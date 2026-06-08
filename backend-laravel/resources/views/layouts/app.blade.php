@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $title ?? 'NeuroTrader Lab' }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg: #f6f7f4;
@@ -128,7 +129,9 @@
             <a class="{{ request()->routeIs('market-data') ? 'active' : '' }}" href="{{ route('market-data') }}">Market Data</a>
             <a class="{{ request()->routeIs('strategy-lab.*') ? 'active' : '' }}" href="{{ route('strategy-lab.index') }}">Strategy Lab</a>
             <a class="{{ request()->routeIs('training-sessions.*') ? 'active' : '' }}" href="{{ route('training-sessions.index') }}">Training Sessions</a>
+            <a class="{{ request()->routeIs('training-logs.*') ? 'active' : '' }}" href="{{ route('training-logs.index') }}">Training Logs</a>
             <a class="{{ request()->routeIs('model-versions.*') ? 'active' : '' }}" href="{{ route('model-versions.index') }}">Model Versions</a>
+            <a class="{{ request()->routeIs('evolution-proposals.*') ? 'active' : '' }}" href="{{ route('evolution-proposals.index') }}">Evolution Proposals</a>
             <a class="{{ request()->routeIs('backtests.*') ? 'active' : '' }}" href="{{ route('backtests.index') }}">Run Backtest</a>
             <a class="{{ request()->routeIs('backtest-results') ? 'active' : '' }}" href="{{ route('backtest-results') }}">Backtest Results</a>
             <a class="{{ request()->routeIs('mistake-journal') ? 'active' : '' }}" href="{{ route('mistake-journal') }}">Mistake Journal</a>
@@ -149,5 +152,6 @@
         @yield('content')
     </main>
 </div>
+@stack('scripts')
 </body>
 </html>

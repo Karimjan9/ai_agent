@@ -9,3 +9,7 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('trading:daily-report')->dailyAt('23:50');
+Schedule::command('trading:daily-workflow')
+    ->dailyAt('01:00')
+    ->withoutOverlapping()
+    ->runInBackground();

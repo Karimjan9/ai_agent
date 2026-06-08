@@ -135,7 +135,7 @@ php artisan migrate --force
 - Laravel testlar o'tdi:
 
 ```text
-14 passed, 66 assertions
+27 passed, 154 assertions
 ```
 
 ### 4-etap
@@ -228,7 +228,313 @@ GET /model-versions
 - Laravel testlar yangilandi:
 
 ```text
-14 passed, 66 assertions
+27 passed, 154 assertions
+```
+
+### 6-etap
+
+- Agent Evolution Engine qo'shildi: past score olgan agent uchun yangi version proposal yaratiladi.
+- Yangi jadval va model qo'shildi:
+  - `evolution_proposals`
+  - `EvolutionProposal`
+- `AgentEvolutionService` yaratildi:
+  - training session ichidagi `worst_strategy` ni topadi
+  - score `< 50` bo'lsa proposal yaratadi
+  - strategy turiga qarab `main_problem`, `reason`, `proposal`, `new_parameters` tayyorlaydi
+- `StrategyLabController::runAll` endi training session tugagach avtomatik evolution proposal yaratadi.
+- `ModelVersion.parameters` endi strategy parametrlarini saqlash uchun ishlatiladi; backtest result esa `metadata` ichida qoladi.
+- Default model version parametrlarini yaratish uchun `ModelVersionSeeder` qo'shildi.
+- Evolution proposal sahifalari va actionlari qo'shildi:
+
+```text
+GET  /evolution-proposals
+GET  /evolution-proposals/{evolutionProposal}
+POST /evolution-proposals/{evolutionProposal}/approve
+POST /evolution-proposals/{evolutionProposal}/apply
+POST /evolution-proposals/{evolutionProposal}/reject
+```
+
+- `apply` qilinganda yangi `ModelVersion` yaratiladi:
+
+```text
+breakout_v1 -> breakout_v2
+v1 -> v2
+generation 1 -> 2
+status -> testing
+```
+
+- Laravel testlar yangilandi:
+
+```text
+27 passed, 154 assertions
+```
+
+#### 6-etap yakuniy test tartibi
+
+```bash
+cd backend-laravel
+php artisan migrate
+php artisan db:seed --class=ModelVersionSeeder
+php artisan test
+```
+
+Python service ishlab turganda:
+
+```bash
+cd ai-service-python
+uvicorn app.main:app --reload --host 127.0.0.1 --port 9000
+```
+
+Laravel UI flow:
+
+```text
+/strategy-lab
+Start New Training Session
+/evolution-proposals
+Apply & Create Version
+/model-versions
+```
+
+Kutilgan natija:
+
+```text
+breakout_v1 -> v1 -> testing/rejected
+breakout_v2 -> v2 -> testing
+```
+
+### 7-etap
+
+- Dynamic Strategy Engine qo'shildi.
+- Laravel `StrategyLabController::runAll` endi `model_versions` jadvalidagi `testing` va `active` versiyalarni Python'ga yuboradi.
+- `testing/active` model version topilmasa, run-all endi aniq error qaytaradi.
+- Python `/api/backtest/run-all` endi ixtiyoriy `strategies` payloadni qabul qiladi:
+
+```json
+{
+  "strategy": "breakout_v2",
+  "base_strategy": "breakout_v1",
+  "version": "v2",
+  "parameters": {
+    "lookback": 30,
+    "atr_multiplier": 0.4,
+    "confirmation_candles": 2
+  }
+}
+```
+
+- Python strategy registry `breakout_v2` kabi nomlarni alohida faylsiz `breakout_v1` base strategy orqali ishlata oladi.
+- Strategy fayllari dynamic parametrlarni qabul qiladigan qilindi:
+  - `ema_rsi.py`
+  - `macd_trend.py`
+  - `fibonacci.py`
+  - `breakout.py`
+- 6-etapdagi cheklov olib tashlandi: `breakout_v2` endi Python backtesterda real ishlaydi, lekin u hali alohida yangi algoritm emas, base strategy + yangi parametrlar sifatida ishlaydi.
+- Python response endi `parameters`ni ham qaytaradi.
+- `strategy_scores.parameters` ustuni qo'shildi va leaderboard natijasi qaysi parametr bilan chiqqani DB'da saqlanadi.
+- Training Session detail sahifasida har bir strategy score uchun `Parameters` details bloki qo'shildi.
+- Laravel testlar yangilandi:
+
+```text
+27 passed, 154 assertions
+```
+
+Python compile/smoke:
+
+```text
+python -m compileall app -> OK
+breakout_v2 dynamic smoke -> OK, parameters leaderboard/result ichida qaytdi
+```
+
+### 8-etap
+
+- Risk Metrics Engine qo'shildi.
+- Python backtester endi har bir strategy uchun professional risk metrikalarni qaytaradi:
+  - `max_drawdown_percent`
+  - `profit_factor`
+  - `average_win_percent`
+  - `average_loss_percent`
+  - `risk_reward_ratio`
+  - `max_consecutive_losses`
+  - `stability_score`
+  - `equity_curve`
+- Python score formulasi 100 ballik professional formulaga o'tdi:
+
+```text
+profit quality
++ winrate
++ profit factor
+- drawdown penalty
+- loss streak penalty
++ stability score
++ trade count reliability
+```
+
+- Laravel `strategy_scores` jadvali risk metric ustunlari bilan kengaytirildi.
+- Laravel `training_sessions` jadvali umumiy risk average metriclari bilan kengaytirildi:
+  - `average_drawdown`
+  - `average_profit_factor`
+  - `average_stability_score`
+- `StrategyLabController` risk metriclarni DB'ga saqlaydi va training session xulosasida ishlatadi.
+- `ModelVersion` active/rejected qarori endi faqat score emas, risk-adjusted qoida bilan ishlaydi:
+  - active: `score >= 75`, `profit_factor >= 1.3`, `drawdown <= 15`
+  - rejected: `score < 30` yoki `profit_factor < 0.8`
+- Strategy Lab leaderboardda PF, loss streak va stability ko'rinadi.
+- Training Session detail sahifasida average risk kartalari va har bir agentning risk metriclari ko'rinadi.
+
+Tekshiruv:
+
+```text
+python -m compileall app -> OK
+ema_rsi_v1 risk smoke -> OK
+php artisan migrate -> DONE
+php artisan test -> 27 passed, 154 assertions
+```
+
+### 9-etap
+
+- Equity Curve + Charts Dashboard qo'shildi.
+- Layoutga Chart.js CDN qo'shildi va Blade script stack yoqildi:
+
+```text
+resources/views/layouts/app.blade.php
+```
+
+- Training Session detail sahifasiga quyidagi chartlar qo'shildi:
+  - Equity Curve
+  - Agent Score Comparison
+  - Profit vs Drawdown
+  - Win / Loss Distribution
+  - Stability Score
+- Strategy Lab sahifasiga umumiy leaderboard chartlari qo'shildi:
+  - Top Strategy Scores
+  - Profit vs Drawdown
+- Model Versions sahifasiga status distribution doughnut chart qo'shildi.
+- Chart scriptlar null-safe qilindi: eski sessionlarda `equity_curve` bo'lmasa xato bermaydi.
+- Feature testlar chart canvas va sarlavhalarini tekshiradigan qilindi.
+
+Tekshiruv:
+
+```text
+php artisan test -> 27 passed, 154 assertions
+```
+
+### 10-etap
+
+- Market Regime Detection qo'shildi.
+- Python service har bir candle uchun bozor holatini aniqlaydi:
+  - `trend_up`
+  - `trend_down`
+  - `range`
+  - `unknown`
+- Volatility regime ham aniqlanadi:
+  - `high_volatility`
+  - `low_volatility`
+  - `normal_volatility`
+- `ai-service-python/app/services/market_regime.py` yaratildi.
+- `ta` paketi bo'lmagan lokal muhitda ham ishlashi uchun EMA, ATR va ADX fallback hisob-kitoblari qo'shildi.
+- Python backtester har bir trade ichida `market_regime` va `volatility_regime` qaytaradi.
+- Python response ichiga `regime_performance` va `volatility_performance` qo'shildi.
+- Score formulasiga regime adaptability bonus/penalty qo'shildi.
+- Laravel `strategy_scores` jadvali `regime_performance` va `volatility_performance` JSON ustunlari bilan kengaytirildi.
+- Laravel `trades` jadvali `market_regime` va `volatility_regime` ustunlari bilan kengaytirildi.
+- Training Session detail sahifasiga `Best Agent Regime Profit` chart va `Market Regime Performance` jadvali qo'shildi.
+- `AgentEvolutionService` endi eng yomon agentning eng zararli market regime'ini proposal ichiga yozadi va `avoid_regime` parametrini taklif qiladi.
+
+Tekshiruv:
+
+```text
+python -m compileall app -> OK
+run-all regime smoke -> OK
+php artisan migrate -> DONE
+php artisan test -> 27 passed, 154 assertions
+```
+
+### 11-etap
+
+- Auto Training Scheduler qo'shildi.
+- `training_logs` jadvali va `TrainingLog` modeli yaratildi.
+- Yangi commandlar qo'shildi:
+  - `php artisan trading:auto-train`
+  - `php artisan trading:daily-workflow`
+- `trading:auto-train` active/testing model versionlarni olib, Python `/api/backtest/run-all` endpointiga yuboradi.
+- Auto training natijasi DB'ga saqlanadi:
+  - `training_sessions`
+  - `strategy_scores`
+  - `model_versions`
+  - `evolution_proposals`
+  - `training_logs`
+- `trading:daily-workflow` auto trainingdan keyin `trading:daily-report` commandini ishga tushiradi.
+- Schedulerga quyidagi workflow qo'shildi:
+
+```text
+trading:daily-workflow -> dailyAt('01:00') -> withoutOverlapping() -> runInBackground()
+```
+
+- Auto Training Logs sahifalari qo'shildi:
+  - `GET /training-logs`
+  - `GET /training-logs/{trainingLog}`
+- Sidebar ichiga `Training Logs` linki qo'shildi.
+- Productionda Laravel scheduler uchun cron kerak:
+
+```cron
+* * * * * cd /var/www/neurotrader-lab/backend-laravel && php artisan schedule:run >> /dev/null 2>&1
+```
+
+- Auto training ishlashi uchun Python FastAPI service doim ishlab turishi kerak; serverda buni `systemd` yoki process manager orqali `uvicorn app.main:app --host 127.0.0.1 --port 9000` sifatida ushlab turish kerak.
+- Batafsil manual run/deployment yo'riqnomasi: `docs/AUTO_TRAINING_SCHEDULER.md`.
+- Feature testlar auto training command, daily workflow va training logs sahifalarini tekshiradi.
+
+Tekshiruv:
+
+```text
+php artisan migrate -> DONE
+php artisan test -> 27 passed, 154 assertions
+```
+
+### 12-etap
+
+- Data Update Engine qo'shildi.
+- `market_symbols` jadvali va `MarketSymbol` modeli yaratildi.
+- Mavjud `candles` jadvaliga `provider` ustuni qo'shildi.
+- `Candle` va `Symbol` modellari qo'shildi.
+- `MarketSymbolSeeder` yaratildi va `DatabaseSeeder`ga ulandi.
+- Market data config qo'shildi:
+  - `MARKET_DATA_PROVIDER=csv`
+  - `OANDA_API_TOKEN`
+  - `OANDA_ACCOUNT_ID`
+  - `OANDA_BASE_URL`
+- CSV provider va market data servicelar qo'shildi:
+  - `MarketDataProviderInterface`
+  - `CsvMarketDataProvider`
+  - `MarketDataService`
+  - `CandlePayloadService`
+- Yangi command:
+
+```bash
+php artisan market-data:update --symbol=XAUUSD --timeframe=H1 --limit=1000
+```
+
+- CSV fayl joyi:
+
+```text
+storage/app/market-data/XAUUSD_H1.csv
+```
+
+- `trading:daily-workflow` endi 3 qadamli: market data update, auto training, daily report.
+- `trading:auto-train`, manual Strategy Lab run-all va single backtest endi DB `candles`dan olingan candle payloadni Python'ga yuboradi.
+- Python `SimpleBacktestRequest` endi `candles` array qabul qiladi; candles bo'lmasa CSV fallback saqlangan.
+- Market Data web sahifasi real status sahifaga almashtirildi:
+  - `GET /market-data`
+  - `POST /market-data/update`
+- Sahifada active symbol, provider symbol, candle count va oxirgi candle vaqti ko'rinadi.
+
+Tekshiruv:
+
+```text
+php artisan migrate -> DONE
+python -m compileall app -> OK
+Python candles-array smoke -> OK
+php artisan test -> 27 passed, 154 assertions
 ```
 
 ## Run Python Backtest Service
@@ -266,11 +572,14 @@ Open:
 http://127.0.0.1:8003
 ```
 
-The MVP includes six pages:
+The MVP includes these main pages:
 
 - Dashboard
 - Market Data
 - Strategy Lab
+- Training Sessions
+- Model Versions
+- Evolution Proposals
 - Backtest Results
 - Mistake Journal
 - AI Daily Report

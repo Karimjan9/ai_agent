@@ -33,6 +33,25 @@
         </article>
     @endif
 
+    @php
+        $topScores = $scores->getCollection()->take(10);
+        $topLabels = $topScores->pluck('strategy')->map(fn ($strategy) => strtoupper($strategy))->values();
+        $topScoreData = $topScores->pluck('score')->values();
+        $topProfitData = $topScores->pluck('net_profit_percent')->values();
+        $topDrawdownData = $topScores->pluck('max_drawdown_percent')->values();
+    @endphp
+
+    <section class="split">
+        <article class="card">
+            <h2 class="section-title">Top Strategy Scores</h2>
+            <canvas id="topScoreChart" height="160"></canvas>
+        </article>
+        <article class="card">
+            <h2 class="section-title">Profit vs Drawdown</h2>
+            <canvas id="topProfitDrawdownChart" height="160"></canvas>
+        </article>
+    </section>
+
     <article class="card" style="margin-top: 14px;">
         <h2 class="section-title">Agent Leaderboard</h2>
         <table class="table">
@@ -45,6 +64,9 @@
                 <th>Winrate</th>
                 <th>Profit</th>
                 <th>Drawdown</th>
+                <th>PF</th>
+                <th>Loss Streak</th>
+                <th>Stability</th>
                 <th>Created</th>
             </tr>
             </thead>
@@ -58,11 +80,14 @@
                     <td>{{ $score->winrate }}%</td>
                     <td>{{ $score->net_profit_percent }}%</td>
                     <td>{{ $score->max_drawdown_percent }}%</td>
+                    <td>{{ $score->profit_factor }}</td>
+                    <td>{{ $score->max_consecutive_losses }}</td>
+                    <td>{{ $score->stability_score }}</td>
                     <td>{{ $score->created_at->format('Y-m-d H:i') }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="8">Hali leaderboard natijasi yo'q. Run All Agents tugmasini bosing.</td>
+                    <td colspan="11">Hali leaderboard natijasi yo'q. Run All Agents tugmasini bosing.</td>
                 </tr>
             @endforelse
             </tbody>
@@ -74,4 +99,60 @@
             {{ $scores->links() }}
         </article>
     @endif
+
+    @push('scripts')
+        <script>
+            const topLabels = @json($topLabels);
+            const topScoreData = @json($topScoreData);
+            const topProfitData = @json($topProfitData);
+            const topDrawdownData = @json($topDrawdownData);
+
+            const topScoreCanvas = document.getElementById('topScoreChart');
+            if (topScoreCanvas) {
+                new Chart(topScoreCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: topLabels,
+                        datasets: [{
+                            label: 'Score',
+                            data: topScoreData
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        indexAxis: 'y',
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                max: 100
+                            }
+                        }
+                    }
+                });
+            }
+
+            const topProfitDrawdownCanvas = document.getElementById('topProfitDrawdownChart');
+            if (topProfitDrawdownCanvas) {
+                new Chart(topProfitDrawdownCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: topLabels,
+                        datasets: [
+                            {
+                                label: 'Profit %',
+                                data: topProfitData
+                            },
+                            {
+                                label: 'Drawdown %',
+                                data: topDrawdownData
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true
+                    }
+                });
+            }
+        </script>
+    @endpush
 @endsection

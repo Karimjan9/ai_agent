@@ -6,9 +6,13 @@ except ImportError:  # pragma: no cover
     AverageTrueRange = None
 
 
-def apply_breakout_strategy(df: pd.DataFrame) -> pd.DataFrame:
+def apply_breakout_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    parameters = parameters or {}
     prepared = df.copy()
-    lookback = 20
+    lookback = int(parameters.get("lookback", 20))
+    atr_period = int(parameters.get("atr_period", 14))
+    atr_multiplier = float(parameters.get("atr_multiplier", 0.2))
+    confirmation_candles = max(int(parameters.get("confirmation_candles", 1)), 1)
 
     prepared["range_high"] = prepared["high"].rolling(window=lookback).max().shift(1)
     prepared["range_low"] = prepared["low"].rolling(window=lookback).min().shift(1)
@@ -18,23 +22,30 @@ def apply_breakout_strategy(df: pd.DataFrame) -> pd.DataFrame:
             high=prepared["high"],
             low=prepared["low"],
             close=prepared["close"],
-            window=14,
+            window=atr_period,
         )
         prepared["atr"] = atr.average_true_range()
     else:
-        prepared["atr"] = _atr(prepared, 14)
+        prepared["atr"] = _atr(prepared, atr_period)
 
     prepared["signal"] = "WAIT"
 
-    buy_condition = (
+    breakout_up = (
         (prepared["close"] > prepared["range_high"])
-        & ((prepared["close"] - prepared["range_high"]) > prepared["atr"] * 0.2)
+        & ((prepared["close"] - prepared["range_high"]) > prepared["atr"] * atr_multiplier)
     )
 
-    sell_condition = (
+    breakout_down = (
         (prepared["close"] < prepared["range_low"])
-        & ((prepared["range_low"] - prepared["close"]) > prepared["atr"] * 0.2)
+        & ((prepared["range_low"] - prepared["close"]) > prepared["atr"] * atr_multiplier)
     )
+
+    if confirmation_candles > 1:
+        buy_condition = breakout_up.rolling(window=confirmation_candles).sum() >= confirmation_candles
+        sell_condition = breakout_down.rolling(window=confirmation_candles).sum() >= confirmation_candles
+    else:
+        buy_condition = breakout_up
+        sell_condition = breakout_down
 
     prepared.loc[buy_condition, "signal"] = "BUY"
     prepared.loc[sell_condition, "signal"] = "SELL"

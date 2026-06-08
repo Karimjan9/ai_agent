@@ -18,6 +18,7 @@ from app.schemas import (
 )
 from app.services.data_loader import load_candles
 from app.services.indicators import add_indicators
+from app.services.market_regime import apply_market_regime
 from app.strategies.registry import get_strategy, strategy_label
 
 
@@ -48,8 +49,11 @@ def run_backtest(payload: BacktestRequest) -> BacktestResponse:
 
 
 def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktestResponse:
-    csv_path = _resolve_dataset_path(payload.dataset_path or "../datasets/XAUUSD_H1.csv")
-    df = pd.read_csv(csv_path)
+    if payload.candles:
+        df = pd.DataFrame([candle.model_dump() for candle in payload.candles])
+    else:
+        csv_path = _resolve_dataset_path(payload.dataset_path or "../datasets/XAUUSD_H1.csv")
+        df = pd.read_csv(csv_path)
 
     if "volume" not in df.columns:
         df["volume"] = 0
@@ -77,8 +81,9 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
     if len(df) <= 200:
         raise ValueError("At least 201 candles are required for EMA 200 backtest.")
 
-    strategy_function = get_strategy(payload.strategy)
-    df = strategy_function(df)
+    df = apply_market_regime(df)
+    strategy_function = get_strategy(payload.strategy, payload.base_strategy)
+    df = strategy_function(df, payload.parameters)
 
     balance = payload.initial_balance
     peak_balance = balance
@@ -111,6 +116,8 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
                 "entry_price": entry_price,
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
+                "market_regime": row.get("market_regime", "unknown"),
+                "volatility_regime": row.get("volatility_regime", "normal_volatility"),
             }
             continue
 
@@ -167,6 +174,8 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
                 result=result,
                 profit_percent=round(profit_percent, 3),
                 balance=round(balance, 2),
+                market_regime=str(position.get("market_regime", "unknown")),
+                volatility_regime=str(position.get("volatility_regime", "normal_volatility")),
                 mistake_type=mistake["type"] if mistake else None,
                 reason=mistake["reason"] if mistake else None,
                 suggestion=mistake["suggestion"] if mistake else None,
@@ -179,13 +188,28 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
     losses = len([trade for trade in trades if trade.result == "LOSS"])
     winrate = round((wins / total_trades) * 100, 2) if total_trades else 0.0
     net_profit = round(((balance - payload.initial_balance) / payload.initial_balance) * 100, 2)
-    profit_factor = round(gross_profit / gross_loss, 2) if gross_loss else round(gross_profit, 2)
+    equity_curve = [round(payload.initial_balance, 2), *[trade.balance for trade in trades]]
+    max_drawdown = calculate_max_drawdown(equity_curve)
+    profit_factor = calculate_profit_factor(trades)
+    average_win = calculate_average_win(trades)
+    average_loss = calculate_average_loss(trades)
+    risk_reward_ratio = calculate_risk_reward_ratio(average_win, average_loss)
+    max_consecutive_losses = calculate_max_consecutive_losses(trades)
+    stability_score = calculate_stability_score(
+        max_drawdown=max_drawdown,
+        max_consecutive_losses=max_consecutive_losses,
+        profit_factor=profit_factor,
+        total_trades=total_trades,
+    )
     period_start = payload.from_date.isoformat() if payload.from_date else df["time"].min().date().isoformat()
     period_end = payload.to_date.isoformat() if payload.to_date else df["time"].max().date().isoformat()
     top_mistakes = _top_simple_mistakes(trades)
+    regime_performance = calculate_regime_performance(trades)
+    volatility_performance = calculate_volatility_performance(trades)
 
     return SimpleBacktestResponse(
         strategy=strategy_label(payload.strategy),
+        parameters=payload.parameters,
         instrument="XAU/USD",
         timeframe=payload.timeframe,
         period=f"{period_start} - {period_end}",
@@ -197,10 +221,27 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
         losses=losses,
         winrate=winrate,
         profit_factor=profit_factor,
-        max_drawdown=round(float(max_drawdown), 2),
+        max_drawdown=max_drawdown,
+        max_drawdown_percent=max_drawdown,
+        average_win_percent=average_win,
+        average_loss_percent=average_loss,
+        risk_reward_ratio=risk_reward_ratio,
+        max_consecutive_losses=max_consecutive_losses,
+        stability_score=stability_score,
+        equity_curve=equity_curve,
+        regime_performance=regime_performance,
+        volatility_performance=volatility_performance,
         top_mistakes=top_mistakes,
         trades=trades[-20:],
-        conclusion=_simple_conclusion(winrate, net_profit, total_trades, top_mistakes),
+        conclusion=_simple_conclusion(
+            winrate,
+            net_profit,
+            total_trades,
+            top_mistakes,
+            max_drawdown=max_drawdown,
+            profit_factor=profit_factor,
+            stability_score=stability_score,
+        ),
     )
 
 
@@ -281,6 +322,163 @@ def _top_simple_mistakes(trades: list[SimpleTrade]) -> list[dict[str, int | str]
     ]
 
 
+def calculate_max_drawdown(equity_curve: list[float]) -> float:
+    if not equity_curve:
+        return 0.0
+
+    peak = equity_curve[0]
+    max_drawdown = 0.0
+
+    for equity in equity_curve:
+        peak = max(peak, equity)
+        drawdown = ((peak - equity) / peak) * 100 if peak > 0 else 0
+        max_drawdown = max(max_drawdown, drawdown)
+
+    return round(max_drawdown, 2)
+
+
+def calculate_profit_factor(trades: list[SimpleTrade]) -> float:
+    gross_profit = sum(trade.profit_percent for trade in trades if trade.profit_percent > 0)
+    gross_loss = abs(sum(trade.profit_percent for trade in trades if trade.profit_percent < 0))
+
+    if gross_loss == 0:
+        return round(gross_profit, 2) if gross_profit > 0 else 0.0
+
+    return round(gross_profit / gross_loss, 2)
+
+
+def calculate_average_win(trades: list[SimpleTrade]) -> float:
+    wins = [trade.profit_percent for trade in trades if trade.profit_percent > 0]
+    if not wins:
+        return 0.0
+
+    return round(sum(wins) / len(wins), 3)
+
+
+def calculate_average_loss(trades: list[SimpleTrade]) -> float:
+    losses = [abs(trade.profit_percent) for trade in trades if trade.profit_percent < 0]
+    if not losses:
+        return 0.0
+
+    return round(sum(losses) / len(losses), 3)
+
+
+def calculate_risk_reward_ratio(avg_win: float, avg_loss: float) -> float:
+    if avg_loss == 0:
+        return 0.0
+
+    return round(avg_win / avg_loss, 2)
+
+
+def calculate_max_consecutive_losses(trades: list[SimpleTrade]) -> int:
+    max_streak = 0
+    current_streak = 0
+
+    for trade in trades:
+        if trade.result == "LOSS":
+            current_streak += 1
+            max_streak = max(max_streak, current_streak)
+        else:
+            current_streak = 0
+
+    return max_streak
+
+
+def calculate_stability_score(
+    max_drawdown: float,
+    max_consecutive_losses: int,
+    profit_factor: float,
+    total_trades: int,
+) -> int:
+    score = 100
+
+    if max_drawdown > 20:
+        score -= 40
+    elif max_drawdown > 15:
+        score -= 30
+    elif max_drawdown > 10:
+        score -= 20
+    elif max_drawdown > 5:
+        score -= 10
+
+    if max_consecutive_losses >= 10:
+        score -= 30
+    elif max_consecutive_losses >= 7:
+        score -= 20
+    elif max_consecutive_losses >= 5:
+        score -= 10
+
+    if profit_factor >= 1.7:
+        score += 10
+    elif profit_factor < 1:
+        score -= 25
+
+    if total_trades < 20:
+        score -= 20
+    elif total_trades >= 100:
+        score += 5
+
+    return max(min(score, 100), 0)
+
+
+def calculate_regime_performance(trades: list[SimpleTrade]) -> dict[str, dict[str, float | int]]:
+    regimes: dict[str, dict[str, float | int]] = {}
+
+    for trade in trades:
+        regime = trade.market_regime or "unknown"
+        regimes.setdefault(regime, {
+            "trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "profit_percent": 0.0,
+        })
+
+        regimes[regime]["trades"] += 1
+        if trade.result == "WIN":
+            regimes[regime]["wins"] += 1
+        if trade.result == "LOSS":
+            regimes[regime]["losses"] += 1
+
+        regimes[regime]["profit_percent"] += trade.profit_percent
+
+    return _finalize_regime_performance(regimes)
+
+
+def calculate_volatility_performance(trades: list[SimpleTrade]) -> dict[str, dict[str, float | int]]:
+    regimes: dict[str, dict[str, float | int]] = {}
+
+    for trade in trades:
+        regime = trade.volatility_regime or "normal_volatility"
+        regimes.setdefault(regime, {
+            "trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "profit_percent": 0.0,
+        })
+
+        regimes[regime]["trades"] += 1
+        if trade.result == "WIN":
+            regimes[regime]["wins"] += 1
+        if trade.result == "LOSS":
+            regimes[regime]["losses"] += 1
+
+        regimes[regime]["profit_percent"] += trade.profit_percent
+
+    return _finalize_regime_performance(regimes)
+
+
+def _finalize_regime_performance(
+    regimes: dict[str, dict[str, float | int]],
+) -> dict[str, dict[str, float | int]]:
+    for data in regimes.values():
+        trades_count = int(data["trades"])
+        wins = int(data["wins"])
+        data["winrate"] = round((wins / trades_count) * 100, 2) if trades_count else 0.0
+        data["profit_percent"] = round(float(data["profit_percent"]), 3)
+
+    return regimes
+
+
 def _resolve_dataset_path(dataset_path: str) -> Path:
     path = Path(dataset_path)
     if path.exists():
@@ -303,17 +501,35 @@ def _simple_conclusion(
     net_profit: float,
     total_trades: int,
     top_mistakes: list[dict[str, int | str]],
+    max_drawdown: float = 0,
+    profit_factor: float = 0,
+    stability_score: int = 0,
 ) -> str:
     if total_trades == 0:
         return "Strategiya bu periodda trade ochmadi."
 
     main_mistake = top_mistakes[0]["type"] if top_mistakes else None
-    if winrate >= 55 and net_profit > 0:
-        conclusion = "Strategiya umumiy hisobda yaxshi natija berdi. "
-    elif winrate < 45:
-        conclusion = "Strategiya zaif natija berdi. "
+    if net_profit > 0 and profit_factor >= 1.3 and max_drawdown <= 10:
+        conclusion = "Strategiya risk va profit bo'yicha yaxshi natija berdi. "
+    elif net_profit > 0 and max_drawdown > 15:
+        conclusion = "Strategiya profit berdi, lekin drawdown yuqori. Riskni kamaytirish kerak. "
+    elif net_profit < 0:
+        conclusion = "Strategiya zarar bilan yakunlandi. Parametrlarni qayta optimizatsiya qilish kerak. "
     else:
-        conclusion = "Strategiya o'rtacha natija berdi. "
+        conclusion = "Strategiya o'rtacha natija berdi. Qo'shimcha filterlar kerak. "
+
+    if profit_factor < 1:
+        conclusion += "Profit Factor 1 dan past, zararli trade hajmi foydali tradelardan ko'proq. "
+    elif profit_factor >= 1.7:
+        conclusion += "Profit Factor kuchli, strategiyada yaxshi risk/reward bor. "
+
+    if max_drawdown > 15:
+        conclusion += "Max drawdown yuqori, position size yoki stop-loss logikasini yaxshilash kerak. "
+
+    if stability_score < 50:
+        conclusion += "Stability score past, strategiya barqaror emas. "
+    elif stability_score >= 75:
+        conclusion += "Stability score yaxshi, agent barqarorroq ishlayapti. "
 
     if main_mistake == "trend_against_entry":
         conclusion += "Eng ko'p xato trendga qarshi kirish bilan bog'liq. Trend filterni kuchaytirish kerak."

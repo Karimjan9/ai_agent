@@ -49,6 +49,8 @@ class BacktestWebFlowTest extends TestCase
                         'stop_loss' => 1814.38,
                         'take_profit' => 1841.74,
                         'result' => 'LOSS',
+                        'market_regime' => 'range',
+                        'volatility_regime' => 'high_volatility',
                         'profit_percent' => -0.5,
                         'balance' => 9950,
                         'mistake_type' => 'sideways_market',
@@ -91,6 +93,8 @@ class BacktestWebFlowTest extends TestCase
         $this->assertDatabaseHas('trades', [
             'symbol' => 'XAUUSD',
             'result' => 'LOSS',
+            'market_regime' => 'range',
+            'volatility_regime' => 'high_volatility',
             'mistake_type' => 'sideways_market',
         ]);
 
@@ -139,6 +143,8 @@ class BacktestWebFlowTest extends TestCase
                         'stop_loss' => 1814.38,
                         'take_profit' => 1841.74,
                         'result' => 'LOSS',
+                        'market_regime' => 'range',
+                        'volatility_regime' => 'high_volatility',
                         'profit_percent' => -0.5,
                         'balance' => 9950,
                         'mistake_type' => 'sideways_market',

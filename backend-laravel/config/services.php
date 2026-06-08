@@ -40,4 +40,14 @@ return [
         'default_dataset' => env('AI_SERVICE_DEFAULT_DATASET', '../datasets/XAUUSD_H1.csv'),
     ],
 
+    'market_data' => [
+        'provider' => env('MARKET_DATA_PROVIDER', 'csv'),
+    ],
+
+    'oanda' => [
+        'token' => env('OANDA_API_TOKEN'),
+        'account_id' => env('OANDA_ACCOUNT_ID'),
+        'base_url' => env('OANDA_BASE_URL', 'https://api-fxpractice.oanda.com'),
+    ],
+
 ];

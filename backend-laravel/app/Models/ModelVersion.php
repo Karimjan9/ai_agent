@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ModelVersion extends Model
 {
@@ -28,4 +29,9 @@ class ModelVersion extends Model
         'metadata' => 'array',
         'promoted_at' => 'datetime',
     ];
+
+    public function evolutionProposals(): HasMany
+    {
+        return $this->hasMany(EvolutionProposal::class);
+    }
 }

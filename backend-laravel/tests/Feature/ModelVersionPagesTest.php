@@ -32,6 +32,8 @@ class ModelVersionPagesTest extends TestCase
 
         $response->assertOk()
             ->assertSee('Model Versions')
+            ->assertSee('Model Status Distribution')
+            ->assertSee('modelStatusChart')
             ->assertSee('MACD_TREND_V1')
             ->assertSee('v1')
             ->assertSee('84');

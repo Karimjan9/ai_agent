@@ -19,6 +19,9 @@ class TrainingSession extends Model
         'total_trades',
         'average_winrate',
         'average_profit',
+        'average_drawdown',
+        'average_profit_factor',
+        'average_stability_score',
         'ai_conclusion',
         'next_training_plan',
         'raw_leaderboard',
@@ -35,5 +38,15 @@ class TrainingSession extends Model
     public function strategyScores(): HasMany
     {
         return $this->hasMany(StrategyScore::class);
+    }
+
+    public function evolutionProposals(): HasMany
+    {
+        return $this->hasMany(EvolutionProposal::class);
+    }
+
+    public function trainingLogs(): HasMany
+    {
+        return $this->hasMany(TrainingLog::class);
     }
 }

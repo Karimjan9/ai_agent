@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 
@@ -8,11 +9,21 @@ from app.strategies.fibonacci import apply_fibonacci_strategy
 from app.strategies.macd_trend import apply_macd_trend_strategy
 
 
-STRATEGIES: dict[str, Callable[[pd.DataFrame], pd.DataFrame]] = {
+StrategyFunction = Callable[[pd.DataFrame, dict[str, Any] | None], pd.DataFrame]
+
+
+STRATEGIES: dict[str, StrategyFunction] = {
     "ema_rsi_v1": apply_ema_rsi_strategy,
     "macd_trend_v1": apply_macd_trend_strategy,
     "fibonacci_v1": apply_fibonacci_strategy,
     "breakout_v1": apply_breakout_strategy,
+}
+
+STRATEGY_BASES: dict[str, StrategyFunction] = {
+    "ema_rsi": apply_ema_rsi_strategy,
+    "macd_trend": apply_macd_trend_strategy,
+    "fibonacci": apply_fibonacci_strategy,
+    "breakout": apply_breakout_strategy,
 }
 
 STRATEGY_LABELS = {
@@ -30,9 +41,12 @@ AGENT_NAMES = {
 }
 
 
-def get_strategy(strategy_name: str) -> Callable[[pd.DataFrame], pd.DataFrame]:
-    normalized = strategy_name.lower()
+def get_strategy(strategy_name: str, base_strategy: str | None = None) -> StrategyFunction:
+    normalized = (base_strategy or strategy_name).lower()
     strategy = STRATEGIES.get(normalized)
+
+    if strategy is None:
+        strategy = STRATEGY_BASES.get(_base_name(normalized))
 
     if strategy is None:
         raise ValueError(f"Strategiya topilmadi: {strategy_name}")
@@ -57,3 +71,10 @@ def list_strategy_agents() -> list[dict[str, str]]:
         }
         for strategy_name in STRATEGIES
     ]
+
+
+def _base_name(strategy_name: str) -> str:
+    if "_v" not in strategy_name:
+        return strategy_name
+
+    return strategy_name.rsplit("_v", 1)[0]

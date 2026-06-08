@@ -8,30 +8,38 @@ except ImportError:  # pragma: no cover - fallback keeps the service usable befo
     RSIIndicator = None
 
 
-def apply_ema_rsi_strategy(df: pd.DataFrame) -> pd.DataFrame:
+def apply_ema_rsi_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    parameters = parameters or {}
     prepared = df.copy()
+    ema_fast = int(parameters.get("ema_fast", 50))
+    ema_slow = int(parameters.get("ema_slow", 200))
+    rsi_period = int(parameters.get("rsi_period", 14))
+    rsi_buy_min = float(parameters.get("rsi_buy_min", 50))
+    rsi_buy_max = float(parameters.get("rsi_buy_max", 70))
+    rsi_sell_min = float(parameters.get("rsi_sell_min", 30))
+    rsi_sell_max = float(parameters.get("rsi_sell_max", 50))
 
     if EMAIndicator and RSIIndicator:
-        prepared["ema_50"] = EMAIndicator(close=prepared["close"], window=50).ema_indicator()
-        prepared["ema_200"] = EMAIndicator(close=prepared["close"], window=200).ema_indicator()
-        prepared["rsi"] = RSIIndicator(close=prepared["close"], window=14).rsi()
+        prepared["ema_50"] = EMAIndicator(close=prepared["close"], window=ema_fast).ema_indicator()
+        prepared["ema_200"] = EMAIndicator(close=prepared["close"], window=ema_slow).ema_indicator()
+        prepared["rsi"] = RSIIndicator(close=prepared["close"], window=rsi_period).rsi()
     else:
-        prepared["ema_50"] = prepared["close"].ewm(span=50, adjust=False).mean()
-        prepared["ema_200"] = prepared["close"].ewm(span=200, adjust=False).mean()
-        prepared["rsi"] = _rsi(prepared["close"], 14)
+        prepared["ema_50"] = prepared["close"].ewm(span=ema_fast, adjust=False).mean()
+        prepared["ema_200"] = prepared["close"].ewm(span=ema_slow, adjust=False).mean()
+        prepared["rsi"] = _rsi(prepared["close"], rsi_period)
 
     prepared["signal"] = "WAIT"
 
     buy_condition = (
         (prepared["ema_50"] > prepared["ema_200"])
-        & (prepared["rsi"] > 50)
-        & (prepared["rsi"] < 70)
+        & (prepared["rsi"] > rsi_buy_min)
+        & (prepared["rsi"] < rsi_buy_max)
     )
 
     sell_condition = (
         (prepared["ema_50"] < prepared["ema_200"])
-        & (prepared["rsi"] < 50)
-        & (prepared["rsi"] > 30)
+        & (prepared["rsi"] < rsi_sell_max)
+        & (prepared["rsi"] > rsi_sell_min)
     )
 
     prepared.loc[buy_condition, "signal"] = "BUY"

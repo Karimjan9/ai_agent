@@ -21,6 +21,8 @@ class Trade extends Model
         'stop_loss',
         'take_profit',
         'result',
+        'market_regime',
+        'volatility_regime',
         'profit_percent',
         'balance_after_trade',
         'mistake_type',

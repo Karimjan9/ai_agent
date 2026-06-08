@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\BacktestRun;
 use App\Models\Mistake;
 use App\Models\Trade;
+use App\Services\MarketData\CandlePayloadService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
@@ -15,6 +16,10 @@ use Illuminate\Support\Facades\Schema;
 
 class BacktestController extends Controller
 {
+    public function __construct(
+        private CandlePayloadService $candlePayloadService,
+    ) {}
+
     public function index(): View
     {
         return view('backtests.index');
@@ -31,6 +36,7 @@ class BacktestController extends Controller
             'from_date' => $request->input('from_date'),
             'to_date' => $request->input('to_date'),
         ];
+        $payload['candles'] = $this->candlePayloadService->candlesForBacktest($payload['symbol'], $payload['timeframe']);
 
         try {
             $response = Http::timeout(120)
@@ -109,7 +115,7 @@ class BacktestController extends Controller
             $run = BacktestRun::create($runData);
 
             foreach (($result['trades'] ?? []) as $tradeData) {
-                $trade = Trade::create([
+                $trade = Trade::create($this->onlyExistingColumns('trades', [
                     'backtest_run_id' => $run->id,
                     'symbol' => $payload['symbol'],
                     'timeframe' => $payload['timeframe'],
@@ -122,11 +128,13 @@ class BacktestController extends Controller
                     'stop_loss' => $tradeData['stop_loss'] ?? null,
                     'take_profit' => $tradeData['take_profit'] ?? null,
                     'result' => $tradeData['result'],
+                    'market_regime' => $tradeData['market_regime'] ?? null,
+                    'volatility_regime' => $tradeData['volatility_regime'] ?? null,
                     'profit_percent' => $tradeData['profit_percent'] ?? 0,
                     'balance_after_trade' => $tradeData['balance'] ?? null,
                     'mistake_type' => $tradeData['mistake_type'] ?? null,
                     'reason' => $tradeData['reason'] ?? null,
-                ]);
+                ]));
 
                 if (($tradeData['result'] ?? null) === 'LOSS' && !empty($tradeData['mistake_type'])) {
                     $mistakeData = [

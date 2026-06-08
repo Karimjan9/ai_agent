@@ -54,16 +54,38 @@ def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
         raise HTTPException(status_code=400, detail="Hozircha faqat XAUUSD ishlaydi")
 
     leaderboard = []
+    strategy_configs = payload.strategies or [
+        {
+            "strategy": strategy_name,
+            "base_strategy": strategy_name,
+            "version": "v1",
+            "parameters": {},
+        }
+        for strategy_name in list_strategies()
+    ]
 
     try:
-        for strategy_name in list_strategies():
-            strategy_payload = payload.model_copy(update={"strategy": strategy_name})
+        for config in strategy_configs:
+            if hasattr(config, "model_dump"):
+                config = config.model_dump()
+
+            strategy_name = config["strategy"]
+            strategy_payload = payload.model_copy(update={
+                "strategy": strategy_name,
+                "base_strategy": config.get("base_strategy"),
+                "version": config.get("version"),
+                "parameters": config.get("parameters") or {},
+                "strategies": [],
+            })
             result = run_simple_ema_rsi_backtest(strategy_payload)
             result_data = result.model_dump()
 
             leaderboard.append(
                 {
                     "strategy": strategy_name,
+                    "base_strategy": config.get("base_strategy"),
+                    "version": config.get("version"),
+                    "parameters": config.get("parameters") or {},
                     "score": calculate_strategy_score(result_data),
                     "result": result_data,
                 }
@@ -86,30 +108,70 @@ def calculate_strategy_score(result: dict) -> int:
     winrate = result.get("winrate", 0)
     profit = result.get("net_profit_percent", 0)
     total_trades = result.get("total_trades", 0)
-    losses = result.get("losses", 0)
+    max_drawdown = result.get("max_drawdown_percent", result.get("max_drawdown", 0))
+    profit_factor = result.get("profit_factor", 0)
+    max_consecutive_losses = result.get("max_consecutive_losses", 0)
+    stability_score = result.get("stability_score", 0)
+    regime_performance = result.get("regime_performance", {})
 
     score = 0
-    score += winrate * 0.4
 
     if profit > 0:
-        score += min(profit, 50) * 0.7
+        score += min(profit, 30) * 0.8
     else:
-        score += profit * 0.8
+        score += profit * 1.2
 
-    if total_trades >= 100:
+    score += winrate * 0.2
+
+    if profit_factor >= 2:
+        score += 25
+    elif profit_factor >= 1.7:
+        score += 20
+    elif profit_factor >= 1.4:
         score += 15
-    elif total_trades >= 50:
-        score += 10
-    elif total_trades >= 20:
-        score += 5
-    else:
+    elif profit_factor >= 1.1:
+        score += 8
+    elif profit_factor < 1:
+        score -= 15
+
+    if max_drawdown > 25:
+        score -= 35
+    elif max_drawdown > 20:
+        score -= 25
+    elif max_drawdown > 15:
+        score -= 18
+    elif max_drawdown > 10:
         score -= 10
+    elif max_drawdown <= 5:
+        score += 8
 
-    if total_trades > 0:
-        loss_rate = (losses / total_trades) * 100
-        score -= loss_rate * 0.1
+    if max_consecutive_losses >= 10:
+        score -= 20
+    elif max_consecutive_losses >= 7:
+        score -= 12
+    elif max_consecutive_losses >= 5:
+        score -= 6
 
-    return round(max(score, 0))
+    score += stability_score * 0.2
+
+    if total_trades < 20:
+        score -= 20
+    elif total_trades >= 100:
+        score += 5
+
+    profitable_regimes = 0
+    for data in regime_performance.values():
+        if data.get("trades", 0) >= 10 and data.get("profit_percent", 0) > 0:
+            profitable_regimes += 1
+
+    if profitable_regimes >= 3:
+        score += 8
+    elif profitable_regimes == 2:
+        score += 5
+    elif profitable_regimes == 0:
+        score -= 8
+
+    return round(max(min(score, 100), 0))
 
 
 app.include_router(backtests_router)

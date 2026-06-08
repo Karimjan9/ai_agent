@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -48,15 +48,27 @@ class BacktestRequest(BaseModel):
         return self
 
 
+class StrategyRuntimeConfig(BaseModel):
+    strategy: str
+    base_strategy: str | None = None
+    version: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
 class SimpleBacktestRequest(BaseModel):
     symbol: str = "XAUUSD"
     timeframe: Timeframe = "H1"
     strategy: str = "ema_rsi_v1"
+    base_strategy: str | None = None
+    version: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    strategies: list[StrategyRuntimeConfig] = Field(default_factory=list)
     initial_balance: float = Field(default=10000.0, gt=0)
     risk_per_trade: float = Field(default=1.0, gt=0)
     from_date: date | None = None
     to_date: date | None = None
     dataset_path: str | None = None
+    candles: list[Candle] = Field(default_factory=list)
 
 
 class Metrics(BaseModel):
@@ -124,6 +136,8 @@ class SimpleTrade(BaseModel):
     result: str
     profit_percent: float
     balance: float
+    market_regime: str = "unknown"
+    volatility_regime: str = "normal_volatility"
     mistake_type: str | None = None
     reason: str | None = None
     suggestion: str | None = None
@@ -131,6 +145,7 @@ class SimpleTrade(BaseModel):
 
 class SimpleBacktestResponse(BaseModel):
     strategy: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
     instrument: str
     timeframe: Timeframe
     period: str
@@ -143,6 +158,15 @@ class SimpleBacktestResponse(BaseModel):
     winrate: float
     profit_factor: float
     max_drawdown: float
+    max_drawdown_percent: float = 0.0
+    average_win_percent: float = 0.0
+    average_loss_percent: float = 0.0
+    risk_reward_ratio: float = 0.0
+    max_consecutive_losses: int = 0
+    stability_score: int = 0
+    equity_curve: list[float] = Field(default_factory=list)
+    regime_performance: dict[str, dict[str, float | int]] = Field(default_factory=dict)
+    volatility_performance: dict[str, dict[str, float | int]] = Field(default_factory=dict)
     top_mistakes: list[dict[str, int | str]]
     trades: list[SimpleTrade]
     conclusion: str

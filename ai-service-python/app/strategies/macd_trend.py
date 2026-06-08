@@ -9,22 +9,28 @@ except ImportError:  # pragma: no cover
     RSIIndicator = None
 
 
-def apply_macd_trend_strategy(df: pd.DataFrame) -> pd.DataFrame:
+def apply_macd_trend_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    parameters = parameters or {}
     prepared = df.copy()
+    ema_trend = int(parameters.get("ema_trend", 100))
+    macd_fast = int(parameters.get("macd_fast", 12))
+    macd_slow = int(parameters.get("macd_slow", 26))
+    macd_signal = int(parameters.get("macd_signal", 9))
+    rsi_period = int(parameters.get("rsi_period", 14))
 
     if EMAIndicator and MACD and RSIIndicator:
-        prepared["ema_100"] = EMAIndicator(close=prepared["close"], window=100).ema_indicator()
-        macd = MACD(close=prepared["close"], window_slow=26, window_fast=12, window_sign=9)
+        prepared["ema_100"] = EMAIndicator(close=prepared["close"], window=ema_trend).ema_indicator()
+        macd = MACD(close=prepared["close"], window_slow=macd_slow, window_fast=macd_fast, window_sign=macd_signal)
         prepared["macd"] = macd.macd()
         prepared["macd_signal"] = macd.macd_signal()
-        prepared["rsi"] = RSIIndicator(close=prepared["close"], window=14).rsi()
+        prepared["rsi"] = RSIIndicator(close=prepared["close"], window=rsi_period).rsi()
     else:
-        prepared["ema_100"] = prepared["close"].ewm(span=100, adjust=False).mean()
-        ema_fast = prepared["close"].ewm(span=12, adjust=False).mean()
-        ema_slow = prepared["close"].ewm(span=26, adjust=False).mean()
+        prepared["ema_100"] = prepared["close"].ewm(span=ema_trend, adjust=False).mean()
+        ema_fast = prepared["close"].ewm(span=macd_fast, adjust=False).mean()
+        ema_slow = prepared["close"].ewm(span=macd_slow, adjust=False).mean()
         prepared["macd"] = ema_fast - ema_slow
-        prepared["macd_signal"] = prepared["macd"].ewm(span=9, adjust=False).mean()
-        prepared["rsi"] = _rsi(prepared["close"], 14)
+        prepared["macd_signal"] = prepared["macd"].ewm(span=macd_signal, adjust=False).mean()
+        prepared["rsi"] = _rsi(prepared["close"], rsi_period)
 
     prepared["signal"] = "WAIT"
 

@@ -4,6 +4,11 @@
 ])
 
 @section('content')
+    <article class="card" style="margin-bottom: 14px;">
+        <h2 class="section-title">Model Status Distribution</h2>
+        <canvas id="modelStatusChart" height="100"></canvas>
+    </article>
+
     <article class="card">
         <h2 class="section-title">Version History</h2>
         <table class="table">
@@ -59,4 +64,28 @@
             {{ $versions->links() }}
         </article>
     @endif
+
+    @push('scripts')
+        <script>
+            const statusLabels = @json($statusCounts->keys()->values());
+            const statusData = @json($statusCounts->values());
+
+            const modelStatusCanvas = document.getElementById('modelStatusChart');
+            if (modelStatusCanvas) {
+                new Chart(modelStatusCanvas, {
+                    type: 'doughnut',
+                    data: {
+                        labels: statusLabels,
+                        datasets: [{
+                            label: 'Models',
+                            data: statusData
+                        }]
+                    },
+                    options: {
+                        responsive: true
+                    }
+                });
+            }
+        </script>
+    @endpush
 @endsection
