@@ -10,9 +10,9 @@ Data -> Strategy -> Backtest -> Result -> Mistake Journal -> Daily Report
 
 ## Codex Project Memory
 
-Codex agentlar yangi ish boshlaganda avval `PROJECT_CONTEXT.md` faylini o'qishi kerak. Bu fayl README yonida turadi va loyiha arxitekturasi, route'lar, modellar, Python endpointlar, flowlar, test holati va keyingi etaplar bo'yicha qisqa xotira vazifasini bajaradi.
+Codex agentlar yangi ish boshlaganda avval `docs/project-memory/README.md` va `docs/project-memory/project-index.json`ni o'qishi kerak. Vazifaga mos modul yozuvi keyin ochiladi; shu usul butun repository'ni qayta skan qilish zaruratini kamaytiradi. `PROJECT_CONTEXT.md` batafsil tarixiy kontekst va qarorlar jurnalidir.
 
-Har muhim o'zgarishdan keyin `PROJECT_CONTEXT.md` ham yangilansin.
+Har muhim o'zgarishdan keyin tegishli `docs/project-memory/` yozuvi va indeks yangilansin; zarur strategic qarorlar `PROJECT_CONTEXT.md`ga ham qo'shilsin.
 
 ## MVP Scope
 
@@ -577,6 +577,7 @@ The MVP includes these main pages:
 - Dashboard
 - Market Data
 - Strategy Lab
+- DNA Laboratory
 - Training Sessions
 - Model Versions
 - Evolution Proposals
@@ -729,3 +730,172 @@ Use `POST /api/backtest/run` for the simple EMA/RSI H1 MVP:
 ```
 
 The response includes dashboard-ready metrics plus the last 20 trades. The detailed ATR/Fibonacci MVP endpoint remains available at `POST /backtests/run`.
+
+## Current Advanced Stages: 13-15
+
+Bu bo'lim keyingi ishda loyihani tez tushunish uchun qisqa Obsidian-style yozuv. Batafsil kontekst `PROJECT_CONTEXT.md` ichida.
+
+### Stage 13: Walk Forward Validation Engine
+
+Purpose:
+
+```text
+Agent tarixiy datasetda emas, forward segmentda ham ishlaydimi?
+```
+
+Python:
+
+```text
+ai-service-python/app/services/walk_forward.py
+```
+
+Run-all flow:
+
+```text
+Dataset -> Train 70% -> Validation 15% -> Forward 15%
+ -> train_score / validation_score / forward_score
+ -> robustness_score
+ -> is_overfit
+ -> final leaderboard score
+```
+
+Laravel persistence:
+
+```text
+strategy_scores.train_score
+strategy_scores.validation_score
+strategy_scores.forward_score
+strategy_scores.robustness_score
+strategy_scores.is_overfit
+```
+
+Model promotion now requires:
+
+```text
+score >= 75
+profit_factor >= 1.3
+drawdown <= 15
+robustness_score >= 70
+is_overfit = false
+```
+
+### Stage 14: Monte Carlo Risk Simulation Engine
+
+Purpose:
+
+```text
+Trade tartibi yomon bo'lsa ham account tirik qoladimi?
+```
+
+Python:
+
+```text
+ai-service-python/app/services/monte_carlo.py
+```
+
+Response:
+
+```text
+result.monte_carlo.worst_profit_percent
+result.monte_carlo.avg_profit_percent
+result.monte_carlo.best_profit_percent
+result.monte_carlo.worst_drawdown_percent
+result.monte_carlo.avg_drawdown_percent
+result.monte_carlo.risk_of_ruin_percent
+result.monte_carlo.worst_equity_curve
+result.monte_carlo.best_equity_curve
+```
+
+Laravel persistence:
+
+```text
+strategy_scores.mc_worst_profit_percent
+strategy_scores.mc_avg_profit_percent
+strategy_scores.mc_best_profit_percent
+strategy_scores.mc_worst_drawdown_percent
+strategy_scores.mc_avg_drawdown_percent
+strategy_scores.mc_risk_of_ruin_percent
+strategy_scores.mc_worst_equity_curve
+strategy_scores.mc_best_equity_curve
+```
+
+Additional model rules:
+
+```text
+active requires:
+mc_risk_of_ruin_percent <= 10
+mc_worst_drawdown_percent <= 25
+
+rejected if:
+mc_risk_of_ruin_percent > 30
+or mc_worst_drawdown_percent > 40
+```
+
+### Stage 15: Strategy DNA & Personality Engine
+
+Purpose:
+
+```text
+Strategiyaning xarakteri: agressivmi, trendga qarammi, adaptivmi, survival kuchlimi?
+```
+
+Python:
+
+```text
+ai-service-python/app/services/strategy_dna.py
+```
+
+Response:
+
+```text
+result.strategy_dna.aggression_score
+result.strategy_dna.trend_dependency
+result.strategy_dna.range_dependency
+result.strategy_dna.volatility_sensitivity
+result.strategy_dna.adaptability_score
+result.strategy_dna.recovery_score
+result.strategy_dna.survival_score
+result.strategy_dna.dna_summary
+```
+
+Laravel:
+
+```text
+strategy_dna_profiles
+StrategyDnaProfile model
+StrategyScore -> hasOne StrategyDnaProfile
+```
+
+UI:
+
+```text
+/strategy-lab/dna-laboratory
+Training Session detail -> Strategy DNA Radar chart
+```
+
+Evolution now also reads DNA:
+
+```text
+trend_dependency > 90   -> excessive_trend_dependency
+adaptability_score < 35 -> low_adaptability
+survival_score < 50     -> weak_survival_dna
+```
+
+### Latest Test Snapshot
+
+```bash
+cd ai-service-python
+python -m unittest discover -s tests
+python -m compileall app
+
+cd ../backend-laravel
+php artisan test
+```
+
+Last known result:
+
+```text
+Python unittest: 8 passed
+Python compileall: OK
+Laravel: 34 passed, 177 assertions
+```

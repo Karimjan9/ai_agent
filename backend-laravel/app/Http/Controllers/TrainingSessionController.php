@@ -18,7 +18,10 @@ class TrainingSessionController extends Controller
 
     public function show(TrainingSession $trainingSession): View
     {
-        $trainingSession->load(['strategyScores' => fn ($query) => $query->orderByDesc('score')]);
+        $trainingSession->load([
+            'strategyScores' => fn ($query) => $query->orderByDesc('score'),
+            'strategyScores.dnaProfile',
+        ]);
 
         return view('training-sessions.show', compact('trainingSession'));
     }

@@ -36,6 +36,7 @@ class BacktestController extends Controller
         try {
             $response = Http::timeout(30)
                 ->acceptJson()
+                ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
                 ->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/run', $payload);
         } catch (ConnectionException) {
             return response()->json([

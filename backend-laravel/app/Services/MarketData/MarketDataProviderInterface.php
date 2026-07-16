@@ -9,5 +9,7 @@ interface MarketDataProviderInterface
         string $providerSymbol,
         string $timeframe,
         int $limit = 1000,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $to = null,
     ): array;
 }

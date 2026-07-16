@@ -14,11 +14,17 @@
         <div class="topbar" style="margin-bottom: 0;">
             <div>
                 <h2 class="section-title">Yangi trening</h2>
-                <p class="muted">Barcha agentlarni XAU/USD H1 datasetda qayta test qilib, yangi training session yarating.</p>
+                <p class="muted">Tanlangan instrument uchun barcha agentlarni H1 tarixiy ma'lumotlarda qayta test qiling.</p>
             </div>
             <form method="post" action="{{ route('strategy-lab.run-all') }}">
                 @csrf
-                <input type="hidden" name="symbol" value="XAUUSD">
+                <label>Symbol
+                    <select name="symbol">
+                        <option value="XAUUSD">XAUUSD</option>
+                        <option value="EURUSD">EURUSD</option>
+                        <option value="GBPUSD">GBPUSD</option>
+                    </select>
+                </label>
                 <input type="hidden" name="timeframe" value="H1">
                 <input type="hidden" name="initial_balance" value="10000">
                 <input type="hidden" name="risk_per_trade" value="1">

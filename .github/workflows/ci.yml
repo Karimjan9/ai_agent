@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_DATABASE: neurotrader_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping" --health-interval=10s
+          --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_mysql
+          coverage: none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend-laravel/package-lock.json
+      - name: Laravel dependencies
+        working-directory: backend-laravel
+        run: composer install --no-interaction --prefer-dist
+      - name: Composer security audit
+        working-directory: backend-laravel
+        run: composer audit --locked
+      - name: Frontend dependencies and audit
+        working-directory: backend-laravel
+        run: npm ci && npm audit --omit=dev --audit-level=high
+      - name: Python dependencies
+        working-directory: ai-service-python
+        run: pip install -r requirements.txt
+      - name: Python tests
+        working-directory: ai-service-python
+        run: PYTHONPATH=. python -m unittest discover -s tests -v
+      - name: Laravel tests
+        working-directory: backend-laravel
+        run: php artisan test
+      - name: Frontend build
+        working-directory: backend-laravel
+        run: npm run build

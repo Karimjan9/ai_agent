@@ -18,6 +18,8 @@
             <label>Symbol
                 <select name="symbol">
                     <option value="XAUUSD">XAUUSD</option>
+                    <option value="EURUSD">EURUSD</option>
+                    <option value="GBPUSD">GBPUSD</option>
                 </select>
             </label>
             <label>Timeframe

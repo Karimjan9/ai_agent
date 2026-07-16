@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\EvolutionProposal;
-use App\Models\ModelVersion;
+use App\Services\EvolutionProposalApplicationService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 
@@ -40,41 +40,13 @@ class EvolutionProposalController extends Controller
         return back()->with('success', 'Evolution proposal approved qilindi.');
     }
 
-    public function apply(EvolutionProposal $evolutionProposal): RedirectResponse
+    public function apply(EvolutionProposal $evolutionProposal, EvolutionProposalApplicationService $applicationService): RedirectResponse
     {
-        if (! in_array($evolutionProposal->status, ['pending', 'approved'], true)) {
+        $modelVersion = $applicationService->apply($evolutionProposal);
+
+        if (! $modelVersion) {
             return back()->with('error', 'Bu proposalni apply qilib bolmaydi.');
         }
-
-        $strategyName = $this->nextStrategyName(
-            $evolutionProposal->strategy,
-            $evolutionProposal->proposed_version,
-        );
-
-        ModelVersion::create([
-            'name' => $strategyName,
-            'strategy' => $strategyName,
-            'version' => $evolutionProposal->proposed_version,
-            'generation' => $this->nextGeneration($evolutionProposal),
-            'status' => 'testing',
-            'best_score' => 0,
-            'best_winrate' => 0,
-            'best_profit' => 0,
-            'best_drawdown' => 0,
-            'description' => $evolutionProposal->proposal,
-            'change_log' => $evolutionProposal->reason,
-            'parameters' => $evolutionProposal->new_parameters,
-            'metadata' => [
-                'source_proposal_id' => $evolutionProposal->id,
-                'parent_strategy' => $evolutionProposal->strategy,
-                'parent_version' => $evolutionProposal->current_version,
-            ],
-        ]);
-
-        $evolutionProposal->update([
-            'status' => 'applied',
-            'applied_at' => now(),
-        ]);
 
         return redirect()
             ->route('model-versions.index')
@@ -89,26 +61,10 @@ class EvolutionProposalController extends Controller
 
         $evolutionProposal->update([
             'status' => 'rejected',
+            'open_status' => null,
         ]);
 
         return back()->with('success', 'Evolution proposal rejected qilindi.');
     }
 
-    private function nextStrategyName(string $strategy, string $proposedVersion): string
-    {
-        $next = preg_replace('/_v\d+$/', '_'.$proposedVersion, $strategy);
-
-        return $next ?: $strategy.'_'.$proposedVersion;
-    }
-
-    private function nextGeneration(EvolutionProposal $proposal): int
-    {
-        $model = $proposal->modelVersion;
-
-        if (! $model) {
-            return 1;
-        }
-
-        return (int) $model->generation + 1;
-    }
 }

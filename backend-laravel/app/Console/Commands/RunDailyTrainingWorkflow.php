@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\MarketSymbol;
 use App\Models\TrainingLog;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
@@ -23,27 +24,37 @@ class RunDailyTrainingWorkflow extends Command
         ]);
 
         try {
+            $symbols = MarketSymbol::query()->where('is_active', true)->pluck('symbol');
+
             $this->info('1/3 Market data yangilanmoqda...');
-            $marketDataCode = Artisan::call('market-data:update', [
-                '--symbol' => 'XAUUSD',
-                '--timeframe' => 'H1',
-                '--limit' => 1000,
-            ]);
+            foreach ($symbols as $symbol) {
+                $marketDataCode = Artisan::call('market-data:update', [
+                    '--symbol' => $symbol,
+                    '--timeframe' => 'H1',
+                    '--limit' => 1000,
+                ]);
 
-            if ($marketDataCode !== self::SUCCESS) {
-                throw new \RuntimeException('Market data update command failed.');
+                if ($marketDataCode !== self::SUCCESS) {
+                    throw new \RuntimeException("Market data update failed for {$symbol}.");
+                }
+
+                $this->line(Artisan::output());
             }
-
-            $this->line(Artisan::output());
 
             $this->info('2/3 Auto training boshlanmoqda...');
-            $autoTrainCode = Artisan::call('trading:auto-train');
+            foreach ($symbols as $symbol) {
+                $autoTrainCode = Artisan::call('trading:auto-train', [
+                    '--symbol' => $symbol,
+                    '--timeframe' => 'H1',
+                    '--evaluation' => 'incremental',
+                ]);
 
-            if ($autoTrainCode !== self::SUCCESS) {
-                throw new \RuntimeException('Auto training command failed.');
+                if ($autoTrainCode !== self::SUCCESS) {
+                    throw new \RuntimeException("Auto training failed for {$symbol}.");
+                }
+
+                $this->line(Artisan::output());
             }
-
-            $this->line(Artisan::output());
 
             $this->info('3/3 Daily report yaratilmoqda...');
             $reportCode = Artisan::call('trading:daily-report');

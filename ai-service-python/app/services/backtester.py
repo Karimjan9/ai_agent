@@ -19,6 +19,8 @@ from app.schemas import (
 from app.services.data_loader import load_candles
 from app.services.indicators import add_indicators
 from app.services.market_regime import apply_market_regime
+from app.services.monte_carlo import MonteCarloService
+from app.services.strategy_dna import StrategyDnaService
 from app.strategies.registry import get_strategy, strategy_label
 
 
@@ -49,11 +51,16 @@ def run_backtest(payload: BacktestRequest) -> BacktestResponse:
 
 
 def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktestResponse:
-    if payload.candles:
-        df = pd.DataFrame([candle.model_dump() for candle in payload.candles])
-    else:
-        csv_path = _resolve_dataset_path(payload.dataset_path or "../datasets/XAUUSD_H1.csv")
-        df = pd.read_csv(csv_path)
+    df = _load_simple_candles(payload)
+
+    return run_simple_ema_rsi_backtest_on_dataframe(payload, df)
+
+
+def run_simple_ema_rsi_backtest_on_dataframe(
+    payload: SimpleBacktestRequest,
+    df: pd.DataFrame,
+) -> SimpleBacktestResponse:
+    df = df.copy()
 
     if "volume" not in df.columns:
         df["volume"] = 0
@@ -64,7 +71,6 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
         missing = ", ".join(sorted(missing_columns))
         raise ValueError(f"Dataset is missing required columns: {missing}")
 
-    df = df.copy()
     df["time"] = pd.to_datetime(df["time"])
     for column in ["open", "high", "low", "close", "volume"]:
         df[column] = pd.to_numeric(df[column], errors="coerce")
@@ -72,15 +78,44 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
     df = df.dropna(subset=["time", "open", "high", "low", "close"])
     df = df.sort_values("time").reset_index(drop=True)
 
+    unexpected_gap_count = _validate_data_gaps(df, payload)
+    if unexpected_gap_count and payload.execution.reject_unexpected_gaps:
+        raise ValueError(
+            f"Historical data hard-gate failed: {unexpected_gap_count} unexpected candle gaps."
+        )
+    df.attrs["unexpected_gap_count"] = unexpected_gap_count
+
     if payload.from_date:
         df = df[df["time"].dt.date >= payload.from_date]
     if payload.to_date:
         df = df[df["time"].dt.date <= payload.to_date]
 
     df = df.reset_index(drop=True)
-    if len(df) <= 200:
-        raise ValueError("At least 201 candles are required for EMA 200 backtest.")
+    if len(df) < 2:
+        raise ValueError("At least 2 candles are required for backtest.")
 
+    return _run_prepared_simple_backtest(payload, df)
+
+
+def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
+    if payload.candles:
+        df = pd.DataFrame([
+            candle.model_dump() if hasattr(candle, "model_dump") else candle
+            for candle in payload.candles
+        ])
+    else:
+        dataset_path = payload.dataset_path
+        if not dataset_path:
+            normalized = payload.symbol.replace("/", "").replace("_", "").upper()
+            dataset_path = f"../datasets/{normalized}_H1.csv"
+        csv_path = _resolve_dataset_path(dataset_path)
+        df = pd.read_csv(csv_path)
+
+    return df
+
+
+def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFrame) -> SimpleBacktestResponse:
+    unexpected_gap_count = int(df.attrs.get("unexpected_gap_count", 0))
     df = apply_market_regime(df)
     strategy_function = get_strategy(payload.strategy, payload.base_strategy)
     df = strategy_function(df, payload.parameters)
@@ -93,64 +128,70 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
     gross_profit = 0.0
     gross_loss = 0.0
 
-    for index in range(200, len(df) - 1):
-        row = df.iloc[index]
-        next_row = df.iloc[index + 1]
+    # A signal is only knowable after its candle closes. Execute it at the
+    # following candle's open, then include that same candle in exit checks.
+    for index in range(200, len(df)):
+        candle = df.iloc[index]
+        signal_row = df.iloc[index - 1]
 
         if position is None:
-            signal = str(row["signal"])
+            signal = str(signal_row["signal"])
             if signal not in {"BUY", "SELL"}:
                 continue
+            if not _is_liquid_entry(candle, payload):
+                continue
 
-            entry_price = float(row["close"])
+            market_price = float(candle["open"])
+            entry_price = _entry_price(market_price, signal, payload)
+            stop_fraction = payload.execution.stop_loss_percent / 100
+            target_fraction = payload.execution.take_profit_percent / 100
             if signal == "BUY":
-                stop_loss = entry_price * 0.995
-                take_profit = entry_price * 1.010
+                stop_loss = market_price * (1 - stop_fraction)
+                take_profit = market_price * (1 + target_fraction)
             else:
-                stop_loss = entry_price * 1.005
-                take_profit = entry_price * 0.990
+                stop_loss = market_price * (1 + stop_fraction)
+                take_profit = market_price * (1 - target_fraction)
 
             position = {
                 "direction": signal,
-                "entry_time": row["time"],
+                "signal_time": signal_row["time"],
+                "entry_time": candle["time"],
                 "entry_price": entry_price,
+                "market_entry_price": market_price,
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
-                "market_regime": row.get("market_regime", "unknown"),
-                "volatility_regime": row.get("volatility_regime", "normal_volatility"),
+                "position_size_multiple": _position_size_multiple(
+                    entry_price, stop_loss, signal, payload
+                ),
+                "market_regime": signal_row.get("market_regime", "unknown"),
+                "volatility_regime": signal_row.get("volatility_regime", "normal_volatility"),
+                "signal_row": signal_row,
             }
-            continue
 
         direction = str(position["direction"])
-        exit_price = None
-        result = None
+        exit_price, exit_reason = _intrabar_exit(direction, position, candle, payload)
 
-        if direction == "BUY":
-            if float(next_row["low"]) <= float(position["stop_loss"]):
-                exit_price = float(position["stop_loss"])
-                result = "LOSS"
-            elif float(next_row["high"]) >= float(position["take_profit"]):
-                exit_price = float(position["take_profit"])
-                result = "WIN"
-        else:
-            if float(next_row["high"]) >= float(position["stop_loss"]):
-                exit_price = float(position["stop_loss"])
-                result = "LOSS"
-            elif float(next_row["low"]) <= float(position["take_profit"]):
-                exit_price = float(position["take_profit"])
-                result = "WIN"
-
-        if not result or exit_price is None:
+        if exit_reason is None or exit_price is None:
             continue
 
         entry_price = float(position["entry_price"])
         if direction == "BUY":
-            profit_percent = ((exit_price - entry_price) / entry_price) * 100
+            market_profit_percent = ((exit_price - entry_price) / entry_price) * 100
         else:
-            profit_percent = ((entry_price - exit_price) / entry_price) * 100
+            market_profit_percent = ((entry_price - exit_price) / entry_price) * 100
 
-        scaled_profit_percent = profit_percent * payload.risk_per_trade
-        balance += balance * (scaled_profit_percent / 100)
+        holding_days = max(
+            (pd.Timestamp(candle["time"]) - pd.Timestamp(position["entry_time"])).total_seconds() / 86400,
+            0,
+        )
+        explicit_cost = payload.execution.commission_percent + payload.execution.swap_per_day_percent * holding_days
+        position_size = float(position["position_size_multiple"])
+        gross_profit_percent = market_profit_percent * position_size
+        scaled_cost_percent = explicit_cost * position_size
+        profit_percent = gross_profit_percent - scaled_cost_percent
+        result = "WIN" if profit_percent > 0 else "LOSS"
+
+        balance += balance * (profit_percent / 100)
         peak_balance = max(peak_balance, balance)
         drawdown = ((peak_balance - balance) / peak_balance) * 100 if peak_balance else 0
         max_drawdown = max(max_drawdown, drawdown)
@@ -160,19 +201,31 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
         else:
             gross_loss += abs(profit_percent)
 
-        mistake = classify_mistake(direction, row, next_row, position) if result == "LOSS" else None
+        mistake = classify_mistake(
+            direction,
+            position["signal_row"],
+            candle,
+            position,
+        ) if result == "LOSS" else None
 
         trades.append(
             SimpleTrade(
                 direction=direction,
                 entry_time=str(position["entry_time"]),
-                exit_time=str(next_row["time"]),
+                exit_time=str(candle["time"]),
                 entry_price=round(entry_price, 2),
                 exit_price=round(exit_price, 2),
                 stop_loss=round(float(position["stop_loss"]), 2),
                 take_profit=round(float(position["take_profit"]), 2),
                 result=result,
                 profit_percent=round(profit_percent, 3),
+                gross_profit_percent=round(gross_profit_percent, 3),
+                execution_cost_percent=round(scaled_cost_percent, 5),
+                market_profit_percent=round(market_profit_percent, 5),
+                position_size_multiple=round(position_size, 5),
+                risk_budget_percent=payload.risk_per_trade,
+                signal_time=str(position["signal_time"]),
+                exit_reason=exit_reason,
                 balance=round(balance, 2),
                 market_regime=str(position.get("market_regime", "unknown")),
                 volatility_regime=str(position.get("volatility_regime", "normal_volatility")),
@@ -206,11 +259,28 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
     top_mistakes = _top_simple_mistakes(trades)
     regime_performance = calculate_regime_performance(trades)
     volatility_performance = calculate_volatility_performance(trades)
+    monte_carlo = MonteCarloService(
+        simulations=1000,
+        starting_balance=payload.initial_balance,
+        seed=payload.random_seed,
+    ).run([trade.model_dump() for trade in trades])
+    strategy_dna = StrategyDnaService().generate({
+        "strategy": strategy_label(payload.strategy),
+        "total_trades": total_trades,
+        "max_drawdown_percent": max_drawdown,
+        "risk_reward_ratio": risk_reward_ratio,
+        "equity_curve": equity_curve,
+        "regime_performance": regime_performance,
+        "volatility_performance": volatility_performance,
+        "monte_carlo": monte_carlo,
+    }, [trade.model_dump() for trade in trades])
+    buy_hold_percent = ((float(df.iloc[-1]["close"]) - float(df.iloc[0]["close"])) / max(float(df.iloc[0]["close"]), 0.0000001)) * 100
+    statistical_evidence = _statistical_evidence(trades, wins, total_trades)
 
     return SimpleBacktestResponse(
         strategy=strategy_label(payload.strategy),
         parameters=payload.parameters,
-        instrument="XAU/USD",
+        instrument=_display_symbol(payload.symbol),
         timeframe=payload.timeframe,
         period=f"{period_start} - {period_end}",
         initial_balance=payload.initial_balance,
@@ -231,6 +301,16 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
         equity_curve=equity_curve,
         regime_performance=regime_performance,
         volatility_performance=volatility_performance,
+        monte_carlo=monte_carlo,
+        strategy_dna=strategy_dna,
+        execution_assumptions=payload.execution.model_dump(),
+        data_quality={"status": "warning" if unexpected_gap_count else "passed", "rows": len(df),
+                      "gap_control": True, "hard_gate": payload.execution.reject_unexpected_gaps,
+                      "unexpected_gap_count": unexpected_gap_count},
+        statistical_evidence=statistical_evidence,
+        benchmark={"buy_and_hold_percent": round(buy_hold_percent, 3), "edge_vs_buy_and_hold_percent": round(net_profit - buy_hold_percent, 3)},
+        trade_ledger_scope="full evaluation; API display is capped to the latest 20 closed trades",
+        displayed_trade_count=min(total_trades, 20),
         top_mistakes=top_mistakes,
         trades=trades[-20:],
         conclusion=_simple_conclusion(
@@ -242,6 +322,162 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
             profit_factor=profit_factor,
             stability_score=stability_score,
         ),
+    )
+
+
+def _statistical_evidence(trades: list[SimpleTrade], wins: int, total_trades: int) -> dict[str, object]:
+    if total_trades == 0:
+        return {"trade_count": 0, "winrate_ci_95": [0.0, 0.0], "regime_profit_factor": {}}
+
+    # Wilson interval is robust for small samples and makes the uncertainty of
+    # a 10-trade backtest visible instead of presenting a point win rate as fact.
+    z = 1.96
+    p = wins / total_trades
+    denominator = 1 + z * z / total_trades
+    centre = (p + z * z / (2 * total_trades)) / denominator
+    margin = z * (((p * (1 - p) / total_trades) + (z * z / (4 * total_trades * total_trades))) ** 0.5) / denominator
+    regime_pf: dict[str, float] = {}
+    for regime in {trade.market_regime for trade in trades}:
+        subset = [trade.profit_percent for trade in trades if trade.market_regime == regime]
+        gross_win = sum(value for value in subset if value > 0)
+        gross_loss = abs(sum(value for value in subset if value <= 0))
+        regime_pf[regime] = round(gross_win / gross_loss, 3) if gross_loss else (99.0 if gross_win else 0.0)
+
+    return {
+        "trade_count": total_trades,
+        "winrate_ci_95": [round(max(0, centre - margin) * 100, 2), round(min(1, centre + margin) * 100, 2)],
+        "regime_profit_factor": regime_pf,
+        "minimum_sample_recommendation": 50,
+    }
+
+
+def _entry_price(close: float, signal: str, payload: SimpleBacktestRequest) -> float:
+    execution = payload.execution
+    spread = execution.spread_points * execution.point_size
+    slippage = execution.slippage_points * execution.point_size
+    return close + spread / 2 + slippage if signal == "BUY" else close - spread / 2 - slippage
+
+
+def _exit_price(market_price: float, direction: str, payload: SimpleBacktestRequest) -> float:
+    execution = payload.execution
+    spread = execution.spread_points * execution.point_size
+    slippage = execution.slippage_points * execution.point_size
+    return market_price - spread / 2 - slippage if direction == "BUY" else market_price + spread / 2 + slippage
+
+
+def _position_size_multiple(
+    entry_price: float,
+    stop_loss: float,
+    direction: str,
+    payload: SimpleBacktestRequest,
+) -> float:
+    stop_execution_price = _exit_price(stop_loss, direction, payload)
+    if direction == "BUY":
+        stop_return = (entry_price - stop_execution_price) / max(entry_price, 0.0000001) * 100
+    else:
+        stop_return = (stop_execution_price - entry_price) / max(entry_price, 0.0000001) * 100
+    stop_return = max(stop_return + payload.execution.commission_percent, 0.000001)
+    return min(payload.execution.max_leverage, payload.risk_per_trade / stop_return)
+
+
+def _intrabar_exit(
+    direction: str,
+    position: dict[str, object],
+    candle: pd.Series,
+    payload: SimpleBacktestRequest,
+) -> tuple[float | None, str | None]:
+    stop = float(position["stop_loss"])
+    target = float(position["take_profit"])
+    candle_open = float(candle["open"])
+    high, low = float(candle["high"]), float(candle["low"])
+
+    if direction == "BUY":
+        if candle_open <= stop:
+            return _exit_price(candle_open, direction, payload), "gap_stop"
+        if candle_open >= target:
+            return _exit_price(candle_open, direction, payload), "gap_target"
+    else:
+        if candle_open >= stop:
+            return _exit_price(candle_open, direction, payload), "gap_stop"
+        if candle_open <= target:
+            return _exit_price(candle_open, direction, payload), "gap_target"
+
+    stop_hit = low <= stop if direction == "BUY" else high >= stop
+    target_hit = high >= target if direction == "BUY" else low <= target
+
+    if stop_hit and target_hit:
+        choose_stop = payload.execution.intrabar_policy == "conservative"
+        market_exit = stop if choose_stop else target
+        return _exit_price(market_exit, direction, payload), "intrabar_stop" if choose_stop else "intrabar_target"
+    if stop_hit:
+        return _exit_price(stop, direction, payload), "intrabar_stop"
+    if target_hit:
+        return _exit_price(target, direction, payload), "intrabar_target"
+    return None, None
+
+
+def _is_liquid_entry(row: pd.Series, payload: SimpleBacktestRequest) -> bool:
+    execution = payload.execution
+    if execution.allowed_sessions_utc:
+        hour = pd.Timestamp(row["time"]).hour
+        allowed = False
+        for session in execution.allowed_sessions_utc:
+            start, end = (int(value) for value in session.split("-", 1))
+            allowed = allowed or (start <= hour < end if start < end else hour >= start or hour < end)
+        if not allowed:
+            return False
+    if execution.min_volume is not None and float(row.get("volume", 0) or 0) < execution.min_volume:
+        return False
+    return True
+
+
+def _validate_data_gaps(df: pd.DataFrame, payload: SimpleBacktestRequest) -> int:
+    if len(df) < 2:
+        return 0
+
+    expected = pd.Timedelta(minutes=15 if payload.timeframe == "M15" else 60)
+    unexpected = 0
+    previous = pd.Timestamp(df.iloc[0]["time"])
+
+    for index in range(1, len(df)):
+        current = pd.Timestamp(df.iloc[index]["time"])
+        if current <= previous:
+            raise ValueError("Candle timestamps takrorlangan yoki tartibsiz.")
+
+        if _is_scheduled_market_closure(previous, current, payload.symbol):
+            previous = current
+            continue
+
+        missing = previous + expected
+        while missing < current:
+            if _is_expected_market_candle(missing, payload.symbol):
+                unexpected += 1
+            missing += expected
+        previous = current
+
+    return unexpected
+
+
+def _is_expected_market_candle(timestamp: pd.Timestamp, symbol: str) -> bool:
+    # Shared conservative calendar used by the export hard-gate. Provider-
+    # specific holiday calendars can be layered on later without weakening the
+    # invariant that ordinary weekday holes are never training evidence.
+    if (timestamp.month, timestamp.day) in {(1, 1), (12, 25)}:
+        return False
+    if symbol.upper().startswith("XAU") and timestamp.hour == 0:
+        return False
+    return timestamp.weekday() < 5 and not (timestamp.weekday() == 4 and timestamp.hour >= 21)
+
+
+def _is_scheduled_market_closure(previous: pd.Timestamp, current: pd.Timestamp, symbol: str) -> bool:
+    duration_hours = (current - previous).total_seconds() / 3600
+    if duration_hours <= 96 and previous.weekday() == 4 and current.weekday() in {6, 0}:
+        return True
+    return (
+        symbol.upper().startswith("XAU")
+        and duration_hours <= 3
+        and previous.hour == 23
+        and current.hour == 1
     )
 
 
@@ -494,6 +730,13 @@ def _resolve_dataset_path(dataset_path: str) -> Path:
         return dataset_relative
 
     raise FileNotFoundError(f"Dataset not found: {dataset_path}")
+
+
+def _display_symbol(symbol: str) -> str:
+    normalized = symbol.replace("/", "").replace("_", "").upper()
+    if len(normalized) == 6:
+        return f"{normalized[:3]}/{normalized[3:]}"
+    return symbol
 
 
 def _simple_conclusion(

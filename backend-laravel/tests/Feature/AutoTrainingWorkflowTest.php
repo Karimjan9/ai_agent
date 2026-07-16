@@ -15,6 +15,13 @@ class AutoTrainingWorkflowTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['services.market_data.provider' => 'csv']);
+    }
+
     public function test_training_logs_index_and_show_pages_are_visible(): void
     {
         $session = TrainingSession::create([
@@ -80,7 +87,21 @@ class AutoTrainingWorkflowTest extends TestCase
                         'strategy' => 'ema_rsi_v1',
                         'parameters' => ['ema_fast' => 50, 'ema_slow' => 200],
                         'score' => 82,
+                        'train_score' => 85,
+                        'validation_score' => 83,
+                        'forward_score' => 82,
+                        'forward_window_scores' => [80, 82, 84],
+                        'rolling_windows_count' => 3,
+                        'robustness_score' => 97,
+                        'is_overfit' => false,
                         'result' => [
+                            'train_score' => 85,
+                            'validation_score' => 83,
+                            'forward_score' => 82,
+                            'forward_window_scores' => [80, 82, 84],
+                            'rolling_windows_count' => 3,
+                            'robustness_score' => 97,
+                            'is_overfit' => false,
                             'parameters' => ['ema_fast' => 50, 'ema_slow' => 200],
                             'total_trades' => 120,
                             'wins' => 72,
@@ -105,6 +126,17 @@ class AutoTrainingWorkflowTest extends TestCase
                                 ],
                             ],
                             'volatility_performance' => [],
+                            'monte_carlo' => [
+                                'simulations' => 1000,
+                                'worst_profit_percent' => -3.5,
+                                'avg_profit_percent' => 13.2,
+                                'best_profit_percent' => 24.8,
+                                'worst_drawdown_percent' => 11.4,
+                                'avg_drawdown_percent' => 5.7,
+                                'risk_of_ruin_percent' => 1.8,
+                                'worst_equity_curve' => [10000, 9980, 10250],
+                                'best_equity_curve' => [10000, 10400, 10800],
+                            ],
                         ],
                     ],
                 ],
@@ -132,6 +164,8 @@ class AutoTrainingWorkflowTest extends TestCase
         $this->assertDatabaseHas('strategy_scores', [
             'strategy' => 'ema_rsi_v1',
             'score' => 82,
+            'robustness_score' => 97,
+            'mc_risk_of_ruin_percent' => 1.8,
             'profit_factor' => 1.55,
             'stability_score' => 88,
         ]);
@@ -140,7 +174,15 @@ class AutoTrainingWorkflowTest extends TestCase
             'strategy' => 'ema_rsi_v1',
             'version' => 'v1',
             'best_score' => 82,
-            'status' => 'active',
+            'status' => 'testing',
+        ]);
+
+        $this->assertDatabaseHas('model_market_performance', [
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'ema_rsi',
+            'status' => 'forward_validated',
+            'paper_status' => 'pending',
         ]);
 
         Http::assertSent(fn ($request) => $request->url() === 'http://127.0.0.1:9000/api/backtest/run-all'

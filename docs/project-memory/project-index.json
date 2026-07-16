@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "NeuroTrader Lab",
+  "repository_root": "../..",
+  "updated": "2026-07-13",
+  "purpose": "Historical-market strategy research, backtesting, agent evaluation, and paper-trading foundation.",
+  "read_order": [
+    "README.md",
+    "project-index.json",
+    "architecture.md",
+    "modules.md",
+    "operations.md"
+  ],
+  "entry_points": {
+    "laravel_routes": "../../backend-laravel/routes/web.php",
+    "laravel_scheduler": "../../backend-laravel/routes/console.php",
+    "python_api": "../../ai-service-python/app/main.py",
+    "python_backtest_router": "../../ai-service-python/app/routers/backtests.py"
+  },
+  "modules": [
+    {
+      "id": "laravel-dashboard",
+      "status": "implemented",
+      "path": "../../backend-laravel",
+      "responsibility": "Web UI, request orchestration, persistence, reports, scheduled commands.",
+      "notes": "Routes and controllers are the public PHP entry points."
+    },
+    {
+      "id": "python-ai-service",
+      "status": "implemented",
+      "path": "../../ai-service-python",
+      "responsibility": "FastAPI strategy registry, backtests, walk-forward evaluation, paper-signal calculation.",
+      "notes": "HTTP endpoints originate in app/main.py and app/routers/backtests.py."
+    },
+    {
+      "id": "market-data",
+      "status": "implemented-continuity-protected",
+      "path": "../../backend-laravel/app/Services/MarketData",
+      "responsibility": "CSV, Dukascopy and Oanda provider adapters; candle payloads, outage recovery state, and continuity-protected updates.",
+      "notes": "For live Dukascopy operations read market-data-continuity.md before changing scheduler or provider code."
+    },
+    {
+      "id": "cot-market-intelligence",
+      "status": "implemented-read-only",
+      "path": "../../backend-laravel/app/Services/CotMarketIntelligenceService.php",
+      "responsibility": "Imports immutable official CFTC Gold COT records and creates versioned positioning features for dashboard/research use.",
+      "notes": "Phase 1 is explicitly non-decisional: it must not change strategy scoring, paper orders, or promotion gates until a timestamp-safe walk-forward A/B test is added."
+    },
+    {
+      "id": "research-evolution",
+      "status": "implemented-primary-focus",
+      "path": "../../backend-laravel/app/Services",
+      "responsibility": "Pair-owned AI Laboratory populations, evaluation, champion lifecycle and mutation learning memory.",
+      "notes": "Read ai-learning-laboratory.md before modifying laboratory code. Knowledge/civilization/theory modules remain available but run on a secondary monthly cadence."
+    },
+    {
+      "id": "paper-trading",
+      "status": "foundation-in-progress",
+      "path": "../../backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "responsibility": "Paper order/fill/evaluation records and the feedback-loop foundation.",
+      "notes": "Treat live-trading capability as unverified unless a task explicitly validates it."
+    }
+  ],
+  "contracts": [
+    "../ai-service-contract.md",
+    "../AUTO_TRAINING_SCHEDULER.md"
+  ],
+  "historical_context": "../../PROJECT_CONTEXT.md",
+  "change_log": [
+    {
+      "date": "2026-07-12",
+      "change": "Created compact Obsidian-compatible project-memory index from the current repository entry points."
+    },
+    {
+      "date": "2026-07-12",
+      "change": "Made pair-isolated AI Learning Laboratory the primary focus: bounded populations, daily incremental champion health checks, weekly full rolling evaluation, paper-order evidence and strict champion gates."
+    },
+    {
+      "date": "2026-07-12",
+      "change": "Added Dukascopy continuity protection: persistent pending ranges, retry state, market-open gap verification, recovery-first sync, generation block, and Market Data status UI."
+    },
+    {
+      "date": "2026-07-13",
+      "change": "Added CFTC Gold COT Phase 1: immutable raw reports, cot_v1 descriptive feature snapshots, Friday/Monday scheduler, and read-only Market Intelligence dashboard section."
+    }
+  ]
+}

@@ -28,16 +28,70 @@ class TrainingSession extends Model
         'status',
         'metrics',
         'notes',
+        'evidence_status',
+        'invalidated_at',
+        'invalidation_reason',
     ];
 
     protected $casts = [
         'raw_leaderboard' => 'array',
         'metrics' => 'array',
+        'invalidated_at' => 'datetime',
     ];
 
     public function strategyScores(): HasMany
     {
         return $this->hasMany(StrategyScore::class);
+    }
+
+    public function agentHypotheses(): HasMany
+    {
+        return $this->hasMany(AgentHypothesis::class);
+    }
+
+    public function scientistJournals(): HasMany
+    {
+        return $this->hasMany(ScientistJournal::class);
+    }
+
+    public function counterfactualRuns(): HasMany
+    {
+        return $this->hasMany(CounterfactualRun::class);
+    }
+
+    public function psychologySnapshots(): HasMany
+    {
+        return $this->hasMany(AgentPsychologySnapshot::class);
+    }
+
+    public function selfReflections(): HasMany
+    {
+        return $this->hasMany(AgentSelfReflection::class);
+    }
+
+    public function memories(): HasMany
+    {
+        return $this->hasMany(AgentMemory::class);
+    }
+
+    public function internalDebates(): HasMany
+    {
+        return $this->hasMany(InternalDebate::class);
+    }
+
+    public function evolutionTriggers(): HasMany
+    {
+        return $this->hasMany(EvolutionTrigger::class);
+    }
+
+    public function strategyGenomes(): HasMany
+    {
+        return $this->hasMany(StrategyGenome::class);
+    }
+
+    public function fitnessEvaluations(): HasMany
+    {
+        return $this->hasMany(FitnessEvaluation::class);
     }
 
     public function evolutionProposals(): HasMany

@@ -7,7 +7,7 @@ use App\Models\Symbol;
 
 class CandlePayloadService
 {
-    public function candlesForBacktest(string $symbol, string $timeframe, int $limit = 5000): array
+    public function candlesForBacktest(string $symbol, string $timeframe, ?int $limit = null): array
     {
         $symbolModel = Symbol::query()
             ->where('code', $symbol)
@@ -17,14 +17,17 @@ class CandlePayloadService
             return [];
         }
 
-        return Candle::query()
+        $query = Candle::query()
             ->where('symbol_id', $symbolModel->id)
-            ->where('timeframe', $timeframe)
-            ->orderByDesc('time')
-            ->limit($limit)
-            ->get()
-            ->sortBy('time')
-            ->values()
+            ->where('timeframe', $timeframe);
+
+        if ($limit !== null) {
+            $candles = $query->orderByDesc('time')->limit($limit)->get()->sortBy('time')->values();
+        } else {
+            $candles = $query->orderBy('time')->get();
+        }
+
+        return $candles
             ->map(fn (Candle $candle): array => [
                 'time' => $candle->time->format('Y-m-d H:i:s'),
                 'open' => (float) $candle->open,

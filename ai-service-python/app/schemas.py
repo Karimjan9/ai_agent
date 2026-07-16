@@ -55,6 +55,22 @@ class StrategyRuntimeConfig(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
+class ExecutionConfig(BaseModel):
+    spread_points: float = Field(default=0.0, ge=0)
+    point_size: float = Field(default=0.01, gt=0)
+    commission_percent: float = Field(default=0.0, ge=0)
+    slippage_points: float = Field(default=0.0, ge=0)
+    swap_per_day_percent: float = Field(default=0.0, ge=0)
+    allowed_sessions_utc: list[str] = Field(default_factory=list)
+    min_volume: float | None = Field(default=None, ge=0)
+    intrabar_policy: Literal["conservative", "optimistic"] = "conservative"
+    max_gap_multiple: float = Field(default=96.0, gt=1)
+    reject_unexpected_gaps: bool = False
+    stop_loss_percent: float = Field(default=0.5, gt=0)
+    take_profit_percent: float = Field(default=1.0, gt=0)
+    max_leverage: float = Field(default=5.0, gt=0)
+
+
 class SimpleBacktestRequest(BaseModel):
     symbol: str = "XAUUSD"
     timeframe: Timeframe = "H1"
@@ -69,6 +85,9 @@ class SimpleBacktestRequest(BaseModel):
     to_date: date | None = None
     dataset_path: str | None = None
     candles: list[Candle] = Field(default_factory=list)
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    evaluation_mode: Literal["incremental", "full"] = "full"
+    random_seed: int = 42
 
 
 class Metrics(BaseModel):
@@ -135,6 +154,13 @@ class SimpleTrade(BaseModel):
     take_profit: float | None = None
     result: str
     profit_percent: float
+    gross_profit_percent: float = 0.0
+    execution_cost_percent: float = 0.0
+    market_profit_percent: float = 0.0
+    position_size_multiple: float = 1.0
+    risk_budget_percent: float = 1.0
+    signal_time: str | None = None
+    exit_reason: str | None = None
     balance: float
     market_regime: str = "unknown"
     volatility_regime: str = "normal_volatility"
@@ -167,6 +193,14 @@ class SimpleBacktestResponse(BaseModel):
     equity_curve: list[float] = Field(default_factory=list)
     regime_performance: dict[str, dict[str, float | int]] = Field(default_factory=dict)
     volatility_performance: dict[str, dict[str, float | int]] = Field(default_factory=dict)
+    monte_carlo: dict[str, Any] = Field(default_factory=dict)
+    strategy_dna: dict[str, Any] = Field(default_factory=dict)
+    execution_assumptions: dict[str, Any] = Field(default_factory=dict)
+    data_quality: dict[str, Any] = Field(default_factory=dict)
+    statistical_evidence: dict[str, Any] = Field(default_factory=dict)
+    benchmark: dict[str, Any] = Field(default_factory=dict)
+    trade_ledger_scope: str = "full evaluation"
+    displayed_trade_count: int = 0
     top_mistakes: list[dict[str, int | str]]
     trades: list[SimpleTrade]
     conclusion: str

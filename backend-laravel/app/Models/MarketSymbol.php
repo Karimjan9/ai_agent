@@ -11,10 +11,14 @@ class MarketSymbol extends Model
         'provider_symbol',
         'name',
         'market_type',
+        'category',
+        'priority',
+        'settings',
         'is_active',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'settings' => 'array',
     ];
 }

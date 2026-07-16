@@ -68,6 +68,96 @@ Response:
 }
 ```
 
+## Run All With Walk Forward Validation
+
+```http
+POST /api/backtest/run-all
+```
+
+The run-all endpoint tests every submitted strategy with a 70% train, 15% validation, and 15% forward split. The final leaderboard score is based on forward performance and robustness, with an overfit penalty.
+
+Response:
+
+```json
+{
+  "symbol": "XAUUSD",
+  "timeframe": "H1",
+  "leaderboard": [
+    {
+      "strategy": "ema_rsi_v4",
+      "train_score": 91,
+      "validation_score": 88,
+      "forward_score": 84,
+      "robustness_score": 93,
+      "is_overfit": false,
+      "score": 87,
+      "result": {
+        "total_trades": 120,
+        "winrate": 58.4,
+        "profit_factor": 1.5,
+        "max_drawdown_percent": 8.2,
+        "monte_carlo": {
+          "simulations": 1000,
+          "worst_profit_percent": -8.4,
+          "avg_profit_percent": 22.1,
+          "best_profit_percent": 46.7,
+          "worst_drawdown_percent": 27.3,
+          "avg_drawdown_percent": 11.2,
+          "risk_of_ruin_percent": 3.6,
+          "worst_equity_curve": [],
+          "best_equity_curve": []
+        },
+        "strategy_dna": {
+          "aggression_score": 72,
+          "trend_dependency": 91,
+          "range_dependency": 18,
+          "volatility_sensitivity": 42,
+          "adaptability_score": 84,
+          "recovery_score": 78,
+          "survival_score": 88,
+          "dna_summary": "EMA_RSI_V4 is a trend-focused medium-risk strategy based on 120 recent trades."
+        }
+      }
+    }
+  ]
+}
+```
+
+## Monte Carlo Survival Metrics
+
+Every simple backtest result includes `monte_carlo`. The service shuffles the strategy trade list across 1000 simulations and reports survival-focused metrics:
+
+```json
+{
+  "simulations": 1000,
+  "worst_profit_percent": -8.4,
+  "avg_profit_percent": 22.1,
+  "best_profit_percent": 46.7,
+  "worst_drawdown_percent": 27.3,
+  "avg_drawdown_percent": 11.2,
+  "risk_of_ruin_percent": 3.6,
+  "worst_equity_curve": [],
+  "best_equity_curve": []
+}
+```
+
+## Strategy DNA Metrics
+
+Every simple backtest result includes `strategy_dna`. The DNA profile describes strategy personality rather than only raw performance:
+
+```json
+{
+  "aggression_score": 72,
+  "trend_dependency": 91,
+  "range_dependency": 18,
+  "volatility_sensitivity": 42,
+  "adaptability_score": 84,
+  "recovery_score": 78,
+  "survival_score": 88,
+  "dna_summary": "EMA_RSI_V4 is a trend-focused medium-risk strategy based on 120 recent trades."
+}
+```
+
 Detailed strategy research endpoint:
 
 ```http

@@ -60,6 +60,16 @@
                 <th>Rank</th>
                 <th>Strategy</th>
                 <th>Score</th>
+                <th>Train</th>
+                <th>Valid</th>
+                <th>Forward</th>
+                <th>Robust</th>
+                <th>Status</th>
+                <th>MC Worst</th>
+                <th>MC Avg</th>
+                <th>MC Best</th>
+                <th>Ruin Risk</th>
+                <th>Risk Grade</th>
                 <th>Trades</th>
                 <th>Winrate</th>
                 <th>Profit</th>
@@ -72,10 +82,41 @@
             </thead>
             <tbody>
             @forelse ($scores as $index => $score)
+                @php
+                    $ruin = (float) ($score->mc_risk_of_ruin_percent ?? 0);
+                    if ($ruin <= 5) {
+                        $riskGrade = 'LOW';
+                        $riskTone = 'tone-green';
+                    } elseif ($ruin <= 15) {
+                        $riskGrade = 'MEDIUM';
+                        $riskTone = 'tone-yellow';
+                    } else {
+                        $riskGrade = 'HIGH';
+                        $riskTone = 'tone-red';
+                    }
+                @endphp
                 <tr>
                     <td>#{{ $scores->firstItem() + $index }}</td>
                     <td>{{ strtoupper($score->strategy) }}</td>
                     <td>{{ $score->score }}</td>
+                    <td>{{ $score->train_score ?? '-' }}</td>
+                    <td>{{ $score->validation_score ?? '-' }}</td>
+                    <td>{{ $score->forward_score ?? '-' }}</td>
+                    <td>{{ $score->robustness_score ?? '-' }}</td>
+                    <td>
+                        <span class="{{ $score->is_overfit ? 'tone-red' : 'tone-green' }}" style="display:inline-block; border-radius:8px; padding:4px 8px;">
+                            {{ $score->is_overfit ? 'OVERFIT' : 'OK' }}
+                        </span>
+                    </td>
+                    <td>{{ $score->mc_worst_profit_percent ?? '-' }}%</td>
+                    <td>{{ $score->mc_avg_profit_percent ?? '-' }}%</td>
+                    <td>{{ $score->mc_best_profit_percent ?? '-' }}%</td>
+                    <td>{{ $score->mc_risk_of_ruin_percent ?? '-' }}%</td>
+                    <td>
+                        <span class="{{ $riskTone }}" style="display:inline-block; border-radius:8px; padding:4px 8px;">
+                            {{ $riskGrade }}
+                        </span>
+                    </td>
                     <td>{{ $score->total_trades }}</td>
                     <td>{{ $score->winrate }}%</td>
                     <td>{{ $score->net_profit_percent }}%</td>
@@ -87,7 +128,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="11">Hali leaderboard natijasi yo'q. Run All Agents tugmasini bosing.</td>
+                    <td colspan="21">Hali leaderboard natijasi yo'q. Run All Agents tugmasini bosing.</td>
                 </tr>
             @endforelse
             </tbody>

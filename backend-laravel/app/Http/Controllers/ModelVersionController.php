@@ -15,7 +15,7 @@ class ModelVersionController extends Controller
             ->pluck('total', 'status');
 
         $versions = ModelVersion::query()
-            ->orderByRaw("CASE status WHEN 'active' THEN 1 WHEN 'testing' THEN 2 WHEN 'rejected' THEN 3 WHEN 'archived' THEN 4 ELSE 5 END")
+            ->orderByRaw("CASE status WHEN 'active' THEN 1 WHEN 'testing' THEN 2 WHEN 'overfit' THEN 3 WHEN 'rejected' THEN 4 WHEN 'archived' THEN 5 ELSE 6 END")
             ->orderByDesc('best_score')
             ->paginate(20);
 

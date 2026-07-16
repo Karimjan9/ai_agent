@@ -20,14 +20,18 @@
         <div class="topbar" style="margin-bottom: 0;">
             <div>
                 <h2 class="section-title">Data update</h2>
-                <p class="muted">CSV provider orqali XAUUSD H1 candle data jadvalini yangilang.</p>
+                <p class="muted">{{ strtoupper(config('services.market_data.provider')) }} provider orqali aktiv instrumentlarning H1 candle ma'lumotlarini yangilang.</p>
             </div>
             <form method="post" action="{{ route('market-data.update') }}" style="display:flex; gap:10px; flex-wrap:wrap;">
                 @csrf
-                <input type="hidden" name="symbol" value="XAUUSD">
+                <select name="symbol">
+                    @foreach ($symbols as $item)
+                        <option value="{{ $item['symbol']->symbol }}">{{ $item['symbol']->symbol }}</option>
+                    @endforeach
+                </select>
                 <input type="hidden" name="timeframe" value="H1">
                 <input type="hidden" name="limit" value="5000">
-                <button type="submit">Update XAUUSD H1</button>
+                <button type="submit">Update H1</button>
             </form>
         </div>
     </article>
@@ -43,6 +47,8 @@
                 <th>Market Type</th>
                 <th>Candles</th>
                 <th>Last Candle</th>
+                <th>Sync Status</th>
+                <th>Pending gap / retry</th>
             </tr>
             </thead>
             <tbody>
@@ -54,10 +60,19 @@
                     <td>{{ $item['symbol']->market_type }}</td>
                     <td>{{ $item['count'] }}</td>
                     <td class="muted">{{ $item['last_candle']?->time?->format('Y-m-d H:i') ?? '-' }}</td>
+                    <td>{{ $item['sync_state']?->status ?? 'unknown' }}</td>
+                    <td class="muted">
+                        @if ($item['sync_state']?->pending_from_at)
+                            {{ $item['sync_state']->pending_from_at->format('Y-m-d H:i') }} → {{ $item['sync_state']->pending_to_at?->format('Y-m-d H:i') ?? 'now' }}
+                            / {{ $item['sync_state']->retry_count }}
+                        @else
+                            -
+                        @endif
+                    </td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="6">Active market symbol topilmadi.</td>
+                    <td colspan="8">Active market symbol topilmadi.</td>
                 </tr>
             @endforelse
             </tbody>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Candle;
 use App\Models\MarketSymbol;
+use App\Models\MarketDataSyncState;
 use App\Models\Symbol;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -14,11 +15,12 @@ class MarketDataController extends Controller
 {
     public function index(): View
     {
+        $provider = (string) config('services.market_data.provider', 'csv');
         $symbols = MarketSymbol::query()
             ->where('is_active', true)
             ->orderBy('symbol')
             ->get()
-            ->map(function (MarketSymbol $marketSymbol): array {
+            ->map(function (MarketSymbol $marketSymbol) use ($provider): array {
                 $symbol = Symbol::query()
                     ->where('code', $marketSymbol->symbol)
                     ->first();
@@ -30,10 +32,15 @@ class MarketDataController extends Controller
                     'symbol' => $marketSymbol,
                     'count' => $symbol ? (clone $query)->count() : 0,
                     'last_candle' => $symbol ? (clone $query)->latest('time')->first() : null,
+                    'sync_state' => MarketDataSyncState::query()
+                        ->where('provider', $provider)
+                        ->where('symbol', $marketSymbol->symbol)
+                        ->where('timeframe', 'H1')
+                        ->first(),
                 ];
             });
 
-        return view('market-data.index', compact('symbols'));
+        return view('market-data.index', compact('symbols', 'provider'));
     }
 
     public function update(Request $request): RedirectResponse

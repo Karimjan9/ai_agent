@@ -19,7 +19,7 @@ class DailyReport extends Model
         'average_profit',
         'top_mistakes',
         'ai_conclusion',
-        'next_training_plan',
+        'next_training_plan',   
         'backtest_run_id',
         'metrics',
         'conclusion',

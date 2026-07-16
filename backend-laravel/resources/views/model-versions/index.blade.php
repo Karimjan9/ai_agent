@@ -35,6 +35,7 @@
                         @php
                             $statusTone = match ($version->status) {
                                 'active' => 'tone-green',
+                                'overfit' => 'tone-red',
                                 'rejected' => 'tone-red',
                                 'testing' => 'tone-yellow',
                                 default => 'tone-blue',

@@ -10,7 +10,12 @@ class EvolutionProposal extends Model
     protected $fillable = [
         'training_session_id',
         'model_version_id',
+        'parent_model_version_id',
+        'applied_model_version_id',
         'strategy',
+        'symbol',
+        'timeframe',
+        'strategy_family',
         'current_version',
         'proposed_version',
         'current_score',
@@ -20,6 +25,7 @@ class EvolutionProposal extends Model
         'old_parameters',
         'new_parameters',
         'status',
+        'open_status',
         'approved_at',
         'applied_at',
     ];

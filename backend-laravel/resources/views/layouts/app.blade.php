@@ -126,8 +126,24 @@
         </div>
         <nav class="nav">
             <a class="{{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard') }}">Dashboard</a>
+            <a class="{{ request()->routeIs('ai-laboratory.*') ? 'active' : '' }}" href="{{ route('ai-laboratory.show', 'XAUUSD') }}">AI Laboratory</a>
             <a class="{{ request()->routeIs('market-data') ? 'active' : '' }}" href="{{ route('market-data') }}">Market Data</a>
-            <a class="{{ request()->routeIs('strategy-lab.*') ? 'active' : '' }}" href="{{ route('strategy-lab.index') }}">Strategy Lab</a>
+            <a class="{{ request()->routeIs('market-profiles.*') ? 'active' : '' }}" href="{{ route('market-profiles.index') }}">Market Profiles</a>
+            <a class="{{ request()->routeIs('market-intelligence.*') ? 'active' : '' }}" href="{{ route('market-intelligence.index') }}">Market Intelligence</a>
+            <a class="{{ request()->routeIs('knowledge-center.*') ? 'active' : '' }}" href="{{ route('knowledge-center.index') }}">Knowledge Center</a>
+            <a class="{{ request()->routeIs('future-intelligence.*') ? 'active' : '' }}" href="{{ route('future-intelligence.index') }}">Future Intelligence</a>
+            <a class="{{ request()->routeIs('meta-intelligence.*') ? 'active' : '' }}" href="{{ route('meta-intelligence.index') }}">Meta Intelligence</a>
+            <a class="{{ request()->routeIs('ai-civilization.*') ? 'active' : '' }}" href="{{ route('ai-civilization.index') }}">AI Civilization</a>
+            <a class="{{ request()->routeIs('quant-laws.*') ? 'active' : '' }}" href="{{ route('quant-laws.index') }}">Quant Laws</a>
+            <a class="{{ request()->routeIs('causal-intelligence.*') ? 'active' : '' }}" href="{{ route('causal-intelligence.index') }}">Causal Intelligence</a>
+            <a class="{{ request()->routeIs('theory-lab.*') ? 'active' : '' }}" href="{{ route('theory-lab.index') }}">Theory Lab</a>
+            <a class="{{ request()->routeIs('reality-center.*') ? 'active' : '' }}" href="{{ route('reality-center.index') }}">Reality Center</a>
+            <a class="{{ request()->routeIs('agent-health.*') ? 'active' : '' }}" href="{{ route('agent-health.index') }}">Agent Health</a>
+            <a class="{{ request()->routeIs('ai-scientist.*') ? 'active' : '' }}" href="{{ route('ai-scientist.index') }}">AI Scientist</a>
+            <a class="{{ request()->routeIs('agent-mind.*') ? 'active' : '' }}" href="{{ route('agent-mind.index') }}">Agent Mind</a>
+            <a class="{{ request()->routeIs('evolution-lab.*') ? 'active' : '' }}" href="{{ route('evolution-lab.index') }}">Evolution Lab</a>
+            <a class="{{ request()->routeIs('strategy-lab.index', 'strategy-lab.run-all') ? 'active' : '' }}" href="{{ route('strategy-lab.index') }}">Strategy Lab</a>
+            <a class="{{ request()->routeIs('strategy-lab.dna-laboratory') ? 'active' : '' }}" href="{{ route('strategy-lab.dna-laboratory') }}">DNA Laboratory</a>
             <a class="{{ request()->routeIs('training-sessions.*') ? 'active' : '' }}" href="{{ route('training-sessions.index') }}">Training Sessions</a>
             <a class="{{ request()->routeIs('training-logs.*') ? 'active' : '' }}" href="{{ route('training-logs.index') }}">Training Logs</a>
             <a class="{{ request()->routeIs('model-versions.*') ? 'active' : '' }}" href="{{ route('model-versions.index') }}">Model Versions</a>
@@ -137,6 +153,11 @@
             <a class="{{ request()->routeIs('mistake-journal') ? 'active' : '' }}" href="{{ route('mistake-journal') }}">Mistake Journal</a>
             <a class="{{ request()->routeIs('ai-daily-report') ? 'active' : '' }}" href="{{ route('ai-daily-report') }}">AI Daily Report</a>
             <a class="{{ request()->routeIs('daily-reports.*') ? 'active' : '' }}" href="{{ route('daily-reports.index') }}">Daily Reports</a>
+            @auth
+                <form method="POST" action="{{ route('logout') }}" style="margin-top:14px">@csrf
+                    <button type="submit" style="width:100%;background:#344b3e">Chiqish ({{ auth()->user()->role }})</button>
+                </form>
+            @endauth
         </nav>
     </aside>
     <main class="main">

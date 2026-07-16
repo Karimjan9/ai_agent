@@ -75,7 +75,19 @@ class StrategyLabRunAllTest extends TestCase
                         'strategy' => 'macd_trend_v1',
                         'parameters' => ['ema_trend' => 100],
                         'score' => 84,
+                        'train_score' => 88,
+                        'validation_score' => 86,
+                        'forward_score' => 84,
+                        'forward_window_scores' => [82, 84, 86],
+                        'rolling_windows_count' => 3,
+                        'robustness_score' => 96,
+                        'is_overfit' => false,
                         'result' => [
+                            'train_score' => 88,
+                            'validation_score' => 86,
+                            'forward_score' => 84,
+                            'robustness_score' => 96,
+                            'is_overfit' => false,
                             'total_trades' => 185,
                             'wins' => 113,
                             'losses' => 72,
@@ -107,13 +119,46 @@ class StrategyLabRunAllTest extends TestCase
                                     'profit_percent' => 4.2,
                                 ],
                             ],
+                            'monte_carlo' => [
+                                'simulations' => 1000,
+                                'worst_profit_percent' => -4.2,
+                                'avg_profit_percent' => 20.1,
+                                'best_profit_percent' => 35.4,
+                                'worst_drawdown_percent' => 12.5,
+                                'avg_drawdown_percent' => 6.8,
+                                'risk_of_ruin_percent' => 2.5,
+                                'worst_equity_curve' => [10000, 9950, 10100],
+                                'best_equity_curve' => [10000, 10300, 10600],
+                            ],
+                            'strategy_dna' => [
+                                'aggression_score' => 72,
+                                'trend_dependency' => 91,
+                                'range_dependency' => 18,
+                                'volatility_sensitivity' => 42,
+                                'adaptability_score' => 84,
+                                'recovery_score' => 78,
+                                'survival_score' => 88,
+                                'dna_summary' => 'MACD Trend is a trend-focused medium-risk strategy.',
+                            ],
                         ],
                     ],
                     [
                         'strategy' => 'ema_rsi_v1',
                         'parameters' => ['ema_fast' => 50, 'ema_slow' => 200],
                         'score' => 76,
+                        'train_score' => 78,
+                        'validation_score' => 77,
+                        'forward_score' => 76,
+                        'forward_window_scores' => [75, 76, 77],
+                        'rolling_windows_count' => 3,
+                        'robustness_score' => 98,
+                        'is_overfit' => false,
                         'result' => [
+                            'train_score' => 78,
+                            'validation_score' => 77,
+                            'forward_score' => 76,
+                            'robustness_score' => 98,
+                            'is_overfit' => false,
                             'total_trades' => 248,
                             'wins' => 140,
                             'losses' => 108,
@@ -144,6 +189,27 @@ class StrategyLabRunAllTest extends TestCase
                                     'winrate' => 50.0,
                                     'profit_percent' => 1.2,
                                 ],
+                            ],
+                            'monte_carlo' => [
+                                'simulations' => 1000,
+                                'worst_profit_percent' => -6.4,
+                                'avg_profit_percent' => 16.0,
+                                'best_profit_percent' => 28.2,
+                                'worst_drawdown_percent' => 14.0,
+                                'avg_drawdown_percent' => 8.1,
+                                'risk_of_ruin_percent' => 4.0,
+                                'worst_equity_curve' => [10000, 9900, 10080],
+                                'best_equity_curve' => [10000, 10200, 10500],
+                            ],
+                            'strategy_dna' => [
+                                'aggression_score' => 55,
+                                'trend_dependency' => 70,
+                                'range_dependency' => 30,
+                                'volatility_sensitivity' => 38,
+                                'adaptability_score' => 76,
+                                'recovery_score' => 80,
+                                'survival_score' => 85,
+                                'dna_summary' => 'EMA RSI is a balanced medium-risk strategy.',
                             ],
                         ],
                     ],
@@ -179,6 +245,13 @@ class StrategyLabRunAllTest extends TestCase
             'timeframe' => 'H1',
             'strategy' => 'macd_trend_v1',
             'score' => 84,
+            'train_score' => 88,
+            'validation_score' => 86,
+            'forward_score' => 84,
+            'robustness_score' => 96,
+            'is_overfit' => false,
+            'mc_worst_profit_percent' => -4.2,
+            'mc_risk_of_ruin_percent' => 2.5,
             'total_trades' => 185,
         ]);
 
@@ -196,6 +269,7 @@ class StrategyLabRunAllTest extends TestCase
         $macdScore = StrategyScore::query()->where('strategy', 'macd_trend_v1')->first();
         $this->assertSame(4.2, $macdScore->regime_performance['trend_up']['profit_percent']);
         $this->assertSame(4.2, $macdScore->volatility_performance['high_volatility']['profit_percent']);
+        $this->assertSame('MACD Trend is a trend-focused medium-risk strategy.', $macdScore->dnaProfile->dna_summary);
 
         $this->assertDatabaseHas('strategy_scores', [
             'strategy' => 'ema_rsi_v1',
@@ -211,7 +285,18 @@ class StrategyLabRunAllTest extends TestCase
             'strategy' => 'macd_trend_v1',
             'version' => 'v1',
             'best_score' => 84,
-            'status' => 'active',
+            'status' => 'testing',
+        ]);
+        $this->assertDatabaseHas('model_market_performance', [
+            'strategy_family' => 'macd_trend', 'symbol' => 'XAUUSD',
+            'timeframe' => 'H1', 'status' => 'forward_validated', 'paper_status' => 'pending',
+        ]);
+
+        $this->assertDatabaseHas('strategy_dna_profiles', [
+            'strategy_score_id' => $macdScore->id,
+            'aggression_score' => 72,
+            'trend_dependency' => 91,
+            'survival_score' => 88,
         ]);
 
         Http::assertSent(fn ($request) => $request->url() === 'http://127.0.0.1:9000/api/backtest/run-all'
@@ -344,10 +429,10 @@ class StrategyLabRunAllTest extends TestCase
             'risk_per_trade' => 1,
         ]);
 
-        $this->assertDatabaseHas('model_versions', [
-            'strategy' => 'breakout_v1',
-            'version' => 'v1',
-            'best_score' => 20,
+        $this->assertDatabaseHas('model_market_performance', [
+            'strategy_family' => 'breakout',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
             'status' => 'rejected',
         ]);
 
@@ -362,7 +447,7 @@ class StrategyLabRunAllTest extends TestCase
 
         $proposal = EvolutionProposal::first();
         $this->assertStringContainsString('Eng yomon market regime: range', $proposal->reason);
-        $this->assertSame('range', $proposal->new_parameters['avoid_regime']);
+        $this->assertArrayNotHasKey('avoid_regime', $proposal->new_parameters);
     }
 
     public function test_high_score_model_is_not_activated_when_risk_metrics_are_weak(): void
@@ -417,6 +502,75 @@ class StrategyLabRunAllTest extends TestCase
         ]);
     }
 
+    public function test_overfit_model_gets_overfit_status_even_with_high_train_score(): void
+    {
+        ModelVersion::create([
+            'name' => 'ema_rsi_v1',
+            'strategy' => 'ema_rsi_v1',
+            'version' => 'v1',
+            'generation' => 1,
+            'status' => 'testing',
+            'parameters' => ['ema_fast' => 50],
+            'metadata' => [],
+        ]);
+
+        Http::fake([
+            'http://127.0.0.1:9000/api/backtest/run-all' => Http::response([
+                'symbol' => 'XAUUSD',
+                'timeframe' => 'H1',
+                'leaderboard' => [
+                    [
+                        'strategy' => 'ema_rsi_v1',
+                        'parameters' => ['ema_fast' => 50],
+                        'score' => 43,
+                        'train_score' => 95,
+                        'validation_score' => 61,
+                        'forward_score' => 40,
+                        'robustness_score' => 45,
+                        'is_overfit' => true,
+                        'result' => [
+                            'train_score' => 95,
+                            'validation_score' => 61,
+                            'forward_score' => 40,
+                            'robustness_score' => 45,
+                            'is_overfit' => true,
+                            'total_trades' => 90,
+                            'wins' => 50,
+                            'losses' => 40,
+                            'winrate' => 55.5,
+                            'net_profit_percent' => 8.0,
+                            'max_drawdown_percent' => 8.0,
+                            'profit_factor' => 1.5,
+                            'stability_score' => 75,
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->post('/strategy-lab/run-all', [
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'initial_balance' => 10000,
+            'risk_per_trade' => 1,
+        ]);
+
+        $this->assertDatabaseHas('strategy_scores', [
+            'strategy' => 'ema_rsi_v1',
+            'train_score' => 95,
+            'forward_score' => 40,
+            'robustness_score' => 45,
+            'is_overfit' => true,
+        ]);
+
+        $this->assertDatabaseHas('model_market_performance', [
+            'strategy_family' => 'ema_rsi',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'status' => 'overfit',
+        ]);
+    }
+
     public function test_model_is_rejected_when_profit_factor_is_too_low_even_with_moderate_score(): void
     {
         ModelVersion::create([
@@ -460,12 +614,96 @@ class StrategyLabRunAllTest extends TestCase
             'risk_per_trade' => 1,
         ]);
 
-        $this->assertDatabaseHas('model_versions', [
-            'strategy' => 'ema_rsi_v1',
-            'version' => 'v1',
-            'best_score' => 45,
+        $this->assertDatabaseHas('model_market_performance', [
+            'strategy_family' => 'ema_rsi',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'fitness' => 45,
             'status' => 'rejected',
         ]);
+    }
+
+    public function test_model_version_rejects_high_monte_carlo_risk(): void
+    {
+        ModelVersion::create([
+            'name' => 'breakout_v1',
+            'strategy' => 'breakout_v1',
+            'version' => 'v1',
+            'generation' => 1,
+            'status' => 'testing',
+            'parameters' => ['confirmation_candles' => 1],
+            'metadata' => [],
+        ]);
+
+        Http::fake([
+            'http://127.0.0.1:9000/api/backtest/run-all' => Http::response([
+                'symbol' => 'XAUUSD',
+                'timeframe' => 'H1',
+                'leaderboard' => [
+                    [
+                        'strategy' => 'breakout_v1',
+                        'parameters' => ['confirmation_candles' => 1],
+                        'score' => 68,
+                        'result' => [
+                            'total_trades' => 100,
+                            'wins' => 60,
+                            'losses' => 40,
+                            'winrate' => 60.0,
+                            'net_profit_percent' => 18.0,
+                            'max_drawdown_percent' => 12.0,
+                            'profit_factor' => 1.45,
+                            'stability_score' => 75,
+                            'monte_carlo' => [
+                                'risk_of_ruin_percent' => 34.2,
+                                'worst_drawdown_percent' => 46.8,
+                                'worst_profit_percent' => -22.1,
+                                'avg_profit_percent' => 8.0,
+                                'best_profit_percent' => 31.0,
+                                'avg_drawdown_percent' => 18.4,
+                                'worst_equity_curve' => [10000, 7800, 7200],
+                                'best_equity_curve' => [10000, 11200, 13100],
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->post('/strategy-lab/run-all', [
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'initial_balance' => 10000,
+            'risk_per_trade' => 1,
+        ]);
+
+        $this->assertDatabaseHas('strategy_scores', [
+            'strategy' => 'breakout_v1',
+            'mc_risk_of_ruin_percent' => 34.2,
+            'mc_worst_drawdown_percent' => 46.8,
+        ]);
+
+        $this->assertDatabaseHas('model_market_performance', [
+            'strategy_family' => 'breakout',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'status' => 'rejected',
+        ]);
+
+        $this->assertDatabaseHas('evolution_proposals', [
+            'strategy' => 'breakout_v1',
+            'current_version' => 'v1',
+            'current_score' => 68,
+            'main_problem' => 'high_risk_of_ruin',
+            'status' => 'pending',
+        ]);
+
+        $proposal = EvolutionProposal::query()
+            ->where('strategy', 'breakout_v1')
+            ->latest()
+            ->first();
+        $this->assertStringContainsString('Monte Carlo risk of ruin is too high', $proposal->reason);
+        $this->assertArrayNotHasKey('risk_multiplier', $proposal->new_parameters);
+        $this->assertSame(2, $proposal->new_parameters['confirmation_candles']);
     }
 
     public function test_run_all_requires_testing_or_active_model_versions(): void

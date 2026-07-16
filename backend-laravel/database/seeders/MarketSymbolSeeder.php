@@ -16,6 +16,8 @@ class MarketSymbolSeeder extends Seeder
                 'provider_symbol' => 'XAU_USD',
                 'name' => 'Gold / US Dollar',
                 'market_type' => 'forex',
+                'category' => 'metals',
+                'priority' => 10,
                 'is_active' => true,
             ],
             [
@@ -23,6 +25,8 @@ class MarketSymbolSeeder extends Seeder
                 'provider_symbol' => 'EUR_USD',
                 'name' => 'Euro / US Dollar',
                 'market_type' => 'forex',
+                'category' => 'forex',
+                'priority' => 20,
                 'is_active' => true,
             ],
             [
@@ -30,6 +34,8 @@ class MarketSymbolSeeder extends Seeder
                 'provider_symbol' => 'GBP_USD',
                 'name' => 'British Pound / US Dollar',
                 'market_type' => 'forex',
+                'category' => 'forex',
+                'priority' => 80,
                 'is_active' => true,
             ],
         ];

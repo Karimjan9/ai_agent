@@ -36,11 +36,13 @@ class BacktestController extends Controller
             'from_date' => $request->input('from_date'),
             'to_date' => $request->input('to_date'),
         ];
+        $payload['execution'] = $this->executionAssumptions($payload['symbol']);
         $payload['candles'] = $this->candlePayloadService->candlesForBacktest($payload['symbol'], $payload['timeframe']);
 
         try {
             $response = Http::timeout(120)
                 ->acceptJson()
+                ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
                 ->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/run', $payload);
         } catch (ConnectionException) {
             return back()->with('error', "Python AI service bilan bog'lanib bo'lmadi.");
@@ -186,5 +188,16 @@ class BacktestController extends Controller
             fn (string $column): bool => Schema::hasColumn($table, $column),
             ARRAY_FILTER_USE_KEY,
         );
+    }
+
+    private function executionAssumptions(string $symbol): array
+    {
+        $isMetal = str_starts_with(strtoupper(str_replace('/', '', $symbol)), 'XAU');
+        return [
+            'spread_points' => $isMetal ? 20 : 12, 'point_size' => $isMetal ? 0.01 : 0.00001,
+            'commission_percent' => 0.01, 'slippage_points' => 2,
+            'swap_per_day_percent' => 0.002, 'allowed_sessions_utc' => ['1-22'],
+            'intrabar_policy' => 'conservative', 'max_gap_multiple' => 96,
+        ];
     }
 }
