@@ -11,9 +11,13 @@ class ParameterSchemaTest(unittest.TestCase):
         )
         self.assertEqual(values["lookback"], 50)
 
+    def test_shared_execution_gene_is_accepted(self):
+        values = validate_strategy_parameters("breakout_v2", {"avoid_high_volatility": True, "atr_stop_multiplier": 1.5})
+        self.assertTrue(values["avoid_high_volatility"])
+
     def test_unknown_evolution_parameter_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "noma'lum parametr"):
-            validate_strategy_parameters("breakout_v2", {"avoid_high_volatility": True})
+            validate_strategy_parameters("breakout_v2", {"invented_parameter": True})
 
     def test_out_of_range_parameter_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "10..100"):

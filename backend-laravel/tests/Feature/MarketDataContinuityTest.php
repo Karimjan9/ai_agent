@@ -54,11 +54,31 @@ class MarketDataContinuityTest extends TestCase
         $this->assertTrue($pending->pending_from_at->equalTo($from->addHour()));
     }
 
-    private function candle(int $symbolId, CarbonImmutable $time): void
+    public function test_m15_recovery_detects_a_missing_quarter_hour(): void
+    {
+        $symbol = Symbol::create(['code' => 'EURUSD', 'display_name' => 'Euro', 'asset_class' => 'forex', 'is_active' => true]);
+        $from = CarbonImmutable::parse('2026-07-20 10:00:00', 'UTC');
+        $to = CarbonImmutable::parse('2026-07-20 11:00:00', 'UTC');
+
+        foreach ([$from, $from->addMinutes(15), $from->addMinutes(30), $from->addMinutes(45)] as $time) {
+            $this->candle($symbol->id, $time, 'M15');
+        }
+
+        $service = app(MarketDataContinuityService::class);
+        $healthy = $service->recordResult('dukascopy', 'EURUSD', 'M15', $from, $to, 4);
+        $this->assertSame('healthy', $healthy->status);
+
+        Candle::query()->where('symbol_id', $symbol->id)->where('timeframe', 'M15')->where('time', $from->addMinutes(30))->delete();
+        $pending = $service->recordResult('dukascopy', 'EURUSD', 'M15', $from, $to, 0);
+        $this->assertSame('catching_up', $pending->status);
+        $this->assertTrue($pending->pending_from_at->equalTo($from->addMinutes(30)));
+    }
+
+    private function candle(int $symbolId, CarbonImmutable $time, string $timeframe = 'H1'): void
     {
         Candle::create([
             'symbol_id' => $symbolId,
-            'timeframe' => 'H1',
+            'timeframe' => $timeframe,
             'time' => $time,
             'open' => 1.1,
             'high' => 1.2,

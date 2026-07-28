@@ -15,13 +15,20 @@ class MarketChampionService
     public function __construct(
         private StrategyParameterSchemaService $schemas,
         private AgentDiagnosisService $diagnoses,
+        private DecisionLearningService $decisionLearning,
         private MarketReadinessService $marketReadiness,
         private PaperEvidenceReadinessService $paperEvidence,
+        private ForwardGateProgressService $gateProgress,
+        private CandidateGateDecisionService $gateDecisions,
     ) {}
 
     public function evaluate(string $strategy, string $symbol, string $timeframe, int $fitness, array $result): ModelMarketPerformance
     {
         return DB::transaction(function () use ($strategy, $symbol, $timeframe, $fitness, $result): ModelMarketPerformance {
+            $result['evidence_streams'] = array_merge([
+                'synthetic_forward_evidence' => ['status' => 'assessed', 'promotion_sufficient' => false],
+                'real_time_paper_evidence' => ['status' => 'required', 'promotion_sufficient' => false],
+            ], (array) ($result['evidence_streams'] ?? []));
             $model = ModelVersion::query()->where('strategy', $strategy)->where('evidence_status', 'valid')->lockForUpdate()->firstOrFail();
             $family = $this->schemas->family($strategy);
             $champion = ModelMarketPerformance::query()
@@ -33,12 +40,19 @@ class MarketChampionService
                 ->first();
 
             $windowScores = array_values($result['forward_window_scores'] ?? []);
-            $championScores = array_values(data_get($champion?->metrics, 'forward_window_scores', []));
-            $wins = $champion
-                ? collect($windowScores)->filter(fn ($score, $i) => isset($championScores[$i]) && $score > $championScores[$i])->count()
-                : count($windowScores);
+            // A missing champion is not evidence that a checkpoint won. The
+            // forward gate requires at least three genuinely positive replay
+            // windows, independently of any champion comparison.
+            $passportMonths = (array) data_get($result, 'monthly_passport.months', []);
+            $wins = $passportMonths !== []
+                ? (int) data_get($result, 'monthly_passport.rolling_forward_wins', 0)
+                : collect($windowScores)->filter(fn ($score) => (float) $score > 0)->count();
             $forward = (float) ($result['forward_score'] ?? 0);
             $sampleCount = (int) ($result['total_trades'] ?? 0);
+            // Keep the measured rolling result in the immutable gate ledger;
+            // otherwise a later diagnostic would confuse an absent payload
+            // field with zero rolling wins.
+            $result['rolling_forward_wins'] = $wins;
 
             $performance = ModelMarketPerformance::query()->updateOrCreate(
                 ['model_version_id' => $model->id, 'symbol' => $symbol, 'timeframe' => $timeframe],
@@ -79,6 +93,8 @@ class MarketChampionService
 
             $this->updateLabAgentAndMemory($performance->fresh(), $champion, $result);
             $this->diagnoses->diagnose($performance->fresh(), $result);
+            $this->decisionLearning->learn($performance->fresh(), $result);
+            $this->gateDecisions->recordForward($performance->fresh(), $result);
 
             return $performance->fresh();
         });
@@ -109,6 +125,7 @@ class MarketChampionService
 
             $agent = LabAgent::where('model_version_id', $performance->model_version_id)->latest()->first();
             $agent?->update(['lifecycle_status' => $performance->fresh()->status, 'decision_reason' => $passed ? 'Paper trading gate passed.' : 'Paper trading evidence insufficient or failed.']);
+            $this->gateDecisions->recordPaper($performance->fresh(), $metrics);
             return $performance->fresh();
         });
     }
@@ -131,6 +148,7 @@ class MarketChampionService
                 if($this->backtestGatesPass($performance,$champion,$performance->metrics??[]))$this->promote($performance,$champion,$performance->modelVersion);}
             LabAgent::where('model_version_id',$performance->model_version_id)->update(['lifecycle_status'=>$performance->fresh()->status,
                 'decision_reason'=>$passed?'Sealed holdout and paper gates passed.':'Sealed holdout failed.']);
+            $this->gateDecisions->recordHoldout($performance->fresh(), $holdout);
             return $performance->fresh();
         });
     }
@@ -139,6 +157,39 @@ class MarketChampionService
     {
         $requiredWins = 3;
         $forwardGain = $champion ? $candidate->forward_score - $champion->forward_score : $candidate->forward_score;
+        $strictStatisticalProtocol = (int) data_get($candidate->modelVersion?->metadata, 'statistical_gate_version', 0) >= 2;
+        $selectionValidation = data_get($result, 'selection_validation', []);
+        $deflatedSharpe = data_get($result, 'statistical_evidence.deflated_sharpe', []);
+        // A new population may not paper-promote from an unavailable PBO/DSR
+        // calculation. CSCV needs competing candidates; DSR needs enough
+        // closed trade returns. Their absence is evidence still to gather,
+        // not an exemption. Pre-protocol records remain legacy audit data.
+        $pboPasses = $strictStatisticalProtocol
+            ? data_get($selectionValidation, 'status') === 'assessed'
+                && (float) data_get($selectionValidation, 'probability_of_backtest_overfitting', 1) <= 0.50
+            : (data_get($selectionValidation, 'status') !== 'assessed'
+                || (float) data_get($selectionValidation, 'probability_of_backtest_overfitting', 1) <= 0.50);
+        $dsrPasses = $strictStatisticalProtocol
+            ? data_get($deflatedSharpe, 'status') === 'assessed'
+                && (float) data_get($deflatedSharpe, 'deflated_sharpe_probability', 0) >= 0.95
+            : (data_get($deflatedSharpe, 'status') !== 'assessed'
+                || (float) data_get($deflatedSharpe, 'deflated_sharpe_probability', 0) >= 0.95);
+        $stressProfile = data_get($result, 'pf_attribution', []);
+        $stressCostPasses = data_get($stressProfile, 'method') !== 'identical_replay_execution_profiles'
+            || (float) data_get($stressProfile, 'stress_cost.profit_factor', 0) >= 1.05;
+        $bootstrap = data_get($result, 'statistical_evidence.edge_quality.bootstrap_pf', []);
+        $bootstrapPasses = $strictStatisticalProtocol
+            ? data_get($bootstrap, 'status') === 'assessed'
+                && (float) data_get($bootstrap, 'pf_5_percentile_lower_bound', 0) >= 1.1
+            : (data_get($bootstrap, 'status') !== 'assessed'
+                || (float) data_get($bootstrap, 'pf_5_percentile_lower_bound', 0) >= 1.1);
+        $edgeQuality = data_get($result, 'statistical_evidence.edge_quality', []);
+        $worstRegimePasses = $strictStatisticalProtocol
+            ? (bool) data_get($edgeQuality, 'worst_regime_sampled', false)
+                && (float) data_get($edgeQuality, 'worst_regime_pf', 0) >= 1.0
+            : (! data_get($edgeQuality, 'worst_regime_sampled', false)
+                || (float) data_get($edgeQuality, 'worst_regime_pf', 0) >= 1.0);
+        $diverse = data_get($result, 'behavioral_diversity.status') !== 'near_duplicate';
 
         return $forwardGain >= ($champion ? 5 : 0)
             && (float) ($result['profit_factor'] ?? 0) >= 1.3
@@ -147,7 +198,13 @@ class MarketChampionService
             && ! (bool) ($result['is_overfit'] ?? true)
             && $candidate->sample_count >= 30
             && $candidate->rolling_windows_count >= $requiredWins
-            && $candidate->rolling_forward_wins >= $requiredWins;
+            && $candidate->rolling_forward_wins >= $requiredWins
+            && $pboPasses
+            && $dsrPasses
+            && $stressCostPasses
+            && $bootstrapPasses
+            && $worstRegimePasses
+            && $diverse;
     }
 
     private function promote(ModelMarketPerformance $candidate, ?ModelMarketPerformance $champion, ModelVersion $model): void
@@ -170,6 +227,8 @@ class MarketChampionService
     {
         $agent = LabAgent::where('model_version_id', $performance->model_version_id)->latest()->first();
         if (! $agent) return;
+        $skillTree = $this->skillTree($result);
+        $agent->modelVersion?->update(['metadata' => array_merge($agent->modelVersion->metadata ?? [], ['skill_tree' => $skillTree])]);
         $delta = $champion ? $performance->forward_score - $champion->forward_score : $performance->forward_score;
         $reason = match ($performance->status) {
             'forward_validated' => 'Backtest gates passed; paper trading required.',
@@ -186,18 +245,161 @@ class MarketChampionService
             'max_drawdown' => $result['max_drawdown_percent'] ?? $result['max_drawdown'] ?? null,
             'risk_of_ruin' => data_get($result, 'monte_carlo.risk_of_ruin_percent'), 'decision_reason' => $reason,
         ]);
-        $regime = collect($result['regime_performance'] ?? [])->sortByDesc('profit_percent')->keys()->first();
+        $observedWorstRegime = collect($result['regime_performance'] ?? [])->sortBy('profit_percent')->keys()->first();
+        $regime = $observedWorstRegime ? 'market:'.$observedWorstRegime
+            : (data_get($agent->modelVersion?->metadata, 'mutation_scope') ?: 'market:unknown');
+        $hardFailure = (float) ($result['profit_factor'] ?? 0) < 1.0
+            || (int) ($result['total_trades'] ?? 0) === 0
+            || (bool) ($result['is_overfit'] ?? false)
+            || (float) data_get($result, 'monte_carlo.risk_of_ruin_percent', 0) > 10
+            || (float) ($result['max_drawdown_percent'] ?? $result['max_drawdown'] ?? 0) > 15;
+        $outcome = $hardFailure ? 'harmful' : ($delta >= 5 ? 'beneficial' : ($delta <= -5 ? 'harmful' : 'neutral'));
+        $learningDelta = $hardFailure ? min($delta, -10) : $delta;
+        $parentA = $agent->parent_a_model_version_id ? ModelMarketPerformance::query()->where('model_version_id', $agent->parent_a_model_version_id)
+            ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->first() : null;
+        $parentB = ! $parentA && $agent->parent_b_model_version_id ? ModelMarketPerformance::query()->where('model_version_id', $agent->parent_b_model_version_id)
+            ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->first() : null;
+        $baseline = $parentA ? ['type' => 'parent_a', 'agent_ids' => [$agent->parent_a_model_version_id]]
+            : ($parentB ? ['type' => 'parent_b', 'agent_ids' => [$agent->parent_b_model_version_id]] : []);
+        $parentPerformance = $parentA ?: $parentB;
+        $frontierBaseline = $champion ? [...($champion->metrics ?? []), 'forward_score' => $champion->forward_score] : null;
+        if (! $parentPerformance && $champion) {
+            $parentPerformance = $champion;
+            $baseline = ['type' => 'family_frontier', 'agent_ids' => [$champion->model_version_id]];
+        }
+        if (! $parentPerformance) {
+            $previous = ModelMarketPerformance::with('modelVersion')->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)
+                ->where('strategy_family', $agent->strategy_family)->whereHas('modelVersion', fn ($query) => $query->where('generation', '<', $agent->generation?->generation ?? PHP_INT_MAX))
+                ->orderByDesc('forward_score')->first();
+            if ($previous) {
+                $parentPerformance = $previous;
+                $baseline = ['type' => 'previous_generation_frontier', 'agent_ids' => [$previous->model_version_id]];
+            }
+        }
+        $baseline = $baseline ?: ['type' => 'symbol_timeframe_benchmark', 'agent_ids' => []];
+        $parentResult = $parentPerformance?->metrics;
+        $beforeGates = is_array($parentResult)
+            ? $this->gateProgress->snapshot($parentResult, (int) $parentPerformance->rolling_forward_wins, $frontierBaseline)
+            : null;
+        $gateTransition = $this->gateProgress->transition(
+            $beforeGates,
+            // Parent A/B is the local mutation baseline; the same-family
+            // champion is the frontier baseline for forward-gain evidence.
+            $this->gateProgress->snapshot($result, (int) $performance->rolling_forward_wins, $frontierBaseline),
+            $baseline,
+        );
+        $behavioralEffect = $this->behavioralEffect($parentResult, $result);
         foreach ($agent->parameter_diff ?? [] as $key => $change) {
+            $mutationEffect = $this->parameterEffectiveness($agent, $key, $behavioralEffect);
             MutationMemory::updateOrCreate([
                 'lab_agent_id' => $agent->id, 'parameter_key' => $key,
             ], [
                 'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $agent->strategy_family,
                 'old_value' => ['value' => $change['old'] ?? null], 'new_value' => ['value' => $change['new'] ?? null],
-                'forward_delta' => $delta, 'market_regime' => $regime,
-                'outcome' => $delta >= 5 ? 'beneficial' : ($delta <= -5 ? 'harmful' : 'neutral'),
+                'forward_delta' => $learningDelta, 'market_regime' => $regime,
+                'outcome' => $outcome,
                 'confidence' => min(100, 50 + $performance->rolling_windows_count * 10),
                 'decision' => $delta >= 5 ? 'Foydali mutation; keyingi generationda ustuvor.' : ($delta <= -5 ? 'Zararli mutation; shu yo‘nalishni cheklash.' : 'Neutral mutation; qo‘shimcha evidence kerak.'),
+                'gate_transition' => $gateTransition,
+                'behavioral_effect' => [...$behavioralEffect, 'causal_experiment' => $mutationEffect],
             ]);
         }
+        $architecture = data_get($agent->modelVersion?->metadata, 'strategy_architecture');
+        $parentArchitecture = data_get($agent->parentA?->metadata, 'strategy_architecture');
+        if ($architecture && $architecture !== $parentArchitecture) {
+            MutationMemory::updateOrCreate([
+                'lab_agent_id' => $agent->id, 'parameter_key' => '__architecture',
+            ], [
+                'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $agent->strategy_family,
+                'old_value' => ['value' => $parentArchitecture], 'new_value' => ['value' => $architecture],
+                'forward_delta' => $learningDelta, 'market_regime' => $regime, 'outcome' => $outcome,
+                'confidence' => min(100, 50 + $performance->rolling_windows_count * 10),
+                'decision' => $outcome === 'beneficial' ? 'Architecture evidence improved; retain for this regime.' : ($outcome === 'harmful' ? 'Architecture falsified in this regime; de-prioritize.' : 'Architecture needs more evidence.'),
+                'gate_transition' => $gateTransition,
+                'behavioral_effect' => $behavioralEffect,
+            ]);
+        }
+    }
+
+    private function behavioralEffect(?array $parent, array $current): array
+    {
+        $metrics = ['total_trades', 'winrate', 'profit_factor', 'max_drawdown_percent'];
+        $effect = [];
+        foreach ($metrics as $key) {
+            $effect[$key] = [
+                'before' => $parent === null ? null : data_get($parent, $key),
+                'after' => data_get($current, $key),
+                'delta' => $parent === null ? null : round((float) data_get($current, $key, 0) - (float) data_get($parent, $key, 0), 4),
+            ];
+        }
+        foreach (['flat_signal_opportunities', 'accepted_entries'] as $key) {
+            $effect['entry_funnel'][$key] = [
+                'before' => $parent === null ? null : (int) data_get($parent, "entry_funnel.{$key}", 0),
+                'after' => (int) data_get($current, "entry_funnel.{$key}", 0),
+                'delta' => $parent === null ? null : (int) data_get($current, "entry_funnel.{$key}", 0) - (int) data_get($parent, "entry_funnel.{$key}", 0),
+            ];
+        }
+        foreach (['edge_density', 'coverage', 'rolling_consistency'] as $key) {
+            $effect['opportunity_metrics'][$key] = [
+                'before' => $parent === null ? null : data_get($parent, "opportunity_metrics.{$key}"),
+                'after' => data_get($current, "opportunity_metrics.{$key}"),
+                'delta' => $parent === null ? null : round((float) data_get($current, "opportunity_metrics.{$key}", 0) - (float) data_get($parent, "opportunity_metrics.{$key}", 0), 6),
+            ];
+        }
+        foreach (['signal_count', 'entry_rejection_count', 'confirmation_rejection_count', 'news_veto_count', 'risk_veto_count', 'average_holding_time_hours', 'signal_coverage'] as $key) {
+            $effect['diagnostic_telemetry'][$key] = [
+                'before' => $parent === null ? null : data_get($parent, "diagnostic_telemetry.{$key}"),
+                'after' => data_get($current, "diagnostic_telemetry.{$key}"),
+                'delta' => $parent === null ? null : round((float) data_get($current, "diagnostic_telemetry.{$key}", 0) - (float) data_get($parent, "diagnostic_telemetry.{$key}", 0), 4),
+            ];
+        }
+        $effect['exit_distribution'] = [
+            'before' => $parent === null ? null : data_get($parent, 'diagnostic_telemetry.exit_distribution', []),
+            'after' => data_get($current, 'diagnostic_telemetry.exit_distribution', []),
+        ];
+        return $effect;
+    }
+
+    private function parameterEffectiveness(LabAgent $agent, string $parameterKey, array $effect): array
+    {
+        $changed = abs((float) data_get($effect, 'profit_factor.delta', 0)) >= .01
+            || abs((float) data_get($effect, 'total_trades.delta', 0)) >= 1
+            || abs((float) data_get($effect, 'entry_funnel.accepted_entries.delta', 0)) >= 1
+            || abs((float) data_get($effect, 'opportunity_metrics.coverage.delta', 0)) >= .01;
+        $previous = MutationMemory::query()->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)
+            ->where('strategy_family', $agent->strategy_family)->where('parameter_key', $parameterKey)
+            ->latest()->take(2)->get();
+        $previousIneffective = $previous->count() === 2 && $previous->every(
+            fn (MutationMemory $memory) => data_get($memory->behavioral_effect, 'causal_experiment.parameter_effective') === false,
+        );
+        return [
+            'parameter_effective' => $changed ? true : ($previousIneffective ? false : null),
+            'behavior_changed' => $changed, 'repeat_count_before' => $previous->count(),
+            'rule' => 'three unchanged causal experiments temporarily remove this parameter from mutation search',
+        ];
+    }
+
+    private function skillTree(array $result): array
+    {
+        $regimes = (array) data_get($result, 'regime_performance', []);
+        $trend = collect($regimes)->only(['trend_up', 'trend_down'])->avg(fn ($item) => max(0, (float) data_get($item, 'profit_percent', 0))) ?: 0;
+        $range = max(0, (float) data_get($regimes, 'range.profit_percent', 0));
+        $coverage = (float) data_get($result, 'opportunity_metrics.coverage', 0);
+        $pf = (float) data_get($result, 'profit_factor', 0);
+        $drawdown = (float) data_get($result, 'max_drawdown_percent', data_get($result, 'max_drawdown', 100));
+        $ruin = (float) data_get($result, 'monte_carlo.risk_of_ruin_percent', 100);
+        $stress = (float) data_get($result, 'pf_attribution.stress_cost.profit_factor', 0);
+        $news = data_get($result, 'red_team.scenarios.news_window.status') === 'assessed'
+            ? (bool) data_get($result, 'red_team.scenarios.news_window.pass') : null;
+        return [
+            'trend_skill' => round(min(100, $trend * 20), 2),
+            'range_skill' => round(min(100, $range * 20), 2),
+            'entry_timing_skill' => round(min(100, $coverage * min(2, max(0, $pf)) * 50), 2),
+            'exit_skill' => round(min(100, max(0, $pf) * 35), 2),
+            'risk_skill' => round(max(0, min(100, 100 - ($drawdown * 3) - ($ruin * 2))), 2),
+            'news_survival_skill' => $news === null ? null : ($news ? 100.0 : 0.0),
+            'cost_robustness_skill' => round(min(100, max(0, $stress) * 50), 2),
+            'evidence_status' => 'synthetic_forward_only',
+        ];
     }
 }

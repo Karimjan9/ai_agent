@@ -175,7 +175,9 @@ class AgentMindTest extends TestCase
         $this->assertGreaterThan(80, (float) $snapshot->stress);
         $this->assertGreaterThan(85, (float) $snapshot->adaptation_pressure);
         $this->assertSame(1, AgentSelfReflection::count());
-        $this->assertSame(1, AgentMemory::count());
+        // Decision-learning now adds separate entry/exit/architecture evidence
+        // alongside AgentMind's own reflection memory.
+        $this->assertGreaterThanOrEqual(1, AgentMemory::count());
         $this->assertSame(1, AgentReputation::count());
         $this->assertSame(1, InternalDebate::count());
         $this->assertSame(2, EvolutionTrigger::count());

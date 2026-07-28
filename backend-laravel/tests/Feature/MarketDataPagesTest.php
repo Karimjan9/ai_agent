@@ -7,7 +7,6 @@ use App\Models\MarketSymbol;
 use App\Models\Symbol;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class MarketDataPagesTest extends TestCase
@@ -81,66 +80,6 @@ class MarketDataPagesTest extends TestCase
         $this->assertDatabaseHas('symbols', [
             'code' => 'XAUUSD',
             'display_name' => 'Gold / US Dollar',
-        ]);
-        $this->assertDatabaseCount('candles', 2);
-    }
-
-    public function test_market_data_update_can_store_oanda_candles(): void
-    {
-        config([
-            'services.market_data.provider' => 'oanda',
-            'services.oanda.token' => 'test-token',
-            'services.oanda.base_url' => 'https://api-fxpractice.oanda.com',
-        ]);
-
-        MarketSymbol::create([
-            'symbol' => 'XAUUSD',
-            'provider_symbol' => 'XAU_USD',
-            'name' => 'Gold / US Dollar',
-            'market_type' => 'forex',
-            'is_active' => true,
-        ]);
-
-        Http::fake([
-            'https://api-fxpractice.oanda.com/v3/instruments/XAU_USD/candles*' => Http::response([
-                'instrument' => 'XAU_USD',
-                'granularity' => 'H1',
-                'candles' => [
-                    [
-                        'complete' => true,
-                        'time' => '2024-01-01T00:00:00.000000000Z',
-                        'volume' => 1100,
-                        'mid' => ['o' => '2062.12', 'h' => '2065.40', 'l' => '2059.10', 'c' => '2063.50'],
-                    ],
-                    [
-                        'complete' => false,
-                        'time' => '2024-01-01T01:00:00.000000000Z',
-                        'volume' => 900,
-                        'mid' => ['o' => '2063.50', 'h' => '2066.00', 'l' => '2060.00', 'c' => '2064.10'],
-                    ],
-                    [
-                        'complete' => true,
-                        'time' => '2024-01-01T02:00:00.000000000Z',
-                        'volume' => 1200,
-                        'mid' => ['o' => '2064.10', 'h' => '2068.00', 'l' => '2062.00', 'c' => '2067.25'],
-                    ],
-                ],
-            ], 200),
-        ]);
-
-        $this->artisan('market-data:update --symbol=XAUUSD --timeframe=H1 --limit=5000')
-            ->expectsOutput('XAUUSD H1: 2 candle updated.')
-            ->assertOk();
-
-        Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer test-token')
-            && str_contains($request->url(), '/v3/instruments/XAU_USD/candles')
-            && $request['granularity'] === 'H1'
-            && $request['count'] === 5000);
-
-        $this->assertDatabaseHas('candles', [
-            'timeframe' => 'H1',
-            'provider' => 'oanda',
-            'close' => 2067.25,
         ]);
         $this->assertDatabaseCount('candles', 2);
     }

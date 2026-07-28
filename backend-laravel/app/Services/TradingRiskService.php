@@ -8,12 +8,17 @@ use App\Services\MarketData\MarketReadinessService;
 
 class TradingRiskService
 {
-    public function __construct(private MarketReadinessService $readiness) {}
+    public function __construct(private MarketReadinessService $readiness, private EconomicCalendarService $calendar) {}
 
     /** @return array{allowed: bool, reason: string, estimated_round_trip_cost_percent: float} */
     public function canOpen(ModelMarketPerformance $candidate, array $signal): array
     {
         $cost = $this->estimatedRoundTripCostPercent($candidate->symbol, (float) ($signal['price'] ?? 0));
+
+        $news = $this->calendar->veto($candidate->symbol);
+        if ($news['active']) {
+            return ['allowed' => false, 'reason' => 'High-impact economic event execution veto.', 'estimated_round_trip_cost_percent' => $cost];
+        }
 
         if (! $this->readiness->ready($candidate->symbol, $candidate->timeframe)) {
             return ['allowed' => false, 'reason' => 'Market feed is not healthy.', 'estimated_round_trip_cost_percent' => $cost];

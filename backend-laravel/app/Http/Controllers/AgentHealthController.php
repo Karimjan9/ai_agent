@@ -34,7 +34,10 @@ class AgentHealthController extends Controller
             'signal_snapshots' => SignalMarketSnapshot::count(),
             'memories' => AgentMemory::count(),
             'memory_matches' => AgentMemoryMatch::count(),
-            'avg_health' => round((float) ServiceHealthCheck::avg('health_score'), 2),
+            // Use the same active-provider scope as the visible checks.
+            // Retained MT5 audit rows must not lower the live dashboard's
+            // aggregate while Dukascopy is the configured feed.
+            'avg_health' => round((float) $checks->avg('health_score'), 2),
             'champions' => ModelMarketPerformance::where('status', 'champion')->count(),
             'forward_validated' => ModelMarketPerformance::where('status', 'forward_validated')->count(),
             'paper_running' => ModelMarketPerformance::where('paper_status', 'running')->count(),

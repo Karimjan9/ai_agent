@@ -14,7 +14,9 @@ class RepairHistoricalDataGaps extends Command
     protected $signature = 'market-data:repair-gaps
                             {symbol?}
                             {--timeframe=H1}
-                            {--chunk-days=7}
+                            {--provider=dukascopy}
+                            {--transport=legacy : Dukascopy transport for archival repair (legacy, jetta, or auto)}
+                            {--chunk-days=365}
                             {--max-ranges=10}
                             {--dry-run}';
 
@@ -28,6 +30,35 @@ class RepairHistoricalDataGaps extends Command
         $timeframe = (string) $this->option('timeframe');
         $chunkDays = max(1, (int) $this->option('chunk-days'));
         $maxRanges = max(1, min(100, (int) $this->option('max-ranges')));
+        $provider = strtolower(trim((string) $this->option('provider')));
+        if (! in_array($provider, ['dukascopy', 'twelve', 'csv'], true)) {
+            $this->error("Market data provider topilmadi: {$provider}");
+
+            return self::INVALID;
+        }
+        $transport = strtolower(trim((string) $this->option('transport')));
+        if ($provider === 'dukascopy' && ! in_array($transport, ['legacy', 'jetta', 'auto'], true)) {
+            $this->error("Dukascopy transport topilmadi: {$transport}");
+
+            return self::INVALID;
+        }
+
+        // Gap repair must use the explicitly selected archive provider. The
+        // normal live-feed fallback chain can waste quota and obscure which
+        // source actually supplied historical evidence.
+        config([
+            'services.market_data.provider' => $provider,
+            'services.market_data.fallback_provider' => null,
+            // The Jetta monthly archive can return a sparse historical slice
+            // with HTTP 200.  Legacy datafeed is the authoritative repair
+            // transport because it retains flat candles and has a local cache.
+            'services.dukascopy.transport' => $provider === 'dukascopy' ? $transport : config('services.dukascopy.transport'),
+            // A repair can re-upsert its boundary candles even when the
+            // provider cannot fill the actual hole.  Those maintenance writes
+            // must not trigger the expensive market-reality pipeline; the
+            // normal scheduled live update will analyse genuinely new data.
+            'services.secondary_intelligence.enabled' => false,
+        ]);
         $failed = false;
 
         foreach ($symbols as $marketSymbol) {
@@ -39,8 +70,11 @@ class RepairHistoricalDataGaps extends Command
             }
 
             foreach ($ranges as $range) {
-                $from = CarbonImmutable::parse($range['after'], 'UTC')->addHour();
-                $end = CarbonImmutable::parse($range['before'], 'UTC');
+                // Include both boundary candles. This lets the Dukascopy tick
+                // fallback replace malformed sparse-H1 boundary rows as well
+                // as fill the missing hours between them.
+                $from = CarbonImmutable::parse($range['after'], 'UTC');
+                $end = CarbonImmutable::parse($range['before'], 'UTC')->addHour();
                 $this->line("{$marketSymbol->symbol}: {$from->toIso8601String()} -> {$end->toIso8601String()}");
                 if ($this->option('dry-run')) {
                     continue;

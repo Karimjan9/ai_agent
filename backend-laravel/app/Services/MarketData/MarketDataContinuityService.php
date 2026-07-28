@@ -17,7 +17,7 @@ class MarketDataContinuityService
             return CarbonImmutable::instance($state->pending_from_at)->utc();
         }
 
-        return $latest?->addHour();
+        return $latest?->addMinutes($this->intervalMinutes($timeframe));
     }
 
     public function recordFailure(
@@ -56,7 +56,7 @@ class MarketDataContinuityService
             return $this->markHealthy($state, $symbol, $timeframe, $saved, $to);
         }
 
-        $missing = $this->firstMissingOpenHour($symbol, $timeframe, $from, $this->lastClosedHour($to));
+        $missing = $this->firstMissingOpenCandle($symbol, $timeframe, $from, $this->lastClosedBoundary($to, $timeframe));
         if ($missing) {
             $state->update([
                 'status' => 'catching_up',
@@ -64,7 +64,11 @@ class MarketDataContinuityService
                 'pending_to_at' => $to,
                 'last_error' => null,
                 'last_attempt_at' => now(),
-                'metrics' => array_merge($state->metrics ?? [], ['last_saved' => $saved, 'first_missing_open_hour' => $missing->toIso8601String()]),
+                'metrics' => array_merge($state->metrics ?? [], [
+                    'last_saved' => $saved,
+                    'first_missing_open_candle' => $missing->toIso8601String(),
+                    'first_missing_open_hour' => $missing->toIso8601String(),
+                ]),
             ]);
 
             return $state->fresh();
@@ -114,7 +118,7 @@ class MarketDataContinuityService
         );
     }
 
-    private function firstMissingOpenHour(string $symbol, string $timeframe, CarbonImmutable $from, CarbonImmutable $to): ?CarbonImmutable
+    private function firstMissingOpenCandle(string $symbol, string $timeframe, CarbonImmutable $from, CarbonImmutable $to): ?CarbonImmutable
     {
         if ($to->lessThan($from)) {
             return null;
@@ -130,11 +134,12 @@ class MarketDataContinuityService
             ->where('timeframe', $timeframe)
             ->whereBetween('time', [$from, $to])
             ->pluck('time')
-            ->map(fn ($time) => CarbonImmutable::parse($time, 'UTC')->format('Y-m-d H:00:00'))
+            ->map(fn ($time) => $this->alignToInterval(CarbonImmutable::parse($time, 'UTC'), $timeframe)->format('Y-m-d H:i:s'))
             ->flip();
 
-        for ($cursor = $from->startOfHour(); $cursor->lessThanOrEqualTo($to); $cursor = $cursor->addHour()) {
-            if ($this->isMarketOpenHour($cursor) && ! $existing->has($cursor->format('Y-m-d H:00:00'))) {
+        $intervalMinutes = $this->intervalMinutes($timeframe);
+        for ($cursor = $this->alignToInterval($from, $timeframe); $cursor->lessThanOrEqualTo($to); $cursor = $cursor->addMinutes($intervalMinutes)) {
+            if ($this->isMarketOpenCandle($cursor) && ! $existing->has($cursor->format('Y-m-d H:i:s'))) {
                 return $cursor;
             }
         }
@@ -142,12 +147,12 @@ class MarketDataContinuityService
         return null;
     }
 
-    private function lastClosedHour(CarbonImmutable $time): CarbonImmutable
+    private function lastClosedBoundary(CarbonImmutable $time, string $timeframe): CarbonImmutable
     {
-        return $time->utc()->startOfHour()->subHour();
+        return $this->alignToInterval($time, $timeframe)->subMinutes($this->intervalMinutes($timeframe));
     }
 
-    private function isMarketOpenHour(CarbonImmutable $time): bool
+    private function isMarketOpenCandle(CarbonImmutable $time): bool
     {
         return match ($time->dayOfWeek) {
             CarbonImmutable::SATURDAY => false,
@@ -155,5 +160,22 @@ class MarketDataContinuityService
             CarbonImmutable::FRIDAY => $time->hour < 22,
             default => true,
         };
+    }
+
+    private function intervalMinutes(string $timeframe): int
+    {
+        return match (strtoupper($timeframe)) {
+            'M15' => 15,
+            'H1' => 60,
+            default => throw new \InvalidArgumentException("Unsupported continuity timeframe: {$timeframe}"),
+        };
+    }
+
+    private function alignToInterval(CarbonImmutable $time, string $timeframe): CarbonImmutable
+    {
+        $time = $time->utc();
+        $intervalMinutes = $this->intervalMinutes($timeframe);
+
+        return $time->setTime($time->hour, intdiv($time->minute, $intervalMinutes) * $intervalMinutes, 0);
     }
 }

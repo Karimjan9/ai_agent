@@ -24,6 +24,7 @@ Har muhim o'zgarishdan keyin tegishli `docs/project-memory/` yozuvi va indeks ya
   - Fibonacci pullback zone
   - ATR stop-loss
 - No live trading
+- Historical promotion evidence has one explicit canonical provider (`MARKET_DATA_CANONICAL_PROVIDER=twelve` by default); secondary feeds are audit-only.
 - No AI model in the first pass
 - Python service performs strategy and backtest calculations
 - Laravel will own dashboard, persistence, queues, and user workflows
@@ -500,10 +501,9 @@ php artisan test -> 27 passed, 154 assertions
 - `MarketSymbolSeeder` yaratildi va `DatabaseSeeder`ga ulandi.
 - Market data config qo'shildi:
   - `MARKET_DATA_PROVIDER=csv`
-  - `OANDA_API_TOKEN`
-  - `OANDA_ACCOUNT_ID`
-  - `OANDA_BASE_URL`
-- CSV provider va market data servicelar qo'shildi:
+  - `TWELVE_DATA_API_KEY`
+  - `DUKASCOPY_NODE_BINARY`
+- CSV, Dukascopy va Twelve Data provider servicelari qo'shildi:
   - `MarketDataProviderInterface`
   - `CsvMarketDataProvider`
   - `MarketDataService`

@@ -5,9 +5,9 @@
     "scripts": {
         "build": "vite build",
         "dev": "vite",
-        "process:start": "pm2 start ecosystem.config.cjs",
-        "process:stop": "pm2 stop ecosystem.config.cjs",
-        "process:status": "pm2 status"
+        "process:start": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" node_modules\\pm2\\bin\\pm2 start ecosystem.config.cjs",
+        "process:stop": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" node_modules\\pm2\\bin\\pm2 stop ecosystem.config.cjs",
+        "process:status": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" node_modules\\pm2\\bin\\pm2 status"
     },
     "engines": {
         "node": ">=22 <23"

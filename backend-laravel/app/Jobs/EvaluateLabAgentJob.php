@@ -23,6 +23,10 @@ class EvaluateLabAgentJob implements ShouldQueue
     public function handle(LabAgentEvaluationService $service):void
     {
         $agent=LabAgent::findOrFail($this->labAgentId);
+        // The first full-validation job evaluates and caches the selected
+        // cohort.  A peer that has already been resolved must not reopen a
+        // completed lifecycle state when its queued job is reached.
+        if($this->mode === 'full' && $agent->lifecycle_status !== 'full_queued') return;
         $agent->update(['lifecycle_status'=>$this->mode === 'screen' ? 'screening' : 'training']);
         $this->mode === 'screen' ? $service->screen($agent) : $service->evaluate($agent);
     }

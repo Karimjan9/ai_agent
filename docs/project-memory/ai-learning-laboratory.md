@@ -6,7 +6,7 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-07-12
+updated: 2026-07-27
 ---
 
 # AI Learning Laboratory
@@ -17,16 +17,17 @@ Prove that agents improve safely across generations before expanding the concept
 
 | Laboratory | Families | Scope key |
 | --- | --- | --- |
-| XAUUSD Lab | Trend, Breakout, Volatility | `XAUUSD + H1 + family` |
-| EURUSD Lab | Trend, Mean Reversion, Session | `EURUSD + H1 + family` |
-| GBPUSD Lab | Breakout, Momentum, Volatility | `GBPUSD + H1 + family` |
+| XAUUSD Lab | Trend, Breakout, Volatility, Hybrid | `XAUUSD + H1 + family` |
+| EURUSD Lab | Trend, Mean Reversion, Session, Hybrid | `EURUSD + H1 + family` |
+| GBPUSD Lab | Breakout, Momentum, Volatility, Hybrid | `GBPUSD + H1 + family` |
 
 ## Learning loop
 
 ```text
 complete historical data
   -> 20-agent generation
-  -> full rolling walk-forward + untouched holdout
+  -> screening reason ledger + diagnostic rescue replay plan
+  -> full rolling replay + CSCV/PBO and Deflated Sharpe selection checks + untouched holdout
   -> Monte Carlo and risk gates
   -> forward-validated challenger
   -> paper orders and outcomes
@@ -35,7 +36,25 @@ complete historical data
   -> mutation memory informs the next generation
 ```
 
-Generation composition is fixed: 3 elites (one per family), 10 bounded mutations, 4 crossovers, and 3 random explorers. A generation starts with `draft` agents and cannot be duplicated while it is queued or training.
+Generation composition is fixed and gate-targeted: 8 gate-targeted mutations, 4 risk/exit mutations, 3 architecture mutations, 3 robust crossovers, and 2 random explorers. A generation starts with `draft` agents and cannot be duplicated while it is queued or training. It ranks family budget by explicit deficits: `trade_deficit = max(0, 30 - trades)`, `pf_deficit = max(0, 1.30 - PF)`, `rolling_deficit = max(0, 3 - rolling_wins)`, `drawdown_excess = max(0, DD - 15)`, and `ruin_excess = max(0, ruin - 10)`.
+
+Trade deficit targets entry filters; PF deficit targets stop/target/trailing/exit topology; drawdown and ruin target risk multiplier and loss cooldown; rolling deficit targets regime/session-adaptive topology; starvation targets lookback, confirmation, and confidence; overfit targets architecture diversification. Each mutation stores its parent-to-child gate transition, including improved and worsened gates. Trade milestones are `15 -> 24 -> 34`, PF milestones are `1.05 -> 1.18 -> 1.36`, and rolling-win milestones are `1 -> 2 -> 3`. A family or architecture with no gate improvement across three completed generations is temporarily excluded until new evidence changes that state.
+
+Parent eligibility is stricter than a forward-score sort: a reusable parent must independently meet PF >= 1.3, risk of ruin <= 10%, drawdown <= 15%, 30 trades, and three rolling forward wins. Regime mutations record and reuse a `market:*` or `volatility:*` scope, prioritising the weakest sufficiently sampled regime rather than applying one global parameter change.
+
+## Market-adaptive replay protocol
+
+Full laboratory evaluation uses `market_adaptive_replay`: 2004-01-01 through
+2025-12-31 is foundation evidence; 2026-01-01 through the start of the last
+six weeks is delivered candle-by-candle. A decision is available only after a
+candle closes and is executed at the next candle open. Each closed trade adds
+regime/volatility-scoped fitness, mistake evidence, and a mutation recommendation.
+The final six weeks are sealed: they are excluded from training, evolution, and
+selection until the paper gate has passed. Dates define only the experiment
+boundary; all learned evidence remains scoped to `symbol + timeframe + regime`.
+Provider archives that begin on the supported GBPUSD baseline of 2005-01-02 are
+valid foundation inputs; an earlier calendar boundary is not treated as an
+invented missing-candle requirement.
 
 ## Lifecycle and gates
 
@@ -49,10 +68,17 @@ A challenger replaces a champion only in the same `symbol + timeframe + strategy
 - it wins all 3 required rolling forward windows;
 - forward PF >= 1.3, drawdown <= 15%, risk of ruin <= 10%, and at least 30 trades;
 - it is not overfit;
-- paper results have at least 30 trades, PF >= 1.3, positive return, and drawdown <= 15%;
+- when a full-validation cohort contains enough evidence, its replay-only CSCV probability of backtest overfitting (PBO) is at most 50% and its per-trade Deflated Sharpe probability is at least 95%;
+- paper results have at least 50 real-time samples, PF >= 1.3, positive return, and drawdown <= 15%;
 - the untouched sealed holdout passes equivalent risk/profit gates.
 
 The old champion is archived only at promotion time; it remains active while a challenger is being proven.
+
+Every stage writes a `candidate_gate_decisions` ledger row rather than only a generic rejected status. The decision is `passed`, `failed`, or `waiting` and uses machine-readable codes such as `FAILED_TRADE_COUNT`, `FAILED_PROFIT_FACTOR`, `FAILED_DRAWDOWN`, `FAILED_REGIME_COVERAGE`, `FAILED_STRESS_COST`, `FAILED_CALIBRATION`, `FAILED_FEED_UPTIME`, and `WAITING_FOR_SAMPLE`. A screening failure additionally creates a `diagnostic_rescue_replay` waiting record so the next targeted generation has a specific remediation objective.
+
+## Statistical selection controls
+
+Full validation submits the selected cohort from one generation in a single AI-service request. Four chronological replay checkpoints (all before the sealed six-week holdout) form the candidate-by-checkpoint score matrix. CSCV selects on one half of those checkpoints and ranks the selected candidate on the complementary half; PBO is the fraction of splits where the selected candidate finishes below the out-of-sample median. Deflated Sharpe uses cost-inclusive per-trade equity returns, the cohort's observed Sharpe distribution, skewness, and excess kurtosis. A missing cohort or insufficient checkpoint count is explicitly recorded as `insufficient_data`/`not_applicable_single_trial`; it is never represented as a successful statistical test.
 
 ## Cadence
 

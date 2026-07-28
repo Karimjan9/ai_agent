@@ -16,7 +16,6 @@ class MarketDataService
 {
     public function __construct(
         private CsvMarketDataProvider $csvProvider,
-        private OandaMarketDataProvider $oandaProvider,
         private DukascopyMarketDataProvider $dukascopyProvider,
         private TwelveDataMarketDataProvider $twelveDataProvider,
         private MarketRealityService $marketRealityService,
@@ -50,11 +49,27 @@ class MarketDataService
             $from = $from
                 ? CarbonImmutable::instance($from)->utc()
                 : $this->continuity->recoveryStart($providerKey, $marketSymbol->symbol, $timeframe, $latestAt);
-            // H1 providers publish only completed candles. Request an exact
-            // closed-hour boundary instead of a moving current timestamp.
+            // Providers publish only completed candles. Request an exact
+            // timeframe boundary instead of a moving current timestamp.
             $to = $to
                 ? CarbonImmutable::instance($to)->utc()
-                : CarbonImmutable::now('UTC')->startOfHour();
+                : $this->currentIntervalBoundary($timeframe);
+
+            // There is nothing to fetch until the next candle closes. A
+            // `latest + interval == current boundary` interval is a
+            // healthy no-op, not a provider outage.
+            if ($from && $from->greaterThanOrEqualTo($to)) {
+                $this->continuity->recordResult(
+                    $providerKey,
+                    $marketSymbol->symbol,
+                    $timeframe,
+                    $from,
+                    $to,
+                    0,
+                );
+
+                return 0;
+            }
         }
 
         try {
@@ -112,14 +127,14 @@ class MarketDataService
             ->values();
 
         if ($rows->isNotEmpty()) {
-            MarketCandleObservation::upsert(
-                $rows->map(fn (array $row): array => [
-                    'provider' => $usedProvider, 'symbol' => $marketSymbol->symbol, 'timeframe' => $timeframe,
-                    'time' => $row['time'], 'open' => $row['open'], 'high' => $row['high'], 'low' => $row['low'],
-                    'close' => $row['close'], 'volume' => $row['volume'], 'created_at' => $now, 'updated_at' => $now,
-                ])->all(),
+            $rows->map(fn (array $row): array => [
+                'provider' => $usedProvider, 'symbol' => $marketSymbol->symbol, 'timeframe' => $timeframe,
+                'time' => $row['time'], 'open' => $row['open'], 'high' => $row['high'], 'low' => $row['low'],
+                'close' => $row['close'], 'volume' => $row['volume'], 'created_at' => $now, 'updated_at' => $now,
+            ])->chunk(1000)->each(fn ($chunk) => MarketCandleObservation::upsert(
+                $chunk->all(),
                 ['provider', 'symbol', 'timeframe', 'time'], ['open', 'high', 'low', 'close', 'volume', 'updated_at'],
-            );
+            ));
             $rows->chunk(1000)->each(fn ($chunk) => Candle::upsert(
                 $chunk->all(),
                 ['symbol_id', 'timeframe', 'time'],
@@ -208,7 +223,6 @@ class MarketDataService
 
         return match ($provider) {
             'csv' => $this->csvProvider,
-            'oanda' => $this->oandaProvider,
             'dukascopy' => $this->dukascopyProvider,
             'twelve' => $this->twelveDataProvider,
             default => throw new RuntimeException("Market data provider topilmadi: {$provider}"),
@@ -218,5 +232,16 @@ class MarketDataService
     private function usesContinuity(string $provider): bool
     {
         return in_array($provider, ['dukascopy', 'twelve'], true);
+    }
+
+    private function currentIntervalBoundary(string $timeframe): CarbonImmutable
+    {
+        $now = CarbonImmutable::now('UTC');
+
+        return match (strtoupper($timeframe)) {
+            'H1' => $now->startOfHour(),
+            'M15' => $now->setTime($now->hour, intdiv($now->minute, 15) * 15, 0),
+            default => throw new RuntimeException("Unsupported market-data timeframe: {$timeframe}"),
+        };
     }
 }

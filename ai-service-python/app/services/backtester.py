@@ -1,8 +1,10 @@
-from collections import Counter
-from datetime import datetime
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta
+import hashlib
 from pathlib import Path
 
 import pandas as pd
+from dateutil.easter import easter
 
 from app.schemas import (
     BacktestRequest,
@@ -21,6 +23,7 @@ from app.services.indicators import add_indicators
 from app.services.market_regime import apply_market_regime
 from app.services.monte_carlo import MonteCarloService
 from app.services.strategy_dna import StrategyDnaService
+from app.services.statistical_validation import bootstrap_profit_factor_lower_bound
 from app.strategies.registry import get_strategy, strategy_label
 
 
@@ -114,9 +117,46 @@ def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
     return df
 
 
+def _load_regime_source(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
+    if payload.regime_candles:
+        return pd.DataFrame([candle.model_dump() if hasattr(candle, "model_dump") else candle for candle in payload.regime_candles])
+    if payload.regime_dataset_path:
+        return pd.read_csv(_resolve_dataset_path(payload.regime_dataset_path))
+    return None
+
+
+def _apply_execution_regime(execution_df: pd.DataFrame, regime_source: pd.DataFrame | None) -> pd.DataFrame:
+    """Merge only closed H1 state into an M15 execution stream (no look-ahead)."""
+    if regime_source is None:
+        return apply_market_regime(execution_df)
+    higher = regime_source.copy()
+    higher["time"] = pd.to_datetime(higher["time"], utc=True)
+    higher = apply_market_regime(higher).sort_values("time")
+    higher["regime_available_at"] = higher["time"] + pd.Timedelta(hours=1)
+    columns = ["regime_available_at", "market_regime", "volatility_regime", "adx", "atr_regime"]
+    base = execution_df.copy()
+    base["time"] = pd.to_datetime(base["time"], utc=True)
+    merged = pd.merge_asof(base.sort_values("time"), higher[columns].sort_values("regime_available_at"), left_on="time", right_on="regime_available_at", direction="backward").drop(columns=["regime_available_at"])
+    merged["market_regime"] = merged["market_regime"].fillna("unknown")
+    merged["volatility_regime"] = merged["volatility_regime"].fillna("normal_volatility")
+    merged["adx"] = merged["adx"].fillna(0.0)
+    merged["atr_regime"] = merged["atr_regime"].ffill().fillna(0.0)
+    return merged
+
+
 def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFrame) -> SimpleBacktestResponse:
     unexpected_gap_count = int(df.attrs.get("unexpected_gap_count", 0))
-    df = apply_market_regime(df)
+    regime_source = _load_regime_source(payload)
+    df = _apply_execution_regime(df, regime_source)
+    # Use only the completed candle range for management decisions.  ATR is
+    # calculated here so every strategy family can evolve exits consistently.
+    previous_close = df["close"].shift(1)
+    true_range = pd.concat([
+        df["high"] - df["low"],
+        (df["high"] - previous_close).abs(),
+        (df["low"] - previous_close).abs(),
+    ], axis=1).max(axis=1)
+    df["_management_atr"] = true_range.rolling(14, min_periods=1).mean()
     strategy_function = get_strategy(payload.strategy, payload.base_strategy)
     df = strategy_function(df, payload.parameters)
 
@@ -127,30 +167,62 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
     position: dict[str, object] | None = None
     gross_profit = 0.0
     gross_loss = 0.0
+    loss_streak = 0
+    cooldown_until = -1
+    regime_returns: dict[str, list[float]] = {}
+    entry_funnel: Counter[str] = Counter()
+    opportunities_by_month: Counter[str] = Counter()
+    accepted_by_month: Counter[str] = Counter()
+    # Shadow positions never touch balance, loss streak, or real-position
+    # state.  They are a counterfactual evidence ledger, not hidden trades.
+    shadow_positions: list[dict[str, object]] = []
+    shadow_ledger: list[dict[str, object]] = []
+    shadow_history: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    meta_returns: dict[str, list[float]] = defaultdict(list)
+    cooldown_decisions: list[dict[str, object]] = []
+    entry_funnel["raw_strategy_signals"] = int(df.iloc[199:]["signal"].isin(["BUY", "SELL"]).sum())
 
     # A signal is only knowable after its candle closes. Execute it at the
     # following candle's open, then include that same candle in exit checks.
     for index in range(200, len(df)):
         candle = df.iloc[index]
         signal_row = df.iloc[index - 1]
+        _advance_shadow_positions(
+            shadow_positions, shadow_ledger, shadow_history, candle, df.iloc[index - 1], payload, index
+        )
 
         if position is None:
             signal = str(signal_row["signal"])
             if signal not in {"BUY", "SELL"}:
                 continue
-            if not _is_liquid_entry(candle, payload):
+            entry_funnel["flat_signal_opportunities"] += 1
+            month_key = str(pd.Timestamp(signal_row["time"]).to_period("M"))
+            opportunities_by_month[month_key] += 1
+            liquid, rejection_reason = _entry_eligibility(
+                candle, payload, signal_row, loss_streak, index < cooldown_until, regime_returns, meta_returns
+            )
+            if not liquid:
+                entry_funnel[f"rejected_{rejection_reason or 'unknown'}"] += 1
+                shadow = _open_shadow_position(candle, signal_row, signal, payload, index, rejection_reason or "unknown")
+                if shadow is not None:
+                    settled = _advance_shadow_position(shadow, candle, df.iloc[index - 1], payload, index)
+                    if settled is None:
+                        shadow_positions.append(shadow)
+                    else:
+                        _record_shadow_outcome(shadow_ledger, shadow_history, settled)
                 continue
+            entry_funnel["accepted_entries"] += 1
+            accepted_by_month[month_key] += 1
 
             market_price = float(candle["open"])
             entry_price = _entry_price(market_price, signal, payload)
-            stop_fraction = payload.execution.stop_loss_percent / 100
-            target_fraction = payload.execution.take_profit_percent / 100
+            stop_distance, target_distance = _exit_distances(market_price, signal_row, payload)
             if signal == "BUY":
-                stop_loss = market_price * (1 - stop_fraction)
-                take_profit = market_price * (1 + target_fraction)
+                stop_loss = market_price - stop_distance
+                take_profit = market_price + target_distance
             else:
-                stop_loss = market_price * (1 + stop_fraction)
-                take_profit = market_price * (1 - target_fraction)
+                stop_loss = market_price + stop_distance
+                take_profit = market_price - target_distance
 
             position = {
                 "direction": signal,
@@ -162,15 +234,26 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
                 "take_profit": take_profit,
                 "position_size_multiple": _position_size_multiple(
                     entry_price, stop_loss, signal, payload
-                ),
+                ) * _volatility_risk_multiplier(signal_row, payload) * _meta_risk_multiplier(signal_row, signal, payload, meta_returns),
                 "market_regime": signal_row.get("market_regime", "unknown"),
                 "volatility_regime": signal_row.get("volatility_regime", "normal_volatility"),
                 "signal_row": signal_row,
+                "entry_index": index,
+                "partial_closed": False,
+                "partial_fraction": float(payload.parameters.get("partial_take_profit_fraction", 0) or 0),
+                "partial_exit_price": None,
             }
 
         direction = str(position["direction"])
-        exit_price, exit_reason = _intrabar_exit(direction, position, candle, payload)
+        _advance_trailing_stop(position, df.iloc[index - 1], payload)
+        time_stop = int(payload.parameters.get("time_stop_candles", 0) or 0)
+        if time_stop and index - int(position["entry_index"]) >= time_stop:
+            exit_price, exit_reason = _exit_price(float(candle["open"]), direction, payload), "time_stop"
+        else:
+            exit_price, exit_reason = _intrabar_exit(direction, position, candle, payload)
 
+        if exit_reason is None and _take_partial_profit(position, candle, payload):
+            continue
         if exit_reason is None or exit_price is None:
             continue
 
@@ -179,6 +262,12 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
             market_profit_percent = ((exit_price - entry_price) / entry_price) * 100
         else:
             market_profit_percent = ((entry_price - exit_price) / entry_price) * 100
+        partial_fraction = float(position.get("partial_fraction", 0) or 0) if bool(position.get("partial_closed")) else 0.0
+        partial_exit = position.get("partial_exit_price")
+        if partial_fraction and partial_exit is not None:
+            partial_return = ((float(partial_exit) - entry_price) / entry_price) * 100 if direction == "BUY" else ((entry_price - float(partial_exit)) / entry_price) * 100
+            market_profit_percent = market_profit_percent * (1 - partial_fraction) + partial_return * partial_fraction
+            exit_reason = f"partial_target+{exit_reason}"
 
         holding_days = max(
             (pd.Timestamp(candle["time"]) - pd.Timestamp(position["entry_time"])).total_seconds() / 86400,
@@ -190,6 +279,17 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
         scaled_cost_percent = explicit_cost * position_size
         profit_percent = gross_profit_percent - scaled_cost_percent
         result = "WIN" if profit_percent > 0 else "LOSS"
+        loss_streak = 0 if result == "WIN" else loss_streak + 1
+        if result == "LOSS":
+            cooldown, evidence = _dynamic_cooldown_duration(signal_row, payload, loss_streak, shadow_history)
+            cooldown_until = index + cooldown
+            cooldown_decisions.append({
+                "time": str(candle["time"]), "market_regime": str(signal_row.get("market_regime", "unknown")),
+                "volatility_regime": str(signal_row.get("volatility_regime", "normal_volatility")),
+                "loss_streak": loss_streak, "cooldown_candles": cooldown, "shadow_evidence": evidence,
+            })
+        regime_returns.setdefault(str(position.get("market_regime", "unknown")), []).append(profit_percent)
+        meta_returns[_meta_context(position["signal_row"], direction)].append(profit_percent)
 
         balance += balance * (profit_percent / 100)
         peak_balance = max(peak_balance, balance)
@@ -225,6 +325,7 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
                 position_size_multiple=round(position_size, 5),
                 risk_budget_percent=payload.risk_per_trade,
                 signal_time=str(position["signal_time"]),
+                signal_confidence=round(float(position["signal_row"].get("signal_confidence", 1.0) or 0), 4),
                 exit_reason=exit_reason,
                 balance=round(balance, 2),
                 market_regime=str(position.get("market_regime", "unknown")),
@@ -235,6 +336,14 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
             )
         )
         position = None
+
+    # A shadow still open at the end of a bounded replay is closed at the last
+    # observable close.  This is explicitly marked, rather than silently
+    # dropping a veto from the evidence denominator.
+    if shadow_positions:
+        final_candle = df.iloc[-1]
+        for shadow in shadow_positions:
+            _record_shadow_outcome(shadow_ledger, shadow_history, _force_close_shadow(shadow, final_candle, payload))
 
     total_trades = len(trades)
     wins = len([trade for trade in trades if trade.result == "WIN"])
@@ -276,6 +385,17 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
     }, [trade.model_dump() for trade in trades])
     buy_hold_percent = ((float(df.iloc[-1]["close"]) - float(df.iloc[0]["close"])) / max(float(df.iloc[0]["close"]), 0.0000001)) * 100
     statistical_evidence = _statistical_evidence(trades, wins, total_trades)
+    statistical_evidence["edge_quality"] = _edge_quality_evidence(trades)
+    pf_attribution = _pf_attribution(trades)
+    entry_funnel_report = _entry_funnel_report(entry_funnel)
+    behavioral_signature = _behavioral_signature(df, trades)
+    diagnostic_telemetry = _diagnostic_telemetry(trades, entry_funnel_report, pf_attribution)
+    veto_regret = _veto_regret_report(shadow_ledger)
+    cooldown_policy = _cooldown_policy_report(cooldown_decisions)
+    window_survival = _window_survival(df, trades, opportunities_by_month, accepted_by_month)
+    regime_ensemble = _regime_ensemble_report(df, payload)
+    opportunity_metrics = _opportunity_metrics(net_profit, entry_funnel_report, window_survival)
+    edge_claim = _edge_claim(payload, pf_attribution, statistical_evidence["edge_quality"])
 
     return SimpleBacktestResponse(
         strategy=strategy_label(payload.strategy),
@@ -306,8 +426,20 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
         execution_assumptions=payload.execution.model_dump(),
         data_quality={"status": "warning" if unexpected_gap_count else "passed", "rows": len(df),
                       "gap_control": True, "hard_gate": payload.execution.reject_unexpected_gaps,
-                      "unexpected_gap_count": unexpected_gap_count},
+                      "unexpected_gap_count": unexpected_gap_count,
+                      "regime_source": "closed_h1" if regime_source is not None else "execution_timeframe"},
         statistical_evidence=statistical_evidence,
+        pf_attribution=pf_attribution,
+        entry_funnel=entry_funnel_report,
+        behavioral_signature=behavioral_signature,
+        diagnostic_telemetry=diagnostic_telemetry,
+        veto_regret=veto_regret,
+        observability_protocol_version=1,
+        cooldown_policy=cooldown_policy,
+        window_survival=window_survival,
+        regime_ensemble=regime_ensemble,
+        opportunity_metrics=opportunity_metrics,
+        edge_claim=edge_claim,
         benchmark={"buy_and_hold_percent": round(buy_hold_percent, 3), "edge_vs_buy_and_hold_percent": round(net_profit - buy_hold_percent, 3)},
         trade_ledger_scope="full evaluation; API display is capped to the latest 20 closed trades",
         displayed_trade_count=min(total_trades, 20),
@@ -416,7 +548,38 @@ def _intrabar_exit(
     return None, None
 
 
-def _is_liquid_entry(row: pd.Series, payload: SimpleBacktestRequest) -> bool:
+def _exit_distances(market_price: float, signal_row: pd.Series, payload: SimpleBacktestRequest) -> tuple[float, float]:
+    atr = float(signal_row.get("_management_atr", 0) or 0)
+    stop_multiplier = payload.parameters.get("atr_stop_multiplier")
+    target_multiplier = payload.parameters.get("atr_target_multiplier")
+    stop = atr * float(stop_multiplier) if atr > 0 and stop_multiplier else market_price * payload.execution.stop_loss_percent / 100
+    target = atr * float(target_multiplier) if atr > 0 and target_multiplier else market_price * payload.execution.take_profit_percent / 100
+    return max(stop, market_price * 0.00001), max(target, market_price * 0.00001)
+
+
+def _volatility_risk_multiplier(signal_row: pd.Series, payload: SimpleBacktestRequest) -> float:
+    if str(signal_row.get("volatility_regime", "")) == "high_volatility":
+        return float(payload.parameters.get("high_volatility_risk_multiplier", 1.0))
+    return 1.0
+
+
+def _advance_trailing_stop(position: dict[str, object], previous_candle: pd.Series, payload: SimpleBacktestRequest) -> None:
+    multiplier = float(payload.parameters.get("trailing_atr_multiplier", 0) or 0)
+    atr = float(previous_candle.get("_management_atr", 0) or 0)
+    if multiplier <= 0 or atr <= 0:
+        return
+    distance = multiplier * atr
+    if str(position["direction"]) == "BUY":
+        position["stop_loss"] = max(float(position["stop_loss"]), float(previous_candle["close"]) - distance)
+    else:
+        position["stop_loss"] = min(float(position["stop_loss"]), float(previous_candle["close"]) + distance)
+
+
+def _entry_eligibility(
+    row: pd.Series, payload: SimpleBacktestRequest, signal_row: pd.Series | None = None,
+    loss_streak: int = 0, cooldown_active: bool = False, regime_returns: dict[str, list[float]] | None = None,
+    meta_returns: dict[str, list[float]] | None = None,
+) -> tuple[bool, str | None]:
     execution = payload.execution
     if execution.allowed_sessions_utc:
         hour = pd.Timestamp(row["time"]).hour
@@ -425,10 +588,500 @@ def _is_liquid_entry(row: pd.Series, payload: SimpleBacktestRequest) -> bool:
             start, end = (int(value) for value in session.split("-", 1))
             allowed = allowed or (start <= hour < end if start < end else hour >= start or hour < end)
         if not allowed:
-            return False
+            return False, "outside_session"
     if execution.min_volume is not None and float(row.get("volume", 0) or 0) < execution.min_volume:
+        return False, "minimum_volume"
+    if signal_row is not None:
+        # These columns are supplied only by a time-aligned official calendar
+        # or risk controller. Missing data never masquerades as a veto.
+        if pd.notna(signal_row.get("news_veto", False)) and bool(signal_row.get("news_veto", False)):
+            return False, "news_veto"
+        if pd.notna(signal_row.get("risk_veto", False)) and bool(signal_row.get("risk_veto", False)):
+            return False, "risk_veto"
+        if cooldown_active or loss_streak >= int(payload.parameters.get("max_loss_streak_before_wait", 99)):
+            return False, "loss_cooldown"
+        confidence = float(signal_row.get("signal_confidence", 1.0) or 0)
+        if confidence < float(payload.parameters.get("minimum_signal_confidence", 0.0)):
+            return False, "minimum_confidence"
+        if bool(payload.parameters.get("avoid_high_volatility", False)) and str(signal_row.get("volatility_regime", "")) == "high_volatility":
+            return False, "high_volatility_veto"
+        atr = float(signal_row.get("_management_atr", 0) or 0)
+        spread = execution.spread_points * execution.point_size
+        maximum = float(payload.parameters.get("max_spread_atr_ratio", 1.0))
+        if atr > 0 and spread / atr > maximum:
+            return False, "spread_to_atr"
+        # An online regime veto: only closed, earlier trades are used.  A
+        # regime with enough evidence and PF below one is parked until a later
+        # generation redesigns its specialist rules.
+        prior = (regime_returns or {}).get(str(signal_row.get("market_regime", "unknown")), [])
+        if len(prior) >= 10 and _profit_factor_for(prior) < 1.0:
+            return False, "weak_regime_history"
+        if bool(payload.parameters.get("meta_label_enabled", False)):
+            meta_prior = (meta_returns or {}).get(_meta_context(signal_row, str(signal_row.get("signal", "WAIT"))), [])
+            minimum = int(payload.parameters.get("meta_label_min_history", 10) or 10)
+            minimum_pf = float(payload.parameters.get("meta_label_min_pf", 1.0) or 1.0)
+            if len(meta_prior) >= minimum and _profit_factor_for(meta_prior) < minimum_pf:
+                return False, "meta_label_veto"
+        expected_target = atr * float(payload.parameters.get("atr_target_multiplier", 0) or 0)
+        expected_edge = expected_target / max(float(row["open"]), 0.0000001) * 100
+        round_trip_cost = (spread + execution.slippage_points * execution.point_size * 2) / max(float(row["open"]), 0.0000001) * 100 + execution.commission_percent
+        if expected_target > 0 and expected_edge <= round_trip_cost:
+            return False, "cost_exceeds_target"
+    return True, None
+
+
+def _is_liquid_entry(
+    row: pd.Series, payload: SimpleBacktestRequest, signal_row: pd.Series | None = None,
+    loss_streak: int = 0, cooldown_active: bool = False, regime_returns: dict[str, list[float]] | None = None,
+    meta_returns: dict[str, list[float]] | None = None,
+) -> bool:
+    """Compatibility wrapper for callers/tests that need only a yes/no veto."""
+    return _entry_eligibility(row, payload, signal_row, loss_streak, cooldown_active, regime_returns, meta_returns)[0]
+
+
+def _meta_context(signal_row: pd.Series, direction: str) -> str:
+    return "|".join([
+        str(signal_row.get("market_regime", "unknown")),
+        str(signal_row.get("volatility_regime", "normal_volatility")), direction,
+    ])
+
+
+def _meta_risk_multiplier(
+    signal_row: pd.Series, direction: str, payload: SimpleBacktestRequest, meta_returns: dict[str, list[float]],
+) -> float:
+    if not bool(payload.parameters.get("meta_label_enabled", False)):
+        return 1.0
+    values = meta_returns.get(_meta_context(signal_row, direction), [])
+    minimum = int(payload.parameters.get("meta_label_min_history", 10) or 10)
+    if len(values) < minimum or _profit_factor_for(values) < float(payload.parameters.get("meta_label_min_pf", 1.0) or 1.0):
+        return 1.0
+    return float(payload.parameters.get("meta_label_risk_multiplier", 1.0) or 1.0)
+
+
+def _open_shadow_position(
+    candle: pd.Series,
+    signal_row: pd.Series,
+    direction: str,
+    payload: SimpleBacktestRequest,
+    index: int,
+    veto_reason: str,
+) -> dict[str, object] | None:
+    """Open the counterfactual at the same next-candle price as a real trade.
+
+    The caller invokes this only after an execution veto.  It deliberately
+    does not call eligibility again: we want to measure the signal that the
+    veto prevented, under otherwise identical costs and exits.
+    """
+    market_price = float(candle["open"])
+    entry_price = _entry_price(market_price, direction, payload)
+    stop_distance, target_distance = _exit_distances(market_price, signal_row, payload)
+    if direction == "BUY":
+        stop_loss, take_profit = market_price - stop_distance, market_price + target_distance
+    else:
+        stop_loss, take_profit = market_price + stop_distance, market_price - target_distance
+    return {
+        "veto_reason": veto_reason, "direction": direction,
+        "signal_time": signal_row["time"], "entry_time": candle["time"],
+        "entry_price": entry_price, "market_entry_price": market_price,
+        "stop_loss": stop_loss, "take_profit": take_profit,
+        "position_size_multiple": _position_size_multiple(entry_price, stop_loss, direction, payload)
+        * _volatility_risk_multiplier(signal_row, payload),
+        "market_regime": str(signal_row.get("market_regime", "unknown")),
+        "volatility_regime": str(signal_row.get("volatility_regime", "normal_volatility")),
+        "entry_index": index, "signal_row": signal_row,
+        "partial_closed": False,
+        "partial_fraction": float(payload.parameters.get("partial_take_profit_fraction", 0) or 0),
+        "partial_exit_price": None,
+    }
+
+
+def _advance_shadow_positions(
+    positions: list[dict[str, object]], ledger: list[dict[str, object]],
+    history: dict[str, dict[str, list[float]]], candle: pd.Series,
+    previous_candle: pd.Series, payload: SimpleBacktestRequest, index: int,
+) -> None:
+    active: list[dict[str, object]] = []
+    for position in positions:
+        settled = _advance_shadow_position(position, candle, previous_candle, payload, index)
+        if settled is None:
+            active.append(position)
+        else:
+            _record_shadow_outcome(ledger, history, settled)
+    positions[:] = active
+
+
+def _advance_shadow_position(
+    position: dict[str, object], candle: pd.Series, previous_candle: pd.Series,
+    payload: SimpleBacktestRequest, index: int,
+) -> dict[str, object] | None:
+    direction = str(position["direction"])
+    _advance_trailing_stop(position, previous_candle, payload)
+    time_stop = int(payload.parameters.get("time_stop_candles", 0) or 0)
+    if time_stop and index - int(position["entry_index"]) >= time_stop:
+        exit_price, exit_reason = _exit_price(float(candle["open"]), direction, payload), "time_stop"
+    else:
+        exit_price, exit_reason = _intrabar_exit(direction, position, candle, payload)
+    if exit_reason is None and _take_partial_profit(position, candle, payload):
+        return None
+    if exit_reason is None or exit_price is None:
+        return None
+    return _shadow_outcome(position, candle, float(exit_price), exit_reason, payload)
+
+
+def _force_close_shadow(position: dict[str, object], candle: pd.Series, payload: SimpleBacktestRequest) -> dict[str, object]:
+    return _shadow_outcome(
+        position, candle, _exit_price(float(candle["close"]), str(position["direction"]), payload), "replay_end", payload,
+    )
+
+
+def _shadow_outcome(
+    position: dict[str, object], candle: pd.Series, exit_price: float, exit_reason: str,
+    payload: SimpleBacktestRequest,
+) -> dict[str, object]:
+    direction, entry_price = str(position["direction"]), float(position["entry_price"])
+    market_profit = ((exit_price - entry_price) / entry_price) * 100 if direction == "BUY" else ((entry_price - exit_price) / entry_price) * 100
+    partial_fraction = float(position.get("partial_fraction", 0) or 0) if bool(position.get("partial_closed")) else 0.0
+    partial_exit = position.get("partial_exit_price")
+    if partial_fraction and partial_exit is not None:
+        partial_return = ((float(partial_exit) - entry_price) / entry_price) * 100 if direction == "BUY" else ((entry_price - float(partial_exit)) / entry_price) * 100
+        market_profit = market_profit * (1 - partial_fraction) + partial_return * partial_fraction
+        exit_reason = f"partial_target+{exit_reason}"
+    holding_days = max((pd.Timestamp(candle["time"]) - pd.Timestamp(position["entry_time"])).total_seconds() / 86400, 0)
+    cost = (payload.execution.commission_percent + payload.execution.swap_per_day_percent * holding_days) * float(position["position_size_multiple"])
+    profit = market_profit * float(position["position_size_multiple"]) - cost
+    return {
+        "veto_reason": str(position["veto_reason"]), "market_regime": str(position["market_regime"]),
+        "volatility_regime": str(position["volatility_regime"]), "direction": direction,
+        "signal_time": str(position["signal_time"]), "entry_time": str(position["entry_time"]),
+        "exit_time": str(candle["time"]), "exit_reason": exit_reason,
+        "shadow_profit": round(max(profit, 0.0), 5), "shadow_loss": round(abs(min(profit, 0.0)), 5),
+        "shadow_profit_percent": round(profit, 5), "outcome": "WIN" if profit > 0 else "LOSS",
+    }
+
+
+def _record_shadow_outcome(
+    ledger: list[dict[str, object]], history: dict[str, dict[str, list[float]]], outcome: dict[str, object],
+) -> None:
+    ledger.append(outcome)
+    reason = str(outcome["veto_reason"])
+    context = f"{outcome['market_regime']}|{outcome['volatility_regime']}"
+    history[reason][context].append(float(outcome["shadow_profit_percent"]))
+
+
+def _dynamic_cooldown_duration(
+    signal_row: pd.Series, payload: SimpleBacktestRequest, loss_streak: int,
+    shadow_history: dict[str, dict[str, list[float]]],
+) -> tuple[int, dict[str, object]]:
+    base = max(1, int(payload.parameters.get("loss_cooldown_candles", 1) or 1))
+    regime = str(signal_row.get("market_regime", "unknown"))
+    volatility = str(signal_row.get("volatility_regime", "normal_volatility"))
+    if not bool(payload.parameters.get("dynamic_cooldown_enabled", True)):
+        return base, {"mode": "fixed", "samples": 0, "shadow_pf": None}
+
+    # Frozen policy before the replay begins.  Only the final one-candle
+    # nudge depends on already-closed counterfactuals from earlier candles.
+    if regime in {"trend_up", "trend_down"} and volatility == "normal_volatility":
+        duration = min(2, base)
+    elif regime == "range" and volatility == "high_volatility":
+        duration = max(4, min(6, base))
+    else:
+        duration = min(6, base)
+    duration = min(6, duration + max(0, min(loss_streak - 1, 2)))
+
+    context = f"{regime}|{volatility}"
+    values = shadow_history.get("loss_cooldown", {}).get(context, [])
+    minimum = int(payload.parameters.get("cooldown_shadow_min_samples", 5) or 5)
+    threshold = float(payload.parameters.get("cooldown_shadow_edge_pf", 1.1) or 1.1)
+    pf = _profit_factor_for(values) if len(values) >= minimum else None
+    adjustment = 0
+    if pf is not None and pf >= threshold:
+        adjustment = -1
+    elif pf is not None and pf < 1.0:
+        adjustment = 1
+    return max(1, min(6, duration + adjustment)), {
+        "mode": "online_shadow_regret", "samples": len(values), "shadow_pf": pf,
+        "adjustment": adjustment, "context": context,
+    }
+
+
+def _veto_regret_report(ledger: list[dict[str, object]]) -> dict[str, object]:
+    def summarize(items: list[dict[str, object]], reason: str | None = None) -> dict[str, object]:
+        profits = [float(item["shadow_profit_percent"]) for item in items]
+        gross_profit = sum(float(item["shadow_profit"]) for item in items)
+        gross_loss = sum(float(item["shadow_loss"]) for item in items)
+        pf = round(gross_profit / gross_loss, 3) if gross_loss else (99.0 if gross_profit else 0.0)
+        monthly: dict[str, list[dict[str, object]]] = defaultdict(list)
+        for item in items:
+            monthly[str(pd.Timestamp(item["exit_time"]).to_period("M"))].append(item)
+        monthly_summary = {month: summarize_month(values) for month, values in monthly.items()}
+        robust_months = sum(float(data["shadow_profit_factor"]) > 1.30 for data in monthly_summary.values())
+        action = "insufficient_evidence"
+        if len(items) >= 5:
+            # Cooldown may be softened only after the counterfactual edge
+            # repeats in three distinct calendar windows. Other vetoes retain
+            # the less-strong aggregate diagnostic until their own protocol
+            # has enough regime-specific evidence.
+            if reason == "loss_cooldown":
+                action = "relax_bounded_veto" if robust_months >= 3 else ("preserve_veto" if pf < 1.0 else "hold")
+            else:
+                action = "relax_bounded_veto" if pf >= 1.1 else ("preserve_veto" if pf < 1.0 else "hold")
+        return {
+            "shadow_trades": len(items), "wins": sum(value > 0 for value in profits),
+            "losses": sum(value <= 0 for value in profits), "shadow_profit": round(gross_profit, 5),
+            "shadow_loss": round(gross_loss, 5), "shadow_profit_factor": pf,
+            "net_shadow_profit_percent": round(sum(profits), 5), "recommended_action": action,
+            "monthly_passport": monthly_summary, "monthly_pf_gt_1_30": robust_months,
+        }
+
+    def summarize_month(items: list[dict[str, object]]) -> dict[str, object]:
+        profits = [float(item["shadow_profit_percent"]) for item in items]
+        gross_profit = sum(float(item["shadow_profit"]) for item in items)
+        gross_loss = sum(float(item["shadow_loss"]) for item in items)
+        return {
+            "shadow_trades": len(items), "shadow_profit_factor": round(gross_profit / gross_loss, 3) if gross_loss else (99.0 if gross_profit else 0.0),
+            "net_shadow_profit_percent": round(sum(profits), 5),
+        }
+
+    by_veto: dict[str, list[dict[str, object]]] = defaultdict(list)
+    by_context: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for item in ledger:
+        by_veto[str(item["veto_reason"])].append(item)
+        key = f"{item['veto_reason']}|{item['market_regime']}|{item['volatility_regime']}"
+        by_context[key].append(item)
+    ranked = sorted(by_veto.items(), key=lambda pair: summarize(pair[1], pair[0])["shadow_profit_factor"], reverse=True)
+    return {
+        "protocol": "same next-candle-open, costs, exits; counterfactual only; never promotion evidence",
+        "shadow_trade_count": len(ledger),
+        "by_veto_reason": {key: summarize(items, key) for key, items in by_veto.items()},
+        "by_regime_context": {key: summarize(items) for key, items in by_context.items()},
+        "highest_regret_veto": ranked[0][0] if ranked else None,
+        # Bounded sample keeps API and model metadata practical; aggregates
+        # above always include the complete replay ledger.
+        "sample_records": ledger[:200], "sample_records_truncated": len(ledger) > 200,
+    }
+
+
+def _cooldown_policy_report(decisions: list[dict[str, object]]) -> dict[str, object]:
+    durations = [int(item["cooldown_candles"]) for item in decisions]
+    adjusted = sum(int((item.get("shadow_evidence", {}) or {}).get("adjustment", 0) or 0) != 0 for item in decisions)
+    return {
+        "protocol": "closed-trade loss -> frozen regime policy -> prior closed shadow evidence only",
+        "loss_events": len(decisions), "average_cooldown_candles": round(sum(durations) / len(durations), 3) if durations else 0.0,
+        "shadow_adjusted_events": adjusted, "decisions": decisions[-100:],
+    }
+
+
+def _window_survival(
+    df: pd.DataFrame, trades: list[SimpleTrade], opportunities: Counter[str], accepted: Counter[str],
+) -> dict[str, object]:
+    windows: list[dict[str, object]] = []
+    for period in pd.period_range(pd.Timestamp(df["time"].min()).to_period("M"), pd.Timestamp(df["time"].max()).to_period("M"), freq="M"):
+        month = str(period)
+        subset = [trade for trade in trades if str(pd.Timestamp(trade.entry_time).to_period("M")) == month]
+        returns = [trade.profit_percent for trade in subset]
+        opportunity_count = int(opportunities.get(month, 0))
+        pf = _profit_factor_for(returns) if returns else 0.0
+        net = sum(returns)
+        if opportunity_count == 0:
+            status = "activity_absence"
+        elif net > 0 and pf >= 1.0:
+            status = "positive"
+        else:
+            status = "edge_failure"
+        windows.append({
+            "month": month, "opportunities": opportunity_count, "accepted_entries": int(accepted.get(month, 0)),
+            "trades": len(subset), "profit_factor": pf, "net_profit_percent": round(net, 4),
+            "status": status, "catastrophic": bool(opportunity_count and net <= -5.0),
+        })
+    return {
+        "protocol": "calendar windows; activity absence is distinct from edge failure",
+        "windows": windows, "positive_windows": sum(item["status"] == "positive" for item in windows),
+        "edge_failures": sum(item["status"] == "edge_failure" for item in windows),
+        "activity_absence": sum(item["status"] == "activity_absence" for item in windows),
+        "catastrophic_windows": sum(bool(item["catastrophic"]) for item in windows),
+    }
+
+
+def _opportunity_metrics(net_profit_percent: float, funnel: dict[str, object], survival: dict[str, object]) -> dict[str, object]:
+    valid = int(funnel.get("flat_signal_opportunities", 0))
+    accepted = int(funnel.get("accepted_entries", 0))
+    coverage = accepted / valid if valid else 0.0
+    return {
+        "valid_signal_opportunities": valid,
+        "accepted_entries": accepted,
+        "coverage": round(coverage, 5),
+        "edge_density": round(net_profit_percent / valid, 6) if valid else 0.0,
+        "rolling_consistency": int(survival.get("positive_windows", 0)),
+        "activity_absence_windows": int(survival.get("activity_absence", 0)),
+        "classification": "coverage_preserving" if coverage >= .30 and int(survival.get("positive_windows", 0)) >= 3 else "insufficient_coverage_evidence",
+    }
+
+
+def _regime_ensemble_report(df: pd.DataFrame, payload: SimpleBacktestRequest) -> dict[str, object]:
+    if "selected_specialist" not in df.columns:
+        return {"enabled": False}
+    selected = df["selected_specialist"].value_counts().to_dict()
+    return {
+        "enabled": True,
+        "architecture": "frozen_regime_specialist_ensemble_v1",
+        "router_policy": {
+            "high_volatility": "breakout", "trend_up_or_down": "trend",
+            "range": "range", "other": "session", "maximum_signals_per_candle": 1,
+        },
+        "specialist_candle_ownership": {str(key): int(value) for key, value in selected.items()},
+        "selection_timing": "fixed before replay; no post-result specialist selection",
+    }
+
+
+def _entry_funnel_report(funnel: Counter[str]) -> dict[str, object]:
+    raw = int(funnel["raw_strategy_signals"])
+    flat = int(funnel["flat_signal_opportunities"])
+    accepted = int(funnel["accepted_entries"])
+    rejected = {key.removeprefix("rejected_"): int(value) for key, value in funnel.items() if key.startswith("rejected_")}
+    return {
+        "raw_strategy_signals": raw,
+        "flat_signal_opportunities": flat,
+        "accepted_entries": accepted,
+        "occupied_or_superseded_signals": max(0, raw - flat),
+        "rejected": rejected,
+        "acceptance_rate_percent": round(accepted / flat * 100, 2) if flat else 0.0,
+        "dominant_rejection": max(rejected, key=rejected.get) if rejected else None,
+    }
+
+
+def _diagnostic_telemetry(trades: list[SimpleTrade], funnel: dict[str, object], attribution: dict[str, object]) -> dict[str, object]:
+    holding_hours = [
+        max(0.0, (pd.Timestamp(trade.exit_time) - pd.Timestamp(trade.entry_time)).total_seconds() / 3600)
+        for trade in trades
+    ]
+    rejected = funnel.get("rejected", {}) if isinstance(funnel.get("rejected"), dict) else {}
+    return {
+        "signal_count": int(funnel.get("raw_strategy_signals", 0)),
+        "trade_count": len(trades),
+        "entry_rejection_count": int(sum(int(value) for value in rejected.values())),
+        "confirmation_rejection_count": int(rejected.get("confirmation", 0)),
+        # News/risk vetoes are explicit even where the current strategy has
+        # no such filter; a missing value is never mistaken for hidden alpha.
+        "news_veto_count": int(rejected.get("news_veto", 0)),
+        "risk_veto_count": int(rejected.get("risk", 0) + rejected.get("risk_veto", 0)),
+        "average_holding_time_hours": round(sum(holding_hours) / len(holding_hours), 3) if holding_hours else 0.0,
+        "exit_distribution": attribution.get("by_exit_reason", {}),
+        "signal_coverage": round(float(funnel.get("accepted_entries", 0)) / max(1, int(funnel.get("flat_signal_opportunities", 0))), 4),
+    }
+
+
+def _take_partial_profit(position: dict[str, object], candle: pd.Series, payload: SimpleBacktestRequest) -> bool:
+    fraction = float(position.get("partial_fraction", 0) or 0)
+    if not fraction or bool(position.get("partial_closed")):
         return False
+    atr = float(candle.get("_management_atr", 0) or 0)
+    if atr <= 0:
+        return False
+    entry = float(position["market_entry_price"])
+    distance = atr * float(payload.parameters.get("partial_target_atr_multiplier", 1.0))
+    target = entry + distance if str(position["direction"]) == "BUY" else entry - distance
+    hit = float(candle["high"]) >= target if str(position["direction"]) == "BUY" else float(candle["low"]) <= target
+    if not hit:
+        return False
+    position["partial_closed"] = True
+    position["partial_exit_price"] = _exit_price(target, str(position["direction"]), payload)
     return True
+
+
+def _profit_factor_for(values: list[float]) -> float:
+    gross_win = sum(value for value in values if value > 0)
+    gross_loss = abs(sum(value for value in values if value <= 0))
+    return round(gross_win / gross_loss, 3) if gross_loss else (99.0 if gross_win else 0.0)
+
+
+def _pf_attribution(trades: list[SimpleTrade]) -> dict[str, object]:
+    """Full-ledger diagnostics; the response's displayed ledger is capped."""
+    if not trades:
+        return {"summary": {"gross_pf": 0.0, "net_pf": 0.0, "cost_percent": 0.0, "cost_to_gross_profit_percent": 0.0}, "by_direction": {}, "by_session": {}, "by_regime": {}, "by_exit_reason": {}}
+
+    def breakdown(items: list[SimpleTrade]) -> dict[str, float | int]:
+        gross_positive = sum(max(trade.gross_profit_percent, 0) for trade in items)
+        costs = sum(trade.execution_cost_percent for trade in items)
+        return {
+            "trades": len(items), "gross_pf": _profit_factor_for([trade.gross_profit_percent for trade in items]),
+            "net_pf": _profit_factor_for([trade.profit_percent for trade in items]),
+            "winrate": round(sum(trade.profit_percent > 0 for trade in items) / len(items) * 100, 2),
+            "average_win": round(sum(trade.profit_percent for trade in items if trade.profit_percent > 0) / max(1, sum(trade.profit_percent > 0 for trade in items)), 4),
+            "average_loss": round(sum(trade.profit_percent for trade in items if trade.profit_percent <= 0) / max(1, sum(trade.profit_percent <= 0 for trade in items)), 4),
+            "cost_percent": round(costs, 5),
+            "cost_to_gross_profit_percent": round(costs / gross_positive * 100, 2) if gross_positive else 0.0,
+        }
+
+    def grouped(key) -> dict[str, dict[str, float | int]]:
+        values: dict[str, list[SimpleTrade]] = {}
+        for trade in trades:
+            values.setdefault(str(key(trade)), []).append(trade)
+        return {name: breakdown(items) for name, items in values.items()}
+
+    return {
+        "summary": breakdown(trades),
+        "by_direction": grouped(lambda trade: trade.direction),
+        "by_session": grouped(lambda trade: pd.Timestamp(trade.entry_time).hour),
+        "by_regime": grouped(lambda trade: trade.market_regime),
+        "by_volatility": grouped(lambda trade: trade.volatility_regime),
+        "by_exit_reason": grouped(lambda trade: trade.exit_reason or "unknown"),
+    }
+
+
+def _edge_quality_evidence(trades: list[SimpleTrade]) -> dict[str, object]:
+    values = [trade.profit_percent for trade in trades]
+    regimes: dict[str, list[float]] = {}
+    for trade in trades:
+        regimes.setdefault(trade.market_regime, []).append(trade.profit_percent)
+    usable = {name: _profit_factor_for(items) for name, items in regimes.items() if len(items) >= 5}
+    return {
+        "bootstrap_pf": bootstrap_profit_factor_lower_bound(values),
+        "worst_regime_pf": round(min(usable.values()), 3) if usable else None,
+        "worst_regime_sampled": bool(usable),
+        "regime_pf": usable,
+        "confidence_calibration": _confidence_calibration(trades),
+    }
+
+
+def _confidence_calibration(trades: list[SimpleTrade]) -> dict[str, object]:
+    if len(trades) < 10:
+        return {"status": "insufficient_trades", "trade_count": len(trades)}
+    brier = sum((trade.signal_confidence - float(trade.profit_percent > 0)) ** 2 for trade in trades) / len(trades)
+    bins: dict[int, list[SimpleTrade]] = {}
+    for trade in trades:
+        bins.setdefault(min(4, int(trade.signal_confidence * 5)), []).append(trade)
+    return {
+        "status": "assessed", "method": "closed_trade_confidence_calibration",
+        "brier_score": round(brier, 4),
+        "bins": {str(bucket): {"trades": len(items), "mean_confidence": round(sum(item.signal_confidence for item in items) / len(items), 3), "realized_winrate": round(sum(item.profit_percent > 0 for item in items) / len(items), 3)} for bucket, items in bins.items()},
+    }
+
+
+def _edge_claim(payload: SimpleBacktestRequest, attribution: dict[str, object], edge_quality: dict[str, object]) -> dict[str, object]:
+    regimes = attribution.get("by_regime", {})
+    viable = [(name, data) for name, data in regimes.items() if int(data.get("trades", 0)) >= 5]
+    best = max(viable, key=lambda item: float(item[1].get("net_pf", 0)), default=("unproven", {"net_pf": 0, "trades": 0}))
+    return {
+        "hypothesis": f"{payload.symbol} {payload.base_strategy or payload.strategy} claims net edge in {best[0]} regime.",
+        "target_regime": best[0], "observed_net_pf": best[1].get("net_pf", 0), "observed_trades": best[1].get("trades", 0),
+        "falsification_conditions": ["stress_cost_pf_below_1_05", "bootstrap_pf_5pct_below_1_10", "worst_regime_pf_below_1_00", "checkpoint_or_pbo_dsr_failure"],
+        "status": "candidate_claim" if best[0] != "unproven" else "insufficient_regime_evidence",
+        "confidence_calibration": edge_quality.get("confidence_calibration", {}).get("status"),
+    }
+
+
+def _behavioral_signature(df: pd.DataFrame, trades: list[SimpleTrade]) -> dict[str, object]:
+    events = [f"{pd.Timestamp(row.time).isoformat()}:{row.signal}" for row in df[["time", "signal"]].itertuples(index=False) if str(row.signal) in {"BUY", "SELL"}]
+    # Fixed MinHash sketch permits behaviour comparison without persisting a
+    # large signal series in every model's JSON metrics.
+    sketch: list[int] = []
+    for salt in range(32):
+        hashes = [int(hashlib.sha256(f"{salt}|{event}".encode()).hexdigest()[:16], 16) for event in events]
+        sketch.append(min(hashes) if hashes else -1)
+    return {
+        "signal_event_count": len(events), "signal_minhash": sketch,
+        "trade_entries": [trade.entry_time for trade in trades],
+    }
 
 
 def _validate_data_gaps(df: pd.DataFrame, payload: SimpleBacktestRequest) -> int:
@@ -459,13 +1112,15 @@ def _validate_data_gaps(df: pd.DataFrame, payload: SimpleBacktestRequest) -> int
 
 
 def _is_expected_market_candle(timestamp: pd.Timestamp, symbol: str) -> bool:
-    # Shared conservative calendar used by the export hard-gate. Provider-
-    # specific holiday calendars can be layered on later without weakening the
-    # invariant that ordinary weekday holes are never training evidence.
+    # Keep this calendar aligned with Laravel's HistoricalDataQualityService.
+    # Full-lab exports are gated in Laravel, but standalone backtests still
+    # enable this guard and must not reject a valid Dukascopy market closure.
     if (timestamp.month, timestamp.day) in {(1, 1), (12, 25)}:
         return False
-    if symbol.upper().startswith("XAU") and timestamp.hour == 0:
-        return False
+    if symbol.upper().startswith("XAU"):
+        utc_time = _as_utc(timestamp)
+        if utc_time.hour == 0 or utc_time.tz_convert("America/New_York").hour == 17:
+            return False
     return timestamp.weekday() < 5 and not (timestamp.weekday() == 4 and timestamp.hour >= 21)
 
 
@@ -473,12 +1128,73 @@ def _is_scheduled_market_closure(previous: pd.Timestamp, current: pd.Timestamp, 
     duration_hours = (current - previous).total_seconds() / 3600
     if duration_hours <= 96 and previous.weekday() == 4 and current.weekday() in {6, 0}:
         return True
-    return (
-        symbol.upper().startswith("XAU")
-        and duration_hours <= 3
-        and previous.hour == 23
-        and current.hour == 1
-    )
+    if (
+        duration_hours <= 100
+        and previous.month == 12
+        and previous.day == 31
+        and current.year == previous.year + 1
+        and current.month == 1
+        and current.day <= 3
+    ):
+        return True
+    if not symbol.upper().startswith("XAU"):
+        return False
+    if duration_hours <= 120 and _crosses_xau_market_holiday(previous, current):
+        return True
+    if duration_hours <= 8 and previous.month == 12 and previous.day == 31 and current.normalize() == previous.normalize():
+        return True
+    return duration_hours <= 3 and previous.hour == 23 and current.hour == 1
+
+
+def _as_utc(timestamp: pd.Timestamp) -> pd.Timestamp:
+    normalized = pd.Timestamp(timestamp)
+    return normalized.tz_localize("UTC") if normalized.tzinfo is None else normalized.tz_convert("UTC")
+
+
+def _crosses_xau_market_holiday(previous: pd.Timestamp, current: pd.Timestamp) -> bool:
+    date = previous.normalize()
+    end = current.normalize()
+    while date <= end:
+        if date.date() in _xau_market_holidays(date.year):
+            return True
+        date += pd.Timedelta(days=1)
+    return False
+
+
+def _xau_market_holidays(year: int) -> set:
+    holidays = {
+        _observed_fixed_holiday(year, 1, 1),
+        _nth_weekday_of_month(year, 1, 0, 3),
+        _nth_weekday_of_month(year, 2, 0, 3),
+        easter(year) - timedelta(days=2),
+        _last_weekday_of_month(year, 5, 0),
+        _observed_fixed_holiday(year, 7, 4),
+        _nth_weekday_of_month(year, 9, 0, 1),
+        _nth_weekday_of_month(year, 11, 3, 4),
+        _observed_fixed_holiday(year, 12, 25),
+    }
+    if year >= 2022:
+        holidays.add(_observed_fixed_holiday(year, 6, 19))
+    return holidays
+
+
+def _observed_fixed_holiday(year: int, month: int, day: int):
+    holiday = pd.Timestamp(year=year, month=month, day=day)
+    if holiday.weekday() == 5:
+        holiday -= pd.Timedelta(days=1)
+    elif holiday.weekday() == 6:
+        holiday += pd.Timedelta(days=1)
+    return holiday.date()
+
+
+def _nth_weekday_of_month(year: int, month: int, weekday: int, nth: int):
+    first = pd.Timestamp(year=year, month=month, day=1)
+    return (first + pd.Timedelta(days=(weekday - first.weekday()) % 7 + ((nth - 1) * 7))).date()
+
+
+def _last_weekday_of_month(year: int, month: int, weekday: int):
+    last = pd.Timestamp(year=year, month=month, day=1) + pd.offsets.MonthEnd(0)
+    return (last - pd.Timedelta(days=(last.weekday() - weekday) % 7)).date()
 
 
 def classify_mistake(

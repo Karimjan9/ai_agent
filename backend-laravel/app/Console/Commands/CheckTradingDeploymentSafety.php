@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 class CheckTradingDeploymentSafety extends Command
 {
     protected $signature = 'trading:deployment-safety';
-    protected $description = 'Show paper, OANDA practice and live-trading safety gates';
+    protected $description = 'Show simulated-paper evidence and live-trading safety gates';
     public function handle(TradingDeploymentSafetyService $safety): int
     {
         $status = $safety->status();

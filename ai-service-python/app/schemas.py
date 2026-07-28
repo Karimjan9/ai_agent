@@ -85,8 +85,10 @@ class SimpleBacktestRequest(BaseModel):
     to_date: date | None = None
     dataset_path: str | None = None
     candles: list[Candle] = Field(default_factory=list)
+    regime_dataset_path: str | None = None
+    regime_candles: list[Candle] = Field(default_factory=list)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
-    evaluation_mode: Literal["incremental", "full"] = "full"
+    evaluation_mode: Literal["incremental", "full", "replay"] = "full"
     random_seed: int = 42
 
 
@@ -160,6 +162,7 @@ class SimpleTrade(BaseModel):
     position_size_multiple: float = 1.0
     risk_budget_percent: float = 1.0
     signal_time: str | None = None
+    signal_confidence: float = 1.0
     exit_reason: str | None = None
     balance: float
     market_regime: str = "unknown"
@@ -198,6 +201,29 @@ class SimpleBacktestResponse(BaseModel):
     execution_assumptions: dict[str, Any] = Field(default_factory=dict)
     data_quality: dict[str, Any] = Field(default_factory=dict)
     statistical_evidence: dict[str, Any] = Field(default_factory=dict)
+    pf_attribution: dict[str, Any] = Field(default_factory=dict)
+    # The entry funnel distinguishes a strategy that finds no opportunities
+    # from one whose execution/risk filters reject otherwise valid signals.
+    # This is evidence for the evolutionary loop, never a promotion shortcut.
+    entry_funnel: dict[str, Any] = Field(default_factory=dict)
+    behavioral_signature: dict[str, Any] = Field(default_factory=dict)
+    diagnostic_telemetry: dict[str, Any] = Field(default_factory=dict)
+    # Learning evidence only.  These counterfactual outcomes are never used as
+    # promotion evidence and are derived with the same next-open/cost/exit
+    # convention as a real candidate trade.
+    veto_regret: dict[str, Any] = Field(default_factory=dict)
+    # Lets the Laravel evidence ledger distinguish a replay produced after
+    # the counterfactual-observability protocol was deployed from legacy
+    # cached results.  This is observability only; it is never a gate bypass.
+    observability_protocol_version: int = 1
+    cooldown_policy: dict[str, Any] = Field(default_factory=dict)
+    window_survival: dict[str, Any] = Field(default_factory=dict)
+    regime_ensemble: dict[str, Any] = Field(default_factory=dict)
+    opportunity_metrics: dict[str, Any] = Field(default_factory=dict)
+    red_team: dict[str, Any] = Field(default_factory=dict)
+    monthly_passport: dict[str, Any] = Field(default_factory=dict)
+    evidence_streams: dict[str, Any] = Field(default_factory=dict)
+    edge_claim: dict[str, Any] = Field(default_factory=dict)
     benchmark: dict[str, Any] = Field(default_factory=dict)
     trade_ledger_scope: str = "full evaluation"
     displayed_trade_count: int = 0

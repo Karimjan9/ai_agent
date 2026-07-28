@@ -51,7 +51,7 @@ module.exports = {
       name: 'neurotrader-scheduler',
       script: 'artisan',
       interpreter: php,
-      args: 'schedule:work',
+      args: 'schedule:headless-work',
       autorestart: true,
       max_memory_restart: '256M',
       time: true,

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "NeuroTrader Lab",
   "repository_root": "../..",
-  "updated": "2026-07-13",
+  "updated": "2026-07-24",
   "purpose": "Historical-market strategy research, backtesting, agent evaluation, and paper-trading foundation.",
   "read_order": [
     "README.md",
@@ -36,7 +36,7 @@
       "id": "market-data",
       "status": "implemented-continuity-protected",
       "path": "../../backend-laravel/app/Services/MarketData",
-      "responsibility": "CSV, Dukascopy and Oanda provider adapters; candle payloads, outage recovery state, and continuity-protected updates.",
+      "responsibility": "CSV, Dukascopy and Twelve Data provider adapters; candle payloads, outage recovery state, and continuity-protected updates.",
       "notes": "For live Dukascopy operations read market-data-continuity.md before changing scheduler or provider code."
     },
     {
@@ -82,6 +82,22 @@
     {
       "date": "2026-07-13",
       "change": "Added CFTC Gold COT Phase 1: immutable raw reports, cot_v1 descriptive feature snapshots, Friday/Monday scheduler, and read-only Market Intelligence dashboard section."
+    },
+    {
+      "date": "2026-07-21",
+      "change": "Repaired the bounded GBPUSD 2005-01-18 H1 archive hole from the legacy Dukascopy source; optimized historical gap inspection and aligned PHP/Python closure calendars to prevent false full-validation hard-gates."
+    },
+    {
+      "date": "2026-07-24",
+      "change": "Aligned market-adaptive replay with the continuity gate: a complete GBPUSD archive beginning on 2005-01-02 is accepted for foundation evaluation instead of being rejected by a calendar-only start-year check."
+    },
+    {
+      "date": "2026-07-24",
+      "change": "Hardened laboratory parent selection against weak out-of-sample candidates, made mutation memory regime-scoped, and added forward-gate diagnostics to explain why a candidate cannot enter paper trading."
+    },
+    {
+      "date": "2026-07-24",
+      "change": "Added replay-only CSCV/PBO and per-trade Deflated Sharpe cohort diagnostics. Full-validation jobs now evaluate a selected generation cohort together, cache peer results to avoid duplicate replay work, and block statistically weak assessed candidates from paper trading."
     }
   ]
 }

@@ -20,6 +20,9 @@ updated: 2026-06-25
 > Bu fayl loyihaning **yagona asosiy xotirasi va Source of Truth** hisoblanadi.
 > Har bir Codex/AI agent ish boshlashdan oldin shu faylni to'liq o'qishi, ish tugagach esa real o'zgarishlar, qarorlar, testlar va keyingi qadamlarni shu faylga kiritishi shart.
 
+> [!IMPORTANT]
+> **2026-07-27 execution policy:** yangi populationlar faqat gate-aware generation budget bilan yaratiladi: 8 gate-targeted, 4 risk/exit, 3 architecture, 3 robust crossover, 2 random explorer. Har agent uchun `trade_deficit`, `pf_deficit`, `rolling_deficit`, `drawdown_excess`, `ruin_excess` yoziladi va mutation memory parentga nisbatan qaysi gate yaxshilangan/yomonlashganini saqlaydi. Uch completed generation davomida gate progress bo'lmagan family yoki architecture vaqtincha rejalashtirilmaydi. Promotion evidence uchun `MARKET_DATA_CANONICAL_PROVIDER=twelve`; Dukascopy secondary archive/audit evidence. Live trading o'chirilgan, kill switch engaged va human approval yo'q — buni o'zgartirish ushbu roadmap scope'iga kirmaydi.
+
 ## Status Belgilari
 
 - `[IMPLEMENTED]` — kod, migration, UI va testlarda real mavjud.
@@ -2721,9 +2724,6 @@ MT5_FEED_LOST_AFTER_SECONDS=1200
 MT5_AUTO_RECOVERY_ENABLED=false
 MT5_RESTART_SCRIPT=/opt/neurotrader/scripts/restart_mt5.sh
 MT5_RESTART_TIMEOUT_SECONDS=60
-OANDA_API_TOKEN=
-OANDA_ACCOUNT_ID=
-OANDA_BASE_URL=https://api-fxpractice.oanda.com
 ```
 
 Python dependencies:
@@ -5620,7 +5620,7 @@ Canonical 15–25'dan tashqaridagi backlog:
 
 - Strategy parameter optimizer
 - Agent mutation / v3 generation
-- OANDA/TwelveData live provider integration
+- Twelve Data live-feed hardening
 - Multi-symbol support
 - Queue jobs for long training
 - Export reports

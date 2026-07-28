@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Bus;
 
 class DispatchLabGeneration extends Command
 {
-    protected $signature = 'trading:dispatch-lab {symbol?} {--force-generation}';
+    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1} {--force-generation}';
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
@@ -21,17 +21,22 @@ class DispatchLabGeneration extends Command
         $populations->ensureLaboratories();
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
 
+        $timeframe = strtoupper((string) $this->option('timeframe'));
         foreach ($symbols as $symbol) {
-            $lab = AiLaboratory::where('symbol', $symbol)->firstOrFail();
+            $lab = AiLaboratory::where('symbol', $symbol)->where('timeframe', $timeframe)->firstOrFail();
+            $generation = $lab->generations()->with('agents')->latest('generation')->first();
+            $replayActivation = $generation?->trigger_type === 'protocol_activation';
             if ((string) config('services.market_data.provider', 'csv') !== 'csv'
+                && ! $replayActivation
                 && ! $continuity->isReady((string) config('services.market_data.provider'), $symbol, $lab->timeframe)) {
                 $this->warn("{$symbol}: feed healthy bo'lmaguncha lab dispatch bloklandi.");
                 continue;
             }
-            $generation = $lab->generations()->with('agents')->latest('generation')->first();
-
+            if ($replayActivation) {
+                $this->info("{$symbol}: sealed historical replay dispatch; live-feed continuity paper trading uchun alohida gate bo'lib qoladi.");
+            }
             if (! $generation || $this->option('force-generation')) {
-                $generation = $populations->build($symbol, 'new_data', (bool) $this->option('force-generation'));
+                $generation = $populations->build($symbol, 'new_data', (bool) $this->option('force-generation'), $timeframe);
             }
 
             if (! $generation) {
@@ -39,22 +44,22 @@ class DispatchLabGeneration extends Command
                 continue;
             }
 
-            $jobs = $generation->agents
-                ->where('lifecycle_status', 'draft')
-                ->map(fn ($agent) => new EvaluateLabAgentJob($agent->id, $symbol, 'screen'))
-                ->all();
-
-            if (! $jobs) {
+            $datasets->export($symbol, $lab->timeframe);
+            // A second scheduler/manual invocation may have waited for the
+            // dataset lock. Re-read after export so it never queues the same
+            // draft agents a second time.
+            $generation = $generation->fresh(['agents']);
+            $agentIds = $generation->agents->where('lifecycle_status', 'draft')->pluck('id');
+            if ($agentIds->isEmpty()) {
                 $this->info("{$symbol}: generation is already dispatched or evaluated.");
                 continue;
             }
-
-            $datasets->export($symbol, $lab->timeframe);
-            $generation->agents()->where('lifecycle_status', 'draft')->update(['lifecycle_status' => 'queued']);
+            $generation->agents()->whereIn('id', $agentIds)->update(['lifecycle_status' => 'queued']);
             $generation->update(['status' => 'screening']);
+            $jobs = $agentIds->map(fn ($id) => new EvaluateLabAgentJob($id, $symbol, 'screen'))->all();
 
             $batch = Bus::batch($jobs)
-                ->name("{$symbol} Lab G{$generation->generation} screening")
+                ->name("{$symbol} {$timeframe} Lab G{$generation->generation} screening")
                 ->onConnection('database')
                 ->onQueue('lab-'.strtolower($symbol))
                 ->dispatch();

@@ -8,6 +8,7 @@ use App\Models\Candle;
 use App\Models\KnowledgeMiningRun;
 use App\Models\MarketStateSnapshot;
 use App\Models\MarketDataSyncState;
+use App\Models\ModelMarketPerformance;
 use App\Models\RealityVerificationRun;
 use App\Models\ServiceHealthCheck;
 use App\Models\SignalMarketSnapshot;
@@ -213,7 +214,7 @@ class PhaseTwoFoundationService
                 'key' => 'signal_foundation',
                 'label' => 'Signal Snapshot',
                 'stale_after' => 3600,
-                'status' => fn (): array => $this->freshnessStatus(SignalMarketSnapshot::query()->latest()->value('created_at'), 3600, 'Latest signal market snapshot'),
+                'status' => fn (): array => $this->signalFoundationStatus(),
             ],
             [
                 'key' => 'event_store',
@@ -306,6 +307,29 @@ class PhaseTwoFoundationService
         }
 
         return ['status' => 'ok', 'score' => 100, 'message' => 'All active per-market feeds are healthy.', 'last_ok_at' => now(), 'metrics' => ['markets' => $states->pluck('symbol')->values()->all()]];
+    }
+
+    private function signalFoundationStatus(): array
+    {
+        $latestSignal = SignalMarketSnapshot::query()->latest()->value('created_at');
+        if ($latestSignal) {
+            return $this->freshnessStatus($latestSignal, 3600, 'Latest signal market snapshot');
+        }
+
+        $eligible = ModelMarketPerformance::query()
+            ->where('evidence_status', 'valid')
+            ->whereIn('status', ['forward_validated', 'paper'])
+            ->where('paper_status', '!=', 'failed')
+            ->exists();
+        if (! $eligible) {
+            return [
+                'status' => 'warning', 'score' => 50,
+                'message' => 'No valid paper-eligible candidate yet; signal evidence is intentionally blocked by the forward gate.',
+                'last_ok_at' => null, 'metrics' => ['paper_eligible_candidates' => 0],
+            ];
+        }
+
+        return ['status' => 'critical', 'score' => 0, 'message' => 'Paper-eligible candidate exists but no signal snapshot was captured.', 'last_ok_at' => null, 'metrics' => ['paper_eligible_candidates' => 1]];
     }
 
     private function schedulerStatus(): array

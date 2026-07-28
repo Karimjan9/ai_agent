@@ -13,7 +13,7 @@ class MarketSymbolSeeder extends Seeder
         $symbols = [
             [
                 'symbol' => 'XAUUSD',
-                'provider_symbol' => 'XAU_USD',
+                'provider_symbol' => 'XAU/USD',
                 'name' => 'Gold / US Dollar',
                 'market_type' => 'forex',
                 'category' => 'metals',
@@ -22,7 +22,7 @@ class MarketSymbolSeeder extends Seeder
             ],
             [
                 'symbol' => 'EURUSD',
-                'provider_symbol' => 'EUR_USD',
+                'provider_symbol' => 'EUR/USD',
                 'name' => 'Euro / US Dollar',
                 'market_type' => 'forex',
                 'category' => 'forex',
@@ -31,7 +31,7 @@ class MarketSymbolSeeder extends Seeder
             ],
             [
                 'symbol' => 'GBPUSD',
-                'provider_symbol' => 'GBP_USD',
+                'provider_symbol' => 'GBP/USD',
                 'name' => 'British Pound / US Dollar',
                 'market_type' => 'forex',
                 'category' => 'forex',

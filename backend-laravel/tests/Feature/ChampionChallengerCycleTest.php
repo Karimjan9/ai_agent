@@ -81,6 +81,33 @@ class ChampionChallengerCycleTest extends TestCase
         ]);
     }
 
+    public function test_low_profit_factor_candidate_never_enters_paper_trading(): void
+    {
+        $candidate = ModelVersion::create($this->model('breakout_v1', 'v1'));
+        $metrics = $this->resultMetrics(90, [90, 91, 92]);
+        $metrics['profit_factor'] = 1.29;
+
+        $performance = app(MarketChampionService::class)->evaluate($candidate->strategy, 'EURUSD', 'H1', 90, $metrics);
+
+        $this->assertSame('challenger', $performance->status);
+        $this->assertDatabaseMissing('paper_trading_evaluations', [
+            'model_market_performance_id' => $performance->id,
+        ]);
+    }
+
+    public function test_statistically_overfit_batch_candidate_never_enters_paper_trading(): void
+    {
+        $candidate = ModelVersion::create($this->model('breakout_v1', 'v1'));
+        $metrics = $this->resultMetrics(90, [90, 91, 92, 93]);
+        $metrics['selection_validation'] = ['status' => 'assessed', 'probability_of_backtest_overfitting' => 0.67];
+        $metrics['statistical_evidence'] = ['deflated_sharpe' => ['status' => 'assessed', 'deflated_sharpe_probability' => 0.99]];
+
+        $performance = app(MarketChampionService::class)->evaluate($candidate->strategy, 'EURUSD', 'H1', 90, $metrics);
+
+        $this->assertSame('challenger', $performance->status);
+        $this->assertDatabaseMissing('paper_trading_evaluations', ['model_market_performance_id' => $performance->id]);
+    }
+
     private function model(string $strategy, string $version): array
     {
         return [

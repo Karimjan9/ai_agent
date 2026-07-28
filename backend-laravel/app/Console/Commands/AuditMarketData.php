@@ -15,8 +15,9 @@ class AuditMarketData extends Command
     {
         $symbols = $this->argument('symbol') ? MarketSymbol::where('symbol', strtoupper($this->argument('symbol')))->get() : MarketSymbol::where('is_active', true)->get();
         foreach ($symbols as $symbol) {
-            $metrics = $audit->audit((string) config('services.market_data.provider', 'dukascopy'), $symbol->symbol, (string) $this->option('timeframe'));
-            $this->line("{$symbol->symbol}: {$metrics['audit_status']}, gaps={$metrics['unexpected_gaps']}, providers=".collect($metrics['providers'])->keys()->implode(','));
+            $canonical = (string) config('services.market_data.canonical_provider', config('services.market_data.provider', 'dukascopy'));
+            $metrics = $audit->audit($canonical, $symbol->symbol, (string) $this->option('timeframe'));
+            $this->line("{$symbol->symbol}: {$metrics['audit_status']}, canonical={$canonical}, gaps={$metrics['unexpected_gaps']}, providers=".collect($metrics['providers'])->keys()->implode(','));
         }
 
         return self::SUCCESS;

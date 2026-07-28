@@ -10,6 +10,7 @@ use App\Models\Symbol;
 use App\Services\LabDatasetExportService;
 use App\Services\MarketData\HistoricalDataQualityService;
 use App\Services\PaperEvidenceReadinessService;
+use App\Services\PhaseTwoFoundationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -49,6 +50,83 @@ class P0EvidenceControlsTest extends TestCase
         $this->assertSame(1, $report['missing_open_hours']);
     }
 
+    public function test_m15_weekday_gap_is_a_hard_gate(): void
+    {
+        config()->set('services.historical_data.minimum_rows', 2);
+        $symbol = Symbol::create(['code' => 'EURUSD', 'display_name' => 'EUR/USD', 'asset_class' => 'forex', 'is_active' => true]);
+        foreach (['2026-07-20 10:00:00', '2026-07-20 10:30:00'] as $time) {
+            Candle::create([
+                'symbol_id' => $symbol->id, 'timeframe' => 'M15', 'time' => $time,
+                'open' => 1.1, 'high' => 1.2, 'low' => 1.0, 'close' => 1.1, 'volume' => 1,
+            ]);
+        }
+
+        $report = app(HistoricalDataQualityService::class)->inspect('EURUSD', 'M15', true);
+
+        $this->assertSame('blocked', $report['status']);
+        $this->assertSame(1, $report['missing_open_candles']);
+    }
+
+    public function test_new_year_archive_closure_is_not_counted_as_a_data_gap(): void
+    {
+        $symbol = Symbol::create(['code' => 'EURUSD', 'display_name' => 'EUR/USD', 'asset_class' => 'forex', 'is_active' => true]);
+        foreach (['2019-12-31 21:00:00', '2020-01-01 23:00:00'] as $time) {
+            Candle::create([
+                'symbol_id' => $symbol->id, 'timeframe' => 'H1', 'time' => $time,
+                'open' => 1.1, 'high' => 1.2, 'low' => 1.0, 'close' => 1.1, 'volume' => 1,
+            ]);
+        }
+
+        $report = app(HistoricalDataQualityService::class)->inspect('EURUSD', 'H1', true);
+
+        $this->assertSame(0, $report['missing_open_hours']);
+    }
+
+    public function test_xau_holiday_weekend_is_not_counted_as_a_data_gap(): void
+    {
+        $symbol = Symbol::create(['code' => 'XAUUSD', 'display_name' => 'Gold', 'asset_class' => 'metal', 'is_active' => true]);
+        foreach (['2005-02-18 18:00:00', '2005-02-22 09:00:00'] as $time) {
+            Candle::create([
+                'symbol_id' => $symbol->id, 'timeframe' => 'H1', 'time' => $time,
+                'open' => 430, 'high' => 431, 'low' => 429, 'close' => 430, 'volume' => 1,
+            ]);
+        }
+
+        $report = app(HistoricalDataQualityService::class)->inspect('XAUUSD', 'H1', true);
+
+        $this->assertSame(0, $report['missing_open_hours']);
+    }
+
+    public function test_xau_new_york_maintenance_hour_is_not_counted_as_a_data_gap(): void
+    {
+        $symbol = Symbol::create(['code' => 'XAUUSD', 'display_name' => 'Gold', 'asset_class' => 'metal', 'is_active' => true]);
+        foreach (['2025-07-15 20:00:00', '2025-07-15 22:00:00'] as $time) {
+            Candle::create([
+                'symbol_id' => $symbol->id, 'timeframe' => 'H1', 'time' => $time,
+                'open' => 3300, 'high' => 3301, 'low' => 3299, 'close' => 3300, 'volume' => 1,
+            ]);
+        }
+
+        $report = app(HistoricalDataQualityService::class)->inspect('XAUUSD', 'H1', true);
+
+        $this->assertSame(0, $report['missing_open_hours']);
+    }
+
+    public function test_xau_new_years_eve_early_close_is_not_counted_as_a_data_gap(): void
+    {
+        $symbol = Symbol::create(['code' => 'XAUUSD', 'display_name' => 'Gold', 'asset_class' => 'metal', 'is_active' => true]);
+        foreach (['2004-12-31 16:00:00', '2004-12-31 19:00:00'] as $time) {
+            Candle::create([
+                'symbol_id' => $symbol->id, 'timeframe' => 'H1', 'time' => $time,
+                'open' => 438, 'high' => 439, 'low' => 437, 'close' => 438, 'volume' => 1,
+            ]);
+        }
+
+        $report = app(HistoricalDataQualityService::class)->inspect('XAUUSD', 'H1', true);
+
+        $this->assertSame(0, $report['missing_open_hours']);
+    }
+
     public function test_paper_signal_and_outcome_evidence_starts_blocked_and_signal_is_immutable(): void
     {
         $model = ModelVersion::create([
@@ -71,6 +149,14 @@ class P0EvidenceControlsTest extends TestCase
 
         $this->expectException(LogicException::class);
         $signal->update(['decision' => 'BUY']);
+    }
+
+    public function test_missing_signal_is_a_warning_until_a_valid_paper_candidate_exists(): void
+    {
+        $check = app(PhaseTwoFoundationService::class)->runHealthCheck()->firstWhere('service_key', 'signal_foundation');
+
+        $this->assertSame('warning', $check->status);
+        $this->assertStringContainsString('No valid paper-eligible candidate', $check->message);
     }
 
     private function insertCandles(Symbol $symbol, int $count, ?int $gapAt = null): void

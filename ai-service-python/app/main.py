@@ -1,5 +1,6 @@
 import hmac
 import os
+import math
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -11,6 +12,13 @@ from app.schemas import SimpleBacktestRequest, SimpleBacktestResponse
 from app.services.backtester import _load_simple_candles, run_simple_ema_rsi_backtest, run_simple_ema_rsi_backtest_on_dataframe
 from app.services.parameter_schema import validate_strategy_parameters
 from app.services.walk_forward import WalkForwardService
+from app.services.market_adaptive_replay import MarketAdaptiveReplayService
+from app.services.statistical_validation import (
+    cscv_probability_of_backtest_overfitting,
+    deflated_sharpe_ratio,
+    per_trade_sharpe,
+    returns_from_equity_curve,
+)
 from app.strategies.registry import get_strategy, list_strategy_agents, list_strategies
 from app.services.market_regime import apply_market_regime
 
@@ -126,6 +134,8 @@ def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
                     "rolling_windows_count": 0, "robustness_score": 0, "is_overfit": False,
                     "result": {**incremental_result, "evaluation_mode": "incremental"},
                 }
+            elif payload.evaluation_mode == "replay":
+                analysis = MarketAdaptiveReplayService().run(strategy_payload, source_df, calculate_strategy_score)
             else:
                 analysis = walk_forward.run(strategy_payload, source_df, calculate_strategy_score)
             result_data = analysis["result"]
@@ -157,13 +167,72 @@ def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # The following diagnostics use replay checkpoints only.  The sealed
+    # holdout remains untouched and is still run through its dedicated route.
+    trial_sharpes = [
+        sharpe for item in leaderboard
+        if (sharpe := per_trade_sharpe(returns_from_equity_curve(item["result"].get("equity_curve", [])))) is not None
+    ]
+    cscv = cscv_probability_of_backtest_overfitting([
+        item["forward_window_scores"] for item in leaderboard
+    ])
+    for item in leaderboard:
+        evidence = dict(item["result"].get("statistical_evidence", {}))
+        evidence["deflated_sharpe"] = deflated_sharpe_ratio(
+            returns_from_equity_curve(item["result"].get("equity_curve", [])), trial_sharpes,
+        )
+        item["result"]["statistical_evidence"] = evidence
+        item["result"]["selection_validation"] = cscv
+
+    _attach_behavioral_diversity(leaderboard)
+
     leaderboard = sorted(leaderboard, key=lambda item: item["score"], reverse=True)
 
     return {
         "symbol": payload.symbol,
         "timeframe": payload.timeframe,
         "leaderboard": leaderboard,
+        "statistical_validation": cscv,
     }
+
+
+def _attach_behavioral_diversity(leaderboard: list[dict[str, object]]) -> None:
+    """Annotate each batch candidate with observable behaviour similarity."""
+    for item in leaderboard:
+        signature = item["result"].get("behavioral_signature", {})
+        comparisons = []
+        for other in leaderboard:
+            if other is item:
+                continue
+            other_signature = other["result"].get("behavioral_signature", {})
+            signal = _minhash_similarity(signature.get("signal_minhash", []), other_signature.get("signal_minhash", []))
+            entries, other_entries = set(signature.get("trade_entries", [])), set(other_signature.get("trade_entries", []))
+            overlap = len(entries & other_entries) / len(entries | other_entries) if entries or other_entries else 0.0
+            equity = _correlation(item["result"].get("equity_curve", []), other["result"].get("equity_curve", []))
+            comparisons.append({"strategy": other["strategy"], "signal_similarity": round(signal, 3), "trade_overlap": round(overlap, 3), "equity_correlation": round(equity, 3)})
+        clone = [value for value in comparisons if (value["signal_similarity"] >= .85 and value["trade_overlap"] >= .85) or value["equity_correlation"] >= .95]
+        item["result"]["behavioral_diversity"] = {
+            "status": "near_duplicate" if clone else "diverse",
+            "signal_similarity_threshold": .85, "equity_correlation_threshold": .95,
+            "nearest": sorted(comparisons, key=lambda value: max(value["signal_similarity"], value["trade_overlap"], value["equity_correlation"]), reverse=True)[:3],
+            "near_duplicate_with": clone,
+        }
+
+
+def _minhash_similarity(left: list[int], right: list[int]) -> float:
+    pairs = [(a, b) for a, b in zip(left, right) if a >= 0 and b >= 0]
+    return sum(a == b for a, b in pairs) / len(pairs) if pairs else 0.0
+
+
+def _correlation(left: list[float], right: list[float]) -> float:
+    pairs = list(zip(left[1:], right[1:]))
+    if len(pairs) < 3:
+        return 0.0
+    a, b = [float(value[0]) for value in pairs], [float(value[1]) for value in pairs]
+    mean_a, mean_b = sum(a) / len(a), sum(b) / len(b)
+    numerator = sum((x - mean_a) * (y - mean_b) for x, y in zip(a, b))
+    denominator = math.sqrt(sum((x - mean_a) ** 2 for x in a) * sum((y - mean_b) ** 2 for y in b))
+    return numerator / denominator if denominator else 0.0
 
 
 @app.post("/api/paper/signal")
@@ -187,6 +256,7 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             "take_profit": price * (1.01 if signal == "BUY" else 0.99),
             "market_regime": str(row.get("market_regime", "unknown")),
             "volatility_regime": str(row.get("volatility_regime", "normal_volatility")),
+            "confidence": float(row.get("signal_confidence", 1.0) or 0),
         }
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -198,9 +268,9 @@ def run_sealed_holdout(payload: SimpleBacktestRequest) -> dict[str, object]:
         parameters = validate_strategy_parameters(payload.strategy, payload.parameters, payload.base_strategy)
         payload = payload.model_copy(update={"parameters": parameters})
         df = _load_simple_candles(payload)
-        _, holdout = WalkForwardService().rolling_windows(df)
-        result = run_simple_ema_rsi_backtest_on_dataframe(payload, holdout).model_dump()
-        return {"score": calculate_strategy_score(result), "result": result, "rows": len(holdout)}
+        result, period = MarketAdaptiveReplayService().sealed_holdout(payload, df)
+        return {"score": calculate_strategy_score(result), "result": result, "rows": period["rows"], "period": period,
+                "protocol": "market_adaptive_replay_sealed_holdout"}
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

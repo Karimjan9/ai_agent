@@ -14,19 +14,33 @@ class MarketDataAuditService
     /** @return array<string, mixed> */
     public function audit(string $provider, string $symbol, string $timeframe): array
     {
-        $observations = MarketCandleObservation::query()->where(compact('symbol', 'timeframe'))->latest('time')->take(1000)->get()->sortBy('time')->values();
+        $allObservations = MarketCandleObservation::query()->where(compact('symbol', 'timeframe'))->latest('time')->take(2000)->get()->sortBy('time')->values();
+        $observations = $allObservations->where('provider', $provider)->values();
         if ($observations->isEmpty()) {
             $this->backfillCanonicalObservations($provider, $symbol, $timeframe);
-            $observations = MarketCandleObservation::query()->where(compact('symbol', 'timeframe'))->latest('time')->take(1000)->get()->sortBy('time')->values();
+            $allObservations = MarketCandleObservation::query()->where(compact('symbol', 'timeframe'))->latest('time')->take(2000)->get()->sortBy('time')->values();
+            $observations = $allObservations->where('provider', $provider)->values();
         }
         $gaps = $this->unexpectedGaps($observations, $timeframe);
-        $providerCounts = $observations->groupBy('provider')->map->count();
-        $discrepancy = $this->closeDiscrepancyBps($observations);
+        // Observations are an audit ledger, whereas candles are the canonical
+        // market-data store. A partial earlier audit/import must not turn an
+        // otherwise complete canonical candle series into a false P0 warning.
+        // Reconcile just the audited tail, then evaluate it again.
+        if ($gaps > 0) {
+            $this->backfillCanonicalObservations($provider, $symbol, $timeframe);
+            $allObservations = MarketCandleObservation::query()->where(compact('symbol', 'timeframe'))->latest('time')->take(2000)->get()->sortBy('time')->values();
+            $observations = $allObservations->where('provider', $provider)->values();
+            $gaps = $this->unexpectedGaps($observations, $timeframe);
+        }
+        $providerCounts = $allObservations->groupBy('provider')->map->count();
+        $discrepancy = $this->closeDiscrepancyBps($allObservations);
         $status = $observations->isEmpty() || $gaps > 0 ? 'warning' : 'passed';
         $metrics = [
-            'audit_status' => $status, 'observations' => $observations->count(), 'providers' => $providerCounts,
+            'audit_status' => $status, 'canonical_provider' => $provider, 'canonical_observations' => $observations->count(),
+            'observations' => $allObservations->count(), 'providers' => $providerCounts,
             'unexpected_gaps' => $gaps, 'close_discrepancy_bps' => $discrepancy,
             'timezone' => 'UTC', 'flat_candles_retained' => true,
+            'secondary_provider_discrepancy_observed' => $discrepancy !== null,
         ];
 
         $state = MarketDataSyncState::query()->where(compact('provider', 'symbol', 'timeframe'))->first();
@@ -37,15 +51,41 @@ class MarketDataAuditService
 
     private function unexpectedGaps(Collection $observations, string $timeframe): int
     {
-        if ($timeframe !== 'H1' || $observations->count() < 2) return 0;
+        if (! in_array(strtoupper($timeframe), ['H1', 'M15'], true) || $observations->count() < 2) return 0;
+        $intervalMinutes = strtoupper($timeframe) === 'M15' ? 15 : 60;
         $gaps = 0; $previous = null;
         foreach ($observations as $observation) {
             $current = CarbonImmutable::instance($observation->time)->utc();
-            if ($previous && $current->diffInHours($previous) > 1 && $previous->dayOfWeek !== CarbonImmutable::FRIDAY) $gaps++;
+            if ($previous && $this->hasUnexpectedGap($previous, $current, $intervalMinutes)) $gaps++;
             $previous = $current;
         }
 
         return $gaps;
+    }
+
+    private function hasUnexpectedGap(CarbonImmutable $previous, CarbonImmutable $current, int $intervalMinutes): bool
+    {
+        if ($current->lessThanOrEqualTo($previous->addMinutes($intervalMinutes))) {
+            return false;
+        }
+
+        for ($cursor = $previous->addMinutes($intervalMinutes); $cursor->lessThan($current); $cursor = $cursor->addMinutes($intervalMinutes)) {
+            if ($this->isExpectedMarketOpen($cursor)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isExpectedMarketOpen(CarbonImmutable $time): bool
+    {
+        return match ($time->dayOfWeek) {
+            CarbonImmutable::SATURDAY => false,
+            CarbonImmutable::SUNDAY => $time->hour >= 22,
+            CarbonImmutable::FRIDAY => $time->hour < 22,
+            default => true,
+        };
     }
 
     private function closeDiscrepancyBps(Collection $observations): ?float
@@ -64,9 +104,9 @@ class MarketDataAuditService
         $symbolId = Symbol::query()->where('code', $symbol)->value('id');
         if (! $symbolId) return;
         $now = now();
-        $rows = Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $timeframe)->latest('time')->take(1000)->get()
+        $rows = Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $timeframe)->where('provider', $provider)->latest('time')->take(1000)->get()
             ->map(fn (Candle $candle): array => [
-                'provider' => $candle->provider ?: $provider, 'symbol' => $symbol, 'timeframe' => $timeframe,
+                'provider' => $provider, 'symbol' => $symbol, 'timeframe' => $timeframe,
                 'time' => $candle->time, 'open' => $candle->open, 'high' => $candle->high, 'low' => $candle->low,
                 'close' => $candle->close, 'volume' => $candle->volume ?? 0, 'created_at' => $now, 'updated_at' => $now,
             ])->all();

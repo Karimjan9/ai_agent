@@ -42,12 +42,17 @@ return [
 
     'market_data' => [
         'provider' => env('MARKET_DATA_PROVIDER', 'csv'),
+        // One provider owns promotion evidence. Secondary feeds remain useful
+        // for discrepancy observation, but never make a canonical series fail
+        // merely by having a different coverage window.
+        'canonical_provider' => env('MARKET_DATA_CANONICAL_PROVIDER', 'twelve'),
         'fallback_provider' => env('MARKET_DATA_FALLBACK_PROVIDER'),
     ],
 
     'historical_data' => [
         'minimum_rows' => (int) env('HISTORICAL_MINIMUM_ROWS', 5000),
         'allowed_missing_open_hours' => (int) env('HISTORICAL_ALLOWED_MISSING_OPEN_HOURS', 0),
+        'gap_repair_limit' => (int) env('HISTORICAL_GAP_REPAIR_LIMIT', 100),
     ],
 
     'secondary_intelligence' => [
@@ -84,6 +89,11 @@ return [
 
     'dukascopy' => [
         'node_binary' => env('DUKASCOPY_NODE_BINARY', 'node'),
+        'transport' => env('DUKASCOPY_TRANSPORT', 'jetta'),
+        'jetta_base_url' => env('DUKASCOPY_JETTA_BASE_URL', 'https://jetta.dukascopy.com'),
+        'http_timeout_seconds' => (int) env('DUKASCOPY_HTTP_TIMEOUT_SECONDS', 20),
+        'http_retry_attempts' => (int) env('DUKASCOPY_HTTP_RETRY_ATTEMPTS', 3),
+        'tick_fallback_enabled' => env('DUKASCOPY_TICK_FALLBACK_ENABLED', true),
         'timeout_seconds' => (int) env('DUKASCOPY_TIMEOUT_SECONDS', 45),
         'batch_size' => (int) env('DUKASCOPY_BATCH_SIZE', 1),
         'pause_ms' => (int) env('DUKASCOPY_PAUSE_MS', 1000),
@@ -122,7 +132,7 @@ return [
     ],
 
     'paper' => [
-        'broker' => env('PAPER_BROKER', 'simulated'),
+        'broker' => 'simulated',
         'units' => (float) env('PAPER_UNITS', 1),
     ],
 
@@ -135,6 +145,50 @@ return [
         'min_profit_factor' => (float) env('PAPER_OBSERVATION_MIN_PROFIT_FACTOR', 1.3),
         'max_drawdown_percent' => (float) env('PAPER_OBSERVATION_MAX_DRAWDOWN_PERCENT', 15),
         'min_feed_uptime_percent' => (float) env('PAPER_OBSERVATION_MIN_FEED_UPTIME_PERCENT', 99.5),
+    ],
+
+    // Economic events are an execution veto, never an alpha source.  A real
+    // provider credential is required before the veto is enabled; this avoids
+    // pretending that a static calendar is live news data.
+    'economic_calendar' => [
+        'enabled' => env('ECONOMIC_CALENDAR_ENABLED', false),
+        'provider' => env('ECONOMIC_CALENDAR_PROVIDER', 'financial_modeling_prep'),
+        'endpoint' => env('ECONOMIC_CALENDAR_ENDPOINT', 'https://financialmodelingprep.com/stable/economic-calendar'),
+        'api_key' => env('FMP_API_KEY', env('ECONOMIC_CALENDAR_API_KEY')),
+        'timeout_seconds' => (int) env('ECONOMIC_CALENDAR_TIMEOUT_SECONDS', 30),
+        'pre_event_minutes' => (int) env('ECONOMIC_CALENDAR_PRE_EVENT_MINUTES', 30),
+        'post_event_minutes' => (int) env('ECONOMIC_CALENDAR_POST_EVENT_MINUTES', 30),
+        'minimum_impact' => env('ECONOMIC_CALENDAR_MINIMUM_IMPACT', 'high'),
+    ],
+
+    'alpha_vantage' => [
+        'api_key' => env('ALPHA_VANTAGE_API_KEY'),
+        'endpoint' => env('ALPHA_VANTAGE_ENDPOINT', 'https://www.alphavantage.co/query'),
+        'headline_window_minutes' => (int) env('ALPHA_VANTAGE_HEADLINE_WINDOW_MINUTES', 60),
+    ],
+
+    // Published-news feeds are a short-lived execution-risk veto. They are
+    // deliberately kept separate from the scheduled macro calendar: a news
+    // headline must never be presented as a known future economic release.
+    'currents_api' => [
+        // CURRENTSAPI_API_KEY is accepted as a compatibility alias for an
+        // earlier local setup; new deployments should use CURRENTS_API_KEY.
+        'api_key' => env('CURRENTS_API_KEY', env('CURRENTSAPI_API_KEY')),
+        'endpoint' => env('CURRENTS_API_ENDPOINT', 'https://api.currentsapi.services/v1/latest-news'),
+        'headline_window_minutes' => (int) env('CURRENTS_API_HEADLINE_WINDOW_MINUTES', 60),
+        // CurrentsAPI's free plan accepts at most 20 articles per request.
+        'page_size' => (int) env('CURRENTS_API_PAGE_SIZE', 20),
+    ],
+
+    'paper_calibration' => [
+        'minimum_samples' => (int) env('PAPER_CALIBRATION_MINIMUM_SAMPLES', 20),
+        'minimum_calibrated_confidence' => (float) env('PAPER_CALIBRATION_MINIMUM_CONFIDENCE', 0.55),
+    ],
+
+    'lab_selection' => [
+        // A fast screen is only a hypothesis generator.  Fewer than this many
+        // observed trades is too noisy even to spend a full replay on.
+        'minimum_screening_trades' => (int) env('LAB_MINIMUM_SCREENING_TRADES', 10),
     ],
 
     'risk' => [
@@ -150,13 +204,6 @@ return [
     'promotion' => [
         'require_all_markets_healthy' => env('PROMOTION_REQUIRE_ALL_MARKETS_HEALTHY', true),
         'paper_min_samples' => (int) env('PROMOTION_PAPER_MIN_SAMPLES', 50),
-    ],
-
-    'oanda' => [
-        'environment' => env('OANDA_ENVIRONMENT', 'practice'),
-        'token' => env('OANDA_API_TOKEN'),
-        'account_id' => env('OANDA_ACCOUNT_ID'),
-        'base_url' => env('OANDA_BASE_URL', 'https://api-fxpractice.oanda.com'),
     ],
 
     'live_trading' => [
