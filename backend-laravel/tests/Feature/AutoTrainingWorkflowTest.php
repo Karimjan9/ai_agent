@@ -181,7 +181,7 @@ class AutoTrainingWorkflowTest extends TestCase
             'symbol' => 'XAUUSD',
             'timeframe' => 'H1',
             'strategy_family' => 'ema_rsi',
-            'status' => 'forward_validated',
+            'status' => 'challenger',
             'paper_status' => 'pending',
         ]);
 

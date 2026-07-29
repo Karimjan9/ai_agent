@@ -73,6 +73,7 @@ class CausalIntelligenceService
                 $source = $this->node($driver, 'driver', (float) $law->confidence_score);
                 $targetNode = $this->node($target, 'outcome', (float) $law->confidence_score);
                 $causality = $this->causalityScore($law);
+                $invariance = $this->invariantEvidence($law);
                 $status = $causality >= 75 ? 'provisionally_identified' : ($causality >= 45 ? 'partially_identified' : 'associational');
 
                 return CausalEdge::updateOrCreate(
@@ -98,6 +99,7 @@ class CausalIntelligenceService
                             'law_key' => $law->law_key,
                             'law_status' => $law->status,
                             'universality_score' => $law->universality_score,
+                            'invariant_causal_evidence' => $invariance,
                         ],
                     ],
                 );
@@ -200,6 +202,7 @@ class CausalIntelligenceService
                         'minimum_samples' => 30,
                         'target_metric' => $target,
                         'holdout_required' => true,
+                        'required_invariance_checks' => ['residual_invariance', 'cross_market_stability', 'placebo_intervention', 'negative_control', 'effect_sign_consistency', 'unseen_period_validation'],
                     ],
                     'metadata' => ['edge_id' => $edge->id],
                 ],
@@ -286,6 +289,25 @@ class CausalIntelligenceService
         $penalty = $law->evidence_count < 3 ? 12 : 0;
 
         return $this->clamp($base - $penalty);
+    }
+
+    /** Explicitly distinguishes an invariant causal result from a correlation candidate. */
+    private function invariantEvidence(QuantLaw $law): array
+    {
+        $metadata = $law->metadata ?? [];
+        $checks = [
+            'residual_invariance' => (bool) data_get($metadata, 'invariance.residual_invariance', false),
+            'cross_market_stability' => (int) $law->species_count >= 3 && (bool) data_get($metadata, 'invariance.cross_market_stability', false),
+            'placebo_intervention' => (bool) data_get($metadata, 'invariance.placebo_intervention', false),
+            'negative_control' => (bool) data_get($metadata, 'invariance.negative_control', false),
+            'parameter_intervention_replay' => (bool) data_get($metadata, 'invariance.parameter_intervention_replay', false),
+            'effect_sign_consistency' => (bool) data_get($metadata, 'invariance.effect_sign_consistency', false),
+            'unseen_period_validation' => (bool) data_get($metadata, 'invariance.unseen_period_validation', false),
+        ];
+        return ['protocol' => 'invariant_causal_evidence_v1',
+            'status' => collect($checks)->every(fn ($pass) => $pass) ? 'invariantly_supported' : 'candidate_requires_invariance_tests',
+            'checks' => $checks,
+            'rule' => 'A causality score alone never upgrades an edge to causal proof.'];
     }
 
     private function signedEffect(CausalEdge $edge): float

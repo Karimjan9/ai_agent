@@ -90,6 +90,9 @@ class SimpleBacktestRequest(BaseModel):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     evaluation_mode: Literal["incremental", "full", "replay"] = "full"
     random_seed: int = 42
+    # Sealed policy evidence used by the paper execution path for OOD and
+    # uncertainty-aware abstention. It does not alter replay gate thresholds.
+    policy_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class Metrics(BaseModel):
@@ -212,6 +215,9 @@ class SimpleBacktestResponse(BaseModel):
     # promotion evidence and are derived with the same next-open/cost/exit
     # convention as a real candidate trade.
     veto_regret: dict[str, Any] = Field(default_factory=dict)
+    # Full decision graph is aggregate learning evidence. It retains edge
+    # uncertainty and deliberately leaves unavailable interventions unassessed.
+    decision_blame_graph: dict[str, Any] = Field(default_factory=dict)
     # Lets the Laravel evidence ledger distinguish a replay produced after
     # the counterfactual-observability protocol was deployed from legacy
     # cached results.  This is observability only; it is never a gate bypass.

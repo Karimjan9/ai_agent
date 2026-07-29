@@ -181,7 +181,7 @@ class LabLifecycleWatchdogService
     private function watchPaperIntegrity(): array
     {
         $events = [];
-        PaperOrder::query()->whereNull('paper_signal_id')->each(function (PaperOrder $order) use (&$events): void {
+        PaperOrder::query()->where('evidence_status', 'valid')->whereNull('paper_signal_id')->each(function (PaperOrder $order) use (&$events): void {
             $events[] = $this->warn('PAPER_INTEGRITY_ERROR', 'Paper order has no immutable paper_signal_id; it cannot count as valid paper evidence.', [
                 'paper_order_id' => $order->id, 'performance_id' => $order->model_market_performance_id,
             ], $order->id, 'critical');

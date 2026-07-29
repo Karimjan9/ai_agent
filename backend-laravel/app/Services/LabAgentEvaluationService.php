@@ -6,10 +6,11 @@ use App\Models\TrainingSession;
 use App\Services\MarketData\CandlePayloadService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\File;
 use RuntimeException;
 class LabAgentEvaluationService
 {
-    public function __construct(private CandlePayloadService $candles,private MarketChampionService $champions,private LabDatasetExportService $datasets,private ScreeningLearningService $screeningLearning, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger){}
+    public function __construct(private CandlePayloadService $candles,private MarketChampionService $champions,private LabDatasetExportService $datasets,private ScreeningLearningService $screeningLearning, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger, private CandidateHandoffService $handoffs, private CounterfactualBlameGraphService $blameGraph){}
     public function evaluate(LabAgent $agent):void
     {
         $agent->load('modelVersion','generation');$model=$agent->modelVersion;
@@ -26,6 +27,7 @@ class LabAgentEvaluationService
                 ->whereIn('lifecycle_status',['full_queued','training'])->orderBy('id')->get();
             if($cohort->isEmpty())$cohort=collect([$agent]);
             $dataset=storage_path("app/lab-datasets/{$agent->symbol}_{$agent->timeframe}.csv");if(!is_file($dataset))$dataset=$this->datasets->export($agent->symbol,$agent->timeframe);
+            $manifest = is_file($dataset.'.manifest.json') ? json_decode(File::get($dataset.'.manifest.json'), true) : [];
             $request=[
                 'symbol'=>$agent->symbol,'timeframe'=>$agent->timeframe,'strategy'=>'all','evaluation_mode'=>'replay',
                 'strategies'=>$cohort->map(fn(LabAgent $peer)=>['strategy'=>$peer->modelVersion->strategy,'base_strategy'=>data_get($peer->modelVersion->metadata,'base_strategy')?:$peer->strategy_family.'_v1','version'=>$peer->modelVersion->version,'parameters'=>$peer->modelVersion->parameters??[]])->all(),
@@ -41,7 +43,7 @@ class LabAgentEvaluationService
             }
             $response=Http::timeout(1800)->acceptJson()->withHeaders(['X-Internal-Token'=>(string)config('services.internal_api.token')])->post(rtrim(config('services.ai_service.url'),'/').'/api/backtest/run-all',$request);
             if($response->failed())throw new RuntimeException($response->body());$items=collect($response->json('leaderboard',[]))->keyBy('strategy');
-            foreach($cohort as $peer){$peerItem=$items->get($peer->modelVersion->strategy);if(!$peerItem)throw new RuntimeException('Missing cohort lab agent result.');$peerModel=$peer->modelVersion;$peerModel->update(['metadata'=>array_merge($peerModel->metadata??[],['full_validation_batch'=>['generation_id'=>$agent->lab_generation_id,'item'=>$peerItem]])]);}
+            foreach($cohort as $peer){$peerItem=$items->get($peer->modelVersion->strategy);if(!$peerItem)throw new RuntimeException('Missing cohort lab agent result.');$peerItem['result']['data_manifest']=$manifest;$items->put($peer->modelVersion->strategy,$peerItem);$peerModel=$peer->modelVersion;$peerModel->update(['metadata'=>array_merge($peerModel->metadata??[],['full_validation_batch'=>['generation_id'=>$agent->lab_generation_id,'item'=>$peerItem]])]);}
             $item=$items->get($model->strategy);if(!$item)throw new RuntimeException('Empty lab agent result.');
         }
         DB::transaction(function()use($agent,$model,$item){$result=$item['result']??[];$session=TrainingSession::create([
@@ -64,7 +66,11 @@ class LabAgentEvaluationService
             $result['train_score']=$item['train_score']??0;$result['validation_score']=$item['validation_score']??0;$result['is_overfit']=$item['is_overfit']??false;
             $model->update(['best_score'=>max((float)$model->best_score,(float)$item['score']),'best_winrate'=>$result['winrate']??0,'best_profit'=>$result['net_profit_percent']??0,'best_drawdown'=>$result['max_drawdown_percent']??0,'metadata'=>array_merge($model->metadata??[],['last_result'=>$result])]);
             $this->shadowVetoLedger->record($agent, $result, 'full_replay');
-            $this->champions->evaluate($model->strategy,$agent->symbol,$agent->timeframe,(int)$item['score'],$result);
+            $performance = $this->champions->evaluate($model->strategy,$agent->symbol,$agent->timeframe,(int)$item['score'],$result);
+            $this->blameGraph->sync($performance, $agent, $result);
+            $this->handoffs->record($agent->generation, $agent, 'full_validation_completed', 'completed', null, [
+                'performance_id' => $performance->id, 'result_hash' => hash('sha256', json_encode($result)),
+            ]);
         });
         $generation=$agent->generation()->with('agents')->first();if($generation->agents->whereIn('lifecycle_status',['draft','queued','training','full_queued'])->isEmpty())$generation->update(['status'=>'completed','completed_at'=>now()]);
     }
@@ -122,6 +128,10 @@ class LabAgentEvaluationService
             'max_drawdown' => $result['max_drawdown_percent'] ?? $result['max_drawdown'] ?? 0,
             'risk_of_ruin' => data_get($result, 'monte_carlo.risk_of_ruin_percent'),
             'decision_reason' => 'Incremental screening completed; awaiting global full-validation selection.',
+        ]);
+
+        $this->handoffs->record($agent->generation, $agent, 'screened', 'completed', null, [
+            'screen_result_hash' => hash('sha256', json_encode($screenResult)), 'sample_count' => $agent->sample_count,
         ]);
 
         $generation = $agent->generation()->with('agents')->first();

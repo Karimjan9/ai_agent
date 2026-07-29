@@ -234,7 +234,8 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
                 "take_profit": take_profit,
                 "position_size_multiple": _position_size_multiple(
                     entry_price, stop_loss, signal, payload
-                ) * _volatility_risk_multiplier(signal_row, payload) * _meta_risk_multiplier(signal_row, signal, payload, meta_returns),
+                ) * _volatility_risk_multiplier(signal_row, payload) * _meta_risk_multiplier(signal_row, signal, payload, meta_returns)
+                * _regime_transition_multiplier(signal_row, df.iloc[index - 2] if index >= 2 else None),
                 "market_regime": signal_row.get("market_regime", "unknown"),
                 "volatility_regime": signal_row.get("volatility_regime", "normal_volatility"),
                 "signal_row": signal_row,
@@ -391,6 +392,7 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
     behavioral_signature = _behavioral_signature(df, trades)
     diagnostic_telemetry = _diagnostic_telemetry(trades, entry_funnel_report, pf_attribution)
     veto_regret = _veto_regret_report(shadow_ledger)
+    decision_blame_graph = _decision_blame_graph(trades, veto_regret)
     cooldown_policy = _cooldown_policy_report(cooldown_decisions)
     window_survival = _window_survival(df, trades, opportunities_by_month, accepted_by_month)
     regime_ensemble = _regime_ensemble_report(df, payload)
@@ -434,6 +436,7 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
         behavioral_signature=behavioral_signature,
         diagnostic_telemetry=diagnostic_telemetry,
         veto_regret=veto_regret,
+        decision_blame_graph=decision_blame_graph,
         observability_protocol_version=1,
         cooldown_policy=cooldown_policy,
         window_survival=window_survival,
@@ -563,6 +566,17 @@ def _volatility_risk_multiplier(signal_row: pd.Series, payload: SimpleBacktestRe
     return 1.0
 
 
+def _regime_transition_multiplier(signal_row: pd.Series, previous_row: pd.Series | None) -> float:
+    """Transition firewall: regime changes reduce exposure, never fabricate a trade."""
+    if previous_row is None:
+        return 1.0
+    transitioned = (
+        str(previous_row.get("market_regime", "unknown")) != str(signal_row.get("market_regime", "unknown"))
+        or str(previous_row.get("volatility_regime", "normal_volatility")) != str(signal_row.get("volatility_regime", "normal_volatility"))
+    )
+    return 0.5 if transitioned else 1.0
+
+
 def _advance_trailing_stop(position: dict[str, object], previous_candle: pd.Series, payload: SimpleBacktestRequest) -> None:
     multiplier = float(payload.parameters.get("trailing_atr_multiplier", 0) or 0)
     atr = float(previous_candle.get("_management_atr", 0) or 0)
@@ -679,6 +693,14 @@ def _open_shadow_position(
         stop_loss, take_profit = market_price - stop_distance, market_price + target_distance
     else:
         stop_loss, take_profit = market_price + stop_distance, market_price - target_distance
+    spread_percent = payload.execution.spread_points * payload.execution.point_size / max(market_price, 1e-9) * 100
+    atr = max(float(signal_row.get("_management_atr", 0) or 0), 1e-9)
+    spread_to_atr = (payload.execution.spread_points * payload.execution.point_size) / atr
+    spread_context = "high_spread" if spread_to_atr >= .20 else ("medium_spread" if spread_to_atr >= .08 else "low_spread")
+    # Predetermined, deterministic 5% shadow exploration assignment. It
+    # never opens a real position; it only makes policy propensities explicit
+    # for later counterfactual OPE.
+    exploration = int(hashlib.sha256(f"{signal_row['time']}|{veto_reason}".encode()).hexdigest()[:8], 16) % 100 < 5
     return {
         "veto_reason": veto_reason, "direction": direction,
         "signal_time": signal_row["time"], "entry_time": candle["time"],
@@ -688,6 +710,9 @@ def _open_shadow_position(
         * _volatility_risk_multiplier(signal_row, payload),
         "market_regime": str(signal_row.get("market_regime", "unknown")),
         "volatility_regime": str(signal_row.get("volatility_regime", "normal_volatility")),
+        "spread_context": spread_context, "spread_percent": round(spread_percent, 7),
+        "p_allow": .05, "p_veto": .95, "exploration_assigned": exploration,
+        "policy_arm": "shadow_exploration" if exploration else "shadow_control",
         "entry_index": index, "signal_row": signal_row,
         "partial_closed": False,
         "partial_fraction": float(payload.parameters.get("partial_take_profit_fraction", 0) or 0),
@@ -752,6 +777,9 @@ def _shadow_outcome(
     return {
         "veto_reason": str(position["veto_reason"]), "market_regime": str(position["market_regime"]),
         "volatility_regime": str(position["volatility_regime"]), "direction": direction,
+        "spread_context": str(position.get("spread_context", "unknown")), "p_allow": float(position.get("p_allow", 0)),
+        "p_veto": float(position.get("p_veto", 1)), "exploration_assigned": bool(position.get("exploration_assigned", False)),
+        "policy_arm": str(position.get("policy_arm", "shadow_control")),
         "signal_time": str(position["signal_time"]), "entry_time": str(position["entry_time"]),
         "exit_time": str(candle["time"]), "exit_reason": exit_reason,
         "shadow_profit": round(max(profit, 0.0), 5), "shadow_loss": round(abs(min(profit, 0.0)), 5),
@@ -815,22 +843,24 @@ def _veto_regret_report(ledger: list[dict[str, object]]) -> dict[str, object]:
             monthly[str(pd.Timestamp(item["exit_time"]).to_period("M"))].append(item)
         monthly_summary = {month: summarize_month(values) for month, values in monthly.items()}
         robust_months = sum(float(data["shadow_profit_factor"]) > 1.30 for data in monthly_summary.values())
-        action = "insufficient_evidence"
-        if len(items) >= 5:
-            # Cooldown may be softened only after the counterfactual edge
-            # repeats in three distinct calendar windows. Other vetoes retain
-            # the less-strong aggregate diagnostic until their own protocol
-            # has enough regime-specific evidence.
-            if reason == "loss_cooldown":
-                action = "relax_bounded_veto" if robust_months >= 3 else ("preserve_veto" if pf < 1.0 else "hold")
-            else:
-                action = "relax_bounded_veto" if pf >= 1.1 else ("preserve_veto" if pf < 1.0 else "hold")
+        exploration = [item for item in items if bool(item.get("exploration_assigned", False))]
+        mean = sum(profits) / len(profits) if profits else 0.0
+        # Logged-propensity DR surrogate. It is useful for ranking bounded
+        # research experiments but is explicitly counterfactual-only.
+        dr = sum(mean + ((value - mean) / max(.01, float(item.get("p_allow", .05)))) if bool(item.get("exploration_assigned", False)) else mean for item, value in zip(items, profits)) / len(items) if items else 0.0
+        variance = sum((value - mean) ** 2 for value in profits) / max(1, len(profits) - 1)
+        lower_bound = dr - 1.645 * (variance / max(1, len(profits))) ** .5
+        action = "preserve_veto"
+        if len(items) >= 30 and robust_months >= 3 and len(exploration) >= 5 and lower_bound > 0:
+            action = "bounded_relaxation_experiment"
         return {
             "shadow_trades": len(items), "wins": sum(value > 0 for value in profits),
             "losses": sum(value <= 0 for value in profits), "shadow_profit": round(gross_profit, 5),
             "shadow_loss": round(gross_loss, 5), "shadow_profit_factor": pf,
             "net_shadow_profit_percent": round(sum(profits), 5), "recommended_action": action,
             "monthly_passport": monthly_summary, "monthly_pf_gt_1_30": robust_months,
+            "doubly_robust_value": round(dr, 6), "lower_confidence_bound": round(lower_bound, 6),
+            "exploration_count": len(exploration), "policy_evidence": "counterfactual_only",
         }
 
     def summarize_month(items: list[dict[str, object]]) -> dict[str, object]:
@@ -846,11 +876,11 @@ def _veto_regret_report(ledger: list[dict[str, object]]) -> dict[str, object]:
     by_context: dict[str, list[dict[str, object]]] = defaultdict(list)
     for item in ledger:
         by_veto[str(item["veto_reason"])].append(item)
-        key = f"{item['veto_reason']}|{item['market_regime']}|{item['volatility_regime']}"
+        key = f"{item['veto_reason']}|{item['market_regime']}|{item['volatility_regime']}|{item.get('spread_context', 'unknown')}"
         by_context[key].append(item)
     ranked = sorted(by_veto.items(), key=lambda pair: summarize(pair[1], pair[0])["shadow_profit_factor"], reverse=True)
     return {
-        "protocol": "same next-candle-open, costs, exits; counterfactual only; never promotion evidence",
+        "protocol": "same next-candle-open, costs, exits; logged shadow propensity + doubly-robust surrogate; never promotion evidence",
         "shadow_trade_count": len(ledger),
         "by_veto_reason": {key: summarize(items, key) for key, items in by_veto.items()},
         "by_regime_context": {key: summarize(items) for key, items in by_context.items()},
@@ -859,6 +889,49 @@ def _veto_regret_report(ledger: list[dict[str, object]]) -> dict[str, object]:
         # above always include the complete replay ledger.
         "sample_records": ledger[:200], "sample_records_truncated": len(ledger) > 200,
     }
+
+
+def _decision_blame_graph(trades: list[SimpleTrade], veto_regret: dict[str, object]) -> dict[str, object]:
+    """Aggregate, intervention-labelled decision graph from the full trade ledger.
+
+    No-trade and half-risk branches are exact accounting counterfactuals. Exit
+    topology and specialist alternatives remain explicitly unassessed until a
+    frozen, same-contract replay supplies them.
+    """
+    edges: list[dict[str, object]] = []
+    losses = [trade for trade in trades if float(trade.profit_percent) < 0]
+    by_regime: dict[str, list[SimpleTrade]] = defaultdict(list)
+    for trade in losses:
+        by_regime[str(trade.market_regime)].append(trade)
+    for regime, rows in by_regime.items():
+        values = [float(trade.profit_percent) for trade in rows]
+        mean = sum(values) / len(values)
+        variance = sum((value - mean) ** 2 for value in values) / max(1, len(values) - 1)
+        margin = 1.96 * (variance / max(1, len(values))) ** .5
+        common = {"regime": regime, "cost_scenario": "normal_execution", "sample_count": len(values),
+                  "confidence_interval": [round(mean - margin, 6), round(mean + margin, 6)]}
+        edges.extend([
+            {"edge_key": f"market_context|regime_belief|{regime}", "source_node": "market_context", "target_node": "regime_belief",
+             "baseline": 1.0, "intervention": 1.0, "delta": 0.0, "evidence_status": "observed", "intervention_type": "none", **common},
+            {"edge_key": f"regime_belief|specialist_choice|{regime}", "source_node": "regime_belief", "target_node": "specialist_choice",
+             "baseline": None, "intervention": None, "delta": None, "evidence_status": "not_assessed", "intervention_type": "frozen_specialist_replay_required", **common},
+            {"edge_key": f"signal|entry_timing|{regime}", "source_node": "signal", "target_node": "entry_timing",
+             "baseline": round(mean, 6), "intervention": 0.0, "delta": round(-mean, 6), "evidence_status": "assessed_accounting", "intervention_type": "no_trade", **common},
+            {"edge_key": f"entry_timing|position_size|{regime}", "source_node": "entry_timing", "target_node": "position_size",
+             "baseline": round(mean, 6), "intervention": round(mean / 2, 6), "delta": round(-mean / 2, 6), "evidence_status": "assessed_accounting", "intervention_type": "half_size", **common},
+            {"edge_key": f"position_size|exit|{regime}", "source_node": "position_size", "target_node": "exit",
+             "baseline": round(mean, 6), "intervention": None, "delta": None, "evidence_status": "not_assessed", "intervention_type": "alternative_exit_replay_required", **common},
+            {"edge_key": f"exit|outcome|{regime}", "source_node": "exit", "target_node": "outcome",
+             "baseline": round(mean, 6), "intervention": None, "delta": None, "evidence_status": "observed", "intervention_type": "none", **common},
+        ])
+    for context, metrics in (veto_regret.get("by_regime_context", {}) or {}).items():
+        sample = int(metrics.get("shadow_trades", 0) or 0)
+        baseline = float(metrics.get("net_shadow_profit_percent", 0) or 0) / max(1, sample)
+        edges.append({"edge_key": f"veto|outcome|{context}", "source_node": "veto", "target_node": "outcome",
+                      "regime": context.split("|")[1] if "|" in context else "unknown", "cost_scenario": "same_next_open_costed_shadow",
+                      "baseline": round(baseline, 6), "intervention": 0.0, "delta": round(-baseline, 6), "confidence_interval": [None, None],
+                      "sample_count": sample, "evidence_status": "counterfactual_shadow_only", "intervention_type": "no_trade_vs_shadow_allow"})
+    return {"protocol": "decision_blame_graph_v1; full trade ledger aggregates; promotion evidence forbidden", "nodes": ["market_context", "regime_belief", "specialist_choice", "signal", "veto", "entry_timing", "position_size", "exit", "outcome"], "edges": edges}
 
 
 def _cooldown_policy_report(decisions: list[dict[str, object]]) -> dict[str, object]:
@@ -1051,8 +1124,13 @@ def _confidence_calibration(trades: list[SimpleTrade]) -> dict[str, object]:
     for trade in trades:
         bins.setdefault(min(4, int(trade.signal_confidence * 5)), []).append(trade)
     return {
-        "status": "assessed", "method": "closed_trade_confidence_calibration",
-        "brier_score": round(brier, 4),
+        "schema_version": "2.0", "status": "assessed", "method": "closed_trade_confidence_calibration",
+        # Laravel consumes a normalized skill score while Brier remains the
+        # audit metric. Exposing both prevents a missing-field mismatch from
+        # silently turning calibration capability into zero.
+        "brier_score": round(brier, 4), "calibration_score": round(max(0.0, min(1.0, 1 - brier)), 4),
+        "score": round(max(0.0, min(100.0, (1 - brier) * 100)), 2),
+        "sample_count": len(trades),
         "bins": {str(bucket): {"trades": len(items), "mean_confidence": round(sum(item.signal_confidence for item in items) / len(items), 3), "realized_winrate": round(sum(item.profit_percent > 0 for item in items) / len(items), 3)} for bucket, items in bins.items()},
     }
 

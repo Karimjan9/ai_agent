@@ -10,6 +10,7 @@ use App\Models\ModelVersion;
 use App\Models\MutationMemory;
 use App\Models\AgentDiagnosis;
 use App\Models\CandidateGateDecision;
+use App\Models\AgentFailureCase;
 use App\Models\Symbol;
 use App\Services\MarketData\MarketDataContinuityService;
 use App\Services\MarketData\HistoricalDataQualityService;
@@ -41,6 +42,12 @@ class LabPopulationService
         private MarketDataContinuityService $continuity,
         private HistoricalDataQualityService $historicalData,
         private DecisionLearningService $decisionLearning,
+        private BayesianMutationLaboratoryService $bayesianMutations,
+        private AgentEvolutionQualityService $evolutionQuality,
+        private AgentConstitutionService $constitutions,
+        private UniversalAgentCapabilityService $universalCapabilities,
+        private VetoPolicyLaboratoryService $vetoPolicies,
+        private RegimeReservoirService $regimeReservoir,
     ) {}
 
     public function ensureLaboratories(): void
@@ -91,7 +98,7 @@ class LabPopulationService
         // evidence.  Degradation is an immediate safety exception; market
         // drift is confirmed separately and still needs new candles so the
         // hourly detector cannot create a 20-agent generation storm.
-        if (! $force && $latest && $newCandles < 24 && $trigger !== 'degradation') {
+        if (! $force && $latest && $newCandles < 24 && ! in_array($trigger, ['degradation', 'candidate_handoff'], true)) {
             return null;
         }
 
@@ -161,15 +168,27 @@ class LabPopulationService
                 ->latest('evaluated_at')->first();
             $vetoTarget = $this->shadowVetoTarget($lab->symbol, $lab->timeframe, $family);
             $deficits = (array) data_get($diagnosis?->evidence, 'deficits', []);
+            $latest = ModelMarketPerformance::query()->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)
+                ->where('strategy_family', $family)->latest()->first();
+            $curriculum = $latest ? $this->evolutionQuality->curriculum((array) $latest->metrics) : null;
             $doctorBundle = data_get($diagnosis?->evidence, 'gate_doctor.recommended_bundle');
-            $target = $vetoTarget ?: ($doctorBundle ? $this->targetFromBundle($doctorBundle) : ($diagnosis ? $this->dominantTarget($diagnosis->primary_failure, $deficits) : $this->rescueTarget($rescue?->reason_codes ?? [])));
+            $target = $vetoTarget ?: ($doctorBundle ? $this->targetFromBundle($doctorBundle) : ($diagnosis ? $this->dominantTarget($diagnosis->primary_failure, $deficits) : ($curriculum['primary_target'] ?? $this->rescueTarget($rescue?->reason_codes ?? []))));
             $severity = (float) ($deficits['trade_deficit'] ?? 0) / 30
                 + (float) ($deficits['pf_deficit'] ?? 0) / 1.3
                 + (float) ($deficits['rolling_deficit'] ?? 0) / 3
                 + (float) ($deficits['drawdown_excess'] ?? 0) / 15
                 + (float) ($deficits['ruin_excess'] ?? 0) / 10
                 + ($rescue ? 1.0 : 0.0);
-            return ['family' => $family, 'target' => $target, 'severity' => $severity];
+            $failureCases = AgentFailureCase::query()
+                ->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)
+                ->where('regression_status', 'open')->latest()->take(3)->get();
+            $failureTarget = $failureCases->contains('failure_type', 'cost_fragility') ? 'drawdown_risk'
+                : ($failureCases->contains('failure_type', 'transition_failure') ? 'rolling_regime'
+                    : ($failureCases->contains('failure_type', 'edge_pf_signal_quality') ? 'profit_factor'
+                        : ($failureCases->contains('failure_type', 'trade_viability_signal_frequency') ? 'trade_frequency' : null)));
+            return ['family' => $family, 'target' => $failureTarget ?: $target,
+                'severity' => $severity + ($failureCases->count() * .35), 'curriculum' => $curriculum,
+                'failure_curriculum_case_ids' => $failureCases->pluck('id')->all()];
         })->sortByDesc('severity')->values();
 
         // No prior evidence is an exploration case, not an implicit claim of
@@ -226,12 +245,16 @@ class LabPopulationService
     /** A shadow result may relax exactly one veto; it never weakens promotion gates. */
     private function shadowVetoTarget(string $symbol, string $timeframe, string $family): ?string
     {
+        if ($target = $this->vetoPolicies->recommendedTarget($symbol, $timeframe, $family)) return $target;
         $decisions = CandidateGateDecision::query()->where('stage', 'screening')
             ->whereHas('labAgent', fn ($agent) => $agent->where('symbol', $symbol)->where('timeframe', $timeframe)->where('strategy_family', $family))
             ->latest('evaluated_at')->take(12)->get();
         foreach ($decisions as $decision) {
             foreach ((array) data_get($decision->metrics, 'veto_regret.by_veto_reason', []) as $reason => $metrics) {
-                if ((int) data_get($metrics, 'shadow_trades', 0) < 5 || data_get($metrics, 'recommended_action') !== 'relax_bounded_veto') continue;
+                // Legacy aggregates remain diagnostic only. New policy-lab
+                // records require 30 context samples, three months and a
+                // positive lower bound before a bounded experiment.
+                if ((int) data_get($metrics, 'shadow_trades', 0) < 30 || data_get($metrics, 'recommended_action') !== 'relax_bounded_veto') continue;
                 return match ($reason) {
                     'loss_cooldown' => 'shadow_veto_loss_cooldown',
                     'minimum_confidence' => 'shadow_veto_confidence',
@@ -288,6 +311,10 @@ class LabPopulationService
         // clones.  Reject exact fingerprints and near neighbours before they
         // consume an expensive full validation slot.
         $parameters = $this->ensureNovelParameters($generation, $family, $parameters, $slot, $origin === 'gate_targeted');
+        $parentMetrics = $parentA?->marketPerformances()->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)->latest()->first()?->metrics ?? [];
+        $constitution = $this->constitutions->draft($lab->symbol, $lab->timeframe, $family, $architecture, $parameters);
+        $universalGenome = $this->universalCapabilities->genome($lab->symbol, $lab->timeframe, $family, $architecture, $parameters, $parentA);
+        $reservoirRecall = $this->regimeReservoir->recall($lab->symbol, $lab->timeframe, $mutationScope);
         // Model versions are globally unique. H1 keeps its established name;
         // additional execution timeframes receive an explicit namespace so an
         // EURUSD M15 G1 specialist cannot collide with EURUSD H1 G1.
@@ -301,13 +328,22 @@ class LabPopulationService
                 'base_strategy' => $this->architectureBaseStrategy($architecture), 'strategy_architecture' => $architecture,
                 'lab_symbol' => $lab->symbol, 'origin' => $origin,
                 'generation_target' => $target,
+                'mutation_bundle' => $this->evolutionQuality->curriculum($parentMetrics)['bounded_bundle'] ?? null,
                 'mutation_scope' => $mutationScope,
                 'skill_crossover_sources' => $skillCrossoverSources ?: null,
+                // A frozen near-forward parent is never edited in place.
+                // This child is the only allowed research fork from it.
+                'elite_candidate_fork' => data_get($parentA?->metadata, 'elite_agent_passport.freeze.status') === 'frozen'
+                    ? ['parent_model_version_id' => $parentA->id, 'parent_parameter_hash' => data_get($parentA->metadata, 'elite_agent_passport.freeze.parameter_hash')]
+                    : null,
                 'parameter_fingerprint' => $this->parameterFingerprint($family, $parameters),
                 // New generations must produce actual CSCV/PBO, DSR and
                 // bootstrap evidence before paper promotion. Legacy records
                 // remain auditable but cannot silently define this protocol.
-                'statistical_gate_version' => 2,
+                'statistical_gate_version' => 3,
+                'agent_constitution' => $constitution,
+                'universal_genome' => $universalGenome,
+                'regime_reservoir_recall' => $reservoirRecall,
             ]),
         ]);
         $generation->agents()->create([
@@ -404,9 +440,11 @@ class LabPopulationService
         $schema = $this->schemas->schema($family);
         $beneficial = MutationMemory::where(compact('symbol', 'timeframe'))->where('strategy_family', $family)
             ->when($scope, fn ($query) => $query->where('market_regime', $scope))
+            ->whereJsonContains('behavioral_effect->causal_credit->status', 'independently_confirmed')
             ->where('outcome', 'beneficial')->orderByDesc('confidence')->first();
         $harmful = MutationMemory::where(compact('symbol', 'timeframe'))->where('strategy_family', $family)
             ->when($scope, fn ($query) => $query->where('market_regime', $scope))
+            ->whereJsonContains('behavioral_effect->causal_credit->status', 'independently_confirmed')
             ->where('outcome', 'harmful')->orderByDesc('confidence')->first();
         $keys = array_keys($schema);
         $targetKeys = match ($target) {
@@ -420,19 +458,23 @@ class LabPopulationService
             'shadow_veto_volatility' => ['high_volatility_risk_multiplier', 'avoid_high_volatility'],
             // PF is an exit-topology experiment: stop/target/trailing/time
             // exits and partials are changed as a coherent family.
-            'profit_factor', 'risk_exit' => ['atr_stop_multiplier', 'atr_target_multiplier', 'trailing_atr_multiplier', 'time_stop_candles', 'partial_take_profit_fraction', 'partial_target_atr_multiplier'],
+            'profit_factor', 'risk_exit', 'stress_cost' => ['atr_stop_multiplier', 'atr_target_multiplier', 'trailing_atr_multiplier', 'time_stop_candles', 'partial_take_profit_fraction', 'partial_target_atr_multiplier'],
             'drawdown_risk' => ['high_volatility_risk_multiplier', 'max_loss_streak_before_wait', 'loss_cooldown_candles', 'atr_stop_multiplier', 'avoid_high_volatility'],
             'rolling_regime', 'architecture' => ['lookback', 'session_start', 'session_end', 'trend_strength_min', 'minimum_signal_confidence', 'high_volatility_risk_multiplier'],
             default => $keys,
         };
         $targetKeys = array_values(array_intersect($keys, $targetKeys));
         if ($targetKeys !== []) $keys = $targetKeys;
+        $latestDiagnosis = AgentDiagnosis::query()->whereHas('modelMarketPerformance', fn ($query) => $query
+            ->where('symbol', $symbol)->where('timeframe', $timeframe)->where('strategy_family', $family))->latest()->first();
+        $latestDeficits = (array) data_get($latestDiagnosis?->evidence, 'deficits', []);
         // A high-confidence harmful mutation is evidence, not a tie-breaker.
         // Keep it out of the next search unless every available gene has been
         // falsified; otherwise a single historic beneficial result could keep
         // resurrecting a known-bad direction.
         $harmfulKeys = MutationMemory::where(compact('symbol', 'timeframe'))->where('strategy_family', $family)
             ->when($scope, fn ($query) => $query->where('market_regime', $scope))
+            ->whereJsonContains('behavioral_effect->causal_credit->status', 'independently_confirmed')
             ->where('outcome', 'harmful')->where('confidence', '>=', 70)
             ->pluck('parameter_key')->unique()->all();
         $safeKeys = array_values(array_diff($keys, $harmfulKeys));
@@ -453,8 +495,9 @@ class LabPopulationService
         if (! $beneficial && $harmful && count($keys) > 1) {
             $keys = array_values(array_diff($keys, [$harmful->parameter_key]));
         }
+        $bayesian = $this->bayesianMutations->recommend($symbol, $timeframe, $family, $keys, $latestDeficits, $scope);
         $key = $beneficial?->parameter_key && isset($schema[$beneficial->parameter_key]) && in_array($beneficial->parameter_key, $keys, true)
-            ? $beneficial->parameter_key : ($decisionKey ?: ($diagnosedKey ?: $keys[$seed % count($keys)]));
+            ? $beneficial->parameter_key : ($decisionKey ?: ($diagnosedKey ?: ($bayesian['parameter_key'] ?? $keys[$seed % count($keys)])));
         [$type, $min, $max] = array_pad($schema[$key], 3, null);
         if ($type === 'boolean') { $base[$key] = ! (bool) ($base[$key] ?? false); return $base; }
         $current = (float) ($base[$key] ?? (($min + $max) / 2));

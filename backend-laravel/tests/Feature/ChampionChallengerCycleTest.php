@@ -123,6 +123,27 @@ class ChampionChallengerCycleTest extends TestCase
             'forward_score' => $forward, 'forward_window_scores' => $windows,
             'total_trades' => 90, 'profit_factor' => 1.5, 'max_drawdown_percent' => 10,
             'is_overfit' => false, 'monte_carlo' => ['risk_of_ruin_percent' => 5],
+            // A candidate can reach paper in this test only with a complete
+            // Elite Agent Passport. Tests that omit these fields verify the
+            // expected challenger-only behaviour instead.
+            'data_manifest' => ['status' => 'ready', 'sha256' => str_repeat('a', 64)],
+            'entry_funnel' => ['raw_strategy_signals' => 120, 'accepted_entries' => 90],
+            'veto_regret' => ['shadow_trade_count' => 12],
+            'monthly_passport' => ['rolling_forward_wins' => 3, 'failed_months' => 0],
+            'behavioral_diversity' => ['status' => 'diverse'],
+            'statistical_evidence' => ['edge_quality' => ['worst_regime_pf' => 1.1]],
+            'pf_attribution' => ['stress_cost' => ['profit_factor' => 1.1]],
+            'red_team' => ['scenarios' => [
+                'double_cost_execution' => ['status' => 'assessed', 'pass' => true],
+                'news_window' => ['status' => 'assessed', 'pass' => true],
+            ]],
+            'market_adaptive_replay' => [
+                'protocol' => 'closed candle decision -> next candle execution -> outcome',
+                'sealed_holdout' => ['used_for_training' => false, 'used_for_evolution' => false],
+            ],
+            'secret_adversarial_arena' => ['status' => 'passed'],
+            'permanent_unseen_challenge' => ['status' => 'sealed'],
+            'temporal_firewall' => ['status' => 'passed'],
         ];
     }
 }

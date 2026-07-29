@@ -6,6 +6,7 @@ state observed on a candle (symbol, regime and volatility), never by a date.
 """
 
 from dataclasses import dataclass
+import math
 
 import pandas as pd
 
@@ -13,6 +14,7 @@ from app.schemas import SimpleBacktestRequest
 from app.services.backtester import run_simple_ema_rsi_backtest_on_dataframe
 from app.services.market_regime import apply_market_regime
 from app.services.red_team import RedTeamService
+from app.strategies.registry import get_strategy
 
 
 @dataclass(frozen=True)
@@ -78,11 +80,15 @@ class MarketAdaptiveReplayService:
         adaptation = self._adaptation_evidence(segments["replay"], replay_result, checkpoints)
         monthly_walk_forward = self._monthly_walk_forward(payload, segments["replay"], score_calculator)
         monthly_passport = self._monthly_passport(monthly_walk_forward)
+        failure_focused = self._failure_focused_replay(monthly_walk_forward)
+        transition_homework = self._transition_homework(segments["replay"], replay_result)
         replay_result["window_survival"] = {
             **dict(replay_result.get("window_survival", {})),
             "monthly_walk_forward": monthly_walk_forward,
         }
         replay_result["monthly_passport"] = monthly_passport
+        replay_result["failure_focused_replay"] = failure_focused
+        replay_result["transition_homework"] = transition_homework
         replay_result["evidence_streams"] = {
             "synthetic_forward_evidence": {
                 "status": "assessed", "source": "monthly_walk_forward_replay",
@@ -110,9 +116,24 @@ class MarketAdaptiveReplayService:
                 "checkpoint_windows": checkpoints,
                 "monthly_walk_forward": monthly_walk_forward,
                 "monthly_passport": monthly_passport,
+                "failure_focused_replay": failure_focused,
+                "transition_homework": transition_homework,
                 "adaptation": adaptation,
             },
         }
+        result["permanent_unseen_challenge"] = {
+            "status": "sealed", "segment": self._period(segments["holdout"]),
+            "data_hash": self._segment_hash(segments["holdout"]),
+            "rule": "This segment is never used for mutation, ranking or same-generation selection.",
+        }
+        result["temporal_firewall"] = self._temporal_firewall(payload, segments["replay"], segments["holdout"])
+        result["secret_adversarial_arena"] = self._secret_adversarial_arena(payload, segments["replay"])
+        # These two ledgers deliberately use the same next-candle execution
+        # function as the replay.  Their verdicts are diagnostic evidence;
+        # they neither create trades nor change a promotion decision.
+        result["execution_digital_twin"] = self._execution_digital_twin(payload, segments["replay"], replay_result)
+        result["counterfactual_blame_graph"] = self._counterfactual_blame_graph(replay_result, segments["replay"])
+        result["metamorphic_universality"] = self._metamorphic_universality(payload, segments["replay"], replay_result)
         return {
             "train_score": train_score,
             "validation_score": validation_score,
@@ -122,6 +143,170 @@ class MarketAdaptiveReplayService:
             "robustness_score": result["robustness_score"],
             "is_overfit": is_overfit,
             "result": result,
+        }
+
+    @staticmethod
+    def _segment_hash(df: pd.DataFrame) -> str:
+        import hashlib
+        columns = [column for column in ["time", "open", "high", "low", "close", "volume"] if column in df]
+        return hashlib.sha256(df[columns].to_csv(index=False).encode()).hexdigest()
+
+    @staticmethod
+    def _temporal_firewall(payload: SimpleBacktestRequest, replay: pd.DataFrame, future: pd.DataFrame) -> dict[str, object]:
+        """Perturb unseen future candles and prove preceding features/signals stay fixed."""
+        if len(replay) < 220 or future.empty:
+            return {"status": "insufficient_rows"}
+        prefix = replay.iloc[-220:].copy().reset_index(drop=True)
+        altered_future = future.iloc[:8].copy().reset_index(drop=True)
+        for column in ["open", "high", "low", "close"]:
+            altered_future[column] = altered_future[column] * 1.25
+
+        def signals(frame: pd.DataFrame) -> list[tuple[str, str]]:
+            normalized = apply_market_regime(frame.copy())
+            previous = normalized["close"].shift(1)
+            true_range = pd.concat([
+                normalized["high"] - normalized["low"], (normalized["high"] - previous).abs(), (normalized["low"] - previous).abs(),
+            ], axis=1).max(axis=1)
+            normalized["_management_atr"] = true_range.rolling(14, min_periods=1).mean()
+            prepared = get_strategy(payload.strategy, payload.base_strategy)(normalized, payload.parameters)
+            return [(str(row.time), str(row.signal)) for row in prepared[["time", "signal"]].itertuples(index=False)]
+
+        baseline = signals(prefix)
+        extended = signals(pd.concat([prefix, altered_future], ignore_index=True))[:len(prefix)]
+        return {
+            "status": "passed" if baseline == extended else "failed",
+            "checked_candles": len(prefix), "future_perturbation": "unseen OHLC shock",
+            "rule": "future-candle mutation must not alter prior signals or features",
+        }
+
+    @staticmethod
+    def _secret_adversarial_arena(payload: SimpleBacktestRequest, replay: pd.DataFrame) -> dict[str, object]:
+        """Rotating hidden execution shocks; only the verdict is exposed to evolution."""
+        import hashlib
+        seed = int(hashlib.sha256(MarketAdaptiveReplayService._segment_hash(replay).encode()).hexdigest()[:8], 16)
+        multipliers = [2.0, 2.5, 3.0]
+        selected = [multipliers[(seed + offset) % len(multipliers)] for offset in range(2)]
+        results = []
+        for multiplier in selected:
+            execution = payload.execution.model_copy(update={
+                "spread_points": payload.execution.spread_points * multiplier,
+                "slippage_points": payload.execution.slippage_points * multiplier,
+                "commission_percent": payload.execution.commission_percent * multiplier,
+            })
+            outcome = run_simple_ema_rsi_backtest_on_dataframe(payload.model_copy(update={"execution": execution}), replay).model_dump()
+            results.append(float(outcome.get("profit_factor", 0)) >= 1.0)
+        return {
+            "status": "passed" if all(results) else "failed", "evaluated_scenarios": len(results),
+            "rotation_commitment": hashlib.sha256(f"{seed}|{len(results)}".encode()).hexdigest(),
+            "rule": "Scenario parameters remain hidden from the mutation policy until the next rotation.",
+        }
+
+    @staticmethod
+    def _execution_digital_twin(payload: SimpleBacktestRequest, replay: pd.DataFrame, normal: dict[str, object]) -> dict[str, object]:
+        """Deterministic adverse execution scenarios using the replay contract.
+
+        Partial-fill, broker-rejection and disconnect behaviours are explicitly
+        marked unavailable until the provider exposes such immutable events;
+        no imagined fill result is presented as market evidence.
+        """
+        execution = payload.execution
+        profiles = {
+            "variable_spread": execution.model_copy(update={"spread_points": execution.spread_points * 2.0}),
+            "slippage_spike": execution.model_copy(update={"slippage_points": max(execution.slippage_points * 3.0, execution.point_size)}),
+            "cost_stress": execution.model_copy(update={
+                "spread_points": execution.spread_points * 2.0, "slippage_points": execution.slippage_points * 2.0,
+                "commission_percent": execution.commission_percent * 2.0,
+            }),
+        }
+        scenarios: dict[str, object] = {}
+        normal_net = float(normal.get("net_profit_percent", 0))
+        for name, profile in profiles.items():
+            tested = run_simple_ema_rsi_backtest_on_dataframe(payload.model_copy(update={"execution": profile}), replay).model_dump()
+            scenarios[name] = {
+                "status": "assessed", "profit_factor": tested.get("profit_factor", 0),
+                "net_profit_percent": tested.get("net_profit_percent", 0),
+                "max_drawdown_percent": tested.get("max_drawdown_percent", 0),
+                "cost_monotonic": float(tested.get("net_profit_percent", 0)) <= normal_net + 1e-9,
+            }
+        latency = run_simple_ema_rsi_backtest_on_dataframe(payload, replay.iloc[1:].reset_index(drop=True)).model_dump() if len(replay) > 203 else None
+        scenarios["one_candle_latency"] = {
+            "status": "assessed" if latency else "insufficient_rows",
+            "profit_factor": latency.get("profit_factor", 0) if latency else None,
+            "net_profit_percent": latency.get("net_profit_percent", 0) if latency else None,
+            "rule": "Delayed dataset start is a conservative availability check, not a substitute for per-order latency replay.",
+        }
+        for unavailable in ["partial_fill", "rejected_order", "stale_candle", "disconnect", "gap_during_stop", "provider_disagreement"]:
+            scenarios[unavailable] = {"status": "waiting_for_immutable_provider_event", "safe_behavior": "WAIT_OR_CANCEL"}
+        assessed = [item for item in scenarios.values() if item.get("status") == "assessed"]
+        return {
+            "status": "assessed" if assessed else "waiting_for_provider_events",
+            "execution_contract": "closed candle decision -> next candle open fill -> conservative intrabar exit",
+            "scenarios": scenarios,
+            "rule": "Unobservable broker failures remain pending; they are never simulated into a pass.",
+        }
+
+    @staticmethod
+    def _counterfactual_blame_graph(result: dict[str, object], replay: pd.DataFrame) -> dict[str, object]:
+        """Loss ledger with transparent, bounded counterfactual branches.
+
+        The visible trade ledger is capped by the API.  Branches therefore
+        carry scope metadata and never claim to be a full-history blame score.
+        Mutators may only use a blamed component when its branch is assessed.
+        """
+        rows = replay.copy()
+        rows["time"] = pd.to_datetime(rows["time"])
+        losses = [trade for trade in result.get("trades", []) if float(trade.get("profit_percent", 0)) < 0]
+        cases = []
+        for trade in losses:
+            entry_time = pd.to_datetime(trade.get("entry_time"), errors="coerce")
+            exit_time = pd.to_datetime(trade.get("exit_time"), errors="coerce")
+            delayed = {"status": "not_assessed"}
+            if not pd.isna(entry_time) and not pd.isna(exit_time):
+                later = rows[rows["time"] > entry_time]
+                exit_rows = rows[rows["time"] == exit_time]
+                if not later.empty and not exit_rows.empty:
+                    delayed_entry = float(later.iloc[0]["open"])
+                    exit_price = float(exit_rows.iloc[0]["close"])
+                    gross = ((exit_price - delayed_entry) / delayed_entry * 100) if trade.get("direction") == "BUY" else ((delayed_entry - exit_price) / delayed_entry * 100)
+                    delayed = {"status": "assessed_fixed_exit", "profit_percent": round(gross - float(trade.get("execution_cost_percent", 0)), 5),
+                               "limitation": "Uses original exit timestamp; not eligible for mutation credit."}
+            profit = float(trade.get("profit_percent", 0))
+            blame = "execution_failure" if float(trade.get("execution_cost_percent", 0)) > abs(profit) * .35 else (
+                "exit_failure" if str(trade.get("exit_reason", "")) in {"stop_loss", "time_stop"} else "entry_failure"
+            )
+            cases.append({
+                "trade_key": f"{trade.get('entry_time')}|{trade.get('direction')}", "real_trade": {"profit_percent": profit},
+                "no_trade": {"status": "assessed", "profit_percent": 0.0},
+                "half_risk": {"status": "assessed", "profit_percent": round(profit / 2, 5)},
+                "delayed_entry": delayed,
+                "alternative_exit": {"status": "not_assessed", "reason": "requires per-trade exit topology replay"},
+                "alternative_specialist": {"status": "not_assessed", "reason": "requires frozen router candidate"},
+                "stressed_execution": {"status": "assessed_at_population_level", "reference": "execution_digital_twin"},
+                "provisional_blame": blame,
+            })
+        return {
+            "status": "assessed_visible_ledger" if losses else "no_visible_losses",
+            "scope": "latest API-visible closed trades only; not promotion evidence",
+            "cases": cases,
+            "mutation_rule": "Only branches with status assessed may constrain the named component; provisional blame alone cannot grant causal credit.",
+        }
+
+    @staticmethod
+    def _metamorphic_universality(payload: SimpleBacktestRequest, replay: pd.DataFrame, normal: dict[str, object]) -> dict[str, object]:
+        """Invariant checks that preserve meaning instead of optimizing history."""
+        scaled = replay.copy()
+        for column in ["open", "high", "low", "close"]:
+            scaled[column] = scaled[column] * 10.0
+        scaled_execution = payload.execution.model_copy(update={"point_size": payload.execution.point_size * 10.0, "spread_points": payload.execution.spread_points})
+        scaled_result = run_simple_ema_rsi_backtest_on_dataframe(payload.model_copy(update={"execution": scaled_execution}), scaled).model_dump()
+        original_directions = [trade.get("direction") for trade in normal.get("trades", [])]
+        scaled_directions = [trade.get("direction") for trade in scaled_result.get("trades", [])]
+        return {
+            "status": "assessed",
+            "price_scale": {"status": "passed" if original_directions == scaled_directions else "failed",
+                            "rule": "Price scaling must not invert the visible signal direction."},
+            "cost_monotonicity": {"status": "delegated", "reference": "execution_digital_twin.variable_spread"},
+            "provider_absence": {"status": "safe_wait_required", "rule": "No canonical provider candle means WAIT; no fallback trade is allowed."},
         }
 
     def _monthly_walk_forward(
@@ -183,6 +368,84 @@ class MarketAdaptiveReplayService:
             "protocol": "expanding prior-month training; a test month feeds only later months",
             "status": status, "months": windows,
             "rolling_forward_wins": len(positive), "failed_months": len(failures),
+        }
+
+    @staticmethod
+    def _failure_focused_replay(tournament: dict[str, object]) -> dict[str, object]:
+        """Allocate 70/20/10 repair, historical-control and hidden-test lanes."""
+        windows = list(tournament.get("windows", []))
+        if not windows:
+            return {"status": "insufficient_monthly_rows", "targeted_windows": [], "control_windows": []}
+        failed = [window for window in windows if float(window.get("profit_factor", 0)) < 1.0
+                  or float(window.get("max_drawdown_percent", 0)) > 15 or float(window.get("net_profit_percent", 0)) <= 0]
+        healthy = [window for window in windows if window not in failed]
+        target_count = max(1, round(len(windows) * .70))
+        control_count = max(1, round(len(windows) * .20))
+        hidden_reservation = max(0, len(windows) - target_count - control_count)
+        targeted = failed[:target_count]
+        # If there are fewer failures than the diagnostic budget, use oldest
+        # remaining windows as explicitly labelled controls rather than
+        # pretending they are repaired failures.
+        controls = (healthy + [w for w in windows if w not in targeted and w not in healthy])[:control_count]
+        mean = lambda rows: round(sum(float(row.get("score", 0)) for row in rows) / len(rows), 3) if rows else None
+        return {
+            "status": "assessed", "protocol": "70% failed-month repair; 20% chronological control; 10% hidden adversarial reservation; no same-window mutation",
+            "targeted_windows": [w.get("test_month") for w in targeted], "control_windows": [w.get("test_month") for w in controls],
+            "hidden_adversarial_reservation": hidden_reservation,
+            "targeted_repair_score": mean(targeted), "control_score": mean(controls),
+            "failure_count": len(failed),
+            "acceptance_rule": "A later mutation must improve its targeted lane without degrading the fixed control lane.",
+        }
+
+    @staticmethod
+    def _transition_homework(replay: pd.DataFrame, result: dict[str, object]) -> dict[str, object]:
+        """Measure the hard regime-boundary zone, not only steady-state regimes."""
+        classified = apply_market_regime(replay.copy()).reset_index(drop=True)
+        if len(classified) < 3:
+            return {"status": "insufficient_rows", "score": 0.0}
+        boundary = (classified["market_regime"] != classified["market_regime"].shift(1)) | (
+            classified["volatility_regime"] != classified["volatility_regime"].shift(1)
+        )
+        transition_times = pd.to_datetime(classified.loc[boundary, "time"])
+        trades = list(result.get("trades", []))
+        transition_trades = []
+        for trade in trades:
+            signal_time = pd.to_datetime(trade.get("signal_time"), errors="coerce")
+            if pd.isna(signal_time) or transition_times.empty:
+                continue
+            if (transition_times.sub(signal_time).abs() <= pd.Timedelta(hours=3)).any():
+                transition_trades.append(trade)
+        total = len(transition_trades)
+        losses = sum(float(trade.get("profit_percent", 0)) < 0 for trade in transition_trades)
+        wins = total - losses
+        gross_win = sum(max(0, float(trade.get("profit_percent", 0))) for trade in transition_trades)
+        gross_loss = sum(abs(min(0, float(trade.get("profit_percent", 0)))) for trade in transition_trades)
+        pf = round(gross_win / gross_loss, 3) if gross_loss else (99.0 if gross_win else 0.0)
+        false_entry_rate = round(losses / total, 4) if total else 0.0
+        # No entry at a dangerous transition is valid abstention. The score
+        # records it separately so it cannot be misread as coverage success.
+        abstention = round(100 * (1 - min(1, false_entry_rate)), 2)
+        score = round(max(0, min(100, (wins / total * 70 + min(pf, 2) * 15))) if total else 50.0, 2)
+        transition_equity = 100.0
+        transition_peak = transition_equity
+        transition_dd = 0.0
+        for trade in transition_trades:
+            transition_equity *= 1 + float(trade.get("profit_percent", 0)) / 100
+            transition_peak = max(transition_peak, transition_equity)
+            transition_dd = max(transition_dd, (transition_peak - transition_equity) / transition_peak * 100)
+        # Entropy is derived from continuation/reversal evidence in the
+        # transition slice. It is a diagnostic summary, not a future label.
+        continuation = wins / total if total else .5
+        reversal = losses / total if total else .5
+        entropy = 0.0 if not total else -sum(p * math.log(max(p, 1e-9)) for p in [continuation, reversal]) / math.log(2)
+        return {
+            "status": "assessed", "protocol": "market/volatility transition +/- 3 H1 candles; frozen strategy and execution",
+            "transition_events": int(boundary.sum()), "transition_trades": total, "transition_profit_factor": pf,
+            "transition_only_drawdown_percent": round(transition_dd, 4), "transition_entropy": round(entropy, 5),
+            "continuation_reversal_disagreement": round(abs(continuation - reversal), 5),
+            "transition_risk_multiplier": round(max(.3, min(.7, 1 - entropy * .55)), 5),
+            "false_entry_rate": false_entry_rate, "abstention_quality": abstention, "score": score,
+            "rule": "Transition policy may WAIT, reduce risk or re-route; steady-state PF alone is insufficient.",
         }
 
     def sealed_holdout(self, payload: SimpleBacktestRequest, df: pd.DataFrame) -> tuple[dict[str, object], dict[str, object]]:

@@ -20,6 +20,15 @@ class MarketChampionService
         private PaperEvidenceReadinessService $paperEvidence,
         private ForwardGateProgressService $gateProgress,
         private CandidateGateDecisionService $gateDecisions,
+        private EliteAgentPassportService $passport,
+        private AgentEvolutionQualityService $evolutionQuality,
+        private UniversalAgentCapabilityService $universalCapabilities,
+        private EliteEcosystemService $eliteEcosystem,
+        private SequentialPaperEvidenceService $sequentialPaperEvidence,
+        private VetoPolicyLaboratoryService $vetoPolicies,
+        private RegimeReservoirService $regimeReservoir,
+        private TransferMatrixService $transferMatrix,
+        private FailureCurriculumService $failureCurriculum,
     ) {}
 
     public function evaluate(string $strategy, string $symbol, string $timeframe, int $fitness, array $result): ModelMarketPerformance
@@ -53,6 +62,22 @@ class MarketChampionService
             // otherwise a later diagnostic would confuse an absent payload
             // field with zero rolling wins.
             $result['rolling_forward_wins'] = $wins;
+            $agent = LabAgent::query()->with('mutationMemories')->where('model_version_id', $model->id)->latest()->first();
+            $result['trial_ledger'] = [
+                'generation_id' => $agent?->lab_generation_id, 'model_version_id' => $model->id,
+                'generation_trials' => $agent ? LabAgent::query()->where('lab_generation_id', $agent->lab_generation_id)->count() : 1,
+                'selection_count' => $agent ? LabAgent::query()->where('lab_generation_id', $agent->lab_generation_id)->whereIn('lifecycle_status', ['full_queued', 'training', 'challenger', 'forward_validated'])->count() : 1,
+                'rule' => 'Forward evidence records trial multiplicity; raw PF is never interpreted without selection context.',
+            ];
+            $result['veto_policy_lab'] = $agent ? $this->vetoPolicies->evaluate($agent) : ['status' => 'waiting_for_lab_agent'];
+            $result['transfer_matrix'] = $this->transferMatrix->sync($model, $result);
+            $result['epistemic_boundary'] = app(UniversalAgentCapabilityService::class)->selfKnowledge($result);
+            $result['cross_market_transfer_passport'] = $this->universalCapabilities->transferPassport($model, $result);
+            $result['pass_k_reliability'] = $this->universalCapabilities->passKReliability($result);
+            $elitePassport = $this->passport->build($model, $agent, $result);
+            $elitePassport = $this->passport->freezeIfFinalist($model, $elitePassport, $result);
+            $result['elite_agent_passport'] = $elitePassport;
+            $model->update(['metadata' => array_merge($model->metadata ?? [], ['elite_agent_passport' => $elitePassport])]);
 
             $performance = ModelMarketPerformance::query()->updateOrCreate(
                 ['model_version_id' => $model->id, 'symbol' => $symbol, 'timeframe' => $timeframe],
@@ -64,6 +89,15 @@ class MarketChampionService
                     'champion_slot' => $champion?->model_version_id === $model->id ? 'champion' : null,
                 ],
             );
+            $result['failure_curriculum'] = $this->failureCurriculum->evaluate($performance, $result);
+            // Curriculum evidence is available only after the immutable
+            // performance row exists. Rebuild the passport so v4 candidates
+            // see the same P0 curriculum contract as the gate evaluator.
+            $elitePassport = $this->passport->build($model, $agent, $result);
+            $elitePassport = $this->passport->freezeIfFinalist($model, $elitePassport, $result);
+            $result['elite_agent_passport'] = $elitePassport;
+            $model->update(['metadata' => array_merge($model->metadata ?? [], ['elite_agent_passport' => $elitePassport])]);
+            $performance->update(['metrics' => $result]);
 
             if ($champion?->id === $performance->id) {
                 $performance->update(['status' => 'champion', 'champion_slot' => 'champion']);
@@ -92,6 +126,17 @@ class MarketChampionService
             }
 
             $this->updateLabAgentAndMemory($performance->fresh(), $champion, $result);
+            // The atlas and Red-Queen records are learning evidence only. They
+            // do not turn a challenger into a paper candidate and therefore
+            // cannot weaken the promotion protocol.
+            $this->eliteEcosystem->sync(
+                $performance->fresh(),
+                $result,
+                $this->evolutionQuality->capabilityVector($result),
+            );
+            $result['regime_reservoir'] = $this->regimeReservoir->sync($performance->fresh(), $result);
+            $performance->update(['metrics' => [...($performance->metrics ?? []), 'regime_reservoir' => $result['regime_reservoir'],
+                'veto_policy_lab' => $result['veto_policy_lab'], 'transfer_matrix' => $result['transfer_matrix']]]);
             $this->diagnoses->diagnose($performance->fresh(), $result);
             $this->decisionLearning->learn($performance->fresh(), $result);
             $this->gateDecisions->recordForward($performance->fresh(), $result);
@@ -108,6 +153,9 @@ class MarketChampionService
             $profitFactor = (float) ($metrics['profit_factor'] ?? 0);
             $drawdown = (float) ($metrics['max_drawdown'] ?? 100);
             $minimumSamples = max(50, (int) config('services.promotion.paper_min_samples', 50));
+            // This is an observational, anytime-valid sequence.  The existing
+            // immutable >=50 real paper outcome requirement remains decisive.
+            $metrics['sequential_evidence'] = $this->sequentialPaperEvidence->observe($performance, $metrics);
             $passed = $sampleCount >= $minimumSamples && $profitFactor >= 1.3 && $drawdown <= 15
                 && (float) ($metrics['net_profit_percent'] ?? 0) > 0;
             $status = $passed ? 'passed' : ($sampleCount >= $minimumSamples ? 'failed' : 'running');
@@ -184,6 +232,7 @@ class MarketChampionService
             : (data_get($bootstrap, 'status') !== 'assessed'
                 || (float) data_get($bootstrap, 'pf_5_percentile_lower_bound', 0) >= 1.1);
         $edgeQuality = data_get($result, 'statistical_evidence.edge_quality', []);
+        $passportPasses = data_get($result, 'elite_agent_passport.status') === 'passed';
         $worstRegimePasses = $strictStatisticalProtocol
             ? (bool) data_get($edgeQuality, 'worst_regime_sampled', false)
                 && (float) data_get($edgeQuality, 'worst_regime_pf', 0) >= 1.0
@@ -204,6 +253,7 @@ class MarketChampionService
             && $stressCostPasses
             && $bootstrapPasses
             && $worstRegimePasses
+            && $passportPasses
             && $diverse;
     }
 
@@ -228,7 +278,6 @@ class MarketChampionService
         $agent = LabAgent::where('model_version_id', $performance->model_version_id)->latest()->first();
         if (! $agent) return;
         $skillTree = $this->skillTree($result);
-        $agent->modelVersion?->update(['metadata' => array_merge($agent->modelVersion->metadata ?? [], ['skill_tree' => $skillTree])]);
         $delta = $champion ? $performance->forward_score - $champion->forward_score : $performance->forward_score;
         $reason = match ($performance->status) {
             'forward_validated' => 'Backtest gates passed; paper trading required.',
@@ -253,8 +302,6 @@ class MarketChampionService
             || (bool) ($result['is_overfit'] ?? false)
             || (float) data_get($result, 'monte_carlo.risk_of_ruin_percent', 0) > 10
             || (float) ($result['max_drawdown_percent'] ?? $result['max_drawdown'] ?? 0) > 15;
-        $outcome = $hardFailure ? 'harmful' : ($delta >= 5 ? 'beneficial' : ($delta <= -5 ? 'harmful' : 'neutral'));
-        $learningDelta = $hardFailure ? min($delta, -10) : $delta;
         $parentA = $agent->parent_a_model_version_id ? ModelMarketPerformance::query()->where('model_version_id', $agent->parent_a_model_version_id)
             ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->first() : null;
         $parentB = ! $parentA && $agent->parent_b_model_version_id ? ModelMarketPerformance::query()->where('model_version_id', $agent->parent_b_model_version_id)
@@ -278,6 +325,26 @@ class MarketChampionService
         }
         $baseline = $baseline ?: ['type' => 'symbol_timeframe_benchmark', 'agent_ids' => []];
         $parentResult = $parentPerformance?->metrics;
+        $curriculum = $this->evolutionQuality->curriculum($result);
+        $noRegression = $this->evolutionQuality->noRegressionContract($parentResult, $result);
+        $capabilityVector = $this->evolutionQuality->capabilityVector($result);
+        $result['capability_vector'] = $capabilityVector;
+        $operatingEnvelope = $this->evolutionQuality->operatingEnvelope($result);
+        $pairedExperiment = $this->evolutionQuality->pairedExperiment($agent, $parentResult, $result);
+        $selfKnowledge = $this->universalCapabilities->selfKnowledge($result);
+        $retention = $this->universalCapabilities->retention($parentResult, $result);
+        $certification = $this->universalCapabilities->certification($result, $selfKnowledge, $retention);
+        $skillAtlas = $this->universalCapabilities->skillAtlas($performance, $capabilityVector);
+        $agent->modelVersion?->update(['metadata' => array_merge($agent->modelVersion->metadata ?? [], [
+            'skill_tree' => $skillTree, 'capability_vector' => $capabilityVector,
+            'operating_envelope' => $operatingEnvelope, 'gate_deficit_curriculum' => $curriculum,
+            'no_regression_contract' => $noRegression,
+            'epistemic_boundary' => $selfKnowledge, 'skill_retention_exam' => $retention,
+            'universal_certification' => $certification, 'quality_diversity_skill_atlas' => $skillAtlas,
+        ])]);
+        $contractFailure = $noRegression['status'] === 'failed';
+        $outcome = ($hardFailure || $contractFailure) ? 'harmful' : ($delta >= 5 ? 'beneficial' : ($delta <= -5 ? 'harmful' : 'neutral'));
+        $learningDelta = ($hardFailure || $contractFailure) ? min($delta, -10) : $delta;
         $beforeGates = is_array($parentResult)
             ? $this->gateProgress->snapshot($parentResult, (int) $parentPerformance->rolling_forward_wins, $frontierBaseline)
             : null;
@@ -289,6 +356,25 @@ class MarketChampionService
             $baseline,
         );
         $behavioralEffect = $this->behavioralEffect($parentResult, $result);
+        $changedFields = array_keys($agent->parameter_diff ?? []);
+        $isSingleMutation = count($changedFields) === 1;
+        $pairedConfirmed = data_get($pairedExperiment, 'status') === 'confirmed';
+        $causalCredit = [
+            'status' => $isSingleMutation && $pairedConfirmed ? 'independently_confirmed' : ($isSingleMutation ? 'awaiting_paired_confirmation' : 'bundle_unattributed'),
+            'parent_model_version_id' => $parentPerformance?->model_version_id,
+            'changed_fields' => $changedFields,
+            'mutation_bundle_id' => hash('sha256', json_encode([$agent->id, $changedFields, data_get($agent->modelVersion?->metadata, 'generation_target')], JSON_PRESERVE_ZERO_FRACTION)),
+            'rule' => 'Aggregate bundle outcome is never automatically credited to each changed parameter.',
+        ];
+        if (! $isSingleMutation && $changedFields !== []) {
+            MutationMemory::updateOrCreate(['lab_agent_id' => $agent->id, 'parameter_key' => '__bundle:'.substr($causalCredit['mutation_bundle_id'], 0, 16)], [
+                'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $agent->strategy_family,
+                'old_value' => ['fields' => $changedFields], 'new_value' => ['fields' => $changedFields], 'forward_delta' => $learningDelta,
+                'market_regime' => $regime, 'outcome' => $outcome, 'confidence' => min(100, 50 + $performance->rolling_windows_count * 10),
+                'decision' => 'Bundle evidence retained; individual causal credit withheld.', 'gate_transition' => $gateTransition,
+                'behavioral_effect' => [...$behavioralEffect, 'causal_credit' => $causalCredit],
+            ]);
+        }
         foreach ($agent->parameter_diff ?? [] as $key => $change) {
             $mutationEffect = $this->parameterEffectiveness($agent, $key, $behavioralEffect);
             MutationMemory::updateOrCreate([
@@ -297,11 +383,14 @@ class MarketChampionService
                 'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $agent->strategy_family,
                 'old_value' => ['value' => $change['old'] ?? null], 'new_value' => ['value' => $change['new'] ?? null],
                 'forward_delta' => $learningDelta, 'market_regime' => $regime,
-                'outcome' => $outcome,
+                'outcome' => $isSingleMutation && $pairedConfirmed ? $outcome : 'neutral',
                 'confidence' => min(100, 50 + $performance->rolling_windows_count * 10),
                 'decision' => $delta >= 5 ? 'Foydali mutation; keyingi generationda ustuvor.' : ($delta <= -5 ? 'Zararli mutation; shu yo‘nalishni cheklash.' : 'Neutral mutation; qo‘shimcha evidence kerak.'),
                 'gate_transition' => $gateTransition,
-                'behavioral_effect' => [...$behavioralEffect, 'causal_experiment' => $mutationEffect],
+                'behavioral_effect' => [...$behavioralEffect, 'causal_experiment' => $mutationEffect,
+                    'gate_deficit_curriculum' => $curriculum, 'no_regression_contract' => $noRegression,
+                    'capability_vector' => $capabilityVector, 'operating_envelope' => $operatingEnvelope,
+                    'paired_experiment' => $pairedExperiment, 'causal_credit' => $causalCredit],
             ]);
         }
         $architecture = data_get($agent->modelVersion?->metadata, 'strategy_architecture');
@@ -316,7 +405,9 @@ class MarketChampionService
                 'confidence' => min(100, 50 + $performance->rolling_windows_count * 10),
                 'decision' => $outcome === 'beneficial' ? 'Architecture evidence improved; retain for this regime.' : ($outcome === 'harmful' ? 'Architecture falsified in this regime; de-prioritize.' : 'Architecture needs more evidence.'),
                 'gate_transition' => $gateTransition,
-                'behavioral_effect' => $behavioralEffect,
+                'behavioral_effect' => [...$behavioralEffect, 'gate_deficit_curriculum' => $curriculum,
+                    'no_regression_contract' => $noRegression, 'capability_vector' => $capabilityVector,
+                    'operating_envelope' => $operatingEnvelope, 'paired_experiment' => $pairedExperiment],
             ]);
         }
     }

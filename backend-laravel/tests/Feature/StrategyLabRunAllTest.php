@@ -289,7 +289,7 @@ class StrategyLabRunAllTest extends TestCase
         ]);
         $this->assertDatabaseHas('model_market_performance', [
             'strategy_family' => 'macd_trend', 'symbol' => 'XAUUSD',
-            'timeframe' => 'H1', 'status' => 'forward_validated', 'paper_status' => 'pending',
+            'timeframe' => 'H1', 'status' => 'challenger', 'paper_status' => 'pending',
         ]);
 
         $this->assertDatabaseHas('strategy_dna_profiles', [

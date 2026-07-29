@@ -7,6 +7,7 @@ use App\Models\AiLaboratory;
 use App\Services\LabDatasetExportService;
 use App\Services\LabCandidateSelectionService;
 use App\Services\MarketData\MarketDataContinuityService;
+use App\Services\SystemLogService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 
@@ -16,10 +17,11 @@ class DispatchFullLabValidation extends Command
 
     protected $description = 'Select the strongest screened agents from every pair and serialize full walk-forward validation';
 
-    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabCandidateSelectionService $selection): int
+    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabCandidateSelectionService $selection, \App\Services\CandidateGateDecisionService $decisions, SystemLogService $logs, \App\Services\CandidateHandoffService $handoffs): int
     {
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
         $rounds = [];
+        $queuedAgents = [];
 
         $timeframe = strtoupper((string) $this->option('timeframe'));
         foreach ($symbols as $symbol) {
@@ -41,22 +43,55 @@ class DispatchFullLabValidation extends Command
                 continue;
             }
 
-            $datasets->export($symbol, $lab->timeframe);
-            // Export is serialized, but scheduler and a manual command can
-            // both be waiting for it. Reload candidate state afterwards so a
-            // waiter cannot enqueue an already full_queued agent twice.
+            // Selection completes before any heavy export. It is immutable
+            // evidence for why a candidate received scarce replay capacity.
             $generation = $generation->fresh(['agents.modelVersion']);
-            $screened = $generation->agents
-                ->where('lifecycle_status', 'screened')
-                ->values();
+            $screened = $generation->agents->where('lifecycle_status', 'screened')->values();
             $agents = $selection->select($screened);
+            $selectionIds = [];
+            foreach ($screened as $screenedAgent) {
+                $decision = $decisions->recordFullReplaySelection($screenedAgent, $agents->contains('id', $screenedAgent->id));
+                $selectionIds[$screenedAgent->id] = $decision->id;
+                $handoffs->record($generation, $screenedAgent, 'selection_passed', $agents->contains('id', $screenedAgent->id) ? 'completed' : 'not_selected',
+                    $agents->contains('id', $screenedAgent->id) ? null : 'NO_ELIGIBLE_CANDIDATE', ['selection_decision_id' => $decision->id, 'next_action' => $agents->contains('id', $screenedAgent->id) ? 'export' : 'targeted_generation']);
+            }
             if ($agents->isEmpty()) {
+                $handoffs->noEligibleCandidate($generation);
                 $this->info("{$symbol}: full validation uchun screened kandidat yo'q.");
                 continue;
             }
+
+            $exportStarted = microtime(true);
+            try {
+                $datasetPath = $datasets->export($symbol, $lab->timeframe);
+                $payloadHash = is_file($datasetPath) ? hash_file('sha256', $datasetPath) : null;
+                $logs->write('FULL_VALIDATION_EXPORT_READY', 'Full-validation dataset export completed.', [
+                    'symbol' => $symbol, 'timeframe' => $lab->timeframe, 'generation' => $generation->generation,
+                    'duration_ms' => (int) ((microtime(true) - $exportStarted) * 1000),
+                ], 'info', 'lab_validation', 'dataset_export', 'ready');
+                foreach ($agents as $agent) {
+                    $handoffs->record($generation, $agent, 'export_locked', 'completed', null, ['selection_decision_id' => $selectionIds[$agent->id] ?? null,
+                        'payload_hash' => $payloadHash, 'duration_ms' => (int) ((microtime(true) - $exportStarted) * 1000),
+                        'idempotency_key' => hash('sha256', "{$generation->id}|{$agent->id}|{$payloadHash}")]);
+                }
+            } catch (\Throwable $exception) {
+                $logs->write('FULL_VALIDATION_EXPORT_FAILED', 'Full-validation dataset export failed; no replay was dispatched.', [
+                    'symbol' => $symbol, 'timeframe' => $lab->timeframe, 'generation' => $generation->generation,
+                    'duration_ms' => (int) ((microtime(true) - $exportStarted) * 1000), 'reason' => $exception->getMessage(),
+                ], 'warning', 'lab_validation', 'dataset_export', 'failed');
+                $this->error("{$symbol}: dataset export failed; no full replay dispatched.");
+                continue;
+            }
+            $logs->write('FULL_VALIDATION_SELECTION_COMPLETE', 'Full-validation candidate selection completed.', [
+                'symbol' => $symbol, 'timeframe' => $lab->timeframe, 'generation' => $generation->generation,
+                'screened_count' => $screened->count(), 'selected_count' => $agents->count(),
+            ], 'info', 'lab_validation', 'candidate_selection', 'completed');
             foreach ($agents as $rank => $agent) {
                 $agent->update(['lifecycle_status' => 'full_queued', 'decision_reason' => 'Dynamic evidence-frontier candidate #'.($rank + 1).'; queued for serialized full validation.']);
+                $handoffs->record($generation, $agent, 'queued', 'completed', null, ['rank' => $rank + 1, 'selection_decision_id' => $selectionIds[$agent->id] ?? null,
+                    'idempotency_key' => hash('sha256', "{$generation->id}|{$agent->id}|full")]);
                 $rounds[$rank][] = new EvaluateLabAgentJob($agent->id, $symbol, 'full');
+                $queuedAgents[] = ['generation' => $generation, 'agent' => $agent, 'selection_decision_id' => $selectionIds[$agent->id] ?? null];
             }
             $generation->update(['status' => 'full_validation']);
         }
@@ -67,6 +102,12 @@ class DispatchFullLabValidation extends Command
         if (! $jobs) return self::SUCCESS;
 
         $batch = Bus::batch($jobs)->name('Global full validation')->onConnection('database')->onQueue('lab-full-validation')->dispatch();
+        foreach ($queuedAgents as $queued) {
+            $handoffs->record($queued['generation'], $queued['agent'], 'queue_job_id', 'completed', null, [
+                'queue_job_id' => $batch->id, 'queue_batch_id' => $batch->id, 'attempt' => 0,
+                'selection_decision_id' => $queued['selection_decision_id'], 'failure_reason' => null, 'next_action' => 'worker_reservation',
+            ]);
+        }
         $this->info("Global full validation batch {$batch->id}: ".count($jobs).' candidates.');
 
         return self::SUCCESS;

@@ -25,6 +25,7 @@ class PaperTradingExecutionService
         private PaperConfidenceCalibrationService $calibration,
         private EconomicCalendarService $calendar,
         private CandidateGateDecisionService $gateDecisions,
+        private PaperExecutionStateMachineService $executionState,
     ) {}
 
     public function run(): array
@@ -68,14 +69,7 @@ class PaperTradingExecutionService
         $response = Http::timeout(120)->acceptJson()
             ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])->post(
             rtrim(config('services.ai_service.url'), '/').'/api/paper/signal',
-            [
-                'symbol' => $candidate->symbol,
-                'timeframe' => $candidate->timeframe,
-                'strategy' => $model->strategy,
-                'base_strategy' => data_get($model->metadata, 'base_strategy') ?: $candidate->strategy_family.'_v1',
-                'parameters' => $model->parameters ?? [],
-                'candles' => $rows,
-            ],
+            $this->aiRequest($candidate, $rows),
         );
         if ($response->failed()) {
             $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_AI_SERVICE', ['http_status' => $response->status()]);
@@ -89,7 +83,10 @@ class PaperTradingExecutionService
         $signal['raw_confidence'] = $rawConfidence;
         $signal['calibration'] = $calibrated;
         $signal['economic_calendar'] = $news;
-        if (! $calibrated['allowed']) {
+        if (($signal['meta_agent']['decision'] ?? null) === 'WAIT') {
+            $signal['signal'] = 'WAIT';
+            $signal['meta_reason'] = $signal['meta_agent']['reason'] ?? 'META_AGENT_WAIT';
+        } elseif (! $calibrated['allowed']) {
             $signal['signal'] = 'WAIT';
             $signal['calibration_reason'] = 'Calibrated paper probability is below the minimum execution threshold.';
         } elseif ($news['active']) {
@@ -105,6 +102,7 @@ class PaperTradingExecutionService
         }
         $captureReason = match (true) {
             ! $calibrated['allowed'] => 'BLOCKED_BY_CALIBRATION',
+            isset($signal['meta_reason']) => 'BLOCKED_BY_META_AGENT',
             $news['active'] => 'BLOCKED_BY_CALENDAR',
             isset($signal['allocator_reason']) => 'BLOCKED_BY_ALLOCATOR',
             ($signal['signal'] ?? 'WAIT') === 'WAIT' => 'NO_SIGNAL_OPPORTUNITY',
@@ -136,7 +134,7 @@ class PaperTradingExecutionService
             'hypothesis' => 'Forward-validated candidate emitted an immutable paper signal.',
         ]);
 
-        PaperSignal::create([
+        $paperSignal = PaperSignal::create([
             'model_market_performance_id' => $candidate->id,
             'model_version_id' => $model->id,
             'signal_market_snapshot_id' => $signalSnapshot?->id,
@@ -153,6 +151,8 @@ class PaperTradingExecutionService
             'payload' => $signal,
             'payload_hash' => hash('sha256', json_encode($this->canonicalize($signal), JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
         ]);
+        $this->executionState->record($candidate, 'signal_created', $paperSignal, null, ['provider' => 'canonical_market_data',
+            'requested_price' => $paperSignal->price, 'payload' => ['candle_time' => $paperSignal->candle_time?->toIso8601String()]]);
 
         return 1;
     }
@@ -168,6 +168,10 @@ class PaperTradingExecutionService
         if (! $signal) {
             return 0;
         }
+        if ($this->executionState->signalInvalidatedByDisconnect($candidate, $signal)) {
+            $this->executionState->record($candidate, 'cancelled', $signal, null, ['reason' => 'STALE_AFTER_PROVIDER_DISCONNECT']);
+            return 0;
+        }
 
         $symbolId = Symbol::where('code', $signal->symbol)->value('id');
         $entryCandle = $symbolId ? Candle::query()
@@ -180,24 +184,36 @@ class PaperTradingExecutionService
             return 0;
         }
 
-        $entry = (float) $entryCandle->open;
-        $isBuy = $signal->decision === 'BUY';
+        $rows = $this->candles->candlesForBacktest($candidate->symbol, $candidate->timeframe, 1000);
+        $contractResponse = Http::timeout(120)->acceptJson()
+            ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])->post(
+                rtrim(config('services.ai_service.url'), '/').'/api/paper/execution-contract',
+                ['request' => $this->aiRequest($candidate, $rows), 'entry_market_price' => (float) $entryCandle->open,
+                    'signal_time' => $signal->candle_time->toIso8601String()],
+            );
+        if ($contractResponse->failed()) {
+            $this->executionState->record($candidate, 'provider_disconnected', $signal, null, ['provider' => 'ai_execution_contract', 'reason' => 'EXECUTION_CONTRACT_UNAVAILABLE', 'latency_ms' => 120000]);
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_EXECUTION_CONTRACT', ['paper_signal_id' => $signal->id, 'http_status' => $contractResponse->status()]);
+            return 0;
+        }
+        $contract = (array) $contractResponse->json();
+        if (($contract['decision'] ?? 'WAIT') !== $signal->decision) {
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_META_AGENT', ['paper_signal_id' => $signal->id, 'meta_reason' => data_get($contract, 'meta_agent.reason')]);
+            return 0;
+        }
+        $entry = (float) $contract['entry_price'];
         $executionSignal = array_merge($signal->payload, [
-            'signal' => $signal->decision,
-            'signal_time' => $signal->candle_time->toIso8601String(),
-            'entry_candle_time' => $entryCandle->time->toIso8601String(),
-            'price' => $entry,
-            'stop_loss' => $entry * ($isBuy ? 0.995 : 1.005),
-            'take_profit' => $entry * ($isBuy ? 1.01 : 0.99),
+            'signal' => $signal->decision, 'signal_time' => $signal->candle_time->toIso8601String(),
+            'entry_candle_time' => $entryCandle->time->toIso8601String(), 'price' => $entry,
+            'stop_loss' => (float) $contract['stop_loss'], 'take_profit' => (float) $contract['take_profit'],
+            'execution_contract' => $contract,
         ]);
         $risk = $this->risk->canOpen($candidate, $executionSignal);
         $baseUnits = (float) config('services.paper.units', 1);
-        $stopRisk = abs($entry - $executionSignal['stop_loss']) / max($entry, 0.0000001) * 100
-            + $risk['estimated_round_trip_cost_percent'];
-        $sizeMultiple = min(5.0, (float) config('services.risk.max_risk_per_trade_percent', 1) / max($stopRisk, 0.000001));
+        $sizeMultiple = (float) $contract['position_size_multiple'];
 
         if (! $risk['allowed']) {
-            PaperOrder::create([
+            $blockedOrder = PaperOrder::create([
                 'model_market_performance_id' => $candidate->id,
                 'paper_signal_id' => $signal->id,
                 'broker' => 'risk_gate',
@@ -212,6 +228,7 @@ class PaperTradingExecutionService
                 'opened_at' => $entryCandle->time,
                 'signal_context' => ['signal' => $executionSignal, 'risk' => $risk],
             ]);
+            $this->executionState->record($candidate, 'rejected', $signal, $blockedOrder, ['provider' => 'risk_gate', 'requested_price' => $entry, 'reason' => $risk['reason'] ?? 'RISK_VETO']);
             $this->foundation->recordEvent([
                 'event_type' => 'paper_signal_blocked',
                 'agent' => $candidate->modelVersion->strategy,
@@ -242,9 +259,10 @@ class PaperTradingExecutionService
             'take_profit' => $executionSignal['take_profit'],
             'status' => 'open',
             'opened_at' => $entryCandle->time,
-            'signal_context' => ['signal' => $executionSignal, 'risk' => $risk, 'position_size_multiple' => $sizeMultiple],
-            'broker_payload' => null,
+            'signal_context' => ['signal' => $executionSignal, 'risk' => $risk, 'position_size_multiple' => $sizeMultiple, 'execution_contract' => $contract],
+            'broker_payload' => ['execution_contract' => $contract],
         ]);
+        $this->executionState->record($candidate, 'order_submitted', $signal, $order, ['provider' => $broker, 'requested_price' => $entry, 'requested_units' => $units]);
         $order->fills()->create([
             'fill_type' => 'entry',
             'price' => $entry,
@@ -252,6 +270,7 @@ class PaperTradingExecutionService
             'filled_at' => $entryCandle->time,
             'payload' => null,
         ]);
+        $this->executionState->record($candidate, 'filled', $signal, $order, ['provider' => $broker, 'requested_price' => $entry, 'filled_price' => $entry, 'requested_units' => $units, 'filled_units' => $units]);
         $candidate->update(['status' => 'paper', 'paper_status' => 'running']);
 
         return 1;
@@ -275,6 +294,7 @@ class PaperTradingExecutionService
                 'filled_at' => now(),
                 'payload' => ['exit_reason' => $exitReason],
             ]);
+            $this->executionState->record($candidate, 'closed', $order->paperSignal, $order, ['provider' => $order->broker, 'filled_price' => $price, 'filled_units' => $order->units, 'reason' => $exitReason]);
             if ($order->paper_signal_id) {
                 $outcome = PaperSignalOutcome::firstOrCreate(['paper_signal_id' => $order->paper_signal_id], [
                     'paper_order_id' => $order->id,
@@ -284,6 +304,8 @@ class PaperTradingExecutionService
                     'exit_reason' => $exitReason,
                     'payload' => ['broker' => $order->broker, 'closed_at' => now()->toIso8601String()],
                 ]);
+                $audit = $this->selfAudit($candidate, $order, $exitReason, $profit);
+                $outcome->update(['payload' => [...((array) $outcome->payload), 'self_audit' => $audit]]);
                 if ($outcome->wasRecentlyCreated && $order->paperSignal) {
                     $this->calibration->learn($candidate, $order->paperSignal);
                 }
@@ -297,41 +319,19 @@ class PaperTradingExecutionService
 
     private function simulatedExit(PaperOrder $order): ?array
     {
-        $symbolId = Symbol::where('code', $order->symbol)->value('id');
-        if (! $symbolId) return null;
-        $candles = Candle::where('symbol_id', $symbolId)->where('timeframe', $order->timeframe)
-            ->where('time', '>=', $order->opened_at)->orderBy('time')->get();
-
-        foreach ($candles as $candle) {
-            $open = (float) $candle->open;
-            $stop = (float) $order->stop_loss;
-            $target = (float) $order->take_profit;
-            $isBuy = $order->direction === 'BUY';
-            if (($isBuy && $open <= $stop) || (! $isBuy && $open >= $stop)) {
-                return $this->paperExit($order, $open, 'gap_stop');
-            }
-            if (($isBuy && $open >= $target) || (! $isBuy && $open <= $target)) {
-                return $this->paperExit($order, $open, 'gap_target');
-            }
-
-            $stopHit = $isBuy ? (float) $candle->low <= $stop : (float) $candle->high >= $stop;
-            $targetHit = $isBuy ? (float) $candle->high >= $target : (float) $candle->low <= $target;
-            if ($stopHit) return $this->paperExit($order, $stop, 'intrabar_stop');
-            if ($targetHit) return $this->paperExit($order, $target, 'intrabar_target');
-        }
-
-        return null;
-    }
-
-    private function paperExit(PaperOrder $order, float $price, string $reason): array
-    {
-        $gross = $order->direction === 'BUY'
-            ? ($price - $order->entry_price) / $order->entry_price * 100
-            : ($order->entry_price - $price) / $order->entry_price * 100;
-        $profit = ($gross - $this->risk->estimatedRoundTripCostPercent($order->symbol, (float) $order->entry_price))
-            * (float) data_get($order->signal_context, 'position_size_multiple', 1);
-
-        return [$price, round($profit, 4), $reason];
+        $candidate = $order->marketPerformance()->with('modelVersion')->first();
+        $contract = (array) data_get($order->signal_context, 'execution_contract', []);
+        if (! $candidate || $contract === []) return null;
+        $response = Http::timeout(120)->acceptJson()
+            ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])->post(
+                rtrim(config('services.ai_service.url'), '/').'/api/paper/advance-contract', [
+                    'request' => $this->aiRequest($candidate, $this->candles->candlesForBacktest($candidate->symbol, $candidate->timeframe, 1000)),
+                    'contract' => $contract, 'entry_time' => $order->opened_at?->toIso8601String(),
+                ],
+            );
+        if ($response->failed() || ! $response->json('closed')) return null;
+        $result = $response->json();
+        return [(float) $result['exit_price'], (float) $result['profit_percent'], (string) $result['exit_reason']];
     }
 
     private function score(ModelMarketPerformance $candidate): void
@@ -376,6 +376,30 @@ class PaperTradingExecutionService
         ]);
     }
 
+    /** Immutable post-trade explanation: future mutations receive a taxonomy, not a vague "PF low" label. */
+    private function selfAudit(ModelMarketPerformance $candidate, PaperOrder $order, string $exitReason, float $profit): array
+    {
+        $signal = $order->paperSignal;
+        $payload = (array) ($signal?->payload ?? []);
+        $meta = (array) data_get($payload, 'meta_agent', []);
+        $constitution = (array) data_get($candidate->modelVersion?->metadata, 'agent_constitution', []);
+        $allowed = (array) ($constitution['allowed_regimes'] ?? []);
+        $mistakes = [];
+        if ($profit <= 0 && str_contains($exitReason, 'stop')) $mistakes[] = 'stop_too_close';
+        if ($profit <= 0 && str_contains($exitReason, 'time_stop')) $mistakes[] = 'target_too_far';
+        if ($allowed !== [] && ! in_array($signal?->market_regime, $allowed, true)) $mistakes[] = 'regime_mismatch';
+        if ((float) data_get($meta, 'expected_value.net_expected_value_percent', 0) > 0 && $profit <= 0) $mistakes[] = 'wrong_direction';
+        if ((float) data_get($meta, 'expected_value.net_expected_value_percent', 0) <= 0 && $profit <= 0) $mistakes[] = 'cost_destroyed_edge';
+        return [
+            'protocol' => 'professional_self_audit_v1', 'predicted_direction' => $signal?->decision,
+            'predicted_confidence' => $signal?->confidence, 'expected_value' => data_get($meta, 'expected_value', []),
+            'actual_profit_percent' => round($profit, 5), 'exit_reason' => $exitReason,
+            'market_regime' => $signal?->market_regime, 'volatility_regime' => $signal?->volatility_regime,
+            'loss_taxonomy' => $mistakes, 'primary_failure' => $mistakes[0] ?? null,
+            'rule' => 'This audit is learning evidence only; it never rewrites the immutable paper order.',
+        ];
+    }
+
     private function canonicalize(array $value): array
     {
         if (! array_is_list($value)) ksort($value);
@@ -383,5 +407,32 @@ class PaperTradingExecutionService
             if (is_array($item)) $value[$key] = $this->canonicalize($item);
         }
         return $value;
+    }
+
+    private function aiRequest(ModelMarketPerformance $candidate, array $rows): array
+    {
+        $model = $candidate->modelVersion;
+        return [
+            'symbol' => $candidate->symbol, 'timeframe' => $candidate->timeframe,
+            'strategy' => $model->strategy,
+            'base_strategy' => data_get($model->metadata, 'base_strategy') ?: $candidate->strategy_family.'_v1',
+            'parameters' => $model->parameters ?? [], 'candles' => $rows,
+            'policy_context' => [
+                'constitution' => data_get($model->metadata, 'agent_constitution', []),
+                'sample_count' => (int) $candidate->sample_count,
+                'calibration_score' => (float) data_get($model->metadata, 'capability_vector.calibration', 50),
+                'stress_cost_pf' => (float) data_get($candidate->metrics, 'pf_attribution.stress_cost.profit_factor', 0),
+            ],
+            // The same execution profile is used by screening/full replay and
+            // now by paper execution-contract generation.
+            'initial_balance' => 10000, 'risk_per_trade' => 1,
+            'execution' => [
+                'spread_points' => str_starts_with($candidate->symbol, 'XAU') ? 20 : 12,
+                'point_size' => str_starts_with($candidate->symbol, 'XAU') ? .01 : .00001,
+                'commission_percent' => .01, 'slippage_points' => 2, 'swap_per_day_percent' => .002,
+                'allowed_sessions_utc' => ['1-22'], 'intrabar_policy' => 'conservative', 'max_gap_multiple' => 96,
+                'reject_unexpected_gaps' => false, 'stop_loss_percent' => .5, 'take_profit_percent' => 1, 'max_leverage' => 5,
+            ],
+        ];
     }
 }

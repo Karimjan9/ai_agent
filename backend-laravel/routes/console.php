@@ -80,6 +80,9 @@ $scheduleArtisan('trading:dispatch-lab')
 $scheduleArtisan('trading:dispatch-full-validation')
     ->hourlyAt(20)
     ->withoutOverlapping();
+$scheduleArtisan('trading:process-targeted-generations')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
 $scheduleArtisan('trading:paper-monitor')
     ->everyFiveMinutes()
     ->withoutOverlapping();

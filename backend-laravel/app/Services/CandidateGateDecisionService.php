@@ -41,6 +41,12 @@ class CandidateGateDecisionService
 
     public function recordForward(ModelMarketPerformance $performance, array $result): CandidateGateDecision
     {
+        // A forward decision without its laboratory identity is not auditable
+        // evidence. Resolve only the deterministic same-version/symbol/scope
+        // relationship; an absent relation stays explicitly unattributed.
+        $agent = LabAgent::query()->where('model_version_id', $performance->model_version_id)
+            ->where('symbol', $performance->symbol)->where('timeframe', $performance->timeframe)
+            ->latest('id')->first();
         $reasons = $this->economicReasons($result, 30, 1.3, 15.0, 10.0, 3);
         if ((bool) data_get($result, 'is_overfit', false)) $reasons[] = 'FAILED_OVERFIT';
         if (data_get($result, 'pf_attribution.method') === 'identical_replay_execution_profiles'
@@ -55,7 +61,21 @@ class CandidateGateDecisionService
             && (float) data_get($result, 'selection_validation.probability_of_backtest_overfitting', 1) > .5) $reasons[] = 'FAILED_OVERFIT';
         if (data_get($result, 'statistical_evidence.deflated_sharpe.status') === 'assessed'
             && (float) data_get($result, 'statistical_evidence.deflated_sharpe.deflated_sharpe_probability', 0) < .95) $reasons[] = 'FAILED_OVERFIT';
-        return $this->store($performance, null, 'statistical_forward_gate', $reasons === [] ? 'passed' : 'failed', array_values(array_unique($reasons)), $result);
+        if (data_get($result, 'elite_agent_passport.status') !== 'passed') {
+            $reasons[] = 'FAILED_ELITE_PASSPORT';
+            $reasons = [...$reasons, ...(array) data_get($result, 'elite_agent_passport.reason_codes', [])];
+        }
+        $identity = [
+            'lab_agent_id' => $agent?->id, 'generation_id' => $agent?->lab_generation_id,
+            'model_market_performance_id' => $performance->id, 'model_version_id' => $performance->model_version_id,
+            'symbol' => $performance->symbol, 'timeframe' => $performance->timeframe,
+            'data_manifest_hash' => data_get($result, 'data_manifest.sha256'),
+            'execution_hash' => data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash')),
+            'code_version' => data_get($result, 'execution_contract.code_version', data_get($result, 'code_version')),
+            'result_hash' => hash('sha256', json_encode($result, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
+            'attribution_status' => $agent ? 'deterministic' : 'ATTRIBUTION_MISSING',
+        ];
+        return $this->store($performance, $agent, 'statistical_forward_gate', $reasons === [] ? 'passed' : 'failed', array_values(array_unique($reasons)), [...$result, 'forward_identity' => $identity]);
     }
 
     public function recordDiagnosticReplay(LabAgent $agent, array $result): CandidateGateDecision
@@ -66,6 +86,23 @@ class CandidateGateDecisionService
             'entry_funnel' => data_get($result, 'entry_funnel', []),
             'gate_deficits' => app(ForwardGateProgressService::class)->deficits($result),
             'promotion_evidence' => false,
+        ]);
+    }
+
+    /** Records why screening did or did not enter scarce full replay capacity. */
+    public function recordFullReplaySelection(LabAgent $agent, bool $selected, ?string $reason = null): CandidateGateDecision
+    {
+        $screen = (array) data_get($agent->modelVersion?->metadata, 'last_screen_result', []);
+        if ($selected) {
+            return $this->store(null, $agent, 'full_replay_selection', 'waiting', ['FULL_REPLAY_ELIGIBLE', 'WAITING_FOR_FULL_REPLAY'], [
+                'screening_metrics' => $screen, 'promotion_evidence' => false,
+            ]);
+        }
+        $reason ??= (int) $agent->sample_count < 10 ? 'FAILED_LOW_SCREEN_TRADES'
+            : ((float) $agent->forward_score <= 0 ? 'FAILED_NON_POSITIVE_SCORE'
+            : ((int) data_get($screen, 'entry_funnel.flat_signal_opportunities', 0) === 0 ? 'FAILED_NO_OPPORTUNITY' : 'DOMINATED_BY_OTHER_AGENT'));
+        return $this->store(null, $agent, 'full_replay_selection', 'failed', [$reason], [
+            'screening_metrics' => $screen, 'promotion_evidence' => false,
         ]);
     }
 
