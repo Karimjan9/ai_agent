@@ -29,6 +29,7 @@ class MarketChampionService
         private RegimeReservoirService $regimeReservoir,
         private TransferMatrixService $transferMatrix,
         private FailureCurriculumService $failureCurriculum,
+        private CandidateHandoffService $handoffs,
     ) {}
 
     public function evaluate(string $strategy, string $symbol, string $timeframe, int $fitness, array $result): ModelMarketPerformance
@@ -139,7 +140,18 @@ class MarketChampionService
                 'veto_policy_lab' => $result['veto_policy_lab'], 'transfer_matrix' => $result['transfer_matrix']]]);
             $this->diagnoses->diagnose($performance->fresh(), $result);
             $this->decisionLearning->learn($performance->fresh(), $result);
-            $this->gateDecisions->recordForward($performance->fresh(), $result);
+            $forwardDecision = $this->gateDecisions->recordForward($performance->fresh(), $result);
+            // The gate ledger is the authoritative evaluation record; mirror
+            // its immutable decision into the operational handoff so the
+            // screened -> ... -> forward_gate chain has no missing endpoint.
+            if ($agent) {
+                $this->handoffs->record($agent->generation, $agent, 'forward_gate', $forwardDecision->decision, null, [
+                    'candidate_gate_decision_id' => $forwardDecision->id,
+                    'performance_id' => $performance->id,
+                    'reason_codes' => $forwardDecision->reason_codes,
+                    'next_action' => $forwardDecision->decision === 'passed' ? 'paper_eligibility_review' : 'targeted_generation',
+                ]);
+            }
 
             return $performance->fresh();
         });
