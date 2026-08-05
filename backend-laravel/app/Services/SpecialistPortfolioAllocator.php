@@ -7,7 +7,10 @@ use Illuminate\Support\Collection;
 
 class SpecialistPortfolioAllocator
 {
-    public function __construct(private EliteEcosystemService $eliteEcosystem) {}
+    public function __construct(
+        private EliteEcosystemService $eliteEcosystem,
+        private EliteAgentPortfolioGateService $portfolioGate,
+    ) {}
 
     /**
      * Select the evidence-strongest independent specialist for the current
@@ -15,6 +18,27 @@ class SpecialistPortfolioAllocator
      */
     public function ownsRegime(ModelMarketPerformance $candidate, Collection $universe, string $regime, string $volatility): bool
     {
+        // A certified multi-member portfolio gets first refusal. It is
+        // routed by persisted niche ownership and combined replay evidence;
+        // a strong standalone candidate can never silently become a portfolio
+        // member merely because it has the highest PF.
+        if ($portfolio = $this->portfolioGate->ready($candidate->symbol, $candidate->timeframe)) {
+            if ((int) data_get($candidate->metrics, 'elite_portfolio_id', 0) === (int) $portfolio->id
+                && (bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
+                // The proxy is the sealed portfolio object itself. Its
+                // members are routed inside the canonical AI replay; the
+                // Laravel allocator must not reject the proxy because its id
+                // is intentionally different from every member id.
+                return $this->portfolioGate->routeMembers($portfolio, $regime, $volatility)->isNotEmpty();
+            }
+            $routed = $this->portfolioGate->routeMembers($portfolio, $regime, $volatility)
+                ->map(fn ($member) => $member->performance)
+                ->filter()->values();
+            if ($routed->isEmpty()) return false;
+            $winner = $routed->sortByDesc(fn (ModelMarketPerformance $item) => $this->stateScore($item, $regime, $volatility))->first();
+            return $winner?->id === $candidate->id;
+        }
+
         $eligible = $universe->filter(function (ModelMarketPerformance $item) use ($candidate, $regime, $volatility): bool {
             if ($item->symbol !== $candidate->symbol || $item->timeframe !== $candidate->timeframe) return false;
             $claim = data_get($item->metrics, 'edge_claim', []);

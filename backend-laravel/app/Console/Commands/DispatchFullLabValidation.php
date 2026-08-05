@@ -38,7 +38,14 @@ class DispatchFullLabValidation extends Command
                 $this->warn("{$symbol}: feed healthy bo'lmaguncha full validation bloklandi.");
                 continue;
             }
-            if ($generation->status !== 'screened') {
+            $hasScreenedFollowUp = $generation->status === 'completed'
+                && $generation->agents()->where('lifecycle_status', 'screened')->exists()
+                && ! $generation->agents()->whereIn('lifecycle_status', ['queued', 'screening', 'training', 'full_queued', 'full_validation'])->exists();
+            // The scheduled full selector can run just before the last
+            // screening job finishes. A completed generation with remaining
+            // screened council children is a valid second research wave; do
+            // not leave those targeted lanes stranded until a manual retry.
+            if ($generation->status !== 'screened' && ! $hasScreenedFollowUp) {
             $this->info("{$symbol} {$timeframe}: screening hali yakunlanmagan.");
                 continue;
             }
@@ -47,16 +54,37 @@ class DispatchFullLabValidation extends Command
             // evidence for why a candidate received scarce replay capacity.
             $generation = $generation->fresh(['agents.modelVersion']);
             $screened = $generation->agents->where('lifecycle_status', 'screened')->values();
-            $agents = $selection->select($screened);
+            $laneSelection = $selection->selectValidationLanes($screened);
+            $agents = $laneSelection['agents'];
+            $lanes = $laneSelection['lanes'];
             $selectionIds = [];
             foreach ($screened as $screenedAgent) {
-                $decision = $decisions->recordFullReplaySelection($screenedAgent, $agents->contains('id', $screenedAgent->id));
+                $isSelected = $agents->contains('id', $screenedAgent->id);
+                $lane = $lanes[$screenedAgent->id] ?? 'none';
+                $selectionReason = match ($lane) {
+                    'causal_probe' => 'CAUSAL_PROBE_ONLY',
+                    'causal_probe_control' => 'CAUSAL_PROBE_ALTERNATIVE',
+                    'portfolio_member' => 'PORTFOLIO_MEMBER_REPLAY',
+                    'targeted_research' => 'TARGETED_RESEARCH_ONLY',
+                    default => null,
+                };
+                $decision = $decisions->recordFullReplaySelection($screenedAgent, $isSelected, $selectionReason);
                 $selectionIds[$screenedAgent->id] = $decision->id;
-                $handoffs->record($generation, $screenedAgent, 'selection_passed', $agents->contains('id', $screenedAgent->id) ? 'completed' : 'not_selected',
-                    $agents->contains('id', $screenedAgent->id) ? null : 'NO_ELIGIBLE_CANDIDATE', ['selection_decision_id' => $decision->id, 'next_action' => $agents->contains('id', $screenedAgent->id) ? 'export' : 'targeted_generation']);
+                $handoffs->record($generation, $screenedAgent, 'selection_passed', $isSelected ? 'completed' : 'not_selected',
+                    $isSelected ? null : 'NO_ELIGIBLE_CANDIDATE', ['selection_decision_id' => $decision->id,
+                        'selection_lane' => $lane,
+                        'next_action' => match ($lane) {
+                            'causal_probe' => 'causal_probe_full_replay',
+                            'causal_probe_control' => 'causal_probe_control_replay',
+                            'portfolio_member' => 'portfolio_combined_replay',
+                            'targeted_research' => 'targeted_research_full_replay',
+                            'general_candidate', 'orthogonal_specialist' => 'export',
+                            default => 'targeted_generation',
+                        }]);
             }
             if ($agents->isEmpty()) {
                 $handoffs->noEligibleCandidate($generation);
+                app(\App\Services\LabGenerationReportService::class)->record($generation->fresh(), 'screening_no_full_candidate');
                 $this->info("{$symbol}: full validation uchun screened kandidat yo'q.");
                 continue;
             }
@@ -84,11 +112,12 @@ class DispatchFullLabValidation extends Command
             }
             $logs->write('FULL_VALIDATION_SELECTION_COMPLETE', 'Full-validation candidate selection completed.', [
                 'symbol' => $symbol, 'timeframe' => $lab->timeframe, 'generation' => $generation->generation,
-                'screened_count' => $screened->count(), 'selected_count' => $agents->count(),
+                'screened_count' => $screened->count(), 'selected_count' => $agents->count(), 'selection_lanes' => $lanes,
             ], 'info', 'lab_validation', 'candidate_selection', 'completed');
             foreach ($agents as $rank => $agent) {
                 $agent->update(['lifecycle_status' => 'full_queued', 'decision_reason' => 'Dynamic evidence-frontier candidate #'.($rank + 1).'; queued for serialized full validation.']);
                 $handoffs->record($generation, $agent, 'queued', 'completed', null, ['rank' => $rank + 1, 'selection_decision_id' => $selectionIds[$agent->id] ?? null,
+                    'selection_lane' => $lanes[$agent->id] ?? 'unknown',
                     'idempotency_key' => hash('sha256', "{$generation->id}|{$agent->id}|full")]);
                 $rounds[$rank][] = new EvaluateLabAgentJob($agent->id, $symbol, 'full');
                 $queuedAgents[] = ['generation' => $generation, 'agent' => $agent, 'selection_decision_id' => $selectionIds[$agent->id] ?? null];

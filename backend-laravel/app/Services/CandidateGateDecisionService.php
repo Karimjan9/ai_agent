@@ -13,7 +13,23 @@ class CandidateGateDecisionService
 
     public function recordScreening(LabAgent $agent, array $result): CandidateGateDecision
     {
+        $survival = (array) data_get($result, 'screening_survival', []);
+        if (data_get($survival, 'status') === 'insufficient_evidence') {
+            return $this->store(null, $agent, 'screening', 'insufficient_evidence', ['INSUFFICIENT_SCREENING_EVIDENCE'], $result);
+        }
         $reasons = $this->economicReasons($result, 10, 1.0, 100.0, 100.0, 0);
+        // A high global PF from one short slice is not a survivor claim. The
+        // incremental replay attaches frozen cost/window/perturbation checks;
+        // failures enter rescue, never the scarce promotion lane.
+        if ($survival !== [] && data_get($survival, 'status') !== 'survivor') {
+            $reasons = [...$reasons, ...(array) data_get($survival, 'reason_codes', ['FAILED_SCREENING_SURVIVAL'])];
+        }
+        if (data_get($result, 'differential_no_regression.status') !== null
+            && data_get($result, 'differential_no_regression.status') !== 'passed') {
+            $reasons[] = 'FAILED_NON_TARGET_REGRESSION';
+        }
+        $reasons = [...$reasons, ...$this->causalCooldownRescueReasons($agent, $result)];
+        $reasons = array_values(array_unique($reasons));
         $decision = $reasons === [] ? 'passed' : 'failed';
         $decisionRow = $this->store(null, $agent, 'screening', $decision, $reasons, $result);
 
@@ -28,7 +44,7 @@ class CandidateGateDecisionService
             ->whereHas('labAgent', fn ($query) => $query->where('lab_generation_id', $agent->lab_generation_id)->where('strategy_family', $agent->strategy_family))->count();
         // Maximum 4/20 population (20%) and two per family. This preserves a
         // diagnostic lane without allowing it to compete with promotion work.
-        if ($reasons !== [] && $hasDiagnosticSignal && $generationRescues < 4 && $familyRescues < 2) {
+        if ($decision === 'failed' && $hasDiagnosticSignal && $generationRescues < 4 && $familyRescues < 2) {
             $this->store(null, $agent, 'diagnostic_rescue_replay', 'waiting', [...$reasons, 'WAITING_FOR_EVIDENCE'], [
                 'recommended_mutation_target' => data_get($agent->modelVersion?->metadata, 'generation_target'),
                 'screening_metrics' => $result,
@@ -65,6 +81,9 @@ class CandidateGateDecisionService
             $reasons[] = 'FAILED_ELITE_PASSPORT';
             $reasons = [...$reasons, ...(array) data_get($result, 'elite_agent_passport.reason_codes', [])];
         }
+        if (data_get($result, 'proof_carrying_replay.status') === 'mismatch') {
+            $reasons[] = 'QUARANTINED_PROOF_REPLAY_MISMATCH';
+        }
         $identity = [
             'lab_agent_id' => $agent?->id, 'generation_id' => $agent?->lab_generation_id,
             'model_market_performance_id' => $performance->id, 'model_version_id' => $performance->model_version_id,
@@ -75,7 +94,15 @@ class CandidateGateDecisionService
             'result_hash' => hash('sha256', json_encode($result, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
             'attribution_status' => $agent ? 'deterministic' : 'ATTRIBUTION_MISSING',
         ];
-        return $this->store($performance, $agent, 'statistical_forward_gate', $reasons === [] ? 'passed' : 'failed', array_values(array_unique($reasons)), [...$result, 'forward_identity' => $identity]);
+        if (! $agent) {
+            $reasons[] = 'ATTRIBUTION_MISSING';
+        }
+        $decision = $this->store($performance, $agent, 'statistical_forward_gate', $reasons === [] ? 'passed' : 'failed', array_values(array_unique($reasons)), [...$result, 'forward_identity' => $identity]);
+        if (in_array('QUARANTINED_PROOF_REPLAY_MISMATCH', $reasons, true)) {
+            $decision->update(['quarantined_at' => now(), 'quarantine_reason' => 'primary_and_independent_ledger_verifier_disagree']);
+            $performance->update(['status' => 'rejected', 'paper_status' => 'failed']);
+        }
+        return $decision;
     }
 
     public function recordDiagnosticReplay(LabAgent $agent, array $result): CandidateGateDecision
@@ -94,8 +121,19 @@ class CandidateGateDecisionService
     {
         $screen = (array) data_get($agent->modelVersion?->metadata, 'last_screen_result', []);
         if ($selected) {
-            return $this->store(null, $agent, 'full_replay_selection', 'waiting', ['FULL_REPLAY_ELIGIBLE', 'WAITING_FOR_FULL_REPLAY'], [
+            $probe = in_array($reason, ['CAUSAL_PROBE_ONLY', 'CAUSAL_PROBE_ALTERNATIVE'], true);
+            $portfolio = $reason === 'PORTFOLIO_MEMBER_REPLAY';
+            $targetedResearch = $reason === 'TARGETED_RESEARCH_ONLY';
+            return $this->store(null, $agent, 'full_replay_selection', 'waiting', [$probe ? $reason : 'FULL_REPLAY_ELIGIBLE', 'WAITING_FOR_FULL_REPLAY'], [
                 'screening_metrics' => $screen, 'promotion_evidence' => false,
+                'replay_purpose' => $portfolio
+                    ? 'portfolio_member_validation'
+                    : ($targetedResearch ? 'g98_targeted_research_validation'
+                    : ($probe ? ($reason === 'CAUSAL_PROBE_ALTERNATIVE' ? 'causal_probe_control' : 'causal_probe') : 'candidate_validation')),
+                'rule' => $portfolio
+                    ? 'Portfolio-member replay may create combined evidence; the member can never bypass its standalone forward gate.'
+                    : ($targetedResearch ? 'Targeted G98 replay may create learning evidence for its declared lane but can never bypass promotion gates.'
+                    : ($probe ? 'Probe full replay may create learning evidence but can never bypass promotion gates.' : 'Screening-to-full replay selection.')),
             ]);
         }
         $reason ??= (int) $agent->sample_count < 10 ? 'FAILED_LOW_SCREEN_TRADES'
@@ -133,6 +171,29 @@ class CandidateGateDecisionService
         ]);
     }
 
+    /** Automated forward→paper handoff; missing activity remains observable. */
+    public function recordPaperAdmissionHandshake(ModelMarketPerformance $performance): CandidateGateDecision
+    {
+        $forward = CandidateGateDecision::query()->where('model_market_performance_id', $performance->id)
+            ->where('stage', 'statistical_forward_gate')->latest('evaluated_at')->first();
+        $passport = (array) data_get($forward?->metrics, 'elite_agent_passport', data_get($performance->metrics, 'elite_agent_passport', []));
+        $firstSignal = \App\Models\PaperSignal::query()->where('model_market_performance_id', $performance->id)->oldest('created_at')->first();
+        $reasons = [];
+        if ($forward?->decision !== 'passed') $reasons[] = 'FORWARD_GATE_NOT_PASSED';
+        if (data_get($passport, 'status') !== 'passed') $reasons[] = 'SEALED_PASSPORT_MISSING';
+        if (! filled(data_get($passport, 'agent.parameter_hash')) || ! filled(data_get($passport, 'final_exam_result_hash'))) $reasons[] = 'IMMUTABLE_IDENTITY_MISSING';
+        if (! $firstSignal && $performance->updated_at?->lte(now()->subDay())) $reasons[] = 'PAPER_ARMED_NO_SIGNAL_24H';
+        return $this->store($performance, null, 'paper_admission_handshake', $reasons === [] ? 'armed' : 'waiting', $reasons ?: ['PAPER_REGISTERED_WAITING_FOR_FIRST_SIGNAL'], [
+            'sealed_strategy_passport' => $passport,
+            'immutable_config_hash' => data_get($passport, 'agent.parameter_hash'),
+            'final_exam_result_hash' => data_get($passport, 'final_exam_result_hash'),
+            'first_signal_health' => $firstSignal ? 'captured' : 'waiting',
+            'signal_ledger_heartbeat_at' => $firstSignal?->created_at?->toIso8601String(),
+            'outcome_reconciliation' => $firstSignal?->outcome ? 'started' : 'waiting',
+            'rule' => 'Forward promotion is armed automatically; a missing signal after 24h is a diagnosable state, not a silent backend gap.',
+        ]);
+    }
+
     public function recordHoldout(ModelMarketPerformance $performance, array $holdout): CandidateGateDecision
     {
         $result = (array) data_get($holdout, 'result', []);
@@ -152,11 +213,56 @@ class CandidateGateDecisionService
         return $reasons;
     }
 
+    /** A cooldown rescue is a falsifiable single-gene experiment, never a
+     * route around the normal promotion gates. */
+    private function causalCooldownRescueReasons(LabAgent $agent, array $result): array
+    {
+        $contract = (array) data_get($agent->modelVersion?->metadata, 'causal_rescue_contract', []);
+        if (data_get($contract, 'kind') !== 'loss_cooldown_single_gene') return [];
+
+        $reasons = [];
+        $diff = (array) ($agent->parameter_diff ?? []);
+        $expected = (int) data_get($contract, 'variant.loss_cooldown_candles');
+        if (array_keys($diff) !== ['loss_cooldown_candles']
+            || (int) data_get($diff, 'loss_cooldown_candles.old') !== 4
+            || (int) data_get($diff, 'loss_cooldown_candles.new') !== $expected
+            || ! in_array($expected, [2, 3], true)) $reasons[] = 'FAILED_RESCUE_SINGLE_GENE_CONTRACT';
+        if ((int) data_get($result, 'total_trades', 0) < 10) $reasons[] = 'FAILED_RESCUE_TRADE_COUNT';
+        if ((float) data_get($result, 'profit_factor', 0) < 1.30) $reasons[] = 'FAILED_RESCUE_PROFIT_FACTOR';
+        if ((float) data_get($result, 'screening_survival.stress_cost_pf', data_get($result, 'pf_attribution.stress_cost.profit_factor', 0)) < 1.05) $reasons[] = 'FAILED_RESCUE_STRESS_COST';
+        $worstRegime = data_get($result, 'screening_survival.worst_regime_pf');
+        if ($worstRegime === null || (float) $worstRegime < 1.0) $reasons[] = 'FAILED_RESCUE_REGIME_COVERAGE';
+        $worstTemporal = (float) data_get($result, 'screening_survival.worst_temporal_chunk_pf', data_get($result, 'screening_survival.worst_window_pf', 0));
+        if ($worstTemporal < 1.0) $reasons[] = 'FAILED_RESCUE_TEMPORAL_SURVIVAL';
+        if ((float) data_get($result, 'screening_survival.train_forward_gap', PHP_FLOAT_MAX) > 25.0) $reasons[] = 'FAILED_RESCUE_TEMPORAL_GAP';
+        if ((float) data_get($result, 'screening_survival.parameter_perturbation_ratio', 0) < .80) $reasons[] = 'FAILED_RESCUE_PARAMETER_STABILITY';
+        return $reasons;
+    }
+
     private function store(?ModelMarketPerformance $performance, ?LabAgent $agent, string $stage, string $decision, array $reasons, array $metrics): CandidateGateDecision
     {
-        return CandidateGateDecision::updateOrCreate(
+        $attribution = match (true) {
+            $stage === 'statistical_forward_gate' && $agent !== null => 'deterministic',
+            $stage === 'statistical_forward_gate' => 'ATTRIBUTION_MISSING',
+            $agent !== null => 'agent_scoped',
+            $performance !== null => 'performance_only',
+            default => 'not_applicable',
+        };
+
+        $decisionRow = CandidateGateDecision::updateOrCreate(
             ['model_market_performance_id' => $performance?->id, 'lab_agent_id' => $agent?->id, 'stage' => $stage],
-            ['decision' => $decision, 'reason_codes' => array_values(array_unique($reasons)), 'metrics' => $metrics, 'evaluated_at' => now()],
+            ['decision' => $decision, 'reason_codes' => array_values(array_unique($reasons)), 'metrics' => $metrics,
+                'attribution_status' => $attribution, 'evaluated_at' => now()],
         );
+
+        // This row is a fast current-state projection. Every retry and
+        // re-check is preserved separately in the immutable evidence plane.
+        app(LabImmutableEvidenceService::class)->recordGateDecision($decisionRow, [
+            'projection' => 'candidate_gate_decisions',
+            'projection_write' => 'updateOrCreate',
+            'reason_count' => count($reasons),
+        ], data_get($metrics, 'evidence_run_id'));
+
+        return $decisionRow;
     }
 }

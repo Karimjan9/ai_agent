@@ -20,3 +20,4 @@ class ValidateInternalApiToken
         return $next($request);
     }
 }
+   

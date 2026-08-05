@@ -20,7 +20,12 @@ class BackfillCandidateHandoff extends Command
         $handoffs->backfill($generation);
         $screened = $generation->agents->where('lifecycle_status', 'screened')->values();
         $eligible = $selection->select($screened);
-        if ($generation->status === 'screened' && $eligible->isEmpty()) {
+        // A completed generation with no forward-valid agent is also a real
+        // no-candidate outcome (for example G32 screen/full collapse).  It
+        // must enter the same failure-driven rescue protocol rather than
+        // disappearing merely because its one replay has already finished.
+        $noForwardCandidate = $generation->agents->whereIn('lifecycle_status', ['forward_validated', 'paper', 'champion'])->isEmpty();
+        if ($eligible->isEmpty() && ($generation->status === 'screened' || ($generation->status === 'completed' && $noForwardCandidate))) {
             $handoffs->noEligibleCandidate($generation);
             $this->warn("{$symbol} G{$generation->generation}: NO_ELIGIBLE_CANDIDATE; targeted curriculum recorded, nothing dispatched.");
             return self::SUCCESS;

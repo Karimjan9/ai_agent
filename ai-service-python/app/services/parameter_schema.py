@@ -77,12 +77,80 @@ PARAMETER_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
         "mean_reversion_weight": {"type": float, "min": 0.0, "max": 3.0},
         "minimum_confidence": {"type": float, "min": 0.1, "max": 6.0},
         "high_volatility_wait": {"type": bool},
+        # Each lane has its own bounded operating envelope.  Keeping these
+        # genes explicit prevents a calendar/temporal rescue from mutating a
+        # fixed hidden specialist and then claiming causal credit for the
+        # whole hybrid.
+        "trend_roc_period": {"type": int, "min": 4, "max": 60},
+        "trend_roc_threshold": {"type": float, "min": 0.01, "max": 5.0},
+        "trend_ema_period": {"type": int, "min": 10, "max": 300},
+        "breakout_atr_period": {"type": int, "min": 2, "max": 100},
+        "breakout_atr_threshold": {"type": float, "min": 0.1, "max": 5.0},
+        "breakout_lookback": {"type": int, "min": 10, "max": 100},
+        "breakout_compression_ratio": {"type": float, "min": 0.3, "max": 1.0},
+        "breakout_expansion_multiplier": {"type": float, "min": 1.0, "max": 3.0},
+        "range_lookback": {"type": int, "min": 10, "max": 200},
+        "range_deviation": {"type": float, "min": 0.5, "max": 4.0},
+        "range_adx_max": {"type": float, "min": 5, "max": 35},
+        "range_low_volatility_only": {"type": bool},
+        "range_reentry_required": {"type": bool},
+        "range_signal_mode": {"type": str, "choices": {"reentry", "mean_reversion", "inverse_extreme", "mid_cross"}},
+        "session_filter_enabled": {"type": bool},
+        "session_start": {"type": int, "min": 0, "max": 23},
+        "session_end": {"type": int, "min": 1, "max": 24},
+    },
+    "differential_router": {
+        "trend_weight": {"type": float, "min": 0.0, "max": 3.0},
+        "breakout_weight": {"type": float, "min": 0.0, "max": 3.0},
+        "mean_reversion_weight": {"type": float, "min": 0.0, "max": 3.0},
+        "minimum_confidence": {"type": float, "min": 0.1, "max": 6.0},
+        "high_volatility_wait": {"type": bool},
+        "trend_down_strength_min": {"type": float, "min": 10, "max": 50},
+        "trend_down_pullback_atr_fraction": {"type": float, "min": 0.1, "max": 2.0},
+        "trend_down_risk_multiplier": {"type": float, "min": 0.1, "max": 1.0},
+        "trend_up_strength_min": {"type": float, "min": 10, "max": 50},
+        "trend_up_pullback_atr_fraction": {"type": float, "min": 0.1, "max": 2.0},
+        # v2 differential lanes reuse the parent hybrid momentum topology and
+        # mutate only the declared regime's ROC/EMA envelope.  v1 remains the
+        # compatibility path for sealed historical models.
+        "trend_up_roc_period": {"type": int, "min": 4, "max": 60},
+        "trend_up_roc_threshold": {"type": float, "min": 0.01, "max": 5.0},
+        "trend_up_ema_period": {"type": int, "min": 10, "max": 300},
+        "trend_down_roc_period": {"type": int, "min": 4, "max": 60},
+        "trend_down_roc_threshold": {"type": float, "min": 0.01, "max": 5.0},
+        "trend_down_ema_period": {"type": int, "min": 10, "max": 300},
+        "range_lookback": {"type": int, "min": 10, "max": 200},
+        "range_deviation": {"type": float, "min": 0.5, "max": 4.0},
+        "range_adx_max": {"type": float, "min": 5, "max": 35},
+        "range_low_volatility_only": {"type": bool},
+        "range_reentry_required": {"type": bool},
+        "range_signal_mode": {"type": str, "choices": {"reentry", "mean_reversion", "inverse_extreme", "mid_cross"}},
+        "trend_roc_period": {"type": int, "min": 4, "max": 60},
+        "trend_roc_threshold": {"type": float, "min": 0.01, "max": 5.0},
+        "trend_ema_period": {"type": int, "min": 10, "max": 300},
+        "breakout_atr_period": {"type": int, "min": 2, "max": 100},
+        "breakout_atr_threshold": {"type": float, "min": 0.1, "max": 5.0},
+        "breakout_lookback": {"type": int, "min": 10, "max": 100},
+        "breakout_compression_ratio": {"type": float, "min": 0.3, "max": 1.0},
+        "breakout_expansion_multiplier": {"type": float, "min": 1.0, "max": 3.0},
+        "session_filter_enabled": {"type": bool},
+        "session_start": {"type": int, "min": 0, "max": 23},
+        "session_end": {"type": int, "min": 1, "max": 24},
+        "differential_target_regime": {"type": str, "choices": {"trend_up", "range", "trend_down"}},
+        "differential_replay_mode": {"type": str, "choices": {"portfolio", "paired_isolated"}},
+        "differential_router_version": {"type": str, "choices": {"v1", "v2"}},
     },
     "regime_ensemble": {
         "atr_period": {"type": int, "min": 2, "max": 100},
         "lookback": {"type": int, "min": 10, "max": 100},
         "trend_strength_min": {"type": float, "min": 10, "max": 50},
         "pullback_atr_fraction": {"type": float, "min": 0.1, "max": 2.0},
+        # trend_down is its own operating envelope.  These values are used
+        # only by the frozen trend-down specialist; they do not perturb the
+        # trend-up or range specialists.
+        "trend_down_strength_min": {"type": float, "min": 10, "max": 50},
+        "trend_down_pullback_atr_fraction": {"type": float, "min": 0.1, "max": 2.0},
+        "trend_down_risk_multiplier": {"type": float, "min": 0.1, "max": 1.0},
         "session_start": {"type": int, "min": 0, "max": 23},
         "session_end": {"type": int, "min": 1, "max": 24},
         "adx_max": {"type": float, "min": 5, "max": 35},
@@ -105,6 +173,15 @@ EXECUTION_PARAMETER_SCHEMA: dict[str, dict[str, Any]] = {
     "minimum_signal_confidence": {"type": float, "min": 0.0, "max": 1.0},
     "max_loss_streak_before_wait": {"type": int, "min": 1, "max": 10},
     "loss_cooldown_candles": {"type": int, "min": 1, "max": 48},
+    "loss_streak_wait_candles": {"type": int, "min": 1, "max": 96},
+    "recovery_probe_risk_multiplier": {"type": float, "min": 0.1, "max": 1.0},
+    "weak_regime_min_samples": {"type": int, "min": 15, "max": 100},
+    "weak_regime_wait_candles": {"type": int, "min": 1, "max": 96},
+    "transition_firewall_enabled": {"type": bool},
+    "transition_wait_candles": {"type": int, "min": 1, "max": 6},
+    "confidence_calibration_enabled": {"type": bool},
+    "confidence_calibration_min_samples": {"type": int, "min": 15, "max": 200},
+    "confidence_ev_lower_bound_enabled": {"type": bool},
     # Dynamic cooldown is an online policy: it may inspect only shadow trades
     # whose exits were already observable at the current candle.
     "dynamic_cooldown_enabled": {"type": bool},
@@ -121,11 +198,15 @@ EXECUTION_PARAMETER_SCHEMA: dict[str, dict[str, Any]] = {
 }
 
 
-def strategy_family(strategy: str, base_strategy: str | None = None) -> str:
-    value = (base_strategy or strategy).lower()
-    value = re.sub(r"^(xauusd|eurusd|gbpusd)_", "", value)
-    value = re.sub(r"_g\d+_a\d+$", "", value)
-    value = re.sub(r"_v\d+$", "", value)
+def _normalise_strategy_identity(value: str | None) -> str:
+    identity = (value or "").lower()
+    identity = re.sub(r"^(xauusd|eurusd|gbpusd)_", "", identity)
+    identity = re.sub(r"_g\d+_a\d+$", "", identity)
+    identity = re.sub(r"_v\d+$", "", identity)
+    return identity
+
+
+def _strategy_family_alias(value: str) -> str:
     return {
         "trend_retest": "trend",
         "breakout_retest": "breakout",
@@ -140,8 +221,22 @@ def strategy_family(strategy: str, base_strategy: str | None = None) -> str:
         "momentum_pullback": "momentum",
         "regime_router": "hybrid",
         "regime_consensus": "hybrid",
+        "differential_router": "differential_router",
         "regime_ensemble": "regime_ensemble",
     }.get(value, value)
+
+
+def strategy_family(strategy: str, base_strategy: str | None = None) -> str:
+    # Composite agents own their runtime identity. Their generated parameters
+    # intentionally contain the parent topology plus specialist genes, so a
+    # stale architectural base such as breakout_v1 must not select breakout's
+    # schema or execution function.
+    strategy_value = _strategy_family_alias(_normalise_strategy_identity(strategy))
+    if strategy_value in {"differential_router", "regime_ensemble"}:
+        return strategy_value
+    if base_strategy:
+        return _strategy_family_alias(_normalise_strategy_identity(base_strategy))
+    return strategy_value
 
 
 def validate_strategy_parameters(
@@ -172,6 +267,13 @@ def validate_strategy_parameters(
             validated[key] = value
             continue
 
+        if expected is str:
+            choices = rule.get("choices", set())
+            if not isinstance(value, str) or (choices and value not in choices):
+                raise ValueError(f"{family}.{key} qiymati ruxsat etilmagan.")
+            validated[key] = value
+            continue
+
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"{family}.{key} raqam bo'lishi kerak")
         numeric = expected(value)
@@ -180,5 +282,24 @@ def validate_strategy_parameters(
                 f"{family}.{key} {rule['min']}..{rule['max']} oralig'ida bo'lishi kerak"
             )
         validated[key] = numeric
+
+    # Range-valid is not necessarily strategy-valid. Keep the runtime
+    # contract aligned with Laravel's generator so an old or externally
+    # supplied model cannot silently run an inverted EMA/RSI topology.
+    if family in {"trend", "ema_rsi"}:
+        if "ema_fast" in validated and "ema_slow" in validated:
+            fast = int(validated["ema_fast"])
+            slow = int(validated["ema_slow"])
+            if fast >= slow:
+                validated["ema_slow"] = min(500, max(3, fast + 1))
+        for lower, upper in (("rsi_buy_min", "rsi_buy_max"), ("rsi_sell_min", "rsi_sell_max")):
+            if lower in validated and upper in validated and validated[lower] > validated[upper]:
+                validated[lower], validated[upper] = validated[upper], validated[lower]
+
+    if family == "macd_trend" and "macd_fast" in validated and "macd_slow" in validated:
+        fast = int(validated["macd_fast"])
+        slow = int(validated["macd_slow"])
+        if fast >= slow:
+            validated["macd_slow"] = min(200, max(3, fast + 1))
 
     return validated

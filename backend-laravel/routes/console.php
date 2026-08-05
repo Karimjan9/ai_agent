@@ -2,6 +2,7 @@
 
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -12,7 +13,29 @@ $scheduleArtisan = static function (string $command, array $arguments = []) {
     // On Windows, Schedule::command() starts a separate console PHP process
     // for each due task, briefly flashing a CMD window. Running through the
     // scheduler process keeps the task headless under PM2.
-    return Schedule::call(static fn (): int => Artisan::call($command, $arguments))
+    // A provider outage must not abort the entire minute's schedule. This is
+    // especially important for optional intelligence feeds such as CurrentsAPI:
+    // the feed becomes stale/failed, while market-data and lab tasks continue.
+    return Schedule::call(static function () use ($command, $arguments): int {
+        try {
+            return Artisan::call($command, $arguments);
+        } catch (\Throwable $exception) {
+            $message = preg_replace(
+                '/([?&](?:apiKey|apikey|key|token|access_token)=)[^&]+/i',
+                '$1[REDACTED]',
+                $exception->getMessage()
+            ) ?: get_class($exception);
+
+            Log::error('Scheduled artisan task failed; scheduler tick isolated.', [
+                'command' => $command,
+                'arguments' => $arguments,
+                'exception_class' => get_class($exception),
+                'message' => $message,
+            ]);
+
+            return 1;
+        }
+    })
         ->name($command.':'.md5(json_encode($arguments)));
 };
 
@@ -80,17 +103,51 @@ $scheduleArtisan('trading:dispatch-lab')
 $scheduleArtisan('trading:dispatch-full-validation')
     ->hourlyAt(20)
     ->withoutOverlapping();
+$scheduleArtisan('trading:dispatch-portfolio-member-replay')
+    // This is a research-only second lane for strong niche members whose
+    // broad standalone calendar gate failed. It never emits paper signals.
+    ->hourlyAt(22)
+    ->withoutOverlapping();
 $scheduleArtisan('trading:process-targeted-generations')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+$scheduleArtisan('trading:lab-learn-from-history')
+    // History learning is a read/append-only operation. It runs before the
+    // next generation planner and never changes a quality or paper gate.
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:process-screening-learning-outbox')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:recover-lab-evaluation-errors')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:recover-stale-lab-batches', ['--older-than' => 180, '--limit' => 50])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:recover-lab-replay-mutex')
+    ->everyMinute()
+    ->withoutOverlapping();
 $scheduleArtisan('trading:paper-monitor')
     ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:validate-elite-portfolios')
+    // Individual forward validation remains the first gate. This replay is
+    // idle until at least two strict members exist, then certifies the
+    // combined routing interaction on the same canonical execution contract.
+    ->hourlyAt(25)
     ->withoutOverlapping();
 $scheduleArtisan('trading:watch-lab-lifecycle', ['--repair' => true])
     ->everyFiveMinutes()
     ->withoutOverlapping();
 $scheduleArtisan('trading:sync-economic-calendar')
     ->everySixHours()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:sync-official-us-calendar')
+    // Paid FMP history can be unavailable (for example HTTP 402). This
+    // immutable official-release fallback keeps historical USD calendar
+    // alignment auditable without turning a missing provider into a pass.
+    ->dailyAt('00:15')
     ->withoutOverlapping();
 $scheduleArtisan('trading:sync-economic-calendar --provider=alpha_vantage_news')
     // Alpha Vantage's free tier is limited to about 25 requests/day: four

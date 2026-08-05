@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "NeuroTrader Lab",
   "repository_root": "../..",
-  "updated": "2026-07-24",
+  "updated": "2026-08-04",
   "purpose": "Historical-market strategy research, backtesting, agent evaluation, and paper-trading foundation.",
   "read_order": [
     "README.md",
@@ -98,6 +98,14 @@
     {
       "date": "2026-07-24",
       "change": "Added replay-only CSCV/PBO and per-trade Deflated Sharpe cohort diagnostics. Full-validation jobs now evaluate a selected generation cohort together, cache peer results to avoid duplicate replay work, and block statistically weak assessed candidates from paper trading."
+    },
+    {
+      "date": "2026-08-04",
+      "change": "Made differential-router and regime-ensemble identity authoritative across Python validation/registry and Laravel replay, paper, holdout, incremental, portfolio, and auto-training payloads; stale parent architecture metadata can no longer execute the wrong strategy family."
+    },
+    {
+      "date": "2026-08-04",
+      "change": "Added certified coverage passport v2 with explicit hierarchical evidence backoff, preserved fine-cell diagnostics, and bounded runtime-schema recovery for quarantined evaluator errors. Coverage, forward, paper, and portfolio gates remain fail-closed."
     }
   ]
 }

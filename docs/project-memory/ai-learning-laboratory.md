@@ -6,20 +6,20 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-07-27
+updated: 2026-08-04
 ---
 
 # AI Learning Laboratory
 
 ## Primary objective
 
-Prove that agents improve safely across generations before expanding the conceptual AI modules. Each market owns its models: a successful XAUUSD model never becomes an EURUSD or GBPUSD champion automatically.
+Prove that agents improve safely across generations before expanding the conceptual AI modules. Each market owns its models: a successful XAUUSD model never becomes an EURUSD or GBPUSD champion automatically. A market may promote either one forward-valid agent or a sealed complementary portfolio; a portfolio is not a shortcut around independent member passports and combined replay.
 
 | Laboratory | Families | Scope key |
 | --- | --- | --- |
-| XAUUSD Lab | Trend, Breakout, Volatility, Hybrid | `XAUUSD + H1 + family` |
-| EURUSD Lab | Trend, Mean Reversion, Session, Hybrid | `EURUSD + H1 + family` |
-| GBPUSD Lab | Breakout, Momentum, Volatility, Hybrid | `GBPUSD + H1 + family` |
+| XAUUSD Lab | Trend, Breakout, Volatility, Hybrid, Regime Ensemble, Differential Router | `XAUUSD + H1 + family` |
+| EURUSD Lab | Trend, Mean Reversion, Session, Hybrid, Regime Ensemble | `EURUSD + H1 + family` |
+| GBPUSD Lab | Breakout, Momentum, Volatility, Hybrid, Regime Ensemble | `GBPUSD + H1 + family` |
 
 ## Learning loop
 
@@ -37,6 +37,8 @@ complete historical data
 ```
 
 Generation composition is fixed and gate-targeted: 8 gate-targeted mutations, 4 risk/exit mutations, 3 architecture mutations, 3 robust crossovers, and 2 random explorers. A generation starts with `draft` agents and cannot be duplicated while it is queued or training. It ranks family budget by explicit deficits: `trade_deficit = max(0, 30 - trades)`, `pf_deficit = max(0, 1.30 - PF)`, `rolling_deficit = max(0, 3 - rolling_wins)`, `drawdown_excess = max(0, DD - 15)`, and `ruin_excess = max(0, ruin - 10)`.
+
+Composite runtimes are identity-safe: `differential_router` and `regime_ensemble` own their execution function even when a frozen parent architecture is recorded as `base_strategy`. This same canonical identity is sent to screening, full replay, paper signal/order contracts, holdout, incremental health checks, and combined portfolio replay.
 
 Trade deficit targets entry filters; PF deficit targets stop/target/trailing/exit topology; drawdown and ruin target risk multiplier and loss cooldown; rolling deficit targets regime/session-adaptive topology; starvation targets lookback, confirmation, and confidence; overfit targets architecture diversification. Each mutation stores its parent-to-child gate transition, including improved and worsened gates. Trade milestones are `15 -> 24 -> 34`, PF milestones are `1.05 -> 1.18 -> 1.36`, and rolling-win milestones are `1 -> 2 -> 3`. A family or architecture with no gate improvement across three completed generations is temporarily excluded until new evidence changes that state.
 
@@ -76,6 +78,8 @@ The old champion is archived only at promotion time; it remains active while a c
 
 Every stage writes a `candidate_gate_decisions` ledger row rather than only a generic rejected status. The decision is `passed`, `failed`, or `waiting` and uses machine-readable codes such as `FAILED_TRADE_COUNT`, `FAILED_PROFIT_FACTOR`, `FAILED_DRAWDOWN`, `FAILED_REGIME_COVERAGE`, `FAILED_STRESS_COST`, `FAILED_CALIBRATION`, `FAILED_FEED_UPTIME`, and `WAITING_FOR_SAMPLE`. A screening failure additionally creates a `diagnostic_rescue_replay` waiting record so the next targeted generation has a specific remediation objective.
 
+The certified coverage passport keeps the fine `regime × volatility × session × direction` cells for diagnosis, then uses only a declared, evidence-backed hierarchy (`regime|volatility|session|direction` → `regime|volatility|direction` → `regime|direction` → `regime`) when a finite sample is too sparse. Every observed cell must map to trade or abstain evidence; unobserved cells remain `WAIT`. Paper signal generation consumes the same sealed effective cells, so an unseen paper envelope cannot quietly create an order. This is a statistical evidence repair, never a lower promotion threshold.
+
 ## Statistical selection controls
 
 Full validation submits the selected cohort from one generation in a single AI-service request. Four chronological replay checkpoints (all before the sealed six-week holdout) form the candidate-by-checkpoint score matrix. CSCV selects on one half of those checkpoints and ranks the selected candidate on the complementary half; PBO is the fraction of splits where the selected candidate finishes below the out-of-sample median. Deflated Sharpe uses cost-inclusive per-trade equity returns, the cohort's observed Sharpe distribution, skewness, and excess kurtosis. A missing cohort or insufficient checkpoint count is explicitly recorded as `insufficient_data`/`not_applicable_single_trial`; it is never represented as a successful statistical test.
@@ -88,6 +92,7 @@ Full validation submits the selected cohort from one generation in a single AI-s
 - Weekly: `trading:dispatch-lab` sends every draft agent to its own pair queue for full historical rolling walk-forward and Monte Carlo evaluation.
 - Every five minutes: `trading:paper-monitor` opens/reconciles simulated or configured practice-broker paper orders.
 - Hourly: `trading:release-holdouts` releases a paper-passed finalist's untouched holdout exactly once.
+- Every five minutes: `trading:watch-lab-lifecycle` audits abandoned evaluator runs, missing forward ledgers, paper capture gaps, and invalid paper-order identities; repairs are bounded and never create quality evidence.
 
 ## Required workers
 

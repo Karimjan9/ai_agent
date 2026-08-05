@@ -84,6 +84,51 @@ def apply_mean_reversion_strategy(df: pd.DataFrame, parameters: dict | None = No
     return out
 
 
+def apply_range_reentry_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Range specialist with an explicit, sealed signal topology.
+
+    ``reentry``/``mean_reversion`` are contrarian hypotheses.  A range label
+    can also contain failed mean-reversion moves, so ``inverse_extreme`` is a
+    separately scored continuation hypothesis.  It is never silently mixed
+    into the parent; the router changes only the declared range lane.
+    """
+    p = parameters or {}
+    lookback = int(p.get("range_lookback", p.get("lookback", 20)))
+    deviation = float(p.get("range_deviation", p.get("deviation", 2.0)))
+    adx_max = float(p.get("range_adx_max", p.get("adx_max", 20)))
+    low_volatility_only = bool(p.get("range_low_volatility_only", p.get("low_volatility_only", False)))
+    reentry_required = bool(p.get("range_reentry_required", True))
+    signal_mode = str(p.get("range_signal_mode", "reentry"))
+    mean = df.close.rolling(lookback).mean()
+    std = df.close.rolling(lookback).std().replace(0, pd.NA)
+    lower, upper = mean - std * deviation, mean + std * deviation
+    range_filter = df.get("adx", pd.Series(0, index=df.index)) <= adx_max
+    if low_volatility_only:
+        range_filter &= df.get("volatility_regime", pd.Series("normal_volatility", index=df.index)) == "low_volatility"
+    if signal_mode == "inverse_extreme":
+        # A failed fade is treated as continuation only inside the target
+        # range lane.  This is a falsifiable specialist hypothesis, not a
+        # global direction flip.
+        buy = df.close > upper
+        sell = df.close < lower
+    elif signal_mode == "mid_cross":
+        buy = (df.close.shift(1) < mean.shift(1)) & (df.close >= mean)
+        sell = (df.close.shift(1) > mean.shift(1)) & (df.close <= mean)
+    elif signal_mode == "reentry" and reentry_required:
+        buy = (df.close.shift(1) < lower.shift(1)) & (df.close >= lower) & (df.close > df.close.shift(1))
+        sell = (df.close.shift(1) > upper.shift(1)) & (df.close <= upper) & (df.close < df.close.shift(1))
+    else:
+        buy = df.close < lower
+        sell = df.close > upper
+    out = df.copy()
+    out["signal"] = "WAIT"
+    out.loc[range_filter & buy, "signal"] = "BUY"
+    out.loc[range_filter & sell, "signal"] = "SELL"
+    distance = ((df.close - mean).abs() / (std * max(deviation, .01))).clip(0, 2).fillna(0)
+    out["signal_confidence"] = ((distance - 1) / 1).clip(0, 1).fillna(0)
+    return out
+
+
 def _rsi(close: pd.Series, period: int) -> pd.Series:
     delta = close.diff()
     gain, loss = delta.clip(lower=0), -delta.clip(upper=0)
@@ -112,6 +157,21 @@ def apply_momentum_strategy(df: pd.DataFrame, parameters: dict | None = None) ->
     out["signal"] = "WAIT"
     out.loc[(roc > threshold) & (out.close > ema), "signal"] = "BUY"
     out.loc[(roc < -threshold) & (out.close < ema), "signal"] = "SELL"
+    atr = out.get("atr_regime", (out.high - out.low).rolling(14, min_periods=1).mean()).replace(0, pd.NA)
+    roc_strength = ((roc.abs() - abs(threshold)) / max(abs(threshold), .01)).clip(0, 1)
+    trend_separation = ((out.close - ema).abs() / atr).clip(0, 3).fillna(0) / 3
+    structural_quality = (roc_strength * .65 + trend_separation * .35).clip(0, 1)
+    # Confidence is an ordered signal-quality score, not a claim that the
+    # raw indicator is a calibrated probability.  The replay layer calibrates
+    # it only from already-closed trades and may abstain on a negative EV
+    # lower bound.  A small floor preserves the existing minimum-confidence
+    # contract for a valid momentum signal while still separating weak/strong
+    # entries for the calibration ledger.
+    out["signal_confidence"] = structural_quality.where(
+        out["signal"].isin(["BUY", "SELL"]), 0.0
+    ).fillna(0).mul(.65).add(.35).where(
+        out["signal"].isin(["BUY", "SELL"]), 0.0
+    ).clip(0, 1)
     return out
 
 
@@ -120,44 +180,196 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
 
     Trend candles use trend-following, ranges use mean-reversion, and high
     volatility can be explicitly parked.  Outside those clear states, the
-    weighted agreement of independent families is required.
+    weighted agreement of independent families is required.  The specialist
+    envelopes are explicit genes rather than hidden constants: a temporal or
+    monthly rescue can therefore test one causal lane without refitting the
+    whole hybrid.
     """
     p = parameters or {}
     out = df.copy()
-    trend = apply_momentum_strategy(out, {"roc_period": 12, "roc_threshold": 0.2, "ema_period": 50})
-    breakout = apply_volatility_strategy(out, {"atr_period": 14, "atr_threshold": 1.2, "lookback": 20})
-    mean_reversion = apply_mean_reversion_strategy(out, {"lookback": 20, "deviation": 2.0})
+    trend = apply_momentum_strategy(out, {
+        "roc_period": int(p.get("trend_roc_period", 12)),
+        "roc_threshold": float(p.get("trend_roc_threshold", 0.2)),
+        "ema_period": int(p.get("trend_ema_period", 50)),
+    })
+    breakout = apply_volatility_strategy(out, {
+        "atr_period": int(p.get("breakout_atr_period", 14)),
+        "atr_threshold": float(p.get("breakout_atr_threshold", 1.2)),
+        "lookback": int(p.get("breakout_lookback", 20)),
+        "compression_ratio": float(p.get("breakout_compression_ratio", 0.75)),
+        "expansion_multiplier": float(p.get("breakout_expansion_multiplier", 1.2)),
+    })
+    mean_reversion = apply_mean_reversion_strategy(out, {
+        "lookback": int(p.get("range_lookback", 20)),
+        "deviation": float(p.get("range_deviation", 2.0)),
+        "adx_max": float(p.get("range_adx_max", 20.0)),
+        "low_volatility_only": bool(p.get("range_low_volatility_only", True)),
+    })
     weights = {
         "trend": float(p.get("trend_weight", 1.0)),
         "breakout": float(p.get("breakout_weight", 1.0)),
         "mean_reversion": float(p.get("mean_reversion_weight", 1.0)),
     }
     minimum = float(p.get("minimum_confidence", 1.0))
+    session_enabled = bool(p.get("session_filter_enabled", False))
+    session_start = int(p.get("session_start", 0))
+    session_end = int(p.get("session_end", 24))
     out["signal"] = "WAIT"
+    out["selected_specialist"] = "none"
+    # Confidence is populated from the selected specialist below. Keeping it
+    # at zero for WAIT prevents a no-signal row from entering the calibration
+    # sample and removes the old implicit-confidence=1.0 blind spot.
+    out["signal_confidence"] = 0.0
 
-    for index in out.index:
-        regime = str(out.at[index, "market_regime"] if "market_regime" in out else "unknown")
-        volatility = str(out.at[index, "volatility_regime"] if "volatility_regime" in out else "normal_volatility")
-        if bool(p.get("high_volatility_wait", True)) and volatility == "high_volatility":
-            continue
-        signals = {
-            "trend": str(trend.at[index, "signal"]),
-            "breakout": str(breakout.at[index, "signal"]),
-            "mean_reversion": str(mean_reversion.at[index, "signal"]),
-        }
-        if regime in {"trend_up", "trend_down"}:
-            out.at[index, "signal"] = signals["trend"] if signals["trend"] != "WAIT" else signals["breakout"]
-            continue
-        if regime == "range":
-            out.at[index, "signal"] = signals["mean_reversion"]
-            continue
-        buy = sum(weights[name] for name, signal in signals.items() if signal == "BUY")
-        sell = sum(weights[name] for name, signal in signals.items() if signal == "SELL")
-        if buy >= minimum and buy > sell:
-            out.at[index, "signal"] = "BUY"
-        elif sell >= minimum and sell > buy:
-            out.at[index, "signal"] = "SELL"
+    # This router used to perform a Python ``.at`` lookup for every candle.
+    # Full canonical archives contain 100k+ rows and replay this topology many
+    # times (normal/stress, temporal, monthly and adversarial lanes), so that
+    # implementation turned a deterministic vector operation into an
+    # accidental multi-hour bottleneck. The masks below preserve the exact
+    # precedence of the old loop: trend specialist first, breakout fallback,
+    # range specialist next, weighted consensus only for unknown regimes.
+    regime = out.get("market_regime", pd.Series("unknown", index=out.index)).astype(str)
+    volatility = out.get(
+        "volatility_regime", pd.Series("normal_volatility", index=out.index)
+    ).astype(str)
+    active = pd.Series(True, index=out.index)
+    if bool(p.get("high_volatility_wait", True)):
+        active &= volatility != "high_volatility"
+    if session_enabled:
+        hours = pd.to_datetime(out["time"], errors="coerce").dt.hour
+        if session_start < session_end:
+            active &= hours.ge(session_start) & hours.lt(session_end)
+        else:
+            active &= hours.ge(session_start) | hours.lt(session_end)
+
+    trend_signal = trend["signal"].astype(str)
+    breakout_signal = breakout["signal"].astype(str)
+    mean_signal = mean_reversion["signal"].astype(str)
+
+    def clipped_confidence(source: pd.DataFrame) -> pd.Series:
+        return pd.to_numeric(
+            source.get("signal_confidence", pd.Series(0.0, index=out.index)),
+            errors="coerce",
+        ).fillna(0.0).clip(lower=.35, upper=1.0)
+
+    trend_confidence = clipped_confidence(trend)
+    breakout_confidence = clipped_confidence(breakout)
+    mean_confidence = clipped_confidence(mean_reversion)
+
+    trend_regime = active & regime.isin(["trend_up", "trend_down"])
+    trend_lane = trend_regime & trend_signal.ne("WAIT")
+    breakout_lane = trend_regime & trend_signal.eq("WAIT")
+    out.loc[trend_regime, "selected_specialist"] = "breakout"
+    out.loc[trend_lane, "selected_specialist"] = "trend"
+    out.loc[trend_lane, "signal"] = trend_signal.loc[trend_lane]
+    out.loc[breakout_lane, "signal"] = breakout_signal.loc[breakout_lane]
+    out.loc[trend_lane & trend_signal.ne("WAIT"), "signal_confidence"] = trend_confidence.loc[
+        trend_lane & trend_signal.ne("WAIT")
+    ]
+    out.loc[breakout_lane & breakout_signal.ne("WAIT"), "signal_confidence"] = breakout_confidence.loc[
+        breakout_lane & breakout_signal.ne("WAIT")
+    ]
+
+    range_lane = active & regime.eq("range")
+    range_signal = range_lane & mean_signal.ne("WAIT")
+    out.loc[range_lane, "selected_specialist"] = "range"
+    out.loc[range_lane, "signal"] = mean_signal.loc[range_lane]
+    out.loc[range_signal, "signal_confidence"] = mean_confidence.loc[range_signal]
+
+    unknown_lane = active & ~regime.isin(["trend_up", "trend_down", "range"])
+    trend_buy = trend_signal.eq("BUY").astype(float) * weights["trend"]
+    breakout_buy = breakout_signal.eq("BUY").astype(float) * weights["breakout"]
+    mean_buy = mean_signal.eq("BUY").astype(float) * weights["mean_reversion"]
+    trend_sell = trend_signal.eq("SELL").astype(float) * weights["trend"]
+    breakout_sell = breakout_signal.eq("SELL").astype(float) * weights["breakout"]
+    mean_sell = mean_signal.eq("SELL").astype(float) * weights["mean_reversion"]
+    buy_weight = trend_buy + breakout_buy + mean_buy
+    sell_weight = trend_sell + breakout_sell + mean_sell
+    buy_lane = unknown_lane & buy_weight.ge(minimum) & buy_weight.gt(sell_weight)
+    sell_lane = unknown_lane & sell_weight.ge(minimum) & sell_weight.gt(buy_weight)
+
+    buy_confidence_weight = (
+        trend_buy * trend_confidence
+        + breakout_buy * breakout_confidence
+        + mean_buy * mean_confidence
+    )
+    sell_confidence_weight = (
+        trend_sell * trend_confidence
+        + breakout_sell * breakout_confidence
+        + mean_sell * mean_confidence
+    )
+    out.loc[buy_lane | sell_lane, "selected_specialist"] = "consensus"
+    out.loc[buy_lane, "signal"] = "BUY"
+    out.loc[sell_lane, "signal"] = "SELL"
+    out.loc[buy_lane, "signal_confidence"] = (
+        buy_confidence_weight / buy_weight.clip(lower=.0001)
+    ).clip(lower=.35, upper=1.0).loc[buy_lane]
+    out.loc[sell_lane, "signal_confidence"] = (
+        sell_confidence_weight / sell_weight.clip(lower=.0001)
+    ).clip(lower=.35, upper=1.0).loc[sell_lane]
     return out
+
+
+def apply_differential_router_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Freeze a parent hybrid except for one pre-declared regime lane.
+
+    The original rescue was permanently wired to ``trend_down``.  That made
+    the experiment optimize a healthy lane while the actual deficit was often
+    ``range``.  The target is now part of the sealed experiment contract and
+    the child topology is selected before replay.  Untargeted candles are
+    copied verbatim from the parent so a lane mutation cannot silently rewrite
+    the rest of the strategy.
+    """
+    p = parameters or {}
+    target_regime = str(p.get("differential_target_regime", "trend_down"))
+    if target_regime not in {"trend_up", "range", "trend_down"}:
+        raise ValueError(f"Unsupported differential target regime: {target_regime}")
+
+    parent = apply_hybrid_strategy(df, p)
+    router_version = str(p.get("differential_router_version", "v1"))
+    if target_regime == "range":
+        child = apply_range_reentry_strategy(parent, p)
+    elif router_version == "v2":
+        # Preserve the parent's hybrid momentum topology.  The old v1 path
+        # swapped in a different ADX/EMA specialist, which silently destroyed
+        # target-lane opportunity coverage and made a one-gene rescue look
+        # like a new strategy family.  v2 changes only the declared regime's
+        # ROC/EMA envelope; outside that regime the parent frame is copied
+        # verbatim below.
+        prefix = "trend_up" if target_regime == "trend_up" else "trend_down"
+        child = apply_momentum_strategy(parent, {
+            "roc_period": int(p.get(f"{prefix}_roc_period", p.get("trend_roc_period", 12))),
+            "roc_threshold": float(p.get(f"{prefix}_roc_threshold", p.get("trend_roc_threshold", .2))),
+            "ema_period": int(p.get(f"{prefix}_ema_period", p.get("trend_ema_period", 50))),
+        })
+    else:
+        prefix = "trend_up" if target_regime == "trend_up" else "trend_down"
+        child = apply_trend_specialist(parent, {
+            **p,
+            "trend_strength_min": p.get(f"{prefix}_strength_min", p.get("trend_strength_min", 20)),
+            "pullback_atr_fraction": p.get(
+                f"{prefix}_pullback_atr_fraction", p.get("pullback_atr_fraction", .75)
+            ),
+        })
+
+    out = parent.copy()
+    # Keep the exact parent context outside the target lane.  The replay
+    # engine uses this marker to run an isolated paired lane contract.
+    out["selected_specialist"] = "parent"
+    out["parent_signal"] = parent["signal"]
+    out["parent_signal_confidence"] = parent["signal_confidence"]
+    target = out.get("market_regime", pd.Series("unknown", index=out.index)).astype(str) == target_regime
+    out.loc[target, "signal"] = child.loc[target, "signal"]
+    out.loc[target, "signal_confidence"] = child.loc[target, "signal_confidence"]
+    out.loc[target, "selected_specialist"] = f"{target_regime}_child"
+    out["differential_target"] = target
+    out["differential_target_regime"] = target_regime
+    return out
+
+
+def apply_differential_trend_down_router_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Backward-compatible alias for old trend-down model versions."""
+    return apply_differential_router_strategy(df, parameters)
 
 
 def apply_regime_ensemble_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
@@ -169,7 +381,14 @@ def apply_regime_ensemble_strategy(df: pd.DataFrame, parameters: dict | None = N
     """
     p = parameters or {}
     out = df.copy()
-    trend = apply_trend_specialist(out, p)
+    trend_up = apply_trend_specialist(out, p)
+    # A trend-down signal is generated by a separate frozen specialist.  Its
+    # thresholds cannot leak into trend-up, range, or breakout decisions.
+    trend_down = apply_trend_specialist(out, {
+        **p,
+        "trend_strength_min": p.get("trend_down_strength_min", p.get("trend_strength_min", 20)),
+        "pullback_atr_fraction": p.get("trend_down_pullback_atr_fraction", p.get("pullback_atr_fraction", .75)),
+    })
     breakout = apply_volatility_strategy(out, p)
     range_agent = apply_mean_reversion_strategy(out, p)
     session = apply_session_strategy(out, p)
@@ -182,8 +401,10 @@ def apply_regime_ensemble_strategy(df: pd.DataFrame, parameters: dict | None = N
         volatility = str(out.at[index, "volatility_regime"] if "volatility_regime" in out else "normal_volatility")
         if volatility == "high_volatility":
             specialist, source = "breakout", breakout
-        elif regime in {"trend_up", "trend_down"}:
-            specialist, source = "trend", trend
+        elif regime == "trend_up":
+            specialist, source = "trend_up", trend_up
+        elif regime == "trend_down":
+            specialist, source = "trend_down", trend_down
         elif regime == "range":
             specialist, source = "range", range_agent
         else:

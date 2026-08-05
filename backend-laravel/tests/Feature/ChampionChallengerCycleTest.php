@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\EvolutionProposal;
+use App\Models\EconomicEvent;
 use App\Models\ModelVersion;
 use App\Services\EvolutionProposalApplicationService;
 use App\Services\MarketChampionService;
@@ -19,6 +20,14 @@ class ChampionChallengerCycleTest extends TestCase
         $champion = ModelVersion::create($this->model('breakout_v1', 'v1'));
         $challenger = ModelVersion::create($this->model('breakout_v2', 'v2'));
         $service = app(MarketChampionService::class);
+        // The production passport requires an explicit historical official
+        // calendar ledger. This fixture proves safe abstention in the event
+        // window instead of relying on a missing-provider exemption.
+        EconomicEvent::create([
+            'source' => 'official_bls', 'external_id' => 'test-us-cpi-2026-01',
+            'title' => 'US CPI', 'country' => 'US', 'currency' => 'USD',
+            'impact' => 'high', 'scheduled_at' => '2026-01-15 13:30:00', 'payload' => ['test_fixture' => true],
+        ]);
 
         $first = $service->evaluate('breakout_v1', 'XAUUSD', 'H1', 75, $this->resultMetrics(70, [70, 71, 69]));
         $this->assertSame('forward_validated', $first->status);
@@ -36,6 +45,30 @@ class ChampionChallengerCycleTest extends TestCase
         ]);
         $this->assertDatabaseHas('model_market_performance', [
             'model_version_id' => $champion->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'status' => 'archived',
+        ]);
+    }
+
+    public function test_evaluation_can_pin_duplicate_runtime_strategy_to_the_exact_model_version(): void
+    {
+        ModelVersion::create($this->model('breakout_v1', 'v1'));
+        $exactAttributes = $this->model('breakout_v1', 'v2');
+        $exactAttributes['name'] = 'breakout_v1_candidate_v2';
+        $exact = ModelVersion::create($exactAttributes);
+
+        $performance = app(MarketChampionService::class)->evaluate(
+            $exact->strategy,
+            'XAUUSD',
+            'H1',
+            90,
+            $this->resultMetrics(90, [90, 91, 92]),
+            $exact,
+        );
+
+        $this->assertSame($exact->id, $performance->model_version_id);
+        $this->assertDatabaseHas('model_market_performance', [
+            'model_version_id' => $exact->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
         ]);
     }
 
@@ -139,6 +172,7 @@ class ChampionChallengerCycleTest extends TestCase
             ]],
             'market_adaptive_replay' => [
                 'protocol' => 'closed candle decision -> next candle execution -> outcome',
+                'rolling_evolution' => ['start' => '2026-01-01T00:00:00+00:00', 'end' => '2026-01-31T00:00:00+00:00'],
                 'sealed_holdout' => ['used_for_training' => false, 'used_for_evolution' => false],
             ],
             'secret_adversarial_arena' => ['status' => 'passed'],

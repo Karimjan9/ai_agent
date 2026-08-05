@@ -3,6 +3,11 @@ import os
 import math
 import hashlib
 import json
+import subprocess
+import sys
+import tempfile
+import time
+from threading import Lock
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -35,6 +40,13 @@ app = FastAPI(
     version="0.1.0",
 )
 
+_replay_state_lock = Lock()
+_replay_lane_lock = Lock()
+_active_replay_count = 0
+_last_replay_started_at: str | None = None
+_last_replay_finished_at: str | None = None
+_last_replay_termination: str | None = None
+
 
 @app.middleware("http")
 async def require_internal_token(request: Request, call_next):
@@ -45,20 +57,30 @@ async def require_internal_token(request: Request, call_next):
         supplied = request.headers.get("x-internal-token", "")
         if not hmac.compare_digest(token, supplied):
             return JSONResponse(status_code=401, content={"detail": "Invalid internal API token."})
-    return await call_next(request)
+    is_replay = request.url.path in {"/api/backtest/run-all", "/api/portfolio/backtest"}
+    if is_replay:
+        global _active_replay_count, _last_replay_started_at
+        with _replay_state_lock:
+            _active_replay_count += 1
+            _last_replay_started_at = pd.Timestamp.utcnow().isoformat()
+    try:
+        return await call_next(request)
+    finally:
+        if is_replay:
+            with _replay_state_lock:
+                _active_replay_count = max(0, _active_replay_count - 1)
 
 
 def _internal_api_token() -> str:
-    token = os.getenv("INTERNAL_API_TOKEN", "").strip()
-    if token:
-        return token
     token_file = os.getenv("INTERNAL_API_TOKEN_FILE", "").strip()
-    if not token_file:
-        return ""
-    try:
-        return Path(token_file).read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
+    if token_file:
+        try:
+            token = Path(token_file).read_text(encoding="utf-8").strip()
+            if token:
+                return token
+        except OSError:
+            pass
+    return os.getenv("INTERNAL_API_TOKEN", "").strip()
 
 
 @app.get("/health")
@@ -82,6 +104,20 @@ def strategies() -> dict[str, object]:
     }
 
 
+@app.get("/api/replay-status")
+def replay_status() -> dict[str, object]:
+    """Expose the single evaluator lane's liveness to safe mutex recovery."""
+    with _replay_state_lock:
+        return {
+            "active_requests": _active_replay_count,
+            "last_replay_started_at": _last_replay_started_at,
+            "last_replay_finished_at": _last_replay_finished_at,
+            "last_replay_termination": _last_replay_termination,
+            "service_pid": os.getpid(),
+            "protocol": "replay_liveness_v2_bounded_worker",
+        }
+
+
 @app.post("/api/backtest/run", response_model=SimpleBacktestResponse)
 def run_simple_backtest_api(payload: SimpleBacktestRequest) -> SimpleBacktestResponse:
     try:
@@ -99,6 +135,19 @@ def run_simple_backtest_api(payload: SimpleBacktestRequest) -> SimpleBacktestRes
 
 @app.post("/api/backtest/run-all")
 def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
+    """Run a replay in a killable child process with a hard wall-clock bound.
+
+    The strategy engine is intentionally kept in ``_run_all_backtests_sync``.
+    A synchronous Python thread cannot be safely interrupted after Laravel's
+    cURL timeout, which previously allowed one pathological replay to hold the
+    evaluator lane for many hours.  A child process gives the service a real
+    containment boundary: a timed-out replay is terminated and can never
+    continue mutating the shared AI process or starve later candidates.
+    """
+    return _run_bounded_replay("run_all", payload)
+
+
+def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
     leaderboard = []
     strategy_configs = payload.strategies or [
         {
@@ -132,8 +181,66 @@ def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
                 "strategies": [],
             })
             if payload.evaluation_mode == "incremental":
-                incremental_df = source_df.sort_values("time").tail(2000).reset_index(drop=True)
-                incremental_result = run_simple_ema_rsi_backtest_on_dataframe(strategy_payload, incremental_df).model_dump()
+                ordered = source_df.sort_values("time").reset_index(drop=True)
+                # Tier 1 is deliberately cheap: it measures whether there is
+                # a signal/opportunity claim at all. It never rejects a gene
+                # for lacking regime, stress or monthly evidence.
+                opportunity_df = ordered.tail(2000).reset_index(drop=True)
+                # Differential causal lanes are expensive and belong to the
+                # Tier-2 survival contract. Tier-1 only answers whether the
+                # candidate has observable activity, so do not spend four
+                # paired replays there as well. The full 5k survival replay
+                # below keeps the paired ledger evidence intact.
+                opportunity_payload = strategy_payload
+                if len(ordered) >= 5000 and "differential_router" in str(
+                    strategy_payload.base_strategy or strategy_payload.strategy
+                ).lower():
+                    opportunity_payload = strategy_payload.model_copy(update={
+                        "parameters": {
+                            **strategy_payload.parameters,
+                            "differential_pair_replay_enabled": False,
+                        },
+                    })
+                opportunity_result = run_simple_ema_rsi_backtest_on_dataframe(
+                    opportunity_payload,
+                    opportunity_df,
+                    include_differential_pair=False,
+                    lightweight=True,
+                ).model_dump()
+                # Tier 2 is the only screen allowed to make a survival claim.
+                # An archive shorter than 5k is an evidence gap, not failure.
+                if len(ordered) >= 5000:
+                    survival_df = ordered.tail(5000).reset_index(drop=True)
+                    # Screening is a routing/falsification stage.  Keep the
+                    # same core execution, costs and full-ledger attribution,
+                    # but defer Monte Carlo/DNA/promotion-only diagnostics to
+                    # full validation.  This cannot create promotion or
+                    # paper evidence and prevents one pathological specialist
+                    # from monopolizing the screening queue.
+                    incremental_result = run_simple_ema_rsi_backtest_on_dataframe(
+                        strategy_payload, survival_df, lightweight=True
+                    ).model_dump()
+                    survival = MarketAdaptiveReplayService().screening_survival_profile(
+                        strategy_payload, survival_df, incremental_result, calculate_strategy_score
+                    )
+                    incremental_result["pf_attribution"] = survival.get("cost_profile", {})
+                else:
+                    incremental_result = opportunity_result
+                    survival = {
+                        "protocol": "screening_survival_v2", "status": "insufficient_evidence",
+                        "required_candles": 5000, "available_candles": len(ordered), "reason_codes": ["INSUFFICIENT_SCREENING_EVIDENCE"],
+                        "promotion_evidence": False,
+                        "rule": "Short opportunity screening may route research, but cannot make a survival or harmful mutation claim.",
+                    }
+                incremental_result["screening_opportunity"] = {
+                    "protocol": "screening_opportunity_v1", "candles": len(opportunity_df),
+                    "total_trades": opportunity_result.get("total_trades", 0),
+                    "entry_funnel": opportunity_result.get("entry_funnel", {}),
+                    "opportunity_metrics": opportunity_result.get("opportunity_metrics", {}),
+                    "promotion_evidence": False,
+                }
+                incremental_result["screening_survival"] = survival
+                incremental_result["evaluation_mode"] = "incremental_two_tier"
                 incremental_score = calculate_strategy_score(incremental_result)
                 analysis = {
                     "train_score": incremental_score, "validation_score": incremental_score,
@@ -203,6 +310,344 @@ def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
     }
 
 
+@app.post("/api/portfolio/backtest")
+def run_portfolio_backtest(payload: SimpleBacktestRequest) -> dict[str, object]:
+    """Replay a pre-declared complementary portfolio on one canonical stream.
+
+    This endpoint deliberately does not accept a post-replay optimiser or a
+    free-form month/regime selector. Membership and niche ownership are part
+    of the request contract and are frozen before the same next-candle,
+    conservative-cost execution engine is run.
+    """
+    if len(payload.portfolio_members) < 2:
+        raise HTTPException(status_code=400, detail="A portfolio replay requires at least two declared members.")
+    return _run_bounded_replay("portfolio", payload)
+
+
+def _run_portfolio_backtest_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
+    if len(payload.portfolio_members) < 2:
+        raise ValueError("A portfolio replay requires at least two declared members.")
+    validated_members = []
+    try:
+        for member in payload.portfolio_members:
+            parameters = validate_strategy_parameters(member.strategy, member.parameters, member.base_strategy)
+            validated_members.append(member.model_copy(update={"parameters": parameters}))
+        run_payload = payload.model_copy(update={
+            "strategy": "portfolio_v1",
+            "base_strategy": "portfolio",
+            # The portfolio owns only its sealed global policy layer. Member
+            # execution genes are bound per signal by the router; copying the
+            # first member here would silently turn the council back into a
+            # primary-agent replay.
+            "parameters": dict(payload.parameters or {}),
+            "portfolio_members": validated_members,
+        })
+        # Portfolio evidence must use the same chronological replay, stress,
+        # monthly, temporal-firewall and adversarial lanes as an individual
+        # full-validation candidate. A plain simple replay would silently
+        # omit those gates and make the combined portfolio incomparable.
+        source_df = _load_simple_candles(run_payload)
+        analysis = MarketAdaptiveReplayService().run(
+            run_payload, source_df, calculate_strategy_score
+        )
+        return analysis["result"]
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> int:
+    """Return a deadline that is shorter than the Laravel transport budget."""
+    is_differential = any(
+        "differential" in str(value).lower()
+        for value in [payload.strategy, payload.base_strategy, payload.version]
+    ) or any("differential" in str(member.strategy).lower() for member in payload.strategies)
+
+    if operation == "portfolio":
+        # Laravel's portfolio HTTP budget is 1800s. Keep a small transport
+        # margin while allowing a legitimate sealed council replay to finish
+        # when Windows CPU scheduling places it just beyond the old 1650s
+        # cutoff. This changes no quality gate or replay content.
+        env_name, default, ceiling = "AI_REPLAY_PORTFOLIO_HARD_TIMEOUT_SECONDS", 2220, 2220
+    elif payload.evaluation_mode == "incremental" and is_differential:
+        env_name, default, ceiling = "AI_REPLAY_DIFFERENTIAL_SCREEN_HARD_TIMEOUT_SECONDS", 780, 840
+    elif payload.evaluation_mode == "incremental":
+        # Screening computes the full 5k-candle survival profile, including
+        # chronological month attribution. Keep a strict wall-clock bound,
+        # but leave enough room for a normal Windows worker under load.
+        env_name, default, ceiling = "AI_REPLAY_SCREEN_HARD_TIMEOUT_SECONDS", 330, 330
+    else:
+        # Full replay has the same 1800s Laravel HTTP budget. The former 1650s
+        # default classified a still-running, CPU-active replay as an
+        # evaluation_error before the caller's own timeout could expire.
+        env_name, default, ceiling = "AI_REPLAY_FULL_HARD_TIMEOUT_SECONDS", 2220, 2220
+
+    try:
+        configured = int(os.getenv(env_name, str(default)))
+    except ValueError:
+        configured = default
+    return max(30, min(configured, ceiling))
+
+
+def _read_replay_capture(stream) -> str:
+    if stream is None:
+        return ""
+    try:
+        stream.flush()
+        stream.seek(0)
+        value = stream.read()
+        return value if isinstance(value, str) else value.decode("utf-8", errors="replace")
+    except (OSError, ValueError):
+        return ""
+
+
+def _terminate_replay_tree(process: subprocess.Popen | None, stdout_capture=None, stderr_capture=None) -> tuple[str, str]:
+    """Kill a replay and every descendant, then drain its pipes briefly.
+
+    On Windows, ``Popen.kill()`` only targets the immediate process. A replay
+    worker can retain stdout/stderr handles through a descendant and make the
+    parent appear alive forever. ``taskkill /T /F`` is the explicit containment
+    boundary for this service; it is used only for the exact worker PID.
+    """
+    if process is None:
+        return "", ""
+    if process.poll() is None:
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    timeout=10,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        else:
+            try:
+                process.kill()
+            except OSError:
+                pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+    if stdout_capture is not None or stderr_capture is not None:
+        return _read_replay_capture(stdout_capture), _read_replay_capture(stderr_capture)
+    return "", ""
+
+
+def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[str, object]:
+    """Execute one heavy replay in a killable, single-lane worker.
+
+    ``multiprocessing`` spawn is not a reliable containment boundary on
+    Windows when the request contains thousands of inline candle objects: the
+    parent can remain inside process startup/serialization before it can
+    observe a child failure. A standalone Python subprocess with a JSON pipe
+    gives us a hard parent-controlled deadline and a deterministic kill path.
+    """
+    global _last_replay_finished_at, _last_replay_termination
+
+    # The replay compiler is intentionally content addressed.  It is safe to
+    # reuse only an *identical* payload under the same evaluator code digest;
+    # no stochastic seed, candle, execution assumption or specialist contract
+    # is omitted from the key.  This removes duplicate timeout work without
+    # changing a single gate result.
+    cache_key = _replay_cache_key(operation, payload)
+    cached = _load_immutable_replay_cache(cache_key)
+    if cached is not None:
+        _last_replay_finished_at = pd.Timestamp.utcnow().isoformat()
+        _last_replay_termination = "cache_hit"
+        return _with_replay_compiler_metadata(cached, cache_key, "immutable_cache_hit")
+
+    # Laravel's WithoutOverlapping is the primary queue mutex. This second
+    # guard protects direct/API callers and makes contention fail fast rather
+    # than queueing an HTTP request that will consume a client timeout.
+    if not _replay_lane_lock.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="AI replay lane is busy; retry after the current bounded replay.")
+
+    timeout_seconds = _bounded_replay_seconds(payload, operation)
+    service_root = Path(__file__).resolve().parent.parent
+    worker_module = "app.replay_worker"
+    request_body = json.dumps({
+        "operation": operation,
+        "payload": payload.model_dump(mode="json"),
+    }, ensure_ascii=False, separators=(",", ":"))
+    child_env = os.environ.copy()
+    # Backtests do not need provider/API credentials. Do not copy ambient
+    # secrets into short-lived evaluator children.
+    for key in list(child_env):
+        if key.startswith(("OPENAI_", "CODEX_")):
+            child_env.pop(key, None)
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if os.name == "nt":
+        creation_flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    process = None
+    stdout_capture = None
+    stderr_capture = None
+    try:
+        # Do not use stdout/stderr=PIPE here.  A normal evidence response can
+        # contain a large full-ledger JSON document; if the parent only polls
+        # process.poll() while the child writes, the OS pipe fills and the
+        # child blocks forever until the wall-clock timeout.  Temporary files
+        # preserve the same containment boundary without an IPC backpressure
+        # deadlock.
+        # Keep the capture files binary.  On Windows a child can emit a
+        # provider/path diagnostic in the active code page (for example
+        # CP1252 smart quotes) even though its JSON protocol is UTF-8.  A
+        # text wrapper makes that single byte capable of raising a decode
+        # error while the parent is draining an otherwise valid response.
+        stdout_capture = tempfile.TemporaryFile(mode="w+b")
+        stderr_capture = tempfile.TemporaryFile(mode="w+b")
+        process = subprocess.Popen(
+            [sys.executable, "-m", worker_module],
+            cwd=str(service_root),
+            env=child_env,
+            stdin=subprocess.PIPE,
+            stdout=stdout_capture,
+            stderr=stderr_capture,
+            creationflags=creation_flags,
+            text=False,
+        )
+        try:
+            if process.stdin is not None:
+                process.stdin.write(request_body.encode("utf-8"))
+                process.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+        deadline = time.monotonic() + timeout_seconds
+        while process.poll() is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _last_replay_termination = f"hard_timeout:{operation}:{timeout_seconds}s"
+                _terminate_replay_tree(process, stdout_capture, stderr_capture)
+                raise HTTPException(
+                    status_code=504,
+                    detail=f"Bounded AI replay exceeded {timeout_seconds}s; strategy verdict withheld.",
+                )
+            time.sleep(min(0.25, remaining))
+
+        stdout = _read_replay_capture(stdout_capture)
+        stderr = _read_replay_capture(stderr_capture)
+
+        if process.returncode != 0:
+            _last_replay_termination = f"child_exit:{operation}:{process.returncode}"
+            detail = (stderr or stdout or "AI replay worker exited before returning evidence.").strip()
+            raise HTTPException(status_code=503, detail=detail[-500:])
+        try:
+            message = json.loads(stdout or "{}")
+        except json.JSONDecodeError as exc:
+            _last_replay_termination = f"invalid_child_output:{operation}"
+            raise HTTPException(status_code=503, detail="AI replay worker returned invalid evidence output.") from exc
+
+        if not message.get("ok"):
+            kind = message.get("kind")
+            detail = str(message.get("detail", "AI replay failed."))
+            if kind == "not_found":
+                raise HTTPException(status_code=404, detail=detail)
+            if kind == "value":
+                raise HTTPException(status_code=400, detail=detail)
+            if kind == "http":
+                raise HTTPException(status_code=int(message.get("status", 500)), detail=detail)
+            raise HTTPException(status_code=500, detail=detail)
+        value = _with_replay_compiler_metadata(message["value"], cache_key, "compiled")
+        _store_immutable_replay_cache(cache_key, value)
+        _last_replay_termination = "completed"
+        return value
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _last_replay_termination = f"process_error:{type(exc).__name__}"
+        raise HTTPException(status_code=503, detail=f"AI replay worker unavailable: {exc}") from exc
+    finally:
+        if process is not None and process.poll() is None:
+            _terminate_replay_tree(process, stdout_capture, stderr_capture)
+        for capture in (stdout_capture, stderr_capture):
+            if capture is not None:
+                try:
+                    capture.close()
+                except OSError:
+                    pass
+        _last_replay_finished_at = pd.Timestamp.utcnow().isoformat()
+        _replay_lane_lock.release()
+
+
+def _replay_cache_key(operation: str, payload: SimpleBacktestRequest) -> str:
+    """Fingerprint all deterministic inputs, including the evaluator itself."""
+    service_root = Path(__file__).resolve().parent
+    code = {
+        name: hashlib.sha256((service_root / name).read_bytes()).hexdigest()
+        for name in ["main.py", "services/backtester.py", "services/market_adaptive_replay.py"]
+    }
+    body = {
+        "protocol": "immutable_replay_compiler_v1",
+        "operation": operation,
+        "payload": payload.model_dump(mode="json"),
+        "code": code,
+    }
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
+
+
+def _replay_cache_path(cache_key: str) -> Path:
+    root = Path(os.getenv("AI_REPLAY_IMMUTABLE_CACHE_DIR", str(Path(__file__).resolve().parent.parent / ".runtime" / "replay-cache")))
+    return root / f"{cache_key}.json"
+
+
+def _load_immutable_replay_cache(cache_key: str) -> dict[str, object] | None:
+    path = _replay_cache_path(cache_key)
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        value = document.get("value")
+        return value if isinstance(value, dict) and document.get("key") == cache_key else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _store_immutable_replay_cache(cache_key: str, value: dict[str, object]) -> None:
+    path = _replay_cache_path(cache_key)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Atomic replace prevents a timeout/restart from ever exposing a
+        # partial diagnostic as if it were a completed immutable replay.
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"key": cache_key, "value": value}, ensure_ascii=False, separators=(",", ":"), default=str), encoding="utf-8")
+        temporary.replace(path)
+    except OSError:
+        # Cache failure is operational-only.  Replay evidence and all gates
+        # continue through the normal deterministic worker path.
+        return
+
+
+def _with_replay_compiler_metadata(value: dict[str, object], cache_key: str, status: str) -> dict[str, object]:
+    result = dict(value)
+    compiler = {
+        "protocol": "immutable_replay_compiler_v1",
+        "status": status,
+        "cache_key": cache_key,
+        "stages": ["immutable_payload", "core_replay", "expensive_diagnostics_after_core_gate"],
+        "rule": "Exact payload cache only; a failed core gate does not schedule expensive diagnostic work.",
+    }
+    # run-all returns a leaderboard while portfolio returns a direct result.
+    if isinstance(result.get("leaderboard"), list):
+        for item in result["leaderboard"]:
+            if isinstance(item, dict) and isinstance(item.get("result"), dict):
+                item["result"] = {**item["result"], "replay_compiler": compiler}
+    else:
+        result["replay_compiler"] = compiler
+    return result
+
+
 def _attach_behavioral_diversity(leaderboard: list[dict[str, object]]) -> None:
     """Annotate each batch candidate with observable behaviour similarity."""
     for item in leaderboard:
@@ -252,10 +697,33 @@ def _correlation(left: list[float], right: list[float]) -> float:
     return numerator / denominator if denominator else 0.0
 
 
+def _prepare_paper_payload(payload: SimpleBacktestRequest) -> SimpleBacktestRequest:
+    """Validate the sealed single-agent or portfolio paper contract."""
+    if payload.portfolio_members:
+        if len(payload.portfolio_members) < 2:
+            raise ValueError("A portfolio paper contract requires at least two members.")
+        members = [
+            member.model_copy(update={
+                "parameters": validate_strategy_parameters(member.strategy, member.parameters, member.base_strategy),
+            })
+            for member in payload.portfolio_members
+        ]
+        return payload.model_copy(update={
+            "portfolio_members": members,
+            # Keep only the sealed portfolio-level policy. The selected
+            # member's execution parameters are attached to each paper signal
+            # by the same router used in canonical replay.
+            "parameters": dict(payload.parameters or {}),
+        })
+    return payload.model_copy(update={
+        "parameters": validate_strategy_parameters(payload.strategy, payload.parameters, payload.base_strategy),
+    })
+
+
 @app.post("/api/paper/signal")
 def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
     try:
-        parameters = validate_strategy_parameters(payload.strategy, payload.parameters, payload.base_strategy)
+        payload = _prepare_paper_payload(payload)
         df = _load_simple_candles(payload).copy()
         df["time"] = pd.to_datetime(df["time"])
         for column in ["open", "high", "low", "close", "volume"]:
@@ -268,7 +736,11 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
         df["_management_atr"] = pd.concat([
             df["high"] - df["low"], (df["high"] - previous_close).abs(), (df["low"] - previous_close).abs(),
         ], axis=1).max(axis=1).rolling(14, min_periods=1).mean()
-        prepared = get_strategy(payload.strategy, payload.base_strategy)(df, parameters)
+        prepared = (
+            _apply_portfolio_strategy(df, payload.portfolio_members)
+            if payload.portfolio_members
+            else get_strategy(payload.strategy, payload.base_strategy)(df, payload.parameters)
+        )
         row = prepared.iloc[-1]
         signal = str(row.get("signal", "WAIT"))
         price = float(row["close"])
@@ -295,8 +767,7 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
     """
     try:
         payload = SimpleBacktestRequest.model_validate(body.get("request", {}))
-        parameters = validate_strategy_parameters(payload.strategy, payload.parameters, payload.base_strategy)
-        payload = payload.model_copy(update={"parameters": parameters})
+        payload = _prepare_paper_payload(payload)
         market_price = float(body["entry_market_price"])
         requested_time = str(body.get("signal_time", ""))
         df = _load_simple_candles(payload).copy()
@@ -311,7 +782,11 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
         df["_management_atr"] = pd.concat([
             df["high"] - df["low"], (df["high"] - previous_close).abs(), (df["low"] - previous_close).abs(),
         ], axis=1).max(axis=1).rolling(14, min_periods=1).mean()
-        prepared = get_strategy(payload.strategy, payload.base_strategy)(df, parameters)
+        prepared = (
+            _apply_portfolio_strategy(df, payload.portfolio_members)
+            if payload.portfolio_members
+            else get_strategy(payload.strategy, payload.base_strategy)(df, payload.parameters)
+        )
         if requested_time:
             expected = pd.Timestamp(requested_time)
             if expected.tzinfo is not None:
@@ -381,6 +856,44 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _coverage_permission(policy: dict[str, object], row: pd.Series, signal: str) -> dict[str, object]:
+    """Apply only a sealed, evidence-backed coverage envelope in paper mode."""
+    passport = policy.get("coverage_passport", {}) if isinstance(policy, dict) else {}
+    if not isinstance(passport, dict) or passport.get("protocol") != "certified_coverage_passport_v2":
+        return {"decision": "ALLOW", "status": "unavailable", "reason": "NO_SEALED_COVERAGE_PASSPORT"}
+    if passport.get("status") != "assessed":
+        return {"decision": "WAIT", "status": "insufficient_evidence", "reason": "COVERAGE_PASSPORT_NOT_ASSESSED"}
+
+    regime = str(row.get("market_regime", "unknown"))
+    volatility = str(row.get("volatility_regime", "normal_volatility"))
+    timestamp = pd.Timestamp(row.get("time"))
+    session = str(timestamp.hour) if not pd.isna(timestamp) else "unknown"
+    context = {"regime": regime, "volatility": volatility, "session": session, "direction": signal}
+    scopes = passport.get("scope_order") or [
+        "regime|volatility|session|direction", "regime|volatility|direction",
+        "regime|direction", "regime",
+    ]
+    effective_cells = passport.get("effective_cells", {})
+    if not isinstance(effective_cells, dict):
+        return {"decision": "WAIT", "status": "invalid", "reason": "COVERAGE_PASSPORT_EFFECTIVE_CELLS_INVALID"}
+
+    for scope in scopes:
+        axes = str(scope).split("|")
+        if any(axis not in context for axis in axes):
+            continue
+        key = "|".join(context[axis] for axis in axes)
+        cell = effective_cells.get(f"{scope}|{key}")
+        if not isinstance(cell, dict):
+            continue
+        permission = str(cell.get("permissions", [cell.get("effective_permission", "")])[0] if cell.get("permissions") else cell.get("effective_permission", ""))
+        if permission == "TRADE":
+            return {"decision": "ALLOW", "status": "certified", "reason": "COVERAGE_TRADE_PERMISSION", "scope": scope, "key": key}
+        if permission == "ABSTAIN":
+            return {"decision": "WAIT", "status": "certified", "reason": "COVERAGE_ABSTAIN_PERMISSION", "scope": scope, "key": key}
+
+    return {"decision": "WAIT", "status": "unobserved", "reason": "COVERAGE_ENVELOPE_UNOBSERVED", "regime": regime, "volatility": volatility, "session": session, "direction": signal}
+
+
 def _abstention_meta_decision(row: pd.Series, previous: pd.Series | None, signal: str, market_price: float, payload: SimpleBacktestRequest) -> dict[str, object]:
     if signal not in {"BUY", "SELL"}:
         return {"decision": "WAIT", "reason": "NO_BASE_SIGNAL", "position_size_multiplier": 0.0, "expected_value_percent": 0.0}
@@ -398,6 +911,7 @@ def _abstention_meta_decision(row: pd.Series, previous: pd.Series | None, signal
     constitution = policy.get("constitution", {}) if isinstance(policy, dict) else {}
     allowed = set(constitution.get("allowed_regimes", []) or [])
     regime = str(row.get("market_regime", "unknown"))
+    regime_belief = _regime_belief(row, previous)
     atr = max(float(row.get("_management_atr", 0) or 0), 1e-9)
     range_atr = abs(float(row.get("high", 0)) - float(row.get("low", 0))) / atr
     ood_reasons = ([] if not allowed or regime in allowed else ["REGIME_OUTSIDE_CONSTITUTION"])
@@ -410,12 +924,17 @@ def _abstention_meta_decision(row: pd.Series, previous: pd.Series | None, signal
     council_decision = str(council["decision"])
     expected_value = {"p_win": round(confidence, 5), "expected_win_percent": round(expected_win, 5), "expected_loss_percent": round(expected_loss, 5), "execution_cost_percent": round(cost, 5), "net_expected_value_percent": round(expected, 5)}
     ood = {"status": "out_of_distribution" if ood_reasons else "in_distribution", "reasons": ood_reasons, "range_atr_multiple": round(range_atr, 4), "action": ood_action}
+    coverage = _coverage_permission(policy, row, signal)
+    if coverage["decision"] == "WAIT":
+        return {"decision": "WAIT", "reason": coverage["reason"], "position_size_multiplier": 0.0, "expected_value_percent": round(expected, 5), "expected_value": expected_value, "transition": transition, "transition_mixture": mixture, "foundation_prior": foundation_prior, "ood": ood, "coverage": coverage, "council": council}
     samples = max(0, int(policy.get("sample_count", 0) or 0))
     calibration = max(.2, min(1.0, float(policy.get("calibration_score", 50) or 50) / 100))
     uncertainty_discount = min(1.0, samples / 50) * calibration
     stress_pf = float(policy.get("stress_cost_pf", 0) or 0)
     if confidence < .35 or expected <= 0:
         return {"decision": "WAIT", "reason": "NEGATIVE_NET_EV", "position_size_multiplier": 0.0, "expected_value_percent": round(expected, 5), "expected_value": expected_value, "transition": transition, "transition_mixture": mixture, "foundation_prior": foundation_prior, "ood": ood, "council": council}
+    if regime_belief["action"] == "WAIT":
+        return {"decision": "WAIT", "reason": "REGIME_BELIEF_UNCERTAIN", "position_size_multiplier": 0.0, "expected_value_percent": round(expected, 5), "expected_value": expected_value, "regime_belief": regime_belief, "transition": transition, "transition_mixture": mixture, "foundation_prior": foundation_prior, "ood": ood, "council": council}
     if ood_action == "WAIT" or (stress_pf and stress_pf < 1.05):
         return {"decision": "WAIT", "reason": "OUT_OF_DISTRIBUTION" if ood_action == "WAIT" else "STRESS_COST_UNCERTAIN", "position_size_multiplier": 0.0, "expected_value_percent": round(expected, 5), "expected_value": expected_value, "transition": transition, "transition_mixture": mixture, "foundation_prior": foundation_prior, "ood": ood, "council": council}
     if transition and (float(mixture["disagreement"]) < .12 or float(mixture["no_trade_probability"]) >= .40):
@@ -425,7 +944,45 @@ def _abstention_meta_decision(row: pd.Series, previous: pd.Series | None, signal
     # Transition firewall does not invent a new edge: it only cuts exposure.
     firewall = float(mixture["risk_multiplier"]) if transition else 1.0
     size = max(.05, min(1.0, (.35 + confidence * .65) * firewall * max(.2, uncertainty_discount) * (.3 if ood_action == "REDUCE_RISK" else 1.0)))
-    return {"decision": signal, "reason": "REGIME_TRANSITION_RISK_REDUCED" if transition else "NET_EV_ACCEPTED", "position_size_multiplier": round(size, 5), "expected_value_percent": round(expected, 5), "expected_value": expected_value, "transition": transition, "transition_mixture": mixture, "foundation_prior": foundation_prior, "ood": ood, "council": council, "uncertainty_discount": round(uncertainty_discount, 5), "sample_count": samples}
+    return {"decision": signal, "reason": "REGIME_TRANSITION_RISK_REDUCED" if transition else "NET_EV_ACCEPTED", "position_size_multiplier": round(size, 5), "expected_value_percent": round(expected, 5), "expected_value": expected_value, "regime_belief": regime_belief, "transition": transition, "transition_mixture": mixture, "foundation_prior": foundation_prior, "ood": ood, "coverage": coverage, "council": council, "uncertainty_discount": round(uncertainty_discount, 5), "sample_count": samples}
+
+
+def _regime_belief(row: pd.Series, previous: pd.Series | None) -> dict[str, object]:
+    """Causal, current-candle regime uncertainty; never a hard calendar label.
+
+    The encoder starts from the current regime classifier, then discounts its
+    dominance when the candle is indecisive or the classifier just changed.
+    An ambiguous state is an explicit OOD/transition WAIT, not a forced vote
+    for the nominal highest label.
+    """
+    label = str(row.get("market_regime", "unknown"))
+    labels = ["trend_up", "trend_down", "range"]
+    probabilities = {key: 0.0 for key in labels}
+    if label in probabilities:
+        probabilities[label] = 0.58
+        alternatives = [key for key in labels if key != label]
+        probabilities[alternatives[0]] = 0.25
+        probabilities[alternatives[1]] = 0.17
+    else:
+        probabilities = {key: round(1 / 3, 5) for key in labels}
+    atr = max(float(row.get("_management_atr", 0) or 0), 1e-9)
+    body_ratio = abs(float(row.get("close", 0) or 0) - float(row.get("open", 0) or 0)) / atr
+    changed = previous is not None and str(previous.get("market_regime", "unknown")) != label
+    discount = .12 if changed else 0.0
+    if body_ratio < .20: discount += .10
+    leader = max(probabilities, key=probabilities.get)
+    probabilities[leader] = max(1 / 3, probabilities[leader] - discount)
+    remaining = 1 - probabilities[leader]
+    others = [key for key in labels if key != leader]
+    previous_other_total = sum(probabilities[key] for key in others) or 1.0
+    for key in others:
+        probabilities[key] = probabilities[key] / previous_other_total * remaining
+    ordered = sorted(probabilities.values(), reverse=True)
+    ambiguity = ordered[0] < .52 or (ordered[0] - ordered[1]) < .12
+    return {"protocol": "uncertainty_aware_regime_encoder_v1", "probabilities": {key: round(value, 5) for key, value in probabilities.items()},
+            "top_regime": leader, "top_probability": round(ordered[0], 5), "margin": round(ordered[0] - ordered[1], 5),
+            "transition_hint": changed, "action": "WAIT" if ambiguity else "ALLOW",
+            "rule": "Low dominance or near-tied regime beliefs produce WAIT; no label is forced into a trade."}
 
 
 def _transition_mixture(row: pd.Series, previous: pd.Series | None, atr: float, transition: bool) -> dict[str, object]:
@@ -456,9 +1013,13 @@ def _typed_agent_council(signal: str, regime: str, body_atr: float, cost: float,
                "warning": "transition_disagreement" if transition else None}
     votes = {"direction": direction["decision"], "volatility": signal if volatility["risk_band"] != "halt" else "WAIT", "execution": execution["decision"], "skeptic": skeptic["decision"]}
     buy_votes, sell_votes = list(votes.values()).count("BUY"), list(votes.values()).count("SELL")
-    decision = "BUY" if buy_votes >= 3 else ("SELL" if sell_votes >= 3 else "WAIT")
+    # The final governor is independent from the committee. It requires
+    # agreement from at least two of the three actionable specialist voices;
+    # event/OOD/transition vetoes above can still force WAIT afterwards.
+    decision = "BUY" if buy_votes >= 2 else ("SELL" if sell_votes >= 2 else "WAIT")
     return {"decision": decision, "votes": votes, "buy_votes": buy_votes, "sell_votes": sell_votes,
-            "agents": [direction, volatility, execution, event, skeptic, {"agent": "risk_governor", "schema": "final_decision/v1", "decision": decision}],
+            "agents": [direction, volatility, execution, event, skeptic, {"agent": "risk_governor", "schema": "final_decision/v2", "decision": decision}],
+            "quorum": {"required": 2, "eligible_specialists": 3, "rule": "Only in-envelope specialist votes count."},
             "foundation_prior": foundation_prior, "rule": "Typed specialist disagreement, execution risk or skeptic warning resolves to WAIT."}
 
 
@@ -472,7 +1033,12 @@ def _execution_contract(payload: SimpleBacktestRequest, row: pd.Series, signal: 
     target = entry + target_distance if direction == "BUY" else entry - target_distance
     size = _position_size_multiple(entry, stop, direction, payload) * _volatility_risk_multiplier(row, payload) * float(meta["position_size_multiplier"])
     data_hash = hashlib.sha256(json.dumps([[str(value) for value in item] for item in row[["time", "open", "high", "low", "close"]].to_frame().T.values], separators=(",", ":")).encode()).hexdigest()
-    strategy_hash = hashlib.sha256(json.dumps({"strategy": payload.strategy, "base_strategy": payload.base_strategy, "parameters": payload.parameters}, sort_keys=True, default=str).encode()).hexdigest()
+    strategy_hash = hashlib.sha256(json.dumps({
+        "strategy": payload.strategy,
+        "base_strategy": payload.base_strategy,
+        "parameters": payload.parameters,
+        "portfolio_members": [member.model_dump() if hasattr(member, "model_dump") else member for member in payload.portfolio_members],
+    }, sort_keys=True, default=str).encode()).hexdigest()
     execution_hash = hashlib.sha256(json.dumps(payload.execution.model_dump(), sort_keys=True, default=str).encode()).hexdigest()
     code_version = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     return {

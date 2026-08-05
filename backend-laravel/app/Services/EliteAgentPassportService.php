@@ -25,13 +25,14 @@ class EliteAgentPassportService
         $quorum = $this->eliteQuorum($result, $monthly, $redTeam);
         $constitution = $this->constitutions->verify($model, $result);
         $requiresEpistemicGate = (int) data_get($model->metadata, 'statistical_gate_version', 0) >= 3;
+        $requiresPromotionProof = data_get($model->metadata, 'g98_council_lane.protocol') === 'g98_failure_eliminator_v1';
         $checks = [
             'signal_viability' => (int) data_get($result, 'entry_funnel.raw_strategy_signals', 0) > 0
                 && (int) data_get($result, 'entry_funnel.accepted_entries', 0) > 0,
             'veto_regret' => array_key_exists('shadow_trade_count', (array) data_get($result, 'veto_regret', [])),
             'monthly_walk_forward' => (int) data_get($monthly, 'rolling_forward_wins', 0) >= 3
                 && (int) data_get($monthly, 'failed_months', 0) === 0,
-            'regime_coverage' => data_get($result, 'behavioral_diversity.status') !== 'near_duplicate'
+            'regime_coverage' => data_get($result, 'behavioral_diversity.status') === 'diverse'
                 && (float) data_get($result, 'statistical_evidence.edge_quality.worst_regime_pf', 0) >= 1.0,
             'red_team_stress' => data_get($redTeam, 'scenarios.double_cost_execution.status') === 'assessed'
                 && (bool) data_get($redTeam, 'scenarios.double_cost_execution.pass'),
@@ -56,6 +57,17 @@ class EliteAgentPassportService
                 || data_get($result, 'pass_k_reliability.status') === 'passed',
             'p0_failure_curriculum' => (int) data_get($model->metadata, 'statistical_gate_version', 0) < 4
                 || (bool) data_get($result, 'failure_curriculum.p0_safety_passed', false),
+            'certified_coverage' => ! $requiresPromotionProof
+                || (data_get($result, 'certified_coverage_passport.status') === 'assessed'
+                    && (int) data_get($result, 'certified_coverage_passport.certified_cells', 0) >= 1
+                    && (int) data_get($result, 'certified_coverage_passport.uncertified_cells', 0) === 0),
+            'opportunity_recall' => ! $requiresPromotionProof
+                || (data_get($result, 'opportunity_recall.status') === 'assessed'
+                    && (int) data_get($result, 'opportunity_recall.accepted_entries', 0) >= 10
+                    && (float) data_get($result, 'opportunity_recall.opportunity_recall', 0) >= .20
+                    && (float) data_get($result, 'opportunity_recall.abstention_precision', 0) >= .50),
+            'proof_carrying_replay' => ! $requiresPromotionProof
+                || data_get($result, 'proof_carrying_replay.status') === 'passed',
         ];
         $failed = collect($checks)->filter(fn (bool $pass) => ! $pass)->keys()->map(
             fn (string $check) => 'FAILED_PASSPORT_'.strtoupper($check)
@@ -94,6 +106,9 @@ class EliteAgentPassportService
             'trial_ledger' => data_get($result, 'trial_ledger', []),
             'cross_market_transfer_passport' => data_get($result, 'cross_market_transfer_passport', []),
             'pass_k_reliability' => data_get($result, 'pass_k_reliability', []),
+            'certified_coverage_passport' => data_get($result, 'certified_coverage_passport', []),
+            'opportunity_recall' => data_get($result, 'opportunity_recall', []),
+            'proof_carrying_replay' => data_get($result, 'proof_carrying_replay', []),
             'preflight' => ['checks' => $checks, 'failed_checks' => $failed],
             'final_exam_result_hash' => $resultHash,
             'generated_at' => now()->utc()->toIso8601String(),

@@ -14,6 +14,7 @@ use App\Services\MarketRealityService;
 use App\Services\MarketChampionService;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\OverfitDetectorService;
+use App\Services\StrategyParameterSchemaService;
 use App\Services\TradingScientistService;
 use App\Services\UniversalKnowledgeGraphService;
 use Illuminate\Console\Command;
@@ -48,6 +49,7 @@ class RunAutoTrainingSession extends Command
         UniversalKnowledgeGraphService $knowledgeGraph,
         FutureSimulationService $futureSimulation,
         MarketChampionService $marketChampion,
+        StrategyParameterSchemaService $schemas,
     ): int
     {
         $log = TrainingLog::create([
@@ -64,7 +66,7 @@ class RunAutoTrainingSession extends Command
         ]);
 
         try {
-            $payload = $this->trainingPayload($candlePayloadService);
+            $payload = $this->trainingPayload($candlePayloadService, $schemas);
 
             $response = Http::timeout(600)
                 ->acceptJson()
@@ -121,11 +123,11 @@ class RunAutoTrainingSession extends Command
         }
     }
 
-    private function trainingPayload(CandlePayloadService $candlePayloadService): array
+    private function trainingPayload(CandlePayloadService $candlePayloadService, StrategyParameterSchemaService $schemas): array
     {
         $symbol = (string) $this->option('symbol');
         $timeframe = (string) $this->option('timeframe');
-        $strategies = $this->strategyRuntimePayloads($symbol, $timeframe);
+        $strategies = $this->strategyRuntimePayloads($symbol, $timeframe, $schemas);
 
         if (empty($strategies)) {
             throw new RuntimeException('Bu market uchun testing yoki champion model version topilmadi.');
@@ -391,7 +393,7 @@ class RunAutoTrainingSession extends Command
         $modelVersion->save();
     }
 
-    private function strategyRuntimePayloads(string $symbol, string $timeframe): array
+    private function strategyRuntimePayloads(string $symbol, string $timeframe, StrategyParameterSchemaService $schemas): array
     {
         if (! Schema::hasTable('model_versions') || ! Schema::hasColumn('model_versions', 'parameters')) {
             return [];
@@ -420,7 +422,7 @@ class RunAutoTrainingSession extends Command
             ->take(max(1, (int) $this->option('max-strategies')))
             ->map(fn (ModelVersion $version): array => [
                 'strategy' => $version->strategy ?? $version->name,
-                'base_strategy' => data_get($version->metadata, 'base_strategy') ?: $this->baseStrategyName($version->strategy ?? $version->name),
+                'base_strategy' => $schemas->runtimeBaseStrategy($version->strategy ?? $version->name, data_get($version->metadata, 'base_strategy')),
                 'version' => $version->version ?? $this->extractVersion($version->strategy ?? $version->name),
                 'parameters' => $version->parameters ?? [],
             ])

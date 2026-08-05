@@ -40,7 +40,12 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // The lab uses serialized replays that can legitimately run for
+            // 16-40 minutes. A 90-second lease lets the database hand the
+            // same job to another worker while the original HTTP request is
+            // still alive, producing duplicate replays and false timeouts.
+            // Keep the lease above the longest worker budget plus margin.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 2700),
             'after_commit' => false,
         ],
 

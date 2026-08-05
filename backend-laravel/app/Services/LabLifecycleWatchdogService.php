@@ -15,6 +15,7 @@ use App\Models\Symbol;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 /**
  * Detects lifecycle/evidence failures without changing any promotion gate.
@@ -25,6 +26,7 @@ class LabLifecycleWatchdogService
 {
     private const STALE_TRAINING_MINUTES = 30;
     private const FULL_STALL_MINUTES = 60;
+    private const DRAFT_STALL_MINUTES = 90;
     private const MAX_SAFE_REQUEUES = 2;
 
     public function __construct(private readonly SystemLogService $logs) {}
@@ -33,12 +35,33 @@ class LabLifecycleWatchdogService
     {
         $events = [];
         $events = [...$events, ...$this->watchStaleTraining($repair)];
-        $events = [...$events, ...$this->watchFullValidationStalls()];
+        $events = [...$events, ...$this->watchFullValidationStalls($repair)];
+        $events = [...$events, ...$this->watchDraftDispatchStalls()];
         $events = [...$events, ...$this->watchMissingForwardLedgers()];
         $events = [...$events, ...$this->watchShadowConnection()];
         $events = [...$events, ...$this->watchPaperCapture()];
         $events = [...$events, ...$this->watchPaperIntegrity()];
 
+        return $events;
+    }
+
+    /** Draft is normal for one scheduler tick; beyond 90 minutes it is a
+     * lifecycle finding, never an excuse to create a duplicate generation. */
+    private function watchDraftDispatchStalls(): array
+    {
+        $events = [];
+        LabGeneration::query()->with(['laboratory', 'agents'])
+            ->whereIn('status', ['draft', 'queued'])
+            ->where('updated_at', '<=', now()->subMinutes(self::DRAFT_STALL_MINUTES))
+            ->each(function (LabGeneration $generation) use (&$events): void {
+                $queued = $generation->agents->whereIn('lifecycle_status', ['queued', 'screening'])->count();
+                $events[] = $this->warn('LAB_GENERATION_DISPATCH_STALLED', 'Generation remained draft/queued for over 90 minutes; no duplicate dispatch was created.', [
+                    'generation_id' => $generation->id, 'generation' => $generation->generation,
+                    'symbol' => $generation->laboratory?->symbol, 'timeframe' => $generation->laboratory?->timeframe,
+                    'status' => $generation->status, 'queued_or_screening_agents' => $queued,
+                    'next_action' => 'inspect scheduler, feed health and existing queue job before manual dispatch',
+                ], $generation->id);
+            });
         return $events;
     }
 
@@ -102,20 +125,65 @@ class LabLifecycleWatchdogService
             ->where('payload', 'like', '%labAgentId%'.$agentId.'%')->exists();
     }
 
-    private function watchFullValidationStalls(): array
+    private function watchFullValidationStalls(bool $repair = false): array
     {
         $events = [];
         LabGeneration::query()->where('status', 'full_validation')->with('agents')
-            ->where('updated_at', '<=', now()->subMinutes(self::FULL_STALL_MINUTES))->each(function (LabGeneration $generation) use (&$events): void {
+            ->where('updated_at', '<=', now()->subMinutes(self::FULL_STALL_MINUTES))->each(function (LabGeneration $generation) use (&$events, $repair): void {
                 // Long replays are expected.  "stalled" specifically means
                 // that no queued or reserved full-validation job remains.
                 if ($generation->agents->contains(fn (LabAgent $agent) => $this->hasQueuedFullJob($agent->id))) return;
-                $events[] = $this->warn('FULL_VALIDATION_STALLED', 'Generation has remained in full validation for over 60 minutes; no lifecycle state was changed.', [
+                $context = [
                     'generation_id' => $generation->id, 'generation' => $generation->generation,
                     'symbol' => $generation->laboratory?->symbol, 'updated_at' => $generation->updated_at?->toIso8601String(),
-                ], $generation->id);
+                ];
+                if (! $repair || ! $this->safeToFinalizeStalledGeneration($generation)) {
+                    $events[] = $this->warn('FULL_VALIDATION_STALLED', 'Generation has remained in full validation for over 60 minutes; no lifecycle state was changed.', $context, $generation->id);
+                    return;
+                }
+
+                DB::transaction(function () use ($generation): void {
+                    $locked = LabGeneration::query()->with('agents')->lockForUpdate()->find($generation->id);
+                    if (! $locked || $locked->status !== 'full_validation') return;
+                    if ($locked->agents->contains(fn (LabAgent $agent) => in_array($agent->lifecycle_status, ['queued', 'screening', 'training', 'full_queued'], true))) return;
+                    $triggerContext = (array) $locked->trigger_context;
+                    $triggerContext['stale_full_validation_recovery'] = [
+                        'protocol' => 'safe_terminal_lifecycle_finalize_v1',
+                        'finalized_at' => now()->toIso8601String(),
+                        'reason' => 'no_active_job_or_replay_and_all_agents_terminal',
+                        'gate_status_unchanged' => true,
+                    ];
+                    $locked->update([
+                        'status' => 'completed',
+                        'completed_at' => now(),
+                        'trigger_context' => $triggerContext,
+                    ]);
+                });
+                $events[] = $this->warn('FULL_VALIDATION_STALE_FINALIZED', 'Safely finalized a stale full-validation generation after proving that no job/replay remained and every agent was terminal.', $context, $generation->id, 'info');
             });
         return $events;
+    }
+
+    private function safeToFinalizeStalledGeneration(LabGeneration $generation): bool
+    {
+        if ($generation->agents->isEmpty()) return false;
+        if ($generation->agents->contains(fn (LabAgent $agent): bool => in_array($agent->lifecycle_status, ['queued', 'screening', 'training', 'full_queued'], true))) return false;
+        if ($generation->agents->contains(fn (LabAgent $agent): bool => $this->hasQueuedFullJob($agent->id))) return false;
+
+        $url = rtrim((string) config('services.ai_service.url'), '/').'/api/replay-status';
+        $token = (string) config('services.internal_api.token');
+        if ($url === '/api/replay-status' || $token === '') return false;
+
+        try {
+            $response = Http::connectTimeout(2)->timeout(4)
+                ->withHeaders(['X-Internal-Token' => $token])->get($url);
+            if ($response->failed()) return false;
+            $body = $response->json();
+            return (string) data_get($body, 'protocol', '') !== ''
+                && (int) data_get($body, 'active_requests', -1) === 0;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function watchMissingForwardLedgers(): array

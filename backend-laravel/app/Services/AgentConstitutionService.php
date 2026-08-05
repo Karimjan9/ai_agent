@@ -24,7 +24,8 @@ class AgentConstitutionService
             'entry_conditions' => ['closed_candle_signal', 'next_candle_execution', 'positive_net_expected_value'],
             'exit_logic' => ['atr_stop_target', 'trailing_stop', 'time_stop'],
             'risk_limits' => ['max_drawdown_percent' => 15, 'risk_of_ruin_percent' => 10, 'stress_cost_pf_minimum' => 1.05,
-                'high_volatility_risk_multiplier' => (float) ($parameters['high_volatility_risk_multiplier'] ?? .5)],
+                'high_volatility_risk_multiplier' => (float) ($parameters['high_volatility_risk_multiplier'] ?? .5),
+                'trend_down_risk_multiplier' => (float) ($parameters['trend_down_risk_multiplier'] ?? 1.0)],
             'abstention_rules' => ['forbidden_regime', 'negative_net_ev', 'out_of_distribution', 'calendar_or_risk_veto', 'strong_council_disagreement'],
             'falsification_conditions' => ['stress_cost_pf_below_1_05', 'drawdown_above_15', 'ruin_risk_above_10', 'temporal_firewall_failure'],
             'mutation_rule' => 'A child may tune bounded parameters, but a changed family, architecture or thesis requires a new constitution.',
@@ -32,7 +33,7 @@ class AgentConstitutionService
         $document['hash'] = $this->hash($document);
         return $document;
     }
- 
+
     public function verify(ModelVersion $model, array $result): array
     {
         $document = (array) data_get($model->metadata, 'agent_constitution', []);
@@ -53,4 +54,6 @@ class AgentConstitutionService
         unset($document['hash']); ksort($document);
         return hash('sha256', json_encode($document, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES));
     }
+
 }
+

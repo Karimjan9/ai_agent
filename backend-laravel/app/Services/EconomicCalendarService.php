@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 
 class EconomicCalendarService
 {
-    public function sync(?string $requestedProvider = null): array
+    public function sync(?string $requestedProvider = null, ?Carbon $from = null, ?Carbon $to = null): array
     {
         $provider = $requestedProvider ?: (string) config('services.economic_calendar.provider', 'financial_modeling_prep');
         $apiKey = $this->apiKey($provider);
@@ -29,15 +29,35 @@ class EconomicCalendarService
                     'category' => 'business',
                     'page_size' => (int) config('services.currents_api.page_size', 100),
                 ]
-                : ($provider === 'financial_modeling_prep'
+            : ($provider === 'financial_modeling_prep'
             ? [
                 'apikey' => $apiKey,
-                'from' => now('UTC')->subDay()->toDateString(),
-                'to' => now('UTC')->addDays(14)->toDateString(),
+                // The normal scheduler keeps a small rolling window. An
+                // explicit historical range is available for passport
+                // backfill when the configured provider plan supports it.
+                'from' => ($from ?: now('UTC')->subDay())->toDateString(),
+                'to' => ($to ?: now('UTC')->addDays(14))->toDateString(),
             ]
             : ['c' => $apiKey]));
-        $response = Http::timeout((int) config('services.economic_calendar.timeout_seconds', 30))
-            ->acceptJson()->get($this->endpoint($provider), $params);
+        try {
+            $response = Http::timeout((int) config('services.economic_calendar.timeout_seconds', 30))
+                ->acceptJson()->get($this->endpoint($provider), $params);
+        } catch (\Throwable $exception) {
+            // Optional intelligence must never become a hard dependency for
+            // market-data, lab, or paper-monitor scheduling. Keep the last
+            // known calendar evidence and expose a visible failed status.
+            $reason = preg_replace(
+                '/([?&](?:apiKey|apikey|key|token|access_token)=)[^&]+/i',
+                '$1[REDACTED]',
+                $exception->getMessage()
+            ) ?: get_class($exception);
+
+            return [
+                'status' => 'failed',
+                'synced' => 0,
+                'reason' => 'Economic calendar provider unavailable: '.$reason,
+            ];
+        }
         if ($response->failed()) {
             return ['status' => 'failed', 'synced' => 0, 'reason' => 'Economic calendar provider returned HTTP '.$response->status()];
         }

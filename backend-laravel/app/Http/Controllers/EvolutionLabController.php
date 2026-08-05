@@ -26,6 +26,7 @@ class EvolutionLabController extends Controller
         $populations->ensureLaboratories();
         $lab = AiLaboratory::where('symbol', strtoupper($symbol))->firstOrFail();
         $generation = $lab->generations()->with(['agents.modelVersion', 'agents.parentA', 'agents.parentB'])->latest('generation')->first();
+        $generationReport = (array) data_get($generation?->trigger_context, 'latest_generation_report', []);
         $champions = ModelMarketPerformance::with('modelVersion')->where('symbol', $lab->symbol)
             ->where('timeframe', $lab->timeframe)->where('status', 'champion')->orderBy('strategy_family')->get();
         $candidates = ModelMarketPerformance::with('modelVersion')->where('symbol', $lab->symbol)
@@ -43,7 +44,11 @@ class EvolutionLabController extends Controller
         $performanceIds = (clone $performances)->pluck('id');
         $funnel = [
             'generated' => (clone $agents)->count(),
-            'screened' => (clone $agents)->whereNotIn('lifecycle_status', ['draft', 'queued', 'screening'])->count(),
+            // Only a completed screening is screening evidence.  Rejected
+            // strategies and evaluator/runtime errors must remain visible as
+            // separate terminal outcomes instead of inflating this stage.
+            'screened' => (clone $agents)->where('lifecycle_status', 'screened')->count(),
+            'evaluation_errors' => (clone $agents)->where('lifecycle_status', 'evaluation_error')->count(),
             'diagnostic_replay' => (clone $gateDecisions)->where('stage', 'diagnostic_rescue_replay')->count(),
             'full_replay_eligible' => (clone $agents)->whereIn('lifecycle_status', ['full_queued', 'training', 'challenger', 'forward_validated', 'paper', 'champion'])->count(),
             'full_evaluated' => (clone $performances)->count(),
@@ -62,7 +67,7 @@ class EvolutionLabController extends Controller
             'best' => round((float) $item->agents->max('forward_score'), 2),
         ]);
         $labs = AiLaboratory::orderBy('symbol')->get();
-        return view('ai-laboratory.show', compact('lab', 'labs', 'generation', 'champions', 'challengers', 'gateDiagnostics', 'memories', 'gateDecisions', 'funnel', 'paperReadiness', 'generationPerformance'));
+        return view('ai-laboratory.show', compact('lab', 'labs', 'generation', 'generationReport', 'champions', 'challengers', 'gateDiagnostics', 'memories', 'gateDecisions', 'funnel', 'paperReadiness', 'generationPerformance'));
     }
 
     private function forwardGateDiagnostic(ModelMarketPerformance $candidate, $champions): array

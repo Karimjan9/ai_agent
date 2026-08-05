@@ -53,6 +53,16 @@ class StrategyRuntimeConfig(BaseModel):
     base_strategy: str | None = None
     version: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # Portfolio membership is sealed before replay.  These fields describe
+    # ownership, not a label inferred from the replay outcome.
+    member_key: str | None = None
+    role: str | None = None
+    target_regime: str | None = None
+    target_volatility: str | None = None
+    # Optional directional ownership makes a council useful when BUY and SELL
+    # edges are asymmetric inside the same regime/volatility niche. It is a
+    # sealed routing declaration, never inferred from the combined outcome.
+    target_direction: Literal["BUY", "SELL"] | None = None
 
 
 class ExecutionConfig(BaseModel):
@@ -79,6 +89,7 @@ class SimpleBacktestRequest(BaseModel):
     version: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
     strategies: list[StrategyRuntimeConfig] = Field(default_factory=list)
+    portfolio_members: list[StrategyRuntimeConfig] = Field(default_factory=list)
     initial_balance: float = Field(default=10000.0, gt=0)
     risk_per_trade: float = Field(default=1.0, gt=0)
     from_date: date | None = None
@@ -93,6 +104,10 @@ class SimpleBacktestRequest(BaseModel):
     # Sealed policy evidence used by the paper execution path for OOD and
     # uncertainty-aware abstention. It does not alter replay gate thresholds.
     policy_context: dict[str, Any] = Field(default_factory=dict)
+    # Full candle-level observability is opt-in so ordinary paper/status calls
+    # do not pay for a large trace. Laboratory runs set this true and persist
+    # the returned immutable trace in the Laravel evidence plane.
+    emit_decision_trace: bool = False
 
 
 class Metrics(BaseModel):
@@ -173,6 +188,9 @@ class SimpleTrade(BaseModel):
     mistake_type: str | None = None
     reason: str | None = None
     suggestion: str | None = None
+    # Sealed portfolio ownership is copied from the pre-replay router. It is
+    # diagnostic attribution, never an outcome-derived label.
+    portfolio_member: str | None = None
 
 
 class SimpleBacktestResponse(BaseModel):
@@ -223,8 +241,21 @@ class SimpleBacktestResponse(BaseModel):
     # cached results.  This is observability only; it is never a gate bypass.
     observability_protocol_version: int = 1
     cooldown_policy: dict[str, Any] = Field(default_factory=dict)
+    transition_firewall: dict[str, Any] = Field(default_factory=dict)
+    differential_router: dict[str, Any] = Field(default_factory=dict)
+    differential_invariants: dict[str, Any] = Field(default_factory=dict)
+    confidence_calibration: dict[str, Any] = Field(default_factory=dict)
+    # Complete diagnostic attribution for failure-eliminator selection.  It is
+    # deliberately not a routing feature: calendar is evidence only and the
+    # mutation contract names the failing causal context instead.
+    robustness_matrix: dict[str, Any] = Field(default_factory=dict)
+    replay_compiler: dict[str, Any] = Field(default_factory=dict)
+    certified_coverage_passport: dict[str, Any] = Field(default_factory=dict)
+    opportunity_recall: dict[str, Any] = Field(default_factory=dict)
+    proof_carrying_replay: dict[str, Any] = Field(default_factory=dict)
     window_survival: dict[str, Any] = Field(default_factory=dict)
     regime_ensemble: dict[str, Any] = Field(default_factory=dict)
+    portfolio_evidence: dict[str, Any] = Field(default_factory=dict)
     opportunity_metrics: dict[str, Any] = Field(default_factory=dict)
     red_team: dict[str, Any] = Field(default_factory=dict)
     monthly_passport: dict[str, Any] = Field(default_factory=dict)
@@ -232,7 +263,13 @@ class SimpleBacktestResponse(BaseModel):
     edge_claim: dict[str, Any] = Field(default_factory=dict)
     benchmark: dict[str, Any] = Field(default_factory=dict)
     trade_ledger_scope: str = "full evaluation"
+    trade_ledger_hash: str = ""
     displayed_trade_count: int = 0
     top_mistakes: list[dict[str, int | str]]
     trades: list[SimpleTrade]
+    # The UI keeps ``trades`` capped, while laboratory runs may request the
+    # complete immutable ledger. It is populated only when observability is
+    # explicitly enabled and is never used to alter a gate.
+    trade_ledger: list[SimpleTrade] = Field(default_factory=list)
     conclusion: str
+    decision_trace: list[dict[str, Any]] = Field(default_factory=list)

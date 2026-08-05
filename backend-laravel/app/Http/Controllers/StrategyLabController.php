@@ -14,6 +14,7 @@ use App\Services\MarketRealityService;
 use App\Services\MarketChampionService;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\OverfitDetectorService;
+use App\Services\StrategyParameterSchemaService;
 use App\Services\TradingScientistService;
 use App\Services\UniversalKnowledgeGraphService;
 use Illuminate\Contracts\View\View;
@@ -37,6 +38,7 @@ class StrategyLabController extends Controller
         private UniversalKnowledgeGraphService $knowledgeGraph,
         private FutureSimulationService $futureSimulation,
         private MarketChampionService $marketChampion,
+        private StrategyParameterSchemaService $schemas,
     ) {}
 
     public function index(): View
@@ -372,7 +374,7 @@ class StrategyLabController extends Controller
             ->get()
             ->map(fn (ModelVersion $version): array => [
                 'strategy' => $version->strategy ?? $version->name,
-                'base_strategy' => data_get($version->metadata, 'base_strategy') ?: $this->baseStrategyName($version->strategy ?? $version->name),
+                'base_strategy' => $this->schemas->runtimeBaseStrategy($version->strategy ?? $version->name, data_get($version->metadata, 'base_strategy')),
                 'version' => $version->version ?? $this->extractVersion($version->strategy ?? $version->name),
                 'parameters' => $version->parameters ?? [],
             ])

@@ -17,6 +17,15 @@ class StrategyParameterSchemaService
         'minimum_signal_confidence' => ['numeric', 0.0, 1.0],
         'max_loss_streak_before_wait' => ['integer', 1, 10],
         'loss_cooldown_candles' => ['integer', 1, 48],
+        'loss_streak_wait_candles' => ['integer', 1, 96],
+        'recovery_probe_risk_multiplier' => ['numeric', 0.1, 1.0],
+        'weak_regime_min_samples' => ['integer', 15, 100],
+        'weak_regime_wait_candles' => ['integer', 1, 96],
+        'transition_firewall_enabled' => ['boolean'],
+        'transition_wait_candles' => ['integer', 1, 6],
+        'confidence_calibration_enabled' => ['boolean'],
+        'confidence_calibration_min_samples' => ['integer', 15, 200],
+        'confidence_ev_lower_bound_enabled' => ['boolean'],
         'dynamic_cooldown_enabled' => ['boolean'],
         'cooldown_shadow_min_samples' => ['integer', 3, 50],
         'cooldown_shadow_edge_pf' => ['numeric', 0.8, 2.0],
@@ -80,10 +89,39 @@ class StrategyParameterSchemaService
             'trend_weight' => ['numeric', 0.0, 3.0], 'breakout_weight' => ['numeric', 0.0, 3.0],
             'mean_reversion_weight' => ['numeric', 0.0, 3.0], 'minimum_confidence' => ['numeric', 0.1, 6.0],
             'high_volatility_wait' => ['boolean'],
+            'trend_roc_period' => ['integer', 4, 60], 'trend_roc_threshold' => ['numeric', .01, 5.0], 'trend_ema_period' => ['integer', 10, 300],
+            'breakout_atr_period' => ['integer', 2, 100], 'breakout_atr_threshold' => ['numeric', .1, 5.0], 'breakout_lookback' => ['integer', 10, 100],
+            'breakout_compression_ratio' => ['numeric', .3, 1.0], 'breakout_expansion_multiplier' => ['numeric', 1.0, 3.0],
+            'range_lookback' => ['integer', 10, 200], 'range_deviation' => ['numeric', .5, 4.0], 'range_adx_max' => ['numeric', 5, 35],
+            'range_low_volatility_only' => ['boolean'], 'range_reentry_required' => ['boolean'],
+            'range_signal_mode' => ['string', ['reentry', 'mean_reversion', 'inverse_extreme', 'mid_cross']],
+            'session_filter_enabled' => ['boolean'],
+            'session_start' => ['integer', 0, 23], 'session_end' => ['integer', 1, 24],
+        ],
+        'differential_router' => [
+            'trend_weight' => ['numeric', 0.0, 3.0], 'breakout_weight' => ['numeric', 0.0, 3.0],
+            'mean_reversion_weight' => ['numeric', 0.0, 3.0], 'minimum_confidence' => ['numeric', 0.1, 6.0],
+            'high_volatility_wait' => ['boolean'], 'trend_down_strength_min' => ['numeric', 10, 50],
+            'trend_down_pullback_atr_fraction' => ['numeric', .1, 2.0], 'trend_down_risk_multiplier' => ['numeric', .1, 1.0],
+            'trend_up_strength_min' => ['numeric', 10, 50], 'trend_up_pullback_atr_fraction' => ['numeric', .1, 2.0],
+            'trend_up_roc_period' => ['integer', 4, 60], 'trend_up_roc_threshold' => ['numeric', .01, 5.0], 'trend_up_ema_period' => ['integer', 10, 300],
+            'trend_down_roc_period' => ['integer', 4, 60], 'trend_down_roc_threshold' => ['numeric', .01, 5.0], 'trend_down_ema_period' => ['integer', 10, 300],
+            'range_lookback' => ['integer', 10, 200], 'range_deviation' => ['numeric', .5, 4.0],
+            'range_adx_max' => ['numeric', 5, 35], 'range_low_volatility_only' => ['boolean'], 'range_reentry_required' => ['boolean'],
+            'range_signal_mode' => ['string', ['reentry', 'mean_reversion', 'inverse_extreme', 'mid_cross']],
+            'trend_roc_period' => ['integer', 4, 60], 'trend_roc_threshold' => ['numeric', .01, 5.0], 'trend_ema_period' => ['integer', 10, 300],
+            'breakout_atr_period' => ['integer', 2, 100], 'breakout_atr_threshold' => ['numeric', .1, 5.0], 'breakout_lookback' => ['integer', 10, 100],
+            'breakout_compression_ratio' => ['numeric', .3, 1.0], 'breakout_expansion_multiplier' => ['numeric', 1.0, 3.0],
+            'session_filter_enabled' => ['boolean'], 'session_start' => ['integer', 0, 23], 'session_end' => ['integer', 1, 24],
+            'differential_target_regime' => ['string', ['trend_up', 'range', 'trend_down']],
+            'differential_replay_mode' => ['string', ['portfolio', 'paired_isolated']],
+            'differential_router_version' => ['string', ['v1', 'v2']],
         ],
         'regime_ensemble' => [
             'atr_period' => ['integer', 2, 100], 'lookback' => ['integer', 10, 100],
             'trend_strength_min' => ['numeric', 10, 50], 'pullback_atr_fraction' => ['numeric', 0.1, 2.0],
+            'trend_down_strength_min' => ['numeric', 10, 50], 'trend_down_pullback_atr_fraction' => ['numeric', 0.1, 2.0],
+            'trend_down_risk_multiplier' => ['numeric', 0.1, 1.0],
             'session_start' => ['integer', 0, 23], 'session_end' => ['integer', 1, 24],
             'adx_max' => ['numeric', 5, 35], 'deviation' => ['numeric', 0.5, 4.0],
         ],
@@ -94,6 +132,25 @@ class StrategyParameterSchemaService
         $family = preg_replace('/^(xauusd|eurusd|gbpusd)_/', '', strtolower($strategy));
         $family = preg_replace('/_g\d+_a\d+$/', '', $family ?? strtolower($strategy));
         return preg_replace('/_v\d+$/', '', $family) ?: $family;
+    }
+
+    /**
+     * Return the runtime function identity sent to Python. Composite agents
+     * may preserve a parent architecture in metadata, but that parent must
+     * never replace the differential/ensemble runtime selected by the model
+     * family.
+     */
+    public function runtimeBaseStrategy(string $strategy, ?string $baseStrategy = null, ?string $family = null): string
+    {
+        $strategyFamily = $this->family($strategy);
+        $declaredFamily = strtolower(trim((string) $family));
+        $specialized = ['differential_router', 'regime_ensemble'];
+
+        if (in_array($strategyFamily, $specialized, true)) return $strategyFamily.'_v1';
+        if (in_array($declaredFamily, $specialized, true)) return $declaredFamily.'_v1';
+
+        $base = trim((string) $baseStrategy);
+        return $base !== '' ? $base : (($declaredFamily ?: $strategyFamily).'_v1');
     }
 
     public function schema(string $strategy): array
@@ -111,8 +168,28 @@ class StrategyParameterSchemaService
             'mean_reversion' => ['lookback' => 20, 'deviation' => 2.0, 'rsi_period' => 14, 'adx_max' => 20.0, 'low_volatility_only' => true],
             'session' => ['session_start' => 7, 'session_end' => 16, 'lookback' => 20],
             'momentum' => ['roc_period' => 12, 'roc_threshold' => 0.2, 'ema_period' => 50],
-            'hybrid' => ['trend_weight' => 1.0, 'breakout_weight' => 1.0, 'mean_reversion_weight' => 1.0, 'minimum_confidence' => 1.0, 'high_volatility_wait' => true],
-            'regime_ensemble' => ['atr_period' => 14, 'lookback' => 20, 'trend_strength_min' => 20.0, 'pullback_atr_fraction' => .75, 'session_start' => 7, 'session_end' => 16, 'adx_max' => 20.0, 'deviation' => 2.0],
+            'hybrid' => ['trend_weight' => 1.0, 'breakout_weight' => 1.0, 'mean_reversion_weight' => 1.0, 'minimum_confidence' => 1.0, 'high_volatility_wait' => true,
+                'trend_roc_period' => 12, 'trend_roc_threshold' => .2, 'trend_ema_period' => 50,
+                'breakout_atr_period' => 14, 'breakout_atr_threshold' => 1.2, 'breakout_lookback' => 20,
+                'breakout_compression_ratio' => .75, 'breakout_expansion_multiplier' => 1.2,
+                'range_lookback' => 20, 'range_deviation' => 2.0, 'range_adx_max' => 20.0, 'range_low_volatility_only' => true,
+                'range_reentry_required' => true, 'range_signal_mode' => 'reentry',
+                'session_filter_enabled' => false, 'session_start' => 0, 'session_end' => 24],
+            'differential_router' => ['trend_weight' => 1.0, 'breakout_weight' => 1.0, 'mean_reversion_weight' => 1.0, 'minimum_confidence' => 1.0,
+                'high_volatility_wait' => true, 'trend_down_strength_min' => 20.0, 'trend_down_pullback_atr_fraction' => .75, 'trend_down_risk_multiplier' => .5,
+                'trend_up_strength_min' => 20.0, 'trend_up_pullback_atr_fraction' => .75,
+                'trend_up_roc_period' => 12, 'trend_up_roc_threshold' => .2, 'trend_up_ema_period' => 50,
+                'trend_down_roc_period' => 12, 'trend_down_roc_threshold' => .2, 'trend_down_ema_period' => 50,
+                'range_lookback' => 20, 'range_deviation' => 2.0, 'range_adx_max' => 20.0, 'range_low_volatility_only' => false,
+                'range_reentry_required' => true, 'range_signal_mode' => 'reentry',
+                'trend_roc_period' => 12, 'trend_roc_threshold' => .2, 'trend_ema_period' => 50,
+                'breakout_atr_period' => 14, 'breakout_atr_threshold' => 1.2, 'breakout_lookback' => 20,
+                'breakout_compression_ratio' => .75, 'breakout_expansion_multiplier' => 1.2,
+                'session_filter_enabled' => false, 'session_start' => 0, 'session_end' => 24,
+                'differential_target_regime' => 'trend_down', 'differential_replay_mode' => 'paired_isolated', 'differential_router_version' => 'v2'],
+            'regime_ensemble' => ['atr_period' => 14, 'lookback' => 20, 'trend_strength_min' => 20.0, 'pullback_atr_fraction' => .75,
+                'trend_down_strength_min' => 28.0, 'trend_down_pullback_atr_fraction' => .60, 'trend_down_risk_multiplier' => .50,
+                'session_start' => 7, 'session_end' => 16, 'adx_max' => 20.0, 'deviation' => 2.0],
             'fibonacci' => ['lookback' => 50, 'fib_level' => 0.618, 'tolerance' => 0.002, 'candle_confirmation' => true, 'trend_confirmation' => false],
             'macd_trend' => ['ema_trend' => 100, 'macd_fast' => 12, 'macd_slow' => 26, 'macd_signal' => 9, 'rsi_period' => 14],
             default => [],
@@ -139,11 +216,60 @@ class StrategyParameterSchemaService
                 'integer' => is_int($value),
                 'numeric' => is_int($value) || is_float($value),
                 'boolean' => is_bool($value),
+                'string' => is_string($value) && in_array($value, (array) $min, true),
                 default => false,
             };
-            if (! $validType || ($min !== null && ($value < $min || $value > $max))) {
+            $outOfRange = in_array($type, ['integer', 'numeric'], true)
+                && $min !== null && ($value < $min || $value > $max);
+            if (! $validType || $outOfRange) {
                 throw new InvalidArgumentException("{$family}.{$key} schema talabiga mos emas.");
             }
+        }
+
+        return $parameters;
+    }
+
+    /**
+     * Repair relationships between genes before a generated child is
+     * evaluated.  Scalar range validation alone permits executable but
+     * semantically inverted strategies (for example ema_fast >= ema_slow),
+     * which turns evolutionary search into mostly invalid signal experiments.
+     * This is used only for newly generated children; historical evidence is
+     * never rewritten.
+     */
+    public function normalizeForGeneration(string $strategy, array $parameters): array
+    {
+        $family = $this->family($strategy);
+
+        if (in_array($family, ['trend', 'ema_rsi'], true)
+            && isset($parameters['ema_fast'], $parameters['ema_slow'])) {
+            $fast = (int) $parameters['ema_fast'];
+            $slow = (int) $parameters['ema_slow'];
+            if ($fast >= $slow) {
+                $parameters['ema_slow'] = min(500, max(3, $fast + 1));
+            }
+        }
+
+        if (in_array($family, ['trend', 'ema_rsi'], true)) {
+            foreach ([['rsi_buy_min', 'rsi_buy_max'], ['rsi_sell_min', 'rsi_sell_max']] as [$lower, $upper]) {
+                if (isset($parameters[$lower], $parameters[$upper])
+                    && (float) $parameters[$lower] > (float) $parameters[$upper]) {
+                    [$parameters[$lower], $parameters[$upper]] = [$parameters[$upper], $parameters[$lower]];
+                }
+            }
+        }
+
+        if ($family === 'macd_trend'
+            && isset($parameters['macd_fast'], $parameters['macd_slow'])
+            && (int) $parameters['macd_fast'] >= (int) $parameters['macd_slow']) {
+            $parameters['macd_slow'] = min(200, max(3, (int) $parameters['macd_fast'] + 1));
+        }
+
+        if (in_array($family, ['hybrid', 'differential_router'], true)
+            && isset($parameters['session_start'], $parameters['session_end'])
+            && (int) $parameters['session_start'] >= (int) $parameters['session_end']) {
+            $parameters['session_end'] = min(24, max(1, (int) $parameters['session_start'] + 1));
+            if ((int) $parameters['session_start'] >= 23) $parameters['session_start'] = 22;
         }
 
         return $parameters;
@@ -155,8 +281,8 @@ class StrategyParameterSchemaService
         $schema = $this->schema($strategy);
         $clean = array_intersect_key($parameters, $schema);
         foreach ($clean as $key => $value) {
-            [, $min, $max] = array_pad($schema[$key], 3, null);
-            if ($min !== null && is_numeric($value)) {
+            [$type, $min, $max] = array_pad($schema[$key], 3, null);
+            if (in_array($type, ['integer', 'numeric'], true) && $min !== null && is_numeric($value)) {
                 $clean[$key] = max($min, min($max, $value));
             }
         }
@@ -176,6 +302,15 @@ class StrategyParameterSchemaService
             'minimum_signal_confidence' => 0.35,
             'max_loss_streak_before_wait' => 4,
             'loss_cooldown_candles' => 4,
+            'loss_streak_wait_candles' => 4,
+            'recovery_probe_risk_multiplier' => 0.5,
+            'weak_regime_min_samples' => 15,
+            'weak_regime_wait_candles' => 4,
+            'transition_firewall_enabled' => false,
+            'transition_wait_candles' => 2,
+            'confidence_calibration_enabled' => true,
+            'confidence_calibration_min_samples' => 15,
+            'confidence_ev_lower_bound_enabled' => true,
             'dynamic_cooldown_enabled' => true,
             'cooldown_shadow_min_samples' => 5,
             'cooldown_shadow_edge_pf' => 1.1,

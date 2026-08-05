@@ -9,7 +9,7 @@ use RuntimeException;
 
 class LabIncrementalEvaluationService
 {
-    public function __construct(private CandlePayloadService $candles) {}
+    public function __construct(private CandlePayloadService $candles, private StrategyParameterSchemaService $schemas) {}
 
     /**
      * Re-checks the current champion on recent candles only. This is health
@@ -61,7 +61,7 @@ class LabIncrementalEvaluationService
                 'candles' => $rows,
                 'strategies' => [[
                     'strategy' => $model->strategy,
-                    'base_strategy' => data_get($model->metadata, 'base_strategy') ?: $performance->strategy_family.'_v1',
+                    'base_strategy' => $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $performance->strategy_family),
                     'version' => $model->version,
                     'parameters' => $model->parameters ?? [],
                 ]],

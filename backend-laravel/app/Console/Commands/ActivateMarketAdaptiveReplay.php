@@ -22,6 +22,11 @@ class ActivateMarketAdaptiveReplay extends Command
 
         foreach ($symbols as $symbol) {
             $lab = AiLaboratory::where('symbol', $symbol)->firstOrFail();
+            $active = $lab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->latest('generation')->first();
+            if ($active) {
+                $this->warn("{$symbol}: G{$active->generation} hali {$active->status}; replay activation yangi generation yaratmaydi.");
+                continue;
+            }
             $superseded = DB::transaction(function () use ($lab): int {
                 $generations = $lab->generations()
                     ->whereIn('status', ['draft', 'queued', 'screening', 'screened', 'full_validation'])
@@ -32,10 +37,10 @@ class ActivateMarketAdaptiveReplay extends Command
                 foreach ($generations as $generation) {
                     $agentIds = $generation->agents->pluck('id');
                     $modelIds = $generation->agents->pluck('model_version_id');
-                    LabAgent::whereIn('id', $agentIds)->update([
+                    $generation->agents->each(fn (LabAgent $agent) => $agent->update([
                         'lifecycle_status' => 'archived',
                         'decision_reason' => 'Superseded before promotion: market-adaptive replay and hybrid protocol activated.',
-                    ]);
+                    ]));
                     ModelVersion::whereIn('id', $modelIds)->update(['status' => 'archived']);
                     $context = $generation->trigger_context ?? [];
                     $context['superseded_reason'] = 'market_adaptive_replay_activation';

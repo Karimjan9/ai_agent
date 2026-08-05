@@ -25,10 +25,21 @@ class LabDatasetExportService
         $path = $directory."/{$symbol}_{$timeframe}.csv";
         $lock = fopen($path.'.lock', 'c');
         // Scheduler, manual dispatch, and full validation can request the
-        // same export concurrently.  Waiting indefinitely here leaves the
-        // queue worker stuck behind a stale Windows file lock; fail fast so
-        // the caller can retry on its normal cadence instead.
-        if ($lock === false || ! flock($lock, LOCK_EX | LOCK_NB)) {
+        // same export concurrently. Wait only a bounded interval: a real
+        // concurrent export gets a chance to finish, while an orphaned lock
+        // still becomes an operational error instead of blocking a worker
+        // forever.
+        $lockWaitSeconds = max(1, (int) config('services.lab_selection.dataset_export_lock_wait_seconds', 30));
+        $lockDeadline = microtime(true) + $lockWaitSeconds;
+        $locked = false;
+        while ($lock !== false && microtime(true) < $lockDeadline) {
+            if (flock($lock, LOCK_EX | LOCK_NB)) {
+                $locked = true;
+                break;
+            }
+            usleep(250000);
+        }
+        if ($lock === false || ! $locked) {
             if ($lock !== false) {
                 fclose($lock);
             }

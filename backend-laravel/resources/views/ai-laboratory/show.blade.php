@@ -39,6 +39,29 @@
     </article>
 
     <article class="card" style="margin-top:14px;">
+        <h2 class="section-title">Generation result packet</h2>
+        @if($generationReport)
+            <p style="margin-top:0;color:var(--muted);">Phase: <code>{{ $generationReport['phase'] ?? '-' }}</code> · Next action: <strong>{{ $generationReport['next_action'] ?? '-' }}</strong></p>
+            <section class="grid metrics">
+                <article class="card tone-blue"><div class="metric-label">Technical completion</div><div class="metric-value">{{ data_get($generationReport, 'kpis.technical_completion_rate', 0) }}%</div></article>
+                <article class="card tone-yellow"><div class="metric-label">Screen pass rate</div><div class="metric-value">{{ data_get($generationReport, 'kpis.screening_pass_rate', 0) }}%</div></article>
+                <article class="card tone-blue"><div class="metric-label">Full completion</div><div class="metric-value">{{ data_get($generationReport, 'kpis.full_validation_completion_rate', 0) }}%</div></article>
+                <article class="card tone-green"><div class="metric-label">Forward-valid</div><div class="metric-value">{{ data_get($generationReport, 'kpis.forward_valid_agents', 0) }}</div></article>
+            </section>
+            <table class="table"><tbody>
+                <tr><th>Best agent</th><td>{{ data_get($generationReport, 'best_agent.id', '-') }} / {{ data_get($generationReport, 'best_agent.performance_status', '-') }} / PF {{ data_get($generationReport, 'best_agent.profit_factor', '-') }}</td></tr>
+                <tr><th>Parent delta</th><td>{{ collect($generationReport['parent_delta'] ?? [])->map(fn($value, $key) => $key.' '.(is_numeric($value) ? number_format((float)$value, 3) : '-'))->implode(', ') ?: 'Parent evidence yo‘q' }}</td></tr>
+                <tr><th>Improved gates</th><td>{{ implode(', ', $generationReport['gate_improvements'] ?? []) ?: 'Hali tasdiqlangan yaxshilanish yo‘q' }}</td></tr>
+                <tr><th>Failed gates</th><td>{{ collect($generationReport['gate_failures'] ?? [])->map(fn($value, $key) => $key.' ('.$value.')')->implode(', ') ?: 'Failure yo‘q' }}</td></tr>
+                <tr><th>Technical errors</th><td>{{ count($generationReport['technical_errors'] ?? []) }}</td></tr>
+                <tr><th>Mutation targets</th><td>{{ implode(', ', $generationReport['mutation_targets'] ?? []) ?: '-' }}</td></tr>
+            </tbody></table>
+        @else
+            <p style="margin:0;color:var(--muted);">Generation report hali yozilmadi; current phase yakunlangach avtomatik yaratiladi.</p>
+        @endif
+    </article>
+
+    <article class="card" style="margin-top:14px;">
         <h2 class="section-title">Forward-gate diagnostics</h2>
         <p style="margin-top:0;color:var(--muted);">Paper monitor faqat barcha gate'dan o'tgan <code>forward_validated</code> candidate uchun signal yaratadi. Bu jadval har model qayerda to'xtaganini ko'rsatadi.</p>
         <table class="table"><thead><tr><th>Family / model</th><th>Status</th><th>Edge claim / falsifier</th><th>Gross / normal / stress PF</th><th>Cost / gross profit</th><th>PF attribution</th><th>Ruin</th><th>PBO / DSR</th><th>Failed gates</th></tr></thead><tbody>

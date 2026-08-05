@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Http;
 use RuntimeException;
 class SealedHoldoutService
 {
-    public function __construct(private CandlePayloadService $candles,private MarketChampionService $champions){}
+    public function __construct(private CandlePayloadService $candles,private MarketChampionService $champions, private StrategyParameterSchemaService $schemas){}
     public function release(ModelMarketPerformance $performance): SealedHoldoutRelease
     {
         if($performance->paper_status!=='passed')throw new RuntimeException('Paper gate hali o‘tilmagan.');
@@ -19,7 +19,7 @@ class SealedHoldoutService
         $model=$performance->modelVersion;
         $response=Http::timeout(1200)->acceptJson()->withHeaders(['X-Internal-Token'=>(string)config('services.internal_api.token')])->post(rtrim(config('services.ai_service.url'),'/').'/api/holdout/run',[
             'symbol'=>$performance->symbol,'timeframe'=>$performance->timeframe,'strategy'=>$model->strategy,
-            'base_strategy'=>data_get($model->metadata,'base_strategy')?:$performance->strategy_family.'_v1',
+            'base_strategy'=>$this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata,'base_strategy'), $performance->strategy_family),
             'parameters'=>$model->parameters??[],'candles'=>$rows,'initial_balance'=>10000,'risk_per_trade'=>1,
             'execution'=>['spread_points'=>str_starts_with($performance->symbol,'XAU')?20:12,'point_size'=>str_starts_with($performance->symbol,'XAU')?0.01:0.00001,
                 'commission_percent'=>0.01,'slippage_points'=>2,'swap_per_day_percent'=>0.002,'allowed_sessions_utc'=>['1-22'],'intrabar_policy'=>'conservative','max_gap_multiple'=>96,

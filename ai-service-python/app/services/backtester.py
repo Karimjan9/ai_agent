@@ -1,6 +1,7 @@
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 import hashlib
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -62,6 +63,9 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
 def run_simple_ema_rsi_backtest_on_dataframe(
     payload: SimpleBacktestRequest,
     df: pd.DataFrame,
+    *,
+    include_differential_pair: bool = True,
+    lightweight: bool = False,
 ) -> SimpleBacktestResponse:
     df = df.copy()
 
@@ -97,7 +101,12 @@ def run_simple_ema_rsi_backtest_on_dataframe(
     if len(df) < 2:
         raise ValueError("At least 2 candles are required for backtest.")
 
-    return _run_prepared_simple_backtest(payload, df)
+    return _run_prepared_simple_backtest(
+        payload,
+        df,
+        include_differential_pair=include_differential_pair,
+        lightweight=lightweight,
+    )
 
 
 def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
@@ -144,7 +153,15 @@ def _apply_execution_regime(execution_df: pd.DataFrame, regime_source: pd.DataFr
     return merged
 
 
-def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFrame) -> SimpleBacktestResponse:
+def _run_prepared_simple_backtest(
+    payload: SimpleBacktestRequest,
+    df: pd.DataFrame,
+    *,
+    differential_lane: str | None = None,
+    include_differential_pair: bool = True,
+    lightweight: bool = False,
+) -> SimpleBacktestResponse:
+    source_df = df.copy()
     unexpected_gap_count = int(df.attrs.get("unexpected_gap_count", 0))
     regime_source = _load_regime_source(payload)
     df = _apply_execution_regime(df, regime_source)
@@ -157,8 +174,11 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
         (df["low"] - previous_close).abs(),
     ], axis=1).max(axis=1)
     df["_management_atr"] = true_range.rolling(14, min_periods=1).mean()
-    strategy_function = get_strategy(payload.strategy, payload.base_strategy)
-    df = strategy_function(df, payload.parameters)
+    if payload.portfolio_members:
+        df = _apply_portfolio_strategy(df, payload.portfolio_members)
+    else:
+        strategy_function = get_strategy(payload.strategy, payload.base_strategy)
+        df = strategy_function(df, payload.parameters)
 
     balance = payload.initial_balance
     peak_balance = balance
@@ -167,56 +187,152 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
     position: dict[str, object] | None = None
     gross_profit = 0.0
     gross_loss = 0.0
+    # A loss streak is a finite risk-control state, never a permanent entry
+    # veto.  In particular, do not use ``loss_streak >= threshold`` at entry:
+    # a blocked strategy cannot produce the winning trade that would reset it.
     loss_streak = 0
-    cooldown_until = -1
+    # Dynamic cooldown is a local containment policy.  A range specialist
+    # losing once must not freeze a healthy trend lane (and vice versa).  The
+    # key contains only already-known regime/volatility/direction/specialist
+    # context; it is therefore safe for paired differential replay as well.
+    cooldown_until_by_context: dict[str, int] = {}
+    loss_streak_wait_until = -1
+    recovery_probe = False
+    loss_streak_by_context: dict[str, int] = defaultdict(int)
+    context_wait_until: dict[str, int] = {}
+    context_recovery_probes: set[str] = set()
+    # Regime quality is a separate, context-local finite state machine.  It
+    # must never turn a weak historical PF into an end-of-replay hard lock.
+    weak_regime_state: dict[str, dict[str, object]] = {}
     regime_returns: dict[str, list[float]] = {}
     entry_funnel: Counter[str] = Counter()
     opportunities_by_month: Counter[str] = Counter()
     accepted_by_month: Counter[str] = Counter()
+    decision_trace: list[dict[str, object]] = []
+    emit_decision_trace = bool(payload.emit_decision_trace)
     # Shadow positions never touch balance, loss streak, or real-position
     # state.  They are a counterfactual evidence ledger, not hidden trades.
     shadow_positions: list[dict[str, object]] = []
     shadow_ledger: list[dict[str, object]] = []
     shadow_history: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     meta_returns: dict[str, list[float]] = defaultdict(list)
+    confidence_history: dict[str, list[dict[str, float]]] = defaultdict(list)
     cooldown_decisions: list[dict[str, object]] = []
-    entry_funnel["raw_strategy_signals"] = int(df.iloc[199:]["signal"].isin(["BUY", "SELL"]).sum())
+    loss_streak_wait_events: list[dict[str, object]] = []
+    recovery_probe_events: list[dict[str, object]] = []
+    weak_regime_events: list[dict[str, object]] = []
+    transition_wait_until = -1
+    transition_events = 0
+    transition_vetoes = 0
+    entry_funnel["raw_strategy_signals"] = _count_lane_signals(df, differential_lane)
 
     # A signal is only knowable after its candle closes. Execute it at the
     # following candle's open, then include that same candle in exit checks.
     for index in range(200, len(df)):
         candle = df.iloc[index]
         signal_row = df.iloc[index - 1]
+        transition_event = _regime_transitioned(signal_row, df.iloc[index - 2] if index >= 2 else None)
+        if transition_event and bool(payload.parameters.get("transition_firewall_enabled", False)):
+            transition_events += 1
+            transition_wait_until = max(transition_wait_until, index + _transition_wait_duration(payload))
+        transition_wait_active = bool(payload.parameters.get("transition_firewall_enabled", False)) and index < transition_wait_until
         _advance_shadow_positions(
             shadow_positions, shadow_ledger, shadow_history, candle, df.iloc[index - 1], payload, index
         )
 
+        if emit_decision_trace and position is not None:
+            decision_trace.append(_decision_trace_event(
+                index, candle, signal_row, 'position_management', 'WAIT', False, 'position_open',
+                {'position_open': True, 'loss_streak': loss_streak},
+            ))
+
+        # A completed wait earns exactly one reduced-risk probe.  This is
+        # evaluated even when there is no signal so expiry is driven by time,
+        # not by a future accepted trade.
+        if loss_streak_wait_until >= 0 and index >= loss_streak_wait_until:
+            loss_streak = 0
+            loss_streak_wait_until = -1
+            recovery_probe = True
+            recovery_probe_events.append({"time": str(candle["time"]), "scope": "global", "event": "wait_expired"})
+
         if position is None:
-            signal = str(signal_row["signal"])
+            signal, lane_confidence, lane_specialist = _effective_lane_signal(signal_row, differential_lane)
+            if differential_lane is not None:
+                signal_row = signal_row.copy()
+                signal_row["signal"] = signal
+                signal_row["signal_confidence"] = lane_confidence
+                signal_row["selected_specialist"] = lane_specialist
             if signal not in {"BUY", "SELL"}:
+                if emit_decision_trace:
+                    decision_trace.append(_decision_trace_event(
+                        index, candle, signal_row, 'signal_evaluation', 'WAIT', False, 'no_signal',
+                        {'position_open': False, 'loss_streak': loss_streak},
+                    ))
                 continue
+            # A portfolio owns both the signal and its sealed execution
+            # topology.  Using the first member's stop/target parameters for
+            # every member makes a multi-agent result a hidden single-agent
+            # replay and can erase the very complementarity being tested.
+            execution_payload = _portfolio_payload_for_signal(payload, signal_row)
             entry_funnel["flat_signal_opportunities"] += 1
             month_key = str(pd.Timestamp(signal_row["time"]).to_period("M"))
             opportunities_by_month[month_key] += 1
+            context_key = _risk_context(signal_row, signal)
+            context_wait = int(context_wait_until.get(context_key, -1))
+            if context_wait >= 0 and index >= context_wait:
+                loss_streak_by_context[context_key] = 0
+                context_wait_until.pop(context_key, None)
+                context_recovery_probes.add(context_key)
+                recovery_probe_events.append({"time": str(candle["time"]), "scope": "context", "context": context_key, "event": "wait_expired"})
+            global_wait_active = loss_streak_wait_until >= 0 and index < loss_streak_wait_until
+            context_wait_active = context_wait >= 0 and index < context_wait
+            weak_regime_wait_active, weak_regime_probe = _advance_weak_regime_state(
+                weak_regime_state, context_key, index, candle, weak_regime_events
+            )
+            confidence_assessment = _confidence_assessment(
+                signal_row, signal, confidence_history, execution_payload, candle
+            )
             liquid, rejection_reason = _entry_eligibility(
-                candle, payload, signal_row, loss_streak, index < cooldown_until, regime_returns, meta_returns
+                candle,
+                execution_payload,
+                signal_row,
+                loss_streak,
+                index < int(cooldown_until_by_context.get(context_key, -1)),
+                regime_returns,
+                meta_returns,
+                loss_streak_wait_active=global_wait_active or context_wait_active,
+                weak_regime_wait_active=weak_regime_wait_active,
+                confidence_assessment=confidence_assessment,
+                transition_wait_active=transition_wait_active,
             )
             if not liquid:
                 entry_funnel[f"rejected_{rejection_reason or 'unknown'}"] += 1
-                shadow = _open_shadow_position(candle, signal_row, signal, payload, index, rejection_reason or "unknown")
+                if rejection_reason == "regime_transition_wait":
+                    transition_vetoes += 1
+                shadow = _open_shadow_position(candle, signal_row, signal, execution_payload, index, rejection_reason or "unknown")
                 if shadow is not None:
-                    settled = _advance_shadow_position(shadow, candle, df.iloc[index - 1], payload, index)
+                    settled = _advance_shadow_position(shadow, candle, df.iloc[index - 1], execution_payload, index)
                     if settled is None:
                         shadow_positions.append(shadow)
                     else:
                         _record_shadow_outcome(shadow_ledger, shadow_history, settled)
+                if emit_decision_trace:
+                    decision_trace.append(_decision_trace_event(
+                        index, candle, signal_row, 'signal_evaluation', signal, False,
+                        rejection_reason or 'unknown', {
+                            'position_open': False, 'loss_streak': loss_streak,
+                            'context_key': context_key, 'confidence_assessment': confidence_assessment,
+                        },
+                    ))
                 continue
             entry_funnel["accepted_entries"] += 1
             accepted_by_month[month_key] += 1
+            probe_active = recovery_probe or context_key in context_recovery_probes or weak_regime_probe
+            probe_scope = "global" if recovery_probe else ("context" if context_key in context_recovery_probes else None)
 
             market_price = float(candle["open"])
-            entry_price = _entry_price(market_price, signal, payload)
-            stop_distance, target_distance = _exit_distances(market_price, signal_row, payload)
+            entry_price = _entry_price(market_price, signal, execution_payload)
+            stop_distance, target_distance = _exit_distances(market_price, signal_row, execution_payload)
             if signal == "BUY":
                 stop_loss = market_price - stop_distance
                 take_profit = market_price + target_distance
@@ -233,27 +349,46 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
                 "position_size_multiple": _position_size_multiple(
-                    entry_price, stop_loss, signal, payload
-                ) * _volatility_risk_multiplier(signal_row, payload) * _meta_risk_multiplier(signal_row, signal, payload, meta_returns)
-                * _regime_transition_multiplier(signal_row, df.iloc[index - 2] if index >= 2 else None),
+                    entry_price, stop_loss, signal, execution_payload
+                ) * _volatility_risk_multiplier(signal_row, execution_payload) * _meta_risk_multiplier(signal_row, signal, execution_payload, meta_returns)
+                * _regime_transition_multiplier(signal_row, df.iloc[index - 2] if index >= 2 else None)
+                * _regime_specific_risk_multiplier(signal_row, execution_payload)
+                * (_recovery_probe_risk_multiplier(execution_payload) if probe_active else 1.0),
                 "market_regime": signal_row.get("market_regime", "unknown"),
                 "volatility_regime": signal_row.get("volatility_regime", "normal_volatility"),
+                "portfolio_member": signal_row.get("selected_specialist") if payload.portfolio_members else None,
                 "signal_row": signal_row,
+                "risk_context": context_key,
+                "recovery_probe": probe_active,
+                "recovery_probe_scope": probe_scope,
+                "weak_regime_probe": weak_regime_probe,
                 "entry_index": index,
+                "execution_parameters": dict(execution_payload.parameters),
                 "partial_closed": False,
-                "partial_fraction": float(payload.parameters.get("partial_take_profit_fraction", 0) or 0),
+                "partial_fraction": float(execution_payload.parameters.get("partial_take_profit_fraction", 0) or 0),
                 "partial_exit_price": None,
             }
+            if emit_decision_trace:
+                decision_trace.append(_decision_trace_event(
+                    index, candle, signal_row, 'signal_evaluation', signal, True, None, {
+                        'position_open': True, 'loss_streak': loss_streak,
+                        'context_key': context_key, 'entry_price': entry_price,
+                        'stop_loss': stop_loss, 'take_profit': take_profit,
+                        'position_size_multiple': position['position_size_multiple'],
+                        'recovery_probe': probe_active, 'recovery_probe_scope': probe_scope,
+                    },
+                ))
 
         direction = str(position["direction"])
-        _advance_trailing_stop(position, df.iloc[index - 1], payload)
-        time_stop = int(payload.parameters.get("time_stop_candles", 0) or 0)
+        position_payload = _payload_for_position(payload, position)
+        _advance_trailing_stop(position, df.iloc[index - 1], position_payload)
+        time_stop = int(position_payload.parameters.get("time_stop_candles", 0) or 0)
         if time_stop and index - int(position["entry_index"]) >= time_stop:
-            exit_price, exit_reason = _exit_price(float(candle["open"]), direction, payload), "time_stop"
+            exit_price, exit_reason = _exit_price(float(candle["open"]), direction, position_payload), "time_stop"
         else:
-            exit_price, exit_reason = _intrabar_exit(direction, position, candle, payload)
+            exit_price, exit_reason = _intrabar_exit(direction, position, candle, position_payload)
 
-        if exit_reason is None and _take_partial_profit(position, candle, payload):
+        if exit_reason is None and _take_partial_profit(position, candle, position_payload):
             continue
         if exit_reason is None or exit_price is None:
             continue
@@ -280,17 +415,58 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
         scaled_cost_percent = explicit_cost * position_size
         profit_percent = gross_profit_percent - scaled_cost_percent
         result = "WIN" if profit_percent > 0 else "LOSS"
-        loss_streak = 0 if result == "WIN" else loss_streak + 1
+        closed_signal_row = position["signal_row"]
+        closed_context = str(position.get("risk_context", _risk_context(closed_signal_row, direction)))
+        was_recovery_probe = bool(position.get("recovery_probe", False))
+        was_weak_regime_probe = bool(position.get("weak_regime_probe", False))
+        probe_scope = position.get("recovery_probe_scope")
+        if result == "WIN":
+            # A successful probe returns to normal operation.  A normal win
+            # also clears the global streak, as before, but leaves unrelated
+            # context history intact.
+            loss_streak = 0
+            loss_streak_by_context[closed_context] = 0
+            if probe_scope == "global":
+                recovery_probe = False
+                context_recovery_probes.discard(closed_context)
+            if probe_scope == "context":
+                context_recovery_probes.discard(closed_context)
+            if was_recovery_probe:
+                recovery_probe_events.append({"time": str(candle["time"]), "scope": probe_scope, "context": closed_context, "event": "probe_win"})
+        else:
+            loss_streak += 1
+            loss_streak_by_context[closed_context] += 1
         if result == "LOSS":
-            cooldown, evidence = _dynamic_cooldown_duration(signal_row, payload, loss_streak, shadow_history)
-            cooldown_until = index + cooldown
+            cooldown, evidence = _dynamic_cooldown_duration(closed_signal_row, payload, loss_streak, shadow_history)
+            cooldown_until_by_context[closed_context] = index + cooldown
             cooldown_decisions.append({
-                "time": str(candle["time"]), "market_regime": str(signal_row.get("market_regime", "unknown")),
-                "volatility_regime": str(signal_row.get("volatility_regime", "normal_volatility")),
-                "loss_streak": loss_streak, "cooldown_candles": cooldown, "shadow_evidence": evidence,
+                "time": str(candle["time"]), "market_regime": str(closed_signal_row.get("market_regime", "unknown")),
+                "volatility_regime": str(closed_signal_row.get("volatility_regime", "normal_volatility")),
+                "context": closed_context, "scope": "context", "loss_streak": loss_streak,
+                "cooldown_candles": cooldown, "until_index": index + cooldown,
+                "shadow_evidence": evidence,
             })
+            threshold = int(payload.parameters.get("max_loss_streak_before_wait", 99) or 99)
+            wait_candles = _loss_streak_wait_duration(payload)
+            global_wait = bool(probe_scope == "global") or loss_streak >= threshold
+            context_wait = bool(probe_scope == "context") or loss_streak_by_context[closed_context] >= threshold
+            if global_wait:
+                loss_streak_wait_until = index + wait_candles
+                recovery_probe = False
+                loss_streak_wait_events.append({"time": str(candle["time"]), "scope": "global", "until_index": loss_streak_wait_until, "loss_streak": loss_streak, "reason": "probe_loss" if probe_scope == "global" else "threshold"})
+            if context_wait:
+                context_wait_until[closed_context] = index + wait_candles
+                context_recovery_probes.discard(closed_context)
+                loss_streak_wait_events.append({"time": str(candle["time"]), "scope": "context", "context": closed_context, "until_index": context_wait_until[closed_context], "loss_streak": loss_streak_by_context[closed_context], "reason": "probe_loss" if probe_scope == "context" else "threshold"})
+            if was_recovery_probe:
+                recovery_probe_events.append({"time": str(candle["time"]), "scope": probe_scope, "context": closed_context, "event": "probe_loss"})
+        _record_weak_regime_outcome(
+            weak_regime_state, closed_context, profit_percent, result, was_weak_regime_probe,
+            index, candle, payload, weak_regime_events,
+        )
         regime_returns.setdefault(str(position.get("market_regime", "unknown")), []).append(profit_percent)
         meta_returns[_meta_context(position["signal_row"], direction)].append(profit_percent)
+        _record_confidence_observation(confidence_history, position["signal_row"], direction, profit_percent)
 
         balance += balance * (profit_percent / 100)
         peak_balance = max(peak_balance, balance)
@@ -334,8 +510,17 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
                 mistake_type=mistake["type"] if mistake else None,
                 reason=mistake["reason"] if mistake else None,
                 suggestion=mistake["suggestion"] if mistake else None,
+                portfolio_member=position.get("portfolio_member"),
             )
         )
+        if emit_decision_trace:
+            decision_trace.append(_decision_trace_event(
+                index, candle, closed_signal_row, 'trade_exit', direction, True, None, {
+                    'position_open': False, 'outcome': result, 'exit_reason': exit_reason,
+                    'profit_percent': round(profit_percent, 5), 'balance': round(balance, 2),
+                    'entry_time': str(position['entry_time']), 'exit_time': str(candle['time']),
+                },
+            ))
         position = None
 
     # A shadow still open at the end of a bounded replay is closed at the last
@@ -369,37 +554,94 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
     top_mistakes = _top_simple_mistakes(trades)
     regime_performance = calculate_regime_performance(trades)
     volatility_performance = calculate_volatility_performance(trades)
-    monte_carlo = MonteCarloService(
-        simulations=1000,
-        starting_balance=payload.initial_balance,
-        seed=payload.random_seed,
-    ).run([trade.model_dump() for trade in trades])
-    strategy_dna = StrategyDnaService().generate({
-        "strategy": strategy_label(payload.strategy),
-        "total_trades": total_trades,
-        "max_drawdown_percent": max_drawdown,
-        "risk_reward_ratio": risk_reward_ratio,
-        "equity_curve": equity_curve,
-        "regime_performance": regime_performance,
-        "volatility_performance": volatility_performance,
-        "monte_carlo": monte_carlo,
-    }, [trade.model_dump() for trade in trades])
+    if lightweight:
+        # Screening sub-replays exist only to measure the same core trade,
+        # cost, temporal and calendar outcomes under a frozen contract. They
+        # must not spend CPU on promotion-only Monte Carlo/DNA diagnostics;
+        # the primary screening replay and every full replay still compute
+        # those immutable evidence streams in full.
+        monte_carlo = {}
+        strategy_dna = {}
+    else:
+        monte_carlo = MonteCarloService(
+            simulations=1000,
+            starting_balance=payload.initial_balance,
+            seed=payload.random_seed,
+        ).run([trade.model_dump() for trade in trades])
+        strategy_dna = StrategyDnaService().generate({
+            "strategy": strategy_label(payload.strategy),
+            "total_trades": total_trades,
+            "max_drawdown_percent": max_drawdown,
+            "risk_reward_ratio": risk_reward_ratio,
+            "equity_curve": equity_curve,
+            "regime_performance": regime_performance,
+            "volatility_performance": volatility_performance,
+            "monte_carlo": monte_carlo,
+        }, [trade.model_dump() for trade in trades])
     buy_hold_percent = ((float(df.iloc[-1]["close"]) - float(df.iloc[0]["close"])) / max(float(df.iloc[0]["close"]), 0.0000001)) * 100
     statistical_evidence = _statistical_evidence(trades, wins, total_trades)
-    statistical_evidence["edge_quality"] = _edge_quality_evidence(trades)
-    pf_attribution = _pf_attribution(trades)
+    statistical_evidence["edge_quality"] = (
+        {"status": "deferred_screening_subreplay", "promotion_evidence": False}
+        if lightweight else _edge_quality_evidence(trades)
+    )
+    # Keep the full trade ledger's chronological bucket attribution alongside
+    # the usual regime/month breakdown.  Screening can consume this exact
+    # ledger without resetting indicator/risk state at artificial chunk
+    # boundaries; full validation still runs its independent strict replay.
+    pf_attribution = _pf_attribution(trades, df)
     entry_funnel_report = _entry_funnel_report(entry_funnel)
-    behavioral_signature = _behavioral_signature(df, trades)
-    diagnostic_telemetry = _diagnostic_telemetry(trades, entry_funnel_report, pf_attribution)
-    veto_regret = _veto_regret_report(shadow_ledger)
-    decision_blame_graph = _decision_blame_graph(trades, veto_regret)
-    cooldown_policy = _cooldown_policy_report(cooldown_decisions)
+    behavioral_signature = {} if lightweight else _behavioral_signature(df, trades)
+    diagnostic_telemetry = (
+        {"status": "deferred_screening_subreplay", "promotion_evidence": False}
+        if lightweight else _diagnostic_telemetry(trades, entry_funnel_report, pf_attribution)
+    )
+    veto_regret = {} if lightweight else _veto_regret_report(shadow_ledger)
+    decision_blame_graph = {} if lightweight else _decision_blame_graph(trades, veto_regret)
+    cooldown_policy = (
+        {"status": "deferred_screening_subreplay", "promotion_evidence": False}
+        if lightweight else _cooldown_policy_report(cooldown_decisions, loss_streak_wait_events, recovery_probe_events, weak_regime_events)
+    )
+    transition_firewall = {
+        "enabled": bool(payload.parameters.get("transition_firewall_enabled", False)),
+        "wait_candles": _transition_wait_duration(payload),
+        "transition_events": transition_events,
+        "vetoes": transition_vetoes,
+        "rule": "A regime or volatility boundary creates a finite WAIT state; it never uses future outcomes or lowers a gate.",
+    }
+    confidence_calibration = {} if lightweight else _confidence_calibration_report(confidence_history, payload)
+    robustness_matrix = _robustness_matrix(trades)
+    # The paired differential lane is part of screening's causal contract,
+    # even when promotion-only diagnostics are deferred.  Leaving this report
+    # empty in a lightweight replay passed ``False`` identities into the
+    # paired report, creating a deterministic false FAILED_NON_TARGET_REGRESSION
+    # while the branch hashes and ledgers were identical.
+    differential_router = (
+        _differential_router_report(df, trades)
+        if _is_differential_router(payload, df)
+        else ({} if lightweight else _differential_router_report(df, trades))
+    )
+    # Paired differential lanes use lightweight execution intentionally, but
+    # their branch hashes are the causal identity evidence.  Keep that small
+    # invariant calculation while deferring Monte Carlo/DNA/diagnostics to the
+    # primary full replay; otherwise one full candidate pays for four copies
+    # of promotion-only analysis and can hit the hard timeout without changing
+    # a single trade or gate metric.
+    differential_invariants = (
+        _differential_invariants(df, trades)
+        if differential_lane is not None
+        else ({} if lightweight else _differential_invariants(df, trades))
+    )
+    if differential_lane is not None:
+        differential_router["replay_lane"] = differential_lane
     window_survival = _window_survival(df, trades, opportunities_by_month, accepted_by_month)
-    regime_ensemble = _regime_ensemble_report(df, payload)
+    regime_ensemble = {} if lightweight else _regime_ensemble_report(df, payload)
+    portfolio_evidence = {} if lightweight else _portfolio_evidence(df, trades, payload)
     opportunity_metrics = _opportunity_metrics(net_profit, entry_funnel_report, window_survival)
-    edge_claim = _edge_claim(payload, pf_attribution, statistical_evidence["edge_quality"])
+    certified_coverage_passport = _certified_coverage_passport(trades, shadow_ledger)
+    opportunity_recall = _opportunity_recall(entry_funnel_report, shadow_ledger, trades)
+    edge_claim = {} if lightweight else _edge_claim(payload, pf_attribution, statistical_evidence["edge_quality"])
 
-    return SimpleBacktestResponse(
+    response = SimpleBacktestResponse(
         strategy=strategy_label(payload.strategy),
         parameters=payload.parameters,
         instrument=_display_symbol(payload.symbol),
@@ -429,7 +671,13 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
         data_quality={"status": "warning" if unexpected_gap_count else "passed", "rows": len(df),
                       "gap_control": True, "hard_gate": payload.execution.reject_unexpected_gaps,
                       "unexpected_gap_count": unexpected_gap_count,
-                      "regime_source": "closed_h1" if regime_source is not None else "execution_timeframe"},
+                      "regime_source": "closed_h1" if regime_source is not None else "execution_timeframe",
+                      "decision_trace": {
+                          "protocol": "candle_decision_trace_v1", "requested": emit_decision_trace,
+                          "complete": emit_decision_trace, "event_count": len(decision_trace),
+                          "evaluated_candle_count": max(0, len(df) - 200),
+                          "promotion_evidence": False,
+                      }},
         statistical_evidence=statistical_evidence,
         pf_attribution=pf_attribution,
         entry_funnel=entry_funnel_report,
@@ -439,15 +687,25 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
         decision_blame_graph=decision_blame_graph,
         observability_protocol_version=1,
         cooldown_policy=cooldown_policy,
+        transition_firewall=transition_firewall if not lightweight else {"status": "deferred_screening_subreplay", "promotion_evidence": False},
+        confidence_calibration=confidence_calibration,
+        robustness_matrix=robustness_matrix,
+        differential_router=differential_router,
+        differential_invariants=differential_invariants,
         window_survival=window_survival,
         regime_ensemble=regime_ensemble,
+        portfolio_evidence=portfolio_evidence,
         opportunity_metrics=opportunity_metrics,
+        certified_coverage_passport=certified_coverage_passport,
+        opportunity_recall=opportunity_recall,
         edge_claim=edge_claim,
         benchmark={"buy_and_hold_percent": round(buy_hold_percent, 3), "edge_vs_buy_and_hold_percent": round(net_profit - buy_hold_percent, 3)},
         trade_ledger_scope="full evaluation; API display is capped to the latest 20 closed trades",
+        trade_ledger_hash=_trade_ledger_hash(trades),
         displayed_trade_count=min(total_trades, 20),
         top_mistakes=top_mistakes,
         trades=trades[-20:],
+        trade_ledger=[],
         conclusion=_simple_conclusion(
             winrate,
             net_profit,
@@ -457,7 +715,470 @@ def _run_prepared_simple_backtest(payload: SimpleBacktestRequest, df: pd.DataFra
             profit_factor=profit_factor,
             stability_score=stability_score,
         ),
+        decision_trace=[],
     )
+    response.proof_carrying_replay = _proof_carrying_replay(response.model_dump(), trades, payload)
+    if emit_decision_trace:
+        response.decision_trace = decision_trace
+        response.trade_ledger = trades
+
+    if (
+        differential_lane is None
+        and include_differential_pair
+        and bool(payload.parameters.get("differential_pair_replay_enabled", True))
+        and _is_differential_router(payload, df)
+    ):
+        target_regime = _differential_target_regime(payload, df)
+        portfolio_non_target_trades = [trade for trade in trades if trade.market_regime != target_regime]
+        portfolio_target_trades = [trade for trade in trades if trade.market_regime == target_regime]
+        response.differential_router = {
+            **response.differential_router,
+            "paired_lane": _paired_differential_lane_report(
+                payload, source_df, _trade_summary(portfolio_non_target_trades),
+                _trade_summary(portfolio_target_trades),
+                bool(response.differential_router.get("non_target_signal_identity", False)),
+                bool(response.differential_router.get("non_target_confidence_identity", False)),
+            ),
+        }
+    return response
+
+
+def _apply_portfolio_strategy(df: pd.DataFrame, members: list[object]) -> pd.DataFrame:
+    """Apply a sealed complementary-member router to one candle stream.
+
+    Members are never selected after seeing outcomes.  A member may speak only
+    inside its declared regime/volatility niche.  If several members own the
+    same niche, they must agree on direction; disagreement becomes WAIT. This
+    prevents duplicate trades and turns disagreement into an explicit risk
+    control instead of an accidental vote for the most active agent.
+    """
+    prepared = df.copy()
+    member_frames: list[tuple[dict[str, object], pd.DataFrame]] = []
+    for raw in members:
+        config = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+        function = get_strategy(str(config["strategy"]), config.get("base_strategy"))
+        member = function(prepared.copy(), dict(config.get("parameters") or {}))
+        member_frames.append((config, member))
+
+    # Canonical archives contain 100k+ candles and a portfolio replay is
+    # repeated for cost, temporal, adversarial and checkpoint evidence.  The
+    # router is outcome-independent, so boolean masks preserve the exact
+    # eligibility/disagreement rules without a nested Python row/member loop.
+    return _apply_portfolio_strategy_vectorized(prepared, member_frames)
+
+    prepared["signal"] = "WAIT"
+    prepared["signal_confidence"] = 0.0
+    prepared["selected_specialist"] = "portfolio_wait"
+    prepared["portfolio_member_count"] = 0
+    prepared["portfolio_disagreement"] = False
+    # Object-valued metadata is kept on each signal row so the execution
+    # contract can carry the selected member's exits into the position.  It is
+    # observability plus deterministic replay input, never an outcome label.
+    prepared["portfolio_execution_parameters"] = pd.Series(
+        [None] * len(prepared), index=prepared.index, dtype=object
+    )
+
+    for index in prepared.index:
+        regime = str(prepared.at[index, "market_regime"] if "market_regime" in prepared else "unknown")
+        volatility = str(prepared.at[index, "volatility_regime"] if "volatility_regime" in prepared else "normal_volatility")
+        eligible: list[tuple[dict[str, object], pd.DataFrame]] = []
+        for config, frame in member_frames:
+            target_regime = config.get("target_regime")
+            target_volatility = config.get("target_volatility")
+            target_direction = config.get("target_direction")
+            if target_direction not in {None, "BUY", "SELL"}:
+                raise ValueError(f"Unsupported portfolio target direction: {target_direction}")
+            if target_regime and target_regime != regime:
+                continue
+            if target_volatility and target_volatility != volatility:
+                continue
+            # A directional specialist owns only its declared side. If its
+            # base strategy emits the opposite side, that is a WAIT for this
+            # specialist—not a veto against a complementary opposite-side
+            # member. This keeps same-regime BUY/SELL councils independent.
+            if target_direction and str(frame.at[index, "signal"]) != target_direction:
+                continue
+            eligible.append((config, frame))
+
+        if not eligible:
+            continue
+        signals = [str(frame.at[index, "signal"]) for _, frame in eligible]
+        actionable = [signal for signal in signals if signal in {"BUY", "SELL"}]
+        if not actionable:
+            continue
+        if len(set(actionable)) > 1:
+            prepared.at[index, "portfolio_disagreement"] = True
+            prepared.at[index, "portfolio_member_count"] = len(eligible)
+            continue
+
+        direction = actionable[0]
+        agreeing = [
+            (config, frame) for config, frame in eligible
+            if str(frame.at[index, "signal"]) == direction
+        ]
+        # If an owner exists but another same-niche member explicitly says the
+        # opposite, the disagreement was handled above. WAIT is preferable to
+        # silently treating missing/weak specialists as a vote.
+        if not agreeing:
+            continue
+        confidences = [
+            float(frame.at[index, "signal_confidence"] if "signal_confidence" in frame else 0.0)
+            for _, frame in agreeing
+        ]
+        # When multiple specialists own the same niche and agree on
+        # direction, the first database row must not silently own execution
+        # forever.  Choose the strongest *current* signal confidence in a
+        # deterministic tie-preserving way; this uses no outcome/future
+        # information and keeps the member's own exits bound to the trade.
+        selected_config, _selected_frame = max(
+            agreeing,
+            key=lambda item: float(item[1].at[index, "signal_confidence"] if "signal_confidence" in item[1] else 0.0),
+        )
+        selected = selected_config
+        prepared.at[index, "signal"] = direction
+        prepared.at[index, "signal_confidence"] = max(0.0, min(1.0, sum(confidences) / max(1, len(confidences))))
+        prepared.at[index, "selected_specialist"] = _portfolio_member_key(selected)
+        prepared.at[index, "portfolio_member_count"] = len(agreeing)
+        prepared.at[index, "portfolio_execution_parameters"] = dict(selected.get("parameters") or {})
+    return prepared
+
+
+def _apply_portfolio_strategy_vectorized(
+    prepared: pd.DataFrame,
+    member_frames: list[tuple[dict[str, object], pd.DataFrame]],
+) -> pd.DataFrame:
+    """Apply the sealed portfolio router using column masks.
+
+    This is semantically equivalent to the original row-wise router.  It
+    deliberately keeps the old implementation above as a readable reference
+    contract while the production path avoids per-candle ``.at`` writes.
+    """
+    index = prepared.index
+    regime = prepared.get("market_regime", pd.Series("unknown", index=index)).astype(str)
+    volatility = prepared.get(
+        "volatility_regime", pd.Series("normal_volatility", index=index)
+    ).astype(str)
+
+    eligible_masks: list[pd.Series] = []
+    buy_masks: list[pd.Series] = []
+    sell_masks: list[pd.Series] = []
+    confidence_series: list[pd.Series] = []
+    member_keys: list[str] = []
+
+    for config, frame in member_frames:
+        target_regime = config.get("target_regime")
+        target_volatility = config.get("target_volatility")
+        target_direction = config.get("target_direction")
+        if target_direction not in {None, "BUY", "SELL"}:
+            raise ValueError(f"Unsupported portfolio target direction: {target_direction}")
+        eligible = pd.Series(True, index=index)
+        if target_regime:
+            eligible &= regime.eq(str(target_regime))
+        if target_volatility:
+            eligible &= volatility.eq(str(target_volatility))
+
+        signals = frame.get("signal", pd.Series("WAIT", index=index)).astype(str)
+        # A directional specialist owns only its declared side. An opposite
+        # signal is WAIT for that member, not a veto against another member.
+        if target_direction:
+            eligible &= signals.eq(str(target_direction))
+        confidence = pd.to_numeric(
+            frame.get("signal_confidence", pd.Series(0.0, index=index)),
+            errors="coerce",
+        ).fillna(0.0)
+        eligible_masks.append(eligible)
+        buy_masks.append(eligible & signals.eq("BUY"))
+        sell_masks.append(eligible & signals.eq("SELL"))
+        confidence_series.append(confidence)
+        member_keys.append(_portfolio_member_key(config))
+
+    prepared["signal"] = "WAIT"
+    prepared["signal_confidence"] = 0.0
+    prepared["selected_specialist"] = "portfolio_wait"
+    prepared["portfolio_member_count"] = 0
+    prepared["portfolio_disagreement"] = False
+    prepared["portfolio_execution_parameters"] = pd.Series(
+        [None] * len(index), index=index, dtype=object
+    )
+    if not member_frames:
+        return prepared
+
+    eligible_count = sum(mask.astype(int) for mask in eligible_masks)
+    buy_count = sum(mask.astype(int) for mask in buy_masks)
+    sell_count = sum(mask.astype(int) for mask in sell_masks)
+    disagreement = buy_count.gt(0) & sell_count.gt(0)
+    buy_only = buy_count.gt(0) & sell_count.eq(0)
+    sell_only = sell_count.gt(0) & buy_count.eq(0)
+    actionable = buy_only | sell_only
+
+    prepared.loc[buy_only, "signal"] = "BUY"
+    prepared.loc[sell_only, "signal"] = "SELL"
+    prepared.loc[disagreement, "portfolio_disagreement"] = True
+    prepared.loc[disagreement, "portfolio_member_count"] = eligible_count.loc[disagreement]
+
+    # Average confidence uses only agreeing specialists. Selecting the
+    # strongest current confidence uses strict `>` so ties preserve the first
+    # database member exactly as the old deterministic max() did.
+    selected_index = pd.Series(-1, index=index, dtype="int64")
+    selected_confidence = pd.Series(float("-inf"), index=index, dtype="float64")
+    confidence_total = pd.Series(0.0, index=index, dtype="float64")
+    agreeing_count = pd.Series(0, index=index, dtype="int64")
+    for member_index, (buy_mask, sell_mask, confidence) in enumerate(
+        zip(buy_masks, sell_masks, confidence_series)
+    ):
+        agreeing = (buy_mask | sell_mask) & actionable
+        confidence_total += confidence.where(agreeing, 0.0)
+        agreeing_count += agreeing.astype(int)
+        stronger = agreeing & confidence.gt(selected_confidence)
+        selected_index.loc[stronger] = member_index
+        selected_confidence.loc[stronger] = confidence.loc[stronger]
+
+    normal_action = actionable & ~disagreement
+    prepared.loc[normal_action, "signal_confidence"] = (
+        confidence_total.loc[normal_action] / agreeing_count.loc[normal_action].clip(lower=1)
+    ).clip(lower=0.0, upper=1.0)
+    prepared.loc[normal_action, "portfolio_member_count"] = agreeing_count.loc[normal_action]
+
+    # Execution metadata remains bound to the selected sealed member. Build
+    # object columns once instead of issuing one pandas .at write per candle.
+    selected_specialists = ["portfolio_wait"] * len(index)
+    execution_parameters: list[object] = [None] * len(index)
+    index_positions = {label: position for position, label in enumerate(index)}
+    for label, member_index in selected_index.items():
+        if not normal_action.loc[label] or int(member_index) < 0:
+            continue
+        position = index_positions[label]
+        selected_config = member_frames[int(member_index)][0]
+        selected_specialists[position] = member_keys[int(member_index)]
+        execution_parameters[position] = dict(selected_config.get("parameters") or {})
+    prepared["selected_specialist"] = pd.Series(selected_specialists, index=index, dtype=object)
+    prepared["portfolio_execution_parameters"] = pd.Series(execution_parameters, index=index, dtype=object)
+    return prepared
+
+
+def _portfolio_member_key(config: dict[str, object]) -> str:
+    """Return a stable, outcome-independent identity for one sealed member.
+
+    A role such as ``trend_up`` is a routing niche, not an agent identity:
+    two generations can legitimately own the same niche while having
+    different execution topology.  Attribution must therefore retain the
+    immutable performance key when Laravel supplies it, with a deterministic
+    strategy/niche fallback for direct API and unit-test callers.
+    """
+    explicit = str(config.get("member_key") or "").strip()
+    if explicit:
+        return explicit
+    strategy = str(config.get("strategy") or "portfolio_member").strip()
+    role = str(config.get("role") or "").strip()
+    regime = str(config.get("target_regime") or "").strip()
+    volatility = str(config.get("target_volatility") or "").strip()
+    direction = str(config.get("target_direction") or "").strip()
+    return "|".join([strategy, role, regime, volatility, direction])
+
+
+def _portfolio_payload_for_signal(
+    payload: SimpleBacktestRequest, signal_row: pd.Series
+) -> SimpleBacktestRequest:
+    """Bind the selected member's sealed execution genes for one entry.
+
+    The portfolio-level policy remains authoritative for transition and risk
+    governance.  All member parameters are otherwise preserved so a breakout
+    specialist does not inherit a range specialist's exit topology merely
+    because it happened to be the first member in the registry.
+    """
+    if not payload.portfolio_members:
+        return payload
+    member_parameters = signal_row.get("portfolio_execution_parameters")
+    if not isinstance(member_parameters, dict) or not member_parameters:
+        return payload
+    merged = {**member_parameters, **dict(payload.parameters or {})}
+    # These are portfolio-owned controls and must never be overridden by a
+    # member's local experiment.
+    for key in ("portfolio_policy_version", "transition_firewall_enabled", "transition_wait_candles"):
+        if key in payload.parameters:
+            merged[key] = payload.parameters[key]
+    return payload.model_copy(update={"parameters": merged})
+
+
+def _payload_for_position(
+    payload: SimpleBacktestRequest, position: dict[str, object]
+) -> SimpleBacktestRequest:
+    """Rehydrate the exact entry-time execution contract for open positions."""
+    parameters = position.get("execution_parameters")
+    if not isinstance(parameters, dict) or not parameters:
+        return payload
+    return payload.model_copy(update={"parameters": dict(parameters)})
+
+
+def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: SimpleBacktestRequest) -> dict[str, object]:
+    if not payload.portfolio_members:
+        return {"status": "not_applicable"}
+    regimes = sorted({str(trade.market_regime) for trade in trades})
+    roles = sorted({str(trade.reason or "") for trade in trades if trade.reason})
+    disagreements = int(df.get("portfolio_disagreement", pd.Series(dtype=bool)).sum())
+    member_configs = {
+        _portfolio_member_key(member.model_dump() if hasattr(member, "model_dump") else dict(member)): member
+        for member in payload.portfolio_members
+    }
+    by_member: dict[str, list[SimpleTrade]] = {key: [] for key in member_configs}
+    for trade in trades:
+        member = str(trade.portfolio_member or "unknown")
+        by_member.setdefault(member, []).append(trade)
+    member_breakdown = {}
+    for member, member_trades in by_member.items():
+        by_month: dict[str, list[float]] = {}
+        by_context: dict[str, list[float]] = {}
+        by_context_month: dict[str, dict[str, list[float]]] = {}
+        by_context_direction: dict[str, dict[str, list[float]]] = {}
+        by_context_direction_month: dict[str, dict[str, dict[str, list[float]]]] = {}
+        for trade in member_trades:
+            month = str(pd.Timestamp(trade.entry_time).to_period("M"))
+            by_month.setdefault(month, []).append(float(trade.profit_percent))
+            context = f"{trade.market_regime}|{trade.volatility_regime}"
+            by_context.setdefault(context, []).append(float(trade.profit_percent))
+            by_context_month.setdefault(context, {}).setdefault(month, []).append(float(trade.profit_percent))
+            direction = str(trade.direction)
+            by_context_direction.setdefault(context, {}).setdefault(direction, []).append(float(trade.profit_percent))
+            by_context_direction_month.setdefault(context, {}).setdefault(direction, {}).setdefault(month, []).append(float(trade.profit_percent))
+        config = member_configs.get(member)
+        config_dict = config.model_dump() if hasattr(config, "model_dump") else dict(config or {})
+        direction_breakdown = {
+            context: {
+                direction: {
+                    "trades": len(values),
+                    "profit_factor": _profit_factor_for(values),
+                    "wins": sum(value > 0 for value in values),
+                    "losses": sum(value <= 0 for value in values),
+                    "monthly": {
+                        month: {"trades": len(month_values), "profit_factor": _profit_factor_for(month_values)}
+                        for month, month_values in by_context_direction_month.get(context, {}).get(direction, {}).items()
+                    },
+                }
+                for direction, values in directions.items()
+            }
+            for context, directions in by_context_direction.items()
+        }
+        member_breakdown[member] = {
+            "role": config_dict.get("role"),
+            "target_regime": config_dict.get("target_regime"),
+            "target_volatility": config_dict.get("target_volatility"),
+            "target_direction": config_dict.get("target_direction"),
+            "trades": len(member_trades),
+            "profit_factor": _profit_factor_for([float(trade.profit_percent) for trade in member_trades]),
+            "wins": sum(float(trade.profit_percent) > 0 for trade in member_trades),
+            "losses": sum(float(trade.profit_percent) <= 0 for trade in member_trades),
+            "monthly": {
+                month: {"trades": len(values), "profit_factor": _profit_factor_for(values)}
+                for month, values in by_month.items()
+            },
+            # This is diagnostic evidence, not a selector.  It lets the
+            # Laravel curriculum identify a recurring regime x volatility
+            # failure without turning a calendar label into a feature.
+            "context_breakdown": {
+                context: {
+                    "trades": len(values),
+                    "profit_factor": _profit_factor_for(values),
+                    "wins": sum(value > 0 for value in values),
+                    "losses": sum(value <= 0 for value in values),
+                    "monthly": {
+                        month: {
+                            "trades": len(month_values),
+                            "profit_factor": _profit_factor_for(month_values),
+                        }
+                        for month, month_values in months.items()
+                    },
+                }
+                for context, values in by_context.items()
+                for months in [by_context_month.get(context, {})]
+            },
+            "direction_breakdown": direction_breakdown,
+        }
+    loss_sets = {
+        member: {str(trade.entry_time) for trade in member_trades if float(trade.profit_percent) < 0}
+        for member, member_trades in by_member.items()
+    }
+    correlations = []
+    member_keys = sorted(loss_sets)
+    for index, left in enumerate(member_keys):
+        for right in member_keys[index + 1:]:
+            union = loss_sets[left] | loss_sets[right]
+            correlations.append(len(loss_sets[left] & loss_sets[right]) / len(union) if union else 0.0)
+    member_returns = {
+        member: [float(trade.profit_percent) for trade in member_trades]
+        for member, member_trades in by_member.items()
+    }
+    # These are deterministic fixed-route counterfactual replays. They do
+    # not select a replacement after seeing outcomes: they simply remove one
+    # sealed member from the already routed ledger, then re-aggregate it.
+    leave_one_out = {
+        member: {
+            "trades": sum(len(values) for key, values in member_returns.items() if key != member),
+            "profit_factor": _profit_factor_for([value for key, values in member_returns.items() if key != member for value in values]),
+        }
+        for member in member_returns
+    }
+    perturbations = {}
+    for member, values in member_returns.items():
+        for multiplier in (0.8, 1.2):
+            weighted = [value * multiplier if key == member else value for key, rows in member_returns.items() for value in rows]
+            perturbations[f"{member}@{multiplier}"] = {"profit_factor": _profit_factor_for(weighted), "trades": len(weighted)}
+    selected = df.get("selected_specialist", pd.Series("portfolio_wait", index=df.index)).astype(str)
+    contexts = (df.get("market_regime", pd.Series("unknown", index=df.index)).astype(str)
+        + "|" + df.get("volatility_regime", pd.Series("unknown", index=df.index)).astype(str))
+    active = selected.ne("portfolio_wait")
+    comparable = active & active.shift(1, fill_value=False) & contexts.eq(contexts.shift(1))
+    switches = int((selected.ne(selected.shift(1)) & comparable).sum())
+    stable_rows = int(comparable.sum())
+    contribution = {member: sum(values) for member, values in member_returns.items()}
+    positive_contribution = sum(max(0.0, value) for value in contribution.values())
+    contribution_share = max((max(0.0, value) / positive_contribution for value in contribution.values()), default=0.0) if positive_contribution else 0.0
+    regime_opportunities = {regime: sum(1 for trade in trades if str(trade.market_regime) == regime) for regime in regimes}
+    return {
+        "status": "observed",
+        "member_count": len(payload.portfolio_members),
+        "declared_members": [
+            {
+                "member_key": _portfolio_member_key(member.model_dump() if hasattr(member, "model_dump") else dict(member)),
+                "strategy": member.strategy,
+                "role": member.role,
+                "target_regime": member.target_regime,
+                "target_volatility": member.target_volatility,
+                "target_direction": member.target_direction,
+            }
+            for member in payload.portfolio_members
+        ],
+        "trade_regimes": regimes,
+        "disagreement_rows": disagreements,
+        "disagreement_rate": round(disagreements / max(1, len(df)), 6),
+        "loss_correlation": {
+            "max_jaccard": round(max(correlations, default=0.0), 6),
+            "mean_jaccard": round(sum(correlations) / len(correlations), 6) if correlations else 0.0,
+            "pair_count": len(correlations),
+        },
+        "leave_one_member_out": {
+            "method": "sealed_fixed_route_ledger_replay", "members": leave_one_out,
+            "minimum_profit_factor": round(min((row["profit_factor"] for row in leave_one_out.values()), default=0.0), 6),
+        },
+        "weight_perturbation": {
+            "method": "symmetric_member_return_scaling", "scenarios": perturbations,
+            "minimum_profit_factor": round(min((row["profit_factor"] for row in perturbations.values()), default=0.0), 6),
+        },
+        "router_stability": {
+            "same_context_comparisons": stable_rows, "switches": switches,
+            "switch_rate": round(switches / max(1, stable_rows), 6),
+        },
+        "member_contribution": {
+            "net_profit_percent": {key: round(value, 6) for key, value in contribution.items()},
+            "max_positive_share": round(contribution_share, 6),
+        },
+        "opportunity_coverage": {
+            "regime_accepted_entries": regime_opportunities,
+            "covered_regimes": len([count for count in regime_opportunities.values() if count >= 3]),
+        },
+        "member_breakdown": member_breakdown,
+        "execution_contract": "member_specific_execution_v1",
+        "rule": "Members are independently validated; portfolio replay only measures sealed routing interaction.",
+    }
 
 
 def _statistical_evidence(trades: list[SimpleTrade], wins: int, total_trades: int) -> dict[str, object]:
@@ -515,6 +1236,324 @@ def _position_size_multiple(
     return min(payload.execution.max_leverage, payload.risk_per_trade / stop_return)
 
 
+def _risk_context(signal_row: pd.Series, direction: str) -> str:
+    """Stable context key for loss containment; it contains no future data."""
+    return "|".join([
+        str(signal_row.get("market_regime", "unknown")),
+        str(signal_row.get("volatility_regime", "normal_volatility")),
+        direction, str(signal_row.get("selected_specialist", "parent")),
+    ])
+
+
+def _differential_target_regime(payload: SimpleBacktestRequest, df: pd.DataFrame | None = None) -> str:
+    value = str(payload.parameters.get("differential_target_regime", "trend_down"))
+    if value in {"trend_up", "range", "trend_down"}:
+        return value
+    if df is not None and "differential_target_regime" in df.columns:
+        observed = df["differential_target_regime"].dropna().astype(str)
+        if not observed.empty and observed.iloc[0] in {"trend_up", "range", "trend_down"}:
+            return observed.iloc[0]
+    return "trend_down"
+
+
+def _is_differential_router(payload: SimpleBacktestRequest, df: pd.DataFrame) -> bool:
+    return "differential_target" in df.columns or "differential_router" in str(payload.base_strategy or payload.strategy).lower()
+
+
+def _effective_lane_signal(signal_row: pd.Series, lane: str | None) -> tuple[str, float, str]:
+    """Return the signal owned by one side of a paired differential replay.
+
+    ``*_parent`` lanes use the frozen parent signal, while ``*_child`` lanes
+    use the candidate signal.  A lane never sees another lane's signal.  This
+    makes risk state and position occupancy local to the replay being measured
+    instead of letting a target mutation rewrite the control lane.
+    """
+    current = str(signal_row.get("signal", "WAIT"))
+    current_confidence = float(signal_row.get("signal_confidence", 1.0) or 0)
+    parent = str(signal_row.get("parent_signal", current))
+    parent_confidence = float(signal_row.get("parent_signal_confidence", current_confidence) or 0)
+    target = bool(signal_row.get("differential_target", False))
+    if lane is None:
+        return current, current_confidence, str(signal_row.get("selected_specialist", "parent"))
+    target_lane = lane.startswith("target_")
+    if target != target_lane:
+        return "WAIT", 0.0, "parent"
+    parent_lane = lane.endswith("_parent")
+    if parent_lane:
+        return parent, parent_confidence, "parent"
+    return current, current_confidence, str(signal_row.get("selected_specialist", "target_child"))
+
+
+def _count_lane_signals(df: pd.DataFrame, lane: str | None) -> int:
+    if lane is None:
+        return int(df.iloc[199:]["signal"].isin(["BUY", "SELL"]).sum())
+    return sum(
+        _effective_lane_signal(row, lane)[0] in {"BUY", "SELL"}
+        for _, row in df.iloc[199:].iterrows()
+    )
+
+
+def _trade_ledger_hash(trades: list[SimpleTrade]) -> str:
+    values = [
+        "|".join([
+            str(trade.entry_time), str(trade.exit_time), str(trade.direction),
+            f"{float(trade.profit_percent):.8f}", str(trade.exit_reason), str(trade.market_regime),
+        ])
+        for trade in trades
+    ]
+    return hashlib.sha256("\n".join(values).encode()).hexdigest()
+
+
+def _decision_trace_event(
+    index: int,
+    candle: pd.Series,
+    signal_row: pd.Series,
+    event_type: str,
+    action: str,
+    accepted: bool,
+    rejection_code: str | None,
+    state: dict[str, object],
+) -> dict[str, object]:
+    """Build a compact, deterministic per-candle decision record.
+
+    The trace contains only information known at the decision candle. Trade
+    outcomes are separate ``trade_exit`` events, so no future result leaks
+    into an entry decision.
+    """
+    features: dict[str, object] = {}
+    for key, value in signal_row.items():
+        name = str(key)
+        if name in {"time", "signal", "parent_signal", "selected_specialist"} or name.startswith("_"):
+            continue
+        if isinstance(value, (dict, list, tuple)):
+            continue
+        try:
+            missing = pd.isna(value)
+            if not hasattr(missing, "__len__") and bool(missing):
+                continue
+        except (TypeError, ValueError):
+            pass
+        if isinstance(value, bool):
+            features[name] = value
+        elif isinstance(value, (int, float)):
+            features[name] = float(value)
+        else:
+            try:
+                scalar = value.item()
+                features[name] = float(scalar) if isinstance(scalar, (int, float)) else str(scalar)
+            except (AttributeError, TypeError, ValueError):
+                if isinstance(value, str):
+                    features[name] = value
+
+    for name in ["open", "high", "low", "close", "volume"]:
+        value = candle.get(name)
+        if value is not None:
+            try:
+                features[f"candle_{name}"] = float(value)
+            except (TypeError, ValueError):
+                pass
+
+    safe_state = json.loads(json.dumps(state, default=str))
+    return {
+        "candle_time": str(candle.get("time", signal_row.get("time", ""))),
+        "candle_index": index,
+        "event_type": event_type,
+        "action": action,
+        "accepted": accepted,
+        "rejection_code": rejection_code,
+        "market_regime": str(signal_row.get("market_regime", "unknown")),
+        "volatility_regime": str(signal_row.get("volatility_regime", "normal_volatility")),
+        "confidence": float(signal_row.get("signal_confidence", 0.0) or 0.0),
+        "price": float(candle.get("open", 0.0) or 0.0),
+        "features": features,
+        "state": safe_state,
+    }
+
+
+def _trade_summary(trades: list[SimpleTrade], ledger_hash: str | None = None) -> dict[str, object]:
+    values = [float(trade.profit_percent) for trade in trades]
+    return {
+        "trades": len(trades),
+        "profit_factor": _profit_factor_for(values),
+        "net_profit_percent": round(sum(values), 6),
+        "ledger_hash": ledger_hash or _trade_ledger_hash(trades),
+        "entry_times_hash": hashlib.sha256("\n".join(str(trade.entry_time) for trade in trades).encode()).hexdigest(),
+    }
+
+
+def _response_trade_summary(response: SimpleBacktestResponse) -> dict[str, object]:
+    return _trade_summary([], response.trade_ledger_hash) | {
+        "trades": int(response.total_trades),
+        "profit_factor": float(response.profit_factor),
+        "net_profit_percent": float(response.net_profit_percent),
+    }
+
+
+def _differential_invariants(df: pd.DataFrame, trades: list[SimpleTrade]) -> dict[str, object]:
+    if "differential_target" not in df.columns:
+        return {"enabled": False}
+    target = df["differential_target"].fillna(False).astype(bool)
+    result: dict[str, object] = {"enabled": True, "branches": {}}
+    for regime in sorted(set(df.loc[~target, "market_regime"].astype(str))):
+        mask = (~target) & (df["market_regime"].astype(str) == regime)
+        rows = df.loc[mask, ["time", "signal", "signal_confidence", "parent_signal", "parent_signal_confidence"]]
+        def digest(columns: list[str]) -> str:
+            values = ["|".join(str(row[column]) for column in columns) for _, row in rows.iterrows()]
+            return hashlib.sha256("\n".join(values).encode()).hexdigest()
+        branch_trades = [trade for trade in trades if trade.market_regime == regime]
+        result["branches"][regime] = {
+            "child_signal_hash": digest(["time", "signal"]),
+            "parent_signal_hash": digest(["time", "parent_signal"]),
+            "child_confidence_hash": digest(["time", "signal_confidence"]),
+            "parent_confidence_hash": digest(["time", "parent_signal_confidence"]),
+            "trade_ledger_hash": _trade_ledger_hash(branch_trades),
+            "entry_times_hash": hashlib.sha256("\n".join(str(trade.entry_time) for trade in branch_trades).encode()).hexdigest(),
+        }
+    return result
+
+
+def _paired_differential_lane_report(
+    payload: SimpleBacktestRequest,
+    source_df: pd.DataFrame,
+    portfolio_non_target: dict[str, object],
+    portfolio_target: dict[str, object],
+    signal_identity: bool = False,
+    confidence_identity: bool = False,
+) -> dict[str, object]:
+    """Run parent/child lane ledgers under identical data and cost rules."""
+    target = _differential_target_regime(payload)
+    # The four paired ledgers must retain the exact execution core, but they
+    # do not need Monte Carlo, strategy DNA, behavioral telemetry, or other
+    # promotion-only diagnostics. Those are already computed once by the
+    # primary full replay. This cuts causal replay cost without changing any
+    # trade, ledger hash, branch identity, or gate outcome.
+    paired_kwargs = {"include_differential_pair": False, "lightweight": True}
+    parent_non_target = _run_prepared_simple_backtest(
+        payload, source_df.copy(), differential_lane="non_target_parent", **paired_kwargs
+    )
+    child_non_target = _run_prepared_simple_backtest(
+        payload, source_df.copy(), differential_lane="non_target_child", **paired_kwargs
+    )
+    parent_target = _run_prepared_simple_backtest(
+        payload, source_df.copy(), differential_lane="target_parent", **paired_kwargs
+    )
+    parent_summary = _response_trade_summary(parent_non_target)
+    child_summary = _response_trade_summary(child_non_target)
+    target_parent_summary = _response_trade_summary(parent_target)
+    # The primary full replay above already produced the sealed child target
+    # ledger. Reusing its immutable summary avoids a fourth identical child
+    # execution while retaining an independent parent target comparison.
+    target_child_summary = portfolio_target
+    parent_branches = (parent_non_target.differential_invariants or {}).get("branches", {})
+    child_branches = (child_non_target.differential_invariants or {}).get("branches", {})
+    branch_identity = parent_branches == child_branches
+    ledger_identity = parent_summary["ledger_hash"] == child_summary["ledger_hash"] and branch_identity
+    target_delta = round(float(target_child_summary["net_profit_percent"]) - float(target_parent_summary["net_profit_percent"]), 6)
+    isolated_status = (
+        signal_identity
+        and confidence_identity
+        and ledger_identity
+        and int(parent_summary["trades"]) == int(child_summary["trades"])
+        and float(child_summary["net_profit_percent"]) >= float(parent_summary["net_profit_percent"]) - .01
+    )
+    portfolio_delta = round(
+        float(portfolio_non_target.get("net_profit_percent", 0)) - float(child_summary["net_profit_percent"]), 6
+    )
+    return {
+        "protocol": "differential_paired_lane_v4_calendar_context_v1",
+        "status": "passed" if isolated_status else "failed",
+        "target_regime": target,
+        "non_target_signal_identity": signal_identity,
+        "non_target_confidence_identity": confidence_identity,
+        "non_target_ledger_identity": ledger_identity,
+        "non_target_entry_times_identity": all(
+            data.get("entry_times_hash") == child_branches.get(regime, {}).get("entry_times_hash")
+            for regime, data in parent_branches.items()
+        ) and set(parent_branches) == set(child_branches),
+        "non_target_branch_hashes": {"parent": parent_branches, "child": child_branches},
+        "parent_non_target": parent_summary,
+        "child_non_target": child_summary,
+        "parent_target": target_parent_summary,
+        "child_target": target_child_summary,
+        "target_delta_net_profit_percent": target_delta,
+        "portfolio_child_non_target": portfolio_non_target,
+        "portfolio_interaction_delta_net_profit_percent": portfolio_delta,
+        "rule": "Non-target identity is judged on isolated paired ledgers; portfolio interaction is reported separately.",
+        "promotion_evidence": False,
+    }
+
+
+def _loss_streak_wait_duration(payload: SimpleBacktestRequest) -> int:
+    """Finite wait duration, defaulting to the configured short cooldown."""
+    fallback = int(payload.parameters.get("loss_cooldown_candles", 1) or 1)
+    return max(1, int(payload.parameters.get("loss_streak_wait_candles", fallback) or fallback))
+
+
+def _recovery_probe_risk_multiplier(payload: SimpleBacktestRequest) -> float:
+    """The probe is deliberately bounded below normal risk, never enlarged."""
+    return min(1.0, max(0.1, float(payload.parameters.get("recovery_probe_risk_multiplier", 0.5) or 0.5)))
+
+
+def _weak_regime_minimum_samples(payload: SimpleBacktestRequest) -> int:
+    return max(15, int(payload.parameters.get("weak_regime_min_samples", 15) or 15))
+
+
+def _weak_regime_wait_duration(payload: SimpleBacktestRequest) -> int:
+    return max(1, int(payload.parameters.get("weak_regime_wait_candles", payload.parameters.get("loss_streak_wait_candles", 4)) or 4))
+
+
+def _advance_weak_regime_state(
+    states: dict[str, dict[str, object]], context: str, index: int, candle: pd.Series,
+    events: list[dict[str, object]],
+) -> tuple[bool, bool]:
+    """Return (temporarily_blocked, this-entry-is-recovery-probe)."""
+    state = states.get(context)
+    if state is None:
+        return False, False
+    wait_until = int(state.get("wait_until", -1) or -1)
+    if wait_until >= 0 and index < wait_until:
+        return True, False
+    if wait_until >= 0:
+        state["wait_until"] = -1
+        state["probe_pending"] = True
+        events.append({"time": str(candle["time"]), "context": context, "event": "wait_expired"})
+    if bool(state.get("probe_pending", False)):
+        # Mark it consumed only when the caller actually accepts the entry.
+        # Until then, the next eligible signal remains the one bounded probe.
+        return False, True
+    return False, False
+
+
+def _record_weak_regime_outcome(
+    states: dict[str, dict[str, object]], context: str, profit_percent: float, result: str,
+    was_probe: bool, index: int, candle: pd.Series, payload: SimpleBacktestRequest,
+    events: list[dict[str, object]],
+) -> None:
+    state = states.setdefault(context, {"returns_window": [], "loss_count": 0, "wait_until": -1, "probe_pending": False})
+    values = list(state.get("returns_window", []))[-19:]
+    values.append(float(profit_percent))
+    state["returns_window"] = values
+    state["loss_count"] = sum(value <= 0 for value in values)
+    if was_probe:
+        state["probe_pending"] = False
+        if result == "WIN":
+            # A probe win removes the veto and starts fresh evidence for this
+            # exact context.  Other contexts remain untouched.
+            state.update({"returns_window": [], "loss_count": 0, "wait_until": -1})
+            events.append({"time": str(candle["time"]), "context": context, "event": "probe_win"})
+            return
+        state["wait_until"] = index + _weak_regime_wait_duration(payload)
+        events.append({"time": str(candle["time"]), "context": context, "event": "probe_loss", "until_index": state["wait_until"]})
+        return
+    if len(values) >= _weak_regime_minimum_samples(payload) and _profit_factor_for(values) < 1.0:
+        state["wait_until"] = index + _weak_regime_wait_duration(payload)
+        state["probe_pending"] = False
+        events.append({
+            "time": str(candle["time"]), "context": context, "event": "weak_regime_wait_started",
+            "until_index": state["wait_until"], "sample_count": len(values), "profit_factor": round(_profit_factor_for(values), 4),
+        })
+
+
 def _intrabar_exit(
     direction: str,
     position: dict[str, object],
@@ -566,15 +1605,63 @@ def _volatility_risk_multiplier(signal_row: pd.Series, payload: SimpleBacktestRe
     return 1.0
 
 
+def _regime_specific_risk_multiplier(signal_row: pd.Series, payload: SimpleBacktestRequest) -> float:
+    """Local adapter: only the declared trend-down specialist may be de-risked."""
+    if str(signal_row.get("selected_specialist", "")) in {"trend_down", "trend_down_child"}:
+        return min(1.0, max(0.1, float(payload.parameters.get("trend_down_risk_multiplier", 1.0) or 1.0)))
+    return 1.0
+
+
+def _differential_router_report(df: pd.DataFrame, trades: list[SimpleTrade]) -> dict[str, object]:
+    if "differential_target" not in df.columns:
+        return {"enabled": False}
+    target = df["differential_target"].fillna(False).astype(bool)
+    non_target = ~target
+    target_regime = "trend_down"
+    if "differential_target_regime" in df.columns:
+        observed = df["differential_target_regime"].dropna().astype(str)
+        if not observed.empty:
+            target_regime = observed.iloc[0]
+    # WAIT/zero is the canonical representation of an unavailable signal.
+    # Pandas treats NaN != NaN, so a pair of equally unavailable non-target
+    # values used to fail the identity gate even though the branch hashes and
+    # ledgers were identical.  Normalize only missing values; do not round or
+    # otherwise soften a real child/parent difference.
+    child_signals = df.loc[non_target, "signal"].fillna("WAIT").astype(str).reset_index(drop=True)
+    parent_signals = df.loc[non_target, "parent_signal"].fillna("WAIT").astype(str).reset_index(drop=True)
+    child_confidence = pd.to_numeric(df.loc[non_target, "signal_confidence"], errors="coerce").fillna(0.0).reset_index(drop=True)
+    parent_confidence = pd.to_numeric(df.loc[non_target, "parent_signal_confidence"], errors="coerce").fillna(0.0).reset_index(drop=True)
+    signals_match = bool(child_signals.equals(parent_signals))
+    confidence_match = bool(child_confidence.equals(parent_confidence))
+    target_trades = sum(trade.market_regime == target_regime for trade in trades)
+    non_target_trades = len(trades) - target_trades
+    return {
+        "enabled": True, "protocol": "differential_router_v2",
+        "target_regime": target_regime, "target_candles": int(target.sum()), "non_target_candles": int(non_target.sum()),
+        "non_target_signal_identity": signals_match,
+        "non_target_confidence_identity": confidence_match,
+        "target_trade_count": target_trades, "non_target_trade_count": non_target_trades,
+        "non_target_trade_count_invariant": "requires paired parent replay under identical data/execution contract",
+        "promotion_evidence": False,
+    }
+
+
 def _regime_transition_multiplier(signal_row: pd.Series, previous_row: pd.Series | None) -> float:
     """Transition firewall: regime changes reduce exposure, never fabricate a trade."""
+    return 0.5 if _regime_transitioned(signal_row, previous_row) else 1.0
+
+
+def _regime_transitioned(signal_row: pd.Series, previous_row: pd.Series | None) -> bool:
     if previous_row is None:
-        return 1.0
-    transitioned = (
+        return False
+    return (
         str(previous_row.get("market_regime", "unknown")) != str(signal_row.get("market_regime", "unknown"))
         or str(previous_row.get("volatility_regime", "normal_volatility")) != str(signal_row.get("volatility_regime", "normal_volatility"))
     )
-    return 0.5 if transitioned else 1.0
+
+
+def _transition_wait_duration(payload: SimpleBacktestRequest) -> int:
+    return max(1, min(6, int(payload.parameters.get("transition_wait_candles", 2) or 2)))
 
 
 def _advance_trailing_stop(position: dict[str, object], previous_candle: pd.Series, payload: SimpleBacktestRequest) -> None:
@@ -592,7 +1679,9 @@ def _advance_trailing_stop(position: dict[str, object], previous_candle: pd.Seri
 def _entry_eligibility(
     row: pd.Series, payload: SimpleBacktestRequest, signal_row: pd.Series | None = None,
     loss_streak: int = 0, cooldown_active: bool = False, regime_returns: dict[str, list[float]] | None = None,
-    meta_returns: dict[str, list[float]] | None = None,
+    meta_returns: dict[str, list[float]] | None = None, loss_streak_wait_active: bool = False,
+    weak_regime_wait_active: bool = False, confidence_assessment: dict[str, object] | None = None,
+    transition_wait_active: bool = False,
 ) -> tuple[bool, str | None]:
     execution = payload.execution
     if execution.allowed_sessions_utc:
@@ -612,11 +1701,20 @@ def _entry_eligibility(
             return False, "news_veto"
         if pd.notna(signal_row.get("risk_veto", False)) and bool(signal_row.get("risk_veto", False)):
             return False, "risk_veto"
-        if cooldown_active or loss_streak >= int(payload.parameters.get("max_loss_streak_before_wait", 99)):
+        if loss_streak_wait_active:
+            return False, "loss_streak_wait"
+        if weak_regime_wait_active:
+            return False, "weak_regime_wait"
+        if transition_wait_active:
+            return False, "regime_transition_wait"
+        if cooldown_active:
             return False, "loss_cooldown"
         confidence = float(signal_row.get("signal_confidence", 1.0) or 0)
         if confidence < float(payload.parameters.get("minimum_signal_confidence", 0.0)):
             return False, "minimum_confidence"
+        if bool(payload.parameters.get("confidence_ev_lower_bound_enabled", False)) and (confidence_assessment or {}).get("status") == "assessed" and bool((confidence_assessment or {}).get("hard_veto_eligible", False)):
+            if float((confidence_assessment or {}).get("ev_lower_bound", 0)) <= 0:
+                return False, "negative_ev_lower_bound"
         if bool(payload.parameters.get("avoid_high_volatility", False)) and str(signal_row.get("volatility_regime", "")) == "high_volatility":
             return False, "high_volatility_veto"
         atr = float(signal_row.get("_management_atr", 0) or 0)
@@ -624,12 +1722,6 @@ def _entry_eligibility(
         maximum = float(payload.parameters.get("max_spread_atr_ratio", 1.0))
         if atr > 0 and spread / atr > maximum:
             return False, "spread_to_atr"
-        # An online regime veto: only closed, earlier trades are used.  A
-        # regime with enough evidence and PF below one is parked until a later
-        # generation redesigns its specialist rules.
-        prior = (regime_returns or {}).get(str(signal_row.get("market_regime", "unknown")), [])
-        if len(prior) >= 10 and _profit_factor_for(prior) < 1.0:
-            return False, "weak_regime_history"
         if bool(payload.parameters.get("meta_label_enabled", False)):
             meta_prior = (meta_returns or {}).get(_meta_context(signal_row, str(signal_row.get("signal", "WAIT"))), [])
             minimum = int(payload.parameters.get("meta_label_min_history", 10) or 10)
@@ -647,17 +1739,19 @@ def _entry_eligibility(
 def _is_liquid_entry(
     row: pd.Series, payload: SimpleBacktestRequest, signal_row: pd.Series | None = None,
     loss_streak: int = 0, cooldown_active: bool = False, regime_returns: dict[str, list[float]] | None = None,
-    meta_returns: dict[str, list[float]] | None = None,
+    meta_returns: dict[str, list[float]] | None = None, loss_streak_wait_active: bool = False,
+    weak_regime_wait_active: bool = False,
+    confidence_assessment: dict[str, object] | None = None,
 ) -> bool:
     """Compatibility wrapper for callers/tests that need only a yes/no veto."""
-    return _entry_eligibility(row, payload, signal_row, loss_streak, cooldown_active, regime_returns, meta_returns)[0]
+    return _entry_eligibility(
+        row, payload, signal_row, loss_streak, cooldown_active, regime_returns, meta_returns, loss_streak_wait_active,
+        weak_regime_wait_active, confidence_assessment,
+    )[0]
 
 
 def _meta_context(signal_row: pd.Series, direction: str) -> str:
-    return "|".join([
-        str(signal_row.get("market_regime", "unknown")),
-        str(signal_row.get("volatility_regime", "normal_volatility")), direction,
-    ])
+    return _risk_context(signal_row, direction)
 
 
 def _meta_risk_multiplier(
@@ -670,6 +1764,95 @@ def _meta_risk_multiplier(
     if len(values) < minimum or _profit_factor_for(values) < float(payload.parameters.get("meta_label_min_pf", 1.0) or 1.0):
         return 1.0
     return float(payload.parameters.get("meta_label_risk_multiplier", 1.0) or 1.0)
+
+
+def _confidence_assessment(
+    signal_row: pd.Series, direction: str, history: dict[str, list[dict[str, float]]],
+    payload: SimpleBacktestRequest, entry_candle: pd.Series,
+) -> dict[str, object]:
+    """Strictly online confidence -> calibrated probability -> EV lower bound.
+
+    The history contains only already closed real trades.  Context evidence is
+    preferred; sparse contexts fall back to the global closed-trade history.
+    """
+    if not bool(payload.parameters.get("confidence_calibration_enabled", False)):
+        return {"status": "disabled"}
+    minimum = max(15, int(payload.parameters.get("confidence_calibration_min_samples", 15) or 15))
+    context = _risk_context(signal_row, direction)
+    context_values = history.get(context, [])
+    values = context_values
+    source = "context"
+    if len(context_values) < minimum:
+        values = history.get("__global__", [])
+        source = "global_fallback"
+    if len(values) < minimum:
+        return {"status": "insufficient_evidence", "sample_count": len(values), "source": source}
+    raw = float(signal_row.get("signal_confidence", 1.0) or 0)
+    nearby = [item for item in values if abs(float(item["confidence"]) - raw) <= .20]
+    if len(nearby) < minimum:
+        nearby = values
+        source += "_hierarchical"
+    wins = [float(item["profit_percent"]) for item in nearby if float(item["profit_percent"]) > 0]
+    losses = [abs(float(item["profit_percent"])) for item in nearby if float(item["profit_percent"]) <= 0]
+    n = len(nearby)
+    probability = len(wins) / n if n else 0.0
+    lower_probability = _wilson_lower_bound(len(wins), n)
+    average_win = sum(wins) / len(wins) if wins else 0.0
+    average_loss = sum(losses) / len(losses) if losses else 0.0
+    execution = payload.execution
+    spread_cost = (execution.spread_points * execution.point_size + execution.slippage_points * execution.point_size * 2) / max(float(entry_candle["open"]), .0000001) * 100
+    cost = spread_cost + execution.commission_percent
+    ev = probability * average_win - (1 - probability) * average_loss - cost
+    lower_ev = lower_probability * average_win - (1 - lower_probability) * average_loss - cost
+    return {
+        "status": "assessed", "source": source, "sample_count": n, "raw_confidence": round(raw, 4),
+        "calibrated_win_probability": round(probability, 5), "win_probability_lower_bound": round(lower_probability, 5),
+        "expected_value": round(ev, 6), "ev_lower_bound": round(lower_ev, 6),
+        # A global fallback is a prior for sizing/diagnostics, not a hard
+        # veto for a new regime.  Only enough same-context closed evidence can
+        # justify suppressing the next signal; otherwise the candidate stays
+        # observable and the gate judges its realized temporal/regime edge.
+        "hard_veto_eligible": len(context_values) >= minimum,
+        "fallback_is_risk_prior": len(context_values) < minimum,
+    }
+
+
+def _record_confidence_observation(
+    history: dict[str, list[dict[str, float]]], signal_row: pd.Series, direction: str, profit_percent: float,
+) -> None:
+    observation = {"confidence": float(signal_row.get("signal_confidence", 1.0) or 0), "profit_percent": float(profit_percent)}
+    context = _risk_context(signal_row, direction)
+    history[context] = [*history.get(context, [])[-199:], observation]
+    history["__global__"] = [*history.get("__global__", [])[-499:], observation]
+
+
+def _confidence_calibration_report(history: dict[str, list[dict[str, float]]], payload: SimpleBacktestRequest) -> dict[str, object]:
+    values = history.get("__global__", [])
+    minimum = max(15, int(payload.parameters.get("confidence_calibration_min_samples", 15) or 15))
+    if not bool(payload.parameters.get("confidence_calibration_enabled", False)):
+        return {"status": "disabled", "promotion_evidence": False}
+    if len(values) < minimum:
+        return {"status": "insufficient_evidence", "sample_count": len(values), "minimum_samples": minimum, "promotion_evidence": False}
+    bins = []
+    for lower, upper in [(0.0, .33), (.33, .66), (.66, 1.01)]:
+        rows = [row for row in values if lower <= row["confidence"] < upper]
+        if not rows:
+            continue
+        bins.append({"range": [lower, min(upper, 1.0)], "sample_count": len(rows),
+                     "win_probability": round(sum(row["profit_percent"] > 0 for row in rows) / len(rows), 5),
+                     "average_profit_percent": round(sum(row["profit_percent"] for row in rows) / len(rows), 5)})
+    return {"status": "assessed", "protocol": "train_only_online_hierarchical_calibration_v1", "sample_count": len(values),
+            "bins": bins, "rule": "Only previously closed real trades update calibration; vetoed shadows never train it.", "promotion_evidence": False}
+
+
+def _wilson_lower_bound(successes: int, sample: int, z: float = 1.96) -> float:
+    if sample <= 0:
+        return 0.0
+    p = successes / sample
+    denominator = 1 + z * z / sample
+    centre = (p + z * z / (2 * sample)) / denominator
+    margin = z * ((p * (1 - p) / sample + z * z / (4 * sample * sample)) ** .5) / denominator
+    return max(0.0, centre - margin)
 
 
 def _open_shadow_position(
@@ -714,6 +1897,7 @@ def _open_shadow_position(
         "p_allow": .05, "p_veto": .95, "exploration_assigned": exploration,
         "policy_arm": "shadow_exploration" if exploration else "shadow_control",
         "entry_index": index, "signal_row": signal_row,
+        "execution_parameters": dict(payload.parameters),
         "partial_closed": False,
         "partial_fraction": float(payload.parameters.get("partial_take_profit_fraction", 0) or 0),
         "partial_exit_price": None,
@@ -727,7 +1911,7 @@ def _advance_shadow_positions(
 ) -> None:
     active: list[dict[str, object]] = []
     for position in positions:
-        settled = _advance_shadow_position(position, candle, previous_candle, payload, index)
+        settled = _advance_shadow_position(position, candle, previous_candle, _payload_for_position(payload, position), index)
         if settled is None:
             active.append(position)
         else:
@@ -754,8 +1938,9 @@ def _advance_shadow_position(
 
 
 def _force_close_shadow(position: dict[str, object], candle: pd.Series, payload: SimpleBacktestRequest) -> dict[str, object]:
+    position_payload = _payload_for_position(payload, position)
     return _shadow_outcome(
-        position, candle, _exit_price(float(candle["close"]), str(position["direction"]), payload), "replay_end", payload,
+        position, candle, _exit_price(float(candle["close"]), str(position["direction"]), position_payload), "replay_end", position_payload,
     )
 
 
@@ -934,13 +2119,28 @@ def _decision_blame_graph(trades: list[SimpleTrade], veto_regret: dict[str, obje
     return {"protocol": "decision_blame_graph_v1; full trade ledger aggregates; promotion evidence forbidden", "nodes": ["market_context", "regime_belief", "specialist_choice", "signal", "veto", "entry_timing", "position_size", "exit", "outcome"], "edges": edges}
 
 
-def _cooldown_policy_report(decisions: list[dict[str, object]]) -> dict[str, object]:
+def _cooldown_policy_report(
+    decisions: list[dict[str, object]], loss_streak_wait_events: list[dict[str, object]] | None = None,
+    recovery_probe_events: list[dict[str, object]] | None = None, weak_regime_events: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
     durations = [int(item["cooldown_candles"]) for item in decisions]
     adjusted = sum(int((item.get("shadow_evidence", {}) or {}).get("adjustment", 0) or 0) != 0 for item in decisions)
+    waits = loss_streak_wait_events or []
+    probes = recovery_probe_events or []
+    regime_events = weak_regime_events or []
     return {
-        "protocol": "closed-trade loss -> frozen regime policy -> prior closed shadow evidence only",
+        "protocol": "finite loss cooldown + finite global/context streak wait + reduced-risk recovery probe; prior closed shadow evidence only",
         "loss_events": len(decisions), "average_cooldown_candles": round(sum(durations) / len(durations), 3) if durations else 0.0,
         "shadow_adjusted_events": adjusted, "decisions": decisions[-100:],
+        "loss_streak_wait_events": len(waits), "loss_streak_wait_decisions": waits[-100:],
+        "recovery_probe_trades": sum(item.get("event") in {"probe_win", "probe_loss"} for item in probes),
+        "recovery_probe_wins": sum(item.get("event") == "probe_win" for item in probes),
+        "recovery_probe_losses": sum(item.get("event") == "probe_loss" for item in probes),
+        "recovery_probe_events": probes[-100:],
+        "weak_regime_wait_events": sum(item.get("event") == "weak_regime_wait_started" for item in regime_events),
+        "weak_regime_probe_wins": sum(item.get("event") == "probe_win" for item in regime_events),
+        "weak_regime_probe_losses": sum(item.get("event") == "probe_loss" for item in regime_events),
+        "weak_regime_events": regime_events[-100:],
     }
 
 
@@ -996,9 +2196,9 @@ def _regime_ensemble_report(df: pd.DataFrame, payload: SimpleBacktestRequest) ->
     selected = df["selected_specialist"].value_counts().to_dict()
     return {
         "enabled": True,
-        "architecture": "frozen_regime_specialist_ensemble_v1",
+        "architecture": "frozen_regime_specialist_ensemble_v2",
         "router_policy": {
-            "high_volatility": "breakout", "trend_up_or_down": "trend",
+            "high_volatility": "breakout", "trend_up": "trend_up", "trend_down": "trend_down",
             "range": "range", "other": "session", "maximum_signals_per_candle": 1,
         },
         "specialist_candle_ownership": {str(key): int(value) for key, value in selected.items()},
@@ -1067,20 +2267,43 @@ def _profit_factor_for(values: list[float]) -> float:
     return round(gross_win / gross_loss, 3) if gross_loss else (99.0 if gross_win else 0.0)
 
 
-def _pf_attribution(trades: list[SimpleTrade]) -> dict[str, object]:
+def _pf_attribution(trades: list[SimpleTrade], df: pd.DataFrame | None = None) -> dict[str, object]:
     """Full-ledger diagnostics; the response's displayed ledger is capped."""
     if not trades:
-        return {"summary": {"gross_pf": 0.0, "net_pf": 0.0, "cost_percent": 0.0, "cost_to_gross_profit_percent": 0.0}, "by_direction": {}, "by_session": {}, "by_regime": {}, "by_exit_reason": {}}
+        return {
+            "summary": {"gross_pf": 0.0, "net_pf": 0.0, "cost_percent": 0.0, "cost_to_gross_profit_percent": 0.0},
+            "by_direction": {}, "by_session": {}, "by_regime": {},
+            "by_volatility": {}, "by_regime_volatility": {},
+            "by_regime_volatility_direction": {}, "by_regime_volatility_session": {},
+            "by_temporal_chunk": {}, "by_exit_reason": {},
+        }
 
     def breakdown(items: list[SimpleTrade]) -> dict[str, float | int]:
         gross_positive = sum(max(trade.gross_profit_percent, 0) for trade in items)
         costs = sum(trade.execution_cost_percent for trade in items)
+        values = [float(trade.profit_percent) for trade in items]
+        equity = 100.0
+        peak = equity
+        max_drawdown = 0.0
+        consecutive_losses = 0
+        max_consecutive_losses = 0
+        for value in values:
+            equity += value
+            peak = max(peak, equity)
+            max_drawdown = max(max_drawdown, ((peak - equity) / peak) * 100 if peak > 0 else 0.0)
+            consecutive_losses = consecutive_losses + 1 if value <= 0 else 0
+            max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
         return {
             "trades": len(items), "gross_pf": _profit_factor_for([trade.gross_profit_percent for trade in items]),
             "net_pf": _profit_factor_for([trade.profit_percent for trade in items]),
             "winrate": round(sum(trade.profit_percent > 0 for trade in items) / len(items) * 100, 2),
             "average_win": round(sum(trade.profit_percent for trade in items if trade.profit_percent > 0) / max(1, sum(trade.profit_percent > 0 for trade in items)), 4),
             "average_loss": round(sum(trade.profit_percent for trade in items if trade.profit_percent <= 0) / max(1, sum(trade.profit_percent <= 0 for trade in items)), 4),
+            "wins": sum(value > 0 for value in values),
+            "losses": sum(value <= 0 for value in values),
+            "net_profit_percent": round(sum(values), 6),
+            "max_drawdown_percent": round(max_drawdown, 4),
+            "max_consecutive_losses": max_consecutive_losses,
             "cost_percent": round(costs, 5),
             "cost_to_gross_profit_percent": round(costs / gross_positive * 100, 2) if gross_positive else 0.0,
         }
@@ -1091,14 +2314,353 @@ def _pf_attribution(trades: list[SimpleTrade]) -> dict[str, object]:
             values.setdefault(str(key(trade)), []).append(trade)
         return {name: breakdown(items) for name, items in values.items()}
 
+    def grouped_context_month() -> dict[str, dict[str, dict[str, float | int]]]:
+        values: dict[str, dict[str, list[SimpleTrade]]] = {}
+        for trade in trades:
+            context = f"{trade.market_regime}|{trade.volatility_regime}"
+            month = pd.Timestamp(trade.entry_time).strftime("%Y-%m")
+            values.setdefault(context, {}).setdefault(month, []).append(trade)
+        return {
+            context: {month: breakdown(items) for month, items in months.items()}
+            for context, months in values.items()
+        }
+
+    def grouped_context_dimension(dimension) -> dict[str, dict[str, dict[str, float | int]]]:
+        """Expose an observable micro-context without making it a selector."""
+        values: dict[str, dict[str, list[SimpleTrade]]] = {}
+        for trade in trades:
+            context = f"{trade.market_regime}|{trade.volatility_regime}"
+            dimension_value = str(dimension(trade))
+            values.setdefault(context, {}).setdefault(dimension_value, []).append(trade)
+        return {
+            context: {dimension_value: breakdown(items) for dimension_value, items in dimensions.items()}
+            for context, dimensions in values.items()
+        }
+
+    def temporal_chunk(trade: SimpleTrade) -> str:
+        """Assign a trade to its candle-history bucket without replaying it.
+
+        This is diagnostic attribution only.  It uses the entry timestamp and
+        the already-normalized chronological frame, so no future outcome can
+        affect the label.  The strict full-validation replay remains the
+        authority for temporal survival; this bucket is a bounded screening
+        accelerator that preserves the stateful single-ledger semantics.
+        """
+        if df is None or df.empty or "time" not in df.columns:
+            return "unknown"
+        try:
+            times = pd.to_datetime(df["time"], errors="coerce").dropna().reset_index(drop=True)
+            if len(times) < 3:
+                return "unknown"
+            position = int(times.searchsorted(pd.Timestamp(trade.entry_time), side="left"))
+            chunk_size = max(1, len(times) // 3)
+            return f"chunk_{min(3, position // chunk_size + 1)}"
+        except (TypeError, ValueError, IndexError):
+            return "unknown"
+
     return {
         "summary": breakdown(trades),
         "by_direction": grouped(lambda trade: trade.direction),
         "by_session": grouped(lambda trade: pd.Timestamp(trade.entry_time).hour),
         "by_regime": grouped(lambda trade: trade.market_regime),
         "by_volatility": grouped(lambda trade: trade.volatility_regime),
+        # Calendar evidence must be derived from the one chronological trade
+        # ledger. Re-running each month from an empty indicator state creates
+        # artificial boundary signals and is not a valid survival test.
+        "by_month": grouped(lambda trade: pd.Timestamp(trade.entry_time).strftime("%Y-%m")),
+        # Diagnostic only: this intersection tells the council which market
+        # context failed inside a weak month. Month labels never enter the
+        # strategy/router contract or promotion selector.
+        "by_regime_volatility_month": grouped_context_month(),
+        # Portfolio members are routed on this sealed intersection, not on a
+        # global PF. Persisting it makes admission auditable and prevents a
+        # strategy that is good in a regime but bad in the declared volatility
+        # lane from masquerading as a complementary specialist.
+        "by_regime_volatility": grouped(lambda trade: f"{trade.market_regime}|{trade.volatility_regime}"),
+        # Second-order diagnostics guide the next specialist council. They
+        # never lower promotion gates and never turn calendar labels into a
+        # routing feature.
+        "by_regime_volatility_direction": grouped_context_dimension(lambda trade: trade.direction),
+        "by_regime_volatility_session": grouped_context_dimension(lambda trade: pd.Timestamp(trade.entry_time).hour),
+        "by_temporal_chunk": grouped(temporal_chunk),
         "by_exit_reason": grouped(lambda trade: trade.exit_reason or "unknown"),
     }
+
+
+def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
+    """Attribute robustness to the full causal context, never to a month alone.
+
+    The key intentionally includes calendar only as an evidence coordinate.
+    Selection consumes the weakest *regime/volatility/session/direction*
+    envelope and may use calendar to verify recurrence, but cannot mutate or
+    route on a month name.
+    """
+    cells: dict[str, list[SimpleTrade]] = defaultdict(list)
+    envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
+    for trade in trades:
+        timestamp = pd.Timestamp(trade.entry_time)
+        month = timestamp.strftime("%Y-%m")
+        session = str(timestamp.hour)
+        envelope = f"{trade.market_regime}|{trade.volatility_regime}|{session}|{trade.direction}"
+        cells[f"{envelope}|{month}"].append(trade)
+        envelopes[envelope].append(trade)
+
+    def summary(rows: list[SimpleTrade]) -> dict[str, float | int]:
+        values = [float(row.profit_percent) for row in rows]
+        return {
+            "trades": len(rows),
+            "net_pf": _profit_factor_for(values),
+            "net_profit_percent": round(sum(values), 6),
+            "winrate": round(100 * sum(value > 0 for value in values) / max(1, len(values)), 2),
+        }
+
+    cell_rows = {key: summary(rows) for key, rows in cells.items()}
+    envelope_rows = {key: summary(rows) for key, rows in envelopes.items()}
+    weak = [
+        {"context": key, **row,
+         "regime": key.split("|")[0], "volatility": key.split("|")[1],
+         "session": key.split("|")[2], "direction": key.split("|")[3]}
+        for key, row in envelope_rows.items()
+        if int(row["trades"]) >= 3 and float(row["net_pf"]) < 1.0
+    ]
+    weak.sort(key=lambda item: (float(item["net_pf"]), -int(item["trades"])))
+    return {
+        "protocol": "robustness_matrix_v1",
+        "axes": ["regime", "volatility", "session_utc_hour", "direction", "calendar_month"],
+        "cells": cell_rows,
+        "envelopes": envelope_rows,
+        "weakest_envelopes": weak[:20],
+        "calendar_role": "diagnostic_recurrence_only_not_mutation_or_router_feature",
+        "rule": "A failure is actionable only as a full causal context, never as a calendar label.",
+    }
+
+
+def _certified_coverage_passport(trades: list[SimpleTrade], shadow_ledger: list[dict[str, object]]) -> dict[str, object]:
+    """Build an auditable trade/abstain passport with conservative backoff.
+
+    Session and side are useful diagnostics, but a finite sample often makes
+    their Cartesian product too sparse to certify anything. The passport keeps
+    those fine cells immutable and diagnostic, then maps every observed cell
+    through a declared hierarchy to an aggregate envelope. Unobserved
+    contexts never become permission by silence.
+    """
+    scope_order = [
+        ("regime|volatility|session|direction", ("regime", "volatility", "session", "direction")),
+        ("regime|volatility|direction", ("regime", "volatility", "direction")),
+        ("regime|direction", ("regime", "direction")),
+        ("regime", ("regime",)),
+    ]
+    fine_axes = scope_order[0][1]
+    cells: dict[str, dict[str, object]] = {}
+
+    def context_for(regime: str, volatility: str, session: str, direction: str) -> dict[str, str]:
+        return {"regime": regime, "volatility": volatility, "session": session, "direction": direction}
+
+    def key_for(context: dict[str, str], axes: tuple[str, ...]) -> str:
+        return "|".join(context[axis] for axis in axes)
+
+    def hour_for(value: object) -> str:
+        timestamp = pd.Timestamp(value)
+        return str(timestamp.hour) if not pd.isna(timestamp) else "unknown"
+
+    def cell_for(context: dict[str, str]) -> dict[str, object]:
+        key = key_for(context, fine_axes)
+        return cells.setdefault(key, {
+            "regime": context["regime"], "volatility": context["volatility"],
+            "session_utc_hour": context["session"], "direction": context["direction"],
+            "trades": [], "abstains": [],
+        })
+
+    for trade in trades:
+        stamp = pd.Timestamp(trade.entry_time)
+        cell_for(context_for(
+            str(trade.market_regime), str(trade.volatility_regime), str(stamp.hour), str(trade.direction)
+        ))["trades"].append(float(trade.profit_percent))
+    for shadow in shadow_ledger:
+        cell_for(context_for(
+            str(shadow.get("market_regime", "unknown")),
+            str(shadow.get("volatility_regime", "unknown")),
+            hour_for(shadow.get("entry_time")),
+            str(shadow.get("direction", "unknown")),
+        ))["abstains"].append(float(shadow.get("shadow_profit_percent", 0)))
+
+    def summary(scope: str, key: str, context: dict[str, str], trade_values: list[float], abstain_values: list[float]) -> dict[str, object]:
+        profitable_missed = sum(value > 0 for value in abstain_values)
+        harmful_filtered = sum(value <= 0 for value in abstain_values)
+        trade_permission = len(trade_values) >= 3 and _profit_factor_for(trade_values) >= 1.0
+        # Abstaining is certified only when there is observed shadow evidence;
+        # silence/zero opportunity cannot become an automatic pass.
+        abstain_permission = len(abstain_values) >= 3 and harmful_filtered >= profitable_missed
+        permissions = []
+        if trade_permission:
+            permissions.append("TRADE")
+        if abstain_permission:
+            permissions.append("ABSTAIN")
+        return {
+            "scope": scope, "key": key,
+            "regime": context.get("regime"), "volatility": context.get("volatility"),
+            "session_utc_hour": context.get("session"), "direction": context.get("direction"),
+            "trade_permission": "TRADE" if trade_permission else "NOT_CERTIFIED",
+            "abstain_permission": "ABSTAIN" if abstain_permission else "NOT_CERTIFIED",
+            "trade_count": len(trade_values), "abstain_shadow_count": len(abstain_values),
+            "missed_profitable_opportunities": profitable_missed, "harmful_opportunities_filtered": harmful_filtered,
+            "trade_pf": _profit_factor_for(trade_values) if trade_values else 0.0,
+            "permissions": permissions,
+        }
+
+    aggregates: dict[str, dict[str, dict[str, object]]] = {}
+    for scope, axes in scope_order:
+        grouped: dict[str, dict[str, object]] = {}
+        for cell in cells.values():
+            context = {
+                "regime": str(cell["regime"]), "volatility": str(cell["volatility"]),
+                "session": str(cell["session_utc_hour"]), "direction": str(cell["direction"]),
+            }
+            key = key_for(context, axes)
+            group = grouped.setdefault(key, {"context": context, "trades": [], "abstains": []})
+            group["trades"].extend(cell["trades"])
+            group["abstains"].extend(cell["abstains"])
+        aggregates[scope] = {
+            key: summary(scope, key, {
+                axis: str(group["context"][axis])
+                for axis in ("regime", "volatility", "session", "direction")
+                if axis in axes
+            }, group["trades"], group["abstains"])
+            for key, group in grouped.items()
+        }
+
+    evidence: dict[str, dict[str, object]] = {}
+    effective_cells: dict[str, dict[str, object]] = {}
+    for key, cell in cells.items():
+        context = {
+            "regime": str(cell["regime"]), "volatility": str(cell["volatility"]),
+            "session": str(cell["session_utc_hour"]), "direction": str(cell["direction"]),
+        }
+        selected = None
+        for scope, axes in scope_order:
+            candidate = aggregates[scope].get(key_for(context, axes))
+            if candidate and candidate["permissions"]:
+                selected = candidate
+                break
+
+        local = summary(scope_order[0][0], key, context, cell["trades"], cell["abstains"])
+        permissions = list(selected["permissions"]) if selected else []
+        effective_permission = permissions[0] if permissions else "NOT_CERTIFIED"
+        effective_scope = selected["scope"] if selected else None
+        effective_key = selected["key"] if selected else None
+        row = {
+            "regime": context["regime"], "volatility": context["volatility"],
+            "session_utc_hour": context["session"], "direction": context["direction"],
+            "trade_permission": "TRADE" if "TRADE" in permissions else "NOT_CERTIFIED",
+            "abstain_permission": "ABSTAIN" if "ABSTAIN" in permissions else "NOT_CERTIFIED",
+            "effective_permission": effective_permission,
+            "effective_scope": effective_scope, "effective_key": effective_key,
+            "backoff_used": effective_scope not in {None, scope_order[0][0]},
+            "trade_count": local["trade_count"], "abstain_shadow_count": local["abstain_shadow_count"],
+            "missed_profitable_opportunities": local["missed_profitable_opportunities"],
+            "harmful_opportunities_filtered": local["harmful_opportunities_filtered"],
+            "trade_pf": local["trade_pf"],
+            "effective_trade_count": selected["trade_count"] if selected else 0,
+            "effective_abstain_shadow_count": selected["abstain_shadow_count"] if selected else 0,
+            "effective_trade_pf": selected["trade_pf"] if selected else 0.0,
+        }
+        evidence[key] = row
+        if selected:
+            effective_cells[f"{selected['scope']}|{selected['key']}"] = selected
+
+    certified = [row for row in evidence.values() if row["effective_permission"] != "NOT_CERTIFIED"]
+    return {
+        "protocol": "certified_coverage_passport_v2", "cells": evidence,
+        "effective_cells": effective_cells,
+        "scope_order": [scope for scope, _axes in scope_order],
+        "status": "assessed" if evidence else "insufficient_evidence",
+        "certified_cells": len(certified), "uncertified_cells": len(evidence) - len(certified),
+        "runtime_policy": {
+            "protocol": "coverage_backoff_policy_v1",
+            "declared_scope": "the narrowest evidence-backed envelope in scope_order",
+            "unobserved_action": "WAIT",
+            "rule": "Fine session/side cells remain diagnostic; backoff is allowed only to an aggregate with observed trade or abstain evidence.",
+        },
+        "rule": "Every observed envelope needs evidence-backed TRADE or ABSTAIN permission; no activity is never a pass.",
+    }
+
+
+def _opportunity_recall(funnel: dict[str, object], shadow_ledger: list[dict[str, object]], trades: list[SimpleTrade]) -> dict[str, object]:
+    opportunities = int(funnel.get("flat_signal_opportunities", 0))
+    accepted = int(funnel.get("accepted_entries", 0))
+    missed_profitable = sum(float(row.get("shadow_profit_percent", 0)) > 0 for row in shadow_ledger)
+    harmful_filtered = sum(float(row.get("shadow_profit_percent", 0)) <= 0 for row in shadow_ledger)
+    recall = accepted / max(1, opportunities)
+    by_regime: dict[str, dict[str, int]] = {}
+    for trade in trades:
+        row = by_regime.setdefault(str(trade.market_regime), {"opportunities": 0, "accepted_entries": 0})
+        row["opportunities"] += 1
+        row["accepted_entries"] += 1
+    for shadow in shadow_ledger:
+        row = by_regime.setdefault(str(shadow.get("market_regime", "unknown")), {"opportunities": 0, "accepted_entries": 0})
+        row["opportunities"] += 1
+    by_regime_report = {
+        regime: {**row, "recall": round(int(row["accepted_entries"]) / max(1, int(row["opportunities"])), 6)}
+        for regime, row in by_regime.items()
+    }
+    # A candidate cannot manufacture a high PF by nearly never trading: it
+    # needs both observable opportunities and recall evidence. Thresholds are
+    # reported here; Laravel applies them only to G98 promotion passports.
+    status = "assessed" if opportunities >= 10 else "insufficient_evidence"
+    return {"protocol": "opportunity_recall_gate_v1", "status": status,
+            "opportunities": opportunities, "accepted_entries": accepted,
+            "by_regime": by_regime_report,
+            "opportunity_recall": round(recall, 6), "missed_profitable_waits": missed_profitable,
+            "harmful_waits": harmful_filtered, "trade_count": len(trades),
+            "abstention_precision": round(harmful_filtered / max(1, harmful_filtered + missed_profitable), 6),
+            "rule": "PF is insufficient: a candidate must show opportunity recall and prove that WAIT filters more harm than missed edge."}
+
+
+def _proof_carrying_replay(result: dict[str, object], trades: list[SimpleTrade], payload: SimpleBacktestRequest) -> dict[str, object]:
+    """Independent ledger verifier for promotion identity and arithmetic.
+
+    The primary replay reports compounded account return, while the trade
+    ledger stores each return rounded to three decimals.  Comparing that
+    account return to an additive ledger sum created false proof failures
+    (and the primary PF was rounded to two decimals while the verifier used
+    three).  Both sides now use the same declared canonical contract: PF is
+    rounded to two decimals and net return is independently recomputed by
+    compounding the stored ledger returns.  The small net-return tolerance is
+    only the unavoidable effect of the ledger's three-decimal serialization;
+    the trade count, ledger hash and PF must still match exactly.
+    """
+    values = [float(trade.profit_percent) for trade in trades]
+    verifier_balance = float(payload.initial_balance)
+    for value in values:
+        verifier_balance += verifier_balance * (value / 100.0)
+    verifier_net_profit = round(
+        ((verifier_balance - float(payload.initial_balance)) / max(float(payload.initial_balance), 0.0000001)) * 100,
+        2,
+    )
+    verifier_profit_factor = round(_profit_factor_for(values), 2)
+    verifier = {
+        "total_trades": len(trades),
+        "profit_factor": verifier_profit_factor,
+        "net_profit_percent": verifier_net_profit,
+        "ledger_net_profit_percent": round(sum(values), 6),
+        "trade_ledger_hash": _trade_ledger_hash(trades),
+    }
+    primary = {"total_trades": int(result.get("total_trades", 0)), "profit_factor": round(float(result.get("profit_factor", 0)), 2),
+               "net_profit_percent": round(float(result.get("net_profit_percent", 0)), 6), "trade_ledger_hash": result.get("trade_ledger_hash", "")}
+    matches = (
+        primary["total_trades"] == verifier["total_trades"]
+        and primary["profit_factor"] == verifier["profit_factor"]
+        and abs(float(primary["net_profit_percent"]) - float(verifier["net_profit_percent"])) <= 0.02
+        and primary["trade_ledger_hash"] == verifier["trade_ledger_hash"]
+    )
+    data_hash = hashlib.sha256(json.dumps(payload.candles and [c.model_dump(mode="json") for c in payload.candles] or [], sort_keys=True, default=str).encode()).hexdigest()
+    config_hash = hashlib.sha256(json.dumps({"strategy": payload.strategy, "base_strategy": payload.base_strategy, "parameters": payload.parameters, "execution": payload.execution.model_dump()}, sort_keys=True, default=str).encode()).hexdigest()
+    return {"protocol": "proof_carrying_replay_v1", "status": "passed" if matches else "mismatch",
+            "primary": primary, "independent_ledger_verifier": verifier,
+            "data_hash": data_hash, "config_hash": config_hash,
+            "gate_decision_hash": hashlib.sha256(json.dumps({"primary": primary, "verifier": verifier}, sort_keys=True).encode()).hexdigest(),
+            "comparison_tolerances": {"profit_factor": 0.0, "net_profit_percent": 0.02},
+            "rule": "Promotion fails closed when independently recomputed full-ledger facts differ from the primary replay after the canonical rounding/compounding contract."}
 
 
 def _edge_quality_evidence(trades: list[SimpleTrade]) -> dict[str, object]:

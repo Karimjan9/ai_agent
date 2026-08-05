@@ -1,5 +1,10 @@
 <?php
 
+$protectedSecret = static function (string $file): ?string {
+    $path = storage_path('app/secrets/'.$file);
+    return is_file($path) ? trim((string) file_get_contents($path)) : null;
+};
+
 return [
 
     /*
@@ -64,9 +69,7 @@ return [
     ],
 
     'internal_api' => [
-        'token' => env('INTERNAL_API_TOKEN') ?: (is_file(storage_path('app/internal-api.token'))
-            ? trim((string) file_get_contents(storage_path('app/internal-api.token')))
-            : null),
+        'token' => $protectedSecret('internal-api.token') ?: env('INTERNAL_API_TOKEN'),
     ],
 
     'twelve_data' => [
@@ -162,7 +165,7 @@ return [
     ],
 
     'alpha_vantage' => [
-        'api_key' => env('ALPHA_VANTAGE_API_KEY'),
+        'api_key' => $protectedSecret('alpha-vantage-api.key') ?: env('ALPHA_VANTAGE_API_KEY'),
         'endpoint' => env('ALPHA_VANTAGE_ENDPOINT', 'https://www.alphavantage.co/query'),
         'headline_window_minutes' => (int) env('ALPHA_VANTAGE_HEADLINE_WINDOW_MINUTES', 60),
     ],
@@ -173,7 +176,7 @@ return [
     'currents_api' => [
         // CURRENTSAPI_API_KEY is accepted as a compatibility alias for an
         // earlier local setup; new deployments should use CURRENTS_API_KEY.
-        'api_key' => env('CURRENTS_API_KEY', env('CURRENTSAPI_API_KEY')),
+        'api_key' => $protectedSecret('currents-api.key') ?: env('CURRENTS_API_KEY', env('CURRENTSAPI_API_KEY')),
         'endpoint' => env('CURRENTS_API_ENDPOINT', 'https://api.currentsapi.services/v1/latest-news'),
         'headline_window_minutes' => (int) env('CURRENTS_API_HEADLINE_WINDOW_MINUTES', 60),
         // CurrentsAPI's free plan accepts at most 20 articles per request.
@@ -188,8 +191,14 @@ return [
     'lab_selection' => [
         // A fast screen is only a hypothesis generator.  Fewer than this many
         // observed trades is too noisy even to spend a full replay on.
-        'minimum_screening_trades' => (int) env('LAB_MINIMUM_SCREENING_TRADES', 10),
-    ],
+      'minimum_screening_trades' => (int) env('LAB_MINIMUM_SCREENING_TRADES', 10),
+      'max_screening_jobs' => (int) env('LAB_MAX_SCREENING_JOBS', 40),
+      'screen_timeout_seconds' => (int) env('LAB_SCREEN_TIMEOUT_SECONDS', 900),
+      'differential_screen_timeout_seconds' => (int) env('LAB_DIFFERENTIAL_SCREEN_TIMEOUT_SECONDS', 900),
+      'full_replay_timeout_seconds' => (int) env('LAB_FULL_REPLAY_TIMEOUT_SECONDS', 2280),
+      'portfolio_replay_timeout_seconds' => (int) env('LAB_PORTFOLIO_REPLAY_TIMEOUT_SECONDS', 2280),
+      'dataset_export_lock_wait_seconds' => (int) env('LAB_DATASET_EXPORT_LOCK_WAIT_SECONDS', 30),
+  ],
 
     'risk' => [
         'max_open_positions' => (int) env('RISK_MAX_OPEN_POSITIONS', 3),

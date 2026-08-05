@@ -11,6 +11,7 @@ use App\Models\PaperSignalOutcome;
 use App\Models\Symbol;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\MarketData\MarketReadinessService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 
 class PaperTradingExecutionService
@@ -22,10 +23,12 @@ class PaperTradingExecutionService
         private MarketReadinessService $marketReadiness,
         private TradingRiskService $risk,
         private SpecialistPortfolioAllocator $allocator,
+        private EliteAgentPortfolioGateService $portfolios,
         private PaperConfidenceCalibrationService $calibration,
         private EconomicCalendarService $calendar,
         private CandidateGateDecisionService $gateDecisions,
         private PaperExecutionStateMachineService $executionState,
+        private StrategyParameterSchemaService $schemas,
     ) {}
 
     public function run(): array
@@ -38,7 +41,19 @@ class PaperTradingExecutionService
             ->where('paper_status', '!=', 'failed')
             ->get();
 
+        // Rebuild the strict portfolio registry before routing any paper
+        // signal. With zero forward candidates this remains a no-op; once
+        // complementary members exist, routing still waits for their own
+        // combined canonical replay gate.
+        $portfolioStatuses = $candidates->groupBy(fn (ModelMarketPerformance $candidate): string => $candidate->symbol.'|'.$candidate->timeframe)
+            ->map(function (Collection $marketCandidates, string $key): string {
+                [$symbol, $timeframe] = explode('|', $key, 2);
+                return $this->portfolios->syncMarket($symbol, $timeframe, $marketCandidates)['status'];
+            })->all();
+        $stats['portfolio_status'] = $portfolioStatuses;
+
         foreach ($candidates as $candidate) {
+            $this->gateDecisions->recordPaperAdmissionHandshake($candidate);
             if (! $this->marketReadiness->ready($candidate->symbol, $candidate->timeframe)) {
                 $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_PROVIDER');
                 continue;
@@ -415,13 +430,15 @@ class PaperTradingExecutionService
         return [
             'symbol' => $candidate->symbol, 'timeframe' => $candidate->timeframe,
             'strategy' => $model->strategy,
-            'base_strategy' => data_get($model->metadata, 'base_strategy') ?: $candidate->strategy_family.'_v1',
+            'base_strategy' => $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $candidate->strategy_family),
             'parameters' => $model->parameters ?? [], 'candles' => $rows,
+            'portfolio_members' => data_get($model->metadata, 'portfolio_members', []),
             'policy_context' => [
                 'constitution' => data_get($model->metadata, 'agent_constitution', []),
                 'sample_count' => (int) $candidate->sample_count,
                 'calibration_score' => (float) data_get($model->metadata, 'capability_vector.calibration', 50),
                 'stress_cost_pf' => (float) data_get($candidate->metrics, 'pf_attribution.stress_cost.profit_factor', 0),
+                'coverage_passport' => data_get($model->metadata, 'elite_agent_passport.certified_coverage_passport', data_get($candidate->metrics, 'elite_agent_passport.certified_coverage_passport', [])),
             ],
             // The same execution profile is used by screening/full replay and
             // now by paper execution-contract generation.

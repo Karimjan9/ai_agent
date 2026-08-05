@@ -110,7 +110,10 @@ class DukascopyMarketDataProviderTest extends TestCase
             'services.dukascopy.tick_fallback_enabled' => false,
         ]);
 
-        $hour = CarbonImmutable::parse('2026-07-13 10:00:00', 'UTC');
+        // Keep this test anchored to the actual open month. A hard-coded
+        // month eventually becomes an archive request as time advances and
+        // makes the fake miss, causing an accidental DNS/network call.
+        $hour = CarbonImmutable::now('UTC')->startOfMonth()->addDay()->setTime(10, 0);
         Http::fake([
             'https://jetta.test/v1/candles/trade/hour/EUR-USD/BID?from=*' => Http::response([
                 'timestamp' => $hour->getTimestampMs(),
@@ -134,7 +137,7 @@ class DukascopyMarketDataProviderTest extends TestCase
         );
 
         $this->assertCount(1, $rows);
-        $this->assertSame('2026-07-13 10:00:00', $rows[0]['time']);
+        $this->assertSame($hour->format('Y-m-d H:i:s'), $rows[0]['time']);
         Http::assertSentCount(1);
     }
 }
