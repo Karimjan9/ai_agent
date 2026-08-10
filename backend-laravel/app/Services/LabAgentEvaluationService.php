@@ -1,36 +1,55 @@
 <?php
+
 namespace App\Services;
+
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
-use App\Models\StrategyScore;
-use App\Models\TrainingSession;
+use App\Models\ModelVersion;
 use App\Services\MarketData\CandlePayloadService;
+use App\Services\MarketData\MarketVolumeService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\File;
 use RuntimeException;
+
 class LabAgentEvaluationService
 {
-    public function __construct(private CandlePayloadService $candles,private MarketChampionService $champions,private LabDatasetExportService $datasets,private ScreeningLearningOutboxService $screeningOutbox, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger, private CandidateHandoffService $handoffs, private CounterfactualBlameGraphService $blameGraph, private LearningProtocolSafetyService $protocolSafety, private LabImmutableEvidenceService $evidence, private StrategyParameterSchemaService $schemas){}
-    public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null):void
+    public function __construct(private CandlePayloadService $candles, private MarketChampionService $champions, private LabDatasetExportService $datasets, private ScreeningLearningOutboxService $screeningOutbox, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger, private CandidateHandoffService $handoffs, private CounterfactualBlameGraphService $blameGraph, private LearningProtocolSafetyService $protocolSafety, private LabImmutableEvidenceService $evidence, private StrategyParameterSchemaService $schemas, private MarketVolumeService $volumes, private AgentKnowledgeService $knowledge) {}
+
+    public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
         $run ??= $this->evidence->beginRun($agent, 'full_validation', 'full', ['source' => 'direct_evaluation']);
-        $agent->load('modelVersion','generation');$model=$agent->modelVersion;
+        $agent->load('modelVersion', 'generation');
+        $model = $agent->modelVersion;
         $rawResponse = null;
         $cacheHit = false;
-        $cached=data_get($model->metadata,'full_validation_batch');
-        if((int)data_get($cached,'generation_id')===(int)$agent->lab_generation_id && is_array(data_get($cached,'item'))){
-            $item=$cached['item'];
+        $currentCodeHash = $this->evidence->codeHash();
+        $currentParameterHash = $this->evidence->parameterHash($agent);
+        $currentSnapshotHash = (string) data_get(
+            $agent->generation?->trigger_context,
+            'canonical_dataset_snapshots.price.sha256',
+            data_get($agent->generation?->trigger_context, 'canonical_dataset_snapshots.volume.sha256', '')
+        );
+        $cached = data_get($model->metadata, 'full_validation_batch');
+        $cacheIsSealed = (int) data_get($cached, 'generation_id') === (int) $agent->lab_generation_id
+            && is_array(data_get($cached, 'item'))
+            && hash_equals($currentCodeHash, (string) data_get($cached, 'code_hash', ''))
+            && hash_equals($currentParameterHash, (string) data_get($cached, 'parameter_hash', ''))
+            && $currentSnapshotHash !== ''
+            && hash_equals($currentSnapshotHash, (string) data_get($cached, 'data_hash', ''));
+        if ($cacheIsSealed) {
+            $item = $cached['item'];
             $cacheHit = true;
-        }else{
+        } else {
             // Evaluate the selected generation cohort together.  This gives CSCV
             // and DSR a real candidate distribution instead of a meaningless
             // one-strategy batch.  The first serialized job caches each peer's
             // result; following jobs persist their own cached result without
             // repeating the expensive Python replay.
-            $cohort=LabAgent::query()->with('modelVersion')->where('lab_generation_id',$agent->lab_generation_id)
-                ->whereIn('lifecycle_status',['full_queued','training'])->orderBy('id')->get();
-            if($cohort->isEmpty())$cohort=collect([$agent]);
+            $cohort = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $agent->lab_generation_id)
+                ->whereIn('lifecycle_status', ['full_queued', 'training'])->orderBy('id')->get();
+            if ($cohort->isEmpty()) {
+                $cohort = collect([$agent]);
+            }
             // Portfolio members are independent sealed hypotheses. Replaying
             // several of them in one Python cohort multiplies the worst-case
             // runtime and can turn useful full evidence into a transport
@@ -43,13 +62,37 @@ class LabAgentEvaluationService
             // generation. Export the immutable canonical snapshot at dispatch
             // time; the first serialized cohort job then caches that exact
             // result for every peer in the batch.
-            $dataset=$this->datasets->export($agent->symbol,$agent->timeframe);
-            $manifest = is_file($dataset.'.manifest.json') ? json_decode(File::get($dataset.'.manifest.json'), true) : [];
-            $request=[
-                'symbol'=>$agent->symbol,'timeframe'=>$agent->timeframe,'strategy'=>'all','evaluation_mode'=>'replay',
-                'strategies'=>$cohort->map(fn(LabAgent $peer)=>['strategy'=>$peer->modelVersion->strategy,'base_strategy'=>$this->schemas->runtimeBaseStrategy($peer->modelVersion->strategy, data_get($peer->modelVersion->metadata,'base_strategy'), $peer->strategy_family),'version'=>$peer->modelVersion->version,'parameters'=>$peer->modelVersion->parameters??[]])->all(),
-                'initial_balance'=>10000,'risk_per_trade'=>1,'dataset_path'=>$dataset,
-                'execution'=>$this->executionAssumptions($agent->symbol),
+            $volumeEnabled = $cohort->contains(fn (LabAgent $peer): bool => $this->volumeEnabled($peer->modelVersion));
+            $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
+            $dataset = $datasetSnapshot['path'];
+            $manifest = (array) ($datasetSnapshot['manifest'] ?? []);
+            $request = [
+                'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy' => 'all', 'evaluation_mode' => 'replay',
+                'strategies' => $cohort->map(fn (LabAgent $peer) => ['strategy' => $peer->modelVersion->strategy, 'base_strategy' => $this->schemas->runtimeBaseStrategy($peer->modelVersion->strategy, data_get($peer->modelVersion->metadata, 'base_strategy'), $peer->strategy_family), 'version' => $peer->modelVersion->version, 'parameters' => $peer->modelVersion->parameters ?? []])->all(),
+                'initial_balance' => 10000, 'risk_per_trade' => 1, 'dataset_path' => $dataset,
+                'volume_context' => $volumeEnabled
+                    ? (array) data_get($manifest, 'volume_quality', [])
+                    : $this->disabledVolumeContext(),
+                'policy_context' => [
+                    'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($agent->symbol, $agent->timeframe),
+                    // Each cohort member keeps its own one-gene contract;
+                    // the Python replay selects the contract by strategy so
+                    // a sibling's mutation can never be used for plateau
+                    // evidence by mistake.
+                    'repair_contracts' => $cohort->mapWithKeys(function (LabAgent $peer): array {
+                        $diff = (array) $peer->parameter_diff;
+                        $changedGene = count($diff) === 1 ? array_key_first($diff) : null;
+
+                        return [$peer->modelVersion->strategy => [
+                            'changed_gene' => $changedGene,
+                            'repair_attempt' => (int) data_get($peer->modelVersion->metadata, 'repair_lineage.attempt', 0),
+                            'parent_model_version_id' => $peer->parent_a_model_version_id ?: $peer->parent_b_model_version_id,
+                            'single_gene' => count($diff) === 1,
+                        ]];
+                    })->all(),
+                ],
+                'execution' => $this->executionAssumptions($agent->symbol),
+                'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe),
                 'emit_decision_trace' => true,
             ];
             // A council seat is not only a label on the model version.  Its
@@ -60,8 +103,7 @@ class LabAgentEvaluationService
             // portfolio replay; it is still subject to every normal full,
             // forward and paper gate and never creates promotion evidence by
             // itself.
-            $researchMembers = $cohort->filter(fn (LabAgent $peer): bool =>
-                data_get($peer->modelVersion->metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1'
+            $researchMembers = $cohort->filter(fn (LabAgent $peer): bool => data_get($peer->modelVersion->metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1'
             );
             if ($researchMembers->isNotEmpty()) {
                 $request['portfolio_members'] = $researchMembers->map(fn (LabAgent $peer): array => [
@@ -78,15 +120,15 @@ class LabAgentEvaluationService
             }
             // M15 entries must use only a completed H1 market regime. The
             // Python engine delays that state by one H1 bar before merging.
-            if(strtoupper($agent->timeframe)==='M15'){
-                $regimeDataset=$this->datasets->export($agent->symbol,'H1');
-                $request['regime_dataset_path']=$regimeDataset;
+            if (strtoupper($agent->timeframe) === 'M15') {
+                $regimeDataset = $this->datasets->export($agent->symbol, 'H1', $volumeEnabled);
+                $request['regime_dataset_path'] = $regimeDataset;
             }
             $timeout = min(2280, max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 2280)));
             $requestId = 'full-'.$agent->id.'-'.bin2hex(random_bytes(6));
             $this->evidence->attachRequest($run, $request, ['request_id' => $requestId, 'dataset_manifest' => $manifest]);
             $this->assertAiReplayHealthy($requestId, $run);
-            $response=Http::connectTimeout(15)->timeout($timeout)->withOptions([
+            $response = Http::connectTimeout(15)->timeout($timeout)->withOptions([
                 // Keep the transport limit explicit for Windows/cURL too;
                 // Http::timeout() maps to this option, but the duplicate
                 // declaration makes the bounded contract visible in traces.
@@ -102,34 +144,55 @@ class LabAgentEvaluationService
                     CURLOPT_TIMEOUT_MS => $timeout * 1000,
                 ],
             ])->acceptJson()->withHeaders([
-                'X-Internal-Token'=>(string)config('services.internal_api.token'),
+                'X-Internal-Token' => (string) config('services.internal_api.token'),
                 'X-Lab-Request-Id' => $requestId,
-            ])->post(rtrim(config('services.ai_service.url'),'/').'/api/backtest/run-all',$request);
-            if($response->failed())throw new RuntimeException($response->body());
+            ])->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/run-all', $request);
+            if ($response->failed()) {
+                throw new RuntimeException($response->body());
+            }
             $rawResponse = $response->json();
-            $items=collect($rawResponse['leaderboard'] ?? [])->keyBy('strategy');
-            foreach($cohort as $peer){$peerItem=$items->get($peer->modelVersion->strategy);if(!$peerItem)throw new RuntimeException('Missing cohort lab agent result.');$peerItem['result']['data_manifest']=$manifest;$items->put($peer->modelVersion->strategy,$peerItem);$peerModel=$peer->modelVersion;$peerModel->update(['metadata'=>array_merge($peerModel->metadata??[],['full_validation_batch'=>['generation_id'=>$agent->lab_generation_id,'item'=>$peerItem]])]);}
-            $item=$items->get($model->strategy);if(!$item)throw new RuntimeException('Empty lab agent result.');
+            $items = collect($rawResponse['leaderboard'] ?? [])->keyBy('strategy');
+            foreach ($cohort as $peer) {
+                $peerItem = $items->get($peer->modelVersion->strategy);
+                if (! $peerItem) {
+                    throw new RuntimeException('Missing cohort lab agent result.');
+                }
+                $peerItem['result']['data_manifest'] = $manifest;
+                $items->put($peer->modelVersion->strategy, $peerItem);
+                $peerModel = $peer->modelVersion;
+                $peerModel->update(['metadata' => array_merge($peerModel->metadata ?? [], ['full_validation_batch' => [
+                    'protocol' => 'sealed_replay_cache_v2',
+                    'generation_id' => $agent->lab_generation_id,
+                    'item' => $peerItem,
+                    'code_hash' => $currentCodeHash,
+                    'parameter_hash' => $this->evidence->parameterHash($peer),
+                    'data_hash' => (string) ($manifest['snapshot_sha256'] ?? $manifest['sha256'] ?? ''),
+                ]])]);
+            }
+            $item = $items->get($model->strategy);
+            if (! $item) {
+                throw new RuntimeException('Empty lab agent result.');
+            }
         }
-        DB::transaction(function()use($agent,$model,$item,$run){$fullResult=$item['result']??[];$fullResult['evidence_run_id']=$run->run_id;$result=$this->evidence->projectionPayload($fullResult);$session=TrainingSession::create([
-            'title'=>"{$agent->symbol} Lab G{$agent->generation->generation} {$model->name}",'symbol'=>$agent->symbol,'timeframe'=>$agent->timeframe,
-            'agents_count'=>1,'best_strategy'=>$model->strategy,'best_score'=>$item['score'],'worst_strategy'=>$model->strategy,'worst_score'=>$item['score'],
-            'total_trades'=>$result['total_trades']??0,'average_winrate'=>$result['winrate']??0,'average_profit'=>$result['net_profit_percent']??0,
-            'average_drawdown'=>$result['max_drawdown_percent']??$result['max_drawdown']??0,
-            'average_profit_factor'=>$result['profit_factor']??0,
-            'average_stability_score'=>$result['stability_score']??0,
-            'status'=>'completed','started_at'=>now(),'finished_at'=>now(),'raw_leaderboard'=>[$this->evidence->projectionPayload($item)]]);
-            StrategyScore::create(['training_session_id'=>$session->id,'symbol'=>$agent->symbol,'timeframe'=>$agent->timeframe,'strategy'=>$model->strategy,
-                'parameters'=>$model->parameters??[],'score'=>$item['score'],'train_score'=>$item['train_score']??0,'validation_score'=>$item['validation_score']??0,
-                'forward_score'=>$item['forward_score']??0,'robustness_score'=>$item['robustness_score']??0,'is_overfit'=>$item['is_overfit']??false,
-                'mc_worst_drawdown_percent'=>data_get($result,'monte_carlo.worst_drawdown_percent'),'mc_risk_of_ruin_percent'=>data_get($result,'monte_carlo.risk_of_ruin_percent'),
-                'total_trades'=>$result['total_trades']??0,'wins'=>$result['wins']??0,'losses'=>$result['losses']??0,'winrate'=>$result['winrate']??0,
-                'net_profit_percent'=>$result['net_profit_percent']??0,'max_drawdown_percent'=>$result['max_drawdown_percent']??0,'profit_factor'=>$result['profit_factor']??0,
-                'stability_score'=>$result['stability_score']??0,'equity_curve'=>$result['equity_curve']??[],'regime_performance'=>$result['regime_performance']??[],
-                'volatility_performance'=>$result['volatility_performance']??[],'raw_result'=>$result]);
-            $result['forward_score']=$item['forward_score']??0;$result['forward_window_scores']=$item['forward_window_scores']??[];$result['rolling_windows_count']=$item['rolling_windows_count']??0;
-            $result['train_score']=$item['train_score']??0;$result['validation_score']=$item['validation_score']??0;$result['is_overfit']=$item['is_overfit']??false;
-            $model->update(['best_score'=>max((float)$model->best_score,(float)$item['score']),'best_winrate'=>$result['winrate']??0,'best_profit'=>$result['net_profit_percent']??0,'best_drawdown'=>$result['max_drawdown_percent']??0,'metadata'=>array_merge($model->metadata??[],['last_result'=>$result])]);
+        // Full replay evidence is unusable without the exact canonical
+        // execution hash. Never persist a score from a response that omitted
+        // the contract or silently changed spread/gap policy.
+        $returnedExecutionContract = data_get($item, 'result.execution_contract', data_get($item, 'execution_contract'));
+        if (! is_array($returnedExecutionContract)
+            || ! app(ExecutionContractService::class)->matches($returnedExecutionContract, $agent->symbol, $agent->timeframe)) {
+            throw new RuntimeException('FULL_REPLAY_EXECUTION_CONTRACT_MISSING_OR_MISMATCH');
+        }
+        DB::transaction(function () use ($agent, $model, $item, $run) {
+            $fullResult = $item['result'] ?? [];
+            $fullResult['evidence_run_id'] = $run->run_id;
+            $fullResult['forward_score'] = $item['forward_score'] ?? 0;
+            $fullResult['forward_window_scores'] = $item['forward_window_scores'] ?? [];
+            $fullResult['rolling_windows_count'] = $item['rolling_windows_count'] ?? 0;
+            $fullResult['train_score'] = $item['train_score'] ?? 0;
+            $fullResult['validation_score'] = $item['validation_score'] ?? 0;
+            $fullResult['is_overfit'] = $item['is_overfit'] ?? false;
+            $result = $this->evidence->projectionPayload($fullResult);
+            $model->update(['best_score' => max((float) $model->best_score, (float) $item['score']), 'best_winrate' => $result['winrate'] ?? 0, 'best_profit' => $result['net_profit_percent'] ?? 0, 'best_drawdown' => $result['max_drawdown_percent'] ?? 0, 'metadata' => array_merge($model->metadata ?? [], ['last_result' => $result])]);
             $this->shadowVetoLedger->record($agent, $result, 'full_replay');
             // Preserve the sealed niche contract on the full-replay result.
             // It is used only by the separate portfolio-member gate; it must
@@ -140,9 +203,24 @@ class LabAgentEvaluationService
             // Pass the sealed model instance, not only its runtime strategy
             // label. Multiple generations can use the same family/label;
             // evidence must remain attributed to this exact lab agent.
-            $performance = $this->champions->evaluate($model->strategy,$agent->symbol,$agent->timeframe,(int)$item['score'],$result,$model);
+            $performance = $this->champions->evaluate($model->strategy, $agent->symbol, $agent->timeframe, (int) $item['score'], $result, $model);
             if ((int) $performance->model_version_id !== (int) $model->getKey()) {
                 throw new RuntimeException('Full replay evidence attribution mismatch.');
+            }
+            // Knowledge-card writes are a learning projection.  A storage
+            // fault must remain observable but must never erase or downgrade
+            // the immutable replay/gate evidence that just completed.
+            try {
+                $knowledgeAgent = $agent->fresh(['modelVersion', 'generation']);
+                $knowledgePerformance = $performance->fresh();
+                $this->knowledge->recordFullReplay(
+                    $knowledgeAgent,
+                    $knowledgePerformance,
+                    [...((array) $knowledgePerformance->metrics), 'evidence_run_id' => $run->run_id],
+                    $run->run_id,
+                );
+            } catch (\Throwable $exception) {
+                report($exception);
             }
             $this->blameGraph->sync($performance, $agent, $result);
             $this->handoffs->record($agent->generation, $agent, 'full_validation_completed', 'completed', null, [
@@ -150,9 +228,9 @@ class LabAgentEvaluationService
                 'evidence_run_id' => $run->run_id,
             ]);
         });
-        $generation=$agent->generation()->with('agents')->first();
-        if($generation->agents->whereIn('lifecycle_status',['draft','queued','training','full_queued'])->isEmpty()){
-            $generation->update(['status'=>'completed','completed_at'=>now()]);
+        $generation = $agent->generation()->with('agents')->first();
+        if ($generation->agents->whereIn('lifecycle_status', ['draft', 'queued', 'training', 'full_queued'])->isEmpty()) {
+            $generation->update(['status' => 'completed', 'completed_at' => now()]);
             $generation = $generation->fresh(['agents']);
             app(LabGenerationReportService::class)->record($generation, 'full_completed');
             if ($generation->agents->whereIn('lifecycle_status', ['forward_validated', 'paper', 'champion'])->isEmpty()) {
@@ -182,7 +260,9 @@ class LabAgentEvaluationService
         $run ??= $this->evidence->beginRun($agent, 'screening', 'incremental', ['source' => 'direct_screen']);
         $agent->load('modelVersion', 'generation');
         $model = $agent->modelVersion;
-        $rows = $this->candles->candlesForBacktest($agent->symbol, $agent->timeframe, 5000);
+        $volumeEnabled = $this->volumeEnabled($model);
+        $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
+        $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], 5000);
         if (count($rows) < 500) {
             throw new RuntimeException('Screening uchun yetarli recent candle topilmadi.');
         }
@@ -196,11 +276,30 @@ class LabAgentEvaluationService
                 'version' => $model->version, 'parameters' => $model->parameters ?? [],
             ]],
             'initial_balance' => 10000, 'risk_per_trade' => 1, 'candles' => $rows,
+            'volume_context' => $volumeEnabled
+                ? $this->volumeContextOrFail($agent->symbol, $agent->timeframe)
+                : $this->disabledVolumeContext(),
             // Screening must rank candidates after the same normal execution
             // costs as full replay; otherwise cheap-turnover strategies are
             // incorrectly promoted into the scarce full-validation cohort.
             'execution' => $this->executionAssumptions($agent->symbol),
-            'emit_decision_trace' => true,
+            'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe),
+            'policy_context' => [
+                'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($agent->symbol, $agent->timeframe),
+                'repair_contract' => [
+                    'changed_gene' => count((array) $agent->parameter_diff) === 1
+                        ? array_key_first((array) $agent->parameter_diff) : null,
+                    'repair_attempt' => (int) data_get($model->metadata, 'repair_lineage.attempt', 0),
+                    'parent_model_version_id' => $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id,
+                    'single_gene' => count((array) $agent->parameter_diff) === 1,
+                ],
+            ],
+            // Screening is a routing/falsification tier. Do not return a
+            // per-candle feature/state graph here: it multiplies the JSON
+            // response and PHP memory before the bounded projection can
+            // externalize evidence. Full validation remains the canonical
+            // decision-trace evidence lane.
+            'emit_decision_trace' => false,
         ];
         if (strtoupper($agent->timeframe) === 'M15') {
             // Screen only needs the recent H1 context; full replay uses the
@@ -223,7 +322,13 @@ class LabAgentEvaluationService
         // differential screening up to 840 seconds.
         $screenTimeout = min($isDifferential ? 900 : 360, max(30, $configuredScreenTimeout));
         $requestId = 'screen-'.$agent->id.'-'.bin2hex(random_bytes(6));
-        $manifest = ['candle_count' => count($rows), 'data_hash' => $this->evidence->hash($rows)];
+        $manifest = [
+            'candle_count' => count($rows),
+            'data_hash' => $this->evidence->hash($rows),
+            'snapshot_sha256' => $datasetSnapshot['sha256'],
+            'snapshot_protocol' => $datasetSnapshot['protocol'],
+            'snapshot_generation_id' => $agent->lab_generation_id,
+        ];
         $this->evidence->attachRequest($run, $request, ['request_id' => $requestId, 'data_hash' => $manifest['data_hash'], 'dataset_manifest' => $manifest]);
         $this->assertAiReplayHealthy($requestId, $run);
         $response = Http::connectTimeout(15)->timeout($screenTimeout)->withOptions([
@@ -240,12 +345,16 @@ class LabAgentEvaluationService
                 CURLOPT_TIMEOUT_MS => $screenTimeout * 1000,
             ],
         ])->acceptJson()->withHeaders([
-            'X-Internal-Token'=>(string)config('services.internal_api.token'),
+            'X-Internal-Token' => (string) config('services.internal_api.token'),
             'X-Lab-Request-Id' => $requestId,
         ])->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/run-all', $request);
-        if ($response->failed()) throw new RuntimeException($response->body());
+        if ($response->failed()) {
+            throw new RuntimeException($response->body());
+        }
         $item = data_get($response->json(), 'leaderboard.0');
-        if (! $item) throw new RuntimeException('Empty screening result.');
+        if (! $item) {
+            throw new RuntimeException('Empty screening result.');
+        }
         $result = $item['result'] ?? [];
         $screenResult = array_merge($result, [
             'forward_score' => $item['forward_score'] ?? $item['score'] ?? 0,
@@ -253,11 +362,19 @@ class LabAgentEvaluationService
             'validation_score' => $item['validation_score'] ?? $item['score'] ?? 0,
             'evidence_run_id' => $run->run_id,
         ]);
-        $screenResult['execution_contract'] = [
-            'version' => LearningProtocolSafetyService::EXECUTION_CONTRACT,
-            'execution_hash' => hash('sha256', json_encode($request['execution'], JSON_PRESERVE_ZERO_FRACTION)),
-        ];
-        $screenResult = $this->appendDifferentialNoRegressionEvidence($model, $screenResult);
+        $screenResult['execution_contract'] = is_array(data_get($result, 'execution_contract'))
+            ? (array) data_get($result, 'execution_contract')
+            : app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe);
+        $screenResult = $this->appendDifferentialNoRegressionEvidence(
+            $model,
+            $screenResult,
+            $agent->strategy_family,
+            $agent->symbol,
+            $agent->timeframe,
+        );
+        $screenResult['trial_ledger'] = app(LabTrialLedgerService::class)->record(
+            $agent, $model, $agent->symbol, $agent->timeframe, 'screening', $screenResult, $run->run_id
+        );
         // Keep the complete result for the immutable response artifact, but
         // expose only a bounded projection to gate/learning selectors.
         $screenProjection = $this->evidence->projectionPayload($screenResult);
@@ -268,11 +385,21 @@ class LabAgentEvaluationService
             && data_get($screenResult, 'differential_no_regression.status') !== 'passed') {
             $model->update(['metadata' => array_merge($model->metadata ?? [], ['last_screen_result' => $screenProjection])]);
             $agent->update(['lifecycle_status' => 'technical_quarantine', 'decision_reason' => 'Coverage-rescue differential invariant breached; child quarantined without strategy-quality verdict.']);
+            try {
+                app(AgentProgressCardService::class)->sync(
+                    $agent->fresh(['modelVersion', 'generation']),
+                    null,
+                    [...$screenProjection, 'evidence_run_id' => $run->run_id],
+                );
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
             $this->evidence->recordLifecycle($agent, 'coverage_rescue_invariant_quarantine', [
                 'reason_code' => 'COVERAGE_RESCUE_NON_TARGET_IDENTITY_BREACH', 'quality_verdict' => 'withheld',
                 'differential_no_regression' => data_get($screenResult, 'differential_no_regression'),
             ], 'screening', $run->run_id, $run->attempt, self::class);
             $this->evidence->finishRun($run, 'completed', $screenResult, [], ['technical_quarantine' => true]);
+
             return;
         }
         // The fact/gate path is primary. Mutation learning runs through an
@@ -282,7 +409,7 @@ class LabAgentEvaluationService
         $screenDecision = $this->gateDecisions->recordScreening($agent, $screenProjection);
         $model->update(['metadata' => array_merge($model->metadata ?? [], [
             'last_screen_result' => $screenProjection,
-            'execution_contract' => LearningProtocolSafetyService::EXECUTION_CONTRACT,
+            'execution_contract' => $screenResult['execution_contract'],
         ])]);
         $agent->update([
             'lifecycle_status' => 'screened',
@@ -297,8 +424,29 @@ class LabAgentEvaluationService
                 ? ($screenDecision->decision === 'passed'
                     ? 'Cooldown causal rescue passed its strict screen contract; awaiting global full-validation selection.'
                     : 'Cooldown causal rescue rejected by its strict screen contract; no promotion path opened.')
-                : 'Incremental screening completed; awaiting global full-validation selection.',
+            : 'Incremental screening completed; awaiting global full-validation selection.',
         ]);
+
+        try {
+            app(AgentProgressCardService::class)->sync(
+                $agent->fresh(['modelVersion', 'generation']),
+                null,
+                [...$screenProjection, 'evidence_run_id' => $run->run_id],
+                $screenDecision,
+            );
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        try {
+            $this->knowledge->recordScreening(
+                $agent->fresh(['modelVersion', 'generation']),
+                [...$screenProjection, 'evidence_run_id' => $run->run_id],
+                $run->run_id,
+            );
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
 
         $this->handoffs->record($agent->generation, $agent, 'screened', 'completed', null, [
             'screen_result_hash' => hash('sha256', json_encode($screenProjection)), 'sample_count' => $agent->sample_count,
@@ -311,8 +459,23 @@ class LabAgentEvaluationService
         // generation open until the failed agent is recovered or explicitly
         // quarantined; otherwise the last successful peer could close an
         // incomplete generation as if every candidate had evidence.
-        if ($generation->agents->whereIn('lifecycle_status', ['draft', 'queued', 'screening', 'evaluation_error'])->isEmpty()) {
-            $generation->update(['status' => 'screened']);
+        if ($generation->agents->whereIn('lifecycle_status', [
+            'draft', 'queued', 'screening', 'evaluation_error',
+            'full_queued', 'full_validation', 'training',
+        ])->isEmpty()) {
+            $context = (array) ($generation->trigger_context ?? []);
+            $context['screening_terminal'] = [
+                'protocol' => 'generation_terminal_boundary_v1',
+                'status' => 'screened',
+                'completed_at' => now()->utc()->toIso8601String(),
+                'all_agents_terminal' => true,
+                'promotion_evidence' => false,
+            ];
+            $generation->update([
+                'status' => 'screened',
+                'completed_at' => now(),
+                'trigger_context' => $context,
+            ]);
             app(LabGenerationReportService::class)->record($generation->fresh(), 'screening_completed');
         }
         $this->evidence->finishRun($run, 'completed', $screenResult, [
@@ -321,6 +484,37 @@ class LabAgentEvaluationService
             'profit_factor' => $result['profit_factor'] ?? 0,
             'stress_profit_factor' => data_get($result, 'screening_survival.stress_cost_pf'),
         ], ['screen_decision_id' => $screenDecision->id]);
+    }
+
+    private function volumeEnabled($model): bool
+    {
+        // The no-volume control in a volume council still replays the
+        // canonical volume snapshot with volume_lane=none.  This keeps the
+        // control and every child on one immutable dataset hash; the lane
+        // remains disabled, so volume cannot alter the control signal.
+        return data_get($model->metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
+            || (bool) data_get($model->metadata, 'volume_research_contract.enabled', false)
+            || data_get($model->parameters, 'volume_lane', 'none') !== 'none';
+    }
+
+    private function volumeContextOrFail(string $symbol, string $timeframe): array
+    {
+        $quality = $this->volumes->inspect($symbol, $timeframe);
+        if (data_get($quality, 'status') !== 'passed') {
+            throw new RuntimeException("{$symbol} {$timeframe} canonical volume quality gate failed.");
+        }
+
+        return $quality;
+    }
+
+    /** Keep the optional no-volume control contract JSON-object shaped. */
+    private function disabledVolumeContext(): array
+    {
+        return [
+            'status' => 'not_requested',
+            'enabled' => false,
+            'promotion_evidence' => false,
+        ];
     }
 
     /** Diagnostic replay is a learning-only re-evaluation; it never creates a full-replay or paper candidate. */
@@ -356,49 +550,50 @@ class LabAgentEvaluationService
                 'X-Lab-Request-Id' => $requestId.'-preflight',
             ])->get(rtrim(config('services.ai_service.url'), '/').'/api/replay-status');
         } catch (\Throwable $error) {
-            if ($run) $this->evidence->recordLifecycle($run->agent, 'ai_health_preflight_error', [
-                'request_id' => $requestId, 'request_type' => 'GET /api/replay-status',
-            ], $run->phase, $run->run_id, $run->attempt, self::class, $error);
+            if ($run) {
+                $this->evidence->recordLifecycle($run->agent, 'ai_health_preflight_error', [
+                    'request_id' => $requestId, 'request_type' => 'GET /api/replay-status',
+                ], $run->phase, $run->run_id, $run->attempt, self::class, $error);
+            }
             throw new RuntimeException('AI replay health preflight failed: '.$error->getMessage(), 0, $error);
         }
 
-        if ($run) $this->evidence->recordArtifact($run, 'ai_health_preflight', [
-            'request_id' => $requestId, 'http_status' => $response->status(), 'body' => $response->json(),
-        ], ['request_type' => 'GET /api/replay-status', 'promotion_evidence' => false]);
+        if ($run) {
+            $this->evidence->recordArtifact($run, 'ai_health_preflight', [
+                'request_id' => $requestId, 'http_status' => $response->status(), 'body' => $response->json(),
+            ], ['request_type' => 'GET /api/replay-status', 'promotion_evidence' => false]);
+        }
 
         if ($response->failed()) {
-            if ($run) $this->evidence->recordLifecycle($run->agent, 'ai_health_preflight_failed', [
-                'request_id' => $requestId, 'http_status' => $response->status(),
-            ], $run->phase, $run->run_id, $run->attempt, self::class);
+            if ($run) {
+                $this->evidence->recordLifecycle($run->agent, 'ai_health_preflight_failed', [
+                    'request_id' => $requestId, 'http_status' => $response->status(),
+                ], $run->phase, $run->run_id, $run->attempt, self::class);
+            }
             throw new RuntimeException('AI replay health preflight returned HTTP '.$response->status().'.');
         }
         $status = $response->json();
         if (! is_array($status) || data_get($status, 'protocol') !== 'replay_liveness_v2_bounded_worker') {
-            if ($run) $this->evidence->recordLifecycle($run->agent, 'ai_health_protocol_error', [
-                'request_id' => $requestId, 'protocol' => data_get($status, 'protocol'),
-            ], $run->phase, $run->run_id, $run->attempt, self::class);
+            if ($run) {
+                $this->evidence->recordLifecycle($run->agent, 'ai_health_protocol_error', [
+                    'request_id' => $requestId, 'protocol' => data_get($status, 'protocol'),
+                ], $run->phase, $run->run_id, $run->attempt, self::class);
+            }
             throw new RuntimeException('AI replay health preflight returned an unknown liveness protocol.');
         }
         if ((int) data_get($status, 'active_requests', 0) > 0) {
-            if ($run) $this->evidence->recordLifecycle($run->agent, 'ai_health_lane_busy', [
-                'request_id' => $requestId, 'active_requests' => data_get($status, 'active_requests'),
-            ], $run->phase, $run->run_id, $run->attempt, self::class);
+            if ($run) {
+                $this->evidence->recordLifecycle($run->agent, 'ai_health_lane_busy', [
+                    'request_id' => $requestId, 'active_requests' => data_get($status, 'active_requests'),
+                ], $run->phase, $run->run_id, $run->attempt, self::class);
+            }
             throw new RuntimeException('AI replay lane is busy; strategy verdict withheld for bounded retry.');
         }
     }
 
     private function executionAssumptions(string $symbol): array
     {
-        return [
-            'spread_points' => str_starts_with($symbol, 'XAU') ? 20 : 12,
-            'point_size' => str_starts_with($symbol, 'XAU') ? 0.01 : 0.00001,
-            'commission_percent' => 0.01, 'slippage_points' => 2,
-            'swap_per_day_percent' => 0.002, 'allowed_sessions_utc' => ['1-22'],
-            'intrabar_policy' => 'conservative', 'max_gap_multiple' => 96,
-            // LabDatasetExportService is the canonical full-history gate.
-            'reject_unexpected_gaps' => false, 'stop_loss_percent' => 0.5,
-            'take_profit_percent' => 1.0, 'max_leverage' => 5,
-        ];
+        return app(ExecutionContractService::class)->parameters($symbol);
     }
 
     /** Convert Laravel's open-ended research marker (`any`) to Python null. */
@@ -406,13 +601,22 @@ class LabAgentEvaluationService
     {
         $candidate = trim((string) $value);
         foreach ($allowed as $option) {
-            if (strcasecmp($candidate, (string) $option) === 0) return (string) $option;
+            if (strcasecmp($candidate, (string) $option) === 0) {
+                return (string) $option;
+            }
         }
+
         return null;
     }
 
     /** A differential child may improve only its declared target lane. */
-    private function appendDifferentialNoRegressionEvidence($model, array $result): array
+    private function appendDifferentialNoRegressionEvidence(
+        $model,
+        array $result,
+        ?string $strategyFamily = null,
+        ?string $symbol = null,
+        ?string $timeframe = null,
+    ): array
     {
         $contract = (array) data_get($model->metadata, 'differential_router_contract', []);
         $router = (array) data_get($result, 'differential_router', []);
@@ -421,13 +625,26 @@ class LabAgentEvaluationService
         // through to the default trend_down target and every ordinary
         // regime_ensemble/hybrid/breakout candidate was falsely rejected with
         // FAILED_NON_TARGET_REGRESSION.
-        $isDifferential = $contract !== []
-            || data_get($router, 'enabled') === true
-            || str_contains((string) data_get($model->metadata, 'base_strategy', ''), 'differential_router');
-        if (! $isDifferential) return $result;
+        // Family identity is authoritative when the caller has the sealed
+        // LabAgent row. A hybrid transition/risk router can inherit an old
+        // `base_strategy` label while deliberately using hybrid execution;
+        // treating that label as proof of a differential contract creates a
+        // false FAILED_NON_TARGET_REGRESSION before the specialist reaches
+        // full validation. Keep the legacy metadata fallback only for older
+        // callers that do not have the family identity available.
+        $isDifferential = $strategyFamily !== null
+            ? ($strategyFamily === 'differential_router' || $contract !== [])
+            : ($contract !== []
+                || data_get($router, 'enabled') === true
+                || str_contains((string) data_get($model->metadata, 'base_strategy', ''), 'differential_router'));
+        if (! $isDifferential) {
+            return $result;
+        }
         $targetRegime = (string) data_get($contract, 'target_regime', data_get($result, 'differential_router.target_regime', 'trend_down'));
-        if (! in_array($targetRegime, ['trend_up', 'range', 'trend_down'], true)) return $result;
-        $parent = \App\Models\ModelVersion::find((int) data_get($contract, 'parent_model_version_id'));
+        if (! in_array($targetRegime, ['trend_up', 'range', 'trend_down'], true)) {
+            return $result;
+        }
+        $parent = ModelVersion::find((int) data_get($contract, 'parent_model_version_id'));
         $parentResult = (array) data_get($parent?->metadata, 'last_screen_result', []);
         $paired = (array) data_get($router, 'paired_lane', []);
         $parentRegimes = (array) data_get($parentResult, 'regime_performance', []);
@@ -447,8 +664,15 @@ class LabAgentEvaluationService
             : collect($childRegimes)->reject(fn ($row, $regime) => $regime === $targetRegime)->sum(fn ($row) => (float) data_get($row, 'profit_percent', 0));
         $parentFrozenHash = (string) data_get($contract, 'parent_frozen_hash');
         $parentHashMatches = $parentResult !== [] && hash_equals($parentFrozenHash, hash('sha256', json_encode($parentResult, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)));
+        $resultExecutionContract = (array) data_get($result, 'execution_contract', []);
+        $canonicalExecutionMatches = app(ExecutionContractService::class)->matches(
+            $resultExecutionContract,
+            (string) ($symbol ?: data_get($model, 'symbol', data_get($model->metadata, 'lab_symbol', 'XAUUSD'))),
+            (string) ($timeframe ?: data_get($model, 'timeframe', data_get($model->metadata, 'lab_timeframe', 'H1'))),
+        );
+        $legacyExecutionMatches = (string) data_get($result, 'execution_contract.version') === LearningProtocolSafetyService::EXECUTION_CONTRACT;
         $sameExecutionContract = (string) data_get($contract, 'execution_contract') === LearningProtocolSafetyService::EXECUTION_CONTRACT
-            && (string) data_get($result, 'execution_contract.version') === LearningProtocolSafetyService::EXECUTION_CONTRACT;
+            && ($legacyExecutionMatches || $canonicalExecutionMatches);
         $entryIdentity = data_get($paired, 'non_target_entry_times_identity') === true;
         $status = $hasPairedLane
             && $parentHashMatches && $sameExecutionContract
@@ -466,6 +690,7 @@ class LabAgentEvaluationService
             'non_target_entry_times_identity' => $entryIdentity,
             'parent_frozen_hash_matches' => $parentHashMatches,
             'execution_contract_matches' => $sameExecutionContract,
+            'canonical_execution_contract_matches' => $canonicalExecutionMatches,
             'branch_hashes' => data_get($paired, 'non_target_branch_hashes', []),
             'parent_non_target_trade_count' => $parentNonTargetTrades, 'child_non_target_trade_count' => $childNonTargetTrades,
             'parent_non_target_net_profit_percent' => round($parentNonTargetNet, 5), 'child_non_target_net_profit_percent' => round($childNonTargetNet, 5),
@@ -473,6 +698,7 @@ class LabAgentEvaluationService
             'target_delta_net_profit_percent' => data_get($paired, 'target_delta_net_profit_percent'),
             'epsilon' => .01, 'promotion_evidence' => false,
         ];
+
         return $result;
     }
 }

@@ -9,4 +9,6 @@ class LabGeneration extends Model
     protected $casts = ['trigger_context' => 'array', 'started_at' => 'datetime', 'completed_at' => 'datetime'];
     public function laboratory(): BelongsTo { return $this->belongsTo(AiLaboratory::class, 'ai_laboratory_id'); }
     public function agents(): HasMany { return $this->hasMany(LabAgent::class); }
+    public function parentSelectionDecisions(): HasMany { return $this->hasMany(LabParentSelectionDecision::class, 'lab_generation_id'); }
+    public function evolutionArchiveEntries(): HasMany { return $this->hasMany(LabEvolutionArchiveEntry::class, 'lab_generation_id'); }
 }

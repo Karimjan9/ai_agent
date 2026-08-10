@@ -9,7 +9,11 @@ use RuntimeException;
 
 class LabIncrementalEvaluationService
 {
-    public function __construct(private CandlePayloadService $candles, private StrategyParameterSchemaService $schemas) {}
+    public function __construct(
+        private CandlePayloadService $candles,
+        private StrategyParameterSchemaService $schemas,
+        private RuntimeEnsemblePolicyService $runtimeEnsembles,
+    ) {}
 
     /**
      * Re-checks the current champion on recent candles only. This is health
@@ -50,16 +54,23 @@ class LabIncrementalEvaluationService
             return ['checked' => false, 'degraded' => false];
         }
 
+        $runtime = $this->runtimeEnsembles->requestPayload($performance);
+        $portfolioMembers = (array) data_get($runtime, 'portfolio_members', []);
+        $isPortfolio = count($portfolioMembers) >= 2;
         $response = Http::timeout(300)->acceptJson()
             ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])->post(
             rtrim(config('services.ai_service.url'), '/').'/api/backtest/run-all',
             [
                 'symbol' => $performance->symbol,
                 'timeframe' => $performance->timeframe,
-                'strategy' => $model->strategy,
+                'strategy' => $isPortfolio ? 'portfolio_v1' : $model->strategy,
+                'base_strategy' => $isPortfolio ? 'portfolio' : $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $performance->strategy_family),
                 'evaluation_mode' => 'incremental',
                 'candles' => $rows,
-                'strategies' => [[
+                'parameters' => $isPortfolio ? (array) data_get($runtime, 'parameters', []) : ($model->parameters ?? []),
+                'portfolio_members' => $portfolioMembers,
+                'runtime_ensemble_policy' => (array) data_get($runtime, 'runtime_ensemble_policy', []),
+                'strategies' => $isPortfolio ? [] : [[
                     'strategy' => $model->strategy,
                     'base_strategy' => $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $performance->strategy_family),
                     'version' => $model->version,

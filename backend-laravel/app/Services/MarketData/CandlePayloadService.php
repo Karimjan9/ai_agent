@@ -7,8 +7,16 @@ use App\Models\Symbol;
 
 class CandlePayloadService
 {
-    public function candlesForBacktest(string $symbol, string $timeframe, ?int $limit = null): array
+    public function __construct(private MarketVolumeService $volumes) {}
+
+    public function candlesForBacktest(string $symbol, string $timeframe, ?int $limit = null, bool $includeVolume = false): array
     {
+        if ($limit === null && ! app()->environment('testing')) {
+            throw new \RuntimeException(
+                'Unbounded candle payload disabled. Use LabDatasetExportService::export() and dataset_path for replay.'
+            );
+        }
+
         $symbolModel = Symbol::query()
             ->where('code', $symbol)
             ->first();
@@ -27,15 +35,28 @@ class CandlePayloadService
             $candles = $query->orderBy('time')->get();
         }
 
+        $volumeMap = $includeVolume ? $this->volumes->forDataset($symbol, $timeframe) : [];
+
         return $candles
-            ->map(fn (Candle $candle): array => [
-                'time' => $candle->time->format('Y-m-d H:i:s'),
-                'open' => (float) $candle->open,
-                'high' => (float) $candle->high,
-                'low' => (float) $candle->low,
-                'close' => (float) $candle->close,
-                'volume' => (float) ($candle->volume ?? 0),
-            ])
+            ->map(function (Candle $candle) use ($volumeMap, $includeVolume): array {
+                $key = $candle->time->copy()->utc()->format('Y-m-d H:i:s');
+                $volume = $includeVolume
+                    ? ($volumeMap[$key] ?? ['volume' => 0.0, 'available' => false])
+                    : ['volume' => (float) ($candle->volume ?? 0), 'available' => null];
+                $row = [
+                    'time' => $key,
+                    'open' => (float) $candle->open,
+                    'high' => (float) $candle->high,
+                    'low' => (float) $candle->low,
+                    'close' => (float) $candle->close,
+                    'volume' => (float) $volume['volume'],
+                ];
+                if ($includeVolume) {
+                    $row['volume_available'] = (bool) $volume['available'];
+                }
+
+                return $row;
+            })
             ->all();
     }
 }

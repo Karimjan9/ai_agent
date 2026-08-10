@@ -2,9 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Models\BacktestRun;
 use App\Models\DailyReport;
-use App\Models\Mistake;
+use App\Services\CanonicalLabResultService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
@@ -15,15 +14,18 @@ class GenerateDailyTradingReport extends Command
 
     protected $description = 'Generate daily AI training report';
 
+    public function __construct(private CanonicalLabResultService $labResults)
+    {
+        parent::__construct();
+    }
+
     public function handle(): int
     {
         $date = $this->argument('date')
             ? Carbon::parse($this->argument('date'))
             : now();
 
-        $runs = BacktestRun::query()
-            ->whereDate('created_at', $date->toDateString())
-            ->get();
+        $runs = $this->labResults->forDate($date);
 
         if ($runs->isEmpty()) {
             $this->info('Bu kunda backtest topilmadi.');
@@ -31,33 +33,23 @@ class GenerateDailyTradingReport extends Command
             return self::SUCCESS;
         }
 
-        $topMistakes = Mistake::query()
-            ->whereDate('created_at', $date->toDateString())
-            ->selectRaw('mistake_type, COUNT(*) as total')
-            ->groupBy('mistake_type')
-            ->orderByDesc('total')
-            ->limit(5)
-            ->get()
-            ->map(fn (Mistake $item) => [
-                'type' => $item->mistake_type,
-                'count' => (int) $item->total,
-            ])
-            ->values()
-            ->toArray();
-
-        $totalTrades = $runs->sum('total_trades');
-        $totalWins = $runs->sum('wins');
-        $totalLosses = $runs->sum('losses');
-        $averageWinrate = round($runs->avg('winrate'), 2);
-        $averageProfit = round($runs->avg('net_profit_percent'), 2);
+        $aggregate = $this->labResults->aggregate($runs);
+        $topMistakes = $this->labResults->topMistakes($date);
+        $totalTrades = $aggregate['total_trades'];
+        $totalWins = $aggregate['total_wins'];
+        $totalLosses = $aggregate['total_losses'];
+        $averageWinrate = $aggregate['average_winrate'];
+        $averageProfit = $aggregate['average_profit'];
 
         $aiConclusion = $this->makeAiConclusion($averageWinrate, $averageProfit, $topMistakes);
         $nextPlan = $this->makeNextTrainingPlan($topMistakes);
         $reportData = [
-            'symbol' => $runs->pluck('symbol')->filter()->unique()->count() === 1 ? $runs->pluck('symbol')->filter()->first() : null,
-            'timeframe' => $runs->pluck('timeframe')->unique()->count() === 1 ? $runs->first()->timeframe : null,
-            'strategy' => $runs->pluck('strategy')->filter()->unique()->count() === 1 ? $runs->pluck('strategy')->filter()->first() : null,
-            'total_backtests' => $runs->count(),
+            'symbol' => $aggregate['symbol'],
+            'timeframe' => $aggregate['timeframe'],
+            'strategy' => $aggregate['strategy'],
+            'source' => CanonicalLabResultService::SOURCE,
+            'evidence_run_ids' => $runs->pluck('run_id')->values()->all(),
+            'total_backtests' => $aggregate['total_backtests'],
             'total_trades' => $totalTrades,
             'total_wins' => $totalWins,
             'total_losses' => $totalLosses,
@@ -73,6 +65,10 @@ class GenerateDailyTradingReport extends Command
                 'total_losses' => $totalLosses,
                 'average_winrate' => $averageWinrate,
                 'average_profit' => $averageProfit,
+                'average_profit_factor' => $aggregate['average_profit_factor'],
+                'average_drawdown' => $aggregate['average_drawdown'],
+                'source' => CanonicalLabResultService::SOURCE,
+                'run_ids' => $runs->pluck('run_id')->values()->all(),
                 'top_mistakes' => $topMistakes,
             ],
             'conclusion' => $aiConclusion,
@@ -115,7 +111,7 @@ class GenerateDailyTradingReport extends Command
         } elseif ($mainMistake === 'unknown_loss') {
             $text .= "Ko'p losslar aniq klassifikatsiya qilinmadi, market regime tahlili kerak.";
         } else {
-            $text .= "Xatolar chuqurroq tahlil qilinishi kerak.";
+            $text .= 'Xatolar chuqurroq tahlil qilinishi kerak.';
         }
 
         return $text;

@@ -233,6 +233,7 @@ class HistoricalDataQualityService
             $this->observedFixedHoliday($year, 1, 1),
             $this->nthWeekdayOfMonth($year, 1, CarbonImmutable::MONDAY, 3),
             $this->nthWeekdayOfMonth($year, 2, CarbonImmutable::MONDAY, 3),
+            CarbonImmutable::createFromTimestampUTC(easter_date($year))->subDays(3)->startOfDay(),
             CarbonImmutable::createFromTimestampUTC(easter_date($year))->subDays(2)->startOfDay(),
             $this->lastWeekdayOfMonth($year, 5, CarbonImmutable::MONDAY),
             $this->observedFixedHoliday($year, 7, 4),

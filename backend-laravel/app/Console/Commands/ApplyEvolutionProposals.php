@@ -2,45 +2,22 @@
 
 namespace App\Console\Commands;
 
-use App\Models\EvolutionProposal;
-use App\Services\EvolutionProposalApplicationService;
 use Illuminate\Console\Command;
 
+/**
+ * Retained as a safe compatibility command only.  EvolutionProposal is a
+ * legacy write plane; canonical evolution is created by LabPopulationService
+ * from immutable LabEvaluationRun evidence and never by this command.
+ */
 class ApplyEvolutionProposals extends Command
 {
     protected $signature = 'trading:evolve {--limit=5}';
 
-    protected $description = 'Apply pending strategy evolution proposals as new testing model versions';
+    protected $description = 'Deprecated compatibility alias; canonical Lab owns evolution';
 
-    public function handle(EvolutionProposalApplicationService $applicationService): int
+    public function handle(): int
     {
-        $proposals = EvolutionProposal::query()
-            ->with('modelVersion')
-            ->whereIn('status', ['pending', 'approved'])
-            ->oldest()
-            ->limit((int) $this->option('limit'))
-            ->get();
-
-        if ($proposals->isEmpty()) {
-            $this->info('No evolution proposals to apply.');
-
-            return self::SUCCESS;
-        }
-
-        $applied = 0;
-
-        foreach ($proposals as $proposal) {
-            $modelVersion = $applicationService->apply($proposal);
-
-            if (! $modelVersion) {
-                continue;
-            }
-
-            $applied++;
-            $this->info("Applied proposal #{$proposal->id}: {$modelVersion->strategy}");
-        }
-
-        $this->info("Evolution applied: {$applied}");
+        $this->warn('trading:evolve deprecated: EvolutionProposal apply qilinmadi. Canonical Lab evidence pipeline faol.');
 
         return self::SUCCESS;
     }

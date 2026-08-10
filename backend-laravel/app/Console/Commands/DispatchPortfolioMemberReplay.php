@@ -36,6 +36,7 @@ class DispatchPortfolioMemberReplay extends Command
             + (int) DB::table('job_batches')->where('name', 'Portfolio member full validation')->whereNull('finished_at')->count();
         if ($activeReplay > 0) {
             $this->warn('lab-full-validation band: mavjud replay tugamaguncha yangi portfolio replay dispatch qilinmadi.');
+
             return self::SUCCESS;
         }
 
@@ -48,6 +49,7 @@ class DispatchPortfolioMemberReplay extends Command
             // council seats. Wait for the standalone full wave to finish.
             if (! $generation || $generation->status !== 'completed') {
                 $this->info("{$symbol}: portfolio replay uchun generation tayyor emas.");
+
                 continue;
             }
 
@@ -72,6 +74,7 @@ class DispatchPortfolioMemberReplay extends Command
             }
             if ($members->isEmpty()) {
                 $this->info("{$symbol}: portfolio-member seed topilmadi.");
+
                 continue;
             }
 
@@ -79,8 +82,12 @@ class DispatchPortfolioMemberReplay extends Command
             $queuedAgents = collect();
             foreach ($members as $rank => $agent) {
                 $refreshMode = (bool) $this->option('refresh') || $refreshAll;
-                if (! $refreshMode && $agent->lifecycle_status !== 'screened') continue;
-                if ($refreshMode && ! in_array($agent->lifecycle_status, ['challenger', 'stagnated', 'rejected'], true)) continue;
+                if (! $refreshMode && $agent->lifecycle_status !== 'screened') {
+                    continue;
+                }
+                if ($refreshMode && ! in_array($agent->lifecycle_status, ['challenger', 'stagnated', 'rejected'], true)) {
+                    continue;
+                }
                 if ($refreshMode && $agent->modelVersion) {
                     $metadata = (array) $agent->modelVersion->metadata;
                     // The prior cohort result may have been produced against
@@ -104,11 +111,13 @@ class DispatchPortfolioMemberReplay extends Command
                 $queuedAgents->push($agent);
             }
 
-            if ($jobs === []) continue;
+            if ($jobs === []) {
+                continue;
+            }
             foreach ($queuedAgents->groupBy('lab_generation_id') as $generationAgents) {
                 $generationAgents->first()->generation()->update(['status' => 'full_validation', 'completed_at' => null]);
             }
-            $batch = Bus::batch($jobs)->name('Portfolio member full validation')->onConnection('database')->onQueue('lab-full-validation')->dispatch();
+            $batch = Bus::batch($jobs)->name('Portfolio member full validation')->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-full-validation')->dispatch();
             $this->info("{$symbol} G{$generation->generation}: portfolio member batch {$batch->id}; ".count($jobs).' replay queued.');
         }
 
@@ -125,14 +134,18 @@ class DispatchPortfolioMemberReplay extends Command
         $performanceIds = EliteAgentPortfolioMember::query()
             ->whereHas('portfolio', fn ($query) => $query->where('symbol', $symbol)->where('timeframe', $timeframe))
             ->pluck('model_market_performance_id');
-        if ($performanceIds->isEmpty()) return collect();
+        if ($performanceIds->isEmpty()) {
+            return collect();
+        }
 
         $modelIds = ModelMarketPerformance::query()
             ->whereIn('id', $performanceIds)
             ->where('symbol', $symbol)
             ->where('timeframe', $timeframe)
             ->pluck('model_version_id');
-        if ($modelIds->isEmpty()) return collect();
+        if ($modelIds->isEmpty()) {
+            return collect();
+        }
 
         return LabAgent::query()
             ->with(['modelVersion', 'generation'])
@@ -145,13 +158,14 @@ class DispatchPortfolioMemberReplay extends Command
 
     private function refreshMembers($agents)
     {
-        if (! $this->option('refresh')) return $agents;
+        if (! $this->option('refresh')) {
+            return $agents;
+        }
 
         // Refresh is deliberately explicit and limited to non-overfit
         // research candidates carrying the sealed portfolio contract. It
         // never reopens an overfit member or creates standalone evidence.
-        return $agents->filter(fn (LabAgent $agent): bool =>
-            in_array($agent->lifecycle_status, ['challenger', 'stagnated', 'rejected'], true)
+        return $agents->filter(fn (LabAgent $agent): bool => in_array($agent->lifecycle_status, ['challenger', 'stagnated', 'rejected'], true)
             && data_get($agent->modelVersion?->metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1'
         )->values();
     }

@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\ModelMarketPerformance;
 use App\Services\CalendarAlignmentEvidenceService;
 use App\Services\EliteAgentPortfolioGateService;
+use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -124,6 +125,7 @@ class ValidateElitePortfolios extends Command
                     'risk_per_trade' => 1,
                     'dataset_path' => $dataset,
                     'execution' => $this->executionAssumptions($symbol),
+                    'execution_contract' => app(ExecutionContractService::class)->for($symbol, $timeframe),
                 ]);
             if ($response->failed()) {
                 $this->warn("{$symbol}: portfolio replay transport failed ({$response->status()}); no gate status changed.");
@@ -198,14 +200,6 @@ class ValidateElitePortfolios extends Command
 
     private function executionAssumptions(string $symbol): array
     {
-        return [
-            'spread_points' => str_starts_with($symbol, 'XAU') ? 20 : 12,
-            'point_size' => str_starts_with($symbol, 'XAU') ? 0.01 : 0.00001,
-            'commission_percent' => 0.01, 'slippage_points' => 2,
-            'swap_per_day_percent' => 0.002, 'allowed_sessions_utc' => ['1-22'],
-            'intrabar_policy' => 'conservative', 'max_gap_multiple' => 96,
-            'reject_unexpected_gaps' => false, 'stop_loss_percent' => 0.5,
-            'take_profit_percent' => 1.0, 'max_leverage' => 5,
-        ];
+        return app(ExecutionContractService::class)->parameters($symbol);
     }
 }

@@ -5,6 +5,8 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use App\Models\LabEvaluationRun;
+use App\Services\LabImmutableEvidenceService;
 
 /**
  * Removes only an orphaned evaluator overlap lock.
@@ -40,7 +42,7 @@ class RecoverLabReplayMutex extends Command
                 'lab-gbpusd',
                 'lab-full-validation',
             ])
-            ->get(['id', 'queue', 'reserved_at', 'attempts']);
+            ->get(['id', 'queue', 'reserved_at', 'attempts', 'payload']);
 
         // A worker restart can leave both the queue reservation and the
         // overlap lock behind.  The normal path remains conservative.  The
@@ -48,7 +50,18 @@ class RecoverLabReplayMutex extends Command
         // that the old worker is gone and the AI service has no active replay;
         // it requeues the exact jobs and never deletes evidence.
         if ((bool) $this->option('force-stale')) {
-            $staleAfter = max(120, (int) $this->option('stale-after'));
+            $requestedStaleAfter = max(120, (int) $this->option('stale-after'));
+            // A full replay can finish its Python request before Laravel has
+            // persisted the immutable ledger, gate decisions, and lifecycle
+            // projection.  The evaluator may therefore report zero active
+            // requests while the reserved full job is still legitimately
+            // completing. Never interrupt that post-processing window with
+            // the short screening recovery threshold.
+            $hasFullReplay = $reservedJobs->contains(
+                fn ($job): bool => $job->queue === 'lab-full-validation'
+            );
+            $minimumStaleAfter = $hasFullReplay ? 900 : 120;
+            $staleAfter = max($minimumStaleAfter, $requestedStaleAfter);
             $cutoff = now()->timestamp - $staleAfter;
             if ($reservedJobs->isEmpty()) {
                 $this->line('No reserved evaluator job is present; nothing to recover.');
@@ -80,6 +93,11 @@ class RecoverLabReplayMutex extends Command
                 return self::FAILURE;
             }
 
+            $staleAgentIds = $stale->map(fn ($job): ?int => $this->labAgentIdFromPayload((string) $job->payload))
+                ->filter()
+                ->unique()
+                ->values();
+
             DB::transaction(function () use ($stale, $key): void {
                 DB::table('jobs')->whereIn('id', $stale->pluck('id')->all())->update([
                     'reserved_at' => null,
@@ -87,6 +105,29 @@ class RecoverLabReplayMutex extends Command
                 ]);
                 DB::table('cache_locks')->where('key', $key)->delete();
             });
+
+            // The evaluator is proven idle and the worker reservation is
+            // proven stale, so any open run for these exact agents belongs to
+            // the interrupted attempt. Close it as operational retry evidence
+            // before the requeued job can open a fresh attempt.
+            $evidence = app(LabImmutableEvidenceService::class);
+            LabEvaluationRun::query()
+                ->whereIn('lab_agent_id', $staleAgentIds->all())
+                ->where('status', 'started')
+                ->get()
+                ->each(function (LabEvaluationRun $run) use ($evidence): void {
+                    $evidence->finishIfOpen(
+                        $run,
+                        'retry_released',
+                        null,
+                        [],
+                        [
+                            'reason_code' => 'STALE_QUEUE_RESERVATION_RECOVERED',
+                            'recovery_protocol' => 'orphaned_replay_mutex_v1',
+                            'promotion_evidence' => false,
+                        ],
+                    );
+                });
             $this->warn('Requeued '. $stale->count().' stale evaluator reservation(s); no job or evidence was deleted.');
             return self::SUCCESS;
         }
@@ -104,5 +145,19 @@ class RecoverLabReplayMutex extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function labAgentIdFromPayload(string $payload): ?int
+    {
+        // Queue payloads are JSON-wrapped PHP-serialized commands, so the
+        // inner property quotes may be escaped as `\"`.  The old exact
+        // serialized-fragment regex missed those payloads and requeued the
+        // job without closing its open immutable run.  Anchor on the unique
+        // property name while accepting either representation.
+        if (preg_match('/labAgentId[^0-9]{1,24}(\d+)/', $payload, $matches) !== 1) {
+            return null;
+        }
+
+        return (int) $matches[1];
     }
 }

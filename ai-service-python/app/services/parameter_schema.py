@@ -104,6 +104,10 @@ PARAMETER_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
         "breakout_weight": {"type": float, "min": 0.0, "max": 3.0},
         "mean_reversion_weight": {"type": float, "min": 0.0, "max": 3.0},
         "minimum_confidence": {"type": float, "min": 0.1, "max": 6.0},
+        # Differential recall is allowed to lower the entry threshold only
+        # on the declared target regime; the replay layer preserves the
+        # parent threshold everywhere else.
+        "differential_target_min_signal_confidence": {"type": float, "min": 0.0, "max": 1.0},
         "high_volatility_wait": {"type": bool},
         "trend_down_strength_min": {"type": float, "min": 10, "max": 50},
         "trend_down_pullback_atr_fraction": {"type": float, "min": 0.1, "max": 2.0},
@@ -163,6 +167,18 @@ PARAMETER_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
 # of repeatedly trying nearly identical indicator values with a fixed 0.5/1.0
 # percent exit.  A value of zero disables the optional control.
 EXECUTION_PARAMETER_SCHEMA: dict[str, dict[str, Any]] = {
+    # Optional context-specialist lane.  It is intentionally shared by all
+    # families so a sealed child can be compared with its exact no-volume
+    # control without changing the alpha topology.
+    "volume_lane": {
+        "type": str,
+        "choices": {
+            "none",
+            "breakout_volume_confirmation",
+            "transition_volume_router",
+            "low_volume_risk_firewall",
+        },
+    },
     "atr_stop_multiplier": {"type": float, "min": 0.5, "max": 4.0},
     "atr_target_multiplier": {"type": float, "min": 0.75, "max": 8.0},
     "trailing_atr_multiplier": {"type": float, "min": 0.0, "max": 4.0},

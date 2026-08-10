@@ -9,6 +9,10 @@ if (!fs.existsSync(tokenFile)) {
 }
 const sharedEnv = { INTERNAL_API_TOKEN_FILE: tokenFile };
 const secretPrefixes = ['OPENAI_', 'CODEX_', 'INTERNAL_API_TOKEN'];
+// Production web traffic is served by Nginx/Apache + PHP-FPM. The built-in
+// server remains available only for the local Windows development profile.
+const externalWebServer = process.env.WEB_SERVER_MODE === 'external' || process.env.NODE_ENV === 'production';
+const queueConnection = process.env.QUEUE_CONNECTION || (externalWebServer ? 'redis' : 'database');
 
 const worker = (name, queue, timeoutSeconds = 1200) => ({
   name,
@@ -18,12 +22,19 @@ const worker = (name, queue, timeoutSeconds = 1200) => ({
   // Shared-AI contention is recoverable, but an evaluator outage must not
   // retry a single candidate for hours. Full validation gets a longer worker
   // lease; market screening remains bounded separately.
-    // retryUntil() on EvaluateLabAgentJob is the wall-clock safety bound.
-    // A high attempt ceiling is required because release-based queue
-    // fairness/AI-lane mutex middleware consumes attempts during contention.
-    args: `queue:work database --queue=${queue} --sleep=1 --tries=240 --timeout=${timeoutSeconds}`,
+  // EvaluateLabAgentJob uses retryUntil() as its wall-clock safety bound.
+  // Release-based mutex contention must not exhaust a numeric attempt cap.
+  args: `queue:work ${queueConnection} --queue=${queue} --sleep=1 --tries=0 --timeout=${timeoutSeconds} --max-time=3600`,
   autorestart: true,
-  max_memory_restart: '512M',
+  restart_delay: 5000,
+  // Screening responses carry immutable ledgers and can legitimately exceed
+  // 768M on XAUUSD. Keep a real ceiling, but leave enough headroom so PM2
+  // does not interrupt a healthy job after every few replay responses.
+  // A 5k-candle screening response is built and projected in PHP before the
+  // immutable artifact is externalized. Keep PM2 from killing a legitimate
+  // bounded replay around the 1G mark; the queue worker is still bounded by
+  // --timeout/--max-time and is restarted after a completed job when needed.
+  max_memory_restart: '2048M',
   time: true,
   env: sharedEnv,
   filter_env: secretPrefixes,
@@ -31,8 +42,8 @@ const worker = (name, queue, timeoutSeconds = 1200) => ({
 
 module.exports = {
   apps: [
-    {
-      name: 'neurotrader-web',
+    ...(!externalWebServer ? [{
+      name: 'neurotrader-web-dev',
       script: php,
       interpreter: 'none',
       args: ['-S', '127.0.0.1:8000', laravelRouter],
@@ -42,7 +53,7 @@ module.exports = {
       time: true,
       env: sharedEnv,
       filter_env: secretPrefixes,
-    },
+    }] : []),
     {
       name: 'neurotrader-ai',
       script: 'scripts/run-ai-service.py',
@@ -60,6 +71,7 @@ module.exports = {
       interpreter: php,
       args: 'schedule:headless-work',
       autorestart: true,
+      restart_delay: 5000,
       max_memory_restart: '256M',
       time: true,
       env: sharedEnv,
@@ -69,5 +81,7 @@ module.exports = {
     worker('lab-eurusd', 'lab-eurusd'),
     worker('lab-gbpusd', 'lab-gbpusd'),
     worker('lab-full-validation', 'lab-full-validation', 2400),
+    worker('strategy-lab', 'strategy-lab', 2400),
+    worker('backtests', 'backtests', 900),
   ],
 };

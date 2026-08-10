@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 
 class CoverageRescueAudit extends Command
 {
-    protected $signature = 'trading:coverage-rescue {--symbol=XAUUSD} {--generation= : Generation to audit; latest completed generation when omitted} {--seal : Append and seal the formal audit} {--open : Open the coverage-only child generation after a successful sealed audit}';
+    protected $signature = 'trading:coverage-rescue {--symbol=XAUUSD} {--generation= : Generation to audit; newest completed generation with eligible sparse-coverage evidence when omitted} {--seal : Append and seal the formal audit} {--open : Open the coverage-only child generation after a successful sealed audit}';
     protected $description = 'Audit dynamic edge/coverage evidence and optionally open only a frozen-parent coverage rescue generation';
 
     public function handle(CoverageRescueAuditService $auditor, LabPopulationService $population): int

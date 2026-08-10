@@ -5,7 +5,7 @@ import pandas as pd
 
 from app.schemas import SimpleBacktestRequest, SimpleTrade, StrategyRuntimeConfig
 from app.strategies.laboratory import apply_differential_router_strategy, apply_differential_trend_down_router_strategy, apply_hybrid_strategy, apply_regime_ensemble_strategy
-from app.services.backtester import _apply_portfolio_strategy, _pf_attribution, _portfolio_evidence, _portfolio_payload_for_signal
+from app.services.backtester import _apply_portfolio_strategy, _pf_attribution, _portfolio_evidence, _portfolio_payload_for_signal, _router_evidence
 
 
 def _portfolio_high_confidence_strategy(frame: pd.DataFrame, _parameters: dict | None) -> pd.DataFrame:
@@ -19,6 +19,20 @@ def _portfolio_low_confidence_strategy(frame: pd.DataFrame, _parameters: dict | 
     result = frame.copy()
     result["signal"] = "BUY"
     result["signal_confidence"] = 0.6
+    return result
+
+
+def _portfolio_sell_strategy(frame: pd.DataFrame, _parameters: dict | None) -> pd.DataFrame:
+    result = frame.copy()
+    result["signal"] = "SELL"
+    result["signal_confidence"] = 0.9
+    return result
+
+
+def _portfolio_unsafe_confidence_strategy(frame: pd.DataFrame, _parameters: dict | None) -> pd.DataFrame:
+    result = frame.copy()
+    result["signal"] = "BUY"
+    result["signal_confidence"] = 0.2
     return result
 
 
@@ -82,11 +96,32 @@ class RegimeEnsembleTest(unittest.TestCase):
 
         result = apply_regime_ensemble_strategy(frame)
 
-        self.assertTrue(result["selected_specialist"].isin(["trend_up", "trend_down", "breakout", "range", "session"]).all())
+        self.assertTrue(result["selected_specialist"].isin(["trend_up", "trend_down", "breakout", "range", "unknown_wait"]).all())
         self.assertTrue(result["signal"].isin(["BUY", "SELL", "WAIT"]).all())
         self.assertEqual(result.loc[3, "selected_specialist"], "breakout")
         self.assertEqual(result.loc[1, "selected_specialist"], "range")
+        self.assertEqual(result.loc[2, "selected_specialist"], "unknown_wait")
+        self.assertEqual(result.loc[2, "signal"], "WAIT")
         self.assertEqual(result.loc[4, "selected_specialist"], "trend_down")
+
+    def test_router_is_fail_closed_for_unseen_regime_even_when_session_has_signal(self):
+        frame = pd.DataFrame({
+            "time": pd.date_range("2026-01-01", periods=4, freq="h"),
+            "open": [100.0] * 4,
+            "high": [101.0] * 4,
+            "low": [99.0] * 4,
+            "close": [100.8] * 4,
+            "market_regime": ["new_regime"] * 4,
+            "volatility_regime": ["normal_volatility"] * 4,
+            "adx": [25.0] * 4,
+            "atr_regime": [1.0] * 4,
+        })
+
+        result = apply_regime_ensemble_strategy(frame)
+
+        self.assertTrue((result["signal"] == "WAIT").all())
+        self.assertTrue((result["signal_confidence"] == 0.0).all())
+        self.assertTrue((result["selected_specialist"] == "unknown_wait").all())
 
     def test_differential_router_keeps_parent_signal_and_confidence_outside_trend_down(self):
         rows = 120
@@ -220,6 +255,22 @@ class RegimeEnsembleTest(unittest.TestCase):
         self.assertTrue((selected == "performance:101").all())
         self.assertNotEqual("performance:101", "performance:202")
 
+    def test_portfolio_generic_member_cannot_trade_unknown_regime(self):
+        frame = pd.DataFrame({
+            "time": pd.date_range("2026-01-01", periods=4, freq="h"),
+            "open": [100.0] * 4, "high": [101.0] * 4, "low": [99.0] * 4,
+            "close": [100.8] * 4, "market_regime": ["unknown"] * 4,
+            "volatility_regime": ["normal_volatility"] * 4,
+        })
+        members = [{"strategy": "hybrid_v1", "member_key": "performance:unknown"}]
+
+        with patch("app.services.backtester.get_strategy", return_value=_portfolio_high_confidence_strategy):
+            prepared = _apply_portfolio_strategy(frame, members)
+
+        self.assertTrue((prepared["signal"] == "WAIT").all())
+        self.assertTrue((prepared["selected_specialist"] == "portfolio_wait").all())
+        self.assertTrue((prepared["portfolio_wait_reason"] == "unknown_state_wait").all())
+
     def test_portfolio_same_niche_binds_highest_current_confidence_execution(self):
         frame = pd.DataFrame({
             "time": pd.date_range("2026-01-01", periods=4, freq="h"),
@@ -240,6 +291,57 @@ class RegimeEnsembleTest(unittest.TestCase):
 
         self.assertTrue((prepared["selected_specialist"] == "performance:high").all())
         self.assertTrue((prepared["portfolio_member_count"] == 2).all())
+
+    def test_council_opposite_specialists_force_wait_and_record_reason(self):
+        frame = pd.DataFrame({
+            "time": pd.date_range("2026-01-01", periods=4, freq="h"),
+            "open": [100.0] * 4, "high": [101.0] * 4, "low": [99.0] * 4,
+            "close": [100.0] * 4, "market_regime": ["trend_up"] * 4,
+            "volatility_regime": ["normal_volatility"] * 4,
+        })
+        members = [
+            {"strategy": "buy_v1", "member_key": "performance:buy", "target_regime": "trend_up", "target_direction": "BUY"},
+            {"strategy": "sell_v1", "member_key": "performance:sell", "target_regime": "trend_up", "target_direction": "SELL"},
+        ]
+
+        def strategy_factory(strategy: str, _base: str | None = None):
+            return _portfolio_sell_strategy if strategy == "sell_v1" else _portfolio_high_confidence_strategy
+
+        with patch("app.services.backtester.get_strategy", side_effect=strategy_factory):
+            prepared = _apply_portfolio_strategy(frame, members)
+
+        self.assertTrue((prepared["signal"] == "WAIT").all())
+        self.assertTrue(prepared["portfolio_disagreement"].all())
+        self.assertTrue((prepared["portfolio_wait_reason"] == "council_disagreement").all())
+
+    def test_council_low_confidence_consensus_forces_wait(self):
+        frame = pd.DataFrame({
+            "time": pd.date_range("2026-01-01", periods=4, freq="h"),
+            "open": [100.0] * 4, "high": [101.0] * 4, "low": [99.0] * 4,
+            "close": [100.0] * 4, "market_regime": ["trend_up"] * 4,
+            "volatility_regime": ["normal_volatility"] * 4,
+        })
+        members = [
+            {"strategy": "low_v1", "member_key": "performance:low1", "target_regime": "trend_up"},
+            {"strategy": "low_v1", "member_key": "performance:low2", "target_regime": "trend_up"},
+        ]
+
+        with patch("app.services.backtester.get_strategy", return_value=lambda frame, _parameters: _portfolio_unsafe_confidence_strategy(frame, _parameters)):
+            prepared = _apply_portfolio_strategy(frame, members)
+
+        self.assertTrue((prepared["signal"] == "WAIT").all())
+        self.assertTrue((prepared["portfolio_wait_reason"] == "calibrated_confidence_below_minimum").all())
+
+    def test_router_objective_excludes_profit_factor(self):
+        result = _router_evidence(
+            pd.DataFrame({"signal": ["WAIT"], "portfolio_disagreement": [True], "portfolio_wait_reason": ["council_disagreement"]}),
+            SimpleBacktestRequest(), {"status": "observed"},
+            {"abstention_precision": .80, "opportunities": 20},
+            {"edge_quality": {"confidence_calibration": {"score": 80, "sample_count": 20}}},
+        )
+        self.assertEqual(result["status"], "assessed")
+        self.assertFalse(result["profit_factor_used_for_training"])
+        self.assertEqual(result["training_objective"], "calibrated_confidence_plus_abstention_precision")
 
     def test_pf_attribution_persists_regime_volatility_intersection(self):
         trades = [

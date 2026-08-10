@@ -7,6 +7,7 @@ use InvalidArgumentException;
 class StrategyParameterSchemaService
 {
     private const EXECUTION_SCHEMA = [
+        'volume_lane' => ['string', ['none', 'breakout_volume_confirmation', 'transition_volume_router', 'low_volume_risk_firewall']],
         'atr_stop_multiplier' => ['numeric', 0.5, 4.0],
         'atr_target_multiplier' => ['numeric', 0.75, 8.0],
         'trailing_atr_multiplier' => ['numeric', 0.0, 4.0],
@@ -101,7 +102,8 @@ class StrategyParameterSchemaService
         'differential_router' => [
             'trend_weight' => ['numeric', 0.0, 3.0], 'breakout_weight' => ['numeric', 0.0, 3.0],
             'mean_reversion_weight' => ['numeric', 0.0, 3.0], 'minimum_confidence' => ['numeric', 0.1, 6.0],
-            'high_volatility_wait' => ['boolean'], 'trend_down_strength_min' => ['numeric', 10, 50],
+            'high_volatility_wait' => ['boolean'], 'differential_target_min_signal_confidence' => ['numeric', 0.0, 1.0],
+            'trend_down_strength_min' => ['numeric', 10, 50],
             'trend_down_pullback_atr_fraction' => ['numeric', .1, 2.0], 'trend_down_risk_multiplier' => ['numeric', .1, 1.0],
             'trend_up_strength_min' => ['numeric', 10, 50], 'trend_up_pullback_atr_fraction' => ['numeric', .1, 2.0],
             'trend_up_roc_period' => ['integer', 4, 60], 'trend_up_roc_threshold' => ['numeric', .01, 5.0], 'trend_up_ema_period' => ['integer', 10, 300],
@@ -176,7 +178,8 @@ class StrategyParameterSchemaService
                 'range_reentry_required' => true, 'range_signal_mode' => 'reentry',
                 'session_filter_enabled' => false, 'session_start' => 0, 'session_end' => 24],
             'differential_router' => ['trend_weight' => 1.0, 'breakout_weight' => 1.0, 'mean_reversion_weight' => 1.0, 'minimum_confidence' => 1.0,
-                'high_volatility_wait' => true, 'trend_down_strength_min' => 20.0, 'trend_down_pullback_atr_fraction' => .75, 'trend_down_risk_multiplier' => .5,
+                'high_volatility_wait' => true, 'differential_target_min_signal_confidence' => .34,
+                'trend_down_strength_min' => 20.0, 'trend_down_pullback_atr_fraction' => .75, 'trend_down_risk_multiplier' => .5,
                 'trend_up_strength_min' => 20.0, 'trend_up_pullback_atr_fraction' => .75,
                 'trend_up_roc_period' => 12, 'trend_up_roc_threshold' => .2, 'trend_up_ema_period' => 50,
                 'trend_down_roc_period' => 12, 'trend_down_roc_threshold' => .2, 'trend_down_ema_period' => 50,

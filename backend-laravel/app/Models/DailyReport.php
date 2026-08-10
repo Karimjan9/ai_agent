@@ -19,11 +19,13 @@ class DailyReport extends Model
         'average_profit',
         'top_mistakes',
         'ai_conclusion',
-        'next_training_plan',   
+        'next_training_plan',
         'backtest_run_id',
         'metrics',
         'conclusion',
         'recommendations',
+        'source',
+        'evidence_run_ids',
     ];
 
     protected $casts = [
@@ -31,5 +33,6 @@ class DailyReport extends Model
         'top_mistakes' => 'array',
         'metrics' => 'array',
         'recommendations' => 'array',
+        'evidence_run_ids' => 'array',
     ];
 }

@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 class ReplayCooldownCausalCohort extends Command
 {
     protected $signature = 'trading:replay-cooldown-causal-cohort {sourceAgent : Frozen cooldown=4 parent agent id} {generation : Existing causal 4->2/3 generation number}';
+
     protected $description = 'Re-screen a frozen 4/2/3 cooldown cohort under a newer execution-state contract; never promotes a candidate.';
 
     public function handle(): int
@@ -23,20 +24,21 @@ class ReplayCooldownCausalCohort extends Command
             ->where('generation', (int) $this->argument('generation'))
             ->where('ai_laboratory_id', $source->generation->ai_laboratory_id)->firstOrFail();
 
-        $variants = $cohort->agents->filter(fn (LabAgent $agent) =>
-            data_get($agent->modelVersion?->metadata, 'causal_rescue_contract.kind') === 'loss_cooldown_single_gene'
+        $variants = $cohort->agents->filter(fn (LabAgent $agent) => data_get($agent->modelVersion?->metadata, 'causal_rescue_contract.kind') === 'loss_cooldown_single_gene'
             && (int) data_get($agent->modelVersion?->metadata, 'causal_rescue_contract.source_agent_id') === $source->id
         )->sortBy(fn (LabAgent $agent) => (int) data_get($agent->modelVersion?->parameters, 'loss_cooldown_candles'));
 
         if (! $source->modelVersion || $source->lifecycle_status !== 'screened' || (int) data_get($source->modelVersion->parameters, 'loss_cooldown_candles') !== 4
             || $variants->count() !== 2 || $variants->pluck('modelVersion.parameters.loss_cooldown_candles')->map(fn ($value) => (int) $value)->values()->all() !== [2, 3]) {
             $this->error('Expected one screened frozen parent at cooldown=4 and exactly its existing 4->2 / 4->3 causal variants.');
+
             return self::FAILURE;
         }
 
         $agents = collect([$source])->merge($variants)->values();
         if ($agents->contains(fn (LabAgent $agent) => in_array($agent->lifecycle_status, ['full_queued', 'training', 'challenger', 'forward_validated', 'paper', 'champion'], true))) {
             $this->error('Replay is refused once any member has entered full validation or promotion.');
+
             return self::FAILURE;
         }
 
@@ -69,8 +71,9 @@ class ReplayCooldownCausalCohort extends Command
         $batch = Bus::batch($agents->map(fn (LabAgent $agent) => new EvaluateLabAgentJob($agent->id, $agent->symbol, 'screen'))->all())
             ->name("{$source->symbol} cooldown state-machine replay G{$cohort->generation}: 4/2/3")
             ->allowFailures()
-            ->onConnection('database')->onQueue('lab-'.strtolower($source->symbol))->dispatch();
+            ->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-'.strtolower($source->symbol))->dispatch();
         $this->info("{$source->symbol} G{$cohort->generation}: {$batch->id}; frozen parent 4 plus causal variants 2/3 re-screened. No full-validation or paper promotion was dispatched.");
+
         return self::SUCCESS;
     }
 }

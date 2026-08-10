@@ -2,12 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ExtinctionEvent;
-use App\Models\FitnessEvaluation;
-use App\Models\GenomeCrossover;
-use App\Models\GenomeDiscovery;
-use App\Models\GenomeMutation;
-use App\Models\StrategyGenome;
 use App\Models\AiLaboratory;
 use App\Models\ModelMarketPerformance;
 use App\Models\MutationMemory;
@@ -18,6 +12,7 @@ use App\Models\PaperSignal;
 use App\Models\PaperSignalOutcome;
 use App\Services\LabPopulationService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 
 class EvolutionLabController extends Controller
 {
@@ -25,7 +20,7 @@ class EvolutionLabController extends Controller
     {
         $populations->ensureLaboratories();
         $lab = AiLaboratory::where('symbol', strtoupper($symbol))->firstOrFail();
-        $generation = $lab->generations()->with(['agents.modelVersion', 'agents.parentA', 'agents.parentB'])->latest('generation')->first();
+        $generation = $lab->generations()->with(['agents.modelVersion', 'agents.parentA', 'agents.parentB', 'agents.progressCard'])->latest('generation')->first();
         $generationReport = (array) data_get($generation?->trigger_context, 'latest_generation_report', []);
         $champions = ModelMarketPerformance::with('modelVersion')->where('symbol', $lab->symbol)
             ->where('timeframe', $lab->timeframe)->where('status', 'champion')->orderBy('strategy_family')->get();
@@ -109,6 +104,13 @@ class EvolutionLabController extends Controller
             $dsr = (float) data_get($metrics, 'statistical_evidence.deflated_sharpe.deflated_sharpe_probability', 0);
             $gates['Deflated Sharpe >= 95%'] = [$dsr >= 0.95, number_format($dsr * 100, 2).'%'];
         }
+        if (data_get($metrics, 'parameter_plateau.status') !== null) {
+            $plateau = data_get($metrics, 'parameter_plateau');
+            $gates['Parameter plateau +/-10%'] = [
+                data_get($plateau, 'status') === 'assessed' && (bool) data_get($plateau, 'pass', false),
+                data_get($plateau, 'parameter', 'not assessed').' / '.data_get($plateau, 'status', 'unknown'),
+            ];
+        }
         if ($champion) {
             $gates['Champion delta >= 5'] = [$forwardGain >= 5, number_format($forwardGain, 2)];
         }
@@ -128,84 +130,8 @@ class EvolutionLabController extends Controller
         ];
     }
 
-    public function index(): View
+    public function index(): RedirectResponse
     {
-        $metrics = [
-            'genomes' => StrategyGenome::count(),
-            'alive' => StrategyGenome::query()->where('status', 'alive')->count(),
-            'archived' => StrategyGenome::query()->where('status', 'archived')->count(),
-            'mutations' => GenomeMutation::count(),
-            'crossovers' => GenomeCrossover::count(),
-            'discoveries' => GenomeDiscovery::count(),
-        ];
-
-        $genomes = StrategyGenome::query()
-            ->with(['parentLineages.parentGenome', 'childLineages.childGenome'])
-            ->orderBy('family')
-            ->orderBy('generation')
-            ->latest()
-            ->take(30)
-            ->get();
-
-        $mutations = GenomeMutation::query()
-            ->with(['parentGenome', 'childGenome'])
-            ->latest()
-            ->take(12)
-            ->get();
-
-        $crossovers = GenomeCrossover::query()
-            ->with(['parentA', 'parentB', 'childGenome'])
-            ->latest()
-            ->take(12)
-            ->get();
-
-        $extinctions = ExtinctionEvent::query()
-            ->with('strategyGenome')
-            ->latest()
-            ->take(12)
-            ->get();
-
-        $discoveries = GenomeDiscovery::query()
-            ->orderByDesc('confidence_score')
-            ->latest()
-            ->take(12)
-            ->get();
-
-        $fitnessEvaluations = FitnessEvaluation::query()
-            ->with('strategyGenome')
-            ->orderByDesc('fitness_score')
-            ->take(12)
-            ->get();
-
-        $geneHeatmap = StrategyGenome::query()
-            ->where('fitness_score', '>', 0)
-            ->get()
-            ->flatMap(fn (StrategyGenome $genome): array => collect($genome->genes ?? [])
-                ->filter(fn ($value): bool => is_numeric($value))
-                ->map(fn ($value, string $key): array => [
-                    'gene' => $key,
-                    'value' => (float) $value,
-                    'fitness' => (float) $genome->fitness_score,
-                ])
-                ->values()
-                ->all())
-            ->groupBy('gene')
-            ->map(fn ($items) => [
-                'count' => $items->count(),
-                'min' => round((float) $items->min('value'), 4),
-                'max' => round((float) $items->max('value'), 4),
-                'avg_fitness' => round((float) $items->avg('fitness'), 2),
-            ]);
-
-        return view('evolution-lab.index', compact(
-            'metrics',
-            'genomes',
-            'mutations',
-            'crossovers',
-            'extinctions',
-            'discoveries',
-            'fitnessEvaluations',
-            'geneHeatmap',
-        ));
+        return redirect()->route('ai-laboratory.show', ['symbol' => 'XAUUSD']);
     }
 }

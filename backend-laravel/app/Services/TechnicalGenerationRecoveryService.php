@@ -18,7 +18,10 @@ class TechnicalGenerationRecoveryService
 {
     public const PROTOCOL = 'technical_generation_recovery_v1';
 
-    public function __construct(private LabImmutableEvidenceService $evidence) {}
+    public function __construct(
+        private LabImmutableEvidenceService $evidence,
+        private LabAgentPreflightService $preflight,
+    ) {}
 
     /** @return array{ready: bool, idle: bool, reason: string} */
     public function readiness(): array
@@ -48,7 +51,13 @@ class TechnicalGenerationRecoveryService
         $probe = $this->readiness();
         if (! $probe['ready'] || ! $probe['idle']) return ['retried' => 0, 'quarantined' => 0, 'skipped' => 0, 'reason' => $probe['reason']];
 
-        $mutexHeld = DB::table('cache_locks')->where('key', 'like', '%neurotrader-ai-heavy-replay%')->exists();
+        // A killed worker can leave a database lock row until its explicit
+        // expiry. An expired row is historical residue, not a live replay
+        // owner, and must not block bounded technical recovery.
+        $mutexHeld = DB::table('cache_locks')
+            ->where('key', 'like', '%neurotrader-ai-heavy-replay%')
+            ->where('expiration', '>', now()->timestamp)
+            ->exists();
         if ($mutexHeld) return ['retried' => 0, 'quarantined' => 0, 'skipped' => 0, 'reason' => 'REPLAY_MUTEX_HELD'];
 
         $cutoff = now()->subMinutes(max(30, $olderThanMinutes));
@@ -60,6 +69,12 @@ class TechnicalGenerationRecoveryService
 
         $retried = $quarantined = $skipped = 0;
         foreach ($agents as $agent) {
+            $inspection = $this->preflight->inspect($agent, 'screening');
+            if (! $inspection['passed']) {
+                if ($apply) $this->preflight->quarantine($agent, $inspection, 'technical_recovery_admission');
+                $quarantined++;
+                continue;
+            }
             $queue = 'lab-'.strtolower($agent->symbol);
             $queued = DB::table('jobs')->where('queue', $queue)->where('payload', 'like', '%labAgentId%'.$agent->id.'%')->exists();
             $metadata = (array) ($agent->modelVersion?->metadata ?? []);

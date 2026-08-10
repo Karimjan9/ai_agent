@@ -39,21 +39,47 @@ class AgentConstitutionService
         $document = (array) data_get($model->metadata, 'agent_constitution', []);
         if ($document === []) return ['status' => 'legacy_unsealed', 'reason' => 'Model predates constitution protocol.'];
         $hash = $document['hash'] ?? null; unset($document['hash']);
-        $integrity = is_string($hash) && hash_equals($hash, $this->hash($document));
+        // JSON round-tripping can represent 1.0 as 1. New constitutions use a
+        // numeric-type-insensitive canonical hash; the legacy comparison keeps
+        // previously sealed documents auditable without rewriting their
+        // evidence. Neither path permits a changed document to pass.
+        $canonicalHash = $this->hash($document);
+        $legacyHash = $this->legacyHash($document);
+        $canonicalMatch = is_string($hash) && hash_equals($hash, $canonicalHash);
+        $legacyMatch = is_string($hash) && hash_equals($hash, $legacyHash);
+        $integrity = $canonicalMatch || $legacyMatch;
         $architectureMatches = data_get($model->metadata, 'strategy_architecture') === ($document['architecture'] ?? null);
         $falsified = (float) data_get($result, 'pf_attribution.stress_cost.profit_factor', 99) < 1.05
             || (float) data_get($result, 'max_drawdown_percent', data_get($result, 'max_drawdown', 0)) > 15
             || (float) data_get($result, 'monte_carlo.risk_of_ruin_percent', 0) > 10;
         return ['status' => $integrity && $architectureMatches ? ($falsified ? 'falsified' : 'verified') : 'invalid',
             'integrity' => $integrity, 'architecture_matches' => $architectureMatches, 'falsified_by_evidence' => $falsified,
-            'hash' => $hash, 'document' => [...$document, 'hash' => $hash]];
+            'hash' => $hash, 'hash_version' => $canonicalMatch ? 'canonical_v2' : ($legacyMatch ? 'legacy_v1' : null),
+            'document' => [...$document, 'hash' => $hash]];
     }
 
     private function hash(array $document): string
     {
-        unset($document['hash']); ksort($document);
+        unset($document['hash']);
+        ksort($document);
+        // Do not preserve a zero fraction here: a persisted JSON 1.0 and 1
+        // are the same constitution value and must produce the same digest.
+        return hash('sha256', json_encode($document, JSON_UNESCAPED_SLASHES));
+    }
+
+    private function legacyHash(array $document): string
+    {
+        unset($document['hash']);
+        // The original draft always cast these two risk multipliers to float,
+        // but JSON decoding may return an exact 1.0 as an integer. Recreate
+        // that old typed representation only for legacy verification.
+        foreach (['high_volatility_risk_multiplier', 'trend_down_risk_multiplier'] as $key) {
+            if (array_key_exists($key, (array) data_get($document, 'risk_limits'))) {
+                data_set($document, "risk_limits.{$key}", (float) data_get($document, "risk_limits.{$key}"));
+            }
+        }
+        ksort($document);
         return hash('sha256', json_encode($document, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES));
     }
 
 }
-

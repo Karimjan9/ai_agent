@@ -18,21 +18,23 @@ from app.routers.backtests import router as backtests_router
 from app.schemas import SimpleBacktestRequest, SimpleBacktestResponse
 from app.services.backtester import (
     _advance_trailing_stop, _apply_execution_regime, _entry_price, _exit_distances, _exit_price, _intrabar_exit, _load_regime_source,
-    _load_simple_candles, _position_size_multiple, _volatility_risk_multiplier,
+    _load_simple_candles, _position_size_multiple, _volatility_risk_multiplier, _volume_risk_multiplier,
     run_simple_ema_rsi_backtest, run_simple_ema_rsi_backtest_on_dataframe,
 )
 from app.services.parameter_schema import validate_strategy_parameters
 from app.services.walk_forward import WalkForwardService
 from app.services.market_adaptive_replay import MarketAdaptiveReplayService
+from app.services.execution_contract import enforce_policy_boundary, execution_contract_metadata
 from app.services.statistical_validation import (
-    cscv_probability_of_backtest_overfitting,
     deflated_sharpe_ratio,
     per_trade_sharpe,
+    purged_cscv_probability_of_backtest_overfitting,
     returns_from_equity_curve,
 )
 from app.strategies.registry import get_strategy, list_strategy_agents, list_strategies
 from app.services.market_regime import apply_market_regime
 from app.services.foundation_prior import evaluate_foundation_prior
+from app.services.volume_features import add_volume_features, apply_volume_policy
 
 app = FastAPI(
     title="NeuroTrader Lab AI Service",
@@ -46,6 +48,8 @@ _active_replay_count = 0
 _last_replay_started_at: str | None = None
 _last_replay_finished_at: str | None = None
 _last_replay_termination: str | None = None
+_last_replay_cache_cleanup = 0.0
+_replay_cache_cleanup_lock = Lock()
 
 
 @app.middleware("http")
@@ -149,7 +153,12 @@ def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
 
 def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
     leaderboard = []
-    strategy_configs = payload.strategies or [
+    strategy_configs = payload.strategies or ([{
+        "strategy": "portfolio_v1",
+        "base_strategy": "portfolio",
+        "version": payload.version or "portfolio-v1",
+        "parameters": dict(payload.parameters or {}),
+    }] if payload.portfolio_members else [
         {
             "strategy": strategy_name,
             "base_strategy": strategy_name,
@@ -157,7 +166,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             "parameters": {},
         }
         for strategy_name in list_strategies()
-    ]
+    ])
 
     try:
         source_df = _load_simple_candles(payload)
@@ -168,7 +177,10 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 config = config.model_dump()
 
             strategy_name = config["strategy"]
-            parameters = validate_strategy_parameters(
+            is_portfolio_config = bool(payload.portfolio_members) and (
+                strategy_name == "portfolio_v1" or config.get("base_strategy") == "portfolio"
+            )
+            parameters = dict(config.get("parameters") or {}) if is_portfolio_config else validate_strategy_parameters(
                 strategy_name,
                 config.get("parameters") or {},
                 config.get("base_strategy"),
@@ -253,10 +265,17 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             else:
                 analysis = walk_forward.run(strategy_payload, source_df, calculate_strategy_score)
             result_data = analysis["result"]
+            # Fitness is a ranking aid, not a promotion decision. Expose the
+            # evidence components so Laravel can explain why a candidate was
+            # preferred without collapsing everything into raw profit.
+            fitness_score = calculate_strategy_score(result_data)
+            result_data["fitness_score"] = fitness_score
+            result_data["fitness_breakdown"] = build_fitness_breakdown(result_data, fitness_score)
             score = calculate_final_walk_forward_score(
                 int(analysis["forward_score"]),
                 int(analysis["robustness_score"]),
                 bool(analysis["is_overfit"]),
+                fitness_score,
             )
 
             leaderboard.append(
@@ -287,9 +306,24 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
         sharpe for item in leaderboard
         if (sharpe := per_trade_sharpe(returns_from_equity_curve(item["result"].get("equity_curve", [])))) is not None
     ]
-    cscv = cscv_probability_of_backtest_overfitting([
+    prior_trials = (payload.policy_context or {}).get("trial_ledger", {})
+    historical_sharpes = []
+    if isinstance(prior_trials, dict):
+        for value in prior_trials.get("trial_sharpes", []):
+            try:
+                normalized = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(normalized):
+                historical_sharpes.append(normalized)
+    trial_sharpes = historical_sharpes + trial_sharpes
+    window_intervals = prior_trials.get("window_intervals", []) if isinstance(prior_trials, dict) else []
+    cscv = purged_cscv_probability_of_backtest_overfitting([
         item["forward_window_scores"] for item in leaderboard
-    ])
+    ], window_intervals if isinstance(window_intervals, list) else [],
+        purge_bars=int(prior_trials.get("purge_bars", 0) or 0) if isinstance(prior_trials, dict) else 0,
+        embargo_bars=int(prior_trials.get("embargo_bars", 0) or 0) if isinstance(prior_trials, dict) else 0,
+    )
     for item in leaderboard:
         evidence = dict(item["result"].get("statistical_evidence", {}))
         evidence["deflated_sharpe"] = deflated_sharpe_ratio(
@@ -297,6 +331,8 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
         )
         item["result"]["statistical_evidence"] = evidence
         item["result"]["selection_validation"] = cscv
+        if isinstance(prior_trials, dict):
+            item["result"]["trial_ledger"] = {**prior_trials, "promotion_evidence": False}
 
     _attach_behavioral_diversity(leaderboard)
 
@@ -584,19 +620,69 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
 
 
 def _replay_cache_key(operation: str, payload: SimpleBacktestRequest) -> str:
-    """Fingerprint all deterministic inputs, including the evaluator itself."""
-    service_root = Path(__file__).resolve().parent
-    code = {
-        name: hashlib.sha256((service_root / name).read_bytes()).hexdigest()
-        for name in ["main.py", "services/backtester.py", "services/market_adaptive_replay.py"]
-    }
+    """Fingerprint every local evaluator dependency and the sealed datasets."""
+    code = _runtime_dependency_manifest()
     body = {
-        "protocol": "immutable_replay_compiler_v1",
+        "protocol": "immutable_replay_compiler_v2",
         "operation": operation,
         "payload": payload.model_dump(mode="json"),
         "code": code,
+        "datasets": _dataset_dependency_manifest(payload),
     }
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
+
+
+def _runtime_dependency_manifest() -> dict[str, object]:
+    """Hash the complete Python app, including registry and validation modules.
+
+    A short hand-maintained file list is unsafe here: adding a strategy,
+    changing a walk-forward/statistical helper, or editing a transitive local
+    import must invalidate old replay evidence automatically.
+    """
+    app_root = Path(__file__).resolve().parent
+    files: dict[str, str] = {}
+    for path in sorted(app_root.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        files[path.relative_to(app_root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    for name in ("requirements.txt", "pyproject.toml", "poetry.lock"):
+        path = app_root.parent / name
+        if path.is_file():
+            files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    return {
+        "protocol": "runtime_dependency_manifest_v2",
+        "python": sys.version,
+        "files": files,
+    }
+
+
+def _dataset_dependency_manifest(payload: SimpleBacktestRequest) -> dict[str, object]:
+    paths = [payload.dataset_path, payload.regime_dataset_path]
+    manifest: dict[str, object] = {}
+    for index, raw_path in enumerate(paths):
+        if not raw_path:
+            continue
+        key = "dataset" if index == 0 else "regime_dataset"
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = (Path(__file__).resolve().parent.parent / path).resolve()
+        item: dict[str, object] = {"requested_path": raw_path, "resolved_path": str(path)}
+        manifest_path = Path(str(path) + ".manifest.json")
+        if manifest_path.is_file():
+            try:
+                manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+                item["manifest_sha256"] = manifest_payload.get("sha256")
+                item["manifest_file_hash"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+            except (OSError, json.JSONDecodeError):
+                item["manifest_file_hash"] = None
+        elif path.is_file():
+            item["file_hash"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            item["missing"] = True
+        manifest[key] = item
+    return manifest
 
 
 def _replay_cache_path(cache_key: str) -> Path:
@@ -621,18 +707,63 @@ def _store_immutable_replay_cache(cache_key: str, value: dict[str, object]) -> N
         # Atomic replace prevents a timeout/restart from ever exposing a
         # partial diagnostic as if it were a completed immutable replay.
         temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"key": cache_key, "value": value}, ensure_ascii=False, separators=(",", ":"), default=str), encoding="utf-8")
+        temporary.write_text(json.dumps({
+            "protocol": "immutable_replay_cache_v2",
+            "key": cache_key,
+            "created_at": pd.Timestamp.utcnow().isoformat(),
+            "value": value,
+        }, ensure_ascii=False, separators=(",", ":"), default=str), encoding="utf-8")
         temporary.replace(path)
+        _cleanup_replay_cache(path.parent)
     except OSError:
         # Cache failure is operational-only.  Replay evidence and all gates
         # continue through the normal deterministic worker path.
         return
 
 
+def _cleanup_replay_cache(root: Path) -> None:
+    """Apply TTL and size bounds so immutable cache cannot fill the disk."""
+    global _last_replay_cache_cleanup
+    now = time.time()
+    interval = max(30, int(os.getenv("AI_REPLAY_CACHE_CLEANUP_INTERVAL_SECONDS", "300")))
+    if now - _last_replay_cache_cleanup < interval:
+        return
+    with _replay_cache_cleanup_lock:
+        if now - _last_replay_cache_cleanup < interval:
+            return
+        _last_replay_cache_cleanup = now
+        retention_days = max(1, int(os.getenv("AI_REPLAY_CACHE_RETENTION_DAYS", "14")))
+        max_bytes = max(64 * 1024 * 1024, int(os.getenv("AI_REPLAY_CACHE_MAX_BYTES", str(2 * 1024 * 1024 * 1024))))
+        cutoff = now - retention_days * 86400
+        files = []
+        try:
+            for path in root.glob("*.json"):
+                try:
+                    stat = path.stat()
+                    files.append((path, stat.st_mtime, stat.st_size))
+                    if stat.st_mtime < cutoff:
+                        path.unlink()
+                except OSError:
+                    continue
+
+            files = [(path, mtime, size) for path, mtime, size in files if path.exists()]
+            total = sum(size for _, _, size in files)
+            for path, _, size in sorted(files, key=lambda item: item[1]):
+                if total <= max_bytes:
+                    break
+                try:
+                    path.unlink()
+                    total -= size
+                except OSError:
+                    continue
+        except OSError:
+            return
+
+
 def _with_replay_compiler_metadata(value: dict[str, object], cache_key: str, status: str) -> dict[str, object]:
     result = dict(value)
     compiler = {
-        "protocol": "immutable_replay_compiler_v1",
+        "protocol": "immutable_replay_compiler_v2",
         "status": status,
         "cache_key": cache_key,
         "stages": ["immutable_payload", "core_replay", "expensive_diagnostics_after_core_gate"],
@@ -679,6 +810,15 @@ def _attach_behavioral_diversity(leaderboard: list[dict[str, object]]) -> None:
             "diversification_score": round(max(0, 100 * (1 - ((tail_overlap + tail_correlation) / 2))), 2),
             "rule": "portfolio selection rewards uncorrelated failure modes, not only standalone PF",
         }
+        item["result"]["failure_correlation"] = {
+            "protocol": "failure_correlation_matrix_v1",
+            "matrix": {
+                item["strategy"]: {value["strategy"]: value["loss_overlap"] for value in comparisons}
+            },
+            "max_loss_overlap": round(max((value["loss_overlap"] for value in comparisons), default=0.0), 3),
+            "promotion_evidence": False,
+            "rule": "Failure timing overlap is recorded separately from family labels and standalone PF.",
+        }
 
 
 def _minhash_similarity(left: list[int], right: list[int]) -> float:
@@ -699,6 +839,7 @@ def _correlation(left: list[float], right: list[float]) -> float:
 
 def _prepare_paper_payload(payload: SimpleBacktestRequest) -> SimpleBacktestRequest:
     """Validate the sealed single-agent or portfolio paper contract."""
+    enforce_policy_boundary(payload)
     if payload.portfolio_members:
         if len(payload.portfolio_members) < 2:
             raise ValueError("A portfolio paper contract requires at least two members.")
@@ -730,8 +871,12 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             if column not in df.columns:
                 df[column] = 0
             df[column] = pd.to_numeric(df[column], errors="coerce")
+        if "volume_available" not in df.columns:
+            df["volume_available"] = False
+        df["volume_available"] = df["volume_available"].fillna(False).astype(bool)
         df = df.dropna(subset=["time", "open", "high", "low", "close"]).sort_values("time").tail(1000).reset_index(drop=True)
         df = _apply_execution_regime(df, _load_regime_source(payload))
+        df = add_volume_features(df, payload.volume_context)
         previous_close = df["close"].shift(1)
         df["_management_atr"] = pd.concat([
             df["high"] - df["low"], (df["high"] - previous_close).abs(), (df["low"] - previous_close).abs(),
@@ -739,18 +884,33 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
         prepared = (
             _apply_portfolio_strategy(df, payload.portfolio_members)
             if payload.portfolio_members
-            else get_strategy(payload.strategy, payload.base_strategy)(df, payload.parameters)
+            else apply_volume_policy(
+                get_strategy(payload.strategy, payload.base_strategy)(df, payload.parameters),
+                payload.parameters,
+                payload.base_strategy or payload.strategy,
+            )
         )
         row = prepared.iloc[-1]
         signal = str(row.get("signal", "WAIT"))
         price = float(row["close"])
         meta = _abstention_meta_decision(row, prepared.iloc[-2] if len(prepared) > 1 else None, signal, price, payload)
+        router_wait_reason = str(row.get("portfolio_wait_reason", "") or "")
+        if signal == "WAIT" and router_wait_reason:
+            meta = {**meta, "decision": "WAIT", "reason": router_wait_reason, "router_wait": True}
         return {
             "signal": meta["decision"], "agent_signal": signal, "signal_time": pd.Timestamp(row["time"]).isoformat(), "price": price,
             "market_regime": str(row.get("market_regime", "unknown")),
             "volatility_regime": str(row.get("volatility_regime", "normal_volatility")),
             "confidence": float(row.get("signal_confidence", 1.0) or 0),
+            "volume_quality": dict(prepared.attrs.get("volume_quality") or {}),
+            "volume_context": {
+                "feature_available": bool(row.get("volume_feature_available", False)),
+                "ratio": float(row.get("volume_ratio", 0) or 0) if pd.notna(row.get("volume_ratio")) else None,
+                "regime": str(row.get("volume_regime", "unavailable")),
+                "policy_rejection": str(row.get("volume_policy_rejection", "")),
+            },
             "meta_agent": meta,
+            "router_wait_reason": router_wait_reason or None,
             "execution_contract_preview": _execution_contract(payload, row, signal, price, meta),
         }
     except (ValueError, FileNotFoundError) as exc:
@@ -776,8 +936,12 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
             if column not in df:
                 df[column] = 0
             df[column] = pd.to_numeric(df[column], errors="coerce")
+        if "volume_available" not in df.columns:
+            df["volume_available"] = False
+        df["volume_available"] = df["volume_available"].fillna(False).astype(bool)
         df = df.dropna(subset=["time", "open", "high", "low", "close"]).sort_values("time").tail(1000).reset_index(drop=True)
         df = _apply_execution_regime(df, _load_regime_source(payload))
+        df = add_volume_features(df, payload.volume_context)
         previous_close = df["close"].shift(1)
         df["_management_atr"] = pd.concat([
             df["high"] - df["low"], (df["high"] - previous_close).abs(), (df["low"] - previous_close).abs(),
@@ -785,7 +949,11 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
         prepared = (
             _apply_portfolio_strategy(df, payload.portfolio_members)
             if payload.portfolio_members
-            else get_strategy(payload.strategy, payload.base_strategy)(df, payload.parameters)
+            else apply_volume_policy(
+                get_strategy(payload.strategy, payload.base_strategy)(df, payload.parameters),
+                payload.parameters,
+                payload.base_strategy or payload.strategy,
+            )
         )
         if requested_time:
             expected = pd.Timestamp(requested_time)
@@ -801,6 +969,9 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
             row, previous = prepared.iloc[-1], (prepared.iloc[-2] if len(prepared) > 1 else None)
         signal = str(row.get("signal", "WAIT"))
         meta = _abstention_meta_decision(row, previous, signal, market_price, payload)
+        router_wait_reason = str(row.get("portfolio_wait_reason", "") or "")
+        if signal == "WAIT" and router_wait_reason:
+            meta = {**meta, "decision": "WAIT", "reason": router_wait_reason, "router_wait": True}
         return _execution_contract(payload, row, signal, market_price, meta)
     except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1024,14 +1195,21 @@ def _typed_agent_council(signal: str, regime: str, body_atr: float, cost: float,
 
 
 def _execution_contract(payload: SimpleBacktestRequest, row: pd.Series, signal: str, market_price: float, meta: dict[str, object]) -> dict[str, object]:
+    execution_metadata = execution_contract_metadata(payload)
     if meta.get("decision") not in {"BUY", "SELL"}:
-        return {"decision": "WAIT", "meta_agent": meta, "contract_version": "reality_parity_execution_v1"}
+        return {
+            "decision": "WAIT",
+            "meta_agent": meta,
+            "contract_version": "reality_parity_execution_v1",
+            "execution_contract": execution_metadata,
+            "execution_hash": execution_metadata["execution_hash"],
+        }
     direction = str(meta["decision"])
     entry = _entry_price(market_price, direction, payload)
     stop_distance, target_distance = _exit_distances(market_price, row, payload)
     stop = entry - stop_distance if direction == "BUY" else entry + stop_distance
     target = entry + target_distance if direction == "BUY" else entry - target_distance
-    size = _position_size_multiple(entry, stop, direction, payload) * _volatility_risk_multiplier(row, payload) * float(meta["position_size_multiplier"])
+    size = _position_size_multiple(entry, stop, direction, payload) * _volatility_risk_multiplier(row, payload) * _volume_risk_multiplier(row) * float(meta["position_size_multiplier"])
     data_hash = hashlib.sha256(json.dumps([[str(value) for value in item] for item in row[["time", "open", "high", "low", "close"]].to_frame().T.values], separators=(",", ":")).encode()).hexdigest()
     strategy_hash = hashlib.sha256(json.dumps({
         "strategy": payload.strategy,
@@ -1039,7 +1217,7 @@ def _execution_contract(payload: SimpleBacktestRequest, row: pd.Series, signal: 
         "parameters": payload.parameters,
         "portfolio_members": [member.model_dump() if hasattr(member, "model_dump") else member for member in payload.portfolio_members],
     }, sort_keys=True, default=str).encode()).hexdigest()
-    execution_hash = hashlib.sha256(json.dumps(payload.execution.model_dump(), sort_keys=True, default=str).encode()).hexdigest()
+    execution_hash = execution_metadata["execution_hash"]
     code_version = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     return {
         "decision": direction, "entry_price": round(entry, 8), "stop_loss": round(stop, 8), "take_profit": round(target, 8),
@@ -1047,20 +1225,132 @@ def _execution_contract(payload: SimpleBacktestRequest, row: pd.Series, signal: 
         "time_stop_candles": int(payload.parameters.get("time_stop_candles", 0) or 0), "management_atr": float(row.get("_management_atr", 0) or 0),
         "meta_agent": meta, "contract_version": "reality_parity_execution_v1",
         "data_hash": data_hash, "strategy_hash": strategy_hash, "execution_hash": execution_hash, "code_version": code_version,
+        "execution_contract": execution_metadata,
     }
 
 
 @app.post("/api/holdout/run")
 def run_sealed_holdout(payload: SimpleBacktestRequest) -> dict[str, object]:
     try:
-        parameters = validate_strategy_parameters(payload.strategy, payload.parameters, payload.base_strategy)
-        payload = payload.model_copy(update={"parameters": parameters})
+        if payload.portfolio_members:
+            if len(payload.portfolio_members) < 2:
+                raise ValueError("A portfolio holdout requires at least two sealed members.")
+            members = [
+                member.model_copy(update={
+                    "parameters": validate_strategy_parameters(
+                        member.strategy, member.parameters, member.base_strategy,
+                    ),
+                })
+                for member in payload.portfolio_members
+            ]
+            payload = payload.model_copy(update={
+                "strategy": "portfolio_v1",
+                "base_strategy": "portfolio",
+                "parameters": dict(payload.parameters or {}),
+                "portfolio_members": members,
+            })
+        else:
+            parameters = validate_strategy_parameters(payload.strategy, payload.parameters, payload.base_strategy)
+            payload = payload.model_copy(update={"parameters": parameters})
         df = _load_simple_candles(payload)
         result, period = MarketAdaptiveReplayService().sealed_holdout(payload, df)
         return {"score": calculate_strategy_score(result), "result": result, "rows": period["rows"], "period": period,
                 "protocol": "market_adaptive_replay_sealed_holdout"}
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _numeric(value: object, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _row_profit_factor(row: object) -> float | None:
+    if not isinstance(row, dict):
+        return None
+    for key in ("profit_factor", "net_pf", "pf"):
+        if key in row and row[key] is not None:
+            return _numeric(row[key], 0.0)
+    wins = _numeric(row.get("wins"), 0.0)
+    losses = _numeric(row.get("losses"), 0.0)
+    if wins or losses:
+        return wins / losses if losses else (99.0 if wins else 0.0)
+    return None
+
+
+def _rows_from_metric(value: object) -> list[dict[str, object]]:
+    if isinstance(value, dict):
+        return [row for row in value.values() if isinstance(row, dict)]
+    if isinstance(value, list):
+        return [row for row in value if isinstance(row, dict)]
+    return []
+
+
+def _fitness_quality(result: dict) -> dict[str, object]:
+    survival = result.get("screening_survival") or {}
+    monthly = result.get("monthly_passport") or {}
+    survival_months = (survival.get("calendar_month_survival") or {}).get("months")
+    attribution = result.get("pf_attribution") or {}
+    attribution_breakdown = attribution.get("breakdown") or {}
+    month_rows = _rows_from_metric(survival_months)
+    if not month_rows:
+        month_rows = _rows_from_metric(monthly.get("months"))
+    if not month_rows:
+        month_rows = _rows_from_metric(attribution_breakdown.get("by_month"))
+    if not month_rows:
+        month_rows = _rows_from_metric(attribution.get("by_month"))
+
+    month_pfs = [pf for row in month_rows if (pf := _row_profit_factor(row)) is not None and _numeric(row.get("trades"), 0) >= 2]
+    month_positive = sum(
+        pf >= 1.0 and _numeric(row.get("net_profit_percent"), 0.0) > 0
+        for row, pf in ((row, _row_profit_factor(row)) for row in month_rows)
+        if pf is not None and _numeric(row.get("trades"), 0) >= 2
+    )
+
+    regime_rows = _rows_from_metric(result.get("regime_performance"))
+    regime_pfs = [pf for row in regime_rows if (pf := _row_profit_factor(row)) is not None and _numeric(row.get("trades"), 0) >= 10]
+
+    stress = survival.get("stress_cost_pf")
+    if stress is None:
+        stress = (attribution.get("stress_cost") or {}).get("profit_factor")
+    if stress is None:
+        stress = (attribution_breakdown.get("stress_cost") or {}).get("profit_factor")
+
+    summary = attribution.get("summary") or attribution_breakdown.get("summary") or {}
+    explicit_worst_month = survival.get("worst_calendar_month_pf")
+    return {
+        "trade_count": int(_numeric(result.get("total_trades"), 0)),
+        "trade_confidence": round(min(1.0, _numeric(result.get("total_trades"), 0) / 30.0), 4),
+        "worst_month_pf": round(_numeric(explicit_worst_month), 4) if explicit_worst_month is not None else (round(min(month_pfs), 4) if month_pfs else None),
+        "month_consistency": round(month_positive / len(month_pfs), 4) if month_pfs else None,
+        "months_observed": len(month_pfs),
+        "worst_regime_pf": round(min(regime_pfs), 4) if regime_pfs else None,
+        "regime_coverage": round(sum(pf >= 1.0 for pf in regime_pfs) / len(regime_pfs), 4) if regime_pfs else None,
+        "regimes_observed": len(regime_pfs),
+        "stress_cost_pf": round(_numeric(stress), 4) if stress is not None else None,
+        "cost_to_gross_profit_percent": round(_numeric(summary.get("cost_to_gross_profit_percent")), 4),
+    }
+
+
+def build_fitness_breakdown(result: dict, fitness_score: int | None = None) -> dict[str, object]:
+    quality = _fitness_quality(result)
+    return {
+        "protocol": "fitness_quality_v2",
+        "score": int(fitness_score if fitness_score is not None else calculate_strategy_score(result)),
+        "components": quality,
+        "weights": {
+            "profit_and_pf": "base_score",
+            "monthly_stability": "worst_month_pf + positive_month_ratio",
+            "regime_coverage": "worst_regime_pf + observed_regime_ratio",
+            "execution_cost": "stress_cost_pf + cost_to_gross_profit_percent",
+            "sample_size": "trade_confidence",
+        },
+        "promotion_evidence": False,
+        "rule": "Ranking only; forward, paper, portfolio and live gates remain unchanged.",
+    }
 
 
 def calculate_strategy_score(result: dict) -> int:
@@ -1072,6 +1362,7 @@ def calculate_strategy_score(result: dict) -> int:
     max_consecutive_losses = result.get("max_consecutive_losses", 0)
     stability_score = result.get("stability_score", 0)
     regime_performance = result.get("regime_performance", {})
+    quality = _fitness_quality(result)
 
     score = 0
 
@@ -1130,6 +1421,18 @@ def calculate_strategy_score(result: dict) -> int:
     elif profitable_regimes == 0:
         score -= 8
 
+    # Reward consistency and cost survival explicitly. These are intentionally
+    # bounded ranking adjustments; a high score cannot bypass a failed gate.
+    if quality["month_consistency"] is not None:
+        score += (_numeric(quality["month_consistency"]) - .5) * 12
+        score += max(-1.0, min(1.0, _numeric(quality["worst_month_pf"]) - 1.0)) * 6
+    if quality["regime_coverage"] is not None:
+        score += (_numeric(quality["regime_coverage"]) - .5) * 8
+        score += max(-1.0, min(1.0, _numeric(quality["worst_regime_pf"]) - 1.0)) * 6
+    if quality["stress_cost_pf"] is not None:
+        score += max(-1.0, min(1.0, _numeric(quality["stress_cost_pf"]) - 1.05)) * 8
+        score -= max(0.0, _numeric(quality["cost_to_gross_profit_percent"]) - 15.0) * .15
+
     return round(max(min(score, 100), 0))
 
 
@@ -1137,8 +1440,12 @@ def calculate_final_walk_forward_score(
     forward_score: int,
     robustness_score: int,
     is_overfit: bool,
+    fitness_score: int | None = None,
 ) -> int:
-    score = (forward_score * 0.70) + (robustness_score * 0.30)
+    if fitness_score is None:
+        score = (forward_score * 0.70) + (robustness_score * 0.30)
+    else:
+        score = (forward_score * 0.55) + (robustness_score * 0.25) + (fitness_score * 0.20)
 
     if is_overfit:
         score -= 20

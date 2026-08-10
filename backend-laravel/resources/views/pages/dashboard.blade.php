@@ -23,7 +23,7 @@
         </article>
         <article class="card">
             <h2 class="section-title">MVP pipeline</h2>
-            <p class="muted">Data -> Strategy -> Backtest -> Result -> Mistake Journal -> Daily Report</p>
+            <p class="muted">Market data -> LabAgent -> EvaluationRun -> Evidence -> Champion/Paper -> Daily report</p>
         </article>
     </section>
 

@@ -31,6 +31,8 @@ class BacktestRun extends Model
         'profit_factor',
         'conclusion',
         'raw_result',
+        'started_at',
+        'finished_at',
     ];
 
     protected $casts = [

@@ -40,19 +40,21 @@ $scheduleArtisan = static function (string $command, array $arguments = []) {
 };
 
 $scheduleArtisan('trading:daily-report')->dailyAt('23:50');
-$scheduleArtisan('training:repair-metrics')->dailyAt('23:40')->withoutOverlapping();
 // --symbol berilmasa, command barcha active market_symbols instrumentlarini yangilaydi.
 $scheduleArtisan('market-data:update', ['--timeframe' => 'H1', '--limit' => 1000])
     ->hourly()
     ->withoutOverlapping();
+$scheduleArtisan('market-data:update', ['--symbol' => 'EURUSD', '--timeframe' => 'M15', '--limit' => 500])
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
 $scheduleArtisan('market-data:audit', ['--timeframe' => 'H1'])
     ->hourlyAt(10)
     ->withoutOverlapping();
+$scheduleArtisan('market-data:audit', ['EURUSD', '--timeframe' => 'M15'])
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
 $scheduleArtisan('trading:daily-workflow')
     ->dailyAt('00:30')
-    ->withoutOverlapping();
-$scheduleArtisan('trading:evolve', ['--limit' => 5])
-    ->weeklyOn(1, '01:30')
     ->withoutOverlapping();
 $scheduleArtisan('system:health-check')
     ->everyFiveMinutes()
@@ -74,11 +76,8 @@ $scheduleArtisan('market-intelligence:sync-cot', ['--limit' => 12])
     ->timezone('America/New_York')
     ->withoutOverlapping();
 if (config('services.secondary_intelligence.enabled', false)) {
-    $scheduleArtisan('knowledge:mine')->monthlyOn(1, '04:00')->withoutOverlapping();
-    $scheduleArtisan('future:simulate')->monthlyOn(1, '04:30')->withoutOverlapping();
     $scheduleArtisan('meta:audit')->monthlyOn(1, '03:00')->withoutOverlapping();
     $scheduleArtisan('civilization:sync')->monthlyOn(1, '03:30')->withoutOverlapping();
-    $scheduleArtisan('laws:discover')->monthlyOn(1, '04:00')->withoutOverlapping();
     $scheduleArtisan('causal:discover')->monthlyOn(1, '04:30')->withoutOverlapping();
     $scheduleArtisan('theory:generate')->monthlyOn(1, '05:00')->withoutOverlapping();
     $scheduleArtisan('reality:verify')->dailyAt('05:30')->withoutOverlapping();
@@ -101,7 +100,10 @@ $scheduleArtisan('trading:dispatch-lab')
     ->hourlyAt(5)
     ->withoutOverlapping();
 $scheduleArtisan('trading:dispatch-full-validation')
-    ->hourlyAt(20)
+    // Screening can finish after the old hourly selector has already run.
+    // Poll for the newest eligible screened generation so a ready cohort is
+    // picked up within one scheduler interval instead of waiting an hour.
+    ->everyFiveMinutes()
     ->withoutOverlapping();
 $scheduleArtisan('trading:dispatch-portfolio-member-replay')
     // This is a research-only second lane for strong niche members whose
@@ -161,6 +163,8 @@ $scheduleArtisan('trading:sync-economic-calendar --provider=currents_api_news')
     ->withoutOverlapping();
 $scheduleArtisan('trading:detect-drift')->hourlyAt(45)->withoutOverlapping();
 $scheduleArtisan('trading:release-holdouts')->hourlyAt(40)->withoutOverlapping();
-$scheduleArtisan('ops:backup-database', ['--retain' => 14])->dailyAt('02:15')->withoutOverlapping();
+// Database backups are managed outside this application. Do not create large
+// local dumps on the trading host unless an operator explicitly runs the
+// manual ops:backup-database command.
 // Gate-decision backfill is intentionally manual: it records reasons from
 // existing immutable replay evidence and never changes promotion status.

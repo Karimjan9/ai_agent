@@ -15,7 +15,7 @@ updated: 2026-07-12
 | Backtests | Submits a backtest, maps result, persists it | `app/Http/Controllers/BacktestController.php`, `ai-service-python/app/main.py` |
 | Strategies | Strategy implementations and registration | `ai-service-python/app/strategies/`, `app/strategies/registry.py` |
 | Backtest engine | Candle loading, indicators, scores, walk-forward and Monte Carlo | `ai-service-python/app/services/backtester.py`, `walk_forward.py`, `monte_carlo.py` |
-| AI Learning Laboratory | Pair-owned bounded populations, lineage, mutation memory, champion/challenger lifecycle | `LabPopulationService.php`, `LabAgentEvaluationService.php`, `MarketChampionService.php`, [[ai-learning-laboratory]] |
+| AI Learning Laboratory | Pair-owned populations, adaptive parent frontier, semantic islands, lineage, mutation memory, champion/challenger lifecycle | `LabPopulationService.php`, `AdaptiveParentFrontierService.php`, `EvolutionArchiveService.php`, `MarketChampionService.php`, [[ai-learning-laboratory]], [[adaptive-evolution]] |
 | Strategy Lab and DNA | Batch comparisons, parameter schema, DNA profiles | `StrategyLabController.php`, `StrategyParameterSchemaService.php`, `strategy_dna.py` |
 | Training workflow | Sessions, logs, automatic/daily training commands | `TrainingSessionController.php`, `app/Console/Commands/Run*Training*.php` |
 | Market data | Provider selection, data import/update, candle payloads | `app/Services/MarketData/`, `MarketDataController.php` |

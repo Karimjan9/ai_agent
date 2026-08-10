@@ -97,6 +97,21 @@ class P0EvidenceControlsTest extends TestCase
         $this->assertSame(0, $report['missing_open_hours']);
     }
 
+    public function test_xau_maundy_thursday_closure_is_not_counted_as_a_data_gap(): void
+    {
+        $symbol = Symbol::create(['code' => 'XAUUSD', 'display_name' => 'Gold', 'asset_class' => 'metal', 'is_active' => true]);
+        foreach (['2011-04-20 21:00:00', '2011-04-21 08:00:00'] as $time) {
+            Candle::create([
+                'symbol_id' => $symbol->id, 'timeframe' => 'H1', 'time' => $time,
+                'open' => 1485, 'high' => 1486, 'low' => 1484, 'close' => 1485, 'volume' => 1,
+            ]);
+        }
+
+        $report = app(HistoricalDataQualityService::class)->inspect('XAUUSD', 'H1', true);
+
+        $this->assertSame(0, $report['missing_open_hours']);
+    }
+
     public function test_xau_new_york_maintenance_hour_is_not_counted_as_a_data_gap(): void
     {
         $symbol = Symbol::create(['code' => 'XAUUSD', 'display_name' => 'Gold', 'asset_class' => 'metal', 'is_active' => true]);

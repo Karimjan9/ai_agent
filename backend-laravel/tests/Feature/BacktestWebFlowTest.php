@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\LabEvaluationRun;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -15,7 +16,7 @@ class BacktestWebFlowTest extends TestCase
         $response = $this->get('/backtests');
 
         $response->assertOk()
-            ->assertSee('Run Backtest')
+            ->assertSee('Run Canonical Lab Replay')
             ->assertSee('Initial balance');
     }
 
@@ -79,29 +80,16 @@ class BacktestWebFlowTest extends TestCase
             ->assertSee('sideways_market')
             ->assertSee("Trend paytida yaxshi, flat bozorda ko'p xato qiladi.");
 
-        $this->assertDatabaseHas('backtest_runs', [
-            'symbol' => 'XAUUSD',
-            'timeframe' => 'H1',
-            'strategy' => 'ema_rsi_v1',
-            'date_from' => '2023-01-01 00:00:00',
-            'date_to' => '2025-12-31 00:00:00',
-            'total_trades' => 248,
-            'wins' => 140,
-            'losses' => 108,
+        $run = LabEvaluationRun::query()->where('phase', 'manual_backtest')->latest('id')->firstOrFail();
+        $this->assertSame('completed', $run->status);
+        $this->assertSame(248, data_get($run->metrics, 'total_trades'));
+        $this->assertDatabaseHas('lab_evidence_artifacts', [
+            'run_id' => $run->run_id,
+            'artifact_type' => 'evaluation_response',
         ]);
-
-        $this->assertDatabaseHas('trades', [
-            'symbol' => 'XAUUSD',
-            'result' => 'LOSS',
-            'market_regime' => 'range',
-            'volatility_regime' => 'high_volatility',
-            'mistake_type' => 'sideways_market',
-        ]);
-
-        $this->assertDatabaseHas('mistakes', [
-            'mistake_type' => 'sideways_market',
-            'description' => 'EMA 50 va EMA 200 juda yaqin.',
-        ]);
+        $this->assertDatabaseCount('backtest_runs', 0);
+        $this->assertDatabaseCount('trades', 0);
+        $this->assertDatabaseCount('mistakes', 0);
 
         Http::assertSent(fn ($request) => $request->url() === 'http://127.0.0.1:9000/api/backtest/run'
             && $request['symbol'] === 'XAUUSD'

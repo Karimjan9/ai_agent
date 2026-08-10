@@ -80,7 +80,7 @@ class EconomicCalendarService
                 continue;
             }
             $at = data_get($row, 'Date') ?? data_get($row, 'date') ?? data_get($row, 'scheduled_at');
-            $title = (string) (data_get($row, 'Event') ?? data_get($row, 'event') ?? 'Economic event');
+            $title = $this->boundedTitle(data_get($row, 'Event') ?? data_get($row, 'event') ?? 'Economic event');
             $country = data_get($row, 'Country') ?? data_get($row, 'country');
             $currency = strtoupper((string) (data_get($row, 'Currency') ?? data_get($row, 'currency') ?? $this->currencyFromCountry((string) $country))) ?: null;
             // FMP calendar rows do not expose a durable public event id.  This
@@ -178,7 +178,7 @@ class EconomicCalendarService
 
     private function storeAlphaVantageHeadline(array $row, string $provider): void
     {
-        $title = (string) data_get($row, 'title', 'Market headline');
+        $title = $this->boundedTitle(data_get($row, 'title', 'Market headline'));
         $summary = (string) data_get($row, 'summary', '');
         $text = strtolower($title.' '.$summary);
         // Alpha Vantage is headline/sentiment data, not a scheduled economic
@@ -199,7 +199,7 @@ class EconomicCalendarService
 
     private function storeCurrentsHeadline(array $row, string $provider): void
     {
-        $title = (string) data_get($row, 'title', 'Market headline');
+        $title = $this->boundedTitle(data_get($row, 'title', 'Market headline'));
         $summary = (string) (data_get($row, 'description') ?? data_get($row, 'snippet') ?? '');
         $text = strtolower($title.' '.$summary);
         $macro = preg_match('/fomc|federal reserve|interest rate|central bank|cpi|inflation|nonfarm|payroll|nfp|gdp|unemployment|ecb|bank of england|boe/', $text) === 1;
@@ -222,5 +222,16 @@ class EconomicCalendarService
         if (preg_match('/\bgbp\b|sterling|bank of england|\bboe\b|united kingdom/', $text)) return 'GBP';
         if (preg_match('/\busd\b|dollar|federal reserve|fomc|nonfarm|payroll|\bnfp\b|united states/', $text)) return 'USD';
         return null;
+    }
+
+    /**
+     * Provider headlines are untrusted external text. Keep the searchable
+     * title within the economic_events VARCHAR limit; the original headline
+     * remains available in payload for audit and downstream NLP.
+     */
+    private function boundedTitle(mixed $value): string
+    {
+        $title = trim((string) $value);
+        return function_exists('mb_substr') ? mb_substr($title, 0, 255) : substr($title, 0, 255);
     }
 }

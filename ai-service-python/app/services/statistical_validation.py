@@ -1,11 +1,14 @@
 """Selection-bias diagnostics for strategy batches.
 
-The routines in this module deliberately consume only replay checkpoint data.
-The sealed holdout is not part of CSCV/PBO selection or parameter ranking.
+The routines in this module deliberately consume replay/checkpoint evidence
+only. The sealed holdout is not part of CSCV/PBO selection or parameter
+ranking. Score-only CSCV is explicitly diagnostic; purged/embargoed CSCV needs
+label intervals.
 """
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from itertools import combinations
 import math
 import random
@@ -86,6 +89,55 @@ def deflated_sharpe_ratio(returns: list[float], trial_sharpes: list[float]) -> d
     }
 
 
+def noise_label_permutation_test(
+    values: list[float], simulations: int = 200, seed: int = 42
+) -> dict[str, object]:
+    """Check whether the observed trade edge beats a sign-randomized null.
+
+    This is a bounded noise sanity test, not a leakage proof.  It preserves
+    the observed return magnitudes and randomizes only win/loss labels, so a
+    pipeline that manufactures a positive result from selection noise is
+    unlikely to survive the null distribution.
+    """
+    usable = [float(value) for value in values if value is not None and math.isfinite(float(value)) and float(value) != 0]
+    wins = sum(value for value in usable if value > 0)
+    losses = abs(sum(value for value in usable if value < 0))
+    observed_pf = wins / losses if losses else (99.0 if wins else 0.0)
+    if len(usable) < 30:
+        return {
+            "status": "insufficient_data",
+            "pass": False,
+            "method": "sign_permutation_noise_null",
+            "trade_count": len(usable),
+            "required_trade_count": 30,
+            "promotion_evidence": False,
+        }
+
+    rng = random.Random(seed)
+    magnitudes = [abs(value) for value in usable]
+    null_pfs: list[float] = []
+    for _ in range(max(50, int(simulations))):
+        randomized = [magnitude if rng.random() >= 0.5 else -magnitude for magnitude in magnitudes]
+        null_wins = sum(value for value in randomized if value > 0)
+        null_losses = abs(sum(value for value in randomized if value < 0))
+        null_pfs.append(null_wins / null_losses if null_losses else (99.0 if null_wins else 0.0))
+    exceedances = sum(value >= observed_pf for value in null_pfs)
+    p_value = (exceedances + 1) / (len(null_pfs) + 1)
+    return {
+        "status": "assessed",
+        "pass": p_value <= 0.10,
+        "method": "sign_permutation_noise_null",
+        "trade_count": len(usable),
+        "simulations": len(null_pfs),
+        "observed_profit_factor": round(observed_pf, 6),
+        "null_95_percentile_profit_factor": round(sorted(null_pfs)[max(0, int(len(null_pfs) * .95) - 1)], 6),
+        "p_value": round(p_value, 6),
+        "seed": seed,
+        "promotion_evidence": True,
+        "rule": "Randomized labels preserve return magnitudes; p<=0.10 is required for the robustness protocol.",
+    }
+
+
 def cscv_probability_of_backtest_overfitting(score_rows: list[list[float]]) -> dict[str, object]:
     """Estimate PBO with combinatorially symmetric cross-validation.
 
@@ -126,6 +178,10 @@ def cscv_probability_of_backtest_overfitting(score_rows: list[list[float]]) -> d
     return {
         "status": "assessed",
         "method": "combinatorially_symmetric_cross_validation",
+        "purge_embargo_applied": False,
+        "diagnostic_only": True,
+        "promotion_evidence": False,
+        "warning": "Score-only CSCV is a PBO diagnostic; it is not purged financial CPCV.",
         "candidate_count": len(aligned),
         "checkpoint_count": checkpoint_count,
         "split_count": len(split_results),
@@ -133,6 +189,195 @@ def cscv_probability_of_backtest_overfitting(score_rows: list[list[float]]) -> d
         "overfit_split_count": below_median,
         "splits": split_results,
     }
+
+
+def purged_cscv_probability_of_backtest_overfitting(
+    score_rows: list[list[float]],
+    window_intervals: list[dict[str, object]] | None = None,
+    *,
+    purge_bars: int = 0,
+    embargo_bars: int = 0,
+) -> dict[str, object]:
+    """Run CSCV only when checkpoint labels have explicit time intervals.
+
+    A score-only split cannot know whether a trade label from the training
+    side reaches into the test side.  This protocol therefore refuses to
+    call itself financial CPCV unless every checkpoint has ``start``,
+    ``end``, ``label_start`` and ``label_end`` metadata.  Purging removes
+    training windows whose labels overlap the test labels; embargo removes a
+    configurable number of neighbouring windows around the test fold.
+
+    ``purge_bars`` and ``embargo_bars`` are intentionally expressed as
+    neighbouring observed windows here.  A future candle-level implementation
+    can pass one interval per bar without changing the contract.
+    """
+    if not window_intervals:
+        diagnostic = cscv_probability_of_backtest_overfitting(score_rows)
+        diagnostic.update({
+            "method": "purged_embargoed_combinatorially_symmetric_cross_validation",
+            "protocol": "purged_embargoed_cscv_v1",
+            "purge_embargo_applied": False,
+            "diagnostic_only": True,
+            "promotion_evidence": False,
+            "reason": "Checkpoint label intervals are missing; score-only PBO remains diagnostic.",
+        })
+        return diagnostic
+
+    aligned = [row for row in score_rows if row and all(math.isfinite(float(score)) for score in row)]
+    checkpoint_count = min((len(row) for row in aligned), default=0)
+    interval_rows = list(window_intervals[:checkpoint_count])
+    if checkpoint_count < 4 or checkpoint_count % 2 or len(interval_rows) != checkpoint_count:
+        return {
+            "status": "insufficient_data",
+            "method": "purged_embargoed_combinatorially_symmetric_cross_validation",
+            "protocol": "purged_embargoed_cscv_v1",
+            "candidate_count": len(aligned),
+            "checkpoint_count": checkpoint_count,
+            "purge_embargo_applied": False,
+            "diagnostic_only": False,
+            "promotion_evidence": False,
+            "reason": "An even set of at least four aligned checkpoint intervals is required.",
+        }
+
+    intervals: list[dict[str, float]] = []
+    for index, row in enumerate(interval_rows):
+        if not isinstance(row, dict):
+            return _purged_cscv_metadata_error(len(aligned), checkpoint_count, "Interval metadata is not an object.")
+        start = _interval_number(row.get("start"))
+        end = _interval_number(row.get("end"))
+        label_start = _interval_number(row.get("label_start", row.get("start")))
+        label_end = _interval_number(row.get("label_end", row.get("end")))
+        if None in (start, end, label_start, label_end) or end < start or label_end < label_start:
+            return _purged_cscv_metadata_error(
+                len(aligned), checkpoint_count,
+                f"Checkpoint {index + 1} lacks valid start/end and label_start/label_end bounds.",
+            )
+        intervals.append({
+            "start": float(start), "end": float(end),
+            "label_start": float(label_start), "label_end": float(label_end),
+        })
+
+    purge_bars = max(0, int(purge_bars))
+    embargo_bars = max(0, int(embargo_bars))
+    half = checkpoint_count // 2
+    split_results: list[dict[str, object]] = []
+    below_median = 0
+    purged_indices: set[int] = set()
+    embargoed_indices: set[int] = set()
+    label_overlap_count = sum(
+        _intervals_overlap(intervals[left]["label_start"], intervals[left]["label_end"],
+                           intervals[right]["label_start"], intervals[right]["label_end"])
+        for left, right in combinations(range(checkpoint_count), 2)
+    )
+
+    for in_sample in combinations(range(checkpoint_count), half):
+        out_of_sample = tuple(index for index in range(checkpoint_count) if index not in in_sample)
+        blocked_by_purge: list[int] = []
+        blocked_by_embargo: list[int] = []
+        for index in in_sample:
+            overlaps_test_label = any(
+                _intervals_overlap(intervals[index]["label_start"], intervals[index]["label_end"],
+                                   intervals[test]["label_start"], intervals[test]["label_end"])
+                for test in out_of_sample
+            )
+            if overlaps_test_label:
+                blocked_by_purge.append(index)
+            if any(abs(index - test) <= purge_bars + embargo_bars for test in out_of_sample):
+                if index not in blocked_by_purge:
+                    blocked_by_embargo.append(index)
+
+        eligible = [index for index in in_sample if index not in blocked_by_purge and index not in blocked_by_embargo]
+        purged_indices.update(blocked_by_purge)
+        embargoed_indices.update(blocked_by_embargo)
+        if not eligible:
+            continue
+
+        in_scores = [mean(row[index] for index in eligible) for row in aligned]
+        selected_index = max(range(len(aligned)), key=lambda index: (in_scores[index], -index))
+        out_scores = [mean(row[index] for index in out_of_sample) for row in aligned]
+        ordered = sorted(range(len(aligned)), key=lambda index: (-out_scores[index], index))
+        oos_rank = ordered.index(selected_index) + 1
+        is_below_median = oos_rank > len(aligned) / 2
+        below_median += int(is_below_median)
+        split_results.append({
+            "in_sample_windows": [index + 1 for index in in_sample],
+            "eligible_in_sample_windows": [index + 1 for index in eligible],
+            "purged_windows": [index + 1 for index in blocked_by_purge],
+            "embargoed_windows": [index + 1 for index in blocked_by_embargo],
+            "out_of_sample_windows": [index + 1 for index in out_of_sample],
+            "selected_candidate_index": selected_index,
+            "selected_oos_rank": oos_rank,
+            "selected_oos_percentile": round((len(aligned) - oos_rank + 1) / len(aligned), 6),
+            "below_oos_median": is_below_median,
+        })
+
+    if not split_results:
+        return _purged_cscv_metadata_error(
+            len(aligned), checkpoint_count,
+            "Purging and embargo removed every in-sample fold; no valid split remains.",
+        ) | {
+            "purged_window_count": len(purged_indices),
+            "embargoed_window_count": len(embargoed_indices),
+        }
+
+    probability = below_median / len(split_results)
+    return {
+        "status": "assessed",
+        "method": "purged_embargoed_combinatorially_symmetric_cross_validation",
+        "protocol": "purged_embargoed_cscv_v1",
+        "candidate_count": len(aligned),
+        "checkpoint_count": checkpoint_count,
+        "split_count": len(split_results),
+        "probability_of_backtest_overfitting": round(probability, 6),
+        "overfit_split_count": below_median,
+        "purge_bars": purge_bars,
+        "embargo_bars": embargo_bars,
+        "purged_window_count": len(purged_indices),
+        "embargoed_window_count": len(embargoed_indices),
+        "label_overlap_detected": label_overlap_count > 0,
+        "label_overlap_pair_count": label_overlap_count,
+        "purge_embargo_applied": True,
+        "diagnostic_only": False,
+        "promotion_evidence": True,
+        "splits": split_results,
+    }
+
+
+def _purged_cscv_metadata_error(candidate_count: int, checkpoint_count: int, reason: str) -> dict[str, object]:
+    return {
+        "status": "insufficient_data",
+        "method": "purged_embargoed_combinatorially_symmetric_cross_validation",
+        "protocol": "purged_embargoed_cscv_v1",
+        "candidate_count": candidate_count,
+        "checkpoint_count": checkpoint_count,
+        "purge_embargo_applied": False,
+        "diagnostic_only": False,
+        "promotion_evidence": False,
+        "reason": reason,
+    }
+
+
+def _interval_number(value: object) -> float | None:
+    if isinstance(value, (datetime, date)):
+        return value.timestamp() if isinstance(value, datetime) else datetime(value.year, value.month, value.day).timestamp()
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed.timestamp()
+        except ValueError:
+            try:
+                return float(value)
+            except ValueError:
+                return None
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _intervals_overlap(left_start: float, left_end: float, right_start: float, right_end: float) -> bool:
+    return max(left_start, right_start) <= min(left_end, right_end)
 
 
 def bootstrap_profit_factor_lower_bound(values: list[float], simulations: int = 500, seed: int = 42) -> dict[str, object]:

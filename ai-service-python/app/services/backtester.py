@@ -20,11 +20,18 @@ from app.schemas import (
     Trade,
 )
 from app.services.data_loader import load_candles
+from app.services.execution_contract import enforce_policy_boundary, execution_contract_metadata
+from app.services.control_roots import control_root_for
 from app.services.indicators import add_indicators
 from app.services.market_regime import apply_market_regime
 from app.services.monte_carlo import MonteCarloService
 from app.services.strategy_dna import StrategyDnaService
 from app.services.statistical_validation import bootstrap_profit_factor_lower_bound
+from app.services.volume_features import (
+    add_volume_features,
+    apply_volume_policy,
+    volume_shadow_report,
+)
 from app.strategies.registry import get_strategy, strategy_label
 
 
@@ -67,10 +74,13 @@ def run_simple_ema_rsi_backtest_on_dataframe(
     include_differential_pair: bool = True,
     lightweight: bool = False,
 ) -> SimpleBacktestResponse:
+    policy_boundary = enforce_policy_boundary(payload)
     df = df.copy()
 
     if "volume" not in df.columns:
         df["volume"] = 0
+    if "volume_available" not in df.columns:
+        df["volume_available"] = False
 
     required_columns = {"time", "open", "high", "low", "close", "volume"}
     missing_columns = required_columns - set(df.columns)
@@ -78,9 +88,17 @@ def run_simple_ema_rsi_backtest_on_dataframe(
         missing = ", ".join(sorted(missing_columns))
         raise ValueError(f"Dataset is missing required columns: {missing}")
 
-    df["time"] = pd.to_datetime(df["time"])
+    data_quality = _data_quality_diagnostics(df)
+    if payload.execution.reject_unexpected_gaps and data_quality["hard_gate_failure_count"]:
+        raise ValueError(
+            "Historical data hard-gate failed: data_quality "
+            f"{data_quality['hard_gate_failures']}"
+        )
+
+    df["time"] = pd.to_datetime(df["time"], errors="coerce")
     for column in ["open", "high", "low", "close", "volume"]:
         df[column] = pd.to_numeric(df[column], errors="coerce")
+    df["volume_available"] = df["volume_available"].fillna(False).astype(bool)
 
     df = df.dropna(subset=["time", "open", "high", "low", "close"])
     df = df.sort_values("time").reset_index(drop=True)
@@ -91,6 +109,10 @@ def run_simple_ema_rsi_backtest_on_dataframe(
             f"Historical data hard-gate failed: {unexpected_gap_count} unexpected candle gaps."
         )
     df.attrs["unexpected_gap_count"] = unexpected_gap_count
+    data_quality["rows_after_cleaning"] = len(df)
+    data_quality["unexpected_gap_count"] = unexpected_gap_count
+    data_quality["status"] = "warning" if data_quality["hard_gate_failure_count"] or unexpected_gap_count else "passed"
+    df.attrs["data_quality"] = data_quality
 
     if payload.from_date:
         df = df[df["time"].dt.date >= payload.from_date]
@@ -161,10 +183,12 @@ def _run_prepared_simple_backtest(
     include_differential_pair: bool = True,
     lightweight: bool = False,
 ) -> SimpleBacktestResponse:
+    policy_boundary = enforce_policy_boundary(payload)
     source_df = df.copy()
     unexpected_gap_count = int(df.attrs.get("unexpected_gap_count", 0))
     regime_source = _load_regime_source(payload)
     df = _apply_execution_regime(df, regime_source)
+    df = add_volume_features(df, payload.volume_context)
     # Use only the completed candle range for management decisions.  ATR is
     # calculated here so every strategy family can evolve exits consistently.
     previous_close = df["close"].shift(1)
@@ -179,6 +203,12 @@ def _run_prepared_simple_backtest(
     else:
         strategy_function = get_strategy(payload.strategy, payload.base_strategy)
         df = strategy_function(df, payload.parameters)
+        df = apply_volume_policy(
+            df,
+            payload.parameters,
+            payload.base_strategy or payload.strategy,
+        )
+    df = _apply_signal_delay(df, payload.signal_delay_candles)
 
     balance = payload.initial_balance
     peak_balance = balance
@@ -257,6 +287,20 @@ def _run_prepared_simple_backtest(
 
         if position is None:
             signal, lane_confidence, lane_specialist = _effective_lane_signal(signal_row, differential_lane)
+            if signal not in {"BUY", "SELL"} and _is_volume_policy_veto(signal_row):
+                # Keep the policy-visible signal WAIT for paper/UI callers,
+                # but restore the causal opportunity in replay so the
+                # shadow ledger measures missed edge and recall honestly.
+                policy_signal = str(signal_row.get("pre_volume_signal", "WAIT"))
+                if policy_signal in {"BUY", "SELL"}:
+                    signal = policy_signal
+                    lane_confidence = float(
+                        signal_row.get("pre_volume_signal_confidence", 0.0) or 0.0
+                    )
+                    signal_row = signal_row.copy()
+                    signal_row["signal"] = signal
+                    signal_row["signal_confidence"] = lane_confidence
+                    signal_row["selected_specialist"] = lane_specialist
             if differential_lane is not None:
                 signal_row = signal_row.copy()
                 signal_row["signal"] = signal
@@ -353,6 +397,7 @@ def _run_prepared_simple_backtest(
                 ) * _volatility_risk_multiplier(signal_row, execution_payload) * _meta_risk_multiplier(signal_row, signal, execution_payload, meta_returns)
                 * _regime_transition_multiplier(signal_row, df.iloc[index - 2] if index >= 2 else None)
                 * _regime_specific_risk_multiplier(signal_row, execution_payload)
+                * _volume_risk_multiplier(signal_row)
                 * (_recovery_probe_risk_multiplier(execution_payload) if probe_active else 1.0),
                 "market_regime": signal_row.get("market_regime", "unknown"),
                 "volatility_regime": signal_row.get("volatility_regime", "normal_volatility"),
@@ -639,7 +684,19 @@ def _run_prepared_simple_backtest(
     opportunity_metrics = _opportunity_metrics(net_profit, entry_funnel_report, window_survival)
     certified_coverage_passport = _certified_coverage_passport(trades, shadow_ledger)
     opportunity_recall = _opportunity_recall(entry_funnel_report, shadow_ledger, trades)
+    router_evidence = (
+        {"status": "deferred_screening_subreplay", "promotion_evidence": False}
+        if lightweight
+        else _router_evidence(df, payload, portfolio_evidence, opportunity_recall, statistical_evidence)
+    )
     edge_claim = {} if lightweight else _edge_claim(payload, pf_attribution, statistical_evidence["edge_quality"])
+    volume_quality = dict(df.attrs.get("volume_quality") or {})
+    volume_shadow = (
+        {"status": "deferred_screening_subreplay", "promotion_evidence": False, "quality": volume_quality}
+        if lightweight
+        else volume_shadow_report(df, [trade.model_dump() for trade in trades], payload.volume_context)
+    )
+    volume_policy = _volume_policy_report(df, payload.parameters, volume_quality)
 
     response = SimpleBacktestResponse(
         strategy=strategy_label(payload.strategy),
@@ -668,9 +725,14 @@ def _run_prepared_simple_backtest(
         monte_carlo=monte_carlo,
         strategy_dna=strategy_dna,
         execution_assumptions=payload.execution.model_dump(),
-        data_quality={"status": "warning" if unexpected_gap_count else "passed", "rows": len(df),
-                      "gap_control": True, "hard_gate": payload.execution.reject_unexpected_gaps,
+        execution_contract=execution_contract_metadata(payload),
+        control_root=control_root_for(payload.base_strategy or payload.strategy),
+        policy_boundary=policy_boundary,
+        data_quality={**dict(df.attrs.get("data_quality") or {}),
+                      "status": "warning" if (dict(df.attrs.get("data_quality") or {}).get("hard_gate_failure_count", 0) or unexpected_gap_count) else "passed",
+                      "rows": len(df), "gap_control": True, "hard_gate": payload.execution.reject_unexpected_gaps,
                       "unexpected_gap_count": unexpected_gap_count,
+                      "spread_quality": _spread_quality(df, payload),
                       "regime_source": "closed_h1" if regime_source is not None else "execution_timeframe",
                       "decision_trace": {
                           "protocol": "candle_decision_trace_v1", "requested": emit_decision_trace,
@@ -678,6 +740,9 @@ def _run_prepared_simple_backtest(
                           "evaluated_candle_count": max(0, len(df) - 200),
                           "promotion_evidence": False,
                       }},
+        volume_quality=volume_quality,
+        volume_policy=volume_policy,
+        volume_shadow=volume_shadow,
         statistical_evidence=statistical_evidence,
         pf_attribution=pf_attribution,
         entry_funnel=entry_funnel_report,
@@ -695,6 +760,7 @@ def _run_prepared_simple_backtest(
         window_survival=window_survival,
         regime_ensemble=regime_ensemble,
         portfolio_evidence=portfolio_evidence,
+        router_evidence=router_evidence,
         opportunity_metrics=opportunity_metrics,
         certified_coverage_passport=certified_coverage_passport,
         opportunity_recall=opportunity_recall,
@@ -743,6 +809,97 @@ def _run_prepared_simple_backtest(
     return response
 
 
+def _data_quality_diagnostics(df: pd.DataFrame) -> dict[str, object]:
+    """Inspect source order/values before sorting or dropping anything."""
+    raw = df.copy()
+    timestamps = pd.to_datetime(raw["time"], errors="coerce")
+    valid_times = timestamps.dropna()
+    duplicate_count = int(valid_times.duplicated(keep="first").sum())
+    non_monotonic_pairs = int((valid_times.diff().dropna() <= pd.Timedelta(0)).sum())
+    numeric_invalid: dict[str, int] = {}
+    converted: dict[str, pd.Series] = {}
+    for column in ["open", "high", "low", "close", "volume"]:
+        values = pd.to_numeric(raw[column], errors="coerce")
+        converted[column] = values
+        numeric_invalid[column] = int(values.isna().sum())
+
+    required_missing = int((timestamps.isna() | converted["open"].isna() | converted["high"].isna()
+                            | converted["low"].isna() | converted["close"].isna()).sum())
+    valid_ohlc = ~(converted["open"].isna() | converted["high"].isna()
+                   | converted["low"].isna() | converted["close"].isna())
+    non_positive = valid_ohlc & ((converted["open"] <= 0) | (converted["high"] <= 0)
+                                 | (converted["low"] <= 0) | (converted["close"] <= 0))
+    invalid_geometry = valid_ohlc & (
+        (converted["high"] < converted["open"])
+        | (converted["high"] < converted["close"])
+        | (converted["low"] > converted["open"])
+        | (converted["low"] > converted["close"])
+        | (converted["high"] < converted["low"])
+    )
+    invalid_ohlc_rows = int((non_positive | invalid_geometry).sum())
+    failures = []
+    if int(timestamps.isna().sum()): failures.append("invalid_timestamp")
+    if duplicate_count: failures.append("duplicate_timestamp")
+    if non_monotonic_pairs: failures.append("non_monotonic_timestamp")
+    if required_missing: failures.append("missing_or_non_numeric_required_value")
+    if invalid_ohlc_rows: failures.append("invalid_ohlc_geometry")
+    return {
+        "protocol": "historical_data_quality_v2",
+        "rows_before_cleaning": len(raw),
+        "invalid_timestamp_count": int(timestamps.isna().sum()),
+        "duplicate_timestamp_count": duplicate_count,
+        "non_monotonic_timestamp_pairs": non_monotonic_pairs,
+        "missing_or_non_numeric_required_rows": required_missing,
+        "invalid_ohlc_rows": invalid_ohlc_rows,
+        "numeric_invalid_counts": numeric_invalid,
+        "hard_gate_failures": failures,
+        "hard_gate_failure_count": len(failures),
+        "repair_action": "rejected_before_sort_or_dropna" if failures else "none",
+        "promotion_evidence": True,
+    }
+
+
+def _spread_quality(df: pd.DataFrame, payload: SimpleBacktestRequest) -> dict[str, object]:
+    observed_column = next((column for column in ("spread_points", "spread", "bid_ask_spread") if column in df.columns), None)
+    return {
+        "status": "observed" if observed_column else "assumed",
+        "source": observed_column or "execution_config",
+        "provider_observed": observed_column is not None,
+        "column": observed_column,
+        "spread_points": float(payload.execution.spread_points),
+        "point_size": float(payload.execution.point_size),
+        "round_trip_cost_assumption": "spread + slippage + commission",
+        "promotion_evidence": observed_column is not None,
+    }
+
+
+def _apply_signal_delay(df: pd.DataFrame, delay: int) -> pd.DataFrame:
+    """Move signal outputs forward without moving observed market features."""
+    delay = max(0, int(delay or 0))
+    if delay == 0:
+        return df
+    delayed = df.copy()
+    signal_columns = [
+        column for column in delayed.columns
+        if column in {"signal", "parent_signal", "target_signal", "pre_volume_signal", "selected_specialist"}
+        or column.endswith("_signal") or column.endswith("_specialist")
+        or column.endswith("_signal_confidence") or column in {"signal_confidence", "parent_signal_confidence", "target_signal_confidence", "pre_volume_signal_confidence"}
+    ]
+    for column in sorted(set(signal_columns)):
+        shifted = delayed[column].shift(delay)
+        if "confidence" in column:
+            delayed[column] = pd.to_numeric(shifted, errors="coerce").fillna(0.0)
+        elif column.endswith("target") or column == "differential_target":
+            delayed[column] = shifted.fillna(False).astype(bool)
+        elif "specialist" in column:
+            delayed[column] = shifted.where(shifted.notna(), None)
+        else:
+            delayed[column] = shifted.fillna("WAIT")
+    delayed.attrs = dict(df.attrs)
+    delayed.attrs["signal_delay_candles"] = delay
+    return delayed
+
+
 def _apply_portfolio_strategy(df: pd.DataFrame, members: list[object]) -> pd.DataFrame:
     """Apply a sealed complementary-member router to one candle stream.
 
@@ -758,6 +915,11 @@ def _apply_portfolio_strategy(df: pd.DataFrame, members: list[object]) -> pd.Dat
         config = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
         function = get_strategy(str(config["strategy"]), config.get("base_strategy"))
         member = function(prepared.copy(), dict(config.get("parameters") or {}))
+        member = apply_volume_policy(
+            member,
+            dict(config.get("parameters") or {}),
+            str(config.get("base_strategy") or config.get("strategy") or ""),
+        )
         member_frames.append((config, member))
 
     # Canonical archives contain 100k+ candles and a portfolio replay is
@@ -771,6 +933,7 @@ def _apply_portfolio_strategy(df: pd.DataFrame, members: list[object]) -> pd.Dat
     prepared["selected_specialist"] = "portfolio_wait"
     prepared["portfolio_member_count"] = 0
     prepared["portfolio_disagreement"] = False
+    prepared["portfolio_wait_reason"] = ""
     # Object-valued metadata is kept on each signal row so the execution
     # contract can carry the selected member's exits into the position.  It is
     # observability plus deterministic replay input, never an outcome label.
@@ -863,6 +1026,8 @@ def _apply_portfolio_strategy_vectorized(
     buy_masks: list[pd.Series] = []
     sell_masks: list[pd.Series] = []
     confidence_series: list[pd.Series] = []
+    volume_risk_series: list[pd.Series] = []
+    volume_rejection_series: list[pd.Series] = []
     member_keys: list[str] = []
 
     for config, frame in member_frames:
@@ -872,6 +1037,10 @@ def _apply_portfolio_strategy_vectorized(
         if target_direction not in {None, "BUY", "SELL"}:
             raise ValueError(f"Unsupported portfolio target direction: {target_direction}")
         eligible = pd.Series(True, index=index)
+        # Unknown market state is an explicit abstention boundary. A generic
+        # member (target_regime omitted) must not turn missing regime evidence
+        # into a trade just because its local strategy emitted BUY/SELL.
+        eligible &= regime.isin(["trend_up", "trend_down", "range"])
         if target_regime:
             eligible &= regime.eq(str(target_regime))
         if target_volatility:
@@ -890,6 +1059,13 @@ def _apply_portfolio_strategy_vectorized(
         buy_masks.append(eligible & signals.eq("BUY"))
         sell_masks.append(eligible & signals.eq("SELL"))
         confidence_series.append(confidence)
+        volume_risk_series.append(pd.to_numeric(
+            frame.get("volume_risk_multiplier", pd.Series(1.0, index=index)),
+            errors="coerce",
+        ).fillna(1.0).clip(lower=0.1, upper=1.0))
+        volume_rejection_series.append(frame.get(
+            "volume_policy_rejection", pd.Series("", index=index)
+        ).astype(str))
         member_keys.append(_portfolio_member_key(config))
 
     prepared["signal"] = "WAIT"
@@ -897,9 +1073,12 @@ def _apply_portfolio_strategy_vectorized(
     prepared["selected_specialist"] = "portfolio_wait"
     prepared["portfolio_member_count"] = 0
     prepared["portfolio_disagreement"] = False
+    prepared["portfolio_wait_reason"] = ""
     prepared["portfolio_execution_parameters"] = pd.Series(
         [None] * len(index), index=index, dtype=object
     )
+    prepared["volume_risk_multiplier"] = 1.0
+    prepared["volume_policy_rejection"] = ""
     if not member_frames:
         return prepared
 
@@ -915,6 +1094,10 @@ def _apply_portfolio_strategy_vectorized(
     prepared.loc[sell_only, "signal"] = "SELL"
     prepared.loc[disagreement, "portfolio_disagreement"] = True
     prepared.loc[disagreement, "portfolio_member_count"] = eligible_count.loc[disagreement]
+    prepared.loc[disagreement, "portfolio_wait_reason"] = "council_disagreement"
+    no_specialist = eligible_count.eq(0)
+    prepared.loc[no_specialist & regime.eq("unknown"), "portfolio_wait_reason"] = "unknown_state_wait"
+    prepared.loc[no_specialist & regime.ne("unknown"), "portfolio_wait_reason"] = "no_specialist_for_state"
 
     # Average confidence uses only agreeing specialists. Selecting the
     # strongest current confidence uses strict `>` so ties preserve the first
@@ -937,6 +1120,14 @@ def _apply_portfolio_strategy_vectorized(
     prepared.loc[normal_action, "signal_confidence"] = (
         confidence_total.loc[normal_action] / agreeing_count.loc[normal_action].clip(lower=1)
     ).clip(lower=0.0, upper=1.0)
+    # The council refuses a low-confidence consensus as well as an
+    # opposite-direction disagreement. This is a fixed safety invariant,
+    # not a PF-trained threshold; calibration is evaluated separately.
+    low_confidence = normal_action & prepared["signal_confidence"].lt(0.35)
+    prepared.loc[low_confidence, "signal"] = "WAIT"
+    prepared.loc[low_confidence, "portfolio_wait_reason"] = "calibrated_confidence_below_minimum"
+    prepared.loc[low_confidence, "portfolio_member_count"] = eligible_count.loc[low_confidence]
+    normal_action = normal_action & ~low_confidence
     prepared.loc[normal_action, "portfolio_member_count"] = agreeing_count.loc[normal_action]
 
     # Execution metadata remains bound to the selected sealed member. Build
@@ -951,6 +1142,12 @@ def _apply_portfolio_strategy_vectorized(
         selected_config = member_frames[int(member_index)][0]
         selected_specialists[position] = member_keys[int(member_index)]
         execution_parameters[position] = dict(selected_config.get("parameters") or {})
+        prepared.at[label, "volume_risk_multiplier"] = float(
+            volume_risk_series[int(member_index)].loc[label]
+        )
+        prepared.at[label, "volume_policy_rejection"] = str(
+            volume_rejection_series[int(member_index)].loc[label]
+        )
     prepared["selected_specialist"] = pd.Series(selected_specialists, index=index, dtype=object)
     prepared["portfolio_execution_parameters"] = pd.Series(execution_parameters, index=index, dtype=object)
     return prepared
@@ -1284,13 +1481,82 @@ def _effective_lane_signal(signal_row: pd.Series, lane: str | None) -> tuple[str
     return current, current_confidence, str(signal_row.get("selected_specialist", "target_child"))
 
 
+def _is_volume_policy_veto(row: pd.Series | None) -> bool:
+    if row is None:
+        return False
+    rejection = str(row.get("volume_policy_rejection", "") or "")
+    return rejection.startswith((
+        "breakout_volume",
+        "transition_volume",
+        "low_volume_wait",
+    ))
+
+
 def _count_lane_signals(df: pd.DataFrame, lane: str | None) -> int:
     if lane is None:
-        return int(df.iloc[199:]["signal"].isin(["BUY", "SELL"]).sum())
+        signals = df.iloc[199:]["signal"].astype(str)
+        policy_veto = df.iloc[199:].apply(_is_volume_policy_veto, axis=1)
+        pre = df.iloc[199:].get("pre_volume_signal", signals).astype(str)
+        signals = signals.where(~policy_veto, pre)
+        return int(signals.isin(["BUY", "SELL"]).sum())
     return sum(
         _effective_lane_signal(row, lane)[0] in {"BUY", "SELL"}
         for _, row in df.iloc[199:].iterrows()
     )
+
+
+def _volume_policy_report(
+    df: pd.DataFrame,
+    parameters: dict[str, object] | None,
+    quality: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Expose the causal effect of a volume lane without promoting it.
+
+    A child that receives volume data but never owns a matching specialist is
+    reported as zero-effect rather than being mistaken for a successful
+    confirmation. Missing volume remains ``volume_unavailable`` and is never
+    counted as low-volume evidence.
+    """
+    params = parameters or {}
+    lane = str(params.get("volume_lane", "none") or "none")
+    quality = dict(quality or {})
+    index = df.index
+    available = df.get("volume_feature_available", pd.Series(False, index=index)).fillna(False).astype(bool)
+    pre = df.get("pre_volume_signal", df.get("signal", pd.Series("WAIT", index=index))).astype(str)
+    final = df.get("signal", pd.Series("WAIT", index=index)).astype(str)
+    actionable = pre.isin(["BUY", "SELL"])
+    accepted = final.isin(["BUY", "SELL"])
+    rejection = df.get("volume_policy_rejection", pd.Series("", index=index)).astype(str)
+    risk = pd.to_numeric(
+        df.get("volume_risk_multiplier", pd.Series(1.0, index=index)), errors="coerce"
+    ).fillna(1.0)
+    observed = df.iloc[199:] if len(df) > 199 else df.iloc[0:0]
+    observed_available = available.loc[observed.index]
+    observed_actionable = actionable.loc[observed.index]
+    observed_accepted = accepted.loc[observed.index]
+    observed_rejection = rejection.loc[observed.index]
+    observed_risk = risk.loc[observed.index]
+    counts = observed_rejection[observed_rejection.ne("")].value_counts().to_dict()
+    specialist = df.get("selected_specialist", pd.Series("unknown", index=index)).astype(str)
+    specialist_counts = specialist.loc[observed.index][observed_accepted].value_counts().to_dict()
+    quality_status = str(quality.get("status", "volume_unavailable") or "volume_unavailable")
+    return {
+        "protocol": "volume_policy_telemetry_v1",
+        "lane": lane,
+        "status": "control" if lane == "none" else ("applied" if quality_status == "passed" else "volume_unavailable"),
+        "quality_status": quality_status,
+        "rows_evaluated": int(len(observed)),
+        "feature_available_rows": int(observed_available.sum()),
+        "feature_coverage": round(float(observed_available.mean()), 6) if len(observed_available) else 0.0,
+        "pre_volume_actionable": int(observed_actionable.sum()),
+        "post_volume_actionable": int(observed_accepted.sum()),
+        "volume_vetoes": int((observed_actionable & ~observed_accepted).sum()),
+        "unavailable_actionable": int((observed_actionable & ~observed_available).sum()),
+        "reduced_risk_rows": int((observed_actionable & observed_risk.lt(1.0)).sum()),
+        "rejection_counts": {str(key): int(value) for key, value in counts.items()},
+        "selected_specialist_counts": {str(key): int(value) for key, value in specialist_counts.items()},
+        "promotion_evidence": False,
+    }
 
 
 def _trade_ledger_hash(trades: list[SimpleTrade]) -> str:
@@ -1612,6 +1878,17 @@ def _regime_specific_risk_multiplier(signal_row: pd.Series, payload: SimpleBackt
     return 1.0
 
 
+def _volume_risk_multiplier(signal_row: pd.Series) -> float:
+    """Apply only an explicit, available-volume risk reduction."""
+    if not bool(signal_row.get("volume_feature_available", False)):
+        return 1.0
+    value = signal_row.get("volume_risk_multiplier", 1.0)
+    try:
+        return max(0.1, min(1.0, float(value or 1.0)))
+    except (TypeError, ValueError):
+        return 1.0
+
+
 def _differential_router_report(df: pd.DataFrame, trades: list[SimpleTrade]) -> dict[str, object]:
     if "differential_target" not in df.columns:
         return {"enabled": False}
@@ -1683,6 +1960,8 @@ def _entry_eligibility(
     weak_regime_wait_active: bool = False, confidence_assessment: dict[str, object] | None = None,
     transition_wait_active: bool = False,
 ) -> tuple[bool, str | None]:
+    if _is_volume_policy_veto(signal_row if signal_row is not None else row):
+        return False, "volume_policy"
     execution = payload.execution
     if execution.allowed_sessions_utc:
         hour = pd.Timestamp(row["time"]).hour
@@ -1692,8 +1971,11 @@ def _entry_eligibility(
             allowed = allowed or (start <= hour < end if start < end else hour >= start or hour < end)
         if not allowed:
             return False, "outside_session"
-    if execution.min_volume is not None and float(row.get("volume", 0) or 0) < execution.min_volume:
-        return False, "minimum_volume"
+    if execution.min_volume is not None:
+        if not bool(row.get("volume_available", False)):
+            return False, "volume_unavailable"
+        if float(row.get("volume", 0) or 0) < execution.min_volume:
+            return False, "minimum_volume"
     if signal_row is not None:
         # These columns are supplied only by a time-aligned official calendar
         # or risk controller. Missing data never masquerades as a veto.
@@ -1710,7 +1992,21 @@ def _entry_eligibility(
         if cooldown_active:
             return False, "loss_cooldown"
         confidence = float(signal_row.get("signal_confidence", 1.0) or 0)
-        if confidence < float(payload.parameters.get("minimum_signal_confidence", 0.0)):
+        minimum_signal_confidence = float(payload.parameters.get("minimum_signal_confidence", 0.0) or 0)
+        # Differential recall experiments may lower the entry threshold only
+        # inside their declared target regime.  The parent/non-target lane
+        # keeps the original threshold, preserving paired signal and ledger
+        # identity while allowing a falsifiable precision-vs-recall test.
+        target_lane = signal_row.get("differential_target", False)
+        try:
+            target_lane = bool(target_lane) if pd.notna(target_lane) else False
+        except (TypeError, ValueError):
+            target_lane = False
+        if target_lane and "differential_target_min_signal_confidence" in payload.parameters:
+            minimum_signal_confidence = float(
+                payload.parameters.get("differential_target_min_signal_confidence", minimum_signal_confidence)
+            )
+        if confidence < minimum_signal_confidence:
             return False, "minimum_confidence"
         if bool(payload.parameters.get("confidence_ev_lower_bound_enabled", False)) and (confidence_assessment or {}).get("status") == "assessed" and bool((confidence_assessment or {}).get("hard_veto_eligible", False)):
             if float((confidence_assessment or {}).get("ev_lower_bound", 0)) <= 0:
@@ -2267,7 +2563,11 @@ def _profit_factor_for(values: list[float]) -> float:
     return round(gross_win / gross_loss, 3) if gross_loss else (99.0 if gross_win else 0.0)
 
 
-def _pf_attribution(trades: list[SimpleTrade], df: pd.DataFrame | None = None) -> dict[str, object]:
+def _pf_attribution(
+    trades: list[SimpleTrade],
+    df: pd.DataFrame | None = None,
+    temporal_chunk_count: int = 4,
+) -> dict[str, object]:
     """Full-ledger diagnostics; the response's displayed ledger is capped."""
     if not trades:
         return {
@@ -2353,8 +2653,9 @@ def _pf_attribution(trades: list[SimpleTrade], df: pd.DataFrame | None = None) -
             if len(times) < 3:
                 return "unknown"
             position = int(times.searchsorted(pd.Timestamp(trade.entry_time), side="left"))
-            chunk_size = max(1, len(times) // 3)
-            return f"chunk_{min(3, position // chunk_size + 1)}"
+            chunk_count = max(1, int(temporal_chunk_count))
+            chunk_size = max(1, len(times) // chunk_count)
+            return f"chunk_{min(chunk_count, position // chunk_size + 1)}"
         except (TypeError, ValueError, IndexError):
             return "unknown"
 
@@ -2616,6 +2917,85 @@ def _opportunity_recall(funnel: dict[str, object], shadow_ledger: list[dict[str,
             "rule": "PF is insufficient: a candidate must show opportunity recall and prove that WAIT filters more harm than missed edge."}
 
 
+def _router_evidence(
+    df: pd.DataFrame,
+    payload: SimpleBacktestRequest,
+    portfolio_evidence: dict[str, object],
+    opportunity_recall: dict[str, object],
+    statistical_evidence: dict[str, object],
+) -> dict[str, object]:
+    """Score the router on calibration and safe abstention only.
+
+    The economic PF remains available to the ordinary passport, but it is
+    explicitly excluded from this objective. This prevents the routing layer
+    from selecting a high-PF specialist that is poorly calibrated or unsafe
+    in disagreement/unknown states.
+    """
+    edge_quality = statistical_evidence.get("edge_quality", {}) if isinstance(statistical_evidence, dict) else {}
+    calibration = dict(edge_quality.get("confidence_calibration", {}) or {}) if isinstance(edge_quality, dict) else {}
+    sample_count = int(calibration.get("sample_count", 0) or 0)
+    calibration_score = calibration.get("score", calibration.get("calibration_score"))
+    if isinstance(calibration_score, (int, float)):
+        calibration_score = float(calibration_score)
+        if calibration_score > 1:
+            calibration_score /= 100.0
+    else:
+        calibration_score = None
+
+    abstention_precision = opportunity_recall.get("abstention_precision")
+    if isinstance(abstention_precision, (int, float)):
+        abstention_precision = float(abstention_precision)
+    else:
+        abstention_precision = None
+
+    disagreement = df.get("portfolio_disagreement", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+    signals = df.get("signal", pd.Series("WAIT", index=df.index)).astype(str)
+    disagreement_wait_invariant = bool(signals.loc[disagreement].eq("WAIT").all())
+    wait_reasons = df.get("portfolio_wait_reason", pd.Series("", index=df.index)).astype(str)
+    reason_counts = {
+        str(reason): int(count)
+        for reason, count in wait_reasons[wait_reasons.ne("")].value_counts().to_dict().items()
+    }
+    components = {
+        "calibrated_confidence": calibration_score,
+        "abstention_precision": abstention_precision,
+        "disagreement_wait_safety": 1.0 if disagreement_wait_invariant else 0.0,
+    }
+    objective = None
+    if calibration_score is not None or abstention_precision is not None:
+        objective = round(100.0 * (
+            .50 * float(calibration_score or 0.0)
+            + .35 * float(abstention_precision or 0.0)
+            + .15 * (1.0 if disagreement_wait_invariant else 0.0)
+        ), 4)
+    status = (
+        "assessed"
+        if objective is not None and sample_count >= 15
+        and float(abstention_precision or 0.0) >= .50
+        and disagreement_wait_invariant
+        else "insufficient_evidence"
+    )
+    return {
+        "protocol": "router_calibration_abstention_v1",
+        "status": status,
+        "training_objective": "calibrated_confidence_plus_abstention_precision",
+        "objective_score": objective,
+        "calibration": calibration,
+        "calibration_score": calibration_score,
+        "abstention_precision": abstention_precision,
+        "sample_count": sample_count,
+        "portfolio_member_count": len(payload.portfolio_members),
+        "disagreement_rows": int(disagreement.sum()),
+        "disagreement_rate": round(float(disagreement.mean()) if len(disagreement) else 0.0, 6),
+        "disagreement_wait_invariant": disagreement_wait_invariant,
+        "wait_reason_counts": reason_counts,
+        "components": components,
+        "profit_factor_used_for_training": False,
+        "promotion_evidence": False,
+        "rule": "Router objective is calibration + abstention precision; economic PF is not an input.",
+    }
+
+
 def _proof_carrying_replay(result: dict[str, object], trades: list[SimpleTrade], payload: SimpleBacktestRequest) -> dict[str, object]:
     """Independent ledger verifier for promotion identity and arithmetic.
 
@@ -2637,7 +3017,11 @@ def _proof_carrying_replay(result: dict[str, object], trades: list[SimpleTrade],
         ((verifier_balance - float(payload.initial_balance)) / max(float(payload.initial_balance), 0.0000001)) * 100,
         2,
     )
-    verifier_profit_factor = round(_profit_factor_for(values), 2)
+    # Match the primary replay's canonical rounding contract exactly.  The
+    # helper used by diagnostics rounds to three decimals first, which can
+    # flip a half-cent boundary (for example 1.845 -> 1.84 vs 1.85) and create
+    # a false proof mismatch for an otherwise identical ledger.
+    verifier_profit_factor = calculate_profit_factor(trades)
     verifier = {
         "total_trades": len(trades),
         "profit_factor": verifier_profit_factor,
@@ -2806,6 +3190,7 @@ def _xau_market_holidays(year: int) -> set:
         _observed_fixed_holiday(year, 1, 1),
         _nth_weekday_of_month(year, 1, 0, 3),
         _nth_weekday_of_month(year, 2, 0, 3),
+        easter(year) - timedelta(days=3),
         easter(year) - timedelta(days=2),
         _last_weekday_of_month(year, 5, 0),
         _observed_fixed_holiday(year, 7, 4),

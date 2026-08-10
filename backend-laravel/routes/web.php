@@ -63,6 +63,17 @@ Route::get('/strategy-lab', [StrategyLabController::class, 'index'])->name('stra
 Route::get('/strategy-lab/dna-laboratory', [StrategyLabController::class, 'dnaLaboratory'])->name('strategy-lab.dna-laboratory');
 Route::post('/strategy-lab/run-all', [StrategyLabController::class, 'runAll'])->middleware('role:operator,admin')->name('strategy-lab.run-all');
 Route::get('/training-sessions', [TrainingSessionController::class, 'index'])->name('training-sessions.index');
+Route::get('/training-sessions/{trainingSession}/status', function (\App\Models\TrainingSession $trainingSession) {
+    return response()->json([
+        'id' => $trainingSession->id,
+        'status' => $trainingSession->status,
+        'metrics' => $trainingSession->metrics,
+        'result_url' => $trainingSession->status === 'completed'
+            ? route('training-sessions.show', $trainingSession)
+            : null,
+        'error' => $trainingSession->status === 'failed' ? $trainingSession->notes : null,
+    ]);
+})->name('training-sessions.status');
 Route::get('/training-sessions/{trainingSession}', [TrainingSessionController::class, 'show'])->name('training-sessions.show');
 Route::get('/training-logs', [TrainingLogController::class, 'index'])->name('training-logs.index');
 Route::get('/training-logs/{trainingLog}', [TrainingLogController::class, 'show'])->name('training-logs.show');
@@ -77,7 +88,12 @@ Route::get('/mistake-journal', [DashboardController::class, 'mistakeJournal'])->
 Route::get('/ai-daily-report', [DashboardController::class, 'dailyReport'])->name('ai-daily-report');
 
 Route::get('/backtests', [BacktestController::class, 'index'])->name('backtests.index');
-Route::post('/backtests/run', [BacktestController::class, 'run'])->middleware('role:operator,admin')->name('backtests.run');
+Route::post('/backtests/run', [BacktestController::class, 'run'])->middleware(['role:operator,admin', 'throttle:5,1'])->name('backtests.run');
+Route::get('/backtests/{backtestRun}/status', [BacktestController::class, 'status'])->name('backtests.status');
+Route::get('/backtests/{backtestRun}/result', [BacktestController::class, 'result'])->name('backtests.result');
+Route::get('/backtests/{backtestRun}/status-page', function (\App\Models\LabEvaluationRun $backtestRun) {
+    return view('backtests.status', compact('backtestRun'));
+})->name('backtests.status-page');
 
 Route::get('/daily-reports', [DailyReportController::class, 'index'])->name('daily-reports.index');
 Route::get('/daily-reports/{dailyReport}', [DailyReportController::class, 'show'])->name('daily-reports.show');

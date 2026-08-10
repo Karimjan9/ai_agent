@@ -55,33 +55,63 @@ def apply_volatility_strategy(df: pd.DataFrame, parameters: dict | None = None) 
     threshold = float(p.get("atr_threshold", 1.2))
     compression_ratio = float(p.get("compression_ratio", 0.75))
     expansion_multiplier = float(p.get("expansion_multiplier", 1.2))
+    breakout_confirmation = bool(p.get("breakout_confirmation", False))
     tr = pd.concat([(out.high - out.low), (out.high - out.close.shift()).abs(), (out.low - out.close.shift()).abs()], axis=1).max(axis=1)
     atr = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
     baseline = atr.rolling(lookback).mean()
     out["signal"] = "WAIT"
     compressed = atr.shift(1) <= baseline.shift(1) * compression_ratio
     active = compressed & (atr >= baseline * max(threshold, expansion_multiplier))
-    out.loc[active & (out.close > out.open), "signal"] = "BUY"
-    out.loc[active & (out.close < out.open), "signal"] = "SELL"
+    if breakout_confirmation:
+        # The expansion candle must also clear the prior Donchian boundary.
+        # This is the classic squeeze-to-breakout variant and avoids treating
+        # every large two-sided candle as a directional signal.
+        prior_high = out.high.rolling(lookback).max().shift(1)
+        prior_low = out.low.rolling(lookback).min().shift(1)
+        buy = active & (out.close > out.open) & (out.close > prior_high)
+        sell = active & (out.close < out.open) & (out.close < prior_low)
+    else:
+        buy = active & (out.close > out.open)
+        sell = active & (out.close < out.open)
+    out.loc[buy, "signal"] = "BUY"
+    out.loc[sell, "signal"] = "SELL"
     out["signal_confidence"] = ((atr / baseline.replace(0, pd.NA)) / max(threshold, expansion_multiplier) - 1).clip(0, 1).fillna(0)
     return out
+
+
+def apply_volatility_breakout_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """ATR squeeze/expansion with an explicit prior-range breakout."""
+    return apply_volatility_strategy(df, {**(parameters or {}), "breakout_confirmation": True})
 
 
 def apply_mean_reversion_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
     p = parameters or {}
     out = df.copy()
     lookback, deviation = int(p.get("lookback", 20)), float(p.get("deviation", 2.0))
+    rsi_period = int(p.get("rsi_period", 14))
     mean, std = out.close.rolling(lookback).mean(), out.close.rolling(lookback).std()
     out["signal"] = "WAIT"
     adx_max = float(p.get("adx_max", 20))
     low_volatility_only = bool(p.get("low_volatility_only", True))
+    rsi_confirmation = bool(p.get("rsi_confirmation", False))
     range_filter = out.get("adx", pd.Series(0, index=out.index)) <= adx_max
     if low_volatility_only:
         range_filter &= out.get("volatility_regime", pd.Series("normal_volatility", index=out.index)) == "low_volatility"
-    out.loc[range_filter & (out.close < mean - std * deviation), "signal"] = "BUY"
-    out.loc[range_filter & (out.close > mean + std * deviation), "signal"] = "SELL"
+    buy = range_filter & (out.close < mean - std * deviation)
+    sell = range_filter & (out.close > mean + std * deviation)
+    if rsi_confirmation:
+        rsi = _rsi(out.close, rsi_period)
+        buy &= rsi <= float(p.get("rsi_oversold", 35))
+        sell &= rsi >= float(p.get("rsi_overbought", 65))
+    out.loc[buy, "signal"] = "BUY"
+    out.loc[sell, "signal"] = "SELL"
     out["signal_confidence"] = ((out.close - mean).abs() / (std.replace(0, pd.NA) * max(deviation, .01)) - 1).clip(0, 1).fillna(0)
     return out
+
+
+def apply_mean_reversion_rsi_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Bollinger/z-score re-entry with a bounded RSI exhaustion confirmation."""
+    return apply_mean_reversion_strategy(df, {**(parameters or {}), "rsi_confirmation": True})
 
 
 def apply_range_reentry_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
@@ -145,6 +175,27 @@ def apply_session_strategy(df: pd.DataFrame, parameters: dict | None = None) -> 
     out["signal"] = "WAIT"
     out.loc[active & (out.close > high), "signal"] = "BUY"
     out.loc[active & (out.close < low), "signal"] = "SELL"
+    spread = (high - low).replace(0, pd.NA)
+    out["signal_confidence"] = ((out.close - low) / spread).clip(0, 1).fillna(0)
+    out.loc[out["signal"] == "SELL", "signal_confidence"] = ((high - out.close) / spread).clip(0, 1).fillna(0)
+    return out
+
+
+def apply_session_mean_reversion_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Session-only range re-entry; no signal is emitted outside the session."""
+    p = parameters or {}
+    start, end, lookback = int(p.get("session_start", 7)), int(p.get("session_end", 16)), int(p.get("lookback", 20))
+    active = pd.to_datetime(df.time).dt.hour.between(start, end - 1)
+    mean = df.close.rolling(lookback).mean()
+    std = df.close.rolling(lookback).std().replace(0, pd.NA)
+    lower, upper = mean - 2.0 * std, mean + 2.0 * std
+    buy = active & (df.close.shift(1) < lower.shift(1)) & (df.close >= lower) & (df.close > df.close.shift(1))
+    sell = active & (df.close.shift(1) > upper.shift(1)) & (df.close <= upper) & (df.close < df.close.shift(1))
+    out = df.copy()
+    out["signal"] = "WAIT"
+    out.loc[buy, "signal"] = "BUY"
+    out.loc[sell, "signal"] = "SELL"
+    out["signal_confidence"] = ((df.close - mean).abs() / (std * 2.0)).clip(0, 1).fillna(0)
     return out
 
 
@@ -172,6 +223,20 @@ def apply_momentum_strategy(df: pd.DataFrame, parameters: dict | None = None) ->
     ).fillna(0).mul(.65).add(.35).where(
         out["signal"].isin(["BUY", "SELL"]), 0.0
     ).clip(0, 1)
+    return out
+
+
+def apply_momentum_pullback_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Time-series momentum that refuses entries after ATR-sized extension."""
+    p = parameters or {}
+    out = apply_momentum_strategy(df, p)
+    ema_period = int(p.get("ema_period", 50))
+    ema = df.close.ewm(span=ema_period, adjust=False).mean()
+    atr = df.get("atr_regime", (df.high - df.low).rolling(14, min_periods=1).mean()).replace(0, pd.NA)
+    near_ema = (df.close - ema).abs() <= atr * 0.75
+    invalid = ~near_ema.fillna(False)
+    out.loc[invalid, "signal"] = "WAIT"
+    out.loc[invalid, "signal_confidence"] = 0.0
     return out
 
 
@@ -310,6 +375,39 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
     return out
 
 
+def apply_hybrid_consensus_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Keep regime-owned signals, but require two votes in unknown regimes."""
+    p = parameters or {}
+    out = apply_hybrid_strategy(df, p)
+    trend = apply_momentum_strategy(out, {
+        "roc_period": int(p.get("trend_roc_period", 12)),
+        "roc_threshold": float(p.get("trend_roc_threshold", 0.2)),
+        "ema_period": int(p.get("trend_ema_period", 50)),
+    })
+    breakout = apply_volatility_strategy(out, {
+        "atr_period": int(p.get("breakout_atr_period", 14)),
+        "atr_threshold": float(p.get("breakout_atr_threshold", 1.2)),
+        "lookback": int(p.get("breakout_lookback", 20)),
+        "compression_ratio": float(p.get("breakout_compression_ratio", 0.75)),
+        "expansion_multiplier": float(p.get("breakout_expansion_multiplier", 1.2)),
+    })
+    mean = apply_mean_reversion_strategy(out, {
+        "lookback": int(p.get("range_lookback", 20)),
+        "deviation": float(p.get("range_deviation", 2.0)),
+        "adx_max": float(p.get("range_adx_max", 20.0)),
+        "low_volatility_only": bool(p.get("range_low_volatility_only", True)),
+    })
+    regime = out.get("market_regime", pd.Series("unknown", index=out.index)).astype(str)
+    unknown = ~regime.isin(["trend_up", "trend_down", "range"])
+    buy_votes = (trend["signal"] == "BUY").astype(int) + (breakout["signal"] == "BUY").astype(int) + (mean["signal"] == "BUY").astype(int)
+    sell_votes = (trend["signal"] == "SELL").astype(int) + (breakout["signal"] == "SELL").astype(int) + (mean["signal"] == "SELL").astype(int)
+    consensus = unknown & ((buy_votes >= 2) | (sell_votes >= 2))
+    out.loc[unknown & ~consensus, "signal"] = "WAIT"
+    out.loc[unknown & ~consensus, "signal_confidence"] = 0.0
+    out.loc[unknown & ~consensus, "selected_specialist"] = "consensus_wait"
+    return out
+
+
 def apply_differential_router_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
     """Freeze a parent hybrid except for one pre-declared regime lane.
 
@@ -391,7 +489,6 @@ def apply_regime_ensemble_strategy(df: pd.DataFrame, parameters: dict | None = N
     })
     breakout = apply_volatility_strategy(out, p)
     range_agent = apply_mean_reversion_strategy(out, p)
-    session = apply_session_strategy(out, p)
     out["signal"] = "WAIT"
     out["signal_confidence"] = 0.0
     out["selected_specialist"] = "none"
@@ -399,7 +496,9 @@ def apply_regime_ensemble_strategy(df: pd.DataFrame, parameters: dict | None = N
     for index in out.index:
         regime = str(out.at[index, "market_regime"] if "market_regime" in out else "unknown")
         volatility = str(out.at[index, "volatility_regime"] if "volatility_regime" in out else "normal_volatility")
-        if volatility == "high_volatility":
+        if regime not in {"trend_up", "trend_down", "range"}:
+            specialist, source = "unknown_wait", None
+        elif volatility == "high_volatility":
             specialist, source = "breakout", breakout
         elif regime == "trend_up":
             specialist, source = "trend_up", trend_up
@@ -408,8 +507,15 @@ def apply_regime_ensemble_strategy(df: pd.DataFrame, parameters: dict | None = N
         elif regime == "range":
             specialist, source = "range", range_agent
         else:
-            specialist, source = "session", session
+            # An unclassified regime is an epistemic state, not a session
+            # regime. Falling back to a specialist here silently converts
+            # missing/ambiguous evidence into a live trading decision and
+            # makes the router look more capable than it is. Keep the
+            # decision fail-closed; the portfolio router has the same
+            # invariant and uses "portfolio_wait" for this state.
+            specialist, source = "unknown_wait", None
         out.at[index, "selected_specialist"] = specialist
-        out.at[index, "signal"] = str(source.at[index, "signal"])
-        out.at[index, "signal_confidence"] = float(source.at[index, "signal_confidence"] if "signal_confidence" in source else 1.0)
+        if source is not None:
+            out.at[index, "signal"] = str(source.at[index, "signal"])
+            out.at[index, "signal_confidence"] = float(source.at[index, "signal_confidence"] if "signal_confidence" in source else 1.0)
     return out

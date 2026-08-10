@@ -53,7 +53,9 @@ class LabQueueAttemptEvidenceMiddleware
         } catch (Throwable $error) {
             $ledger->finishIfOpen($run, 'technical_error', null, [], [
                 'reason_code' => 'QUEUE_MIDDLEWARE_ERROR', 'attempt' => $job->attempts(),
+                'error_file' => $error->getFile(), 'error_line' => $error->getLine(),
             ], $error);
+            report($error);
             $ledger->recordLifecycle($agent->fresh(), 'queue_attempt_error', [
                 'run_id' => $run->run_id, 'attempt' => $job->attempts(), 'queue' => $job->queue,
                 'mutex_acquired' => $job->labMutexAcquired,

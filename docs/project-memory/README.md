@@ -22,6 +22,8 @@ Bu papka loyihani qayta-qayta to'liq skan qilmasdan tushunish uchun ixcham, Obsi
 
 ## Navigatsiya
 
+- [[adaptive-evolution]] - champion-guided dynamic parent frontier, archives, islands va governor qoidalari.
+
 - [[project-index]] — mashina o'qishi uchun asosiy JSON indeks.
 - [[architecture]] — komponentlar va asosiy data flow.
 - [[modules]] — modullar, kirish nuqtalari va egalik chegaralari.

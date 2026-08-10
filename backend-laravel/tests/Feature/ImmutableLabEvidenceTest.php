@@ -9,15 +9,44 @@ use App\Models\LabLifecycleEvent;
 use App\Models\LabCandleDecisionEvent;
 use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
+use App\Services\AgentConstitutionService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
+use App\Models\ModelVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ImmutableLabEvidenceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_constitution_hash_survives_json_numeric_round_trip_and_separates_falsification(): void
+    {
+        $service = app(AgentConstitutionService::class);
+        $constitution = $service->draft('XAUUSD', 'H1', 'hybrid', 'regime_router', [
+            'high_volatility_risk_multiplier' => .856,
+            'trend_down_risk_multiplier' => 1.0,
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'constitution-round-trip', 'strategy' => 'constitution-round-trip',
+            'version' => 'test', 'generation' => 1, 'status' => 'testing', 'parameters' => [],
+            'metadata' => [
+                'strategy_architecture' => 'regime_router',
+                'agent_constitution' => $constitution,
+            ],
+        ])->fresh();
+
+        $healthy = $service->verify($model, ['pf_attribution' => ['stress_cost' => ['profit_factor' => 1.2]]]);
+        $falsified = $service->verify($model, ['pf_attribution' => ['stress_cost' => ['profit_factor' => .4]]]);
+
+        $this->assertTrue($healthy['integrity']);
+        $this->assertSame('verified', $healthy['status']);
+        $this->assertSame('canonical_v2', $healthy['hash_version']);
+        $this->assertTrue($falsified['integrity']);
+        $this->assertSame('falsified', $falsified['status']);
+        $this->assertTrue($falsified['falsified_by_evidence']);
+    }
 
     public function test_agent_creation_is_recorded_without_replacing_the_projection(): void
     {
@@ -52,6 +81,26 @@ class ImmutableLabEvidenceTest extends TestCase
 
         $this->assertDatabaseCount('candidate_handoff_events', 1);
         $this->assertSame(2, LabLifecycleEvent::where('lab_agent_id', $agent->id)->where('event_type', 'handoff_screened')->count());
+    }
+
+    public function test_selection_handoff_projection_refreshes_after_a_retry(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'selection_handoff_retry', true);
+        $agent = $generation->agents->first();
+        $handoffs = app(CandidateHandoffService::class);
+
+        $handoffs->record($generation, $agent, 'selection_passed', 'not_selected', 'NO_ELIGIBLE_CANDIDATE', [
+            'selection_lane' => 'none',
+        ]);
+        $handoffs->record($generation, $agent, 'selection_passed', 'completed', null, [
+            'selection_lane' => 'volume_context',
+        ]);
+
+        $projection = \App\Models\CandidateHandoffEvent::where('lab_generation_id', $generation->id)
+            ->where('lab_agent_id', $agent->id)->where('stage', 'selection_passed')->first();
+        $this->assertSame('completed', $projection->status);
+        $this->assertSame('volume_context', data_get($projection->payload, 'selection_lane'));
+        $this->assertSame(2, LabLifecycleEvent::where('lab_agent_id', $agent->id)->where('event_type', 'handoff_selection_passed')->count());
     }
 
     public function test_evaluation_run_keeps_terminal_artifact_and_candle_trace(): void

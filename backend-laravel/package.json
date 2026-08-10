@@ -22,6 +22,9 @@
     },
     "dependencies": {
         "dukascopy-node": "^1.46.4",
-        "pm2": "^7.0.3"
+        "pm2": "7.0.3"
+    },
+    "overrides": {
+        "js-yaml": "4.3.1"
     }
 }

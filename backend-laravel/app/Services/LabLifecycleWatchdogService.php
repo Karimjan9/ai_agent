@@ -6,6 +6,7 @@ use App\Jobs\EvaluateLabAgentJob;
 use App\Models\CandidateGateDecision;
 use App\Models\Candle;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\ModelMarketPerformance;
 use App\Models\PaperOrder;
@@ -36,6 +37,7 @@ class LabLifecycleWatchdogService
         $events = [];
         $events = [...$events, ...$this->watchStaleTraining($repair)];
         $events = [...$events, ...$this->watchFullValidationStalls($repair)];
+        $events = [...$events, ...$this->watchOrphanedOpenRuns($repair)];
         $events = [...$events, ...$this->watchDraftDispatchStalls()];
         $events = [...$events, ...$this->watchMissingForwardLedgers()];
         $events = [...$events, ...$this->watchShadowConnection()];
@@ -43,6 +45,126 @@ class LabLifecycleWatchdogService
         $events = [...$events, ...$this->watchPaperIntegrity()];
 
         return $events;
+    }
+
+    /**
+     * A worker can die after the immutable run is opened and before the
+     * queue middleware gets a chance to close it.  Such a row is not strategy
+     * evidence and must not remain an apparent active replay forever.  We
+     * only reconcile it after all three operational proofs hold: the owning
+     * generation is terminal, no queue job still references the agent, and
+     * the single Python replay lane explicitly reports idle.
+     */
+    private function watchOrphanedOpenRuns(bool $repair): array
+    {
+        $events = [];
+        $runs = LabEvaluationRun::query()
+            ->with(['generation', 'agent'])
+            ->where('status', 'started')
+            ->where('started_at', '<=', now()->subMinutes(self::STALE_TRAINING_MINUTES))
+            ->orderBy('id')
+            ->limit(100)
+            ->get();
+
+        if ($runs->isEmpty()) return $events;
+
+        $laneIdle = $this->replayLaneIsIdle();
+        $evidence = $repair && $laneIdle ? app(LabImmutableEvidenceService::class) : null;
+        foreach ($runs as $run) {
+            $generation = $run->generation;
+            $agent = $run->agent;
+            $screeningComplete = $generation
+                && (string) $generation->status === 'screened'
+                && ! $generation->agents()->whereIn('lifecycle_status', ['draft', 'queued', 'screening'])->exists();
+            $terminalGeneration = $generation
+                && (in_array((string) $generation->status, ['completed', 'technical_quarantine', 'abandoned'], true) || $screeningComplete);
+            $hasQueuedJob = $agent ? $this->hasAnyLabJob($agent->id) : true;
+            $context = [
+                'run_id' => $run->run_id,
+                'lab_evaluation_run_id' => $run->id,
+                'lab_agent_id' => $run->lab_agent_id,
+                'generation_id' => $run->lab_generation_id,
+                'phase' => $run->phase,
+                'started_at' => $run->started_at?->toIso8601String(),
+                'generation_status' => $generation?->status,
+                'screening_complete' => $screeningComplete,
+                'agent_lifecycle_status' => $agent?->lifecycle_status,
+                'queue_job_present' => $hasQueuedJob,
+                'replay_lane_idle' => $laneIdle,
+                'promotion_evidence' => false,
+            ];
+
+            if (! $terminalGeneration || $hasQueuedJob) {
+                $events[] = $this->warn(
+                    'OPEN_LAB_RUN_REQUIRES_REVIEW',
+                    'An old immutable lab run remains open, but its lifecycle/queue proof is not sufficient for automatic reconciliation.',
+                    $context,
+                    $run->id,
+                );
+                continue;
+            }
+
+            $events[] = $this->warn(
+                'ORPHANED_OPEN_LAB_RUN',
+                'An old open lab run has no active queue/replay owner; it is operational retry evidence, not a strategy verdict.',
+                $context,
+                $run->id,
+            );
+
+            if ($evidence === null) continue;
+
+            $evidence->finishIfOpen(
+                $run,
+                'retry_released',
+                null,
+                [],
+                [
+                    'reason_code' => 'ORPHANED_OPEN_RUN_RECONCILED',
+                    'recovery_protocol' => 'orphaned_open_run_v1',
+                    'terminal_generation_proven' => true,
+                    'no_queue_job_proven' => true,
+                    'replay_lane_idle_proven' => true,
+                    'promotion_evidence' => false,
+                ],
+            );
+            $events[] = $this->warn(
+                'ORPHANED_OPEN_LAB_RUN_RECONCILED',
+                'Closed the orphaned immutable run as retry_released after terminal lifecycle and idle-lane proofs; no strategy gate was changed.',
+                $context,
+                $run->id,
+                'info',
+            );
+        }
+
+        return $events;
+    }
+
+    private function hasAnyLabJob(int $agentId): bool
+    {
+        if (! DB::getSchemaBuilder()->hasTable('jobs')) return false;
+
+        return DB::table('jobs')
+            ->whereIn('queue', ['lab-xauusd', 'lab-eurusd', 'lab-gbpusd', 'lab-full-validation'])
+            ->where('payload', 'like', '%labAgentId%'.$agentId.'%')
+            ->exists();
+    }
+
+    private function replayLaneIsIdle(): bool
+    {
+        $url = rtrim((string) config('services.ai_service.url'), '/').'/api/replay-status';
+        $token = (string) config('services.internal_api.token');
+        if ($url === '/api/replay-status' || $token === '') return false;
+
+        try {
+            $response = Http::connectTimeout(2)->timeout(4)
+                ->withHeaders(['X-Internal-Token' => $token])->get($url);
+            if ($response->failed()) return false;
+            $body = $response->json();
+            return (string) data_get($body, 'protocol', '') !== ''
+                && (int) data_get($body, 'active_requests', -1) === 0;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /** Draft is normal for one scheduler tick; beyond 90 minutes it is a

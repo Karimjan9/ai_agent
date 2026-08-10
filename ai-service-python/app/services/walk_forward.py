@@ -78,20 +78,30 @@ class WalkForwardService:
         if len(selection) < 30:
             return []
 
-        segment_size = max(2, int(len(selection) * 0.12))
+        # Use one expanding training history and three *disjoint* validation /
+        # forward blocks. The old 45/55/65% starts advanced by less than a
+        # full block, so the reported forward windows overlapped and could not
+        # be counted as independent evidence.
+        initial_train_end = max(2, int(len(selection) * 0.45))
+        remaining = len(selection) - initial_train_end
+        segment_size = max(2, (remaining - 2) // 6)
         windows: list[dict[str, pd.DataFrame]] = []
 
-        for train_ratio in (0.45, 0.55, 0.65):
-            train_end = int(len(selection) * train_ratio)
-            validation_end = train_end + segment_size
-            forward_end = validation_end + segment_size
+        for index in range(3):
+            validation_start = initial_train_end + index * (2 * segment_size + 1)
+            validation_end = validation_start + segment_size
+            # One observed-row embargo separates validation and forward. It
+            # prevents a label that closes on the boundary from leaking into
+            # the next forward block in sparse archives.
+            forward_start = validation_end + 1
+            forward_end = forward_start + segment_size
             if forward_end > len(selection):
                 continue
 
             window = {
-                "train": selection.iloc[:train_end].reset_index(drop=True),
-                "validation": selection.iloc[train_end:validation_end].reset_index(drop=True),
-                "forward": selection.iloc[validation_end:forward_end].reset_index(drop=True),
+                "train": selection.iloc[:validation_start].reset_index(drop=True),
+                "validation": selection.iloc[validation_start:validation_end].reset_index(drop=True),
+                "forward": selection.iloc[forward_start:forward_end].reset_index(drop=True),
             }
             if all(len(segment) >= 2 for segment in window.values()):
                 windows.append(window)
@@ -165,6 +175,7 @@ class WalkForwardService:
                 "walk_forward": {
                     "mode": "rolling",
                     "windows": evaluations,
+                    "forward_window_protocol": self._forward_window_protocol(evaluations),
                     "final_holdout": {
                         "period": f"{holdout.time.min().date()} - {holdout.time.max().date()}",
                         "rows": len(holdout),
@@ -172,6 +183,29 @@ class WalkForwardService:
                     },
                 },
             },
+        }
+
+    @staticmethod
+    def _forward_window_protocol(evaluations: list[dict[str, object]]) -> dict[str, object]:
+        bounds: list[tuple[str, str]] = []
+        for evaluation in evaluations:
+            period = (evaluation.get("periods", {}) or {}).get("forward", "")
+            if not isinstance(period, str) or " - " not in period:
+                continue
+            start, end = period.split(" - ", 1)
+            bounds.append((start, end))
+        overlap = any(bounds[index][0] <= bounds[index - 1][1] for index in range(1, len(bounds)))
+        return {
+            "protocol": "disjoint_forward_folds_v1",
+            "source": "walk_forward_forward_segments",
+            "observed_windows": len(bounds),
+            "overlap_detected": overlap,
+            "independence_verified": bool(bounds) and not overlap,
+            "purge_bars": 0,
+            "embargo_bars": 1,
+            "label_holding_period_purged": False,
+            "promotion_evidence": False,
+            "rule": "Only disjoint forward intervals are reported; candle-level label purge remains a separate required protocol.",
         }
 
     def _run_segment(self, payload: SimpleBacktestRequest, segment: pd.DataFrame, name: str) -> dict[str, object]:

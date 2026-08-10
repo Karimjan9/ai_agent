@@ -6,7 +6,7 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-08-04
+updated: 2026-08-09
 ---
 
 # AI Learning Laboratory
@@ -43,6 +43,8 @@ Composite runtimes are identity-safe: `differential_router` and `regime_ensemble
 Trade deficit targets entry filters; PF deficit targets stop/target/trailing/exit topology; drawdown and ruin target risk multiplier and loss cooldown; rolling deficit targets regime/session-adaptive topology; starvation targets lookback, confirmation, and confidence; overfit targets architecture diversification. Each mutation stores its parent-to-child gate transition, including improved and worsened gates. Trade milestones are `15 -> 24 -> 34`, PF milestones are `1.05 -> 1.18 -> 1.36`, and rolling-win milestones are `1 -> 2 -> 3`. A family or architecture with no gate improvement across three completed generations is temporarily excluded until new evidence changes that state.
 
 Parent eligibility is stricter than a forward-score sort: a reusable parent must independently meet PF >= 1.3, risk of ruin <= 10%, drawdown <= 15%, 30 trades, and three rolling forward wins. Regime mutations record and reuse a `market:*` or `volatility:*` scope, prioritising the weakest sufficiently sampled regime rather than applying one global parameter change.
+
+The parent layer is adaptive rather than champion-only. Read [[adaptive-evolution]] for the full contract. `EvolutionGovernorService` observes recent progress, stagnation and diversity; `AdaptiveParentFrontierService` then selects a dynamic K from the exact semantic cell. Causal/G98/differential repair remains one-parent, robust crossover can use 2-5 contributors, architecture/curiosity can revive young/archive lineages, and runtime ensemble policy can hold 3-8 sealed specialists. `EvolutionArchiveService` keeps convergence, diversity, young and failure archives separate. Failure evidence is preserved for diagnosis but never reintroduced as a parent. Every selected ID, module source and dynamic-K decision is recorded with `promotion_evidence=false` and all children repeat the normal replay/statistical/holdout/paper gates.
 
 ## Market-adaptive replay protocol
 
@@ -110,6 +112,7 @@ The Python AI service must also be available at `AI_SERVICE_URL` before a full e
 ## Main files
 
 - Population and mutation selection: `backend-laravel/app/Services/LabPopulationService.php`
+- Adaptive parent/governor/archive layer: `backend-laravel/app/Services/AdaptiveParentFrontierService.php`, `EvolutionGovernorService.php`, `EvolutionArchiveService.php`, [[adaptive-evolution]]
 - Full evaluation: `LabAgentEvaluationService.php`
 - Daily incremental health: `LabIncrementalEvaluationService.php`
 - Champion gates and mutation memory: `MarketChampionService.php`

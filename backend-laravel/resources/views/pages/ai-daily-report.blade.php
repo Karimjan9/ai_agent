@@ -1,6 +1,6 @@
 @extends('layouts.app', [
     'heading' => 'AI Daily Report',
-    'subtitle' => 'Kunlik backtest xulosalari va keyingi trening rejasi.',
+    'subtitle' => 'Canonical lab evidence asosidagi kunlik xulosa va keyingi trening rejasi.',
 ])
 
 @section('content')

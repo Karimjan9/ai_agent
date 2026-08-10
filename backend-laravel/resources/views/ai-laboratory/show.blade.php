@@ -131,16 +131,18 @@
 
     <article class="card" style="margin-top:14px;">
         <h2 class="section-title">Generation population</h2>
-        <table class="table"><thead><tr><th>Agent</th><th>Family / origin</th><th>Parents</th><th>Lifecycle</th><th>Train / Val / Forward</th><th>PF / DD / Ruin</th><th>Rolling wins</th><th>Qaror</th></tr></thead><tbody>
+        <table class="table"><thead><tr><th>Agent</th><th>Family / tactic</th><th>Parents</th><th>Lifecycle</th><th>Progress</th><th>Train / Val / Forward</th><th>PF / DD / Ruin</th><th>Rolling wins</th><th>Qaror</th></tr></thead><tbody>
         @forelse($generation?->agents ?? [] as $agent)
             <tr>
-                <td>{{ $agent->modelVersion?->name }}</td><td>{{ $agent->strategy_family }} / {{ $agent->origin }}</td>
+                <td>{{ $agent->modelVersion?->name }}</td><td>{{ $agent->strategy_family }} / {{ $agent->origin }}<br><small>{{ $agent->progressCard?->tactic_id ?? data_get($agent->modelVersion?->metadata, 'tactic_contract.tactic_id', 'declared-family') }}</small></td>
                 <td>{{ $agent->parentA?->name ?? '-' }}{{ $agent->parentB ? ' + '.$agent->parentB->name : '' }}</td>
-                <td>{{ $agent->lifecycle_status }}</td><td>{{ $agent->train_score ?? '-' }} / {{ $agent->validation_score ?? '-' }} / {{ $agent->forward_score ?? '-' }}</td>
+                <td>{{ $agent->lifecycle_status }}</td>
+                <td>{{ $agent->progressCard?->stage ?? 'weak' }} / {{ $agent->progressCard?->primary_failure ?? 'none' }}<br><small>{{ $agent->progressCard?->changed_gene ?? 'no gene' }} → {{ $agent->progressCard?->next_action ?? 'diagnose_primary_failure' }}</small></td>
+                <td>{{ $agent->train_score ?? '-' }} / {{ $agent->validation_score ?? '-' }} / {{ $agent->forward_score ?? '-' }}</td>
                 <td>{{ $agent->profit_factor ?? '-' }} / {{ $agent->max_drawdown ?? '-' }} / {{ $agent->risk_of_ruin ?? '-' }}</td>
                 <td>{{ $agent->rolling_wins }}</td><td>{{ $agent->decision_reason ?? 'Training kutilmoqda.' }}</td>
             </tr>
-        @empty <tr><td colspan="8">Generation hali yaratilmagan. `php artisan trading:lab-generation {{ $lab->symbol }}` ishlating.</td></tr> @endforelse
+        @empty <tr><td colspan="9">Generation hali yaratilmagan. `php artisan trading:lab-generation {{ $lab->symbol }}` ishlating.</td></tr> @endforelse
         </tbody></table>
     </article>
 

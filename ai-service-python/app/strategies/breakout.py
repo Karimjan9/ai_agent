@@ -65,6 +65,13 @@ def apply_breakout_strategy(df: pd.DataFrame, parameters: dict | None = None) ->
     return prepared
 
 
+def apply_breakout_continuation_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Confirmed Donchian/ATR continuation without a retest requirement."""
+    p = dict(parameters or {})
+    p["retest_required"] = False
+    return apply_breakout_strategy(df, p)
+
+
 def _atr(candles: pd.DataFrame, period: int) -> pd.Series:
     high_low = candles["high"] - candles["low"]
     high_close = (candles["high"] - candles["close"].shift()).abs()

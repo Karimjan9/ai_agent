@@ -2,202 +2,124 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\BacktestRun;
-use App\Models\Mistake;
-use App\Models\Trade;
-use App\Services\MarketData\CandlePayloadService;
+use App\Models\LabEvaluationRun;
+use App\Services\CanonicalManualBacktestService;
 use Illuminate\Contracts\View\View;
-use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Cache;
 
 class BacktestController extends Controller
 {
-    public function __construct(
-        private CandlePayloadService $candlePayloadService,
-    ) {}
-
     public function index(): View
     {
         return view('backtests.index');
     }
 
-    public function run(Request $request): View|RedirectResponse
+    public function run(Request $request, CanonicalManualBacktestService $manualBacktests): View|RedirectResponse
     {
+        $validated = $request->validate([
+            'symbol' => ['required', 'string', 'regex:/^(XAU|EUR|GBP)(?:[_\/]?USD)$/i'],
+            'timeframe' => ['required', 'string', 'in:M15,H1'],
+            'strategy' => ['required', 'string', 'regex:/^[a-z0-9]+(?:[_-][a-z0-9]+)*$/i', 'max:96'],
+            'initial_balance' => ['nullable', 'numeric', 'gt:0', 'max:100000000'],
+            'risk_per_trade' => ['nullable', 'numeric', 'gt:0', 'max:5'],
+            'from_date' => ['nullable', 'date'],
+            'to_date' => ['nullable', 'date', 'after_or_equal:from_date'],
+        ]);
+
         $payload = [
-            'symbol' => $request->input('symbol', 'XAUUSD'),
-            'timeframe' => $request->input('timeframe', 'H1'),
-            'strategy' => $request->input('strategy', 'ema_rsi_v1'),
-            'initial_balance' => (float) $request->input('initial_balance', 10000),
-            'risk_per_trade' => (float) $request->input('risk_per_trade', 1),
-            'from_date' => $request->input('from_date'),
-            'to_date' => $request->input('to_date'),
+            'symbol' => $this->normalizeSymbolCode($validated['symbol']),
+            'timeframe' => strtoupper((string) $validated['timeframe']),
+            'strategy' => strtolower((string) $validated['strategy']),
+            'initial_balance' => (float) ($validated['initial_balance'] ?? 10000),
+            'risk_per_trade' => (float) ($validated['risk_per_trade'] ?? 1),
+            'from_date' => $validated['from_date'] ?? null,
+            'to_date' => $validated['to_date'] ?? null,
         ];
-        $payload['execution'] = $this->executionAssumptions($payload['symbol']);
-        $payload['candles'] = $this->candlePayloadService->candlesForBacktest($payload['symbol'], $payload['timeframe']);
+        $requestHash = $manualBacktests->requestHash($payload);
+        $idempotencyKey = trim((string) $request->header('Idempotency-Key'));
+        $lockKey = 'web-canonical-backtest:'.($idempotencyKey !== ''
+            ? hash('sha256', $idempotencyKey)
+            : $requestHash);
+        $lock = Cache::lock($lockKey, 1800);
+
+        if (! $lock->get()) {
+            return back()->with('error', 'Ayni canonical backtest allaqachon queue\'da bajarilmoqda.');
+        }
 
         try {
-            $response = Http::timeout(120)
-                ->acceptJson()
-                ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
-                ->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/run', $payload);
-        } catch (ConnectionException) {
-            return back()->with('error', "Python AI service bilan bog'lanib bo'lmadi.");
+            $run = $manualBacktests->submit($payload, $requestHash, [
+                'idempotency_key_hash' => $idempotencyKey !== '' ? hash('sha256', $idempotencyKey) : null,
+            ]);
+
+            return $this->respondForRun($run, $payload, $manualBacktests);
+        } finally {
+            $lock->release();
         }
+    }
 
-        if ($response->failed()) {
-            return back()->with('error', 'Backtest service xatolik berdi.');
+    public function status(LabEvaluationRun $backtestRun): JsonResponse
+    {
+        $backtestRun->refresh();
+        $terminalError = in_array($backtestRun->status, ['technical_error', 'skipped'], true);
+
+        return response()->json([
+            'id' => $backtestRun->id,
+            'run_id' => $backtestRun->run_id,
+            'source' => 'lab_evaluation_runs',
+            'status' => $backtestRun->status,
+            'metrics' => $backtestRun->metrics,
+            'result_url' => $backtestRun->status === 'completed'
+                ? route('backtests.result', ['backtestRun' => $backtestRun->id])
+                : null,
+            'error' => $terminalError ? $backtestRun->error_message : null,
+        ]);
+    }
+
+    public function result(LabEvaluationRun $backtestRun, CanonicalManualBacktestService $manualBacktests): View|RedirectResponse
+    {
+        $backtestRun->refresh();
+
+        if ($backtestRun->status !== 'completed') {
+            return redirect()->route('backtests.status-page', ['backtestRun' => $backtestRun->id]);
         }
-
-        $result = $response->json();
-        $backtestRun = DB::transaction(function () use ($result, $payload): BacktestRun {
-            $runData = [
-                'symbol' => $payload['symbol'],
-                'timeframe' => $payload['timeframe'],
-                'strategy' => $payload['strategy'],
-                'date_from' => $payload['from_date'] ?? null,
-                'date_to' => $payload['to_date'] ?? null,
-                'initial_balance' => $result['initial_balance'] ?? 10000,
-                'final_balance' => $result['final_balance'] ?? 0,
-                'total_trades' => $result['total_trades'] ?? 0,
-                'wins' => $result['wins'] ?? 0,
-                'losses' => $result['losses'] ?? 0,
-                'winrate' => $result['winrate'] ?? 0,
-                'net_profit_percent' => $result['net_profit_percent'] ?? 0,
-                'max_drawdown_percent' => $result['max_drawdown'] ?? 0,
-                'profit_factor' => $result['profit_factor'] ?? 0,
-                'conclusion' => $result['conclusion'] ?? null,
-                'raw_result' => $result,
-            ];
-
-            if (Schema::hasColumn('backtest_runs', 'symbol_id')) {
-                $runData['symbol_id'] = $this->symbolId($payload['symbol']);
-            }
-
-            if (Schema::hasColumn('backtest_runs', 'from_date')) {
-                $runData['from_date'] = $payload['from_date'] ?? now()->toDateString();
-            }
-
-            if (Schema::hasColumn('backtest_runs', 'to_date')) {
-                $runData['to_date'] = $payload['to_date'] ?? now()->toDateString();
-            }
-
-            if (Schema::hasColumn('backtest_runs', 'status')) {
-                $runData['status'] = 'completed';
-            }
-
-            if (Schema::hasColumn('backtest_runs', 'request_payload')) {
-                $runData['request_payload'] = $payload;
-            }
-
-            if (Schema::hasColumn('backtest_runs', 'metrics')) {
-                $runData['metrics'] = [
-                    'total_trades' => $result['total_trades'] ?? 0,
-                    'wins' => $result['wins'] ?? 0,
-                    'losses' => $result['losses'] ?? 0,
-                    'winrate' => $result['winrate'] ?? 0,
-                    'net_profit_percent' => $result['net_profit_percent'] ?? 0,
-                    'profit_factor' => $result['profit_factor'] ?? 0,
-                    'max_drawdown' => $result['max_drawdown'] ?? 0,
-                ];
-            }
-
-            if (Schema::hasColumn('backtest_runs', 'started_at')) {
-                $runData['started_at'] = now();
-            }
-
-            if (Schema::hasColumn('backtest_runs', 'finished_at')) {
-                $runData['finished_at'] = now();
-            }
-
-            $runData = $this->onlyExistingColumns('backtest_runs', $runData);
-            $run = BacktestRun::create($runData);
-
-            foreach (($result['trades'] ?? []) as $tradeData) {
-                $trade = Trade::create($this->onlyExistingColumns('trades', [
-                    'backtest_run_id' => $run->id,
-                    'symbol' => $payload['symbol'],
-                    'timeframe' => $payload['timeframe'],
-                    'strategy' => $payload['strategy'],
-                    'direction' => $tradeData['direction'],
-                    'entry_time' => $tradeData['entry_time'],
-                    'exit_time' => $tradeData['exit_time'] ?? null,
-                    'entry_price' => $tradeData['entry_price'],
-                    'exit_price' => $tradeData['exit_price'] ?? null,
-                    'stop_loss' => $tradeData['stop_loss'] ?? null,
-                    'take_profit' => $tradeData['take_profit'] ?? null,
-                    'result' => $tradeData['result'],
-                    'market_regime' => $tradeData['market_regime'] ?? null,
-                    'volatility_regime' => $tradeData['volatility_regime'] ?? null,
-                    'profit_percent' => $tradeData['profit_percent'] ?? 0,
-                    'balance_after_trade' => $tradeData['balance'] ?? null,
-                    'mistake_type' => $tradeData['mistake_type'] ?? null,
-                    'reason' => $tradeData['reason'] ?? null,
-                ]));
-
-                if (($tradeData['result'] ?? null) === 'LOSS' && !empty($tradeData['mistake_type'])) {
-                    $mistakeData = [
-                        'backtest_run_id' => $run->id,
-                        'trade_id' => $trade->id,
-                        'mistake_type' => $tradeData['mistake_type'],
-                        'reason' => $tradeData['reason'] ?? null,
-                        'description' => $tradeData['reason'] ?? null,
-                        'suggestion' => $tradeData['suggestion'] ?? null,
-                        'context' => $tradeData,
-                    ];
-
-                    Mistake::create($this->onlyExistingColumns('mistakes', $mistakeData));
-                }
-            }
-
-            return $run;
-        });
 
         return view('backtests.result', [
-            'result' => $result,
-            'payload' => $payload,
+            'result' => $manualBacktests->responseFor($backtestRun),
+            'payload' => $manualBacktests->payloadFor($backtestRun),
             'backtestRun' => $backtestRun,
         ]);
     }
 
-    private function symbolId(string $symbol): int
-    {
-        $code = str_replace('/', '', $symbol);
-        $existing = DB::table('symbols')->where('code', $code)->first();
-        if ($existing) {
-            return (int) $existing->id;
+    private function respondForRun(
+        LabEvaluationRun $run,
+        array $payload,
+        CanonicalManualBacktestService $manualBacktests,
+    ): View|RedirectResponse {
+        $run->refresh();
+        if ($run->status === 'completed') {
+            return view('backtests.result', [
+                'result' => $manualBacktests->responseFor($run),
+                'payload' => $manualBacktests->payloadFor($run) ?: $payload,
+                'backtestRun' => $run,
+            ]);
         }
 
-        return (int) DB::table('symbols')->insertGetId([
-            'code' => $code,
-            'display_name' => str_contains($symbol, '/') ? $symbol : 'XAU/USD',
-            'asset_class' => 'metal',
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        if (in_array($run->status, ['technical_error', 'skipped'], true)) {
+            return redirect()
+                ->route('backtests.status-page', ['backtestRun' => $run->id])
+                ->with('error', $run->error_message ?: 'Canonical backtest technical error.');
+        }
+
+        return redirect()
+            ->route('backtests.status-page', ['backtestRun' => $run->id])
+            ->with('success', 'Canonical Lab backtest queue\'ga yuborildi. Natija evidence polling orqali ko\'rinadi.');
     }
 
-    private function onlyExistingColumns(string $table, array $data): array
+    private function normalizeSymbolCode(string $symbol): string
     {
-        return array_filter(
-            $data,
-            fn (string $column): bool => Schema::hasColumn($table, $column),
-            ARRAY_FILTER_USE_KEY,
-        );
-    }
-
-    private function executionAssumptions(string $symbol): array
-    {
-        $isMetal = str_starts_with(strtoupper(str_replace('/', '', $symbol)), 'XAU');
-        return [
-            'spread_points' => $isMetal ? 20 : 12, 'point_size' => $isMetal ? 0.01 : 0.00001,
-            'commission_percent' => 0.01, 'slippage_points' => 2,
-            'swap_per_day_percent' => 0.002, 'allowed_sessions_utc' => ['1-22'],
-            'intrabar_policy' => 'conservative', 'max_gap_multiple' => 96,
-        ];
+        return strtoupper(str_replace(['_', '/'], '', trim($symbol)));
     }
 }

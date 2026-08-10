@@ -17,6 +17,23 @@ class CandidateHandoffService
             'lab_generation_id' => $generation->id, 'lab_agent_id' => $agent?->id, 'stage' => $stage,
         ], ['status' => $status, 'terminal_reason' => $reason, 'payload' => $payload, 'recorded_at' => now()]);
 
+        // The projection is idempotent, but a later selector retry can turn a
+        // previously unselected candidate into a real full-replay handoff
+        // (for example after a technical snapshot quarantine is repaired).
+        // Refresh only that routing projection; the immutable evidence plane
+        // below still records both decisions and their revisions.
+        if (! $event->wasRecentlyCreated
+            && $stage === 'selection_passed'
+            && ($event->status !== $status || $event->terminal_reason !== $reason || $event->payload !== $payload)) {
+            $event->update([
+                'status' => $status,
+                'terminal_reason' => $reason,
+                'payload' => $payload,
+                'recorded_at' => now(),
+            ]);
+            $event = $event->fresh();
+        }
+
         // The handoff row is intentionally idempotent for routing, but the
         // evidence plane records every invocation, including repeated retries.
         app(LabImmutableEvidenceService::class)->recordHandoff($generation, $agent, $stage, $status, $reason, [

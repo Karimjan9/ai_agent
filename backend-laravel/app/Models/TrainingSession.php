@@ -31,6 +31,8 @@ class TrainingSession extends Model
         'evidence_status',
         'invalidated_at',
         'invalidation_reason',
+        'started_at',
+        'finished_at',
     ];
 
     protected $casts = [

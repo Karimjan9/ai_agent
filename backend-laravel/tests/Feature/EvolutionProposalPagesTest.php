@@ -12,7 +12,7 @@ class EvolutionProposalPagesTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_evolution_proposals_index_lists_proposals(): void
+    public function test_evolution_proposals_index_lists_historical_proposals(): void
     {
         $modelVersion = ModelVersion::create([
             'name' => 'breakout_v1',
@@ -38,19 +38,18 @@ class EvolutionProposalPagesTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $response = $this->get('/evolution-proposals');
-
-        $response->assertOk()
+        $this->get('/evolution-proposals')
+            ->assertOk()
             ->assertSee('Evolution Proposals')
             ->assertSee('BREAKOUT_V1')
             ->assertSee('false_breakout')
             ->assertSee('pending');
     }
 
-    public function test_evolution_proposal_show_can_approve_apply_and_create_next_model_version(): void
+    public function test_historical_proposal_show_page_is_read_only(): void
     {
         $trainingSession = TrainingSession::create([
-            'title' => 'Training Session Test',
+            'title' => 'Historical Training Session',
             'symbol' => 'XAUUSD',
             'timeframe' => 'H1',
             'agents_count' => 1,
@@ -90,32 +89,18 @@ class EvolutionProposalPagesTest extends TestCase
             ->assertSee('false_breakout')
             ->assertSee('Create breakout v2');
 
-        $this->post(route('evolution-proposals.approve', $proposal))
-            ->assertRedirect();
+        $this->post(route('evolution-proposals.approve', $proposal))->assertStatus(410);
+        $this->post(route('evolution-proposals.apply', $proposal))->assertStatus(410);
+        $this->post(route('evolution-proposals.reject', $proposal))->assertStatus(410);
 
         $this->assertDatabaseHas('evolution_proposals', [
             'id' => $proposal->id,
-            'status' => 'approved',
+            'status' => 'pending',
         ]);
-
-        $this->post(route('evolution-proposals.apply', $proposal->fresh()))
-            ->assertRedirect(route('model-versions.index'));
-
-        $this->assertDatabaseHas('model_versions', [
-            'name' => 'breakout_v2',
-            'strategy' => 'breakout_v2',
-            'version' => 'v2',
-            'generation' => 2,
-            'status' => 'testing',
-        ]);
-
-        $this->assertDatabaseHas('evolution_proposals', [
-            'id' => $proposal->id,
-            'status' => 'applied',
-        ]);
+        $this->assertDatabaseMissing('model_versions', ['name' => 'breakout_v2']);
     }
 
-    public function test_evolution_proposal_can_be_rejected(): void
+    public function test_evolution_proposal_mutations_are_gone(): void
     {
         $proposal = EvolutionProposal::create([
             'strategy' => 'ema_rsi_v1',
@@ -129,11 +114,11 @@ class EvolutionProposalPagesTest extends TestCase
         ]);
 
         $this->post(route('evolution-proposals.reject', $proposal))
-            ->assertRedirect();
+            ->assertStatus(410);
 
         $this->assertDatabaseHas('evolution_proposals', [
             'id' => $proposal->id,
-            'status' => 'rejected',
+            'status' => 'pending',
         ]);
     }
 }

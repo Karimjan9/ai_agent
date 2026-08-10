@@ -14,12 +14,15 @@ from app.schemas import SimpleBacktestRequest
 from app.services.backtester import _apply_portfolio_strategy, run_simple_ema_rsi_backtest_on_dataframe
 from app.services.market_regime import apply_market_regime
 from app.services.red_team import RedTeamService
+from app.services.volume_features import add_volume_features, apply_volume_policy
 from app.services.statistical_validation import (
-    cscv_probability_of_backtest_overfitting,
     deflated_sharpe_ratio,
+    noise_label_permutation_test,
+    purged_cscv_probability_of_backtest_overfitting,
     per_trade_sharpe,
     returns_from_equity_curve,
 )
+from app.services.parameter_schema import validate_strategy_parameters
 from app.strategies.registry import get_strategy
 
 
@@ -90,10 +93,22 @@ class MarketAdaptiveReplayService:
         replay_result["pf_attribution"] = self._cost_profile_attribution(payload, segments["replay"], replay_result)
         replay_result["red_team"] = RedTeamService().evaluate(replay_result)
         replay_result["edge_claim"] = self._falsify_claim(replay_result)
+        trade_rows = replay_result.get("trade_ledger") or replay_result.get("trades", [])
+        noise_values = [
+            float(row.get("profit_percent", 0))
+            for row in trade_rows
+            if isinstance(row, dict) and row.get("profit_percent") is not None
+        ]
+        replay_result["noise_sanity"] = noise_label_permutation_test(noise_values)
 
         train_score = score_calculator(foundation_result)
         forward_score = score_calculator(replay_result)
-        checkpoints = self._checkpoint_results(payload, segments["replay"], score_calculator)
+        checkpoints = self._checkpoint_results(
+            payload,
+            segments["replay"],
+            score_calculator,
+            chronological_replay_result,
+        )
         checkpoint_scores = [item["score"] for item in checkpoints]
         validation_score = round(sum(checkpoint_scores) / len(checkpoint_scores)) if checkpoint_scores else forward_score
         is_overfit = train_score - forward_score > self.overfit_threshold
@@ -149,12 +164,41 @@ class MarketAdaptiveReplayService:
             "data_hash": self._segment_hash(segments["holdout"]),
             "rule": "This segment is never used for mutation, ranking or same-generation selection.",
         }
+        result["gold_holdout"] = {
+            "protocol": "gold_holdout_v1",
+            "status": "sealed",
+            "dataset_hash": self._segment_hash(segments["holdout"]),
+            "used_for_training": False,
+            "used_for_evolution": False,
+            "one_time_release": True,
+            "selection_excluded": True,
+            "rule": "Gold holdout is opened only after candidate selection and is never reused for tuning.",
+        }
+        result["challenger_protocol"] = {
+            "protocol": "frozen_champion_2_3_challenger_v1",
+            "independent_forward_windows_required": 3,
+            "observed_forward_windows": len(checkpoints),
+            "positive_forward_windows": sum(1 for score in checkpoint_scores if float(score) > 0),
+            "checkpoint_state_continuity": True,
+            "checkpoint_windows_are_independent": False,
+            "champion_replacement_rule": "replace only after all independent forward windows and cost-adjusted gates pass",
+            "promotion_evidence": False,
+            "rule": "Continuous replay checkpoints are diagnostic survival evidence; they cannot manufacture independent forward quorum.",
+        }
+        trial_context = (payload.policy_context or {}).get("trial_ledger", {})
+        if isinstance(trial_context, dict):
+            result["trial_ledger"] = {
+                **trial_context,
+                "promotion_evidence": False,
+                "rule": "Trial multiplicity is carried into DSR/PBO diagnostics; it never relaxes an economic gate.",
+            }
         result["temporal_firewall"] = self._temporal_firewall(payload, segments["replay"], segments["holdout"])
         result["secret_adversarial_arena"] = self._secret_adversarial_arena(payload, segments["replay"])
         # These two ledgers deliberately use the same next-candle execution
         # function as the replay.  Their verdicts are diagnostic evidence;
         # they neither create trades nor change a promotion decision.
         result["execution_digital_twin"] = self._execution_digital_twin(payload, segments["replay"], replay_result)
+        result["parameter_plateau"] = self._parameter_plateau(payload, segments["replay"], replay_result)
         result["counterfactual_blame_graph"] = self._counterfactual_blame_graph(replay_result, segments["replay"])
         result["metamorphic_universality"] = self._metamorphic_universality(payload, segments["replay"], replay_result)
         if payload.portfolio_members:
@@ -208,12 +252,28 @@ class MarketAdaptiveReplayService:
                 if math.isfinite(normalized):
                     trial_sharpes.append(normalized)
 
-        selection_validation = cscv_probability_of_backtest_overfitting(score_rows)
+        interval_rows = context.get("window_intervals", context.get("checkpoint_intervals", []))
+        if not isinstance(interval_rows, list):
+            interval_rows = []
+        try:
+            purge_bars = max(0, int(context.get("purge_bars", 0) or 0))
+        except (TypeError, ValueError):
+            purge_bars = 0
+        try:
+            embargo_bars = max(0, int(context.get("embargo_bars", 0) or 0))
+        except (TypeError, ValueError):
+            embargo_bars = 0
+        selection_validation = purged_cscv_probability_of_backtest_overfitting(
+            score_rows,
+            interval_rows,
+            purge_bars=purge_bars,
+            embargo_bars=embargo_bars,
+        )
         if not score_rows:
             selection_validation["promotion_evidence"] = False
             selection_validation["reason"] = "Frozen portfolio candidate frontier is absent or invalid."
-        else:
-            selection_validation["promotion_evidence"] = True
+        elif not selection_validation.get("purge_embargo_applied", False):
+            selection_validation["promotion_evidence"] = False
         result["selection_validation"] = selection_validation
         returns = returns_from_equity_curve(result.get("equity_curve", []))
         result.setdefault("statistical_evidence", {})["deflated_sharpe"] = deflated_sharpe_ratio(
@@ -225,6 +285,13 @@ class MarketAdaptiveReplayService:
             "candidate_count": int(context.get("candidate_count", len(score_rows)) or 0),
             "aligned_score_row_count": len(score_rows),
             "trial_sharpe_count": len(trial_sharpes),
+            "trial_ledger": context.get("trial_ledger", {}),
+            "purged_cscv": {
+                "purge_bars": purge_bars,
+                "embargo_bars": embargo_bars,
+                "interval_count": len(interval_rows),
+                "promotion_evidence": bool(selection_validation.get("promotion_evidence", False)),
+            },
             "promotion_evidence": False,
             "rule": "Frontier is frozen before the combined replay; no holdout or same-window mutation is allowed.",
         }
@@ -485,6 +552,7 @@ class MarketAdaptiveReplayService:
 
         def signals(frame: pd.DataFrame) -> list[tuple[str, str]]:
             normalized = apply_market_regime(frame.copy())
+            normalized = add_volume_features(normalized, payload.volume_context)
             previous = normalized["close"].shift(1)
             true_range = pd.concat([
                 normalized["high"] - normalized["low"], (normalized["high"] - previous).abs(), (normalized["low"] - previous).abs(),
@@ -493,7 +561,11 @@ class MarketAdaptiveReplayService:
             if payload.portfolio_members:
                 prepared = _apply_portfolio_strategy(normalized, payload.portfolio_members)
             else:
-                prepared = get_strategy(payload.strategy, payload.base_strategy)(normalized, payload.parameters)
+                prepared = apply_volume_policy(
+                    get_strategy(payload.strategy, payload.base_strategy)(normalized, payload.parameters),
+                    payload.parameters,
+                    payload.base_strategy or payload.strategy,
+                )
             return [(str(row.time), str(row.signal)) for row in prepared[["time", "signal"]].itertuples(index=False)]
 
         baseline = signals(prefix)
@@ -547,6 +619,10 @@ class MarketAdaptiveReplayService:
         profiles = {
             "variable_spread": execution.model_copy(update={"spread_points": execution.spread_points * 2.0}),
             "slippage_spike": execution.model_copy(update={"slippage_points": max(execution.slippage_points * 3.0, execution.point_size)}),
+            "cost_1_5x": execution.model_copy(update={
+                "spread_points": execution.spread_points * 1.5, "slippage_points": execution.slippage_points * 1.5,
+                "commission_percent": execution.commission_percent * 1.5,
+            }),
             "cost_stress": execution.model_copy(update={
                 "spread_points": execution.spread_points * 2.0, "slippage_points": execution.slippage_points * 2.0,
                 "commission_percent": execution.commission_percent * 2.0,
@@ -568,8 +644,8 @@ class MarketAdaptiveReplayService:
                 "cost_monotonic": float(tested.get("net_profit_percent", 0)) <= normal_net + 1e-9,
             }
         latency = run_simple_ema_rsi_backtest_on_dataframe(
-            payload,
-            replay.iloc[1:].reset_index(drop=True),
+            payload.model_copy(update={"signal_delay_candles": 1}),
+            replay,
             include_differential_pair=False,
             lightweight=True,
         ).model_dump() if len(replay) > 203 else None
@@ -577,16 +653,168 @@ class MarketAdaptiveReplayService:
             "status": "assessed" if latency else "insufficient_rows",
             "profit_factor": latency.get("profit_factor", 0) if latency else None,
             "net_profit_percent": latency.get("net_profit_percent", 0) if latency else None,
-            "rule": "Delayed dataset start is a conservative availability check, not a substitute for per-order latency replay.",
+            "pass": bool(latency) and float(latency.get("net_profit_percent", 0)) <= normal_net + 1e-9 if latency else False,
+            "rule": "Signal-derived columns are shifted one candle; OHLC/regime features remain fixed.",
         }
+        scenarios["missing_candle"] = MarketAdaptiveReplayService._missing_candle_stress(payload, replay)
         fault_contract = MarketAdaptiveReplayService._execution_fault_contract(payload)
         scenarios.update(fault_contract["scenarios"])
         assessed = [item for item in scenarios.values() if item.get("status") in {"assessed", "contract_test_passed"}]
+        stress_pass = bool(latency) and bool(scenarios["one_candle_latency"].get("pass")) \
+            and scenarios["missing_candle"].get("status") == "contract_test_passed" \
+            and all(bool(scenarios[name].get("cost_monotonic")) for name in profiles)
         return {
             "status": "assessed" if assessed else "waiting_for_provider_events",
+            "pass": stress_pass and fault_contract["status"] == "passed",
             "execution_contract": "closed candle decision -> next candle open fill -> conservative intrabar exit",
             "scenarios": scenarios, "fault_contract": fault_contract,
             "rule": "Unobservable broker failures remain pending; they are never simulated into a pass.",
+        }
+
+    @staticmethod
+    def _parameter_plateau(
+        payload: SimpleBacktestRequest,
+        replay: pd.DataFrame,
+        normal: dict[str, object],
+    ) -> dict[str, object]:
+        """Replay the selected repair gene on both sides of its value.
+
+        A repair is not elite merely because one exact value won.  The
+        contract freezes the parent/data/cost/execution context and probes
+        the declared single gene at -10% and +10%.  Invalid boundary probes
+        remain insufficient evidence rather than being silently clipped into
+        a pass.
+        """
+        context = payload.policy_context if isinstance(payload.policy_context, dict) else {}
+        contracts = context.get("repair_contracts", {})
+        contract = contracts.get(payload.strategy, {}) if isinstance(contracts, dict) else {}
+        if not isinstance(contract, dict) or not contract:
+            contract = context.get("repair_contract", {})
+        if not isinstance(contract, dict):
+            contract = {}
+
+        parameters = dict(payload.parameters or {})
+        changed_gene = contract.get("changed_gene")
+        value = parameters.get(changed_gene) if changed_gene else None
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            numeric = [
+                key for key, candidate in parameters.items()
+                if isinstance(candidate, (int, float)) and not isinstance(candidate, bool)
+            ]
+            changed_gene = numeric[0] if numeric else None
+            value = parameters.get(changed_gene) if changed_gene else None
+            source = "first_numeric_gene_fallback"
+        else:
+            source = "declared_repair_gene"
+
+        if changed_gene is None or not isinstance(value, (int, float)) or isinstance(value, bool):
+            return {
+                "protocol": "parameter_plateau_v1",
+                "status": "insufficient_evidence",
+                "pass": False,
+                "reason": "No numeric single repair gene is available for the plateau probe.",
+                "promotion_evidence": False,
+            }
+
+        variants: list[dict[str, object]] = []
+        for offset in (-0.10, 0.10):
+            proposed = float(value) + max(abs(float(value)), 1.0) * offset
+            if isinstance(value, int) and not isinstance(value, bool):
+                proposed = int(round(proposed))
+            changed = dict(parameters)
+            changed[changed_gene] = proposed
+            try:
+                validated = validate_strategy_parameters(payload.strategy, changed, payload.base_strategy)
+                tested = run_simple_ema_rsi_backtest_on_dataframe(
+                    payload.model_copy(update={"parameters": validated}),
+                    replay,
+                    include_differential_pair=False,
+                    lightweight=True,
+                ).model_dump()
+            except (ValueError, TypeError):
+                # A hard schema boundary is a real absence of two-sided
+                # robustness evidence; do not repair it by clipping to the
+                # boundary, because that would test a different hypothesis.
+                continue
+            variants.append({
+                "offset": offset,
+                "value": proposed,
+                "profit_factor": float(tested.get("profit_factor", 0) or 0),
+                "net_profit_percent": float(tested.get("net_profit_percent", 0) or 0),
+                "max_drawdown_percent": float(tested.get("max_drawdown_percent", 0) or 0),
+                "total_trades": int(tested.get("total_trades", 0) or 0),
+            })
+
+        normal_pf = float(normal.get("profit_factor", 0) or 0)
+        normal_net = float(normal.get("net_profit_percent", 0) or 0)
+        normal_dd = float(normal.get("max_drawdown_percent", 100) or 100)
+        min_pf = min((float(item["profit_factor"]) for item in variants), default=0.0)
+        min_net = min((float(item["net_profit_percent"]) for item in variants), default=0.0)
+        max_dd = max((float(item["max_drawdown_percent"]) for item in variants), default=100.0)
+        max_pf_drop = 1.0 - (min_pf / normal_pf) if normal_pf > 0 else 1.0
+        passed = (
+            len(variants) == 2
+            and normal_pf >= 1.0
+            and normal_net > 0
+            and min_pf >= 1.0
+            and min_net >= 0
+            and max_dd <= max(15.0, normal_dd * 1.5)
+        )
+        return {
+            "protocol": "parameter_plateau_v1",
+            "status": "assessed" if len(variants) == 2 else "insufficient_evidence",
+            "pass": passed,
+            "parameter": changed_gene,
+            "source": source,
+            "tested_offsets": [-0.10, 0.10],
+            "baseline": {
+                "value": value,
+                "profit_factor": normal_pf,
+                "net_profit_percent": normal_net,
+                "max_drawdown_percent": normal_dd,
+            },
+            "variants": variants,
+            "min_profit_factor": round(min_pf, 6),
+            "min_net_profit_percent": round(min_net, 6),
+            "max_drawdown_percent": round(max_dd, 6),
+            "max_profit_factor_drop": round(max_pf_drop, 6),
+            "rule": "Both +/-10% probes must retain positive cost-aware economics and avoid a catastrophic drawdown jump.",
+            "promotion_evidence": True,
+        }
+
+    @staticmethod
+    def _missing_candle_stress(payload: SimpleBacktestRequest, replay: pd.DataFrame) -> dict[str, object]:
+        if len(replay) < 204:
+            return {"status": "insufficient_rows", "pass": False, "promotion_evidence": False}
+        expected = pd.Timedelta(minutes=15 if payload.timeframe == "M15" else 60)
+        deltas = pd.to_datetime(replay["time"]).diff()
+        candidates = [index for index in range(1, len(replay) - 1) if deltas.iloc[index] == expected and deltas.iloc[index + 1] == expected]
+        if not candidates:
+            return {"status": "insufficient_contiguous_candles", "pass": False, "promotion_evidence": False}
+        drop_index = candidates[len(candidates) // 2]
+        damaged = replay.drop(index=drop_index).reset_index(drop=True)
+        strict_execution = payload.execution.model_copy(update={"reject_unexpected_gaps": True})
+        try:
+            run_simple_ema_rsi_backtest_on_dataframe(
+                payload.model_copy(update={"execution": strict_execution}),
+                damaged,
+                include_differential_pair=False,
+                lightweight=True,
+            )
+        except ValueError as exc:
+            message = str(exc)
+            passed = "hard-gate failed" in message or "unexpected candle gaps" in message
+            return {
+                "status": "contract_test_passed" if passed else "contract_test_failed",
+                "pass": passed,
+                "dropped_row_index": drop_index,
+                "error": message,
+                "rule": "One deterministic internal candle is removed and reject_unexpected_gaps must stop the replay.",
+                "promotion_evidence": False,
+            }
+        return {
+            "status": "contract_test_failed", "pass": False, "dropped_row_index": drop_index,
+            "rule": "Missing-candle hard gate did not stop the damaged dataset.", "promotion_evidence": False,
         }
 
     @staticmethod
@@ -760,12 +988,18 @@ class MarketAdaptiveReplayService:
                 },
                 "feedback_available_at": (month.end_time + pd.Timedelta(seconds=1)).isoformat(),
                 "used_for_same_month_mutation": False,
+                "state_continuity": "single_chronological_replay",
+                "state_reset": False,
+                "independent_evidence": False,
+                "promotion_evidence": False,
             })
         return {
             "protocol": "chronological replay ledger -> frozen month attribution -> next-month-only feedback",
             "status": "assessed" if windows else "insufficient_monthly_rows",
             "execution_source": "full_chronological_trade_ledger",
             "indicator_warmup_preserved": True,
+            "independent_evidence": False,
+            "promotion_evidence": False,
             "windows": windows,
             "positive_windows": sum(int(data.get("window_survival", {}).get("positive_windows", 0)) > 0 for data in windows),
             "catastrophic_windows": sum(int(data.get("window_survival", {}).get("catastrophic_windows", 0)) > 0 for data in windows),
@@ -786,6 +1020,21 @@ class MarketAdaptiveReplayService:
             return {"status": "insufficient_history", "windows": []}
         if chronological_result and ((chronological_result.get("pf_attribution", {}) or {}).get("by_month", {}) or {}):
             return self._monthly_walk_forward_from_ledger(replay, score_calculator, chronological_result)
+        if chronological_result is not None:
+            # Do not fall back to month-sized replays from an empty state. A
+            # missing month ledger is an evidence gap, not permission to
+            # manufacture a second, state-reset experiment.
+            return {
+                "protocol": "chronological_replay_ledger_required_v1",
+                "status": "insufficient_monthly_ledger",
+                "execution_source": "none",
+                "indicator_warmup_preserved": False,
+                "state_reset": False,
+                "independent_evidence": False,
+                "promotion_evidence": False,
+                "windows": [],
+                "rule": "Monthly passport requires by_month attribution from the one continuous replay.",
+            }
         normalized = replay.copy()
         normalized["time"] = pd.to_datetime(normalized["time"])
         periods = list(normalized["time"].dt.to_period("M").drop_duplicates())
@@ -917,6 +1166,12 @@ class MarketAdaptiveReplayService:
     def sealed_holdout(self, payload: SimpleBacktestRequest, df: pd.DataFrame) -> tuple[dict[str, object], dict[str, object]]:
         segments = self.split_dataset(df)
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, segments["holdout"]).model_dump()
+        result["gold_holdout"] = {
+            "protocol": "gold_holdout_v1", "status": "released_once",
+            "dataset_hash": self._segment_hash(segments["holdout"]),
+            "used_for_training": False, "used_for_evolution": False,
+            "one_time_release": True, "selection_excluded": True,
+        }
         return result, self._period(segments["holdout"])
 
     @staticmethod
@@ -972,9 +1227,16 @@ class MarketAdaptiveReplayService:
         if edge.get("worst_regime_sampled") and float(edge.get("worst_regime_pf", 0)) < 1.0: failures.append("worst_regime")
         claim["falsification_report"] = {"status": "survived" if not failures else "falsified", "failed_scenarios": failures, "adversarial": profile.get("adversarial", {})}
         return claim
-    def _checkpoint_results(self, payload: SimpleBacktestRequest, replay: pd.DataFrame, score_calculator) -> list[dict[str, object]]:
-        # The checkpoints are chronological evidence only.  They do not tune a
-        # strategy, so a later candle cannot alter an earlier decision.
+    def _checkpoint_results(
+        self,
+        payload: SimpleBacktestRequest,
+        replay: pd.DataFrame,
+        score_calculator,
+        chronological_result: dict[str, object],
+    ) -> list[dict[str, object]]:
+        # These are projections of ONE chronological replay. Replaying a
+        # reset chunk here would restart EMA warm-up, cooldown and risk state
+        # and manufacture boundary signals.
         chunk_size = len(replay) // self.minimum_checkpoint_windows
         chunks = [
             replay.iloc[index * chunk_size:(index + 1) * chunk_size if index < self.minimum_checkpoint_windows - 1 else len(replay)]
@@ -982,19 +1244,60 @@ class MarketAdaptiveReplayService:
         ]
         chunks = [chunk for chunk in chunks if len(chunk) >= 202]
         checkpoints: list[dict[str, object]] = []
+        temporal_ledger = ((chronological_result.get("pf_attribution", {}) or {}).get("by_temporal_chunk", {}) or {})
+        full_trades = [trade for trade in (chronological_result.get("trade_ledger", []) or []) if isinstance(trade, dict)]
         for index, chunk in enumerate(chunks, start=1):
-            # Checkpoints contribute only chronological score/trade evidence.
-            # They must preserve the same execution core, but promotion-only
-            # diagnostics and paired child replays are already represented by
-            # the primary full replay.  Keeping this lane lightweight removes
-            # four redundant full-history diagnostic stacks per candidate.
-            result = run_simple_ema_rsi_backtest_on_dataframe(
-                payload,
-                chunk.reset_index(drop=True),
-                include_differential_pair=False,
-                lightweight=True,
-            ).model_dump()
-            checkpoints.append({"window": index, **self._period(chunk), "score": score_calculator(result), "trades": result["total_trades"]})
+            attribution = temporal_ledger.get(f"chunk_{index}", {})
+            if not isinstance(attribution, dict):
+                attribution = {}
+            projection = {
+                "profit_factor": float(attribution.get("net_pf", 0) or 0),
+                "total_trades": int(attribution.get("trades", 0) or 0),
+                "wins": int(attribution.get("wins", 0) or 0),
+                "losses": int(attribution.get("losses", 0) or 0),
+                "winrate": float(attribution.get("winrate", 0) or 0),
+                "net_profit_percent": float(attribution.get("net_profit_percent", 0) or 0),
+                "max_drawdown_percent": float(attribution.get("max_drawdown_percent", 0) or 0),
+                "stability_score": 0,
+                "execution_assumptions": chronological_result.get("execution_assumptions", {}),
+            }
+            chunk_start = pd.Timestamp(chunk.time.min())
+            chunk_end = pd.Timestamp(chunk.time.max())
+            chunk_trades = []
+            for trade in full_trades:
+                try:
+                    entry_time = pd.Timestamp(trade.get("entry_time"))
+                except (TypeError, ValueError):
+                    continue
+                if chunk_start <= entry_time <= chunk_end:
+                    chunk_trades.append(trade)
+            label_starts = []
+            label_ends = []
+            for trade in chunk_trades:
+                try:
+                    label_starts.append(pd.Timestamp(trade.get("entry_time")))
+                    label_ends.append(pd.Timestamp(trade.get("exit_time") or trade.get("entry_time")))
+                except (TypeError, ValueError):
+                    continue
+            label_interval = {
+                "label_start": min(label_starts).isoformat() if label_starts else None,
+                "label_end": max(label_ends).isoformat() if label_ends else None,
+                "label_trade_count": len(chunk_trades),
+            }
+            checkpoints.append({
+                "window": index,
+                **self._period(chunk),
+                "score": score_calculator(projection),
+                "trades": projection["total_trades"],
+                "profit_factor": projection["profit_factor"],
+                "net_profit_percent": projection["net_profit_percent"],
+                "state_continuity": "single_chronological_replay",
+                "state_reset": False,
+                "independent_evidence": False,
+                "source_trade_ledger_hash": chronological_result.get("trade_ledger_hash"),
+                "promotion_evidence": False,
+                **label_interval,
+            })
         return checkpoints
 
     @staticmethod

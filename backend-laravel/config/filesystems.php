@@ -38,6 +38,17 @@ return [
             'report' => false,
         ],
 
+        // The default laboratory evidence disk keeps the current local
+        // artifact layout compatible with already-externalized files.
+        // Production can point LAB_EVIDENCE_DISK at s3 without changing the
+        // database manifest contract.
+        'lab_evidence' => [
+            'driver' => 'local',
+            'root' => storage_path('app'),
+            'throw' => true,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

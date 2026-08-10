@@ -6,6 +6,7 @@ import pandas as pd
 from app.schemas import ExecutionConfig, SimpleBacktestRequest, SimpleTrade
 from app.services.backtester import (
     _differential_router_report,
+    _entry_eligibility,
     _proof_carrying_replay,
     _trade_ledger_hash,
     _validate_data_gaps,
@@ -191,6 +192,28 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertGreaterEqual(result.entry_funnel["raw_strategy_signals"], 1)
         self.assertEqual(result.entry_funnel["accepted_entries"], 0)
         self.assertEqual(result.entry_funnel["dominant_rejection"], "minimum_confidence")
+
+    def test_differential_recall_threshold_is_target_lane_only(self):
+        payload = self.payload(reject_gaps=False)
+        payload.parameters.update({
+            "minimum_signal_confidence": 0.34,
+            "differential_target_min_signal_confidence": 0.25,
+        })
+        row = pd.Series({"time": "2026-01-10 00:00:00", "open": 100.0, "atr_regime": 1.0})
+        target = pd.Series({
+            "signal": "BUY", "signal_confidence": 0.30, "differential_target": True,
+            "market_regime": "trend_up", "volatility_regime": "normal_volatility",
+        })
+        non_target = target.copy()
+        non_target["differential_target"] = False
+
+        target_allowed, target_reason = _entry_eligibility(row, payload, target)
+        non_target_allowed, non_target_reason = _entry_eligibility(row, payload, non_target)
+
+        self.assertTrue(target_allowed)
+        self.assertIsNone(target_reason)
+        self.assertFalse(non_target_allowed)
+        self.assertEqual(non_target_reason, "minimum_confidence")
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
     def test_opt_in_decision_trace_carries_features_and_rejections(self, _strategy):
@@ -412,6 +435,28 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertEqual(result["status"], "passed")
         self.assertEqual(result["independent_ledger_verifier"]["ledger_net_profit_percent"], 0.5)
 
+    def test_proof_replay_does_not_double_round_profit_factor(self):
+        payload = self.payload(reject_gaps=False)
+        trades = [
+            SimpleTrade(
+                direction="BUY", entry_time="2026-01-01T00:00:00", exit_time="2026-01-01T01:00:00",
+                entry_price=100, exit_price=101, result="WIN", profit_percent=1.8451, balance=10184.51,
+            ),
+            SimpleTrade(
+                direction="SELL", entry_time="2026-01-01T02:00:00", exit_time="2026-01-01T03:00:00",
+                entry_price=100, exit_price=100.0, result="LOSS", profit_percent=-1.0, balance=10082.66,
+            ),
+        ]
+        result = _proof_carrying_replay({
+            "total_trades": 2,
+            "profit_factor": 1.85,
+            "net_profit_percent": 0.83,
+            "trade_ledger_hash": _trade_ledger_hash(trades),
+        }, trades, payload)
+
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["independent_ledger_verifier"]["profit_factor"], 1.85)
+
     def test_proof_replay_still_fails_on_real_ledger_mismatch(self):
         payload = self.payload(reject_gaps=False)
         trades = [SimpleTrade(
@@ -457,6 +502,18 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
             "high": [431.0, 432.0],
             "low": [429.0, 430.0],
             "close": [430.0, 431.0],
+            "volume": [1.0, 1.0],
+        })
+
+        self.assertEqual(_validate_data_gaps(frame, self.payload()), 0)
+
+    def test_xau_maundy_thursday_closure_is_not_a_hard_gap(self):
+        frame = pd.DataFrame({
+            "time": pd.to_datetime(["2011-04-20 21:00:00", "2011-04-21 08:00:00"]),
+            "open": [1485.0, 1486.0],
+            "high": [1486.0, 1487.0],
+            "low": [1484.0, 1485.0],
+            "close": [1485.0, 1486.0],
             "volume": [1.0, 1.0],
         })
 

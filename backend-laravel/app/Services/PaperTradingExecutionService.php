@@ -29,12 +29,13 @@ class PaperTradingExecutionService
         private CandidateGateDecisionService $gateDecisions,
         private PaperExecutionStateMachineService $executionState,
         private StrategyParameterSchemaService $schemas,
+        private RuntimeEnsemblePolicyService $runtimeEnsembles,
     ) {}
 
     public function run(): array
     {
-        $stats = ['captured' => 0, 'opened' => 0, 'closed' => 0, 'candidates' => 0];
-        $candidates = ModelMarketPerformance::with('modelVersion')
+        $stats = ['mode' => (string) config('services.paper.mode', 'shadow'), 'broker' => 'simulated', 'captured' => 0, 'opened' => 0, 'closed' => 0, 'candidates' => 0];
+        $allCandidates = ModelMarketPerformance::with('modelVersion')
             ->where('evidence_status', 'valid')
             ->whereHas('modelVersion', fn ($query) => $query->where('evidence_status', 'valid'))
             ->whereIn('status', ['forward_validated', 'paper'])
@@ -45,12 +46,21 @@ class PaperTradingExecutionService
         // signal. With zero forward candidates this remains a no-op; once
         // complementary members exist, routing still waits for their own
         // combined canonical replay gate.
-        $portfolioStatuses = $candidates->groupBy(fn (ModelMarketPerformance $candidate): string => $candidate->symbol.'|'.$candidate->timeframe)
+        $portfolioStatuses = $allCandidates->groupBy(fn (ModelMarketPerformance $candidate): string => $candidate->symbol.'|'.$candidate->timeframe)
             ->map(function (Collection $marketCandidates, string $key): string {
                 [$symbol, $timeframe] = explode('|', $key, 2);
                 return $this->portfolios->syncMarket($symbol, $timeframe, $marketCandidates)['status'];
             })->all();
         $stats['portfolio_status'] = $portfolioStatuses;
+
+        // A declared council specialist may prove its individual passport,
+        // but it must never start an individual paper track. Paper evidence
+        // belongs to the passed combined council proxy; otherwise a strong
+        // member could silently bypass the specialist -> router -> replay
+        // sequence and reintroduce the portfolio-rescues-failure problem.
+        $candidates = $allCandidates->filter(fn (ModelMarketPerformance $candidate): bool =>
+            $this->paperTrackAllowed($candidate)
+        )->values();
 
         foreach ($candidates as $candidate) {
             $this->gateDecisions->recordPaperAdmissionHandshake($candidate);
@@ -70,6 +80,24 @@ class PaperTradingExecutionService
         }
 
         return $stats;
+    }
+
+    private function paperTrackAllowed(ModelMarketPerformance $candidate): bool
+    {
+        if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
+            if (! filled($candidate->symbol) || ! filled($candidate->timeframe)) return false;
+            $ready = $this->portfolios->ready($candidate->symbol, $candidate->timeframe);
+            return $ready !== null && (int) $ready->id === (int) data_get($candidate->metrics, 'elite_portfolio_id', 0);
+        }
+
+        $metadata = (array) ($candidate->modelVersion?->metadata ?? []);
+        $isCouncilMember = data_get($metadata, 'council_specialist_contract.protocol') === 'agent_council_v1'
+            || data_get($metadata, 'portfolio_council_lane.protocol') === 'portfolio_council_v1';
+
+        // Ordinary standalone forward-valid agents retain their existing
+        // paper path. Only explicitly declared council members are held for
+        // the combined proxy.
+        return ! $isCouncilMember;
     }
 
     private function captureLatestSignal(ModelMarketPerformance $candidate, $universe): int
@@ -212,6 +240,22 @@ class PaperTradingExecutionService
             return 0;
         }
         $contract = (array) $contractResponse->json();
+        $expectedExecution = app(ExecutionContractService::class)->for($candidate->symbol, $candidate->timeframe);
+        if (! app(ExecutionContractService::class)->matches(
+            (array) data_get($contract, 'execution_contract', []),
+            $candidate->symbol,
+            $candidate->timeframe,
+        )) {
+            $this->executionState->record($candidate, 'provider_disconnected', $signal, null, [
+                'provider' => 'ai_execution_contract', 'reason' => 'EXECUTION_CONTRACT_MISMATCH',
+                'expected_execution_hash' => $expectedExecution['execution_hash'],
+                'received_execution_hash' => data_get($contract, 'execution_hash'),
+            ]);
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_EXECUTION_CONTRACT', [
+                'paper_signal_id' => $signal->id, 'reason' => 'EXECUTION_CONTRACT_MISMATCH',
+            ]);
+            return 0;
+        }
         if (($contract['decision'] ?? 'WAIT') !== $signal->decision) {
             $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_META_AGENT', ['paper_signal_id' => $signal->id, 'meta_reason' => data_get($contract, 'meta_agent.reason')]);
             return 0;
@@ -427,12 +471,17 @@ class PaperTradingExecutionService
     private function aiRequest(ModelMarketPerformance $candidate, array $rows): array
     {
         $model = $candidate->modelVersion;
+        $executionContract = app(ExecutionContractService::class)->for($candidate->symbol, $candidate->timeframe);
+        $runtime = $this->runtimeEnsembles->requestPayload($candidate);
+        $portfolioMembers = (array) data_get($runtime, 'portfolio_members', []);
+        $isPortfolio = count($portfolioMembers) >= 2;
         return [
             'symbol' => $candidate->symbol, 'timeframe' => $candidate->timeframe,
-            'strategy' => $model->strategy,
-            'base_strategy' => $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $candidate->strategy_family),
-            'parameters' => $model->parameters ?? [], 'candles' => $rows,
-            'portfolio_members' => data_get($model->metadata, 'portfolio_members', []),
+            'strategy' => $isPortfolio ? 'portfolio_v1' : $model->strategy,
+            'base_strategy' => $isPortfolio ? 'portfolio' : $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $candidate->strategy_family),
+            'parameters' => $isPortfolio ? (array) data_get($runtime, 'parameters', []) : ($model->parameters ?? []), 'candles' => $rows,
+            'portfolio_members' => $portfolioMembers,
+            'runtime_ensemble_policy' => (array) data_get($runtime, 'runtime_ensemble_policy', []),
             'policy_context' => [
                 'constitution' => data_get($model->metadata, 'agent_constitution', []),
                 'sample_count' => (int) $candidate->sample_count,
@@ -443,13 +492,8 @@ class PaperTradingExecutionService
             // The same execution profile is used by screening/full replay and
             // now by paper execution-contract generation.
             'initial_balance' => 10000, 'risk_per_trade' => 1,
-            'execution' => [
-                'spread_points' => str_starts_with($candidate->symbol, 'XAU') ? 20 : 12,
-                'point_size' => str_starts_with($candidate->symbol, 'XAU') ? .01 : .00001,
-                'commission_percent' => .01, 'slippage_points' => 2, 'swap_per_day_percent' => .002,
-                'allowed_sessions_utc' => ['1-22'], 'intrabar_policy' => 'conservative', 'max_gap_multiple' => 96,
-                'reject_unexpected_gaps' => false, 'stop_loss_percent' => .5, 'take_profit_percent' => 1, 'max_leverage' => 5,
-            ],
+            'execution' => $executionContract['parameters'],
+            'execution_contract' => $executionContract,
         ];
     }
 }

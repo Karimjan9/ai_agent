@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
-use App\Models\LabCandleDecisionEvent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabEvidenceArtifact;
 use App\Models\LabGateDecisionEvent;
@@ -12,9 +11,11 @@ use App\Models\LabGeneration;
 use App\Models\LabLifecycleEvent;
 use App\Models\LabMutationCreditEvent;
 use App\Models\MutationMemory;
-use App\Models\ModelMarketPerformance;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -51,7 +52,9 @@ class LabImmutableEvidenceService
         ?Throwable $error = null,
     ): void {
         $run->refresh();
-        if ($this->isTerminalRun($run)) return;
+        if ($this->isTerminalRun($run)) {
+            return;
+        }
         $this->finishRun($run, $status, $response, $metrics, $metadata, $error);
     }
 
@@ -101,14 +104,16 @@ class LabImmutableEvidenceService
 
     public function attachRequest(LabEvaluationRun $run, array $request, array $context = []): void
     {
-        $requestHash = $this->hash($request);
+        $requestHash = (string) ($context['request_hash'] ?? $this->hash($request));
+        $payloadHash = $this->hash($request);
         $safeRequest = $this->requestManifest($request);
         $run->update([
             'request_id' => $context['request_id'] ?? $run->request_id,
             'request_hash' => $requestHash,
             'data_hash' => $context['data_hash'] ?? $run->data_hash ?? $this->dataHashFromRequest($request),
             'request_meta' => [
-                'payload_hash' => $requestHash,
+                'payload_hash' => $payloadHash,
+                'request_hash' => $requestHash,
                 'payload' => $safeRequest,
                 'candle_count' => $this->candleCount($request),
                 'dataset_manifest' => $context['dataset_manifest'] ?? null,
@@ -116,11 +121,13 @@ class LabImmutableEvidenceService
             ],
         ]);
         $this->recordArtifact($run, 'evaluation_request', $safeRequest, [
-            'raw_payload_hash' => $requestHash,
+            'raw_payload_hash' => $payloadHash,
+            'request_hash' => $requestHash,
             'exact_candles_referenced_by_hash' => true,
         ]);
         $this->recordLifecycle($run->agent, 'evaluation_request_attached', [
-            'request_hash' => $requestHash, 'data_hash' => $run->data_hash,
+            'request_hash' => $requestHash, 'payload_hash' => $payloadHash,
+            'data_hash' => $run->data_hash,
         ], $run->phase, $run->run_id, $run->attempt, 'LabImmutableEvidenceService');
     }
 
@@ -142,6 +149,7 @@ class LabImmutableEvidenceService
                 'run_id' => $run->run_id, 'existing_status' => $run->status,
                 'ignored_status' => $status, 'response_hash' => $response === null ? null : $this->hash($response),
             ], $run->phase, $run->run_id, $run->attempt, 'LabImmutableEvidenceService', $error);
+
             return;
         }
         $finished = now();
@@ -205,6 +213,7 @@ class LabImmutableEvidenceService
         ?string $toStatus = null,
     ): LabLifecycleEvent {
         $agent?->loadMissing('generation');
+
         return LabLifecycleEvent::create([
             'event_id' => (string) Str::uuid(),
             'lab_generation_id' => $agent?->lab_generation_id ?? ($payload['generation_id'] ?? null),
@@ -234,7 +243,9 @@ class LabImmutableEvidenceService
 
     public function recordAgentStatusChanged(LabAgent $agent, ?string $from, ?string $to, string $source = 'LabAgentObserver'): void
     {
-        if ($from === $to) return;
+        if ($from === $to) {
+            return;
+        }
         $this->recordLifecycle($agent, 'status_changed', [
             'source_projection' => 'lab_agents.lifecycle_status',
         ], $this->phaseForStatus($to), null, null, $source, null, $from, $to);
@@ -279,12 +290,14 @@ class LabImmutableEvidenceService
                 ]);
             }
         }
+
         return $run;
     }
 
     public function legacySnapshotHash(LabAgent $agent): string
     {
         $agent->loadMissing('modelVersion');
+
         return $this->hash([
             'lifecycle_status' => $agent->lifecycle_status,
             'decision_reason' => $agent->decision_reason,
@@ -318,6 +331,7 @@ class LabImmutableEvidenceService
             ->where('model_market_performance_id', $decision->model_market_performance_id)
             ->where('lab_agent_id', $decision->lab_agent_id);
         $revision = $revisionQuery->count() + 1;
+
         return LabGateDecisionEvent::create([
             'current_decision_id' => $decision->id,
             'model_market_performance_id' => $decision->model_market_performance_id,
@@ -342,7 +356,10 @@ class LabImmutableEvidenceService
         $effect = (array) $memory->behavioral_effect;
         $credit = (array) data_get($effect, 'causal_credit', []);
         $bundle = $payload['mutation_bundle_id'] ?? data_get($agent?->modelVersion?->metadata, 'mutation_bundle');
-        if (is_array($bundle)) $bundle = $this->hash($bundle);
+        if (is_array($bundle)) {
+            $bundle = $this->hash($bundle);
+        }
+
         return LabMutationCreditEvent::create([
             'mutation_memory_id' => $memory->id,
             'lab_generation_id' => $agent?->lab_generation_id,
@@ -367,24 +384,142 @@ class LabImmutableEvidenceService
         ]);
     }
 
-    public function recordArtifact(?LabEvaluationRun $run, string $type, array $payload, array $metadata = [], ?LabAgent $agent = null): LabEvidenceArtifact
+    public function recordArtifact(?LabEvaluationRun $run, string $type, array $payload, array $metadata = [], ?LabAgent $agent = null, ?string $runId = null): LabEvidenceArtifact
     {
         $agent ??= $run?->agent;
         $agent?->loadMissing('generation');
         $encoded = $this->encode($payload);
-        return LabEvidenceArtifact::create([
-            'artifact_id' => (string) Str::uuid(),
-            'run_id' => $run?->run_id,
-            'lab_generation_id' => $run?->lab_generation_id ?? $agent?->lab_generation_id,
-            'lab_agent_id' => $run?->lab_agent_id ?? $agent?->id,
-            'artifact_type' => $type,
-            'sha256' => hash('sha256', $encoded),
-            'byte_size' => strlen($encoded),
-            'content_encoding' => 'json',
-            'payload' => $payload,
-            'metadata' => ['protocol' => 'lab_immutable_evidence_v1', ...$metadata],
-            'recorded_at' => now(),
-        ]);
+        $artifactId = (string) Str::uuid();
+        $compressed = gzencode($encoded, 6);
+        if ($compressed === false) {
+            throw new RuntimeException('Evidence payloadini gzip qilish muvaffaqiyatsiz tugadi.');
+        }
+
+        $relativePath = sprintf(
+            'lab-evidence/%s/%s/%s.json.gz',
+            now()->format('Y/m'),
+            preg_replace('/[^a-z0-9_-]+/i', '-', $type) ?: 'artifact',
+            $artifactId,
+        );
+        $this->writeArtifact($relativePath, $compressed);
+
+        try {
+            return LabEvidenceArtifact::create([
+                'artifact_id' => $artifactId,
+                'run_id' => $run?->run_id ?? $runId,
+                'lab_generation_id' => $run?->lab_generation_id ?? $agent?->lab_generation_id,
+                'lab_agent_id' => $run?->lab_agent_id ?? $agent?->id,
+                'artifact_type' => $type,
+                'sha256' => hash('sha256', $encoded),
+                'byte_size' => strlen($compressed),
+                'content_encoding' => 'json+gzip',
+                'storage_path' => $relativePath,
+                'payload' => null,
+                'metadata' => [
+                    'protocol' => 'lab_immutable_evidence_v1',
+                    'storage_protocol' => 'compressed_artifact_v2',
+                    'storage_disk' => $this->artifactDisk(),
+                    'uncompressed_byte_size' => strlen($encoded),
+                    ...$metadata,
+                ],
+                'recorded_at' => now(),
+            ]);
+        } catch (Throwable $exception) {
+            $this->deleteArtifact($relativePath);
+            throw $exception;
+        }
+    }
+
+    /** Read both new compressed artifacts and legacy inline payloads. */
+    public function readArtifactPayload(LabEvidenceArtifact $artifact): ?array
+    {
+        if ($artifact->storage_path) {
+            $contents = $this->readArtifact((string) $artifact->storage_path);
+            if (str_contains((string) $artifact->content_encoding, 'gzip')) {
+                $contents = gzdecode($contents) ?: '';
+            }
+            $decoded = json_decode($contents, true);
+            if (! is_array($decoded)) {
+                throw new RuntimeException("Evidence artifact JSON yaroqsiz: {$artifact->artifact_id}");
+            }
+            $decodedHash = hash('sha256', $this->encode($decoded));
+            $roundtripHash = (string) data_get($artifact->metadata, 'payload_roundtrip_sha256', '');
+            if (! hash_equals((string) $artifact->sha256, $decodedHash)
+                && ! ($roundtripHash !== '' && hash_equals($roundtripHash, $decodedHash))) {
+                throw new RuntimeException("Evidence artifact hash mismatch: {$artifact->artifact_id}");
+            }
+
+            return $decoded;
+        }
+
+        return $artifact->payload;
+    }
+
+    /**
+     * Read the latest immutable artifact for a run.  Consumers such as the
+     * manual-backtest result page must read the response plane rather than a
+     * mutable BacktestRun/Trade/Mistake projection.
+     */
+    public function latestArtifactPayload(LabEvaluationRun $run, string $type = 'evaluation_response'): ?array
+    {
+        $artifact = LabEvidenceArtifact::query()
+            ->where('run_id', $run->run_id)
+            ->where('artifact_type', $type)
+            ->latest('id')
+            ->first();
+
+        return $artifact ? $this->readArtifactPayload($artifact) : null;
+    }
+
+    /**
+     * Move one legacy inline artifact to the compressed evidence store while
+     * retaining the original hash and artifact id. Safe to call repeatedly.
+     */
+    public function externalizeLegacyArtifact(LabEvidenceArtifact $artifact): bool
+    {
+        if ($artifact->storage_path || $artifact->payload === null) {
+            return false;
+        }
+
+        $encoded = $this->encode((array) $artifact->payload);
+        $compressed = gzencode($encoded, 6);
+        if ($compressed === false) {
+            throw new RuntimeException("Legacy evidence gzip qilinmadi: {$artifact->artifact_id}");
+        }
+        $expectedHash = (string) $artifact->sha256;
+        $roundtripHash = hash('sha256', $encoded);
+        $hashMatches = $expectedHash === '' || hash_equals($expectedHash, $roundtripHash);
+
+        $relativePath = sprintf(
+            'lab-evidence/%s/%s/%s.json.gz',
+            optional($artifact->recorded_at)->format('Y/m') ?: now()->format('Y/m'),
+            preg_replace('/[^a-z0-9_-]+/i', '-', $artifact->artifact_type) ?: 'artifact',
+            $artifact->artifact_id,
+        );
+        $this->writeArtifact($relativePath, $compressed);
+
+        try {
+            $artifact->update([
+                'byte_size' => strlen($compressed),
+                'content_encoding' => 'json+gzip',
+                'storage_path' => $relativePath,
+                'payload' => null,
+                'metadata' => [
+                    ...(array) $artifact->metadata,
+                    'storage_protocol' => 'compressed_artifact_v2',
+                    'storage_disk' => $this->artifactDisk(),
+                    'uncompressed_byte_size' => strlen($encoded),
+                    'legacy_hash_matches_roundtrip' => $hashMatches,
+                    'payload_roundtrip_sha256' => $roundtripHash,
+                    'externalized_at' => now()->utc()->toIso8601String(),
+                ],
+            ]);
+        } catch (Throwable $exception) {
+            $this->deleteArtifact($relativePath);
+            throw $exception;
+        }
+
+        return true;
     }
 
     /**
@@ -398,7 +533,9 @@ class LabImmutableEvidenceService
         $trace = data_get($payload, 'decision_trace', data_get($payload, 'candle_decision_trace', data_get($payload, 'decision_events')));
         $ledger = data_get($payload, 'trade_ledger');
         $projected = $payload;
-        foreach (['decision_trace', 'candle_decision_trace', 'decision_events', 'trade_ledger'] as $key) unset($projected[$key]);
+        foreach (['decision_trace', 'candle_decision_trace', 'decision_events', 'trade_ledger'] as $key) {
+            unset($projected[$key]);
+        }
         $projected['observability_manifest'] = [
             'protocol' => 'lab_immutable_evidence_v1',
             'immutable_source_required' => true,
@@ -409,10 +546,13 @@ class LabImmutableEvidenceService
             'trade_ledger_count' => is_array($ledger) ? count($ledger) : null,
             'trade_ledger_hash' => data_get($payload, 'trade_ledger_hash'),
         ];
-        if (is_array($projected['result'] ?? null)) $projected['result'] = $this->projectionPayload($projected['result']);
+        if (is_array($projected['result'] ?? null)) {
+            $projected['result'] = $this->projectionPayload($projected['result']);
+        }
         if (is_array($projected['leaderboard'] ?? null)) {
             $projected['leaderboard'] = array_map(fn ($row) => is_array($row) ? $this->projectionPayload($row) : $row, $projected['leaderboard']);
         }
+
         return $projected;
     }
 
@@ -431,13 +571,21 @@ class LabImmutableEvidenceService
                 'result_hash' => $this->hash($response), 'promotion_evidence' => false,
             ];
             $this->recordArtifact($run, 'decision_trace_manifest', $manifest, ['complete' => false]);
+
             return $manifest;
         }
 
+        $traceArtifact = $this->recordArtifact($run, 'decision_trace', $trace, [
+            'complete' => true,
+            'event_count' => count($trace),
+            'promotion_evidence' => false,
+        ]);
         $rows = [];
         $recorded = 0;
         foreach ($trace as $index => $item) {
-            if (! is_array($item)) continue;
+            if (! is_array($item)) {
+                continue;
+            }
             $features = (array) ($item['features'] ?? $item['feature_snapshot'] ?? []);
             $state = (array) ($item['state'] ?? $item['state_snapshot'] ?? []);
             $payload = $item;
@@ -454,22 +602,34 @@ class LabImmutableEvidenceService
                 'volatility_regime' => $item['volatility_regime'] ?? $item['volatility'] ?? null,
                 'confidence' => isset($item['confidence']) ? (float) $item['confidence'] : (isset($item['signal_confidence']) ? (float) $item['signal_confidence'] : null),
                 'price' => isset($item['price']) ? (float) $item['price'] : null,
-                'features' => $this->encode($features), 'state' => $this->encode($state),
-                'payload_hash' => $this->hash($payload), 'payload' => $this->encode($payload),
+                // The complete feature/state/payload graph is in the
+                // compressed decision_trace artifact. Keep only scalar
+                // dimensions in MySQL so the learning aggregates stay fast
+                // without turning every candle into a multi-KB JSON row.
+                'features' => null, 'state' => null,
+                'payload_hash' => $this->hash($payload), 'payload' => null,
                 'recorded_at' => now(), 'created_at' => now(), 'updated_at' => now(),
             ];
             if (count($rows) >= 500) {
                 DB::table('lab_candle_decision_events')->insert($rows);
-                $recorded += count($rows); $rows = [];
+                $recorded += count($rows);
+                $rows = [];
             }
         }
-        if ($rows !== []) { DB::table('lab_candle_decision_events')->insert($rows); $recorded += count($rows); }
+        if ($rows !== []) {
+            DB::table('lab_candle_decision_events')->insert($rows);
+            $recorded += count($rows);
+        }
         $manifest = [
             'protocol' => 'candle_decision_trace_v1', 'complete' => true,
             'event_count' => $recorded, 'result_hash' => $this->hash($response),
+            'artifact_id' => $traceArtifact->artifact_id,
+            'artifact_path' => $traceArtifact->storage_path,
+            'artifact_sha256' => $traceArtifact->sha256,
             'promotion_evidence' => false,
         ];
         $this->recordArtifact($run, 'decision_trace_manifest', $manifest, ['complete' => true, 'event_count' => $recorded]);
+
         return $manifest;
     }
 
@@ -481,6 +641,7 @@ class LabImmutableEvidenceService
     public function parameterHash(LabAgent $agent): string
     {
         $agent->loadMissing('modelVersion');
+
         return $this->hash([
             'model_version_id' => $agent->model_version_id,
             'strategy' => $agent->modelVersion?->strategy,
@@ -491,21 +652,50 @@ class LabImmutableEvidenceService
 
     public function codeHash(): string
     {
-        $files = [
-            base_path('app/Services/LabAgentEvaluationService.php'),
-            dirname(base_path()).'/ai-service-python/app/services/backtester.py',
-            dirname(base_path()).'/ai-service-python/app/main.py',
+        $backendRoot = base_path();
+        $pythonRoot = dirname($backendRoot).'/ai-service-python';
+        $roots = [$backendRoot.'/app', $pythonRoot.'/app'];
+        $manifestFiles = [
+            $backendRoot.'/composer.lock', $backendRoot.'/package-lock.json',
+            $pythonRoot.'/requirements.txt', $pythonRoot.'/pyproject.toml',
         ];
         $parts = [];
-        foreach ($files as $file) if (is_file($file)) $parts[] = hash_file('sha256', $file);
-        return $this->hash(['files' => $parts, 'commit' => env('APP_COMMIT_SHA')]);
+
+        foreach ($roots as $root) {
+            if (! is_dir($root)) {
+                continue;
+            }
+            foreach (File::allFiles($root) as $file) {
+                $extension = strtolower($file->getExtension());
+                if (! in_array($extension, ['php', 'py'], true)) {
+                    continue;
+                }
+                $path = $file->getPathname();
+                $parts[str_replace('\\', '/', str_replace($backendRoot, '', $path))] = hash_file('sha256', $path);
+            }
+        }
+        foreach ($manifestFiles as $file) {
+            if (is_file($file)) {
+                $parts[str_replace('\\', '/', str_replace($backendRoot, '', $file))] = hash_file('sha256', $file);
+            }
+        }
+        ksort($parts);
+
+        return $this->hash([
+            'protocol' => 'full_runtime_dependency_fingerprint_v2',
+            'files' => $parts,
+            'php' => PHP_VERSION,
+            'commit' => env('APP_COMMIT_SHA'),
+        ]);
     }
 
     private function requestManifest(array $request): array
     {
         $manifest = $request;
         foreach (['candles', 'regime_candles'] as $key) {
-            if (! array_key_exists($key, $manifest)) continue;
+            if (! array_key_exists($key, $manifest)) {
+                continue;
+            }
             $rows = is_array($manifest[$key]) ? $manifest[$key] : [];
             $manifest[$key] = [
                 '__canonical_dataset_reference' => true, 'row_count' => count($rows),
@@ -513,6 +703,7 @@ class LabImmutableEvidenceService
                 'last_row' => $rows === [] ? null : $rows[array_key_last($rows)],
             ];
         }
+
         return $manifest;
     }
 
@@ -520,6 +711,7 @@ class LabImmutableEvidenceService
     {
         $trace = data_get($response, 'decision_trace', data_get($response, 'candle_decision_trace', data_get($response, 'decision_events')));
         $ledger = data_get($response, 'trade_ledger');
+
         return [
             'payload_hash' => $this->hash($response),
             'leaderboard_count' => is_array($response['leaderboard'] ?? null) ? count($response['leaderboard']) : null,
@@ -535,7 +727,10 @@ class LabImmutableEvidenceService
 
     private function metricsManifest(?array $response): array
     {
-        if ($response === null) return [];
+        if ($response === null) {
+            return [];
+        }
+
         return [
             'total_trades' => data_get($response, 'total_trades'),
             'profit_factor' => data_get($response, 'profit_factor'),
@@ -552,7 +747,10 @@ class LabImmutableEvidenceService
         $trades = data_get($response, 'trades');
         $displayed = data_get($response, 'displayed_trade_count');
         $total = data_get($response, 'total_trades');
-        if (is_array($ledger) && $total !== null && count($ledger) >= (int) $total) return true;
+        if (is_array($ledger) && $total !== null && count($ledger) >= (int) $total) {
+            return true;
+        }
+
         return is_array($trades) && $displayed !== null && $total !== null && (int) $displayed >= (int) $total;
     }
 
@@ -565,6 +763,7 @@ class LabImmutableEvidenceService
     {
         $path = $request['dataset_path'] ?? null;
         $manifest = is_string($path) && is_file($path.'.manifest.json') ? json_decode((string) file_get_contents($path.'.manifest.json'), true) : null;
+
         return data_get($manifest, 'sha256') ?: ($path ? $this->hash(['dataset_path' => $path, 'candles' => $this->candleCount($request)]) : null);
     }
 
@@ -585,5 +784,65 @@ class LabImmutableEvidenceService
         } catch (Throwable) {
             return json_encode(['serialization_error' => true, 'type' => get_debug_type($value)], JSON_UNESCAPED_SLASHES) ?: '{}';
         }
+    }
+
+    private function writeArtifactFile(string $path, string $contents): void
+    {
+        File::ensureDirectoryExists(dirname($path));
+        $temporary = $path.'.'.Str::random(12).'.tmp';
+        if (File::put($temporary, $contents) === false) {
+            throw new RuntimeException("Evidence artifact yozilmadi: {$path}");
+        }
+        if (! rename($temporary, $path)) {
+            File::delete($temporary);
+            throw new RuntimeException("Evidence artifact publish qilinmadi: {$path}");
+        }
+    }
+
+    private function artifactDisk(): string
+    {
+        return (string) config('services.lab_evidence.disk', 'lab_evidence');
+    }
+
+    private function writeArtifact(string $relativePath, string $contents): void
+    {
+        if ($this->artifactDisk() === 'lab_evidence') {
+            $this->writeArtifactFile(storage_path('app/'.$relativePath), $contents);
+
+            return;
+        }
+
+        if (! Storage::disk($this->artifactDisk())->put($relativePath, $contents)) {
+            throw new RuntimeException("Evidence artifact publish qilinmadi: {$relativePath}");
+        }
+    }
+
+    private function readArtifact(string $relativePath): string
+    {
+        $disk = $this->artifactDisk();
+        if ($disk !== 'lab_evidence' && Storage::disk($disk)->exists($relativePath)) {
+            return (string) Storage::disk($disk)->get($relativePath);
+        }
+
+        // Keep existing local artifacts readable during an object-storage
+        // migration. New writes use the configured disk; this fallback is
+        // only for manifests created before the disk switch.
+        $localPath = storage_path('app/'.ltrim($relativePath, '/\\'));
+        if (is_file($localPath)) {
+            return (string) file_get_contents($localPath);
+        }
+
+        throw new RuntimeException("Evidence artifact topilmadi: {$relativePath}");
+    }
+
+    private function deleteArtifact(string $relativePath): void
+    {
+        if ($this->artifactDisk() === 'lab_evidence') {
+            File::delete(storage_path('app/'.$relativePath));
+
+            return;
+        }
+
+        Storage::disk($this->artifactDisk())->delete($relativePath);
     }
 }

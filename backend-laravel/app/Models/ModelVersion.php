@@ -53,4 +53,19 @@ class ModelVersion extends Model
     {
         return $this->hasMany(LabAgent::class);
     }
+
+    public function agentKnowledgeCards(): HasMany
+    {
+        return $this->hasMany(AgentKnowledgeCard::class);
+    }
+
+    public function professionalExams(): HasMany
+    {
+        return $this->hasMany(AgentProfessionalExam::class);
+    }
+
+    public function evolutionArchiveEntries(): HasMany
+    {
+        return $this->hasMany(LabEvolutionArchiveEntry::class, 'model_version_id');
+    }
 }

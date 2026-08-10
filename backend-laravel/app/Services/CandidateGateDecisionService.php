@@ -64,6 +64,58 @@ class CandidateGateDecisionService
             ->where('symbol', $performance->symbol)->where('timeframe', $performance->timeframe)
             ->latest('id')->first();
         $reasons = $this->economicReasons($result, 30, 1.3, 15.0, 10.0, 3);
+        // Drift expiry is a safety stop, not a promotion shortcut. A stale
+        // skill must re-certify on fresh state evidence before it can enter
+        // forward/paper, even if the economic replay still looks strong.
+        $knowledgeCard = $agent?->knowledgeCard;
+        if ($knowledgeCard && ! app(AgentProfessionalExamService::class)->skillUsable($knowledgeCard)) {
+            $reasons[] = 'SKILL_RECERTIFICATION_REQUIRED_AFTER_DRIFT';
+        }
+        $robustnessGate = (int) data_get($agent?->modelVersion?->metadata, 'robustness_gate_version', 0) >= 1;
+        if ($robustnessGate) {
+            if (data_get($result, 'noise_sanity.status') !== 'assessed' || ! (bool) data_get($result, 'noise_sanity.pass', false)) {
+                $reasons[] = data_get($result, 'noise_sanity.status') === 'assessed' ? 'FAILED_NOISE_SANITY' : 'FAILED_NOISE_SANITY_EVIDENCE';
+            }
+            if (data_get($result, 'execution_digital_twin.status') !== 'assessed' || ! (bool) data_get($result, 'execution_digital_twin.pass', false)) {
+                $reasons[] = data_get($result, 'execution_digital_twin.status') === 'assessed' ? 'FAILED_EXECUTION_STRESS_GATE' : 'FAILED_EXECUTION_STRESS_EVIDENCE';
+            }
+            if (data_get($result, 'parameter_plateau.status') !== 'assessed'
+                || ! (bool) data_get($result, 'parameter_plateau.pass', false)) {
+                $reasons[] = data_get($result, 'parameter_plateau.status') === 'assessed'
+                    ? 'FAILED_PARAMETER_PLATEAU' : 'FAILED_PARAMETER_PLATEAU_EVIDENCE';
+            }
+            $quality = (array) data_get($result, 'data_quality', []);
+            if (data_get($quality, 'status') !== 'passed'
+                || (int) data_get($quality, 'duplicate_timestamp_count', 0) > 0
+                || (int) data_get($quality, 'non_monotonic_timestamp_pairs', 0) > 0
+                || (int) data_get($quality, 'invalid_ohlc_rows', 0) > 0) {
+                $reasons[] = 'FAILED_DATA_QUALITY';
+            }
+            $challenger = (array) data_get($result, 'challenger_protocol', []);
+            if ((int) data_get($challenger, 'observed_forward_windows', 0) < 3
+                || (int) data_get($challenger, 'positive_forward_windows', 0) < 3) {
+                $reasons[] = 'FAILED_INDEPENDENT_FORWARD_WINDOWS';
+            }
+            $windowProtocol = (array) data_get($result, 'forward_window_protocol', []);
+            if (data_get($windowProtocol, 'independence_verified') !== true
+                || (bool) data_get($windowProtocol, 'overlap_detected', true)) {
+                $reasons[] = data_get($windowProtocol, 'source') === 'not_available'
+                    ? 'FAILED_INDEPENDENT_FORWARD_WINDOW_EVIDENCE'
+                    : 'FAILED_OVERLAPPING_FORWARD_WINDOWS';
+            }
+            $repairLineage = (array) data_get($agent?->modelVersion?->metadata, 'repair_lineage', []);
+            if ((int) data_get($repairLineage, 'attempt', 0) > 0) {
+                if (count((array) ($agent?->parameter_diff ?? [])) !== 1) {
+                    $reasons[] = 'FAILED_SINGLE_GENE_CONTRACT';
+                }
+                if (data_get($result, 'paired_replay.status') !== 'confirmed') {
+                    $reasons[] = 'FAILED_PAIRED_REPLAY_EVIDENCE';
+                }
+                if (data_get($result, 'no_regression_contract.status') !== 'passed') {
+                    $reasons[] = 'FAILED_NON_TARGET_REGRESSION';
+                }
+            }
+        }
         if ((bool) data_get($result, 'is_overfit', false)) $reasons[] = 'FAILED_OVERFIT';
         if (data_get($result, 'pf_attribution.method') === 'identical_replay_execution_profiles'
             && (float) data_get($result, 'pf_attribution.stress_cost.profit_factor', 0) < 1.05) $reasons[] = 'FAILED_STRESS_COST';
@@ -71,8 +123,11 @@ class CandidateGateDecisionService
         if (data_get($edge, 'worst_regime_sampled', false) && (float) data_get($edge, 'worst_regime_pf', 0) < 1.0) $reasons[] = 'FAILED_REGIME_COVERAGE';
         $survival = data_get($result, 'window_survival', []);
         if ((int) data_get($survival, 'positive_windows', 0) > 0
-            && ((int) data_get($survival, 'positive_windows', 0) < 3 || (int) data_get($survival, 'catastrophic_windows', 0) > 0)) $reasons[] = 'FAILED_REGIME_COVERAGE';
-        if (data_get($result, 'monthly_passport.status') === 'seasonal_or_luck') $reasons[] = 'FAILED_REGIME_COVERAGE';
+            && ((int) data_get($survival, 'positive_windows', 0) < 3 || (int) data_get($survival, 'catastrophic_windows', 0) > 0)) $reasons[] = 'FAILED_CALENDAR_MONTH_SURVIVAL';
+        // A failed chronological month is a monthly-survival defect, not a
+        // regime-PF defect. Keep the reason specific so historical learning
+        // routes the next mutation to the monthly lane.
+        if (data_get($result, 'monthly_passport.status') === 'seasonal_or_luck') $reasons[] = 'FAILED_CALENDAR_MONTH_SURVIVAL';
         if (data_get($result, 'selection_validation.status') === 'assessed'
             && (float) data_get($result, 'selection_validation.probability_of_backtest_overfitting', 1) > .5) $reasons[] = 'FAILED_OVERFIT';
         if (data_get($result, 'statistical_evidence.deflated_sharpe.status') === 'assessed'
@@ -209,7 +264,9 @@ class CandidateGateDecisionService
         if ((float) data_get($metrics, 'profit_factor', 0) < $minimumPf) $reasons[] = 'FAILED_PROFIT_FACTOR';
         if ((float) data_get($metrics, 'max_drawdown_percent', data_get($metrics, 'max_drawdown', 100)) > $maxDrawdown) $reasons[] = 'FAILED_DRAWDOWN';
         if ((float) data_get($metrics, 'monte_carlo.risk_of_ruin_percent', 0) > $maxRuin) $reasons[] = 'FAILED_RUIN_RISK';
-        if ($minimumRollingWins > 0 && (int) data_get($metrics, 'rolling_forward_wins', 0) < $minimumRollingWins) $reasons[] = 'FAILED_REGIME_COVERAGE';
+        // Forward rolling wins are the chronological monthly-survival
+        // requirement. Do not mislabel it as regime coverage.
+        if ($minimumRollingWins > 0 && (int) data_get($metrics, 'rolling_forward_wins', 0) < $minimumRollingWins) $reasons[] = 'FAILED_CALENDAR_MONTH_SURVIVAL';
         return $reasons;
     }
 

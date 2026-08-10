@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class BacktestRunApiTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_backtest_run_endpoint_returns_summary_metrics(): void
     {
         Http::fake([

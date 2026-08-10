@@ -52,9 +52,10 @@ class TradingRiskService
 
     public function estimatedRoundTripCostPercent(string $symbol, float $price): float
     {
-        $point = str_starts_with(strtoupper($symbol), 'XAU') ? 0.01 : 0.00001;
-        $spreadPoints = str_starts_with(strtoupper($symbol), 'XAU') ? (float) config('services.risk.xau_spread_points', 35) : (float) config('services.risk.fx_spread_points', 12);
-        $slippagePoints = (float) config('services.risk.slippage_points', 2);
+        $execution = app(ExecutionContractService::class)->parameters($symbol);
+        $point = (float) $execution['point_size'];
+        $spreadPoints = (float) $execution['spread_points'];
+        $slippagePoints = (float) $execution['slippage_points'];
 
         return round((($spreadPoints + (2 * $slippagePoints)) * $point / max($price, $point)) * 100, 5);
     }

@@ -8,7 +8,6 @@ use App\Models\ModelVersion;
 use App\Services\EvolutionProposalApplicationService;
 use App\Services\MarketChampionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use InvalidArgumentException;
 use Tests\TestCase;
 
 class ChampionChallengerCycleTest extends TestCase
@@ -72,7 +71,7 @@ class ChampionChallengerCycleTest extends TestCase
         ]);
     }
 
-    public function test_apply_is_idempotent_and_unknown_parameter_is_rejected(): void
+    public function test_legacy_proposal_apply_is_disabled_without_creating_a_model_version(): void
     {
         $parent = ModelVersion::create($this->model('breakout_v1', 'v1'));
         $proposal = EvolutionProposal::create([
@@ -83,16 +82,14 @@ class ChampionChallengerCycleTest extends TestCase
         $service = app(EvolutionProposalApplicationService::class);
         $first = $service->apply($proposal);
         $second = $service->apply($proposal->fresh());
-        $this->assertSame($first->id, $second->id);
-        $this->assertDatabaseCount('model_versions', 2);
-
-        $bad = EvolutionProposal::create([
-            'model_version_id' => $first->id, 'parent_model_version_id' => $first->id,
-            'strategy' => 'breakout_v2', 'current_version' => 'v2', 'proposed_version' => 'v3',
-            'new_parameters' => ['python_does_not_use_this' => true], 'status' => 'approved', 'open_status' => 'open',
+        $this->assertNull($first);
+        $this->assertNull($second);
+        $this->assertDatabaseCount('model_versions', 1);
+        $this->assertDatabaseHas('evolution_proposals', [
+            'id' => $proposal->id,
+            'status' => 'approved',
+            'open_status' => 'open',
         ]);
-        $this->expectException(InvalidArgumentException::class);
-        $service->apply($bad);
     }
 
     public function test_candidate_needs_three_rolling_forward_wins_before_paper_trading(): void

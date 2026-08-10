@@ -16,6 +16,9 @@ class Candle(BaseModel):
     low: float
     close: float
     volume: float | None = None
+    # Explicit source-quality marker.  A false/absent marker means volume is
+    # unavailable for the optional research context layer.
+    volume_available: bool | None = None
 
 
 class StrategyConfig(BaseModel):
@@ -99,11 +102,26 @@ class SimpleBacktestRequest(BaseModel):
     regime_dataset_path: str | None = None
     regime_candles: list[Candle] = Field(default_factory=list)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    # Laravel seals this map before lab/paper/holdout execution. A missing
+    # declaration is accepted for local unit tests but is never promotion
+    # evidence.
+    execution_contract: dict[str, Any] = Field(default_factory=dict)
     evaluation_mode: Literal["incremental", "full", "replay"] = "full"
+    # A delayed signal is a deterministic execution-stress variant.  OHLC,
+    # regime and volume features stay anchored to their observed candle; only
+    # signal-derived columns move forward so the test cannot introduce look-ahead.
+    signal_delay_candles: int = Field(default=0, ge=0, le=3)
     random_seed: int = 42
     # Sealed policy evidence used by the paper execution path for OOD and
     # uncertainty-aware abstention. It does not alter replay gate thresholds.
     policy_context: dict[str, Any] = Field(default_factory=dict)
+    # Canonical volume provenance is passed separately from strategy genes so
+    # an unavailable source can never be interpreted as low volume.
+    volume_context: dict[str, Any] = Field(default_factory=dict)
+    # Sealed runtime router provenance. The executable member list remains in
+    # portfolio_members; this map is an audit contract and never authorizes
+    # genetic parent IDs by itself.
+    runtime_ensemble_policy: dict[str, Any] = Field(default_factory=dict)
     # Full candle-level observability is opt-in so ordinary paper/status calls
     # do not pay for a large trace. Laboratory runs set this true and persist
     # the returned immutable trace in the Laravel evidence plane.
@@ -220,7 +238,15 @@ class SimpleBacktestResponse(BaseModel):
     monte_carlo: dict[str, Any] = Field(default_factory=dict)
     strategy_dna: dict[str, Any] = Field(default_factory=dict)
     execution_assumptions: dict[str, Any] = Field(default_factory=dict)
+    execution_contract: dict[str, Any] = Field(default_factory=dict)
+    control_root: dict[str, Any] = Field(default_factory=dict)
+    policy_boundary: dict[str, Any] = Field(default_factory=dict)
     data_quality: dict[str, Any] = Field(default_factory=dict)
+    volume_quality: dict[str, Any] = Field(default_factory=dict)
+    # Causal observability for the declared volume child lane. This is
+    # evidence/telemetry only; it never relaxes a screening or promotion gate.
+    volume_policy: dict[str, Any] = Field(default_factory=dict)
+    volume_shadow: dict[str, Any] = Field(default_factory=dict)
     statistical_evidence: dict[str, Any] = Field(default_factory=dict)
     pf_attribution: dict[str, Any] = Field(default_factory=dict)
     # The entry funnel distinguishes a strategy that finds no opportunities
@@ -256,6 +282,10 @@ class SimpleBacktestResponse(BaseModel):
     window_survival: dict[str, Any] = Field(default_factory=dict)
     regime_ensemble: dict[str, Any] = Field(default_factory=dict)
     portfolio_evidence: dict[str, Any] = Field(default_factory=dict)
+    # Router learning is intentionally orthogonal to economics: calibrated
+    # confidence, safe abstention and disagreement-WAIT invariants are
+    # persisted separately from PF so the router cannot learn to chase PF.
+    router_evidence: dict[str, Any] = Field(default_factory=dict)
     opportunity_metrics: dict[str, Any] = Field(default_factory=dict)
     red_team: dict[str, Any] = Field(default_factory=dict)
     monthly_passport: dict[str, Any] = Field(default_factory=dict)

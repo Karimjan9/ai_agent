@@ -20,7 +20,12 @@ use Illuminate\Support\Facades\DB;
  */
 class EliteAgentPortfolioGateService
 {
-    public function __construct(private StrategyParameterSchemaService $schemas) {}
+    private const PORTFOLIO_KEY = 'elite-regime-portfolio-v2';
+
+    public function __construct(
+        private StrategyParameterSchemaService $schemas,
+        private AgentKnowledgeService $knowledge,
+    ) {}
 
     public function syncMarket(string $symbol, string $timeframe, Collection $candidates): array
     {
@@ -31,8 +36,25 @@ class EliteAgentPortfolioGateService
             return ['status' => 'waiting_for_individual_forward', 'portfolio' => null, 'members' => []];
         }
 
-        $selected = $this->selectComplementaryMembers($eligible);
-        $portfolioKey = 'elite-regime-portfolio-v1';
+        // A council is a staged protocol, not an accidental collection of
+        // forward-valid models. If this candidate set contains declared
+        // council members, require at least two distinct regime specialists
+        // and one independently passed transition/risk router before any
+        // combined replay can be created.
+        $sequence = $this->councilSequence($eligible);
+        if (! $sequence['ready']) {
+            return [
+                'status' => $sequence['status'],
+                'portfolio' => null,
+                'members' => [],
+                'council_sequence' => $sequence,
+            ];
+        }
+
+        $selected = $sequence['active']
+            ? $this->selectCouncilMembers($eligible)
+            : $this->selectComplementaryMembers($eligible);
+        $portfolioKey = self::PORTFOLIO_KEY;
         $membershipHash = hash('sha256', json_encode([
             'portfolio_policy' => $this->portfolioPolicy(),
             'members' => $selected->map(fn (ModelMarketPerformance $candidate): array => [
@@ -89,13 +111,29 @@ class EliteAgentPortfolioGateService
             return ['status' => 'waiting_for_portfolio_member_replay', 'portfolio' => null, 'members' => []];
         }
 
-        $selected = $this->selectComplementaryMembers($eligible);
+        // Research-only full replays cannot be used to bypass the same
+        // specialist -> router order. They are useful evidence, but the
+        // combined council remains blocked until the individual passports
+        // are present for the declared specialist set.
+        $sequence = $this->councilSequence($eligible);
+        if (! $sequence['ready']) {
+            return [
+                'status' => $sequence['status'],
+                'portfolio' => null,
+                'members' => [],
+                'council_sequence' => $sequence,
+            ];
+        }
+
+        $selected = $sequence['active']
+            ? $this->selectCouncilMembers($eligible)
+            : $this->selectComplementaryMembers($eligible);
         if ($selected->count() < 2 || $selected->pluck('strategy_family')->unique()->count() < 2
             || $selected->map(fn (ModelMarketPerformance $candidate): string => $this->targetRegime($candidate))->unique()->count() < 2) {
             return ['status' => 'waiting_for_complementary_niches', 'portfolio' => null, 'members' => $selected];
         }
 
-        $portfolioKey = 'elite-regime-portfolio-v1';
+        $portfolioKey = self::PORTFOLIO_KEY;
         $membershipHash = hash('sha256', json_encode([
             'mode' => 'portfolio_member_research_v1',
             'portfolio_policy' => $this->portfolioPolicy(),
@@ -121,6 +159,148 @@ class EliteAgentPortfolioGateService
         ];
     }
 
+    /**
+     * Enforce the explicit agent-council order while leaving ordinary
+     * non-council portfolio candidates on their existing path. This method
+     * only runs after the caller has already applied the individual forward
+     * passport; it never turns a failed member into evidence.
+     */
+    private function councilSequence(Collection $candidates): array
+    {
+        $council = $candidates->filter(fn (ModelMarketPerformance $candidate): bool =>
+            data_get($candidate->modelVersion?->metadata, 'council_specialist_contract.protocol') === 'agent_council_v1'
+        )->values();
+
+        if ($council->isEmpty()) {
+            return [
+                'protocol' => 'agent_council_sequence_v1',
+                'active' => false,
+                'ready' => true,
+                'status' => 'ordinary_portfolio_path',
+                'specialist_regimes' => [],
+                'specialist_count' => 0,
+                'router_count' => 0,
+                'rule' => 'Council ordering applies only to declared council members.',
+            ];
+        }
+
+        $routerCount = $council->filter(fn (ModelMarketPerformance $candidate): bool =>
+            $this->councilRole($candidate) === 'transition_risk_router'
+        )->count();
+        $specialistRegimes = $council
+            ->filter(fn (ModelMarketPerformance $candidate): bool =>
+                in_array($this->councilRole($candidate), ['trend_up_specialist', 'trend_down_specialist', 'range_specialist'], true)
+            )
+            ->map(fn (ModelMarketPerformance $candidate): string => $this->councilRegime($candidate))
+            ->filter(fn (string $regime): bool => in_array($regime, ['trend_up', 'trend_down', 'range'], true))
+            ->unique()->values()->all();
+
+        if (count($specialistRegimes) < 2) {
+            return [
+                'protocol' => 'agent_council_sequence_v1',
+                'active' => true,
+                'ready' => false,
+                'status' => 'waiting_for_two_specialist_passports',
+                'specialist_regimes' => $specialistRegimes,
+                'specialist_count' => count($specialistRegimes),
+                'router_count' => $routerCount,
+                'required' => ['specialist_regimes' => 2, 'transition_risk_router' => 1],
+                'rule' => 'trend_up/trend_down/range standalone passports precede the router and combined replay.',
+            ];
+        }
+
+        if ($routerCount < 1) {
+            return [
+                'protocol' => 'agent_council_sequence_v1',
+                'active' => true,
+                'ready' => false,
+                'status' => 'waiting_for_transition_router_passport',
+                'specialist_regimes' => $specialistRegimes,
+                'specialist_count' => count($specialistRegimes),
+                'router_count' => $routerCount,
+                'required' => ['specialist_regimes' => 2, 'transition_risk_router' => 1],
+                'rule' => 'The transition/risk router must pass individually before combined replay.',
+            ];
+        }
+
+        return [
+            'protocol' => 'agent_council_sequence_v1',
+            'active' => true,
+            'ready' => true,
+            'status' => 'ready_for_combined_replay',
+            'specialist_regimes' => $specialistRegimes,
+            'specialist_count' => count($specialistRegimes),
+            'router_count' => $routerCount,
+            'required' => ['specialist_regimes' => 2, 'transition_risk_router' => 1],
+            'rule' => 'Every member already passed its own unchanged individual passport.',
+        ];
+    }
+
+    private function councilRole(ModelMarketPerformance $candidate): string
+    {
+        return (string) (
+            data_get($candidate->modelVersion?->metadata, 'council_specialist_contract.role')
+            ?: data_get($candidate->modelVersion?->metadata, 'portfolio_council_lane.specialist_role')
+            ?: data_get($candidate->modelVersion?->metadata, 'portfolio_council_lane.role')
+        );
+    }
+
+    private function councilRegime(ModelMarketPerformance $candidate): string
+    {
+        return (string) (
+            data_get($candidate->modelVersion?->metadata, 'council_specialist_contract.owner_regime')
+            ?: data_get($candidate->modelVersion?->metadata, 'portfolio_council_lane.regime')
+            ?: data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract.target_regime')
+        );
+    }
+
+    /**
+     * Select the actual council after its individual passports are present.
+     * The router is not merely a prerequisite signal: it must be one of the
+     * replay members so that the combined result represents specialist
+     * routing, rather than a portfolio that happens to contain a router
+     * somewhere in the eligible pool.
+     */
+    private function selectCouncilMembers(Collection $eligible): Collection
+    {
+        $specialists = $eligible->filter(fn (ModelMarketPerformance $candidate): bool =>
+            in_array($this->councilRole($candidate), ['trend_up_specialist', 'trend_down_specialist', 'range_specialist'], true)
+        )->values();
+        $selected = $this->selectComplementaryMembers($specialists);
+
+        // Keep the two-regime requirement explicit even if a future selector
+        // changes its scoring/near-duplicate behavior.
+        $selectedRegimes = $selected
+            ->filter(fn (ModelMarketPerformance $candidate): bool =>
+                in_array($this->councilRole($candidate), ['trend_up_specialist', 'trend_down_specialist', 'range_specialist'], true)
+            )
+            ->map(fn (ModelMarketPerformance $candidate): string => $this->councilRegime($candidate))
+            ->filter()
+            ->unique()
+            ->values();
+        if ($selectedRegimes->count() < 2) {
+            foreach ($specialists->sortByDesc(fn (ModelMarketPerformance $candidate): float => $this->stateScore($candidate)) as $candidate) {
+                $regime = $this->councilRegime($candidate);
+                if ($regime === '' || $selected->contains(fn (ModelMarketPerformance $item): bool => $item->id === $candidate->id)) continue;
+                $selected->push($candidate);
+                $selectedRegimes = $selectedRegimes->push($regime)->unique()->values();
+                if ($selectedRegimes->count() >= 2) break;
+            }
+        }
+
+        $router = $eligible
+            ->filter(fn (ModelMarketPerformance $candidate): bool =>
+                $this->councilRole($candidate) === 'transition_risk_router'
+            )
+            ->sortByDesc(fn (ModelMarketPerformance $candidate): float => $this->stateScore($candidate))
+            ->first();
+        if ($router && ! $selected->contains(fn (ModelMarketPerformance $candidate): bool => $candidate->id === $router->id)) {
+            $selected->push($router);
+        }
+
+        return $selected->values();
+    }
+
     public function eligibleMembers(Collection $candidates): Collection
     {
         return $candidates->filter(function (ModelMarketPerformance $candidate): bool {
@@ -138,16 +318,32 @@ class EliteAgentPortfolioGateService
         })->values();
     }
 
-    /** Full-replay admission for a niche member; not standalone promotion. */
+    /**
+     * Combined-replay admission for a niche member.
+     *
+     * A council member is not allowed to rescue a failed standalone forward
+     * passport. It must first pass the same individual statistical forward
+     * gate; only its eventual champion/paper promotion remains portfolio-only.
+     */
     public function eligibleResearchMembers(Collection $candidates): Collection
     {
         return $candidates->filter(function (ModelMarketPerformance $candidate): bool {
+            // A mixed strategy may contain only specialists that already
+            // passed their own unchanged forward passport. Near-miss members
+            // remain learning evidence, never portfolio constituents.
             if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)
-                || ! in_array($candidate->status, ['challenger', 'stagnated', 'rejected'], true)
+                || ! in_array($candidate->status, ['forward_validated', 'paper'], true)
                 || $candidate->evidence_status !== 'valid'
                 || $candidate->modelVersion?->evidence_status !== 'valid') return false;
             $contract = (array) data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract', []);
             if (data_get($contract, 'protocol') !== 'portfolio_member_research_v1') return false;
+            $forward = CandidateGateDecision::query()
+                ->where('model_market_performance_id', $candidate->id)
+                ->where('stage', 'statistical_forward_gate')
+                ->latest('evaluated_at')
+                ->first();
+            if ($forward?->decision !== 'passed'
+                || data_get($forward->metrics, 'elite_agent_passport.status') !== 'passed') return false;
             $globalTrades = (int) $candidate->sample_count;
             if ($globalTrades < 20
                 || $this->profitFactor($candidate) < 1.3
@@ -235,6 +431,11 @@ class EliteAgentPortfolioGateService
         $rows = [];
         $trialSharpes = [];
         $candidateIds = [];
+        $firstCandidate = $candidates->first();
+        $trialLedger = $firstCandidate
+            ? app(LabTrialLedgerService::class)->selectionContext((string) $firstCandidate->symbol, (string) $firstCandidate->timeframe)
+            : [];
+        $windowIntervals = [];
 
         foreach ($candidates->sortBy('id')->values() as $candidate) {
             $metadata = (array) ($candidate->modelVersion?->metadata ?? []);
@@ -274,6 +475,20 @@ class EliteAgentPortfolioGateService
             if (count($scores) < 4) continue;
             $rows[] = $scores;
             $candidateIds[] = (int) $candidate->id;
+            if ($windowIntervals === []) {
+                $windowIntervals = collect((array) data_get($metrics, 'market_adaptive_replay.checkpoint_windows', []))
+                    ->filter(fn ($window): bool => is_array($window)
+                        && filled(data_get($window, 'start'))
+                        && filled(data_get($window, 'end'))
+                        && filled(data_get($window, 'label_start'))
+                        && filled(data_get($window, 'label_end')))
+                    ->map(fn (array $window): array => [
+                        'start' => data_get($window, 'start'),
+                        'end' => data_get($window, 'end'),
+                        'label_start' => data_get($window, 'label_start'),
+                        'label_end' => data_get($window, 'label_end'),
+                    ])->values()->all();
+            }
 
             $observedSharpe = data_get($metrics, 'statistical_evidence.deflated_sharpe.observed_sharpe');
             if (is_numeric($observedSharpe) && is_finite((float) $observedSharpe)) {
@@ -304,6 +519,13 @@ class EliteAgentPortfolioGateService
             'candidate_count' => count($rows),
             'score_rows' => $rows,
             'trial_sharpes' => $trialSharpes,
+            'trial_ledger' => $trialLedger,
+            'trial_count' => (int) data_get($trialLedger, 'trial_count', count($rows)),
+            'window_intervals' => count($windowIntervals) >= 4 ? $windowIntervals : [],
+            // At least one observed bar is removed around each test fold so
+            // holding-period labels cannot leak across the train/test edge.
+            'purge_bars' => 1,
+            'embargo_bars' => 1,
             'promotion_evidence' => false,
             'rule' => 'Frozen pre-replay candidate frontier; no holdout or same-window mutation.',
         ];
@@ -384,6 +606,18 @@ class EliteAgentPortfolioGateService
         if ((float) data_get($result, 'portfolio_evidence.disagreement_rate', 1) > .10) {
             $reasons[] = 'FAILED_PORTFOLIO_ROUTER_DISAGREEMENT';
         }
+        // The router has its own professional objective. It must be
+        // calibrated and safe to abstain before a combined PF can be
+        // considered; PF itself is deliberately not used to train this layer.
+        if (data_get($result, 'router_evidence.status') !== 'assessed') {
+            $reasons[] = 'FAILED_PORTFOLIO_ROUTER_CALIBRATION_EVIDENCE';
+        }
+        if ((float) data_get($result, 'router_evidence.abstention_precision', 0) < .50) {
+            $reasons[] = 'FAILED_PORTFOLIO_ROUTER_ABSTENTION_PRECISION';
+        }
+        if (data_get($result, 'router_evidence.disagreement_wait_invariant') !== true) {
+            $reasons[] = 'FAILED_PORTFOLIO_DISAGREEMENT_WAIT_INVARIANT';
+        }
         if ((float) data_get($result, 'portfolio_evidence.loss_correlation.max_jaccard', 1) > .50) {
             $reasons[] = 'FAILED_PORTFOLIO_LOSS_CORRELATION';
         }
@@ -437,6 +671,19 @@ class EliteAgentPortfolioGateService
             'execution_hash' => data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash')),
             'last_evaluated_at' => now(),
         ]);
+        if ($gate['status'] === 'passed') {
+            // The knowledge stage changes only after the independent member
+            // gates and the combined passport both passed. It cannot make a
+            // failed member look elite or create paper eligibility.
+            try {
+                $this->knowledge->markCouncilElite(
+                    $portfolio->fresh(['members.performance.modelVersion']),
+                    (string) data_get($result, 'evidence_run_id', data_get($result, 'execution_contract.execution_hash')),
+                );
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
         return $gate;
     }
 
@@ -499,6 +746,10 @@ class EliteAgentPortfolioGateService
             'leave_one_member_out' => (float) data_get($result, 'portfolio_evidence.leave_one_member_out.minimum_profit_factor', 0) >= 1.0,
             'weight_perturbation' => (float) data_get($result, 'portfolio_evidence.weight_perturbation.minimum_profit_factor', 0) >= 1.0,
             'router_stability' => (float) data_get($result, 'portfolio_evidence.router_stability.switch_rate', 1) <= .25,
+            'router_calibration' => data_get($result, 'router_evidence.status') === 'assessed'
+                && (float) data_get($result, 'router_evidence.objective_score', 0) >= 50,
+            'router_abstention_precision' => (float) data_get($result, 'router_evidence.abstention_precision', 0) >= .50,
+            'disagreement_wait_invariant' => data_get($result, 'router_evidence.disagreement_wait_invariant') === true,
             'member_contribution_cap' => (float) data_get($result, 'portfolio_evidence.member_contribution.max_positive_share', 1) <= .65,
             'opportunity_coverage' => (int) data_get($result, 'portfolio_evidence.opportunity_coverage.covered_regimes', 0) >= 2,
         ];

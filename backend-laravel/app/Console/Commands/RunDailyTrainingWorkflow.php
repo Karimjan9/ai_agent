@@ -41,20 +41,12 @@ class RunDailyTrainingWorkflow extends Command
                 $this->line(Artisan::output());
             }
 
-            $this->info('2/3 Auto training boshlanmoqda...');
-            foreach ($symbols as $symbol) {
-                $autoTrainCode = Artisan::call('trading:auto-train', [
-                    '--symbol' => $symbol,
-                    '--timeframe' => 'H1',
-                    '--evaluation' => 'incremental',
-                ]);
-
-                if ($autoTrainCode !== self::SUCCESS) {
-                    throw new \RuntimeException("Auto training failed for {$symbol}.");
-                }
-
-                $this->line(Artisan::output());
+            $this->info('2/3 Canonical Lab incremental tekshiruvi boshlanmoqda...');
+            $labCode = Artisan::call('trading:lab-incremental');
+            if ($labCode !== self::SUCCESS) {
+                throw new \RuntimeException('Canonical Lab incremental check failed.');
             }
+            $this->line(Artisan::output());
 
             $this->info('3/3 Daily report yaratilmoqda...');
             $reportCode = Artisan::call('trading:daily-report');

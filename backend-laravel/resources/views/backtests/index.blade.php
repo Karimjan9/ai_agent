@@ -1,6 +1,6 @@
 @extends('layouts.app', [
-    'heading' => 'Run Backtest',
-    'subtitle' => 'Laravel Python AI service endpointiga request yuboradi va natijani qaytaradi.',
+    'heading' => 'Run Canonical Lab Replay',
+    'subtitle' => 'Replay LabEvaluationRun sifatida immutable evidence plane\'ga yoziladi.',
 ])
 
 @section('content')
@@ -12,7 +12,7 @@
     @endif
 
     <article class="card">
-        <h2 class="section-title">Backtest sozlamalari</h2>
+        <h2 class="section-title">Canonical replay sozlamalari</h2>
         <form class="form-grid" method="post" action="{{ route('backtests.run') }}">
             @csrf
             <label>Symbol

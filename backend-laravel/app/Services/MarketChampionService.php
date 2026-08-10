@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CandidateGateDecision;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use App\Models\LabAgent;
@@ -32,6 +33,8 @@ class MarketChampionService
         private FailureCurriculumService $failureCurriculum,
         private CandidateHandoffService $handoffs,
         private CausalMutationCreditService $causalMutationCredit,
+        private StrategySemanticGroupService $semanticGroups,
+        private MutationSkillVerificationService $mutationSkills,
     ) {}
 
     public function evaluate(string $strategy, string $symbol, string $timeframe, int $fitness, array $result, ?ModelVersion $modelVersion = null): ModelMarketPerformance
@@ -52,29 +55,53 @@ class MarketChampionService
                 ? ModelVersion::query()->whereKey($modelVersion->getKey())->where('evidence_status', 'valid')->lockForUpdate()->firstOrFail()
                 : ModelVersion::query()->where('strategy', $strategy)->where('evidence_status', 'valid')->lockForUpdate()->firstOrFail();
             $family = $this->schemas->family($strategy);
-            $champion = ModelMarketPerformance::query()
-                ->where(compact('symbol', 'timeframe'))
-                ->where('strategy_family', $family)
-                ->where('evidence_status', 'valid')
-                ->where('status', 'champion')
-                ->lockForUpdate()
-                ->first();
+            // A champion belongs to the candidate's semantic group, not to
+            // every strategy that happens to share a family label. A trend
+            // council member, router and generic family specialist must not
+            // overwrite one another's champion baseline.
+            $champion = $this->groupChampion($symbol, $timeframe, $family, $model);
 
             $windowScores = array_values($result['forward_window_scores'] ?? []);
+            $forwardWindowEvidence = $this->mutationSkills->independentForwardWindows($result);
+            $observedForwardWindows = max(
+                (int) data_get($forwardWindowEvidence, 'observed_windows', 0),
+                count($windowScores),
+            );
+            $positiveForwardWindows = (int) data_get($forwardWindowEvidence, 'positive_windows', 0);
+            if ($positiveForwardWindows === 0 && $windowScores !== []) {
+                $positiveForwardWindows = collect($windowScores)
+                    ->filter(fn ($score): bool => (float) $score > 0)->count();
+            }
             // A missing champion is not evidence that a checkpoint won. The
             // forward gate requires at least three genuinely positive replay
             // windows, independently of any champion comparison.
             $passportMonths = (array) data_get($result, 'monthly_passport.months', []);
             $wins = $passportMonths !== []
                 ? (int) data_get($result, 'monthly_passport.rolling_forward_wins', 0)
-                : collect($windowScores)->filter(fn ($score) => (float) $score > 0)->count();
+                : $positiveForwardWindows;
             $forward = (float) ($result['forward_score'] ?? 0);
             $sampleCount = (int) ($result['total_trades'] ?? 0);
             // Keep the measured rolling result in the immutable gate ledger;
             // otherwise a later diagnostic would confuse an absent payload
             // field with zero rolling wins.
             $result['rolling_forward_wins'] = $wins;
-            $agent = LabAgent::query()->with('mutationMemories')->where('model_version_id', $model->id)->latest()->first();
+            $result['forward_window_protocol'] = [
+                ...$forwardWindowEvidence,
+                'observed_windows' => $observedForwardWindows,
+                'positive_windows' => $positiveForwardWindows,
+                'promotion_evidence' => false,
+            ];
+            $result['challenger_protocol'] = [
+                'protocol' => 'frozen_champion_2_3_challenger_v1',
+                'independent_forward_windows_required' => 3,
+                'observed_forward_windows' => $observedForwardWindows,
+                'positive_forward_windows' => $wins,
+                'champion_replacement_rule' => 'replace only after all independent forward windows and cost-adjusted gates pass',
+                'stateful_checkpoint_diagnostic_only' => (bool) data_get($forwardWindowEvidence, 'stateful_diagnostic_only', false),
+                'promotion_evidence' => (bool) data_get($forwardWindowEvidence, 'independence_verified', false)
+                    && ! (bool) data_get($forwardWindowEvidence, 'stateful_diagnostic_only', false),
+            ];
+            $agent = LabAgent::query()->with(['mutationMemories', 'generation'])->where('model_version_id', $model->id)->latest()->first();
             $result['trial_ledger'] = [
                 'generation_id' => $agent?->lab_generation_id, 'model_version_id' => $model->id,
                 'generation_trials' => $agent ? LabAgent::query()->where('lab_generation_id', $agent->lab_generation_id)->count() : 1,
@@ -86,10 +113,39 @@ class MarketChampionService
             $result['epistemic_boundary'] = app(UniversalAgentCapabilityService::class)->selfKnowledge($result);
             $result['cross_market_transfer_passport'] = $this->universalCapabilities->transferPassport($model, $result);
             $result['pass_k_reliability'] = $this->universalCapabilities->passKReliability($result);
+            // Compute the parent/control identity before the passport is
+            // built. Otherwise a repaired child would receive a passport
+            // that predates its paired replay even when the sibling cohort
+            // has already supplied the required alternative.
+            if ($agent) {
+                $parentModelId = $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id;
+                $parentPerformance = $parentModelId
+                    ? ModelMarketPerformance::query()->with('modelVersion')->where('model_version_id', $parentModelId)
+                        ->where('symbol', $symbol)->where('timeframe', $timeframe)->latest('id')->first()
+                    : null;
+                if ($parentPerformance && (! $parentPerformance->modelVersion || ! $this->semanticGroups->sameGroup(
+                    $model,
+                    $family,
+                    $parentPerformance->modelVersion,
+                    (string) $parentPerformance->strategy_family,
+                ))) {
+                    $parentPerformance = null;
+                }
+                $result['paired_replay'] = $this->pairedReplayProjection($agent, $parentPerformance?->metrics, $result);
+            }
             // Official calendar alignment is joined only after the sealed
             // market replay. Missing historical events remain an explicit
             // passport failure; no provider gap is converted into a pass.
             $result = $this->calendarAlignment->enrich($symbol, $timeframe, $result);
+            // A role-complete council child must carry its professional exam
+            // projection into the same immutable passport build. Recording
+            // the exams only after the forward decision would allow a stale
+            // passport to reach the gate before hidden-state/drift/router
+            // evidence was considered.
+            if ($agent && data_get($model->metadata, 'role_complete_council.protocol') === 'role_complete_council_v1') {
+                $result['professional_exams'] = app(\App\Services\AgentProfessionalExamService::class)
+                    ->assessAndRecord($agent, $model, null, $result, null);
+            }
             $elitePassport = $this->passport->build($model, $agent, $result);
             $elitePassport = $this->passport->freezeIfFinalist($model, $elitePassport, $result);
             $result['elite_agent_passport'] = $elitePassport;
@@ -99,7 +155,7 @@ class MarketChampionService
                 ['model_version_id' => $model->id, 'symbol' => $symbol, 'timeframe' => $timeframe],
                 [
                     'strategy_family' => $family, 'fitness' => $fitness, 'forward_score' => $forward,
-                    'sample_count' => $sampleCount, 'rolling_windows_count' => count($windowScores),
+                    'sample_count' => $sampleCount, 'rolling_windows_count' => $observedForwardWindows,
                     'rolling_forward_wins' => $wins, 'metrics' => $result,
                     'status' => $champion?->model_version_id === $model->id ? 'champion' : 'challenger',
                     'champion_slot' => $champion?->model_version_id === $model->id ? 'champion' : null,
@@ -113,6 +169,15 @@ class MarketChampionService
             $elitePassport = $this->passport->freezeIfFinalist($model, $elitePassport, $result);
             $result['elite_agent_passport'] = $elitePassport;
             $model->update(['metadata' => array_merge($model->metadata ?? [], ['elite_agent_passport' => $elitePassport])]);
+            $performance->update(['metrics' => $result]);
+
+            $result['trial_ledger'] = array_merge(
+                (array) ($result['trial_ledger'] ?? []),
+                app(LabTrialLedgerService::class)->record(
+                    $agent, $model, $symbol, $timeframe, 'full_replay', $result,
+                    data_get($result, 'evidence_run_id'),
+                ),
+            );
             $performance->update(['metrics' => $result]);
 
             if ($champion?->id === $performance->id) {
@@ -164,6 +229,9 @@ class MarketChampionService
             $this->diagnoses->diagnose($performance->fresh(), $result);
             $this->decisionLearning->learn($performance->fresh(), $result);
             $forwardDecision = $this->gateDecisions->recordForward($performance->fresh(), $result);
+            $repairQuarantined = $agent
+                ? $this->applyRepairQuarantine($agent, $model, $performance, $forwardDecision, $result)
+                : false;
             // The gate ledger is the authoritative evaluation record; mirror
             // its immutable decision into the operational handoff so the
             // screened -> ... -> forward_gate chain has no missing endpoint.
@@ -172,8 +240,21 @@ class MarketChampionService
                     'candidate_gate_decision_id' => $forwardDecision->id,
                     'performance_id' => $performance->id,
                     'reason_codes' => $forwardDecision->reason_codes,
-                    'next_action' => $forwardDecision->decision === 'passed' ? 'paper_eligibility_review' : 'targeted_generation',
+                    'next_action' => $repairQuarantined
+                        ? 'repair_lineage_quarantined'
+                        : ($forwardDecision->decision === 'passed' ? 'paper_eligibility_review' : 'targeted_generation'),
+                    'repair_quarantine' => $repairQuarantined,
                 ]);
+                try {
+                    app(AgentProgressCardService::class)->sync(
+                        $agent->fresh(['modelVersion', 'generation']),
+                        $performance->fresh(),
+                        $result,
+                        $forwardDecision,
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
             }
 
             return $performance->fresh();
@@ -208,9 +289,48 @@ class MarketChampionService
 
             $agent = LabAgent::where('model_version_id', $performance->model_version_id)->latest()->first();
             $agent?->update(['lifecycle_status' => $performance->fresh()->status, 'decision_reason' => $passed ? 'Paper trading gate passed.' : 'Paper trading evidence insufficient or failed.']);
-            $this->gateDecisions->recordPaper($performance->fresh(), $metrics);
+            $paperDecision = $this->gateDecisions->recordPaper($performance->fresh(), $metrics);
+            if ($agent) {
+                try {
+                    app(AgentProgressCardService::class)->sync(
+                        $agent->fresh(['modelVersion', 'generation']),
+                        $performance->fresh(),
+                        [...$metrics, 'evidence_run_id' => data_get($metrics, 'evidence_run_id')],
+                        $paperDecision,
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
             return $performance->fresh();
         });
+    }
+
+    private function pairedReplayProjection(?LabAgent $agent, ?array $parentResult, array $current): array
+    {
+        if (! $agent) {
+            return ['protocol' => 'paired_parent_child_replay_v1', 'status' => 'pending', 'promotion_evidence' => false];
+        }
+        $experiment = $this->evolutionQuality->pairedExperiment($agent, $parentResult, $current);
+        $sameData = is_array($parentResult)
+            && filled(data_get($parentResult, 'data_manifest.sha256'))
+            && data_get($parentResult, 'data_manifest.sha256') === data_get($current, 'data_manifest.sha256');
+        $sameExecution = is_array($parentResult)
+            && filled(data_get($parentResult, 'execution_contract.execution_hash'))
+            && data_get($parentResult, 'execution_contract.execution_hash') === data_get($current, 'execution_contract.execution_hash');
+        return [
+            'protocol' => 'paired_parent_child_replay_v1',
+            'status' => data_get($experiment, 'status') === 'confirmed' && $sameData && $sameExecution
+                ? 'confirmed' : data_get($experiment, 'status', 'pending'),
+            'parent_model_version_id' => $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id,
+            'child_model_version_id' => $agent->model_version_id,
+            'same_data_hash' => $sameData,
+            'same_execution_hash' => $sameExecution,
+            'same_cost_contract' => $sameExecution,
+            'experiment' => $experiment,
+            'promotion_evidence' => false,
+            'rule' => 'Parent, child and alternative are credited only when the replay data and execution-cost identities match.',
+        ];
     }
 
     public function finalizeHoldout(ModelMarketPerformance $performance, array $holdout): ModelMarketPerformance
@@ -225,17 +345,57 @@ class MarketChampionService
                 && (int)($result['total_trades']??0)>=30;
             $performance->update(['holdout_status'=>$passed?'passed':'failed','holdout_score'=>$score,
                 'status'=>$passed?'paper':'rejected']);
-            if($passed && $this->marketReadiness->promotionReady() && $this->paperEvidence->ready()){$champion=ModelMarketPerformance::where('symbol',$performance->symbol)->where('timeframe',$performance->timeframe)
-                ->where('evidence_status', 'valid')
-                ->where('strategy_family',$performance->strategy_family)->where('status','champion')->lockForUpdate()->first();
+            if($passed && $this->marketReadiness->promotionReady() && $this->paperEvidence->ready()){$champion=$this->groupChampion(
+                $performance->symbol, $performance->timeframe, $performance->strategy_family, $performance->modelVersion,
+            );
                 if($this->backtestGatesPass($performance,$champion,$performance->metrics??[]))$this->promote($performance,$champion,$performance->modelVersion);}
             LabAgent::where('model_version_id',$performance->model_version_id)->get()->each(fn (LabAgent $agent) => $agent->update([
                 'lifecycle_status' => $performance->fresh()->status,
                 'decision_reason' => $passed ? 'Sealed holdout and paper gates passed.' : 'Sealed holdout failed.',
             ]));
-            $this->gateDecisions->recordHoldout($performance->fresh(), $holdout);
+            $holdoutDecision = $this->gateDecisions->recordHoldout($performance->fresh(), $holdout);
+            LabAgent::where('model_version_id', $performance->model_version_id)->get()->each(function (LabAgent $agent) use ($performance, $holdout, $holdoutDecision): void {
+                try {
+                    app(AgentProgressCardService::class)->sync(
+                        $agent->fresh(['modelVersion', 'generation']),
+                        $performance->fresh(),
+                        [...(array) data_get($holdout, 'result', []), 'evidence_run_id' => data_get($holdout, 'evidence_run_id')],
+                        $holdoutDecision,
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            });
             return $performance->fresh();
         });
+    }
+
+    private function groupChampion(string $symbol, string $timeframe, string $family, ModelVersion $candidate): ?ModelMarketPerformance
+    {
+        $candidateHasDeclaredGroup = $this->semanticGroups->hasDeclaredGroup($candidate, $family);
+        return ModelMarketPerformance::query()
+            ->with('modelVersion')
+            ->where(compact('symbol', 'timeframe'))
+            ->where('strategy_family', $family)
+            ->where('evidence_status', 'valid')
+            ->where('status', 'champion')
+            ->lockForUpdate()
+            ->get()
+            ->filter(fn (ModelMarketPerformance $performance): bool => $performance->modelVersion !== null
+                && ($candidateHasDeclaredGroup
+                    ? $this->semanticGroups->sameGroup(
+                        $candidate,
+                        $family,
+                        $performance->modelVersion,
+                        (string) $performance->strategy_family,
+                    )
+                    // Runtime-only/legacy models predate semantic groups.
+                    // They may still be compared as a diagnostic benchmark,
+                    // but they are never returned by the genetic parent
+                    // boundary in LabPopulationService.
+                    : ! $this->semanticGroups->hasDeclaredGroup($performance->modelVersion, (string) $performance->strategy_family)))
+            ->sortByDesc('forward_score')
+            ->first();
     }
 
     private function backtestGatesPass(ModelMarketPerformance $candidate, ?ModelMarketPerformance $champion, array $result): bool
@@ -243,6 +403,7 @@ class MarketChampionService
         $requiredWins = 3;
         $forwardGain = $champion ? $candidate->forward_score - $champion->forward_score : $candidate->forward_score;
         $strictStatisticalProtocol = (int) data_get($candidate->modelVersion?->metadata, 'statistical_gate_version', 0) >= 2;
+        $strictRobustnessProtocol = (int) data_get($candidate->modelVersion?->metadata, 'robustness_gate_version', 0) >= 1;
         $selectionValidation = data_get($result, 'selection_validation', []);
         $deflatedSharpe = data_get($result, 'statistical_evidence.deflated_sharpe', []);
         // A new population may not paper-promote from an unavailable PBO/DSR
@@ -252,6 +413,9 @@ class MarketChampionService
         $pboPasses = $strictStatisticalProtocol
             ? data_get($selectionValidation, 'status') === 'assessed'
                 && (float) data_get($selectionValidation, 'probability_of_backtest_overfitting', 1) <= 0.50
+                && data_get($selectionValidation, 'protocol') === 'purged_embargoed_cscv_v1'
+                && (bool) data_get($selectionValidation, 'purge_embargo_applied', false)
+                && (bool) data_get($selectionValidation, 'promotion_evidence', false)
             : (data_get($selectionValidation, 'status') !== 'assessed'
                 || (float) data_get($selectionValidation, 'probability_of_backtest_overfitting', 1) <= 0.50);
         $dsrPasses = $strictStatisticalProtocol
@@ -276,6 +440,35 @@ class MarketChampionService
             : (! data_get($edgeQuality, 'worst_regime_sampled', false)
                 || (float) data_get($edgeQuality, 'worst_regime_pf', 0) >= 1.0);
         $diverse = data_get($result, 'behavioral_diversity.status') === 'diverse';
+        $noisePasses = ! $strictRobustnessProtocol
+            || (data_get($result, 'noise_sanity.status') === 'assessed' && (bool) data_get($result, 'noise_sanity.pass', false));
+        $executionStressPasses = ! $strictRobustnessProtocol
+            || (data_get($result, 'execution_digital_twin.status') === 'assessed' && (bool) data_get($result, 'execution_digital_twin.pass', false));
+        $parameterPlateauPasses = ! $strictRobustnessProtocol
+            || (data_get($result, 'parameter_plateau.status') === 'assessed'
+                && (bool) data_get($result, 'parameter_plateau.pass', false));
+        $dataQualityPasses = ! $strictRobustnessProtocol
+            || (data_get($result, 'data_quality.status') === 'passed'
+                && (int) data_get($result, 'data_quality.duplicate_timestamp_count', 0) === 0
+                && (int) data_get($result, 'data_quality.non_monotonic_timestamp_pairs', 0) === 0
+                && (int) data_get($result, 'data_quality.invalid_ohlc_rows', 0) === 0);
+        $goldHoldoutPasses = ! $strictRobustnessProtocol
+            || (data_get($result, 'gold_holdout.protocol') === 'gold_holdout_v1'
+                && data_get($result, 'gold_holdout.used_for_training') === false
+                && data_get($result, 'gold_holdout.used_for_evolution') === false
+                && data_get($result, 'gold_holdout.one_time_release') === true);
+        $forwardWindowIntegrity = ! $strictRobustnessProtocol
+            || (data_get($result, 'forward_window_protocol.independence_verified') === true
+                && data_get($result, 'forward_window_protocol.overlap_detected') !== true);
+        $challengerProtocolPasses = ! $strictRobustnessProtocol
+            || ((int) data_get($result, 'challenger_protocol.observed_forward_windows', 0) >= $requiredWins
+                && (int) data_get($result, 'challenger_protocol.positive_forward_windows', 0) >= $requiredWins
+                && $forwardWindowIntegrity);
+        $repairLineage = (array) data_get($candidate->modelVersion?->metadata, 'repair_lineage', []);
+        $repairReplayPasses = (int) data_get($repairLineage, 'attempt', 0) === 0
+            || (count((array) ($this->agentParameterDiff($candidate) ?? [])) === 1
+                && data_get($result, 'paired_replay.status') === 'confirmed'
+                && data_get($result, 'no_regression_contract.status') === 'passed');
 
         return $forwardGain >= ($champion ? 5 : 0)
             && (float) ($result['profit_factor'] ?? 0) >= 1.3
@@ -291,7 +484,66 @@ class MarketChampionService
             && $bootstrapPasses
             && $worstRegimePasses
             && $passportPasses
-            && $diverse;
+            && $diverse
+            && $noisePasses
+            && $executionStressPasses
+            && $parameterPlateauPasses
+            && $dataQualityPasses
+            && $goldHoldoutPasses
+            && $challengerProtocolPasses
+            && (! $strictRobustnessProtocol || $repairReplayPasses);
+    }
+
+    private function agentParameterDiff(ModelMarketPerformance $candidate): ?array
+    {
+        $agent = LabAgent::query()->where('model_version_id', $candidate->model_version_id)->latest('id')->first();
+        return $agent?->parameter_diff;
+    }
+
+    private function applyRepairQuarantine(
+        LabAgent $agent,
+        ModelVersion $model,
+        ModelMarketPerformance $performance,
+        CandidateGateDecision $decision,
+        array $result,
+    ): bool {
+        if ($decision->decision === 'passed') return false;
+        $agent->loadMissing('modelVersion');
+        $lineage = (array) data_get($model->metadata, 'repair_lineage', []);
+        $attempt = (int) data_get($lineage, 'attempt', 0);
+        $statisticalFalsifier = collect((array) $decision->reason_codes)->contains(
+            fn ($reason): bool => in_array($reason, [
+                'FAILED_OVERFIT', 'FAILED_NOISE_SANITY', 'FAILED_NOISE_SANITY_EVIDENCE',
+                'QUARANTINED_PROOF_REPLAY_MISMATCH',
+            ], true),
+        );
+        if ((! $statisticalFalsifier && $attempt < 2) || data_get($lineage, 'status') === 'quarantined') return false;
+
+        $fromStatus = (string) $agent->lifecycle_status;
+        $lineage['status'] = 'quarantined';
+        $lineage['failed_forward_replays'] = $attempt;
+        $lineage['quarantined_at'] = now()->utc()->toIso8601String();
+        $lineage['quarantine_reason'] = $statisticalFalsifier
+            ? 'Statistical falsifier (DSR/PBO/noise/proof) failed; no further tuning is allowed.'
+            : 'Two bounded repair attempts failed the independent forward gate.';
+        $metadata = $model->metadata ?? [];
+        data_set($metadata, 'repair_lineage', $lineage);
+        $model->update(['metadata' => $metadata]);
+        $agent->update([
+            'lifecycle_status' => 'quarantined',
+            'decision_reason' => $statisticalFalsifier
+                ? 'Repair lineage quarantined after a statistical falsifier; no further tuning is allowed.'
+                : 'Repair lineage quarantined after two failed independent forward replays.',
+        ]);
+        $performance->update(['status' => 'rejected', 'champion_slot' => null]);
+        app(LabImmutableEvidenceService::class)->recordLifecycle($agent, 'repair_lineage_quarantine', [
+            'reason_code' => $statisticalFalsifier ? 'FAILED_STATISTICAL_FALSIFIER' : 'FAILED_TWO_REPAIR_REPLAYS',
+            'candidate_gate_decision_id' => $decision->id,
+            'performance_id' => $performance->id,
+            'attempt' => $attempt,
+            'result_hash' => hash('sha256', json_encode($result, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
+        ], 'statistical_forward_gate', data_get($result, 'evidence_run_id'), null, self::class, null, $fromStatus, 'quarantined');
+        return true;
     }
 
     private function promote(ModelMarketPerformance $candidate, ?ModelMarketPerformance $champion, ModelVersion $model): void
@@ -312,10 +564,11 @@ class MarketChampionService
         $model->update(['status' => 'active', 'promoted_at' => now()]);
     }
 
-    private function updateLabAgentAndMemory(ModelMarketPerformance $performance, ?ModelMarketPerformance $champion, array $result): void
+    private function updateLabAgentAndMemory(ModelMarketPerformance $performance, ?ModelMarketPerformance $champion, array &$result): void
     {
         $agent = LabAgent::where('model_version_id', $performance->model_version_id)->latest()->first();
         if (! $agent) return;
+        $agent->loadMissing('modelVersion', 'generation');
         $skillTree = $this->skillTree($result);
         $delta = $champion ? $performance->forward_score - $champion->forward_score : $performance->forward_score;
         $reason = match ($performance->status) {
@@ -341,13 +594,37 @@ class MarketChampionService
             || (bool) ($result['is_overfit'] ?? false)
             || (float) data_get($result, 'monte_carlo.risk_of_ruin_percent', 0) > 10
             || (float) ($result['max_drawdown_percent'] ?? $result['max_drawdown'] ?? 0) > 15;
-        $parentA = $agent->parent_a_model_version_id ? ModelMarketPerformance::query()->where('model_version_id', $agent->parent_a_model_version_id)
+        $parentA = $agent->parent_a_model_version_id ? ModelMarketPerformance::query()->with('modelVersion')->where('model_version_id', $agent->parent_a_model_version_id)
             ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->first() : null;
-        $parentB = ! $parentA && $agent->parent_b_model_version_id ? ModelMarketPerformance::query()->where('model_version_id', $agent->parent_b_model_version_id)
+        // Old agents can retain a parent id that was valid under the loose
+        // family-only protocol. Re-check the persisted semantic identity at
+        // evaluation time so historical metadata cannot create new genetic
+        // credit after the protocol upgrade.
+        if ($parentA && (! $parentA->modelVersion || ! $this->semanticGroups->sameGroup(
+            $agent->modelVersion,
+            $agent->strategy_family,
+            $parentA->modelVersion,
+            (string) $parentA->strategy_family,
+        ))) {
+            $parentA = null;
+        }
+        $parentB = ! $parentA && $agent->parent_b_model_version_id ? ModelMarketPerformance::query()->with('modelVersion')->where('model_version_id', $agent->parent_b_model_version_id)
             ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->first() : null;
+        if ($parentB && (! $parentB->modelVersion || ! $this->semanticGroups->sameGroup(
+            $agent->modelVersion,
+            $agent->strategy_family,
+            $parentB->modelVersion,
+            (string) $parentB->strategy_family,
+        ))) {
+            $parentB = null;
+        }
         $baseline = $parentA ? ['type' => 'parent_a', 'agent_ids' => [$agent->parent_a_model_version_id]]
             : ($parentB ? ['type' => 'parent_b', 'agent_ids' => [$agent->parent_b_model_version_id]] : []);
-        $parentPerformance = $parentA ?: $parentB;
+        // `geneticParentPerformance` is the only baseline that may award a
+        // mutation skill. The broader frontier below remains useful for
+        // ranking diagnostics, but it is never a parent/child replay claim.
+        $geneticParentPerformance = $parentA ?: $parentB;
+        $parentPerformance = $geneticParentPerformance;
         $frontierBaseline = $champion ? [...($champion->metrics ?? []), 'forward_score' => $champion->forward_score] : null;
         if (! $parentPerformance && $champion) {
             $parentPerformance = $champion;
@@ -364,12 +641,44 @@ class MarketChampionService
         }
         $baseline = $baseline ?: ['type' => 'symbol_timeframe_benchmark', 'agent_ids' => []];
         $parentResult = $parentPerformance?->metrics;
+        $geneticParentResult = $geneticParentPerformance?->metrics;
         $curriculum = $this->evolutionQuality->curriculum($result);
-        $noRegression = $this->evolutionQuality->noRegressionContract($parentResult, $result);
+        $noRegression = $this->evolutionQuality->noRegressionContract($geneticParentResult, $result);
         $capabilityVector = $this->evolutionQuality->capabilityVector($result);
         $result['capability_vector'] = $capabilityVector;
         $operatingEnvelope = $this->evolutionQuality->operatingEnvelope($result);
-        $pairedExperiment = $this->evolutionQuality->pairedExperiment($agent, $parentResult, $result);
+        $pairedExperiment = $this->evolutionQuality->pairedExperiment($agent, $geneticParentResult, $result);
+        $sameData = is_array($geneticParentResult)
+            && filled(data_get($geneticParentResult, 'data_manifest.sha256'))
+            && data_get($geneticParentResult, 'data_manifest.sha256') === data_get($result, 'data_manifest.sha256');
+        $sameExecution = is_array($geneticParentResult)
+            && filled(data_get($geneticParentResult, 'execution_contract.execution_hash'))
+            && data_get($geneticParentResult, 'execution_contract.execution_hash') === data_get($result, 'execution_contract.execution_hash');
+        $pairedReplay = [
+            'protocol' => 'paired_parent_child_replay_v1',
+            'status' => data_get($pairedExperiment, 'status') === 'confirmed' && $sameData && $sameExecution
+                ? 'confirmed' : data_get($pairedExperiment, 'status', 'pending'),
+            'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
+            'child_model_version_id' => $agent->model_version_id,
+            'alternative_model_version_id' => data_get($pairedExperiment, 'alternative_model_version_id'),
+            'same_data_hash' => $sameData,
+            'same_execution_hash' => $sameExecution,
+            'same_cost_contract' => $sameExecution,
+            'experiment' => $pairedExperiment,
+            'promotion_evidence' => false,
+            'rule' => 'Parent, child and alternative are credited only when the replay data and execution-cost identities match.',
+        ];
+        $result['paired_replay'] = $pairedReplay;
+        $result['no_regression_contract'] = $noRegression;
+        $mutationSkillContract = $this->mutationSkills->verify(
+            $agent,
+            $geneticParentPerformance?->modelVersion,
+            $geneticParentResult,
+            $result,
+            (array) $agent->parameter_diff,
+            $noRegression,
+        );
+        $result['verified_mutation_skill'] = $mutationSkillContract;
         $selfKnowledge = $this->universalCapabilities->selfKnowledge($result);
         $retention = $this->universalCapabilities->retention($parentResult, $result);
         $certification = $this->universalCapabilities->certification($result, $selfKnowledge, $retention);
@@ -384,6 +693,17 @@ class MarketChampionService
         $contractFailure = $noRegression['status'] === 'failed';
         $outcome = ($hardFailure || $contractFailure) ? 'harmful' : ($delta >= 5 ? 'beneficial' : ($delta <= -5 ? 'harmful' : 'neutral'));
         $learningDelta = ($hardFailure || $contractFailure) ? min($delta, -10) : $delta;
+        $skillConfirmed = data_get($mutationSkillContract, 'status') === 'confirmed';
+        $skillWindowCount = (int) data_get($mutationSkillContract, 'independent_forward_windows.confirmed_windows', 0);
+        $skillOutcome = $skillConfirmed && data_get($mutationSkillContract, 'target_gate.improved') === true
+            ? 'beneficial'
+            : ($hardFailure || $contractFailure ? 'harmful' : 'neutral');
+        $executionContractHash = (string) data_get($result, 'execution_contract.execution_hash', '');
+        $nonTargetRegressionStatus = (string) data_get(
+            $mutationSkillContract,
+            'non_target.status',
+            data_get($result, 'differential_no_regression.status', 'not_applicable'),
+        );
         $beforeGates = is_array($parentResult)
             ? $this->gateProgress->snapshot($parentResult, (int) $parentPerformance->rolling_forward_wins, $frontierBaseline)
             : null;
@@ -396,8 +716,9 @@ class MarketChampionService
         );
         $behavioralEffect = $this->behavioralEffect($parentResult, $result);
         $changedFields = array_keys($agent->parameter_diff ?? []);
-        $isSingleMutation = count($changedFields) === 1;
-        $pairedConfirmed = data_get($pairedExperiment, 'status') === 'confirmed';
+        $changedGenes = (array) data_get($mutationSkillContract, 'changed_genes', $changedFields);
+        $isSingleMutation = count($changedGenes) === 1;
+        $pairedConfirmed = data_get($pairedReplay, 'status') === 'confirmed';
         $g98Lane = (array) data_get($agent->modelVersion?->metadata, 'g98_council_lane', []);
         $declaredContext = (array) data_get($agent->modelVersion?->metadata, 'portfolio_council_lane', []);
         $failureSignature = [
@@ -409,12 +730,14 @@ class MarketChampionService
             'lane' => data_get($g98Lane, 'lane'),
         ];
         $causalCredit = [
-            'status' => $isSingleMutation && $pairedConfirmed ? 'independently_confirmed' : ($isSingleMutation ? 'awaiting_paired_confirmation' : 'bundle_unattributed'),
-            'parent_model_version_id' => $parentPerformance?->model_version_id,
+            'status' => $skillConfirmed ? 'independently_confirmed' : ($isSingleMutation ? 'awaiting_verified_skill_confirmation' : 'bundle_unattributed'),
+            'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
             'changed_fields' => $changedFields,
+            'changed_genes' => $changedGenes,
             'mutation_bundle_id' => hash('sha256', json_encode([$agent->id, $changedFields, data_get($agent->modelVersion?->metadata, 'generation_target')], JSON_PRESERVE_ZERO_FRACTION)),
             'counterfactual_replay_contract' => data_get($result, 'counterfactual_blame_graph'),
             'g98_failure_eliminator_lane' => $g98Lane ?: null,
+            'verified_skill_contract' => $mutationSkillContract,
             'rule' => 'Aggregate bundle outcome is never automatically credited to each changed parameter; G98 also requires all five counterfactual replays to be assessed.',
         ];
         $evidenceLedger = app(LabImmutableEvidenceService::class);
@@ -423,14 +746,18 @@ class MarketChampionService
                 'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $agent->strategy_family,
                 'old_value' => ['fields' => $changedFields], 'new_value' => ['fields' => $changedFields], 'forward_delta' => $learningDelta,
                 'market_regime' => $regime, 'outcome' => $outcome, 'confidence' => min(100, 50 + $performance->rolling_windows_count * 10),
+                'execution_contract_hash' => $executionContractHash !== '' ? $executionContractHash : null,
+                'independent_confirmation_count' => 0,
+                'non_target_regression_status' => $nonTargetRegressionStatus,
+                'evidence_scope_status' => 'historical_failure_memory',
                 'decision' => 'Bundle evidence retained; individual causal credit withheld.', 'gate_transition' => $gateTransition,
-                'behavioral_effect' => [...$behavioralEffect, 'causal_credit' => $causalCredit, 'failure_signature' => $failureSignature],
+                'behavioral_effect' => [...$behavioralEffect, 'causal_credit' => $causalCredit, 'verified_mutation_skill' => $mutationSkillContract, 'failure_signature' => $failureSignature],
             ]);
             $evidenceLedger->recordMutationCredit($bundleMemory, [
                 'source' => 'full_replay_bundle_learning',
                 'model_market_performance_id' => $performance->id,
                 'mutation_bundle_id' => $causalCredit['mutation_bundle_id'],
-                'parent_model_version_id' => $parentPerformance?->model_version_id,
+                'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
                 'paired_experiment' => $pairedExperiment,
             ], data_get($result, 'evidence_run_id'));
         }
@@ -442,26 +769,33 @@ class MarketChampionService
                 'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $agent->strategy_family,
                 'old_value' => ['value' => $change['old'] ?? null], 'new_value' => ['value' => $change['new'] ?? null],
                 'forward_delta' => $learningDelta, 'market_regime' => $regime,
-                'outcome' => $isSingleMutation && $pairedConfirmed ? $outcome : 'neutral',
+                'execution_contract_hash' => $executionContractHash !== '' ? $executionContractHash : null,
+                'independent_confirmation_count' => $skillConfirmed ? min(2, $skillWindowCount) : 0,
+                'non_target_regression_status' => $nonTargetRegressionStatus,
+                'evidence_scope_status' => $skillConfirmed ? 'eligible_prior' : 'historical_failure_memory',
+                'outcome' => $isSingleMutation ? $skillOutcome : 'neutral',
                 'confidence' => min(100, 50 + $performance->rolling_windows_count * 10),
-                'decision' => $delta >= 5 ? 'Foydali mutation; keyingi generationda ustuvor.' : ($delta <= -5 ? 'Zararli mutation; shu yo‘nalishni cheklash.' : 'Neutral mutation; qo‘shimcha evidence kerak.'),
                 'gate_transition' => $gateTransition,
+                'decision' => $skillConfirmed
+                    ? 'Verified beneficial skill; exact semantic descendants may reuse this gene.'
+                    : ($delta <= -5 ? 'Observed harmful/failed mutation; no beneficial skill credit.' : 'Neutral mutation; complete verification contract is still missing.'),
                 'behavioral_effect' => [...$behavioralEffect, 'causal_experiment' => $mutationEffect,
                     'gate_deficit_curriculum' => $curriculum, 'no_regression_contract' => $noRegression,
                     'capability_vector' => $capabilityVector, 'operating_envelope' => $operatingEnvelope,
-                    'paired_experiment' => $pairedExperiment, 'causal_credit' => $causalCredit, 'failure_signature' => $failureSignature],
+                    'paired_experiment' => $pairedExperiment, 'causal_credit' => $causalCredit,
+                    'verified_mutation_skill' => $mutationSkillContract, 'failure_signature' => $failureSignature],
             ]);
             $evidenceLedger->recordMutationCredit($memory, [
                 'source' => 'full_replay_parameter_learning',
                 'model_market_performance_id' => $performance->id,
                 'mutation_bundle_id' => $causalCredit['mutation_bundle_id'],
-                'parent_model_version_id' => $parentPerformance?->model_version_id,
+                'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
                 'control_model_version_id' => data_get($pairedExperiment, 'alternative_model_version_id'),
                 'paired_experiment' => $pairedExperiment,
             ], data_get($result, 'evidence_run_id'));
         }
         $architecture = data_get($agent->modelVersion?->metadata, 'strategy_architecture');
-        $parentArchitecture = data_get($agent->parentA?->metadata, 'strategy_architecture');
+        $parentArchitecture = data_get($geneticParentPerformance?->modelVersion?->metadata, 'strategy_architecture');
         if ($architecture && $architecture !== $parentArchitecture) {
             $memory = MutationMemory::updateOrCreate([
                 'lab_agent_id' => $agent->id, 'parameter_key' => '__architecture',
@@ -469,17 +803,22 @@ class MarketChampionService
                 'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $agent->strategy_family,
                 'old_value' => ['value' => $parentArchitecture], 'new_value' => ['value' => $architecture],
                 'forward_delta' => $learningDelta, 'market_regime' => $regime, 'outcome' => $outcome,
+                'execution_contract_hash' => $executionContractHash !== '' ? $executionContractHash : null,
+                'independent_confirmation_count' => $skillConfirmed ? min(2, $skillWindowCount) : 0,
+                'non_target_regression_status' => $nonTargetRegressionStatus,
+                'evidence_scope_status' => $skillConfirmed ? 'eligible_prior' : 'historical_failure_memory',
                 'confidence' => min(100, 50 + $performance->rolling_windows_count * 10),
                 'decision' => $outcome === 'beneficial' ? 'Architecture evidence improved; retain for this regime.' : ($outcome === 'harmful' ? 'Architecture falsified in this regime; de-prioritize.' : 'Architecture needs more evidence.'),
                 'gate_transition' => $gateTransition,
                 'behavioral_effect' => [...$behavioralEffect, 'gate_deficit_curriculum' => $curriculum,
                     'no_regression_contract' => $noRegression, 'capability_vector' => $capabilityVector,
-                    'operating_envelope' => $operatingEnvelope, 'paired_experiment' => $pairedExperiment],
+                    'operating_envelope' => $operatingEnvelope, 'paired_experiment' => $pairedExperiment,
+                    'verified_mutation_skill' => $mutationSkillContract],
             ]);
             $evidenceLedger->recordMutationCredit($memory, [
                 'source' => 'full_replay_architecture_learning',
                 'model_market_performance_id' => $performance->id,
-                'parent_model_version_id' => $parentPerformance?->model_version_id,
+                'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
                 'paired_experiment' => $pairedExperiment,
             ], data_get($result, 'evidence_run_id'));
         }
@@ -487,6 +826,13 @@ class MarketChampionService
         // earlier isolated child. Reconcile inside the same evidence flow so
         // pending credit does not remain pending forever.
         $this->causalMutationCredit->reconcileGeneration((int) $agent->lab_generation_id);
+        $performance->update(['metrics' => [
+            ...((array) $performance->metrics),
+            'paired_replay' => $pairedReplay,
+            'no_regression_contract' => $noRegression,
+            'behavioral_effect' => $behavioralEffect,
+            'causal_credit' => $causalCredit,
+        ]]);
     }
 
     private function behavioralEffect(?array $parent, array $current): array

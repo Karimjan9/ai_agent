@@ -1,0 +1,441 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\LabGeneration;
+use App\Models\ModelMarketPerformance;
+use App\Models\ModelVersion;
+use Illuminate\Support\Collection;
+
+/**
+ * Selects contributors from the exact semantic frontier.
+ *
+ * The service is intentionally downstream of strict semantic filtering. It
+ * may choose several parents inside one legal cell, but it can never create a
+ * cross-family or cross-regime genetic edge.
+ */
+class AdaptiveParentFrontierService
+{
+    private const MODULE_KEYS = [
+        'entry' => [
+            'lookback', 'confirmation_candles',
+            'trend_strength_min', 'pullback_atr_fraction', 'roc_threshold', 'deviation',
+        ],
+        'exit' => [
+            'atr_stop_multiplier', 'atr_target_multiplier', 'trailing_atr_multiplier',
+            'time_stop_candles', 'partial_take_profit_fraction', 'partial_target_atr_multiplier',
+        ],
+        'risk' => [
+            'high_volatility_risk_multiplier', 'max_loss_streak_before_wait',
+            'loss_cooldown_candles', 'avoid_high_volatility',
+        ],
+        'execution_cost' => [
+            'spread_to_atr_max', 'max_spread_points', 'slippage_points',
+            'commission_percent', 'risk_per_trade',
+        ],
+        'router' => [
+            'differential_target_regime', 'differential_router_version',
+            'trend_down_strength_min', 'trend_down_pullback_atr_fraction',
+            'high_volatility_wait', 'range_signal_mode',
+        ],
+        'confidence_calibration' => [
+            'minimum_signal_confidence', 'confidence_calibration_enabled',
+            'confidence_calibration_min_samples', 'confidence_ev_lower_bound_enabled',
+            'meta_label_enabled', 'meta_label_min_history', 'meta_label_min_pf',
+            'meta_label_risk_multiplier',
+        ],
+    ];
+
+    public function __construct(
+        private EvolutionGovernorService $governor,
+        private StrategySemanticGroupService $semanticGroups,
+    ) {}
+
+    /**
+     * @param iterable<ModelVersion> $parents Already exact-cell filtered.
+     * @return array{parents: Collection, selected_parent_ids: array, candidate_parent_ids: array, contract: array, capability_genome: array, runtime_ensemble_policy: ?array}
+     */
+    public function select(
+        iterable $parents,
+        string $symbol,
+        string $timeframe,
+        string $family,
+        string $origin,
+        ?string $target,
+        ?array $niche,
+        int $slot = 1,
+        ?LabGeneration $generation = null,
+    ): array {
+        $candidates = collect($parents)
+            ->filter(fn ($model): bool => $model instanceof ModelVersion && (int) $model->id > 0)
+            ->filter(fn (ModelVersion $model): bool => $this->semanticGroups->exactParentCompatible(
+                $model,
+                $symbol,
+                $timeframe,
+                $family,
+                $niche,
+            ))
+            ->unique('id')
+            ->values();
+
+        $snapshot = $generation
+            ? (array) data_get($generation->trigger_context, 'adaptive_evolution_policy', [])
+            : [];
+        if ($snapshot === []) $snapshot = $this->governor->scopeSnapshot($symbol, $timeframe);
+
+        if (! (bool) config('services.lab_selection.adaptive_parent_enabled', true)) {
+            $ids = $candidates->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
+            $contract = [
+                'protocol' => 'adaptive_parent_frontier_v1',
+                'status' => 'disabled',
+                'mode' => 'legacy_frontier_projection',
+                'candidate_count' => $candidates->count(),
+                'selected_count' => $candidates->count(),
+                'candidate_parent_model_version_ids' => $ids,
+                'selected_parent_model_version_ids' => $ids,
+                'promotion_evidence' => false,
+            ];
+            return [
+                'parents' => $candidates,
+                'selected_parent_ids' => $ids,
+                'candidate_parent_ids' => $ids,
+                'contract' => $contract,
+                'capability_genome' => $this->capabilityGenome($candidates, []),
+                'runtime_ensemble_policy' => $this->governor->runtimePolicy($family, $ids),
+            ];
+        }
+
+        $policy = $this->governor->selectionPolicy($family, $origin, $target, $snapshot);
+        $island = $this->semanticGroups->descriptor($symbol, $timeframe, $family, $niche);
+        $allProfiles = $this->profiles($candidates, $symbol, $timeframe, $family, $target, $niche);
+        // An archive is a memory system, not a passport. Convergence and
+        // diversity entries still have to re-prove the parent contract when
+        // they re-enter a generation. Young entries are useful only for the
+        // explicitly exploratory lanes; they must never silently become a
+        // validated champion parent.
+        $profiles = $allProfiles->filter(function (array $profile) use ($policy): bool {
+            if ((bool) data_get($profile, 'parent_eligible', false)) return true;
+            return in_array((string) data_get($policy, 'mode'), [
+                'architecture_discovery', 'curiosity_exploration',
+            ], true) && (bool) data_get($profile, 'research_seed_eligible', false);
+        })->values();
+        $desired = $this->desiredParentCount($policy, $profiles->count());
+        $selectedProfiles = $this->selectProfiles($profiles, $desired, (int) $slot, $policy);
+        $selected = $selectedProfiles->map(fn (array $profile): ModelVersion => $profile['model'])->values();
+        $selectedIds = $selected->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
+        $candidateIds = $allProfiles->pluck('model.id')->map(fn ($id): int => (int) $id)->values()->all();
+        $eligibleCandidateIds = $profiles->pluck('model.id')->map(fn ($id): int => (int) $id)->values()->all();
+        $capability = $this->capabilityGenome($selected, $selectedProfiles->all());
+        $runtime = $this->governor->runtimePolicy($family, $selectedIds);
+
+        $candidateScores = [];
+        foreach ($allProfiles as $profile) {
+            $candidateScores[(string) $profile['model']->id] = [
+                'score' => round((float) $profile['score'], 4),
+                'lineage_id' => $profile['lineage_id'],
+                'parameter_signature' => $profile['signature'],
+                'novelty_to_anchor' => round((float) $profile['novelty_to_anchor'], 4),
+                'parent_eligible' => (bool) data_get($profile, 'parent_eligible', false),
+                'research_seed_eligible' => (bool) data_get($profile, 'research_seed_eligible', false),
+                'exclusion_reason' => data_get($profile, 'parent_exclusion_reason'),
+                'archive_type' => data_get($profile, 'archive_type'),
+            ];
+        }
+
+        $contract = [
+            'protocol' => 'adaptive_parent_frontier_v1',
+            'status' => 'active',
+            'mode' => $policy['mode'],
+            'island_key' => data_get($island, 'key'),
+            'semantic_group_protocol' => StrategySemanticGroupService::PROTOCOL,
+            'candidate_count' => $allProfiles->count(),
+            'eligible_candidate_count' => $profiles->count(),
+            'selected_count' => $selected->count(),
+            'candidate_parent_model_version_ids' => $candidateIds,
+            'eligible_parent_model_version_ids' => $eligibleCandidateIds,
+            'selected_parent_model_version_ids' => $selectedIds,
+            'dynamic_k' => $selected->count(),
+            'min_parents' => $policy['min_parents'],
+            'max_parents' => $policy['max_parents'],
+            'candidate_scores' => $candidateScores,
+            'exploration_ratio' => $policy['exploration_ratio'],
+            'diversity_score' => $policy['diversity_score'],
+            'progress_score' => $policy['progress_score'],
+            'stagnation_generations' => $policy['stagnation_generations'],
+            'lineage_cap' => $policy['lineage_cap'],
+            'selection_seed' => $slot,
+            'capability_modules' => array_keys((array) data_get($capability, 'modules', [])),
+            'research_seed_only' => $selectedProfiles->contains(fn (array $profile): bool => ! (bool) data_get($profile, 'parent_eligible', false)),
+            'parent_passport_rule' => 'valid evidence, sample/rolling/stress/PBO-DSR/bootstrap checks; exploratory young seeds are research-only',
+            'causal_parent_rule' => $policy['causal_lane']
+                ? 'exactly one parent; mutation attribution remains isolated'
+                : null,
+            'cross_cell_crossover' => false,
+            'promotion_evidence' => false,
+        ];
+
+        return [
+            'parents' => $selected,
+            'selected_parent_ids' => $selectedIds,
+            'candidate_parent_ids' => $candidateIds,
+            'contract' => $contract,
+            'capability_genome' => $capability,
+            'runtime_ensemble_policy' => $runtime,
+        ];
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
+    private function profiles(
+        Collection $candidates,
+        string $symbol,
+        string $timeframe,
+        string $family,
+        ?string $target,
+        ?array $niche,
+    ): Collection {
+        return $candidates->map(function (ModelVersion $model) use ($symbol, $timeframe, $family, $target, $niche): array {
+            $performance = $model->marketPerformances()
+                ->where('symbol', $symbol)
+                ->where('timeframe', $timeframe)
+                ->where('strategy_family', $family)
+                ->latest('id')
+                ->first();
+            $metrics = (array) ($performance?->metrics ?? []);
+            $statusBonus = match ((string) ($performance?->status ?? '')) {
+                'champion' => 8, 'forward_validated' => 6, 'challenger' => 4, 'paper' => 3,
+                default => 0,
+            };
+            $score = ((float) ($performance?->forward_score ?? $model->best_score ?? 0) * 2)
+                + ((float) data_get($metrics, 'profit_factor', 0) * 25)
+                - (float) data_get($metrics, 'max_drawdown_percent', data_get($metrics, 'max_drawdown', 0))
+                - ((float) data_get($metrics, 'monte_carlo.risk_of_ruin_percent', 0) * 2)
+                + $statusBonus
+                + (float) data_get($model->metadata, 'target_progress.'.(string) $target.'.selection_score', 0);
+
+            $parameters = (array) ($model->parameters ?? []);
+            ksort($parameters);
+            $signature = hash('sha256', json_encode($parameters, JSON_PRESERVE_ZERO_FRACTION));
+            $lineage = data_get($model->metadata, 'repair_lineage.root_model_version_id')
+                ?: data_get($model->metadata, 'control_root_seed.control_root_model_version_id')
+                ?: data_get($model->metadata, 'control_root_seed_model_version_id')
+                ?: $model->id;
+
+            return [
+                'model' => $model,
+                'score' => $score,
+                'lineage_id' => (string) $lineage,
+                'signature' => $signature,
+                'novelty_to_anchor' => 0.0,
+                'performance_id' => $performance?->id,
+                'archive_type' => $model->getAttribute('_adaptive_archive_type'),
+                ...$this->parentEligibilityProfile($model, $performance),
+                'semantic_group_key' => data_get($this->semanticGroups->fromModel($model, $family), 'key'),
+                'niche' => $niche,
+            ];
+        })->sortByDesc('score')->values()->tap(function (Collection $profiles): void {
+            $anchor = $profiles->first();
+            if (! $anchor) return;
+            $profiles->transform(function (array $profile) use ($anchor): array {
+                $profile['novelty_to_anchor'] = $this->parameterDistance(
+                    (array) $profile['model']->parameters,
+                    (array) $anchor['model']->parameters,
+                );
+                return $profile;
+            });
+        });
+    }
+
+    private function desiredParentCount(array $policy, int $candidateCount): int
+    {
+        if ($candidateCount === 0) return 0;
+        if ((bool) $policy['causal_lane']) return 1;
+
+        $max = min((int) $policy['max_parents'], $candidateCount);
+        $exploration = (float) $policy['exploration_ratio'];
+        $desired = match ($policy['mode']) {
+            'robust_capability_crossover' => 2 + (int) round($exploration * max(0, $max - 2)),
+            'runtime_ensemble' => max(2, 2 + (int) round($exploration * max(0, $max - 2))),
+            'architecture_discovery' => $exploration >= .50 ? 2 : 1,
+            'curiosity_exploration' => $exploration >= .45 ? 2 : 1,
+            default => 1,
+        };
+        if ((int) $policy['stagnation_generations'] >= (int) config('services.lab_selection.governor_stagnation_generations', 3)
+            || (float) $policy['diversity_score'] <= (float) config('services.lab_selection.governor_diversity_collapse_threshold', .35)) {
+            $desired = $max;
+        }
+
+        return max(1, min($max, $desired));
+    }
+
+    /** @param Collection<int, array<string, mixed>> $profiles */
+    private function selectProfiles(Collection $profiles, int $desired, int $slot, array $policy): Collection
+    {
+        if ($profiles->isEmpty() || $desired <= 0) return collect();
+        $selected = collect([$profiles->first()]);
+        if ($desired === 1) return $selected;
+
+        $remaining = $profiles->slice(1)->values();
+        $lineageCounts = [$profiles->first()['lineage_id'] => 1];
+        $lineageCap = max(1, (int) ceil($desired * max(.25, (float) $policy['lineage_cap'])));
+        $diversityWeight = (float) config('services.lab_selection.parent_diversity_weight', 20);
+
+        while ($selected->count() < $desired && $remaining->isNotEmpty()) {
+            $ranked = $remaining->map(function (array $candidate) use ($selected, $lineageCounts, $lineageCap, $diversityWeight): array {
+                $distances = $selected->map(fn (array $chosen): float => $this->parameterDistance(
+                    (array) $candidate['model']->parameters,
+                    (array) $chosen['model']->parameters,
+                ));
+                $novelty = $distances->isEmpty() ? 0 : (float) $distances->max();
+                $newLineage = ! isset($lineageCounts[$candidate['lineage_id']]);
+                $blocked = ($lineageCounts[$candidate['lineage_id']] ?? 0) >= $lineageCap
+                    && $remaining->contains(fn (array $other): bool => ! isset($lineageCounts[$other['lineage_id']]));
+                $candidate['selection_utility'] = (float) $candidate['score']
+                    + ($novelty * $diversityWeight)
+                    + ($newLineage ? $diversityWeight : 0)
+                    - ($blocked ? 1000000 : 0);
+                $candidate['marginal_novelty'] = $novelty;
+                return $candidate;
+            })->sortByDesc('selection_utility')->first();
+            if (! $ranked) break;
+            $selected->push($ranked);
+            $lineageCounts[$ranked['lineage_id']] = ($lineageCounts[$ranked['lineage_id']] ?? 0) + 1;
+            $remaining = $remaining->reject(fn (array $candidate): bool => (int) $candidate['model']->id === (int) $ranked['model']->id)->values();
+        }
+
+        return $selected->values();
+    }
+
+    /**
+     * Capability-level provenance. A child may copy a module from a different
+     * parent, but every source remains explicit and the child is re-tested.
+     */
+    private function capabilityGenome(Collection $parents, array $profiles): array
+    {
+        $profileMap = collect($profiles)->mapWithKeys(fn (array $profile): array => [(string) $profile['model']->id => $profile]);
+        $modules = [];
+        $parameterSources = [];
+        foreach (self::MODULE_KEYS as $module => $keys) {
+            $contributors = [];
+            foreach ($parents as $parent) {
+                $present = array_values(array_intersect($keys, array_keys((array) $parent->parameters)));
+                if ($present === []) continue;
+                $profile = (array) ($profileMap[(string) $parent->id] ?? []);
+                $contributors[] = [
+                    'parent_model_version_id' => (int) $parent->id,
+                    'parameter_keys' => $present,
+                    'quality_score' => round((float) data_get($profile, 'score', $parent->best_score ?? 0), 4),
+                    'source_evidence_id' => data_get($profile, 'performance_id'),
+                    'evidence_confidence' => round((float) data_get($profile, 'evidence_confidence', 0), 4),
+                    'scope' => data_get($profile, 'niche'),
+                ];
+            }
+            if ($contributors === []) continue;
+            usort($contributors, fn (array $left, array $right): int => $right['quality_score'] <=> $left['quality_score']);
+            $positiveScores = collect($contributors)->map(fn (array $entry): float => max(0.0, (float) $entry['quality_score']));
+            $scoreTotal = max(0.0001, (float) $positiveScores->sum());
+            $contributors = array_map(function (array $entry) use ($scoreTotal): array {
+                $entry['contribution_weight'] = round(max(0.0, (float) $entry['quality_score']) / $scoreTotal, 6);
+                return $entry;
+            }, $contributors);
+            $modules[$module] = [
+                'source_parent_ids' => array_values(array_map(fn (array $entry): int => $entry['parent_model_version_id'], $contributors)),
+                'contributors' => $contributors,
+                'rule' => 'module-level inheritance with explicit gene provenance and independent child replay',
+            ];
+            foreach ($keys as $key) {
+                $sourceEntry = collect($contributors)->first(fn (array $entry): bool => in_array($key, (array) ($entry['parameter_keys'] ?? []), true));
+                $source = data_get($sourceEntry, 'parent_model_version_id');
+                if ($source) {
+                    $sourceModel = $parents->firstWhere('id', (int) $source);
+                    $sourceParameters = (array) ($sourceModel?->parameters ?? []);
+                    $parameterSources[$key] = [
+                        'source_parent_id' => $source,
+                        'source_module' => $module,
+                        'source_evidence_id' => data_get($sourceEntry, 'source_evidence_id'),
+                        'source_confidence' => (float) data_get($sourceEntry, 'evidence_confidence', 0),
+                        'contribution_weight' => (float) data_get($sourceEntry, 'contribution_weight', 0),
+                        'scope' => data_get($sourceEntry, 'scope'),
+                        'parameter_hash' => hash('sha256', json_encode([$key => $sourceParameters[$key] ?? null], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
+                        'provenance_confidence' => data_get($sourceEntry, 'source_evidence_id') ? 'evidence_backed' : 'research_seed',
+                    ];
+                }
+            }
+        }
+
+        return [
+            'protocol' => 'capability_genome_provenance_v1',
+            'parent_model_version_ids' => $parents->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+            'modules' => $modules,
+            'parameter_sources' => $parameterSources,
+            'all_sources_require_child_replay' => true,
+            'blind_scalar_blending' => false,
+            'gene_provenance_required' => true,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function parentEligibilityProfile(ModelVersion $model, ?ModelMarketPerformance $performance): array
+    {
+        $metrics = (array) ($performance?->metrics ?? []);
+        $bootstrap = (array) data_get($metrics, 'statistical_evidence.edge_quality.bootstrap_pf', []);
+        $edge = (array) data_get($metrics, 'statistical_evidence.edge_quality', []);
+        $bootstrapPasses = data_get($bootstrap, 'status') !== 'assessed'
+            || (float) data_get($bootstrap, 'pf_5_percentile_lower_bound', 0) >= 1.1;
+        $regimePasses = ! (bool) data_get($edge, 'worst_regime_sampled', false)
+            || (float) data_get($edge, 'worst_regime_pf', 0) >= 1.0;
+        $parentEligible = $performance !== null
+            && $performance->evidence_status === 'valid'
+            && $model->evidence_status === 'valid'
+            && in_array((string) $performance->status, ['champion', 'challenger', 'forward_validated', 'paper'], true)
+            && (float) data_get($metrics, 'profit_factor', 0) >= 1.3
+            && (float) data_get($metrics, 'max_drawdown_percent', data_get($metrics, 'max_drawdown', 100)) <= 15
+            && (float) data_get($metrics, 'monte_carlo.risk_of_ruin_percent', 100) <= 10
+            && ! (bool) data_get($metrics, 'is_overfit', true)
+            && (int) $performance->sample_count >= 30
+            && (int) $performance->rolling_windows_count >= 3
+            && (int) $performance->rolling_forward_wins >= 3
+            && $bootstrapPasses
+            && $regimePasses
+            && data_get($metrics, 'behavioral_diversity.status') !== 'near_duplicate';
+        $rootSeed = data_get($model->metadata, 'control_root_seed.protocol') === 'control_root_specialist_inheritance_v1'
+            && data_get($model->metadata, 'control_root_seed.status') !== 'revoked';
+        $archiveType = (string) $model->getAttribute('_adaptive_archive_type');
+        $researchSeed = $archiveType === 'young'
+            || $performance === null
+            || (bool) data_get($model->metadata, 'screening_seed_only', false);
+
+        $confidence = $performance === null ? 0.0 : min(1.0, max(0.0,
+            .20
+            + min(0.25, ((int) $performance->sample_count / 1000))
+            + min(0.20, ((int) $performance->rolling_forward_wins / 20))
+            + ($bootstrapPasses ? .15 : 0)
+            + ($regimePasses ? .10 : 0)
+            + ($performance->evidence_status === 'valid' ? .10 : 0),
+        ));
+
+        return [
+            'parent_eligible' => $parentEligible || $rootSeed,
+            'root_seed_eligible' => $rootSeed,
+            'research_seed_eligible' => $researchSeed,
+            'parent_exclusion_reason' => $parentEligible || $rootSeed
+                ? null
+                : ($performance === null ? 'no_independent_evidence' : 'parent_passport_incomplete'),
+            'evidence_confidence' => round($confidence, 4),
+        ];
+    }
+
+    private function parameterDistance(array $left, array $right): float
+    {
+        $keys = array_values(array_unique(array_merge(array_keys($left), array_keys($right))));
+        if ($keys === []) return 0.0;
+        $different = 0;
+        foreach ($keys as $key) {
+            if (json_encode($left[$key] ?? null, JSON_PRESERVE_ZERO_FRACTION)
+                !== json_encode($right[$key] ?? null, JSON_PRESERVE_ZERO_FRACTION)) {
+                $different++;
+            }
+        }
+        return $different / count($keys);
+    }
+}

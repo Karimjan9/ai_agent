@@ -88,6 +88,30 @@ class EconomicCalendarServiceTest extends TestCase
         Http::assertSent(fn ($request) => $request['apiKey'] === 'test-currents-key' && $request['language'] === 'en');
     }
 
+    public function test_external_headline_title_is_bounded_while_payload_keeps_original_text(): void
+    {
+        config([
+            'services.currents_api.api_key' => 'test-currents-key',
+            'services.currents_api.endpoint' => 'https://api.currentsapi.services/v1/latest-news',
+        ]);
+        $title = str_repeat('long headline ', 30);
+        Http::fake([
+            'api.currentsapi.services/v1/latest-news*' => Http::response(['news' => [[
+                'id' => 'currents-long-title',
+                'title' => $title,
+                'description' => 'Market headline description.',
+                'published' => now('UTC')->subMinutes(5)->toIso8601String(),
+            ]]]),
+        ]);
+
+        $result = app(EconomicCalendarService::class)->sync('currents_api_news');
+        $event = EconomicEvent::where('external_id', 'currents-long-title')->firstOrFail();
+
+        $this->assertSame('ok', $result['status']);
+        $this->assertSame(255, mb_strlen($event->title));
+        $this->assertSame($title, data_get($event->payload, 'title'));
+    }
+
     public function test_replay_calendar_alignment_fails_closed_without_historical_official_events(): void
     {
         $result = app(CalendarAlignmentEvidenceService::class)->enrich('XAUUSD', 'H1', [

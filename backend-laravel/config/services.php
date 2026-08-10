@@ -43,6 +43,21 @@ return [
     'ai_service' => [
         'url' => env('AI_SERVICE_URL', 'http://127.0.0.1:9000'),
         'default_dataset' => env('AI_SERVICE_DEFAULT_DATASET', '../datasets/XAUUSD_H1.csv'),
+        'backtest_timeout_seconds' => (int) env('AI_SERVICE_BACKTEST_TIMEOUT_SECONDS', 900),
+        'strategy_lab_timeout_seconds' => (int) env('AI_SERVICE_STRATEGY_LAB_TIMEOUT_SECONDS', 2400),
+    ],
+
+    'lab_queue' => [
+        // A screen may yield briefly for a sealed full replay, then it must
+        // attempt the lane. This bounds fairness releases instead of burning
+        // an unbounded retry stream for the whole full-replay window.
+        'fairness_max_deferrals' => (int) env('LAB_QUEUE_FAIRNESS_MAX_DEFERRALS', 2),
+        'fairness_release_seconds' => (int) env('LAB_QUEUE_FAIRNESS_RELEASE_SECONDS', 300),
+        'mutex_release_seconds' => (int) env('LAB_QUEUE_MUTEX_RELEASE_SECONDS', 600),
+    ],
+
+    'lab_evidence' => [
+        'disk' => env('LAB_EVIDENCE_DISK', 'lab_evidence'),
     ],
 
     'market_data' => [
@@ -52,6 +67,35 @@ return [
         // merely by having a different coverage window.
         'canonical_provider' => env('MARKET_DATA_CANONICAL_PROVIDER', 'twelve'),
         'fallback_provider' => env('MARKET_DATA_FALLBACK_PROVIDER'),
+    ],
+
+    'drift_evidence' => [
+        'algorithm_version' => 'canonical_drift_v2',
+        'required_confirmations' => (int) env('DRIFT_REQUIRED_CONFIRMATIONS', 3),
+        // A repeated check of the same frozen cutoff is still an independent
+        // validation observation. Hash diversity can be required explicitly
+        // in an environment with a continuously advancing feed, but it must
+        // not make confirmation impossible during a static market window.
+        'minimum_distinct_hashes' => (int) env('DRIFT_MINIMUM_DISTINCT_HASHES', 1),
+    ],
+
+    // Volume is a separate research feature contract. It must never inherit
+    // the price provider or its fallback, because the current TwelveData
+    // XAUUSD feed has zero volume while Dukascopy Jetta exposes tick volume.
+    'market_volume' => [
+        'provider' => env('MARKET_VOLUME_PROVIDER', 'dukascopy'),
+        'transport' => env('MARKET_VOLUME_TRANSPORT', 'jetta'),
+        // H1 Jetta archive volume is the canonical research unit. Tick
+        // backfill remains a separate maintenance path because per-hour
+        // requests across a 20-year archive can exhaust the sync budget.
+        'tick_fallback_enabled' => env('MARKET_VOLUME_TICK_FALLBACK_ENABLED', false),
+        'sync_chunk_months' => (int) env('MARKET_VOLUME_SYNC_CHUNK_MONTHS', 1),
+        'minimum_coverage' => (float) env('MARKET_VOLUME_MINIMUM_COVERAGE', 0.95),
+        'minimum_usable_ratio' => (float) env('MARKET_VOLUME_MINIMUM_USABLE_RATIO', 0.95),
+        // A complete archive with a stale tail is not live-ready evidence.
+        // Keep it available for historical shadow replay, but fail the live
+        // context gate until the canonical volume source catches up.
+        'max_lag_hours' => (float) env('MARKET_VOLUME_MAX_LAG_HOURS', 24),
     ],
 
     'historical_data' => [
@@ -135,6 +179,9 @@ return [
     ],
 
     'paper' => [
+        // Paper monitor is deliberately shadow-only. There is no broker
+        // adapter here that can submit a live order.
+        'mode' => env('PAPER_MODE', 'shadow'),
         'broker' => 'simulated',
         'units' => (float) env('PAPER_UNITS', 1),
     ],
@@ -198,6 +245,28 @@ return [
       'full_replay_timeout_seconds' => (int) env('LAB_FULL_REPLAY_TIMEOUT_SECONDS', 2280),
       'portfolio_replay_timeout_seconds' => (int) env('LAB_PORTFOLIO_REPLAY_TIMEOUT_SECONDS', 2280),
       'dataset_export_lock_wait_seconds' => (int) env('LAB_DATASET_EXPORT_LOCK_WAIT_SECONDS', 30),
+      // Full replay is the scarce quality lane. Keep a small, complementary
+      // frontier instead of replaying every diagnostic near-miss in one batch.
+      'max_full_validation_candidates' => (int) env('LAB_MAX_FULL_VALIDATION_CANDIDATES', 4),
+      // Adaptive parent ecosystem. These values change search allocation only;
+      // they never relax PF, drawdown, ruin, PBO/DSR, holdout or paper gates.
+      'adaptive_parent_enabled' => env('LAB_ADAPTIVE_PARENT_ENABLED', true),
+      'adaptive_archive_enabled' => env('LAB_ADAPTIVE_ARCHIVE_ENABLED', true),
+      'adaptive_parent_shadow' => env('LAB_ADAPTIVE_PARENT_SHADOW', false),
+      'adaptive_budget_enabled' => env('LAB_ADAPTIVE_BUDGET_ENABLED', true),
+      'adaptive_causal_seat_floor' => (int) env('LAB_ADAPTIVE_CAUSAL_SEAT_FLOOR', 8),
+      'parent_max_robust' => (int) env('LAB_PARENT_MAX_ROBUST', 5),
+      'parent_max_architecture' => (int) env('LAB_PARENT_MAX_ARCHITECTURE', 4),
+      'parent_max_curiosity' => (int) env('LAB_PARENT_MAX_CURIOSITY', 3),
+      'parent_max_runtime' => (int) env('LAB_PARENT_MAX_RUNTIME', 8),
+      'parent_lineage_cap' => (float) env('LAB_PARENT_LINEAGE_CAP', .50),
+      'parent_diversity_weight' => (float) env('LAB_PARENT_DIVERSITY_WEIGHT', 20),
+      'semantic_cell_parent_frontier' => (int) env('LAB_SEMANTIC_CELL_PARENT_FRONTIER', 5),
+      'archive_failure_limit' => (int) env('LAB_ARCHIVE_FAILURE_LIMIT', 100),
+      'archive_max_per_island' => (int) env('LAB_ARCHIVE_MAX_PER_ISLAND', 32),
+      'governor_lookback_generations' => (int) env('LAB_GOVERNOR_LOOKBACK_GENERATIONS', 3),
+      'governor_diversity_collapse_threshold' => (float) env('LAB_GOVERNOR_DIVERSITY_COLLAPSE_THRESHOLD', .35),
+      'governor_stagnation_generations' => (int) env('LAB_GOVERNOR_STAGNATION_GENERATIONS', 3),
   ],
 
     'risk' => [
@@ -208,6 +277,28 @@ return [
         'fx_spread_points' => (float) env('RISK_FX_SPREAD_POINTS', 12),
         'xau_spread_points' => (float) env('RISK_XAU_SPREAD_POINTS', 35),
         'slippage_points' => (float) env('RISK_SLIPPAGE_POINTS', 2),
+    ],
+
+    // Versioned parameters consumed by lab, full replay, paper and holdout.
+    // Keep the risk spread as the single source of truth; a lane must not
+    // quietly substitute a cheaper backtest assumption.
+    'execution_contract' => [
+        'protocol' => 'canonical_market_execution_v1',
+        'version' => 'canonical_market_execution_v1',
+        'fx_spread_points' => (float) env('EXECUTION_FX_SPREAD_POINTS', env('RISK_FX_SPREAD_POINTS', 12)),
+        'xau_spread_points' => (float) env('EXECUTION_XAU_SPREAD_POINTS', env('RISK_XAU_SPREAD_POINTS', 35)),
+        'xau_point_size' => (float) env('EXECUTION_XAU_POINT_SIZE', 0.01),
+        'fx_point_size' => (float) env('EXECUTION_FX_POINT_SIZE', 0.00001),
+        'commission_percent' => (float) env('EXECUTION_COMMISSION_PERCENT', 0.01),
+        'slippage_points' => (float) env('EXECUTION_SLIPPAGE_POINTS', env('RISK_SLIPPAGE_POINTS', 2)),
+        'swap_per_day_percent' => (float) env('EXECUTION_SWAP_PER_DAY_PERCENT', 0.002),
+        'allowed_sessions_utc' => ['1-22'],
+        'intrabar_policy' => 'conservative',
+        'max_gap_multiple' => 96,
+        'reject_unexpected_gaps' => true,
+        'stop_loss_percent' => 0.5,
+        'take_profit_percent' => 1.0,
+        'max_leverage' => 5,
     ],
 
     'promotion' => [

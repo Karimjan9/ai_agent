@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "NeuroTrader Lab",
   "repository_root": "../..",
-  "updated": "2026-08-04",
+  "updated": "2026-08-09",
   "purpose": "Historical-market strategy research, backtesting, agent evaluation, and paper-trading foundation.",
   "read_order": [
     "README.md",
@@ -50,8 +50,8 @@
       "id": "research-evolution",
       "status": "implemented-primary-focus",
       "path": "../../backend-laravel/app/Services",
-      "responsibility": "Pair-owned AI Laboratory populations, evaluation, champion lifecycle and mutation learning memory.",
-      "notes": "Read ai-learning-laboratory.md before modifying laboratory code. Knowledge/civilization/theory modules remain available but run on a secondary monthly cadence."
+      "responsibility": "Pair-owned AI Laboratory populations, adaptive parent frontier, semantic islands, archive memory, evaluation, champion lifecycle and mutation learning memory.",
+      "notes": "Read ai-learning-laboratory.md and adaptive-evolution.md before modifying laboratory code. Knowledge/civilization/theory modules remain available but run on a secondary monthly cadence."
     },
     {
       "id": "paper-trading",
@@ -106,6 +106,10 @@
     {
       "date": "2026-08-04",
       "change": "Added certified coverage passport v2 with explicit hierarchical evidence backoff, preserved fine-cell diagnostics, and bounded runtime-schema recovery for quarantined evaluator errors. Coverage, forward, paper, and portfolio gates remain fail-closed."
+    },
+    {
+      "date": "2026-08-09",
+      "change": "Added the adaptive parent ecosystem: governor-controlled dynamic parent K, exact semantic islands, convergence/diversity/young/failure archives, capability-level provenance, canonical multi-parent links, runtime WAIT policy, and parent-selection decision ledgers. Causal repair remains single-parent and all children retain independent replay/holdout/paper gates."
     }
   ]
 }

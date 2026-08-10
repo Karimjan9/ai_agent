@@ -3,9 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\EvolutionProposal;
-use App\Services\EvolutionProposalApplicationService;
 use Illuminate\Contracts\View\View;
-use Illuminate\Http\RedirectResponse;
 
 class EvolutionProposalController extends Controller
 {
@@ -26,45 +24,19 @@ class EvolutionProposalController extends Controller
         return view('evolution-proposals.show', compact('evolutionProposal'));
     }
 
-    public function approve(EvolutionProposal $evolutionProposal): RedirectResponse
+    public function approve(EvolutionProposal $evolutionProposal)
     {
-        if ($evolutionProposal->status !== 'pending') {
-            return back()->with('error', 'Bu proposal pending holatda emas.');
-        }
-
-        $evolutionProposal->update([
-            'status' => 'approved',
-            'approved_at' => now(),
-        ]);
-
-        return back()->with('success', 'Evolution proposal approved qilindi.');
+        abort(410, 'Legacy EvolutionProposal oqimi o\'chirilgan; canonical Lab evidence ishlatiladi.');
     }
 
-    public function apply(EvolutionProposal $evolutionProposal, EvolutionProposalApplicationService $applicationService): RedirectResponse
+    public function apply(EvolutionProposal $evolutionProposal)
     {
-        $modelVersion = $applicationService->apply($evolutionProposal);
-
-        if (! $modelVersion) {
-            return back()->with('error', 'Bu proposalni apply qilib bolmaydi.');
-        }
-
-        return redirect()
-            ->route('model-versions.index')
-            ->with('success', 'Yangi model version yaratildi.');
+        abort(410, 'Legacy EvolutionProposal apply o\'chirilgan; canonical Lab generation shu evidence asosida ishlaydi.');
     }
 
-    public function reject(EvolutionProposal $evolutionProposal): RedirectResponse
+    public function reject(EvolutionProposal $evolutionProposal)
     {
-        if ($evolutionProposal->status === 'applied') {
-            return back()->with('error', 'Applied qilingan proposalni reject qilib bolmaydi.');
-        }
-
-        $evolutionProposal->update([
-            'status' => 'rejected',
-            'open_status' => null,
-        ]);
-
-        return back()->with('success', 'Evolution proposal rejected qilindi.');
+        abort(410, 'Legacy EvolutionProposal mutation o\'chirilgan; canonical Lab evidence immutable.');
     }
 
 }

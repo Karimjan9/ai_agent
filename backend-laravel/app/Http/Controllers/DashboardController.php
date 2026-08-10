@@ -3,12 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\DailyReport;
-use App\Models\Mistake;
+use App\Services\CanonicalLabResultService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
+    public function __construct(private CanonicalLabResultService $labResults) {}
+
     public function dashboard(): View
     {
         $backtestSummary = $this->backtestSummary();
@@ -38,7 +43,10 @@ class DashboardController extends Controller
 
     public function strategyLab(): View
     {
-        return view('pages.strategy-lab');
+        return view('pages.strategy-lab', [
+            'labSummary' => $this->backtestSummary(),
+            'strategies' => $this->strategyRegistry(),
+        ]);
     }
 
     public function backtestResults(): View
@@ -64,17 +72,35 @@ class DashboardController extends Controller
 
     private function backtestSummary(): array
     {
+        $run = $this->labResults->latest();
+        if (! $run) {
+            return [
+                'strategy' => '—',
+                'instrument' => '—',
+                'timeframe' => '—',
+                'period' => '—',
+                'trades' => 0,
+                'winrate' => '—',
+                'profit_factor' => '—',
+                'max_drawdown' => '—',
+                'net_profit' => '—',
+                'conclusion' => 'Hali canonical lab evidence mavjud emas.',
+                'source' => CanonicalLabResultService::SOURCE,
+                'run_id' => null,
+            ];
+        }
+
+        $summary = $this->labResults->summary($run);
+
         return [
-            'strategy' => 'EMA_RSI_V1',
-            'instrument' => 'XAU/USD',
-            'timeframe' => 'H1',
-            'period' => '2023-01-01 - 2025-12-31',
-            'trades' => '248',
-            'winrate' => '56.4%',
-            'profit_factor' => '1.42',
-            'max_drawdown' => '8.7%',
-            'net_profit' => '+18.5%',
-            'conclusion' => "Trend paytida yaxshi, flat bozorda ko'p xato qiladi.",
+            ...$summary,
+            'winrate' => $summary['winrate'] === null ? '—' : $summary['winrate'].'%',
+            'profit_factor' => number_format((float) $summary['profit_factor'], 2),
+            'max_drawdown' => $summary['max_drawdown'].'%',
+            'net_profit' => ($summary['net_profit'] > 0 ? '+' : '').$summary['net_profit'].'%',
+            'conclusion' => $summary['conclusion'] !== ''
+                ? $summary['conclusion']
+                : 'Canonical lab replay yakunlandi; qo‘shimcha xulosa mavjud emas.',
         ];
     }
 
@@ -84,21 +110,47 @@ class DashboardController extends Controller
             return null;
         }
 
-        return DailyReport::query()
-            ->latest('report_date')
-            ->latest('id')
-            ->first();
+        $query = DailyReport::query();
+        if (Schema::hasColumn('daily_reports', 'source')) {
+            $query->where('source', CanonicalLabResultService::SOURCE);
+        }
+
+        return $query->latest('report_date')->latest('id')->first();
     }
 
     private function latestMistakes()
     {
-        if (! Schema::hasTable('mistakes')) {
-            return collect();
+        return $this->labResults->latestRejections();
+    }
+
+    /** @return array<int, array{strategy:string,label:string}> */
+    private function strategyRegistry(): array
+    {
+        if (app()->environment('testing')) {
+            return [];
         }
 
-        return Mistake::query()
-            ->latest()
-            ->limit(20)
-            ->get();
+        return Cache::remember('ai-strategy-registry-v1', now()->addMinutes(5), function (): array {
+            try {
+                $response = Http::timeout(5)
+                    ->acceptJson()
+                    ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
+                    ->get(rtrim(config('services.ai_service.url'), '/').'/api/strategies');
+                if ($response->failed()) {
+                    return [];
+                }
+
+                return collect((array) $response->json('agents', []))
+                    ->map(fn (array $agent): array => [
+                        'strategy' => (string) ($agent['strategy'] ?? ''),
+                        'label' => (string) ($agent['label'] ?? $agent['strategy'] ?? ''),
+                    ])
+                    ->filter(fn (array $agent): bool => $agent['strategy'] !== '')
+                    ->values()
+                    ->all();
+            } catch (ConnectionException) {
+                return [];
+            }
+        });
     }
 }

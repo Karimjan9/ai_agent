@@ -1,6 +1,6 @@
 @extends('layouts.app', [
-    'heading' => 'Backtest Result',
-    'subtitle' => 'Python AI service qaytargan EMA/RSI H1 backtest natijasi.',
+    'heading' => 'Canonical Lab Result',
+    'subtitle' => 'LabEvaluationRun immutable evidence plane qaytargan replay natijasi.',
 ])
 
 @section('content')
@@ -43,7 +43,7 @@
         </article>
         @isset($backtestRun)
             <article class="card tone-yellow">
-                <div class="metric-label">Saved run</div>
+                <div class="metric-label">Canonical run</div>
                 <div class="metric-value">#{{ $backtestRun->id }}</div>
             </article>
         @endisset

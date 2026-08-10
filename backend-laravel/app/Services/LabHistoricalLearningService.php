@@ -52,6 +52,8 @@ class LabHistoricalLearningService
     ];
 
     private array $mutationPriorCache = [];
+    /** @var array<string, array{summary: array, aggregates: array}> */
+    private array $candleEvidenceCache = [];
 
     public function refreshForLab(string $symbol, string $timeframe = 'H1'): array
     {
@@ -59,8 +61,16 @@ class LabHistoricalLearningService
         $timeframe = strtoupper($timeframe);
         $families = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->distinct()->pluck('strategy_family')->filter()->values();
+        // Candle decision evidence is immutable and shared by every family in
+        // one lab refresh. Aggregate the 1M+ row event plane once, then split
+        // the compact result by strategy family. Re-running the same grouped
+        // scan once per family made generation creation grow linearly with
+        // historical population size and caused a valid audit-triggered build
+        // to time out without creating a generation.
+        $candleEvidence = $families->isEmpty() ? ['summary' => [], 'aggregates' => []]
+            : $this->candleEvidenceForLab($symbol, $timeframe);
 
-        return $families->map(fn (string $family): ?LabLearningInsight => $this->refreshFamily($symbol, $timeframe, $family))
+        return $families->map(fn (string $family): ?LabLearningInsight => $this->refreshFamily($symbol, $timeframe, $family, $candleEvidence))
             ->filter()->values()->all();
     }
 
@@ -159,7 +169,7 @@ class LabHistoricalLearningService
         ];
     }
 
-    private function refreshFamily(string $symbol, string $timeframe, string $family): ?LabLearningInsight
+    private function refreshFamily(string $symbol, string $timeframe, string $family, array $candleEvidence = []): ?LabLearningInsight
     {
         $agents = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->where('strategy_family', $family)->get(['id', 'lab_generation_id']);
@@ -171,6 +181,7 @@ class LabHistoricalLearningService
         $latestGates = $gateEvents->groupBy(fn (LabGateDecisionEvent $event): string => $event->lab_agent_id.'|'.$event->stage)
             ->map(fn ($items) => $items->sortByDesc('revision')->first())->values();
         $reasonCounts = [];
+        $targetScores = [];
         $sourceEventIds = [];
         foreach ($latestGates as $event) {
             $sourceEventIds[] = $event->id;
@@ -178,6 +189,12 @@ class LabHistoricalLearningService
                 $reason = strtoupper((string) $reason);
                 if (! preg_match('/^(FAILED_|INSUFFICIENT_|DOMINATED_|OVERFIT|REJECTED)/', $reason)) continue;
                 $reasonCounts[$reason] = ($reasonCounts[$reason] ?? 0) + 1;
+                // Older forward events used FAILED_REGIME_COVERAGE for a
+                // seasonal monthly failure. Prefer the immutable metric
+                // payload when available so legacy evidence still routes to
+                // the monthly lane without rewriting that evidence.
+                $target = $this->targetForFailure($reason, (array) $event->metrics);
+                if ($target) $targetScores[$target] = ($targetScores[$target] ?? 0) + 3;
             }
         }
         arsort($reasonCounts);
@@ -187,27 +204,12 @@ class LabHistoricalLearningService
         $legacyRuns = $runs->where('status', 'legacy_snapshot');
         $exactRunIds = $exactRuns->pluck('run_id')->values()->all();
 
-        $baseCandleQuery = DB::table('lab_candle_decision_events as e')
-            ->whereIn('e.lab_agent_id', $agentIds);
-        $candleSummary = (clone $baseCandleQuery)->selectRaw(
-            'COUNT(*) as total, SUM(CASE WHEN e.accepted = 1 THEN 1 ELSE 0 END) as accepted, SUM(CASE WHEN e.accepted = 0 THEN 1 ELSE 0 END) as rejected'
-        )->first();
-        $candleAggregates = (clone $baseCandleQuery)->whereNotNull('e.rejection_code')
-            ->select('e.rejection_code', 'e.market_regime', 'e.volatility_regime')
-            ->selectRaw('COUNT(*) as occurrences')
-            ->groupBy('e.rejection_code', 'e.market_regime', 'e.volatility_regime')
-            ->orderByDesc('occurrences')->limit(64)->get()->map(fn ($row): array => [
-                'rejection_code' => $row->rejection_code,
-                'market_regime' => $row->market_regime,
-                'volatility_regime' => $row->volatility_regime,
-                'occurrences' => (int) $row->occurrences,
-            ])->all();
+        if ($candleEvidence === []) $candleEvidence = $this->candleEvidenceForAgents($agentIds, $family);
+        $candleSummary = (object) ($candleEvidence['summary'][$family] ?? [
+            'total' => 0, 'accepted' => 0, 'rejected' => 0,
+        ]);
+        $candleAggregates = array_slice((array) ($candleEvidence['aggregates'][$family] ?? []), 0, 64);
 
-        $targetScores = [];
-        foreach ($reasonCounts as $reason => $count) {
-            $target = $this->targetForFailure($reason);
-            if ($target) $targetScores[$target] = ($targetScores[$target] ?? 0) + ((int) $count * 3);
-        }
         foreach ($candleAggregates as $row) {
             $target = $this->targetForRejection((string) $row['rejection_code']);
             if ($target) $targetScores[$target] = ($targetScores[$target] ?? 0) + min(30, (int) $row['occurrences']);
@@ -299,8 +301,78 @@ class LabHistoricalLearningService
         }
     }
 
-    private function targetForFailure(string $reason): ?string
+    /** Aggregate the immutable candle event plane once per lab refresh. */
+    private function candleEvidenceForLab(string $symbol, string $timeframe): array
     {
+        $cacheKey = strtoupper($symbol).'|'.strtoupper($timeframe);
+        if (isset($this->candleEvidenceCache[$cacheKey])) return $this->candleEvidenceCache[$cacheKey];
+
+        $base = DB::table('lab_candle_decision_events as e')
+            ->join('lab_agents as a', 'a.id', '=', 'e.lab_agent_id')
+            ->where('a.symbol', strtoupper($symbol))
+            ->where('a.timeframe', strtoupper($timeframe));
+        $summary = (clone $base)
+            ->select('a.strategy_family')
+            ->selectRaw('COUNT(*) as total, SUM(CASE WHEN e.accepted = 1 THEN 1 ELSE 0 END) as accepted, SUM(CASE WHEN e.accepted = 0 THEN 1 ELSE 0 END) as rejected')
+            ->groupBy('a.strategy_family')
+            ->get()
+            ->mapWithKeys(fn ($row): array => [(string) $row->strategy_family => [
+                'total' => (int) $row->total,
+                'accepted' => (int) $row->accepted,
+                'rejected' => (int) $row->rejected,
+            ]])->all();
+        $aggregates = (clone $base)
+            ->whereNotNull('e.rejection_code')
+            ->select('a.strategy_family', 'e.rejection_code', 'e.market_regime', 'e.volatility_regime')
+            ->selectRaw('COUNT(*) as occurrences')
+            ->groupBy('a.strategy_family', 'e.rejection_code', 'e.market_regime', 'e.volatility_regime')
+            ->get()
+            ->groupBy('strategy_family')
+            ->map(fn ($rows): array => $rows->sortByDesc('occurrences')->take(64)->map(fn ($row): array => [
+                'rejection_code' => $row->rejection_code,
+                'market_regime' => $row->market_regime,
+                'volatility_regime' => $row->volatility_regime,
+                'occurrences' => (int) $row->occurrences,
+            ])->values()->all())->all();
+
+        return $this->candleEvidenceCache[$cacheKey] = ['summary' => $summary, 'aggregates' => $aggregates];
+    }
+
+    /** Fallback for a direct family refresh outside refreshForLab(). */
+    private function candleEvidenceForAgents(array $agentIds, string $family = '__fallback'): array
+    {
+        $base = DB::table('lab_candle_decision_events as e')->whereIn('e.lab_agent_id', $agentIds);
+        $summary = (clone $base)->selectRaw(
+            'COUNT(*) as total, SUM(CASE WHEN e.accepted = 1 THEN 1 ELSE 0 END) as accepted, SUM(CASE WHEN e.accepted = 0 THEN 1 ELSE 0 END) as rejected'
+        )->first();
+        $aggregates = (clone $base)->whereNotNull('e.rejection_code')
+            ->select('e.rejection_code', 'e.market_regime', 'e.volatility_regime')
+            ->selectRaw('COUNT(*) as occurrences')
+            ->groupBy('e.rejection_code', 'e.market_regime', 'e.volatility_regime')
+            ->orderByDesc('occurrences')->limit(64)->get()->map(fn ($row): array => [
+                'rejection_code' => $row->rejection_code,
+                'market_regime' => $row->market_regime,
+                'volatility_regime' => $row->volatility_regime,
+                'occurrences' => (int) $row->occurrences,
+            ])->all();
+
+        return [
+            'summary' => [$family => [
+                'total' => (int) ($summary->total ?? 0),
+                'accepted' => (int) ($summary->accepted ?? 0),
+                'rejected' => (int) ($summary->rejected ?? 0),
+            ]],
+            'aggregates' => [$family => $aggregates],
+        ];
+    }
+
+    private function targetForFailure(string $reason, array $metrics = []): ?string
+    {
+        if ($reason === 'FAILED_REGIME_COVERAGE'
+            && data_get($metrics, 'monthly_passport.status') === 'seasonal_or_luck') {
+            return 'monthly_survival';
+        }
+
         return match (true) {
             str_contains($reason, 'CALENDAR') || str_contains($reason, 'MONTH') => 'monthly_survival',
             str_contains($reason, 'TEMPORAL') || str_contains($reason, 'WINDOW') => 'temporal_stability',
