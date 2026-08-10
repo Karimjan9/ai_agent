@@ -42,4 +42,25 @@ class AccessControlTest extends TestCase
         $this->withHeader('X-Internal-Token', 'test-shared-internal-token')
             ->postJson('/api/backtest/run', $payload)->assertOk();
     }
+
+    public function test_login_is_rate_limited_and_responses_include_security_headers(): void
+    {
+        $this->get('/login')
+            ->assertOk()
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('X-Frame-Options', 'SAMEORIGIN')
+            ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+        for ($attempt = 0; $attempt < 6; $attempt++) {
+            $this->post('/login', [
+                'email' => 'unknown@example.com',
+                'password' => 'incorrect-password',
+            ]);
+        }
+
+        $this->post('/login', [
+            'email' => 'unknown@example.com',
+            'password' => 'incorrect-password',
+        ])->assertTooManyRequests();
+    }
 }

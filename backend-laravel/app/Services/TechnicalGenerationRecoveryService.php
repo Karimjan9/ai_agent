@@ -55,7 +55,7 @@ class TechnicalGenerationRecoveryService
         // expiry. An expired row is historical residue, not a live replay
         // owner, and must not block bounded technical recovery.
         $mutexHeld = DB::table('cache_locks')
-            ->where('key', 'like', '%neurotrader-ai-heavy-replay%')
+            ->where('key', 'like', '%'.(string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay').'%')
             ->where('expiration', '>', now()->timestamp)
             ->exists();
         if ($mutexHeld) return ['retried' => 0, 'quarantined' => 0, 'skipped' => 0, 'reason' => 'REPLAY_MUTEX_HELD'];

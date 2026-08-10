@@ -9,7 +9,7 @@ use App\Models\PaperConfidenceCalibration;
 
 class CandidateGateDecisionService
 {
-    public function __construct(private PaperEvidenceReadinessService $paperEvidence) {}
+    public function __construct(private PaperEvidenceReadinessService $paperEvidence, private ExecutionContractService $executionContracts) {}
 
     public function recordScreening(LabAgent $agent, array $result): CandidateGateDecision
     {
@@ -64,6 +64,9 @@ class CandidateGateDecisionService
             ->where('symbol', $performance->symbol)->where('timeframe', $performance->timeframe)
             ->latest('id')->first();
         $reasons = $this->economicReasons($result, 30, 1.3, 15.0, 10.0, 3);
+        $reasons = [...$reasons, ...$this->freshReplayGateReasons($agent, $result, $performance->symbol, $performance->timeframe)];
+        $parentBenefit = $this->parentBenefitContract($agent, $result);
+        $reasons = [...$reasons, ...(array) data_get($parentBenefit, 'reason_codes', [])];
         // Drift expiry is a safety stop, not a promotion shortcut. A stale
         // skill must re-certify on fresh state evidence before it can enter
         // forward/paper, even if the economic replay still looks strong.
@@ -152,12 +155,176 @@ class CandidateGateDecisionService
         if (! $agent) {
             $reasons[] = 'ATTRIBUTION_MISSING';
         }
-        $decision = $this->store($performance, $agent, 'statistical_forward_gate', $reasons === [] ? 'passed' : 'failed', array_values(array_unique($reasons)), [...$result, 'forward_identity' => $identity]);
+        $decision = $this->store($performance, $agent, 'statistical_forward_gate', $reasons === [] ? 'passed' : 'failed', array_values(array_unique($reasons)), [
+            ...$result,
+            'parent_benefit_contract' => $parentBenefit,
+            'forward_identity' => $identity,
+        ]);
         if (in_array('QUARANTINED_PROOF_REPLAY_MISMATCH', $reasons, true)) {
             $decision->update(['quarantined_at' => now(), 'quarantine_reason' => 'primary_and_independent_ledger_verifier_disagree']);
             $performance->update(['status' => 'rejected', 'paper_status' => 'failed']);
         }
         return $decision;
+    }
+
+    /**
+     * Forward promotion is only valid when the result carries the identity of
+     * the sealed full replay that produced it. A score copied from an old
+     * projection, a screening payload, or a hand-built test payload must stay
+     * outside the promotion lane.
+     */
+    public function freshReplayGateReasons(?LabAgent $agent, array $result, ?string $symbol = null, ?string $timeframe = null): array
+    {
+        $reasons = [];
+        if (! filled(data_get($result, 'evidence_run_id'))) {
+            $reasons[] = 'FRESH_REPLAY_EVIDENCE_MISSING';
+        }
+
+        $manifest = (array) data_get($result, 'data_manifest', []);
+        $manifestHash = (string) data_get($manifest, 'snapshot_sha256', data_get($manifest, 'sha256', ''));
+        if ($manifestHash === '') {
+            $reasons[] = 'FRESH_REPLAY_DATA_MANIFEST_MISSING';
+        }
+
+        if (data_get($result, 'full_replay_runtime_policy.protocol') !== 'full_replay_runtime_budget_v1') {
+            $reasons[] = 'FRESH_REPLAY_RUNTIME_POLICY_MISSING';
+        }
+
+        $replaySymbol = $symbol ?: $agent?->symbol;
+        $replayTimeframe = $timeframe ?: $agent?->timeframe;
+        $contract = (array) data_get($result, 'execution_contract', []);
+        if ($replaySymbol === null || $replayTimeframe === null
+            || ! $this->executionContracts->matches($contract, $replaySymbol, $replayTimeframe)) {
+            $reasons[] = 'FRESH_REPLAY_EXECUTION_CONTRACT_MISSING_OR_MISMATCH';
+        }
+
+        if ($agent && $manifestHash !== '') {
+            $generation = $agent->generation;
+            $expectedHash = (string) data_get(
+                $generation?->trigger_context,
+                'canonical_dataset_snapshots.price.sha256',
+                data_get($generation?->trigger_context, 'canonical_dataset_snapshots.volume.sha256', ''),
+            );
+            if ($expectedHash !== '' && ! hash_equals($expectedHash, $manifestHash)) {
+                $reasons[] = 'FRESH_REPLAY_DATASET_SNAPSHOT_MISMATCH';
+            }
+            $manifestGeneration = data_get($manifest, 'snapshot_generation_id');
+            if ($manifestGeneration !== null && (int) $manifestGeneration !== (int) $agent->lab_generation_id) {
+                $reasons[] = 'FRESH_REPLAY_GENERATION_SNAPSHOT_MISMATCH';
+            }
+        }
+
+        return array_values(array_unique($reasons));
+    }
+
+    /**
+     * An attached parent is a genetic claim, not merely a ranking baseline.
+     * It can open the next gate only after the child beats the parent in the
+     * same replay and preserves every gate the parent had already passed.
+     */
+    public function parentBenefitGateReasons(?LabAgent $agent, array $result): array
+    {
+        return (array) data_get($this->parentBenefitContract($agent, $result), 'reason_codes', []);
+    }
+
+    public function parentBenefitContract(?LabAgent $agent, array $result): array
+    {
+        $parentIds = array_values(array_filter([
+            (int) ($agent?->parent_a_model_version_id ?: 0),
+            (int) ($agent?->parent_b_model_version_id ?: 0),
+        ]));
+        if ($agent === null || $parentIds === []) {
+            return [
+                'protocol' => 'parent_benefit_contract_v1',
+                'status' => 'no_parent',
+                'parent_model_version_ids' => [],
+                'reason_codes' => [],
+                'promotion_evidence' => false,
+                'rule' => 'No parent is available; this root seed must prove itself through fresh replay gates.',
+            ];
+        }
+
+        $reasons = [];
+        if (data_get($result, 'paired_replay.status') !== 'confirmed') {
+            $reasons[] = 'PARENT_BENEFIT_PAIRED_REPLAY_NOT_CONFIRMED';
+        }
+        if (data_get($result, 'no_regression_contract.status') !== 'passed') {
+            $reasons[] = 'PARENT_BENEFIT_NO_REGRESSION_NOT_PASSED';
+        }
+
+        return [
+            'protocol' => 'parent_benefit_contract_v1',
+            'status' => $reasons === [] ? 'confirmed' : 'not_confirmed',
+            'parent_model_version_ids' => $parentIds,
+            'paired_replay_status' => data_get($result, 'paired_replay.status', 'missing'),
+            'no_regression_status' => data_get($result, 'no_regression_contract.status', 'missing'),
+            'reason_codes' => $reasons,
+            'promotion_evidence' => $reasons === [],
+            'rule' => 'A genetic child must beat its attached parent in the same replay and preserve every gate the parent had already passed.',
+        ];
+    }
+
+    /**
+     * Record the forward handoff for a sealed multi-agent portfolio.
+     *
+     * A portfolio has no LabAgent owner of its own, so the ordinary
+     * recordForward() path would correctly mark it as unattributed.  That is
+     * the wrong result for a combined replay: the portfolio itself is the
+     * immutable owner, provided its membership/passport identity is present.
+     * This keeps the proxy on the same statistical_forward_gate ledger that
+     * paper admission already consumes, while making the attribution explicit.
+     */
+    public function recordPortfolioForward(
+        ModelMarketPerformance $performance,
+        array $result,
+        array $passport,
+    ): CandidateGateDecision {
+        $reasons = [];
+        if ($performance->evidence_status !== 'valid'
+            || $performance->modelVersion?->evidence_status !== 'valid') {
+            $reasons[] = 'INVALID_PORTFOLIO_EVIDENCE_IDENTITY';
+        }
+        if (data_get($passport, 'protocol') !== 'portfolio_elite_passport_v1') {
+            $reasons[] = 'FAILED_PORTFOLIO_PASSPORT_PROTOCOL';
+        }
+        if (data_get($passport, 'status') !== 'passed') {
+            $reasons[] = 'FAILED_PORTFOLIO_PASSPORT';
+            $reasons = [...$reasons, ...(array) data_get($passport, 'reason_codes', [])];
+        }
+        foreach (['portfolio_id', 'membership_hash', 'parameter_hash', 'final_exam_result_hash'] as $field) {
+            if (! filled(data_get($passport, $field))) {
+                $reasons[] = 'PORTFOLIO_FORWARD_IDENTITY_MISSING';
+                break;
+            }
+        }
+
+        $identity = [
+            'portfolio_id' => data_get($passport, 'portfolio_id'),
+            'membership_hash' => data_get($passport, 'membership_hash'),
+            'parameter_hash' => data_get($passport, 'parameter_hash'),
+            'final_exam_result_hash' => data_get($passport, 'final_exam_result_hash'),
+            'model_market_performance_id' => $performance->id,
+            'model_version_id' => $performance->model_version_id,
+            'symbol' => $performance->symbol,
+            'timeframe' => $performance->timeframe,
+            'attribution_status' => 'portfolio_sealed',
+            'promotion_evidence' => true,
+        ];
+
+        return $this->store(
+            $performance,
+            null,
+            'statistical_forward_gate',
+            $reasons === [] ? 'passed' : 'failed',
+            array_values(array_unique($reasons)),
+            [
+                ...$result,
+                'elite_agent_passport' => $passport,
+                'portfolio_forward_identity' => $identity,
+                'promotion_evidence' => true,
+            ],
+            'portfolio_sealed',
+        );
     }
 
     public function recordDiagnosticReplay(LabAgent $agent, array $result): CandidateGateDecision
@@ -296,9 +463,17 @@ class CandidateGateDecisionService
         return $reasons;
     }
 
-    private function store(?ModelMarketPerformance $performance, ?LabAgent $agent, string $stage, string $decision, array $reasons, array $metrics): CandidateGateDecision
+    private function store(
+        ?ModelMarketPerformance $performance,
+        ?LabAgent $agent,
+        string $stage,
+        string $decision,
+        array $reasons,
+        array $metrics,
+        ?string $attributionOverride = null,
+    ): CandidateGateDecision
     {
-        $attribution = match (true) {
+        $attribution = $attributionOverride ?? match (true) {
             $stage === 'statistical_forward_gate' && $agent !== null => 'deterministic',
             $stage === 'statistical_forward_gate' => 'ATTRIBUTION_MISSING',
             $agent !== null => 'agent_scoped',

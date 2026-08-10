@@ -4,8 +4,9 @@ namespace App\Console\Commands;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class RunHeadlessScheduler extends Command
@@ -24,7 +25,15 @@ class RunHeadlessScheduler extends Command
             if ($minute !== $lastMinute) {
                 $lastMinute = $minute;
                 try {
-                    Artisan::call('schedule:run', ['--whisper' => true]);
+                    $exitCode = Artisan::call('schedule:run', ['--whisper' => true]);
+                    if ($exitCode !== 0) {
+                        Log::warning('Headless scheduler tick returned a non-zero exit code.', [
+                            'minute' => $minute,
+                            'exit_code' => $exitCode,
+                        ]);
+                    } else {
+                        Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinutes(10));
+                    }
                 } catch (Throwable $exception) {
                     // A transient MySQL deadlock must not kill the only
                     // scheduler process. Mark this minute consumed so the

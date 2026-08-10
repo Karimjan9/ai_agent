@@ -84,23 +84,30 @@ class AdaptiveParentFrontierService
         if ($snapshot === []) $snapshot = $this->governor->scopeSnapshot($symbol, $timeframe);
 
         if (! (bool) config('services.lab_selection.adaptive_parent_enabled', true)) {
-            $ids = $candidates->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
+            // Disabling the adaptive scorer must not disable the evolutionary
+            // contract. Causal lanes still need one isolated parent; only
+            // robust/discovery lanes may receive the full legacy frontier.
+            $causal = in_array($origin, EvolutionGovernorService::CAUSAL_ORIGINS, true);
+            $selectedCandidates = $causal ? $candidates->take(1)->values() : $candidates;
+            $candidateIds = $candidates->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
+            $ids = $selectedCandidates->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
             $contract = [
                 'protocol' => 'adaptive_parent_frontier_v1',
                 'status' => 'disabled',
                 'mode' => 'legacy_frontier_projection',
                 'candidate_count' => $candidates->count(),
-                'selected_count' => $candidates->count(),
-                'candidate_parent_model_version_ids' => $ids,
+                'selected_count' => $selectedCandidates->count(),
+                'candidate_parent_model_version_ids' => $candidateIds,
                 'selected_parent_model_version_ids' => $ids,
+                'causal_lane' => $causal,
                 'promotion_evidence' => false,
             ];
             return [
-                'parents' => $candidates,
+                'parents' => $selectedCandidates,
                 'selected_parent_ids' => $ids,
-                'candidate_parent_ids' => $ids,
+                'candidate_parent_ids' => $candidateIds,
                 'contract' => $contract,
-                'capability_genome' => $this->capabilityGenome($candidates, []),
+                'capability_genome' => $this->capabilityGenome($selectedCandidates, []),
                 'runtime_ensemble_policy' => $this->governor->runtimePolicy($family, $ids),
             ];
         }
@@ -108,17 +115,16 @@ class AdaptiveParentFrontierService
         $policy = $this->governor->selectionPolicy($family, $origin, $target, $snapshot);
         $island = $this->semanticGroups->descriptor($symbol, $timeframe, $family, $niche);
         $allProfiles = $this->profiles($candidates, $symbol, $timeframe, $family, $target, $niche);
-        // An archive is a memory system, not a passport. Convergence and
-        // diversity entries still have to re-prove the parent contract when
-        // they re-enter a generation. Young entries are useful only for the
-        // explicitly exploratory lanes; they must never silently become a
-        // validated champion parent.
-        $profiles = $allProfiles->filter(function (array $profile) use ($policy): bool {
-            if ((bool) data_get($profile, 'parent_eligible', false)) return true;
-            return in_array((string) data_get($policy, 'mode'), [
-                'architecture_discovery', 'curiosity_exploration',
-            ], true) && (bool) data_get($profile, 'research_seed_eligible', false);
-        })->values();
+        // An archive is a memory system, not a passport. A young/research
+        // entry may guide a hypothesis, but it has no proven benefit and may
+        // not become a genetic parent or capability contributor. Only an
+        // exact-cell model with a valid parent passport can influence the
+        // child's inherited parameters. Control-root seeds are the explicit
+        // exception: they are reproducible starting baselines, not claimed
+        // performance parents.
+        $profiles = $allProfiles
+            ->filter(fn (array $profile): bool => (bool) data_get($profile, 'parent_eligible', false))
+            ->values();
         $desired = $this->desiredParentCount($policy, $profiles->count());
         $selectedProfiles = $this->selectProfiles($profiles, $desired, (int) $slot, $policy);
         $selected = $selectedProfiles->map(fn (array $profile): ModelVersion => $profile['model'])->values();
@@ -164,8 +170,14 @@ class AdaptiveParentFrontierService
             'stagnation_generations' => $policy['stagnation_generations'],
             'lineage_cap' => $policy['lineage_cap'],
             'selection_seed' => $slot,
+            'anchor_model_version_id' => $selected->first()?->id,
+            'anchor_selection_rule' => 'slot-aware exploitation/exploration rotation; champion is a contributor, not a mandatory parent for every child',
             'capability_modules' => array_keys((array) data_get($capability, 'modules', [])),
-            'research_seed_only' => $selectedProfiles->contains(fn (array $profile): bool => ! (bool) data_get($profile, 'parent_eligible', false)),
+            'research_seed_only' => false,
+            'research_seed_candidate_count' => $allProfiles->filter(
+                fn (array $profile): bool => (bool) data_get($profile, 'research_seed_eligible', false)
+                    && ! (bool) data_get($profile, 'parent_eligible', false),
+            )->count(),
             'parent_passport_rule' => 'valid evidence, sample/rolling/stress/PBO-DSR/bootstrap checks; exploratory young seeds are research-only',
             'causal_parent_rule' => $policy['causal_lane']
                 ? 'exactly one parent; mutation attribution remains isolated'
@@ -193,13 +205,21 @@ class AdaptiveParentFrontierService
         ?string $target,
         ?array $niche,
     ): Collection {
-        return $candidates->map(function (ModelVersion $model) use ($symbol, $timeframe, $family, $target, $niche): array {
-            $performance = $model->marketPerformances()
-                ->where('symbol', $symbol)
-                ->where('timeframe', $timeframe)
-                ->where('strategy_family', $family)
-                ->latest('id')
-                ->first();
+        // A full exact-cell frontier is allowed. Resolve the latest evidence
+        // in one query so removing the old parent-count ceiling does not turn
+        // every contributor into an N+1 database round trip.
+        $performanceByModel = ModelMarketPerformance::query()
+            ->whereIn('model_version_id', $candidates->pluck('id')->all())
+            ->where('symbol', $symbol)
+            ->where('timeframe', $timeframe)
+            ->where('strategy_family', $family)
+            ->latest('id')
+            ->get()
+            ->unique('model_version_id')
+            ->keyBy('model_version_id');
+
+        return $candidates->map(function (ModelVersion $model) use ($symbol, $timeframe, $family, $target, $niche, $performanceByModel): array {
+            $performance = $performanceByModel->get($model->id);
             $metrics = (array) ($performance?->metrics ?? []);
             $statusBonus = match ((string) ($performance?->status ?? '')) {
                 'champion' => 8, 'forward_validated' => 6, 'challenger' => 4, 'paper' => 3,
@@ -250,13 +270,22 @@ class AdaptiveParentFrontierService
         if ($candidateCount === 0) return 0;
         if ((bool) $policy['causal_lane']) return 1;
 
-        $max = min((int) $policy['max_parents'], $candidateCount);
+        $configuredMax = (int) ($policy['max_parents'] ?? 0);
+        // A zero policy max is deliberately resolved here, after exact-cell
+        // eligibility is known. This keeps K dynamic instead of replacing a
+        // hidden parent ceiling with a different hard-coded ceiling.
+        $max = $configuredMax > 0 ? min($configuredMax, $candidateCount) : $candidateCount;
         $exploration = (float) $policy['exploration_ratio'];
         $desired = match ($policy['mode']) {
             'robust_capability_crossover' => 2 + (int) round($exploration * max(0, $max - 2)),
             'runtime_ensemble' => max(2, 2 + (int) round($exploration * max(0, $max - 2))),
-            'architecture_discovery' => $exploration >= .50 ? 2 : 1,
-            'curiosity_exploration' => $exploration >= .45 ? 2 : 1,
+            // Architecture discovery is not a causal one-gene repair. It
+            // needs at least a small capability frontier even under normal
+            // exploration, otherwise the old champion remains the sole
+            // source until a collapse alarm fires. K still grows with the
+            // governor and is bounded only by the configured eligible pool.
+            'architecture_discovery' => 1 + (int) round($exploration * max(0, $max - 1)),
+            'curiosity_exploration' => 1 + (int) round($exploration * max(0, $max - 1)),
             default => 1,
         };
         if ((int) $policy['stagnation_generations'] >= (int) config('services.lab_selection.governor_stagnation_generations', 3)
@@ -271,11 +300,29 @@ class AdaptiveParentFrontierService
     private function selectProfiles(Collection $profiles, int $desired, int $slot, array $policy): Collection
     {
         if ($profiles->isEmpty() || $desired <= 0) return collect();
-        $selected = collect([$profiles->first()]);
+        // The old selector always started at profiles[0]. That made every
+        // child inherit the same champion even after the governor detected
+        // concentration. Keep the score-ranked champion in the pool, but
+        // rotate the exploitation anchor through a small quality frontier as
+        // exploration pressure rises. `slot` is deterministic, so replays
+        // remain reproducible while siblings no longer collapse to one
+        // lineage.
+        $exploration = max(.15, min(.80, (float) data_get($policy, 'exploration_ratio', .35)));
+        $anchorPool = max(1, min(
+            $profiles->count(),
+            1 + (int) ceil(max(0, $profiles->count() - 1) * $exploration),
+        ));
+        $anchorIndex = $anchorPool > 1
+            ? (max(0, $slot - 1) % $anchorPool)
+            : 0;
+        $anchor = $profiles->get($anchorIndex) ?: $profiles->first();
+        $selected = collect([$anchor]);
         if ($desired === 1) return $selected;
 
-        $remaining = $profiles->slice(1)->values();
-        $lineageCounts = [$profiles->first()['lineage_id'] => 1];
+        $remaining = $profiles->reject(fn (array $profile): bool =>
+            (int) data_get($profile, 'model.id') === (int) data_get($anchor, 'model.id')
+        )->values();
+        $lineageCounts = [$anchor['lineage_id'] => 1];
         $lineageCap = max(1, (int) ceil($desired * max(.25, (float) $policy['lineage_cap'])));
         $diversityWeight = (float) config('services.lab_selection.parent_diversity_weight', 20);
 
@@ -314,7 +361,18 @@ class AdaptiveParentFrontierService
         $profileMap = collect($profiles)->mapWithKeys(fn (array $profile): array => [(string) $profile['model']->id => $profile]);
         $modules = [];
         $parameterSources = [];
-        foreach (self::MODULE_KEYS as $module => $keys) {
+        $moduleMap = self::MODULE_KEYS;
+        $knownKeys = collect($moduleMap)->flatten()->map(fn ($key): string => (string) $key)->all();
+        $extensionKeys = $parents
+            ->flatMap(fn (ModelVersion $parent): array => array_keys((array) $parent->parameters))
+            ->unique()
+            ->reject(fn ($key): bool => in_array((string) $key, $knownKeys, true))
+            ->values();
+        foreach ($extensionKeys as $key) {
+            $moduleMap['extension:'.(string) $key] = [(string) $key];
+        }
+
+        foreach ($moduleMap as $module => $keys) {
             $contributors = [];
             foreach ($parents as $parent) {
                 $present = array_values(array_intersect($keys, array_keys((array) $parent->parameters)));
@@ -367,6 +425,11 @@ class AdaptiveParentFrontierService
             'parent_model_version_ids' => $parents->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
             'modules' => $modules,
             'parameter_sources' => $parameterSources,
+            'dynamic_extension_modules' => array_values(array_keys(array_filter(
+                $moduleMap,
+                static fn ($keys, $module): bool => str_starts_with((string) $module, 'extension:'),
+                ARRAY_FILTER_USE_BOTH,
+            ))),
             'all_sources_require_child_replay' => true,
             'blind_scalar_blending' => false,
             'gene_provenance_required' => true,

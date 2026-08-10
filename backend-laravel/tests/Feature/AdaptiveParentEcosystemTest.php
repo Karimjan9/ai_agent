@@ -48,6 +48,133 @@ class AdaptiveParentEcosystemTest extends TestCase
         $this->assertArrayHasKey('parameter_sources', $robust['capability_genome']);
     }
 
+    public function test_unproven_research_seed_cannot_become_a_genetic_parent(): void
+    {
+        $validated = $this->makeModel('validated-parent', 1);
+        $this->makePerformance($validated, 80);
+        $researchSeed = $this->makeModel('unproven-research-seed', 2);
+
+        $selection = app(AdaptiveParentFrontierService::class)->select(
+            collect([$validated, $researchSeed]),
+            'XAUUSD', 'H1', 'trend', 'robust_crossover', 'robustness',
+            ['role' => 'general'], 1,
+        );
+
+        $this->assertSame([$validated->id], $selection['selected_parent_ids']);
+        $this->assertSame(2, $selection['contract']['candidate_count']);
+        $this->assertSame(1, $selection['contract']['eligible_candidate_count']);
+        $this->assertSame(1, $selection['contract']['research_seed_candidate_count']);
+        $this->assertFalse($selection['contract']['research_seed_only']);
+    }
+
+    public function test_exact_cell_frontier_is_not_silently_truncated_before_dynamic_selection(): void
+    {
+        $parents = collect();
+        for ($index = 1; $index <= 30; $index++) {
+            $model = $this->makeModel('wide-frontier-parent-'.$index, $index);
+            $this->makePerformance($model, 70 + $index);
+            $parents->push($model);
+        }
+
+        $selection = app(AdaptiveParentFrontierService::class)->select(
+            $parents,
+            'XAUUSD', 'H1', 'trend', 'robust_crossover', 'robustness',
+            ['role' => 'general'], 1,
+        );
+
+        $this->assertSame(30, $selection['contract']['candidate_count']);
+        $this->assertSame(30, $selection['contract']['eligible_candidate_count']);
+        $this->assertGreaterThan(5, $selection['contract']['selected_count']);
+        $this->assertLessThanOrEqual(30, $selection['contract']['selected_count']);
+        $this->assertSame(30, count($selection['contract']['candidate_parent_model_version_ids']));
+    }
+
+    public function test_new_execution_gene_receives_extension_module_provenance(): void
+    {
+        $parents = collect();
+        for ($index = 1; $index <= 3; $index++) {
+            $model = $this->makeModel('extension-parent-'.$index, $index);
+            if ($index === 3) {
+                $model->update(['parameters' => [...$model->parameters, 'volume_lane' => 'none']]);
+            }
+            $this->makePerformance($model, 70 + $index);
+            $parents->push($model->fresh());
+        }
+
+        $selection = app(AdaptiveParentFrontierService::class)->select(
+            $parents,
+            'XAUUSD', 'H1', 'trend', 'robust_crossover', 'robustness',
+            ['role' => 'general'], 1,
+        );
+
+        $this->assertContains('extension:volume_lane', $selection['capability_genome']['dynamic_extension_modules']);
+        $this->assertArrayHasKey('volume_lane', $selection['capability_genome']['parameter_sources']);
+        $this->assertNotEmpty($selection['capability_genome']['modules']['extension:volume_lane']['contributors']);
+    }
+
+    public function test_regime_ensemble_targeted_repair_keeps_causal_policy_identity(): void
+    {
+        $policy = app(\App\Services\EvolutionGovernorService::class)->selectionPolicy(
+            'regime_ensemble', 'gate_targeted', 'monthly_survival', [
+                'exploration_ratio' => .8,
+                'diversity_score' => .1,
+                'progress_score' => .2,
+            ],
+        );
+
+        $this->assertSame('causal_single_parent', $policy['mode']);
+        $this->assertTrue($policy['causal_lane']);
+        $this->assertSame(1, $policy['max_parents']);
+    }
+
+    public function test_disabling_adaptive_scoring_does_not_break_causal_single_parent_attribution(): void
+    {
+        $parents = collect();
+        for ($index = 1; $index <= 3; $index++) {
+            $model = $this->makeModel('legacy-parent-'.$index, $index);
+            $this->makePerformance($model, 70 + $index);
+            $parents->push($model);
+        }
+
+        $previous = config('services.lab_selection.adaptive_parent_enabled');
+        config(['services.lab_selection.adaptive_parent_enabled' => false]);
+        try {
+            $selection = app(AdaptiveParentFrontierService::class)->select(
+                $parents,
+                'XAUUSD', 'H1', 'trend', 'gate_targeted', 'exit_topology',
+                ['role' => 'general'], 1,
+            );
+        } finally {
+            config(['services.lab_selection.adaptive_parent_enabled' => $previous]);
+        }
+
+        $this->assertCount(1, $selection['selected_parent_ids']);
+        $this->assertSame(3, $selection['contract']['candidate_count']);
+        $this->assertTrue((bool) $selection['contract']['causal_lane']);
+    }
+
+    public function test_configured_population_budget_adds_real_exploration_seats(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'XAUUSD Budget Lab', 'timeframe' => 'H1',
+            'strategy_families' => ['trend', 'breakout'], 'is_active' => true,
+        ]);
+        $previous = config('services.lab_selection.population_size');
+        config(['services.lab_selection.population_size' => 25]);
+        try {
+            $method = new \ReflectionMethod(\App\Services\LabPopulationService::class, 'generationPlan');
+            $method->setAccessible(true);
+            $plan = $method->invoke(app(\App\Services\LabPopulationService::class), $lab);
+        } finally {
+            config(['services.lab_selection.population_size' => $previous]);
+        }
+
+        $this->assertCount(25, $plan);
+        $this->assertContains('robust_crossover', array_column($plan, 'origin'));
+        $this->assertContains('architecture', array_column($plan, 'origin'));
+        $this->assertContains('curiosity_probe', array_column($plan, 'origin'));
+    }
+
     public function test_architecture_lane_uses_dynamic_capability_parents_with_gene_hashes(): void
     {
         $lab = AiLaboratory::create([

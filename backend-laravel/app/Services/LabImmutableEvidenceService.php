@@ -359,6 +359,9 @@ class LabImmutableEvidenceService
         if (is_array($bundle)) {
             $bundle = $this->hash($bundle);
         }
+        $parentIds = $agent
+            ? app(ParentContributionGraphService::class)->ids($agent)
+            : array_values(array_filter(array_map('intval', (array) ($payload['parent_model_version_ids'] ?? []))));
 
         return LabMutationCreditEvent::create([
             'mutation_memory_id' => $memory->id,
@@ -378,6 +381,7 @@ class LabImmutableEvidenceService
             'payload' => [
                 'gate_transition' => $memory->gate_transition,
                 'behavioral_effect' => $memory->behavioral_effect,
+                'parent_model_version_ids' => $parentIds,
                 ...$payload,
             ],
             'recorded_at' => now(),
@@ -763,6 +767,18 @@ class LabImmutableEvidenceService
     {
         $path = $request['dataset_path'] ?? null;
         $manifest = is_string($path) && is_file($path.'.manifest.json') ? json_decode((string) file_get_contents($path.'.manifest.json'), true) : null;
+        $foundationPath = $request['foundation_dataset_path'] ?? null;
+        $foundationManifest = is_string($foundationPath) && is_file($foundationPath.'.manifest.json')
+            ? json_decode((string) file_get_contents($foundationPath.'.manifest.json'), true)
+            : null;
+
+        if (data_get($manifest, 'sha256') && data_get($foundationManifest, 'sha256')) {
+            return $this->hash([
+                'canonical_dataset_sha256' => data_get($manifest, 'sha256'),
+                'foundation_dataset_sha256' => data_get($foundationManifest, 'sha256'),
+                'foundation_promotion_evidence' => data_get($foundationManifest, 'promotion_evidence', false),
+            ]);
+        }
 
         return data_get($manifest, 'sha256') ?: ($path ? $this->hash(['dataset_path' => $path, 'candles' => $this->candleCount($request)]) : null);
     }

@@ -48,6 +48,10 @@ return [
     ],
 
     'lab_queue' => [
+        // One canonical name is shared by Laravel's queue middleware, direct
+        // portfolio replay, and stale-lock recovery. Changing it requires a
+        // controlled drain because existing cache-lock rows use the old key.
+        'replay_mutex_key' => env('LAB_REPLAY_MUTEX_KEY', 'neurotrader-ai-heavy-replay'),
         // A screen may yield briefly for a sealed full replay, then it must
         // attempt the lane. This bounds fairness releases instead of burning
         // an unbounded retry stream for the whole full-replay window.
@@ -90,6 +94,10 @@ return [
         // requests across a 20-year archive can exhaust the sync budget.
         'tick_fallback_enabled' => env('MARKET_VOLUME_TICK_FALLBACK_ENABLED', false),
         'sync_chunk_months' => (int) env('MARKET_VOLUME_SYNC_CHUNK_MONTHS', 1),
+        // M15 legacy files are daily.  A small checkpoint is intentionally
+        // slower but lets a 429 resume without losing prior observations.
+        'sync_chunk_days' => (int) env('MARKET_VOLUME_SYNC_CHUNK_DAYS', 7),
+        'sync_chunk_pause_seconds' => (int) env('MARKET_VOLUME_SYNC_CHUNK_PAUSE_SECONDS', 2),
         'minimum_coverage' => (float) env('MARKET_VOLUME_MINIMUM_COVERAGE', 0.95),
         'minimum_usable_ratio' => (float) env('MARKET_VOLUME_MINIMUM_USABLE_RATIO', 0.95),
         // A complete archive with a stale tail is not live-ready evidence.
@@ -138,9 +146,15 @@ return [
         'node_binary' => env('DUKASCOPY_NODE_BINARY', 'node'),
         'transport' => env('DUKASCOPY_TRANSPORT', 'jetta'),
         'jetta_base_url' => env('DUKASCOPY_JETTA_BASE_URL', 'https://jetta.dukascopy.com'),
+        'm15_node_enabled' => env('DUKASCOPY_M15_NODE_ENABLED', true),
         'http_timeout_seconds' => (int) env('DUKASCOPY_HTTP_TIMEOUT_SECONDS', 20),
         'http_retry_attempts' => (int) env('DUKASCOPY_HTTP_RETRY_ATTEMPTS', 3),
+        'http_retry_pause_ms' => (int) env('DUKASCOPY_HTTP_RETRY_PAUSE_MS', 2000),
         'tick_fallback_enabled' => env('DUKASCOPY_TICK_FALLBACK_ENABLED', true),
+        // Foundation archives use the monthly OHLC resource as a research
+        // source. Per-hour tick reconstruction is too slow for a 20-year
+        // training archive and remains an explicit opt-in diagnostic path.
+        'foundation_tick_fallback_enabled' => env('DUKASCOPY_FOUNDATION_TICK_FALLBACK_ENABLED', false),
         'timeout_seconds' => (int) env('DUKASCOPY_TIMEOUT_SECONDS', 45),
         'batch_size' => (int) env('DUKASCOPY_BATCH_SIZE', 1),
         'pause_ms' => (int) env('DUKASCOPY_PAUSE_MS', 1000),
@@ -148,6 +162,7 @@ return [
         'live_chunk_hours' => (int) env('DUKASCOPY_LIVE_CHUNK_HOURS', 1),
         'empty_response_grace_minutes' => (int) env('DUKASCOPY_EMPTY_RESPONSE_GRACE_MINUTES', 15),
         'retry_attempts' => (int) env('DUKASCOPY_RETRY_ATTEMPTS', 3),
+        'retry_pause_ms' => (int) env('DUKASCOPY_RETRY_PAUSE_MS', 5000),
         'instruments' => [
             'XAUUSD' => env('DUKASCOPY_XAUUSD_INSTRUMENT', 'xauusd'),
             'EURUSD' => env('DUKASCOPY_EURUSD_INSTRUMENT', 'eurusd'),
@@ -158,6 +173,13 @@ return [
     'market_reality' => [
         // Hourly feed updates only need a recent rolling window; full
         // historical rebuilds can invoke MarketRealityService explicitly.
+        // Market Reality is a Phase 2 foundation signal and is independent
+        // from the separately frozen secondary-intelligence modules.
+        'enabled' => env('MARKET_REALITY_ENABLED', true),
+        // H1 candles can be 60-120 minutes old while the live feed is still
+        // healthy. Feed freshness is checked independently by the feed
+        // health service, so this threshold covers the analysis cadence.
+        'stale_after_seconds' => (int) env('MARKET_REALITY_STALE_AFTER_SECONDS', 7200),
         'analysis_limit' => (int) env('MARKET_REALITY_ANALYSIS_LIMIT', 60),
     ],
 
@@ -242,12 +264,24 @@ return [
       'max_screening_jobs' => (int) env('LAB_MAX_SCREENING_JOBS', 40),
       'screen_timeout_seconds' => (int) env('LAB_SCREEN_TIMEOUT_SECONDS', 900),
       'differential_screen_timeout_seconds' => (int) env('LAB_DIFFERENTIAL_SCREEN_TIMEOUT_SECONDS', 900),
-      'full_replay_timeout_seconds' => (int) env('LAB_FULL_REPLAY_TIMEOUT_SECONDS', 2280),
-      'portfolio_replay_timeout_seconds' => (int) env('LAB_PORTFOLIO_REPLAY_TIMEOUT_SECONDS', 2280),
+      // The Python child is bounded at 3600 seconds; leave a transport
+      // margin so a completed evidence response is not cut off by Laravel.
+      'full_replay_timeout_seconds' => (int) env('LAB_FULL_REPLAY_TIMEOUT_SECONDS', 3900),
+      'portfolio_replay_timeout_seconds' => (int) env('LAB_PORTFOLIO_REPLAY_TIMEOUT_SECONDS', 3900),
+      // A 100k+ foundation replay is an explicit infrastructure budget
+      // decision. Keep at least two competing candidates so CSCV/PBO cannot
+      // become a meaningless singleton result; this never relaxes an
+      // evidence gate and is recorded in every replay artifact.
+      'full_replay_bounded_cohort_foundation_rows' => (int) env('LAB_FULL_REPLAY_BOUNDED_COHORT_FOUNDATION_ROWS', 100000),
+      'full_replay_max_cohort_size' => (int) env('LAB_FULL_REPLAY_MAX_COHORT_SIZE', 2),
       'dataset_export_lock_wait_seconds' => (int) env('LAB_DATASET_EXPORT_LOCK_WAIT_SECONDS', 30),
-      // Full replay is the scarce quality lane. Keep a small, complementary
-      // frontier instead of replaying every diagnostic near-miss in one batch.
-      'max_full_validation_candidates' => (int) env('LAB_MAX_FULL_VALIDATION_CANDIDATES', 4),
+      // Full replay is operationally expensive, but a fixed finalist count
+      // must not become an evolutionary ceiling.  Zero means: replay the
+      // complete eligible frontier produced by the current generation.  An
+      // operator may still set a positive value as an explicit infrastructure
+      // budget; the selection contract records that cap as operational, not
+      // as evidence that the other hypotheses were inferior.
+      'max_full_validation_candidates' => (int) env('LAB_MAX_FULL_VALIDATION_CANDIDATES', 0),
       // Adaptive parent ecosystem. These values change search allocation only;
       // they never relax PF, drawdown, ruin, PBO/DSR, holdout or paper gates.
       'adaptive_parent_enabled' => env('LAB_ADAPTIVE_PARENT_ENABLED', true),
@@ -255,15 +289,40 @@ return [
       'adaptive_parent_shadow' => env('LAB_ADAPTIVE_PARENT_SHADOW', false),
       'adaptive_budget_enabled' => env('LAB_ADAPTIVE_BUDGET_ENABLED', true),
       'adaptive_causal_seat_floor' => (int) env('LAB_ADAPTIVE_CAUSAL_SEAT_FLOOR', 8),
-      'parent_max_robust' => (int) env('LAB_PARENT_MAX_ROBUST', 5),
-      'parent_max_architecture' => (int) env('LAB_PARENT_MAX_ARCHITECTURE', 4),
-      'parent_max_curiosity' => (int) env('LAB_PARENT_MAX_CURIOSITY', 3),
+      // Zero means the adaptive child contributor count is bounded only by
+      // the eligible exact-cell frontier. Positive values are explicit
+      // compute/serialization caps, never a biological parent rule.
+      'parent_max_robust' => (int) env('LAB_PARENT_MAX_ROBUST', 0),
+      'parent_max_architecture' => (int) env('LAB_PARENT_MAX_ARCHITECTURE', 0),
+      'parent_max_curiosity' => (int) env('LAB_PARENT_MAX_CURIOSITY', 0),
       'parent_max_runtime' => (int) env('LAB_PARENT_MAX_RUNTIME', 8),
       'parent_lineage_cap' => (float) env('LAB_PARENT_LINEAGE_CAP', .50),
       'parent_diversity_weight' => (float) env('LAB_PARENT_DIVERSITY_WEIGHT', 20),
-      'semantic_cell_parent_frontier' => (int) env('LAB_SEMANTIC_CELL_PARENT_FRONTIER', 5),
-      'archive_failure_limit' => (int) env('LAB_ARCHIVE_FAILURE_LIMIT', 100),
-      'archive_max_per_island' => (int) env('LAB_ARCHIVE_MAX_PER_ISLAND', 32),
+      // Zero means the complete exact-cell frontier. Positive values are
+      // explicit infrastructure caps and are recorded as such by the
+      // selection contract; they are not evidence or lineage rules.
+      'semantic_cell_parent_frontier' => (int) env('LAB_SEMANTIC_CELL_PARENT_FRONTIER', 0),
+      'parent_candidate_frontier' => (int) env('LAB_PARENT_CANDIDATE_FRONTIER', 0),
+      // Population size is an experiment budget, not an evolutionary law.
+      // The historical default remains 20 for comparable runs; operators can
+      // raise it without changing parent or promotion contracts.
+      'population_size' => (int) env('LAB_POPULATION_SIZE', 20),
+      'population_min_size' => (int) env('LAB_POPULATION_MIN_SIZE', 1),
+      // Zero means no application-level population ceiling; positive values
+      // are explicit infrastructure limits for a particular deployment.
+      'population_max_size' => (int) env('LAB_POPULATION_MAX_SIZE', 0),
+      'portfolio_council_max_niches' => (int) env('LAB_PORTFOLIO_COUNCIL_MAX_NICHES', 0),
+      'portfolio_council_source_limit' => (int) env('LAB_PORTFOLIO_COUNCIL_SOURCE_LIMIT', 0),
+      'forward_failure_source_limit' => (int) env('LAB_FORWARD_FAILURE_SOURCE_LIMIT', 0),
+      'evidence_complement_source_limit' => (int) env('LAB_EVIDENCE_COMPLEMENT_SOURCE_LIMIT', 0),
+      'robustness_matrix_frontier_limit' => (int) env('LAB_ROBUSTNESS_MATRIX_FRONTIER_LIMIT', 0),
+      'robustness_matrix_source_limit' => (int) env('LAB_ROBUSTNESS_MATRIX_SOURCE_LIMIT', 0),
+      'archive_failure_limit' => (int) env('LAB_ARCHIVE_FAILURE_LIMIT', 0),
+      'archive_max_per_island' => (int) env('LAB_ARCHIVE_MAX_PER_ISLAND', 0),
+      'archive_migration_limit' => (int) env('LAB_ARCHIVE_MIGRATION_LIMIT', 0),
+      'confirmed_parent_traits_limit' => (int) env('LAB_CONFIRMED_PARENT_TRAITS_LIMIT', 0),
+      'mutation_scope_source_limit' => (int) env('LAB_MUTATION_SCOPE_SOURCE_LIMIT', 0),
+      'shadow_veto_decision_limit' => (int) env('LAB_SHADOW_VETO_DECISION_LIMIT', 0),
       'governor_lookback_generations' => (int) env('LAB_GOVERNOR_LOOKBACK_GENERATIONS', 3),
       'governor_diversity_collapse_threshold' => (float) env('LAB_GOVERNOR_DIVERSITY_COLLAPSE_THRESHOLD', .35),
       'governor_stagnation_generations' => (int) env('LAB_GOVERNOR_STAGNATION_GENERATIONS', 3),

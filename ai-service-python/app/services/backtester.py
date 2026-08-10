@@ -3161,6 +3161,12 @@ def _is_scheduled_market_closure(previous: pd.Timestamp, current: pd.Timestamp, 
         and current.day <= 3
     ):
         return True
+    # The canonical FX archive closes from the Christmas-Eve afternoon
+    # session through the Christmas holiday.  Keep this in lockstep with the
+    # Laravel historical-data gate so a valid foundation archive is not
+    # rejected as if its scheduled holiday bars were a feed outage.
+    if duration_hours <= 48 and _crosses_fx_christmas_closure(previous, current, symbol):
+        return True
     if not symbol.upper().startswith("XAU"):
         return False
     if duration_hours <= 120 and _crosses_xau_market_holiday(previous, current):
@@ -3173,6 +3179,22 @@ def _is_scheduled_market_closure(previous: pd.Timestamp, current: pd.Timestamp, 
 def _as_utc(timestamp: pd.Timestamp) -> pd.Timestamp:
     normalized = pd.Timestamp(timestamp)
     return normalized.tz_localize("UTC") if normalized.tzinfo is None else normalized.tz_convert("UTC")
+
+
+def _crosses_fx_christmas_closure(previous: pd.Timestamp, current: pd.Timestamp, symbol: str) -> bool:
+    if symbol.upper().startswith("XAU"):
+        return False
+
+    previous_is_christmas_eve = previous.month == 12 and previous.day == 24 and previous.hour >= 12
+    current_is_christmas_day = current.month == 12 and current.day == 25
+    previous_is_christmas_day = previous.month == 12 and previous.day == 25
+    current_is_day_after_christmas = current.month == 12 and current.day == 26
+
+    return (
+        previous_is_christmas_eve and (current_is_christmas_day or current.day == 24)
+    ) or (
+        previous_is_christmas_day and (current_is_christmas_day or current_is_day_after_christmas)
+    )
 
 
 def _crosses_xau_market_holiday(previous: pd.Timestamp, current: pd.Timestamp) -> bool:

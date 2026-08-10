@@ -114,13 +114,11 @@ class MarketHealthService
             ->where('timeframe', $timeframe);
 
         if (Schema::hasColumn('candles', 'provider')) {
-            $acceptedProviders = array_filter([
-                $provider,
-                (string) config('services.market_data.fallback_provider', ''),
-            ]);
-            $query->where(function ($inner) use ($acceptedProviders): void {
-                $inner->whereIn('provider', $acceptedProviders)->orWhereNull('provider');
-            });
+            // A fallback feed is useful for research recovery, but it must
+            // never make the configured provider look healthy. Monitoring the
+            // exact writer also prevents legacy NULL-provider rows from
+            // masking a canonical outage.
+            $query->where('provider', $provider);
         }
 
         return $query->latest('time')->first();
@@ -210,7 +208,7 @@ class MarketHealthService
         }
 
         $minutes = round($health->age_seconds / 60, 1);
-        $message = "[ALERT] MT5 Feed Lost\n\nSymbol: {$health->symbol}\nTimeframe: {$health->timeframe}\nLast candle: ".($health->last_candle_at?->toDateTimeString() ?? 'never')."\nAge: {$minutes} minutes ago.";
+        $message = "[ALERT] {$health->provider} Feed Lost\n\nSymbol: {$health->symbol}\nTimeframe: {$health->timeframe}\nLast candle: ".($health->last_candle_at?->toDateTimeString() ?? 'never')."\nAge: {$minutes} minutes ago.";
         $sent = $this->telegram->send($message);
 
         $health->update([

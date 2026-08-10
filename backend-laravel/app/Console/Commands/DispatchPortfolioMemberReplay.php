@@ -64,13 +64,16 @@ class DispatchPortfolioMemberReplay extends Command
                 $members = $this->historicalSealedMembers($symbol, $timeframe)
                     ->merge($this->refreshMembers($generation->agents))
                     ->unique(fn (LabAgent $agent): int => (int) $agent->model_version_id)
-                    ->take(4)
+                    ->take(max(2, (int) config('services.lab_selection.parent_max_runtime', 8)))
                     ->values();
             } else {
                 $screened = $this->refreshMembers($generation->agents)
                     ->when(! $this->option('refresh'), fn ($agents) => $agents->where('lifecycle_status', 'screened'))
                     ->values();
-                $members = $selection->selectPortfolioMembers($screened, 4);
+                $members = $selection->selectPortfolioMembers(
+                    $screened,
+                    max(2, (int) config('services.lab_selection.parent_max_runtime', 8)),
+                );
             }
             if ($members->isEmpty()) {
                 $this->info("{$symbol}: portfolio-member seed topilmadi.");

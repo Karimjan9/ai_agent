@@ -5,7 +5,9 @@ namespace App\Console\Commands;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
+use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
+use App\Services\AdaptiveParentFrontierService;
 use App\Services\AgentConstitutionService;
 use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
@@ -30,6 +32,7 @@ class DispatchTrendDownSpecialistRescue extends Command
         AgentConstitutionService $constitutions,
         UniversalAgentCapabilityService $universalCapabilities,
         StrategySemanticGroupService $semanticGroups,
+        AdaptiveParentFrontierService $adaptiveParents,
     ): int {
         $source = LabAgent::query()->with(['modelVersion', 'generation.laboratory'])->findOrFail((int) $this->argument('sourceAgent'));
         $sourceModel = $source->modelVersion;
@@ -51,19 +54,42 @@ class DispatchTrendDownSpecialistRescue extends Command
             return self::SUCCESS;
         }
 
-        // A regime-ensemble child may only inherit from an exact declared
-        // trend-down specialist group. A hybrid/trend source, and a legacy
-        // unscoped regime model, remain failure context only.
-        $sameFamilyParent = $source->strategy_family === 'regime_ensemble'
-            && $semanticGroups->exactParentCompatible(
-                $sourceModel,
-                $lab->symbol,
-                $lab->timeframe,
-                'regime_ensemble',
-                ['role' => 'trend_down_specialist', 'regime' => 'trend_down'],
-            )
-            ? $sourceModel : null;
-        $generation = DB::transaction(function () use ($source, $sourceModel, $sameFamilyParent, $lab, $schemas, $constitutions, $universalCapabilities, $semanticGroups) {
+        // The failed source is diagnostic context, never a genetic parent.
+        // Resolve a reusable exact-cell frontier first, then deliberately take
+        // one parent because this command is a single-gene rescue lane.
+        $specialistNiche = ['role' => 'trend_down_specialist', 'regime' => 'trend_down'];
+        $candidateParents = ModelMarketPerformance::query()
+            ->with('modelVersion')
+            ->where('symbol', $lab->symbol)
+            ->where('timeframe', $lab->timeframe)
+            ->where('strategy_family', 'regime_ensemble')
+            ->whereIn('status', ['champion', 'challenger', 'forward_validated', 'paper'])
+            ->where('evidence_status', 'valid')
+            ->latest('id')
+            ->get()
+            ->filter(fn (ModelMarketPerformance $performance): bool => $performance->modelVersion !== null
+                && $semanticGroups->exactParentCompatible(
+                    $performance->modelVersion,
+                    $lab->symbol,
+                    $lab->timeframe,
+                    'regime_ensemble',
+                    $specialistNiche,
+                ))
+            ->pluck('modelVersion')
+            ->unique('id')
+            ->values();
+        $parentSelection = $adaptiveParents->select(
+            $candidateParents,
+            $lab->symbol,
+            $lab->timeframe,
+            'regime_ensemble',
+            'gate_targeted',
+            'trend_down_regime_coverage',
+            $specialistNiche,
+            1,
+        );
+        $sameFamilyParent = $parentSelection['parents']->first();
+        $generation = DB::transaction(function () use ($source, $sourceModel, $sameFamilyParent, $parentSelection, $specialistNiche, $lab, $schemas, $constitutions, $universalCapabilities, $semanticGroups) {
             $lockedLab = AiLaboratory::query()->whereKey($lab->id)->lockForUpdate()->firstOrFail();
             if ($lockedLab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->exists()) {
                 return null;
@@ -73,6 +99,8 @@ class DispatchTrendDownSpecialistRescue extends Command
                 'generation' => $number, 'trigger_type' => 'targeted_trend_down_specialist_rescue',
                 'trigger_context' => [
                     'source_agent_id' => $source->id, 'source_model_version_id' => $sourceModel->id,
+                    'source_is_diagnostic_only' => true,
+                    'parent_selection' => $parentSelection['contract'] ?? null,
                     'failure_target' => 'trend_down_regime_coverage', 'promotion_evidence' => false,
                     'router_policy' => 'frozen_regime_specialist_ensemble_v2',
                     'required_screen_contract' => [
@@ -107,10 +135,11 @@ class DispatchTrendDownSpecialistRescue extends Command
                 'metadata' => [
                     'base_strategy' => 'regime_ensemble_v1', 'strategy_architecture' => $architecture,
                     'lab_symbol' => $lab->symbol, 'lab_timeframe' => $lab->timeframe, 'origin' => 'architecture',
-                    'semantic_group' => $semanticGroups->descriptor($lab->symbol, $lab->timeframe, 'regime_ensemble', [
-                        'role' => 'trend_down_specialist', 'regime' => 'trend_down',
-                    ], $architecture),
+                    'semantic_group' => $semanticGroups->descriptor($lab->symbol, $lab->timeframe, 'regime_ensemble', $specialistNiche, $architecture),
                     'source_model_version_id' => $sourceModel->id,
+                    'source_is_diagnostic_only' => true,
+                    'adaptive_parent_ecosystem' => $parentSelection['contract'] ?? null,
+                    'capability_genome' => $parentSelection['capability_genome'] ?? null,
                     'generation_target' => 'trend_down_regime_coverage', 'statistical_gate_version' => 3,
                     'trend_down_specialist_contract' => [
                         'source_agent_id' => $source->id,
@@ -120,6 +149,7 @@ class DispatchTrendDownSpecialistRescue extends Command
                     'parent_inheritance_protocol' => [
                         'protocol' => 'exact_semantic_parent_or_group_root_v1',
                         'parent_selection' => $sameFamilyParent ? 'exact_semantic_parent' : 'exact_group_root_default',
+                        'parent_graph_protocol' => 'lab_agent_parent_graph_v1',
                         'cross_cell_parent_forbidden' => true,
                         'legacy_parent_genetic_material' => false,
                         'promotion_evidence' => false,
@@ -142,10 +172,18 @@ class DispatchTrendDownSpecialistRescue extends Command
                     ],
                     'execution_contract' => app(ExecutionContractService::class)->for($lab->symbol, $lab->timeframe),
                     'agent_constitution' => $constitution, 'universal_genome' => $genome,
+                    'parent_contribution_graph' => [
+                        'protocol' => 'lab_agent_parent_graph_v1',
+                        'all_parent_model_version_ids' => (array) ($parentSelection['selected_parent_ids'] ?? []),
+                        'primary_parent_a_model_version_id' => $sameFamilyParent?->id,
+                        'adaptive_selected_parent_model_version_ids' => (array) ($parentSelection['selected_parent_ids'] ?? []),
+                        'promotion_evidence' => false,
+                    ],
                 ],
             ]);
-            $generation->agents()->create([
+            $agent = $generation->agents()->create([
                 'model_version_id' => $model->id, 'parent_a_model_version_id' => $sameFamilyParent?->id,
+                'parent_b_model_version_id' => null,
                 'symbol' => $lab->symbol, 'timeframe' => $lab->timeframe,
                 'strategy_family' => 'regime_ensemble', 'origin' => 'architecture', 'lifecycle_status' => 'queued',
                 'parameter_diff' => ['trend_down_strength_min' => [
@@ -154,6 +192,18 @@ class DispatchTrendDownSpecialistRescue extends Command
                 ]],
                 'decision_reason' => 'Targeted trend-down specialist/router rescue; strict screen gate required and no promotion was dispatched.',
             ]);
+            if ($sameFamilyParent?->id) {
+                $agent->parentLinks()->create([
+                    'parent_model_version_id' => $sameFamilyParent->id,
+                    'relation_type' => 'causal_parent',
+                    'contribution_key' => 'parent_a',
+                    'metadata' => [
+                        'source' => 'validated_exact_cell_frontier',
+                        'selection_protocol' => data_get($parentSelection, 'contract.protocol'),
+                        'promotion_evidence' => false,
+                    ],
+                ]);
+            }
 
             return $generation->load('agents');
         });

@@ -3,9 +3,9 @@
 ## P0 release gates
 
 1. Keep `SECONDARY_INTELLIGENCE_ENABLED=false`.
-2. Set `MARKET_DATA_CANONICAL_PROVIDER=twelve` (or the explicitly approved replacement). Run `php artisan market-data:audit SYMBOL --timeframe=H1` and then `php artisan market-data:quality --json`. Continuity gates evaluate only the canonical series; secondary providers are discrepancy evidence and never silently replace it.
-3. Repair bounded ranges with `php artisan market-data:repair-gaps --dry-run`, inspect them, then run without `--dry-run`. Repeat until the quality command passes.
-4. Export each clean dataset with `php artisan market-data:export-lab SYMBOL`. Keep the adjacent `.manifest.json`; it contains the full file SHA-256 and exact row count.
+2. Set `MARKET_DATA_CANONICAL_PROVIDER=twelve` (or the explicitly approved replacement). Run `php artisan market-data:audit SYMBOL --timeframe=H1` and then `php artisan market-data:quality --json`. Continuity and historical quality use the same canonical session calendar, including scheduled FX holiday closures. Secondary providers are discrepancy evidence and never silently replace the canonical series.
+3. Repair bounded ranges with `php artisan market-data:repair-gaps --dry-run`, inspect them, then run without `--dry-run`. The command accepts only the configured canonical provider; use the separate foundation-training archive lane for Dukascopy history. Repeat until the quality command passes.
+4. Export each clean rolling dataset with `php artisan market-data:export-lab SYMBOL`. Keep the adjacent `.manifest.json`; it contains the full file SHA-256 and exact row count. Full validation also seals a separate pre-2026 foundation archive per generation; it is research-only and never promotion evidence.
 5. Start clean generations only after quality passes. Pre-P0 sessions/models stay visible as `legacy_invalid` and are never promotion evidence.
 6. Check paper gates with `php artisan paper:evidence-readiness --json`. Do not shorten the 90-day clock or manufacture observations.
 
@@ -18,16 +18,44 @@
 
 ## Processes and Node 22
 
+Heavy replay operations use the configured LAB_REPLAY_MUTEX_KEY (default
+neurotrader-ai-heavy-replay) across queue middleware, direct portfolio replay,
+and stale-lock recovery. A large foundation archive uses the
+full_replay_runtime_budget_v1 policy; the default bounded cohort is two
+candidates and always carries promotion_evidence=false. This is a runtime
+budget, not a relaxed statistical or promotion gate.
+
+If a worker is interrupted, first prove that no replay_worker child and no
+active AI request remain. Then run:
+
+    php artisan trading:recover-lab-replay-mutex --force-stale --stale-after=900
+
+The command requeues only proven-stale reservations and closes their open
+attempt evidence as retry_released; it never deletes jobs or strategy
+evidence. Do not clear the mutex while a full queue reservation or AI replay
+is live.
+
+The ecosystem filters OpenAI, Codex, and inline internal-token prefixes from child
+environments. The process scripts also launch PM2 through
+scripts/pm2-clean-env.mjs, which removes those prefixes before PM2 stores its
+daemon metadata. If an older daemon already contains credentials, rebuild it
+only during a drained replay window with npm run process:kill, npm run
+process:start, and npm run process:save. Rotate any credential that has
+appeared in PM2 metadata.
+
 Install Node 22 (the repository has `.nvmrc` and an engine constraint), then run `npm ci`. On this Windows host the verified portable runtime is `../.runtime/node-v22.23.1-win-x64`; the process scripts explicitly use it so PM2 does not fall back to the system Node 18 installation. Set `PHP_BINARY` and `PYTHON_BINARY` when they are not on `PATH`. Use `npm run process:start`, `npm run process:status`, and `npm run process:stop`. Persist PM2 with the platform-specific startup integration after verifying every process is healthy.
 
-Laravel logs use the daily channel with 14-day retention. `pm2-logrotate` caps process logs at 20 MB, retains 14 compressed rotations, and must remain online. PM2 restarts the Python service, scheduler, and queue workers on failure; the ecosystem filters `OPENAI_`, `CODEX_`, and inline internal-token values from child environments. The five-minute health check and one-minute feed check send rate-limited Telegram critical alerts when Telegram is configured.
+Laravel logs use the daily channel with 14-day retention. `pm2-logrotate` caps process logs at 20 MB, retains 14 compressed rotations, and must remain online. PM2 restarts the Python service, scheduler, and queue workers on failure; the ecosystem filters `OPENAI_`, `CODEX_`, and inline internal-token values from child environments. The five-minute health check and one-minute feed check send rate-limited Telegram critical alerts when Telegram is configured. Market Reality analysis is a separate Phase 2 foundation flow (`MARKET_REALITY_ENABLED=true` by default); its 7,200-second H1 freshness window should be reviewed alongside `php artisan market:health --strict`.
+
+Never run PHPUnit with the production configuration cache. The repository test configuration forces SQLite memory storage and `tests/TestCase.php` fails closed before `RefreshDatabase` if that invariant is broken.
 
 ## Backup and restore drill
 
-- `php artisan ops:backup-database --retain=14` creates an atomic SQL file and full SHA-256 manifest under `storage/app/backups`. It is scheduled daily at 02:15.
+- `php artisan ops:backup-database --retain=14` creates an atomic SQL file and full SHA-256 manifest under `storage/app/backups`. Run it from the approved external backup scheduler (the application scheduler deliberately does not create large local dumps).
 - Copy backups to an encrypted off-host location; a local backup is not disaster recovery.
 - Test quarterly in an isolated database: `php artisan ops:restore-database path/to/file.sql --confirm=RESTORE`.
 - Restore refuses missing/mismatched manifests. Never point a restore drill at the production database.
+- `php artisan system:health-check --strict` verifies the newest matching manifest/hash and backup age; keep `DATABASE_BACKUP_STALE_AFTER_SECONDS` aligned with the external backup schedule.
 
 ## Execution stages
 

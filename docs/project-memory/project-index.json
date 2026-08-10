@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "NeuroTrader Lab",
   "repository_root": "../..",
-  "updated": "2026-08-09",
+  "updated": "2026-08-10",
   "purpose": "Historical-market strategy research, backtesting, agent evaluation, and paper-trading foundation.",
   "read_order": [
     "README.md",
@@ -110,6 +110,54 @@
     {
       "date": "2026-08-09",
       "change": "Added the adaptive parent ecosystem: governor-controlled dynamic parent K, exact semantic islands, convergence/diversity/young/failure archives, capability-level provenance, canonical multi-parent links, runtime WAIT policy, and parent-selection decision ledgers. Causal repair remains single-parent and all children retain independent replay/holdout/paper gates."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Hardened multi-agent runtime activation: independent-member metadata cannot bypass combined replay, portfolio proxies receive an attributed portfolio_sealed forward ledger and immutable identity hashes, stale proxy paper transport is blocked, and the lifecycle watchdog audits portfolio contract drift."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Hardened manual backtest idempotency against payload reuse, added baseline security headers and login throttling, made feed health canonical-provider-only, scoped paper uptime to the active provider, moved backup binaries into config-cache-safe configuration, and added scheduler runtime heartbeat plus strict operational probes."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Re-enabled canonical Market Reality analysis independently from frozen secondary intelligence, added a config-controlled H1-aligned freshness threshold, and refreshed production market snapshots."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Hardened PHPUnit isolation with forced SQLite memory variables and a pre-RefreshDatabase production-DB guard; made the paper-calibration FK migration idempotent for recovery/bootstrap runs."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Added fail-closed access-control and database-backup health checks: an active administrator and a SHA-256-verified, fresh SQL backup are now explicit operational prerequisites."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Aligned live market continuity with the historical quality session calendar so scheduled FX holiday closures cannot remain stuck as catching-up feed alerts; the regression suite now covers the Christmas boundary."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Made lifecycle monitoring evidence-anchored and schema-aware: it reuses lean model-version snapshots, bulk-checks forward/shadow contracts, and reports missing migrations without crashing or mutating promotion evidence."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Repaired first-generation root admission so parentless specialists use exact_group_root_default, aligned historical and live continuity calendars for FX holiday closures, and recovered clean bounded cohorts after quarantining invalid legacy lineage."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Added policy-aware reality-loop health for the intentional P0 secondary-intelligence freeze, added lab-pipeline lifecycle/queue boundary monitoring, and cleared the terminal timestamp when a screened generation enters full validation so active work cannot look completed."
     }
-  ]
+    ,{
+      "date": "2026-08-10",
+      "change": "Separated full-replay coverage checks into generation-frozen rolling and foundation manifests, prevented recovery dispatch without a sealed foundation archive, and aligned the PHP/Python XAU Sunday-open tolerance with the immutable Dukascopy research archive."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Included foundation dataset and actual rolling/foundation file hashes in the Python immutable replay cache identity, and fail-closed Laravel snapshot reuse when a frozen dataset hash no longer matches its file."
+    },
+    {
+      "date": "2026-08-10",
+      "change": "Added a shared configurable heavy-replay mutex, bounded full-replay runtime policy for large foundation archives, evidence-safe stale reservation recovery, and operational documentation for PM2 secret-metadata hygiene."
+    }
+ ]
 }

@@ -7,9 +7,9 @@ use Illuminate\Console\Command;
 
 class BuildAgentCouncilGeneration extends Command
 {
-    protected $signature = 'trading:build-agent-council {symbol?} {--timeframe=H1} {--population=4 : Initial role-complete cohort size; minimum four roles} {--force : Explicitly open the role-complete research population}';
+    protected $signature = 'trading:build-agent-council {symbol?} {--timeframe=H1} {--population=4 : Four-role audit council size; this is not the normal population budget} {--force : Explicitly open the role-complete research population}';
 
-    protected $description = 'Build a four-role council generation without changing frozen forward evidence';
+    protected $description = 'Build a four-role audit council; normal evolution uses the five-group twenty-agent population';
 
     public function handle(LabPopulationService $population): int
     {

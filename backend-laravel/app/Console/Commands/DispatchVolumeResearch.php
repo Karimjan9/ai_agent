@@ -200,7 +200,7 @@ class DispatchVolumeResearch extends Command
                                 'source_agent_id' => $source->id,
                                 'shadow_experiment_id' => $shadow->id,
                                 'source_contract' => 'dukascopy_jetta_bid_tick_volume_millions_v1',
-                                'normalization_protocol' => 'relative_volume_session_v1',
+                                'normalization_protocol' => 'relative_volume_session_v2',
                                 'single_gene' => true,
                                 'frozen_parent' => true,
                                 'promotion_evidence' => false,

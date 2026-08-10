@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use App\Models\LabEvaluationRun;
@@ -27,10 +28,21 @@ class RecoverLabReplayMutex extends Command
 
     public function handle(): int
     {
-        $key = 'neurotrader-lab-cache-laravel-queue-overlap:App\\Jobs\\EvaluateLabAgentJob:neurotrader-ai-heavy-replay';
+        // EvaluateLabAgentJob uses WithoutOverlapping::shared(), so Laravel
+        // stores the cross-job mutex without the job-class hash. Derive the
+        // store prefix instead of freezing an environment-specific prefix.
+        $key = Cache::getStore()->getPrefix()
+            .'laravel-queue-overlap:'
+            .(string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay');
         $lock = DB::table('cache_locks')->where('key', $key)->first();
 
-        if (! $lock) {
+        // A worker can die after Laravel has reserved the queue row but before
+        // WithoutOverlapping persists (or after it has already released) the
+        // cache lock. Explicit stale recovery must therefore inspect the
+        // reservation even when the lock row is absent. The normal operator
+        // path remains a no-op when there is no mutex to recover.
+        $forceStale = (bool) $this->option('force-stale');
+        if (! $lock && ! $forceStale) {
             return self::SUCCESS;
         }
 
@@ -49,7 +61,7 @@ class RecoverLabReplayMutex extends Command
         // explicit flag is intended for an operator who has already verified
         // that the old worker is gone and the AI service has no active replay;
         // it requeues the exact jobs and never deletes evidence.
-        if ((bool) $this->option('force-stale')) {
+        if ($forceStale) {
             $requestedStaleAfter = max(120, (int) $this->option('stale-after'));
             // A full replay can finish its Python request before Laravel has
             // persisted the immutable ledger, gate decisions, and lifecycle

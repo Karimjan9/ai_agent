@@ -12,6 +12,45 @@ class ControlRootInheritanceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_parentless_first_generation_is_explicitly_marked_without_a_parent(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'first_generation_root', true, 'H1', [], true, false, 4);
+        $this->assertNotNull($generation);
+
+        foreach ($generation->agents()->with(['modelVersion', 'inheritanceAudits'])->get() as $agent) {
+            $this->assertSame(
+                'no_parent_available',
+                data_get($agent->modelVersion->metadata, 'parent_inheritance_protocol.parent_selection'),
+            );
+            $this->assertSame(
+                'no_parent_available',
+                data_get($agent->modelVersion->metadata, 'semantic_lineage.mode'),
+            );
+            $inspection = app(LabAgentPreflightService::class)->inspect($agent, 'screening');
+            $this->assertTrue($inspection['passed'], json_encode($inspection, JSON_UNESCAPED_SLASHES));
+            $this->assertSame('no_parent_available', $inspection['parent_mode']);
+            $this->assertSame('not_available', $inspection['parent_status']);
+        }
+    }
+
+    public function test_legacy_parentless_metadata_is_reported_as_no_parent_not_quarantined(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'legacy_parentless_metadata', true, 'H1', [], true, false, 4);
+        $this->assertNotNull($generation);
+
+        $agent = $generation->agents()->with('modelVersion')->firstOrFail();
+        $metadata = (array) $agent->modelVersion->metadata;
+        data_set($metadata, 'parent_inheritance_protocol.parent_selection', 'archive_candidates_not_parent_eligible');
+        $agent->modelVersion->update(['metadata' => $metadata]);
+
+        $inspection = app(LabAgentPreflightService::class)->inspect($agent->fresh(['modelVersion']), 'screening');
+
+        $this->assertTrue($inspection['passed'], json_encode($inspection, JSON_UNESCAPED_SLASHES));
+        $this->assertSame('no_parent_available', $inspection['parent_mode']);
+        $this->assertSame('not_available', $inspection['parent_status']);
+        $this->assertNotContains('ROOT_SEED_PROTOCOL_MISSING', $inspection['errors']);
+    }
+
     public function test_control_root_seed_handoff_is_explicit_and_auditable(): void
     {
         $service = app(LabPopulationService::class);

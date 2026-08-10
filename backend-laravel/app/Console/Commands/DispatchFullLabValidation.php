@@ -10,8 +10,10 @@ use App\Services\CandidateHandoffService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabCandidateSelectionService;
 use App\Services\LabDatasetExportService;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\LabGenerationReportService;
 use App\Services\MarketData\MarketDataContinuityService;
+use App\Services\MarketData\HistoricalDataQualityService;
 use App\Services\SystemLogService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -23,7 +25,7 @@ class DispatchFullLabValidation extends Command
 
     protected $description = 'Select the strongest screened agents from every pair and serialize full walk-forward validation';
 
-    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabCandidateSelectionService $selection, CandidateGateDecisionService $decisions, SystemLogService $logs, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight): int
+    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, HistoricalDataQualityService $quality, LabCandidateSelectionService $selection, CandidateGateDecisionService $decisions, SystemLogService $logs, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LabImmutableEvidenceService $evidence): int
     {
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
         $rounds = [];
@@ -84,6 +86,35 @@ class DispatchFullLabValidation extends Command
                 continue;
             }
 
+            // The full protocol deliberately uses two sealed sources: the
+            // canonical rolling snapshot and a non-promotion foundation
+            // archive. Prepare the latter before queue admission so the
+            // worker cannot turn a missing archive into a strategy-looking
+            // evaluation error.
+            try {
+                $foundationSnapshot = $datasets->ensureGenerationFoundationSnapshot($generation);
+            } catch (\Throwable $exception) {
+                $this->warn("{$symbol}: foundation archive tayyor emas; full validation bloklandi: ".$exception->getMessage());
+
+                continue;
+            }
+            $rollingManifest = data_get($generation->trigger_context, 'canonical_dataset_snapshots.price.manifest');
+            $foundationManifest = $foundationSnapshot['manifest'] ?? data_get(
+                $generation->fresh()->trigger_context,
+                'canonical_dataset_snapshots.foundation.manifest',
+            );
+            $coverage = $quality->fullReplayCoverage(
+                $symbol,
+                $lab->timeframe,
+                is_array($rollingManifest) ? $rollingManifest : null,
+                is_array($foundationManifest) ? $foundationManifest : null,
+            );
+            if ($coverage['status'] !== 'ready') {
+                $this->warn("{$symbol}: full replay history coverage blocked: ".implode(', ', (array) $coverage['reasons']).'.');
+
+                continue;
+            }
+
             // Selection completes before any heavy export. It is immutable
             // evidence for why a candidate received scarce replay capacity.
             $generation = $generation->fresh(['agents.modelVersion']);
@@ -92,7 +123,19 @@ class DispatchFullLabValidation extends Command
             $laneSelection = $selection->selectValidationLanes($screened);
             $agents = $laneSelection['agents'];
             $lanes = $laneSelection['lanes'];
-            $agents = $agents->filter(function ($agent) use ($preflight, $generation, $handoffs): bool {
+            $agents = $agents->filter(function ($agent) use ($preflight, $generation, $handoffs, $evidence): bool {
+                $contractRepair = $preflight->normalizeExecutionContractMetadata($agent);
+                if ($contractRepair !== []) {
+                    $agent = $agent->fresh(['modelVersion']);
+                    $evidence->recordLifecycle($agent, 'execution_contract_metadata_normalized', [
+                        ...$contractRepair,
+                        'reason_code' => 'EXECUTION_CONTRACT_NUMERIC_SERIALIZATION_DRIFT',
+                    ], 'full_validation', null, null, self::class);
+                    $handoffs->record($generation, $agent, 'execution_contract_normalized', 'passed', 'EXECUTION_CONTRACT_NUMERIC_SERIALIZATION_DRIFT', [
+                        ...$contractRepair,
+                        'promotion_evidence' => false,
+                    ]);
+                }
                 $inspection = $preflight->inspect($agent, 'full_validation');
                 if ($inspection['passed']) {
                     return true;
@@ -161,9 +204,11 @@ class DispatchFullLabValidation extends Command
             $exportStarted = microtime(true);
             try {
                 $datasetPath = $datasets->export($symbol, $lab->timeframe);
+                $foundationSnapshot = $datasets->ensureGenerationFoundationSnapshot($generation);
                 $payloadHash = is_file($datasetPath) ? hash_file('sha256', $datasetPath) : null;
                 $logs->write('FULL_VALIDATION_EXPORT_READY', 'Full-validation dataset export completed.', [
                     'symbol' => $symbol, 'timeframe' => $lab->timeframe, 'generation' => $generation->generation,
+                    'foundation_dataset_hash' => $foundationSnapshot['sha256'] ?? null,
                     'duration_ms' => (int) ((microtime(true) - $exportStarted) * 1000),
                 ], 'info', 'lab_validation', 'dataset_export', 'ready');
                 foreach ($agents as $agent) {
@@ -192,7 +237,11 @@ class DispatchFullLabValidation extends Command
                 $rounds[$rank][] = new EvaluateLabAgentJob($agent->id, $symbol, 'full');
                 $queuedAgents[] = ['generation' => $generation, 'agent' => $agent, 'selection_decision_id' => $selectionIds[$agent->id] ?? null];
             }
-            $generation->update(['status' => 'full_validation']);
+            // A screened generation's completed_at belongs to the screening
+            // boundary.  Full validation reopens the lifecycle and must clear
+            // that terminal timestamp, otherwise monitoring sees an active
+            // generation with a contradictory terminal marker.
+            $generation->update(['status' => 'full_validation', 'completed_at' => null]);
         }
 
         // Interleave pair ranks (XAU #1, EUR #1, GBP #1, then #2...) so one

@@ -48,25 +48,31 @@ class LabCandidateSelectionService
         $front = $this->select($agents)->values();
         $general = $front->first();
         $orthogonal = $general ? $front->first(fn ($agent) => $agent->strategy_family !== $general->strategy_family) : null;
-        $causal = $this->selectCausalProbeBundle($agents, 1);
+        $causalLimit = max(1, $agents->filter(fn ($agent): bool => $agent->origin === 'causal_isolation')->count());
+        $causal = $this->selectCausalProbeBundle($agents, $causalLimit);
         // A failed global calendar gate does not prove that every declared
         // niche is useless.  Admit only strong, complementary niche seeds to
         // a separate full replay lane.  They can never become standalone
         // forward candidates; only the frozen combined portfolio may pass
         // its own strict global gate later.
-        $portfolioMembers = $this->selectPortfolioMembers($agents, 4);
+        $portfolioMembers = $this->selectPortfolioMembers($agents, $this->runtimeMemberLimit());
         // G98 lanes are deliberately allowed to fail a cheap screen on the
         // very dimension they are meant to repair. Without this bounded
         // research lane, monthly/regime/transition mutations are discarded
         // before chronological full replay and only one screen survivor can
         // reach immutable evidence. These candidates remain research-only.
-        $targetedResearch = $this->selectTargetedResearchLanes($agents, 4);
+        $targetedResearch = $this->selectTargetedResearchLanes($agents, max(1, $agents->count()));
+        // A bounded root-recovery cohort has no forward score by design: it
+        // is the clean first replay that must produce that evidence. Admit
+        // only the explicit constructor contract, never an arbitrary
+        // parentless/legacy row, and keep the lane research-only.
+        $rootRecovery = $this->selectRootRecoveryLanes($agents);
         // Monthly survival is a separate passport dimension. Preserve a
         // small number of viable monthly children even when a high-PF recall
         // or transition child dominates the global frontier; otherwise the
         // calendar gate remains an untested diagnosis and the council cannot
         // evolve toward failed_months = 0.
-        $monthlyCoverage = $this->selectMonthlyCoverageLanes($agents, 2);
+        $monthlyCoverage = $this->selectMonthlyCoverageLanes($agents, max(1, $agents->count()));
         // A volume council is a sealed four-way control cohort. Its children
         // are not G98 targeted research and must not disappear simply because
         // the generic Pareto selector sees the same parent metrics. Each
@@ -75,7 +81,7 @@ class LabCandidateSelectionService
         $volumeResearch = $this->selectVolumeResearchLanes($agents);
         $selected = collect([$general, $orthogonal])->filter()
             ->merge($causal)->unique('id')->values();
-        $selected = $selected->merge($portfolioMembers)->merge($monthlyCoverage)->merge($targetedResearch)->merge($volumeResearch)->unique('id')->values();
+        $selected = $selected->merge($portfolioMembers)->merge($monthlyCoverage)->merge($targetedResearch)->merge($rootRecovery)->merge($volumeResearch)->unique('id')->values();
         $selected = $selected->merge($roleSelection['agents'])->unique('id')->values();
         $lanes = [];
         if ($general) $lanes[$general->id] = 'general_candidate';
@@ -87,6 +93,9 @@ class LabCandidateSelectionService
         foreach ($targetedResearch as $agent) {
             if (! isset($lanes[$agent->id])) $lanes[$agent->id] = 'targeted_research';
         }
+        foreach ($rootRecovery as $agent) {
+            if (! isset($lanes[$agent->id])) $lanes[$agent->id] = 'root_recovery_full_replay';
+        }
         foreach ($monthlyCoverage as $agent) {
             if (! isset($lanes[$agent->id])) $lanes[$agent->id] = 'targeted_research';
         }
@@ -97,12 +106,15 @@ class LabCandidateSelectionService
             $lanes[$agent->id] = 'council_role_full_replay';
         }
 
-        // The selector may collect several bounded research lanes above, but
-        // the Python replay lane is intentionally scarce. Keep at most a
-        // small, high-quality frontier and prefer one representative from
-        // each available architecture before filling the remaining slots.
+        // The selector may collect several research lanes above. A positive
+        // value is an explicit infrastructure budget; zero keeps the entire
+        // eligible frontier inside this generation so a fixed finalist count
+        // cannot erase an otherwise distinct evolutionary path.
         $roleComplete = $roleSelection['required'] !== [];
-        $limit = max(1, (int) config('services.lab_selection.max_full_validation_candidates', 4));
+        $configuredLimit = (int) config('services.lab_selection.max_full_validation_candidates', 0);
+        $limit = $configuredLimit > 0
+            ? max(1, $configuredLimit)
+            : max(1, $selected->count());
         if ($roleComplete) $limit = max(4, $limit);
         $selected = $this->capDiverseReplayFrontier($selected, $limit, $roleSelection['agents']);
         $lanes = collect($lanes)->only($selected->pluck('id')->all())->all();
@@ -110,6 +122,13 @@ class LabCandidateSelectionService
         return [
             'agents' => $selected,
             'lanes' => $lanes,
+            'replay_budget' => [
+                'protocol' => 'adaptive_full_replay_frontier_v1',
+                'configured_cap' => $configuredLimit > 0 ? $configuredLimit : null,
+                'eligible_frontier_count' => $selected->count(),
+                'all_distinct_frontier_allowed' => $configuredLimit <= 0,
+                'promotion_evidence' => false,
+            ],
             'council_role_coverage' => [
                 'protocol' => 'role_complete_council_selection_v1',
                 'required_roles' => $roleSelection['required'],
@@ -142,14 +161,14 @@ class LabCandidateSelectionService
             if ($regime !== '') $regimes[$regime] = true;
         }
 
-        // These are the three intended mixed-strategy architectures. If one
-        // is absent from the screened frontier, no placeholder is created.
-        foreach (['hybrid', 'regime_ensemble', 'differential_router'] as $family) {
-            $candidate = $ranked->first(fn ($agent): bool =>
-                (string) ($agent->strategy_family ?? '') === $family
-                && ! $chosen->contains('id', $agent->id)
-            );
-            if (! $candidate || $chosen->count() >= $limit) continue;
+        // Preserve every available family before adding a same-family
+        // duplicate. The old list hardcoded hybrid/regime_ensemble/
+        // differential_router, which silently disadvantaged EURUSD's
+        // mean_reversion/session families and GBPUSD's momentum family.
+        foreach ($ranked as $candidate) {
+            if ($chosen->count() >= $limit || $chosen->contains('id', $candidate->id)) continue;
+            $family = (string) ($candidate->strategy_family ?? 'unknown');
+            if (isset($families[$family])) continue;
             $chosen->push($candidate);
             $families[$family] = true;
             $regime = $this->declaredReplayRegime($candidate);
@@ -175,6 +194,11 @@ class LabCandidateSelectionService
         }
 
         return $chosen->values();
+    }
+
+    private function runtimeMemberLimit(): int
+    {
+        return max(2, (int) config('services.lab_selection.parent_max_runtime', 8));
     }
 
     /** @return array<string, mixed> */
@@ -400,6 +424,36 @@ class LabCandidateSelectionService
     }
 
     /**
+     * A clean root recovery is the first full evidence run for a newly
+     * reconstructed semantic cell. Screening intentionally cannot provide a
+     * forward score for it, so the ordinary frontier would discard it before
+     * the replay that is supposed to create that score.
+     */
+    private function selectRootRecoveryLanes(Collection $agents): Collection
+    {
+        return $agents->filter(function ($agent): bool {
+            if ($agent->lifecycle_status !== 'screened') return false;
+            $rootContract = (array) data_get($agent, 'modelVersion.metadata.root_recovery_replay_contract', []);
+            $recoveryProtocol = (array) data_get($agent, 'modelVersion.metadata.recovery_protocol', []);
+            $explicitRoot = data_get($rootContract, 'protocol') === 'bounded_root_recovery_v1'
+                || ($agent->origin === 'lineage_root_rebuild'
+                    && data_get($recoveryProtocol, 'protocol') === 'bounded_root_recovery_v1');
+            if (! $explicitRoot) {
+                return false;
+            }
+            if ($rootContract !== [] && data_get($rootContract, 'standalone_full_replay_required') !== true) {
+                return false;
+            }
+
+            return (int) $agent->sample_count > 0 && $this->validOpportunities($agent) > 0;
+        })->sortByDesc(fn ($agent): array => [
+            $this->validOpportunities($agent),
+            (float) $agent->profit_factor,
+            (int) $agent->sample_count,
+        ])->values();
+    }
+
+    /**
      * Reserve one eligible opportunity-recall child per declared regime.
      * The candidate must already satisfy the bounded research admission
      * contract in selectTargetedResearchLanes(); this method only protects
@@ -535,8 +589,9 @@ class LabCandidateSelectionService
      * temporal and calendar gates.  No failed member is promoted by this
      * lane.
      */
-    public function selectPortfolioMembers(Collection $agents, int $limit = 4): Collection
+    public function selectPortfolioMembers(Collection $agents, int $limit = 0): Collection
     {
+        if ($limit <= 0) $limit = $this->runtimeMemberLimit();
         $selected = collect();
         $usedNiches = [];
         $usedFamilies = [];

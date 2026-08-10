@@ -3,6 +3,7 @@ import unittest
 from app.services.statistical_validation import (
     cscv_probability_of_backtest_overfitting,
     deflated_sharpe_ratio,
+    purged_cscv_probability_of_backtest_overfitting,
 )
 
 
@@ -22,6 +23,20 @@ class StatisticalValidationTest(unittest.TestCase):
         result = cscv_probability_of_backtest_overfitting([[1, 2, 3], [3, 2, 1]])
 
         self.assertEqual("insufficient_data", result["status"])
+
+    def test_purged_cscv_refuses_a_single_candidate(self):
+        intervals = [
+            {"start": index, "end": index + 1, "label_start": index, "label_end": index + 1}
+            for index in range(4)
+        ]
+
+        result = purged_cscv_probability_of_backtest_overfitting(
+            [[1, 2, 3, 4]], intervals
+        )
+
+        self.assertEqual("insufficient_data", result["status"])
+        self.assertEqual(1, result["candidate_count"])
+        self.assertFalse(result["promotion_evidence"])
 
     def test_deflated_sharpe_accounts_for_multiple_trials(self):
         returns = [0.01, 0.02, -0.005, 0.018, 0.01, -0.002, 0.014, 0.009, -0.004, 0.012]

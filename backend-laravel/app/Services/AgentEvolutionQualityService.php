@@ -68,6 +68,45 @@ class AgentEvolutionQualityService
         ];
     }
 
+    /**
+     * Evaluate a capability child against every selected contributor. The
+     * legacy single-parent contract remains the causal lane; robust and
+     * architecture lanes need this composite view so parent A cannot hide a
+     * regression against parent C merely because the compatibility columns
+     * still expose only A/B.
+     *
+     * @param array<int, array{model_version_id?: int|string, metrics?: array}> $parents
+     */
+    public function noRegressionAcrossParents(array $parents, array $child): array
+    {
+        $baselines = collect($parents)
+            ->filter(fn ($parent): bool => is_array($parent) && is_array(data_get($parent, 'metrics')))
+            ->values();
+        if ($baselines->isEmpty()) {
+            return ['status' => 'baseline_unavailable', 'parents' => [], 'preserved' => [], 'regressed' => [],
+                'rule' => 'No contributing parent claim available to preserve.'];
+        }
+
+        $perParent = [];
+        foreach ($baselines as $parent) {
+            $contract = $this->noRegressionContract((array) data_get($parent, 'metrics'), $child);
+            $perParent[(string) data_get($parent, 'model_version_id', count($perParent))] = $contract;
+        }
+        $regressed = collect($perParent)->flatMap(fn (array $contract): array => (array) data_get($contract, 'regressed', []))
+            ->unique()->values()->all();
+        $preserved = collect($perParent)->flatMap(fn (array $contract): array => (array) data_get($contract, 'preserved', []))
+            ->unique()->values()->all();
+
+        return [
+            'status' => $regressed === [] ? 'passed' : 'failed',
+            'parent_count' => $baselines->count(),
+            'parents' => $perParent,
+            'preserved' => $preserved,
+            'regressed' => $regressed,
+            'rule' => 'A capability child must preserve every gate already passed by every contributing parent; diagnostics retain parent-specific regressions.',
+        ];
+    }
+
     public function capabilityVector(array $result): array
     {
         $regimes = (array) data_get($result, 'regime_performance', []);

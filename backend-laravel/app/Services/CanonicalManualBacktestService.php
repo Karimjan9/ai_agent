@@ -62,6 +62,15 @@ class CanonicalManualBacktestService
         return $run->fresh();
     }
 
+    public function findByIdempotencyKey(string $idempotencyKeyHash): ?LabEvaluationRun
+    {
+        return LabEvaluationRun::query()
+            ->where('phase', 'manual_backtest')
+            ->where('metadata->idempotency_key_hash', $idempotencyKeyHash)
+            ->latest('id')
+            ->first();
+    }
+
     public function payloadFor(LabEvaluationRun $run): array
     {
         return (array) data_get($run->request_meta, 'payload', []);

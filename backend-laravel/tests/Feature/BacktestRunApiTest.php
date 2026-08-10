@@ -47,4 +47,71 @@ class BacktestRunApiTest extends TestCase
                 'conclusion' => "EMA trend + RSI strategy H1 timeframe'da yaxshi ishladi, lekin sideways marketdagi xatolar mistake journal orqali tekshirilishi kerak.",
             ]);
     }
+
+    public function test_idempotency_key_returns_the_same_run_for_the_same_payload(): void
+    {
+        Http::fake([
+            '*' => Http::response([
+                'metrics' => [
+                    'total_trades' => 3,
+                    'wins' => 2,
+                    'losses' => 1,
+                    'win_rate' => 66.6,
+                    'net_pnl' => 1.2,
+                    'profit_factor' => 1.5,
+                    'max_drawdown' => 0.4,
+                ],
+            ], 200),
+        ]);
+
+        $payload = [
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy' => 'ema_rsi_v1',
+            'from' => '2023-01-01',
+            'to' => '2025-12-31',
+        ];
+
+        $first = $this->withHeader('Idempotency-Key', 'manual-run-001')
+            ->postJson('/api/backtest/run', $payload)
+            ->assertOk();
+        $second = $this->withHeader('Idempotency-Key', 'manual-run-001')
+            ->postJson('/api/backtest/run', $payload)
+            ->assertOk();
+
+        $this->assertSame($first->json('run_id'), $second->json('run_id'));
+        $this->assertDatabaseCount('lab_evaluation_runs', 1);
+        Http::assertSentCount(1);
+    }
+
+    public function test_idempotency_key_cannot_be_reused_for_a_different_payload(): void
+    {
+        Http::fake([
+            '*' => Http::response(['metrics' => ['total_trades' => 0]], 200),
+        ]);
+
+        $this->withHeader('Idempotency-Key', 'manual-run-002')
+            ->postJson('/api/backtest/run', [
+                'symbol' => 'XAUUSD',
+                'timeframe' => 'H1',
+                'strategy' => 'ema_rsi_v1',
+                'from' => '2023-01-01',
+                'to' => '2025-12-31',
+            ])
+            ->assertOk();
+
+        $this->withHeader('Idempotency-Key', 'manual-run-002')
+            ->postJson('/api/backtest/run', [
+                'symbol' => 'XAUUSD',
+                'timeframe' => 'H1',
+                'strategy' => 'ema_rsi_v1',
+                'from' => '2024-01-01',
+                'to' => '2025-12-31',
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'IDEMPOTENCY_KEY_REUSED');
+
+        $this->assertDatabaseCount('lab_evaluation_runs', 1);
+        Http::assertSentCount(1);
+    }
 }

@@ -74,6 +74,23 @@ class MarketDataContinuityTest extends TestCase
         $this->assertTrue($pending->pending_from_at->equalTo($from->addMinutes(30)));
     }
 
+    public function test_fx_christmas_closure_does_not_remain_catching_up(): void
+    {
+        $symbol = Symbol::create(['code' => 'EURUSD', 'display_name' => 'Euro', 'asset_class' => 'forex', 'is_active' => true]);
+        $from = CarbonImmutable::parse('2025-12-24 12:00:00', 'UTC');
+        $to = CarbonImmutable::parse('2025-12-25 13:00:00', 'UTC');
+
+        $this->candle($symbol->id, $from);
+        $this->candle($symbol->id, $to);
+
+        $state = app(MarketDataContinuityService::class)->recordResult(
+            'twelve', 'EURUSD', 'H1', $from, $to, 2,
+        );
+
+        $this->assertSame('healthy', $state->status);
+        $this->assertNull($state->pending_from_at);
+    }
+
     private function candle(int $symbolId, CarbonImmutable $time, string $timeframe = 'H1'): void
     {
         Candle::create([

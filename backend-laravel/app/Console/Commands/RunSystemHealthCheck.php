@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Cache;
 
 class RunSystemHealthCheck extends Command
 {
-    protected $signature = 'system:health-check';
+    protected $signature = 'system:health-check {--strict : Return failure when a critical service exists}';
 
     protected $description = 'Check Phase 2 foundation health for feed, scheduler, events, signals, memory and reality loop';
 
@@ -26,6 +26,6 @@ class RunSystemHealthCheck extends Command
             $telegram->send("[CRITICAL] NeuroTrader health\n\n{$details}");
         }
 
-        return self::SUCCESS;
+        return $this->option('strict') && $critical > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

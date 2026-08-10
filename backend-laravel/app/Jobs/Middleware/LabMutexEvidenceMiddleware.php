@@ -21,18 +21,18 @@ class LabMutexEvidenceMiddleware
         $phase = $job->mode === 'screen' ? 'screening' : 'full_validation';
         $ledger->recordLifecycle($agent, 'replay_mutex_acquired', [
             'run_id' => $job->evidenceRunId, 'attempt' => $job->attempts(), 'queue' => $job->queue,
-            'mutex' => 'neurotrader-ai-heavy-replay',
+            'mutex' => (string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'),
         ], $phase, $job->evidenceRunId, $job->attempts(), self::class);
         try {
             return $next($job);
         } catch (Throwable $error) {
             $ledger->recordLifecycle($agent->fresh(), 'replay_mutex_error', [
-                'run_id' => $job->evidenceRunId, 'mutex' => 'neurotrader-ai-heavy-replay', 'attempt' => $job->attempts(),
+                'run_id' => $job->evidenceRunId, 'mutex' => (string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'), 'attempt' => $job->attempts(),
             ], $phase, $job->evidenceRunId, $job->attempts(), self::class, $error);
             throw $error;
         } finally {
             $ledger->recordLifecycle($agent->fresh(), 'replay_mutex_released', [
-                'run_id' => $job->evidenceRunId, 'mutex' => 'neurotrader-ai-heavy-replay', 'attempt' => $job->attempts(),
+                'run_id' => $job->evidenceRunId, 'mutex' => (string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'), 'attempt' => $job->attempts(),
             ], $phase, $job->evidenceRunId, $job->attempts(), self::class);
         }
     }

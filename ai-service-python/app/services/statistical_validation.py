@@ -225,6 +225,18 @@ def purged_cscv_probability_of_backtest_overfitting(
 
     aligned = [row for row in score_rows if row and all(math.isfinite(float(score)) for score in row)]
     checkpoint_count = min((len(row) for row in aligned), default=0)
+    if len(aligned) < 2:
+        return {
+            "status": "insufficient_data",
+            "method": "purged_embargoed_combinatorially_symmetric_cross_validation",
+            "protocol": "purged_embargoed_cscv_v1",
+            "candidate_count": len(aligned),
+            "checkpoint_count": checkpoint_count,
+            "purge_embargo_applied": False,
+            "diagnostic_only": False,
+            "promotion_evidence": False,
+            "reason": "At least two competing candidates are required for CSCV/PBO.",
+        }
     interval_rows = list(window_intervals[:checkpoint_count])
     if checkpoint_count < 4 or checkpoint_count % 2 or len(interval_rows) != checkpoint_count:
         return {

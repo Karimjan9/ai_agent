@@ -12,7 +12,10 @@ use Illuminate\Support\Facades\File;
  */
 class EliteAgentPassportService
 {
-    public function __construct(private AgentConstitutionService $constitutions) {}
+    public function __construct(
+        private AgentConstitutionService $constitutions,
+        private ParentContributionGraphService $parentGraphService,
+    ) {}
 
     public function build(ModelVersion $model, ?LabAgent $agent, array $result): array
     {
@@ -26,6 +29,7 @@ class EliteAgentPassportService
                 'metadata' => $link->metadata,
             ])->values()->all()
             : [];
+        $parentIds = $agent ? $this->parentGraphService->ids($agent) : [];
         $inheritanceAudit = $agent?->inheritanceAudits
             ?->where('protocol', ControlRootInheritanceService::PROTOCOL)
             ?->sortByDesc('id')
@@ -52,7 +56,7 @@ class EliteAgentPassportService
         // the integrity/architecture check below.
         $requiresConstitution = $roleCompleteCouncil || array_key_exists('agent_constitution', $metadata);
         $professional = (array) data_get($result, 'professional_exams', data_get($metadata, 'agent_knowledge.professional_exams', []));
-        $hasParent = (bool) ($agent?->parent_a_model_version_id ?: $agent?->parent_b_model_version_id);
+        $hasParent = $parentIds !== [];
         $requiresEpistemicGate = (int) data_get($model->metadata, 'statistical_gate_version', 0) >= 3;
         $requiresPromotionProof = data_get($model->metadata, 'g98_council_lane.protocol') === 'g98_failure_eliminator_v1';
         $requiresRobustnessGate = (int) data_get($model->metadata, 'robustness_gate_version', 0) >= 1;
@@ -175,10 +179,12 @@ class EliteAgentPassportService
                 'strategy_architecture' => data_get($model->metadata, 'strategy_architecture'),
                 'parent_a_model_version_id' => $agent?->parent_a_model_version_id,
                 'parent_b_model_version_id' => $agent?->parent_b_model_version_id,
+                'parent_model_version_ids' => $parentIds,
                 'parent_contribution_graph' => [
                     'protocol' => 'lab_agent_parent_graph_v1',
                     'links' => $parentGraph,
                     'complete' => $agent === null || $parentGraph !== [] || ! $hasParent,
+                    'resolved_parent_model_version_ids' => $parentIds,
                     'promotion_evidence' => false,
                 ],
                 'control_root_specialist_inheritance' => [

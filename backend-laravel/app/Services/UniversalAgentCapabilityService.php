@@ -8,19 +8,36 @@ use App\Models\ModelVersion;
 /** Capability transfer is evidence transfer, never a cross-market promotion shortcut. */
 class UniversalAgentCapabilityService
 {
-    public function genome(string $symbol, string $timeframe, string $family, string $architecture, array $parameters, ?ModelVersion $parent = null): array
+    public function genome(
+        string $symbol,
+        string $timeframe,
+        string $family,
+        string $architecture,
+        array $parameters,
+        ?ModelVersion $parent = null,
+        array $contributors = [],
+    ): array
     {
+        $parentModels = collect([$parent, ...$contributors])
+            ->filter(fn ($model): bool => $model instanceof ModelVersion)
+            ->unique('id')
+            ->values();
         $parentCore = (array) data_get($parent?->metadata, 'universal_genome.core', []);
         $core = $parentCore ?: [
             'protocol' => 'universal_core_v1', 'family' => $family,
             'invariants' => ['closed_candle_decision', 'next_candle_execution', 'cost_aware_ev', 'ood_abstention', 'bounded_risk'],
             'transfer_rule' => 'Only capability priors and falsified mutation directions may cross markets; no champion status or promotion evidence transfers.',
         ];
-        return ['core' => $core, 'local_adapter' => [
+        return [
+            'core' => $core,
+            'parent_model_version_ids' => $parentModels->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+            'contributor_count' => $parentModels->count(),
+            'local_adapter' => [
             'symbol' => $symbol, 'timeframe' => $timeframe, 'architecture' => $architecture,
             'parameters_hash' => hash('sha256', json_encode($parameters, JSON_PRESERVE_ZERO_FRACTION)),
             'operating_envelope' => 'local_evidence_required',
-        ], 'risk_guard' => ['unknown_state' => 'WAIT_OR_REDUCE_RISK', 'transfer_requires_leave_one_market_out' => true],
+            ],
+            'risk_guard' => ['unknown_state' => 'WAIT_OR_REDUCE_RISK', 'transfer_requires_leave_one_market_out' => true],
             'execution_adapter' => ['protocol' => 'reality_parity_execution_v1']];
     }
 
@@ -38,15 +55,31 @@ class UniversalAgentCapabilityService
             'rule' => 'Unknown is not a failure; it is an explicit abstention/routing decision.'];
     }
 
-    public function retention(?array $parent, array $current): array
+    public function retention(?array $parent, array $current, array $parentBaselines = []): array
     {
-        $parentVector = (array) data_get($parent, 'capability_vector', []);
         $currentVector = (array) data_get($current, 'capability_vector', []);
-        if ($parentVector === [] || $currentVector === []) return ['status' => 'baseline_unavailable'];
-        $lost = collect($parentVector)->filter(fn ($score, $key) => is_numeric($score) && (float) $score >= 60
-            && (float) data_get($currentVector, $key, 0) < (float) $score * .8)->keys()->values()->all();
-        return ['status' => $lost === [] ? 'retained' : 'catastrophic_forgetting', 'lost_skills' => $lost,
-            'rule' => 'A child must retain 80% of every parent skill that was already demonstrated at >=60.'];
+        $baselines = collect([$parent, ...$parentBaselines])
+            ->filter(fn ($candidate): bool => is_array($candidate) && $candidate !== [])
+            ->values();
+        if ($baselines->isEmpty() || $currentVector === []) return ['status' => 'baseline_unavailable'];
+
+        $lostByParent = [];
+        foreach ($baselines as $index => $baseline) {
+            $parentVector = (array) data_get($baseline, 'capability_vector', []);
+            $lost = collect($parentVector)->filter(fn ($score, $key) => is_numeric($score) && (float) $score >= 60
+                && (float) data_get($currentVector, $key, 0) < (float) $score * .8)->keys()->values()->all();
+            if ($lost !== []) {
+                $lostByParent[(string) ($baseline['model_version_id'] ?? $index)] = $lost;
+            }
+        }
+        $lost = collect($lostByParent)->flatten()->unique()->values()->all();
+        return [
+            'status' => $lost === [] ? 'retained' : 'catastrophic_forgetting',
+            'lost_skills' => $lost,
+            'lost_skills_by_parent' => $lostByParent,
+            'parent_baseline_count' => $baselines->count(),
+            'rule' => 'A child must retain 80% of every demonstrated skill from every contributing parent that scored at least 60.',
+        ];
     }
 
     public function certification(array $result, array $selfKnowledge, array $retention): array

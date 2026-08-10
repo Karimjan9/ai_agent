@@ -40,9 +40,13 @@ class MarketVolumeService
             'timezone' => 'UTC',
             'fallback' => false,
             'normalization' => [
-                'protocol' => 'relative_volume_session_v1',
+                'protocol' => 'relative_volume_session_v2',
                 'global_lookback' => 168,
                 'session_lookback' => 20,
+                'm15_global_lookback' => 672,
+                'seasonality_bucket' => 'utc_weekday_timeframe_slot_v2',
+                'effort_result' => 'shadow_diagnostic_only_v1',
+                'market_calendar' => 'dukascopy_instrument_session_calendar_v2',
                 'uses_only_prior_closed_candles' => true,
             ],
         ];
@@ -70,9 +74,19 @@ class MarketVolumeService
         $storedRows = 0;
         $cursor = $from;
         $chunkMonths = max(1, (int) config('services.market_volume.sync_chunk_months', 1));
+        $chunkDays = max(1, (int) config('services.market_volume.sync_chunk_days', 1));
+        $chunkPauseSeconds = max(0, (int) config('services.market_volume.sync_chunk_pause_seconds', 2));
         while ($cursor->lessThan($to)) {
-            $chunkEnd = $cursor->startOfMonth()->addMonths($chunkMonths);
-            if ($chunkEnd->lessThanOrEqualTo($cursor)) $chunkEnd = $cursor->addMonth();
+            // M15 legacy files are one file per UTC day.  A daily checkpoint
+            // keeps a long backfill resumable and prevents one rate-limited
+            // file from discarding the whole month's fetched result. H1 keeps
+            // its efficient monthly Jetta archive path.
+            $chunkEnd = $timeframe === 'M15'
+                ? $cursor->addDays($chunkDays)
+                : $cursor->startOfMonth()->addMonths($chunkMonths);
+            if ($chunkEnd->lessThanOrEqualTo($cursor)) {
+                $chunkEnd = $timeframe === 'M15' ? $cursor->addDay() : $cursor->addMonth();
+            }
             if ($chunkEnd->greaterThan($to)) $chunkEnd = $to;
             $rows = $this->dukascopy->fetchCandles(
                 symbol: $symbol,
@@ -107,6 +121,9 @@ class MarketVolumeService
             ));
             $storedRows += $payload->count();
             $cursor = $chunkEnd;
+            if ($cursor->lessThan($to) && $chunkPauseSeconds > 0) {
+                sleep($chunkPauseSeconds);
+            }
         }
 
         return [
@@ -119,6 +136,8 @@ class MarketVolumeService
             'fetched_rows' => $fetchedRows,
             'stored_rows' => $storedRows,
             'chunk_months' => $chunkMonths,
+            'chunk_days' => $chunkDays,
+            'chunk_pause_seconds' => $chunkPauseSeconds,
             'resumable' => true,
         ];
     }
@@ -133,9 +152,14 @@ class MarketVolumeService
         if ($from) $priceQuery->where('time', '>=', CarbonImmutable::instance($from)->utc());
         if ($to) $priceQuery->where('time', '<', CarbonImmutable::instance($to)->utc());
         $priceRows = $priceQuery->orderBy('time')->get(['time']);
-        $expected = $priceRows->count();
+        $priceRowCount = $priceRows->count();
         $first = $priceRows->first()?->time;
         $last = $priceRows->last()?->time;
+        $eligiblePriceRows = $priceRows
+            ->filter(fn (Candle $price): bool => $this->isExpectedVolumeCandle($price->time, $symbol, $timeframe))
+            ->values();
+        $expected = $eligiblePriceRows->count();
+        $lastExpected = $eligiblePriceRows->last()?->time;
 
         $volumeQuery = MarketVolumeObservation::query()
             ->where('source_contract', self::SOURCE_CONTRACT)
@@ -147,7 +171,7 @@ class MarketVolumeService
         $byTime = $volumeRows->keyBy(fn (MarketVolumeObservation $row): string => $this->timeKey($row->time));
         $matched = 0;
         $usable = 0;
-        foreach ($priceRows as $price) {
+        foreach ($eligiblePriceRows as $price) {
             $volume = $byTime->get($this->timeKey($price->time));
             if (! $volume) continue;
             $matched++;
@@ -156,8 +180,8 @@ class MarketVolumeService
         $coverage = $expected > 0 ? $matched / $expected : 0.0;
         $usableRatio = $expected > 0 ? $usable / $expected : 0.0;
         $lastVolume = $volumeRows->last()?->time;
-        $lagSeconds = $last && $lastVolume
-            ? max(0, CarbonImmutable::parse($last, 'UTC')->diffInSeconds(CarbonImmutable::parse($lastVolume, 'UTC'), absolute: true))
+        $lagSeconds = $lastExpected && $lastVolume
+            ? max(0, CarbonImmutable::parse($lastExpected, 'UTC')->diffInSeconds(CarbonImmutable::parse($lastVolume, 'UTC'), absolute: true))
             : null;
         $maxLagHours = max(0.0, (float) config('services.market_volume.max_lag_hours', 24));
         $minCoverage = (float) config('services.market_volume.minimum_coverage', .95);
@@ -184,6 +208,8 @@ class MarketVolumeService
             'last_volume_at' => $lastVolume?->toIso8601String(),
             'lag_seconds' => $lagSeconds,
             'max_lag_hours' => $maxLagHours,
+            'price_rows_total' => $priceRowCount,
+            'excluded_closed_market_rows' => max(0, $priceRowCount - $expected),
             'expected_price_rows' => $expected,
             'observed_volume_rows' => $volumeRows->count(),
             'matched_rows' => $matched,
@@ -255,5 +281,30 @@ class MarketVolumeService
     private function timeKey(mixed $time): string
     {
         return CarbonImmutable::parse($time, 'UTC')->format('Y-m-d H:i:s');
+    }
+
+    private function isExpectedVolumeCandle(mixed $time, string $symbol, string $timeframe): bool
+    {
+        $candle = CarbonImmutable::parse($time, 'UTC');
+        if (($candle->month === 1 && $candle->day === 1) || ($candle->month === 12 && $candle->day === 25)) {
+            return false;
+        }
+
+        // Jetta's UTC open-market calendar is instrument-aware. FX opens
+        // Sunday at 21:00 and closes Friday at 21:00. XAU opens Sunday at
+        // 23:00, closes Friday at 22:00, and has a daily 22:00 maintenance
+        // hour. M15 keeps the minute boundary exact.
+        if ($candle->dayOfWeek === CarbonImmutable::SATURDAY) return false;
+        if ($symbol === 'XAUUSD') {
+            if ($candle->dayOfWeek === CarbonImmutable::SUNDAY) return $candle->hour >= 23;
+            if ($candle->dayOfWeek === CarbonImmutable::FRIDAY && $candle->hour >= 22) return false;
+
+            return $candle->hour !== 22;
+        }
+
+        if ($candle->dayOfWeek === CarbonImmutable::SUNDAY) return $candle->hour >= 21;
+        if ($candle->dayOfWeek === CarbonImmutable::FRIDAY && $candle->hour >= 21) return false;
+
+        return in_array(strtoupper($timeframe), ['H1', 'M15'], true);
     }
 }

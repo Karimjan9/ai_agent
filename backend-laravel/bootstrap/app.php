@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         __DIR__.'/../app/Console/Commands',
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
         $middleware->alias([
             'secondary.enabled' => \App\Http\Middleware\EnsureSecondaryIntelligenceEnabled::class,
             'web.auth' => \App\Http\Middleware\EnsureWebAuthenticated::class,

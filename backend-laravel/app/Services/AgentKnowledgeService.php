@@ -245,15 +245,32 @@ class AgentKnowledgeService
         ?ModelVersion $parent,
         ?array $niche,
         string $target,
+        array $contributors = [],
     ): array {
+        $parentModels = collect([$parent, ...$contributors])
+            ->filter(fn ($model): bool => $model instanceof ModelVersion)
+            ->unique('id')
+            ->values();
+        $cards = $parentModels->isEmpty()
+            ? collect()
+            : AgentKnowledgeCard::query()
+                ->whereIn('model_version_id', $parentModels->pluck('id')->all())
+                ->latest('last_observed_at')
+                ->get()
+                ->unique('model_version_id')
+                ->values();
         $card = $parent?->id
-            ? AgentKnowledgeCard::query()->where('model_version_id', $parent->id)->latest('last_observed_at')->first()
-            : null;
+            ? $cards->firstWhere('model_version_id', $parent->id)
+            : $cards->first();
         $scope = data_get($niche, 'regime');
-        $skillUsable = app(AgentProfessionalExamService::class)->skillUsable($card);
-        $preserve = collect((array) ($skillUsable ? ($card?->capability_vector ?? []) : []))
-            ->filter(fn ($score): bool => is_numeric($score) && (float) $score >= 60)
-            ->keys()->values()->all();
+        $professional = app(AgentProfessionalExamService::class);
+        $usableCards = $cards->filter(fn ($candidate): bool => $professional->skillUsable($candidate));
+        $skillUsable = $professional->skillUsable($card);
+        $preserve = $usableCards
+            ->flatMap(fn ($candidate) => collect((array) ($candidate->capability_vector ?? []))
+                ->filter(fn ($score): bool => is_numeric($score) && (float) $score >= 60)
+                ->keys())
+            ->unique()->values()->all();
         $budget = app(AgentProfessionalExamService::class)->mutationBudget($symbol, $timeframe, $family, $card);
 
         return [
@@ -261,6 +278,8 @@ class AgentKnowledgeService
             'status' => 'research_only',
             'stage' => 'novice',
             'parent_model_version_id' => $parent?->id,
+            'parent_model_version_ids' => $parentModels->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+            'parent_card_ids' => $usableCards->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
             'parent_card_id' => $card?->id,
             'parent_stage' => $card?->skill_stage,
             'parent_skill_status' => $skillUsable ? 'active' : 'expired',
@@ -282,6 +301,7 @@ class AgentKnowledgeService
             ],
             'promotion_evidence' => false,
             'rule' => 'A child may learn from a parent card, but must re-prove every capability on frozen evidence.',
+            'multi_parent_rule' => 'Confirmed capability priors may be unioned across selected parents; blocked lessons remain independently re-earned and never become promotion evidence.',
         ];
     }
 
@@ -453,7 +473,11 @@ class AgentKnowledgeService
         }
         $professionalSkill = (array) data_get($professionalExams, 'drift_recertification', []);
         $examStage = $skillStage;
-        $hasParent = (bool) ($agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id);
+        // A/B are only the legacy database projection. Professional stage
+        // decisions must see the complete contribution graph, otherwise a
+        // multi-parent child could skip the teacher/student retention exam
+        // when its first two compatibility columns are empty or incomplete.
+        $hasParent = app(ParentContributionGraphService::class)->ids($agent) !== [];
         $hiddenPassed = data_get($professionalExams, 'hidden_state_challenge.status') === 'passed';
         $shadowPassed = data_get($professionalExams, 'teacher_student_shadow.status') === 'passed';
         $routerRequired = data_get($result, 'portfolio_evidence.status') === 'observed'

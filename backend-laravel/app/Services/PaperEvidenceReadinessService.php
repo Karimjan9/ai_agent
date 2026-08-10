@@ -82,7 +82,13 @@ class PaperEvidenceReadinessService
     private function feedUptimePercent(?string $firstSignalAt): float
     {
         if (! $firstSignalAt || ! Schema::hasTable('market_health_samples')) return 0.0;
-        $query = MarketHealthSample::query()->where('sampled_at', '>=', $firstSignalAt);
+        $provider = (string) config(
+            'services.mt5.provider',
+            config('services.market_data.provider', 'mt5'),
+        );
+        $query = MarketHealthSample::query()
+            ->where('provider', $provider)
+            ->where('sampled_at', '>=', $firstSignalAt);
         $streams = (clone $query)->select('provider', 'symbol', 'timeframe')->distinct()->get()->count();
         if ($streams === 0) return 0.0;
         $expected = max(1, (int) ceil(Carbon::parse($firstSignalAt)->diffInSeconds(now()) / 60) + 1) * $streams;

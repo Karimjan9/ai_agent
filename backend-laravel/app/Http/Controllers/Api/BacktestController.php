@@ -50,13 +50,43 @@ class BacktestController extends Controller
         ];
         $requestHash = $manualBacktests->requestHash($payload);
         $idempotencyKey = trim((string) $request->header('Idempotency-Key'));
-        $cacheKey = $idempotencyKey !== ''
-            ? 'api-canonical-backtest:'.hash('sha256', $idempotencyKey.'|'.$requestHash)
+        $idempotencyKeyHash = $idempotencyKey !== '' ? hash('sha256', $idempotencyKey) : null;
+        $cacheKey = $idempotencyKeyHash !== null
+            ? 'api-canonical-backtest:'.$idempotencyKeyHash
             : null;
+
+        if ($idempotencyKeyHash !== null) {
+            $existing = $manualBacktests->findByIdempotencyKey($idempotencyKeyHash);
+            if ($existing) {
+                if (! hash_equals((string) $existing->request_hash, $requestHash)) {
+                    return response()->json([
+                        'message' => 'Idempotency-Key boshqa backtest payload bilan allaqachon ishlatilgan.',
+                        'code' => 'IDEMPOTENCY_KEY_REUSED',
+                    ], 409);
+                }
+
+                $body = $this->bodyForRun($existing->fresh(), $payload, $requestHash);
+                $status = $existing->status === 'completed' ? 200 : 202;
+
+                Cache::put($cacheKey, [
+                    'body' => $body,
+                    'status' => $status,
+                    'request_hash' => $requestHash,
+                ], now()->addHours(24));
+
+                return response()->json($body, $status);
+            }
+        }
 
         if ($cacheKey !== null) {
             $cached = Cache::get($cacheKey);
             if (is_array($cached)) {
+                if (! hash_equals((string) ($cached['request_hash'] ?? ''), $requestHash)) {
+                    return response()->json([
+                        'message' => 'Idempotency-Key boshqa backtest payload bilan allaqachon ishlatilgan.',
+                        'code' => 'IDEMPOTENCY_KEY_REUSED',
+                    ], 409);
+                }
                 return response()->json($cached['body'], (int) ($cached['status'] ?? 202));
             }
         }
@@ -74,7 +104,7 @@ class BacktestController extends Controller
             }
 
             $run = $manualBacktests->submit($payload, $requestHash, [
-                'idempotency_key_hash' => $idempotencyKey !== '' ? hash('sha256', $idempotencyKey) : null,
+                'idempotency_key_hash' => $idempotencyKeyHash,
                 'api' => true,
             ]);
             $run->refresh();
@@ -82,7 +112,11 @@ class BacktestController extends Controller
             $body = $this->bodyForRun($run, $payload, $requestHash);
 
             if ($cacheKey !== null) {
-                Cache::put($cacheKey, ['body' => $body, 'status' => $status], now()->addHours(24));
+                Cache::put($cacheKey, [
+                    'body' => $body,
+                    'status' => $status,
+                    'request_hash' => $requestHash,
+                ], now()->addHours(24));
             }
 
             $response = response()->json($body, $status);

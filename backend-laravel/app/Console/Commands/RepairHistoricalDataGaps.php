@@ -14,7 +14,7 @@ class RepairHistoricalDataGaps extends Command
     protected $signature = 'market-data:repair-gaps
                             {symbol?}
                             {--timeframe=H1}
-                            {--provider=dukascopy}
+                            {--provider= : Canonical provider only; non-canonical archives belong in the foundation lane}
                             {--transport=legacy : Dukascopy transport for archival repair (legacy, jetta, or auto)}
                             {--chunk-days=365}
                             {--max-ranges=10}
@@ -30,9 +30,15 @@ class RepairHistoricalDataGaps extends Command
         $timeframe = (string) $this->option('timeframe');
         $chunkDays = max(1, (int) $this->option('chunk-days'));
         $maxRanges = max(1, min(100, (int) $this->option('max-ranges')));
-        $provider = strtolower(trim((string) $this->option('provider')));
+        $canonicalProvider = strtolower((string) config('services.market_data.canonical_provider', 'twelve'));
+        $provider = strtolower(trim((string) ($this->option('provider') ?: $canonicalProvider)));
         if (! in_array($provider, ['dukascopy', 'twelve', 'csv'], true)) {
             $this->error("Market data provider topilmadi: {$provider}");
+
+            return self::INVALID;
+        }
+        if ($provider !== $canonicalProvider) {
+            $this->error("Canonical gap repair faqat {$canonicalProvider} provider bilan ishlaydi; {$provider} foundation/archive lane uchun.");
 
             return self::INVALID;
         }
@@ -57,7 +63,7 @@ class RepairHistoricalDataGaps extends Command
             // provider cannot fill the actual hole.  Those maintenance writes
             // must not trigger the expensive market-reality pipeline; the
             // normal scheduled live update will analyse genuinely new data.
-            'services.secondary_intelligence.enabled' => false,
+            'services.market_reality.enabled' => false,
         ]);
         $failed = false;
 

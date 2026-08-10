@@ -101,6 +101,55 @@ class DukascopyMarketDataProviderTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_it_aggregates_jettas_minute_history_into_m15_tick_volume(): void
+    {
+        config([
+            'services.dukascopy.transport' => 'jetta',
+            'services.dukascopy.jetta_base_url' => 'https://jetta.test',
+            'services.dukascopy.http_retry_attempts' => 1,
+            'services.dukascopy.tick_fallback_enabled' => false,
+            'services.dukascopy.m15_node_enabled' => false,
+        ]);
+
+        $start = CarbonImmutable::parse('2020-01-02 00:00:00', 'UTC');
+        $times = array_merge([0], array_fill(0, 29, 1));
+        $opens = array_fill(0, 30, 0);
+        $highs = array_merge([2], array_fill(0, 29, 0));
+        $lows = array_merge([-2], array_fill(0, 29, 0));
+        $closes = array_merge([1], array_fill(0, 29, 0));
+        $volumes = array_fill(0, 30, 1);
+
+        Http::fake([
+            'https://jetta.test/v1/candles/minute/EUR-USD/BID/2020/1/2' => Http::response([
+                'timestamp' => $start->getTimestampMs(),
+                'shift' => 60_000,
+                'multiplier' => 1,
+                'open' => 100,
+                'high' => 100,
+                'low' => 100,
+                'close' => 100,
+                'times' => $times,
+                'opens' => $opens,
+                'highs' => $highs,
+                'lows' => $lows,
+                'closes' => $closes,
+                'volumes' => $volumes,
+            ]),
+        ]);
+
+        $rows = app(DukascopyMarketDataProvider::class)->fetchCandles(
+            'EURUSD', 'EUR/USD', 'M15', 100, $start, $start->addMinutes(30),
+        );
+
+        $this->assertCount(2, $rows);
+        $this->assertSame('2020-01-02 00:00:00', $rows[0]['time']);
+        $this->assertSame('2020-01-02 00:15:00', $rows[1]['time']);
+        $this->assertSame(15.0, $rows[0]['volume']);
+        $this->assertEqualsWithDelta(102.0, $rows[0]['high'], 0.000001);
+        $this->assertEqualsWithDelta(101.0, $rows[1]['close'], 0.000001);
+        Http::assertSentCount(1);
+    }
+
     public function test_it_uses_timestamp_history_directly_for_the_open_month(): void
     {
         config([

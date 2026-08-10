@@ -11,6 +11,16 @@ return new class extends Migration
         // The first migration may have run on MySQL with an earlier generated
         // name; add the explicit, short FK only when it is absent.
         if (Schema::hasTable('paper_confidence_calibrations') && Schema::hasTable('model_market_performance')) {
+            $hasPerformanceForeignKey = collect(Schema::getForeignKeys('paper_confidence_calibrations'))
+                ->contains(fn (array $foreignKey): bool =>
+                    ($foreignKey['columns'] ?? []) === ['model_market_performance_id']
+                    && strtolower((string) ($foreignKey['foreign_table'] ?? '')) === 'model_market_performance'
+                );
+
+            if ($hasPerformanceForeignKey) {
+                return;
+            }
+
             Schema::table('paper_confidence_calibrations', function (Blueprint $table): void {
                 $table->foreign('model_market_performance_id', 'pcc_performance_fk')
                     ->references('id')->on('model_market_performance')->nullOnDelete();

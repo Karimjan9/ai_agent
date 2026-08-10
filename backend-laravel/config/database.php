@@ -19,6 +19,12 @@ return [
 
     'default' => env('DB_CONNECTION', 'sqlite'),
 
+    'backup' => [
+        'mysqldump_binary' => env('MYSQLDUMP_BINARY', 'mysqldump'),
+        'mysql_binary' => env('MYSQL_BINARY', 'mysql'),
+        'stale_after_seconds' => (int) env('DATABASE_BACKUP_STALE_AFTER_SECONDS', 172800),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Database Connections

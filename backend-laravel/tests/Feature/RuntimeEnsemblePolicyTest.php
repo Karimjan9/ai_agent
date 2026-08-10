@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\CandidateGateDecision;
+use App\Models\EliteAgentPortfolio;
+use App\Models\EliteAgentPortfolioMember;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use App\Services\RuntimeEnsemblePolicyService;
@@ -37,6 +39,31 @@ class RuntimeEnsemblePolicyTest extends TestCase
 
         $this->assertSame('waiting', $policy['status']);
         $this->assertSame('GENETIC_PARENTS_NOT_RUNTIME_MEMBERS', $policy['reason']);
+    }
+
+    public function test_independent_member_flag_cannot_bypass_combined_portfolio_replay(): void
+    {
+        $model = $this->model('unsealed-independent-policy', 1, [
+            'runtime_ensemble_policy' => [
+                'protocol' => 'stale_or_handwritten_policy',
+                'independent_members_validated' => true,
+                'member_model_version_ids' => [1, 2],
+            ],
+        ]);
+        $performance = ModelMarketPerformance::create([
+            'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'trend',
+            'status' => 'forward_validated',
+            'evidence_status' => 'valid',
+            'metrics' => [],
+        ]);
+
+        $policy = app(RuntimeEnsemblePolicyService::class)->forPerformance($performance);
+
+        $this->assertSame('waiting', $policy['status']);
+        $this->assertSame('COMBINED_PORTFOLIO_PASSPORT_REQUIRED', $policy['reason']);
     }
 
     public function test_sealed_portfolio_requires_independent_member_passports_and_exact_specs(): void
@@ -83,7 +110,7 @@ class RuntimeEnsemblePolicyTest extends TestCase
         $policy = app(RuntimeEnsemblePolicyService::class)->forPerformance($ownerPerformance);
 
         $this->assertSame('waiting', $policy['status']);
-        $this->assertSame('PORTFOLIO_MEMBER_PASSPORT_NOT_ACTIVE', $policy['reason']);
+        $this->assertSame('PORTFOLIO_PASSPORT_NOT_ACTIVE', $policy['reason']);
     }
 
     public function test_passed_combined_portfolio_activates_only_matching_independent_members(): void
@@ -92,10 +119,21 @@ class RuntimeEnsemblePolicyTest extends TestCase
         $memberTwo = $this->model('active-member-two', 2);
         $performanceOne = $this->performanceWithPassport($memberOne, 1);
         $performanceTwo = $this->performanceWithPassport($memberTwo, 2);
+        $portfolio = EliteAgentPortfolio::create([
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'portfolio_key' => 'runtime-test-portfolio',
+            'status' => 'forward_validated',
+            'gate_status' => 'passed',
+            'member_count' => 2,
+            'gate_reasons' => [],
+            'membership_hash' => 'member-hash',
+            'route_policy' => ['router' => 'sealed_regime_volatility_direction_ownership_v1'],
+        ]);
         $owner = $this->model('active-portfolio', 3, [
             'base_strategy' => 'portfolio',
             'portfolio_proxy' => true,
-            'elite_portfolio_id' => 99,
+            'elite_portfolio_id' => $portfolio->id,
             'portfolio_members' => [
                 [
                     'strategy' => $memberOne->strategy,
@@ -103,6 +141,7 @@ class RuntimeEnsemblePolicyTest extends TestCase
                     'version' => $memberOne->version,
                     'parameters' => $memberOne->parameters,
                     'member_key' => 'performance:'.$performanceOne->id,
+                    'role' => 'specialist',
                     'target_regime' => 'trend_up',
                 ],
                 [
@@ -111,6 +150,7 @@ class RuntimeEnsemblePolicyTest extends TestCase
                     'version' => $memberTwo->version,
                     'parameters' => $memberTwo->parameters,
                     'member_key' => 'performance:'.$performanceTwo->id,
+                    'role' => 'specialist',
                     'target_regime' => 'range',
                 ],
             ],
@@ -124,9 +164,38 @@ class RuntimeEnsemblePolicyTest extends TestCase
             'evidence_status' => 'valid',
             'metrics' => [
                 'portfolio_proxy' => true,
-                'elite_portfolio_id' => 99,
+                'elite_portfolio_id' => $portfolio->id,
                 'elite_agent_passport' => ['status' => 'passed'],
             ],
+        ]);
+        $portfolio->update([
+            'evidence' => [
+                'gate' => ['status' => 'passed'],
+                'portfolio_performance_id' => $ownerPerformance->id,
+            ],
+        ]);
+        foreach ([[$performanceOne, 'trend_up'], [$performanceTwo, 'range']] as [$performance, $regime]) {
+            EliteAgentPortfolioMember::create([
+                'elite_agent_portfolio_id' => $portfolio->id,
+                'model_market_performance_id' => $performance->id,
+                'role' => 'specialist',
+                'target_regime' => $regime,
+                'target_volatility' => null,
+                'target_direction' => null,
+                'risk_weight' => 1.0,
+                'parameter_hash' => $this->parameterHash($performance->modelVersion->parameters),
+            ]);
+        }
+        CandidateGateDecision::create([
+            'model_market_performance_id' => $ownerPerformance->id,
+            'stage' => 'statistical_forward_gate',
+            'decision' => 'passed',
+            'reason_codes' => [],
+            'metrics' => [
+                'elite_agent_passport' => ['status' => 'passed'],
+                'portfolio_forward_identity' => ['attribution_status' => 'portfolio_sealed'],
+            ],
+            'evaluated_at' => now(),
         ]);
 
         $service = app(RuntimeEnsemblePolicyService::class);
@@ -187,5 +256,18 @@ class RuntimeEnsemblePolicyTest extends TestCase
             'evaluated_at' => now()->addSeconds($variant),
         ]);
         return $performance;
+    }
+
+    private function parameterHash(array $parameters): string
+    {
+        $normalize = function (array $value) use (&$normalize): array {
+            foreach ($value as $key => $item) {
+                if (is_array($item)) $value[$key] = $normalize($item);
+            }
+            ksort($value);
+            return $value;
+        };
+
+        return hash('sha256', json_encode($normalize($parameters), JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES));
     }
 }

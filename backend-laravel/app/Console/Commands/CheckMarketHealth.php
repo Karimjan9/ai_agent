@@ -7,7 +7,7 @@ use Illuminate\Console\Command;
 
 class CheckMarketHealth extends Command
 {
-    protected $signature = 'market:health {--recover : Allow MT5/Wine recovery script execution}';
+    protected $signature = 'market:health {--recover : Allow MT5/Wine recovery script execution} {--strict : Return failure when any feed is stale or lost}';
 
     protected $description = 'Check MT5 market feed health, send alerts, and optionally run recovery.';
 
@@ -19,6 +19,8 @@ class CheckMarketHealth extends Command
 
         $this->info("Market health checked: {$checks->count()} feeds, {$lost} lost, {$stale} stale.");
 
-        return self::SUCCESS;
+        return $this->option('strict') && ($lost > 0 || $stale > 0)
+            ? self::FAILURE
+            : self::SUCCESS;
     }
 }

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\MarketSymbol;
+use App\Services\MarketRealityService;
 use App\Models\TrainingLog;
 use App\Models\TrainingSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -74,6 +75,10 @@ class AutoTrainingWorkflowTest extends TestCase
             'is_active' => true,
         ]);
         $this->writeMarketDataCsv();
+        $this->mock(MarketRealityService::class, function ($mock): void {
+            $mock->shouldReceive('analyzeSymbol')->once();
+        });
+        config(['services.secondary_intelligence.enabled' => false, 'services.market_reality.enabled' => true]);
 
         $this->artisan('market-data:update --symbol=XAUUSD --timeframe=H1 --limit=2')
             ->expectsOutput('XAUUSD H1: 2 candle updated.')

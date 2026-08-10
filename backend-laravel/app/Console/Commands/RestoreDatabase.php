@@ -29,7 +29,7 @@ class RestoreDatabase extends Command
         }
         $connection = config('database.connections.mysql');
         $process = new Process([
-            (string) env('MYSQL_BINARY', 'mysql'), '--host='.(string) $connection['host'],
+            (string) config('database.backup.mysql_binary', 'mysql'), '--host='.(string) $connection['host'],
             '--port='.(string) $connection['port'], '--user='.(string) $connection['username'],
             '--default-character-set=utf8mb4', (string) $connection['database'],
         ]);

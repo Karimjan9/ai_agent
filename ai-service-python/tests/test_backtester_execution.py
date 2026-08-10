@@ -507,6 +507,19 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
 
         self.assertEqual(_validate_data_gaps(frame, self.payload()), 0)
 
+    def test_fx_christmas_closure_is_not_a_hard_gap(self):
+        frame = pd.DataFrame({
+            "time": pd.to_datetime(["2025-12-24 12:00:00", "2025-12-25 13:00:00"]),
+            "open": [1.10, 1.11],
+            "high": [1.11, 1.12],
+            "low": [1.09, 1.10],
+            "close": [1.10, 1.11],
+            "volume": [1.0, 1.0],
+        })
+
+        payload = self.payload().model_copy(update={"symbol": "EURUSD"})
+        self.assertEqual(_validate_data_gaps(frame, payload), 0)
+
     def test_xau_maundy_thursday_closure_is_not_a_hard_gap(self):
         frame = pd.DataFrame({
             "time": pd.to_datetime(["2011-04-20 21:00:00", "2011-04-21 08:00:00"]),

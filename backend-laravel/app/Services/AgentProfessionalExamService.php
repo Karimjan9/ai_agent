@@ -208,36 +208,92 @@ class AgentProfessionalExamService
     /** Compare preserved capability, calibration and abstention—not raw PF. */
     public function teacherStudentShadow(LabAgent $agent, ?ModelVersion $model, array $result): array
     {
-        $parentModelId = $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id;
-        $parent = $parentModelId
-            ? ModelMarketPerformance::query()->where('model_version_id', $parentModelId)
-                ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->latest('id')->first()
-            : null;
-        if (! $parent) {
+        // A/B are compatibility projections only. A robust or architecture
+        // child may have contributors that are present solely in the parent
+        // graph, and checking only A would let the child forget a capability
+        // supplied by parent C while still passing this exam.
+        $parentIds = app(ParentContributionGraphService::class)->ids($agent);
+        if ($parentIds === []) {
             return [
                 'protocol' => 'teacher_student_shadow_v1', 'status' => 'unassessed',
                 'reason' => 'teacher_replay_missing', 'promotion_evidence' => false,
             ];
         }
-        $teacher = (array) $parent->metrics;
+
+        $performances = ModelMarketPerformance::query()
+            ->with('modelVersion')
+            ->whereIn('model_version_id', $parentIds)
+            ->where('symbol', $agent->symbol)
+            ->where('timeframe', $agent->timeframe)
+            ->where('strategy_family', $agent->strategy_family)
+            ->latest('id')
+            ->get()
+            ->filter(fn (ModelMarketPerformance $performance): bool => $performance->modelVersion !== null)
+            ->unique('model_version_id')
+            ->sortBy(fn (ModelMarketPerformance $performance): int => (int) array_search(
+                (int) $performance->model_version_id,
+                $parentIds,
+                true,
+            ))
+            ->values();
+        $observedIds = $performances->pluck('model_version_id')->map(fn ($id): int => (int) $id)->all();
+        $missingIds = array_values(array_diff($parentIds, $observedIds));
+        if ($performances->isEmpty() || $missingIds !== []) {
+            return [
+                'protocol' => 'teacher_student_shadow_v1',
+                'status' => 'unassessed',
+                'reason' => 'teacher_replay_missing',
+                'parent_model_version_ids' => $parentIds,
+                'missing_parent_model_version_ids' => $missingIds,
+                'promotion_evidence' => false,
+            ];
+        }
+
         $studentVector = (array) data_get($result, 'capability_vector', data_get($model?->metadata, 'capability_vector', []));
-        $teacherVector = (array) data_get($teacher, 'capability_vector', data_get($parent->modelVersion?->metadata, 'capability_vector', []));
-        $lost = collect($teacherVector)->filter(fn ($score, $key): bool => is_numeric($score)
-            && (float) $score >= 60 && (float) data_get($studentVector, $key, 0) < (float) $score * .80)->keys()->values()->all();
-        $teacherCalibration = (float) data_get($teacher, 'statistical_evidence.edge_quality.confidence_calibration.score', 0);
+        $perParent = [];
+        foreach ($performances as $parent) {
+            $teacher = (array) $parent->metrics;
+            $teacherVector = (array) data_get($teacher, 'capability_vector', data_get($parent->modelVersion?->metadata, 'capability_vector', []));
+            $lost = collect($teacherVector)->filter(fn ($score, $key): bool => is_numeric($score)
+                && (float) $score >= 60 && (float) data_get($studentVector, $key, 0) < (float) $score * .80)->keys()->values()->all();
+            $teacherCalibration = (float) data_get($teacher, 'statistical_evidence.edge_quality.confidence_calibration.score', 0);
+            $teacherAbstention = (float) data_get($teacher, 'opportunity_recall.abstention_precision', 0);
+            $studentCalibration = (float) data_get($result, 'statistical_evidence.edge_quality.confidence_calibration.score', 0);
+            $studentAbstention = (float) data_get($result, 'opportunity_recall.abstention_precision', 0);
+            $calibrationRetained = $teacherCalibration <= 0 || $studentCalibration >= $teacherCalibration * .80;
+            $abstentionRetained = $teacherAbstention <= 0 || $studentAbstention >= $teacherAbstention * .80;
+            $perParent[(string) $parent->model_version_id] = [
+                'parent_model_version_id' => (int) $parent->model_version_id,
+                'preserved_capability_keys' => collect($teacherVector)->filter(fn ($score): bool => is_numeric($score) && (float) $score >= 60)->keys()->values()->all(),
+                'lost_skills' => $lost,
+                'teacher_calibration_score' => $teacherCalibration,
+                'teacher_abstention_precision' => $teacherAbstention,
+                'calibration_retained' => $calibrationRetained,
+                'abstention_retained' => $abstentionRetained,
+                'status' => $lost === [] && $calibrationRetained && $abstentionRetained ? 'passed' : 'catastrophic_forgetting',
+            ];
+        }
+
+        $primary = $perParent[(string) $performances->first()->model_version_id];
+        $lost = collect($perParent)->flatMap(fn (array $row): array => (array) data_get($row, 'lost_skills', []))->unique()->values()->all();
+        $teacherCalibration = (float) data_get($primary, 'teacher_calibration_score', 0);
         $studentCalibration = (float) data_get($result, 'statistical_evidence.edge_quality.confidence_calibration.score', 0);
-        $teacherAbstention = (float) data_get($teacher, 'opportunity_recall.abstention_precision', 0);
+        $teacherAbstention = (float) data_get($primary, 'teacher_abstention_precision', 0);
         $studentAbstention = (float) data_get($result, 'opportunity_recall.abstention_precision', 0);
-        $calibrationRetained = $teacherCalibration <= 0 || $studentCalibration >= $teacherCalibration * .80;
-        $abstentionRetained = $teacherAbstention <= 0 || $studentAbstention >= $teacherAbstention * .80;
-        $status = $lost === [] && $calibrationRetained && $abstentionRetained ? 'passed' : 'catastrophic_forgetting';
+        $calibrationRetained = collect($perParent)->every(fn (array $row): bool => (bool) data_get($row, 'calibration_retained'));
+        $abstentionRetained = collect($perParent)->every(fn (array $row): bool => (bool) data_get($row, 'abstention_retained'));
+        $status = collect($perParent)->every(fn (array $row): bool => data_get($row, 'status') === 'passed')
+            ? 'passed' : 'catastrophic_forgetting';
 
         return [
             'protocol' => 'teacher_student_shadow_v1',
             'status' => $status,
-            'teacher_model_version_id' => $parent->model_version_id,
+            'teacher_model_version_id' => $performances->first()->model_version_id,
+            'parent_model_version_ids' => $parentIds,
+            'parent_count' => count($parentIds),
+            'per_parent' => $perParent,
             'student_model_version_id' => $model?->id,
-            'preserved_capability_keys' => collect($teacherVector)->filter(fn ($score): bool => is_numeric($score) && (float) $score >= 60)->keys()->values()->all(),
+            'preserved_capability_keys' => collect($perParent)->flatMap(fn (array $row): array => (array) data_get($row, 'preserved_capability_keys', []))->unique()->values()->all(),
             'lost_skills' => $lost,
             'teacher_calibration_score' => $teacherCalibration,
             'student_calibration_score' => $studentCalibration,

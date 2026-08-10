@@ -13,6 +13,7 @@ use App\Services\ScreeningLearningOutboxService;
 use App\Services\CandidateHandoffService;
 use Illuminate\Support\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class AiLearningLaboratoryTest extends TestCase
@@ -36,6 +37,23 @@ class AiLearningLaboratoryTest extends TestCase
                 fn (LabAgent $agent) => data_get($agent->modelVersion->metadata, 'generation_target') === $target
             )->count());
         }
+        $groupContract = (array) data_get($xau->trigger_context, 'population_group_contract');
+        $this->assertSame('population_group_checkpoint_v1', $groupContract['protocol']);
+        $this->assertSame(5, $groupContract['core_group_count']);
+        $this->assertSame(4, $groupContract['core_seats_per_group']);
+        $this->assertTrue($groupContract['balanced_core']);
+        $this->assertTrue(data_get($xau->trigger_context, 'specialist_council_contract.global_champion_forbidden'));
+        $this->assertTrue($xau->agents->every(
+            fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'population_group.protocol') === 'population_group_checkpoint_v1'
+        ));
+        $this->assertTrue($xau->agents->groupBy(
+            fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'population_group.key')
+        )->every(fn ($members): bool => $members->count() === 4));
+        $this->assertTrue($xau->agents->groupBy(
+            fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'population_group.key')
+        )->every(fn ($members): bool => $members->pluck('modelVersion')->filter(
+            fn (ModelVersion $model): bool => data_get($model->metadata, 'population_group.search_mode') === 'depth'
+        )->count() === 2));
         $isolated = $xau->agents->firstWhere('origin', 'g98_council');
         $this->assertCount(1, $isolated->parameter_diff);
         $this->assertSame('isolated_single_gene', data_get($isolated->modelVersion->metadata, 'causal_experiment_lane.status'));
@@ -169,6 +187,14 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertArrayHasKey('gate_failures', $report);
         $this->assertArrayHasKey('technical_errors', $report);
         $this->assertArrayHasKey('mutation_targets', $report);
+        $this->assertArrayHasKey('population_group_checkpoints', $report);
+        $this->assertCount(5, $report['population_group_checkpoints']);
+        $this->assertTrue($report['council']['global_champion_forbidden']);
+        $this->assertTrue(collect($report['population_group_checkpoints'])->every(
+            fn (array $checkpoint): bool => data_get($checkpoint, 'protocol') === 'population_group_checkpoint_v1'
+                && data_get($checkpoint, 'checkpoint.singleton_forbidden') === true
+                && count((array) data_get($checkpoint, 'frontier_members')) === 4
+        ));
         $this->assertArrayHasKey('technical_completion_rate', $report['kpis']);
         $this->assertSame('screening_completed', data_get($generation->fresh()->trigger_context, 'latest_generation_report.phase'));
     }
@@ -242,6 +268,35 @@ class AiLearningLaboratoryTest extends TestCase
         $selected = app(LabCandidateSelectionService::class)->select($agents);
 
         $this->assertSame([2], $selected->pluck('id')->all());
+    }
+
+    public function test_bounded_root_recovery_reaches_full_replay_without_a_forward_score(): void
+    {
+        $agents = collect([1, 2])->map(function (int $id): object {
+            return (object) [
+                'id' => $id,
+                'origin' => 'lineage_root_rebuild',
+                'strategy_family' => $id === 1 ? 'trend' : 'hybrid',
+                'lifecycle_status' => 'screened',
+                'sample_count' => 20,
+                'profit_factor' => 1.0,
+                'forward_score' => 0,
+                'max_drawdown' => 10,
+                'risk_of_ruin' => 5,
+                'modelVersion' => (object) ['metadata' => [
+                    'recovery_protocol' => ['protocol' => 'bounded_root_recovery_v1'],
+                    'last_screen_result' => [
+                        'opportunity_metrics' => ['valid_signal_opportunities' => 20],
+                    ],
+                ]],
+            ];
+        });
+
+        $selection = app(LabCandidateSelectionService::class)->selectValidationLanes($agents);
+
+        $this->assertEqualsCanonicalizing([1, 2], $selection['agents']->pluck('id')->all());
+        $this->assertSame('root_recovery_full_replay', $selection['lanes'][1]);
+        $this->assertSame('root_recovery_full_replay', $selection['lanes'][2]);
     }
 
     public function test_recall_research_reserves_each_regime_before_global_dominance(): void
@@ -446,6 +501,38 @@ class AiLearningLaboratoryTest extends TestCase
         $hybridOutput = $method->invoke($service, $hybridModel, $result, 'hybrid');
 
         $this->assertArrayNotHasKey('differential_no_regression', $hybridOutput);
+    }
+
+    public function test_full_replay_projection_preserves_sealed_cohort_cache_metadata(): void
+    {
+        $model = ModelVersion::create([
+            'name' => 'sealed-cache-refresh',
+            'strategy' => 'sealed-cache-refresh',
+            'version' => 'test',
+            'generation' => 1,
+            'status' => 'testing',
+            'parameters' => [],
+            'metadata' => ['seed' => true],
+        ]);
+        DB::table('model_versions')->where('id', $model->id)->update([
+            'metadata' => json_encode([
+                'seed' => true,
+                'full_validation_batch' => [
+                    'protocol' => 'sealed_replay_cache_v2',
+                    'full_replay_runtime_policy' => ['promotion_evidence' => false],
+                ],
+            ]),
+        ]);
+
+        $service = app(LabAgentEvaluationService::class);
+        $method = new \ReflectionMethod($service, 'mergeRefreshedModelMetadata');
+        $method->setAccessible(true);
+        $metadata = $method->invoke($service, $model, ['last_result' => ['score' => 1]]);
+
+        $this->assertTrue($metadata['seed']);
+        $this->assertSame('sealed_replay_cache_v2', data_get($metadata, 'full_validation_batch.protocol'));
+        $this->assertFalse(data_get($metadata, 'full_validation_batch.full_replay_runtime_policy.promotion_evidence'));
+        $this->assertSame(1, data_get($metadata, 'last_result.score'));
     }
 
     public function test_generated_trend_parameters_preserve_indicator_relationships(): void
@@ -1075,6 +1162,21 @@ class AiLearningLaboratoryTest extends TestCase
 
         $this->assertTrue($screenMiddleware->contains(fn ($middleware): bool => $middleware instanceof \App\Jobs\Middleware\PreferFullValidationQueue));
         $this->assertTrue($fullMiddleware->contains(fn ($middleware): bool => $middleware instanceof \App\Jobs\Middleware\PreferFullValidationQueue));
+    }
+
+    public function test_screen_retry_window_can_wait_behind_a_long_full_validation_lane(): void
+    {
+        $screen = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
+        $full = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'full');
+
+        $this->assertSame(
+            360 * 60,
+            $screen->retryUntil()->getTimestamp() - $screen->screenQueuedAt->getTimestamp(),
+        );
+        $this->assertLessThan(
+            $screen->retryUntil()->getTimestamp(),
+            $full->retryUntil()->getTimestamp(),
+        );
     }
 
     public function test_screening_curriculum_keeps_ranked_bottlenecks_for_generation_planning(): void

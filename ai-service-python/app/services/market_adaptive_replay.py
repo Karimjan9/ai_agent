@@ -30,7 +30,10 @@ from app.strategies.registry import get_strategy
 class MarketAdaptiveReplayService:
     foundation_start: str = "2004-01-01 00:00:00"
     foundation_end: str = "2025-12-31 23:59:59"
-    latest_supported_foundation_start: str = "2005-01-02 22:00:00"
+    # Dukascopy's first XAU Sunday session may open at 23:00 UTC. This
+    # matches the Laravel foundation-export contract's one-day market-open
+    # tolerance without inventing a missing 22:00 candle.
+    latest_supported_foundation_start: str = "2005-01-03 00:00:00"
     rolling_start: str = "2026-01-01 00:00:00"
     sealed_holdout_weeks: int = 6
     overfit_threshold: int = 25
@@ -38,12 +41,13 @@ class MarketAdaptiveReplayService:
     # while every window remains strictly before the sealed holdout.
     minimum_checkpoint_windows: int = 4
 
-    def split_dataset(self, df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    def split_dataset(self, df: pd.DataFrame, foundation_df: pd.DataFrame | None = None) -> dict[str, pd.DataFrame]:
         normalized = self._normalize(df)
+        foundation_source = self._normalize(foundation_df) if foundation_df is not None else normalized
         holdout_start = normalized["time"].max() - pd.Timedelta(weeks=self.sealed_holdout_weeks)
-        foundation = normalized[
-            (normalized.time >= pd.Timestamp(self.foundation_start))
-            & (normalized.time <= pd.Timestamp(self.foundation_end))
+        foundation = foundation_source[
+            (foundation_source.time >= pd.Timestamp(self.foundation_start))
+            & (foundation_source.time <= pd.Timestamp(self.foundation_end))
         ]
         replay = normalized[
             (normalized.time >= pd.Timestamp(self.rolling_start))
@@ -68,15 +72,27 @@ class MarketAdaptiveReplayService:
             "holdout": holdout.reset_index(drop=True),
         }
 
-    def run(self, payload: SimpleBacktestRequest, df: pd.DataFrame, score_calculator) -> dict[str, object]:
-        segments = self.split_dataset(df)
+    def run(
+        self,
+        payload: SimpleBacktestRequest,
+        df: pd.DataFrame,
+        score_calculator,
+        foundation_df: pd.DataFrame | None = None,
+    ) -> dict[str, object]:
+        segments = self.split_dataset(df, foundation_df)
         # Foundation is used only to calculate the train-side score.  The
         # promotion-only Monte Carlo/DNA/telemetry streams belong to the
         # chronological replay below; recomputing them on the 2004-2025
         # archive made every portfolio member pay for evidence that is never
         # read by a gate.  Keep the execution core and ledger identical.
+        # The foundation archive is used only for the train-side score. A
+        # full candle decision trace on 130k+ historical rows is neither read
+        # by a gate nor promotion evidence, and retaining one event per candle
+        # can push the Windows worker into a multi-GB memory restart. Keep the
+        # calculation identical while explicitly suppressing that projection.
+        foundation_payload = payload.model_copy(update={"emit_decision_trace": False})
         foundation_result = run_simple_ema_rsi_backtest_on_dataframe(
-            payload, segments["foundation"], include_differential_pair=False, lightweight=True
+            foundation_payload, segments["foundation"], include_differential_pair=False, lightweight=True
         ).model_dump()
         replay_result = run_simple_ema_rsi_backtest_on_dataframe(payload, segments["replay"]).model_dump()
         # Preserve the raw chronological ledger diagnostics before replacing
@@ -102,6 +118,7 @@ class MarketAdaptiveReplayService:
         replay_result["noise_sanity"] = noise_label_permutation_test(noise_values)
 
         train_score = score_calculator(foundation_result)
+        del foundation_result, foundation_payload
         forward_score = score_calculator(replay_result)
         checkpoints = self._checkpoint_results(
             payload,
@@ -1163,8 +1180,13 @@ class MarketAdaptiveReplayService:
             "rule": "Transition policy may WAIT, reduce risk or re-route; steady-state PF alone is insufficient.",
         }
 
-    def sealed_holdout(self, payload: SimpleBacktestRequest, df: pd.DataFrame) -> tuple[dict[str, object], dict[str, object]]:
-        segments = self.split_dataset(df)
+    def sealed_holdout(
+        self,
+        payload: SimpleBacktestRequest,
+        df: pd.DataFrame,
+        foundation_df: pd.DataFrame | None = None,
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        segments = self.split_dataset(df, foundation_df)
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, segments["holdout"]).model_dump()
         result["gold_holdout"] = {
             "protocol": "gold_holdout_v1", "status": "released_once",

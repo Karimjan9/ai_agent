@@ -18,7 +18,7 @@ from app.routers.backtests import router as backtests_router
 from app.schemas import SimpleBacktestRequest, SimpleBacktestResponse
 from app.services.backtester import (
     _advance_trailing_stop, _apply_execution_regime, _entry_price, _exit_distances, _exit_price, _intrabar_exit, _load_regime_source,
-    _load_simple_candles, _position_size_multiple, _volatility_risk_multiplier, _volume_risk_multiplier,
+    _load_simple_candles, _position_size_multiple, _resolve_dataset_path, _volatility_risk_multiplier, _volume_risk_multiplier,
     run_simple_ema_rsi_backtest, run_simple_ema_rsi_backtest_on_dataframe,
 )
 from app.services.parameter_schema import validate_strategy_parameters
@@ -48,6 +48,73 @@ _active_replay_count = 0
 _last_replay_started_at: str | None = None
 _last_replay_finished_at: str | None = None
 _last_replay_termination: str | None = None
+
+
+def _load_foundation_candles(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
+    """Load the separately sealed foundation archive for full evidence."""
+    if not payload.foundation_dataset_path:
+        return None
+    return pd.read_csv(_resolve_dataset_path(payload.foundation_dataset_path))
+
+
+def _candidate_cache_payload(
+    cohort_payload: SimpleBacktestRequest,
+    strategy_payload: SimpleBacktestRequest,
+    strategy_name: str,
+) -> SimpleBacktestRequest:
+    """Build the cohort-independent identity for one candidate replay.
+
+    The full request carries all repair contracts so the cohort can be
+    audited.  A per-candidate cache must not change identity merely because a
+    sibling timed out or was already resolved, so retain only this strategy's
+    contract while preserving every other policy input.
+    """
+    candidate_policy = dict(cohort_payload.policy_context or {})
+    repair_contracts = candidate_policy.get("repair_contracts")
+    if isinstance(repair_contracts, dict):
+        candidate_contract = repair_contracts.get(strategy_name)
+        candidate_policy["repair_contracts"] = (
+            {strategy_name: candidate_contract}
+            if isinstance(candidate_contract, dict)
+            else {}
+        )
+    # This is a Laravel scheduling/runtime budget envelope, not a strategy
+    # execution input. Cohort size changes during bounded recovery must not
+    # invalidate an already completed candidate's deterministic replay cache.
+    candidate_policy.pop("full_replay_runtime_policy", None)
+    return strategy_payload.model_copy(update={
+        "policy_context": candidate_policy,
+        "strategies": [],
+    })
+
+
+def _candidate_cache_contract_is_current(
+    cached_item: object,
+    payload: SimpleBacktestRequest,
+) -> bool:
+    """Reject legacy candidate caches before they can become full evidence.
+
+    A cache may be structurally valid while carrying a pre-contract result or
+    a hash produced by a different language's float serializer.  Laravel
+    validates the returned contract at the evidence boundary, but recomputing
+    here avoids spending a long cohort replay only to quarantine it after the
+    ledger has already been calculated.
+    """
+    if not isinstance(cached_item, dict):
+        return False
+    result = cached_item.get("result")
+    if not isinstance(result, dict):
+        return False
+    received = result.get("execution_contract")
+    if not isinstance(received, dict):
+        return False
+    expected = execution_contract_metadata(payload)
+    return (
+        received.get("execution_hash") == expected.get("execution_hash")
+        and received.get("parameters") == expected.get("parameters")
+    )
+
+
 _last_replay_cache_cleanup = 0.0
 _replay_cache_cleanup_lock = Lock()
 
@@ -170,6 +237,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
 
     try:
         source_df = _load_simple_candles(payload)
+        foundation_df = _load_foundation_candles(payload) if payload.evaluation_mode == "replay" else None
         walk_forward = WalkForwardService()
 
         for config in strategy_configs:
@@ -192,6 +260,28 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 "parameters": parameters,
                 "strategies": [],
             })
+            # A full request is a cohort so CSCV/DSR can be reconstructed from
+            # the complete candidate distribution.  The expensive execution
+            # for each candidate, however, is independent.  Persist that
+            # candidate result after it completes so a timed-out cohort can be
+            # resumed with only the unfinished strategy.  The cache key keeps
+            # the candidate's own contract, code digest and dataset hashes;
+            # the cohort-level statistical envelope is deliberately rebuilt
+            # below after every candidate has been collected.
+            candidate_payload = _candidate_cache_payload(payload, strategy_payload, strategy_name)
+            candidate_cache_key = _replay_cache_key("candidate", candidate_payload)
+            candidate_cache = _load_immutable_replay_cache(candidate_cache_key)
+            cached_item = candidate_cache.get("item") if isinstance(candidate_cache, dict) else None
+            if (
+                isinstance(candidate_cache, dict)
+                and candidate_cache.get("protocol") == "candidate_replay_cache_v1"
+                and candidate_cache.get("strategy") == strategy_name
+                and isinstance(cached_item, dict)
+                and isinstance(cached_item.get("result"), dict)
+                and _candidate_cache_contract_is_current(cached_item, candidate_payload)
+            ):
+                leaderboard.append(cached_item)
+                continue
             if payload.evaluation_mode == "incremental":
                 ordered = source_df.sort_values("time").reset_index(drop=True)
                 # Tier 1 is deliberately cheap: it measures whether there is
@@ -261,7 +351,9 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "result": {**incremental_result, "evaluation_mode": "incremental"},
                 }
             elif payload.evaluation_mode == "replay":
-                analysis = MarketAdaptiveReplayService().run(strategy_payload, source_df, calculate_strategy_score)
+                analysis = MarketAdaptiveReplayService().run(
+                    strategy_payload, source_df, calculate_strategy_score, foundation_df
+                )
             else:
                 analysis = walk_forward.run(strategy_payload, source_df, calculate_strategy_score)
             result_data = analysis["result"]
@@ -278,8 +370,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 fitness_score,
             )
 
-            leaderboard.append(
-                {
+            candidate_item = {
                     "strategy": strategy_name,
                     "base_strategy": config.get("base_strategy"),
                     "version": config.get("version"),
@@ -293,8 +384,13 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "robustness_score": analysis["robustness_score"],
                     "is_overfit": analysis["is_overfit"],
                     "result": result_data,
-                }
-            )
+            }
+            leaderboard.append(candidate_item)
+            _store_immutable_replay_cache(candidate_cache_key, {
+                "protocol": "candidate_replay_cache_v1",
+                "strategy": strategy_name,
+                "item": candidate_item,
+            })
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -383,8 +479,9 @@ def _run_portfolio_backtest_sync(payload: SimpleBacktestRequest) -> dict[str, ob
         # full-validation candidate. A plain simple replay would silently
         # omit those gates and make the combined portfolio incomparable.
         source_df = _load_simple_candles(run_payload)
+        foundation_df = _load_foundation_candles(run_payload)
         analysis = MarketAdaptiveReplayService().run(
-            run_payload, source_df, calculate_strategy_score
+            run_payload, source_df, calculate_strategy_score, foundation_df
         )
         return analysis["result"]
     except FileNotFoundError as exc:
@@ -401,11 +498,10 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
     ) or any("differential" in str(member.strategy).lower() for member in payload.strategies)
 
     if operation == "portfolio":
-        # Laravel's portfolio HTTP budget is 1800s. Keep a small transport
-        # margin while allowing a legitimate sealed council replay to finish
-        # when Windows CPU scheduling places it just beyond the old 1650s
-        # cutoff. This changes no quality gate or replay content.
-        env_name, default, ceiling = "AI_REPLAY_PORTFOLIO_HARD_TIMEOUT_SECONDS", 2220, 2220
+        # Keep the evaluator bounded, but give a legitimate sealed council
+        # replay enough room for its long foundation lane on Windows. The
+        # Laravel transport remains longer than this child deadline.
+        env_name, default, ceiling = "AI_REPLAY_PORTFOLIO_HARD_TIMEOUT_SECONDS", 3600, 3600
     elif payload.evaluation_mode == "incremental" and is_differential:
         env_name, default, ceiling = "AI_REPLAY_DIFFERENTIAL_SCREEN_HARD_TIMEOUT_SECONDS", 780, 840
     elif payload.evaluation_mode == "incremental":
@@ -414,10 +510,11 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
         # but leave enough room for a normal Windows worker under load.
         env_name, default, ceiling = "AI_REPLAY_SCREEN_HARD_TIMEOUT_SECONDS", 330, 330
     else:
-        # Full replay has the same 1800s Laravel HTTP budget. The former 1650s
-        # default classified a still-running, CPU-active replay as an
-        # evaluation_error before the caller's own timeout could expire.
-        env_name, default, ceiling = "AI_REPLAY_FULL_HARD_TIMEOUT_SECONDS", 2220, 2220
+        # Full replay includes the separate 2005-2025 foundation score and
+        # several deterministic robustness lanes. The old 2220s bound
+        # classified a CPU-active replay as an evaluation error before that
+        # sealed work could finish.
+        env_name, default, ceiling = "AI_REPLAY_FULL_HARD_TIMEOUT_SECONDS", 3600, 3600
 
     try:
         configured = int(os.getenv(env_name, str(default)))
@@ -453,9 +550,8 @@ def _terminate_replay_tree(process: subprocess.Popen | None, stdout_capture=None
             try:
                 subprocess.run(
                     ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                     timeout=10,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                     check=False,
@@ -520,6 +616,8 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
         "payload": payload.model_dump(mode="json"),
     }, ensure_ascii=False, separators=(",", ":"))
     child_env = os.environ.copy()
+    child_env["PYTHONUTF8"] = "1"
+    child_env["PYTHONIOENCODING"] = "utf-8"
     # Backtests do not need provider/API credentials. Do not copy ambient
     # secrets into short-lived evaluator children.
     for key in list(child_env):
@@ -579,7 +677,11 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
 
         if process.returncode != 0:
             _last_replay_termination = f"child_exit:{operation}:{process.returncode}"
-            detail = (stderr or stdout or "AI replay worker exited before returning evidence.").strip()
+            detail = (
+                stderr
+                or stdout
+                or f"AI replay worker exited before returning evidence (exit_code={process.returncode})."
+            ).strip()
             raise HTTPException(status_code=503, detail=detail[-500:])
         try:
             message = json.loads(stdout or "{}")
@@ -659,12 +761,18 @@ def _runtime_dependency_manifest() -> dict[str, object]:
 
 
 def _dataset_dependency_manifest(payload: SimpleBacktestRequest) -> dict[str, object]:
-    paths = [payload.dataset_path, payload.regime_dataset_path]
+    paths = [
+        ("dataset", payload.dataset_path),
+        ("regime_dataset", payload.regime_dataset_path),
+        # Full replay deliberately uses a separate pre-2026 foundation
+        # archive. Its content hash must participate in the immutable cache
+        # identity or a changed training archive could reuse old evidence.
+        ("foundation_dataset", payload.foundation_dataset_path),
+    ]
     manifest: dict[str, object] = {}
-    for index, raw_path in enumerate(paths):
+    for key, raw_path in paths:
         if not raw_path:
             continue
-        key = "dataset" if index == 0 else "regime_dataset"
         path = Path(raw_path)
         if not path.is_absolute():
             path = (Path(__file__).resolve().parent.parent / path).resolve()
@@ -675,6 +783,8 @@ def _dataset_dependency_manifest(payload: SimpleBacktestRequest) -> dict[str, ob
                 manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
                 item["manifest_sha256"] = manifest_payload.get("sha256")
                 item["manifest_file_hash"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+                if path.is_file():
+                    item["file_hash"] = hashlib.sha256(path.read_bytes()).hexdigest()
             except (OSError, json.JSONDecodeError):
                 item["manifest_file_hash"] = None
         elif path.is_file():
@@ -1253,7 +1363,8 @@ def run_sealed_holdout(payload: SimpleBacktestRequest) -> dict[str, object]:
             parameters = validate_strategy_parameters(payload.strategy, payload.parameters, payload.base_strategy)
             payload = payload.model_copy(update={"parameters": parameters})
         df = _load_simple_candles(payload)
-        result, period = MarketAdaptiveReplayService().sealed_holdout(payload, df)
+        foundation_df = _load_foundation_candles(payload)
+        result, period = MarketAdaptiveReplayService().sealed_holdout(payload, df, foundation_df)
         return {"score": calculate_strategy_score(result), "result": result, "rows": period["rows"], "period": period,
                 "protocol": "market_adaptive_replay_sealed_holdout"}
     except (ValueError, FileNotFoundError) as exc:

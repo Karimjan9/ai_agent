@@ -26,6 +26,7 @@ class SealedHoldoutService
             return $existing;
         }
         $datasetPath = $this->datasets->export($performance->symbol, $performance->timeframe);
+        $foundation = $this->datasets->ensureFoundationDataset($performance->symbol, $performance->timeframe);
         $manifest = is_file($datasetPath.'.manifest.json')
             ? (array) json_decode((string) file_get_contents($datasetPath.'.manifest.json'), true)
             : [];
@@ -43,7 +44,8 @@ class SealedHoldoutService
             'parameters' => $isPortfolio ? (array) data_get($runtime, 'parameters', []) : ($model->parameters ?? []),
             'portfolio_members' => $portfolioMembers,
             'runtime_ensemble_policy' => (array) data_get($runtime, 'runtime_ensemble_policy', []),
-            'dataset_path' => $datasetPath, 'initial_balance' => 10000, 'risk_per_trade' => 1,
+            'dataset_path' => $datasetPath, 'foundation_dataset_path' => $foundation['path'],
+            'initial_balance' => 10000, 'risk_per_trade' => 1,
             'execution' => $executionContract['parameters'], 'execution_contract' => $executionContract,
         ]);
         if ($response->failed()) {

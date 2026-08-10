@@ -25,6 +25,7 @@ class EliteAgentPortfolioGateService
     public function __construct(
         private StrategyParameterSchemaService $schemas,
         private AgentKnowledgeService $knowledge,
+        private CandidateGateDecisionService $gateDecisions,
     ) {}
 
     public function syncMarket(string $symbol, string $timeframe, Collection $candidates): array
@@ -381,11 +382,73 @@ class EliteAgentPortfolioGateService
 
     public function ready(string $symbol, string $timeframe): ?EliteAgentPortfolio
     {
-        return EliteAgentPortfolio::query()->with('members.performance.modelVersion')
+        $portfolio = EliteAgentPortfolio::query()->with('members.performance.modelVersion')
             ->where(compact('symbol', 'timeframe'))
             ->where('gate_status', 'passed')
             ->whereIn('status', ['forward_validated', 'paper'])
             ->latest('last_evaluated_at')->first();
+
+        if (! $portfolio || ! $this->activePassport($portfolio)) return null;
+
+        return $portfolio;
+    }
+
+    /**
+     * A passed portfolio row is still only a projection. Re-check the proxy
+     * forward ledger and every member passport at runtime so invalidation of
+     * one specialist, a stale proxy, or a manually altered gate cannot leave
+     * a previously-ready council executable.
+     */
+    private function activePassport(EliteAgentPortfolio $portfolio): bool
+    {
+        if (data_get($portfolio->evidence, 'gate.status') !== 'passed'
+            || $portfolio->members->count() < 2
+            || (int) $portfolio->member_count !== $portfolio->members->count()) {
+            return false;
+        }
+
+        $proxyId = (int) data_get($portfolio->evidence, 'portfolio_performance_id', 0);
+        $proxy = $proxyId > 0
+            ? ModelMarketPerformance::with('modelVersion')->find($proxyId)
+            : null;
+        if (! $proxy
+            || ! (bool) data_get($proxy->metrics, 'portfolio_proxy', false)
+            || (int) data_get($proxy->metrics, 'elite_portfolio_id', 0) !== (int) $portfolio->id
+            || $proxy->evidence_status !== 'valid'
+            || $proxy->modelVersion?->evidence_status !== 'valid') {
+            return false;
+        }
+
+        $proxyGate = CandidateGateDecision::query()
+            ->where('model_market_performance_id', $proxy->id)
+            ->where('stage', 'statistical_forward_gate')
+            ->latest('evaluated_at')
+            ->first();
+        if ($proxyGate?->decision !== 'passed'
+            || data_get($proxyGate->metrics, 'elite_agent_passport.status') !== 'passed') {
+            return false;
+        }
+
+        foreach ($portfolio->members as $member) {
+            $performance = $member->performance;
+            if (! $performance
+                || ! in_array((string) $performance->status, ['forward_validated', 'paper'], true)
+                || $performance->evidence_status !== 'valid'
+                || $performance->modelVersion?->evidence_status !== 'valid') {
+                return false;
+            }
+            $decision = CandidateGateDecision::query()
+                ->where('model_market_performance_id', $performance->id)
+                ->where('stage', 'statistical_forward_gate')
+                ->latest('evaluated_at')
+                ->first();
+            if ($decision?->decision !== 'passed'
+                || data_get($decision->metrics, 'elite_agent_passport.status') !== 'passed') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function routeMembers(EliteAgentPortfolio $portfolio, string $regime, string $volatility): Collection
@@ -644,6 +707,35 @@ class EliteAgentPortfolioGateService
         // arena or calendar-alignment proof to reach paper.
         $passport = $this->portfolioPassport($result);
         $reasons = [...$reasons, ...$passport['reason_codes']];
+        // Carry the exact combined passport into the proxy result.  The proxy
+        // is a first-class forward candidate, so paper admission must be able
+        // to verify the same passport without reading mutable portfolio state.
+        $result['portfolio_passport'] = $passport;
+        $proxy = null;
+        $portfolioForward = null;
+        if ($reasons === []) {
+            // Keep a portfolio proxy separate from every member's standalone
+            // forward decision. The proxy is the only object allowed to
+            // enter paper through this combined lane.
+            $proxy = $this->ensurePortfolioPerformance($portfolio, $result);
+            if (! $proxy) {
+                $reasons[] = 'FAILED_PORTFOLIO_PROXY_IDENTITY';
+            } else {
+                $proxyPassport = (array) data_get($proxy->metrics, 'elite_agent_passport', []);
+                $portfolioForward = $this->gateDecisions->recordPortfolioForward(
+                    $proxy,
+                    $result,
+                    $proxyPassport,
+                );
+                if ($portfolioForward->decision !== 'passed') {
+                    $reasons = [
+                        ...$reasons,
+                        'FAILED_PORTFOLIO_FORWARD_HANDOFF',
+                        ...((array) $portfolioForward->reason_codes),
+                    ];
+                }
+            }
+        }
         $gate = ['status' => $reasons === [] ? 'passed' : 'failed', 'reason_codes' => array_values(array_unique($reasons))];
         $evidence = [
             'gate' => $gate,
@@ -655,14 +747,9 @@ class EliteAgentPortfolioGateService
             'result' => $result,
             'recorded_at' => now()->toIso8601String(),
             'promotion_evidence' => true,
+            'portfolio_forward_gate' => $portfolioForward?->toArray(),
         ];
-        if ($gate['status'] === 'passed') {
-            // Keep a portfolio proxy separate from every member's standalone
-            // forward decision. The proxy is the only object allowed to
-            // enter paper through this combined lane.
-            $proxy = $this->ensurePortfolioPerformance($portfolio, $result);
-            $evidence['portfolio_performance_id'] = $proxy?->id;
-        }
+        $evidence['portfolio_performance_id'] = $proxy?->id;
         $portfolio->update([
             'status' => $reasons === [] ? 'forward_validated' : 'blocked',
             'gate_status' => $gate['status'],
@@ -771,7 +858,8 @@ class EliteAgentPortfolioGateService
         $selected = collect();
         $selectedRegimes = [];
         $pool = $eligible->values();
-        while ($selected->count() < 4 && $pool->isNotEmpty()) {
+        $memberLimit = max(2, (int) config('services.lab_selection.parent_max_runtime', 8));
+        while ($selected->count() < $memberLimit && $pool->isNotEmpty()) {
             // The first member is the strongest sealed niche. Every later
             // member must earn its place twice: positive standalone evidence
             // and a different failure signature. This turns the portfolio
@@ -984,6 +1072,25 @@ class EliteAgentPortfolioGateService
         if (! $primary) return null;
         $strategy = 'portfolio_'.$portfolio->symbol.'_'.$portfolio->timeframe.'_v1';
         $memberSpecs = $this->memberSpecs($portfolio);
+        $parameterHash = hash('sha256', json_encode([
+            'members' => $memberSpecs, 'router_policy' => $this->portfolioPolicy(),
+            'portfolio_parameters' => $this->portfolioParameters(),
+        ], JSON_PRESERVE_ZERO_FRACTION));
+        $portfolioPassport = [
+            ...(array) data_get($result, 'portfolio_passport', []),
+            'protocol' => 'portfolio_elite_passport_v1',
+            'status' => 'passed',
+            'portfolio_id' => $portfolio->id,
+            'membership_hash' => $portfolio->membership_hash,
+            'parameter_hash' => $parameterHash,
+            'final_exam_result_hash' => hash(
+                'sha256',
+                json_encode($result, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES),
+            ),
+            'promotion_evidence' => true,
+            'source' => 'recordCombinedEvidence',
+            'rule' => 'Portfolio proxy inherits only a passed combined passport; member passports remain separate.',
+        ];
         $metadata = [
             'base_strategy' => 'portfolio',
             'portfolio_proxy' => true,
@@ -1003,6 +1110,7 @@ class EliteAgentPortfolioGateService
                 'members' => $memberSpecs, 'router_policy' => $this->portfolioPolicy(),
                 'portfolio_parameters' => $this->portfolioParameters(),
             ], JSON_PRESERVE_ZERO_FRACTION)),
+            'elite_agent_passport' => $portfolioPassport,
         ];
         $model = ModelVersion::query()->updateOrCreate(
             ['strategy' => $strategy],
@@ -1016,13 +1124,8 @@ class EliteAgentPortfolioGateService
             ...$result,
             'portfolio_proxy' => true,
             'elite_portfolio_id' => $portfolio->id,
-            'elite_agent_passport' => [
-                'protocol' => 'portfolio_elite_passport_v1',
-                'status' => 'passed',
-                'portfolio_id' => $portfolio->id,
-                'source' => 'recordCombinedEvidence',
-                'rule' => 'Portfolio proxy inherits only a passed combined passport; member passports remain separate.',
-            ],
+            'portfolio_passport' => $portfolioPassport,
+            'elite_agent_passport' => $portfolioPassport,
         ];
         $performance = ModelMarketPerformance::query()->updateOrCreate(
             ['model_version_id' => $model->id, 'symbol' => $portfolio->symbol, 'timeframe' => $portfolio->timeframe],

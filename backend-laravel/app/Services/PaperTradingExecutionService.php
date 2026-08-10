@@ -102,6 +102,12 @@ class PaperTradingExecutionService
 
     private function captureLatestSignal(ModelMarketPerformance $candidate, $universe): int
     {
+        // A stale/invalidated portfolio proxy must stop before the AI
+        // transport. Sending an empty portfolio_members payload would make
+        // Python interpret the proxy as a normal `portfolio` strategy and
+        // either error or, worse, lose the explicit WAIT reason.
+        if (! $this->runtimePortfolioAllowed($candidate)) return 0;
+
         $rows = $this->candles->candlesForBacktest($candidate->symbol, $candidate->timeframe, 1000);
         if (count($rows) < 200) {
             $this->gateDecisions->recordPaperCapture($candidate, 'NO_SIGNAL_OPPORTUNITY', ['available_candles' => count($rows)]);
@@ -211,6 +217,7 @@ class PaperTradingExecutionService
         if (! $signal) {
             return 0;
         }
+        if (! $this->runtimePortfolioAllowed($candidate)) return 0;
         if ($this->executionState->signalInvalidatedByDisconnect($candidate, $signal)) {
             $this->executionState->record($candidate, 'cancelled', $signal, null, ['reason' => 'STALE_AFTER_PROVIDER_DISCONNECT']);
             return 0;
@@ -333,6 +340,20 @@ class PaperTradingExecutionService
         $candidate->update(['status' => 'paper', 'paper_status' => 'running']);
 
         return 1;
+    }
+
+    private function runtimePortfolioAllowed(ModelMarketPerformance $candidate): bool
+    {
+        if (! (bool) data_get($candidate->metrics, 'portfolio_proxy', false)) return true;
+
+        $runtime = $this->runtimeEnsembles->requestPayload($candidate);
+        if (data_get($runtime, 'runtime_action') === 'ROUTE') return true;
+
+        $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_RUNTIME_PORTFOLIO_POLICY', [
+            'runtime_reason' => data_get($runtime, 'runtime_ensemble_policy.reason', 'PORTFOLIO_PASSPORT_NOT_ACTIVE'),
+            'runtime_policy' => data_get($runtime, 'runtime_ensemble_policy', []),
+        ]);
+        return false;
     }
 
     private function reconcile(ModelMarketPerformance $candidate): int

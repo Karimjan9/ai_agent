@@ -70,7 +70,7 @@ class ValidateElitePortfolios extends Command
             // long canonical replay could overlap with the hourly scheduler
             // and make the same portfolio appear to have two contradictory
             // evidence records.
-            $lock = Cache::lock("elite-portfolio-replay:{$symbol}:{$timeframe}", 3300);
+            $lock = Cache::lock("elite-portfolio-replay:{$symbol}:{$timeframe}", 4500);
             if (! $lock->get()) {
                 $this->warn("{$symbol}: another sealed portfolio replay is active; this run was skipped.");
                 continue;
@@ -80,7 +80,10 @@ class ValidateElitePortfolios extends Command
             // database preflight above is only a hint and has a race with a
             // worker reservation; this shared cache lock is the authority for
             // direct/scheduled portfolio replays.
-            $laneLock = Cache::lock('laravel-queue-overlap:neurotrader-ai-heavy-replay', 2500);
+            $laneLock = Cache::lock(
+                'laravel-queue-overlap:'.(string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'),
+                4500,
+            );
             if (! $laneLock->get()) {
                 $this->warn("{$symbol}: shared AI replay lane is active; combined portfolio replay keyinga qoldirildi.");
                 $lock->release();
@@ -89,7 +92,8 @@ class ValidateElitePortfolios extends Command
 
             try {
             $dataset = $datasets->export($symbol, $timeframe);
-            $timeout = min(2280, max(60, (int) config('services.lab_selection.portfolio_replay_timeout_seconds', 2280)));
+            $foundation = $datasets->ensureFoundationDataset($symbol, $timeframe);
+            $timeout = min(3900, max(60, (int) config('services.lab_selection.portfolio_replay_timeout_seconds', 3900)));
             $requestId = 'portfolio-'.$symbol.'-'.strtolower($timeframe).'-'.bin2hex(random_bytes(6));
             if (! $this->replayLaneReady($requestId)) {
                 $this->warn("{$symbol}: AI replay lane band; combined portfolio replay keyinga qoldirildi.");
@@ -124,6 +128,7 @@ class ValidateElitePortfolios extends Command
                     'initial_balance' => 10000,
                     'risk_per_trade' => 1,
                     'dataset_path' => $dataset,
+                    'foundation_dataset_path' => $foundation['path'],
                     'execution' => $this->executionAssumptions($symbol),
                     'execution_contract' => app(ExecutionContractService::class)->for($symbol, $timeframe),
                 ]);

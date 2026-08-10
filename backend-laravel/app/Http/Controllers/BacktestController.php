@@ -40,6 +40,19 @@ class BacktestController extends Controller
         ];
         $requestHash = $manualBacktests->requestHash($payload);
         $idempotencyKey = trim((string) $request->header('Idempotency-Key'));
+        $idempotencyKeyHash = $idempotencyKey !== '' ? hash('sha256', $idempotencyKey) : null;
+
+        if ($idempotencyKeyHash !== null) {
+            $existing = $manualBacktests->findByIdempotencyKey($idempotencyKeyHash);
+            if ($existing) {
+                if (! hash_equals((string) $existing->request_hash, $requestHash)) {
+                    return back()->with('error', 'Idempotency-Key boshqa backtest payload bilan allaqachon ishlatilgan.');
+                }
+
+                return $this->respondForRun($existing->fresh(), $payload, $manualBacktests);
+            }
+        }
+
         $lockKey = 'web-canonical-backtest:'.($idempotencyKey !== ''
             ? hash('sha256', $idempotencyKey)
             : $requestHash);
@@ -51,7 +64,7 @@ class BacktestController extends Controller
 
         try {
             $run = $manualBacktests->submit($payload, $requestHash, [
-                'idempotency_key_hash' => $idempotencyKey !== '' ? hash('sha256', $idempotencyKey) : null,
+                'idempotency_key_hash' => $idempotencyKeyHash,
             ]);
 
             return $this->respondForRun($run, $payload, $manualBacktests);

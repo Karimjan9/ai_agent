@@ -54,16 +54,17 @@ class EvolutionArchiveService
         }
 
         $islandKey = data_get($this->semanticGroups->descriptor($symbol, $timeframe, $family, $niche), 'key');
-        $entries = LabEvolutionArchiveEntry::with('modelVersion')
+        $archiveLimit = (int) config('services.lab_selection.archive_max_per_island', 0);
+        $entryQuery = LabEvolutionArchiveEntry::with('modelVersion')
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))
             ->where('strategy_family', $family)
             ->where('island_key', $islandKey)
             ->whereIn('archive_type', $allowedTypes)
             ->whereIn('status', ['active', 'retained'])
-            ->latest('novelty_score')
-            ->limit(max(1, (int) config('services.lab_selection.archive_max_per_island', 32)))
-            ->get();
+            ->latest('novelty_score');
+        if ($archiveLimit > 0) $entryQuery->limit($archiveLimit);
+        $entries = $entryQuery->get();
 
         foreach ($entries as $entry) {
             $model = $entry->modelVersion;
@@ -212,20 +213,21 @@ class EvolutionArchiveService
         string $timeframe,
         string $family,
         ?array $niche,
-        int $limit = 8,
+        int $limit = 0,
     ): array {
+        $limit = max(0, $limit);
         $target = $this->semanticGroups->descriptor($symbol, $timeframe, $family, $niche);
         $targetKey = (string) data_get($target, 'key');
-        $rows = LabEvolutionArchiveEntry::with('modelVersion')
+        $rowQuery = LabEvolutionArchiveEntry::with('modelVersion')
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))
             ->where('strategy_family', $family)
             ->where('island_key', '!=', $targetKey)
             ->whereIn('archive_type', ['convergence', 'diversity'])
             ->whereIn('status', ['active', 'retained'])
-            ->latest('novelty_score')
-            ->limit(max(1, $limit * 4))
-            ->get();
+            ->latest('novelty_score');
+        if ($limit > 0) $rowQuery->limit($limit * 4);
+        $rows = $rowQuery->get();
 
         $candidates = [];
         foreach ($rows as $entry) {
@@ -250,7 +252,7 @@ class EvolutionArchiveService
                     : 'compatible cell is knowledge-only; cross-cell genetic edge is forbidden',
                 'promotion_evidence' => false,
             ];
-            if (count($candidates) >= max(1, $limit)) break;
+            if ($limit > 0 && count($candidates) >= $limit) break;
         }
 
         return [
@@ -314,17 +316,21 @@ class EvolutionArchiveService
 
     private function refreshFailureArchive(string $symbol, string $timeframe, string $family, string $islandKey): void
     {
-        $limit = max(1, (int) config('services.lab_selection.archive_failure_limit', 100));
-        $agents = LabAgent::with('modelVersion')
+        $limit = max(0, (int) config('services.lab_selection.archive_failure_limit', 0));
+        $agentQuery = LabAgent::with('modelVersion')
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))
             ->where('strategy_family', $family)
             ->whereIn('lifecycle_status', [
                 'rejected', 'failed', 'overfit', 'archived', 'stagnated', 'technical_quarantine', 'abandoned',
             ])
-            ->latest('id')
-            ->limit($limit)
-            ->get();
+            ->latest('id');
+        // Failure evidence is a safety memory: a failed lineage must not
+        // remain active in a convergence/diversity archive merely because it
+        // fell outside an arbitrary "latest N" window. A positive value is
+        // available only as an explicit operational backfill budget.
+        if ($limit > 0) $agentQuery->limit($limit);
+        $agents = $agentQuery->get();
 
         foreach ($agents as $agent) {
             if (! $agent->modelVersion) continue;

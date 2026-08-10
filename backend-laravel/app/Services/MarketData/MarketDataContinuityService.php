@@ -9,6 +9,8 @@ use Carbon\CarbonImmutable;
 
 class MarketDataContinuityService
 {
+    public function __construct(private HistoricalDataQualityService $historicalData) {}
+
     public function recoveryStart(string $provider, string $symbol, string $timeframe, ?CarbonImmutable $latest): ?CarbonImmutable
     {
         $state = $this->state($provider, $symbol, $timeframe);
@@ -139,7 +141,8 @@ class MarketDataContinuityService
 
         $intervalMinutes = $this->intervalMinutes($timeframe);
         for ($cursor = $this->alignToInterval($from, $timeframe); $cursor->lessThanOrEqualTo($to); $cursor = $cursor->addMinutes($intervalMinutes)) {
-            if ($this->isMarketOpenCandle($cursor) && ! $existing->has($cursor->format('Y-m-d H:i:s'))) {
+            if ($this->historicalData->isContinuityMarketOpen($cursor, $symbol)
+                && ! $existing->has($cursor->format('Y-m-d H:i:s'))) {
                 return $cursor;
             }
         }
@@ -150,16 +153,6 @@ class MarketDataContinuityService
     private function lastClosedBoundary(CarbonImmutable $time, string $timeframe): CarbonImmutable
     {
         return $this->alignToInterval($time, $timeframe)->subMinutes($this->intervalMinutes($timeframe));
-    }
-
-    private function isMarketOpenCandle(CarbonImmutable $time): bool
-    {
-        return match ($time->dayOfWeek) {
-            CarbonImmutable::SATURDAY => false,
-            CarbonImmutable::SUNDAY => $time->hour >= 22,
-            CarbonImmutable::FRIDAY => $time->hour < 22,
-            default => true,
-        };
     }
 
     private function intervalMinutes(string $timeframe): int

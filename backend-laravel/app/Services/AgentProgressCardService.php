@@ -298,12 +298,25 @@ class AgentProgressCardService
 
     private function parentDiff(LabAgent $agent, ?ModelMarketPerformance $performance, array $result): array
     {
-        $parentId = $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id;
+        $parentIds = app(ParentContributionGraphService::class)->ids($agent);
+        $parentId = $parentIds[0] ?? null;
+        $parents = $parentIds === []
+            ? collect()
+            : ModelMarketPerformance::query()
+                ->whereIn('model_version_id', $parentIds)
+                ->where('symbol', $agent->symbol)
+                ->where('timeframe', $agent->timeframe)
+                ->latest('id')
+                ->get()
+                ->unique('model_version_id')
+                ->sortBy(fn (ModelMarketPerformance $candidate): int => (int) array_search(
+                    (int) $candidate->model_version_id,
+                    $parentIds,
+                    true,
+                ))
+                ->values();
         $metrics = [];
-        $parent = $parentId
-            ? ModelMarketPerformance::query()->where('model_version_id', $parentId)
-                ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->latest('id')->first()
-            : null;
+        $parent = $parents->first();
         foreach (['forward_score', 'total_trades', 'profit_factor', 'max_drawdown_percent', 'rolling_forward_wins'] as $key) {
             $before = $parent ? data_get($parent->metrics, $key, $key === 'forward_score' ? $parent->forward_score : null) : null;
             $after = data_get($result, $key, data_get($performance?->metrics, $key));
@@ -313,9 +326,33 @@ class AgentProgressCardService
                 'delta' => is_numeric($before) && is_numeric($after) ? round((float) $after - (float) $before, 6) : null,
             ];
         }
+        $parentMetrics = $parents->mapWithKeys(function (ModelMarketPerformance $candidate): array {
+            $values = [];
+            foreach (['forward_score', 'total_trades', 'profit_factor', 'max_drawdown_percent', 'rolling_forward_wins'] as $key) {
+                $values[$key] = data_get($candidate->metrics, $key, $key === 'forward_score' ? $candidate->forward_score : null);
+            }
+            return [(string) $candidate->model_version_id => $values];
+        })->all();
+        $metricDeltaByParent = $parents->mapWithKeys(function (ModelMarketPerformance $candidate) use ($result, $performance): array {
+            $values = [];
+            foreach (['forward_score', 'total_trades', 'profit_factor', 'max_drawdown_percent', 'rolling_forward_wins'] as $key) {
+                $before = data_get($candidate->metrics, $key, $key === 'forward_score' ? $candidate->forward_score : null);
+                $after = data_get($result, $key, data_get($performance?->metrics, $key));
+                $values[$key] = [
+                    'before' => is_numeric($before) ? (float) $before : $before,
+                    'after' => is_numeric($after) ? (float) $after : $after,
+                    'delta' => is_numeric($before) && is_numeric($after)
+                        ? round((float) $after - (float) $before, 6) : null,
+                ];
+            }
+            return [(string) $candidate->model_version_id => $values];
+        })->all();
         return [
             'protocol' => 'paired_parent_child_replay_v1',
             'parent_model_version_id' => $parentId,
+            'parent_model_version_ids' => $parentIds,
+            'parent_metrics' => $parentMetrics,
+            'metric_delta_by_parent' => $metricDeltaByParent,
             'parameter_diff' => (array) $agent->parameter_diff,
             'metric_delta' => $metrics,
             'paired_replay' => data_get($result, 'paired_replay', data_get($result, 'paired_experiment', [])),
@@ -373,8 +410,11 @@ class AgentProgressCardService
     {
         if (data_get($result, 'paired_replay.status', data_get($result, 'paired_experiment.status')) === 'confirmed') return true;
         if (data_get($result, 'no_regression_contract.status') !== 'passed') return false;
-        $delta = collect((array) data_get($parentDiff, 'metric_delta', []));
-        return $delta->contains(fn (array $item): bool => is_numeric($item['delta'] ?? null) && (float) $item['delta'] > 0);
+        $deltas = collect([(array) data_get($parentDiff, 'metric_delta', [])])
+            ->merge(array_values((array) data_get($parentDiff, 'metric_delta_by_parent', [])));
+        return $deltas->contains(fn (array $metrics): bool => collect($metrics)->contains(
+            fn (array $item): bool => is_numeric($item['delta'] ?? null) && (float) $item['delta'] > 0,
+        ));
     }
 
     private function isSpecialist(LabAgent $agent, mixed $model): bool

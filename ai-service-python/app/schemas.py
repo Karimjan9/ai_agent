@@ -98,6 +98,9 @@ class SimpleBacktestRequest(BaseModel):
     from_date: date | None = None
     to_date: date | None = None
     dataset_path: str | None = None
+    # Full replay may use a separately sealed pre-2026 foundation archive.
+    # The primary dataset remains the canonical rolling/forward/paper stream.
+    foundation_dataset_path: str | None = None
     candles: list[Candle] = Field(default_factory=list)
     regime_dataset_path: str | None = None
     regime_candles: list[Candle] = Field(default_factory=list)

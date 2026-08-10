@@ -6,14 +6,14 @@ tags:
   - market-data
   - dukascopy
   - reliability
-updated: 2026-07-12
+updated: 2026-08-10
 ---
 
 # Market Data Continuity
 
 ## Scope
 
-`MARKET_DATA_CANONICAL_PROVIDER=twelve` is the current promotion-evidence owner; Dukascopy is retained as secondary archive and discrepancy evidence and cannot silently replace a missing canonical candle. `market_data_sync_states` is the persistent source of truth for each `provider + symbol + timeframe` recovery lifecycle.
+`MARKET_DATA_CANONICAL_PROVIDER=twelve` is the current promotion-evidence owner; Dukascopy is retained as secondary archive and discrepancy evidence and cannot silently replace a missing canonical candle. Long-history foundation training is a separate immutable CSV lane with its own hash and `promotion_evidence=false`; it never repairs or backfills the canonical candle table. `market_data_sync_states` is the persistent source of truth for each `provider + symbol + timeframe` recovery lifecycle.
 
 ## States
 
@@ -26,7 +26,7 @@ Each state stores last confirmed candle, pending start/end, retry count, last er
 ## Recovery flow
 
 ```text
-hourly Dukascopy sync
+hourly canonical-provider sync
   -> pending range exists? fetch it first : fetch after latest candle
   -> idempotent candle upsert
   -> verify every open-market H1 hour
@@ -39,12 +39,12 @@ Only trading-session hours are expected: Saturday is closed, Sunday begins at 22
 ## Historical repair
 
 Run `php artisan market-data:quality --json` before dispatching a full lab
-evaluation.  If it reports a bounded archive hole, repair only that interval
-with `php artisan market-data:repair-gaps SYMBOL --max-ranges=1`.  This command
-uses the legacy Dukascopy archive transport by default: it preserves historical
-flat candles and avoids accepting a sparse Jetta monthly response as a repaired
-range.  The command may use `--transport=jetta` or `--transport=auto` only for
-diagnostics; it never invents candles when the selected provider has no data.
+evaluation. If it reports a bounded hole, repair only that interval with
+`php artisan market-data:repair-gaps SYMBOL --max-ranges=1`; the command is
+restricted to the configured canonical provider. A non-canonical provider is
+rejected so a secondary archive cannot pollute the promotion stream. Build a
+separate foundation archive through `LabDatasetExportService::ensureFoundationDataset`
+when the long baseline is unavailable; that archive remains training-only.
 
 The PHP historical gate and Python backtest calendar share the same XAU/USD
 maintenance and US market-holiday closures.  An ordinary weekday hole remains

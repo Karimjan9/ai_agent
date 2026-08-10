@@ -13,7 +13,7 @@ use RuntimeException;
 
 class LabAgentEvaluationService
 {
-    public function __construct(private CandlePayloadService $candles, private MarketChampionService $champions, private LabDatasetExportService $datasets, private ScreeningLearningOutboxService $screeningOutbox, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger, private CandidateHandoffService $handoffs, private CounterfactualBlameGraphService $blameGraph, private LearningProtocolSafetyService $protocolSafety, private LabImmutableEvidenceService $evidence, private StrategyParameterSchemaService $schemas, private MarketVolumeService $volumes, private AgentKnowledgeService $knowledge) {}
+    public function __construct(private CandlePayloadService $candles, private MarketChampionService $champions, private LabDatasetExportService $datasets, private ScreeningLearningOutboxService $screeningOutbox, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger, private CandidateHandoffService $handoffs, private CounterfactualBlameGraphService $blameGraph, private LearningProtocolSafetyService $protocolSafety, private LabImmutableEvidenceService $evidence, private StrategyParameterSchemaService $schemas, private MarketVolumeService $volumes, private AgentKnowledgeService $knowledge, private ParentContributionGraphService $parentGraphService) {}
 
     public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
@@ -21,6 +21,7 @@ class LabAgentEvaluationService
         $agent->load('modelVersion', 'generation');
         $model = $agent->modelVersion;
         $rawResponse = null;
+        $runtimePolicy = null;
         $cacheHit = false;
         $currentCodeHash = $this->evidence->codeHash();
         $currentParameterHash = $this->evidence->parameterHash($agent);
@@ -29,15 +30,53 @@ class LabAgentEvaluationService
             'canonical_dataset_snapshots.price.sha256',
             data_get($agent->generation?->trigger_context, 'canonical_dataset_snapshots.volume.sha256', '')
         );
+        $currentFoundationHash = (string) data_get(
+            $agent->generation?->trigger_context,
+            'canonical_dataset_snapshots.foundation.sha256',
+            ''
+        );
+        $currentSnapshotPath = (string) data_get(
+            $agent->generation?->trigger_context,
+            'canonical_dataset_snapshots.price.path',
+            data_get($agent->generation?->trigger_context, 'canonical_dataset_snapshots.volume.path', ''),
+        );
+        $currentFoundationPath = (string) data_get(
+            $agent->generation?->trigger_context,
+            'canonical_dataset_snapshots.foundation.path',
+            '',
+        );
+        $currentFoundationRowCount = (int) data_get(
+            $agent->generation?->trigger_context,
+            'canonical_dataset_snapshots.foundation.manifest.row_count',
+            0,
+        );
+        $currentSnapshotFileHash = is_file($currentSnapshotPath) ? hash_file('sha256', $currentSnapshotPath) : null;
+        $currentFoundationFileHash = is_file($currentFoundationPath) ? hash_file('sha256', $currentFoundationPath) : null;
         $cached = data_get($model->metadata, 'full_validation_batch');
+        $cachedRuntimePolicy = (array) data_get($cached, 'full_replay_runtime_policy', []);
+        $configuredFoundationThreshold = max(1, (int) config('services.lab_selection.full_replay_bounded_cohort_foundation_rows', 100000));
+        $configuredMaxCohortSize = max(2, (int) config('services.lab_selection.full_replay_max_cohort_size', 2));
+        $cacheRuntimePolicyMatches = data_get($cachedRuntimePolicy, 'protocol') === 'full_replay_runtime_budget_v1'
+            && $currentFoundationRowCount > 0
+            && (int) data_get($cachedRuntimePolicy, 'foundation_row_count', -1) === $currentFoundationRowCount
+            && (int) data_get($cachedRuntimePolicy, 'foundation_threshold_rows', -1) === $configuredFoundationThreshold
+            && (int) data_get($cachedRuntimePolicy, 'max_cohort_size', -1) === $configuredMaxCohortSize;
         $cacheIsSealed = (int) data_get($cached, 'generation_id') === (int) $agent->lab_generation_id
             && is_array(data_get($cached, 'item'))
             && hash_equals($currentCodeHash, (string) data_get($cached, 'code_hash', ''))
             && hash_equals($currentParameterHash, (string) data_get($cached, 'parameter_hash', ''))
             && $currentSnapshotHash !== ''
-            && hash_equals($currentSnapshotHash, (string) data_get($cached, 'data_hash', ''));
+            && hash_equals($currentSnapshotHash, (string) data_get($cached, 'data_hash', ''))
+            && is_string($currentSnapshotFileHash)
+            && hash_equals($currentSnapshotHash, $currentSnapshotFileHash)
+            && $currentFoundationHash !== ''
+            && hash_equals($currentFoundationHash, (string) data_get($cached, 'foundation_data_hash', ''))
+            && is_string($currentFoundationFileHash)
+            && hash_equals($currentFoundationHash, $currentFoundationFileHash)
+            && $cacheRuntimePolicyMatches;
         if ($cacheIsSealed) {
             $item = $cached['item'];
+            $runtimePolicy = $cachedRuntimePolicy;
             $cacheHit = true;
         } else {
             // Evaluate the selected generation cohort together.  This gives CSCV
@@ -50,31 +89,92 @@ class LabAgentEvaluationService
             if ($cohort->isEmpty()) {
                 $cohort = collect([$agent]);
             }
+            $portfolioMemberOnly = data_get($model->metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1';
             // Portfolio members are independent sealed hypotheses. Replaying
             // several of them in one Python cohort multiplies the worst-case
             // runtime and can turn useful full evidence into a transport
             // timeout. The later combined portfolio replay remains the place
             // where complementary members are evaluated together.
-            if (data_get($model->metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1') {
+            if ($portfolioMemberOnly) {
                 $cohort = collect([$agent]);
+            }
+            // Seal the long foundation archive before choosing the replay
+            // budget. The rolling snapshot is exported only after the final
+            // cohort is known, so a removed volume specialist cannot force a
+            // different expensive dataset contract by accident.
+            $foundationSnapshot = $this->datasets->ensureGenerationFoundationSnapshot($agent->generation);
+            $foundationRowCount = (int) data_get($foundationSnapshot, 'manifest.row_count', 0);
+            $boundedThreshold = max(1, (int) config('services.lab_selection.full_replay_bounded_cohort_foundation_rows', 100000));
+            $maxCohortSize = max(2, (int) config('services.lab_selection.full_replay_max_cohort_size', 2));
+            $volumeEnabled = $cohort->contains(fn (LabAgent $peer): bool => $this->volumeEnabled($peer->modelVersion));
+            $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
+            if (! $portfolioMemberOnly) {
+                // A previous cohort can finish before a sibling times out. Keep
+                // its sealed item eligible for the next bounded cohort so the
+                // Python candidate cache can reuse it and CSCV/DSR does not
+                // silently forget a valid peer. Only exact generation,
+                // code/data/foundation/runtime-policy matches are admitted.
+                $cohort = $this->mergeSealedCohortPeers(
+                    $cohort,
+                    $agent->lab_generation_id,
+                    $currentCodeHash,
+                    (string) ($datasetSnapshot['sha256'] ?? ''),
+                    (string) ($foundationSnapshot['sha256'] ?? ''),
+                    $foundationRowCount,
+                    $boundedThreshold,
+                    $maxCohortSize,
+                );
+            }
+            $originalCohortSize = $cohort->count();
+            $boundedCohort = $foundationRowCount >= $boundedThreshold && $originalCohortSize > $maxCohortSize;
+            $runtimePolicy = [
+                'protocol' => 'full_replay_runtime_budget_v1',
+                'mode' => $boundedCohort ? 'bounded_cohort' : 'full_eligible_cohort',
+                'original_cohort_size' => $originalCohortSize,
+                'selected_cohort_size' => $boundedCohort ? $maxCohortSize : $originalCohortSize,
+                'max_cohort_size' => $maxCohortSize,
+                'foundation_row_count' => $foundationRowCount,
+                'foundation_threshold_rows' => $boundedThreshold,
+                'reason' => $boundedCohort ? 'FOUNDATION_REPLAY_RUNTIME_BUDGET' : 'NO_RUNTIME_CAP_REQUIRED',
+                'promotion_evidence' => false,
+            ];
+            if ($boundedCohort) {
+                // Every serialized job must receive its own result. Keep the
+                // current agent in the selected pair even when queue ordering
+                // or a lifecycle transition makes it absent from the query.
+                $currentPeer = $cohort->first(fn (LabAgent $peer): bool => (int) $peer->getKey() === (int) $agent->getKey()) ?: $agent;
+                $cohort = $cohort
+                    ->reject(fn (LabAgent $peer): bool => (int) $peer->getKey() === (int) $agent->getKey())
+                    ->take($maxCohortSize - 1)
+                    ->push($currentPeer)
+                    ->unique(fn (LabAgent $peer): int => (int) $peer->getKey())
+                    ->values();
+                $runtimePolicy['selected_cohort_size'] = $cohort->count();
             }
             // A full replay must never inherit a stale archive from an older
             // generation. Export the immutable canonical snapshot at dispatch
             // time; the first serialized cohort job then caches that exact
             // result for every peer in the batch.
-            $volumeEnabled = $cohort->contains(fn (LabAgent $peer): bool => $this->volumeEnabled($peer->modelVersion));
-            $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
+            $selectedVolumeEnabled = $cohort->contains(fn (LabAgent $peer): bool => $this->volumeEnabled($peer->modelVersion));
+            if ($selectedVolumeEnabled !== $volumeEnabled) {
+                $volumeEnabled = $selectedVolumeEnabled;
+                $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
+            }
             $dataset = $datasetSnapshot['path'];
             $manifest = (array) ($datasetSnapshot['manifest'] ?? []);
+            $manifest['foundation'] = $foundationSnapshot['manifest'];
             $request = [
                 'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy' => 'all', 'evaluation_mode' => 'replay',
                 'strategies' => $cohort->map(fn (LabAgent $peer) => ['strategy' => $peer->modelVersion->strategy, 'base_strategy' => $this->schemas->runtimeBaseStrategy($peer->modelVersion->strategy, data_get($peer->modelVersion->metadata, 'base_strategy'), $peer->strategy_family), 'version' => $peer->modelVersion->version, 'parameters' => $peer->modelVersion->parameters ?? []])->all(),
                 'initial_balance' => 10000, 'risk_per_trade' => 1, 'dataset_path' => $dataset,
+                'foundation_dataset_path' => $foundationSnapshot['path'],
+                'full_replay_runtime_policy' => $runtimePolicy,
                 'volume_context' => $volumeEnabled
                     ? (array) data_get($manifest, 'volume_quality', [])
                     : $this->disabledVolumeContext(),
                 'policy_context' => [
                     'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($agent->symbol, $agent->timeframe),
+                    'full_replay_runtime_policy' => $runtimePolicy,
                     // Each cohort member keeps its own one-gene contract;
                     // the Python replay selects the contract by strategy so
                     // a sibling's mutation can never be used for plateau
@@ -87,6 +187,7 @@ class LabAgentEvaluationService
                             'changed_gene' => $changedGene,
                             'repair_attempt' => (int) data_get($peer->modelVersion->metadata, 'repair_lineage.attempt', 0),
                             'parent_model_version_id' => $peer->parent_a_model_version_id ?: $peer->parent_b_model_version_id,
+                            'parent_model_version_ids' => $this->parentGraphService->ids($peer),
                             'single_gene' => count($diff) === 1,
                         ]];
                     })->all(),
@@ -124,7 +225,7 @@ class LabAgentEvaluationService
                 $regimeDataset = $this->datasets->export($agent->symbol, 'H1', $volumeEnabled);
                 $request['regime_dataset_path'] = $regimeDataset;
             }
-            $timeout = min(2280, max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 2280)));
+            $timeout = min(3900, max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900)));
             $requestId = 'full-'.$agent->id.'-'.bin2hex(random_bytes(6));
             $this->evidence->attachRequest($run, $request, ['request_id' => $requestId, 'dataset_manifest' => $manifest]);
             $this->assertAiReplayHealthy($requestId, $run);
@@ -157,7 +258,10 @@ class LabAgentEvaluationService
                 if (! $peerItem) {
                     throw new RuntimeException('Missing cohort lab agent result.');
                 }
-                $peerItem['result']['data_manifest'] = $manifest;
+                $peerItem['result'] = array_merge((array) ($peerItem['result'] ?? []), [
+                    'data_manifest' => $manifest,
+                    'full_replay_runtime_policy' => $runtimePolicy,
+                ]);
                 $items->put($peer->modelVersion->strategy, $peerItem);
                 $peerModel = $peer->modelVersion;
                 $peerModel->update(['metadata' => array_merge($peerModel->metadata ?? [], ['full_validation_batch' => [
@@ -167,6 +271,8 @@ class LabAgentEvaluationService
                     'code_hash' => $currentCodeHash,
                     'parameter_hash' => $this->evidence->parameterHash($peer),
                     'data_hash' => (string) ($manifest['snapshot_sha256'] ?? $manifest['sha256'] ?? ''),
+                    'foundation_data_hash' => (string) ($foundationSnapshot['sha256'] ?? ''),
+                    'full_replay_runtime_policy' => $runtimePolicy,
                 ]])]);
             }
             $item = $items->get($model->strategy);
@@ -183,6 +289,12 @@ class LabAgentEvaluationService
             throw new RuntimeException('FULL_REPLAY_EXECUTION_CONTRACT_MISSING_OR_MISMATCH');
         }
         DB::transaction(function () use ($agent, $model, $item, $run) {
+            // The cohort cache is written through each peer model before this
+            // projection transaction. Refresh the current model so the
+            // projection update cannot overwrite full_validation_batch,
+            // including its runtime-policy and file-hash contract, with a
+            // stale pre-replay metadata snapshot.
+            $model->refresh();
             $fullResult = $item['result'] ?? [];
             $fullResult['evidence_run_id'] = $run->run_id;
             $fullResult['forward_score'] = $item['forward_score'] ?? 0;
@@ -192,7 +304,13 @@ class LabAgentEvaluationService
             $fullResult['validation_score'] = $item['validation_score'] ?? 0;
             $fullResult['is_overfit'] = $item['is_overfit'] ?? false;
             $result = $this->evidence->projectionPayload($fullResult);
-            $model->update(['best_score' => max((float) $model->best_score, (float) $item['score']), 'best_winrate' => $result['winrate'] ?? 0, 'best_profit' => $result['net_profit_percent'] ?? 0, 'best_drawdown' => $result['max_drawdown_percent'] ?? 0, 'metadata' => array_merge($model->metadata ?? [], ['last_result' => $result])]);
+            $model->update([
+                'best_score' => max((float) $model->best_score, (float) $item['score']),
+                'best_winrate' => $result['winrate'] ?? 0,
+                'best_profit' => $result['net_profit_percent'] ?? 0,
+                'best_drawdown' => $result['max_drawdown_percent'] ?? 0,
+                'metadata' => $this->mergeRefreshedModelMetadata($model, ['last_result' => $result]),
+            ]);
             $this->shadowVetoLedger->record($agent, $result, 'full_replay');
             // Preserve the sealed niche contract on the full-replay result.
             // It is used only by the separate portfolio-member gate; it must
@@ -244,6 +362,7 @@ class LabAgentEvaluationService
             $this->evidence->recordArtifact($run, 'cohort_response', (array) $rawResponse, [
                 'cohort_result_count' => is_array($rawResponse['leaderboard'] ?? null) ? count($rawResponse['leaderboard']) : 0,
                 'source' => 'full_validation_cohort',
+                'full_replay_runtime_policy' => $runtimePolicy,
             ]);
         }
         $evidenceResponse = $item['result'] ?? [];
@@ -251,6 +370,7 @@ class LabAgentEvaluationService
             'agent_result' => $item['result'] ?? [],
             'cache_hit' => $cacheHit,
             'cohort_result_count' => is_array($rawResponse['leaderboard'] ?? null) ? count($rawResponse['leaderboard']) : 1,
+            'full_replay_runtime_policy' => $runtimePolicy,
         ], ['cache_hit' => $cacheHit, 'cohort_generation_id' => $agent->lab_generation_id]);
     }
 
@@ -291,6 +411,7 @@ class LabAgentEvaluationService
                         ? array_key_first((array) $agent->parameter_diff) : null,
                     'repair_attempt' => (int) data_get($model->metadata, 'repair_lineage.attempt', 0),
                     'parent_model_version_id' => $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id,
+                    'parent_model_version_ids' => $this->parentGraphService->ids($agent),
                     'single_gene' => count((array) $agent->parameter_diff) === 1,
                 ],
             ],
@@ -495,6 +616,69 @@ class LabAgentEvaluationService
         return data_get($model->metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
             || (bool) data_get($model->metadata, 'volume_research_contract.enabled', false)
             || data_get($model->parameters, 'volume_lane', 'none') !== 'none';
+    }
+
+    /**
+     * Cohort cache rows are written before the current agent's projection.
+     * Refresh before merging projection metadata so the later update cannot
+     * erase full_validation_batch and its immutable runtime-policy contract.
+     */
+    private function mergeRefreshedModelMetadata(ModelVersion $model, array $patch): array
+    {
+        $model->refresh();
+
+        return array_merge((array) $model->metadata, $patch);
+    }
+
+    /**
+     * Add only sealed peers whose full-replay cache is valid for this exact
+     * generation and runtime contract. Their item is reused by the Python
+     * candidate cache; they are never reopened as lifecycle work here.
+     */
+    private function mergeSealedCohortPeers(
+        $cohort,
+        int $generationId,
+        string $codeHash,
+        string $dataHash,
+        string $foundationHash,
+        int $foundationRowCount,
+        int $foundationThreshold,
+        int $maxCohortSize,
+    ) {
+        if ($dataHash === '' || $foundationHash === '') {
+            return $cohort;
+        }
+
+        $activeIds = $cohort->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        $peers = LabAgent::query()
+            ->with('modelVersion')
+            ->where('lab_generation_id', $generationId)
+            ->whereNotIn('id', $activeIds)
+            ->whereNotIn('lifecycle_status', [
+                'full_queued', 'training', 'evaluation_error', 'technical_quarantine',
+                'quarantined', 'legacy_quarantine',
+            ])
+            ->orderBy('id')->get()
+            ->filter(function (LabAgent $peer) use ($generationId, $codeHash, $dataHash, $foundationHash, $foundationRowCount, $foundationThreshold, $maxCohortSize): bool {
+                $model = $peer->modelVersion;
+                $cached = data_get($model?->metadata, 'full_validation_batch');
+                $policy = (array) data_get($cached, 'full_replay_runtime_policy', []);
+
+                return $model?->evidence_status === 'valid'
+                    && (int) data_get($cached, 'generation_id', 0) === $generationId
+                    && data_get($cached, 'protocol') === 'sealed_replay_cache_v2'
+                    && is_array(data_get($cached, 'item'))
+                    && hash_equals($codeHash, (string) data_get($cached, 'code_hash', ''))
+                    && hash_equals($this->evidence->parameterHash($peer), (string) data_get($cached, 'parameter_hash', ''))
+                    && hash_equals($dataHash, (string) data_get($cached, 'data_hash', ''))
+                    && hash_equals($foundationHash, (string) data_get($cached, 'foundation_data_hash', ''))
+                    && data_get($policy, 'protocol') === 'full_replay_runtime_budget_v1'
+                    && (int) data_get($policy, 'foundation_row_count', -1) === $foundationRowCount
+                    && (int) data_get($policy, 'foundation_threshold_rows', -1) === $foundationThreshold
+                    && (int) data_get($policy, 'max_cohort_size', -1) === $maxCohortSize;
+            });
+
+        return $cohort->concat($peers)->unique(fn (LabAgent $peer): int => (int) $peer->getKey())->sortBy('id')->values();
     }
 
     private function volumeContextOrFail(string $symbol, string $timeframe): array

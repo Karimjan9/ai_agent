@@ -102,7 +102,29 @@ class MarketHealthEngineTest extends TestCase
             ->assertExitCode(0);
     }
 
-    private function createCandle($time): Candle
+    public function test_fallback_provider_cannot_mask_the_configured_provider_outage(): void
+    {
+        config([
+            'services.mt5.provider' => 'twelve',
+            'services.market_data.fallback_provider' => 'dukascopy',
+            'services.mt5.symbols' => 'XAUUSD',
+            'services.mt5.timeframes' => 'M15',
+        ]);
+
+        $this->createCandle(now()->subMinutes(3), 'dukascopy');
+
+        $checks = app(MarketHealthService::class)->check();
+
+        $this->assertSame('lost', $checks->first()->status);
+        $this->assertDatabaseHas('market_provider_health', [
+            'provider' => 'twelve',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'M15',
+            'status' => 'lost',
+        ]);
+    }
+
+    private function createCandle($time, string $provider = 'mt5'): Candle
     {
         $symbol = Symbol::create([
             'code' => 'XAUUSD',
@@ -120,7 +142,7 @@ class MarketHealthEngineTest extends TestCase
             'low' => 3344.81,
             'close' => 3346.01,
             'volume' => 1532,
-            'provider' => 'mt5',
+            'provider' => $provider,
         ]);
     }
 }

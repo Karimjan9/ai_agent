@@ -77,7 +77,7 @@ class RunVolumeShadowExperiment extends Command
                 'unit' => 'millions',
                 'session' => 'UTC',
                 'source_contract' => self::SOURCE_CONTRACT,
-                'protocol' => 'relative_volume_session_v1',
+                'protocol' => 'relative_volume_session_v2',
                 'promotion_evidence' => false,
             ];
             $controlParameters = [...$parameters, 'volume_lane' => 'none'];

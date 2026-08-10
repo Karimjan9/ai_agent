@@ -6,7 +6,7 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-08-09
+updated: 2026-08-10
 ---
 
 # AI Learning Laboratory
@@ -48,17 +48,50 @@ The parent layer is adaptive rather than champion-only. Read [[adaptive-evolutio
 
 ## Market-adaptive replay protocol
 
-Full laboratory evaluation uses `market_adaptive_replay`: 2004-01-01 through
-2025-12-31 is foundation evidence; 2026-01-01 through the start of the last
-six weeks is delivered candle-by-candle. A decision is available only after a
+Full laboratory evaluation uses `market_adaptive_replay`: 2005-01-02 through
+2025-12-31 is foundation training input; 2026-01-01 through the start of the
+last six weeks is delivered candle-by-candle from the immutable generation
+rolling snapshot. A decision is available only after a
 candle closes and is executed at the next candle open. Each closed trade adds
 regime/volatility-scoped fitness, mistake evidence, and a mutation recommendation.
 The final six weeks are sealed: they are excluded from training, evolution, and
 selection until the paper gate has passed. Dates define only the experiment
 boundary; all learned evidence remains scoped to `symbol + timeframe + regime`.
-Provider archives that begin on the supported GBPUSD baseline of 2005-01-02 are
-valid foundation inputs; an earlier calendar boundary is not treated as an
-invented missing-candle requirement.
+The primary Twelve stream owns rolling, forward, paper, and holdout evidence.
+When Twelve does not expose the long baseline, `foundation_dataset_path` points
+to a separate `foundation_training_archive_v1` snapshot assembled from an
+explicit historical archive or Dukascopy source. Its SHA-256 and
+`promotion_evidence=false` flag are recorded per generation; it is never copied
+into canonical candles or used as promotion evidence. Provider archives that
+begin on the supported 2005-01-02 baseline are valid foundation inputs; a
+weekend/market-open delay is not treated as an invented missing-candle
+requirement.
+
+### Full-replay runtime budget
+
+The foundation archive is intentionally large and computationally expensive.
+When its row count reaches the configured
+LAB_FULL_REPLAY_BOUNDED_COHORT_FOUNDATION_ROWS threshold (default 100,000),
+the evaluator selects at most LAB_FULL_REPLAY_MAX_COHORT_SIZE candidates
+(default 2) for one bounded cohort. The current job is always retained in the
+selected cohort, and previously sealed exact peers may be reused only when
+generation, code, parameter, rolling-file, foundation-file, and runtime-policy
+hashes all match. The request, result, cache, and immutable finish metadata
+carry full_replay_runtime_budget_v1; the policy is operational telemetry and
+always has promotion_evidence=false. A runtime cap never changes CSCV/PBO,
+Deflated Sharpe, forward, paper, holdout, or champion thresholds.
+
+Execution-contract hashes are cross-language canonical: Python normalizes
+float exponent spelling to the Laravel JSON contract before hashing, and a
+candidate cache is reusable only when its returned contract hash and parameter
+map still match the current payload. A legacy numeric-serialization cache is
+diagnostic only and is recomputed before full evidence can be accepted.
+
+The queue WithoutOverlapping middleware uses the same LAB_REPLAY_MUTEX_KEY as
+direct portfolio replay and the recovery command. After a worker interruption,
+recovery is valid only when the AI service is idle, no replay child exists,
+and every reserved full job is demonstrably stale. Recovered attempts are
+retry_released operational evidence, not strategy evidence.
 
 ## Lifecycle and gates
 
@@ -78,9 +111,24 @@ A challenger replaces a champion only in the same `symbol + timeframe + strategy
 
 The old champion is archived only at promotion time; it remains active while a challenger is being proven.
 
+For a complementary council, the combined replay creates a separate portfolio
+proxy. That proxy receives its own passed portfolio passport and sealed forward
+ledger only after the individual specialist passports, router evidence,
+leave-one-member-out/weight-perturbation checks, and disagreement-to-WAIT
+invariant pass. Individual council members never start their own paper track;
+paper signals belong to the active proxy and are blocked if any member or
+membership hash drifts.
+
 Every stage writes a `candidate_gate_decisions` ledger row rather than only a generic rejected status. The decision is `passed`, `failed`, or `waiting` and uses machine-readable codes such as `FAILED_TRADE_COUNT`, `FAILED_PROFIT_FACTOR`, `FAILED_DRAWDOWN`, `FAILED_REGIME_COVERAGE`, `FAILED_STRESS_COST`, `FAILED_CALIBRATION`, `FAILED_FEED_UPTIME`, and `WAITING_FOR_SAMPLE`. A screening failure additionally creates a `diagnostic_rescue_replay` waiting record so the next targeted generation has a specific remediation objective.
 
 The certified coverage passport keeps the fine `regime × volatility × session × direction` cells for diagnosis, then uses only a declared, evidence-backed hierarchy (`regime|volatility|session|direction` → `regime|volatility|direction` → `regime|direction` → `regime`) when a finite sample is too sparse. Every observed cell must map to trade or abstain evidence; unobserved cells remain `WAIT`. Paper signal generation consumes the same sealed effective cells, so an unseen paper envelope cannot quietly create an order. This is a statistical evidence repair, never a lower promotion threshold.
+
+Fresh parentless cohorts use the explicit `exact_group_root_default` lineage
+contract. Failure-context/archive labels remain diagnostic metadata and never
+turn a legacy candidate into genetic material. The historical quality gate and
+live continuity state consume one canonical market-session calendar; scheduled
+FX holiday closures (including the Christmas-Eve afternoon boundary) are not
+reported as missing candles or left in `catching_up`.
 
 ## Statistical selection controls
 
@@ -95,6 +143,7 @@ Full validation submits the selected cohort from one generation in a single AI-s
 - Every five minutes: `trading:paper-monitor` opens/reconciles simulated or configured practice-broker paper orders.
 - Hourly: `trading:release-holdouts` releases a paper-passed finalist's untouched holdout exactly once.
 - Every five minutes: `trading:watch-lab-lifecycle` audits abandoned evaluator runs, missing forward ledgers, paper capture gaps, and invalid paper-order identities; repairs are bounded and never create quality evidence.
+- The same watchdog also audits active portfolio proxy/member contracts. Its repeated archive checks reuse a lean snapshot and bulk lookups; a drift finding is critical observability only, and routing stays fail-closed until the sealed portfolio replay is refreshed. Missing evidence tables are surfaced as a schema finding instead of allowing the scheduler to crash.
 
 ## Required workers
 

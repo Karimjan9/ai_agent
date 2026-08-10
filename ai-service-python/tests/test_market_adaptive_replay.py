@@ -39,6 +39,24 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
 
         self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2005-01-02"))
 
+    def test_xau_sunday_open_delay_is_accepted(self):
+        xau_archive = self.df[self.df["time"] >= pd.Timestamp("2005-01-02")].copy()
+        xau_archive.iloc[0, xau_archive.columns.get_loc("time")] = pd.Timestamp("2005-01-02 23:00")
+
+        parts = MarketAdaptiveReplayService().split_dataset(xau_archive)
+
+        self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2005-01-02 23:00"))
+
+    def test_separate_foundation_archive_can_back_the_canonical_rolling_stream(self):
+        foundation = self.df[self.df["time"] <= pd.Timestamp("2025-12-31 23:59:59")]
+        rolling = self.df[self.df["time"] >= pd.Timestamp("2026-01-01")]
+
+        parts = MarketAdaptiveReplayService().split_dataset(rolling, foundation)
+
+        self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2004-01-01"))
+        self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01"))
+        self.assertTrue(parts["holdout"]["time"].min() > parts["replay"]["time"].max())
+
     def test_holdout_runner_receives_only_the_sealed_tail(self):
         service = MarketAdaptiveReplayService()
         payload = SimpleBacktestRequest(symbol="XAUUSD", timeframe="H1", strategy="trend_v1")

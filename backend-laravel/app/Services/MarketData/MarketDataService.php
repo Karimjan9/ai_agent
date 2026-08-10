@@ -153,7 +153,7 @@ class MarketDataService
         // a feed worker spend most of its time in database writes. Analyse only
         // when fresh candles arrived; scheduled reality verification remains
         // responsible for broader periodic audits.
-        if ($rows->isNotEmpty() && (config('services.secondary_intelligence.enabled', false) || app()->environment('testing'))) {
+        if ($rows->isNotEmpty() && config('services.market_reality.enabled', true)) {
             try {
                 $this->marketRealityService->analyzeSymbol(
                     $symbol,

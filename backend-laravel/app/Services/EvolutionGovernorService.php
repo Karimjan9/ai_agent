@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
-use App\Models\LabAgentParentLink;
 use App\Models\LabEvolutionIsland;
 use App\Models\LabGeneration;
 use App\Models\MarketDriftSnapshot;
@@ -162,8 +161,8 @@ class EvolutionGovernorService
         $causal = $this->isCausalLane($family, $origin, $target);
         $runtime = in_array($family, ['regime_ensemble', 'differential_router'], true);
         $mode = match (true) {
-            $runtime && $family === 'regime_ensemble' => 'runtime_ensemble',
             $causal => 'causal_single_parent',
+            $runtime && $family === 'regime_ensemble' => 'runtime_ensemble',
             in_array($origin, ['robust_crossover', 'crossover'], true) => 'robust_capability_crossover',
             $origin === 'architecture' => 'architecture_discovery',
             $origin === 'curiosity_probe' => 'curiosity_exploration',
@@ -172,10 +171,17 @@ class EvolutionGovernorService
 
         $max = match ($mode) {
             'causal_single_parent' => 1,
-            'robust_capability_crossover' => max(2, (int) config('services.lab_selection.parent_max_robust', 5)),
-            'architecture_discovery' => max(1, (int) config('services.lab_selection.parent_max_architecture', 4)),
-            'curiosity_exploration' => max(1, (int) config('services.lab_selection.parent_max_curiosity', 3)),
-            'runtime_ensemble' => max(1, (int) config('services.lab_selection.parent_max_runtime', 8)),
+            // Zero is an explicit unbounded adaptive K: the selector later
+            // resolves it against the number of eligible exact-cell parents.
+            // A positive value is only an operator-selected compute cap.
+            'robust_capability_crossover' => $this->configuredParentMax('parent_max_robust', 2),
+            'architecture_discovery' => $this->configuredParentMax('parent_max_architecture', 1),
+            'curiosity_exploration' => $this->configuredParentMax('parent_max_curiosity', 1),
+            // A runtime ensemble is meaningful only with at least two
+            // independently validated specialists. The value remains fully
+            // configurable above that floor and matches replay member
+            // selection, so a config of 1 cannot create an impossible policy.
+            'runtime_ensemble' => max(2, (int) config('services.lab_selection.parent_max_runtime', 8)),
             default => 1,
         };
 
@@ -274,9 +280,13 @@ class EvolutionGovernorService
     private function parentTelemetry(Collection $generations, Collection $agents): array
     {
         try {
-            $links = LabAgentParentLink::query()
-                ->whereIn('lab_agent_id', $agents->pluck('id'))
-                ->pluck('parent_model_version_id')
+            // The link table is the write-side graph, but old agents and
+            // compatibility imports may have only A/B columns or metadata.
+            // Resolve through the canonical read boundary so concentration
+            // pressure is not understated and the governor does not keep
+            // rewarding a hidden parent simply because its link row is absent.
+            $graph = app(ParentContributionGraphService::class);
+            $links = $agents->flatMap(fn (LabAgent $agent) => $graph->ids($agent))
                 ->filter()->map(fn ($id): int => (int) $id)->values();
             $total = max(1, $links->count());
             $counts = $links->countBy();
@@ -284,12 +294,20 @@ class EvolutionGovernorService
             $entropy = $probabilities->isEmpty()
                 ? 1.0
                 : (float) (-$probabilities->sum(fn (float $p): float => $p > 0 ? $p * log($p) : 0) / log(max(2, $probabilities->count())));
-            $lineages = $agents->map(function (LabAgent $agent): string {
+            $lineages = $agents->map(function (LabAgent $agent) use ($graph): string {
                 $model = $agent->modelVersion;
+                $adaptiveParents = array_values(array_filter(array_map(
+                    'intval',
+                    (array) data_get($model?->metadata, 'adaptive_parent_ecosystem.selected_parent_model_version_ids', []),
+                ), static fn (int $id): bool => $id > 0));
+                if (count($adaptiveParents) > 1) {
+                    sort($adaptiveParents);
+                    return 'composite:'.implode(',', $adaptiveParents);
+                }
                 return (string) (
                     data_get($model?->metadata, 'repair_lineage.root_model_version_id')
                     ?: data_get($model?->metadata, 'control_root_seed.root_model_version_id')
-                    ?: $agent->parent_a_model_version_id
+                    ?: ($graph->ids($agent)[0] ?? null)
                     ?: $agent->model_version_id
                 );
             })->filter()->countBy();
@@ -391,6 +409,13 @@ class EvolutionGovernorService
         return $family === 'differential_router'
             || in_array($origin, self::CAUSAL_ORIGINS, true)
             || in_array((string) $target, self::CAUSAL_TARGETS, true);
+    }
+
+    private function configuredParentMax(string $configKey, int $minimum): int
+    {
+        $configured = (int) config('services.lab_selection.'.$configKey, 0);
+
+        return $configured > 0 ? max($minimum, $configured) : 0;
     }
 
     private function diversityScore(Collection $agents): float

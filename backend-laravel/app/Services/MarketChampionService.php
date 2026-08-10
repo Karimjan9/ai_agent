@@ -35,6 +35,7 @@ class MarketChampionService
         private CausalMutationCreditService $causalMutationCredit,
         private StrategySemanticGroupService $semanticGroups,
         private MutationSkillVerificationService $mutationSkills,
+        private ParentContributionGraphService $parentGraphService,
     ) {}
 
     public function evaluate(string $strategy, string $symbol, string $timeframe, int $fitness, array $result, ?ModelVersion $modelVersion = null): ModelMarketPerformance
@@ -118,20 +119,36 @@ class MarketChampionService
             // that predates its paired replay even when the sibling cohort
             // has already supplied the required alternative.
             if ($agent) {
-                $parentModelId = $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id;
-                $parentPerformance = $parentModelId
-                    ? ModelMarketPerformance::query()->with('modelVersion')->where('model_version_id', $parentModelId)
-                        ->where('symbol', $symbol)->where('timeframe', $timeframe)->latest('id')->first()
-                    : null;
-                if ($parentPerformance && (! $parentPerformance->modelVersion || ! $this->semanticGroups->sameGroup(
-                    $model,
-                    $family,
-                    $parentPerformance->modelVersion,
-                    (string) $parentPerformance->strategy_family,
-                ))) {
-                    $parentPerformance = null;
-                }
-                $result['paired_replay'] = $this->pairedReplayProjection($agent, $parentPerformance?->metrics, $result);
+                $parentModelIds = $this->parentGraphService->ids($agent);
+                $parentPerformances = $parentModelIds === []
+                    ? collect()
+                    : ModelMarketPerformance::query()->with('modelVersion')
+                        ->whereIn('model_version_id', $parentModelIds)
+                        ->where('symbol', $symbol)->where('timeframe', $timeframe)
+                        ->latest('id')->get()
+                        ->filter(fn (ModelMarketPerformance $candidate): bool =>
+                            $candidate->modelVersion !== null
+                            && $this->semanticGroups->sameGroup(
+                                $model,
+                                $family,
+                                $candidate->modelVersion,
+                                (string) $candidate->strategy_family,
+                            )
+                        )
+                        ->unique('model_version_id')
+                        ->sortBy(fn (ModelMarketPerformance $candidate): int => (int) array_search(
+                            (int) $candidate->model_version_id,
+                            $parentModelIds,
+                            true,
+                        ))
+                        ->values();
+                $result['parent_model_version_ids'] = $parentPerformances->pluck('model_version_id')->values()->all();
+                $result['paired_replay'] = $this->pairedReplayProjection(
+                    $agent,
+                    $parentPerformances->first()?->metrics,
+                    $result,
+                    $parentPerformances->all(),
+                );
             }
             // Official calendar alignment is joined only after the sealed
             // market replay. Missing historical events remain an explicit
@@ -306,30 +323,58 @@ class MarketChampionService
         });
     }
 
-    private function pairedReplayProjection(?LabAgent $agent, ?array $parentResult, array $current): array
+    private function pairedReplayProjection(?LabAgent $agent, ?array $parentResult, array $current, array $parentPerformances = []): array
     {
         if (! $agent) {
             return ['protocol' => 'paired_parent_child_replay_v1', 'status' => 'pending', 'promotion_evidence' => false];
         }
-        $experiment = $this->evolutionQuality->pairedExperiment($agent, $parentResult, $current);
-        $sameData = is_array($parentResult)
-            && filled(data_get($parentResult, 'data_manifest.sha256'))
-            && data_get($parentResult, 'data_manifest.sha256') === data_get($current, 'data_manifest.sha256');
-        $sameExecution = is_array($parentResult)
-            && filled(data_get($parentResult, 'execution_contract.execution_hash'))
-            && data_get($parentResult, 'execution_contract.execution_hash') === data_get($current, 'execution_contract.execution_hash');
+        $parents = collect($parentPerformances)
+            ->filter(fn ($candidate): bool => $candidate instanceof ModelMarketPerformance)
+            ->values();
+        if ($parents->isEmpty() && is_array($parentResult) && $parentResult !== []) {
+            $parents = collect([[
+                'model_version_id' => $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id,
+                'metrics' => $parentResult,
+            ]]);
+        }
+        $parentRows = $parents->map(function ($parent) use ($agent, $current): array {
+            $metrics = $parent instanceof ModelMarketPerformance ? (array) $parent->metrics : (array) data_get($parent, 'metrics', []);
+            $parentModelId = $parent instanceof ModelMarketPerformance
+                ? (int) $parent->model_version_id
+                : (int) data_get($parent, 'model_version_id', 0);
+            $experiment = $this->evolutionQuality->pairedExperiment($agent, $metrics, $current);
+            $sameData = filled(data_get($metrics, 'data_manifest.sha256'))
+                && data_get($metrics, 'data_manifest.sha256') === data_get($current, 'data_manifest.sha256');
+            $sameExecution = filled(data_get($metrics, 'execution_contract.execution_hash'))
+                && data_get($metrics, 'execution_contract.execution_hash') === data_get($current, 'execution_contract.execution_hash');
+            return [
+                'parent_model_version_id' => $parentModelId,
+                'status' => data_get($experiment, 'status') === 'confirmed' && $sameData && $sameExecution
+                    ? 'confirmed' : data_get($experiment, 'status', 'pending'),
+                'same_data_hash' => $sameData,
+                'same_execution_hash' => $sameExecution,
+                'experiment' => $experiment,
+            ];
+        })->values();
+        $sameData = $parentRows->isNotEmpty() && $parentRows->every(fn (array $row): bool => $row['same_data_hash'] === true);
+        $sameExecution = $parentRows->isNotEmpty() && $parentRows->every(fn (array $row): bool => $row['same_execution_hash'] === true);
+        $firstParentRow = $parentRows->first() ?? [];
+        $experiment = $firstParentRow['experiment'] ?? $this->evolutionQuality->pairedExperiment($agent, $parentResult, $current);
+        $status = $parentRows->isNotEmpty() && $parentRows->every(fn (array $row): bool => $row['status'] === 'confirmed')
+            && $sameData && $sameExecution ? 'confirmed' : data_get($experiment, 'status', 'pending');
         return [
             'protocol' => 'paired_parent_child_replay_v1',
-            'status' => data_get($experiment, 'status') === 'confirmed' && $sameData && $sameExecution
-                ? 'confirmed' : data_get($experiment, 'status', 'pending'),
-            'parent_model_version_id' => $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id,
+            'status' => $status,
+            'parent_model_version_id' => $firstParentRow['parent_model_version_id'] ?? ($agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id),
+            'parent_model_version_ids' => $parentRows->pluck('parent_model_version_id')->filter()->values()->all(),
             'child_model_version_id' => $agent->model_version_id,
             'same_data_hash' => $sameData,
             'same_execution_hash' => $sameExecution,
             'same_cost_contract' => $sameExecution,
             'experiment' => $experiment,
+            'per_parent' => $parentRows->all(),
             'promotion_evidence' => false,
-            'rule' => 'Parent, child and alternative are credited only when the replay data and execution-cost identities match.',
+            'rule' => 'Every contributing parent must share the replay data and execution-cost identity before a composite parent/child claim is credited.',
         ];
     }
 
@@ -447,6 +492,14 @@ class MarketChampionService
         $parameterPlateauPasses = ! $strictRobustnessProtocol
             || (data_get($result, 'parameter_plateau.status') === 'assessed'
                 && (bool) data_get($result, 'parameter_plateau.pass', false));
+        $agent = LabAgent::query()->with('generation')->where('model_version_id', $candidate->model_version_id)->latest('id')->first();
+        $freshReplayPasses = $this->gateDecisions->freshReplayGateReasons(
+            $agent,
+            $result,
+            $candidate->symbol,
+            $candidate->timeframe,
+        ) === [];
+        $parentBenefitPasses = $this->gateDecisions->parentBenefitGateReasons($agent, $result) === [];
         $dataQualityPasses = ! $strictRobustnessProtocol
             || (data_get($result, 'data_quality.status') === 'passed'
                 && (int) data_get($result, 'data_quality.duplicate_timestamp_count', 0) === 0
@@ -491,6 +544,8 @@ class MarketChampionService
             && $dataQualityPasses
             && $goldHoldoutPasses
             && $challengerProtocolPasses
+            && $freshReplayPasses
+            && $parentBenefitPasses
             && (! $strictRobustnessProtocol || $repairReplayPasses);
     }
 
@@ -594,32 +649,45 @@ class MarketChampionService
             || (bool) ($result['is_overfit'] ?? false)
             || (float) data_get($result, 'monte_carlo.risk_of_ruin_percent', 0) > 10
             || (float) ($result['max_drawdown_percent'] ?? $result['max_drawdown'] ?? 0) > 15;
-        $parentA = $agent->parent_a_model_version_id ? ModelMarketPerformance::query()->with('modelVersion')->where('model_version_id', $agent->parent_a_model_version_id)
-            ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->first() : null;
+        $parentModelIds = $this->parentGraphService->ids($agent);
+        $parentPerformances = $parentModelIds === []
+            ? collect()
+            : ModelMarketPerformance::query()->with('modelVersion')
+                ->whereIn('model_version_id', $parentModelIds)
+                ->where('symbol', $agent->symbol)
+                ->where('timeframe', $agent->timeframe)
+                ->latest('id')
+                ->get()
+                ->filter(fn (ModelMarketPerformance $candidate): bool =>
+                    $candidate->modelVersion !== null
+                    && $this->semanticGroups->sameGroup(
+                        $agent->modelVersion,
+                        $agent->strategy_family,
+                        $candidate->modelVersion,
+                        (string) $candidate->strategy_family,
+                    )
+                )
+                ->unique('model_version_id')
+                ->sortBy(fn (ModelMarketPerformance $candidate): int =>
+                    array_search((int) $candidate->model_version_id, $parentModelIds, true) === false
+                        ? PHP_INT_MAX
+                        : (int) array_search((int) $candidate->model_version_id, $parentModelIds, true)
+                )
+                ->values();
         // Old agents can retain a parent id that was valid under the loose
-        // family-only protocol. Re-check the persisted semantic identity at
-        // evaluation time so historical metadata cannot create new genetic
-        // credit after the protocol upgrade.
-        if ($parentA && (! $parentA->modelVersion || ! $this->semanticGroups->sameGroup(
-            $agent->modelVersion,
-            $agent->strategy_family,
-            $parentA->modelVersion,
-            (string) $parentA->strategy_family,
-        ))) {
-            $parentA = null;
-        }
-        $parentB = ! $parentA && $agent->parent_b_model_version_id ? ModelMarketPerformance::query()->with('modelVersion')->where('model_version_id', $agent->parent_b_model_version_id)
-            ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->first() : null;
-        if ($parentB && (! $parentB->modelVersion || ! $this->semanticGroups->sameGroup(
-            $agent->modelVersion,
-            $agent->strategy_family,
-            $parentB->modelVersion,
-            (string) $parentB->strategy_family,
-        ))) {
-            $parentB = null;
-        }
-        $baseline = $parentA ? ['type' => 'parent_a', 'agent_ids' => [$agent->parent_a_model_version_id]]
-            : ($parentB ? ['type' => 'parent_b', 'agent_ids' => [$agent->parent_b_model_version_id]] : []);
+        // family-only protocol. The complete graph is resolved first, then
+        // every contributor is re-checked at evaluation time so historical
+        // metadata cannot create new genetic credit after the protocol
+        // upgrade.
+        $parentA = $parentPerformances->first(fn (ModelMarketPerformance $candidate): bool =>
+            (int) $candidate->model_version_id === (int) ($agent->parent_a_model_version_id ?: 0)
+        ) ?: $parentPerformances->first();
+        $parentB = $parentPerformances->first(fn (ModelMarketPerformance $candidate): bool =>
+            $parentA && (int) $candidate->model_version_id !== (int) $parentA->model_version_id
+        );
+        $baseline = $parentA
+            ? ['type' => $parentPerformances->count() > 1 ? 'parent_contribution_graph' : 'parent_a', 'agent_ids' => $parentPerformances->pluck('model_version_id')->values()->all()]
+            : ($parentB ? ['type' => 'parent_b', 'agent_ids' => [$parentB->model_version_id]] : []);
         // `geneticParentPerformance` is the only baseline that may award a
         // mutation skill. The broader frontier below remains useful for
         // ranking diagnostics, but it is never a parent/child replay claim.
@@ -643,31 +711,34 @@ class MarketChampionService
         $parentResult = $parentPerformance?->metrics;
         $geneticParentResult = $geneticParentPerformance?->metrics;
         $curriculum = $this->evolutionQuality->curriculum($result);
-        $noRegression = $this->evolutionQuality->noRegressionContract($geneticParentResult, $result);
+        $adaptiveParentCount = count((array) data_get(
+            $agent->modelVersion?->metadata,
+            'adaptive_parent_ecosystem.selected_parent_model_version_ids',
+            [],
+        ));
+        $multiParent = $parentPerformances->count() > 1
+            && ($adaptiveParentCount > 1 || in_array($agent->origin, [
+                'robust_crossover', 'architecture', 'crossover',
+            ], true) || $agent->strategy_family === 'regime_ensemble');
+        $noRegression = $multiParent
+            ? $this->evolutionQuality->noRegressionAcrossParents(
+                $parentPerformances->map(fn (ModelMarketPerformance $candidate): array => [
+                    'model_version_id' => $candidate->model_version_id,
+                    'metrics' => (array) $candidate->metrics,
+                ])->all(),
+                $result,
+            )
+            : $this->evolutionQuality->noRegressionContract($geneticParentResult, $result);
         $capabilityVector = $this->evolutionQuality->capabilityVector($result);
         $result['capability_vector'] = $capabilityVector;
         $operatingEnvelope = $this->evolutionQuality->operatingEnvelope($result);
-        $pairedExperiment = $this->evolutionQuality->pairedExperiment($agent, $geneticParentResult, $result);
-        $sameData = is_array($geneticParentResult)
-            && filled(data_get($geneticParentResult, 'data_manifest.sha256'))
-            && data_get($geneticParentResult, 'data_manifest.sha256') === data_get($result, 'data_manifest.sha256');
-        $sameExecution = is_array($geneticParentResult)
-            && filled(data_get($geneticParentResult, 'execution_contract.execution_hash'))
-            && data_get($geneticParentResult, 'execution_contract.execution_hash') === data_get($result, 'execution_contract.execution_hash');
-        $pairedReplay = [
-            'protocol' => 'paired_parent_child_replay_v1',
-            'status' => data_get($pairedExperiment, 'status') === 'confirmed' && $sameData && $sameExecution
-                ? 'confirmed' : data_get($pairedExperiment, 'status', 'pending'),
-            'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
-            'child_model_version_id' => $agent->model_version_id,
-            'alternative_model_version_id' => data_get($pairedExperiment, 'alternative_model_version_id'),
-            'same_data_hash' => $sameData,
-            'same_execution_hash' => $sameExecution,
-            'same_cost_contract' => $sameExecution,
-            'experiment' => $pairedExperiment,
-            'promotion_evidence' => false,
-            'rule' => 'Parent, child and alternative are credited only when the replay data and execution-cost identities match.',
-        ];
+        $pairedReplay = $this->pairedReplayProjection(
+            $agent,
+            $geneticParentResult,
+            $result,
+            $parentPerformances->all(),
+        );
+        $pairedExperiment = (array) data_get($pairedReplay, 'experiment', []);
         $result['paired_replay'] = $pairedReplay;
         $result['no_regression_contract'] = $noRegression;
         $mutationSkillContract = $this->mutationSkills->verify(
@@ -680,7 +751,18 @@ class MarketChampionService
         );
         $result['verified_mutation_skill'] = $mutationSkillContract;
         $selfKnowledge = $this->universalCapabilities->selfKnowledge($result);
-        $retention = $this->universalCapabilities->retention($parentResult, $result);
+        $retention = $this->universalCapabilities->retention(
+            $parentResult,
+            $result,
+            $multiParent
+                ? $parentPerformances->filter(fn (ModelMarketPerformance $candidate): bool =>
+                    $candidate->model_version_id !== $geneticParentPerformance?->model_version_id
+                )->map(fn (ModelMarketPerformance $candidate): array => [
+                    'model_version_id' => $candidate->model_version_id,
+                    'capability_vector' => data_get($candidate->metrics, 'capability_vector', []),
+                ])->values()->all()
+                : [],
+        );
         $certification = $this->universalCapabilities->certification($result, $selfKnowledge, $retention);
         $skillAtlas = $this->universalCapabilities->skillAtlas($performance, $capabilityVector);
         $agent->modelVersion?->update(['metadata' => array_merge($agent->modelVersion->metadata ?? [], [
@@ -732,6 +814,7 @@ class MarketChampionService
         $causalCredit = [
             'status' => $skillConfirmed ? 'independently_confirmed' : ($isSingleMutation ? 'awaiting_verified_skill_confirmation' : 'bundle_unattributed'),
             'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
+            'parent_model_version_ids' => $parentPerformances->pluck('model_version_id')->values()->all(),
             'changed_fields' => $changedFields,
             'changed_genes' => $changedGenes,
             'mutation_bundle_id' => hash('sha256', json_encode([$agent->id, $changedFields, data_get($agent->modelVersion?->metadata, 'generation_target')], JSON_PRESERVE_ZERO_FRACTION)),

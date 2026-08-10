@@ -6,7 +6,7 @@ tags:
   - ai-learning
   - evolution
   - parent-frontier
-updated: 2026-08-09
+updated: 2026-08-10
 ---
 
 # Adaptive Parent Ecosystem
@@ -45,6 +45,10 @@ global champion / local island champion
 The parent selector receives candidates only after the strict
 `symbol + timeframe + family + role + regime + volatility + direction` check.
 Dynamic selection can diversify within that cell, never across cells.
+The exact-cell frontier and the robust/architecture/curiosity contributor
+caps are unbounded by default (`0`). A positive `LAB_PARENT_MAX_*` or
+frontier/source/archive limit is an explicit compute or serialization budget,
+not evidence that omitted lineages are inferior.
 
 ## Persistent memory
 
@@ -65,6 +69,11 @@ IDs, selected IDs, dynamic K, mode, scores, governor snapshot and the
 `promotion_evidence=false` boundary are recorded for every constructed agent.
 `lab_agent_parent_links` remains the canonical parent graph; the old
 `parent_a`/`parent_b` columns are compatibility projections.
+
+Historical council/failure/complement source scans, confirmed parent traits,
+mutation-scope evidence and failure-archive retirement are also unbounded by
+default. Positive source/archive limit settings are operational backfill
+budgets only; they cannot turn a failed lineage back into an eligible parent.
 
 ## Governor rules
 
@@ -98,11 +107,31 @@ passport; a broader compatible cell is diagnostic-only.
 
 Runtime activation is a separate sealed layer. Genetic parent IDs never become
 `portfolio_members`. `RuntimeEnsemblePolicyService` activates a portfolio
-only when the member performance rows match the sealed specs, each member has
-a passed independent statistical passport, and the combined portfolio
-passport is passed. Holdout, paper and incremental health checks all consume
-this single contract. If the contract is absent or invalid, the request is
+only when the current `elite_agent_portfolios` row is still passed, points to
+the exact proxy performance row, the member performance rows match the sealed
+specs, each member has a passed independent statistical passport, and the
+combined proxy has a `portfolio_sealed` `statistical_forward_gate` ledger row.
+The older `independent_members_validated=true` metadata flag can never bypass
+combined replay. Holdout, paper and incremental health checks all consume this
+single contract. If the contract is absent, stale, or invalid, the request is
 fail-closed and returns `WAIT`.
+
+The combined replay writes a first-class portfolio proxy with its own immutable
+passport identity (`portfolio_id`, membership hash, parameter hash and final
+exam result hash) before paper admission. Paper capture refuses a stale proxy
+before transport, and the five-minute lifecycle watchdog reports active
+portfolio/member/proxy drift without rewriting frozen evidence. Its archive
+checks reuse one lean agent/model-version snapshot and bulk ledger lookups so
+monitoring remains bounded while replay workers are busy. A schema preflight
+reports missing evidence migrations as a critical operational finding and
+skips audits/repairs until the reviewed migrations are applied.
+
+Parentless first-generation specialists are admitted only as explicit
+`exact_group_root_default` seeds; diagnostic/archive candidates may explain a
+failure but cannot change the root admission contract. Historical quality and
+live continuity share the same canonical session calendar, including provider
+holiday closures, so a scheduled FX Christmas closure cannot strand a healthy
+feed in `catching_up`.
 
 ## Safety invariants
 

@@ -5,9 +5,11 @@
     "scripts": {
         "build": "vite build",
         "dev": "vite",
-        "process:start": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" node_modules\\pm2\\bin\\pm2 start ecosystem.config.cjs",
-        "process:stop": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" node_modules\\pm2\\bin\\pm2 stop ecosystem.config.cjs",
-        "process:status": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" node_modules\\pm2\\bin\\pm2 status"
+        "process:start": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-clean-env.mjs start ecosystem.config.cjs",
+        "process:stop": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-clean-env.mjs stop ecosystem.config.cjs",
+        "process:status": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-clean-env.mjs status",
+        "process:kill": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-clean-env.mjs kill",
+        "process:save": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-clean-env.mjs save"
     },
     "engines": {
         "node": ">=22 <23"
@@ -21,7 +23,7 @@
         "vite": "^7.0.7"
     },
     "dependencies": {
-        "dukascopy-node": "^1.46.4",
+        "dukascopy-node": "1.50.0",
         "pm2": "7.0.3"
     },
     "overrides": {

@@ -26,6 +26,9 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 {
     use Batchable,Dispatchable,InteractsWithQueue,Queueable,SerializesModels;
 
+    private const SCREEN_RETRY_WINDOW_MINUTES = 360;
+    private const LEGACY_SCREEN_RETRY_WINDOW_MINUTES = 90;
+
     public int $timeout = 360;
 
     // Laravel counts every middleware release as an attempt. Replay-lane
@@ -47,6 +50,15 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 
     public \DateTimeInterface $retryDeadline;
 
+    /**
+     * Persist the queue admission time so screen jobs can wait behind a
+     * long full-validation lane without turning queue contention into a
+     * strategy/evaluator failure. Older serialized jobs do not have this
+     * property; retryUntil() reconstructs their original admission time
+     * from the legacy deadline.
+     */
+    public ?\DateTimeInterface $screenQueuedAt = null;
+
     public function __construct(public int $labAgentId, public string $symbol, public string $mode = 'full')
     {
         // The queue transport is an environment concern. Hard-coding the
@@ -65,13 +77,17 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         // Differential screening performs four paired replays and has a
         // separate bounded HTTP budget. Ordinary screens keep the shorter
         // transport timeout in LabAgentEvaluationService.
-        $this->timeout = $mode === 'screen' ? 1200 : 2400;
+        // Full replay can legitimately spend close to one hour in the
+        // separate foundation lane. Keep the queue watchdog longer than the
+        // 3600s Python child deadline and Laravel's 3900s transport budget.
+        $this->timeout = $mode === 'screen' ? 1200 : 4200;
         // Screening is serialized through one AI lane per process. A 20
         // minute deadline can starve the tail of a 20-agent generation while
         // the first candidates are being replayed, turning queue fairness
         // into false evaluation_error records. Keep the lane bounded, but
         // give a full generation enough wall-clock time to drain.
-        $this->retryDeadline = now()->addMinutes($mode === 'screen' ? 90 : 90);
+        $this->screenQueuedAt = $mode === 'screen' ? now() : null;
+        $this->retryDeadline = now()->addMinutes($mode === 'screen' ? self::SCREEN_RETRY_WINDOW_MINUTES : 90);
     }
 
     /**
@@ -91,7 +107,12 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             // a queue-order decision is operational telemetry, not an
             // evaluation run.
             new LabQueueAttemptEvidenceMiddleware,
-            (new WithoutOverlapping('neurotrader-ai-heavy-replay'))
+            (new WithoutOverlapping((string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay')))
+                // Share the exact lane key with direct portfolio replay and
+                // the stale-lock recovery command. Without this, Laravel
+                // prefixes the job-class hash and an operator cannot safely
+                // prove or clear an orphaned cross-lane mutex.
+                ->shared()
                 // Sparse releases avoid a database retry storm across market
                 // workers while another replay owns the single AI lane.
                 ->releaseAfter(max(60, (int) config('services.lab_queue.mutex_release_seconds', 600)))
@@ -100,7 +121,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                 // to 330/840 seconds; leave room for Laravel evidence
                 // projection while keeping stale recovery finite. Full
                 // validation keeps a longer lease than its worker timeout.
-                ->expireAfter($this->mode === 'screen' ? 1200 : 3000),
+                ->expireAfter($this->mode === 'screen' ? 1200 : 4500),
             new LabMutexEvidenceMiddleware,
         ];
     }
@@ -112,6 +133,16 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 
     public function retryUntil(): \DateTimeInterface
     {
+        if ($this->mode === 'screen') {
+            $queuedAt = isset($this->screenQueuedAt) && $this->screenQueuedAt !== null
+                ? $this->screenQueuedAt
+                : \DateTimeImmutable::createFromInterface($this->retryDeadline)
+                    ->modify('-'.self::LEGACY_SCREEN_RETRY_WINDOW_MINUTES.' minutes');
+
+            return \DateTimeImmutable::createFromInterface($queuedAt)
+                ->modify('+'.self::SCREEN_RETRY_WINDOW_MINUTES.' minutes');
+        }
+
         return $this->retryDeadline;
     }
 

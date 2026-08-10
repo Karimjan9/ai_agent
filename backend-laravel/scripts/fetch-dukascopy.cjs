@@ -88,7 +88,10 @@ async function fetchJson(url, timeoutMs, retryAttempts) {
   for (let attempt = 1; attempt <= retryAttempts; attempt += 1) {
     try {
       const response = await fetch(url, {
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        },
         signal: AbortSignal.timeout(timeoutMs),
       });
 
@@ -128,6 +131,71 @@ async function fetchJettaH1({ instrument, from, to, baseUrl, timeoutMs, retryAtt
   return candles;
 }
 
+async function fetchJettaM15({
+  instrument,
+  from,
+  to,
+  baseUrl,
+  timeoutMs,
+  retryAttempts,
+  pauseMs,
+}) {
+  const fromMs = from.getTime();
+  const toMs = to.getTime();
+  const code = jettaInstrument(instrument);
+  const root = String(baseUrl || 'https://jetta.dukascopy.com').replace(/\/$/, '');
+  const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+  const candles = new Map();
+  const bucketMs = 15 * 60 * 1000;
+
+  while (cursor.getTime() < toMs) {
+    const year = cursor.getUTCFullYear();
+    const month = cursor.getUTCMonth() + 1;
+    const day = cursor.getUTCDate();
+    const dayStartMs = cursor.getTime();
+    const dayEnd = new Date(dayStartMs + 24 * 60 * 60 * 1000);
+    // Completed days use immutable archive resources. The active UTC day
+    // requires Jetta's timestamp form; the archive endpoint returns HTTP 400
+    // with "From time is too late" while that day is still forming.
+    const url = dayEnd.getTime() <= Date.now()
+      ? `${root}/v1/candles/minute/${code}/BID/${year}/${month}/${day}`
+      : `${root}/v1/candles/minute/${code}/BID?from=${dayStartMs}`;
+    const payload = await fetchJson(url, timeoutMs, retryAttempts);
+    const minuteRows = decodeJettaCandles(payload, dayStartMs, dayEnd.getTime());
+
+    for (const row of minuteRows) {
+      const bucketTimestamp = Math.floor(row.timestamp / bucketMs) * bucketMs;
+      if (bucketTimestamp < fromMs || bucketTimestamp >= toMs) {
+        continue;
+      }
+      const key = String(bucketTimestamp);
+      const current = candles.get(key);
+      if (!current) {
+        candles.set(key, {
+          timestamp: bucketTimestamp,
+          open: row.open,
+          high: row.high,
+          low: row.low,
+          close: row.close,
+          volume: row.volume,
+        });
+        continue;
+      }
+      current.high = Math.max(current.high, row.high);
+      current.low = Math.min(current.low, row.low);
+      current.close = row.close;
+      current.volume += row.volume;
+    }
+
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    if (cursor.getTime() < toMs && pauseMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, pauseMs));
+    }
+  }
+
+  return [...candles.values()].sort((left, right) => left.timestamp - right.timestamp);
+}
+
 async function fetchLegacy({ instrument, timeframe, from, to }) {
   return getHistoricalRates({
     instrument,
@@ -142,6 +210,9 @@ async function fetchLegacy({ instrument, timeframe, from, to }) {
     ignoreFlats: false,
     batchSize: Number(args.batchSize || 1),
     pauseBetweenBatchesMs: Number(args.pauseMs || 1000),
+    retryCount: Number(args.retryCount || 3),
+    pauseBetweenRetriesMs: Number(args.retryPauseMs || 5000),
+    failAfterRetryCount: true,
     useCache: true,
     cacheFolderPath: '.dukascopy-cache',
   });
@@ -168,7 +239,17 @@ async function main() {
   }
 
   let data;
-  if (timeframeName === 'H1' && transport !== 'legacy') {
+  if (timeframeName === 'M15' && transport !== 'legacy') {
+    data = await fetchJettaM15({
+      instrument,
+      from,
+      to,
+      baseUrl: args.baseUrl,
+      timeoutMs: Math.max(1000, Number(args.httpTimeoutMs || 20000)),
+      retryAttempts: Math.max(1, Number(args.httpRetries || 3)),
+      pauseMs: Math.max(0, Number(args.pauseMs || 1000)),
+    });
+  } else if (timeframeName === 'H1' && transport !== 'legacy') {
     try {
       data = await fetchJettaH1({
         instrument,
@@ -204,6 +285,7 @@ module.exports = {
   applyDelta,
   decodeJettaCandles,
   fetchJettaH1,
+  fetchJettaM15,
   jettaInstrument,
   precisionForMultiplier,
 };

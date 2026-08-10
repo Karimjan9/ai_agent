@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\CandidateGateDecision;
 use App\Models\Candle;
+use App\Models\EliteAgentPortfolio;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
@@ -14,9 +15,11 @@ use App\Models\PaperSignal;
 use App\Models\ShadowVetoObservation;
 use App\Models\Symbol;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Detects lifecycle/evidence failures without changing any promotion gate.
@@ -30,10 +33,29 @@ class LabLifecycleWatchdogService
     private const DRAFT_STALL_MINUTES = 90;
     private const MAX_SAFE_REQUEUES = 2;
 
+    private const REQUIRED_AUDIT_TABLES = [
+        'lab_evaluation_runs', 'lab_generations', 'lab_agents', 'model_market_performance',
+        'candidate_gate_decisions', 'shadow_veto_observations', 'elite_agent_portfolios',
+        'paper_signals', 'paper_orders', 'candles', 'symbols',
+    ];
+
+    /** @var Collection<int, LabAgent>|null */
+    private ?Collection $agentAuditSnapshot = null;
+
+    /** @var Collection<int, int>|null */
+    private ?Collection $auditModelVersionIds = null;
+
     public function __construct(private readonly SystemLogService $logs) {}
 
     public function inspect(bool $repair = false): array
     {
+        $schemaFinding = $this->schemaPreflight();
+        if ($schemaFinding !== null) return [$schemaFinding];
+
+        // Both archive audits need the same replay metadata. Reuse one
+        // snapshot for this pass instead of loading thousands of models twice.
+        $this->agentAuditSnapshot = null;
+        $this->auditModelVersionIds = null;
         $events = [];
         $events = [...$events, ...$this->watchStaleTraining($repair)];
         $events = [...$events, ...$this->watchFullValidationStalls($repair)];
@@ -41,10 +63,46 @@ class LabLifecycleWatchdogService
         $events = [...$events, ...$this->watchDraftDispatchStalls()];
         $events = [...$events, ...$this->watchMissingForwardLedgers()];
         $events = [...$events, ...$this->watchShadowConnection()];
+        $events = [...$events, ...$this->watchElitePortfolioContracts()];
         $events = [...$events, ...$this->watchPaperCapture()];
         $events = [...$events, ...$this->watchPaperIntegrity()];
 
         return $events;
+    }
+
+    private function schemaPreflight(): ?array
+    {
+        try {
+            $missing = array_values(array_filter(
+                self::REQUIRED_AUDIT_TABLES,
+                static fn (string $table): bool => ! Schema::hasTable($table),
+            ));
+        } catch (\Throwable $exception) {
+            return $this->warn(
+                'WATCHDOG_SCHEMA_UNAVAILABLE',
+                'Lifecycle watchdog could not verify the evidence schema; no audit or repair was attempted.',
+                [
+                    'exception_class' => $exception::class,
+                    'promotion_evidence' => false,
+                ],
+                0,
+                'critical',
+            );
+        }
+
+        if ($missing === []) return null;
+
+        return $this->warn(
+            'WATCHDOG_SCHEMA_INCOMPLETE',
+            'Lifecycle watchdog found missing evidence tables; no audit or repair was attempted.',
+            [
+                'missing_tables' => $missing,
+                'next_action' => 'run the reviewed database migrations before enabling evidence monitoring',
+                'promotion_evidence' => false,
+            ],
+            0,
+            'critical',
+        );
     }
 
     /**
@@ -311,48 +369,130 @@ class LabLifecycleWatchdogService
     private function watchMissingForwardLedgers(): array
     {
         $events = [];
-        LabGeneration::query()->where('status', 'completed')->with('agents.modelVersion')->each(function (LabGeneration $generation) use (&$events): void {
-            // Legacy generations are intentionally handled by the manual,
-            // immutable backfill command.  This watchdog covers only a full
-            // replay that advertises the post-change observability protocol.
-            $evaluated = $generation->agents->filter(fn (LabAgent $agent) =>
-                (int) data_get($agent->modelVersion?->metadata, 'last_result.observability_protocol_version', 0) >= 1
-                && ModelMarketPerformance::query()->where('model_version_id', $agent->model_version_id)->exists()
+        $generations = LabGeneration::query()
+            ->where('status', 'completed')
+            ->get(['id', 'generation']);
+
+        if ($generations->isEmpty()) return $events;
+
+        // Keep this audit bounded in query count.  The previous per-agent
+        // exists() checks turned a normal 3,000-agent archive into thousands
+        // of round trips every five minutes.
+        $agents = $this->agentAuditSnapshot();
+        $evaluatedModelVersions = $this->auditModelVersionIds()->flip();
+
+        $evaluated = $agents->filter(fn (LabAgent $agent): bool =>
+            (int) data_get($agent->modelVersion?->metadata, 'last_result.observability_protocol_version', 0) >= 1
+            && $evaluatedModelVersions->has((int) $agent->model_version_id)
+        );
+        if ($evaluated->isEmpty()) return $events;
+
+        $ledgerAgentIds = CandidateGateDecision::query()
+            ->where('stage', 'statistical_forward_gate')
+            ->whereIn('lab_agent_id', $evaluated->pluck('id')->all())
+            ->pluck('lab_agent_id')
+            ->flip();
+
+        // Legacy generations are intentionally handled by the manual,
+        // immutable backfill command.  This watchdog covers only a full
+        // replay that advertises the post-change observability protocol.
+        foreach ($generations as $generation) {
+            $generationAgents = $evaluated->where('lab_generation_id', $generation->id);
+            if ($generationAgents->isEmpty()) continue;
+
+            $hasLedger = $generationAgents->contains(fn (LabAgent $agent): bool =>
+                $ledgerAgentIds->has((int) $agent->id)
             );
-            if ($evaluated->isEmpty()) return;
-            $hasLedger = CandidateGateDecision::query()->where('stage', 'statistical_forward_gate')
-                ->whereIn('lab_agent_id', $evaluated->pluck('id'))->exists();
             if (! $hasLedger) {
                 $events[] = $this->warn('FORWARD_LEDGER_NOT_WRITTEN', 'Completed generation has full replay evidence but no statistical forward-gate decision.', [
                     'generation_id' => $generation->id, 'generation' => $generation->generation,
-                    'evaluated_agents' => $evaluated->pluck('id')->all(),
+                    'evaluated_agents' => $generationAgents->pluck('id')->all(),
                 ], $generation->id);
             }
-        });
+        }
         return $events;
     }
 
     private function watchShadowConnection(): array
     {
         $events = [];
-        LabAgent::query()->with('modelVersion')->each(function (LabAgent $agent) use (&$events): void {
+        $agents = $this->agentAuditSnapshot();
+        $eligible = $agents->filter(function (LabAgent $agent): bool {
             $result = (array) data_get($agent->modelVersion?->metadata, 'last_result', []);
-            if ((int) data_get($result, 'observability_protocol_version', 0) < 1) return;
+            return (int) data_get($result, 'observability_protocol_version', 0) >= 1
+                && (int) data_get($result, 'entry_funnel.entry_rejection_count', 0) > 0
+                && (int) data_get($result, 'veto_regret.shadow_trade_count', 0) === 0;
+        });
+        if ($eligible->isEmpty()) return $events;
+
+        // The audit only needs membership, so resolve all observations once
+        // instead of issuing one exists() query per agent.
+        $shadowAgentIds = ShadowVetoObservation::query()
+            ->whereIn('lab_agent_id', $eligible->pluck('id')->all())
+            ->pluck('lab_agent_id')
+            ->flip();
+
+        $eligible->each(function (LabAgent $agent) use (&$events, $shadowAgentIds): void {
+            if ($shadowAgentIds->has((int) $agent->id)) return;
+            $result = (array) data_get($agent->modelVersion?->metadata, 'last_result', []);
             $rejected = (int) data_get($result, 'entry_funnel.entry_rejection_count', 0);
             $shadows = (int) data_get($result, 'veto_regret.shadow_trade_count', 0);
-            if ($rejected > 0 && $shadows === 0 && ! ShadowVetoObservation::query()->where('lab_agent_id', $agent->id)->exists()) {
-                $events[] = $this->warn('SHADOW_ENGINE_NOT_CONNECTED', 'Replay reported veto rejections but no shadow counterfactuals were persisted.', [
-                    'lab_agent_id' => $agent->id, 'rejected_signals' => $rejected, 'shadow_trade_count' => $shadows,
-                ], $agent->id);
-            }
+            $events[] = $this->warn('SHADOW_ENGINE_NOT_CONNECTED', 'Replay reported veto rejections but no shadow counterfactuals were persisted.', [
+                'lab_agent_id' => $agent->id, 'rejected_signals' => $rejected, 'shadow_trade_count' => $shadows,
+            ], $agent->id);
         });
         return $events;
+    }
+
+    /**
+     * Anchor the archive audit to model versions that have actual replay
+     * performance evidence. Screening-only agents have no forward/shadow
+     * contract to audit and should not be loaded every five minutes.
+     *
+     * @return Collection<int, int>
+     */
+    private function auditModelVersionIds(): Collection
+    {
+        return $this->auditModelVersionIds ??= ModelMarketPerformance::query()
+            ->whereNotNull('model_version_id')
+            ->pluck('model_version_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+    }
+
+    /**
+     * Load only the immutable identity and replay metadata needed by the
+     * evidence-anchored archive audits. The snapshot is scoped to one inspect
+     * pass so a later invocation cannot observe stale state.
+     *
+     * @return Collection<int, LabAgent>
+     */
+    private function agentAuditSnapshot(): Collection
+    {
+        $modelVersionIds = $this->auditModelVersionIds();
+        if ($modelVersionIds->isEmpty()) return collect();
+
+        return $this->agentAuditSnapshot ??= LabAgent::query()
+            ->select(['id', 'lab_generation_id', 'model_version_id'])
+            ->whereIn('model_version_id', $modelVersionIds->all())
+            ->with(['modelVersion:id,metadata'])
+            ->get();
     }
 
     private function watchPaperCapture(): array
     {
         $events = [];
-        ModelMarketPerformance::query()->where('status', 'forward_validated')->each(function (ModelMarketPerformance $candidate) use (&$events): void {
+        ModelMarketPerformance::query()->with('modelVersion')->where('status', 'forward_validated')->each(function (ModelMarketPerformance $candidate) use (&$events): void {
+            // Council members are intentionally held out of individual paper
+            // execution. Their missing signal is expected until the combined
+            // portfolio proxy passes, so it is not a capture-path incident.
+            $metadata = (array) ($candidate->modelVersion?->metadata ?? []);
+            if (data_get($metadata, 'council_specialist_contract.protocol') === 'agent_council_v1'
+                || data_get($metadata, 'portfolio_council_lane.protocol') === 'portfolio_council_v1') {
+                return;
+            }
             $symbolId = Symbol::query()->where('code', $candidate->symbol)->value('id');
             if (! $symbolId) return;
             $since = $candidate->updated_at ?: $candidate->created_at;
@@ -365,6 +505,91 @@ class LabLifecycleWatchdogService
                 'reason' => 'NO_SIGNAL_OPPORTUNITY_OR_CAPTURE_PATH_REQUIRES_INSPECTION',
             ], $candidate->id);
         });
+        return $events;
+    }
+
+    /**
+     * A portfolio may remain marked active after a member is invalidated or
+     * its proxy forward ledger disappears. Surface that drift every five
+     * minutes; the watchdog never manufactures a new passport or mutates the
+     * frozen evidence. Paper execution remains fail-closed in the meantime.
+     */
+    private function watchElitePortfolioContracts(): array
+    {
+        $events = [];
+        EliteAgentPortfolio::query()->with('members.performance.modelVersion')
+            ->whereIn('status', ['forward_validated', 'paper'])
+            ->each(function (EliteAgentPortfolio $portfolio) use (&$events): void {
+                $issues = [];
+                if ($portfolio->gate_status !== 'passed') $issues[] = 'PORTFOLIO_GATE_NOT_PASSED';
+                if (data_get($portfolio->evidence, 'gate.status') !== 'passed') $issues[] = 'PORTFOLIO_EVIDENCE_GATE_MISSING';
+                if ($portfolio->members->count() < 2
+                    || (int) $portfolio->member_count !== $portfolio->members->count()) {
+                    $issues[] = 'PORTFOLIO_MEMBER_COUNT_MISMATCH';
+                }
+
+                $proxyId = (int) data_get($portfolio->evidence, 'portfolio_performance_id', 0);
+                $proxy = $proxyId > 0
+                    ? ModelMarketPerformance::with('modelVersion')->find($proxyId)
+                    : null;
+                if (! $proxy
+                    || ! (bool) data_get($proxy->metrics, 'portfolio_proxy', false)
+                    || (int) data_get($proxy->metrics, 'elite_portfolio_id', 0) !== (int) $portfolio->id
+                    || $proxy->evidence_status !== 'valid'
+                    || $proxy->modelVersion?->evidence_status !== 'valid') {
+                    $issues[] = 'PORTFOLIO_PROXY_INVALID';
+                } else {
+                    $decision = CandidateGateDecision::query()
+                        ->where('model_market_performance_id', $proxy->id)
+                        ->where('stage', 'statistical_forward_gate')
+                        ->latest('evaluated_at')
+                        ->first();
+                    if ($decision?->decision !== 'passed'
+                        || data_get($decision->metrics, 'portfolio_forward_identity.attribution_status') !== 'portfolio_sealed') {
+                        $issues[] = 'PORTFOLIO_FORWARD_LEDGER_INVALID';
+                    }
+                }
+
+                foreach ($portfolio->members as $member) {
+                    $performance = $member->performance;
+                    if (! $performance
+                        || ! in_array((string) $performance->status, ['forward_validated', 'paper'], true)
+                        || $performance->evidence_status !== 'valid'
+                        || $performance->modelVersion?->evidence_status !== 'valid') {
+                        $issues[] = 'PORTFOLIO_MEMBER_EVIDENCE_INVALID';
+                        continue;
+                    }
+                    $decision = CandidateGateDecision::query()
+                        ->where('model_market_performance_id', $performance->id)
+                        ->where('stage', 'statistical_forward_gate')
+                        ->latest('evaluated_at')
+                        ->first();
+                    if ($decision?->decision !== 'passed'
+                        || data_get($decision->metrics, 'elite_agent_passport.status') !== 'passed') {
+                        $issues[] = 'PORTFOLIO_MEMBER_PASSPORT_INVALID';
+                    }
+                }
+
+                $issues = array_values(array_unique($issues));
+                if ($issues === []) return;
+                $events[] = $this->warn(
+                    'ELITE_PORTFOLIO_CONTRACT_DRIFT',
+                    'Active multi-agent portfolio no longer satisfies its sealed member/proxy contract; paper routing remains fail-closed.',
+                    [
+                        'portfolio_id' => $portfolio->id,
+                        'symbol' => $portfolio->symbol,
+                        'timeframe' => $portfolio->timeframe,
+                        'status' => $portfolio->status,
+                        'gate_status' => $portfolio->gate_status,
+                        'proxy_performance_id' => $proxyId ?: null,
+                        'member_performance_ids' => $portfolio->members->pluck('model_market_performance_id')->values()->all(),
+                        'issues' => $issues,
+                        'promotion_evidence' => false,
+                    ],
+                    $portfolio->id,
+                    'critical',
+                );
+            });
         return $events;
     }
 

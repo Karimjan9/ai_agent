@@ -37,6 +37,24 @@ class LabPopulationService
 
     public const GENERATION_PROTOCOL = 'g98_failure_eliminator_v1';
     public const ROLE_COMPLETE_COUNCIL_PROTOCOL = 'role_complete_council_v1';
+    public const POPULATION_GROUP_PROTOCOL = 'population_group_checkpoint_v1';
+    public const SPECIALIST_COUNCIL_PROTOCOL = 'specialist_council_v1';
+    public const POPULATION_GROUP_SEATS = 4;
+
+    /**
+     * The normal twenty-seat population is five stable research groups.  A
+     * group is a research objective, not a strategy family: the family and
+     * semantic cell still decide which parents are legal.
+     *
+     * @var array<string, array{label: string, axis: string}>
+     */
+    public const POPULATION_GROUPS = [
+        'monthly_survival' => ['label' => 'Monthly survival', 'axis' => 'temporal_robustness'],
+        'regime_coverage' => ['label' => 'Regime coverage', 'axis' => 'regime_coverage'],
+        'volatility_session_stability' => ['label' => 'Volatility/session stability', 'axis' => 'cost_stability'],
+        'exit_topology' => ['label' => 'Exit topology', 'axis' => 'risk_exit'],
+        'portfolio_router' => ['label' => 'Portfolio/router integrity', 'axis' => 'portfolio_integrity'],
+    ];
 
     private const LABS = [
         'XAUUSD' => ['name' => 'XAUUSD Lab', 'families' => ['trend', 'breakout', 'volatility', 'hybrid', 'regime_ensemble', 'differential_router']],
@@ -81,6 +99,7 @@ class LabPopulationService
         private EvolutionGovernorService $evolutionGovernor,
         private EvolutionArchiveService $evolutionArchive,
         private AdaptiveParentFrontierService $adaptiveParentFrontier,
+        private ExecutionContractService $executionContracts,
     ) {}
 
     public function ensureLaboratories(): void
@@ -92,12 +111,16 @@ class LabPopulationService
             ]);
         }
 
-        // EURUSD uses a closed H1 regime as context and M15 only for entries.
-        // It is a separate evidence stream, never a replacement for the H1 lab.
-        AiLaboratory::updateOrCreate(['symbol' => 'EURUSD', 'timeframe' => 'M15'], [
-            'name' => 'EURUSD M15 Specialist Lab', 'timeframe' => 'M15',
-            'strategy_families' => ['trend', 'mean_reversion', 'session', 'breakout', 'regime_ensemble'], 'is_active' => true,
-        ]);
+        // Every symbol now has a separate M15 entry lab. M15 is an evidence
+        // stream for entries only; its regime context is the last CLOSED H1
+        // candle, and its execution costs remain the same contract as H1.
+        foreach (self::LABS as $symbol => $config) {
+            AiLaboratory::updateOrCreate(['symbol' => $symbol, 'timeframe' => 'M15'], [
+                'name' => "{$symbol} M15 Specialist Lab", 'timeframe' => 'M15',
+                'strategy_families' => array_values(array_unique([...$config['families'], 'regime_ensemble'])),
+                'is_active' => true,
+            ]);
+        }
     }
 
     public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null): ?LabGeneration
@@ -226,6 +249,11 @@ class LabPopulationService
                 return null;
             }
             $number = (int) ($latestInTransaction?->generation ?? 0) + 1;
+            $plannedPopulationSize = $roleComplete
+                ? max(4, $populationLimit !== null ? (int) $populationLimit : $this->configuredPopulationSize())
+                : ($populationLimit !== null
+                    ? max(1, (int) $populationLimit)
+                    : $this->configuredPopulationSize());
             $generation = $lockedLab->generations()->create([
                 'generation' => $number, 'trigger_type' => $trigger,
                 'trigger_context' => ['previous_generation' => $latestInTransaction?->generation, 'created_by' => 'learning_trigger',
@@ -241,7 +269,7 @@ class LabPopulationService
                     'portfolio_council_curriculum' => $roleComplete
                         ? $this->roleCouncilCurriculumSnapshot($lockedLab)
                         : $this->portfolioCouncilCurriculum($lockedLab)],
-                'data_fingerprint' => $fingerprint, 'population_size' => $populationLimit !== null ? max(1, $populationLimit) : 20,
+                'data_fingerprint' => $fingerprint, 'population_size' => $plannedPopulationSize,
                 'status' => 'draft', 'started_at' => now(),
             ]);
 
@@ -266,10 +294,29 @@ class LabPopulationService
             $adaptiveEvolutionPolicy['adaptive_plan_changed'] = $baseGenerationPlan !== $plan;
             $adaptiveEvolutionPolicy['adaptive_plan_protocol'] = 'champion_guided_adaptive_budget_v1';
             $adaptiveEvolutionPolicy['plan_change_rule'] = 'protect causal floor; allocate remaining seats to robust, architecture and curiosity lanes under stagnation, concentration or drift pressure';
+            $populationGroupContract = $this->populationGroupContract($plan);
+            $priorGroupCheckpoints = $this->latestGroupCheckpoints($lockedLab);
             $generation->update(['trigger_context' => [
                 ...($generation->trigger_context ?? []),
                 'generation_plan' => $plan,
                 'adaptive_evolution_policy' => $adaptiveEvolutionPolicy,
+                'population_group_contract' => $populationGroupContract,
+                'group_checkpoint_inputs' => $priorGroupCheckpoints,
+                'specialist_council_contract' => [
+                    'protocol' => self::SPECIALIST_COUNCIL_PROTOCOL,
+                    'global_champion_forbidden' => true,
+                    'member_model' => 'complementary_specialists_by_group_and_semantic_cell',
+                    'parameter_specialist_rule' => 'Each member may own a bounded parameter/skill niche; group progress is measured as a frontier, not a singleton score.',
+                    'combined_activation' => 'individual_passports_then_council_quorum',
+                    'promotion_evidence' => false,
+                ],
+                'group_checkpoint_rule' => [
+                    'protocol' => self::POPULATION_GROUP_PROTOCOL,
+                    'checkpoint_advances_only_from' => ['challenger', 'forward_validated', 'paper', 'champion'],
+                    'screening_and_quarantine_are_diagnostic_only' => true,
+                    'exact_semantic_parent_rule_unchanged' => true,
+                    'promotion_evidence' => false,
+                ],
             ]]);
             $this->historicalLearning->recordGenerationConsumption($generation, $plan);
             $createdAgents = 0;
@@ -283,6 +330,8 @@ class LabPopulationService
                     $spec['target'],
                     $spec['niche'] ?? null,
                     $spec['history'] ?? null,
+                    $spec['research_group'] ?? null,
+                    (int) ($spec['group_seat'] ?? 0),
                 );
                 if ($created) {
                     $createdAgents++;
@@ -315,14 +364,138 @@ class LabPopulationService
         });
     }
 
+    private function configuredPopulationSize(): int
+    {
+        $minimum = max(1, (int) config('services.lab_selection.population_min_size', 1));
+        $configuredMaximum = (int) config('services.lab_selection.population_max_size', 0);
+        $requested = max($minimum, (int) config('services.lab_selection.population_size', 20));
+        return $configuredMaximum > 0
+            ? min(max($minimum, $configuredMaximum), $requested)
+            : $requested;
+    }
+
+    /** @return array<string, mixed> */
+    private function populationGroupSeatContract(string $group, int $seat): array
+    {
+        $definition = self::POPULATION_GROUPS[$group] ?? [
+            'label' => $group,
+            'axis' => 'diagnostic_reserve',
+        ];
+
+        return [
+            'protocol' => self::POPULATION_GROUP_PROTOCOL,
+            'key' => $group,
+            'label' => $definition['label'],
+            'axis' => $definition['axis'],
+            'seat' => $seat,
+            'cohort_size' => self::POPULATION_GROUP_SEATS,
+            'search_mode' => $seat <= 2 ? 'depth' : 'breadth',
+            'search_role' => match ($seat) {
+                1 => 'checkpoint_continuation',
+                2 => 'deepening_mutation',
+                3 => 'architecture_widening',
+                default => 'curiosity_widening',
+            },
+        ];
+    }
+
+    private function researchGroupForTarget(string $target, int $slot): string
+    {
+        if (array_key_exists($target, self::POPULATION_GROUPS)) return $target;
+
+        $groups = array_keys(self::POPULATION_GROUPS);
+        return $groups[max(0, ($slot - 1) % count($groups))];
+    }
+
+    /** @param array<int, array<string, mixed>> $plan */
+    private function populationGroupContract(array $plan): array
+    {
+        $groups = collect($plan)
+            ->map(function (array $spec, int $index): array {
+                $key = (string) ($spec['research_group'] ?? $this->researchGroupForTarget((string) ($spec['target'] ?? ''), $index + 1));
+                return [
+                    'key' => $key,
+                    'seat' => (int) ($spec['group_seat'] ?? 0),
+                    'axis' => (string) ($spec['group_axis'] ?? data_get(self::POPULATION_GROUPS, $key.'.axis', 'diagnostic_reserve')),
+                    'search_mode' => (string) ($spec['group_search_mode'] ?? 'adaptive_reserve'),
+                    'search_role' => (string) ($spec['group_search_role'] ?? 'adaptive_reserve'),
+                    'target' => (string) ($spec['target'] ?? ''),
+                    'origin' => (string) ($spec['origin'] ?? ''),
+                ];
+            })
+            ->groupBy('key');
+
+        $groupRows = [];
+        foreach (array_keys(self::POPULATION_GROUPS) as $key) {
+            $rows = $groups->get($key, collect());
+            $groupRows[$key] = [
+                ...self::POPULATION_GROUPS[$key],
+                'planned_seats' => $rows->count(),
+                'seat_numbers' => $rows->pluck('seat')->filter()->values()->all(),
+                'search_modes' => $rows->pluck('search_mode')->unique()->values()->all(),
+                'targets' => $rows->pluck('target')->filter()->unique()->values()->all(),
+                'origins' => $rows->pluck('origin')->filter()->unique()->values()->all(),
+                'checkpoint_inheritance' => true,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $plannedCore = array_sum(array_map(fn (array $row): int => (int) $row['planned_seats'], $groupRows));
+
+        return [
+            'protocol' => self::POPULATION_GROUP_PROTOCOL,
+            'planned_population' => count($plan),
+            'core_group_count' => count(self::POPULATION_GROUPS),
+            'core_seats_per_group' => self::POPULATION_GROUP_SEATS,
+            'core_population' => count(self::POPULATION_GROUPS) * self::POPULATION_GROUP_SEATS,
+            'balanced_core' => $plannedCore === count(self::POPULATION_GROUPS) * self::POPULATION_GROUP_SEATS
+                && collect($groupRows)->every(fn (array $row): bool => (int) $row['planned_seats'] === self::POPULATION_GROUP_SEATS),
+            'groups' => $groupRows,
+            'overflow_seats' => max(0, count($plan) - $plannedCore),
+            'rule' => 'Five stable research groups receive four seats in the normal twenty-agent population; overflow is an explicit adaptive reserve and cannot replace a core group seat.',
+            'promotion_evidence' => false,
+        ];
+    }
+
     /**
-     * 20 slots are intentionally stable across generations so observed gate
-     * transitions can be compared.  Family selection is deficit-weighted:
+     * Read the last durable group report as context for the next generation.
+     * It never manufactures a parent: strict semantic parent eligibility is
+     * still evaluated independently by createAgent().
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function latestGroupCheckpoints(AiLaboratory $lab): array
+    {
+        $generations = $lab->generations()
+            ->whereIn('status', self::TERMINAL_GENERATION_STATUSES)
+            ->latest('generation')
+            ->take(5)
+            ->get(['trigger_context']);
+
+        foreach ($generations as $generation) {
+            $checkpoints = (array) data_get(
+                $generation->trigger_context,
+                'latest_generation_report.population_group_checkpoints',
+                [],
+            );
+            if ($checkpoints !== []) return $checkpoints;
+        }
+
+        return [];
+    }
+
+    /**
+     * The default 20-slot budget remains stable across generations so observed
+     * gate transitions can be compared. The budget is configurable when a
+     * laboratory needs a wider search. Family selection is deficit-weighted:
      * the greatest unsatisfied forward gate gets the earliest experiments.
      */
     private function generationPlan(AiLaboratory $lab, array $coverageRescue = [], bool $roleComplete = false, ?int $populationLimit = null): array
     {
-        if ((bool) data_get($coverageRescue, 'eligible')) return $this->coverageRescuePlan($coverageRescue);
+        $targetPopulation = $roleComplete
+            ? max(4, $populationLimit !== null ? (int) $populationLimit : $this->configuredPopulationSize())
+            : ($populationLimit !== null ? max(1, (int) $populationLimit) : $this->configuredPopulationSize());
+        if ((bool) data_get($coverageRescue, 'eligible')) return $this->coverageRescuePlan($coverageRescue, $targetPopulation);
         // A role-complete build may be intentionally bounded to the four
         // mandatory seats while its constructor/lineage contract is being
         // proven.  Do not route that request through the generic root-recovery
@@ -339,13 +512,50 @@ class LabPopulationService
             $families,
             fn (array $evidence) => ! in_array($evidence['family'], $explorationOnly, true),
         ));
-        // G98 is a failure-eliminator, not a PF maximizer.  The budget is
-        // fully partitioned into five causal layers; there is deliberately no
-        // random-explorer slot and no lane may change more than one gene.
+        // G98 is a failure-eliminator, not a PF maximizer. The configured
+        // budget starts with five causal layers; additional seats are explicit
+        // robust/architecture/curiosity experiments so a larger population
+        // expands the search instead of cloning the old 20-slot shape.
         $slots = [];
-        foreach (['monthly_survival', 'regime_coverage', 'volatility_session_stability', 'exit_topology', 'portfolio_router'] as $lane) {
-            foreach (range(1, 4) as $_) $slots[] = ['origin' => 'g98_council', 'target' => $lane];
+        // Keep the historical causal baseline at twenty seats; a larger
+        // population is deliberately spent on new search paths instead of
+        // multiplying the same repair lane indefinitely.
+        $causalRepeats = min(4, max(1, intdiv($targetPopulation, 5)));
+        foreach (array_keys(self::POPULATION_GROUPS) as $lane) {
+            foreach (range(1, $causalRepeats) as $groupSeat) {
+                $slots[] = [
+                    'origin' => 'g98_council',
+                    'target' => $lane,
+                    'research_group' => $lane,
+                    'group_seat' => $groupSeat,
+                    'group_axis' => self::POPULATION_GROUPS[$lane]['axis'],
+                    'group_search_mode' => $groupSeat <= 2 ? 'depth' : 'breadth',
+                    'group_search_role' => match ($groupSeat) {
+                        1 => 'checkpoint_continuation',
+                        2 => 'deepening_mutation',
+                        3 => 'architecture_widening',
+                        default => 'curiosity_widening',
+                    },
+                ];
+            }
         }
+        while (count($slots) < $targetPopulation) {
+            $extraIndex = count($slots);
+            $extraGroup = array_keys(self::POPULATION_GROUPS)[$extraIndex % count(self::POPULATION_GROUPS)];
+            $slots[] = [
+                ...match ($extraIndex % 3) {
+                    0 => ['origin' => 'robust_crossover', 'target' => 'robustness'],
+                    1 => ['origin' => 'architecture', 'target' => 'architecture'],
+                    default => ['origin' => 'curiosity_probe', 'target' => 'unknown_state_curiosity'],
+                },
+                'research_group' => $extraGroup,
+                'group_seat' => self::POPULATION_GROUP_SEATS + intdiv($extraIndex, count(self::POPULATION_GROUPS)) + 1,
+                'group_axis' => self::POPULATION_GROUPS[$extraGroup]['axis'],
+                'group_search_mode' => 'breadth_reserve',
+                'group_search_role' => 'adaptive_reserve',
+            ];
+        }
+        $slots = array_slice($slots, 0, $targetPopulation);
 
         // A failed sealed portfolio is an ensemble-level problem.  Its next
         // population must therefore contain several independent attempts for
@@ -438,8 +648,9 @@ class LabPopulationService
                 ];
             }
         }
-        // Keep the fixed 20-agent budget. The standard lanes fill the rest;
-        // the council lanes always get first claim on the gate-targeted slots.
+        // Council lanes get first claim on the configured budget; standard
+        // lanes fill the remainder. No hidden fixed population ceiling is
+        // applied here.
         $councilPlan = array_slice($councilPlan, 0, count($slots));
         $standardSlots = array_slice($slots, count($councilPlan));
         // Reserve one independent research seat when the current knowledge
@@ -543,7 +754,7 @@ class LabPopulationService
         // are still screening children; the full selector and unchanged
         // passport gates decide whether a role receives evidence.
         $mandatory = $this->mandatoryCouncilRolePlan($lab);
-        $remaining = array_slice($plan, 0, max(0, 20 - count($mandatory)));
+        $remaining = array_slice($plan, 0, max(0, $targetPopulation - count($mandatory)));
         return [...$mandatory, ...$remaining];
     }
 
@@ -744,12 +955,12 @@ class LabPopulationService
     }
 
     /** Only uncertified operating-envelope cells receive a G102 child slot. */
-    private function coverageRescuePlan(array $audit): array
+    private function coverageRescuePlan(array $audit, int $populationSize = 20): array
     {
         $cells = array_values((array) data_get($audit, 'uncertified_cells', []));
         $parents = array_values((array) data_get($audit, 'parent_model_version_ids', []));
         if ($cells === [] || $parents === []) return [];
-        return collect(range(0, 19))->map(function (int $index) use ($cells, $parents, $audit): array {
+        return collect(range(0, max(0, $populationSize - 1)))->map(function (int $index) use ($cells, $parents, $audit): array {
             $cell = $cells[$index % count($cells)];
             $parentModelVersionId = (int) data_get($cell, 'parent_model_version_id', $parents[$index % count($parents)]);
             $parentFamily = ModelMarketPerformance::query()
@@ -779,9 +990,12 @@ class LabPopulationService
     /** Recent full-replay failures become G98 context contracts, not month genes. */
     private function robustnessMatrixFrontier(AiLaboratory $lab): array
     {
-        $rows = ModelMarketPerformance::query()->with('modelVersion')
+        $rowsQuery = ModelMarketPerformance::query()->with('modelVersion')
             ->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)
-            ->where('evidence_status', 'valid')->latest('updated_at')->take(30)->get();
+            ->where('evidence_status', 'valid')->latest('updated_at');
+        $sourceLimit = (int) config('services.lab_selection.robustness_matrix_source_limit', 0);
+        if ($sourceLimit > 0) $rowsQuery->take($sourceLimit);
+        $rows = $rowsQuery->get();
         $frontier = [];
         foreach ($rows as $performance) {
             foreach ((array) data_get($performance->metrics, 'robustness_matrix.weakest_envelopes', []) as $cell) {
@@ -803,10 +1017,12 @@ class LabPopulationService
                 ];
             }
         }
-        return collect($frontier)->filter(fn (array $cell): bool => $cell['trades'] >= 3)
+        $frontierQuery = collect($frontier)->filter(fn (array $cell): bool => $cell['trades'] >= 3)
             ->sortBy(fn (array $cell): array => [$cell['profit_factor'], -$cell['trades']])
-            ->unique(fn (array $cell): string => implode('|', [$cell['regime'], $cell['volatility'], $cell['session_utc_hour'], $cell['direction']]))
-            ->take(5)->values()->all();
+            ->unique(fn (array $cell): string => implode('|', [$cell['regime'], $cell['volatility'], $cell['session_utc_hour'], $cell['direction']]));
+        $frontierLimit = (int) config('services.lab_selection.robustness_matrix_frontier_limit', 0);
+        if ($frontierLimit > 0) $frontierQuery = $frontierQuery->take($frontierLimit);
+        return $frontierQuery->values()->all();
     }
 
     /** A zero-activity family may explore, but it cannot consume rescue or
@@ -814,7 +1030,7 @@ class LabPopulationService
     private function explorationOnlyFamilies(AiLaboratory $lab): array
     {
         if ($lab->symbol !== 'XAUUSD' || $lab->timeframe !== 'H1') return [];
-        $latestPopulation = $lab->generations()->where('population_size', 20)->latest('generation')->first();
+        $latestPopulation = $lab->generations()->latest('generation')->first();
         if (! $latestPopulation) return [];
         $volatility = $latestPopulation->agents()->where('strategy_family', 'volatility')->get(['sample_count']);
         return $volatility->count() >= 3 && $volatility->every(fn ($agent) => (int) $agent->sample_count === 0)
@@ -1003,11 +1219,14 @@ class LabPopulationService
             return $this->forwardFailureCouncilCurriculum($lab);
         }
 
-        $candidates = ModelMarketPerformance::with('modelVersion')
+        $candidateQuery = ModelMarketPerformance::with('modelVersion')
             ->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)
             ->where('evidence_status', 'valid')
             ->whereHas('modelVersion', fn ($query) => $query->whereJsonContains('metadata->portfolio_research_contract->protocol', 'portfolio_member_research_v1'))
-            ->latest('updated_at')->take(30)->get();
+            ->latest('updated_at');
+        $sourceLimit = (int) config('services.lab_selection.portfolio_council_source_limit', 0);
+        if ($sourceLimit > 0) $candidateQuery->take($sourceLimit);
+        $candidates = $candidateQuery->get();
 
         $observed = [];
         foreach ($candidates as $candidate) {
@@ -1226,7 +1445,9 @@ class LabPopulationService
                 (int) data_get($niche, 'trades', 0) >= 10 ? 0 : 1,
                 (float) data_get($niche, 'profit_factor', 0),
             ])
-            ->take(4)->values()->all();
+            ->when((int) config('services.lab_selection.portfolio_council_max_niches', 0) > 0,
+                fn ($collection) => $collection->take((int) config('services.lab_selection.portfolio_council_max_niches', 0)))
+            ->values()->all();
 
         $niches = $this->withTransitionRiskRouter($niches);
 
@@ -1364,7 +1585,7 @@ class LabPopulationService
      */
     private function forwardFailureCouncilCurriculum(AiLaboratory $lab): array
     {
-        $performances = ModelMarketPerformance::query()
+        $performanceQuery = ModelMarketPerformance::query()
             ->with('modelVersion')
             ->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)
             ->where('evidence_status', 'valid')
@@ -1372,7 +1593,10 @@ class LabPopulationService
             // routing. They can expose which regime owner failed, but they
             // can never become a council member or promotion evidence.
             ->whereIn('status', ['challenger', 'stagnated', 'rejected', 'overfit'])
-            ->latest('updated_at')->take(60)->get();
+            ->latest('updated_at');
+        $sourceLimit = (int) config('services.lab_selection.forward_failure_source_limit', 0);
+        if ($sourceLimit > 0) $performanceQuery->take($sourceLimit);
+        $performances = $performanceQuery->get();
         if ($performances->isEmpty()) return [];
 
         $decisions = CandidateGateDecision::query()
@@ -1494,13 +1718,14 @@ class LabPopulationService
             ->unique()
             ->values()
             ->all();
-        $performances = ModelMarketPerformance::with('modelVersion')
+        $performanceQuery = ModelMarketPerformance::with('modelVersion')
             ->where('symbol', $lab->symbol)
             ->where('timeframe', $lab->timeframe)
             ->where('evidence_status', 'valid')
-            ->latest('updated_at')
-            ->take(120)
-            ->get();
+            ->latest('updated_at');
+        $sourceLimit = (int) config('services.lab_selection.evidence_complement_source_limit', 0);
+        if ($sourceLimit > 0) $performanceQuery->take($sourceLimit);
+        $performances = $performanceQuery->get();
 
         $complements = [];
         foreach ($performances as $performance) {
@@ -1627,9 +1852,12 @@ class LabPopulationService
     private function shadowVetoTarget(string $symbol, string $timeframe, string $family): ?string
     {
         if ($target = $this->vetoPolicies->recommendedTarget($symbol, $timeframe, $family)) return $target;
-        $decisions = CandidateGateDecision::query()->where('stage', 'screening')
+        $decisionQuery = CandidateGateDecision::query()->where('stage', 'screening')
             ->whereHas('labAgent', fn ($agent) => $agent->where('symbol', $symbol)->where('timeframe', $timeframe)->where('strategy_family', $family))
-            ->latest('evaluated_at')->take(12)->get();
+            ->latest('evaluated_at');
+        $decisionLimit = (int) config('services.lab_selection.shadow_veto_decision_limit', 0);
+        if ($decisionLimit > 0) $decisionQuery->take($decisionLimit);
+        $decisions = $decisionQuery->get();
         foreach ($decisions as $decision) {
             foreach ((array) data_get($decision->metrics, 'veto_regret.by_veto_reason', []) as $reason => $metrics) {
                 // Legacy aggregates remain diagnostic only. New policy-lab
@@ -1696,9 +1924,29 @@ class LabPopulationService
         };
     }
 
-    private function createAgent(LabGeneration $generation, string $family, string $origin, int $slot, string $target, ?array $niche = null, ?array $history = null): bool
+    private function createAgent(
+        LabGeneration $generation,
+        string $family,
+        string $origin,
+        int $slot,
+        string $target,
+        ?array $niche = null,
+        ?array $history = null,
+        ?string $researchGroup = null,
+        int $groupSeat = 0,
+    ): bool
     {
         $lab = $generation->laboratory;
+        $researchGroup = $researchGroup && array_key_exists($researchGroup, self::POPULATION_GROUPS)
+            ? $researchGroup
+            : $this->researchGroupForTarget($target, $slot);
+        $groupSeat = $groupSeat > 0 ? $groupSeat : (($slot - 1) % self::POPULATION_GROUP_SEATS) + 1;
+        $populationGroup = $this->populationGroupSeatContract($researchGroup, $groupSeat);
+        $priorGroupCheckpoint = (array) data_get(
+            $generation->trigger_context,
+            'group_checkpoint_inputs.'.$researchGroup,
+            [],
+        );
         $history ??= ($this->historicalLearning->latestForFamily($lab->symbol, $lab->timeframe, $family)?->toArray());
         $historyKeys = array_values((array) data_get($history, 'recommended_keys', data_get($history, 'recommended_mutations.keys', [])));
         $historyInsightId = data_get($history, 'insight_id');
@@ -1884,7 +2132,6 @@ class LabPopulationService
             // Do not label that empty result as a validated frontier and do
             // not let it block a legal canonical control-root handoff.
             $parentTier = 'no_parent';
-            $parentSelection = 'archive_candidates_not_parent_eligible';
             if ($controlRootSeedAgent === null && ! $frozenParent) {
                 $controlRootSeedAgent = $this->controlRootInheritance->findSeed($generation, $family, $niche);
                 if ($controlRootSeedAgent) {
@@ -1905,6 +2152,13 @@ class LabPopulationService
                     $parents = $adaptiveParentSelection['parents'];
                 }
             }
+            // A genuinely parentless specialist is an explicit no-parent
+            // starting state. Keep the failure-context explanation in
+            // portfolio_council_parent_selection and diagnostic metadata;
+            // it must not be mistaken for an attached genetic parent.
+            if ($parents->isEmpty() && $controlRootSeedAgent === null && ! $frozenParent) {
+                $parentSelection = 'no_parent_available';
+            }
         } elseif ((bool) data_get($adaptiveParentSelection, 'contract.research_seed_only', false)) {
             $parentTier = 'screening_seed';
             $parentSelection = 'archive_revival_research_seed';
@@ -1914,7 +2168,7 @@ class LabPopulationService
             $lab->timeframe,
             $family,
             $niche,
-            8,
+            (int) config('services.lab_selection.archive_migration_limit', 0),
         );
         $this->evolutionArchive->sync(
             $generation,
@@ -1931,7 +2185,13 @@ class LabPopulationService
         $parentCount = $parents->count();
         $parentA = $parents->first();
         $parentB = $parentCount > 1 ? $parents->get(1) : null;
-        $repairOrigins = ['gate_targeted', 'risk_exit', 'causal_isolation', 'architecture', 'g98_council', 'coverage_rescue'];
+        // Architecture discovery and robust crossover are multi-gene,
+        // capability-level hypotheses. Treating architecture as a one-gene
+        // repair here made EliteAgentPassportService demand a causal paired
+        // replay that the child was never designed to provide. Causal lanes
+        // keep the isolated repair lineage; discovery lanes keep their full
+        // independent replay and promotion gates.
+        $repairOrigins = ['gate_targeted', 'risk_exit', 'causal_isolation', 'g98_council', 'coverage_rescue'];
         $parentRepair = (array) data_get($parentA?->metadata, 'repair_lineage', []);
         $repairLineage = in_array($origin, $repairOrigins, true) ? [
             'protocol' => 'bounded_repair_lineage_v1',
@@ -2107,6 +2367,7 @@ class LabPopulationService
             $parentA,
             $niche,
             $target,
+            $parents->all(),
         );
         $knowledgeContract['curiosity_lane'] = [
             ...((array) data_get($knowledgeContract, 'curiosity_lane', [])),
@@ -2288,9 +2549,18 @@ class LabPopulationService
             $parentTier,
             $parentSelection,
             $semanticGroup,
+            $parents->all(),
         );
         $constitution = $this->constitutions->draft($lab->symbol, $lab->timeframe, $family, $architecture, $parameters);
-        $universalGenome = $this->universalCapabilities->genome($lab->symbol, $lab->timeframe, $family, $architecture, $parameters, $parentA);
+        $universalGenome = $this->universalCapabilities->genome(
+            $lab->symbol,
+            $lab->timeframe,
+            $family,
+            $architecture,
+            $parameters,
+            $parentA,
+            $parents->all(),
+        );
         $reservoirRecall = $this->regimeReservoir->recall($lab->symbol, $lab->timeframe, $mutationScope);
         // Model versions are globally unique. H1 keeps its established name;
         // additional execution timeframes receive an explicit namespace so an
@@ -2307,6 +2577,21 @@ class LabPopulationService
                 'tactic_alignment' => $tacticAlignment,
                 'lab_symbol' => $lab->symbol, 'origin' => $origin,
                 'lab_timeframe' => $lab->timeframe,
+                'population_group' => [
+                    ...$populationGroup,
+                    'prior_checkpoint' => $priorGroupCheckpoint !== [] ? $priorGroupCheckpoint : null,
+                    'checkpoint_inheritance_rule' => 'Use the prior group checkpoint as bounded research context; exact semantic parent and unchanged gates remain authoritative.',
+                    'promotion_evidence' => false,
+                ],
+                'specialist_council_membership' => [
+                    'protocol' => self::SPECIALIST_COUNCIL_PROTOCOL,
+                    'group_key' => $researchGroup,
+                    'member_role' => data_get($populationGroup, 'search_role'),
+                    'parameter_specialties' => array_keys($parameterDiff),
+                    'global_champion' => false,
+                    'council_frontier_only_until_individual_passport' => true,
+                    'promotion_evidence' => false,
+                ],
                 'semantic_group' => $semanticGroup,
                 'semantic_map_elites' => app(SemanticEliteArchiveService::class)->contract(
                     // The group descriptor is the immutable cell identity;
@@ -2323,6 +2608,7 @@ class LabPopulationService
                 'parent_inheritance_protocol' => [
                     'protocol' => 'exact_semantic_parent_or_group_root_v1',
                     'parent_selection' => $parentSelection,
+                    'parent_status' => $parentA ? 'attached' : 'not_available',
                     'parent_graph_protocol' => 'lab_agent_parent_graph_v1',
                     'control_root_protocol' => $controlRootSeedAgent ? ControlRootInheritanceService::PROTOCOL : null,
                     'control_root_seed_model_version_id' => $controlRootSeedAgent?->model_version_id,
@@ -2456,6 +2742,7 @@ class LabPopulationService
                 ],
                 'semantic_lineage' => [
                     'protocol' => 'strict_semantic_lineage_v2',
+                    'parent_status' => $parentA ? 'attached' : 'not_available',
                     'child_group_key' => data_get($semanticGroup, 'key'),
                     'genetic_parent_model_version_id' => $parentA?->id,
                     'genetic_parent_model_version_ids' => array_values(array_unique(array_filter([
@@ -2469,7 +2756,7 @@ class LabPopulationService
                         : null,
                     'mode' => $controlRootSeedAgent
                         ? 'control_root_seed_inheritance'
-                        : ($parentA ? 'exact_semantic_parent' : 'semantic_group_root_default_seed'),
+                        : ($parentA ? 'exact_semantic_parent' : 'no_parent_available'),
                     'legacy_parent_ids_diagnostic_only' => $diagnosticParents
                         ->filter(fn (ModelVersion $candidate): bool => (bool) data_get($this->semanticGroups->fromModel($candidate, $family), 'legacy_unscoped', false))
                         ->pluck('id')->values()->all(),
@@ -2506,6 +2793,12 @@ class LabPopulationService
                 'skill_crossover_sources' => $skillCrossoverSources ?: null,
                 'parent_contribution_graph' => [
                     'protocol' => 'lab_agent_parent_graph_v1',
+                    'all_parent_model_version_ids' => array_values(array_unique(array_filter([
+                        ...array_values((array) ($adaptiveParentSelection['selected_parent_ids'] ?? [])),
+                        $parentA?->id,
+                        $canonicalParentB,
+                        ...array_values($skillCrossoverSources),
+                    ], static fn ($id): bool => is_numeric($id) && (int) $id > 0))),
                     'primary_parent_a_model_version_id' => $parentA?->id,
                     'primary_parent_b_model_version_id' => $canonicalParentB,
                     'control_root_seed_model_version_id' => $controlRootSeedAgent?->model_version_id,
@@ -2543,7 +2836,11 @@ class LabPopulationService
                 'agent_constitution' => $constitution,
                 'universal_genome' => $universalGenome,
                 'regime_reservoir_recall' => $reservoirRecall,
-                'execution_contract' => $family === 'differential_router' ? LearningProtocolSafetyService::EXECUTION_CONTRACT : null,
+                // Store the exact symbol-aware contract used by every replay
+                // lane. The old differential protocol string was not an
+                // execution hash and made an otherwise valid FX cohort fail
+                // the later full-validation preflight.
+                'execution_contract' => $this->executionContracts->for($lab->symbol, $lab->timeframe),
                 'differential_router_contract' => $family === 'differential_router' && $parentA ? [
                     'parent_model_version_id' => $parentA->id,
                     'parent_frozen_hash' => hash('sha256', json_encode(data_get($parentA->metadata, 'last_screen_result', []), JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
@@ -2566,6 +2863,9 @@ class LabPopulationService
             'symbol' => $lab->symbol, 'timeframe' => $lab->timeframe, 'strategy_family' => $family,
             'origin' => $origin, 'lifecycle_status' => 'draft',
             'parameter_diff' => $parameterDiff,
+            'decision_reason' => $parentA
+                ? null
+                : 'Parent currently unavailable; agent starts without a parent and may use an exact parent in a later generation.',
         ]);
         $agent->setRelation('modelVersion', $model);
         if ($controlRootSeedDeclaration !== null) {
@@ -4124,9 +4424,16 @@ class LabPopulationService
         // Keep the exact-cell boundary, but retain a bounded same-cell
         // frontier. The local champion anchors convergence; diverse
         // capability parents remain available to robust crossover.
+        $frontierCaps = array_values(array_filter([
+            (int) config('services.lab_selection.semantic_cell_parent_frontier', 0),
+            (int) config('services.lab_selection.parent_candidate_frontier', 0),
+        ], static fn (int $limit): bool => $limit > 0));
+        // Zero means the complete exact-cell frontier. Positive values are
+        // explicit infrastructure caps, never biological/evidence rules.
+        $frontierLimit = $frontierCaps === [] ? 0 : max($frontierCaps);
         return app(SemanticEliteArchiveService::class)->frontierPerCell(
             $eligible,
-            (int) config('services.lab_selection.semantic_cell_parent_frontier', 5),
+            $frontierLimit,
             fn (ModelVersion $parent): float => (float) ($parent->best_score ?? 0),
         );
     }
@@ -4434,23 +4741,42 @@ class LabPopulationService
         string $parentTier,
         string $parentSelection,
         array $semanticGroup,
+        array $contributors = [],
     ): array {
         $schema = $this->schemas->schema($family);
+        $parentModels = collect([$parent, ...$contributors])
+            ->filter(fn ($model): bool => $model instanceof ModelVersion)
+            ->unique('id')
+            ->values();
         $parentParameters = (array) ($parent?->parameters ?? []);
-        $inheritedKeys = array_values(array_intersect(array_keys($parentParameters), array_keys($schema)));
+        $inheritedKeys = $parentModels
+            ->flatMap(fn (ModelVersion $model): array => array_keys((array) $model->parameters))
+            ->filter(fn (string $key): bool => array_key_exists($key, $schema))
+            ->unique()->values()->all();
         $changedKeys = array_keys($this->diff($base, $parameters));
         $parentLineage = (array) data_get($parent?->metadata, 'progressive_inheritance', []);
         $repairLineage = (array) data_get($parent?->metadata, 'repair_lineage', []);
         $rootId = $parent
             ? (int) data_get($parentLineage, 'root_model_version_id', data_get($repairLineage, 'root_model_version_id', $parent->id))
             : null;
-        $traits = $this->confirmedParentTraits($parent);
+        $traitsByParent = $parentModels->mapWithKeys(fn (ModelVersion $model): array => [
+            (string) $model->id => $this->confirmedParentTraits($model),
+        ])->all();
         $traits = collect([
             ...(array) data_get($parentLineage, 'confirmed_beneficial_traits', []),
-            ...$traits,
+            ...collect($traitsByParent)->flatMap(fn (array $parentTraits, string $parentId) => collect($parentTraits)
+                ->map(fn (array $trait): array => [
+                    ...$trait,
+                    // The source id is retained beside the legacy trait
+                    // shape so a multi-parent child can audit which parent
+                    // supplied a beneficial prior.
+                    'source_parent_model_version_id' => (int) $parentId,
+                ]))->all(),
         ])->filter(fn ($trait): bool => is_array($trait) && filled(data_get($trait, 'parameter_key')))
-            ->unique(fn (array $trait): string => (string) data_get($trait, 'parameter_key').'|'.json_encode(data_get($trait, 'new_value')))
-            ->take(24)->values()->all();
+            ->unique(fn (array $trait): string => (string) data_get($trait, 'parameter_key').'|'.json_encode(data_get($trait, 'new_value')));
+        $traitLimit = (int) config('services.lab_selection.confirmed_parent_traits_limit', 0);
+        if ($traitLimit > 0) $traits = $traits->take($traitLimit);
+        $traits = $traits->values()->all();
         $progress = $parentPerformance
             ? $this->parentProgressSnapshot($parentPerformance, $target, $niche)
             : [
@@ -4469,6 +4795,7 @@ class LabPopulationService
             'protocol' => 'progressive_frontier_inheritance_v1',
             'status' => $parent ? 'inherited_from_frontier' : 'first_generation_seed',
             'parent_model_version_id' => $parent?->id,
+            'parent_model_version_ids' => $parentModels->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
             'parent_performance_id' => $parentPerformance?->id,
             'root_model_version_id' => $rootId,
             'lineage_depth' => $parent ? ((int) data_get($parentLineage, 'lineage_depth', 0) + 1) : 0,
@@ -4497,8 +4824,9 @@ class LabPopulationService
             'changed_parameter_keys' => $changedKeys,
             'preserved_parameter_count' => count(array_diff($inheritedKeys, $changedKeys)),
             'confirmed_beneficial_traits' => $traits,
+            'confirmed_beneficial_traits_by_parent' => $traitsByParent,
             'parent_progress' => $progress,
-            'reset_reason' => $parent ? null : 'no_exact_semantic_parent_group_root_default_seed',
+            'reset_reason' => $parent ? null : 'no_parent_available',
             'promotion_evidence' => false,
             'rule' => 'Carry only the exact semantic parent parameters and independently confirmed traits; otherwise start from the group root/default seed. Change only the declared bounded experiment and re-earn every gate.',
         ];
@@ -4509,14 +4837,15 @@ class LabPopulationService
         if (! $parent) return [];
         $agentIds = LabAgent::query()->where('model_version_id', $parent->id)->pluck('id')->all();
         if ($agentIds === []) return [];
-        return MutationMemory::query()
+        $query = MutationMemory::query()
             ->whereIn('lab_agent_id', $agentIds)
             ->where('outcome', 'beneficial')
             ->where('independent_confirmation_count', '>=', 2)
             ->where('non_target_regression_status', 'passed')
-            ->latest('updated_at')
-            ->take(24)
-            ->get()
+            ->latest('updated_at');
+        $traitLimit = (int) config('services.lab_selection.confirmed_parent_traits_limit', 0);
+        if ($traitLimit > 0) $query->take($traitLimit);
+        return $query->get()
             ->map(fn (MutationMemory $memory): array => [
                 'parameter_key' => $memory->parameter_key,
                 'old_value' => data_get($memory->old_value, 'value'),
@@ -4532,13 +4861,14 @@ class LabPopulationService
     private function mutationScope(string $symbol, string $timeframe, string $family, int $seed): string
     {
         $scopes = [];
-        ModelMarketPerformance::query()
+        $performanceQuery = ModelMarketPerformance::query()
             ->where(compact('symbol', 'timeframe'))
             ->where('strategy_family', $family)
             ->where('evidence_status', 'valid')
-            ->latest('updated_at')
-            ->take(20)
-            ->get()
+            ->latest('updated_at');
+        $sourceLimit = (int) config('services.lab_selection.mutation_scope_source_limit', 0);
+        if ($sourceLimit > 0) $performanceQuery->take($sourceLimit);
+        $performanceQuery->get()
             ->each(function (ModelMarketPerformance $performance) use (&$scopes): void {
                 foreach (['market' => 'regime_performance', 'volatility' => 'volatility_performance'] as $prefix => $key) {
                     foreach (data_get($performance->metrics, $key, []) as $name => $metric) {

@@ -72,7 +72,10 @@ module.exports = {
       args: 'schedule:headless-work',
       autorestart: true,
       restart_delay: 5000,
-      max_memory_restart: '256M',
+      // Schedule ticks may materialize generation/foundation manifests and
+      // briefly exceed 256M. A healthy scheduler must not restart in the
+      // middle of a dispatch window and leave queue reservations half-open.
+      max_memory_restart: '512M',
       time: true,
       env: sharedEnv,
       filter_env: secretPrefixes,
@@ -80,7 +83,7 @@ module.exports = {
     worker('lab-xauusd', 'lab-xauusd'),
     worker('lab-eurusd', 'lab-eurusd'),
     worker('lab-gbpusd', 'lab-gbpusd'),
-    worker('lab-full-validation', 'lab-full-validation', 2400),
+    worker('lab-full-validation', 'lab-full-validation', 4200),
     worker('strategy-lab', 'strategy-lab', 2400),
     worker('backtests', 'backtests', 900),
   ],

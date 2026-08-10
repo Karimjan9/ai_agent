@@ -76,6 +76,24 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
     ): array {
         $transport = strtolower((string) config('services.dukascopy.transport', 'jetta'));
 
+        if (strtoupper($timeframe) === 'M15' && $transport !== 'legacy') {
+            try {
+                return (bool) config('services.dukascopy.m15_node_enabled', true)
+                    ? $this->fetchJettaM15NodeChunk($instrument, $from, $to)
+                    : $this->fetchJettaM15Chunk($instrument, $from, $to);
+            } catch (Throwable $exception) {
+                if ($transport !== 'auto') {
+                    throw $exception;
+                }
+
+                Log::warning('Dukascopy Jetta M15 failed; trying legacy datafeed.', [
+                    'from' => $from->toDateTimeString(),
+                    'to' => $to->toDateTimeString(),
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+
         if (strtoupper($timeframe) === 'H1' && $transport !== 'legacy') {
             try {
                 return $this->fetchJettaChunk($instrument, $from, $to);
@@ -93,6 +111,194 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
         }
 
         return $this->fetchLegacyChunk($instrument, $timeframe, $from, $to);
+    }
+
+    /**
+     * Jetta exposes minute candles with the same canonical tick-volume
+     * semantic as its hourly archive. Aggregate those closed minute rows into
+     * M15 locally so the research contract does not depend on a legacy node
+     * downloader or a provider-specific M15 endpoint.
+     *
+     * @return array<int, array{time: string, open: float, high: float, low: float, close: float, volume: float}>
+     */
+    private function fetchJettaM15Chunk(
+        string $instrument,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+    ): array {
+        $normalized = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $instrument));
+        if (strlen($normalized) !== 6) {
+            throw new RuntimeException("Dukascopy Jetta instrument qo'llab-quvvatlanmaydi: {$instrument}");
+        }
+
+        $code = substr($normalized, 0, 3).'-'.substr($normalized, 3);
+        $baseUrl = rtrim((string) config('services.dukascopy.jetta_base_url', 'https://jetta.dukascopy.com'), '/');
+        $cursor = $from->startOfDay();
+        $candles = [];
+
+        while ($cursor->lessThan($to)) {
+            $dayEnd = $cursor->addDay();
+            $url = $dayEnd->lessThanOrEqualTo(CarbonImmutable::now('UTC'))
+                ? sprintf(
+                    '%s/v1/candles/minute/%s/BID/%d/%d/%d',
+                    $baseUrl,
+                    $code,
+                    $cursor->year,
+                    $cursor->month,
+                    $cursor->day,
+                )
+                : sprintf(
+                    '%s/v1/candles/minute/%s/BID?from=%d',
+                    $baseUrl,
+                    $code,
+                    $cursor->getTimestampMs(),
+                );
+            $payload = $this->requestJettaJson($url);
+            $minuteRows = $this->decodeJettaMinutePayload($payload, $cursor->startOfDay(), $dayEnd);
+
+            foreach ($minuteRows as $row) {
+                $minute = CarbonImmutable::parse($row['time'], 'UTC');
+                $bucket = $minute->startOfHour()->addMinutes(intdiv($minute->minute, 15) * 15);
+                if ($bucket->lessThan($from) || ! $bucket->lessThan($to)) {
+                    continue;
+                }
+
+                $key = $bucket->format('Y-m-d H:i:s');
+                if (! isset($candles[$key])) {
+                    $candles[$key] = [
+                        'time' => $key,
+                        'open' => (float) $row['open'],
+                        'high' => (float) $row['high'],
+                        'low' => (float) $row['low'],
+                        'close' => (float) $row['close'],
+                        'volume' => (float) $row['volume'],
+                    ];
+                    continue;
+                }
+
+                $candles[$key]['high'] = max($candles[$key]['high'], (float) $row['high']);
+                $candles[$key]['low'] = min($candles[$key]['low'], (float) $row['low']);
+                $candles[$key]['close'] = (float) $row['close'];
+                $candles[$key]['volume'] += (float) $row['volume'];
+            }
+
+            $cursor = $cursor->addDay();
+        }
+
+        ksort($candles);
+
+        return array_values($candles);
+    }
+
+    /**
+     * Fast production path for the Jetta M15 adapter. The Node 22 runtime is
+     * materially faster than PHP/cURL on this host; it still uses one Jetta
+     * request at a time and performs the same local M15 aggregation.
+     *
+     * @return array<int, array{time: string, open: float, high: float, low: float, close: float, volume: float}>
+     */
+    private function fetchJettaM15NodeChunk(
+        string $instrument,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+    ): array {
+        $timeout = max(10, (int) config('services.dukascopy.timeout_seconds', 45));
+        $result = Process::timeout($timeout)
+            ->idleTimeout($timeout)
+            ->path(base_path())
+            ->run([
+                (string) config('services.dukascopy.node_binary', 'node'),
+                base_path('scripts/fetch-dukascopy.cjs'),
+                '--instrument', $instrument,
+                '--timeframe', 'M15',
+                '--from', $from->toIso8601String(),
+                '--to', $to->toIso8601String(),
+                '--transport', 'jetta',
+                '--baseUrl', (string) config('services.dukascopy.jetta_base_url', 'https://jetta.dukascopy.com'),
+                '--httpTimeoutMs', (string) ((int) config('services.dukascopy.http_timeout_seconds', 20) * 1000),
+                '--httpRetries', (string) config('services.dukascopy.http_retry_attempts', 3),
+                '--pauseMs', (string) config('services.dukascopy.pause_ms', 1000),
+            ]);
+
+        if (! $result->successful()) {
+            throw new RuntimeException('Dukascopy Jetta M15 fetch failed: '.trim((string) $result->errorOutput()));
+        }
+
+        $output = preg_replace('/^\xEF\xBB\xBF/', '', $result->output()) ?? $result->output();
+        $rows = json_decode($output, true);
+        if (! is_array($rows)) {
+            throw new RuntimeException('Dukascopy Jetta M15 noto\'g\'ri JSON qaytardi.');
+        }
+
+        return collect($rows)
+            ->map(fn (array $row): array => [
+                'time' => CarbonImmutable::createFromTimestampMs((int) $row['timestamp'], 'UTC')->format('Y-m-d H:i:s'),
+                'open' => (float) $row['open'],
+                'high' => (float) $row['high'],
+                'low' => (float) $row['low'],
+                'close' => (float) $row['close'],
+                'volume' => (float) ($row['volume'] ?? 0),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{time: string, open: float, high: float, low: float, close: float, volume: float}>
+     */
+    private function decodeJettaMinutePayload(
+        array $payload,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+    ): array {
+        $fields = ['times', 'opens', 'highs', 'lows', 'closes', 'volumes'];
+        $arrays = [];
+        foreach ($fields as $field) {
+            $arrays[$field] = is_array($payload[$field] ?? null) ? $payload[$field] : [];
+        }
+
+        $length = count($arrays['times']);
+        foreach ($arrays as $values) {
+            if (count($values) !== $length) {
+                throw new RuntimeException('Dukascopy Jetta inconsistent minute OHLCV history qaytardi.');
+            }
+        }
+
+        $shift = (int) ($payload['shift'] ?? 60_000);
+        $multiplier = (float) ($payload['multiplier'] ?? 1);
+        $exponent = $multiplier > 0 ? (int) floor(log10($multiplier)) : 0;
+        $precision = $exponent > 0 ? $multiplier : 10 ** abs($exponent);
+        $timestamp = (int) ($payload['timestamp'] ?? $from->getTimestampMs());
+        $open = (float) ($payload['open'] ?? 0);
+        $high = (float) ($payload['high'] ?? 0);
+        $low = (float) ($payload['low'] ?? 0);
+        $close = (float) ($payload['close'] ?? 0);
+        $fromMs = $from->getTimestampMs();
+        $toMs = $to->getTimestampMs();
+        $rows = [];
+
+        for ($index = 0; $index < $length; $index++) {
+            $timestamp += $shift * (int) $arrays['times'][$index];
+            $open = $this->applyJettaDelta($open, (float) $arrays['opens'][$index], $multiplier, $precision);
+            $high = $this->applyJettaDelta($high, (float) $arrays['highs'][$index], $multiplier, $precision);
+            $low = $this->applyJettaDelta($low, (float) $arrays['lows'][$index], $multiplier, $precision);
+            $close = $this->applyJettaDelta($close, (float) $arrays['closes'][$index], $multiplier, $precision);
+            $high = max($high, $open, $close);
+            $low = min($low, $open, $close);
+
+            if ($timestamp >= $fromMs && $timestamp < $toMs) {
+                $rows[] = [
+                    'time' => CarbonImmutable::createFromTimestampMs($timestamp, 'UTC')->format('Y-m-d H:i:s'),
+                    'open' => $open,
+                    'high' => $high,
+                    'low' => $low,
+                    'close' => $close,
+                    'volume' => (float) $arrays['volumes'][$index],
+                ];
+            }
+        }
+
+        return $rows;
     }
 
     /**
@@ -172,6 +378,15 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
             $low = $this->applyJettaDelta($low, (float) $arrays['lows'][$index], $multiplier, $precision);
             $close = $this->applyJettaDelta($close, (float) $arrays['closes'][$index], $multiplier, $precision);
 
+            // Jetta stores OHLC as independently rounded cumulative deltas.
+            // At a price-tick boundary that can leave the close one tick
+            // outside the reconstructed high/low even though the source
+            // candle is geometrically valid. Keep the provider archive
+            // physically coherent without changing values beyond the
+            // already-declared Jetta precision.
+            $high = max($high, $open, $close);
+            $low = min($low, $open, $close);
+
             if ($timestamp >= $fromMs && $timestamp < $toMs) {
                 $candles[$this->candleKey($timestamp)] = [
                     'time' => CarbonImmutable::createFromTimestampMs($timestamp, 'UTC')->format('Y-m-d H:i:s'),
@@ -218,8 +433,13 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
     private function requestJettaJson(string $url): array
     {
         $response = Http::acceptJson()
+            ->withHeaders(['User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'])
             ->timeout(max(1, (int) config('services.dukascopy.http_timeout_seconds', 20)))
-            ->retry(max(1, (int) config('services.dukascopy.http_retry_attempts', 3)), 500, throw: false)
+            ->retry(
+                max(1, (int) config('services.dukascopy.http_retry_attempts', 3)),
+                max(100, (int) config('services.dukascopy.http_retry_pause_ms', 2000)),
+                throw: false,
+            )
             ->get($url);
 
         if ($response->failed()) {
@@ -359,6 +579,8 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
                         '--transport', 'legacy',
                         '--batchSize', (string) config('services.dukascopy.batch_size', 1),
                         '--pauseMs', (string) config('services.dukascopy.pause_ms', 1000),
+                        '--retryCount', (string) config('services.dukascopy.retry_attempts', 3),
+                        '--retryPauseMs', (string) config('services.dukascopy.retry_pause_ms', 5000),
                     ]);
             } catch (Throwable $exception) {
                 Log::warning('Dukascopy chunk process exception.', [

@@ -24,7 +24,7 @@ class BackupDatabase extends Command
         $final = "{$directory}/neurotrader_{$stamp}.sql";
         $temporary = $final.'.partial';
         $connection = config('database.connections.mysql');
-        $binary = (string) env('MYSQLDUMP_BINARY', 'mysqldump');
+        $binary = (string) config('database.backup.mysqldump_binary', 'mysqldump');
         $process = new Process([
             $binary, '--single-transaction', '--quick', '--routines', '--triggers',
             '--host='.(string) $connection['host'], '--port='.(string) $connection['port'],
