@@ -10,8 +10,23 @@ class BuildLabGeneration extends Command
     {
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
         $timeframe = strtoupper((string) $this->option('timeframe'));
+        // Candidate handoff is invoked after screening/full selection has
+        // already produced the current curriculum.  Historical learning is
+        // refreshed by its own bounded scheduler lane; rescanning the full
+        // candle-event plane synchronously here can hold generation creation
+        // for minutes without creating a row.  The population builder still
+        // consumes the latest append-only insights and checkpoint inputs.
+        $refreshHistoricalLearning = (string) $this->option('trigger') !== 'candidate_handoff';
         foreach ($symbols as $symbol) {
-            $generation = $service->build($symbol, (string) $this->option('trigger'), (bool) $this->option('force'), $timeframe);
+            $generation = $service->build(
+                $symbol,
+                (string) $this->option('trigger'),
+                (bool) $this->option('force'),
+                $timeframe,
+                [],
+                false,
+                $refreshHistoricalLearning,
+            );
             $this->info($generation ? "{$symbol} {$timeframe}: generation {$generation->generation}, {$generation->agents->count()} agents." : "{$symbol} {$timeframe}: yangi evidence yo'q, generation yaratilmadi.");
         }
         return self::SUCCESS;

@@ -107,22 +107,29 @@ class LabImmutableEvidenceService
         $requestHash = (string) ($context['request_hash'] ?? $this->hash($request));
         $payloadHash = $this->hash($request);
         $safeRequest = $this->requestManifest($request);
+        $resolvedDataHash = (string) ($context['data_hash'] ?? '');
+        if (! $this->isSha256($resolvedDataHash)) {
+            $resolvedDataHash = (string) ($run->data_hash ?: ($this->dataHashFromRequest($request) ?? ''));
+        }
         $run->update([
             'request_id' => $context['request_id'] ?? $run->request_id,
             'request_hash' => $requestHash,
-            'data_hash' => $context['data_hash'] ?? $run->data_hash ?? $this->dataHashFromRequest($request),
+            'data_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
             'request_meta' => [
                 'payload_hash' => $payloadHash,
                 'request_hash' => $requestHash,
                 'payload' => $safeRequest,
                 'candle_count' => $this->candleCount($request),
                 'dataset_manifest' => $context['dataset_manifest'] ?? null,
+                'dataset_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
                 'attached_at' => now()->toIso8601String(),
             ],
         ]);
         $this->recordArtifact($run, 'evaluation_request', $safeRequest, [
             'raw_payload_hash' => $payloadHash,
             'request_hash' => $requestHash,
+            'dataset_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
+            'dataset_hash_present' => $this->isSha256($resolvedDataHash),
             'exact_candles_referenced_by_hash' => true,
         ]);
         $this->recordLifecycle($run->agent, 'evaluation_request_attached', [
@@ -153,15 +160,41 @@ class LabImmutableEvidenceService
             return;
         }
         $finished = now();
-        $responseHash = $response === null ? null : $this->hash($response);
+        // A terminal replay attempt always gets a response-plane envelope,
+        // even when the evaluator returned no payload.  This envelope is an
+        // operational error record, not a strategy result: its incomplete
+        // trace/ledger markers keep learning and promotion fail-closed.
+        $terminalResponse = $response;
+        if ($terminalResponse === null && in_array($status, self::TERMINAL_RUN_STATUSES, true)) {
+            $terminalResponse = [
+                'terminal_replay_envelope' => [
+                    'status' => $status,
+                    'response_available' => false,
+                    'reason_code' => $metadata['reason_code'] ?? null,
+                    'error_class' => $error?->getMessage() !== null ? $error::class : null,
+                    'error_message' => $error?->getMessage(),
+                ],
+                'data_quality' => [
+                    'decision_trace' => [
+                        'requested' => true,
+                        'complete' => false,
+                        'reason' => 'terminal_replay_did_not_return_evaluator_response',
+                    ],
+                ],
+                'trade_ledger_hash' => null,
+                'total_trades' => null,
+                'displayed_trade_count' => 0,
+            ];
+        }
+        $responseHash = $terminalResponse === null ? null : $this->hash($terminalResponse);
         $run->update([
             'status' => $status,
             'finished_at' => $finished,
             'duration_ms' => $run->started_at ? max(0, $run->started_at->diffInMilliseconds($finished)) : null,
             'response_hash' => $responseHash,
-            'trade_ledger_hash' => data_get($response, 'trade_ledger_hash'),
-            'response_meta' => $response === null ? null : $this->responseManifest($response),
-            'metrics' => $metrics ?: $this->metricsManifest($response),
+            'trade_ledger_hash' => data_get($terminalResponse, 'trade_ledger_hash'),
+            'response_meta' => $terminalResponse === null ? null : $this->responseManifest($terminalResponse, $run->data_hash),
+            'metrics' => $metrics ?: $this->metricsManifest($terminalResponse),
             'metadata' => array_merge((array) $run->metadata, $metadata, [
                 'terminal' => true, 'terminal_at' => $finished->toIso8601String(),
             ]),
@@ -169,35 +202,130 @@ class LabImmutableEvidenceService
             'error_message' => $error ? substr($error->getMessage(), 0, 4000) : null,
         ]);
 
-        if ($response !== null) {
-            $this->recordArtifact($run, 'evaluation_response', $response, [
+        if ($terminalResponse !== null) {
+            $this->recordArtifact($run, 'evaluation_response', $terminalResponse, [
                 'response_hash' => $responseHash,
-                'trade_ledger_hash' => data_get($response, 'trade_ledger_hash'),
-                'displayed_trade_count' => data_get($response, 'displayed_trade_count'),
-                'trade_ledger_complete' => $this->tradeLedgerComplete($response),
+                'dataset_hash' => $run->data_hash,
+                'dataset_hash_present' => $this->isSha256((string) $run->data_hash),
+                'trade_ledger_hash' => data_get($terminalResponse, 'trade_ledger_hash'),
+                'displayed_trade_count' => data_get($terminalResponse, 'displayed_trade_count'),
+                'trade_ledger_complete' => $this->tradeLedgerComplete($terminalResponse),
             ]);
-            $tradeLedger = data_get($response, 'trade_ledger');
+            $tradeLedger = data_get($terminalResponse, 'trade_ledger');
             if (is_array($tradeLedger)) {
                 $this->recordArtifact($run, 'trade_ledger', $tradeLedger, [
-                    'trade_ledger_hash' => data_get($response, 'trade_ledger_hash'),
-                    'total_trades' => data_get($response, 'total_trades'),
-                    'complete' => $this->tradeLedgerComplete($response),
+                    'trade_ledger_hash' => data_get($terminalResponse, 'trade_ledger_hash'),
+                    'dataset_hash' => $run->data_hash,
+                    'total_trades' => data_get($terminalResponse, 'total_trades'),
+                    'complete' => $this->tradeLedgerComplete($terminalResponse),
                 ]);
             } else {
                 $this->recordArtifact($run, 'trade_ledger_manifest', [
-                    'trade_ledger_hash' => data_get($response, 'trade_ledger_hash'),
-                    'total_trades' => data_get($response, 'total_trades'),
-                    'displayed_trade_count' => data_get($response, 'displayed_trade_count'),
+                    'trade_ledger_hash' => data_get($terminalResponse, 'trade_ledger_hash'),
+                    'total_trades' => data_get($terminalResponse, 'total_trades'),
+                    'displayed_trade_count' => data_get($terminalResponse, 'displayed_trade_count'),
                     'complete' => false,
-                ], ['complete' => false, 'reason' => 'full_trade_ledger_not_returned']);
+                ], ['complete' => false, 'reason' => 'full_trade_ledger_not_returned', 'dataset_hash' => $run->data_hash]);
             }
-            $this->recordDecisionTrace($run, $response);
+            $this->recordDecisionTrace($run, $terminalResponse);
         }
 
         $this->recordLifecycle($run->agent, 'evaluation_'.$status, [
             'run_id' => $run->run_id, 'status' => $status, 'response_hash' => $responseHash,
             'error_class' => $error ? $error::class : null,
         ], $run->phase, $run->run_id, $run->attempt, 'LabImmutableEvidenceService', $error);
+    }
+
+    /**
+     * Check the response before any mutable gate, champion or learning
+     * projection is allowed to consume it.  The request artifact is checked
+     * here as well because a response without the exact request cannot be
+     * tied to a frozen dataset/execution contract.
+     *
+     * @return array{complete: bool, reason_codes: array<int, string>, request_artifact: bool, dataset_hash: bool, decision_trace: bool, trade_ledger: bool, promotion_evidence: bool}
+     */
+    public function replayEvidenceCompleteness(LabEvaluationRun $run, array $response): array
+    {
+        $requestArtifact = filled($run->request_hash)
+            && LabEvidenceArtifact::query()
+                ->where('run_id', $run->run_id)
+                ->where('artifact_type', 'evaluation_request')
+                ->exists();
+        $datasetHash = $this->isSha256((string) $run->data_hash)
+            && $this->requestHasDatasetHash($run);
+        $trace = data_get($response, 'decision_trace', data_get($response, 'candle_decision_trace', data_get($response, 'decision_events')));
+        $traceContract = (array) data_get($response, 'data_quality.decision_trace', []);
+        $traceComplete = is_array($trace)
+            && array_is_list($trace)
+            && data_get($traceContract, 'complete', true) === true
+            && data_get($traceContract, 'requested', true) === true
+            && ($trace !== [] || (int) data_get($traceContract, 'evaluated_candle_count', 0) === 0);
+        $ledgerComplete = $this->tradeLedgerComplete($response)
+            && filled(data_get($response, 'trade_ledger_hash'));
+        $reasons = [];
+        if (! $requestArtifact) $reasons[] = 'MISSING_EVALUATION_REQUEST_ARTIFACT';
+        if (! $datasetHash) $reasons[] = 'MISSING_DATASET_HASH';
+        if (! $traceComplete) $reasons[] = 'MISSING_COMPLETE_DECISION_TRACE';
+        if (! $ledgerComplete) $reasons[] = 'MISSING_COMPLETE_TRADE_LEDGER';
+
+        return [
+            'complete' => $reasons === [],
+            'reason_codes' => $reasons,
+            'request_artifact' => $requestArtifact,
+            'dataset_hash' => $datasetHash,
+            'decision_trace' => $traceComplete,
+            'trade_ledger' => $ledgerComplete,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /**
+     * Read the persisted, terminal evidence chain.  This is intentionally
+     * stricter than replayEvidenceCompleteness(): learning may start only
+     * after the response, trace manifest and ledger artifact are durable.
+     *
+     * @return array{complete: bool, reason_codes: array<int, string>, run_id: ?string, promotion_evidence: bool}
+     */
+    public function learningEligibility(LabEvaluationRun|string|null $run): array
+    {
+        if (is_string($run)) $run = $this->findRun($run);
+        if (! $run) {
+            return [
+                'complete' => false,
+                'reason_codes' => ['MISSING_EVIDENCE_RUN'],
+                'run_id' => null,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $artifacts = LabEvidenceArtifact::query()->where('run_id', $run->run_id)->get();
+        $hasArtifact = fn (string $type): bool => $artifacts->contains(fn (LabEvidenceArtifact $artifact): bool => $artifact->artifact_type === $type);
+        $traceArtifact = $artifacts->first(fn (LabEvidenceArtifact $artifact): bool => $artifact->artifact_type === 'decision_trace');
+        $traceManifest = $artifacts->first(fn (LabEvidenceArtifact $artifact): bool => $artifact->artifact_type === 'decision_trace_manifest');
+        $ledgerArtifact = $artifacts->first(fn (LabEvidenceArtifact $artifact): bool => in_array($artifact->artifact_type, ['trade_ledger', 'trade_ledger_manifest'], true));
+        $responseMeta = (array) $run->response_meta;
+        $reasons = [];
+        if ($run->status !== 'completed') $reasons[] = 'EVIDENCE_RUN_NOT_COMPLETED';
+        if (! $hasArtifact('evaluation_request') || ! filled($run->request_hash)) $reasons[] = 'MISSING_EVALUATION_REQUEST_ARTIFACT';
+        if (! $this->isSha256((string) $run->data_hash) || ! $this->requestHasDatasetHash($run)) $reasons[] = 'MISSING_DATASET_HASH';
+        if (! $hasArtifact('evaluation_response') || ! filled($run->response_hash)) $reasons[] = 'MISSING_EVALUATION_RESPONSE_ARTIFACT';
+        if (! $traceArtifact
+            || data_get($traceArtifact->metadata, 'complete') !== true
+            || (int) data_get($traceArtifact->metadata, 'event_count', 0) < 1
+            || data_get($traceManifest?->metadata, 'complete') !== true) {
+            $reasons[] = 'MISSING_COMPLETE_DECISION_TRACE';
+        }
+        if (! $ledgerArtifact || data_get($ledgerArtifact->metadata, 'complete') !== true) $reasons[] = 'MISSING_COMPLETE_TRADE_LEDGER';
+        if (data_get($responseMeta, 'decision_trace_present') !== true || data_get($responseMeta, 'trade_ledger_complete') !== true) {
+            $reasons[] = 'RESPONSE_MANIFEST_INCOMPLETE';
+        }
+
+        return [
+            'complete' => $reasons === [],
+            'reason_codes' => array_values(array_unique($reasons)),
+            'run_id' => $run->run_id,
+            'promotion_evidence' => false,
+        ];
     }
 
     public function recordLifecycle(
@@ -359,11 +487,61 @@ class LabImmutableEvidenceService
         if (is_array($bundle)) {
             $bundle = $this->hash($bundle);
         }
+        $evidenceRunIds = array_values(array_unique(array_filter([
+            $runId,
+            ...((array) ($payload['evidence_run_ids']
+                ?? data_get($payload, 'verified_skill_contract.evidence_run_ids', [])
+                ?? data_get($payload, 'paired_experiment.evidence_run_ids', [])
+                ?? data_get($credit, 'evidence_run_ids', []))),
+        ])));
+        sort($evidenceRunIds);
+        $primaryEvidenceRunId = $runId
+            ?: ($payload['primary_evidence_run_id'] ?? data_get($credit, 'primary_evidence_run_id'))
+            ?: ($evidenceRunIds[0] ?? null);
         $parentIds = $agent
             ? app(ParentContributionGraphService::class)->ids($agent)
             : array_values(array_filter(array_map('intval', (array) ($payload['parent_model_version_ids'] ?? []))));
+        $eventPayload = [
+            ...$payload,
+            'gate_transition' => $memory->gate_transition,
+            'behavioral_effect' => $memory->behavioral_effect,
+            'old_value' => $memory->old_value,
+            'new_value' => $memory->new_value,
+            'market_regime' => $memory->market_regime,
+            'direction' => $memory->direction,
+            'volatility_regime' => $memory->volatility_regime,
+            'parent_model_version_ids' => $parentIds,
+            'primary_evidence_run_id' => $primaryEvidenceRunId,
+        ];
+        $temporalWindowKey = $this->temporalWindowKey($eventPayload);
+        $eventPayload['temporal_window_key'] = $temporalWindowKey;
+        $reconciliationKey = $this->hash([
+            'protocol' => 'mutation_credit_reconciliation_v1',
+            'generation_id' => $agent?->lab_generation_id,
+            'agent_id' => $memory->lab_agent_id,
+            'mutation_memory_id' => $memory->id,
+            'parameter_key' => $memory->parameter_key,
+            'outcome' => (string) $memory->outcome,
+            'primary_evidence_run_id' => $primaryEvidenceRunId,
+            'temporal_window_key' => $temporalWindowKey,
+        ]);
+        $fingerprint = $this->hash([
+            'protocol' => 'lab_mutation_credit_event_v2',
+            'mutation_memory_id' => $memory->id,
+            'lab_agent_id' => $memory->lab_agent_id,
+            'model_market_performance_id' => $payload['model_market_performance_id'] ?? null,
+            'parameter_key' => $memory->parameter_key,
+            'mutation_bundle_id' => $bundle,
+            'outcome' => (string) $memory->outcome,
+            'parent_model_version_id' => $payload['parent_model_version_id'] ?? $agent?->parent_a_model_version_id ?? data_get($credit, 'parent_model_version_id'),
+            'control_model_version_id' => $payload['control_model_version_id'] ?? data_get($credit, 'alternative_model_version_id'),
+            'evidence_run_ids' => $evidenceRunIds,
+            'source' => $payload['source'] ?? null,
+            'causal_credit_status' => data_get($credit, 'status'),
+            'stable_payload' => $this->stableEvidenceValue($eventPayload),
+        ]);
 
-        return LabMutationCreditEvent::create([
+        return LabMutationCreditEvent::query()->firstOrCreate(['reconciliation_key' => $reconciliationKey], [
             'mutation_memory_id' => $memory->id,
             'lab_generation_id' => $agent?->lab_generation_id,
             'lab_agent_id' => $memory->lab_agent_id,
@@ -375,17 +553,51 @@ class LabImmutableEvidenceService
             'forward_delta' => $memory->forward_delta,
             'parent_model_version_id' => $payload['parent_model_version_id'] ?? $agent?->parent_a_model_version_id ?? data_get($credit, 'parent_model_version_id'),
             'control_model_version_id' => $payload['control_model_version_id'] ?? data_get($credit, 'alternative_model_version_id'),
-            'evidence_run_ids' => array_values(array_filter([
-                $runId, ...((array) ($payload['evidence_run_ids'] ?? data_get($credit, 'evidence_run_ids', []))),
-            ])),
-            'payload' => [
-                'gate_transition' => $memory->gate_transition,
-                'behavioral_effect' => $memory->behavioral_effect,
-                'parent_model_version_ids' => $parentIds,
-                ...$payload,
-            ],
+            'evidence_run_ids' => $evidenceRunIds,
+            'temporal_window_key' => $temporalWindowKey,
+            'reconciliation_key' => $reconciliationKey,
+            'evidence_fingerprint' => $fingerprint,
+            'payload' => $eventPayload,
             'recorded_at' => now(),
         ]);
+    }
+
+    private function stableEvidenceValue(mixed $value): mixed
+    {
+        if (! is_array($value)) return $value;
+        $stable = [];
+        foreach ($value as $key => $item) {
+            if (in_array((string) $key, ['reconciled_at', 'recorded_at', 'updated_at'], true)) continue;
+            $stable[$key] = $this->stableEvidenceValue($item);
+        }
+        if (! array_is_list($stable)) ksort($stable);
+
+        return $stable;
+    }
+
+    private function temporalWindowKey(array $payload): string
+    {
+        $ids = collect([
+            ...((array) data_get($payload, 'temporal_window_ids', [])),
+            ...((array) data_get($payload, 'verified_mutation_skill.independent_forward_windows.window_ids', [])),
+            ...((array) data_get($payload, 'verified_skill_contract.independent_forward_windows.window_ids', [])),
+            ...((array) data_get($payload, 'paired_experiment.independent_forward_windows.window_ids', [])),
+            ...((array) data_get($payload, 'behavioral_effect.verified_mutation_skill.independent_forward_windows.window_ids', [])),
+            ...((array) data_get($payload, 'behavioral_effect.causal_credit.temporal_window_ids', [])),
+        ])->filter(fn ($id): bool => filled($id))->map(fn ($id): string => (string) $id)->unique()->sort()->values()->all();
+        $explicit = data_get($payload, 'temporal_window_key');
+        if (is_string($explicit) && trim($explicit) !== '') return trim($explicit);
+        if ($ids !== []) return $this->hash(['protocol' => 'temporal_window_set_v1', 'window_ids' => $ids]);
+
+        $bounds = [
+            'start' => data_get($payload, 'temporal_window.start', data_get($payload, 'window_start')),
+            'end' => data_get($payload, 'temporal_window.end', data_get($payload, 'window_end')),
+        ];
+        if (filled($bounds['start']) || filled($bounds['end'])) {
+            return $this->hash(['protocol' => 'temporal_window_bounds_v1', 'bounds' => $bounds]);
+        }
+
+        return 'missing';
     }
 
     public function recordArtifact(?LabEvaluationRun $run, string $type, array $payload, array $metadata = [], ?LabAgent $agent = null, ?string $runId = null): LabEvidenceArtifact
@@ -711,7 +923,7 @@ class LabImmutableEvidenceService
         return $manifest;
     }
 
-    private function responseManifest(array $response): array
+    private function responseManifest(array $response, ?string $dataHash = null): array
     {
         $trace = data_get($response, 'decision_trace', data_get($response, 'candle_decision_trace', data_get($response, 'decision_events')));
         $ledger = data_get($response, 'trade_ledger');
@@ -723,6 +935,8 @@ class LabImmutableEvidenceService
             'trade_ledger_count' => is_array($ledger) ? count($ledger) : null,
             'displayed_trade_count' => data_get($response, 'displayed_trade_count'),
             'trade_ledger_complete' => $this->tradeLedgerComplete($response),
+            'dataset_hash' => $dataHash,
+            'dataset_hash_present' => $this->isSha256((string) $dataHash),
             'decision_trace_present' => is_array($trace),
             'decision_trace_count' => is_array($trace) ? count($trace) : null,
             'decision_trace_hash' => is_array($trace) ? $this->hash($trace) : null,
@@ -780,7 +994,33 @@ class LabImmutableEvidenceService
             ]);
         }
 
-        return data_get($manifest, 'sha256') ?: ($path ? $this->hash(['dataset_path' => $path, 'candles' => $this->candleCount($request)]) : null);
+        if (data_get($manifest, 'sha256')) return (string) data_get($manifest, 'sha256');
+        if ($path && is_file($path)) return (string) hash_file('sha256', $path);
+        $candles = $request['candles'] ?? null;
+
+        return is_array($candles) && $candles !== [] ? $this->hash($candles) : null;
+    }
+
+    private function requestHasDatasetHash(LabEvaluationRun $run): bool
+    {
+        $manifest = (array) data_get($run->request_meta, 'dataset_manifest', []);
+        $hashes = [
+            data_get($run->request_meta, 'dataset_hash'),
+            data_get($manifest, 'data_hash'),
+            data_get($manifest, 'sha256'),
+            data_get($manifest, 'snapshot_sha256'),
+            data_get($manifest, 'foundation.sha256'),
+            data_get($manifest, 'foundation.snapshot_sha256'),
+            data_get($manifest, 'regime.sha256'),
+            data_get($manifest, 'regime_snapshot_sha256'),
+        ];
+
+        return collect($hashes)->contains(fn ($hash): bool => $this->isSha256((string) $hash));
+    }
+
+    private function isSha256(string $value): bool
+    {
+        return preg_match('/^[a-f0-9]{64}$/i', trim($value)) === 1;
     }
 
     private function phaseForStatus(?string $status): string

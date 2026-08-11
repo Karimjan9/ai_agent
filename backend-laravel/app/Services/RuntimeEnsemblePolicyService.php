@@ -35,7 +35,7 @@ class RuntimeEnsemblePolicyService
             && $performance->evidence_status === 'valid'
             && $model->evidence_status === 'valid';
 
-        if ($portfolioProxy && $passportPassed && $deployableStatus && count($members) >= 2) {
+        if ($portfolioProxy && $passportPassed && $deployableStatus && count($members) >= 3) {
             $portfolio = $this->activePortfolio($performance);
             if (! $portfolio) return $this->wait('PORTFOLIO_PASSPORT_NOT_ACTIVE');
             $sealedMembers = $this->validateSealedMembers($members, $performance, $portfolio);

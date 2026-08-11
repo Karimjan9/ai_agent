@@ -117,15 +117,17 @@ class RuntimeEnsemblePolicyTest extends TestCase
     {
         $memberOne = $this->model('active-member-one', 1);
         $memberTwo = $this->model('active-member-two', 2);
+        $memberThree = $this->model('active-member-three', 3);
         $performanceOne = $this->performanceWithPassport($memberOne, 1);
         $performanceTwo = $this->performanceWithPassport($memberTwo, 2);
+        $performanceThree = $this->performanceWithPassport($memberThree, 3);
         $portfolio = EliteAgentPortfolio::create([
             'symbol' => 'XAUUSD',
             'timeframe' => 'H1',
             'portfolio_key' => 'runtime-test-portfolio',
             'status' => 'forward_validated',
             'gate_status' => 'passed',
-            'member_count' => 2,
+            'member_count' => 3,
             'gate_reasons' => [],
             'membership_hash' => 'member-hash',
             'route_policy' => ['router' => 'sealed_regime_volatility_direction_ownership_v1'],
@@ -153,6 +155,15 @@ class RuntimeEnsemblePolicyTest extends TestCase
                     'role' => 'specialist',
                     'target_regime' => 'range',
                 ],
+                [
+                    'strategy' => $memberThree->strategy,
+                    'base_strategy' => 'trend',
+                    'version' => $memberThree->version,
+                    'parameters' => $memberThree->parameters,
+                    'member_key' => 'performance:'.$performanceThree->id,
+                    'role' => 'specialist',
+                    'target_regime' => 'trend_down',
+                ],
             ],
         ]);
         $ownerPerformance = ModelMarketPerformance::create([
@@ -174,7 +185,11 @@ class RuntimeEnsemblePolicyTest extends TestCase
                 'portfolio_performance_id' => $ownerPerformance->id,
             ],
         ]);
-        foreach ([[$performanceOne, 'trend_up'], [$performanceTwo, 'range']] as [$performance, $regime]) {
+        foreach ([
+            [$performanceOne, 'trend_up'],
+            [$performanceTwo, 'range'],
+            [$performanceThree, 'trend_down'],
+        ] as [$performance, $regime]) {
             EliteAgentPortfolioMember::create([
                 'elite_agent_portfolio_id' => $portfolio->id,
                 'model_market_performance_id' => $performance->id,
@@ -204,9 +219,9 @@ class RuntimeEnsemblePolicyTest extends TestCase
 
         $this->assertSame('active', $policy['status']);
         $this->assertSame('sealed_portfolio_passport', $policy['source']);
-        $this->assertCount(2, $policy['members']);
+        $this->assertCount(3, $policy['members']);
         $this->assertSame('ROUTE', $payload['runtime_action']);
-        $this->assertCount(2, $payload['portfolio_members']);
+        $this->assertCount(3, $payload['portfolio_members']);
         $this->assertTrue($payload['runtime_ensemble_policy']['combined_passport']);
     }
 

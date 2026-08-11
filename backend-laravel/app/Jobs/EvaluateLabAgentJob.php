@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Jobs\Middleware\LabMutexEvidenceMiddleware;
 use App\Jobs\Middleware\LabQueueAttemptEvidenceMiddleware;
 use App\Jobs\Middleware\PreferFullValidationQueue;
+use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Services\CandidateHandoffService;
@@ -12,6 +13,7 @@ use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabGenerationReportService;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\LabReplayRecoveryService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -28,6 +30,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 
     private const SCREEN_RETRY_WINDOW_MINUTES = 360;
     private const LEGACY_SCREEN_RETRY_WINDOW_MINUTES = 90;
+    private const UNIQUE_WINDOW_SECONDS = self::SCREEN_RETRY_WINDOW_MINUTES * 60;
 
     public int $timeout = 360;
 
@@ -37,13 +40,19 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     // serialized retryUntil() deadline as the safety bound instead.
     public int $tries = 0;
 
-    public int $uniqueFor = 7200;
+    // Keep the unique lock for the entire longest retry window. Otherwise a
+    // still-live screen job can be dispatched again after two hours while
+    // the original job is waiting behind the shared replay lane.
+    public int $uniqueFor = self::UNIQUE_WINDOW_SECONDS;
 
     /** Runtime-only marker used by queue evidence middleware. */
     public bool $labMutexAcquired = false;
 
-    /** Set by the outer evidence middleware so deferred attempts have a run. */
+    /** Set by the replay evidence middleware after the shared lane is held. */
     public ?string $evidenceRunId = null;
+
+    /** Frozen generation/dataset contract for an explicit technical recovery. */
+    public ?array $recoveryContract = null;
 
     /** Persisted across queue releases; prevents a fairness polling storm. */
     public int $fullValidationDeferrals = 0;
@@ -59,15 +68,25 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
      */
     public ?\DateTimeInterface $screenQueuedAt = null;
 
-    public function __construct(public int $labAgentId, public string $symbol, public string $mode = 'full')
+    public function __construct(
+        public int $labAgentId,
+        public string $symbol,
+        public string $mode = 'full',
+        ?array $recoveryContract = null,
+        ?string $queue = null,
+    )
     {
+        $this->recoveryContract = $recoveryContract;
         // The queue transport is an environment concern. Hard-coding the
         // database driver here makes Redis workers invisible to lab jobs.
         $this->onConnection((string) config('queue.default', 'redis'));
-        // Screening is safe to run per market in parallel. Full validation is
-        // deliberately serialized through one shared queue because it is CPU
-        // and memory intensive.
-        $this->onQueue($mode === 'screen' ? 'lab-'.strtolower($symbol) : 'lab-full-validation');
+        // Screening remains pair-local in its evidence, but all pair screens
+        // use one fair FIFO lane because the evaluator service and mutex are
+        // shared. Full validation uses its separate serialized lane because
+        // it is CPU and memory intensive.
+        $this->onQueue($queue ?: ($mode === 'screen'
+            ? (string) config('services.lab_queue.screening_queue', 'lab-screening')
+            : 'lab-full-validation'));
         // WithoutOverlapping releases contenders while another replay owns
         // the single AI CPU lane. Those releases count as queue attempts, so
         // a two-attempt policy would incorrectly discard healthy candidates
@@ -91,11 +110,10 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * The Python evaluator is a bounded single-process CPU service.  Multiple
-     * symbol workers may remain online for queue isolation, but only one heavy
-     * replay may enter the service at a time.  Contending jobs are released
-     * instead of waiting inside a 300s HTTP request and being misclassified as
-     * strategy failures.
+     * The Python evaluator is a bounded single-process CPU service. Pair-local
+     * jobs share one fair screening lane, but only one heavy replay may enter
+     * the service at a time. Contending jobs are released instead of waiting
+     * inside a 300s HTTP request and being misclassified as strategy failures.
      */
     public function middleware(): array
     {
@@ -103,10 +121,6 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             // Once a sealed full-validation cohort is waiting, ordinary
             // screening must yield before it reaches the shared replay lock.
             new PreferFullValidationQueue($this->mode),
-            // Open immutable attempt evidence only after the fairness gate;
-            // a queue-order decision is operational telemetry, not an
-            // evaluation run.
-            new LabQueueAttemptEvidenceMiddleware,
             (new WithoutOverlapping((string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay')))
                 // Share the exact lane key with direct portfolio replay and
                 // the stale-lock recovery command. Without this, Laravel
@@ -122,6 +136,11 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                 // projection while keeping stale recovery finite. Full
                 // validation keeps a longer lease than its worker timeout.
                 ->expireAfter($this->mode === 'screen' ? 1200 : 4500),
+            // Open immutable attempt evidence only after the fairness and
+            // replay locks are held. A mutex-deferred queue job is operational
+            // telemetry, not a terminal evaluator replay and has no request
+            // or dataset artifact to record yet.
+            new LabQueueAttemptEvidenceMiddleware,
             new LabMutexEvidenceMiddleware,
         ];
     }
@@ -157,7 +176,26 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         return implode(':', ['lab-evaluation', $this->labAgentId, $this->mode, $contract]);
     }
 
-    public function handle(LabAgentEvaluationService $service, CandidateHandoffService $handoffs, LabImmutableEvidenceService $evidence, LabAgentPreflightService $preflight): void
+    /** Prefer the transport queue after an already-serialized job is promoted. */
+    public function effectiveQueue(): string
+    {
+        if (isset($this->job) && method_exists($this->job, 'getQueue')) {
+            $queue = (string) $this->job->getQueue();
+            if ($queue !== '') return $queue;
+        }
+
+        return (string) ($this->queue ?: ($this->mode === 'screen'
+            ? config('services.lab_queue.screening_queue', 'lab-screening')
+            : 'lab-full-validation'));
+    }
+
+    public function handle(
+        LabAgentEvaluationService $service,
+        CandidateHandoffService $handoffs,
+        LabImmutableEvidenceService $evidence,
+        LabAgentPreflightService $preflight,
+        LabReplayRecoveryService $recovery,
+    ): void
     {
         // A cancelled batch must not continue mutating agent lifecycle state
         // after an operator or recovery command has stopped it.
@@ -171,14 +209,83 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             return;
         }
         $agent = LabAgent::findOrFail($this->labAgentId);
+        // Defensive admission for every full-job producer, including
+        // recovery/portfolio commands that do not pass through the global
+        // selector. A near-miss may seed targeted mutation, but it cannot
+        // start a full replay; the immutable screening chain must be complete.
+        if ($this->mode === 'full') {
+            $admission = $this->fullValidationAdmission($agent, $evidence);
+            if (! $admission['allowed']) {
+                // LabQueueAttemptEvidenceMiddleware opens the immutable
+                // attempt before this admission guard.  A deterministic
+                // screening-gate rejection is not a replay failure, but its
+                // transport run must still be terminal; otherwise a queued
+                // full job can leave an orphaned `started` run forever.
+                if ($admissionRun = $evidence->findRun($this->evidenceRunId)) {
+                    $evidence->finishIfOpen($admissionRun, 'skipped', null, [], [
+                        'reason_code' => 'SCREENING_EVIDENCE_GATE',
+                        'reason_codes' => $admission['reason_codes'],
+                        'quality_verdict' => 'withheld',
+                        'promotion_evidence' => false,
+                    ]);
+                }
+                if ($agent->lifecycle_status === 'full_queued') {
+                    $agent->update([
+                        'lifecycle_status' => 'screened',
+                        'decision_reason' => 'Full validation blocked at queue admission: '.implode(', ', $admission['reason_codes']).'.',
+                    ]);
+                }
+                $handoffs->record(
+                    $agent->generation,
+                    $agent,
+                    'full_validation_blocked',
+                    'blocked',
+                    'SCREENING_EVIDENCE_GATE',
+                    [
+                        'reason_codes' => $admission['reason_codes'],
+                        'rule' => 'Only an evidence-complete screening pass may enter full validation.',
+                        'promotion_evidence' => false,
+                    ],
+                );
+                $evidence->recordLifecycle($agent, 'full_validation_blocked', [
+                    'reason_code' => 'SCREENING_EVIDENCE_GATE',
+                    'reason_codes' => $admission['reason_codes'],
+                    'quality_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ], 'full_validation', null, null, self::class);
+
+                return;
+            }
+        }
         $jobUuid = $this->job && method_exists($this->job, 'uuid') ? $this->job->uuid() : null;
         $run = $evidence->findRun($this->evidenceRunId);
         if (! $run) {
             $run = $evidence->beginRun($agent, $this->mode === 'screen' ? 'screening' : 'full_validation', $this->mode, [
-                'attempt' => max(1, (int) $this->attempts()), 'queue' => $this->queue,
+                'attempt' => max(1, (int) $this->attempts()), 'queue' => $this->effectiveQueue(),
                 'job_uuid' => $jobUuid, 'source' => 'EvaluateLabAgentJob',
             ]);
             $this->evidenceRunId = $run->run_id;
+        }
+        if ($this->recoveryContract !== null) {
+            try {
+                if ((string) data_get($this->recoveryContract, 'mode') !== $this->mode) {
+                    throw new \RuntimeException('RECOVERY_MODE_MISMATCH');
+                }
+                $recovery->assertContract($agent, $this->recoveryContract);
+            } catch (Throwable $error) {
+                $evidence->finishRun($run, 'technical_error', null, [], [
+                    'reason_code' => 'RECOVERY_CONTRACT_INVALID',
+                    'recovery_contract' => $this->recoveryContract,
+                    'quality_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ], $error);
+                $agent->update([
+                    'lifecycle_status' => 'technical_quarantine',
+                    'decision_reason' => 'Technical quarantine: same-generation recovery contract or dataset hash failed; strategy verdict withheld.',
+                ]);
+
+                return;
+            }
         }
         // A quarantined candidate is immutable technical evidence.  Queued
         // work can outlive an operator quarantine, so consume the stale job
@@ -219,11 +326,16 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                     ->first()
                 : null;
             if ($sourceRun && ! $evidence->isTerminalRun($sourceRun)) {
-                $evidence->finishRun($sourceRun, 'completed', $projection, [
+                // The mutable projection has deliberately discarded the
+                // complete trace and ledger. It can close the orphaned run,
+                // but it cannot be promoted to a completed learning run.
+                $evidence->finishRun($sourceRun, 'technical_error', $projection, [
                     'recovered_existing_screen_result' => true,
                     'projection_only' => true,
+                    'quality_verdict' => 'withheld',
                     'promotion_evidence' => false,
                 ], [
+                    'reason_code' => 'INCOMPLETE_LAB_EVIDENCE',
                     'recovery_protocol' => 'screen_projection_after_worker_restart_v1',
                     'promotion_evidence' => false,
                     'source_job_mode' => $this->mode,
@@ -266,7 +378,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         }
         $agent->update(['lifecycle_status' => $this->mode === 'screen' ? 'screening' : 'training']);
         if ($this->mode === 'full') {
-            $handoffs->record($agent->generation, $agent, 'running', 'completed', null, ['attempt' => $this->attempts(), 'queue' => $this->queue]);
+            $handoffs->record($agent->generation, $agent, 'running', 'completed', null, ['attempt' => $this->attempts(), 'queue' => $this->effectiveQueue()]);
         }
         try {
             $this->mode === 'screen' ? $service->screen($agent, $run) : $service->evaluate($agent, $run);
@@ -309,7 +421,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         $run = $evidence->findRun($this->evidenceRunId);
         if (! $run) {
             $run = $evidence->beginRun($agent, $this->mode === 'screen' ? 'screening' : 'full_validation', $this->mode, [
-                'attempt' => max(1, (int) $this->attempts()), 'queue' => $this->queue,
+                'attempt' => max(1, (int) $this->attempts()), 'queue' => $this->effectiveQueue(),
                 'source' => 'queue_failed_callback',
             ]);
             $this->evidenceRunId = $run->run_id;
@@ -395,5 +507,33 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         return str_contains($message, 'ai replay lane is busy')
             || str_contains($message, 'ai replay lane band')
             || str_contains($message, 'http 429');
+    }
+
+    /** @return array{allowed: bool, reason_codes: array<int, string>} */
+    private function fullValidationAdmission(LabAgent $agent, LabImmutableEvidenceService $evidence): array
+    {
+        $reasons = [];
+        $decision = CandidateGateDecision::query()
+            ->where('lab_agent_id', $agent->id)
+            ->where('stage', 'screening')
+            ->latest('evaluated_at')
+            ->first();
+        if (! $decision || $decision->decision !== 'passed') {
+            $reasons[] = 'SCREENING_NOT_PASSED';
+        }
+
+        $run = LabEvaluationRun::query()
+            ->where('lab_agent_id', $agent->id)
+            ->where('phase', 'screening')
+            ->where('status', 'completed')
+            ->latest('id')
+            ->first();
+        if (! $run) {
+            $reasons[] = 'MISSING_COMPLETED_SCREENING_RUN';
+        } elseif (! $evidence->learningEligibility($run)['complete']) {
+            $reasons[] = 'SCREENING_EVIDENCE_INCOMPLETE';
+        }
+
+        return ['allowed' => $reasons === [], 'reason_codes' => array_values(array_unique($reasons))];
     }
 }

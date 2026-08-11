@@ -41,13 +41,23 @@ class MarketAdaptiveReplayService:
     # while every window remains strictly before the sealed holdout.
     minimum_checkpoint_windows: int = 4
 
-    def split_dataset(self, df: pd.DataFrame, foundation_df: pd.DataFrame | None = None) -> dict[str, pd.DataFrame]:
+    def split_dataset(
+        self,
+        df: pd.DataFrame,
+        foundation_df: pd.DataFrame | None = None,
+        timeframe: str = "H1",
+    ) -> dict[str, pd.DataFrame]:
         normalized = self._normalize(df)
         foundation_source = self._normalize(foundation_df) if foundation_df is not None else normalized
         holdout_start = normalized["time"].max() - pd.Timedelta(weeks=self.sealed_holdout_weeks)
+        is_m15 = str(timeframe).upper() == "M15"
+        foundation_start = pd.Timestamp("2025-11-01 00:00:00") if is_m15 else pd.Timestamp(self.foundation_start)
+        foundation_end = pd.Timestamp(self.foundation_end)
+        latest_supported_start = pd.Timestamp("2025-11-01 00:00:00") if is_m15 else pd.Timestamp(self.latest_supported_foundation_start)
+        minimum_foundation_rows = 2000 if is_m15 else 202
         foundation = foundation_source[
-            (foundation_source.time >= pd.Timestamp(self.foundation_start))
-            & (foundation_source.time <= pd.Timestamp(self.foundation_end))
+            (foundation_source.time >= foundation_start)
+            & (foundation_source.time <= foundation_end)
         ]
         replay = normalized[
             (normalized.time >= pd.Timestamp(self.rolling_start))
@@ -59,7 +69,10 @@ class MarketAdaptiveReplayService:
         # Keep the experiment anchored to 2004 without pretending that a
         # missing January candle exists; normal data-quality gates still reject
         # unexplained market-open holes inside the available archive.
-        if len(foundation) < 202 or foundation["time"].min() > pd.Timestamp(self.latest_supported_foundation_start):
+        if is_m15:
+            if len(foundation) < minimum_foundation_rows or foundation["time"].empty:
+                raise ValueError("M15 foundation training uchun 2025-11-01 dan 2025-12-31 gacha kamida 2000 ta candle kerak.")
+        elif len(foundation) < minimum_foundation_rows or foundation["time"].min() > latest_supported_start:
             raise ValueError("Foundation training uchun 2005-01-02 dan 2025-12-31 gacha tarix kerak.")
         if len(replay) < 202:
             raise ValueError("2026 rolling replay uchun kamida 202 ta yopilgan candle kerak.")
@@ -79,7 +92,7 @@ class MarketAdaptiveReplayService:
         score_calculator,
         foundation_df: pd.DataFrame | None = None,
     ) -> dict[str, object]:
-        segments = self.split_dataset(df, foundation_df)
+        segments = self.split_dataset(df, foundation_df, payload.timeframe)
         # Foundation is used only to calculate the train-side score.  The
         # promotion-only Monte Carlo/DNA/telemetry streams belong to the
         # chronological replay below; recomputing them on the 2004-2025
@@ -882,12 +895,12 @@ class MarketAdaptiveReplayService:
         Mutators may only use a blamed component when its branch is assessed.
         """
         rows = replay.copy()
-        rows["time"] = pd.to_datetime(rows["time"])
+        rows["time"] = pd.to_datetime(rows["time"], errors="coerce", utc=True).dt.tz_localize(None)
         losses = [trade for trade in result.get("trades", []) if float(trade.get("profit_percent", 0)) < 0]
         cases = []
         for trade in losses:
-            entry_time = pd.to_datetime(trade.get("entry_time"), errors="coerce")
-            exit_time = pd.to_datetime(trade.get("exit_time"), errors="coerce")
+            entry_time = MarketAdaptiveReplayService._naive_utc_timestamp(trade.get("entry_time"))
+            exit_time = MarketAdaptiveReplayService._naive_utc_timestamp(trade.get("exit_time"))
             delayed = {"status": "not_assessed"}
             if not pd.isna(entry_time) and not pd.isna(exit_time):
                 later = rows[rows["time"] > entry_time]
@@ -1138,11 +1151,13 @@ class MarketAdaptiveReplayService:
         boundary = (classified["market_regime"] != classified["market_regime"].shift(1)) | (
             classified["volatility_regime"] != classified["volatility_regime"].shift(1)
         )
-        transition_times = pd.to_datetime(classified.loc[boundary, "time"])
+        transition_times = pd.to_datetime(
+            classified.loc[boundary, "time"], errors="coerce", utc=True,
+        ).dt.tz_localize(None).dropna()
         trades = list(result.get("trades", []))
         transition_trades = []
         for trade in trades:
-            signal_time = pd.to_datetime(trade.get("signal_time"), errors="coerce")
+            signal_time = MarketAdaptiveReplayService._naive_utc_timestamp(trade.get("signal_time"))
             if pd.isna(signal_time) or transition_times.empty:
                 continue
             if (transition_times.sub(signal_time).abs() <= pd.Timedelta(hours=3)).any():
@@ -1186,7 +1201,7 @@ class MarketAdaptiveReplayService:
         df: pd.DataFrame,
         foundation_df: pd.DataFrame | None = None,
     ) -> tuple[dict[str, object], dict[str, object]]:
-        segments = self.split_dataset(df, foundation_df)
+        segments = self.split_dataset(df, foundation_df, payload.timeframe)
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, segments["holdout"]).model_dump()
         result["gold_holdout"] = {
             "protocol": "gold_holdout_v1", "status": "released_once",
@@ -1283,12 +1298,12 @@ class MarketAdaptiveReplayService:
                 "stability_score": 0,
                 "execution_assumptions": chronological_result.get("execution_assumptions", {}),
             }
-            chunk_start = pd.Timestamp(chunk.time.min())
-            chunk_end = pd.Timestamp(chunk.time.max())
+            chunk_start = self._naive_utc_timestamp(chunk.time.min())
+            chunk_end = self._naive_utc_timestamp(chunk.time.max())
             chunk_trades = []
             for trade in full_trades:
                 try:
-                    entry_time = pd.Timestamp(trade.get("entry_time"))
+                    entry_time = self._naive_utc_timestamp(trade.get("entry_time"))
                 except (TypeError, ValueError):
                     continue
                 if chunk_start <= entry_time <= chunk_end:
@@ -1297,8 +1312,8 @@ class MarketAdaptiveReplayService:
             label_ends = []
             for trade in chunk_trades:
                 try:
-                    label_starts.append(pd.Timestamp(trade.get("entry_time")))
-                    label_ends.append(pd.Timestamp(trade.get("exit_time") or trade.get("entry_time")))
+                    label_starts.append(self._naive_utc_timestamp(trade.get("entry_time")))
+                    label_ends.append(self._naive_utc_timestamp(trade.get("exit_time") or trade.get("entry_time")))
                 except (TypeError, ValueError):
                     continue
             label_interval = {
@@ -1355,8 +1370,24 @@ class MarketAdaptiveReplayService:
         if df.empty:
             raise ValueError("Dataset is empty.")
         normalized = df.copy()
-        normalized["time"] = pd.to_datetime(normalized["time"])
+        # Laravel/database payloads can carry UTC-aware ISO timestamps while
+        # CSV loaders usually produce naive timestamps.  Normalize both to
+        # naive UTC before comparing them with the protocol's calendar
+        # boundaries; otherwise pandas raises on mixed aware/naive values and
+        # the evaluator incorrectly quarantines a technically valid agent.
+        timestamps = pd.to_datetime(normalized["time"], errors="coerce", utc=True)
+        if timestamps.isna().any():
+            raise ValueError("Dataset contains invalid candle timestamps.")
+        normalized["time"] = timestamps.dt.tz_localize(None)
         return normalized.sort_values("time").reset_index(drop=True)
+
+    @staticmethod
+    def _naive_utc_timestamp(value: object) -> pd.Timestamp:
+        """Normalize a scalar ledger timestamp to the replay's UTC-naive form."""
+        timestamp = pd.Timestamp(value)
+        if timestamp.tzinfo is not None:
+            timestamp = timestamp.tz_convert("UTC").tz_localize(None)
+        return timestamp
 
 
 def _minimum_pf(groups: dict[str, object]) -> float | None:

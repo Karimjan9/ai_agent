@@ -88,7 +88,15 @@ class AdaptiveParentFrontierService
             // contract. Causal lanes still need one isolated parent; only
             // robust/discovery lanes may receive the full legacy frontier.
             $causal = in_array($origin, EvolutionGovernorService::CAUSAL_ORIGINS, true);
-            $selectedCandidates = $causal ? $candidates->take(1)->values() : $candidates;
+            $policy = $this->governor->selectionPolicy(
+                $family,
+                $origin,
+                $target,
+                $snapshot,
+            );
+            $selectedCandidates = $causal
+                ? $candidates->take(1)->values()
+                : $candidates->take((int) $policy['max_parents'] > 0 ? (int) $policy['max_parents'] : $candidates->count())->values();
             $candidateIds = $candidates->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
             $ids = $selectedCandidates->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
             $contract = [
@@ -100,6 +108,8 @@ class AdaptiveParentFrontierService
                 'candidate_parent_model_version_ids' => $candidateIds,
                 'selected_parent_model_version_ids' => $ids,
                 'causal_lane' => $causal,
+                'min_parents' => $policy['min_parents'],
+                'max_parents' => $policy['max_parents'],
                 'promotion_evidence' => false,
             ];
             return [
@@ -276,15 +286,16 @@ class AdaptiveParentFrontierService
         // hidden parent ceiling with a different hard-coded ceiling.
         $max = $configuredMax > 0 ? min($configuredMax, $candidateCount) : $candidateCount;
         $exploration = (float) $policy['exploration_ratio'];
+        $minimum = min((int) ($policy['min_parents'] ?? 1), $max);
         $desired = match ($policy['mode']) {
-            'robust_capability_crossover' => 2 + (int) round($exploration * max(0, $max - 2)),
-            'runtime_ensemble' => max(2, 2 + (int) round($exploration * max(0, $max - 2))),
+            'robust_capability_crossover' => max($minimum, 2 + (int) round($exploration * max(0, $max - 2))),
+            'runtime_ensemble' => max($minimum, 3 + (int) round($exploration * max(0, $max - 3))),
             // Architecture discovery is not a causal one-gene repair. It
             // needs at least a small capability frontier even under normal
             // exploration, otherwise the old champion remains the sole
             // source until a collapse alarm fires. K still grows with the
             // governor and is bounded only by the configured eligible pool.
-            'architecture_discovery' => 1 + (int) round($exploration * max(0, $max - 1)),
+            'architecture_discovery' => max($minimum, 1 + (int) round($exploration * max(0, $max - 1))),
             'curiosity_exploration' => 1 + (int) round($exploration * max(0, $max - 1)),
             default => 1,
         };

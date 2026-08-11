@@ -13,10 +13,10 @@ use App\Services\LabImmutableEvidenceService;
  * Removes only an orphaned evaluator overlap lock.
  *
  * A worker can be terminated after acquiring the lock but before Laravel's
- * middleware releases it.  We must never clear it while a queue job is
- * actually reserved, because that would allow two calls into the single
- * Python evaluator.  The database queue reservation is the conservative
- * liveness signal used here.
+ * middleware releases it. We must never clear it while an unproven reserved
+ * job may still be inside the single Python evaluator. A stale reservation
+ * with an open immutable run is the owner proof; recent contenders can remain
+ * reserved while that proven stale owner is requeued.
  */
 class RecoverLabReplayMutex extends Command
 {
@@ -48,12 +48,12 @@ class RecoverLabReplayMutex extends Command
 
         $reservedJobs = DB::table('jobs')
             ->whereNotNull('reserved_at')
-            ->whereIn('queue', [
-                'lab-xauusd',
-                'lab-eurusd',
-                'lab-gbpusd',
-                'lab-full-validation',
-            ])
+            ->whereIn('queue', array_values(array_unique(array_merge(
+                [(string) config('services.lab_queue.screening_queue', 'lab-screening')],
+                [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
+                (array) config('services.lab_queue.legacy_screening_queues', []),
+                ['lab-full-validation'],
+            ))))
             ->get(['id', 'queue', 'reserved_at', 'attempts', 'payload']);
 
         // A worker restart can leave both the queue reservation and the
@@ -65,21 +65,21 @@ class RecoverLabReplayMutex extends Command
             $requestedStaleAfter = max(120, (int) $this->option('stale-after'));
             // A full replay can finish its Python request before Laravel has
             // persisted the immutable ledger, gate decisions, and lifecycle
-            // projection.  The evaluator may therefore report zero active
+            // projection. The evaluator may therefore report zero active
             // requests while the reserved full job is still legitimately
-            // completing. Never interrupt that post-processing window with
-            // the short screening recovery threshold.
+            // completing. Derive the recovery floor from the same transport
+            // budget plus an explicit post-processing grace period; a fixed
+            // short threshold can close valid evidence as retry_released.
             $hasFullReplay = $reservedJobs->contains(
                 fn ($job): bool => $job->queue === 'lab-full-validation'
             );
-            $minimumStaleAfter = $hasFullReplay ? 900 : 120;
+            $fullReplayTimeout = max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900));
+            $postProcessingGrace = max(300, (int) config('services.lab_selection.full_replay_post_processing_grace_seconds', 900));
+            $minimumStaleAfter = $hasFullReplay
+                ? $fullReplayTimeout + $postProcessingGrace
+                : 120;
             $staleAfter = max($minimumStaleAfter, $requestedStaleAfter);
             $cutoff = now()->timestamp - $staleAfter;
-            if ($reservedJobs->isEmpty()) {
-                $this->line('No reserved evaluator job is present; nothing to recover.');
-                return self::SUCCESS;
-            }
-
             // Age alone cannot distinguish a long legitimate replay from a
             // contender that has been released repeatedly. Ask the AI lane
             // itself; force recovery is allowed only when the evaluator
@@ -96,22 +96,77 @@ class RecoverLabReplayMutex extends Command
                 $this->error('Refusing stale recovery: evaluator reports an active or unknown replay.');
                 return self::FAILURE;
             }
+            if ($reservedJobs->isEmpty()) {
+                // A worker can die after the queue reservation expires (or
+                // after a recovery command requeues it) while the shared
+                // cache lock remains. In that state there is no job row left
+                // to prove ownership, so leaving the lock in place creates a
+                // release storm for every newly queued screen. The AI lane
+                // probe above is the final safety proof: only an idle
+                // evaluator with no reserved lab replay may lose this lock.
+                if ($lock) {
+                    if (! $status->successful() || (int) $status->json('active_requests', -1) !== 0) {
+                        $this->error('Refusing orphan-lock recovery: evaluator reports an active or unknown replay.');
+
+                        return self::FAILURE;
+                    }
+
+                    $deleted = DB::table('cache_locks')->where('key', $key)->delete();
+                    if ($deleted > 0) {
+                        $this->warn('Removed orphaned evaluator replay mutex; no reserved evaluator job was present.');
+                    }
+                }
+                $this->line('No reserved evaluator job is present; nothing to recover.');
+                return self::SUCCESS;
+            }
 
             $stale = $reservedJobs->filter(fn ($job): bool =>
                 (int) $job->reserved_at <= $cutoff || (int) $job->attempts >= 10
             );
-            if ($stale->count() !== $reservedJobs->count()) {
-                $this->error('Refusing stale recovery: reservation is recent and has not crossed the contention threshold.');
+            if ($stale->isEmpty()) {
+                $this->error('Refusing stale recovery: no reservation has crossed the contention threshold.');
                 return self::FAILURE;
             }
 
+            // A recent contender can coexist with an orphaned owner. Only
+            // requeue stale rows whose agent still has an open immutable run;
+            // that run is the durable proof that the worker entered the job.
+            // This avoids the old all-or-nothing guard, which let a release
+            // storm keep an orphan lock alive indefinitely.
             $staleAgentIds = $stale->map(fn ($job): ?int => $this->labAgentIdFromPayload((string) $job->payload))
                 ->filter()
                 ->unique()
                 ->values();
+            $openRunAgentIds = LabEvaluationRun::query()
+                ->whereIn('lab_agent_id', $staleAgentIds->all())
+                ->where('status', 'started')
+                ->pluck('lab_agent_id')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values();
+            $staleOwners = $stale->filter(function ($job) use ($openRunAgentIds): bool {
+                $agentId = $this->labAgentIdFromPayload((string) $job->payload);
 
-            DB::transaction(function () use ($stale, $key): void {
-                DB::table('jobs')->whereIn('id', $stale->pluck('id')->all())->update([
+                return $agentId !== null && $openRunAgentIds->contains($agentId);
+            });
+
+            // Preserve the legacy serialized-job recovery path when every
+            // reservation is stale but its payload predates the immutable
+            // run contract and therefore cannot prove an agent id.
+            if ($staleOwners->isEmpty() && $stale->count() === $reservedJobs->count()) {
+                $staleOwners = $stale;
+            }
+            if ($staleOwners->isEmpty()) {
+                $this->error('Refusing stale recovery: stale reservation has no open evaluator run owner.');
+                return self::FAILURE;
+            }
+            $staleAgentIds = $staleOwners->map(fn ($job): ?int => $this->labAgentIdFromPayload((string) $job->payload))
+                ->filter()
+                ->unique()
+                ->values();
+
+            DB::transaction(function () use ($staleOwners, $key): void {
+                DB::table('jobs')->whereIn('id', $staleOwners->pluck('id')->all())->update([
                     'reserved_at' => null,
                     'available_at' => now()->timestamp,
                 ]);
@@ -140,7 +195,8 @@ class RecoverLabReplayMutex extends Command
                         ],
                     );
                 });
-            $this->warn('Requeued '. $stale->count().' stale evaluator reservation(s); no job or evidence was deleted.');
+            $untouched = $reservedJobs->count() - $staleOwners->count();
+            $this->warn('Requeued '. $staleOwners->count().' stale evaluator reservation(s)'.($untouched > 0 ? "; left {$untouched} recent contender(s) untouched" : '').'; no job or evidence was deleted.');
             return self::SUCCESS;
         }
 

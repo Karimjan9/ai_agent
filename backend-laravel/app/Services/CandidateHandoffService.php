@@ -20,10 +20,11 @@ class CandidateHandoffService
         // The projection is idempotent, but a later selector retry can turn a
         // previously unselected candidate into a real full-replay handoff
         // (for example after a technical snapshot quarantine is repaired).
-        // Refresh only that routing projection; the immutable evidence plane
-        // below still records both decisions and their revisions.
+        // Refresh routing projections when their decision/profile changes;
+        // stable waiting polls are short-circuited by the callers below so
+        // the immutable evidence plane records revisions, not scheduler noise.
         if (! $event->wasRecentlyCreated
-            && $stage === 'selection_passed'
+            && in_array($stage, ['selection_passed', 'waiting_for_targeted_generation'], true)
             && ($event->status !== $status || $event->terminal_reason !== $reason || $event->payload !== $payload)) {
             $event->update([
                 'status' => $status,
@@ -48,12 +49,17 @@ class CandidateHandoffService
     public function noEligibleCandidate(LabGeneration $generation, string $reason = 'NO_ELIGIBLE_CANDIDATE'): CandidateHandoffEvent
     {
         $profile = $this->screeningFailureProfile($generation);
-        $event = $this->record($generation, null, 'waiting_for_targeted_generation', 'waiting', $reason, [
+        $payload = [
             'market' => $generation->laboratory?->symbol, 'timeframe' => $generation->laboratory?->timeframe,
             'next_action' => 'targeted_generation_when_scheduler_capacity_allows',
             'rule' => 'No full replay is forced; create a market-specific near-miss curriculum instead.',
             'screening_failure_profile' => $profile,
-        ]);
+            'handoff_profile_hash' => $this->handoffProfileHash('screening', $reason, $profile),
+        ];
+        if ($existing = $this->stableWaitingHandoff($generation, $reason, $payload['handoff_profile_hash'])) {
+            return $existing;
+        }
+        $event = $this->record($generation, null, 'waiting_for_targeted_generation', 'waiting', $reason, $payload);
         $this->persistFailureCases($generation, $reason, $profile);
         return $event;
     }
@@ -68,15 +74,63 @@ class CandidateHandoffService
     public function noForwardCandidate(LabGeneration $generation, string $reason = 'NO_FORWARD_VALIDATED_CANDIDATE'): CandidateHandoffEvent
     {
         $profile = $this->forwardFailureProfile($generation);
-        $event = $this->record($generation, null, 'waiting_for_targeted_generation', 'waiting', $reason, [
+        $payload = [
             'market' => $generation->laboratory?->symbol, 'timeframe' => $generation->laboratory?->timeframe,
             'next_action' => 'targeted_generation_when_scheduler_capacity_allows',
             'rule' => 'Full replay evidence is retained, but no failed forward candidate may enter paper; create a bounded failure curriculum instead.',
             'forward_failure_profile' => $profile,
             'promotion_evidence' => false,
-        ]);
+            'handoff_profile_hash' => $this->handoffProfileHash('forward', $reason, $profile),
+        ];
+        if ($existing = $this->stableWaitingHandoff($generation, $reason, $payload['handoff_profile_hash'])) {
+            return $existing;
+        }
+        $event = $this->record($generation, null, 'waiting_for_targeted_generation', 'waiting', $reason, $payload);
         $this->persistFailureCases($generation, $reason, $profile);
         return $event;
+    }
+
+    private function stableWaitingHandoff(LabGeneration $generation, string $reason, string $profileHash): ?CandidateHandoffEvent
+    {
+        $event = CandidateHandoffEvent::query()
+            ->where('lab_generation_id', $generation->id)
+            ->whereNull('lab_agent_id')
+            ->where('stage', 'waiting_for_targeted_generation')
+            ->first();
+        if (! $event || $event->status !== 'waiting' || $event->terminal_reason !== $reason) {
+            return null;
+        }
+
+        return data_get((array) $event->payload, 'handoff_profile_hash') === $profileHash
+            ? $event
+            : null;
+    }
+
+    private function handoffProfileHash(string $profileType, string $reason, array $profile): string
+    {
+        return hash('sha256', json_encode($this->canonicalizeForHash([
+            'protocol' => 'waiting_handoff_dedupe_v1',
+            'profile_type' => $profileType,
+            'reason' => $reason,
+            'profile' => $profile,
+        ]), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION));
+    }
+
+    private function canonicalizeForHash(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+        if (array_is_list($value)) {
+            return array_map(fn (mixed $item): mixed => $this->canonicalizeForHash($item), $value);
+        }
+
+        ksort($value);
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalizeForHash($item);
+        }
+
+        return $value;
     }
 
     /**

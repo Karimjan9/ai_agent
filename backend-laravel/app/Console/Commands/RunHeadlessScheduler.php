@@ -18,6 +18,8 @@ class RunHeadlessScheduler extends Command
     public function handle(): int
     {
         $lastMinute = null;
+        $memoryLimitMb = max(128, (int) env('SCHEDULER_MEMORY_LIMIT_MB', 256));
+        $memoryLimitBytes = $memoryLimitMb * 1024 * 1024;
 
         while (true) {
             $minute = CarbonImmutable::now()->format('Y-m-d H:i');
@@ -43,6 +45,18 @@ class RunHeadlessScheduler extends Command
                         'minute' => $minute,
                         'exception' => $exception,
                     ]);
+                }
+
+                gc_collect_cycles();
+                $memoryBytes = memory_get_usage(true);
+                if ($memoryBytes >= $memoryLimitBytes) {
+                    Log::warning('Headless scheduler reached its bounded memory limit; exiting for a clean supervisor restart.', [
+                        'minute' => $minute,
+                        'memory_bytes' => $memoryBytes,
+                        'memory_limit_mb' => $memoryLimitMb,
+                    ]);
+
+                    return self::SUCCESS;
                 }
             }
 

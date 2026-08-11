@@ -5,7 +5,7 @@
 1. Keep `SECONDARY_INTELLIGENCE_ENABLED=false`.
 2. Set `MARKET_DATA_CANONICAL_PROVIDER=twelve` (or the explicitly approved replacement). Run `php artisan market-data:audit SYMBOL --timeframe=H1` and then `php artisan market-data:quality --json`. Continuity and historical quality use the same canonical session calendar, including scheduled FX holiday closures. Secondary providers are discrepancy evidence and never silently replace the canonical series.
 3. Repair bounded ranges with `php artisan market-data:repair-gaps --dry-run`, inspect them, then run without `--dry-run`. The command accepts only the configured canonical provider; use the separate foundation-training archive lane for Dukascopy history. Repeat until the quality command passes.
-4. Export each clean rolling dataset with `php artisan market-data:export-lab SYMBOL`. Keep the adjacent `.manifest.json`; it contains the full file SHA-256 and exact row count. Full validation also seals a separate pre-2026 foundation archive per generation; it is research-only and never promotion evidence.
+4. Export each clean rolling dataset with `php artisan market-data:export-lab SYMBOL`. Keep the adjacent `.manifest.json`; it contains the full file SHA-256 and exact row count. Full validation seals a separate pre-2026 foundation archive per generation; H1 uses the long archive, while M15 uses its own preserved M15 slice and closed H1 regime context. Both are research-only and never promotion evidence.
 5. Start clean generations only after quality passes. Pre-P0 sessions/models stay visible as `legacy_invalid` and are never promotion evidence.
 6. Check paper gates with `php artisan paper:evidence-readiness --json`. Do not shorten the 90-day clock or manufacture observations.
 
@@ -35,13 +35,30 @@ attempt evidence as retry_released; it never deletes jobs or strategy
 evidence. Do not clear the mutex while a full queue reservation or AI replay
 is live.
 
+The managed deployment uses one priority replay coordinator for the shared AI
+lane: `lab-full-validation` is read before `lab-screening`, followed by the
+legacy symbol queues. Separate screen/full workers create avoidable mutex
+release churn while one replay is active. Screen queue contention remains
+operational evidence with a bounded six-hour retry window; if old serialized
+jobs report `MaxAttemptsExceeded` after waiting behind full replay, use the
+explicit bounded recovery command for the affected generation. Never turn
+that queue error into a strategy rejection or lower a quality gate.
+
 The ecosystem filters OpenAI, Codex, and inline internal-token prefixes from child
 environments. The process scripts also launch PM2 through
 scripts/pm2-clean-env.mjs, which removes those prefixes before PM2 stores its
 daemon metadata. If an older daemon already contains credentials, rebuild it
 only during a drained replay window with npm run process:kill, npm run
 process:start, and npm run process:save. Rotate any credential that has
-appeared in PM2 metadata.
+appeared in PM2 metadata. The runtime sync also refuses a rolling reload while
+the AI replay-status endpoint reports an active replay, preventing a second
+worker from inheriting a live mutex and creating a queue-release burst.
+The headless scheduler performs post-tick garbage collection and exits cleanly
+at `SCHEDULER_MEMORY_LIMIT_MB`, allowing PM2 to refresh a leaking long-lived
+PHP process without interrupting an in-flight scheduled command.
+Full-replay mutex recovery derives its stale threshold from the configured
+full replay timeout plus `LAB_FULL_REPLAY_POST_PROCESSING_GRACE_SECONDS`; an
+idle Python lane alone is not proof that Laravel has finished sealing evidence.
 
 Install Node 22 (the repository has `.nvmrc` and an engine constraint), then run `npm ci`. On this Windows host the verified portable runtime is `../.runtime/node-v22.23.1-win-x64`; the process scripts explicitly use it so PM2 does not fall back to the system Node 18 installation. Set `PHP_BINARY` and `PYTHON_BINARY` when they are not on `PATH`. Use `npm run process:start`, `npm run process:status`, and `npm run process:stop`. Persist PM2 with the platform-specific startup integration after verifying every process is healthy.
 

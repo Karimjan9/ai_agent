@@ -6,8 +6,8 @@ use App\Jobs\EvaluateLabAgentJob;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\ModelMarketPerformance;
-use App\Services\LabDatasetExportService;
 use App\Services\LabAgentPreflightService;
+use App\Services\LabReplayRecoveryService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +27,7 @@ class RecoverLabFullEvaluationErrors extends Command
 
     protected $description = 'Requeue full-validation transport errors after a bounded code/data repair';
 
-    public function handle(LabDatasetExportService $datasets): int
+    public function handle(LabReplayRecoveryService $recovery): int
     {
         try {
             $probe = Http::connectTimeout(5)->timeout(10)->acceptJson()
@@ -95,11 +95,12 @@ class RecoverLabFullEvaluationErrors extends Command
         }
 
         // Recovery is an operational repair, not permission to bypass the
-        // dataset contract. Prepare one immutable foundation snapshot per
-        // generation before changing any agent back to full_queued; if the
-        // archive cannot be sealed, no jobs are dispatched and no lifecycle
-        // state is mutated.
+        // dataset contract. Prepare one immutable same-generation snapshot
+        // contract per agent before changing any agent back to full_queued;
+        // if a snapshot/hash cannot be sealed, no jobs are dispatched and no
+        // lifecycle state is mutated.
         $blockedAgentIds = [];
+        $recoveryContracts = [];
         foreach ($agents->groupBy('lab_generation_id') as $generationAgents) {
             $generation = $generationAgents->first()?->generation;
             if (! $generation) {
@@ -108,7 +109,9 @@ class RecoverLabFullEvaluationErrors extends Command
                 return self::FAILURE;
             }
             try {
-                $datasets->ensureGenerationFoundationSnapshot($generation);
+                foreach ($generationAgents as $agent) {
+                    $recoveryContracts[$agent->id] = $recovery->prepare($agent, 'full');
+                }
             } catch (\Throwable $exception) {
                 if ($afterCodeRepair && $this->isFoundationContinuityFailure($exception)) {
                     $quarantined = $this->quarantineFoundationBlockedAgents($generationAgents, $exception);
@@ -125,6 +128,9 @@ class RecoverLabFullEvaluationErrors extends Command
 
         if ($blockedAgentIds !== []) {
             $agents = $agents->reject(fn (LabAgent $agent): bool => in_array($agent->id, $blockedAgentIds, true))->values();
+            foreach ($blockedAgentIds as $blockedAgentId) {
+                unset($recoveryContracts[$blockedAgentId]);
+            }
         }
         if ($agents->isEmpty()) {
             return self::SUCCESS;
@@ -183,7 +189,12 @@ class RecoverLabFullEvaluationErrors extends Command
             }
         });
 
-        $jobs = $agents->map(fn (LabAgent $agent) => new EvaluateLabAgentJob($agent->id, $agent->symbol, 'full'))->all();
+        $jobs = $agents->map(fn (LabAgent $agent) => new EvaluateLabAgentJob(
+            $agent->id,
+            $agent->symbol,
+            'full',
+            $recoveryContracts[$agent->id] ?? null,
+        ))->all();
         $batch = Bus::batch($jobs)
             ->name('Bounded full evaluator recovery')
             ->allowFailures()

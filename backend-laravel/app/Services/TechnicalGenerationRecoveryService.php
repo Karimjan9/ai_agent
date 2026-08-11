@@ -21,6 +21,7 @@ class TechnicalGenerationRecoveryService
     public function __construct(
         private LabImmutableEvidenceService $evidence,
         private LabAgentPreflightService $preflight,
+        private LabReplayRecoveryService $replayRecovery,
     ) {}
 
     /** @return array{ready: bool, idle: bool, reason: string} */
@@ -75,8 +76,13 @@ class TechnicalGenerationRecoveryService
                 $quarantined++;
                 continue;
             }
-            $queue = 'lab-'.strtolower($agent->symbol);
-            $queued = DB::table('jobs')->where('queue', $queue)->where('payload', 'like', '%labAgentId%'.$agent->id.'%')->exists();
+            $queue = (string) config('services.lab_queue.screening_queue', 'lab-screening');
+            $queues = array_values(array_unique(array_merge(
+                [$queue],
+                [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
+                (array) config('services.lab_queue.legacy_screening_queues', []),
+            )));
+            $queued = DB::table('jobs')->whereIn('queue', $queues)->where('payload', 'like', '%labAgentId%'.$agent->id.'%')->exists();
             $metadata = (array) ($agent->modelVersion?->metadata ?? []);
             $attempts = (int) data_get($metadata, 'technical_recovery.attempts', 0);
             $this->evidence->recordLifecycle($agent, 'stale_screening_detected', [
@@ -99,11 +105,31 @@ class TechnicalGenerationRecoveryService
                 continue;
             }
 
+            try {
+                $recoveryContract = $this->replayRecovery->prepare($agent, 'screen');
+            } catch (\Throwable $exception) {
+                if ($apply) {
+                    $agent->update([
+                        'lifecycle_status' => 'technical_quarantine',
+                        'decision_reason' => 'Technical quarantine: stale-screening recovery dataset/hash contract failed; strategy verdict withheld.',
+                    ]);
+                    $this->evidence->recordLifecycle($agent, 'technical_quarantine', [
+                        'protocol' => self::PROTOCOL,
+                        'reason_code' => 'RECOVERY_DATASET_CONTRACT_INVALID',
+                        'error_message' => substr($exception->getMessage(), 0, 1000),
+                        'quality_verdict' => 'withheld',
+                        'promotion_evidence' => false,
+                    ], 'screening', null, $attempts, self::class, $exception);
+                }
+                $quarantined++;
+                continue;
+            }
+
             if ($apply) {
                 data_set($metadata, 'technical_recovery', ['protocol' => self::PROTOCOL, 'attempts' => 1, 'status' => 'retry_dispatched', 'retried_at' => now()->utc()->toIso8601String()]);
                 $agent->modelVersion?->update(['metadata' => $metadata]);
                 $agent->update(['lifecycle_status' => 'queued', 'decision_reason' => 'One bounded technical stale-screening retry dispatched; strategy verdict remains withheld.']);
-                Bus::dispatch(new EvaluateLabAgentJob($agent->id, $agent->symbol, 'screen'));
+                Bus::dispatch(new EvaluateLabAgentJob($agent->id, $agent->symbol, 'screen', $recoveryContract));
                 $this->evidence->recordLifecycle($agent, 'technical_retry_dispatched', [
                     'protocol' => self::PROTOCOL, 'reason_code' => 'STALE_SCREENING_BOUNDED_RETRY', 'quality_verdict' => 'withheld',
                 ], 'screening', null, 1, self::class);

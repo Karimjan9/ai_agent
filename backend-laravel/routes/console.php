@@ -44,13 +44,15 @@ $scheduleArtisan('trading:daily-report')->dailyAt('23:50');
 $scheduleArtisan('market-data:update', ['--timeframe' => 'H1', '--limit' => 1000])
     ->hourly()
     ->withoutOverlapping();
-$scheduleArtisan('market-data:update', ['--symbol' => 'EURUSD', '--timeframe' => 'M15', '--limit' => 500])
+// M15 is an entry stream for every active instrument, not an EURUSD-only
+// side feed. H1 remains the slower regime/baseline stream below.
+$scheduleArtisan('market-data:update', ['--timeframe' => 'M15', '--limit' => 500])
     ->everyFifteenMinutes()
     ->withoutOverlapping();
 $scheduleArtisan('market-data:audit', ['--timeframe' => 'H1'])
     ->hourlyAt(10)
     ->withoutOverlapping();
-$scheduleArtisan('market-data:audit', ['EURUSD', '--timeframe' => 'M15'])
+$scheduleArtisan('market-data:audit', ['--timeframe' => 'M15'])
     ->everyFifteenMinutes()
     ->withoutOverlapping();
 $scheduleArtisan('trading:daily-workflow')
@@ -93,16 +95,34 @@ $scheduleArtisan('trading:lab-generation')
     // leaving this daily strands otherwise valid Generation drafts.
     ->hourlyAt(0)
     ->withoutOverlapping();
+// M15 has its own population/evolution ledger. It may use the last CLOSED H1
+// regime as context, but it must never inherit an H1 model as a parent.
+$scheduleArtisan('trading:lab-generation', ['--timeframe' => 'M15'])
+    ->hourlyAt(15)
+    ->withoutOverlapping();
 // Pair queues run only short screening. The expensive full validation is one
 // global FIFO queue, which prevents the three markets from exhausting the
 // shared Python service at the same time.
 $scheduleArtisan('trading:dispatch-lab')
     ->hourlyAt(5)
     ->withoutOverlapping();
+$scheduleArtisan('trading:dispatch-lab', ['--timeframe' => 'M15'])
+    ->hourlyAt(20)
+    ->withoutOverlapping();
+// H1 remains the baseline/regime lane and M15 owns an independent
+// entry/volume full-validation lane once its own foundation, fresh replay and
+// closed-H1 evidence are ready. Never substitute H1 history for M15 prices or
+// force a promotion from a stale/legacy screen.
 $scheduleArtisan('trading:dispatch-full-validation')
     // Screening can finish after the old hourly selector has already run.
     // Poll for the newest eligible screened generation so a ready cohort is
     // picked up within one scheduler interval instead of waiting an hour.
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+// M15 now has an independent pre-2026 foundation and can enter the same
+// sealed full-validation/council gates. Its H1 regime source is still passed
+// separately by the evaluator and is always delayed until the H1 candle closes.
+$scheduleArtisan('trading:dispatch-full-validation', ['--timeframe' => 'M15'])
     ->everyFiveMinutes()
     ->withoutOverlapping();
 $scheduleArtisan('trading:dispatch-portfolio-member-replay')
@@ -127,7 +147,18 @@ $scheduleArtisan('trading:recover-lab-evaluation-errors')
 $scheduleArtisan('trading:recover-stale-lab-batches', ['--older-than' => 180, '--limit' => 50])
     ->everyFiveMinutes()
     ->withoutOverlapping();
-$scheduleArtisan('trading:recover-lab-replay-mutex')
+// A worker/process restart can leave a reserved job and the shared overlap
+// lock behind. Run the explicit fail-safe path every minute; it only acts
+// after the AI probe is idle and the reservation has exceeded the stale
+// threshold, so a healthy long replay is never duplicated.
+$scheduleArtisan('trading:recover-lab-replay-mutex', ['--force-stale' => true, '--stale-after' => 120])
+    ->everyMinute()
+    ->withoutOverlapping();
+// Promote only incomplete evidence recoveries. This is an ordering change on
+// the existing database job; it never duplicates work or adds a second AI
+// replay worker. Ordinary screening remains backpressured while the frontier
+// boundary is drained.
+$scheduleArtisan('trading:promote-lab-frontier')
     ->everyMinute()
     ->withoutOverlapping();
 $scheduleArtisan('trading:paper-monitor')
@@ -141,6 +172,19 @@ $scheduleArtisan('trading:validate-elite-portfolios')
     ->withoutOverlapping();
 $scheduleArtisan('trading:watch-lab-lifecycle', ['--repair' => true])
     ->everyFiveMinutes()
+    ->withoutOverlapping();
+// The watchdog repairs only bounded abandoned replays.  This broader audit
+// is read-only for agent/evidence state and records the complete lifecycle
+// contract (population, lineage, queue, data, volume, evidence and gates).
+// Keep the frequent monitor shallow so scheduler CPU is not consumed by a
+// second full historical/volume scan while the replay lane is busy.
+$scheduleArtisan('trading:audit-agent-lifecycle', ['--shallow' => true])
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
+// A deep lifecycle pass remains part of the operational cadence, but runs
+// hourly and can never change an agent/gate/evidence status.
+$scheduleArtisan('trading:audit-agent-lifecycle')
+    ->hourlyAt(35)
     ->withoutOverlapping();
 $scheduleArtisan('trading:sync-economic-calendar')
     ->everySixHours()

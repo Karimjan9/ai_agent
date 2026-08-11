@@ -20,7 +20,7 @@ class LabMutexEvidenceMiddleware
         $job->labMutexAcquired = true;
         $phase = $job->mode === 'screen' ? 'screening' : 'full_validation';
         $ledger->recordLifecycle($agent, 'replay_mutex_acquired', [
-            'run_id' => $job->evidenceRunId, 'attempt' => $job->attempts(), 'queue' => $job->queue,
+            'run_id' => $job->evidenceRunId, 'attempt' => $job->attempts(), 'queue' => $job->effectiveQueue(),
             'mutex' => (string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'),
         ], $phase, $job->evidenceRunId, $job->attempts(), self::class);
         try {

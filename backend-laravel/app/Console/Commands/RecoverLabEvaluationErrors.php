@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\LabAgent;
+use App\Services\LabReplayRecoveryService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ class RecoverLabEvaluationErrors extends Command
 
     protected $description = 'Requeue transport/evaluator failures after a clean AI service restart';
 
-    public function handle(): int
+    public function handle(LabReplayRecoveryService $recovery): int
     {
         try {
             // /health is intentionally public and cannot prove that Laravel
@@ -122,11 +123,21 @@ class RecoverLabEvaluationErrors extends Command
                 }
                 if ($afterCodeRepair) {
                     $reason = strtolower((string) $agent->decision_reason);
+                    // Keep the repair-specific budget independent from the
+                    // generic evaluator recovery counter.  A prior bounded
+                    // replay may already have consumed evaluator_recovery_
+                    // attempts without ever running this repaired code path.
+                    $codeRepairAttempts = (int) data_get($agent->modelVersion?->metadata, 'code_repair_recovery_attempts', 0);
+                    $timestampNormalizationFailure = str_contains($reason, 'typeerror:')
+                        && (str_contains($reason, 'tz-naive')
+                            || str_contains($reason, 'tz-aware')
+                            || str_contains($reason, 'timestamp'));
 
-                    return $attempts < 1
+                    return $codeRepairAttempts < 1
                         && str_contains($reason, 'strategy verdict withheld')
                         && (str_contains($reason, 'undefined variable')
-                            || str_contains($reason, 'undefined method'));
+                            || str_contains($reason, 'undefined method')
+                            || $timestampNormalizationFailure);
                 }
                 if ($afterRuntimeSchemaRepair) {
                     $reason = strtolower((string) $agent->decision_reason);
@@ -213,6 +224,28 @@ class RecoverLabEvaluationErrors extends Command
             return self::SUCCESS;
         }
 
+        // Every recovery batch carries a frozen generation/snapshot contract.
+        // A hash mismatch is an infrastructure block, not a strategy failure;
+        // leave the agent untouched and dispatch no replay for that row.
+        $recoveryContracts = [];
+        $recoverable = $agents->filter(function (LabAgent $agent) use ($recovery, $mode, &$recoveryContracts): bool {
+            try {
+                $recoveryContracts[$agent->id] = $recovery->prepare($agent, $mode);
+
+                return true;
+            } catch (\Throwable $exception) {
+                $this->warn("A{$agent->id} G{$agent->lab_generation_id}: recovery snapshot/hash verification blocked replay: ".substr($exception->getMessage(), 0, 300));
+
+                return false;
+            }
+        })->values();
+        if ($recoverable->isEmpty()) {
+            $this->warn('No evaluator recovery was dispatched because no same-generation dataset contract passed.');
+
+            return self::FAILURE;
+        }
+        $agents = $recoverable;
+
         DB::transaction(function () use ($agents, $afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterRetryBudgetRepair, $fullRecovery): void {
             foreach ($agents as $agent) {
                 $metadata = $agent->modelVersion?->metadata ?? [];
@@ -267,11 +300,18 @@ class RecoverLabEvaluationErrors extends Command
 
         $batches = [];
         foreach ($agents->groupBy('symbol') as $agentSymbol => $symbolAgents) {
-            $batch = Bus::batch($symbolAgents->map(fn (LabAgent $agent) => new EvaluateLabAgentJob($agent->id, $agent->symbol, $mode))->all())
+            $batch = Bus::batch($symbolAgents->map(fn (LabAgent $agent) => new EvaluateLabAgentJob(
+                $agent->id,
+                $agent->symbol,
+                $mode,
+                $recoveryContracts[$agent->id] ?? null,
+            ))->all())
                 ->name('Bounded lab evaluator recovery '.$mode.' '.$agentSymbol)
                 ->allowFailures()
                 ->onConnection((string) config('queue.default', 'redis'))
-                ->onQueue($mode === 'full' ? 'lab-full-validation' : 'lab-'.strtolower((string) $agentSymbol))
+                ->onQueue($mode === 'full'
+                    ? 'lab-full-validation'
+                    : (string) config('services.lab_queue.screening_queue', 'lab-screening'))
                 ->dispatch();
             $batches[] = $batch->id;
         }
@@ -283,9 +323,19 @@ class RecoverLabEvaluationErrors extends Command
 
     private function hasQueuedJob(LabAgent $agent, string $mode): bool
     {
-        $queue = $mode === 'full' ? 'lab-full-validation' : 'lab-'.strtolower($agent->symbol);
+        $queue = $mode === 'full'
+            ? 'lab-full-validation'
+            : (string) config('services.lab_queue.screening_queue', 'lab-screening');
 
-        return DB::table('jobs')->where('queue', $queue)
+        $queues = $mode === 'full'
+            ? [$queue]
+            : array_values(array_unique(array_merge(
+                [$queue],
+                [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
+                (array) config('services.lab_queue.legacy_screening_queues', []),
+            )));
+
+        return DB::table('jobs')->whereIn('queue', $queues)
             ->where('payload', 'like', '%labAgentId%'.$agent->id.'%')
             ->exists();
     }

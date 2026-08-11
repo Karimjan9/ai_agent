@@ -78,6 +78,11 @@ def _candidate_cache_payload(
             if isinstance(candidate_contract, dict)
             else {}
         )
+    # Historical trial counts only affect the statistical envelope rebuilt
+    # after all candidate results are collected. They are not an execution
+    # input, so including them here would fragment the candidate cache on
+    # every new experiment and duplicate multi-megabyte replay artifacts.
+    candidate_policy.pop("trial_ledger", None)
     # This is a Laravel scheduling/runtime budget envelope, not a strategy
     # execution input. Cohort size changes during bounded recovery must not
     # invalidate an already completed candidate's deterministic replay cache.
@@ -218,6 +223,64 @@ def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
     return _run_bounded_replay("run_all", payload)
 
 
+def _screening_robustness_admission(result: dict[str, object]) -> dict[str, object]:
+    """Decide whether expensive screening robustness work can add signal.
+
+    Screening is a routing tier. A candidate that cannot satisfy the existing
+    minimum full-replay admission preconditions (sample count and positive
+    core PF) cannot reach full validation, so cost-profile and parameter
+    perturbation sub-replays would only repeat a fail-closed rejection. Keep
+    this gate deliberately conservative: candidates that may enter either the
+    standalone or complementary-agent research lane still receive the full
+    robustness profile.
+    """
+    try:
+        minimum_trades = max(1, int(os.getenv("AI_SCREENING_ROBUSTNESS_MIN_TRADES", "10")))
+    except ValueError:
+        minimum_trades = 10
+    trades = int(result.get("total_trades", result.get("sample_count", 0)) or 0)
+    profit_factor = float(result.get("profit_factor", 0) or 0)
+    reasons: list[str] = []
+    if trades < minimum_trades:
+        reasons.append("FAILED_TRADE_COUNT")
+    if profit_factor <= 0:
+        reasons.append("FAILED_PROFIT_FACTOR")
+    return {
+        "passed": reasons == [],
+        "minimum_trades": minimum_trades,
+        "total_trades": trades,
+        "profit_factor": profit_factor,
+        "reason_codes": reasons,
+    }
+
+
+def _screening_insufficient_robustness_profile(
+    result: dict[str, object], admission: dict[str, object]
+) -> dict[str, object]:
+    """Return an explicit fail-closed projection without sub-replay work."""
+    reasons = list(admission.get("reason_codes", []))
+    reasons.append("SCREENING_ROBUSTNESS_DEFERRED_AFTER_CORE_FAILURE")
+    return {
+        "protocol": "screening_survival_v2_cascaded",
+        "status": "insufficient_evidence",
+        "reason_codes": list(dict.fromkeys(reasons)),
+        "sample_count": int(result.get("total_trades", 0) or 0),
+        "core_admission": admission,
+        "skipped_sub_replays": [
+            "zero_cost_profile",
+            "stress_cost_profile",
+            "parameter_perturbation_minus",
+            "parameter_perturbation_plus",
+        ],
+        "promotion_evidence": False,
+        "rule": (
+            "Screening robustness runs only after the existing minimum full-replay "
+            "admission preconditions pass; a deferred robustness profile is never "
+            "eligible for full, forward, paper, or promotion evidence."
+        ),
+    }
+
+
 def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
     leaderboard = []
     strategy_configs = payload.strategies or ([{
@@ -236,8 +299,12 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
     ])
 
     try:
-        source_df = _load_simple_candles(payload)
-        foundation_df = _load_foundation_candles(payload) if payload.evaluation_mode == "replay" else None
+        # Do not load the large sealed archives until a candidate-cache miss
+        # proves that core execution is actually needed. A fully cached
+        # cohort can rebuild its current statistical envelope without
+        # allocating the replay dataset or foundation archive.
+        source_df = None
+        foundation_df = None
         walk_forward = WalkForwardService()
 
         for config in strategy_configs:
@@ -282,6 +349,9 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             ):
                 leaderboard.append(cached_item)
                 continue
+            if source_df is None:
+                source_df = _load_simple_candles(payload)
+                foundation_df = _load_foundation_candles(payload) if payload.evaluation_mode == "replay" else None
             if payload.evaluation_mode == "incremental":
                 ordered = source_df.sort_values("time").reset_index(drop=True)
                 # Tier 1 is deliberately cheap: it measures whether there is
@@ -322,10 +392,16 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     incremental_result = run_simple_ema_rsi_backtest_on_dataframe(
                         strategy_payload, survival_df, lightweight=True
                     ).model_dump()
-                    survival = MarketAdaptiveReplayService().screening_survival_profile(
-                        strategy_payload, survival_df, incremental_result, calculate_strategy_score
+                    admission = _screening_robustness_admission(incremental_result)
+                    survival = (
+                        MarketAdaptiveReplayService().screening_survival_profile(
+                            strategy_payload, survival_df, incremental_result, calculate_strategy_score
+                        )
+                        if admission["passed"]
+                        else _screening_insufficient_robustness_profile(incremental_result, admission)
                     )
-                    incremental_result["pf_attribution"] = survival.get("cost_profile", {})
+                    if "cost_profile" in survival:
+                        incremental_result["pf_attribution"] = survival["cost_profile"]
                 else:
                     incremental_result = opportunity_result
                     survival = {

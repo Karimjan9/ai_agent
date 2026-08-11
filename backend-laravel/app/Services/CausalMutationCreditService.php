@@ -48,6 +48,8 @@ class CausalMutationCreditService
                         'source' => 'verified_mutation_skill_reconciliation',
                         'model_market_performance_id' => $current->id,
                         'parent_model_version_id' => data_get($verification, 'exact_parent.model_version_id'),
+                        'evidence_run_ids' => data_get($verification, 'evidence_run_ids', [data_get($current->metrics, 'evidence_run_id')]),
+                        'primary_evidence_run_id' => data_get($current->metrics, 'evidence_run_id'),
                         'verified_skill_contract' => $verification,
                     ]);
                     $updated++;
@@ -99,6 +101,11 @@ class CausalMutationCreditService
                     && $counterfactualProven;
                 $paired = [
                     'status' => $confirmed ? 'confirmed' : 'not_confirmed',
+                    'evidence_run_ids' => array_values(array_unique(array_filter([
+                        data_get($parent->metrics, 'evidence_run_id'),
+                        data_get($current->metrics, 'evidence_run_id'),
+                        data_get($alternative->metrics, 'evidence_run_id'),
+                    ]))),
                     'parent_score' => (float) $parent->forward_score,
                     'targeted_score' => (float) $current->forward_score,
                     'alternative_score' => (float) $alternative->forward_score,
@@ -139,6 +146,7 @@ class CausalMutationCreditService
                     'parent_model_version_id' => $parent->model_version_id,
                     'control_model_version_id' => $alternative->model_version_id,
                     'evidence_run_ids' => data_get($paired, 'evidence_run_ids', []),
+                    'primary_evidence_run_id' => data_get($current->metrics, 'evidence_run_id'),
                     'paired_experiment' => $paired,
                 ]);
                 $updated++;

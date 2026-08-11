@@ -7,6 +7,9 @@ use App\Models\LabEvaluationRun;
 use App\Models\LabGateDecisionEvent;
 use App\Models\LabLifecycleEvent;
 use App\Models\LabCandleDecisionEvent;
+use App\Models\LabMutationCreditEvent;
+use App\Models\ModelMarketPerformance;
+use App\Models\MutationMemory;
 use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
 use App\Services\AgentConstitutionService;
@@ -14,7 +17,13 @@ use App\Services\LabAgentEvaluationService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use App\Models\ModelVersion;
+use App\Jobs\EvaluateLabAgentJob;
+use App\Jobs\Middleware\LabMutexEvidenceMiddleware;
+use App\Jobs\Middleware\LabQueueAttemptEvidenceMiddleware;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class ImmutableLabEvidenceTest extends TestCase
@@ -81,6 +90,21 @@ class ImmutableLabEvidenceTest extends TestCase
 
         $this->assertDatabaseCount('candidate_handoff_events', 1);
         $this->assertSame(2, LabLifecycleEvent::where('lab_agent_id', $agent->id)->where('event_type', 'handoff_screened')->count());
+    }
+
+    public function test_stable_waiting_handoff_poll_is_deduplicated_but_keeps_projection(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'immutable_waiting_handoff', true);
+        $handoffs = app(CandidateHandoffService::class);
+
+        $first = $handoffs->noEligibleCandidate($generation);
+        $second = $handoffs->noEligibleCandidate($generation);
+
+        $this->assertSame($first->id, $second->id);
+        $this->assertDatabaseCount('candidate_handoff_events', 1);
+        $this->assertSame(1, LabLifecycleEvent::where('lab_generation_id', $generation->id)
+            ->where('event_type', 'handoff_waiting_for_targeted_generation')->count());
+        $this->assertNotEmpty(data_get($first->fresh()->payload, 'handoff_profile_hash'));
     }
 
     public function test_selection_handoff_projection_refreshes_after_a_retry(): void
@@ -154,5 +178,285 @@ class ImmutableLabEvidenceTest extends TestCase
         $this->assertSame($originalHash, $run->fresh()->response_hash);
         $this->assertSame(1, LabLifecycleEvent::where('run_id', $run->run_id)->where('event_type', 'evaluation_terminal_duplicate')->count());
         $this->assertDatabaseHas('lab_evidence_artifacts', ['run_id' => $run->run_id, 'artifact_type' => 'trade_ledger']);
+    }
+
+    public function test_terminal_replay_requires_dataset_hash_and_error_envelope_stays_ineligible(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'terminal_evidence_contract', true);
+        $agent = $generation->agents->first();
+        $evidence = app(LabImmutableEvidenceService::class);
+
+        $run = $evidence->beginRun($agent, 'full_validation', 'full');
+        $evidence->attachRequest($run, ['symbol' => $agent->symbol, 'timeframe' => $agent->timeframe], ['request_id' => 'missing-dataset-hash']);
+        $evidence->finishRun($run, 'technical_error', null, [], ['reason_code' => 'EVALUATION_ERROR']);
+
+        $this->assertDatabaseHas('lab_evidence_artifacts', [
+            'run_id' => $run->run_id,
+            'artifact_type' => 'evaluation_response',
+        ]);
+        $this->assertDatabaseHas('lab_evidence_artifacts', [
+            'run_id' => $run->run_id,
+            'artifact_type' => 'decision_trace_manifest',
+        ]);
+        $eligibility = $evidence->learningEligibility($run->fresh());
+        $this->assertFalse($eligibility['complete']);
+        $this->assertContains('MISSING_DATASET_HASH', $eligibility['reason_codes']);
+        $this->assertContains('EVIDENCE_RUN_NOT_COMPLETED', $eligibility['reason_codes']);
+    }
+
+    public function test_full_admission_block_closes_the_middleware_run_as_skipped(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'full_admission_gate', true);
+        $agent = $generation->agents->first();
+        $agent->update(['lifecycle_status' => 'full_queued']);
+        $generation->update(['status' => 'full_validation', 'completed_at' => null]);
+
+        $job = new EvaluateLabAgentJob($agent->id, $agent->symbol, 'full');
+        $attemptEvidence = new LabQueueAttemptEvidenceMiddleware;
+        $mutexEvidence = new LabMutexEvidenceMiddleware;
+
+        $attemptEvidence->handle($job, function (EvaluateLabAgentJob $wrappedJob) use ($mutexEvidence): mixed {
+            return $mutexEvidence->handle($wrappedJob, fn (EvaluateLabAgentJob $innerJob): mixed => app()->call([$innerJob, 'handle']));
+        });
+
+        $run = LabEvaluationRun::query()->where('lab_agent_id', $agent->id)->latest('id')->firstOrFail();
+        $this->assertSame('skipped', $run->status);
+        $this->assertSame('SCREENING_EVIDENCE_GATE', data_get($run->metadata, 'reason_code'));
+        $this->assertSame('screened', $agent->fresh()->lifecycle_status);
+    }
+
+    public function test_full_replay_recovery_waits_for_laravel_post_processing_grace(): void
+    {
+        Http::fake([
+            '*' => Http::response([
+                'active_requests' => 0,
+                'protocol' => 'replay_liveness_v2_bounded_worker',
+            ], 200),
+        ]);
+
+        $reservedAt = now()->timestamp - 901;
+        $jobId = (int) DB::table('jobs')->insertGetId([
+            'queue' => 'lab-full-validation',
+            'payload' => '{"displayName":"App\\\\Jobs\\\\EvaluateLabAgentJob","data":{"command":"labAgentId;259"}}',
+            'attempts' => 1,
+            'reserved_at' => $reservedAt,
+            'available_at' => $reservedAt,
+            'created_at' => $reservedAt,
+        ]);
+
+        $this->artisan('trading:recover-lab-replay-mutex', [
+            '--force-stale' => true,
+            '--stale-after' => 120,
+        ])->assertExitCode(1);
+
+        $this->assertDatabaseHas('jobs', [
+            'id' => $jobId,
+            'reserved_at' => $reservedAt,
+        ]);
+    }
+
+    public function test_stale_mutex_owner_is_requeued_even_when_a_recent_contender_is_reserved(): void
+    {
+        Http::fake([
+            '*' => Http::response([
+                'active_requests' => 0,
+                'protocol' => 'replay_liveness_v2_bounded_worker',
+            ], 200),
+        ]);
+
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'stale_owner_with_contender', true);
+        $owner = $generation->agents->first();
+        $evidence = app(LabImmutableEvidenceService::class);
+        $run = $evidence->beginRun($owner, 'screening', 'screen');
+        $staleAt = now()->timestamp - 301;
+        $recentAt = now()->timestamp;
+        $staleJobId = (int) DB::table('jobs')->insertGetId([
+            'queue' => 'lab-screening',
+            'payload' => json_encode(['data' => ['command' => 'labAgentId;'.$owner->id]], JSON_THROW_ON_ERROR),
+            'attempts' => 1,
+            'reserved_at' => $staleAt,
+            'available_at' => $staleAt,
+            'created_at' => $staleAt,
+        ]);
+        $recentJobId = (int) DB::table('jobs')->insertGetId([
+            'queue' => 'lab-screening',
+            'payload' => json_encode(['data' => ['command' => 'labAgentId;'.$generation->agents->skip(1)->first()->id]], JSON_THROW_ON_ERROR),
+            'attempts' => 1,
+            'reserved_at' => $recentAt,
+            'available_at' => $recentAt,
+            'created_at' => $recentAt,
+        ]);
+        $lockKey = Cache::getStore()->getPrefix().'laravel-queue-overlap:'.config('services.lab_queue.replay_mutex_key');
+        DB::table('cache_locks')->insert([
+            'key' => $lockKey,
+            'owner' => 'stale-owner-test',
+            'expiration' => now()->timestamp + 600,
+        ]);
+
+        $this->artisan('trading:recover-lab-replay-mutex', [
+            '--force-stale' => true,
+            '--stale-after' => 120,
+        ])->assertExitCode(0);
+
+        $this->assertDatabaseHas('jobs', ['id' => $staleJobId, 'reserved_at' => null]);
+        $this->assertDatabaseHas('jobs', ['id' => $recentJobId, 'reserved_at' => $recentAt]);
+        $this->assertDatabaseMissing('cache_locks', ['key' => $lockKey]);
+        $this->assertSame('retry_released', $run->fresh()->status);
+    }
+
+    public function test_mutation_credit_reconciliation_is_idempotent_and_requires_distinct_replay_runs(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'credit_idempotency', true);
+        $agent = $generation->agents->first();
+        $parameterKey = (string) array_key_first((array) $agent->parameter_diff);
+        $change = (array) data_get($agent->parameter_diff, $parameterKey, []);
+        $memory = MutationMemory::create([
+            'lab_agent_id' => $agent->id,
+            'symbol' => $agent->symbol,
+            'timeframe' => $agent->timeframe,
+            'strategy_family' => $agent->strategy_family,
+            'parameter_key' => $parameterKey,
+            'old_value' => ['value' => $change['old'] ?? 1],
+            'new_value' => ['value' => $change['new'] ?? 2],
+            'forward_delta' => 8,
+            'outcome' => 'beneficial',
+            'confidence' => 90,
+            'decision' => 'independently confirmed',
+            'independent_confirmation_count' => 2,
+            'behavioral_effect' => ['causal_credit' => ['status' => 'independently_confirmed']],
+        ]);
+        $evidence = app(LabImmutableEvidenceService::class);
+        $runOne = $this->completeExactRun($agent, $evidence, 'credit-run-one');
+        $runTwo = $this->completeExactRun($agent, $evidence, 'credit-run-two');
+        $payload = [
+            'source' => 'verified_mutation_skill_reconciliation',
+            'temporal_window_ids' => ['window-2026-01', 'window-2026-02'],
+        ];
+
+        $evidence->recordMutationCredit($memory, $payload, $runOne->run_id);
+        $evidence->recordMutationCredit($memory, $payload, $runOne->run_id);
+
+        $this->assertSame(1, LabMutationCreditEvent::where('mutation_memory_id', $memory->id)->count());
+
+        $evidence->recordMutationCredit($memory, [
+            ...$payload,
+            'temporal_window_ids' => ['window-2026-03', 'window-2026-04'],
+        ], $runTwo->run_id);
+        $this->assertSame(2, LabMutationCreditEvent::where('mutation_memory_id', $memory->id)->count());
+        $events = LabMutationCreditEvent::where('mutation_memory_id', $memory->id)->get();
+        $this->assertTrue($events->every(fn (LabMutationCreditEvent $event): bool => $event->temporal_window_key !== 'missing' && ! str_starts_with((string) $event->temporal_window_key, 'legacy:')));
+        $this->assertTrue($events->every(fn (LabMutationCreditEvent $event): bool => data_get($event->payload, 'behavioral_effect.causal_credit.status') === 'independently_confirmed'));
+        $this->assertTrue($events->every(fn (LabMutationCreditEvent $event): bool => collect((array) $event->evidence_run_ids)->intersect([$runOne->run_id, $runTwo->run_id])->isNotEmpty()));
+        $this->assertSame(2, LabEvaluationRun::whereIn('run_id', [$runOne->run_id, $runTwo->run_id])->where('status', 'completed')->count());
+        $this->assertTrue($evidence->learningEligibility($runOne)['complete']);
+        $this->assertTrue($evidence->learningEligibility($runTwo)['complete']);
+        $exactRuns = LabEvaluationRun::whereIn('run_id', [$runOne->run_id, $runTwo->run_id])
+            ->whereIn('phase', ['full_validation', 'paper', 'holdout'])
+            ->whereJsonDoesntContain('metadata->historical', true)
+            ->pluck('run_id')->all();
+        $this->assertEqualsCanonicalizing([$runOne->run_id, $runTwo->run_id], $exactRuns);
+        $this->assertTrue($events->every(fn (LabMutationCreditEvent $event): bool => $event->outcome === 'beneficial'));
+        $this->assertTrue($events->every(fn (LabMutationCreditEvent $event): bool => $event->parameter_key === $parameterKey));
+
+        $prior = app(\App\Services\LabHistoricalLearningService::class)
+            ->confirmedMutationPrior($agent->symbol, $agent->timeframe, $agent->strategy_family);
+        $this->assertNotNull($prior);
+        $this->assertSame(2, $prior['confirmation_count']);
+        $this->assertEqualsCanonicalizing([$runOne->run_id, $runTwo->run_id], $prior['evidence_run_ids']);
+        $this->assertNotNull(LabMutationCreditEvent::query()->first()->reconciliation_key);
+    }
+
+    public function test_repeated_reconcile_generation_is_idempotent_and_requires_new_run(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'reconcile_idempotency', true);
+        $agent = $generation->agents->first();
+        $parameterKey = (string) array_key_first((array) $agent->parameter_diff);
+        $change = (array) data_get($agent->parameter_diff, $parameterKey, []);
+        $memory = MutationMemory::create([
+            'lab_agent_id' => $agent->id,
+            'symbol' => $agent->symbol,
+            'timeframe' => $agent->timeframe,
+            'strategy_family' => $agent->strategy_family,
+            'parameter_key' => $parameterKey,
+            'old_value' => ['value' => $change['old'] ?? 1],
+            'new_value' => ['value' => $change['new'] ?? 2],
+            'forward_delta' => 8,
+            'outcome' => 'neutral',
+            'confidence' => 90,
+            'decision' => 'awaiting reconciliation',
+            'behavioral_effect' => [
+                'causal_credit' => ['status' => 'awaiting_paired_confirmation'],
+                'verified_mutation_skill' => [
+                    'status' => 'confirmed',
+                    'target_gate' => ['improved' => true],
+                    'independent_forward_windows' => [
+                        'confirmed_windows' => 2,
+                        'window_ids' => ['window-2026-03', 'window-2026-04'],
+                    ],
+                ],
+            ],
+        ]);
+        $evidence = app(LabImmutableEvidenceService::class);
+        $runOne = $this->completeExactRun($agent, $evidence, 'reconcile-run-one');
+        $runTwo = $this->completeExactRun($agent, $evidence, 'reconcile-run-two');
+        $performance = ModelMarketPerformance::create([
+            'model_version_id' => $agent->model_version_id,
+            'symbol' => $agent->symbol,
+            'timeframe' => $agent->timeframe,
+            'strategy_family' => $agent->strategy_family,
+            'status' => 'challenger',
+            'evidence_status' => 'valid',
+            'forward_score' => 10,
+            'sample_count' => 30,
+            'rolling_windows_count' => 2,
+            'rolling_forward_wins' => 2,
+            'metrics' => ['evidence_run_id' => $runOne->run_id],
+        ]);
+
+        $reconciler = app(\App\Services\CausalMutationCreditService::class);
+        $reconciler->reconcileGeneration($generation->id);
+        $reconciler->reconcileGeneration($generation->id);
+        $this->assertSame(1, LabMutationCreditEvent::where('mutation_memory_id', $memory->id)->count());
+
+        $effect = (array) $memory->fresh()->behavioral_effect;
+        data_set($effect, 'verified_mutation_skill.independent_forward_windows.window_ids', ['window-2026-05', 'window-2026-06']);
+        $memory->update(['behavioral_effect' => $effect]);
+        $performance->update(['metrics' => ['evidence_run_id' => $runTwo->run_id]]);
+        $reconciler->reconcileGeneration($generation->id);
+        $this->assertSame(2, LabMutationCreditEvent::where('mutation_memory_id', $memory->id)->count());
+        $this->assertSame(2, LabMutationCreditEvent::where('mutation_memory_id', $memory->id)
+            ->distinct('reconciliation_key')->count('reconciliation_key'));
+    }
+
+    private function completeExactRun($agent, LabImmutableEvidenceService $evidence, string $requestId): LabEvaluationRun
+    {
+        $run = $evidence->beginRun($agent, 'full_validation', 'full', ['source' => 'feature_test']);
+        $evidence->attachRequest($run, [
+            'symbol' => $agent->symbol,
+            'timeframe' => $agent->timeframe,
+            'candles' => [['time' => '2026-01-01T00:00:00Z', 'close' => 2000]],
+        ], ['request_id' => $requestId]);
+        $evidence->finishRun($run, 'completed', [
+            'total_trades' => 0,
+            'trade_ledger_hash' => hash('sha256', $requestId.'-ledger'),
+            'trade_ledger' => [],
+            'trades' => [],
+            'displayed_trade_count' => 0,
+            'decision_trace' => [[
+                'candle_time' => '2026-01-01T00:00:00Z',
+                'event_type' => 'signal_evaluation',
+                'action' => 'WAIT',
+                'accepted' => false,
+            ]],
+            'data_quality' => [
+                'decision_trace' => [
+                    'requested' => true,
+                    'complete' => true,
+                    'evaluated_candle_count' => 1,
+                ],
+            ],
+        ]);
+
+        return $run->fresh();
     }
 }

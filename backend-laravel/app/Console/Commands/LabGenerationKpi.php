@@ -25,17 +25,21 @@ class LabGenerationKpi extends Command
         }
 
         $this->table(
-            ['Market', 'TF', 'Generation', 'Status', 'Technical %', 'Screen pass %', 'Full %', 'Forward-valid', 'Paper time(s)', 'Next action'],
+            ['Market', 'TF', 'Generation', 'Status', 'Safe', 'Technical %', 'Screen pass %', 'Full %', 'Forward-valid', 'Confirmed mutations', 'Parent links', 'Paper eligible', 'Screen diagnosis', 'Next action'],
             collect($rows)->map(fn (array $row): array => [
                 $row['symbol'],
                 $row['timeframe'],
                 $row['generation'] ?? '-',
                 $row['status'] ?? '-',
+                data_get($row, 'kpis.evolution_safe', false) ? 'true' : 'false',
                 data_get($row, 'kpis.technical_completion_rate', 0),
                 data_get($row, 'kpis.screening_pass_rate', 0),
                 data_get($row, 'kpis.full_validation_completion_rate', 0),
                 data_get($row, 'kpis.forward_valid_agents', 0),
-                data_get($row, 'kpis.paper_transition_time_seconds', '-') ?? '-',
+                data_get($row, 'kpis.independently_confirmed_mutations', 0),
+                data_get($row, 'kpis.parent_links', 0),
+                data_get($row, 'kpis.paper_eligible', 0),
+                data_get($row, 'kpis.screening_failure_classification', '-'),
                 $row['next_action'],
             ])->all(),
         );

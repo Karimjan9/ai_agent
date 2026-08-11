@@ -2,18 +2,23 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
 use App\Models\LabGeneration;
+use App\Models\LabEvaluationRun;
 use App\Models\LabTrialLedger;
 use App\Models\ModelVersion;
 use App\Services\LabAgentPreflightService;
 use App\Services\ControlRootCatalogueService;
 use App\Services\ControlRootInheritanceService;
 use App\Services\ExecutionContractService;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
+use App\Services\LabReplayRecoveryService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 
 /** Repair legacy lab records without deleting their immutable history. */
@@ -24,6 +29,8 @@ class RepairLabIntegrity extends Command
         {--timeframe=H1}
         {--generation=* : Generation number(s) to audit; defaults to active generations}
         {--apply : Persist quarantine and lifecycle repairs}
+        {--repair-missing-screen-evidence : Requeue screened agents that have no completed immutable screen run}
+        {--quarantine-contract-drift : Quarantine an active generation whose immutable population/constructor contract is already invalid}
         {--rebuild-root : After applying, create one clean next generation from exact parents or group roots}';
 
     protected $description = 'Quarantine legacy lineage/evidence and optionally rebuild a clean semantic lab generation.';
@@ -35,6 +42,8 @@ class RepairLabIntegrity extends Command
         ExecutionContractService $executionContracts,
         ControlRootCatalogueService $controlRoots,
         ControlRootInheritanceService $rootInheritance,
+        LabImmutableEvidenceService $evidence,
+        LabReplayRecoveryService $replayRecovery,
     ): int
     {
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
@@ -62,6 +71,7 @@ class RepairLabIntegrity extends Command
         }
 
         $invalid = 0;
+        $contractQuarantined = 0;
         foreach ($generations as $generation) {
             $generationInvalid = 0;
             foreach ($generation->agents as $agent) {
@@ -77,6 +87,55 @@ class RepairLabIntegrity extends Command
                 if ($this->option('apply')) {
                     $preflight->quarantine($agent, $inspection, 'database_integrity_repair');
                 }
+            }
+
+            // A generation created before the balanced five-by-four
+            // constructor fix can pass individual preflight while still
+            // being an invalid cohort (for example 16 persisted slots with
+            // a declared 20-seat contract).  It is diagnostic history, not a
+            // strategy verdict.  Quarantine is explicit and opt-in so a
+            // normal integrity audit cannot unexpectedly stop live work.
+            $contractDrift = $this->contractDrift($generation);
+            if ($this->option('apply')
+                && $this->option('quarantine-contract-drift')
+                && $contractDrift['issues'] !== []
+                && in_array((string) $generation->status, [
+                    ...LabPopulationService::ACTIVE_GENERATION_STATUSES,
+                    'screened',
+                ], true)) {
+                $this->warn("G{$generation->generation}: immutable contract drift detected; queued agents will be consumed as technical quarantine.");
+                foreach ($generation->fresh(['agents.modelVersion'])->agents as $agent) {
+                    if (! in_array((string) $agent->lifecycle_status, [
+                        'draft', 'queued', 'screening', 'screened', 'full_queued', 'training', 'evaluation_error',
+                    ], true)) {
+                        continue;
+                    }
+                    $preflight->quarantine($agent, [
+                        'protocol' => LabAgentPreflightService::PROTOCOL,
+                        'passed' => false,
+                        'errors' => ['POPULATION_CONTRACT_DRIFT'],
+                        'stage' => 'screening',
+                        'agent_id' => $agent->id,
+                        'generation_id' => $generation->id,
+                        'promotion_evidence' => false,
+                    ], 'population_contract_drift');
+                    $contractQuarantined++;
+                }
+                $fresh = $generation->fresh(['agents']);
+                $context = (array) ($fresh->trigger_context ?? []);
+                $context['integrity_repair']['contract_drift'] = [
+                    'protocol' => 'population_contract_quarantine_v1',
+                    'issues' => $contractDrift['issues'],
+                    'metrics' => $contractDrift['metrics'],
+                    'applied_at' => now()->utc()->toIso8601String(),
+                    'evidence_preserved' => true,
+                    'promotion_evidence' => false,
+                ];
+                $fresh->update([
+                    'trigger_context' => $context,
+                    'status' => 'technical_quarantine',
+                    'completed_at' => now(),
+                ]);
             }
 
             if ($this->option('apply') && $generationInvalid > 0) {
@@ -97,6 +156,23 @@ class RepairLabIntegrity extends Command
                     'trigger_context' => $context,
                     ...(! $open ? ['status' => 'technical_quarantine', 'completed_at' => now()] : []),
                 ]);
+            }
+        }
+
+        $missingScreenEvidence = 0;
+        $missingScreenRequeued = 0;
+        $missingScreenSkipped = 0;
+        if ($this->option('repair-missing-screen-evidence')) {
+            foreach ($generations as $generation) {
+                $result = $this->repairMissingScreenEvidence(
+                    $generation->fresh(['agents.modelVersion']),
+                    $preflight,
+                    $evidence,
+                    $replayRecovery,
+                );
+                $missingScreenEvidence += $result['missing'];
+                $missingScreenRequeued += $result['requeued'];
+                $missingScreenSkipped += $result['skipped'];
             }
         }
 
@@ -157,7 +233,7 @@ class RepairLabIntegrity extends Command
         }
 
         $mode = $this->option('apply') ? 'APPLIED' : 'DRY_RUN';
-        $this->info("{$symbol} {$timeframe}: {$invalid} invalid lineage/preflight record(s), {$terminalBackfilled} screened terminal boundary backfill(s), {$invalidExecutionEvidence} invalid execution-evidence row(s) [{$mode}].");
+        $this->info("{$symbol} {$timeframe}: {$invalid} invalid lineage/preflight record(s), {$contractQuarantined} contract-drift agent(s) quarantined, {$terminalBackfilled} screened terminal boundary backfill(s), {$invalidExecutionEvidence} invalid execution-evidence row(s), {$missingScreenEvidence} missing-screen-evidence agent(s), {$missingScreenRequeued} requeued, {$missingScreenSkipped} skipped [{$mode}].");
 
         if ($this->option('rebuild-root')) {
             if (! $this->option('apply')) {
@@ -186,6 +262,172 @@ class RepairLabIntegrity extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * A worker can persist the screened projection before a stale reservation
+     * recovery closes the immutable run.  That projection is not a quality
+     * verdict: without a completed run it must be returned to the same
+     * generation's queue and evaluated again against the frozen snapshots.
+     * Historical runs remain untouched and no promotion evidence is created.
+     *
+     * @return array{missing:int,requeued:int,skipped:int}
+     */
+    private function repairMissingScreenEvidence(
+        LabGeneration $generation,
+        LabAgentPreflightService $preflight,
+        LabImmutableEvidenceService $evidence,
+        LabReplayRecoveryService $replayRecovery,
+    ): array {
+        $completedAgentIds = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->where('phase', 'screening')
+            ->where('status', 'completed')
+            ->whereIn('lab_agent_id', $generation->agents->pluck('id'))
+            ->pluck('lab_agent_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->all();
+
+        $missing = $generation->agents
+            ->where('lifecycle_status', 'screened')
+            ->reject(fn ($agent): bool => in_array((int) $agent->id, $completedAgentIds, true));
+        if ($missing->isEmpty()) {
+            return ['missing' => 0, 'requeued' => 0, 'skipped' => 0];
+        }
+
+        $queues = array_values(array_unique(array_merge(
+            [(string) config('services.lab_queue.screening_queue', 'lab-screening')],
+            [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
+            (array) config('services.lab_queue.legacy_screening_queues', []),
+        )));
+        $requeued = 0;
+        $skipped = 0;
+        foreach ($missing as $agent) {
+            $hasOpenRun = LabEvaluationRun::query()
+                ->where('lab_agent_id', $agent->id)
+                ->where('phase', 'screening')
+                ->where('status', 'started')
+                ->exists();
+            $hasQueuedJob = DB::table('jobs')
+                ->whereIn('queue', $queues)
+                ->where('payload', 'like', '%labAgentId%'.$agent->id.'%')
+                ->exists();
+
+            $this->line("G{$generation->generation} A{$agent->id}: screened projection has no completed immutable screen run.");
+            if ($hasOpenRun || $hasQueuedJob) {
+                $skipped++;
+                $this->line("G{$generation->generation} A{$agent->id}: recovery skipped; open run or queue job already exists.");
+                continue;
+            }
+
+            $inspection = $preflight->inspect($agent, 'screening');
+            if (! $inspection['passed']) {
+                $skipped++;
+                $this->warn("G{$generation->generation} A{$agent->id}: recovery skipped; preflight failed.");
+                continue;
+            }
+
+            if (! $this->option('apply')) {
+                $requeued++;
+                continue;
+            }
+
+            try {
+                $recoveryContract = $replayRecovery->prepare($agent, 'screen');
+                $fromStatus = (string) $agent->lifecycle_status;
+                $oldProjection = [
+                    'sample_count' => $agent->sample_count,
+                    'profit_factor' => $agent->profit_factor,
+                    'max_drawdown' => $agent->max_drawdown,
+                    'train_score' => $agent->train_score,
+                    'validation_score' => $agent->validation_score,
+                    'forward_score' => $agent->forward_score,
+                ];
+                DB::transaction(function () use ($agent, $evidence, $recoveryContract, $fromStatus, $oldProjection): void {
+                    $agent->update([
+                        'lifecycle_status' => 'queued',
+                        'sample_count' => 0,
+                        'profit_factor' => null,
+                        'max_drawdown' => null,
+                        'risk_of_ruin' => null,
+                        'train_score' => null,
+                        'validation_score' => null,
+                        'forward_score' => null,
+                        'champion_improvement' => null,
+                        'rolling_wins' => 0,
+                        'decision_reason' => 'Screen evidence was incomplete; same-generation replay requeued against the frozen dataset. Quality verdict withheld.',
+                    ]);
+                    $fresh = $agent->fresh();
+                    $evidence->recordLifecycle($fresh, 'screen_evidence_repair_queued', [
+                        'reason_code' => 'SCREENED_WITHOUT_COMPLETED_SCREEN_RUN',
+                        'old_projection' => $oldProjection,
+                        'recovery_protocol' => LabReplayRecoveryService::PROTOCOL,
+                        'promotion_evidence' => false,
+                    ], 'screening', null, null, self::class, null, $fromStatus, 'queued');
+                    Bus::dispatch(new EvaluateLabAgentJob($fresh->id, $fresh->symbol, 'screen', $recoveryContract));
+                });
+                $requeued++;
+            } catch (\Throwable $exception) {
+                $skipped++;
+                $this->warn("G{$generation->generation} A{$agent->id}: recovery refused — ".substr($exception->getMessage(), 0, 240));
+            }
+        }
+
+        return ['missing' => $missing->count(), 'requeued' => $requeued, 'skipped' => $skipped];
+    }
+
+    /** @return array{issues: array<int, string>, metrics: array<string, mixed>} */
+    private function contractDrift(LabGeneration $generation): array
+    {
+        $context = (array) ($generation->trigger_context ?? []);
+        $contract = (array) data_get($context, 'population_group_contract', []);
+        $agents = $generation->agents()->with('modelVersion')->get();
+        $actual = $agents->count();
+        $expected = (int) $generation->population_size;
+        $contractExpected = (int) data_get($contract, 'planned_population', 0);
+        $groupCounts = $agents->groupBy(function ($agent): string {
+            $metadata = (array) ($agent->modelVersion?->metadata ?? []);
+
+            return (string) (data_get($metadata, 'population_group.key')
+                ?: data_get($metadata, 'specialist_council_membership.group_key')
+                ?: data_get($metadata, 'generation_target')
+                ?: 'unassigned');
+        })->map->count()->all();
+        $plannedGroups = [];
+        foreach ((array) data_get($contract, 'groups', []) as $group => $definition) {
+            $plannedGroups[(string) $group] = (int) data_get($definition, 'planned_seats', 0);
+        }
+        $groupMismatches = [];
+        foreach ($plannedGroups as $group => $seats) {
+            if ((int) ($groupCounts[$group] ?? 0) !== $seats) {
+                $groupMismatches[$group] = [
+                    'expected' => $seats,
+                    'actual' => (int) ($groupCounts[$group] ?? 0),
+                ];
+            }
+        }
+        $skipped = (array) data_get($context, 'constructor_audit.skipped_zero_diff_slots', []);
+        $issues = [];
+        if ($contractExpected > 0 && $contractExpected !== $actual) $issues[] = 'POPULATION_COUNT_MISMATCH';
+        if ($actual !== $expected) $issues[] = 'GENERATION_POPULATION_SIZE_MISMATCH';
+        if ((bool) data_get($contract, 'balanced_core', false) && $groupMismatches !== []) $issues[] = 'COUNCIL_GROUP_SEAT_MISMATCH';
+        if ($skipped !== []) $issues[] = 'CONSTRUCTOR_SKIPPED_ZERO_DIFF_SLOTS';
+
+        return [
+            'issues' => array_values(array_unique($issues)),
+            'metrics' => [
+                'generation_id' => $generation->id,
+                'planned_population' => $expected,
+                'actual_population' => $actual,
+                'contract_planned_population' => $contractExpected ?: null,
+                'group_counts' => $groupCounts,
+                'planned_groups' => $plannedGroups,
+                'group_mismatches' => $groupMismatches,
+                'skipped_zero_diff_slots' => $skipped,
+                'promotion_evidence' => false,
+            ],
+        ];
     }
 
     private function createBoundedRootCohort(

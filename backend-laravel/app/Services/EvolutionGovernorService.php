@@ -19,12 +19,12 @@ class EvolutionGovernorService
     public const PROTOCOL = 'adaptive_evolution_governor_v1';
 
     public const CAUSAL_ORIGINS = [
-        'gate_targeted', 'risk_exit', 'causal_isolation', 'g98_council',
+        'gate_targeted', 'risk_exit', 'causal_isolation', 'g98_council', 'targeted_failure_profile',
         'coverage_rescue', 'lineage_root_rebuild',
     ];
 
     public const CAUSAL_TARGETS = [
-        'monthly_survival', 'regime_coverage', 'volatility_session_stability',
+        'monthly_survival', 'regime_coverage', 'volatility_session_stability', 'profit_factor', 'stress_cost', 'temporal_stability',
         'exit_topology', 'transition_firewall', 'portfolio_router',
         'opportunity_recall', 'unknown_state_curiosity',
     ];
@@ -171,24 +171,28 @@ class EvolutionGovernorService
 
         $max = match ($mode) {
             'causal_single_parent' => 1,
-            // Zero is an explicit unbounded adaptive K: the selector later
-            // resolves it against the number of eligible exact-cell parents.
-            // A positive value is only an operator-selected compute cap.
-            'robust_capability_crossover' => $this->configuredParentMax('parent_max_robust', 2),
-            'architecture_discovery' => $this->configuredParentMax('parent_max_architecture', 1),
+            // Zero is still an explicit operator override; normal bootstrap
+            // configuration supplies a bounded cap from services.php.
+            'robust_capability_crossover' => $this->configuredParentMax('parent_max_robust', 3),
+            'architecture_discovery' => $this->configuredParentMax('parent_max_architecture', 2),
             'curiosity_exploration' => $this->configuredParentMax('parent_max_curiosity', 1),
-            // A runtime ensemble is meaningful only with at least two
+            // A runtime ensemble is meaningful only with at least three
             // independently validated specialists. The value remains fully
             // configurable above that floor and matches replay member
             // selection, so a config of 1 cannot create an impossible policy.
-            'runtime_ensemble' => max(2, (int) config('services.lab_selection.parent_max_runtime', 8)),
+            'runtime_ensemble' => max(3, (int) config('services.lab_selection.parent_max_runtime', 8)),
             default => 1,
         };
 
         return [
             'protocol' => 'adaptive_parent_frontier_v1',
             'mode' => $mode,
-            'min_parents' => $mode === 'robust_capability_crossover' ? 2 : 1,
+            'min_parents' => match ($mode) {
+                'robust_capability_crossover' => 3,
+                'architecture_discovery' => 2,
+                'runtime_ensemble' => 3,
+                default => 1,
+            },
             'max_parents' => $max,
             'causal_lane' => $causal,
             'exploration_ratio' => (float) data_get($snapshot, 'exploration_ratio', .35),
@@ -390,8 +394,10 @@ class EvolutionGovernorService
             'unknown_regime_action' => 'WAIT',
             'specialist_disagreement_action' => 'WAIT',
             'missing_member_action' => 'WAIT',
-            'minimum_independent_members' => $family === 'regime_ensemble' ? 2 : 1,
-            'max_members' => (int) config('services.lab_selection.parent_max_runtime', 8),
+            'minimum_independent_members' => $family === 'regime_ensemble' ? 3 : 1,
+            'max_members' => $family === 'regime_ensemble'
+                ? max(3, (int) config('services.lab_selection.parent_max_runtime', 8))
+                : (int) config('services.lab_selection.parent_max_runtime', 8),
             // Genetic contributors are hypotheses. They are not deployable
             // runtime members until an independent specialist passport and a
             // combined portfolio passport have been sealed.

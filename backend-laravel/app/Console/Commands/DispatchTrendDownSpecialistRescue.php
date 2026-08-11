@@ -219,7 +219,7 @@ class DispatchTrendDownSpecialistRescue extends Command
         $batch = Bus::batch([new EvaluateLabAgentJob($agent->id, $lab->symbol, 'screen')])
             ->name("{$lab->symbol} trend-down specialist rescue G{$generation->generation}")
             ->allowFailures()
-            ->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-'.strtolower($lab->symbol))->dispatch();
+            ->onConnection((string) config('queue.default', 'redis'))->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))->dispatch();
         $this->info("{$lab->symbol} G{$generation->generation}: {$batch->id}; trend-down specialist/router queued for screening only. No full-validation or paper job was dispatched.");
 
         return self::SUCCESS;

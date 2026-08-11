@@ -603,6 +603,12 @@ class MarketChampionService
 
     private function promote(ModelMarketPerformance $candidate, ?ModelMarketPerformance $champion, ModelVersion $model): void
     {
+        if ((bool) config('services.promotion.freeze_champion', true)) {
+            // Promotion is paused during evidence-pipeline repair. Keep the
+            // candidate's forward/paper state and all gate evidence intact;
+            // only the final champion mutation is withheld.
+            return;
+        }
         if (! $this->marketReadiness->promotionReady() || ! $this->paperEvidence->ready()) {
             return;
         }

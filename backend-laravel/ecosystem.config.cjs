@@ -24,7 +24,12 @@ const worker = (name, queue, timeoutSeconds = 1200) => ({
   // lease; market screening remains bounded separately.
   // EvaluateLabAgentJob uses retryUntil() as its wall-clock safety bound.
   // Release-based mutex contention must not exhaust a numeric attempt cap.
-  args: `queue:work ${queueConnection} --queue=${queue} --sleep=1 --tries=0 --timeout=${timeoutSeconds} --max-time=3600`,
+  // Laravel's queue worker has its own 128 MB default memory ceiling. That
+  // limit is lower than a legitimate immutable screening/full-replay
+  // projection and causes exit code 12 after a healthy replay. PM2's
+  // 2048M ceiling below is only useful when the Laravel worker receives the
+  // same explicit limit.
+  args: `queue:work ${queueConnection} --queue=${queue} --sleep=1 --tries=0 --timeout=${timeoutSeconds} --memory=2048 --max-time=3600`,
   autorestart: true,
   restart_delay: 5000,
   // Screening responses carry immutable ledgers and can legitimately exceed
@@ -80,10 +85,15 @@ module.exports = {
       env: sharedEnv,
       filter_env: secretPrefixes,
     },
-    worker('lab-xauusd', 'lab-xauusd'),
-    worker('lab-eurusd', 'lab-eurusd'),
-    worker('lab-gbpusd', 'lab-gbpusd'),
-    worker('lab-full-validation', 'lab-full-validation', 4200),
+    // One coordinator owns the shared AI replay lane. Keeping screening and
+    // full validation in separate workers makes every worker repeatedly pull
+    // the same mutex-contended job while the other worker is replaying; those
+    // releases are queue attempts, not useful work. Queue priority gives a
+    // waiting sealed full replay the first turn, while the single coordinator
+    // guarantees that only one queued replay can enter the Python service.
+    // Legacy symbol queues remain visible so already-serialized jobs cannot be
+    // stranded after a deploy.
+    worker('lab-replay', 'lab-full-validation,lab-frontier,lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', 4200),
     worker('strategy-lab', 'strategy-lab', 2400),
     worker('backtests', 'backtests', 900),
   ],

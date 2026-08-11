@@ -91,6 +91,73 @@ class P0EvidenceControlsTest extends TestCase
         $this->assertFalse($coverage['promotion_evidence']);
     }
 
+    public function test_m15_full_replay_uses_an_independent_pre_2026_foundation_contract(): void
+    {
+        $rolling = [
+            'row_count' => 24000,
+            'first_candle_at' => '2025-11-14 00:00:00',
+            'last_candle_at' => '2026-08-10 11:00:00',
+        ];
+        $foundation = [
+            'row_count' => 4200,
+            'first_candle_at' => '2025-11-14 00:00:00',
+            'last_candle_at' => '2025-12-31 23:45:00',
+            'continuity' => [
+                'protocol' => HistoricalDataQualityService::FOUNDATION_CONTINUITY_PROTOCOL,
+                'status' => 'ready',
+                'row_count' => 4200,
+                'unexpected_gap_count' => 0,
+                'missing_open_candles' => 0,
+                'invalid_rows' => 0,
+            ],
+        ];
+
+        $coverage = app(HistoricalDataQualityService::class)->fullReplayCoverage(
+            'EURUSD',
+            'M15',
+            $rolling,
+            $foundation,
+        );
+
+        $this->assertSame('ready', $coverage['status']);
+        $this->assertSame('M15', $coverage['timeframe']);
+        $this->assertSame(2000, $coverage['minimum_foundation_rows']);
+        $this->assertTrue($coverage['separate_sources']);
+        $this->assertFalse($coverage['promotion_evidence']);
+    }
+
+    public function test_m15_legacy_foundation_manifest_boundaries_are_read_from_its_continuity_passport(): void
+    {
+        $coverage = app(HistoricalDataQualityService::class)->fullReplayCoverage(
+            'GBPUSD',
+            'M15',
+            [
+                'row_count' => 24000,
+                'first_candle_at' => '2025-11-14 00:00:00',
+                'last_candle_at' => '2026-08-10 11:00:00',
+            ],
+            [
+                'row_count' => 3112,
+                'foundation_start' => '2025-11-14T00:00:00+00:00',
+                'foundation_end' => '2025-12-31T12:45:00+00:00',
+                'continuity' => [
+                    'protocol' => HistoricalDataQualityService::FOUNDATION_CONTINUITY_PROTOCOL,
+                    'status' => 'ready',
+                    'first_candle_at' => '2025-11-14T00:00:00+00:00',
+                    'last_candle_at' => '2025-12-31T12:45:00+00:00',
+                    'row_count' => 3112,
+                    'unexpected_gap_count' => 0,
+                    'missing_open_candles' => 0,
+                    'invalid_rows' => 0,
+                ],
+            ],
+        );
+
+        $this->assertSame('ready', $coverage['status']);
+        $this->assertSame('2025-11-14T00:00:00+00:00', $coverage['foundation_first_candle_at']);
+        $this->assertFalse($coverage['promotion_evidence']);
+    }
+
     public function test_foundation_csv_continuity_passport_rejects_unexpected_weekday_gap(): void
     {
         $directory = storage_path('framework/testing');
@@ -124,6 +191,23 @@ class P0EvidenceControlsTest extends TestCase
             'laravel-queue-overlap:'.config('services.lab_queue.replay_mutex_key'),
             $mutex->getLockKey($job),
         );
+    }
+
+    public function test_sealed_holdout_fails_closed_without_a_paper_lifecycle_and_passport(): void
+    {
+        $model = ModelVersion::create([
+            'name' => 'holdout_guard_model', 'strategy' => 'holdout_guard_model', 'version' => 'v1', 'generation' => 1,
+            'status' => 'testing', 'parameters' => [], 'metadata' => [], 'evidence_status' => 'valid',
+        ]);
+        $performance = ModelMarketPerformance::create([
+            'model_version_id' => $model->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'strategy_family' => 'trend', 'status' => 'forward_validated', 'paper_status' => 'passed',
+            'holdout_status' => 'sealed', 'evidence_status' => 'valid',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('paper lifecycle');
+        app(\App\Services\SealedHoldoutService::class)->release($performance);
     }
 
     public function test_weekday_gap_is_a_hard_gate(): void

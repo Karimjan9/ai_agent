@@ -202,7 +202,12 @@ class LabLifecycleWatchdogService
         if (! DB::getSchemaBuilder()->hasTable('jobs')) return false;
 
         return DB::table('jobs')
-            ->whereIn('queue', ['lab-xauusd', 'lab-eurusd', 'lab-gbpusd', 'lab-full-validation'])
+            ->whereIn('queue', array_values(array_unique(array_merge(
+                [(string) config('services.lab_queue.screening_queue', 'lab-screening')],
+                [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
+                (array) config('services.lab_queue.legacy_screening_queues', []),
+                ['lab-full-validation'],
+            ))))
             ->where('payload', 'like', '%labAgentId%'.$agentId.'%')
             ->exists();
     }
@@ -309,16 +314,26 @@ class LabLifecycleWatchdogService
     {
         $events = [];
         LabGeneration::query()->where('status', 'full_validation')->with('agents')
-            ->where('updated_at', '<=', now()->subMinutes(self::FULL_STALL_MINUTES))->each(function (LabGeneration $generation) use (&$events, $repair): void {
+            ->each(function (LabGeneration $generation) use (&$events, $repair): void {
                 // Long replays are expected.  "stalled" specifically means
-                // that no queued or reserved full-validation job remains.
+                // that no queued or reserved full-validation job remains. A
+                // generation whose every agent is already terminal may be
+                // finalized immediately once the global lane is idle; it
+                // must not wait an arbitrary hour after an admission block.
                 if ($generation->agents->contains(fn (LabAgent $agent) => $this->hasQueuedFullJob($agent->id))) return;
+                $oldEnough = $generation->updated_at
+                    && $generation->updated_at->lte(now()->subMinutes(self::FULL_STALL_MINUTES));
+                $terminalBoundaryProven = $this->safeToFinalizeStalledGeneration($generation);
+                if (! $oldEnough && ! $terminalBoundaryProven) return;
                 $context = [
                     'generation_id' => $generation->id, 'generation' => $generation->generation,
                     'symbol' => $generation->laboratory?->symbol, 'updated_at' => $generation->updated_at?->toIso8601String(),
+                    'terminal_boundary_proven' => $terminalBoundaryProven,
                 ];
-                if (! $repair || ! $this->safeToFinalizeStalledGeneration($generation)) {
-                    $events[] = $this->warn('FULL_VALIDATION_STALLED', 'Generation has remained in full validation for over 60 minutes; no lifecycle state was changed.', $context, $generation->id);
+                if (! $repair || ! $terminalBoundaryProven) {
+                    $events[] = $this->warn('FULL_VALIDATION_STALLED', $oldEnough
+                        ? 'Generation has remained in full validation for over 60 minutes; no lifecycle state was changed.'
+                        : 'Generation reached a terminal full-validation boundary but repair mode is disabled; no lifecycle state was changed.', $context, $generation->id);
                     return;
                 }
 
@@ -339,7 +354,15 @@ class LabLifecycleWatchdogService
                         'trigger_context' => $triggerContext,
                     ]);
                 });
-                $events[] = $this->warn('FULL_VALIDATION_STALE_FINALIZED', 'Safely finalized a stale full-validation generation after proving that no job/replay remained and every agent was terminal.', $context, $generation->id, 'info');
+                $events[] = $this->warn(
+                    $oldEnough ? 'FULL_VALIDATION_STALE_FINALIZED' : 'FULL_VALIDATION_TERMINAL_FINALIZED',
+                    $oldEnough
+                        ? 'Safely finalized a stale full-validation generation after proving that no job/replay remained and every agent was terminal.'
+                        : 'Safely finalized a terminal full-validation boundary without waiting for the stale threshold; no quality or promotion gate was changed.',
+                    $context,
+                    $generation->id,
+                    'info',
+                );
             });
         return $events;
     }
@@ -349,6 +372,11 @@ class LabLifecycleWatchdogService
         if ($generation->agents->isEmpty()) return false;
         if ($generation->agents->contains(fn (LabAgent $agent): bool => in_array($agent->lifecycle_status, ['queued', 'screening', 'training', 'full_queued'], true))) return false;
         if ($generation->agents->contains(fn (LabAgent $agent): bool => $this->hasQueuedFullJob($agent->id))) return false;
+        if (LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->where('phase', 'full_validation')
+            ->where('status', 'started')
+            ->exists()) return false;
 
         $url = rtrim((string) config('services.ai_service.url'), '/').'/api/replay-status';
         $token = (string) config('services.internal_api.token');

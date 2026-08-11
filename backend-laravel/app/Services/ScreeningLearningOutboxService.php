@@ -25,7 +25,17 @@ class ScreeningLearningOutboxService
                 $agent = LabAgent::with('modelVersion')->find($outbox->lab_agent_id);
                 if (! $agent || ! $agent->modelVersion) { $outbox->update(['status' => 'discarded', 'processed_at' => now()]); return; }
                 try {
-                    app(ScreeningLearningService::class)->record($agent, $agent->modelVersion, $outbox->screen_result, (float) $outbox->forward_score);
+                    $recorded = app(ScreeningLearningService::class)->record($agent, $agent->modelVersion, $outbox->screen_result, (float) $outbox->forward_score);
+                    if (! $recorded) {
+                        $outbox->update([
+                            'status' => 'blocked',
+                            'attempts' => $outbox->attempts + 1,
+                            'processed_at' => now(),
+                            'last_error' => 'LEARNING_EVIDENCE_INCOMPLETE: request, response, decision trace and complete trade ledger are required.',
+                        ]);
+
+                        return;
+                    }
                     $outbox->update(['status' => 'completed', 'attempts' => $outbox->attempts + 1, 'processed_at' => now(), 'last_error' => null]);
                     $processed++;
                 } catch (\Throwable $exception) {

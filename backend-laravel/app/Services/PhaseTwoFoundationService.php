@@ -433,7 +433,12 @@ class PhaseTwoFoundationService
         // an outage on a different queue backend.
         if ($queueBackend === 'database' && Schema::hasTable('jobs')) {
             $queueRows = collect(DB::table('jobs')
-                ->whereIn('queue', ['lab-xauusd', 'lab-eurusd', 'lab-gbpusd', 'lab-full-validation'])
+                ->whereIn('queue', array_values(array_unique(array_merge(
+                    [(string) config('services.lab_queue.screening_queue', 'lab-screening')],
+                    [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
+                    (array) config('services.lab_queue.legacy_screening_queues', []),
+                    ['lab-full-validation'],
+                ))))
                 ->get(['queue', 'attempts', 'created_at', 'payload']));
         }
 

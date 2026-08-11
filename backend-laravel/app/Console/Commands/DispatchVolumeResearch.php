@@ -248,7 +248,7 @@ class DispatchVolumeResearch extends Command
         )->name("{$lab->symbol} volume council G{$generation->generation}")
             ->allowFailures()
             ->onConnection((string) config('queue.default', 'redis'))
-            ->onQueue('lab-'.strtolower($lab->symbol))
+            ->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))
             ->dispatch();
 
         $this->info("{$lab->symbol} G{$generation->generation}: {$batch->id}; control + ".count(self::LANES).' volume child queued for screening. No promotion/full shortcut used.');

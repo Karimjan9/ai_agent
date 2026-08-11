@@ -125,4 +125,39 @@ class CandidateGateDecisionServiceTest extends TestCase
             'attribution_status' => 'portfolio_sealed',
         ]);
     }
+
+    public function test_insufficient_evidence_decision_fits_the_gate_projection(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'EURUSD', 'name' => 'Insufficient evidence lab', 'timeframe' => 'M15',
+            'strategy_families' => ['mean_reversion'], 'is_active' => true,
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
+            'population_size' => 1, 'status' => 'screening',
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'gate-insufficient-evidence', 'strategy' => 'eurusd_mean_reversion_g1_a01', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => [], 'evidence_status' => 'valid',
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'EURUSD', 'timeframe' => 'M15', 'strategy_family' => 'mean_reversion',
+            'origin' => 'test', 'lifecycle_status' => 'screening', 'parameter_diff' => [],
+        ]);
+
+        $decision = app(CandidateGateDecisionService::class)->recordScreening($agent, [
+            'total_trades' => 1,
+            'profit_factor' => 0,
+            'promotion_evidence' => false,
+            'screening_survival' => ['status' => 'insufficient_evidence'],
+        ]);
+
+        $this->assertSame('insufficient_evidence', $decision->decision);
+        $this->assertDatabaseHas('candidate_gate_decisions', [
+            'lab_agent_id' => $agent->id,
+            'stage' => 'screening',
+            'decision' => 'insufficient_evidence',
+        ]);
+    }
 }

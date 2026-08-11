@@ -74,6 +74,10 @@ class MutationSkillVerificationService
         return [
             'protocol' => self::PROTOCOL,
             'status' => $confirmed ? 'confirmed' : 'not_confirmed',
+            'evidence_run_ids' => array_values(array_unique(array_filter([
+                data_get($parentResult, 'evidence_run_id'),
+                data_get($childResult, 'evidence_run_id'),
+            ]))),
             'target' => $target !== '' ? $target : null,
             'changed_genes' => $changedGenes,
             'changed_parameter_keys' => array_keys($parameterDiff),

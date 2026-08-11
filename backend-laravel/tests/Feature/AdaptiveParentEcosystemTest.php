@@ -84,8 +84,8 @@ class AdaptiveParentEcosystemTest extends TestCase
 
         $this->assertSame(30, $selection['contract']['candidate_count']);
         $this->assertSame(30, $selection['contract']['eligible_candidate_count']);
-        $this->assertGreaterThan(5, $selection['contract']['selected_count']);
-        $this->assertLessThanOrEqual(30, $selection['contract']['selected_count']);
+        $this->assertGreaterThanOrEqual(3, $selection['contract']['selected_count']);
+        $this->assertLessThanOrEqual(5, $selection['contract']['selected_count']);
         $this->assertSame(30, count($selection['contract']['candidate_parent_model_version_ids']));
     }
 

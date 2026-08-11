@@ -9,6 +9,7 @@ use App\Services\LabPopulationService;
 use App\Services\LabGenerationReportService;
 use App\Services\LabCandidateSelectionService;
 use App\Services\LabAgentEvaluationService;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\ScreeningLearningOutboxService;
 use App\Services\CandidateHandoffService;
 use Illuminate\Support\Collection;
@@ -196,7 +197,43 @@ class AiLearningLaboratoryTest extends TestCase
                 && count((array) data_get($checkpoint, 'frontier_members')) === 4
         ));
         $this->assertArrayHasKey('technical_completion_rate', $report['kpis']);
+        $this->assertFalse($report['kpis']['evolution_safe']);
+        $this->assertSame(0, $report['kpis']['screening_pass_rate']);
+        $this->assertSame('pipeline_not_working', $report['kpis']['screening_failure_classification']);
+        $this->assertSame(0, $report['kpis']['independently_confirmed_mutations']);
+        $this->assertArrayHasKey('parent_links', $report['kpis']);
+        $this->assertArrayHasKey('paper_eligible', $report['kpis']);
         $this->assertSame('screening_completed', data_get($generation->fresh()->trigger_context, 'latest_generation_report.phase'));
+    }
+
+    public function test_current_kpis_refreshes_legacy_generation_reports(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'legacy_report_refresh', true);
+        $generation->update(['trigger_context' => [
+            ...($generation->trigger_context ?? []),
+            'latest_generation_report' => [
+                'protocol' => 'lab_generation_report_v0',
+                'kpis' => ['technical_completion_rate' => 100],
+            ],
+        ]]);
+
+        $rows = app(LabGenerationReportService::class)->currentKpis('XAUUSD', 'H1');
+        $kpis = (array) data_get($rows, '0.kpis', []);
+
+        $this->assertTrue(data_get($rows, '0.next_action') !== 'generation_report_pending');
+        foreach ([
+            'evolution_safe',
+            'screening_pass_rate',
+            'full_validation_completion_rate',
+            'forward_valid_agents',
+            'independently_confirmed_mutations',
+            'parent_links',
+            'paper_eligible',
+            'screening_failure_classification',
+        ] as $key) {
+            $this->assertArrayHasKey($key, $kpis);
+        }
+        $this->assertSame('kpi_refresh', data_get($generation->fresh()->trigger_context, 'latest_generation_report.phase'));
     }
 
     public function test_pair_laboratory_dashboard_renders_learning_evidence(): void
@@ -695,10 +732,10 @@ class AiLearningLaboratoryTest extends TestCase
                 ],
             ]],
             'epistemic_boundary' => ['unknown_state_action' => 'WAIT'],
-            'evidence_run_id' => 'knowledge-screen-run',
         ];
+        $screen['evidence_run_id'] = $this->completeEvidenceRun($agent);
         $screenCard = app(\App\Services\AgentKnowledgeService::class)->recordScreening(
-            $agent->fresh(['modelVersion', 'generation']), $screen, 'knowledge-screen-run'
+            $agent->fresh(['modelVersion', 'generation']), $screen, $screen['evidence_run_id']
         );
 
         $this->assertSame('novice', $screenCard->skill_stage);
@@ -733,7 +770,7 @@ class AiLearningLaboratoryTest extends TestCase
                 ['window' => 1, 'trades' => 12, 'profit_factor' => 1.40, 'net_profit_percent' => 2.0],
                 ['window' => 2, 'trades' => 12, 'profit_factor' => 1.35, 'net_profit_percent' => 1.5],
             ]],
-            'evidence_run_id' => 'knowledge-full-run',
+            'evidence_run_id' => $screen['evidence_run_id'],
         ];
         $performance = ModelMarketPerformance::create([
             'model_version_id' => $model->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
@@ -742,7 +779,7 @@ class AiLearningLaboratoryTest extends TestCase
             'rolling_windows_count' => 3, 'rolling_forward_wins' => 2, 'metrics' => $full,
         ]);
         $fullCard = app(\App\Services\AgentKnowledgeService::class)->recordFullReplay(
-            $agent->fresh(['modelVersion', 'generation']), $performance, $full, 'knowledge-full-run'
+            $agent->fresh(['modelVersion', 'generation']), $performance, $full, $screen['evidence_run_id']
         );
 
         $this->assertSame('specialist', $fullCard->skill_stage);
@@ -1156,12 +1193,41 @@ class AiLearningLaboratoryTest extends TestCase
     {
         $screen = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
         $full = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'full');
+        $frontier = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'screen', null, 'lab-frontier');
+
+        $this->assertSame('lab-screening', $screen->queue);
+        $this->assertSame('lab-full-validation', $full->queue);
+        $this->assertSame('lab-frontier', $frontier->queue);
 
         $screenMiddleware = collect($screen->middleware());
         $fullMiddleware = collect($full->middleware());
 
         $this->assertTrue($screenMiddleware->contains(fn ($middleware): bool => $middleware instanceof \App\Jobs\Middleware\PreferFullValidationQueue));
         $this->assertTrue($fullMiddleware->contains(fn ($middleware): bool => $middleware instanceof \App\Jobs\Middleware\PreferFullValidationQueue));
+    }
+
+    public function test_targeted_failure_profile_plan_uses_four_distinct_repair_dimensions(): void
+    {
+        $lab = \App\Models\AiLaboratory::firstOrCreate(
+            ['symbol' => 'XAUUSD', 'timeframe' => 'H1'],
+            ['name' => 'XAUUSD Lab', 'strategy_families' => ['differential_router', 'hybrid'], 'is_active' => true],
+        );
+        $method = new \ReflectionMethod(app(LabPopulationService::class), 'targetedFailurePlan');
+        $method->setAccessible(true);
+
+        $plan = $method->invoke(app(LabPopulationService::class), $lab, ['stress_cost'], 4, [
+            'source_generation_id' => 19,
+            'source_generation' => 3,
+            'profile_hash' => 'gen3-profile',
+            'target_counts' => ['stress_cost' => 7],
+        ]);
+
+        $this->assertSame(['stress_cost', 'profit_factor', 'temporal_stability', 'regime_coverage'], array_column($plan, 'target'));
+        $this->assertSame(4, count($plan));
+        $this->assertTrue(collect($plan)->every(fn (array $seat): bool => $seat['origin'] === 'targeted_failure_profile'));
+        $this->assertSame('targeted_failure_profile_v1', data_get($plan[0], 'niche.protocol'));
+        $this->assertSame(19, data_get($plan[0], 'niche.source_generation_id'));
+        $this->assertFalse((bool) data_get($plan[0], 'niche.promotion_evidence', false));
     }
 
     public function test_screen_retry_window_can_wait_behind_a_long_full_validation_lane(): void
@@ -1173,10 +1239,39 @@ class AiLearningLaboratoryTest extends TestCase
             360 * 60,
             $screen->retryUntil()->getTimestamp() - $screen->screenQueuedAt->getTimestamp(),
         );
+        $this->assertSame(360 * 60, $screen->uniqueFor);
         $this->assertLessThan(
             $screen->retryUntil()->getTimestamp(),
             $full->retryUntil()->getTimestamp(),
         );
+
+        $legacy = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
+        $legacy->retryDeadline = now()->addMinutes(90);
+        unset($legacy->screenQueuedAt);
+
+        $this->assertEqualsWithDelta(
+            360 * 60,
+            $legacy->retryUntil()->getTimestamp() - now()->getTimestamp(),
+            2,
+        );
+    }
+
+    public function test_screen_fairness_ignores_a_delayed_full_validation_job(): void
+    {
+        DB::table('jobs')->insert([
+            'queue' => 'lab-full-validation',
+            'payload' => '{}',
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => now()->timestamp + 300,
+            'created_at' => now()->timestamp,
+        ]);
+
+        $middleware = new \App\Jobs\Middleware\PreferFullValidationQueue('screen');
+        $waiting = new \ReflectionMethod($middleware, 'fullValidationIsWaiting');
+        $waiting->setAccessible(true);
+
+        $this->assertFalse($waiting->invoke($middleware));
     }
 
     public function test_screening_curriculum_keeps_ranked_bottlenecks_for_generation_planning(): void
@@ -1199,8 +1294,16 @@ class AiLearningLaboratoryTest extends TestCase
     {
         $generation = app(LabPopulationService::class)->build('XAUUSD', 'outbox_contract', true);
         $agent = $generation->agents->first();
+        $evidenceRunId = $this->completeEvidenceRun($agent, [
+            'total_trades' => 25,
+            'trade_ledger_hash' => hash('sha256', 'outbox-ledger'),
+            'trade_ledger' => array_fill(0, 25, ['entry_time' => '2026-01-01T00:00:00Z']),
+            'trades' => array_fill(0, 25, ['entry_time' => '2026-01-01T00:00:00Z']),
+            'displayed_trade_count' => 25,
+        ]);
 
         app(ScreeningLearningOutboxService::class)->enqueue($agent, [
+            'evidence_run_id' => $evidenceRunId,
             'total_trades' => 25,
             'profit_factor' => 1.47,
             'entry_funnel' => ['flat_signal_opportunities' => 50, 'accepted_entries' => 25],
@@ -1222,5 +1325,62 @@ class AiLearningLaboratoryTest extends TestCase
         $memory = \App\Models\MutationMemory::where('lab_agent_id', $agent->id)->latest('id')->firstOrFail();
         $this->assertStringContainsString('screen_survival_failed_train_forward_gap;', (string) $memory->decision);
         $this->assertStringContainsString('no causal credit', (string) $memory->decision);
+    }
+
+    public function test_screen_learning_outbox_blocks_missing_evidence_instead_of_teaching_from_it(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'outbox_incomplete_contract', true);
+        $agent = $generation->agents->first();
+
+        app(ScreeningLearningOutboxService::class)->enqueue($agent, [
+            'total_trades' => 25,
+            'profit_factor' => 1.47,
+            'screening_survival' => [
+                'status' => 'rescue_case',
+                'reason_codes' => ['FAILED_TRAIN_FORWARD_GAP'],
+            ],
+        ], 0.0);
+
+        $this->assertSame(0, app(ScreeningLearningOutboxService::class)->process());
+        $this->assertDatabaseHas('screening_learning_outbox', [
+            'lab_agent_id' => $agent->id,
+            'status' => 'blocked',
+        ]);
+        $this->assertDatabaseMissing('mutation_memories', ['lab_agent_id' => $agent->id]);
+        $this->assertDatabaseMissing('agent_memories', ['source_id' => $agent->id]);
+    }
+
+    private function completeEvidenceRun(LabAgent $agent, array $overrides = []): string
+    {
+        $evidence = app(LabImmutableEvidenceService::class);
+        $run = $evidence->beginRun($agent, 'screening', 'incremental', ['source' => 'feature_test']);
+        $evidence->attachRequest($run, [
+            'symbol' => $agent->symbol,
+            'timeframe' => $agent->timeframe,
+            'candles' => [['time' => '2026-01-01T00:00:00Z', 'close' => 2000]],
+        ], ['request_id' => 'feature-test-'.$agent->id]);
+        $evidence->finishRun($run, 'completed', [
+            'total_trades' => 0,
+            'trade_ledger_hash' => hash('sha256', 'empty-ledger'),
+            'trade_ledger' => [],
+            'trades' => [],
+            'displayed_trade_count' => 0,
+            'decision_trace' => [[
+                'candle_time' => '2026-01-01T00:00:00Z',
+                'event_type' => 'signal_evaluation',
+                'action' => 'WAIT',
+                'accepted' => false,
+            ]],
+            'data_quality' => [
+                'decision_trace' => [
+                    'requested' => true,
+                    'complete' => true,
+                    'evaluated_candle_count' => 1,
+                ],
+            ],
+            ...$overrides,
+        ]);
+
+        return $run->run_id;
     }
 }

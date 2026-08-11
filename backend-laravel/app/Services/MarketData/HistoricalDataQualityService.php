@@ -130,12 +130,31 @@ class HistoricalDataQualityService
     ): array {
         $symbol = strtoupper($symbol);
         $timeframe = strtoupper($timeframe);
-        // Dukascopy's first XAU Sunday session can start at 23:00 UTC on
-        // 2005-01-02. The export protocol already allows that one-day
-        // market-open tolerance; the admission gate must use the same rule.
-        $requiredFoundationStart = CarbonImmutable::parse('2005-01-03 00:00:00', 'UTC');
-        $requiredFoundationEnd = CarbonImmutable::parse('2025-12-01 00:00:00', 'UTC');
-        $requiredRollingStart = CarbonImmutable::parse('2026-01-01 00:00:00', 'UTC');
+        // H1 keeps the long pre-2026 Dukascopy foundation contract. M15 has
+        // its own preserved pre-2026 slice; it never substitutes H1 data for
+        // M15 prices. H1 remains a separate closed-regime input at replay.
+        $isM15 = $timeframe === 'M15';
+        $requiredFoundationStart = CarbonImmutable::parse(
+            $isM15
+                ? (string) config('services.lab_selection.m15_foundation_start', '2025-11-01 00:00:00')
+                : '2005-01-03 00:00:00',
+            'UTC',
+        );
+        $requiredFoundationEnd = CarbonImmutable::parse(
+            $isM15
+                ? (string) config('services.lab_selection.m15_foundation_required_end', '2025-12-01 00:00:00')
+                : '2025-12-01 00:00:00',
+            'UTC',
+        );
+        $requiredRollingStart = CarbonImmutable::parse(
+            $isM15
+                ? (string) config('services.lab_selection.m15_rolling_start', '2026-01-01 00:00:00')
+                : '2026-01-01 00:00:00',
+            'UTC',
+        );
+        $minimumFoundationRows = $isM15
+            ? max(1, (int) config('services.lab_selection.m15_foundation_minimum_rows', 2000))
+            : 202;
 
         $symbolId = Symbol::query()->where('code', $symbol)->value('id');
         $query = $symbolId
@@ -153,8 +172,16 @@ class HistoricalDataQualityService
 
             return [
                 'row_count' => (int) ($manifest['row_count'] ?? 0),
-                'first_candle_at' => $manifest['first_candle_at'] ?? null,
-                'last_candle_at' => $manifest['last_candle_at'] ?? null,
+                // Older M15 foundation manifests stored these boundaries in
+                // foundation_start/end and the continuity passport. Accept
+                // those immutable manifests while new exports also publish
+                // the canonical top-level fields.
+                'first_candle_at' => $manifest['first_candle_at']
+                    ?? $manifest['foundation_start']
+                    ?? data_get($manifest, 'continuity.first_candle_at'),
+                'last_candle_at' => $manifest['last_candle_at']
+                    ?? $manifest['foundation_end']
+                    ?? data_get($manifest, 'continuity.last_candle_at'),
                 'source' => 'generation_snapshot',
             ];
         };
@@ -196,14 +223,32 @@ class HistoricalDataQualityService
             }
         }
 
-        if ($foundationFirst === null || $foundationFirst->greaterThan($requiredFoundationStart)) {
-            $reasons[] = 'FOUNDATION_HISTORY_BEFORE_2005_01_02_MARKET_OPEN_REQUIRED';
-        }
-        if ($foundationLast === null || $foundationLast->lessThan($requiredFoundationEnd)) {
-            $reasons[] = 'FOUNDATION_HISTORY_THROUGH_2025_REQUIRED';
-        }
-        if ((int) $foundation['row_count'] < 202) {
-            $reasons[] = 'FOUNDATION_HISTORY_NEEDS_AT_LEAST_202_ROWS';
+        if ($isM15) {
+            // The three preserved symbols begin on different valid M15
+            // sessions (EUR/GBP earlier than XAU). The immutable manifest's
+            // actual first candle is therefore the source boundary; forcing
+            // one calendar start would reject a valid instrument for being
+            // listed later. Minimum rows plus the common 2025 end boundary
+            // remain the hard evidence requirements.
+            if ($foundationFirst === null) {
+                $reasons[] = 'M15_FOUNDATION_HISTORY_FROM_CONFIGURED_START_REQUIRED';
+            }
+            if ($foundationLast === null || $foundationLast->lessThan($requiredFoundationEnd)) {
+                $reasons[] = 'M15_FOUNDATION_HISTORY_THROUGH_2025_REQUIRED';
+            }
+            if ((int) $foundation['row_count'] < $minimumFoundationRows) {
+                $reasons[] = 'M15_FOUNDATION_HISTORY_NEEDS_MINIMUM_ROWS';
+            }
+        } else {
+            if ($foundationFirst === null || $foundationFirst->greaterThan($requiredFoundationStart)) {
+                $reasons[] = 'FOUNDATION_HISTORY_BEFORE_2005_01_02_MARKET_OPEN_REQUIRED';
+            }
+            if ($foundationLast === null || $foundationLast->lessThan($requiredFoundationEnd)) {
+                $reasons[] = 'FOUNDATION_HISTORY_THROUGH_2025_REQUIRED';
+            }
+            if ((int) $foundation['row_count'] < 202) {
+                $reasons[] = 'FOUNDATION_HISTORY_NEEDS_AT_LEAST_202_ROWS';
+            }
         }
         if ($rollingLast === null || $rollingLast->lessThan($requiredRollingStart)) {
             $reasons[] = 'ROLLING_HISTORY_FROM_2026_01_01_REQUIRED';
@@ -245,6 +290,7 @@ class HistoricalDataQualityService
             'required_foundation_start' => $requiredFoundationStart->toIso8601String(),
             'required_foundation_end' => $requiredFoundationEnd->toIso8601String(),
             'required_rolling_start' => $requiredRollingStart->toIso8601String(),
+            'minimum_foundation_rows' => $minimumFoundationRows,
             'reasons' => array_values(array_unique($reasons)),
             'promotion_evidence' => false,
         ];

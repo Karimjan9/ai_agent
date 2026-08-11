@@ -8,7 +8,7 @@ use App\Services\LabImmutableEvidenceService;
 use Closure;
 use Throwable;
 
-/** Records queue attempts even when a later middleware releases for fairness. */
+/** Records immutable evidence only after a replay has acquired the shared lane. */
 class LabQueueAttemptEvidenceMiddleware
 {
     public function handle(object $job, Closure $next): mixed
@@ -19,16 +19,16 @@ class LabQueueAttemptEvidenceMiddleware
         if (! $agent) return $next($job);
 
         $job->labMutexAcquired = false;
-        // Open the attempt before fairness/mutex middleware. A release before
-        // handle() is still a real evaluation attempt and must have its own
-        // run_id; the job reuses this run if it reaches the evaluator.
+        // This middleware runs after the fairness and mutex middleware. A
+        // release before this point is a queue deferral, not a replay attempt;
+        // it must not create a terminal run with missing request/data evidence.
         $run = $ledger->beginRun($agent, $job->mode === 'screen' ? 'screening' : 'full_validation', $job->mode, [
-            'attempt' => max(1, (int) $job->attempts()), 'queue' => $job->queue,
+            'attempt' => max(1, (int) $job->attempts()), 'queue' => $job->effectiveQueue(),
             'source' => self::class,
         ]);
         $job->evidenceRunId = $run->run_id;
         $ledger->recordLifecycle($agent, 'queue_attempt_started', [
-            'run_id' => $run->run_id, 'attempt' => $job->attempts(), 'queue' => $job->queue,
+            'run_id' => $run->run_id, 'attempt' => $job->attempts(), 'queue' => $job->effectiveQueue(),
             'mode' => $job->mode,
         ], $job->mode === 'screen' ? 'screening' : 'full_validation', $run->run_id, $job->attempts(), self::class);
 
@@ -41,11 +41,11 @@ class LabQueueAttemptEvidenceMiddleware
             if (! $ledger->isTerminalRun($run) && ! $job->labMutexAcquired) {
                 $ledger->finishRun($run, 'retry_released', null, [], [
                     'reason_code' => 'QUEUE_MIDDLEWARE_RELEASE',
-                    'attempt' => $job->attempts(), 'queue' => $job->queue,
+                    'attempt' => $job->attempts(), 'queue' => $job->effectiveQueue(),
                 ]);
             }
             $ledger->recordLifecycle($agent->fresh(), $job->labMutexAcquired ? 'queue_attempt_completed' : 'queue_attempt_deferred', [
-                'run_id' => $run->run_id, 'attempt' => $job->attempts(), 'queue' => $job->queue,
+                'run_id' => $run->run_id, 'attempt' => $job->attempts(), 'queue' => $job->effectiveQueue(),
                 'mutex_acquired' => $job->labMutexAcquired,
                 'rule' => $job->labMutexAcquired ? 'worker_entered_evaluator' : 'later_middleware_released_job',
             ], $job->mode === 'screen' ? 'screening' : 'full_validation', $run->run_id, $job->attempts(), self::class);
@@ -57,7 +57,7 @@ class LabQueueAttemptEvidenceMiddleware
             ], $error);
             report($error);
             $ledger->recordLifecycle($agent->fresh(), 'queue_attempt_error', [
-                'run_id' => $run->run_id, 'attempt' => $job->attempts(), 'queue' => $job->queue,
+                'run_id' => $run->run_id, 'attempt' => $job->attempts(), 'queue' => $job->effectiveQueue(),
                 'mutex_acquired' => $job->labMutexAcquired,
             ], $job->mode === 'screen' ? 'screening' : 'full_validation', $run->run_id, $job->attempts(), self::class, $error);
             throw $error;

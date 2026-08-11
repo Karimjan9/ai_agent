@@ -45,6 +45,16 @@ class DispatchFullLabValidation extends Command
                 ->where('status', 'screening')
                 ->latest('generation')
                 ->first();
+            // A worker restart can finish the last screen after the terminal
+            // boundary write, leaving a generation in `screening` even
+            // though every agent is already terminal. Repair that mutable
+            // projection before selection; never treat the cohort as an
+            // active/incomplete generation forever.
+            if ($roleCandidate
+                && data_get($roleCandidate->trigger_context, 'role_complete_council') !== true
+                && $this->closeTerminalScreeningBoundary($roleCandidate)) {
+                $roleCandidate = $roleCandidate->fresh(['agents.modelVersion']);
+            }
             $generation = null;
             if ($roleCandidate && $this->roleCompleteReplayReady($roleCandidate)) {
                 $generation = $roleCandidate;
@@ -93,6 +103,9 @@ class DispatchFullLabValidation extends Command
             // evaluation error.
             try {
                 $foundationSnapshot = $datasets->ensureGenerationFoundationSnapshot($generation);
+                if ($timeframe === 'M15') {
+                    $datasets->ensureGenerationRegimeSnapshot($generation);
+                }
             } catch (\Throwable $exception) {
                 $this->warn("{$symbol}: foundation archive tayyor emas; full validation bloklandi: ".$exception->getMessage());
 
@@ -120,9 +133,50 @@ class DispatchFullLabValidation extends Command
             $generation = $generation->fresh(['agents.modelVersion']);
             $screened = $generation->agents->where('lifecycle_status', 'screened')->values();
             $screened = $this->enforceGenerationDatasetConsistency($generation, $screened);
+            if ($timeframe === 'M15') {
+                $screened = $this->rescreenStaleM15RegimeEvidence($generation, $screened, $handoffs, $evidence);
+            }
+            // Full validation is opened by exactly one evidence-complete
+            // screening survivor. A contextual near-miss may still inform the
+            // targeted-mutation curriculum, but it must not consume the full
+            // replay lane. This check is deliberately against the immutable
+            // run/artifact plane, not only the mutable agent projection.
+            $screened = $screened->filter(function ($agent) use ($evidence): bool {
+                $decision = CandidateGateDecision::query()
+                    ->where('lab_agent_id', $agent->id)
+                    ->where('stage', 'screening')
+                    ->latest('evaluated_at')
+                    ->first();
+                if (! $decision || $decision->decision !== 'passed') {
+                    return false;
+                }
+
+                $run = LabEvaluationRun::query()
+                    ->where('lab_agent_id', $agent->id)
+                    ->where('phase', 'screening')
+                    ->where('status', 'completed')
+                    ->latest('id')
+                    ->first();
+                if (! $run) {
+                    return false;
+                }
+
+                return $evidence->learningEligibility($run)['complete'] === true;
+            })->values();
             $laneSelection = $selection->selectValidationLanes($screened);
+            // Normal generations use the one-candidate bootstrap funnel. A
+            // role-complete generation is the explicit exception: its four
+            // complementary roles are the experiment, and each still enters
+            // the same serialized full-replay queue and unchanged passport.
+            if (! (bool) data_get($generation->trigger_context, 'role_complete_council', false)) {
+                $laneSelection['agents'] = $laneSelection['agents']->take(1)->values();
+            }
+            $laneSelection['lanes'] = collect($laneSelection['lanes'] ?? [])
+                ->only($laneSelection['agents']->pluck('id')->all())
+                ->all();
             $agents = $laneSelection['agents'];
             $lanes = $laneSelection['lanes'];
+            $selectedBeforePreflight = $agents->count();
             $agents = $agents->filter(function ($agent) use ($preflight, $generation, $handoffs, $evidence): bool {
                 $contractRepair = $preflight->normalizeExecutionContractMetadata($agent);
                 if ($contractRepair !== []) {
@@ -149,7 +203,13 @@ class DispatchFullLabValidation extends Command
                 return false;
             })->values();
             if ($agents->isEmpty()) {
-                $this->warn("{$symbol}: full validation preflightdan o'tadigan agent qolmadi.");
+                if ($selectedBeforePreflight === 0) {
+                    $handoffs->noEligibleCandidate($generation);
+                    app(LabGenerationReportService::class)->record($generation->fresh(), 'screening_no_full_candidate');
+                    $this->warn("{$symbol}: screened cohortdan full validation uchun eligible candidate tanlanmadi; targeted curriculum handoff yozildi, promotion evidence yaratilmaydi.");
+                } else {
+                    $this->warn("{$symbol}: full validation preflightdan o'tadigan agent qolmadi.");
+                }
 
                 continue;
             }
@@ -351,5 +411,133 @@ class DispatchFullLabValidation extends Command
         }
 
         return $eligible;
+    }
+
+    /**
+     * A screen produced before the closed-H1 regime contract is not eligible
+     * for M15 full selection. Requeue it as technical research work so its
+     * old score remains diagnostic evidence but can never enter a promotion
+     * lane without a fresh regime-bound replay.
+     */
+    private function rescreenStaleM15RegimeEvidence(
+        $generation,
+        Collection $screened,
+        CandidateHandoffService $handoffs,
+        LabImmutableEvidenceService $evidence,
+    ): Collection {
+        if ($screened->isEmpty()) {
+            return $screened;
+        }
+
+        $expectedHash = (string) data_get(
+            $generation->trigger_context,
+            'canonical_dataset_snapshots.regime.sha256',
+            '',
+        );
+        if ($expectedHash === '') {
+            return $screened;
+        }
+
+        $stale = $screened->filter(function ($agent) use ($expectedHash): bool {
+            $observedHash = (string) data_get(
+                $agent->modelVersion?->metadata,
+                'last_screen_result.regime_snapshot_sha256',
+                '',
+            );
+
+            // The mutable projection can be written by a long-lived worker
+            // restart after the immutable run has already closed. Prefer the
+            // durable request manifest as a fallback; otherwise every
+            // scheduler poll would mistake a valid M15 screen for a legacy
+            // result and reopen the generation indefinitely.
+            if ($observedHash === '') {
+                $requestMeta = LabEvaluationRun::query()
+                    ->where('lab_agent_id', $agent->id)
+                    ->where('phase', 'screening')
+                    ->where('status', 'completed')
+                    ->latest('id')
+                    ->value('request_meta');
+                $requestMetaPayload = is_array($requestMeta)
+                    ? $requestMeta
+                    : json_decode((string) $requestMeta, true);
+                $observedHash = (string) data_get(
+                    is_array($requestMetaPayload) ? $requestMetaPayload : [],
+                    'dataset_manifest.regime_snapshot_sha256',
+                    '',
+                );
+            }
+
+            return $observedHash !== $expectedHash;
+        })->values();
+        if ($stale->isEmpty()) {
+            return $screened;
+        }
+
+        foreach ($stale as $agent) {
+            $agent->update([
+                'lifecycle_status' => 'queued',
+                'decision_reason' => 'M15 screen evidence predates the generation-frozen closed H1 regime; clean rescreen required before full validation. Strategy verdict withheld.',
+            ]);
+            $handoffs->record($generation, $agent, 'm15_rescreen_required', 'queued', 'M15_SCREEN_H1_REGIME_EVIDENCE_MISSING_OR_STALE', [
+                'expected_regime_snapshot_sha256' => $expectedHash,
+                'promotion_evidence' => false,
+            ]);
+            $evidence->recordLifecycle($agent, 'm15_rescreen_required', [
+                'reason_code' => 'M15_SCREEN_H1_REGIME_EVIDENCE_MISSING_OR_STALE',
+                'expected_regime_snapshot_sha256' => $expectedHash,
+                'quality_verdict' => 'withheld',
+                'promotion_evidence' => false,
+            ], 'screening', null, null, self::class);
+        }
+
+        $generation->update(['status' => 'screening', 'completed_at' => null]);
+        $jobs = $stale->map(fn ($agent) => new EvaluateLabAgentJob($agent->id, $agent->symbol, 'screen'))->all();
+        $batch = Bus::batch($jobs)
+            ->name("{$generation->laboratory->symbol} M15 closed-H1 rescreen G{$generation->generation}")
+            ->allowFailures()
+            ->onConnection((string) config('queue.default', 'redis'))
+            ->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))
+            ->dispatch();
+        $this->info("{$generation->laboratory->symbol} M15: {$stale->count()} legacy screen result(s) rescreened under closed H1 regime; batch {$batch->id}.");
+
+        return $screened->reject(fn ($agent): bool => $stale->contains('id', $agent->id))->values();
+    }
+
+    /**
+     * Restore the screening terminal boundary after a worker interruption.
+     * This only repairs a projection; it does not create strategy or
+     * promotion evidence and it never closes a generation with open work.
+     */
+    private function closeTerminalScreeningBoundary($generation): bool
+    {
+        $openStatuses = [
+            'draft', 'queued', 'screening', 'evaluation_error', 'full_queued',
+            'full_validation', 'training',
+        ];
+        if ($generation->agents->contains(fn ($agent): bool => in_array($agent->lifecycle_status, $openStatuses, true))) {
+            return false;
+        }
+
+        $screened = $generation->agents->where('lifecycle_status', 'screened')->isNotEmpty();
+        $context = (array) ($generation->trigger_context ?? []);
+        $context['screening_terminal_recovery'] = [
+            'protocol' => 'generation_terminal_boundary_recovery_v1',
+            'recovered_from_status' => 'screening',
+            'status' => $screened ? 'screened' : 'technical_quarantine',
+            'recovered_at' => now()->utc()->toIso8601String(),
+            'all_agents_terminal' => true,
+            'promotion_evidence' => false,
+        ];
+        $generation->update([
+            'status' => $screened ? 'screened' : 'technical_quarantine',
+            'completed_at' => now(),
+            'trigger_context' => $context,
+        ]);
+        app(LabGenerationReportService::class)->record(
+            $generation->fresh(['agents']),
+            $screened ? 'screening_completed_recovered' : 'screening_technical_quarantine_recovered',
+        );
+
+        return true;
     }
 }

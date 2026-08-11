@@ -71,7 +71,7 @@ class ReplayCooldownCausalCohort extends Command
         $batch = Bus::batch($agents->map(fn (LabAgent $agent) => new EvaluateLabAgentJob($agent->id, $agent->symbol, 'screen'))->all())
             ->name("{$source->symbol} cooldown state-machine replay G{$cohort->generation}: 4/2/3")
             ->allowFailures()
-            ->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-'.strtolower($source->symbol))->dispatch();
+            ->onConnection((string) config('queue.default', 'redis'))->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))->dispatch();
         $this->info("{$source->symbol} G{$cohort->generation}: {$batch->id}; frozen parent 4 plus causal variants 2/3 re-screened. No full-validation or paper promotion was dispatched.");
 
         return self::SUCCESS;

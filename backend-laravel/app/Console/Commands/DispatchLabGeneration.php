@@ -31,7 +31,14 @@ class DispatchLabGeneration extends Command
         // already saturated: a large backlog makes every candidate stale and
         // turns the scheduler into a source of noisy, duplicated experiments.
         if (Schema::hasTable('jobs')) {
-            $queues = collect($symbols)->map(fn (string $symbol) => 'lab-'.strtolower($symbol))->all();
+            $queues = array_values(array_unique(array_merge(
+                [
+                    (string) config('services.lab_queue.screening_queue', 'lab-screening'),
+                    (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
+                    'lab-full-validation',
+                ],
+                (array) config('services.lab_queue.legacy_screening_queues', []),
+            )));
             $pending = (int) DB::table('jobs')->whereIn('queue', $queues)->count();
             $limit = max(1, (int) config('services.lab_selection.max_screening_jobs', 40));
             if ($pending >= $limit) {
@@ -186,7 +193,19 @@ class DispatchLabGeneration extends Command
             // Freeze the exact price/volume snapshot before the first queue
             // job starts. Evaluator workers may drain over several new
             // candles; every child in this generation must see one dataset.
+            // Keep the independent pre-2026 foundation contract beside the
+            // rolling snapshot from the beginning. Screening may proceed
+            // with the rolling tail, but full replay must never discover a
+            // missing foundation only after queue admission.
+            $datasets->ensureGenerationFoundationSnapshot($generation);
             $datasets->ensureGenerationSnapshot($generation, $includeVolume);
+            if ($timeframe === 'M15') {
+                // M15 entries are evaluated against one immutable H1 regime
+                // snapshot whose last candle is already closed. This keeps
+                // screening reproducible and prevents a later open H1 candle
+                // from changing the meaning of an earlier M15 candidate.
+                $datasets->ensureGenerationRegimeSnapshot($generation);
+            }
             $generation->agents()->whereIn('id', $agentIds)->update(['lifecycle_status' => 'queued']);
             foreach ($generation->agents->whereIn('id', $agentIds) as $agent) {
                 $agent->lifecycle_status = 'queued';
@@ -199,7 +218,7 @@ class DispatchLabGeneration extends Command
                 ->name("{$symbol} {$timeframe} Lab G{$generation->generation} screening")
                 ->allowFailures()
                 ->onConnection((string) config('queue.default', 'redis'))
-                ->onQueue('lab-'.strtolower($symbol))
+                ->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))
                 ->dispatch();
 
             $this->info("{$symbol}: {$batch->id}, ".count($jobs).' jobs dispatched.');
@@ -312,7 +331,9 @@ class DispatchLabGeneration extends Command
             // direction firewall has learned several harmful directions. The
             // resulting no-change control is still useful replay evidence,
             // but it is explicitly barred from specialist/passport promotion.
-            $roleControl = data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
+            $roleControl = (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false)
+                || (bool) data_get($metadata, 'g98_council_lane.control_only', false)
+                || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
             if (count($diff) === 0 && $roleControl) {
                 return $violations;
             }

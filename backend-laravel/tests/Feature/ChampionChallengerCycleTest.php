@@ -16,6 +16,10 @@ class ChampionChallengerCycleTest extends TestCase
 
     public function test_challenger_replaces_only_the_same_market_champion_after_all_gates(): void
     {
+        // This is the legacy promotion protocol contract. Production keeps
+        // the final champion mutation frozen until the evidence repair is
+        // explicitly reopened.
+        config(['services.promotion.freeze_champion' => false]);
         $champion = ModelVersion::create($this->model('breakout_v1', 'v1'));
         $challenger = ModelVersion::create($this->model('breakout_v2', 'v2'));
         $service = app(MarketChampionService::class);
@@ -44,6 +48,45 @@ class ChampionChallengerCycleTest extends TestCase
         ]);
         $this->assertDatabaseHas('model_market_performance', [
             'model_version_id' => $champion->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'status' => 'archived',
+        ]);
+    }
+
+    public function test_champion_promotion_is_frozen_while_evidence_pipeline_is_repaired(): void
+    {
+        $candidate = ModelVersion::create($this->model('frozen_breakout', 'v1'));
+        $service = app(MarketChampionService::class);
+
+        $performance = $service->evaluate(
+            $candidate->strategy,
+            'XAUUSD',
+            'H1',
+            90,
+            $this->resultMetrics(90, [90, 91, 92]),
+        );
+        $service->recordPaperResult($performance, [
+            'sample_count' => 50,
+            'profit_factor' => 1.3,
+            'max_drawdown' => 8,
+            'net_profit_percent' => 4,
+        ]);
+        $final = $service->finalizeHoldout($performance, [
+            'score' => 72,
+            'result' => [
+                'profit_factor' => 1.4,
+                'max_drawdown_percent' => 9,
+                'total_trades' => 40,
+                'monte_carlo' => ['risk_of_ruin_percent' => 4],
+            ],
+        ]);
+
+        $this->assertSame('paper', $final->status);
+        $this->assertDatabaseMissing('model_market_performance', [
+            'model_version_id' => $candidate->id,
+            'status' => 'champion',
+        ]);
+        $this->assertDatabaseMissing('model_versions', [
+            'id' => $candidate->id,
+            'status' => 'active',
         ]);
     }
 
@@ -149,8 +192,17 @@ class ChampionChallengerCycleTest extends TestCase
 
     private function resultMetrics(float $forward, array $windows): array
     {
+        $executionContract = app(\App\Services\ExecutionContractService::class)->for('XAUUSD', 'H1');
+
         return [
             'forward_score' => $forward, 'forward_window_scores' => $windows,
+            // This fixture represents a sealed full replay. Promotion tests
+            // must carry the same identity contract as the production replay
+            // path; otherwise the fresh-replay gate should correctly keep it
+            // in challenger status.
+            'evidence_run_id' => 'champion-cycle-full-replay',
+            'full_replay_runtime_policy' => ['protocol' => 'full_replay_runtime_budget_v1'],
+            'execution_contract' => $executionContract,
             'total_trades' => 90, 'profit_factor' => 1.5, 'max_drawdown_percent' => 10,
             'is_overfit' => false, 'monte_carlo' => ['risk_of_ruin_percent' => 5],
             // A candidate can reach paper in this test only with a complete

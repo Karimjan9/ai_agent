@@ -93,6 +93,14 @@ recovery is valid only when the AI service is idle, no replay child exists,
 and every reserved full job is demonstrably stale. Recovered attempts are
 retry_released operational evidence, not strategy evidence.
 
+Screen jobs have a bounded six-hour retry lifetime because full validation has
+priority on the shared AI lane; this is long enough to survive a large full
+replay backlog without converting queue contention into `MaxAttemptsExceeded`.
+The shared mutex handoff is one minute, so a completed or recovered replay does
+not leave the screen lane asleep for ten minutes. Existing serialized
+90-minute screen jobs are interpreted with the same six-hour bound from their
+original enqueue time.
+
 ## Lifecycle and gates
 
 `draft -> training -> challenger -> forward_validated -> paper -> champion`
@@ -138,8 +146,8 @@ Full validation submits the selected cohort from one generation in a single AI-s
 
 - Hourly: candle import.
 - Hourly: `trading:lab-incremental` checks existing champions on recent candles and records degradation.
-- After 24 new closed H1 candles, market drift, or three consecutive degraded checks: `trading:lab-generation` creates at most one pending generation per laboratory. The hourly incremental command creates a degradation-triggered generation immediately once the third consecutive poor check is recorded. Both paths wait for the previous generation to finish rather than overlapping populations.
-- Weekly: `trading:dispatch-lab` sends every draft agent to its own pair queue for full historical rolling walk-forward and Monte Carlo evaluation.
+- After 24 new closed H1 candles or 96 new closed M15 candles, market drift, or three consecutive degraded checks: `trading:lab-generation` creates at most one pending generation per laboratory. H1 remains the baseline/regime lane; M15 has its own price/volume foundation and uses only the last closed H1 regime as context. Both paths wait for the previous generation to finish rather than overlapping populations.
+- Every five minutes: `trading:dispatch-lab` screens draft agents in the shared FIFO screening lane; `trading:dispatch-full-validation --timeframe=H1` and `--timeframe=M15` select only screened candidates for the sealed full replay/council gates.
 - Every five minutes: `trading:paper-monitor` opens/reconciles simulated or configured practice-broker paper orders.
 - Hourly: `trading:release-holdouts` releases a paper-passed finalist's untouched holdout exactly once.
 - Every five minutes: `trading:watch-lab-lifecycle` audits abandoned evaluator runs, missing forward ledgers, paper capture gaps, and invalid paper-order identities; repairs are bounded and never create quality evidence.
@@ -147,14 +155,18 @@ Full validation submits the selected cohort from one generation in a single AI-s
 
 ## Required workers
 
-Full evaluations are database-queue jobs. Keep the scheduler and one worker for each pair queue running so the three laboratories evaluate independently and in parallel:
+Lab evaluations are database-queue jobs. Keep the headless scheduler and one
+priority replay coordinator running. It reads sealed full-validation work before
+the shared FIFO screening lane; the old symbol queues remain accepted only while
+draining legacy rows:
 
 ```powershell
-php artisan schedule:work
-php artisan queue:work database --queue=lab-xauusd --sleep=1 --tries=2 --timeout=2400
-php artisan queue:work database --queue=lab-eurusd --sleep=1 --tries=2 --timeout=2400
-php artisan queue:work database --queue=lab-gbpusd --sleep=1 --tries=2 --timeout=2400
+php artisan schedule:headless-work
+# One coordinator prevents separate workers from polling the same replay mutex.
+php artisan queue:work database --queue=lab-full-validation,lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd --sleep=1 --tries=0 --timeout=4200 --max-time=3600
 ```
+
+The M15 foundation is stored as `storage/app/lab-datasets/foundation/*_M15_2025-foundation.csv`; it is separate from the rolling snapshot and is never treated as promotion evidence. H1 regime data is passed separately and delayed until the H1 candle is closed. A screen without the generation-frozen H1 regime hash is automatically rescreened before full selection.
 
 The Python AI service must also be available at `AI_SERVICE_URL` before a full evaluation, incremental check, paper signal, or holdout can run.
 

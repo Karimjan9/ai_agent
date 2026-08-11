@@ -13,8 +13,16 @@ use App\Models\MutationMemory;
  */
 class ScreeningLearningService
 {
-    public function record(LabAgent $agent, ModelVersion $model, array $result, float $forwardScore): void
+    public function record(LabAgent $agent, ModelVersion $model, array $result, float $forwardScore): bool
     {
+        $evidenceRunId = (string) data_get($result, 'evidence_run_id', '');
+        $evidence = app(LabImmutableEvidenceService::class)->learningEligibility($evidenceRunId);
+        if (! $evidence['complete']) {
+            // A screen may still be visible as a diagnostic projection, but
+            // it cannot create mutation memory or harmful/beneficial credit
+            // without a terminal request/response/trace/ledger chain.
+            return false;
+        }
         $trades = (int) ($result['total_trades'] ?? 0);
         $pf = (float) ($result['profit_factor'] ?? 0);
         $survival = (array) ($result['screening_survival'] ?? []);
@@ -65,7 +73,7 @@ class ScreeningLearningService
         // It stays observable in AgentMemory, but cannot create a mutation
         // lesson until the strict screening window exists.
         if (in_array($failure, ['screen_pass', 'insufficient_evidence'], true)) {
-            return;
+            return true;
         }
 
         foreach ($agent->parameter_diff ?? [] as $key => $change) {
@@ -117,6 +125,8 @@ class ScreeningLearningService
                 'result_hash' => $ledger->hash($result),
             ], data_get($result, 'evidence_run_id'));
         }
+
+        return true;
     }
 
     private function actions(string $family, string $failure, array $funnel): array

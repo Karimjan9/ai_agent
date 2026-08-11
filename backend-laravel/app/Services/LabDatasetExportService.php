@@ -216,6 +216,184 @@ class LabDatasetExportService
     }
 
     /**
+     * Freeze the H1 regime input for an M15 generation. The snapshot is
+     * bounded at the last closed H1 candle; an open H1 candle can therefore
+     * never leak into M15 screening, full replay, or cache identity.
+     *
+     * @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string}
+     */
+    public function ensureGenerationRegimeSnapshot(LabGeneration $generation): array
+    {
+        $symbol = strtoupper((string) ($generation->laboratory?->symbol ?? ''));
+        $timeframe = strtoupper((string) ($generation->laboratory?->timeframe ?? 'H1'));
+        if ($symbol === '') {
+            throw new RuntimeException('Generation laboratory symbol topilmadi.');
+        }
+        if ($timeframe !== 'M15') {
+            throw new RuntimeException('H1 regime snapshot faqat M15 generation uchun kerak.');
+        }
+
+        $directory = storage_path('app/lab-datasets/generations');
+        File::ensureDirectoryExists($directory);
+        $lockPath = $directory."/.G{$generation->generation}_id{$generation->id}_{$symbol}_H1_regime.lock";
+        $lock = fopen($lockPath, 'c');
+        $lockWaitSeconds = max(1, (int) config('services.lab_selection.dataset_export_lock_wait_seconds', 30));
+        $lockDeadline = microtime(true) + $lockWaitSeconds;
+        $locked = false;
+        while ($lock !== false && microtime(true) < $lockDeadline) {
+            if (flock($lock, LOCK_EX | LOCK_NB)) {
+                $locked = true;
+                break;
+            }
+            usleep(250000);
+        }
+        if ($lock === false || ! $locked) {
+            if ($lock !== false) {
+                fclose($lock);
+            }
+            throw new RuntimeException("M15 H1 regime snapshot lock olinmadi: {$symbol} G{$generation->generation}.");
+        }
+
+        try {
+            // Another scheduler/worker may have published the snapshot while
+            // this caller was waiting. Refresh the generation context before
+            // deciding whether materialization is still necessary.
+            $generation->refresh();
+
+            return $this->materializeGenerationRegimeSnapshot($generation);
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    /**
+     * The caller holds the per-generation regime publication lock.
+     *
+     * @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string}
+     */
+    private function materializeGenerationRegimeSnapshot(LabGeneration $generation): array
+    {
+        $symbol = strtoupper((string) ($generation->laboratory?->symbol ?? ''));
+        $timeframe = strtoupper((string) ($generation->laboratory?->timeframe ?? 'H1'));
+        if ($symbol === '') {
+            throw new RuntimeException('Generation laboratory symbol topilmadi.');
+        }
+        if ($timeframe !== 'M15') {
+            throw new RuntimeException('H1 regime snapshot faqat M15 generation uchun kerak.');
+        }
+
+        $context = (array) $generation->trigger_context;
+        $existing = (array) data_get($context, 'canonical_dataset_snapshots.regime', []);
+        $existingPath = (string) data_get($existing, 'path', '');
+        $existingSha = (string) data_get($existing, 'sha256', '');
+        if (is_file($existingPath) && $existingSha !== '') {
+            $actualSha = hash_file('sha256', $existingPath);
+            if (! is_string($actualSha) || ! hash_equals($existingSha, $actualSha)) {
+                throw new RuntimeException("M15 H1 regime snapshot hash mismatch; evidence is frozen: {$existingPath}");
+            }
+
+            return [
+                'path' => $existingPath,
+                'manifest' => (array) data_get($existing, 'manifest', []),
+                'sha256' => $existingSha,
+                'protocol' => (string) data_get($existing, 'protocol', 'lab_generation_regime_snapshot_v1'),
+            ];
+        }
+
+        $sourcePath = $this->export($symbol, 'H1', false);
+        $rows = $this->rowsFromSnapshot($sourcePath);
+        $closedCutoff = now()->utc()->startOfHour()->subHour();
+        $rows = array_values(array_filter($rows, static function (array $row) use ($closedCutoff): bool {
+            try {
+                return CarbonImmutable::parse((string) ($row['time'] ?? ''), 'UTC')->lessThanOrEqualTo($closedCutoff);
+            } catch (\Throwable) {
+                return false;
+            }
+        }));
+        if (count($rows) < 204) {
+            throw new RuntimeException("M15 H1 closed regime snapshot uchun candle yetarli emas: {$symbol} rows=".count($rows));
+        }
+
+        $directory = storage_path('app/lab-datasets/generations');
+        File::ensureDirectoryExists($directory);
+        $snapshotPath = $directory."/G{$generation->generation}_id{$generation->id}_{$symbol}_H1_regime.csv";
+        $snapshotManifestPath = $snapshotPath.'.manifest.json';
+        $temporaryPath = tempnam($directory, ".{$symbol}_H1_regime_");
+        if ($temporaryPath === false) {
+            throw new RuntimeException("M15 H1 regime temporary fayli yaratilmadi: {$symbol}.");
+        }
+
+        try {
+            $handle = fopen($temporaryPath, 'wb');
+            if ($handle === false) {
+                throw new RuntimeException("M15 H1 regime temporary fayli ochilmadi: {$symbol}.");
+            }
+            fputcsv($handle, ['time', 'open', 'high', 'low', 'close', 'volume']);
+            foreach ($rows as $row) {
+                fputcsv($handle, [
+                    (string) $row['time'],
+                    (float) ($row['open'] ?? 0),
+                    (float) ($row['high'] ?? 0),
+                    (float) ($row['low'] ?? 0),
+                    (float) ($row['close'] ?? 0),
+                    (float) ($row['volume'] ?? 0),
+                ]);
+            }
+            fclose($handle);
+            if (! copy($temporaryPath, $snapshotPath)) {
+                throw new RuntimeException("M15 H1 regime snapshot publish qilinmadi: {$snapshotPath}");
+            }
+            $sha256 = hash_file('sha256', $snapshotPath);
+            $first = CarbonImmutable::parse((string) $rows[0]['time'], 'UTC');
+            $last = CarbonImmutable::parse((string) $rows[array_key_last($rows)]['time'], 'UTC');
+            $sourceManifest = is_file($sourcePath.'.manifest.json')
+                ? (array) json_decode(File::get($sourcePath.'.manifest.json'), true)
+                : [];
+            $manifest = [
+                'protocol' => 'lab_generation_regime_snapshot_v1',
+                'source_protocol' => 'lab_generation_dataset_snapshot_v1',
+                'source_path' => $sourcePath,
+                'source_sha256' => data_get($sourceManifest, 'sha256'),
+                'symbol' => $symbol,
+                'timeframe' => 'H1',
+                'row_count' => count($rows),
+                'first_candle_at' => $first->toIso8601String(),
+                'last_closed_candle_at' => $last->toIso8601String(),
+                'closed_candle_cutoff' => $closedCutoff->toIso8601String(),
+                'sha256' => $sha256,
+                'promotion_evidence' => false,
+                'rule' => 'M15 may use only the H1 regime known after the H1 candle closes; H1 is never an M15 genetic parent.',
+                'generated_at' => now()->utc()->toIso8601String(),
+            ];
+            File::put($snapshotManifestPath, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+            data_set($context, 'canonical_dataset_snapshots.regime', [
+                'protocol' => 'lab_generation_regime_snapshot_v1',
+                'generation_id' => $generation->id,
+                'generation' => $generation->generation,
+                'symbol' => $symbol,
+                'timeframe' => 'H1',
+                'path' => $snapshotPath,
+                'manifest_path' => $snapshotManifestPath,
+                'sha256' => $sha256,
+                'manifest' => $manifest,
+                'frozen_at' => now()->utc()->toIso8601String(),
+                'promotion_evidence' => false,
+            ]);
+            $generation->update(['trigger_context' => $context]);
+
+            return [
+                'path' => $snapshotPath,
+                'manifest' => $manifest,
+                'sha256' => $sha256,
+                'protocol' => 'lab_generation_regime_snapshot_v1',
+            ];
+        } finally {
+            File::delete($temporaryPath);
+        }
+    }
+
+    /**
      * Freeze the long historical training archive separately from the
      * canonical Twelve rolling/paper stream. Twelve's current plan may not
      * expose the 2005 baseline, while Dukascopy remains an explicit research
@@ -228,6 +406,9 @@ class LabDatasetExportService
     {
         $symbol = strtoupper($symbol);
         $timeframe = strtoupper($timeframe);
+        if ($timeframe === 'M15') {
+            return $this->ensureM15FoundationDataset($symbol);
+        }
         if ($timeframe !== 'H1') {
             throw new RuntimeException('Foundation archive hozircha faqat H1 uchun qo\'llab-quvvatlanadi.');
         }
@@ -466,6 +647,160 @@ class LabDatasetExportService
         }
     }
 
+    /**
+     * Build the M15 foundation from preserved canonical M15 history before
+     * the independent 2026 rolling stream. M15 never borrows H1 prices as a
+     * foundation; H1 is supplied separately as a closed regime source.
+     *
+     * @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string}
+     */
+    private function ensureM15FoundationDataset(string $symbol): array
+    {
+        $directory = storage_path('app/lab-datasets/foundation');
+        File::ensureDirectoryExists($directory);
+        $path = $directory."/{$symbol}_M15_2025-foundation.csv";
+        $manifestPath = $path.'.manifest.json';
+        if ($existing = $this->validFoundationSnapshot($path, $manifestPath)) {
+            return $existing;
+        }
+
+        $lock = fopen($path.'.lock', 'c');
+        if ($lock === false) {
+            throw new RuntimeException("M15 foundation lock ochilmadi: {$symbol}.");
+        }
+        $lockWaitSeconds = max(1, (int) config('services.lab_selection.foundation_export_lock_wait_seconds', 30));
+        $deadline = microtime(true) + $lockWaitSeconds;
+        $locked = false;
+        while (microtime(true) < $deadline) {
+            if (flock($lock, LOCK_EX | LOCK_NB)) {
+                $locked = true;
+                break;
+            }
+            usleep(250000);
+        }
+        if (! $locked) {
+            fclose($lock);
+            throw new RuntimeException("M15 foundation lock olinmadi: {$symbol}.");
+        }
+
+        try {
+            if ($existing = $this->validFoundationSnapshot($path, $manifestPath)) {
+                return $existing;
+            }
+
+            $symbolId = Symbol::query()->where('code', $symbol)->value('id');
+            if (! $symbolId) {
+                throw new RuntimeException("{$symbol} symbol topilmadi.");
+            }
+            $from = CarbonImmutable::parse(
+                (string) config('services.lab_selection.m15_foundation_start', '2025-11-01 00:00:00'),
+                'UTC',
+            );
+            $to = CarbonImmutable::parse(
+                (string) config('services.lab_selection.m15_foundation_end', '2025-12-31 23:59:59'),
+                'UTC',
+            )->addSecond();
+            $minimumRows = max(1, (int) config('services.lab_selection.m15_foundation_minimum_rows', 2000));
+            $candles = Candle::query()
+                ->where('symbol_id', $symbolId)
+                ->where('timeframe', 'M15')
+                ->where('time', '>=', $from)
+                ->where('time', '<', $to)
+                ->orderBy('time')
+                ->orderBy('id')
+                ->get();
+            if ($candles->count() < $minimumRows) {
+                throw new RuntimeException("M15 foundation baseline yetarli emas: {$symbol} rows={$candles->count()}, minimum={$minimumRows}.");
+            }
+
+            $volumeMap = $this->volumes->forDataset($symbol, 'M15');
+            $temporaryPath = tempnam($directory, ".{$symbol}_M15_foundation_");
+            if ($temporaryPath === false) {
+                throw new RuntimeException("M15 foundation temporary fayli yaratilmadi: {$symbol}.");
+            }
+
+            $written = 0;
+            $first = null;
+            $last = null;
+            try {
+                $handle = fopen($temporaryPath, 'wb');
+                if ($handle === false) {
+                    throw new RuntimeException("M15 foundation temporary fayli ochilmadi: {$symbol}.");
+                }
+                fputcsv($handle, ['time', 'open', 'high', 'low', 'close', 'volume', 'volume_available']);
+                foreach ($candles as $candle) {
+                    $time = $candle->time->copy()->utc();
+                    $volume = $volumeMap[$time->format('Y-m-d H:i:s')] ?? ['volume' => 0.0, 'available' => false];
+                    $volumeAvailable = (bool) data_get($volume, 'available', false);
+                    fputcsv($handle, [
+                        $time->format('Y-m-d H:i:s'),
+                        (float) $candle->open,
+                        (float) $candle->high,
+                        (float) $candle->low,
+                        (float) $candle->close,
+                        (float) data_get($volume, 'volume', 0.0),
+                        $volumeAvailable ? 1 : 0,
+                    ]);
+                    $first ??= $time;
+                    $last = $time;
+                    $written++;
+                }
+                fclose($handle);
+
+                $continuity = $this->quality->inspectCsvContinuity($temporaryPath, $symbol, 'M15');
+                if ($continuity['status'] !== 'ready') {
+                    throw $this->foundationContinuityException($symbol, 'M15', $continuity);
+                }
+                if (! copy($temporaryPath, $path)) {
+                    throw new RuntimeException("M15 foundation archive publish qilinmadi: {$path}");
+                }
+                $sha256 = hash_file('sha256', $path);
+                $manifest = [
+                    'protocol' => 'foundation_training_archive_v1',
+                    'source_provider' => 'database_canonical_price_history',
+                    'source_role' => 'm15_foundation_training_only',
+                    'canonical_rolling_provider' => (string) config('services.market_data.canonical_provider', 'twelve'),
+                    'symbol' => $symbol,
+                    'timeframe' => 'M15',
+                    'first_candle_at' => $first?->toIso8601String(),
+                    'last_candle_at' => $last?->toIso8601String(),
+                    'foundation_start' => $first?->toIso8601String(),
+                    'foundation_end' => $last?->toIso8601String(),
+                    'row_count' => $written,
+                    'minimum_rows' => $minimumRows,
+                    'continuity' => $continuity,
+                    'gap_quality' => [
+                        'protocol' => 'foundation_gap_control_v1',
+                        'status' => 'passed',
+                        'source_missing_rows' => 0,
+                        'repaired_rows' => 0,
+                        'unresolved_rows' => 0,
+                        'repair_intervals' => [],
+                        'promotion_evidence' => false,
+                    ],
+                    'volume_quality' => $this->volumes->inspect($symbol, 'M15', $from, $to),
+                    'sha256' => $sha256,
+                    'promotion_evidence' => false,
+                    'rule' => 'M15 uses its own preserved pre-2026 price foundation; H1 is a closed regime context only.',
+                    'generated_at' => now()->utc()->toIso8601String(),
+                ];
+                File::put($manifestPath, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+
+                return [
+                    'path' => $path,
+                    'manifest' => $manifest,
+                    'sha256' => $sha256,
+                    'protocol' => 'foundation_training_archive_v1',
+                ];
+            } finally {
+                File::delete($temporaryPath);
+            }
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
     /** @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string} */
     public function ensureGenerationFoundationSnapshot(LabGeneration $generation): array
     {
@@ -544,9 +879,13 @@ class LabDatasetExportService
         }
 
         $manifest = json_decode((string) File::get($manifestPath), true);
+        $timeframe = strtoupper((string) data_get($manifest, 'timeframe', 'H1'));
+        $minimumRows = $timeframe === 'M15'
+            ? max(1, (int) config('services.lab_selection.m15_foundation_minimum_rows', 2000))
+            : 202;
         if (! is_array($manifest)
             || data_get($manifest, 'protocol') !== 'foundation_training_archive_v1'
-            || (int) data_get($manifest, 'row_count', 0) < 202
+            || (int) data_get($manifest, 'row_count', 0) < $minimumRows
             || (string) data_get($manifest, 'sha256', '') === '') {
             return null;
         }

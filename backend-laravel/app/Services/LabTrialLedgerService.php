@@ -7,6 +7,7 @@ use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\LabTrialLedger;
 use App\Models\ModelVersion;
+use Illuminate\Database\QueryException;
 
 /**
  * Persistent experiment-count evidence for DSR and ranking diagnostics.
@@ -39,16 +40,28 @@ class LabTrialLedgerService
         $score = $this->score($result);
         $observedSharpe = $this->observedSharpe($result);
 
-        $identity = $runId !== null
-            ? ['run_id' => $runId]
-            : [
-                'symbol' => $symbol, 'timeframe' => $timeframe, 'stage' => $stage,
-                'parameter_hash' => $parameterHash,
-                'data_manifest_hash' => $dataHash !== '' ? $dataHash : null,
-                'execution_hash' => $executionHash !== '' ? $executionHash : null,
-            ];
+        // A full replay can be retried with a new immutable run id after a
+        // post-replay worker interruption. The trial ledger deliberately
+        // treats the same symbol/timeframe/stage/parameter/data/execution
+        // tuple as one recovery identity, so preferring run_id here would
+        // race the composite unique key and turn a successful replay into a
+        // technical error. Use run_id only when the canonical full-replay
+        // identity is not available (for example a diagnostic screen).
+        $canonicalIdentity = [
+            'symbol' => $symbol, 'timeframe' => $timeframe, 'stage' => $stage,
+            'parameter_hash' => $parameterHash,
+            'data_manifest_hash' => $dataHash !== '' ? $dataHash : null,
+            'execution_hash' => $executionHash !== '' ? $executionHash : null,
+        ];
+        $canonicalIdentityAvailable = $dataHash !== '' && $executionHash !== '';
+        $ledger = $runId !== null
+            ? LabTrialLedger::query()->where('run_id', $runId)->first()
+            : null;
+        if (! $ledger && ($canonicalIdentityAvailable || $runId === null)) {
+            $ledger = LabTrialLedger::query()->where($canonicalIdentity)->first();
+        }
 
-        $ledger = LabTrialLedger::updateOrCreate($identity, [
+        $values = [
             'lab_generation_id' => $agent?->lab_generation_id,
             'lab_agent_id' => $agent?->id,
             'model_version_id' => $model?->id,
@@ -69,7 +82,37 @@ class LabTrialLedgerService
                 'promotion_evidence' => false,
             ],
             'evaluated_at' => now(),
-        ]);
+        ];
+
+        if (! $ledger) {
+            $identity = $canonicalIdentityAvailable || $runId === null
+                ? $canonicalIdentity
+                : ['run_id' => $runId];
+            try {
+                $ledger = LabTrialLedger::updateOrCreate($identity, $values);
+            } catch (QueryException $exception) {
+                // Two recovery attempts can pass the read before either row
+                // is committed. The unique constraint is the race guard;
+                // converge on its canonical row instead of withholding a
+                // valid replay as a database/evaluator failure.
+                if (! $canonicalIdentityAvailable
+                    || ! str_contains($exception->getMessage(), 'lab_trial_recovery_identity')) {
+                    throw $exception;
+                }
+                $ledger = LabTrialLedger::query()->where($canonicalIdentity)->firstOrFail();
+            }
+        }
+
+        if ($ledger->exists && $ledger->getKey() !== null) {
+            $existingRunId = $ledger->run_id;
+            $ledger->fill($values);
+            // Keep the first run reference for a deduplicated canonical trial;
+            // the immutable evaluation run table retains every retry.
+            if ($existingRunId !== null && $existingRunId !== $runId) {
+                $ledger->run_id = $existingRunId;
+            }
+            $ledger->save();
+        }
 
         $scope = LabTrialLedger::query()->where('symbol', $symbol)->where('timeframe', $timeframe);
         $recordedTrialCount = (clone $scope)->count();

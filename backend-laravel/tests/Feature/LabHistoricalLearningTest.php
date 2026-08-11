@@ -65,7 +65,10 @@ class LabHistoricalLearningTest extends TestCase
         $this->assertNotNull($insight);
 
         $this->assertSame('monthly_survival', data_get($insight?->recommended_mutations, 'primary_target'));
-        $this->assertSame('exact', $insight?->evidence_quality);
+        // A completed screening row is still a diagnostic snapshot. Exact
+        // causal history requires the full request/response/trace/ledger
+        // chain from a full, paper or holdout replay.
+        $this->assertSame('snapshot_only', $insight?->evidence_quality);
         $this->assertFalse((bool) $insight?->causal_prior_allowed);
         $this->assertContains('transition_firewall_enabled', data_get($insight?->recommended_mutations, 'keys', []));
     }

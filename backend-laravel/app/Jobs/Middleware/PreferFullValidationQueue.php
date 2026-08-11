@@ -42,10 +42,22 @@ class PreferFullValidationQueue
 
     private function fullValidationIsWaiting(): bool
     {
-        return DB::table('jobs')->where('queue', 'lab-full-validation')->exists()
+        $now = now()->timestamp;
+
+        return DB::table('jobs')
+            ->where('queue', 'lab-full-validation')
+            // A delayed full replay is not waiting yet. Reserved jobs are
+            // included because they may be inside middleware or running in
+            // the shared lane even though their available_at is in the past.
+            ->where(function ($query) use ($now): void {
+                $query->whereNotNull('reserved_at')
+                    ->orWhere('available_at', '<=', $now);
+            })
+            ->exists()
             || DB::table('job_batches')
                 ->whereIn('name', ['Portfolio member full validation', 'Global full validation'])
                 ->whereNull('finished_at')
+                ->where('pending_jobs', '>', 0)
                 ->exists();
     }
 }

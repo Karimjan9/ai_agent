@@ -48,6 +48,18 @@ return [
     ],
 
     'lab_queue' => [
+        // All screening candidates share one FIFO lane. Symbol-specific names
+        // remain available only for draining and observing legacy rows; a
+        // priority list of three queues starves later symbols whenever the
+        // first queue stays non-empty.
+        'screening_queue' => env('LAB_SCREENING_QUEUE', 'lab-screening'),
+        // Evidence-recovery/frontier jobs are promoted into this queue while
+        // they remain the only missing boundary for a generation. The queue
+        // is still served by the single replay coordinator; priority changes
+        // ordering, never concurrency.
+        'frontier_queue' => env('LAB_FRONTIER_QUEUE', 'lab-frontier'),
+        'frontier_backlog_limit' => (int) env('LAB_FRONTIER_BACKLOG_LIMIT', 4),
+        'legacy_screening_queues' => ['lab-xauusd', 'lab-eurusd', 'lab-gbpusd'],
         // One canonical name is shared by Laravel's queue middleware, direct
         // portfolio replay, and stale-lock recovery. Changing it requires a
         // controlled drain because existing cache-lock rows use the old key.
@@ -57,7 +69,12 @@ return [
         // an unbounded retry stream for the whole full-replay window.
         'fairness_max_deferrals' => (int) env('LAB_QUEUE_FAIRNESS_MAX_DEFERRALS', 2),
         'fairness_release_seconds' => (int) env('LAB_QUEUE_FAIRNESS_RELEASE_SECONDS', 300),
-        'mutex_release_seconds' => (int) env('LAB_QUEUE_MUTEX_RELEASE_SECONDS', 600),
+        // The shared lane is CPU-serialized, but a 10-minute release can
+        // leave every screen worker asleep after a replay finishes or an
+        // orphaned lock is recovered. Retry lifetime is bounded separately,
+        // so a one-minute handoff keeps throughput responsive without
+        // weakening full-validation priority.
+        'mutex_release_seconds' => (int) env('LAB_QUEUE_MUTEX_RELEASE_SECONDS', 60),
     ],
 
     'lab_evidence' => [
@@ -217,6 +234,9 @@ return [
         'min_profit_factor' => (float) env('PAPER_OBSERVATION_MIN_PROFIT_FACTOR', 1.3),
         'max_drawdown_percent' => (float) env('PAPER_OBSERVATION_MAX_DRAWDOWN_PERCENT', 15),
         'min_feed_uptime_percent' => (float) env('PAPER_OBSERVATION_MIN_FEED_UPTIME_PERCENT', 99.5),
+        // A holdout worker that dies after opening its one-time release must
+        // become an auditable failure instead of remaining "running" forever.
+        'holdout_stale_minutes' => (int) env('PAPER_HOLDOUT_STALE_MINUTES', 180),
     ],
 
     // Economic events are an execution veto, never an alpha source.  A real
@@ -268,19 +288,29 @@ return [
       // margin so a completed evidence response is not cut off by Laravel.
       'full_replay_timeout_seconds' => (int) env('LAB_FULL_REPLAY_TIMEOUT_SECONDS', 3900),
       'portfolio_replay_timeout_seconds' => (int) env('LAB_PORTFOLIO_REPLAY_TIMEOUT_SECONDS', 3900),
+      // The Python request can finish before Laravel persists the immutable
+      // response, forward-gate projection and lifecycle close. Stale replay
+      // recovery must wait through this post-processing window.
+      'full_replay_post_processing_grace_seconds' => (int) env('LAB_FULL_REPLAY_POST_PROCESSING_GRACE_SECONDS', 900),
       // A 100k+ foundation replay is an explicit infrastructure budget
       // decision. Keep at least two competing candidates so CSCV/PBO cannot
       // become a meaningless singleton result; this never relaxes an
       // evidence gate and is recorded in every replay artifact.
       'full_replay_bounded_cohort_foundation_rows' => (int) env('LAB_FULL_REPLAY_BOUNDED_COHORT_FOUNDATION_ROWS', 100000),
       'full_replay_max_cohort_size' => (int) env('LAB_FULL_REPLAY_MAX_COHORT_SIZE', 2),
+      // M15 has its own pre-2026 foundation slice built from the preserved
+      // M15 market history. It must never borrow H1 history as a foundation;
+      // H1 is supplied separately only as the closed regime context.
+      'm15_foundation_minimum_rows' => (int) env('LAB_M15_FOUNDATION_MINIMUM_ROWS', 2000),
+      'm15_foundation_start' => env('LAB_M15_FOUNDATION_START', '2025-11-01 00:00:00'),
+      'm15_foundation_end' => env('LAB_M15_FOUNDATION_END', '2025-12-31 23:59:59'),
+      'm15_foundation_required_end' => env('LAB_M15_FOUNDATION_REQUIRED_END', '2025-12-01 00:00:00'),
+      'm15_rolling_start' => env('LAB_M15_ROLLING_START', '2026-01-01 00:00:00'),
       'dataset_export_lock_wait_seconds' => (int) env('LAB_DATASET_EXPORT_LOCK_WAIT_SECONDS', 30),
       // Full replay is operationally expensive, but a fixed finalist count
-      // must not become an evolutionary ceiling.  Zero means: replay the
-      // complete eligible frontier produced by the current generation.  An
-      // operator may still set a positive value as an explicit infrastructure
-      // budget; the selection contract records that cap as operational, not
-      // as evidence that the other hypotheses were inferior.
+      // must not become an evolutionary ceiling. Zero means: the selector
+      // exposes the complete eligible frontier; the dispatch command still
+      // applies the current bootstrap survivor gate before queue admission.
       'max_full_validation_candidates' => (int) env('LAB_MAX_FULL_VALIDATION_CANDIDATES', 0),
       // Adaptive parent ecosystem. These values change search allocation only;
       // they never relax PF, drawdown, ruin, PBO/DSR, holdout or paper gates.
@@ -289,12 +319,14 @@ return [
       'adaptive_parent_shadow' => env('LAB_ADAPTIVE_PARENT_SHADOW', false),
       'adaptive_budget_enabled' => env('LAB_ADAPTIVE_BUDGET_ENABLED', true),
       'adaptive_causal_seat_floor' => (int) env('LAB_ADAPTIVE_CAUSAL_SEAT_FLOOR', 8),
-      // Zero means the adaptive child contributor count is bounded only by
-      // the eligible exact-cell frontier. Positive values are explicit
-      // compute/serialization caps, never a biological parent rule.
-      'parent_max_robust' => (int) env('LAB_PARENT_MAX_ROBUST', 0),
-      'parent_max_architecture' => (int) env('LAB_PARENT_MAX_ARCHITECTURE', 0),
-      'parent_max_curiosity' => (int) env('LAB_PARENT_MAX_CURIOSITY', 0),
+      // Keep the initial parent ecosystem finite while it is still earning
+      // its first forward-valid lineage. Zero remains an explicit operator
+      // override for a deliberate frontier audit, but is not the bootstrap
+      // default: robust crossover is capped at five and architecture
+      // discovery at four contributors.
+      'parent_max_robust' => (int) env('LAB_PARENT_MAX_ROBUST', 5),
+      'parent_max_architecture' => (int) env('LAB_PARENT_MAX_ARCHITECTURE', 4),
+      'parent_max_curiosity' => (int) env('LAB_PARENT_MAX_CURIOSITY', 2),
       'parent_max_runtime' => (int) env('LAB_PARENT_MAX_RUNTIME', 8),
       'parent_lineage_cap' => (float) env('LAB_PARENT_LINEAGE_CAP', .50),
       'parent_diversity_weight' => (float) env('LAB_PARENT_DIVERSITY_WEIGHT', 20),
@@ -363,11 +395,19 @@ return [
     'promotion' => [
         'require_all_markets_healthy' => env('PROMOTION_REQUIRE_ALL_MARKETS_HEALTHY', true),
         'paper_min_samples' => (int) env('PROMOTION_PAPER_MIN_SAMPLES', 50),
+        // Champion replacement is paused while the evidence/recovery
+        // pipeline is being repaired. Forward and paper observations may
+        // continue, but no candidate may become champion from them.
+        'freeze_champion' => env('PROMOTION_FREEZE_CHAMPION', true),
     ],
 
     'live_trading' => [
         'enabled' => env('LIVE_TRADING_ENABLED', false),
         'kill_switch_engaged' => env('LIVE_KILL_SWITCH_ENGAGED', true),
+        // Hard stop is intentionally independent from operator env toggles;
+        // live deployment stays unavailable until the evidence protocol is
+        // explicitly reopened after this repair cycle.
+        'hard_stop' => env('LIVE_TRADING_HARD_STOP', true),
         'human_approval_sha256' => env('LIVE_HUMAN_APPROVAL_SHA256'),
         'max_capital' => (float) env('LIVE_MAX_CAPITAL', 0),
     ],

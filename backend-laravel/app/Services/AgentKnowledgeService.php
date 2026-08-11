@@ -33,6 +33,8 @@ class AgentKnowledgeService
 
     public function recordScreening(LabAgent $agent, array $result, ?string $runId = null): AgentKnowledgeCard
     {
+        $this->assertLearningEvidence($runId ?: data_get($result, 'evidence_run_id'));
+
         return $this->record($agent, null, $result, $runId, true);
     }
 
@@ -58,7 +60,19 @@ class AgentKnowledgeService
         array $result,
         ?string $runId = null,
     ): AgentKnowledgeCard {
+        $this->assertLearningEvidence($runId ?: data_get($result, 'evidence_run_id'));
+
         return $this->record($agent, $performance, $result, $runId, false);
+    }
+
+    private function assertLearningEvidence(?string $runId): void
+    {
+        $eligibility = app(LabImmutableEvidenceService::class)->learningEligibility($runId);
+        if (! $eligibility['complete']) {
+            throw new \RuntimeException(
+                'LEARNING_EVIDENCE_INCOMPLETE: '.implode(',', (array) $eligibility['reason_codes'])
+            );
+        }
     }
 
     /**

@@ -13,6 +13,7 @@ use App\Models\LabMutationCreditEvent;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Collection;
 
 /**
  * Converts the immutable evidence plane into bounded evolution advice.
@@ -133,40 +134,116 @@ class LabHistoricalLearningService
      */
     public function confirmedMutationPrior(string $symbol, string $timeframe, string $family, ?string $scope = null): ?array
     {
-        $cacheKey = implode('|', [strtoupper($symbol), strtoupper($timeframe), $family, $scope ?: 'global']);
-        if (array_key_exists($cacheKey, $this->mutationPriorCache)) return $this->mutationPriorCache[$cacheKey];
         $agents = LabAgent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
             ->where('strategy_family', $family)->get(['id']);
-        if ($agents->isEmpty()) return $this->mutationPriorCache[$cacheKey] = null;
+        $baseCacheKey = implode('|', [strtoupper($symbol), strtoupper($timeframe), $family, $scope ?: 'global']);
+        if ($agents->isEmpty()) return $this->mutationPriorCache[$baseCacheKey.'|credits:0'] = null;
         $agentIds = $agents->pluck('id')->all();
-        $credits = LabMutationCreditEvent::query()->whereIn('lab_agent_id', $agentIds)->get();
+        // The same service instance can plan a generation before a later
+        // exact replay writes a new mutation-credit event. A plain symbol /
+        // family cache would then keep returning a stale null (or an older
+        // confirmation count) for the lifetime of the scheduler. Bind the
+        // cache identity to the append-only credit revision instead.
+        $creditRevision = (int) (LabMutationCreditEvent::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0);
+        $cacheKey = $baseCacheKey.'|credits:'.$creditRevision;
+        if (array_key_exists($cacheKey, $this->mutationPriorCache)) return $this->mutationPriorCache[$cacheKey];
+        $credits = LabMutationCreditEvent::query()
+            ->with(['mutationMemory', 'agent.modelVersion'])
+            ->whereIn('lab_agent_id', $agentIds)->get();
         $runIds = $credits->flatMap(fn (LabMutationCreditEvent $event): array => (array) $event->evidence_run_ids)->filter()->unique()->values();
-        $exactRuns = LabEvaluationRun::query()->whereIn('run_id', $runIds->all())->where('status', '!=', 'legacy_snapshot')->pluck('run_id')->all();
+        $exactRuns = LabEvaluationRun::query()
+            ->whereIn('run_id', $runIds->all())
+            ->where('status', 'completed')
+            ->whereIn('phase', ['full_validation', 'paper', 'holdout'])
+            ->whereJsonDoesntContain('metadata->historical', true)
+            ->get()
+            ->filter(fn (LabEvaluationRun $run): bool => app(LabImmutableEvidenceService::class)->learningEligibility($run)['complete'])
+            ->pluck('run_id')->all();
         if ($exactRuns === []) return $this->mutationPriorCache[$cacheKey] = null;
-        $rows = $credits->filter(function (LabMutationCreditEvent $event) use ($exactRuns, $scope): bool {
-            $status = (string) data_get($event->payload, 'behavioral_effect.causal_credit.status', data_get($event->payload, 'causal_credit.status', ''));
-            $hasExact = collect((array) $event->evidence_run_ids)->intersect($exactRuns)->isNotEmpty();
-            $scopeMatches = $scope === null || (string) data_get($event->payload, 'market_regime', data_get($event->agent?->modelVersion?->metadata, 'mutation_scope', '')) === $scope;
-            return $hasExact && $status === 'independently_confirmed' && $scopeMatches
-                && in_array($event->outcome, ['beneficial', 'harmful'], true);
-        });
-        $winner = $rows->groupBy(fn (LabMutationCreditEvent $event): string => $event->parameter_key.'|'.$event->outcome)
-            ->map(fn ($items) => $items->sortByDesc('recorded_at')->first())
-            ->filter(fn (LabMutationCreditEvent $event): bool => $rows->where('parameter_key', $event->parameter_key)->where('outcome', $event->outcome)->count() >= 2)
-            ->sortByDesc('confidence')->first();
+        $rows = $credits->filter(fn (LabMutationCreditEvent $event): bool =>
+            $this->confirmedCreditMatches($event, $exactRuns, $scope));
+        $winner = null;
+        $winnerUnits = collect();
+        foreach ($rows->groupBy(fn (LabMutationCreditEvent $event): string => $event->parameter_key.'|'.$event->outcome) as $items) {
+            $units = $this->independentCreditUnits($items, $exactRuns);
+            if ($units->count() < 2) continue;
+            $candidate = $items->sortByDesc(fn (LabMutationCreditEvent $event): float =>
+                (float) ($event->mutationMemory?->confidence ?? 0))->first();
+            if (! $winner || (float) ($candidate->mutationMemory?->confidence ?? 0) > (float) ($winner->mutationMemory?->confidence ?? 0)) {
+                $winner = $candidate;
+                $winnerUnits = $units;
+            }
+        }
         if (! $winner) return $this->mutationPriorCache[$cacheKey] = null;
-        $old = data_get($winner->payload, 'old_value.value', null);
-        $new = data_get($winner->payload, 'new_value.value', null);
+        $old = data_get($winner->payload, 'old_value.value', data_get($winner->mutationMemory?->old_value, 'value'));
+        $new = data_get($winner->payload, 'new_value.value', data_get($winner->mutationMemory?->new_value, 'value'));
         $direction = is_numeric($old) && is_numeric($new) ? ((float) $new >= (float) $old ? 1 : -1) : null;
         return $this->mutationPriorCache[$cacheKey] = [
             'parameter_key' => $winner->parameter_key,
             'outcome' => $winner->outcome,
             'direction' => $direction,
-            'confidence' => (float) $winner->confidence,
-            'confirmation_count' => $rows->where('parameter_key', $winner->parameter_key)->where('outcome', $winner->outcome)->count(),
-            'evidence_run_ids' => collect((array) $winner->evidence_run_ids)->intersect($exactRuns)->values()->all(),
+            'confidence' => (float) ($winner->mutationMemory?->confidence ?? 0),
+            'confirmation_count' => $winnerUnits->count(),
+            'evidence_run_ids' => $winnerUnits->pluck('run_id')->unique()->values()->all(),
             'protocol' => self::PROTOCOL,
         ];
+    }
+
+    private function confirmedCreditMatches(LabMutationCreditEvent $event, array $exactRunIds, ?string $scope = null): bool
+    {
+        $status = (string) data_get($event->payload, 'behavioral_effect.causal_credit.status', data_get($event->payload, 'causal_credit.status', ''));
+        $hasExact = collect((array) $event->evidence_run_ids)->intersect($exactRunIds)->isNotEmpty();
+        $temporalWindow = (string) ($event->temporal_window_key ?? data_get($event->payload, 'temporal_window_key', ''));
+        $hasTemporalWindow = $temporalWindow !== '' && $temporalWindow !== 'missing' && ! str_starts_with($temporalWindow, 'legacy:');
+        $eventScope = data_get($event->payload, 'market_regime')
+            ?: data_get($event->payload, 'behavioral_effect.failure_signature.regime')
+            ?: $event->mutationMemory?->market_regime
+            ?: data_get($event->agent?->modelVersion?->metadata, 'mutation_scope');
+        $scopeMatches = $scope === null || $this->normalizeMutationScope($eventScope) === $this->normalizeMutationScope($scope);
+
+        return $hasExact && $hasTemporalWindow && $status === 'independently_confirmed' && $scopeMatches
+            && in_array($event->outcome, ['beneficial', 'harmful'], true);
+    }
+
+    /**
+     * One repeated reconcile of the same child/run is one evidence unit, not
+     * two confirmations. A second unit must have a distinct exact replay run.
+     * The generation is included so a copied run id cannot bridge generations.
+     */
+    private function independentCreditUnits(Collection $events, array $exactRunIds): Collection
+    {
+        $units = $events->flatMap(function (LabMutationCreditEvent $event) use ($exactRunIds): Collection {
+            $runIds = collect((array) $event->evidence_run_ids)->intersect($exactRunIds)->values();
+            $primaryRunId = (string) data_get($event->payload, 'primary_evidence_run_id', '');
+            if ($primaryRunId === '' || ! $runIds->contains($primaryRunId)) {
+                $primaryRunId = (string) ($runIds->first() ?? '');
+            }
+            if ($primaryRunId === '') return collect();
+            $temporalWindow = (string) ($event->temporal_window_key ?? data_get($event->payload, 'temporal_window_key', ''));
+            if ($temporalWindow === '' || $temporalWindow === 'missing' || str_starts_with($temporalWindow, 'legacy:')) {
+                return collect();
+            }
+
+            return collect([[
+                'unit_key' => implode('|', [(int) $event->lab_agent_id, (int) $event->lab_generation_id, $primaryRunId, $temporalWindow]),
+                'run_id' => $primaryRunId,
+                'temporal_window_key' => $temporalWindow,
+                'event_id' => $event->id,
+                'event' => $event,
+            ]]);
+        })->unique('unit_key')->values();
+
+        // A confirmation must be independent in both dimensions. A second
+        // row from the same replay run or a second run over the same temporal
+        // window is still one observation.
+        return $units->unique('run_id')->unique('temporal_window_key')->values();
+    }
+
+    private function normalizeMutationScope(mixed $scope): string
+    {
+        $value = strtolower(trim((string) $scope));
+
+        return preg_replace('/^(market:|volatility:)/', '', $value) ?: '';
     }
 
     private function refreshFamily(string $symbol, string $timeframe, string $family, array $candleEvidence = []): ?LabLearningInsight
@@ -200,7 +277,11 @@ class LabHistoricalLearningService
         arsort($reasonCounts);
 
         $runs = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)->get();
-        $exactRuns = $runs->filter(fn (LabEvaluationRun $run): bool => $run->status !== 'legacy_snapshot' && ! (bool) data_get($run->metadata, 'historical', false));
+        $exactRuns = $runs->filter(fn (LabEvaluationRun $run): bool =>
+            $run->status === 'completed'
+            && in_array((string) $run->phase, ['full_validation', 'paper', 'holdout'], true)
+            && ! (bool) data_get($run->metadata, 'historical', false)
+            && app(LabImmutableEvidenceService::class)->learningEligibility($run)['complete']);
         $legacyRuns = $runs->where('status', 'legacy_snapshot');
         $exactRunIds = $exactRuns->pluck('run_id')->values()->all();
 
@@ -219,19 +300,25 @@ class LabHistoricalLearningService
         $secondaryTargets = array_slice(array_keys($targetScores), 1, 3);
         $recommendedKeys = self::TARGET_KEYS[$primaryTarget] ?? [];
 
-        $credits = LabMutationCreditEvent::query()->whereIn('lab_agent_id', $agentIds)->get();
-        $confirmedCredits = $credits->filter(function (LabMutationCreditEvent $event) use ($exactRunIds): bool {
-            $status = (string) data_get($event->payload, 'behavioral_effect.causal_credit.status', data_get($event->payload, 'causal_credit.status', ''));
-            return $status === 'independently_confirmed'
-                && collect((array) $event->evidence_run_ids)->intersect($exactRunIds)->isNotEmpty();
-        });
-        $blocked = $confirmedCredits->where('outcome', 'harmful')->where('forward_delta', '<', 0)
-            ->groupBy('parameter_key')->map(fn ($items) => [
+        $credits = LabMutationCreditEvent::query()
+            ->with(['mutationMemory', 'agent.modelVersion'])
+            ->whereIn('lab_agent_id', $agentIds)->get();
+        $confirmedCredits = $credits->filter(fn (LabMutationCreditEvent $event): bool =>
+            $this->confirmedCreditMatches($event, $exactRunIds));
+        $confirmedUnits = $this->independentCreditUnits($confirmedCredits, $exactRunIds);
+        $blocked = $confirmedUnits->map(fn (array $unit): LabMutationCreditEvent => $unit['event'])
+            ->filter(fn (LabMutationCreditEvent $event): bool => $event->outcome === 'harmful' && (float) $event->forward_delta < 0)
+            ->groupBy('parameter_key')->map(function ($items) use ($confirmedUnits): array {
+                $eventIds = $items->pluck('id')->all();
+                $confirmations = $confirmedUnits->filter(fn (array $unit): bool => in_array($unit['event_id'], $eventIds, true))->count();
+
+                return [
                 'parameter_key' => $items->first()->parameter_key,
-                'confirmations' => $items->count(),
+                'confirmations' => $confirmations,
                 'reason' => 'independently_confirmed_harmful',
-            ])->values()->all();
-        $causalPriorAllowed = $exactRuns->count() >= 2 && $confirmedCredits->count() >= 2;
+                ];
+            })->values()->all();
+        $causalPriorAllowed = $exactRuns->count() >= 2 && $confirmedUnits->count() >= 2;
 
         $evidenceQuality = $exactRuns->isNotEmpty() ? 'exact' : ($legacyRuns->isNotEmpty() || $latestGates->isNotEmpty() ? 'snapshot_only' : 'no_evidence');
         $confidence = min(95, 15 + min(30, $latestGates->count() * 2) + min(25, $exactRuns->count() * 2) + min(20, count($candleAggregates)));
@@ -247,7 +334,7 @@ class LabHistoricalLearningService
             'accepted_candle_events' => (int) ($candleSummary->accepted ?? 0),
             'rejected_candle_events' => (int) ($candleSummary->rejected ?? 0),
             'target_scores' => $targetScores,
-            'confirmed_credit_count' => $confirmedCredits->count(),
+            'confirmed_credit_count' => $confirmedUnits->count(),
         ];
         $failureSignature = [
             'dominant_gate_reasons' => array_slice($reasonCounts, 0, 8, true),

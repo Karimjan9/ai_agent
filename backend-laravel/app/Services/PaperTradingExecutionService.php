@@ -501,6 +501,13 @@ class PaperTradingExecutionService
             'strategy' => $isPortfolio ? 'portfolio_v1' : $model->strategy,
             'base_strategy' => $isPortfolio ? 'portfolio' : $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $candidate->strategy_family),
             'parameters' => $isPortfolio ? (array) data_get($runtime, 'parameters', []) : ($model->parameters ?? []), 'candles' => $rows,
+            // M15 is the entry stream only. Keep live/paper behavior aligned
+            // with screening and full replay by supplying the latest H1
+            // candles; Python exposes only the last CLOSED H1 state to each
+            // M15 decision, so an open H1 bar cannot leak forward.
+            'regime_candles' => strtoupper((string) $candidate->timeframe) === 'M15'
+                ? $this->candles->candlesForBacktest($candidate->symbol, 'H1', 2000)
+                : [],
             'portfolio_members' => $portfolioMembers,
             'runtime_ensemble_policy' => (array) data_get($runtime, 'runtime_ensemble_policy', []),
             'policy_context' => [

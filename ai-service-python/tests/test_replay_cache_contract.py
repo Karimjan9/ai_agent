@@ -2,8 +2,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from app.main import _candidate_cache_payload, _dataset_dependency_manifest
+from app.main import _candidate_cache_payload, _dataset_dependency_manifest, _run_all_backtests_sync
 from app.schemas import SimpleBacktestRequest
 from app.services.execution_contract import execution_contract_metadata
 
@@ -13,7 +14,7 @@ class ReplayCacheContractTest(unittest.TestCase):
         cohort = SimpleBacktestRequest(
             strategy="all",
             policy_context={
-                "trial_ledger": {"context_hash": "same-cohort"},
+                "trial_ledger": {"context_hash": "changes-per-trial"},
                 "full_replay_runtime_policy": {"original_cohort_size": 4, "max_cohort_size": 2},
                 "repair_contracts": {
                     "trend_v1": {"changed_gene": "ema_fast"},
@@ -33,9 +34,76 @@ class ReplayCacheContractTest(unittest.TestCase):
             {"trend_v1": {"changed_gene": "ema_fast"}},
             cached.policy_context["repair_contracts"],
         )
-        self.assertEqual({"context_hash": "same-cohort"}, cached.policy_context["trial_ledger"])
+        self.assertNotIn("trial_ledger", cached.policy_context)
         self.assertNotIn("full_replay_runtime_policy", cached.policy_context)
         self.assertEqual([], cached.strategies)
+
+    def test_candidate_cache_identity_does_not_change_with_trial_statistics(self):
+        base = SimpleBacktestRequest(
+            strategy="trend_v1",
+            base_strategy="trend_v1",
+            policy_context={
+                "trial_ledger": {"context_hash": "old", "trial_count": 2},
+                "repair_contracts": {"trend_v1": {"changed_gene": "ema_fast"}},
+            },
+        )
+        newer = base.model_copy(update={
+            "policy_context": {
+                **base.policy_context,
+                "trial_ledger": {"context_hash": "new", "trial_count": 99},
+            },
+        })
+
+        old_cache_payload = _candidate_cache_payload(base, base, "trend_v1")
+        new_cache_payload = _candidate_cache_payload(newer, newer, "trend_v1")
+
+        self.assertEqual(old_cache_payload.model_dump(), new_cache_payload.model_dump())
+
+    def test_all_candidate_cache_hits_skip_sealed_dataset_loading(self):
+        payload = SimpleBacktestRequest(
+            strategy="all",
+            evaluation_mode="replay",
+            strategies=[{
+                "strategy": "trend_v1",
+                "base_strategy": "trend_v1",
+                "version": "v1",
+                "parameters": {},
+            }],
+        )
+        cached_item = {
+            "strategy": "trend_v1",
+            "base_strategy": "trend_v1",
+            "version": "v1",
+            "parameters": {},
+            "score": 50,
+            "train_score": 50,
+            "validation_score": 50,
+            "forward_score": 50,
+            "forward_window_scores": [1, 2, 3, 4],
+            "rolling_windows_count": 4,
+            "robustness_score": 0,
+            "is_overfit": False,
+            "result": {
+                "equity_curve": [10000, 10010],
+                "statistical_evidence": {},
+                "behavioral_signature": {},
+                "trades": [],
+            },
+        }
+        cached = {
+            "protocol": "candidate_replay_cache_v1",
+            "strategy": "trend_v1",
+            "item": cached_item,
+        }
+
+        with patch("app.main._load_immutable_replay_cache", return_value=cached), \
+             patch("app.main._candidate_cache_contract_is_current", return_value=True), \
+             patch("app.main._load_simple_candles", side_effect=AssertionError("cache hit loaded the dataset")), \
+             patch("app.main._load_foundation_candles", side_effect=AssertionError("cache hit loaded the foundation")):
+            response = _run_all_backtests_sync(payload)
+
+        self.assertEqual(["trend_v1"], [item["strategy"] for item in response["leaderboard"]])
+        self.assertIn("selection_validation", response["leaderboard"][0]["result"])
 
     def test_foundation_dataset_participates_in_immutable_cache_identity(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -123,7 +123,7 @@ class LabPopulationService
         }
     }
 
-    public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null): ?LabGeneration
+    public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null, ?array $targetedFailureProfile = null): ?LabGeneration
     {
         // Existing queued jobs stay intact.  This only prevents creation of a
         // new population while an execution-contract rollout is being audited.
@@ -206,15 +206,26 @@ class LabPopulationService
             return null;
         }
         $newCandles = $snapshot['count'] - (int) data_get($latest?->trigger_context, 'data_count', 0);
-        // H1 learning cadence: a new population needs a full day of fresh
-        // evidence.  Degradation is an immediate safety exception; market
-        // drift is confirmed separately and still needs new candles so the
-        // hourly detector cannot create a 20-agent generation storm.
-        if (! $force && $latest && $newCandles < 24 && ! in_array($trigger, ['degradation', 'candidate_handoff', 'data_edge_audit'], true)) {
+        // A fresh population needs roughly one day of new evidence on its
+        // own stream: 24 H1 bars or 96 M15 bars. Degradation and explicit
+        // handoff/audit protocols remain immediate safety exceptions. This
+        // prevents the faster M15 feed from creating noisy six-hour
+        // generations while preserving its independent entry research lane.
+        $minimumFreshCandles = $timeframe === 'M15' ? 96 : 24;
+        if (! $force && $latest && $newCandles < $minimumFreshCandles && ! in_array($trigger, ['degradation', 'candidate_handoff', 'data_edge_audit'], true)) {
             return null;
         }
 
-        return DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit): ?LabGeneration {
+        // Reserve the generation number and immutable plan atomically, but do
+        // not keep that transaction open while compiling every child. Parent
+        // frontier/capability work is CPU-heavy and can take minutes; a long
+        // transaction blocks scheduler reads and makes cancellation look like
+        // a database hang.
+        $targetedFailureTargets = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $target): string => (string) $target,
+            (array) data_get($targetedFailureProfile, 'targets', []),
+        ))));
+        $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets): ?array {
             // Scheduler and manual/operator requests may arrive together. Lock
             // the laboratory row before assigning the next generation number;
             // otherwise two workers can build the same G and one can leave a
@@ -265,6 +276,7 @@ class LabPopulationService
                         ? app(MarketDriftDetectionService::class)->canonicalDataContract($lockedLab->symbol, $lockedLab->timeframe)
                         : null,
                     'coverage_rescue_audit' => $trigger === 'coverage_rescue' ? $coverageRescue : null,
+                    'targeted_failure_profile' => $targetedFailureProfile,
                     'portfolio_failure_curriculum' => $roleComplete ? [] : $this->portfolioFailureCurriculum($lockedLab),
                     'portfolio_council_curriculum' => $roleComplete
                         ? $this->roleCouncilCurriculumSnapshot($lockedLab)
@@ -276,7 +288,7 @@ class LabPopulationService
             // Fixed, auditable experiment budget.  A slot is assigned for the
             // gate it is meant to move; it is not an undifferentiated "more
             // agents" budget.
-            $plan = $this->generationPlan($lockedLab, $coverageRescue, $roleComplete, $populationLimit);
+            $plan = $this->generationPlan($lockedLab, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureTargets, $targetedFailureProfile);
             if ($populationLimit !== null) {
                 $limit = $roleComplete ? max(4, (int) $populationLimit) : max(1, (int) $populationLimit);
                 $plan = array_slice($plan, 0, $limit);
@@ -294,6 +306,16 @@ class LabPopulationService
             $adaptiveEvolutionPolicy['adaptive_plan_changed'] = $baseGenerationPlan !== $plan;
             $adaptiveEvolutionPolicy['adaptive_plan_protocol'] = 'champion_guided_adaptive_budget_v1';
             $adaptiveEvolutionPolicy['plan_change_rule'] = 'protect causal floor; allocate remaining seats to robust, architecture and curiosity lanes under stagnation, concentration or drift pressure';
+            if (! $roleComplete && $populationLimit === null && ! data_get($coverageRescue, 'eligible')) {
+                // The governor may reorder or replace reserve lanes. Reapply
+                // the executable five-target core after that decision so an
+                // adaptive plan cannot reintroduce an invalid filler target.
+                $plan = $this->fillNormalCouncilCore($plan, $lockedLab, $plannedPopulationSize);
+            }
+            // Group membership is an explicit council contract. Recompute it
+            // after adaptive planning so a governor cannot turn a balanced
+            // five-by-four core into an accidental target-count imbalance.
+            $plan = $this->assignPopulationGroupSeats($plan);
             $populationGroupContract = $this->populationGroupContract($plan);
             $priorGroupCheckpoints = $this->latestGroupCheckpoints($lockedLab);
             $generation->update(['trigger_context' => [
@@ -319,11 +341,27 @@ class LabPopulationService
                 ],
             ]]);
             $this->historicalLearning->recordGenerationConsumption($generation, $plan);
-            $createdAgents = 0;
-            $constructionFailures = [];
-            foreach ($plan as $index => $spec) {
-                $created = $this->createAgent(
-                    $generation,
+            return [
+                'generation_id' => $generation->id,
+                'plan' => $plan,
+            ];
+        });
+
+        if ($buildState === null) return null;
+
+        $generation = LabGeneration::query()->with('laboratory')->findOrFail((int) $buildState['generation_id']);
+        $plan = (array) ($buildState['plan'] ?? []);
+        $createdAgents = 0;
+        $constructionFailures = [];
+        foreach ($plan as $index => $spec) {
+            // Each child is atomic on its own. Completed siblings remain
+            // visible as durable construction progress, while a cancelled
+            // child cannot leave half of its model/link/archive writes.
+            $created = DB::transaction(function () use ($generation, $spec, $index): bool {
+                $currentGeneration = LabGeneration::query()->with('laboratory')->findOrFail($generation->id);
+
+                return $this->createAgent(
+                    $currentGeneration,
                     $spec['family'],
                     $spec['origin'],
                     $index + 1,
@@ -333,35 +371,36 @@ class LabPopulationService
                     $spec['research_group'] ?? null,
                     (int) ($spec['group_seat'] ?? 0),
                 );
-                if ($created) {
-                    $createdAgents++;
-                } else {
-                    $constructionFailures[] = [
-                        'slot' => $index + 1,
-                        'family' => $spec['family'],
-                        'origin' => $spec['origin'],
-                        'target' => $spec['target'],
-                        'reason' => 'no_legal_nonzero_mutation',
-                        'promotion_evidence' => false,
-                    ];
-                }
+            });
+            if ($created) {
+                $createdAgents++;
+            } else {
+                $constructionFailures[] = [
+                    'slot' => $index + 1,
+                    'family' => $spec['family'],
+                    'origin' => $spec['origin'],
+                    'target' => $spec['target'],
+                    'reason' => 'no_legal_nonzero_mutation',
+                    'promotion_evidence' => false,
+                ];
             }
-            $generation->update([
-                'population_size' => $createdAgents,
-                'trigger_context' => [
-                    ...((array) $generation->trigger_context),
-                    'constructor_audit' => [
-                        'protocol' => 'agent_constructor_invariant_v1',
-                        'planned_slots' => count($plan),
-                        'created_agents' => $createdAgents,
-                        'skipped_zero_diff_slots' => $constructionFailures,
-                        'rule' => 'No zero-diff child is persisted; a blocked experiment is skipped and remains diagnostic only.',
-                        'promotion_evidence' => false,
-                    ],
+        }
+        $generation->update([
+            'population_size' => $createdAgents,
+            'trigger_context' => [
+                ...((array) $generation->fresh()->trigger_context),
+                'constructor_audit' => [
+                    'protocol' => 'agent_constructor_invariant_v1',
+                    'planned_slots' => count($plan),
+                    'created_agents' => $createdAgents,
+                    'skipped_zero_diff_slots' => $constructionFailures,
+                    'rule' => 'No zero-diff child is persisted; a blocked experiment is skipped and remains diagnostic only.',
+                    'promotion_evidence' => false,
                 ],
-            ]);
-            return $generation->load('agents.modelVersion');
-        });
+            ],
+        ]);
+
+        return $generation->fresh(['agents.modelVersion']);
     }
 
     private function configuredPopulationSize(): int
@@ -458,6 +497,186 @@ class LabPopulationService
     }
 
     /**
+     * Keep the normal council budget physically balanced as well as
+     * conceptually balanced.  A target such as transition_firewall can be a
+     * useful experiment inside a group, but it is not itself a sixth group.
+     * Prefer the declared target group while it has a free core seat, then
+     * place the remaining diagnostic lanes into the least-filled group.  This
+     * makes the five-by-four contract deterministic without changing the
+     * experiment target or manufacturing a parent.
+     *
+     * @param array<int, array<string, mixed>> $plan
+     * @return array<int, array<string, mixed>>
+     */
+    private function assignPopulationGroupSeats(array $plan): array
+    {
+        $groupKeys = array_keys(self::POPULATION_GROUPS);
+        $counts = array_fill_keys($groupKeys, 0);
+        $assigned = [];
+
+        foreach ($plan as $index => $spec) {
+            $target = (string) ($spec['target'] ?? '');
+            if (! in_array($target, $groupKeys, true) || $counts[$target] >= self::POPULATION_GROUP_SEATS) {
+                continue;
+            }
+            $assigned[$index] = $target;
+            $counts[$target]++;
+        }
+
+        foreach ($plan as $index => $spec) {
+            if (array_key_exists($index, $assigned)) continue;
+            $available = array_values(array_filter(
+                $groupKeys,
+                fn (string $group): bool => $counts[$group] < self::POPULATION_GROUP_SEATS,
+            ));
+            if ($available === []) {
+                // Seats after the twenty-agent core are explicit overflow;
+                // retain a declared group when one exists and otherwise use
+                // a stable round-robin reserve. The core remains untouched.
+                $declared = (string) ($spec['research_group'] ?? '');
+                $assigned[$index] = in_array($declared, $groupKeys, true)
+                    ? $declared
+                    : $groupKeys[$index % count($groupKeys)];
+                continue;
+            }
+            usort($available, function (string $left, string $right) use ($counts, $groupKeys): int {
+                $countOrder = $counts[$left] <=> $counts[$right];
+                if ($countOrder !== 0) return $countOrder;
+                return array_search($left, $groupKeys, true) <=> array_search($right, $groupKeys, true);
+            });
+            $assigned[$index] = $available[0];
+            $counts[$available[0]]++;
+        }
+
+        $seatCounts = array_fill_keys($groupKeys, 0);
+        foreach ($plan as $index => &$spec) {
+            $group = $assigned[$index] ?? $groupKeys[$index % count($groupKeys)];
+            $seat = ++$seatCounts[$group];
+            $spec['research_group'] = $group;
+            $spec['group_seat'] = $seat;
+            $spec['group_axis'] = self::POPULATION_GROUPS[$group]['axis'];
+            $spec['group_search_mode'] = $seat <= 2 ? 'depth' : 'breadth';
+            $spec['group_search_role'] = match ($seat) {
+                1 => 'checkpoint_continuation',
+                2 => 'deepening_mutation',
+                3 => 'architecture_widening',
+                default => 'curiosity_widening',
+            };
+        }
+        unset($spec);
+
+        return $plan;
+    }
+
+    /**
+     * Fill the normal core with real council experiments when the failure
+     * curriculum contains fewer than twenty lanes.  The old implementation
+     * filled the remainder with generic `robustness`/`architecture` labels;
+     * those labels are not executable mutation targets for every family and
+     * could silently reduce a pair's population to eighteen. Reusing an
+     * existing council niche (or a deterministic family fallback) preserves
+     * the semantic contract and lets the normal one-gene compiler choose a
+     * lawful bounded change.
+     *
+     * @param array<int, array<string, mixed>> $plan
+     * @return array<int, array<string, mixed>>
+     */
+    private function fillNormalCouncilCore(array $plan, AiLaboratory $lab, int $targetPopulation): array
+    {
+        $groupKeys = array_keys(self::POPULATION_GROUPS);
+        $required = min($targetPopulation, count($groupKeys) * self::POPULATION_GROUP_SEATS);
+        if ($required <= 0) return [];
+
+        $family = in_array('differential_router', $lab->strategy_families, true)
+            ? 'differential_router'
+            : (in_array('hybrid', $lab->strategy_families, true) ? 'hybrid' : ($lab->strategy_families[0] ?? 'hybrid'));
+        $fallback = collect($plan)->first(fn (array $spec): bool => ($spec['target'] ?? null) === 'portfolio_router')
+            ?? collect($plan)->first(fn (array $spec): bool => ($spec['family'] ?? null) === 'hybrid')
+            ?? ($plan[0] ?? [
+                'origin' => 'g98_council',
+                'family' => $family,
+                'target' => 'portfolio_router',
+                'niche' => [],
+            ]);
+
+        $counts = array_fill_keys($groupKeys, 0);
+        $kept = [];
+        $replaceable = [];
+        foreach (array_slice($plan, 0, $required) as $spec) {
+            $target = (string) ($spec['target'] ?? '');
+            if (in_array($target, $groupKeys, true) && $counts[$target] < self::POPULATION_GROUP_SEATS) {
+                $kept[] = $spec;
+                $counts[$target]++;
+            } else {
+                // Unknown/overflow targets are still useful research context,
+                // but they cannot consume one of the five core target seats.
+                $replaceable[] = $spec;
+            }
+        }
+
+        $missingTargets = [];
+        foreach ($groupKeys as $target) {
+            for ($seat = $counts[$target] + 1; $seat <= self::POPULATION_GROUP_SEATS; $seat++) {
+                $missingTargets[] = $target;
+            }
+        }
+
+        foreach ($missingTargets as $index => $target) {
+            $targetTemplate = collect($plan)->first(fn (array $spec): bool => ($spec['target'] ?? null) === $target);
+            $template = $targetTemplate ?? ($replaceable[$index] ?? $fallback);
+            $families = array_values($lab->strategy_families);
+            $familyForSeat = $targetTemplate['family'] ?? ($families[$index % max(1, count($families))] ?? $family);
+            $niche = (array) ($template['niche'] ?? []);
+            $kept[] = [
+                ...$template,
+                'origin' => 'g98_council',
+                'family' => $familyForSeat,
+                'target' => $target,
+                'niche' => [
+                    ...$niche,
+                    'protocol' => 'portfolio_council_v1',
+                    'objective' => $target,
+                    'mutation_target' => $target,
+                    'research_reason' => 'balanced_core_group_seat_fill',
+                    'balanced_core_reserve_variant' => $index + 1,
+                    'non_target_parent_freeze' => true,
+                    'promotion_rule' => $target === 'portfolio_router'
+                        ? 'combined_portfolio_only'
+                        : 'standalone_forward_passport_required',
+                ],
+            ];
+        }
+
+        // If a curriculum was unusually sparse, keep filling from the
+        // deterministic fallback until every core target has four seats.
+        while (count($kept) < $required) {
+            $target = $groupKeys[count($kept) % count($groupKeys)];
+            $families = array_values($lab->strategy_families);
+            $familyForSeat = $families[count($kept) % max(1, count($families))] ?? $family;
+            $kept[] = [
+                ...$fallback,
+                'origin' => 'g98_council',
+                'family' => $familyForSeat,
+                'target' => $target,
+                'niche' => [
+                    ...(array) ($fallback['niche'] ?? []),
+                    'protocol' => 'portfolio_council_v1',
+                    'objective' => $target,
+                    'mutation_target' => $target,
+                    'research_reason' => 'balanced_core_group_seat_fill',
+                    'non_target_parent_freeze' => true,
+                    'promotion_rule' => $target === 'portfolio_router'
+                        ? 'combined_portfolio_only'
+                        : 'standalone_forward_passport_required',
+                ],
+            ];
+        }
+
+        $overflow = count($plan) > $required ? array_slice($plan, $required) : [];
+        return [...array_slice($kept, 0, $required), ...$overflow];
+    }
+
+    /**
      * Read the last durable group report as context for the next generation.
      * It never manufactures a parent: strict semantic parent eligibility is
      * still evaluated independently by createAgent().
@@ -490,12 +709,15 @@ class LabPopulationService
      * laboratory needs a wider search. Family selection is deficit-weighted:
      * the greatest unsatisfied forward gate gets the earliest experiments.
      */
-    private function generationPlan(AiLaboratory $lab, array $coverageRescue = [], bool $roleComplete = false, ?int $populationLimit = null): array
+    private function generationPlan(AiLaboratory $lab, array $coverageRescue = [], bool $roleComplete = false, ?int $populationLimit = null, array $targetedFailureTargets = [], ?array $targetedFailureProfile = null): array
     {
         $targetPopulation = $roleComplete
             ? max(4, $populationLimit !== null ? (int) $populationLimit : $this->configuredPopulationSize())
             : ($populationLimit !== null ? max(1, (int) $populationLimit) : $this->configuredPopulationSize());
         if ((bool) data_get($coverageRescue, 'eligible')) return $this->coverageRescuePlan($coverageRescue, $targetPopulation);
+        if ($targetedFailureTargets !== []) {
+            return $this->targetedFailurePlan($lab, $targetedFailureTargets, $targetPopulation, $targetedFailureProfile ?? []);
+        }
         // A role-complete build may be intentionally bounded to the four
         // mandatory seats while its constructor/lineage contract is being
         // proven.  Do not route that request through the generic root-recovery
@@ -651,6 +873,7 @@ class LabPopulationService
         // Council lanes get first claim on the configured budget; standard
         // lanes fill the remainder. No hidden fixed population ceiling is
         // applied here.
+        $councilPlan = $this->fillNormalCouncilCore($councilPlan, $lab, $targetPopulation);
         $councilPlan = array_slice($councilPlan, 0, count($slots));
         $standardSlots = array_slice($slots, count($councilPlan));
         // Reserve one independent research seat when the current knowledge
@@ -756,6 +979,68 @@ class LabPopulationService
         $mandatory = $this->mandatoryCouncilRolePlan($lab);
         $remaining = array_slice($plan, 0, max(0, $targetPopulation - count($mandatory)));
         return [...$mandatory, ...$remaining];
+    }
+
+    /**
+     * A targeted handoff is a four-seat diagnostic cohort. Each seat owns one
+     * observed failure dimension, so PF, stress cost, temporal stability and
+     * regime coverage can be credited independently. This is search routing
+     * only: every child still enters the normal screen/full/forward gates.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function targetedFailurePlan(AiLaboratory $lab, array $targets, int $targetPopulation, array $profile = []): array
+    {
+        $canonical = ['profit_factor', 'stress_cost', 'temporal_stability', 'regime_coverage'];
+        $ordered = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $target): string => (string) $target,
+            $targets,
+        ), fn (string $target): bool => in_array($target, $canonical, true))));
+        $ordered = array_values(array_unique([...$ordered, ...$canonical]));
+        $ordered = array_slice($ordered, 0, max(4, $targetPopulation));
+        while (count($ordered) < $targetPopulation) {
+            $ordered[] = $canonical[count($ordered) % count($canonical)];
+        }
+
+        $family = in_array('differential_router', $lab->strategy_families, true)
+            ? 'differential_router'
+            : (in_array('hybrid', $lab->strategy_families, true) ? 'hybrid' : ($lab->strategy_families[0] ?? 'hybrid'));
+        $groups = [
+            'profit_factor' => 'volatility_session_stability',
+            'stress_cost' => 'volatility_session_stability',
+            'temporal_stability' => 'monthly_survival',
+            'regime_coverage' => 'regime_coverage',
+        ];
+        $roles = [
+            'profit_factor' => 'edge_quality_specialist',
+            'stress_cost' => 'cost_stability_specialist',
+            'temporal_stability' => 'temporal_stability_specialist',
+            'regime_coverage' => 'regime_coverage_specialist',
+        ];
+        $targetCounts = (array) data_get($profile, 'target_counts', []);
+
+        return collect($ordered)->take($targetPopulation)->values()->map(function (string $target, int $index) use ($family, $groups, $roles, $profile, $targetCounts): array {
+            return [
+                'origin' => 'targeted_failure_profile',
+                'family' => $family,
+                'target' => $target,
+                'research_group' => $groups[$target] ?? 'regime_coverage',
+                'niche' => [
+                    'protocol' => 'targeted_failure_profile_v1',
+                    'specialist_role' => $roles[$target] ?? 'failure_profile_specialist',
+                    'failure_target' => $target,
+                    'mutation_target' => $target,
+                    'target_sequence' => $index + 1,
+                    'target_count' => (int) ($targetCounts[$target] ?? 0),
+                    'source_generation_id' => data_get($profile, 'source_generation_id'),
+                    'source_generation' => data_get($profile, 'source_generation'),
+                    'profile_hash' => data_get($profile, 'profile_hash'),
+                    'research_reason' => 'Gen3 failure profile targeted one-gene repair; target remains diagnostic until every unchanged gate passes.',
+                    'non_target_parent_freeze' => true,
+                    'promotion_rule' => 'unchanged_screen_full_forward_paper_gates',
+                ],
+            ];
+        })->all();
     }
 
     /**
@@ -1951,6 +2236,7 @@ class LabPopulationService
         $historyKeys = array_values((array) data_get($history, 'recommended_keys', data_get($history, 'recommended_mutations.keys', [])));
         $historyInsightId = data_get($history, 'insight_id');
         $g98Target = in_array($target, ['monthly_survival', 'regime_coverage', 'volatility_session_stability', 'exit_topology', 'transition_firewall', 'portfolio_router', 'opportunity_recall', 'unknown_state_curiosity'], true);
+        $targetedFailureLane = $origin === 'targeted_failure_profile';
         // The screen gate names the observable failure lane, while the
         // differential/range compiler needs the causal gene family that can
         // actually repair it. Previously volatility/exit seats fell through
@@ -2191,7 +2477,7 @@ class LabPopulationService
         // replay that the child was never designed to provide. Causal lanes
         // keep the isolated repair lineage; discovery lanes keep their full
         // independent replay and promotion gates.
-        $repairOrigins = ['gate_targeted', 'risk_exit', 'causal_isolation', 'g98_council', 'coverage_rescue'];
+        $repairOrigins = ['gate_targeted', 'risk_exit', 'causal_isolation', 'g98_council', 'targeted_failure_profile', 'coverage_rescue'];
         $parentRepair = (array) data_get($parentA?->metadata, 'repair_lineage', []);
         $repairLineage = in_array($origin, $repairOrigins, true) ? [
             'protocol' => 'bounded_repair_lineage_v1',
@@ -2229,7 +2515,7 @@ class LabPopulationService
         foreach ($this->councilRoleBaseline($councilRole, $family) as $key => $value) {
             if (array_key_exists($key, $base)) $base[$key] = $value;
         }
-        $mutationScope = ($g98Target || in_array($origin, ['gate_targeted', 'risk_exit', 'causal_isolation', 'architecture', 'g98_council', 'curiosity_probe'], true))
+        $mutationScope = ($g98Target || in_array($origin, ['gate_targeted', 'risk_exit', 'causal_isolation', 'architecture', 'g98_council', 'targeted_failure_profile', 'curiosity_probe'], true))
             ? $this->mutationScope($lab->symbol, $lab->timeframe, $family, $slot)
             : null;
         $councilRegime = data_get($niche, 'regime');
@@ -2260,7 +2546,7 @@ class LabPopulationService
         // the contract coordinate before compiling the mutation so only the
         // declared lane gene appears in parameter_diff.
         if ($family === 'differential_router'
-            && $g98Target
+            && ($g98Target || $targetedFailureLane)
             && is_string($councilRegime)
             && in_array($councilRegime, ['trend_up', 'trend_down', 'range'], true)
             && array_key_exists('differential_target_regime', $base)) {
@@ -2284,6 +2570,7 @@ class LabPopulationService
 
         $skillCrossoverSources = [];
         $capabilityGeneProvenance = (array) data_get($adaptiveParentSelection, 'capability_genome.parameter_sources', []);
+        $noLegalOwnerMutationControl = false;
         if ($niche && $family === 'hybrid' && (
             data_get($niche, 'regime') === 'range'
             || data_get($niche, 'specialist_role', data_get($niche, 'role')) === 'transition_risk_router'
@@ -2324,7 +2611,7 @@ class LabPopulationService
                 ? $this->mutate($lab->symbol, $lab->timeframe, $family, $base, $slot, $mutationScope, $mutationTarget, true, $historyKeys)
                 : match ($origin) {
                 'gate_targeted', 'risk_exit', 'architecture' => $this->mutate($lab->symbol, $lab->timeframe, $family, $base, $slot, $mutationScope, $mutationTarget, false, $historyKeys),
-            'causal_isolation', 'g98_council', 'curiosity_probe' => $this->mutate($lab->symbol, $lab->timeframe, $family, $base, $slot, $mutationScope, $mutationTarget, true, $historyKeys),
+                'causal_isolation', 'g98_council', 'targeted_failure_profile', 'curiosity_probe' => $this->mutate($lab->symbol, $lab->timeframe, $family, $base, $slot, $mutationScope, $mutationTarget, true, $historyKeys),
                 // Unknown/new origins must still be evolutionary. A parent
                 // is a frozen capability baseline; only a first-ever lab is
                 // allowed to start from a random schema draw.
@@ -2388,20 +2675,28 @@ class LabPopulationService
                 $parameters = $this->schemas->normalizeForGeneration($family, $parameters);
                 $parameters = $this->schemas->validate($family, $parameters);
             }
-            // No legal gene exists under the learned safety firewall.  Do
-            // not let a null/unchanged control flow reach novelty or the DB;
-            // the build records this slot as a skipped diagnostic experiment.
-            if ($parameters === null) return false;
+            // No legal owner gene exists under the learned safety firewall.
+            // Keep one explicit no-change control so the five-by-four council
+            // can measure the exhausted lane without fabricating a mutation.
+            // It is marked control-only below and can never earn promotion.
+            if ($parameters === null) {
+                if ($g98Target && $councilRole !== '') {
+                    $parameters = $base;
+                    $noLegalOwnerMutationControl = true;
+                } else {
+                    return false;
+                }
+            }
         }
         // A generation is an experiment set, not a collection of parameter
         // clones.  Reject exact fingerprints and near neighbours before they
         // consume an expensive full validation slot.
-        $isolatedKey = ($g98Target || in_array($origin, ['causal_isolation', 'g98_council'], true)) ? array_key_first($this->diff($base, $parameters)) : null;
+        $isolatedKey = ($g98Target || in_array($origin, ['causal_isolation', 'g98_council', 'targeted_failure_profile'], true)) ? array_key_first($this->diff($base, $parameters)) : null;
         // Keep the directed child across the generation-local novelty pass.
         // A duplicate boolean nudge can otherwise return to the parent value
         // and erase the declared experiment before historical novelty runs.
         $directedParameters = $parameters;
-        $parameters = $this->ensureNovelParameters($generation, $family, $parameters, $slot, $g98Target || in_array($origin, ['gate_targeted', 'causal_isolation', 'g98_council'], true), $isolatedKey);
+        $parameters = $this->ensureNovelParameters($generation, $family, $parameters, $slot, $g98Target || in_array($origin, ['gate_targeted', 'causal_isolation', 'g98_council', 'targeted_failure_profile'], true), $isolatedKey);
         if ($g98Target && $isolatedKey !== null && $this->diff($base, $parameters) === []) {
             $parameters = $directedParameters;
         }
@@ -2457,7 +2752,7 @@ class LabPopulationService
         // the parent and create a zero-diff agent.  Repair lanes also require
         // exactly one changed gene; a multi-gene child is not attributable.
         $strictSingleGene = $g98Target
-            || in_array($origin, ['gate_targeted', 'risk_exit', 'causal_isolation', 'g98_council', 'coverage_rescue'], true)
+            || in_array($origin, ['gate_targeted', 'risk_exit', 'causal_isolation', 'g98_council', 'targeted_failure_profile', 'coverage_rescue'], true)
             || $family === 'differential_router';
         $parameters = $this->enforceConstructorMutationInvariant(
             $family,
@@ -2468,7 +2763,14 @@ class LabPopulationService
             $knowledgeBlockedKeys,
             $strictSingleGene,
         );
-        if ($parameters === null) return false;
+        if ($parameters === null) {
+            if ($g98Target && $councilRole !== '') {
+                $parameters = $base;
+                $noLegalOwnerMutationControl = true;
+            } else {
+                return false;
+            }
+        }
         $parameters = $this->schemas->normalizeForGeneration($family, $parameters);
         $parameters = $this->schemas->validate($family, $parameters);
         // The generic one-gene nudge above is intentionally family-wide and
@@ -2640,13 +2942,18 @@ class LabPopulationService
                     'failure_signature' => (array) data_get($history, 'failure_signature', []),
                     'direction_rule' => 'Only independently confirmed exact replay credits can influence mutation direction.',
                 ] : null,
-                'g98_council_lane' => $g98Target ? [
+                'g98_council_lane' => ($g98Target || $targetedFailureLane) ? [
                     'protocol' => self::GENERATION_PROTOCOL,
                     'lane' => $target,
                     'mutation_target' => $mutationTarget,
                     'mutation_layers' => 1,
                     'research_variant' => data_get($niche, 'recall_variant'),
+                    'targeted_failure_profile' => $targetedFailureLane,
                     'parent_lane_freeze' => true,
+                    'control_only' => $roleControl,
+                    'control_reason' => $roleControl
+                        ? ($noLegalOwnerMutationControl ? 'all_legal_owner_mutations_blocked' : 'role_policy_no_change')
+                        : null,
                     'acceptance_rule' => 'causal_blame_proven_and_unchanged_gates_pass',
                 ] : null,
                 'coverage_rescue_contract' => data_get($niche, 'protocol') === CoverageRescueAuditService::PROTOCOL ? [
@@ -2766,11 +3073,12 @@ class LabPopulationService
                     'rule' => 'Exact semantic key only for genetic inheritance; all other candidates remain diagnostic controls.',
                 ],
                 'progressive_inheritance' => $progressiveInheritance,
-                'causal_experiment_lane' => ($g98Target || $origin === 'causal_isolation' || $origin === 'g98_council' || $origin === 'curiosity_probe' || $family === 'differential_router') ? [
-                    'status' => 'isolated_single_gene',
+                'causal_experiment_lane' => ($g98Target || $targetedFailureLane || $origin === 'causal_isolation' || $origin === 'g98_council' || $origin === 'curiosity_probe' || $family === 'differential_router') ? [
+                    'status' => $roleControl ? 'no_change_control' : 'isolated_single_gene',
                     'rule' => 'One changed parameter only; requires parent and same-generation alternative before causal credit.',
+                    'control_only' => $roleControl,
                 ] : null,
-                'hypothesis_contract' => ($g98Target || $origin === 'coverage_rescue' || $family === 'differential_router') ? [
+                'hypothesis_contract' => ($g98Target || $targetedFailureLane || $origin === 'coverage_rescue' || $family === 'differential_router') ? [
                     'protocol' => 'hypothesis_laboratory_v1',
                     'hypothesis' => 'Improve only the declared operating-envelope failure without changing any protected lane.',
                     'target_lane' => $target,
@@ -2818,6 +3126,7 @@ class LabPopulationService
                 'mutation_constructor_invariant' => [
                     'protocol' => 'agent_constructor_invariant_v1',
                     'status' => 'passed',
+                    'control_only' => $roleControl,
                     'single_gene_required' => $strictSingleGene,
                     'changed_parameter_keys' => array_keys($parameterDiff),
                     'parameter_diff_count' => count($parameterDiff),

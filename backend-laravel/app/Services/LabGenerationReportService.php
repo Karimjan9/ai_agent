@@ -6,7 +6,10 @@ use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\CandidateHandoffEvent;
 use App\Models\LabAgent;
+use App\Models\LabAgentParentLink;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
+use App\Models\LabMutationCreditEvent;
 use App\Models\ModelMarketPerformance;
 use Illuminate\Support\Collection;
 
@@ -45,6 +48,12 @@ class LabGenerationReportService
             'reason' => (string) $agent->decision_reason,
             'recovery_attempts' => (int) data_get($agent->modelVersion?->metadata, 'evaluator_recovery_attempts', 0),
         ])->values()->all();
+        $technicalErrors = array_merge($technicalErrors, $agents->where('lifecycle_status', 'technical_quarantine')->map(fn (LabAgent $agent): array => [
+            'agent_id' => $agent->id,
+            'reason' => (string) $agent->decision_reason,
+            'recovery_attempts' => (int) data_get($agent->modelVersion?->metadata, 'evaluator_recovery_attempts', 0),
+            'status' => 'technical_quarantine',
+        ])->values()->all());
 
         $screenDecisions = $decisions->where('stage', 'screening');
         $screenPassed = $screenDecisions->where('decision', 'passed')->count();
@@ -79,10 +88,72 @@ class LabGenerationReportService
                 ->keys()->all())
             ->unique()->values()->all();
 
-        $selected = $handoffs->where('stage', 'selection_passed')->filter(fn (CandidateHandoffEvent $event): bool =>
+        $selectedAgentIds = $handoffs->where('stage', 'selection_passed')->filter(fn (CandidateHandoffEvent $event): bool =>
             $event->status === 'completed' && data_get($event->payload, 'selection_lane', 'none') !== 'none'
-        )->count();
+        )->pluck('lab_agent_id')->filter()->unique()->values()->all();
+        $selected = count($selectedAgentIds);
+        $fullRuns = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->where('phase', 'full_validation')
+            ->latest('id')
+            ->get()
+            ->groupBy('lab_agent_id');
+        $fullCompletedAgentIds = $fullRuns->filter(function (Collection $runs): bool {
+            $run = $runs->first();
+
+            return $run !== null
+                && $run->status === 'completed'
+                && app(LabImmutableEvidenceService::class)->learningEligibility($run)['complete'];
+        })->keys()->map(fn ($id): int => (int) $id)->all();
+        $fullCompletedSelected = collect($selectedAgentIds)->intersect($fullCompletedAgentIds)->count();
+        $fullValidationCompletionRate = $selected > 0
+            ? round($fullCompletedSelected / $selected * 100, 2)
+            : 0;
         $forwardValidated = $performances->whereIn('status', ['forward_validated', 'paper', 'champion'])->count();
+        $paperEligible = $performances->whereIn('status', ['forward_validated', 'paper', 'champion'])
+            ->filter(fn (ModelMarketPerformance $performance): bool => $performance->evidence_status === 'valid')
+            ->count();
+        $parentLinks = LabAgentParentLink::query()->whereIn('lab_agent_id', $agentIds ?: [0])
+            ->whereNotNull('parent_model_version_id')->count();
+        $confirmedMutations = LabMutationCreditEvent::query()
+            ->where('lab_generation_id', $generation->id)
+            ->get()
+            ->filter(function (LabMutationCreditEvent $event): bool {
+                $status = (string) data_get(
+                    $event->payload,
+                    'behavioral_effect.causal_credit.status',
+                    data_get($event->payload, 'causal_credit.status', ''),
+                );
+                $window = (string) ($event->temporal_window_key ?? data_get($event->payload, 'temporal_window_key', ''));
+
+                return $status === 'independently_confirmed'
+                    && $event->reconciliation_key !== null
+                    && $window !== ''
+                    && $window !== 'missing'
+                    && ! str_starts_with($window, 'legacy:');
+            })
+            ->unique('reconciliation_key')
+            ->count();
+        $technicalRunCount = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->where('phase', 'full_validation')
+            ->where('status', 'technical_error')
+            ->count();
+        $screeningPassRate = $screenDecisions->count() > 0
+            ? round($screenPassed / $screenDecisions->count() * 100, 2)
+            : 0;
+        $pipelineFailure = $technicalErrors !== [] || $technicalRunCount > 0 || $screenDecisions->count() === 0;
+        $screeningFailureClassification = $screenPassed > 0
+            ? 'agent_quality_signal_available'
+            : ($pipelineFailure ? 'pipeline_not_working' : 'agents_failed_screening_gate');
+        $evolutionSafe = $technicalErrors === []
+            && $technicalRunCount === 0
+            && $screeningPassRate > 0
+            && $fullValidationCompletionRate === 100.0
+            && $forwardValidated > 0
+            && $confirmedMutations >= 2
+            && $parentLinks > 0
+            && $paperEligible > 0;
         $paperTransition = $forwardValidated > 0
             ? $performances->whereIn('status', ['forward_validated', 'paper', 'champion'])->map(fn (ModelMarketPerformance $performance): ?int =>
                 $performance->created_at && $performance->updated_at ? $performance->created_at->diffInSeconds($performance->updated_at) : null
@@ -141,14 +212,27 @@ class LabGenerationReportService
             'gate_improvements' => $gateImprovements,
             'gate_failures' => $failedReasons,
             'technical_errors' => $technicalErrors,
+            'failure_classification' => [
+                'screening_zero' => $screenPassed === 0,
+                'classification' => $screeningFailureClassification,
+                'pipeline_failure' => $pipelineFailure,
+                'agent_quality_failure' => $screenPassed === 0 && ! $pipelineFailure,
+                'technical_full_runs' => $technicalRunCount,
+            ],
             'mutation_targets' => $targets,
             'population_group_checkpoints' => $populationGroupCheckpoints,
             'targeted_rescue_attempts_before_generation' => $targetedAttempts,
             'kpis' => [
+                'evolution_safe' => $evolutionSafe,
                 'technical_completion_rate' => $agents->count() > 0 ? round($cleanTerminal / $agents->count() * 100, 2) : 0,
-                'screening_pass_rate' => $screenDecisions->count() > 0 ? round($screenPassed / $screenDecisions->count() * 100, 2) : 0,
-                'full_validation_completion_rate' => $selected > 0 ? round($performances->count() / $selected * 100, 2) : 0,
+                'screening_pass_rate' => $screeningPassRate,
+                'screening_failure_classification' => $screeningFailureClassification,
+                'full_validation_completion_rate' => $fullValidationCompletionRate,
                 'forward_valid_agents' => $forwardValidated,
+                'independently_confirmed_mutations' => $confirmedMutations,
+                'parent_links' => $parentLinks,
+                'paper_eligible' => $paperEligible,
+                'pipeline_failure_count' => count($technicalErrors) + $technicalRunCount,
                 'paper_transition_time_seconds' => $paperTransition,
                 'population_groups' => collect($populationGroupCheckpoints)->map(fn (array $checkpoint): array => [
                     'key' => $checkpoint['key'],
@@ -157,7 +241,7 @@ class LabGenerationReportService
                 ])->values()->all(),
                 ...$coverageKpis,
             ],
-            'next_action' => $this->nextAction($generation, $technicalErrors, $screenPassed, $screenDecisions->count(), $selected, $forwardValidated, $targetedAttempts),
+            'next_action' => $this->nextAction($generation, $technicalErrors, $screenPassed, $screenDecisions->count(), $selected, $forwardValidated, $targetedAttempts, $pipelineFailure),
             'promotion_evidence' => false,
             'rule' => 'A generation report describes evidence; it never changes a gate decision or creates paper eligibility.',
         ];
@@ -310,6 +394,26 @@ class LabGenerationReportService
         return $labs->map(function (AiLaboratory $lab): array {
             $generation = $lab->generations()->with('agents.modelVersion')->latest('generation')->first();
             $report = (array) data_get($generation?->trigger_context, 'latest_generation_report', []);
+            $requiredKpis = [
+                'evolution_safe',
+                'screening_pass_rate',
+                'full_validation_completion_rate',
+                'forward_valid_agents',
+                'independently_confirmed_mutations',
+                'parent_links',
+                'paper_eligible',
+                'screening_failure_classification',
+            ];
+            $storedKpis = (array) data_get($report, 'kpis', []);
+            if ($generation && (
+                data_get($report, 'protocol') !== self::PROTOCOL
+                || collect($requiredKpis)->contains(fn (string $key): bool => ! array_key_exists($key, $storedKpis))
+            )) {
+                // Older generations may have been recorded before the strict
+                // funnel packet existed. Refresh only that compatibility
+                // case; normal dashboard reads remain side-effect free.
+                $report = $this->record($generation, 'kpi_refresh');
+            }
             return [
                 'symbol' => $lab->symbol,
                 'timeframe' => $lab->timeframe,
@@ -318,7 +422,7 @@ class LabGenerationReportService
                 'kpis' => (array) ($report['kpis'] ?? []),
                 'next_action' => $report['next_action'] ?? 'generation_report_pending',
                 'technical_errors' => count((array) ($report['technical_errors'] ?? [])),
-                'paper_eligible' => ModelMarketPerformance::query()->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)->whereIn('status', ['forward_validated', 'paper', 'champion'])->count(),
+                'paper_eligible' => data_get($report, 'kpis.paper_eligible', 0),
             ];
         })->values()->all();
     }
@@ -392,9 +496,9 @@ class LabGenerationReportService
         return is_numeric($value) ? (float) $value : $fallback;
     }
 
-    private function nextAction(LabGeneration $generation, array $technicalErrors, int $screenPassed, int $screenDecisions, int $selected, int $forwardValidated, int $targetedAttempts): string
+    private function nextAction(LabGeneration $generation, array $technicalErrors, int $screenPassed, int $screenDecisions, int $selected, int $forwardValidated, int $targetedAttempts, bool $pipelineFailure = false): string
     {
-        if ($technicalErrors !== []) return 'recover_technical_errors_before_quality_interpretation';
+        if ($pipelineFailure || $technicalErrors !== []) return 'recover_evidence_pipeline_before_quality_interpretation';
         if ($forwardValidated > 0) return 'paper_admission_handshake';
         if ($generation->status === 'screened' && $selected === 0) {
             return $targetedAttempts >= 2 ? 'data_edge_audit_required' : 'targeted_rescue_for_dominant_gate_failure';

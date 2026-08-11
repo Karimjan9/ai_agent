@@ -47,7 +47,7 @@ class DispatchExitTopologyExperiments extends Command
             $batch = Bus::batch($pending->map(fn (LabAgent $agent) => new EvaluateLabAgentJob($agent->id, $lab->symbol, 'screen'))->all())
                 ->name("{$lab->symbol} resumed frozen-entry exit topology experiments")
                 ->allowFailures()
-                ->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-'.strtolower($lab->symbol))->dispatch();
+                ->onConnection((string) config('queue.default', 'redis'))->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))->dispatch();
             $this->info("{$lab->symbol}: {$batch->id}; {$pending->count()} pending exit experiments resumed.");
 
             return self::SUCCESS;
@@ -167,7 +167,7 @@ class DispatchExitTopologyExperiments extends Command
         $batch = Bus::batch($agents->map(fn (LabAgent $agent) => new EvaluateLabAgentJob($agent->id, $lab->symbol, 'screen'))->all())
             ->name("{$lab->symbol} frozen-entry exit topology experiments")
             ->allowFailures()
-            ->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-'.strtolower($lab->symbol))->dispatch();
+            ->onConnection((string) config('queue.default', 'redis'))->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))->dispatch();
         $this->info("{$lab->symbol}: {$batch->id}; {$agents->count()} isolated exit experiments queued. No full-validation/paper jobs were dispatched.");
 
         return self::SUCCESS;

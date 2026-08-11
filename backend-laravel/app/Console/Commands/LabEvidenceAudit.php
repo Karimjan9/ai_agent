@@ -55,7 +55,17 @@ class LabEvidenceAudit extends Command
         $createdAgents = $events->where('event_type', 'agent_created')->pluck('lab_agent_id')->filter()->unique()->count();
         $seenAgents = $events->pluck('lab_agent_id')->filter()->unique()->count();
         $terminalRuns = $runs->whereIn('status', ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot'])->count();
-        $responseRunIds = $runs->filter(fn (LabEvaluationRun $run): bool => $run->response_hash !== null)->pluck('run_id')->filter()->unique();
+        // A middleware release is a queue deferral, not an evaluator replay.
+        // Newer jobs do not create these rows, but older immutable rows must
+        // not be mistaken for response evidence merely because their
+        // operational envelope has a response hash.
+        $queueDeferredRunIds = $runs->filter(fn (LabEvaluationRun $run): bool => $run->status === 'retry_released'
+            && data_get($run->metadata, 'reason_code') === 'QUEUE_MIDDLEWARE_RELEASE')
+            ->pluck('run_id')->filter()->unique();
+        $replayRuns = $runs->reject(fn (LabEvaluationRun $run): bool => $queueDeferredRunIds->contains($run->run_id));
+        $replayTerminalRuns = $replayRuns->whereIn('status', ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot']);
+        $completedReplayRuns = $replayRuns->where('status', 'completed');
+        $responseRunIds = $completedReplayRuns->filter(fn (LabEvaluationRun $run): bool => $run->response_hash !== null)->pluck('run_id')->filter()->unique();
         $responseRuns = $responseRunIds->count();
         $traceCompleteRunIds = $artifacts->where('artifact_type', 'decision_trace_manifest')
             ->filter(fn (LabEvidenceArtifact $artifact): bool => (bool) data_get($artifact->metadata, 'complete', data_get($artifact->payload, 'complete', false)))
@@ -78,8 +88,11 @@ class LabEvidenceAudit extends Command
         $strictResponseEvidence = $responseRunIds->diff($requestRunIds)->isEmpty()
             && $responseRunIds->diff($traceCompleteRunIds)->isEmpty()
             && $responseRunIds->diff($ledgerCompleteRunIds)->isEmpty();
+        $replayAgentIds = $replayRuns->pluck('lab_agent_id')->filter()->unique();
         $complete = $agents->count() > 0 && $createdAgents === $agents->count()
-            && $runs->count() > 0 && $terminalRuns === $runs->count()
+            && $replayRuns->count() > 0 && $replayAgentIds->count() >= $agents->count()
+            && $replayTerminalRuns->count() === $replayRuns->count()
+            && $completedReplayRuns->count() > 0
             && $runIdsWithLifecycle->count() >= $runs->count()
             && (! $strictTraceRequired || ($traceComplete >= $responseRuns && $strictResponseEvidence))
             && $orphanArtifactCount === 0
@@ -91,7 +104,10 @@ class LabEvidenceAudit extends Command
             'exact_creation_coverage_percent' => $exactCoverage,
             'agent_event_coverage_percent' => $eventCoverage,
             'missing_agent_ids' => $agents->reject(fn ($agent) => $events->where('lab_agent_id', $agent->id)->isNotEmpty())->pluck('id')->values()->all(),
-            'evaluation_run_count' => $runs->count(), 'terminal_run_count' => $terminalRuns,
+            'evaluation_run_count' => $runs->count(), 'replay_run_count' => $replayRuns->count(),
+            'completed_replay_count' => $completedReplayRuns->count(),
+            'queue_deferred_run_count' => $queueDeferredRunIds->count(),
+            'terminal_run_count' => $terminalRuns,
             'terminal_run_coverage_percent' => $terminalCoverage,
             'response_runs' => $responseRuns, 'decision_trace_complete_runs' => $traceComplete,
             'run_lifecycle_coverage_percent' => $runs->count() === 0 ? 0 : round(($runIdsWithLifecycle->count() / $runs->count()) * 100, 1),

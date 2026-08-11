@@ -86,7 +86,7 @@ class DispatchDifferentialTrendDownRescue extends Command
             $batch = Bus::batch($pending->map(fn (LabAgent $agent) => new EvaluateLabAgentJob($agent->id, $lab->symbol, 'screen'))->all())
                 ->name("{$lab->symbol} resumed differential trend-down cohort")
                 ->allowFailures()
-                ->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-'.strtolower($lab->symbol))->dispatch();
+                ->onConnection((string) config('queue.default', 'redis'))->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))->dispatch();
             $this->info("{$lab->symbol}: {$batch->id}; {$pending->count()} corrected differential experiments resumed.");
 
             return self::SUCCESS;
@@ -298,7 +298,7 @@ class DispatchDifferentialTrendDownRescue extends Command
         $batch = Bus::batch($agents->map(fn (LabAgent $agent) => new EvaluateLabAgentJob($agent->id, $lab->symbol, 'screen'))->all())
             ->name("{$lab->symbol} differential {$target['regime']} parent + single-gene cohort")
             ->allowFailures()
-            ->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-'.strtolower($lab->symbol))->dispatch();
+            ->onConnection((string) config('queue.default', 'redis'))->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))->dispatch();
         $this->info("{$lab->symbol}: {$batch->id}; target {$target['regime']} (PF {$target['profit_factor']}, {$target['trades']} trades), frozen parent and {$children->count()} variants queued. No full-validation/paper jobs were dispatched.");
 
         return self::SUCCESS;

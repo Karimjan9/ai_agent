@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabTrialLedger;
 use App\Services\MarketData\HistoricalDataQualityService;
 
@@ -219,6 +220,7 @@ class LabAgentPreflightService
 
         $parameterDiff = (array) $agent->parameter_diff;
         $isControl = (bool) data_get($model?->metadata, 'mutation_constructor_invariant.control_only', false)
+            || (bool) data_get($model?->metadata, 'g98_council_lane.control_only', false)
             || (data_get($model?->metadata, 'role_complete_council.role_control.type') === 'no_change_control');
         $roleContract = (array) data_get($model?->metadata, 'role_complete_council', []);
         $rolePolicy = (array) data_get($roleContract, 'policy', []);
@@ -282,6 +284,41 @@ class LabAgentPreflightService
                     $errors[] = 'FOUNDATION_DATASET_CONTINUITY_PASSPORT_INVALID';
                 } else {
                     $errors[] = 'FULL_REPLAY_DATASET_COVERAGE_INSUFFICIENT';
+                }
+            }
+            if (strtoupper((string) $agent->timeframe) === 'M15') {
+                $regimePath = (string) data_get($generation?->trigger_context, 'canonical_dataset_snapshots.regime.path', '');
+                $regimeHash = (string) data_get($generation?->trigger_context, 'canonical_dataset_snapshots.regime.sha256', '');
+                $actualRegimeHash = is_file($regimePath) ? hash_file('sha256', $regimePath) : null;
+                if ($regimePath === '' || $regimeHash === '' || ! is_string($actualRegimeHash) || ! hash_equals($regimeHash, $actualRegimeHash)) {
+                    $errors[] = 'M15_H1_REGIME_SNAPSHOT_MISSING_OR_INVALID';
+                }
+                $screenRegimeHash = (string) data_get($model?->metadata, 'last_screen_result.regime_snapshot_sha256', '');
+                if ($screenRegimeHash === '') {
+                    // Older workers may have sealed the immutable request
+                    // manifest with the closed-H1 hash before the mutable
+                    // last_screen_result projection was written. The
+                    // projection is only a convenience read model; do not
+                    // quarantine valid evidence merely because that write
+                    // was interrupted. If both sources are present, the
+                    // projection still has to agree with the frozen hash.
+                    $requestMeta = LabEvaluationRun::query()
+                        ->where('lab_agent_id', $agent->id)
+                        ->where('phase', 'screening')
+                        ->where('status', 'completed')
+                        ->latest('id')
+                        ->value('request_meta');
+                    $requestMetaPayload = is_array($requestMeta)
+                        ? $requestMeta
+                        : json_decode((string) $requestMeta, true);
+                    $screenRegimeHash = (string) data_get(
+                        is_array($requestMetaPayload) ? $requestMetaPayload : [],
+                        'dataset_manifest.regime_snapshot_sha256',
+                        '',
+                    );
+                }
+                if ($screenRegimeHash === '' || $screenRegimeHash !== $regimeHash) {
+                    $errors[] = 'M15_SCREEN_H1_REGIME_EVIDENCE_MISSING_OR_STALE';
                 }
             }
         }
@@ -474,6 +511,8 @@ class LabAgentPreflightService
             && array_diff($errors, [
                 'FULL_REPLAY_DATASET_COVERAGE_INSUFFICIENT',
                 'FOUNDATION_DATASET_CONTINUITY_PASSPORT_INVALID',
+                'M15_H1_REGIME_SNAPSHOT_MISSING_OR_INVALID',
+                'M15_SCREEN_H1_REGIME_EVIDENCE_MISSING_OR_STALE',
             ]) === [];
     }
 

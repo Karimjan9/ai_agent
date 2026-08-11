@@ -47,6 +47,9 @@ class EliteAgentPassportService
             ?: data_get($metadata, 'portfolio_council_lane.role')
         );
         $roleCompleteCouncil = data_get($metadata, 'role_complete_council.protocol') === 'role_complete_council_v1';
+        $controlOnly = (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false)
+            || (bool) data_get($metadata, 'g98_council_lane.control_only', false)
+            || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
         $rolePolicy = (array) data_get($metadata, 'role_complete_council.policy', []);
         $rolePolicyIntegrity = ! $roleCompleteCouncil
             || $this->rolePolicyIntegrity($councilRole, $rolePolicy, $parameters, $agent);
@@ -161,7 +164,8 @@ class EliteAgentPassportService
             // complete a replay needed to prove that the owner lane is
             // exhausted, but it can never become a specialist or paper member.
             'role_specialist_mutation' => ! $roleCompleteCouncil
-                || data_get($metadata, 'role_complete_council.role_control.type') !== 'no_change_control',
+                || ! $controlOnly,
+            'control_only_lane' => ! $controlOnly,
         ];
         $failed = collect($checks)->filter(fn (bool $pass) => ! $pass)->keys()->map(
             fn (string $check) => 'FAILED_PASSPORT_'.strtoupper($check)

@@ -169,7 +169,7 @@ class DispatchCooldownCausalRescue extends Command
         )->all();
         $batch = Bus::batch($jobs)->name("{$lab->symbol} cooldown causal rescue G{$generation->generation}")
             ->allowFailures()
-            ->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-'.strtolower($lab->symbol))->dispatch();
+            ->onConnection((string) config('queue.default', 'redis'))->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))->dispatch();
         $this->info("{$lab->symbol} G{$generation->generation}: {$batch->id}; cooldown variants 4→2 and 4→3 dispatched.");
 
         return self::SUCCESS;

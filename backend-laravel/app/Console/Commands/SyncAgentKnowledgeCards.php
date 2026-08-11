@@ -125,6 +125,22 @@ class SyncAgentKnowledgeCards extends Command
                     $progress->sync($agent->fresh(['modelVersion', 'generation']));
                     $baseline++;
                 } catch (Throwable $exception) {
+                    $message = $exception->getMessage();
+                    // Historical rows with incomplete immutable evidence are
+                    // intentionally fail-closed. They are audit debt, not a
+                    // command/runtime failure; leave the existing card
+                    // untouched and report them as skipped. Unexpected
+                    // storage/code errors remain failures so automation can
+                    // still alert on a real regression.
+                    if (str_starts_with($message, 'LEARNING_EVIDENCE_INCOMPLETE:')) {
+                        $skipped++;
+                        Log::notice('Agent knowledge card backfill skipped: immutable evidence is incomplete.', [
+                            'lab_agent_id' => $agent->id,
+                            'model_version_id' => $agent->model_version_id,
+                            'message' => $message,
+                        ]);
+                        continue;
+                    }
                     $failed++;
                     Log::warning('Agent knowledge card backfill failed; continuing with the next agent.', [
                         'lab_agent_id' => $agent->id,

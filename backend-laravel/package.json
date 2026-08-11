@@ -6,6 +6,7 @@
         "build": "vite build",
         "dev": "vite",
         "process:start": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-clean-env.mjs start ecosystem.config.cjs",
+        "process:reload": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-sync-runtime.mjs",
         "process:stop": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-clean-env.mjs stop ecosystem.config.cjs",
         "process:status": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-clean-env.mjs status",
         "process:kill": "\"..\\.runtime\\node-v22.23.1-win-x64\\node.exe\" scripts\\pm2-clean-env.mjs kill",

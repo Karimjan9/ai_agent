@@ -402,7 +402,7 @@ class EliteAgentPortfolioGateService
     private function activePassport(EliteAgentPortfolio $portfolio): bool
     {
         if (data_get($portfolio->evidence, 'gate.status') !== 'passed'
-            || $portfolio->members->count() < 2
+            || $portfolio->members->count() < 3
             || (int) $portfolio->member_count !== $portfolio->members->count()) {
             return false;
         }
@@ -858,7 +858,7 @@ class EliteAgentPortfolioGateService
         $selected = collect();
         $selectedRegimes = [];
         $pool = $eligible->values();
-        $memberLimit = max(2, (int) config('services.lab_selection.parent_max_runtime', 8));
+        $memberLimit = max(3, (int) config('services.lab_selection.parent_max_runtime', 8));
         while ($selected->count() < $memberLimit && $pool->isNotEmpty()) {
             // The first member is the strongest sealed niche. Every later
             // member must earn its place twice: positive standalone evidence
