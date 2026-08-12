@@ -166,7 +166,7 @@ class RunMtfStrategyResearch extends Command
             $contract = $research->contract($experiment, $symbol, (int) $candidate->id, $dataHash, $parameterHash, $executionHash, $frozenControl?->id);
             if ($this->option('validate-forward')) {
                 $contract['targeted_validation'] = [
-                    'protocol' => 'xauusd_mtf_targeted_validation_v2',
+                    'protocol' => 'xauusd_mtf_targeted_validation_v1',
                     'cost_profiles' => ['cost_1_5x', 'cost_2x'],
                     'exit_profiles' => ['wider_stop_tighter_target', 'tighter_stop_wider_target'],
                     'chronological_holdout' => true,
@@ -184,7 +184,7 @@ class RunMtfStrategyResearch extends Command
                 'frozen_control_run_id' => $frozenControl?->id,
                 'mtf_contract_hash' => data_get($pilot->requestPayload($symbol, 'M15', $strategy), 'contract_hash'),
                 'targeted_validation_protocol' => $this->option('validate-forward')
-                    ? 'xauusd_mtf_targeted_validation_v2'
+                    ? 'xauusd_mtf_targeted_validation_v1'
                     : null,
             ]);
 
@@ -361,7 +361,7 @@ class RunMtfStrategyResearch extends Command
         $last = $forwardM15[array_key_last($forwardM15)] ?? [];
 
         return [
-            'protocol' => 'xauusd_mtf_targeted_validation_v2',
+            'protocol' => 'xauusd_mtf_targeted_validation_v1',
             'cost_profiles' => [
                 ['name' => 'cost_1_5x', 'multiplier' => 1.5],
                 ['name' => 'cost_2x', 'multiplier' => 2.0],
