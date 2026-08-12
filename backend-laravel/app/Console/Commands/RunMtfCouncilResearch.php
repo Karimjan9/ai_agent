@@ -392,7 +392,9 @@ class RunMtfCouncilResearch extends Command
             'strategy' => 'portfolio_v1',
             'base_strategy' => 'portfolio',
             'version' => 'xauusd-mtf-council-v1',
-            'parameters' => [],
+            // Pydantic distinguishes an empty JSON object from an empty
+            // array; portfolio-level policy has no scalar genes here.
+            'parameters' => (object) [],
             'portfolio_members' => $specs,
             'initial_balance' => 10000,
             'risk_per_trade' => 1,
@@ -409,7 +411,11 @@ class RunMtfCouncilResearch extends Command
                 'm15_candles' => $m15,
                 'lightweight' => true,
             ]);
-        return $response->failed() ? null : (array) $response->json();
+        if ($response->failed()) {
+            $this->error('AI council response '.$response->status().': '.substr((string) $response->body(), 0, 1500));
+            return null;
+        }
+        return (array) $response->json();
     }
 
     /** @return array<string, mixed> */
