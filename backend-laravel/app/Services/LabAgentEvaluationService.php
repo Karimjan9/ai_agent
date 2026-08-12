@@ -226,6 +226,12 @@ class LabAgentEvaluationService
                 ],
                 'execution' => $this->executionAssumptions($agent->symbol),
                 'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe),
+                'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
+                    $agent->symbol,
+                    $agent->timeframe,
+                    $model->strategy,
+                    $currentRegimeHash ?: null,
+                ),
                 'emit_decision_trace' => true,
             ];
             // A council seat is not only a label on the model version.  Its
@@ -456,6 +462,12 @@ class LabAgentEvaluationService
             // incorrectly promoted into the scarce full-validation cohort.
             'execution' => $this->executionAssumptions($agent->symbol),
             'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe),
+            'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
+                $agent->symbol,
+                $agent->timeframe,
+                $model->strategy,
+                $regimeSnapshot['sha256'] ?? null,
+            ),
             'policy_context' => [
                 'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($agent->symbol, $agent->timeframe),
                 'repair_contract' => [

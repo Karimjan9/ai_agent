@@ -125,6 +125,9 @@ class SimpleBacktestRequest(BaseModel):
     # portfolio_members; this map is an audit contract and never authorizes
     # genetic parent IDs by itself.
     runtime_ensemble_policy: dict[str, Any] = Field(default_factory=dict)
+    # Canonical XAUUSD multi-timeframe routing contract. H1 remains a closed
+    # regime context and M15 remains the independent entry population.
+    mtf_pilot: dict[str, Any] = Field(default_factory=dict)
     # Full candle-level observability is opt-in so ordinary paper/status calls
     # do not pay for a large trace. Laboratory runs set this true and persist
     # the returned immutable trace in the Laravel evidence plane.

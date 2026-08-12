@@ -171,7 +171,7 @@ def apply_session_strategy(df: pd.DataFrame, parameters: dict | None = None) -> 
     out = df.copy()
     start, end, lookback = int(p.get("session_start", 7)), int(p.get("session_end", 16)), int(p.get("lookback", 20))
     high, low = out.high.rolling(lookback).max().shift(), out.low.rolling(lookback).min().shift()
-    active = pd.to_datetime(out.time).dt.hour.between(start, end - 1)
+    active = pd.to_datetime(out.time, utc=True, errors="coerce").dt.hour.between(start, end - 1)
     out["signal"] = "WAIT"
     out.loc[active & (out.close > high), "signal"] = "BUY"
     out.loc[active & (out.close < low), "signal"] = "SELL"
@@ -185,7 +185,7 @@ def apply_session_mean_reversion_strategy(df: pd.DataFrame, parameters: dict | N
     """Session-only range re-entry; no signal is emitted outside the session."""
     p = parameters or {}
     start, end, lookback = int(p.get("session_start", 7)), int(p.get("session_end", 16)), int(p.get("lookback", 20))
-    active = pd.to_datetime(df.time).dt.hour.between(start, end - 1)
+    active = pd.to_datetime(df.time, utc=True, errors="coerce").dt.hour.between(start, end - 1)
     mean = df.close.rolling(lookback).mean()
     std = df.close.rolling(lookback).std().replace(0, pd.NA)
     lower, upper = mean - 2.0 * std, mean + 2.0 * std
@@ -301,7 +301,7 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
     if bool(p.get("high_volatility_wait", True)):
         active &= volatility != "high_volatility"
     if session_enabled:
-        hours = pd.to_datetime(out["time"], errors="coerce").dt.hour
+        hours = pd.to_datetime(out["time"], errors="coerce", utc=True).dt.hour
         if session_start < session_end:
             active &= hours.ge(session_start) & hours.lt(session_end)
         else:
@@ -460,6 +460,23 @@ def apply_differential_router_strategy(df: pd.DataFrame, parameters: dict | None
     out.loc[target, "signal"] = child.loc[target, "signal"]
     out.loc[target, "signal_confidence"] = child.loc[target, "signal_confidence"]
     out.loc[target, "selected_specialist"] = f"{target_regime}_child"
+
+    # Temporal hypotheses may own only the declared regime lane. Applying a
+    # session filter to the whole parent would invalidate the paired
+    # differential contract by changing non-target signals as well.
+    if bool(p.get("differential_target_session_filter_enabled", False)):
+        start = int(p.get("differential_target_session_start", 7))
+        end = int(p.get("differential_target_session_end", 16))
+        hours = pd.to_datetime(out["time"], utc=True, errors="coerce").dt.hour
+        in_session = (
+            (hours.ge(start) & hours.lt(end))
+            if start < end
+            else (hours.ge(start) | hours.lt(end))
+        )
+        target_outside_session = target & ~in_session.fillna(False)
+        out.loc[target_outside_session, "signal"] = "WAIT"
+        out.loc[target_outside_session, "signal_confidence"] = 0.0
+
     out["differential_target"] = target
     out["differential_target_regime"] = target_regime
     return out

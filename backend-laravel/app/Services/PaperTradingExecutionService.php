@@ -30,6 +30,8 @@ class PaperTradingExecutionService
         private PaperExecutionStateMachineService $executionState,
         private StrategyParameterSchemaService $schemas,
         private RuntimeEnsemblePolicyService $runtimeEnsembles,
+        private MultiTimeframePilotService $mtfPilot,
+        private PaperMtfLedgerService $mtfLedger,
     ) {}
 
     public function run(): array
@@ -125,7 +127,7 @@ class PaperTradingExecutionService
             return 0;
         }
 
-        $signal = $response->json();
+        $signal = $this->mtfPilot->enforcePaperResponse($candidate, (array) $response->json());
         $rawConfidence = max(0, min(1, (float) ($signal['confidence'] ?? 0)));
         $calibrated = $this->calibration->calibrate($candidate, (string) ($signal['market_regime'] ?? 'unknown'), $rawConfidence);
         $news = $this->calendar->veto($candidate->symbol);
@@ -200,6 +202,9 @@ class PaperTradingExecutionService
             'payload' => $signal,
             'payload_hash' => hash('sha256', json_encode($this->canonicalize($signal), JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
         ]);
+        $signal['payload_hash'] = $paperSignal->payload_hash;
+        $this->mtfLedger->recordOfficial($paperSignal, $signal);
+        $this->mtfLedger->recordShadow($candidate, $paperSignal, $signal);
         $this->executionState->record($candidate, 'signal_created', $paperSignal, null, ['provider' => 'canonical_market_data',
             'requested_price' => $paperSignal->price, 'payload' => ['candle_time' => $paperSignal->candle_time?->toIso8601String()]]);
 
@@ -266,6 +271,21 @@ class PaperTradingExecutionService
         if (($contract['decision'] ?? 'WAIT') !== $signal->decision) {
             $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_META_AGENT', ['paper_signal_id' => $signal->id, 'meta_reason' => data_get($contract, 'meta_agent.reason')]);
             return 0;
+        }
+        $passport = $signal->passport;
+        if ($passport && $this->mtfPilot->isPilotCandidate($candidate)) {
+            $contractContextHash = (string) data_get($contract, 'mtf_pilot.context.h1_context_hash', '');
+            if ($contractContextHash === '' || ! hash_equals((string) $passport->h1_context_hash, $contractContextHash)) {
+                $this->executionState->record($candidate, 'provider_disconnected', $signal, null, [
+                    'provider' => 'ai_execution_contract', 'reason' => 'MTF_CONTEXT_HASH_MISMATCH',
+                    'expected_h1_context_hash' => $passport->h1_context_hash,
+                    'received_h1_context_hash' => $contractContextHash,
+                ]);
+                $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_EXECUTION_CONTRACT', [
+                    'paper_signal_id' => $signal->id, 'reason' => 'MTF_CONTEXT_HASH_MISMATCH',
+                ]);
+                return 0;
+            }
         }
         $entry = (float) $contract['entry_price'];
         $executionSignal = array_merge($signal->payload, [
@@ -522,6 +542,11 @@ class PaperTradingExecutionService
             'initial_balance' => 10000, 'risk_per_trade' => 1,
             'execution' => $executionContract['parameters'],
             'execution_contract' => $executionContract,
+            'mtf_pilot' => $this->mtfPilot->requestPayload(
+                $candidate->symbol,
+                $candidate->timeframe,
+                $model->strategy,
+            ),
         ];
     }
 }

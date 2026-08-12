@@ -9,6 +9,7 @@ use App\Models\ModelVersion;
 use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabPopulationService;
+use App\Services\LearningProtocolSafetyService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use Illuminate\Console\Command;
@@ -27,7 +28,13 @@ class DispatchCooldownCausalRescue extends Command
         StrategyParameterSchemaService $schemas,
         LabDatasetExportService $datasets,
         StrategySemanticGroupService $semanticGroups,
+        LearningProtocolSafetyService $protocolSafety,
     ): int {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: cooldown causal rescue deferred.');
+
+            return self::SUCCESS;
+        }
         $source = LabAgent::query()->with(['modelVersion', 'generation.laboratory'])->findOrFail((int) $this->argument('sourceAgent'));
         $model = $source->modelVersion;
         $lab = $source->generation?->laboratory;
@@ -36,6 +43,11 @@ class DispatchCooldownCausalRescue extends Command
             $this->error('Source must be a screened laboratory agent with loss_cooldown_candles = 4.');
 
             return self::FAILURE;
+        }
+        if ((string) $lab->lifecycle_mode !== 'lighthouse') {
+            $this->info('Source laboratory shadow rejimida; cooldown rescue dispatch qilinmadi.');
+
+            return self::SUCCESS;
         }
         $sourceGroup = $semanticGroups->fromModel($model, $source->strategy_family);
         $sourceNiche = [

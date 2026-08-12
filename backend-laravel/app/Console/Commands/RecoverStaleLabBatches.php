@@ -6,21 +6,52 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Services\LabQueueJobInspector;
+use App\Services\OperatorApprovalService;
+use RuntimeException;
 
 class RecoverStaleLabBatches extends Command
 {
     protected $signature = 'trading:recover-stale-lab-batches
         {--older-than=180 : Minimum age in minutes before a batch can be considered stale}
         {--limit=50 : Maximum number of stale batches to inspect}
-        {--dry-run : Report candidates without cancelling them}';
+        {--dry-run : Report candidates without cancelling them}
+        {--apply : Cancel proven stale batches after queue drain and operator approval}
+        {--approved-by=}
+        {--approval-reason=}';
 
     protected $description = 'Safely quarantine unfinished lab batches that have no queued job and no active replay';
 
-    public function handle(): int
+    public function handle(LabQueueJobInspector $queue, OperatorApprovalService $approvals): int
     {
         $olderThan = max(30, (int) $this->option('older-than'));
         $limit = min(200, max(1, (int) $this->option('limit')));
         $cutoff = now()->subMinutes($olderThan)->timestamp;
+        $apply = (bool) $this->option('apply');
+        $dryRun = ! $apply || (bool) $this->option('dry-run');
+
+        if ($apply) {
+            $backlog = $queue->labQueueBacklog();
+            if ($backlog['total'] > 0) {
+                $this->warn(sprintf(
+                    'Stale batch apply deferred: %d lab job(s) remain in %s.',
+                    $backlog['total'],
+                    implode(', ', array_keys($backlog['queues'])),
+                ));
+
+                return self::SUCCESS;
+            }
+            try {
+                $approvals->requireForApply('recover-stale-lab-batches', $this->option('approved-by'), $this->option('approval-reason'), [
+                    'older_than_minutes' => $olderThan,
+                    'limit' => $limit,
+                ]);
+            } catch (RuntimeException $exception) {
+                $this->error($exception->getMessage());
+
+                return self::FAILURE;
+            }
+        }
 
         // A popped database job is temporarily absent from `jobs` while its
         // worker is executing. Never cancel stale metadata while the single
@@ -61,7 +92,7 @@ class RecoverStaleLabBatches extends Command
                 'failed_jobs' => $batch->failed_jobs,
             ];
 
-            if ($this->option('dry-run')) {
+            if ($dryRun) {
                 $this->line('Would cancel stale batch '.$batch->id.' ('.$batch->name.').');
                 continue;
             }

@@ -3,10 +3,12 @@
 namespace App\Console\Commands;
 
 use App\Models\ModelMarketPerformance;
+use App\Models\AiLaboratory;
 use App\Services\CalendarAlignmentEvidenceService;
 use App\Services\EliteAgentPortfolioGateService;
 use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
+use App\Services\LearningProtocolSafetyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -18,8 +20,13 @@ class ValidateElitePortfolios extends Command
 
     protected $description = 'Replay complementary forward-valid specialists as one sealed portfolio';
 
-    public function handle(EliteAgentPortfolioGateService $portfolios, LabDatasetExportService $datasets, CalendarAlignmentEvidenceService $calendarAlignment): int
+    public function handle(EliteAgentPortfolioGateService $portfolios, LabDatasetExportService $datasets, CalendarAlignmentEvidenceService $calendarAlignment, LearningProtocolSafetyService $protocolSafety): int
     {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: elite portfolio replay deferred.');
+
+            return self::SUCCESS;
+        }
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
         $timeframe = strtoupper((string) $this->option('timeframe'));
 
@@ -34,6 +41,12 @@ class ValidateElitePortfolios extends Command
         }
 
         foreach ($symbols as $symbol) {
+            $lab = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->first();
+            if (! $lab || (string) $lab->lifecycle_mode !== 'lighthouse') {
+                $this->info("{$symbol} {$timeframe}: shadow lab; elite portfolio replay skipped.");
+
+                continue;
+            }
             $allCandidates = ModelMarketPerformance::with('modelVersion')
                 ->where('symbol', $symbol)->where('timeframe', $timeframe)
                 ->where('evidence_status', 'valid')

@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
+use App\Services\LearningProtocolSafetyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Bus;
@@ -17,9 +18,19 @@ class ReplayCooldownCausalCohort extends Command
 
     protected $description = 'Re-screen a frozen 4/2/3 cooldown cohort under a newer execution-state contract; never promotes a candidate.';
 
-    public function handle(): int
+    public function handle(LearningProtocolSafetyService $protocolSafety): int
     {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: cooldown causal replay deferred.');
+
+            return self::SUCCESS;
+        }
         $source = LabAgent::query()->with(['modelVersion', 'generation.laboratory'])->findOrFail((int) $this->argument('sourceAgent'));
+        if ((string) $source->generation?->laboratory?->lifecycle_mode !== 'lighthouse') {
+            $this->info('Source laboratory shadow rejimida; cooldown causal replay qilinmadi.');
+
+            return self::SUCCESS;
+        }
         $cohort = LabGeneration::query()->with(['agents.modelVersion', 'laboratory'])
             ->where('generation', (int) $this->argument('generation'))
             ->where('ai_laboratory_id', $source->generation->ai_laboratory_id)->firstOrFail();

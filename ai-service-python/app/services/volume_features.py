@@ -24,6 +24,11 @@ VOLUME_PROTOCOL = "relative_volume_session_v2"
 SOURCE_CONTRACT = "dukascopy_jetta_bid_tick_volume_millions_v1"
 
 
+def _utc_timestamp(value: object) -> pd.Timestamp:
+    timestamp = pd.Timestamp(value)
+    return timestamp.tz_localize("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
+
+
 def _normalization_context(context: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return the causal calendar contract for the requested timeframe.
 
@@ -423,7 +428,7 @@ def volume_shadow_report(
     trade_rows = trades or []
     if trade_rows and "time" in out.columns:
         keyed = {
-            pd.Timestamp(value).isoformat(): (ratio, decile_by_index.get(index))
+            _utc_timestamp(value).isoformat(): (ratio, decile_by_index.get(index))
             for index, (value, ratio) in zip(out.index, zip(out["time"], out["volume_ratio"]))
             if pd.notna(value)
         }
@@ -431,7 +436,7 @@ def volume_shadow_report(
         for trade in trade_rows:
             signal_time = str(trade.get("signal_time") or "")
             try:
-                normalized_signal_time = pd.Timestamp(signal_time).isoformat()
+                normalized_signal_time = _utc_timestamp(signal_time).isoformat()
             except (TypeError, ValueError):
                 normalized_signal_time = signal_time
             keyed_value = keyed.get(normalized_signal_time)

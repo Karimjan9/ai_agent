@@ -8,6 +8,7 @@ use App\Models\LabAgent;
 use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
 use App\Services\LabDatasetExportService;
+use App\Services\LearningProtocolSafetyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 
@@ -18,14 +19,24 @@ class DispatchCausalProbeControls extends Command
 
     protected $description = 'Dispatch bounded same-family controls for completed causal probes';
 
-    public function handle(LabDatasetExportService $datasets, CandidateHandoffService $handoffs, CandidateGateDecisionService $decisions): int
+    public function handle(LabDatasetExportService $datasets, CandidateHandoffService $handoffs, CandidateGateDecisionService $decisions, LearningProtocolSafetyService $protocolSafety): int
     {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: causal probe control replay deferred.');
+
+            return self::SUCCESS;
+        }
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
         $jobs = [];
         foreach ($symbols as $symbol) {
             $lab = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', 'H1')->first();
             $generation = $lab?->generations()->whereIn('status', ['completed', 'full_validation'])->latest('generation')->first();
             if (! $generation) {
+                continue;
+            }
+            if ((string) $lab->lifecycle_mode !== 'lighthouse') {
+                $this->info("{$symbol} H1: shadow lab; causal control replay skipped.");
+
                 continue;
             }
             $probes = LabAgent::query()->with(['modelVersion', 'mutationMemories'])

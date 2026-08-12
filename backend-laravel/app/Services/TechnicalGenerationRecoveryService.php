@@ -22,6 +22,7 @@ class TechnicalGenerationRecoveryService
         private LabImmutableEvidenceService $evidence,
         private LabAgentPreflightService $preflight,
         private LabReplayRecoveryService $replayRecovery,
+        private LabQueueJobInspector $queueJobs,
     ) {}
 
     /** @return array{ready: bool, idle: bool, reason: string} */
@@ -82,7 +83,7 @@ class TechnicalGenerationRecoveryService
                 [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
                 (array) config('services.lab_queue.legacy_screening_queues', []),
             )));
-            $queued = DB::table('jobs')->whereIn('queue', $queues)->where('payload', 'like', '%labAgentId%'.$agent->id.'%')->exists();
+            $queued = $this->queueJobs->hasAgentJob((int) $agent->id, $queues);
             $metadata = (array) ($agent->modelVersion?->metadata ?? []);
             $attempts = (int) data_get($metadata, 'technical_recovery.attempts', 0);
             $this->evidence->recordLifecycle($agent, 'stale_screening_detected', [

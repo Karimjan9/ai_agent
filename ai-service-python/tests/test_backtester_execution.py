@@ -110,7 +110,7 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         rows = 205
         prices = [100.0 + ((index % 10) * 0.01) for index in range(rows)]
         frame = pd.DataFrame({
-            "time": pd.date_range("2026-01-05 00:00:00", periods=rows, freq="h"),
+            "time": pd.date_range("2026-01-05 00:00:00", periods=rows, freq="h", tz="UTC"),
             "open": prices,
             "high": [price + 0.4 for price in prices],
             "low": [price - 0.4 for price in prices],

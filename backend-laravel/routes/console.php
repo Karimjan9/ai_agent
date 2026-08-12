@@ -125,6 +125,17 @@ $scheduleArtisan('trading:dispatch-full-validation')
 $scheduleArtisan('trading:dispatch-full-validation', ['--timeframe' => 'M15'])
     ->everyFiveMinutes()
     ->withoutOverlapping();
+$scheduleArtisan('trading:reconcile-lab-funnel')
+    // Scheduled ticks are dry-run only. A state-changing reconciliation
+    // requires an explicit operator-approved CLI invocation after the queue
+    // is empty.
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:study-lab-failures', ['--persist' => true])
+    // Failure grouping is a diagnostic learning step. It updates the
+    // auditable study plane but never creates agents or relaxes a gate.
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
 $scheduleArtisan('trading:dispatch-portfolio-member-replay')
     // This is a research-only second lane for strong niche members whose
     // broad standalone calendar gate failed. It never emits paper signals.
@@ -144,14 +155,35 @@ $scheduleArtisan('trading:process-screening-learning-outbox')
 $scheduleArtisan('trading:recover-lab-evaluation-errors')
     ->everyFiveMinutes()
     ->withoutOverlapping();
-$scheduleArtisan('trading:recover-stale-lab-batches', ['--older-than' => 180, '--limit' => 50])
+$scheduleArtisan('trading:recover-incomplete-lab-evidence', ['--limit' => 6, '--scheduled-sweep' => true])
+    // Scheduled ticks are dry-run only. Same-generation replay recovery is
+    // dispatched only after an operator approval and an empty lab queue.
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+// Only the XAUUSD H1 lighthouse may be proposed by the rescue scheduler.
+// The tick is dry-run; creation still requires explicit operator approval.
+$scheduleArtisan('trading:dispatch-controlled-targeted-rescue', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:quarantine-stale-targeted-generations', ['--dry-run' => true])
+    // During the pause, retire only incomplete v1 handoffs that have no
+    // active agent or queued job. Completed cohorts and the controlled v2
+    // rescue contract are never touched by this cleanup.
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:recover-stale-lab-batches', ['--older-than' => 180, '--limit' => 50, '--dry-run' => true])
+    // Scheduled recovery is a dry-run. State-changing cancellation requires
+    // an explicit --apply and operator approval after the queue has drained.
     ->everyFiveMinutes()
     ->withoutOverlapping();
 // A worker/process restart can leave a reserved job and the shared overlap
 // lock behind. Run the explicit fail-safe path every minute; it only acts
 // after the AI probe is idle and the reservation has exceeded the stale
 // threshold, so a healthy long replay is never duplicated.
-$scheduleArtisan('trading:recover-lab-replay-mutex', ['--force-stale' => true, '--stale-after' => 120])
+$scheduleArtisan('trading:recover-lab-replay-mutex', ['--force-stale' => true, '--stale-after' => 120, '--dry-run' => true])
     ->everyMinute()
     ->withoutOverlapping();
 // Promote only incomplete evidence recoveries. This is an ordering change on
@@ -164,13 +196,46 @@ $scheduleArtisan('trading:promote-lab-frontier')
 $scheduleArtisan('trading:paper-monitor')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+// This is the primary outcome monitor: it records the exact first missing
+// milestone from reproducible candidate through reality feedback. It never
+// creates a generation or promotes a paper candidate.
+$scheduleArtisan('trading:monitor-lighthouse-loop', ['--symbol' => 'XAUUSD', '--timeframe' => 'H1'])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+// XAUUSD MTF shadow outcomes are reconciled under the same next-M15 execution
+// contract, but they never write official paper orders or promotion evidence.
+$scheduleArtisan('trading:reconcile-mtf-shadow', ['--symbol' => 'XAUUSD', '--limit' => 50])
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
+// The monitor records closed-H1 alignment, M15 freshness, Risk Sentinel
+// behavior, passport integrity, paper lifecycle and ablation-control health.
+// It is read-only with respect to strategy and gates.
+$scheduleArtisan('trading:monitor-mtf-pilot', ['--symbol' => 'XAUUSD'])
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
+// Keep the best rejected near-miss candidates visible in the shadow twin;
+// idempotency prevents duplicate observations for the same candle/scenario.
+$scheduleArtisan('trading:mtf-shadow-candidates', ['--symbol' => 'XAUUSD', '--limit' => 3])
+    ->hourlyAt(50)
+    ->withoutOverlapping();
+// Four-lane ablation is research-only and costed with the sealed execution
+// contract. Its immutable result is monitored, never used to auto-promote.
+$scheduleArtisan('trading:mtf-ablation', ['--symbol' => 'XAUUSD'])
+    ->dailyAt('02:20')
+    ->withoutOverlapping();
+// Strategy hypotheses are intentionally operator-triggered because each
+// hypothesis is an expensive replay. The report itself is cheap and can run
+// unattended without changing a strategy, gate, or paper state.
+$scheduleArtisan('trading:mtf-research-report', ['--symbol' => 'XAUUSD', '--lookback-hours' => 720])
+    ->dailyAt('03:10')
+    ->withoutOverlapping();
 $scheduleArtisan('trading:validate-elite-portfolios')
     // Individual forward validation remains the first gate. This replay is
     // idle until at least two strict members exist, then certifies the
     // combined routing interaction on the same canonical execution contract.
     ->hourlyAt(25)
     ->withoutOverlapping();
-$scheduleArtisan('trading:watch-lab-lifecycle', ['--repair' => true])
+$scheduleArtisan('trading:watch-lab-lifecycle')
     ->everyFiveMinutes()
     ->withoutOverlapping();
 // The watchdog repairs only bounded abandoned replays.  This broader audit
@@ -195,12 +260,12 @@ $scheduleArtisan('trading:sync-official-us-calendar')
     // alignment auditable without turning a missing provider into a pass.
     ->dailyAt('00:15')
     ->withoutOverlapping();
-$scheduleArtisan('trading:sync-economic-calendar --provider=alpha_vantage_news')
+$scheduleArtisan('trading:sync-economic-calendar', ['--provider' => 'alpha_vantage_news'])
     // Alpha Vantage's free tier is limited to about 25 requests/day: four
     // calls/day keeps a large reserve for diagnostics and manual checks.
     ->everySixHours()
     ->withoutOverlapping();
-$scheduleArtisan('trading:sync-economic-calendar --provider=currents_api_news')
+$scheduleArtisan('trading:sync-economic-calendar', ['--provider' => 'currents_api_news'])
     // CurrentsAPI has the larger daily allowance, so it can refresh every
     // hour and provide a current headline-risk veto.
     ->hourlyAt(8)

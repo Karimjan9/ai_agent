@@ -21,6 +21,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Queue\SerializesModels;
 use Throwable;
 
@@ -432,6 +433,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     private function markEvaluationError(LabAgent $agent, Throwable $e, ?LabEvaluationRun $run = null, ?LabImmutableEvidenceService $evidence = null): void
     {
         $evidence ??= app(LabImmutableEvidenceService::class);
+        $reasonCode = $this->technicalFailureReason($e);
         // The old catch path persisted only the message, which made a PHP
         // ErrorException such as an undefined closure variable impossible to
         // locate from the immutable run. Keep the operational trace visible;
@@ -439,11 +441,13 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         report($e);
         if ($run) {
             $evidence->finishRun($run, 'technical_error', null, [], [
-                'reason_code' => 'EVALUATION_ERROR', 'mode' => $this->mode,
+                'reason_code' => $reasonCode, 'mode' => $this->mode,
+                'failure_class' => 'technical_queue_failure',
+                'strategy_verdict' => 'withheld',
                 'error_file' => $e->getFile(), 'error_line' => $e->getLine(),
             ], $e);
         }
-        $reason = ucfirst($this->mode).' queue evaluation error; strategy verdict withheld: '.substr($e->getMessage(), 0, 500);
+        $reason = ucfirst($this->mode).' queue technical error ['.$reasonCode.']; strategy verdict withheld: '.substr($e->getMessage(), 0, 500);
         $agent->update(['lifecycle_status' => 'evaluation_error', 'decision_reason' => $reason]);
         if ($this->mode === 'screen') {
             $generation = $agent->generation()->with('agents.modelVersion')->first();
@@ -488,16 +492,40 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                     ['recovery_attempts' => $recoveryAttempts, 'promotion_evidence' => false]
                 );
                 $evidence->recordLifecycle($agent, 'technical_quarantine', [
-                    'reason_code' => 'EVALUATOR_RECOVERY_EXHAUSTED', 'quality_verdict' => 'withheld',
+                    'reason_code' => 'EVALUATOR_RECOVERY_EXHAUSTED', 'failure_reason' => $reasonCode,
+                    'quality_verdict' => 'withheld',
                     'recovery_attempts' => $recoveryAttempts,
                 ], 'screening', $run?->run_id, $run?->attempt, self::class);
                 app(LabGenerationReportService::class)->record($generation->fresh(), 'screening_technical_quarantine');
             }
         }
         if ($this->mode === 'full') {
-            app(CandidateHandoffService::class)->record($agent->generation, $agent, 'completed', 'failed', 'QUEUE_JOB_FAILED', ['attempt' => $this->attempts(), 'failure_reason' => $e->getMessage(), 'next_action' => 'retry_after_evaluator_health_check']);
+            app(CandidateHandoffService::class)->record($agent->generation, $agent, 'completed', 'failed', $reasonCode, [
+                'attempt' => $this->attempts(),
+                'failure_reason' => $e->getMessage(),
+                'failure_class' => 'technical_queue_failure',
+                'strategy_verdict' => 'withheld',
+                'next_action' => 'retry_after_evaluator_health_check',
+            ]);
             app(LabGenerationReportService::class)->record($agent->generation()->with('agents')->first(), 'full_technical_error');
         }
+    }
+
+    private function technicalFailureReason(Throwable $error): string
+    {
+        if ($error instanceof MaxAttemptsExceededException) {
+            return 'MAX_ATTEMPTS_EXCEEDED';
+        }
+
+        if ($this->isReplayLaneContention($error)) {
+            return 'REPLAY_LANE_CONTENTION';
+        }
+
+        if ($error instanceof \Illuminate\Http\Client\RequestException) {
+            return 'EVALUATOR_TRANSPORT_ERROR';
+        }
+
+        return 'EVALUATION_ERROR';
     }
 
     private function isReplayLaneContention(Throwable $error): bool

@@ -8,7 +8,7 @@ label intervals.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from itertools import combinations
 import math
 import random
@@ -370,11 +370,15 @@ def _purged_cscv_metadata_error(candidate_count: int, checkpoint_count: int, rea
 
 
 def _interval_number(value: object) -> float | None:
-    if isinstance(value, (datetime, date)):
-        return value.timestamp() if isinstance(value, datetime) else datetime(value.year, value.month, value.day).timestamp()
+    if isinstance(value, datetime):
+        normalized = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        return normalized.timestamp()
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day, tzinfo=timezone.utc).timestamp()
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
             return parsed.timestamp()
         except ValueError:
             try:

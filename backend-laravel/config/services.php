@@ -53,6 +53,10 @@ return [
         // priority list of three queues starves later symbols whenever the
         // first queue stays non-empty.
         'screening_queue' => env('LAB_SCREENING_QUEUE', 'lab-screening'),
+        // Full validation is the single priority replay lane. Keep this
+        // explicit so monitors and recovery commands cannot silently drift
+        // to a symbol-specific queue.
+        'full_validation_queue' => env('LAB_FULL_VALIDATION_QUEUE', 'lab-full-validation'),
         // Evidence-recovery/frontier jobs are promoted into this queue while
         // they remain the only missing boundary for a generation. The queue
         // is still served by the single replay coordinator; priority changes
@@ -225,6 +229,31 @@ return [
         'units' => (float) env('PAPER_UNITS', 1),
     ],
 
+    // XAUUSD's official multi-timeframe pilot. H1 is a closed regime
+    // controller; M15 remains an independent entry population. This
+    // contract is copied into screening, replay and paper requests so the
+    // execution meaning cannot drift between stages.
+    'mtf_pilot' => [
+        'enabled' => (bool) env('MTF_PILOT_ENABLED', true),
+        'pilot_id' => env('MTF_PILOT_ID', 'xauusd_h1_m15_v1'),
+        'symbol' => env('MTF_PILOT_SYMBOL', 'XAUUSD'),
+        'regime_timeframe' => env('MTF_PILOT_REGIME_TIMEFRAME', 'H1'),
+        'entry_timeframe' => env('MTF_PILOT_ENTRY_TIMEFRAME', 'M15'),
+        'mode' => env('MTF_PILOT_MODE', 'h1_veto_m15_risk'),
+        'max_h1_staleness_seconds' => (int) env('MTF_PILOT_MAX_H1_STALENESS_SECONDS', 7200),
+        'range_risk_multiplier' => (float) env('MTF_PILOT_RANGE_RISK_MULTIPLIER', 0.75),
+        'high_volatility_risk_multiplier' => (float) env('MTF_PILOT_HIGH_VOLATILITY_RISK_MULTIPLIER', 0.65),
+        'normal_volatility_risk_multiplier' => (float) env('MTF_PILOT_NORMAL_VOLATILITY_RISK_MULTIPLIER', 1.0),
+        'low_volatility_risk_multiplier' => (float) env('MTF_PILOT_LOW_VOLATILITY_RISK_MULTIPLIER', 0.85),
+        'shadow_enabled' => (bool) env('MTF_PILOT_SHADOW_ENABLED', true),
+        'shadow_candidate_limit' => (int) env('MTF_PILOT_SHADOW_CANDIDATE_LIMIT', 3),
+        'monitor_lookback_hours' => (int) env('MTF_PILOT_MONITOR_LOOKBACK_HOURS', 24),
+        'monitor_max_m15_staleness_seconds' => (int) env('MTF_PILOT_MONITOR_MAX_M15_STALENESS_SECONDS', 1800),
+        'monitor_veto_warning_rate' => (float) env('MTF_PILOT_MONITOR_VETO_WARNING_RATE', 0.80),
+        'monitor_min_decisions_for_veto_warning' => (int) env('MTF_PILOT_MONITOR_MIN_DECISIONS_FOR_VETO_WARNING', 20),
+        'monitor_ablation_stale_hours' => (int) env('MTF_PILOT_MONITOR_ABLATION_STALE_HOURS', 36),
+    ],
+
     'paper_observation' => [
         'min_days' => (int) env('PAPER_OBSERVATION_MIN_DAYS', 90),
         'min_signals' => (int) env('PAPER_OBSERVATION_MIN_SIGNALS', 1000),
@@ -284,6 +313,10 @@ return [
       'max_screening_jobs' => (int) env('LAB_MAX_SCREENING_JOBS', 40),
       'screen_timeout_seconds' => (int) env('LAB_SCREEN_TIMEOUT_SECONDS', 900),
       'differential_screen_timeout_seconds' => (int) env('LAB_DIFFERENTIAL_SCREEN_TIMEOUT_SECONDS', 900),
+      // The Python screen can return before Laravel persists the immutable
+      // trace/ledger and gate projection. Stale reservation recovery must
+      // wait through this bounded post-processing window as well.
+      'screen_replay_post_processing_grace_seconds' => (int) env('LAB_SCREEN_REPLAY_POST_PROCESSING_GRACE_SECONDS', 300),
       // The Python child is bounded at 3600 seconds; leave a transport
       // margin so a completed evidence response is not cut off by Laravel.
       'full_replay_timeout_seconds' => (int) env('LAB_FULL_REPLAY_TIMEOUT_SECONDS', 3900),

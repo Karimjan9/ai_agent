@@ -22,7 +22,8 @@ class RecoverLabReplayMutex extends Command
 {
     protected $signature = 'trading:recover-lab-replay-mutex
         {--force-stale : Requeue only reservations proven stale after a worker restart; never deletes the job}
-        {--stale-after=120 : Minimum reservation age in seconds for the explicit stale recovery}';
+        {--stale-after=120 : Minimum reservation age in seconds for the explicit stale recovery}
+        {--dry-run : Report the proven stale owner without requeueing or deleting a lock}';
 
     protected $description = 'Recover an orphaned single-lane lab replay mutex safely';
 
@@ -42,6 +43,7 @@ class RecoverLabReplayMutex extends Command
         // reservation even when the lock row is absent. The normal operator
         // path remains a no-op when there is no mutex to recover.
         $forceStale = (bool) $this->option('force-stale');
+        $dryRun = (bool) $this->option('dry-run');
         if (! $lock && ! $forceStale) {
             return self::SUCCESS;
         }
@@ -75,9 +77,11 @@ class RecoverLabReplayMutex extends Command
             );
             $fullReplayTimeout = max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900));
             $postProcessingGrace = max(300, (int) config('services.lab_selection.full_replay_post_processing_grace_seconds', 900));
+            $screenReplayTimeout = max(60, (int) config('services.lab_selection.screen_timeout_seconds', 900));
+            $screenPostProcessingGrace = max(300, (int) config('services.lab_selection.screen_replay_post_processing_grace_seconds', 300));
             $minimumStaleAfter = $hasFullReplay
                 ? $fullReplayTimeout + $postProcessingGrace
-                : 120;
+                : $screenReplayTimeout + $screenPostProcessingGrace;
             $staleAfter = max($minimumStaleAfter, $requestedStaleAfter);
             $cutoff = now()->timestamp - $staleAfter;
             // Age alone cannot distinguish a long legitimate replay from a
@@ -111,9 +115,13 @@ class RecoverLabReplayMutex extends Command
                         return self::FAILURE;
                     }
 
-                    $deleted = DB::table('cache_locks')->where('key', $key)->delete();
-                    if ($deleted > 0) {
-                        $this->warn('Removed orphaned evaluator replay mutex; no reserved evaluator job was present.');
+                    if ($dryRun) {
+                        $this->line('Would remove orphaned evaluator replay mutex; no reserved evaluator job is present.');
+                    } else {
+                        $deleted = DB::table('cache_locks')->where('key', $key)->delete();
+                        if ($deleted > 0) {
+                            $this->warn('Removed orphaned evaluator replay mutex; no reserved evaluator job was present.');
+                        }
                     }
                 }
                 $this->line('No reserved evaluator job is present; nothing to recover.');
@@ -164,6 +172,12 @@ class RecoverLabReplayMutex extends Command
                 ->filter()
                 ->unique()
                 ->values();
+
+            if ($dryRun) {
+                $this->line('Would requeue '.$staleOwners->count().' stale evaluator reservation(s); recent contenders remain untouched.');
+
+                return self::SUCCESS;
+            }
 
             DB::transaction(function () use ($staleOwners, $key): void {
                 DB::table('jobs')->whereIn('id', $staleOwners->pluck('id')->all())->update([

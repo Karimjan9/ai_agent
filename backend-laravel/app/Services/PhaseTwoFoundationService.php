@@ -228,6 +228,18 @@ class PhaseTwoFoundationService
                 'status' => fn (): array => $this->signalFoundationStatus(),
             ],
             [
+                'key' => 'mtf_pilot:XAUUSD',
+                'label' => 'MTF Pilot XAUUSD H1/M15',
+                'stale_after' => 1200,
+                'status' => fn (): array => $this->mtfPilotStatus(),
+            ],
+            [
+                'key' => 'lighthouse_vertical_loop:XAUUSD:H1',
+                'label' => 'Lighthouse Vertical Loop XAUUSD H1',
+                'stale_after' => 900,
+                'status' => fn (): array => $this->lighthouseVerticalLoopStatus(),
+            ],
+            [
                 'key' => 'lab_pipeline',
                 'label' => 'Lab Pipeline',
                 'stale_after' => 5400,
@@ -310,6 +322,83 @@ class PhaseTwoFoundationService
             'message' => "{$label} age: {$age}s.",
             'last_ok_at' => $status === 'ok' ? now() : null,
             'metrics' => ['age_seconds' => $age, 'stale_after_seconds' => $staleAfterSeconds],
+        ];
+    }
+
+    private function mtfPilotStatus(): array
+    {
+        $key = 'mtf_pilot:XAUUSD';
+        $check = ServiceHealthCheck::query()->where('service_key', $key)->first();
+        if (! $check || ! $check->last_checked_at) {
+            return [
+                'status' => 'warning',
+                'score' => 40,
+                'message' => 'MTF pilot monitor has not produced a snapshot yet.',
+                'last_ok_at' => null,
+                'metrics' => ['monitor_snapshot' => false],
+            ];
+        }
+
+        $age = max(0, now()->timestamp - $check->last_checked_at->timestamp);
+        $staleAfter = 1200;
+        $status = (string) $check->status;
+        if ($age > $staleAfter) {
+            $status = $age > $staleAfter * 3 ? 'critical' : 'warning';
+        }
+        $score = $status === 'ok'
+            ? min(100, (float) $check->health_score)
+            : ($status === 'warning' ? min(70, (float) $check->health_score) : min(30, (float) $check->health_score));
+
+        return [
+            'status' => $status,
+            'score' => $score,
+            'message' => "MTF monitor status: {$status}; snapshot age {$age}s.",
+            'last_ok_at' => $check->last_ok_at,
+            'metrics' => [
+                'snapshot_age_seconds' => $age,
+                'monitor_status' => $check->status,
+                'monitor_health_score' => (float) $check->health_score,
+                'monitor_metrics' => $check->metrics ?? [],
+            ],
+        ];
+    }
+
+    private function lighthouseVerticalLoopStatus(): array
+    {
+        $key = 'lighthouse_vertical_loop:XAUUSD:H1';
+        $check = ServiceHealthCheck::query()->where('service_key', $key)->first();
+        if (! $check || ! $check->last_checked_at) {
+            return [
+                'status' => 'warning',
+                'score' => 35,
+                'message' => 'Lighthouse vertical-loop monitor has not produced a snapshot yet.',
+                'last_ok_at' => null,
+                'metrics' => ['monitor_snapshot' => false, 'promotion_evidence' => false],
+            ];
+        }
+
+        $age = max(0, now()->timestamp - $check->last_checked_at->timestamp);
+        $staleAfter = 900;
+        $status = (string) $check->status;
+        if ($age > $staleAfter) {
+            $status = $age > $staleAfter * 3 ? 'critical' : 'warning';
+        }
+        $score = $status === 'ok'
+            ? min(100, (float) $check->health_score)
+            : ($status === 'warning' ? min(70, (float) $check->health_score) : min(30, (float) $check->health_score));
+
+        return [
+            'status' => $status,
+            'score' => $score,
+            'message' => "Lighthouse vertical-loop status: {$status}; snapshot age {$age}s.",
+            'last_ok_at' => $check->last_ok_at,
+            'metrics' => [
+                'snapshot_age_seconds' => $age,
+                'monitor_status' => $check->status,
+                'monitor_health_score' => (float) $check->health_score,
+                'monitor_metrics' => $check->metrics ?? [],
+                'promotion_evidence' => false,
+            ],
         ];
     }
 

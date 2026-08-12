@@ -12,6 +12,7 @@ use App\Services\LabAgentEvaluationService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\ScreeningLearningOutboxService;
 use App\Services\CandidateHandoffService;
+use App\Services\LearningProtocolSafetyService;
 use Illuminate\Support\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,7 @@ class AiLearningLaboratoryTest extends TestCase
         $eur = $service->build('EURUSD', 'new_data', true);
 
         $this->assertCount(20, $xau->agents);
-        $this->assertCount(20, $eur->agents);
+        $this->assertNull($eur);
         // G98 is a bounded failure-eliminator population: all 20 slots are
         // one-gene robustness experiments, with four seats per layer. It no
         // longer spends promotion budget on random/PF-only explorers.
@@ -63,25 +64,23 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent) => $agent->lifecycle_status === 'draft'));
         $this->assertContains(data_get($xau->agents->first()->modelVersion->metadata, 'generation_target'), ['monthly_survival', 'regime_coverage', 'volatility_session_stability', 'exit_topology', 'portfolio_router']);
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent) => str_starts_with($agent->modelVersion->strategy, 'xauusd_')));
-        $this->assertTrue($eur->agents->every(fn (LabAgent $agent) => str_starts_with($agent->modelVersion->strategy, 'eurusd_')));
         $this->assertEqualsCanonicalizing(['breakout', 'differential_router', 'hybrid', 'regime_ensemble', 'trend', 'volatility'], $xau->agents->pluck('strategy_family')->unique()->all());
-        $this->assertEqualsCanonicalizing(['hybrid', 'mean_reversion', 'regime_ensemble', 'session', 'trend'], $eur->agents->pluck('strategy_family')->unique()->all());
     }
 
     public function test_generation_is_not_repeated_without_enough_new_data(): void
     {
         $service = app(LabPopulationService::class);
-        $this->assertNotNull($service->build('GBPUSD', 'new_data', false));
-        $this->assertNull($service->build('GBPUSD', 'new_data', false));
+        $this->assertNotNull($service->build('XAUUSD', 'new_data', false, 'H1'));
+        $this->assertNull($service->build('XAUUSD', 'new_data', false, 'H1'));
         $this->assertDatabaseCount('lab_generations', 1);
     }
 
     public function test_single_hour_drift_does_not_create_a_generation_storm(): void
     {
         $service = app(LabPopulationService::class);
-        $this->assertNotNull($service->build('GBPUSD', 'new_data', true));
+        $this->assertNotNull($service->build('XAUUSD', 'new_data', true, 'H1'));
 
-        $this->assertNull($service->build('GBPUSD', 'market_drift'));
+        $this->assertNull($service->build('XAUUSD', 'market_drift', false, 'H1'));
         $this->assertDatabaseCount('lab_generations', 1);
     }
 
@@ -1206,6 +1205,35 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertTrue($fullMiddleware->contains(fn ($middleware): bool => $middleware instanceof \App\Jobs\Middleware\PreferFullValidationQueue));
     }
 
+    public function test_fresh_role_complete_cohort_is_classified_as_frontier_priority(): void
+    {
+        $command = app(\App\Console\Commands\PromoteLabFrontier::class);
+        $method = new \ReflectionMethod($command, 'frontierReason');
+        $method->setAccessible(true);
+
+        $agent = new \App\Models\LabAgent;
+        $agent->id = 999999;
+        $agent->lifecycle_status = 'queued';
+        $agent->setRelation('generation', new \App\Models\LabGeneration([
+            'status' => 'screening',
+            'trigger_context' => ['role_complete_council' => true],
+        ]));
+        $agent->setRelation('modelVersion', new \App\Models\ModelVersion(['metadata' => [
+                'role_complete_council' => [
+                    'protocol' => 'role_complete_council_v1',
+                    'full_replay_required' => true,
+                ],
+            ]]));
+
+        $this->assertSame('ROLE_COMPLETE_COHORT_PRIORITY', $method->invoke($command, $agent));
+    }
+
+    public function test_frontier_promotion_is_dry_run_by_default(): void
+    {
+        $command = app(\App\Console\Commands\PromoteLabFrontier::class);
+        $this->assertFalse((bool) $command->getDefinition()->getOption('apply')->getDefault());
+    }
+
     public function test_targeted_failure_profile_plan_uses_four_distinct_repair_dimensions(): void
     {
         $lab = \App\Models\AiLaboratory::firstOrCreate(
@@ -1228,6 +1256,53 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertSame('targeted_failure_profile_v1', data_get($plan[0], 'niche.protocol'));
         $this->assertSame(19, data_get($plan[0], 'niche.source_generation_id'));
         $this->assertFalse((bool) data_get($plan[0], 'niche.promotion_evidence', false));
+    }
+
+    public function test_controlled_rescue_plan_is_five_by_four_and_pause_stays_fail_closed(): void
+    {
+        $lab = \App\Models\AiLaboratory::firstOrCreate(
+            ['symbol' => 'XAUUSD', 'timeframe' => 'H1'],
+            ['name' => 'XAUUSD Lab', 'strategy_families' => ['hybrid', 'volatility', 'regime_ensemble', 'differential_router'], 'is_active' => true],
+        );
+        $service = app(LabPopulationService::class);
+        $method = new \ReflectionMethod($service, 'fiveByFourTargetedFailurePlan');
+        $method->setAccessible(true);
+        $profile = [
+            'protocol' => LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL,
+            'rescue_protocol' => LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL,
+            'temporary' => true,
+            'promotion_evidence' => false,
+            'source_generation_id' => 19,
+            'source_generation' => 3,
+            'profile_hash' => 'controlled-rescue-profile',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'target_counts' => ['profit_factor' => 4, 'stress_cost' => 4, 'temporal_stability' => 4, 'regime_coverage' => 4],
+        ];
+
+        $plan = $method->invoke($service, $lab, $profile);
+
+        $this->assertCount(20, $plan);
+        $this->assertSame(
+            ['exit_topology', 'monthly_survival', 'portfolio_router', 'regime_coverage', 'volatility_session_stability'],
+            collect($plan)->pluck('research_group')->unique()->sort()->values()->all(),
+        );
+        $this->assertTrue(collect($plan)->groupBy('research_group')->every(fn ($rows): bool => $rows->count() === 4));
+        $this->assertTrue(collect($plan)->every(fn (array $seat): bool =>
+            data_get($seat, 'niche.protocol') === LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL
+            && data_get($seat, 'niche.rescue_protocol') === LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL
+            && data_get($seat, 'niche.non_target_parent_freeze') === true
+            && data_get($seat, 'niche.promotion_rule') === 'unchanged_screen_full_forward_paper_gates'
+        ));
+
+        $safety = app(LearningProtocolSafetyService::class);
+        $safety->pauseGenerationCreation('test controlled rescue pause');
+        $this->assertTrue($safety->generationCreationPaused());
+        $this->assertTrue($safety->controlledRescueAllowed('candidate_handoff', 20, [
+            ...$profile,
+            'group_plan' => LabPopulationService::TARGETED_RESCUE_GROUP_PLAN,
+        ]));
+        $this->assertNull($service->build('XAUUSD', 'new_data', true, 'H1'));
     }
 
     public function test_screen_retry_window_can_wait_behind_a_long_full_validation_lane(): void

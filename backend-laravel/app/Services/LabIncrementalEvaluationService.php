@@ -67,6 +67,14 @@ class LabIncrementalEvaluationService
                 'base_strategy' => $isPortfolio ? 'portfolio' : $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $performance->strategy_family),
                 'evaluation_mode' => 'incremental',
                 'candles' => $rows,
+                'regime_candles' => strtoupper((string) $performance->timeframe) === 'M15'
+                    ? $this->candles->candlesForBacktest($performance->symbol, 'H1', 2000)
+                    : [],
+                'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
+                    $performance->symbol,
+                    $performance->timeframe,
+                    $model->strategy,
+                ),
                 'parameters' => $isPortfolio ? (array) data_get($runtime, 'parameters', []) : ($model->parameters ?? []),
                 'portfolio_members' => $portfolioMembers,
                 'runtime_ensemble_policy' => (array) data_get($runtime, 'runtime_ensemble_policy', []),

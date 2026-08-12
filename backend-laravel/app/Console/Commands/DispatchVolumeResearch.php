@@ -10,6 +10,7 @@ use App\Models\VolumeShadowExperiment;
 use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabPopulationService;
+use App\Services\LearningProtocolSafetyService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use Illuminate\Console\Command;
@@ -37,12 +38,23 @@ class DispatchVolumeResearch extends Command
         LabDatasetExportService $datasets,
         StrategyParameterSchemaService $schemas,
         StrategySemanticGroupService $semanticGroups,
+        LearningProtocolSafetyService $protocolSafety,
     ): int {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: volume research dispatch deferred.');
+
+            return self::SUCCESS;
+        }
         $source = LabAgent::query()->with(['modelVersion', 'generation.laboratory'])->find((int) $this->argument('sourceAgent'));
         if (! $source || ! $source->modelVersion || ! $source->generation?->laboratory) {
             $this->error('Source agent/model/laboratory topilmadi.');
 
             return self::FAILURE;
+        }
+        if ((string) $source->generation->laboratory->lifecycle_mode !== 'lighthouse') {
+            $this->info('Source laboratory shadow rejimida; volume research dispatch qilinmadi.');
+
+            return self::SUCCESS;
         }
         if (! in_array($source->lifecycle_status, ['screened', 'challenger', 'stagnated', 'rejected'], true)) {
             $this->error('Source standalone screen/challenger candidate bo‘lishi kerak.');

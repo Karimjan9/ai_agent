@@ -6,7 +6,7 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-08-10
+updated: 2026-08-11
 ---
 
 # AI Learning Laboratory
@@ -14,6 +14,71 @@ updated: 2026-08-10
 ## Primary objective
 
 Prove that agents improve safely across generations before expanding the conceptual AI modules. Each market owns its models: a successful XAUUSD model never becomes an EURUSD or GBPUSD champion automatically. A market may promote either one forward-valid agent or a sealed complementary portfolio; a portfolio is not a shortcut around independent member passports and combined replay.
+
+## XAUUSD Multi-Timeframe Pilot
+
+XAUUSD is the only official multi-timeframe pilot. H1 and M15 are separate
+populations and separate genetic lineages:
+
+```text
+closed H1 candle
+  -> H1 regime + direction + volatility context
+  -> closed M15 candle
+  -> M15 entry/timing specialist
+  -> risk sentinel veto or WAIT
+  -> next M15 open execution
+```
+
+The canonical contract is `xauusd_h1_m15_mtf_v1`. H1 is never an M15 parent,
+and an open H1 candle is never available to an earlier M15 decision. Missing,
+stale, uncertain, transition, or direction-conflicting H1 context resolves to
+`WAIT`; range and high-volatility context may only reduce risk. The contract is
+present in screening, full replay, incremental health checks, paper signal,
+execution-contract and paper outcome requests, so a paper result cannot be
+stronger than its replay evidence.
+
+Every official XAUUSD M15 paper signal receives one immutable passport with
+`h1_context_hash`, `h1_closed_at`, `m15_decision_at`, `m15_strategy`,
+`data_hash`, `code_hash`, `parameter_hash`, `execution_hash`, risk/gate
+decisions and counterfactual metadata. The `paper_mtf_shadow_observations`
+ledger records executable M15-only and H1-veto-removed counterfactuals with
+`promotion_evidence=false`; the H1-only lane remains a context/ablation
+benchmark because it has no M15 entry topology. The ledger is idempotent and
+cannot promote a candidate.
+
+The controlled ablation command is research-only and writes an immutable run record:
+
+```powershell
+php artisan trading:mtf-ablation --candidate=<M15_PERFORMANCE_ID>
+```
+
+It compares H1-only, M15-only (frozen control), H1-regime+M15-entry and
+H1-veto+M15-risk under the same data, cost and next-candle execution contract.
+Each completed run is stored immutably in `mtf_ablation_runs` with its data
+and execution hashes. The monitor does not treat a control advantage as
+promotion evidence.
+The bounded strategy catalog is run manually with
+`trading:mtf-strategy-research --symbol=XAUUSD --limit=4`. It tests declared
+regime-ensemble, unknown-regime consensus, breakout/range weighting, and
+one-lane differential hypotheses under the same frozen candidate, data hash,
+and execution hash. The run is sequential and idempotent; technical failure
+is recorded as evidence recovery, never as strategy failure. The read-only
+`trading:mtf-research-report` compares each result with the M15-only control,
+compiles failure-to-mutation actions, and pauses a family in the report after
+three attempts without a gate improvement. It never changes a gate or paper
+state.
+For the top three rejected near-miss candidates, use
+`trading:mtf-shadow-candidates`; settle their non-promotional outcomes with
+`trading:reconcile-mtf-shadow`.
+
+The operational monitor is `trading:monitor-mtf-pilot`. It checks that the
+latest H1 and M15 candles are closed/fresh, every official passport has a
+causal H1 context, Risk Sentinel WAIT/veto behavior is not starving entries,
+shadow outcomes are being settled, paper lifecycle evidence is visible, and
+the four-lane ablation is not stale. Each run is an immutable
+`mtf_pilot_monitor_runs` snapshot and updates the `mtf_pilot:XAUUSD` service
+health row. Warning/critical transitions create system events and logs; no
+monitor action changes strategies, gates, or promotion state.
 
 | Laboratory | Families | Scope key |
 | --- | --- | --- |
@@ -149,6 +214,10 @@ Full validation submits the selected cohort from one generation in a single AI-s
 - After 24 new closed H1 candles or 96 new closed M15 candles, market drift, or three consecutive degraded checks: `trading:lab-generation` creates at most one pending generation per laboratory. H1 remains the baseline/regime lane; M15 has its own price/volume foundation and uses only the last closed H1 regime as context. Both paths wait for the previous generation to finish rather than overlapping populations.
 - Every five minutes: `trading:dispatch-lab` screens draft agents in the shared FIFO screening lane; `trading:dispatch-full-validation --timeframe=H1` and `--timeframe=M15` select only screened candidates for the sealed full replay/council gates.
 - Every five minutes: `trading:paper-monitor` opens/reconciles simulated or configured practice-broker paper orders.
+- Every fifteen minutes: `trading:reconcile-mtf-shadow` settles executable shadows, then `trading:monitor-mtf-pilot` records closed-H1 alignment, M15 freshness, veto/WAIT behavior, passport integrity, paper lifecycle, and ablation-control health.
+- Hourly: `trading:mtf-shadow-candidates --limit=3` refreshes the top rejected near-miss shadow twin; observations remain research-only.
+- Daily: `trading:mtf-ablation` runs the four controlled XAUUSD lanes with the sealed cost/next-candle contract; its immutable result is research-only.
+- Daily: `trading:mtf-research-report` summarizes the bounded MTF hypothesis history and evidence budget; expensive hypotheses remain operator-triggered.
 - Hourly: `trading:release-holdouts` releases a paper-passed finalist's untouched holdout exactly once.
 - Every five minutes: `trading:watch-lab-lifecycle` audits abandoned evaluator runs, missing forward ledgers, paper capture gaps, and invalid paper-order identities; repairs are bounded and never create quality evidence.
 - The same watchdog also audits active portfolio proxy/member contracts. Its repeated archive checks reuse a lean snapshot and bulk lookups; a drift finding is critical observability only, and routing stays fail-closed until the sealed portfolio replay is refreshed. Missing evidence tables are surfaced as a schema finding instead of allowing the scheduler to crash.
@@ -178,4 +247,8 @@ The Python AI service must also be available at `AI_SERVICE_URL` before a full e
 - Daily incremental health: `LabIncrementalEvaluationService.php`
 - Champion gates and mutation memory: `MarketChampionService.php`
 - Paper-order execution: `PaperTradingExecutionService.php`
+- MTF contract and fail-closed response guard: `MultiTimeframePilotService.php`
+- Immutable MTF passport/shadow ledger: `PaperMtfLedgerService.php`, `PaperSignalPassport.php`, `PaperMtfShadowObservation.php`
+- MTF monitoring, ablation and strategy research history: `MtfPilotMonitoringService.php`, `MtfPilotMonitorRun.php`, `MtfAblationRun.php`, `MtfStrategyResearchService.php`, `MtfStrategyResearchRun.php`, `MtfStrategyResearchReportService.php`
+- Python H1/M15 routing: `ai-service-python/app/services/multitimeframe.py`
 - UI: `resources/views/ai-laboratory/show.blade.php`

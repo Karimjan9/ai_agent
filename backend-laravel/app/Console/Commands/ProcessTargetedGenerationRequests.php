@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\CandidateHandoffEvent;
 use App\Services\CandidateHandoffService;
+use App\Services\LearningProtocolSafetyService;
 use App\Services\LabPopulationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -28,6 +29,17 @@ class ProcessTargetedGenerationRequests extends Command
         }
 
         try {
+            // A protocol freeze admits only the explicit controlled-rescue
+            // command. Do not let the five-minute scheduler create a normal
+            // targeted generation during the short interval between an
+            // operator resume and the safety monitor restoring the freeze.
+            // This keeps every v2 cohort tied to its auditable admission
+            // event and prevents another partial draft from being produced.
+            if (app(LearningProtocolSafetyService::class)->generationCreationPaused()) {
+                $this->info('Targeted generation builder deferred: learning protocol is paused; controlled rescue admission is required.');
+                return self::SUCCESS;
+            }
+
             return $this->buildTargetedGenerations($populations, $handoffs);
         } finally {
             optional($lock)->release();
@@ -37,7 +49,13 @@ class ProcessTargetedGenerationRequests extends Command
     private function buildTargetedGenerations(LabPopulationService $populations, CandidateHandoffService $handoffs): int
     {
         $requests = CandidateHandoffEvent::query()->with('generation.laboratory')
-            ->where('stage', 'waiting_for_targeted_generation')->where('status', 'waiting')->get();
+            ->where('stage', 'waiting_for_targeted_generation')->where('status', 'waiting')
+            // Several historical failure profiles can wait for the same lab
+            // while a newer data-edge generation is being screened. Consume
+            // the newest frontier first; otherwise an old G1/G2 profile can
+            // claim the next targeted budget before the current G3/G4 edge
+            // curriculum is even considered.
+            ->orderByDesc('recorded_at')->orderByDesc('id')->get();
         foreach ($requests as $request) {
             $source = $request->generation; $lab = $source?->laboratory;
             if (! $source || ! $lab) continue;
@@ -95,13 +113,13 @@ class ProcessTargetedGenerationRequests extends Command
                 [],
                 false,
                 true,
-                4,
+                20,
                 $targetProfile,
             );
             if ($created) {
                 $handoffs->record($source, null, 'targeted_generation_created', 'completed', null, ['target_generation_id' => $created->id, 'generation' => $created->generation,
                     'targeted_failure_profile' => $targetProfile,
-                    'rule' => 'Four one-gene failure targets are created from the immutable Gen3/forward failure profile; no old screened candidate was force-replayed.']);
+                    'rule' => 'Five four-seat one-gene rescue groups are created from the immutable failure profile; no old screened candidate was force-replayed.']);
                 $this->info("{$lab->symbol}: targeted G{$created->generation} created.");
             } else $this->warn("{$lab->symbol}: targeted generation remains waiting for market-data readiness.");
         }
@@ -143,7 +161,11 @@ class ProcessTargetedGenerationRequests extends Command
             ->values()->all();
 
         return [
-            'protocol' => 'targeted_failure_profile_v1',
+            'protocol' => LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL,
+            'rescue_protocol' => LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL,
+            'temporary' => true,
+            'population_size' => count(LabPopulationService::POPULATION_GROUPS) * LabPopulationService::POPULATION_GROUP_SEATS,
+            'group_plan' => LabPopulationService::TARGETED_RESCUE_GROUP_PLAN,
             'source_generation_id' => $source->id,
             'source_generation' => $source->generation,
             'profile_hash' => (string) data_get($request->payload, 'handoff_profile_hash', hash('sha256', json_encode($profile))),
@@ -151,7 +173,8 @@ class ProcessTargetedGenerationRequests extends Command
             'targets' => $targets,
             'observed_profile' => $profile,
             'promotion_evidence' => false,
-            'rule' => 'One bounded mutation target per seat: profit factor, stress cost, temporal stability and regime coverage. Full/forward/paper gates remain unchanged.',
+            'rule' => 'Five four-seat groups: PF/stress, temporal/calendar, regime specialist, non-target regression and architecture/control. Full/forward/paper gates remain unchanged.',
+            'promotion_evidence' => false,
         ];
     }
 }

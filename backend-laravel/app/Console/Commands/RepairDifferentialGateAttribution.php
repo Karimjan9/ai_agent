@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Services\CandidateGateDecisionService;
+use App\Services\LearningProtocolSafetyService;
 use Illuminate\Console\Command;
 
 /** Corrects historical false non-target failures created by an empty contract. */
@@ -14,8 +15,13 @@ class RepairDifferentialGateAttribution extends Command
 
     protected $description = 'Recompute screening ledgers for ordinary agents that were falsely marked as differential regressions';
 
-    public function handle(CandidateGateDecisionService $decisions): int
+    public function handle(CandidateGateDecisionService $decisions, LearningProtocolSafetyService $protocolSafety): int
     {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: differential attribution repair deferred.');
+
+            return self::SUCCESS;
+        }
         $symbol = $this->argument('symbol') ? strtoupper((string) $this->argument('symbol')) : null;
         $timeframe = strtoupper((string) $this->option('timeframe'));
         $generation = $this->argument('generation') !== null ? (int) $this->argument('generation') : null;

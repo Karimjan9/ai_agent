@@ -26,6 +26,12 @@ from app.services.parameter_schema import validate_strategy_parameters
 from app.strategies.registry import get_strategy
 
 
+def _utc_timestamp(value: object) -> pd.Timestamp:
+    """Normalize scalar timestamps to timezone-aware UTC."""
+    timestamp = pd.Timestamp(value)
+    return timestamp.tz_localize("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
+
+
 @dataclass(frozen=True)
 class MarketAdaptiveReplayService:
     foundation_start: str = "2004-01-01 00:00:00"
@@ -51,16 +57,16 @@ class MarketAdaptiveReplayService:
         foundation_source = self._normalize(foundation_df) if foundation_df is not None else normalized
         holdout_start = normalized["time"].max() - pd.Timedelta(weeks=self.sealed_holdout_weeks)
         is_m15 = str(timeframe).upper() == "M15"
-        foundation_start = pd.Timestamp("2025-11-01 00:00:00") if is_m15 else pd.Timestamp(self.foundation_start)
-        foundation_end = pd.Timestamp(self.foundation_end)
-        latest_supported_start = pd.Timestamp("2025-11-01 00:00:00") if is_m15 else pd.Timestamp(self.latest_supported_foundation_start)
+        foundation_start = _utc_timestamp("2025-11-01 00:00:00") if is_m15 else _utc_timestamp(self.foundation_start)
+        foundation_end = _utc_timestamp(self.foundation_end)
+        latest_supported_start = _utc_timestamp("2025-11-01 00:00:00") if is_m15 else _utc_timestamp(self.latest_supported_foundation_start)
         minimum_foundation_rows = 2000 if is_m15 else 202
         foundation = foundation_source[
             (foundation_source.time >= foundation_start)
             & (foundation_source.time <= foundation_end)
         ]
         replay = normalized[
-            (normalized.time >= pd.Timestamp(self.rolling_start))
+            (normalized.time >= _utc_timestamp(self.rolling_start))
             & (normalized.time < holdout_start)
         ]
         holdout = normalized[normalized.time >= holdout_start]
@@ -817,7 +823,7 @@ class MarketAdaptiveReplayService:
         if len(replay) < 204:
             return {"status": "insufficient_rows", "pass": False, "promotion_evidence": False}
         expected = pd.Timedelta(minutes=15 if payload.timeframe == "M15" else 60)
-        deltas = pd.to_datetime(replay["time"]).diff()
+        deltas = pd.to_datetime(replay["time"], utc=True, errors="coerce").diff()
         candidates = [index for index in range(1, len(replay) - 1) if deltas.iloc[index] == expected and deltas.iloc[index + 1] == expected]
         if not candidates:
             return {"status": "insufficient_contiguous_candles", "pass": False, "promotion_evidence": False}
@@ -895,7 +901,7 @@ class MarketAdaptiveReplayService:
         Mutators may only use a blamed component when its branch is assessed.
         """
         rows = replay.copy()
-        rows["time"] = pd.to_datetime(rows["time"], errors="coerce", utc=True).dt.tz_localize(None)
+        rows["time"] = pd.to_datetime(rows["time"], errors="coerce", utc=True)
         losses = [trade for trade in result.get("trades", []) if float(trade.get("profit_percent", 0)) < 0]
         cases = []
         for trade in losses:
@@ -986,7 +992,7 @@ class MarketAdaptiveReplayService:
         for that same month.
         """
         normalized = replay.copy()
-        normalized["time"] = pd.to_datetime(normalized["time"])
+        normalized["time"] = pd.to_datetime(normalized["time"], utc=True, errors="coerce")
         periods = list(normalized["time"].dt.to_period("M").drop_duplicates())
         candidates = periods[2:][-6:]
         ledger_months = ((chronological_result.get("pf_attribution", {}) or {}).get("by_month", {}) or {})
@@ -1016,7 +1022,7 @@ class MarketAdaptiveReplayService:
                     "indicator_warmup_preserved": True,
                     "source": "full_chronological_trade_ledger",
                 },
-                "feedback_available_at": (month.end_time + pd.Timedelta(seconds=1)).isoformat(),
+                "feedback_available_at": (_utc_timestamp(month.end_time) + pd.Timedelta(seconds=1)).isoformat(),
                 "used_for_same_month_mutation": False,
                 "state_continuity": "single_chronological_replay",
                 "state_reset": False,
@@ -1066,7 +1072,7 @@ class MarketAdaptiveReplayService:
                 "rule": "Monthly passport requires by_month attribution from the one continuous replay.",
             }
         normalized = replay.copy()
-        normalized["time"] = pd.to_datetime(normalized["time"])
+        normalized["time"] = pd.to_datetime(normalized["time"], utc=True, errors="coerce")
         periods = list(normalized["time"].dt.to_period("M").drop_duplicates())
         # Keep the lane bounded; it is learning evidence in addition to the
         # full replay, not an unbounded optimization sweep.
@@ -1089,7 +1095,7 @@ class MarketAdaptiveReplayService:
                 "net_profit_percent": result.get("net_profit_percent", 0),
                 "regime_performance": result.get("regime_performance", {}),
                 "window_survival": survival,
-                "feedback_available_at": (month.end_time + pd.Timedelta(seconds=1)).isoformat(),
+                "feedback_available_at": (_utc_timestamp(month.end_time) + pd.Timedelta(seconds=1)).isoformat(),
                 "used_for_same_month_mutation": False,
             })
         return {
@@ -1153,7 +1159,7 @@ class MarketAdaptiveReplayService:
         )
         transition_times = pd.to_datetime(
             classified.loc[boundary, "time"], errors="coerce", utc=True,
-        ).dt.tz_localize(None).dropna()
+        ).dropna()
         trades = list(result.get("trades", []))
         transition_trades = []
         for trade in trades:
@@ -1371,23 +1377,18 @@ class MarketAdaptiveReplayService:
             raise ValueError("Dataset is empty.")
         normalized = df.copy()
         # Laravel/database payloads can carry UTC-aware ISO timestamps while
-        # CSV loaders usually produce naive timestamps.  Normalize both to
-        # naive UTC before comparing them with the protocol's calendar
-        # boundaries; otherwise pandas raises on mixed aware/naive values and
-        # the evaluator incorrectly quarantines a technically valid agent.
+        # CSV loaders may produce naive timestamps. Normalize both forms to
+        # timezone-aware UTC before comparing them with protocol boundaries.
         timestamps = pd.to_datetime(normalized["time"], errors="coerce", utc=True)
         if timestamps.isna().any():
             raise ValueError("Dataset contains invalid candle timestamps.")
-        normalized["time"] = timestamps.dt.tz_localize(None)
+        normalized["time"] = timestamps
         return normalized.sort_values("time").reset_index(drop=True)
 
     @staticmethod
     def _naive_utc_timestamp(value: object) -> pd.Timestamp:
-        """Normalize a scalar ledger timestamp to the replay's UTC-naive form."""
-        timestamp = pd.Timestamp(value)
-        if timestamp.tzinfo is not None:
-            timestamp = timestamp.tz_convert("UTC").tz_localize(None)
-        return timestamp
+        """Legacy helper name; return a timezone-aware UTC timestamp."""
+        return _utc_timestamp(value)
 
 
 def _minimum_pf(groups: dict[str, object]) -> float | None:

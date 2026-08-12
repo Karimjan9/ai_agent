@@ -36,6 +36,7 @@ class LabPopulationService
     ];
 
     public const GENERATION_PROTOCOL = 'g98_failure_eliminator_v1';
+    public const TARGETED_RESCUE_PROFILE_PROTOCOL = 'targeted_failure_profile_v2';
     public const ROLE_COMPLETE_COUNCIL_PROTOCOL = 'role_complete_council_v1';
     public const POPULATION_GROUP_PROTOCOL = 'population_group_checkpoint_v1';
     public const SPECIALIST_COUNCIL_PROTOCOL = 'specialist_council_v1';
@@ -54,6 +55,39 @@ class LabPopulationService
         'volatility_session_stability' => ['label' => 'Volatility/session stability', 'axis' => 'cost_stability'],
         'exit_topology' => ['label' => 'Exit topology', 'axis' => 'risk_exit'],
         'portfolio_router' => ['label' => 'Portfolio/router integrity', 'axis' => 'portfolio_integrity'],
+    ];
+
+    /**
+     * Temporary rescue curriculum: five named objectives, four seats each.
+     * The legacy population-group keys remain stable for audit compatibility;
+     * rescue_objective explains what each group is trying to repair.
+     */
+    public const TARGETED_RESCUE_GROUP_PLAN = [
+        'volatility_session_stability' => [
+            'rescue_objective' => 'pf_stress_cost',
+            'specialist_role' => 'pf_stress_specialist',
+            'targets' => ['profit_factor', 'stress_cost', 'profit_factor', 'stress_cost'],
+        ],
+        'monthly_survival' => [
+            'rescue_objective' => 'temporal_calendar_stability',
+            'specialist_role' => 'temporal_calendar_specialist',
+            'targets' => ['temporal_stability', 'temporal_stability', 'temporal_stability', 'temporal_stability'],
+        ],
+        'regime_coverage' => [
+            'rescue_objective' => 'regime_specialist',
+            'specialist_role' => 'regime_coverage_specialist',
+            'targets' => ['regime_coverage', 'regime_coverage', 'regime_coverage', 'regime_coverage'],
+        ],
+        'exit_topology' => [
+            'rescue_objective' => 'non_target_regression',
+            'specialist_role' => 'non_target_regression_specialist',
+            'targets' => ['drawdown_risk', 'drawdown_risk', 'drawdown_risk', 'drawdown_risk'],
+        ],
+        'portfolio_router' => [
+            'rescue_objective' => 'architecture_control',
+            'specialist_role' => 'architecture_control_specialist',
+            'targets' => ['architecture', 'architecture', 'architecture', 'architecture'],
+        ],
     ];
 
     private const LABS = [
@@ -108,6 +142,7 @@ class LabPopulationService
             AiLaboratory::updateOrCreate(['symbol' => $symbol, 'timeframe' => 'H1'], [
                 'name' => $config['name'], 'timeframe' => 'H1',
                 'strategy_families' => $config['families'], 'is_active' => true,
+                'lifecycle_mode' => $symbol === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL ? 'lighthouse' : 'shadow',
             ]);
         }
 
@@ -119,18 +154,28 @@ class LabPopulationService
                 'name' => "{$symbol} M15 Specialist Lab", 'timeframe' => 'M15',
                 'strategy_families' => array_values(array_unique([...$config['families'], 'regime_ensemble'])),
                 'is_active' => true,
+                'lifecycle_mode' => 'shadow',
             ]);
         }
     }
 
-    public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null, ?array $targetedFailureProfile = null): ?LabGeneration
+    public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null, ?array $targetedFailureProfile = null, bool $allowControlledRescue = false): ?LabGeneration
     {
         // Existing queued jobs stay intact.  This only prevents creation of a
         // new population while an execution-contract rollout is being audited.
-        if ($this->protocolSafety->generationCreationPaused()) return null;
+        $controlledRescue = $allowControlledRescue
+            && $this->protocolSafety->controlledRescueAllowed($trigger, $populationLimit, $targetedFailureProfile);
+        if ($allowControlledRescue && ! $controlledRescue) return null;
+        if ($this->protocolSafety->generationCreationPaused() && ! $controlledRescue) return null;
         $this->ensureLaboratories();
         $timeframe = strtoupper($timeframe);
         $lab = AiLaboratory::where('symbol', strtoupper($symbol))->where('timeframe', $timeframe)->firstOrFail();
+        if (! $controlledRescue && (string) $lab->lifecycle_mode !== 'lighthouse') {
+            // Non-lighthouse labs remain research/shadow streams. They may be
+            // monitored and studied, but they cannot create an evolution
+            // generation or become a parent ecosystem.
+            return null;
+        }
         // Recompute the append-only historical conclusion before planning a
         // new population. Snapshot history may choose the failure target;
         // exact causal credits are handled separately by mutate().
@@ -225,7 +270,7 @@ class LabPopulationService
             static fn (mixed $target): string => (string) $target,
             (array) data_get($targetedFailureProfile, 'targets', []),
         ))));
-        $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets): ?array {
+        $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets, $controlledRescue): ?array {
             // Scheduler and manual/operator requests may arrive together. Lock
             // the laboratory row before assigning the next generation number;
             // otherwise two workers can build the same G and one can leave a
@@ -332,6 +377,13 @@ class LabPopulationService
                     'combined_activation' => 'individual_passports_then_council_quorum',
                     'promotion_evidence' => false,
                 ],
+                'controlled_rescue_admission' => $controlledRescue ? [
+                    'protocol' => LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL,
+                    'profile_protocol' => data_get($targetedFailureProfile, 'protocol'),
+                    'temporary' => true,
+                    'normal_generation_creation_still_paused' => $this->protocolSafety->generationCreationPaused(),
+                    'promotion_evidence' => false,
+                ] : null,
                 'group_checkpoint_rule' => [
                     'protocol' => self::POPULATION_GROUP_PROTOCOL,
                     'checkpoint_advances_only_from' => ['challenger', 'forward_validated', 'paper', 'champion'],
@@ -460,6 +512,7 @@ class LabPopulationService
                     'search_role' => (string) ($spec['group_search_role'] ?? 'adaptive_reserve'),
                     'target' => (string) ($spec['target'] ?? ''),
                     'origin' => (string) ($spec['origin'] ?? ''),
+                    'rescue_objective' => (string) data_get($spec, 'niche.rescue_lane', ''),
                 ];
             })
             ->groupBy('key');
@@ -474,6 +527,7 @@ class LabPopulationService
                 'search_modes' => $rows->pluck('search_mode')->unique()->values()->all(),
                 'targets' => $rows->pluck('target')->filter()->unique()->values()->all(),
                 'origins' => $rows->pluck('origin')->filter()->unique()->values()->all(),
+                'rescue_objectives' => $rows->pluck('rescue_objective')->filter()->unique()->values()->all(),
                 'checkpoint_inheritance' => true,
                 'promotion_evidence' => false,
             ];
@@ -515,6 +569,20 @@ class LabPopulationService
         $assigned = [];
 
         foreach ($plan as $index => $spec) {
+            // Targeted rescue seats already declare the research group that
+            // owns the failure lane. Preserve that declaration before the
+            // normal target-based balancing pass; otherwise abstract targets
+            // such as `profit_factor` and `architecture` are redistributed
+            // into the wrong groups and the five-by-four cohort loses its
+            // intended causal ownership.
+            $declared = (string) ($spec['research_group'] ?? '');
+            if (($spec['origin'] ?? null) === 'targeted_failure_profile'
+                && in_array($declared, $groupKeys, true)
+                && $counts[$declared] < self::POPULATION_GROUP_SEATS) {
+                $assigned[$index] = $declared;
+                $counts[$declared]++;
+                continue;
+            }
             $target = (string) ($spec['target'] ?? '');
             if (! in_array($target, $groupKeys, true) || $counts[$target] >= self::POPULATION_GROUP_SEATS) {
                 continue;
@@ -716,6 +784,10 @@ class LabPopulationService
             : ($populationLimit !== null ? max(1, (int) $populationLimit) : $this->configuredPopulationSize());
         if ((bool) data_get($coverageRescue, 'eligible')) return $this->coverageRescuePlan($coverageRescue, $targetPopulation);
         if ($targetedFailureTargets !== []) {
+            if ((string) data_get($targetedFailureProfile, 'protocol') === self::TARGETED_RESCUE_PROFILE_PROTOCOL
+                && $targetPopulation >= count(self::POPULATION_GROUPS) * self::POPULATION_GROUP_SEATS) {
+                return $this->fiveByFourTargetedFailurePlan($lab, $targetedFailureProfile ?? []);
+            }
             return $this->targetedFailurePlan($lab, $targetedFailureTargets, $targetPopulation, $targetedFailureProfile ?? []);
         }
         // A role-complete build may be intentionally bounded to the four
@@ -989,6 +1061,67 @@ class LabPopulationService
      *
      * @return array<int, array<string, mixed>>
      */
+    private function fiveByFourTargetedFailurePlan(AiLaboratory $lab, array $profile): array
+    {
+        $familyFallback = in_array('hybrid', $lab->strategy_families, true)
+            ? 'hybrid'
+            : ($lab->strategy_families[0] ?? 'hybrid');
+        $plan = [];
+        $slot = 0;
+
+        foreach (self::TARGETED_RESCUE_GROUP_PLAN as $group => $definition) {
+            foreach ((array) data_get($definition, 'targets', []) as $seat => $target) {
+                $slot++;
+                $family = match ($group) {
+                    'volatility_session_stability' => in_array('volatility', $lab->strategy_families, true) ? 'volatility' : $familyFallback,
+                    'monthly_survival' => in_array('session', $lab->strategy_families, true) ? 'session' : $familyFallback,
+                    'regime_coverage' => in_array('regime_ensemble', $lab->strategy_families, true) ? 'regime_ensemble' : $familyFallback,
+                    'portfolio_router' => in_array('differential_router', $lab->strategy_families, true) ? 'differential_router' : $familyFallback,
+                    default => $familyFallback,
+                };
+                $objective = (string) data_get($definition, 'rescue_objective', $group);
+                $role = (string) data_get($definition, 'specialist_role', 'targeted_failure_specialist');
+                $plan[] = [
+                    'origin' => 'targeted_failure_profile',
+                    'family' => $family,
+                    'target' => (string) $target,
+                    'research_group' => $group,
+                    'group_seat' => $seat + 1,
+                    'group_axis' => data_get(self::POPULATION_GROUPS, $group.'.axis', 'diagnostic_reserve'),
+                    'group_search_mode' => $seat < 2 ? 'depth' : 'breadth',
+                    'group_search_role' => match ($seat) {
+                        0 => 'checkpoint_continuation',
+                        1 => 'deepening_mutation',
+                        2 => 'architecture_widening',
+                        default => 'curiosity_widening',
+                    },
+                    'niche' => [
+                        'protocol' => self::TARGETED_RESCUE_PROFILE_PROTOCOL,
+                        'rescue_protocol' => LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL,
+                        'rescue_lane' => $objective,
+                        'specialist_role' => $role,
+                        'failure_target' => (string) $target,
+                        'mutation_target' => (string) $target,
+                        'target_sequence' => $slot,
+                        'group_key' => $group,
+                        'group_seat' => $seat + 1,
+                        'source_generation_id' => data_get($profile, 'source_generation_id'),
+                        'source_generation' => data_get($profile, 'source_generation'),
+                        'profile_hash' => data_get($profile, 'profile_hash'),
+                        'observed_failure_counts' => (array) data_get($profile, 'target_counts', []),
+                        'calendar_diagnostic_only' => $objective === 'temporal_calendar_stability',
+                        'non_target_parent_freeze' => true,
+                        'protected_semantic_cell' => true,
+                        'research_reason' => 'Temporary five-by-four targeted rescue; one declared failure objective per seat and unchanged promotion gates.',
+                        'promotion_rule' => 'unchanged_screen_full_forward_paper_gates',
+                    ],
+                ];
+            }
+        }
+
+        return $plan;
+    }
+
     private function targetedFailurePlan(AiLaboratory $lab, array $targets, int $targetPopulation, array $profile = []): array
     {
         $canonical = ['profit_factor', 'stress_cost', 'temporal_stability', 'regime_coverage'];
@@ -2227,6 +2360,12 @@ class LabPopulationService
             : $this->researchGroupForTarget($target, $slot);
         $groupSeat = $groupSeat > 0 ? $groupSeat : (($slot - 1) % self::POPULATION_GROUP_SEATS) + 1;
         $populationGroup = $this->populationGroupSeatContract($researchGroup, $groupSeat);
+        if ($origin === 'targeted_failure_profile') {
+            $populationGroup['rescue_objective'] = data_get($niche, 'rescue_lane');
+            $populationGroup['rescue_protocol'] = data_get($niche, 'rescue_protocol');
+            $populationGroup['protected_semantic_cell'] = (bool) data_get($niche, 'protected_semantic_cell', true);
+            $populationGroup['non_target_parent_freeze'] = (bool) data_get($niche, 'non_target_parent_freeze', true);
+        }
         $priorGroupCheckpoint = (array) data_get(
             $generation->trigger_context,
             'group_checkpoint_inputs.'.$researchGroup,
@@ -3787,6 +3926,78 @@ class LabPopulationService
                 'protected_invariants' => ['transition_firewall_enabled' => true],
                 'disagreement_action' => 'WAIT',
                 'unknown_state_action' => 'WAIT',
+            ],
+            // Targeted failure-profile cohorts use observable gate failures
+            // as role names. Keep those roles inside the same one-gene
+            // constructor contract as the specialist council; an unknown
+            // role used to restore every proposed change and silently shrink
+            // a planned 20-seat rescue to only the few control-only seats
+            // that happened to match a generic G98 target.
+            'pf_stress_specialist' => [
+                'protocol' => 'council_role_policy_v1',
+                'role' => $role,
+                'owner' => 'profit_factor|stress_cost',
+                'mutation_allowlist' => [
+                    'atr_stop_multiplier', 'atr_target_multiplier',
+                    'trailing_atr_multiplier', 'time_stop_candles',
+                    'partial_take_profit_fraction', 'max_spread_atr_ratio',
+                    'high_volatility_risk_multiplier', 'avoid_high_volatility',
+                ],
+                'protected_invariants' => [],
+                'unknown_state_action' => 'WAIT',
+                'research_rule' => 'Repair PF/stress cost through one bounded cost or exit gene; keep all non-target lanes frozen.',
+            ],
+            'temporal_calendar_specialist' => [
+                'protocol' => 'council_role_policy_v1',
+                'role' => $role,
+                'owner' => 'temporal_stability|calendar_survival',
+                'mutation_allowlist' => [
+                    'lookback', 'session_start', 'session_end',
+                    'minimum_signal_confidence', 'transition_firewall_enabled',
+                    'transition_wait_candles',
+                ],
+                'protected_invariants' => [],
+                'unknown_state_action' => 'WAIT',
+                'research_rule' => 'Repair temporal/calendar stability through one bounded timing or persistence gene; calendar labels remain diagnostic only.',
+            ],
+            'regime_coverage_specialist' => [
+                'protocol' => 'council_role_policy_v1',
+                'role' => $role,
+                'owner' => 'regime_coverage',
+                'mutation_allowlist' => [
+                    'trend_strength_min', 'lookback',
+                    'high_volatility_risk_multiplier', 'minimum_signal_confidence',
+                    'minimum_confidence',
+                ],
+                'protected_invariants' => [],
+                'unknown_state_action' => 'WAIT',
+                'research_rule' => 'Repair regime coverage through one bounded regime sensitivity gene; no regime gate is relaxed.',
+            ],
+            'non_target_regression_specialist' => [
+                'protocol' => 'council_role_policy_v1',
+                'role' => $role,
+                'owner' => 'drawdown_risk|non_target_regression',
+                'mutation_allowlist' => [
+                    'high_volatility_risk_multiplier', 'max_loss_streak_before_wait',
+                    'loss_cooldown_candles', 'atr_stop_multiplier',
+                    'time_stop_candles', 'avoid_high_volatility',
+                ],
+                'protected_invariants' => [],
+                'unknown_state_action' => 'WAIT',
+                'research_rule' => 'Protect non-target behavior through one bounded risk/exit gene; the target gate remains unchanged.',
+            ],
+            'architecture_control_specialist' => [
+                'protocol' => 'council_role_policy_v1',
+                'role' => $role,
+                'owner' => 'architecture_control',
+                'mutation_allowlist' => [
+                    'lookback', 'session_start', 'session_end',
+                    'trend_strength_min', 'minimum_signal_confidence',
+                    'range_signal_mode', 'range_deviation', 'range_adx_max',
+                ],
+                'protected_invariants' => [],
+                'unknown_state_action' => 'WAIT',
+                'research_rule' => 'Test architecture behavior through one bounded topology-control gene; family and execution contract remain frozen.',
             ],
             default => [
                 'protocol' => 'council_role_policy_v1',

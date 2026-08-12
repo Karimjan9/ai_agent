@@ -9,6 +9,7 @@ use App\Models\ModelVersion;
 use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabPopulationService;
+use App\Services\LearningProtocolSafetyService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use Illuminate\Console\Command;
@@ -26,7 +27,13 @@ class DispatchExitTopologyExperiments extends Command
         StrategyParameterSchemaService $schemas,
         LabDatasetExportService $datasets,
         StrategySemanticGroupService $semanticGroups,
+        LearningProtocolSafetyService $protocolSafety,
     ): int {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: exit-topology experiments deferred.');
+
+            return self::SUCCESS;
+        }
         $source = LabAgent::query()->with(['modelVersion', 'generation.laboratory'])->findOrFail((int) $this->argument('sourceAgent'));
         $parent = $source->modelVersion;
         $lab = $source->generation?->laboratory;
@@ -34,6 +41,11 @@ class DispatchExitTopologyExperiments extends Command
             $this->error('Source must be a screened laboratory agent.');
 
             return self::FAILURE;
+        }
+        if ((string) $lab->lifecycle_mode !== 'lighthouse') {
+            $this->info('Source laboratory shadow rejimida; exit-topology dispatch qilinmadi.');
+
+            return self::SUCCESS;
         }
         if ($this->option('resume')) {
             $pending = LabAgent::query()->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)

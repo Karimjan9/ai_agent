@@ -8,6 +8,7 @@ use App\Models\LabGeneration;
 use App\Models\LabTrialLedger;
 use App\Models\ModelVersion;
 use Illuminate\Database\QueryException;
+use RuntimeException;
 
 /**
  * Persistent experiment-count evidence for DSR and ranking diagnostics.
@@ -28,10 +29,13 @@ class LabTrialLedgerService
     ): array {
         $parameters = (array) ($model?->parameters ?? []);
         $parameterHash = $this->hash($parameters);
-        $dataHash = (string) data_get($result, 'data_manifest.sha256',
-            data_get($result, 'data_manifest.data_hash', data_get($result, 'dataset_hash', '')));
+        $run = $runId !== null
+            ? LabEvaluationRun::query()->where('run_id', $runId)->first(['run_id', 'data_hash', 'request_meta'])
+            : null;
+        $dataHash = strtolower(trim($this->resolveDataHash($result, $run)));
         $executionHash = (string) data_get($result, 'execution_contract.execution_hash',
             data_get($result, 'execution_hash', ''));
+        $executionHash = strtolower(trim($executionHash));
         $requiresExecutionContract = in_array(strtolower($stage), ['full', 'full_replay', 'full_validation', 'paper', 'holdout'], true);
         $executionContract = data_get($result, 'execution_contract');
         $executionValid = ! $requiresExecutionContract
@@ -40,25 +44,37 @@ class LabTrialLedgerService
         $score = $this->score($result);
         $observedSharpe = $this->observedSharpe($result);
 
-        // A full replay can be retried with a new immutable run id after a
-        // post-replay worker interruption. The trial ledger deliberately
-        // treats the same symbol/timeframe/stage/parameter/data/execution
-        // tuple as one recovery identity, so preferring run_id here would
-        // race the composite unique key and turn a successful replay into a
-        // technical error. Use run_id only when the canonical full-replay
-        // identity is not available (for example a diagnostic screen).
-        $canonicalIdentity = [
-            'symbol' => $symbol, 'timeframe' => $timeframe, 'stage' => $stage,
-            'parameter_hash' => $parameterHash,
-            'data_manifest_hash' => $dataHash !== '' ? $dataHash : null,
-            'execution_hash' => $executionHash !== '' ? $executionHash : null,
-        ];
-        $canonicalIdentityAvailable = $dataHash !== '' && $executionHash !== '';
-        $ledger = $runId !== null
+        // A recovery receives a new immutable run id, so run_id is not a
+        // trial identity.  The canonical identity must include the exact
+        // dataset and execution hashes.  Missing hashes fail closed rather
+        // than falling back to run_id and creating a duplicate experiment.
+        if (! $this->isSha256($dataHash)) {
+            throw new RuntimeException('TRIAL_IDENTITY_DATASET_HASH_MISSING');
+        }
+        if ($executionHash !== '' && ! $this->isSha256($executionHash)) {
+            throw new RuntimeException('TRIAL_IDENTITY_EXECUTION_HASH_INVALID');
+        }
+        $identityFingerprint = $this->identityFingerprint(
+            $symbol,
+            $timeframe,
+            $stage,
+            $parameterHash,
+            $dataHash,
+            $executionHash !== '' ? $executionHash : null,
+        );
+        $runLedger = $runId !== null
             ? LabTrialLedger::query()->where('run_id', $runId)->first()
             : null;
-        if (! $ledger && ($canonicalIdentityAvailable || $runId === null)) {
-            $ledger = LabTrialLedger::query()->where($canonicalIdentity)->first();
+        if ($runLedger?->identity_status === 'canonical') {
+            if ((string) $runLedger->identity_fingerprint !== $identityFingerprint) {
+                throw new RuntimeException('TRIAL_IDENTITY_RUN_ID_COLLISION');
+            }
+            $ledger = $runLedger;
+        } else {
+            $ledger = LabTrialLedger::query()
+                ->where('identity_fingerprint', $identityFingerprint)
+                ->where('identity_status', 'canonical')
+                ->first();
         }
 
         $values = [
@@ -71,8 +87,10 @@ class LabTrialLedgerService
             'stage' => $stage,
             'run_id' => $runId,
             'parameter_hash' => $parameterHash,
-            'data_manifest_hash' => $dataHash !== '' ? $dataHash : null,
+            'data_manifest_hash' => $dataHash,
             'execution_hash' => $executionHash !== '' ? $executionHash : null,
+            'identity_fingerprint' => $identityFingerprint,
+            'identity_status' => 'canonical',
             'score' => $score,
             'observed_sharpe' => $observedSharpe,
             'status' => $executionValid ? 'recorded' : 'invalid_execution_contract',
@@ -85,21 +103,23 @@ class LabTrialLedgerService
         ];
 
         if (! $ledger) {
-            $identity = $canonicalIdentityAvailable || $runId === null
-                ? $canonicalIdentity
-                : ['run_id' => $runId];
             try {
-                $ledger = LabTrialLedger::updateOrCreate($identity, $values);
+                $ledger = LabTrialLedger::updateOrCreate(
+                    ['identity_fingerprint' => $identityFingerprint],
+                    $values,
+                );
             } catch (QueryException $exception) {
                 // Two recovery attempts can pass the read before either row
                 // is committed. The unique constraint is the race guard;
                 // converge on its canonical row instead of withholding a
                 // valid replay as a database/evaluator failure.
-                if (! $canonicalIdentityAvailable
-                    || ! str_contains($exception->getMessage(), 'lab_trial_recovery_identity')) {
+                if (! str_contains($exception->getMessage(), 'lab_trial_identity_fingerprint_unique')) {
                     throw $exception;
                 }
-                $ledger = LabTrialLedger::query()->where($canonicalIdentity)->firstOrFail();
+                $ledger = LabTrialLedger::query()
+                    ->where('identity_fingerprint', $identityFingerprint)
+                    ->where('identity_status', 'canonical')
+                    ->firstOrFail();
             }
         }
 
@@ -114,7 +134,10 @@ class LabTrialLedgerService
             $ledger->save();
         }
 
-        $scope = LabTrialLedger::query()->where('symbol', $symbol)->where('timeframe', $timeframe);
+        $scope = LabTrialLedger::query()
+            ->where('symbol', $symbol)
+            ->where('timeframe', $timeframe)
+            ->where('identity_status', 'canonical');
         $recordedTrialCount = (clone $scope)->count();
         $evidence = $this->trialEvidence($symbol, $timeframe, $scope);
         $trialCount = $recordedTrialCount + (int) data_get($evidence, 'unrecorded_trial_count', 0);
@@ -151,7 +174,10 @@ class LabTrialLedgerService
 
     public function selectionContext(string $symbol, string $timeframe): array
     {
-        $query = LabTrialLedger::query()->where('symbol', $symbol)->where('timeframe', $timeframe);
+        $query = LabTrialLedger::query()
+            ->where('symbol', $symbol)
+            ->where('timeframe', $timeframe)
+            ->where('identity_status', 'canonical');
         $recordedTrialCount = (clone $query)->count();
         $rows = (clone $query)->whereNotNull('observed_sharpe')->orderByDesc('id')->limit(1000)->get(['id', 'observed_sharpe']);
         $sharpes = $rows->map(fn (LabTrialLedger $row): float => (float) $row->observed_sharpe)->filter(fn (float $value): bool => is_finite($value))->values()->all();
@@ -305,5 +331,47 @@ class LabTrialLedgerService
             return $item;
         };
         return hash('sha256', json_encode($normalize($value), JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function resolveDataHash(array $result, ?LabEvaluationRun $run): string
+    {
+        $candidates = [
+            data_get($result, 'data_manifest.sha256'),
+            data_get($result, 'data_manifest.data_hash'),
+            data_get($result, 'dataset_hash'),
+            $run?->data_hash,
+            data_get($run?->request_meta, 'dataset_manifest.snapshot_sha256'),
+            data_get($run?->request_meta, 'dataset_manifest.data_hash'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if ($this->isSha256((string) $candidate)) return (string) $candidate;
+        }
+
+        return '';
+    }
+
+    private function identityFingerprint(
+        string $symbol,
+        string $timeframe,
+        string $stage,
+        string $parameterHash,
+        string $dataHash,
+        ?string $executionHash,
+    ): string {
+        return $this->hash([
+            'protocol' => 'lab_trial_identity_v2',
+            'symbol' => strtoupper($symbol),
+            'timeframe' => strtoupper($timeframe),
+            'stage' => strtolower($stage),
+            'parameter_hash' => $parameterHash,
+            'data_manifest_hash' => $dataHash,
+            'execution_hash' => $executionHash,
+        ]);
+    }
+
+    private function isSha256(string $value): bool
+    {
+        return (bool) preg_match('/^[a-f0-9]{64}$/i', trim($value));
     }
 }

@@ -16,6 +16,7 @@ use App\Services\AgentConstitutionService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
+use App\Services\IncompleteLabEvidenceRecoveryService;
 use App\Models\ModelVersion;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Jobs\Middleware\LabMutexEvidenceMiddleware;
@@ -81,7 +82,7 @@ class ImmutableLabEvidenceTest extends TestCase
 
     public function test_handoff_retries_are_not_collapsed_in_the_evidence_plane(): void
     {
-        $generation = app(LabPopulationService::class)->build('EURUSD', 'immutable_handoff', true);
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'immutable_handoff', true, 'H1');
         $agent = $generation->agents->first();
         $handoffs = app(CandidateHandoffService::class);
 
@@ -129,11 +130,11 @@ class ImmutableLabEvidenceTest extends TestCase
 
     public function test_evaluation_run_keeps_terminal_artifact_and_candle_trace(): void
     {
-        $generation = app(LabPopulationService::class)->build('GBPUSD', 'immutable_run', true);
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'immutable_run', true, 'H1');
         $agent = $generation->agents->first();
         $ledger = app(LabImmutableEvidenceService::class);
         $run = $ledger->beginRun($agent, 'screening', 'incremental', ['attempt' => 3, 'queue' => 'lab-gbpusd']);
-        $ledger->attachRequest($run, ['symbol' => 'GBPUSD', 'candles' => [['time' => '2026-01-01', 'close' => 1.0]]], ['request_id' => 'test-run-1']);
+        $ledger->attachRequest($run, ['symbol' => 'XAUUSD', 'candles' => [['time' => '2026-01-01', 'close' => 1.0]]], ['request_id' => 'test-run-1']);
         $ledger->finishRun($run, 'completed', [
             'total_trades' => 1, 'profit_factor' => 1.2, 'trade_ledger_hash' => 'ledger-hash',
             'displayed_trade_count' => 1, 'trades' => [['profit_percent' => 1]],
@@ -204,6 +205,57 @@ class ImmutableLabEvidenceTest extends TestCase
         $this->assertContains('EVIDENCE_RUN_NOT_COMPLETED', $eligibility['reason_codes']);
     }
 
+    public function test_failed_screen_projection_with_incomplete_run_is_recovery_candidate(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'incomplete_failed_projection', true);
+        $generation->update(['status' => 'screening', 'completed_at' => null]);
+        $agent = $generation->agents->first();
+        $agent->update(['lifecycle_status' => 'screened']);
+        $agent->modelVersion()->update(['metadata' => []]);
+        CandidateGateDecision::create([
+            'lab_agent_id' => $agent->id,
+            'stage' => 'screening',
+            'decision' => 'failed',
+            'reason_codes' => ['FAILED_PROFIT_FACTOR'],
+            'metrics' => ['evidence_run_id' => null],
+            'attribution_status' => 'agent_scoped',
+            'evaluated_at' => now(),
+        ]);
+        app(LabImmutableEvidenceService::class)->beginRun($agent, 'screening', 'screen');
+
+        $result = app(IncompleteLabEvidenceRecoveryService::class)->recover(
+            'XAUUSD', $agent->timeframe, $generation->generation, 5, false,
+        );
+        $this->assertSame(1, $result['selected']);
+        $this->assertSame($agent->id, $result['rows'][0]['agent_id']);
+        $this->assertNotSame('skipped', $result['rows'][0]['action']);
+    }
+
+    public function test_queue_inspector_respects_serialized_agent_id_boundary(): void
+    {
+        $matchingId = (int) DB::table('jobs')->insertGetId([
+            'queue' => 'lab-frontier',
+            'payload' => json_encode(['data' => ['command' => 's:10:"labAgentId";i:123;']], JSON_THROW_ON_ERROR),
+            'attempts' => 0,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+        ]);
+        $nearMissId = (int) DB::table('jobs')->insertGetId([
+            'queue' => 'lab-frontier',
+            'payload' => json_encode(['data' => ['command' => 'batch_uuid_labAgentId;1234;']], JSON_THROW_ON_ERROR),
+            'attempts' => 0,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+        ]);
+
+        $inspector = app(\App\Services\LabQueueJobInspector::class);
+        $ids = $inspector->queuedJobIdsForAgents([123], ['lab-frontier']);
+
+        $this->assertContains($matchingId, $ids);
+        $this->assertNotContains($nearMissId, $ids);
+        $this->assertTrue($inspector->hasAgentJob(1234, ['lab-frontier']));
+    }
+
     public function test_full_admission_block_closes_the_middleware_run_as_skipped(): void
     {
         $generation = app(LabPopulationService::class)->build('XAUUSD', 'full_admission_gate', true);
@@ -268,7 +320,7 @@ class ImmutableLabEvidenceTest extends TestCase
         $owner = $generation->agents->first();
         $evidence = app(LabImmutableEvidenceService::class);
         $run = $evidence->beginRun($owner, 'screening', 'screen');
-        $staleAt = now()->timestamp - 301;
+        $staleAt = now()->timestamp - 1501;
         $recentAt = now()->timestamp;
         $staleJobId = (int) DB::table('jobs')->insertGetId([
             'queue' => 'lab-screening',

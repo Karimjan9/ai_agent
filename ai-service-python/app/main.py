@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 import pandas as pd
 
 from app.routers.backtests import router as backtests_router
-from app.schemas import SimpleBacktestRequest, SimpleBacktestResponse
+from app.schemas import Candle, SimpleBacktestRequest, SimpleBacktestResponse
 from app.services.backtester import (
     _advance_trailing_stop, _apply_execution_regime, _entry_price, _exit_distances, _exit_price, _intrabar_exit, _load_regime_source,
     _load_simple_candles, _position_size_multiple, _resolve_dataset_path, _volatility_risk_multiplier, _volume_risk_multiplier,
@@ -25,6 +25,7 @@ from app.services.parameter_schema import validate_strategy_parameters
 from app.services.walk_forward import WalkForwardService
 from app.services.market_adaptive_replay import MarketAdaptiveReplayService
 from app.services.execution_contract import enforce_policy_boundary, execution_contract_metadata
+from app.services.multitimeframe import apply_signal_policy, counterfactuals
 from app.services.statistical_validation import (
     deflated_sharpe_ratio,
     per_trade_sharpe,
@@ -48,6 +49,12 @@ _active_replay_count = 0
 _last_replay_started_at: str | None = None
 _last_replay_finished_at: str | None = None
 _last_replay_termination: str | None = None
+
+
+def _utc_timestamp(value: object) -> pd.Timestamp:
+    """Return one timezone-aware UTC timestamp for API/data comparisons."""
+    timestamp = pd.Timestamp(value)
+    return timestamp.tz_localize("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
 
 
 def _load_foundation_candles(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
@@ -138,7 +145,7 @@ async def require_internal_token(request: Request, call_next):
         global _active_replay_count, _last_replay_started_at
         with _replay_state_lock:
             _active_replay_count += 1
-            _last_replay_started_at = pd.Timestamp.utcnow().isoformat()
+            _last_replay_started_at = pd.Timestamp.now(tz="UTC").isoformat()
     try:
         return await call_next(request)
     finally:
@@ -674,7 +681,7 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
     cache_key = _replay_cache_key(operation, payload)
     cached = _load_immutable_replay_cache(cache_key)
     if cached is not None:
-        _last_replay_finished_at = pd.Timestamp.utcnow().isoformat()
+        _last_replay_finished_at = pd.Timestamp.now(tz="UTC").isoformat()
         _last_replay_termination = "cache_hit"
         return _with_replay_compiler_metadata(cached, cache_key, "immutable_cache_hit")
 
@@ -793,7 +800,7 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
                     capture.close()
                 except OSError:
                     pass
-        _last_replay_finished_at = pd.Timestamp.utcnow().isoformat()
+        _last_replay_finished_at = pd.Timestamp.now(tz="UTC").isoformat()
         _replay_lane_lock.release()
 
 
@@ -896,7 +903,7 @@ def _store_immutable_replay_cache(cache_key: str, value: dict[str, object]) -> N
         temporary.write_text(json.dumps({
             "protocol": "immutable_replay_cache_v2",
             "key": cache_key,
-            "created_at": pd.Timestamp.utcnow().isoformat(),
+            "created_at": pd.Timestamp.now(tz="UTC").isoformat(),
             "value": value,
         }, ensure_ascii=False, separators=(",", ":"), default=str), encoding="utf-8")
         temporary.replace(path)
@@ -1052,7 +1059,7 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
     try:
         payload = _prepare_paper_payload(payload)
         df = _load_simple_candles(payload).copy()
-        df["time"] = pd.to_datetime(df["time"])
+        df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
         for column in ["open", "high", "low", "close", "volume"]:
             if column not in df.columns:
                 df[column] = 0
@@ -1078,13 +1085,42 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
         )
         row = prepared.iloc[-1]
         signal = str(row.get("signal", "WAIT"))
+        raw_agent_signal = signal
         price = float(row["close"])
         meta = _abstention_meta_decision(row, prepared.iloc[-2] if len(prepared) > 1 else None, signal, price, payload)
         router_wait_reason = str(row.get("portfolio_wait_reason", "") or "")
         if signal == "WAIT" and router_wait_reason:
             meta = {**meta, "decision": "WAIT", "reason": router_wait_reason, "router_wait": True}
+        raw_meta = dict(meta)
+        pre_mtf_decision = str(meta.get("decision", "WAIT"))
+        mtf = apply_signal_policy(pre_mtf_decision, row, payload.mtf_pilot, row.get("time"))
+        if mtf["decision"] != pre_mtf_decision:
+            meta = {
+                **meta,
+                "decision": mtf["decision"],
+                "reason": mtf["reason"],
+                "mtf_previous_decision": pre_mtf_decision,
+                "mtf_veto": mtf["decision"] == "WAIT",
+            }
+        if meta.get("decision") in {"BUY", "SELL"}:
+            meta["position_size_multiplier"] = round(
+                float(meta.get("position_size_multiplier", 1.0) or 1.0)
+                * float(mtf.get("risk_multiplier", 1.0) or 1.0), 6
+            )
+        else:
+            meta["position_size_multiplier"] = 0.0
+        final_signal = str(meta.get("decision", "WAIT"))
+        official_contract = _execution_contract(payload, row, final_signal, price, meta, mtf)
+        shadow_contract = _execution_contract(
+            payload,
+            row,
+            pre_mtf_decision,
+            price,
+            raw_meta,
+            {"protocol": "xauusd_h1_m15_mtf_v1", "context": {"status": "not_applicable"}, "risk_multiplier": 1.0},
+        )
         return {
-            "signal": meta["decision"], "agent_signal": signal, "signal_time": pd.Timestamp(row["time"]).isoformat(), "price": price,
+            "signal": final_signal, "agent_signal": raw_agent_signal, "signal_time": _utc_timestamp(row["time"]).isoformat(), "price": price,
             "market_regime": str(row.get("market_regime", "unknown")),
             "volatility_regime": str(row.get("volatility_regime", "normal_volatility")),
             "confidence": float(row.get("signal_confidence", 1.0) or 0),
@@ -1096,8 +1132,18 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
                 "policy_rejection": str(row.get("volume_policy_rejection", "")),
             },
             "meta_agent": meta,
+            "mtf_pilot": mtf,
+            "counterfactuals": counterfactuals(
+                pre_mtf_decision,
+                mtf,
+                {
+                    "m15_only": shadow_contract,
+                    "h1_m15_official": official_contract,
+                    "m15_without_h1_veto": shadow_contract,
+                },
+            ),
             "router_wait_reason": router_wait_reason or None,
-            "execution_contract_preview": _execution_contract(payload, row, signal, price, meta),
+            "execution_contract_preview": official_contract,
         }
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1117,7 +1163,7 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
         market_price = float(body["entry_market_price"])
         requested_time = str(body.get("signal_time", ""))
         df = _load_simple_candles(payload).copy()
-        df["time"] = pd.to_datetime(df["time"])
+        df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
         for column in ["open", "high", "low", "close", "volume"]:
             if column not in df:
                 df[column] = 0
@@ -1142,10 +1188,8 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
             )
         )
         if requested_time:
-            expected = pd.Timestamp(requested_time)
-            if expected.tzinfo is not None:
-                expected = expected.tz_localize(None)
-            matches = prepared[pd.to_datetime(prepared["time"]).eq(expected)]
+            expected = _utc_timestamp(requested_time)
+            matches = prepared[pd.to_datetime(prepared["time"], utc=True, errors="coerce").eq(expected)]
             if matches.empty:
                 raise ValueError("Signal time no longer matches the immutable execution contract.")
             row_index = int(matches.index[-1])
@@ -1158,7 +1202,24 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
         router_wait_reason = str(row.get("portfolio_wait_reason", "") or "")
         if signal == "WAIT" and router_wait_reason:
             meta = {**meta, "decision": "WAIT", "reason": router_wait_reason, "router_wait": True}
-        return _execution_contract(payload, row, signal, market_price, meta)
+        pre_mtf_decision = str(meta.get("decision", "WAIT"))
+        mtf = apply_signal_policy(pre_mtf_decision, row, payload.mtf_pilot, row.get("time"))
+        if mtf["decision"] != pre_mtf_decision:
+            meta = {
+                **meta,
+                "decision": mtf["decision"],
+                "reason": mtf["reason"],
+                "mtf_previous_decision": pre_mtf_decision,
+                "mtf_veto": mtf["decision"] == "WAIT",
+            }
+        if meta.get("decision") in {"BUY", "SELL"}:
+            meta["position_size_multiplier"] = round(
+                float(meta.get("position_size_multiplier", 1.0) or 1.0)
+                * float(mtf.get("risk_multiplier", 1.0) or 1.0), 6
+            )
+        else:
+            meta["position_size_multiplier"] = 0.0
+        return _execution_contract(payload, row, str(meta.get("decision", "WAIT")), market_price, meta, mtf)
     except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1169,9 +1230,9 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
     try:
         payload = SimpleBacktestRequest.model_validate(body.get("request", {}))
         contract = dict(body["contract"])
-        entry_time = pd.Timestamp(str(body["entry_time"]))
+        entry_time = _utc_timestamp(str(body["entry_time"]))
         df = _load_simple_candles(payload).copy()
-        df["time"] = pd.to_datetime(df["time"])
+        df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
         for column in ["open", "high", "low", "close", "volume"]:
             if column not in df:
                 df[column] = 0
@@ -1181,7 +1242,7 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
         df["_management_atr"] = pd.concat([
             df["high"] - df["low"], (df["high"] - previous_close).abs(), (df["low"] - previous_close).abs(),
         ], axis=1).max(axis=1).rolling(14, min_periods=1).mean()
-        matches = df[pd.to_datetime(df["time"]).eq(entry_time.tz_localize(None) if entry_time.tzinfo else entry_time)]
+        matches = df[pd.to_datetime(df["time"], utc=True, errors="coerce").eq(entry_time)]
         if matches.empty:
             raise ValueError("Paper entry candle is absent from execution dataset.")
         entry_index = int(matches.index[0])
@@ -1204,11 +1265,88 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
                 continue
             entry = float(position["entry_price"])
             gross = ((float(exit_price) - entry) / entry * 100) if position["direction"] == "BUY" else ((entry - float(exit_price)) / entry * 100)
-            holding_days = max((pd.Timestamp(candle["time"]) - entry_time).total_seconds() / 86400, 0)
+            holding_days = max((_utc_timestamp(candle["time"]) - entry_time).total_seconds() / 86400, 0)
             profit = gross * float(position["position_size_multiple"]) - (payload.execution.commission_percent + payload.execution.swap_per_day_percent * holding_days) * float(position["position_size_multiple"])
             return {"closed": True, "exit_price": round(float(exit_price), 8), "profit_percent": round(profit, 5), "exit_reason": reason,
                 "stop_loss": round(float(position["stop_loss"]), 8), "contract_version": contract.get("contract_version")}
         return {"closed": False, "stop_loss": round(float(position["stop_loss"]), 8), "contract_version": contract.get("contract_version")}
+    except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/backtest/mtf-ablation")
+def run_mtf_ablation(body: dict[str, object]) -> dict[str, object]:
+    """Run the four controlled XAUUSD MTF lanes under one data/cost contract.
+
+    This endpoint is research-only. It returns comparable summaries and never
+    writes a promotion or paper-evidence record. The Laravel command that
+    calls it selects one frozen M15 candidate and supplies independent H1 and
+    M15 candle streams.
+    """
+    try:
+        base = SimpleBacktestRequest.model_validate(body.get("base_request", body))
+        h1_candles = list(body.get("h1_candles", []) or [])
+        m15_candles = list(body.get("m15_candles", []) or [])
+        if len(h1_candles) < 2 or len(m15_candles) < 2:
+            raise ValueError("MTF ablation requires independent H1 and M15 candle streams.")
+
+        lightweight = bool(body.get("lightweight", True))
+        pilot = dict(base.mtf_pilot or {})
+
+        def variant_payload(timeframe: str, candles: list[object], regime: list[object], mode: str | None) -> SimpleBacktestRequest:
+            variant_pilot = dict(pilot)
+            if mode is None:
+                variant_pilot = {"enabled": False, "mode": "m15_only"}
+            else:
+                variant_pilot["enabled"] = True
+                variant_pilot["mode"] = mode
+            candidate = base.model_copy(update={
+                "timeframe": timeframe,
+                "candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in candles],
+                "regime_candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in regime],
+                "dataset_path": None,
+                "regime_dataset_path": None,
+                "mtf_pilot": variant_pilot,
+            })
+            return _prepare_paper_payload(candidate)
+
+        variants = {
+            "h1_only": (variant_payload("H1", h1_candles, [], None), h1_candles),
+            "m15_only": (variant_payload("M15", m15_candles, [], None), m15_candles),
+            "h1_regime_m15": (variant_payload("M15", m15_candles, h1_candles, "h1_regime_m15"), m15_candles),
+            "h1_veto_m15_risk": (variant_payload("M15", m15_candles, h1_candles, "h1_veto_m15_risk"), m15_candles),
+        }
+        results: dict[str, object] = {}
+        for name, (payload, frame) in variants.items():
+            result = run_simple_ema_rsi_backtest_on_dataframe(
+                payload,
+                pd.DataFrame(frame),
+                include_differential_pair=False,
+                lightweight=lightweight,
+            ).model_dump()
+            results[name] = {
+                "protocol": "mtf_ablation_lane_v1",
+                "mode": payload.mtf_pilot.get("mode", "m15_only"),
+                "symbol": payload.symbol,
+                "timeframe": payload.timeframe,
+                "total_trades": result.get("total_trades", 0),
+                "profit_factor": result.get("profit_factor", 0),
+                "net_profit_percent": result.get("net_profit_percent", 0),
+                "max_drawdown_percent": result.get("max_drawdown_percent", result.get("max_drawdown", 0)),
+                "winrate": result.get("winrate", 0),
+                "mtf_pilot": (result.get("data_quality", {}) or {}).get("mtf_pilot", {}),
+                "execution_contract": result.get("execution_contract", {}),
+                "promotion_evidence": False,
+            }
+        return {
+            "protocol": "xauusd_mtf_ablation_v1",
+            "pilot_id": pilot.get("pilot_id", "xauusd_h1_m15_v1"),
+            "same_data_contract": True,
+            "same_execution_contract": True,
+            "frozen_control": "m15_only",
+            "promotion_evidence": False,
+            "variants": results,
+        }
     except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1223,7 +1361,7 @@ def _coverage_permission(policy: dict[str, object], row: pd.Series, signal: str)
 
     regime = str(row.get("market_regime", "unknown"))
     volatility = str(row.get("volatility_regime", "normal_volatility"))
-    timestamp = pd.Timestamp(row.get("time"))
+    timestamp = _utc_timestamp(row.get("time"))
     session = str(timestamp.hour) if not pd.isna(timestamp) else "unknown"
     context = {"regime": regime, "volatility": volatility, "session": session, "direction": signal}
     scopes = passport.get("scope_order") or [
@@ -1380,8 +1518,16 @@ def _typed_agent_council(signal: str, regime: str, body_atr: float, cost: float,
             "foundation_prior": foundation_prior, "rule": "Typed specialist disagreement, execution risk or skeptic warning resolves to WAIT."}
 
 
-def _execution_contract(payload: SimpleBacktestRequest, row: pd.Series, signal: str, market_price: float, meta: dict[str, object]) -> dict[str, object]:
+def _execution_contract(
+    payload: SimpleBacktestRequest,
+    row: pd.Series,
+    signal: str,
+    market_price: float,
+    meta: dict[str, object],
+    mtf: dict[str, object] | None = None,
+) -> dict[str, object]:
     execution_metadata = execution_contract_metadata(payload)
+    mtf = mtf or {"protocol": "xauusd_h1_m15_mtf_v1", "context": {"status": "not_applicable"}, "risk_multiplier": 1.0}
     if meta.get("decision") not in {"BUY", "SELL"}:
         return {
             "decision": "WAIT",
@@ -1389,6 +1535,7 @@ def _execution_contract(payload: SimpleBacktestRequest, row: pd.Series, signal: 
             "contract_version": "reality_parity_execution_v1",
             "execution_contract": execution_metadata,
             "execution_hash": execution_metadata["execution_hash"],
+            "mtf_pilot": mtf,
         }
     direction = str(meta["decision"])
     entry = _entry_price(market_price, direction, payload)
@@ -1412,6 +1559,7 @@ def _execution_contract(payload: SimpleBacktestRequest, row: pd.Series, signal: 
         "meta_agent": meta, "contract_version": "reality_parity_execution_v1",
         "data_hash": data_hash, "strategy_hash": strategy_hash, "execution_hash": execution_hash, "code_version": code_version,
         "execution_contract": execution_metadata,
+        "mtf_pilot": mtf,
     }
 
 

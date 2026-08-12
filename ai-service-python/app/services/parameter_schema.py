@@ -112,6 +112,7 @@ PARAMETER_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
         "trend_down_strength_min": {"type": float, "min": 10, "max": 50},
         "trend_down_pullback_atr_fraction": {"type": float, "min": 0.1, "max": 2.0},
         "trend_down_risk_multiplier": {"type": float, "min": 0.1, "max": 1.0},
+        "trend_up_risk_multiplier": {"type": float, "min": 0.1, "max": 1.0},
         "trend_up_strength_min": {"type": float, "min": 10, "max": 50},
         "trend_up_pullback_atr_fraction": {"type": float, "min": 0.1, "max": 2.0},
         # v2 differential lanes reuse the parent hybrid momentum topology and
@@ -140,6 +141,9 @@ PARAMETER_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
         "session_filter_enabled": {"type": bool},
         "session_start": {"type": int, "min": 0, "max": 23},
         "session_end": {"type": int, "min": 1, "max": 24},
+        "differential_target_session_filter_enabled": {"type": bool},
+        "differential_target_session_start": {"type": int, "min": 0, "max": 23},
+        "differential_target_session_end": {"type": int, "min": 1, "max": 24},
         "differential_target_regime": {"type": str, "choices": {"trend_up", "range", "trend_down"}},
         "differential_replay_mode": {"type": str, "choices": {"portfolio", "paired_isolated"}},
         "differential_router_version": {"type": str, "choices": {"v1", "v2"}},

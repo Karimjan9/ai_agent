@@ -218,7 +218,7 @@ class WalkForwardService:
         if df.empty:
             raise ValueError("Dataset is empty.")
         normalized = df.copy()
-        normalized["time"] = pd.to_datetime(normalized["time"])
+        normalized["time"] = pd.to_datetime(normalized["time"], utc=True, errors="coerce")
         return normalized.sort_values("time").reset_index(drop=True)
 
 

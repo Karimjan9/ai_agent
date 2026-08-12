@@ -9,6 +9,7 @@ use App\Models\ModelVersion;
 use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabPopulationService;
+use App\Services\LearningProtocolSafetyService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use Illuminate\Console\Command;
@@ -28,7 +29,13 @@ class DispatchDifferentialTrendDownRescue extends Command
         StrategyParameterSchemaService $schemas,
         LabDatasetExportService $datasets,
         StrategySemanticGroupService $semanticGroups,
+        LearningProtocolSafetyService $protocolSafety,
     ): int {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: differential trend-down rescue deferred.');
+
+            return self::SUCCESS;
+        }
         $source = LabAgent::query()->with(['modelVersion', 'generation.laboratory'])->findOrFail((int) $this->argument('sourceAgent'));
         $parent = $source->modelVersion;
         $lab = $source->generation?->laboratory;
@@ -36,6 +43,11 @@ class DispatchDifferentialTrendDownRescue extends Command
             $this->error('Source must be a screened hybrid parent.');
 
             return self::FAILURE;
+        }
+        if ((string) $lab->lifecycle_mode !== 'lighthouse') {
+            $this->info('Source laboratory shadow rejimida; differential rescue dispatch qilinmadi.');
+
+            return self::SUCCESS;
         }
         $target = $this->worstRegimeTarget($source);
         if (! $target) {

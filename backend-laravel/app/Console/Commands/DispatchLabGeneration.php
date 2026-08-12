@@ -9,6 +9,7 @@ use App\Services\LabAgentPreflightService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
+use App\Services\LearningProtocolSafetyService;
 use App\Services\MarketData\MarketDataContinuityService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
@@ -17,13 +18,26 @@ use Illuminate\Support\Facades\Schema;
 
 class DispatchLabGeneration extends Command
 {
-    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1} {--force-generation}';
+    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1} {--force-generation} {--controlled-rescue : Dispatch an already-approved XAUUSD H1 controlled rescue only}';
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
-    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight): int
+    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety): int
     {
         $populations->ensureLaboratories();
+        $controlledRescue = (bool) $this->option('controlled-rescue');
+        if ($controlledRescue
+            && (strtoupper((string) ($this->argument('symbol') ?: '')) !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+                || strtoupper((string) $this->option('timeframe')) !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
+            $this->error('Controlled rescue dispatch faqat XAUUSD H1 uchun ruxsat etiladi.');
+
+            return self::FAILURE;
+        }
+        if ($protocolSafety->generationCreationPaused() && ! $controlledRescue) {
+            $this->info('Learning protocol paused: normal screening dispatch deferred; existing recovery jobs remain untouched.');
+
+            return self::SUCCESS;
+        }
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
 
         // The lab queue shares the worker pool with screening learning and
@@ -51,6 +65,11 @@ class DispatchLabGeneration extends Command
         $timeframe = strtoupper((string) $this->option('timeframe'));
         foreach ($symbols as $symbol) {
             $lab = AiLaboratory::where('symbol', $symbol)->where('timeframe', $timeframe)->firstOrFail();
+            if ((string) $lab->lifecycle_mode !== 'lighthouse') {
+                $this->info("{$symbol} {$timeframe}: shadow lab; normal screening dispatch skipped.");
+
+                continue;
+            }
             $generation = $lab->generations()->with('agents')->latest('generation')->first();
             $activeGeneration = $lab->generations()
                 ->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)
@@ -90,6 +109,13 @@ class DispatchLabGeneration extends Command
 
             if (! $generation) {
                 $this->warn("{$symbol}: new learning evidence is not available.");
+
+                continue;
+            }
+            if ($controlledRescue
+                && data_get($generation->trigger_context, 'controlled_rescue_admission.protocol')
+                    !== LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL) {
+                $this->error("{$symbol}: target generation controlled-rescue admission contracti topilmadi; dispatch bloklandi.");
 
                 continue;
             }

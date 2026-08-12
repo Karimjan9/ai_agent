@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\AiLaboratory;
+use App\Services\LearningProtocolSafetyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -13,11 +14,22 @@ class RescreenLabGeneration extends Command
     protected $signature = 'trading:rescreen-lab-generation {symbol} {generation} {--timeframe=H1}';
     protected $description = 'Return a screened, non-dispatched generation to draft for a newer screening evidence contract';
 
-    public function handle(): int
+    public function handle(LearningProtocolSafetyService $protocolSafety): int
     {
         $symbol = strtoupper((string) $this->argument('symbol'));
         $timeframe = strtoupper((string) $this->option('timeframe'));
-        $generation = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->firstOrFail()
+        $lab = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->firstOrFail();
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->error('Learning protocol paused: legacy rescreen is blocked; use approved same-generation evidence recovery.');
+
+            return self::FAILURE;
+        }
+        if ((string) $lab->lifecycle_mode !== 'lighthouse') {
+            $this->error("{$symbol} {$timeframe}: shadow lab; legacy rescreen is blocked.");
+
+            return self::FAILURE;
+        }
+        $generation = $lab
             ->generations()->with('agents.modelVersion')->where('generation', (int) $this->argument('generation'))->firstOrFail();
         if (! in_array($generation->status, ['screened', 'screening', 'draft'], true)
             || $generation->agents->contains(fn ($agent) => in_array($agent->lifecycle_status, ['full_queued', 'training', 'challenger', 'forward_validated', 'paper', 'champion'], true))) {

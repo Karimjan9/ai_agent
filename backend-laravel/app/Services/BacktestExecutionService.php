@@ -36,6 +36,11 @@ class BacktestExecutionService
         $contract = app(ExecutionContractService::class)->for($symbol, $timeframe);
         $payload['execution'] = $contract['parameters'];
         $payload['execution_contract'] = $contract;
+        $payload['mtf_pilot'] = app(MultiTimeframePilotService::class)->requestPayload(
+            $symbol,
+            $timeframe,
+            $payload['strategy'] ?? null,
+        );
         $startedAt = now();
         $datasetHash = $this->datasetHash($payload['dataset_path']);
         $requestHash = (string) ($run->request_hash ?: $this->evidence->hash($payload));

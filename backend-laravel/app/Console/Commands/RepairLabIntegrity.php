@@ -15,8 +15,10 @@ use App\Services\ExecutionContractService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use App\Services\LabReplayRecoveryService;
+use App\Services\LabQueueJobInspector;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
+use App\Services\LearningProtocolSafetyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +46,7 @@ class RepairLabIntegrity extends Command
         ControlRootInheritanceService $rootInheritance,
         LabImmutableEvidenceService $evidence,
         LabReplayRecoveryService $replayRecovery,
+        LearningProtocolSafetyService $protocolSafety,
     ): int
     {
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
@@ -169,6 +172,7 @@ class RepairLabIntegrity extends Command
                     $preflight,
                     $evidence,
                     $replayRecovery,
+                    app(LabQueueJobInspector::class),
                 );
                 $missingScreenEvidence += $result['missing'];
                 $missingScreenRequeued += $result['requeued'];
@@ -236,6 +240,16 @@ class RepairLabIntegrity extends Command
         $this->info("{$symbol} {$timeframe}: {$invalid} invalid lineage/preflight record(s), {$contractQuarantined} contract-drift agent(s) quarantined, {$terminalBackfilled} screened terminal boundary backfill(s), {$invalidExecutionEvidence} invalid execution-evidence row(s), {$missingScreenEvidence} missing-screen-evidence agent(s), {$missingScreenRequeued} requeued, {$missingScreenSkipped} skipped [{$mode}].");
 
         if ($this->option('rebuild-root')) {
+            if ($protocolSafety->generationCreationPaused()) {
+                $this->warn('Learning protocol paused: --rebuild-root blocked; integrity audit/repair above remained within its requested scope.');
+
+                return $invalid > 0 ? self::FAILURE : self::SUCCESS;
+            }
+            if ((string) $lab->lifecycle_mode !== 'lighthouse') {
+                $this->warn("{$symbol} {$timeframe}: shadow lab; --rebuild-root blocked.");
+
+                return $invalid > 0 ? self::FAILURE : self::SUCCESS;
+            }
             if (! $this->option('apply')) {
                 $this->warn('--rebuild-root ishlashi uchun --apply ham kerak.');
                 return $invalid > 0 ? self::FAILURE : self::SUCCESS;
@@ -278,6 +292,7 @@ class RepairLabIntegrity extends Command
         LabAgentPreflightService $preflight,
         LabImmutableEvidenceService $evidence,
         LabReplayRecoveryService $replayRecovery,
+        LabQueueJobInspector $queueJobs,
     ): array {
         $completedAgentIds = LabEvaluationRun::query()
             ->where('lab_generation_id', $generation->id)
@@ -309,10 +324,7 @@ class RepairLabIntegrity extends Command
                 ->where('phase', 'screening')
                 ->where('status', 'started')
                 ->exists();
-            $hasQueuedJob = DB::table('jobs')
-                ->whereIn('queue', $queues)
-                ->where('payload', 'like', '%labAgentId%'.$agent->id.'%')
-                ->exists();
+            $hasQueuedJob = $queueJobs->hasAgentJob((int) $agent->id, $queues);
 
             $this->line("G{$generation->generation} A{$agent->id}: screened projection has no completed immutable screen run.");
             if ($hasOpenRun || $hasQueuedJob) {

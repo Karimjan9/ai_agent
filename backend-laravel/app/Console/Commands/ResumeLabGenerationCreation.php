@@ -18,7 +18,11 @@ class ResumeLabGenerationCreation extends Command
             return self::INVALID;
         }
 
-        $safety->resumeGenerationCreation($reason);
+        if (! $safety->resumeGenerationCreation($reason)) {
+            $this->error('Resume blocked: full evolution funnel ochilmagan; faqat controlled 20-seat rescue admission ruxsat etiladi.');
+
+            return self::FAILURE;
+        }
         $this->info('Lab-generation creation resumed; promotion gates remain unchanged.');
         return self::SUCCESS;
     }

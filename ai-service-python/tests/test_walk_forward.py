@@ -28,7 +28,7 @@ class WalkForwardSplitTest(unittest.TestCase):
 
     def test_rolling_windows_reserve_final_two_years(self):
         df = pd.DataFrame({
-            "time": pd.date_range("2004-01-01", "2026-01-01", freq="30D"),
+            "time": pd.date_range("2004-01-01", "2026-01-01", freq="30D", tz="UTC"),
             "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1,
         })
 

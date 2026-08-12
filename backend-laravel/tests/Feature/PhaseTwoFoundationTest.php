@@ -157,7 +157,7 @@ class PhaseTwoFoundationTest extends TestCase
 
     public function test_lab_pipeline_health_tracks_active_work_without_calling_it_promotion_evidence(): void
     {
-        app(LabPopulationService::class)->build('EURUSD', 'health_active_test', true);
+        app(LabPopulationService::class)->build('XAUUSD', 'health_active_test', true, 'H1');
 
         $check = app(PhaseTwoFoundationService::class)->runHealthCheck()
             ->firstWhere('service_key', 'lab_pipeline');
@@ -170,7 +170,7 @@ class PhaseTwoFoundationTest extends TestCase
 
     public function test_lab_pipeline_health_blocks_full_validation_without_foundation_coverage(): void
     {
-        $generation = app(LabPopulationService::class)->build('GBPUSD', 'health_coverage_test', true);
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'health_coverage_test', true, 'H1');
         $generation->update(['status' => 'full_validation', 'completed_at' => null]);
 
         $check = app(PhaseTwoFoundationService::class)->runHealthCheck()

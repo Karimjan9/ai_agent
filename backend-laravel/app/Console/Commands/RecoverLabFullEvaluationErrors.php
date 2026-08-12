@@ -7,11 +7,14 @@ use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\ModelMarketPerformance;
 use App\Services\LabAgentPreflightService;
+use App\Services\LabQueueJobInspector;
 use App\Services\LabReplayRecoveryService;
+use App\Services\OperatorApprovalService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 
 /** Requeues full-replay transport failures without creating strategy evidence. */
 class RecoverLabFullEvaluationErrors extends Command
@@ -23,11 +26,15 @@ class RecoverLabFullEvaluationErrors extends Command
         {--limit=4}
         {--agent= : Restrict recovery to one lab agent ID}
         {--after-code-repair : Retry bounded full-replay errors after the evaluator or dataset pipeline was repaired}
-        {--after-proof-repair : Re-run only named candidates quarantined by the old proof verifier}';
+        {--after-proof-repair : Re-run only named candidates quarantined by the old proof verifier}
+        {--apply : Dispatch the bounded recovery after operator approval and queue drain}
+        {--approved-by=}
+        {--approval-reason=}
+        {--json}';
 
     protected $description = 'Requeue full-validation transport errors after a bounded code/data repair';
 
-    public function handle(LabReplayRecoveryService $recovery): int
+    public function handle(LabReplayRecoveryService $recovery, LabQueueJobInspector $queue, OperatorApprovalService $approvals): int
     {
         try {
             $probe = Http::connectTimeout(5)->timeout(10)->acceptJson()
@@ -51,6 +58,26 @@ class RecoverLabFullEvaluationErrors extends Command
         $agentId = $this->option('agent') !== null ? (int) $this->option('agent') : null;
         $afterCodeRepair = (bool) $this->option('after-code-repair');
         $afterProofRepair = (bool) $this->option('after-proof-repair');
+        $apply = (bool) $this->option('apply');
+
+        $queueBacklog = $queue->labQueueBacklog();
+        if ($apply && $queueBacklog['total'] > 0) {
+            $result = [
+                'selected' => 0,
+                'dispatched' => 0,
+                'deferred' => true,
+                'action' => 'deferred_queue_backlog',
+                'queue_backlog' => $queueBacklog,
+                'promotion_evidence' => false,
+            ];
+            if ($this->option('json')) {
+                $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            } else {
+                $this->warn('Full recovery apply deferred: lab queue is not empty.');
+            }
+
+            return self::SUCCESS;
+        }
 
         if ($afterProofRepair && ! $agentId) {
             $this->warn('Proof repair requires an explicit --agent ID; old evidence is never bulk-replayed implicitly.');
@@ -92,6 +119,38 @@ class RecoverLabFullEvaluationErrors extends Command
             $this->info('No bounded full evaluator failures are ready for recovery.');
 
             return self::SUCCESS;
+        }
+
+        if (! $apply) {
+            $result = [
+                'selected' => $agents->count(),
+                'dispatched' => 0,
+                'action' => 'would_dispatch_after_operator_approval',
+                'agent_ids' => $agents->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+                'queue_backlog' => $queueBacklog,
+                'promotion_evidence' => false,
+            ];
+            if ($this->option('json')) {
+                $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            } else {
+                $this->info('Dry-run only: no full-replay recovery was dispatched. Use --apply with explicit operator approval after queue drain.');
+            }
+
+            return self::SUCCESS;
+        }
+
+        try {
+            $approvals->requireForApply('recover-lab-full-evaluation-errors', $this->option('approved-by'), $this->option('approval-reason'), [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+                'generation' => $generationNumber,
+                'agent' => $agentId,
+                'agent_ids' => $agents->pluck('id')->values()->all(),
+            ]);
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
         }
 
         // Recovery is an operational repair, not permission to bypass the

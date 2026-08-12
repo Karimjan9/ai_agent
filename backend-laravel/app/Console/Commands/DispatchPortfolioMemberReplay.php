@@ -10,6 +10,7 @@ use App\Models\ModelMarketPerformance;
 use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
 use App\Services\LabCandidateSelectionService;
+use App\Services\LearningProtocolSafetyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,13 @@ class DispatchPortfolioMemberReplay extends Command
         LabCandidateSelectionService $selection,
         CandidateGateDecisionService $decisions,
         CandidateHandoffService $handoffs,
+        LearningProtocolSafetyService $protocolSafety,
     ): int {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: portfolio full replay dispatch deferred.');
+
+            return self::SUCCESS;
+        }
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
         $timeframe = strtoupper((string) $this->option('timeframe'));
 
@@ -42,6 +49,11 @@ class DispatchPortfolioMemberReplay extends Command
 
         foreach ($symbols as $symbol) {
             $lab = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->first();
+            if (! $lab || (string) $lab->lifecycle_mode !== 'lighthouse') {
+                $this->info("{$symbol} {$timeframe}: shadow lab; portfolio replay skipped.");
+
+                continue;
+            }
             $generation = $lab?->generations()->with('agents.modelVersion')->latest('generation')->first();
             // Portfolio-member research is a second lane. It must never
             // change a freshly screened generation to full_validation before

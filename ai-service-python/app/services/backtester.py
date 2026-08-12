@@ -24,6 +24,7 @@ from app.services.execution_contract import enforce_policy_boundary, execution_c
 from app.services.control_roots import control_root_for
 from app.services.indicators import add_indicators
 from app.services.market_regime import apply_market_regime
+from app.services.multitimeframe import annotate_regime_source, apply_signal_policy
 from app.services.monte_carlo import MonteCarloService
 from app.services.strategy_dna import StrategyDnaService
 from app.services.statistical_validation import bootstrap_profit_factor_lower_bound
@@ -95,7 +96,7 @@ def run_simple_ema_rsi_backtest_on_dataframe(
             f"{data_quality['hard_gate_failures']}"
         )
 
-    df["time"] = pd.to_datetime(df["time"], errors="coerce")
+    df["time"] = pd.to_datetime(df["time"], errors="coerce", utc=True)
     for column in ["open", "high", "low", "close", "volume"]:
         df[column] = pd.to_numeric(df[column], errors="coerce")
     df["volume_available"] = df["volume_available"].fillna(False).astype(bool)
@@ -160,11 +161,16 @@ def _apply_execution_regime(execution_df: pd.DataFrame, regime_source: pd.DataFr
     """Merge only closed H1 state into an M15 execution stream (no look-ahead)."""
     if regime_source is None:
         return apply_market_regime(execution_df)
-    higher = regime_source.copy()
-    higher["time"] = pd.to_datetime(higher["time"], utc=True)
-    higher = apply_market_regime(higher).sort_values("time")
-    higher["regime_available_at"] = higher["time"] + pd.Timedelta(hours=1)
-    columns = ["regime_available_at", "market_regime", "volatility_regime", "adx", "atr_regime"]
+    higher_raw = regime_source.copy()
+    higher_raw["time"] = pd.to_datetime(higher_raw["time"], utc=True, errors="coerce")
+    higher = annotate_regime_source(apply_market_regime(higher_raw))
+    if higher is None:
+        return apply_market_regime(execution_df)
+    higher["regime_available_at"] = higher["_h1_closed_at"]
+    columns = [
+        "regime_available_at", "_h1_open_at", "_h1_closed_at", "_h1_context_hash",
+        "market_regime", "volatility_regime", "adx", "atr_regime",
+    ]
     base = execution_df.copy()
     base["time"] = pd.to_datetime(base["time"], utc=True)
     merged = pd.merge_asof(base.sort_values("time"), higher[columns].sort_values("regime_available_at"), left_on="time", right_on="regime_available_at", direction="backward").drop(columns=["regime_available_at"])
@@ -254,6 +260,8 @@ def _run_prepared_simple_backtest(
     transition_wait_until = -1
     transition_events = 0
     transition_vetoes = 0
+    mtf_vetoes = 0
+    mtf_contexts: Counter[str] = Counter()
     entry_funnel["raw_strategy_signals"] = _count_lane_signals(df, differential_lane)
 
     # A signal is only knowable after its candle closes. Execute it at the
@@ -306,6 +314,28 @@ def _run_prepared_simple_backtest(
                 signal_row["signal"] = signal
                 signal_row["signal_confidence"] = lane_confidence
                 signal_row["selected_specialist"] = lane_specialist
+            mtf_policy = apply_signal_policy(
+                signal,
+                signal_row,
+                payload.mtf_pilot,
+                signal_row.get("time"),
+            )
+            mtf_context = dict(mtf_policy.get("context", {}))
+            mtf_contexts[str(mtf_context.get("h1_regime", mtf_context.get("status", "not_applicable")))] += 1
+            if mtf_policy.get("decision") != signal:
+                if signal in {"BUY", "SELL"} and mtf_policy.get("decision") == "WAIT":
+                    mtf_vetoes += 1
+                    entry_funnel[f"rejected_mtf_{mtf_policy.get('reason', 'unknown')}"] += 1
+                signal_row = signal_row.copy()
+                signal_row["mtf_raw_signal"] = signal
+                signal_row["mtf_decision"] = mtf_policy.get("decision", "WAIT")
+                signal_row["mtf_veto_reason"] = mtf_policy.get("reason")
+                signal_row["mtf_context"] = mtf_context
+                signal = str(mtf_policy.get("decision", "WAIT"))
+            else:
+                signal_row = signal_row.copy()
+                signal_row["mtf_decision"] = signal
+                signal_row["mtf_context"] = mtf_context
             if signal not in {"BUY", "SELL"}:
                 if emit_decision_trace:
                     decision_trace.append(_decision_trace_event(
@@ -319,7 +349,7 @@ def _run_prepared_simple_backtest(
             # replay and can erase the very complementarity being tested.
             execution_payload = _portfolio_payload_for_signal(payload, signal_row)
             entry_funnel["flat_signal_opportunities"] += 1
-            month_key = str(pd.Timestamp(signal_row["time"]).to_period("M"))
+            month_key = _utc_month(signal_row["time"])
             opportunities_by_month[month_key] += 1
             context_key = _risk_context(signal_row, signal)
             context_wait = int(context_wait_until.get(context_key, -1))
@@ -398,6 +428,7 @@ def _run_prepared_simple_backtest(
                 * _regime_transition_multiplier(signal_row, df.iloc[index - 2] if index >= 2 else None)
                 * _regime_specific_risk_multiplier(signal_row, execution_payload)
                 * _volume_risk_multiplier(signal_row)
+                * float(mtf_policy.get("risk_multiplier", 1.0) or 1.0)
                 * (_recovery_probe_risk_multiplier(execution_payload) if probe_active else 1.0),
                 "market_regime": signal_row.get("market_regime", "unknown"),
                 "volatility_regime": signal_row.get("volatility_regime", "normal_volatility"),
@@ -734,6 +765,14 @@ def _run_prepared_simple_backtest(
                       "unexpected_gap_count": unexpected_gap_count,
                       "spread_quality": _spread_quality(df, payload),
                       "regime_source": "closed_h1" if regime_source is not None else "execution_timeframe",
+                      "mtf_pilot": {
+                          "protocol": "xauusd_h1_m15_mtf_v1",
+                          "enabled": bool(payload.mtf_pilot.get("enabled", False)),
+                          "mode": payload.mtf_pilot.get("mode", "m15_only"),
+                          "veto_count": mtf_vetoes,
+                          "context_counts": dict(mtf_contexts),
+                          "promotion_evidence": False,
+                      },
                       "decision_trace": {
                           "protocol": "candle_decision_trace_v1", "requested": emit_decision_trace,
                           "complete": emit_decision_trace, "event_count": len(decision_trace),
@@ -812,7 +851,7 @@ def _run_prepared_simple_backtest(
 def _data_quality_diagnostics(df: pd.DataFrame) -> dict[str, object]:
     """Inspect source order/values before sorting or dropping anything."""
     raw = df.copy()
-    timestamps = pd.to_datetime(raw["time"], errors="coerce")
+    timestamps = pd.to_datetime(raw["time"], errors="coerce", utc=True)
     valid_times = timestamps.dropna()
     duplicate_count = int(valid_times.duplicated(keep="first").sum())
     non_monotonic_pairs = int((valid_times.diff().dropna() <= pd.Timedelta(0)).sum())
@@ -1229,7 +1268,7 @@ def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: Si
         by_context_direction: dict[str, dict[str, list[float]]] = {}
         by_context_direction_month: dict[str, dict[str, dict[str, list[float]]]] = {}
         for trade in member_trades:
-            month = str(pd.Timestamp(trade.entry_time).to_period("M"))
+            month = _utc_month(trade.entry_time)
             by_month.setdefault(month, []).append(float(trade.profit_percent))
             context = f"{trade.market_regime}|{trade.volatility_regime}"
             by_context.setdefault(context, []).append(float(trade.profit_percent))
@@ -1872,9 +1911,11 @@ def _volatility_risk_multiplier(signal_row: pd.Series, payload: SimpleBacktestRe
 
 
 def _regime_specific_risk_multiplier(signal_row: pd.Series, payload: SimpleBacktestRequest) -> float:
-    """Local adapter: only the declared trend-down specialist may be de-risked."""
+    """Apply only explicitly declared directional-specialist risk scaling."""
     if str(signal_row.get("selected_specialist", "")) in {"trend_down", "trend_down_child"}:
         return min(1.0, max(0.1, float(payload.parameters.get("trend_down_risk_multiplier", 1.0) or 1.0)))
+    if str(signal_row.get("selected_specialist", "")) in {"trend_up", "trend_up_child"}:
+        return min(1.0, max(0.1, float(payload.parameters.get("trend_up_risk_multiplier", 1.0) or 1.0)))
     return 1.0
 
 
@@ -2321,7 +2362,7 @@ def _veto_regret_report(ledger: list[dict[str, object]]) -> dict[str, object]:
         pf = round(gross_profit / gross_loss, 3) if gross_loss else (99.0 if gross_profit else 0.0)
         monthly: dict[str, list[dict[str, object]]] = defaultdict(list)
         for item in items:
-            monthly[str(pd.Timestamp(item["exit_time"]).to_period("M"))].append(item)
+            monthly[_utc_month(item["exit_time"])].append(item)
         monthly_summary = {month: summarize_month(values) for month, values in monthly.items()}
         robust_months = sum(float(data["shadow_profit_factor"]) > 1.30 for data in monthly_summary.values())
         exploration = [item for item in items if bool(item.get("exploration_assigned", False))]
@@ -2444,9 +2485,11 @@ def _window_survival(
     df: pd.DataFrame, trades: list[SimpleTrade], opportunities: Counter[str], accepted: Counter[str],
 ) -> dict[str, object]:
     windows: list[dict[str, object]] = []
-    for period in pd.period_range(pd.Timestamp(df["time"].min()).to_period("M"), pd.Timestamp(df["time"].max()).to_period("M"), freq="M"):
+    start_month = _utc_month(df["time"].min())
+    end_month = _utc_month(df["time"].max())
+    for period in pd.period_range(start_month, end_month, freq="M"):
         month = str(period)
-        subset = [trade for trade in trades if str(pd.Timestamp(trade.entry_time).to_period("M")) == month]
+        subset = [trade for trade in trades if _utc_month(trade.entry_time) == month]
         returns = [trade.profit_percent for trade in subset]
         opportunity_count = int(opportunities.get(month, 0))
         pf = _profit_factor_for(returns) if returns else 0.0
@@ -2649,7 +2692,7 @@ def _pf_attribution(
         if df is None or df.empty or "time" not in df.columns:
             return "unknown"
         try:
-            times = pd.to_datetime(df["time"], errors="coerce").dropna().reset_index(drop=True)
+            times = pd.to_datetime(df["time"], errors="coerce", utc=True).dropna().reset_index(drop=True)
             if len(times) < 3:
                 return "unknown"
             position = int(times.searchsorted(pd.Timestamp(trade.entry_time), side="left"))
@@ -3179,6 +3222,11 @@ def _is_scheduled_market_closure(previous: pd.Timestamp, current: pd.Timestamp, 
 def _as_utc(timestamp: pd.Timestamp) -> pd.Timestamp:
     normalized = pd.Timestamp(timestamp)
     return normalized.tz_localize("UTC") if normalized.tzinfo is None else normalized.tz_convert("UTC")
+
+
+def _utc_month(value: object) -> str:
+    """Extract a calendar month without dropping timezone from the source."""
+    return _as_utc(pd.Timestamp(value)).strftime("%Y-%m")
 
 
 def _crosses_fx_christmas_closure(previous: pd.Timestamp, current: pd.Timestamp, symbol: str) -> bool:
@@ -3792,7 +3840,7 @@ def _daily_report(trades: list[Trade], mistakes: list[MistakeJournalEntry]) -> D
 
 
 def _to_datetime(value: object) -> datetime:
-    return pd.Timestamp(value).to_pydatetime()
+    return _as_utc(pd.Timestamp(value)).to_pydatetime()
 
 
 def _rounded(value: object) -> float | None:

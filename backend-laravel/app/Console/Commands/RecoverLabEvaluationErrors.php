@@ -4,20 +4,23 @@ namespace App\Console\Commands;
 
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\LabAgent;
+use App\Services\LabQueueJobInspector;
 use App\Services\LabReplayRecoveryService;
+use App\Services\OperatorApprovalService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 
 /** Requeues bounded evaluator failures without turning them into strategy evidence. */
 class RecoverLabEvaluationErrors extends Command
 {
-    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget}';
+    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget} {--apply : Dispatch the bounded recovery after operator approval} {--approved-by=} {--approval-reason=}';
 
     protected $description = 'Requeue transport/evaluator failures after a clean AI service restart';
 
-    public function handle(LabReplayRecoveryService $recovery): int
+    public function handle(LabReplayRecoveryService $recovery, OperatorApprovalService $approvals): int
     {
         try {
             // /health is intentionally public and cannot prove that Laravel
@@ -48,6 +51,7 @@ class RecoverLabEvaluationErrors extends Command
             return self::FAILURE;
         }
         $fullRecovery = $mode === 'full';
+        $apply = (bool) $this->option('apply');
         $afterAuthRepair = (bool) $this->option('after-auth-repair');
         $afterServiceRepair = (bool) $this->option('after-service-repair');
         $afterCodeRepair = (bool) $this->option('after-code-repair');
@@ -68,6 +72,16 @@ class RecoverLabEvaluationErrors extends Command
             $this->error('Choose only one bounded repair mode.');
 
             return self::FAILURE;
+        }
+        $queueBacklog = $this->queueBacklog();
+        if ($queueBacklog['total'] > 0) {
+            $this->info(sprintf(
+                'Evaluation-error recovery deferred: %d existing lab job(s) remain in %s.',
+                $queueBacklog['total'],
+                implode(', ', array_keys($queueBacklog['queues'])),
+            ));
+
+            return self::SUCCESS;
         }
 
         $agents = LabAgent::query()->with(['modelVersion', 'generation'])
@@ -246,6 +260,29 @@ class RecoverLabEvaluationErrors extends Command
         }
         $agents = $recoverable;
 
+        if (! $apply) {
+            $this->table(['agent', 'generation', 'symbol', 'timeframe', 'mode', 'action'], $agents->map(fn (LabAgent $agent): array => [
+                $agent->id, $agent->lab_generation_id, $agent->symbol, $agent->timeframe, $mode, 'would_recover_after_operator_approval',
+            ])->all());
+            $this->info('Dry-run only: no evaluator recovery was queued. Use --apply with --approved-by and --approval-reason after the lab queue is empty.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            $approvals->requireForApply('recover-lab-evaluation-errors', $this->option('approved-by'), $this->option('approval-reason'), [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+                'generation' => $generationNumber,
+                'mode' => $mode,
+                'agent_ids' => $agents->pluck('id')->values()->all(),
+            ]);
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
         DB::transaction(function () use ($agents, $afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterRetryBudgetRepair, $fullRecovery): void {
             foreach ($agents as $agent) {
                 $metadata = $agent->modelVersion?->metadata ?? [];
@@ -335,8 +372,26 @@ class RecoverLabEvaluationErrors extends Command
                 (array) config('services.lab_queue.legacy_screening_queues', []),
             )));
 
-        return DB::table('jobs')->whereIn('queue', $queues)
-            ->where('payload', 'like', '%labAgentId%'.$agent->id.'%')
-            ->exists();
+        return app(LabQueueJobInspector::class)->hasAgentJob((int) $agent->id, $queues);
+    }
+
+    /** @return array{total: int, queues: array<string, int>} */
+    private function queueBacklog(): array
+    {
+        $queues = array_values(array_unique(array_filter([
+            (string) config('services.lab_queue.screening_queue', 'lab-screening'),
+            (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
+            (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
+            ...((array) config('services.lab_queue.legacy_screening_queues', [])),
+        ])));
+        $counts = DB::table('jobs')
+            ->whereIn('queue', $queues)
+            ->selectRaw('queue, COUNT(*) as total')
+            ->groupBy('queue')
+            ->pluck('total', 'queue')
+            ->map(fn ($count): int => (int) $count)
+            ->all();
+
+        return ['total' => array_sum($counts), 'queues' => $counts];
     }
 }

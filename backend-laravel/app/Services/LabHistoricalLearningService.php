@@ -252,9 +252,18 @@ class LabHistoricalLearningService
             ->where('strategy_family', $family)->get(['id', 'lab_generation_id']);
         if ($agents->isEmpty()) return null;
         $agentIds = $agents->pluck('id')->all();
+        $runs = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)->get();
+        $legacyRunIds = $runs->where('status', 'legacy_snapshot')->pluck('run_id')->filter()->all();
         $gateEvents = LabGateDecisionEvent::query()->whereIn('lab_agent_id', $agentIds)
             ->whereIn('stage', ['screening', 'full_validation', 'statistical_forward_gate', 'paper_admission'])
-            ->latest('recorded_at')->get();
+            ->latest('recorded_at')->get()
+            // Backfilled snapshots are an audit bridge only. They may remain
+            // visible in the evidence ledger, but they must not contribute a
+            // learning target or mutation direction.
+            ->reject(fn (LabGateDecisionEvent $event): bool => in_array((string) $event->run_id, $legacyRunIds, true)
+                || data_get($event->payload, 'completeness') === 'snapshot_only'
+                || data_get($event->payload, 'source') === 'legacy_snapshot_backfill')
+            ->values();
         $latestGates = $gateEvents->groupBy(fn (LabGateDecisionEvent $event): string => $event->lab_agent_id.'|'.$event->stage)
             ->map(fn ($items) => $items->sortByDesc('revision')->first())->values();
         $reasonCounts = [];
@@ -276,7 +285,6 @@ class LabHistoricalLearningService
         }
         arsort($reasonCounts);
 
-        $runs = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)->get();
         $exactRuns = $runs->filter(fn (LabEvaluationRun $run): bool =>
             $run->status === 'completed'
             && in_array((string) $run->phase, ['full_validation', 'paper', 'holdout'], true)
@@ -320,7 +328,9 @@ class LabHistoricalLearningService
             })->values()->all();
         $causalPriorAllowed = $exactRuns->count() >= 2 && $confirmedUnits->count() >= 2;
 
-        $evidenceQuality = $exactRuns->isNotEmpty() ? 'exact' : ($legacyRuns->isNotEmpty() || $latestGates->isNotEmpty() ? 'snapshot_only' : 'no_evidence');
+        $evidenceQuality = $exactRuns->isNotEmpty()
+            ? 'exact'
+            : ($latestGates->isNotEmpty() ? 'diagnostic_only' : ($legacyRuns->isNotEmpty() ? 'legacy_excluded' : 'no_evidence'));
         $confidence = min(95, 15 + min(30, $latestGates->count() * 2) + min(25, $exactRuns->count() * 2) + min(20, count($candleAggregates)));
         $dominantCandle = $candleAggregates[0] ?? null;
         $scopeKey = data_get($dominantCandle, 'market_regime') ? 'market:'.data_get($dominantCandle, 'market_regime') : 'global';
@@ -329,6 +339,7 @@ class LabHistoricalLearningService
             'latest_gate_count' => $latestGates->count(),
             'exact_run_count' => $exactRuns->count(),
             'legacy_snapshot_run_count' => $legacyRuns->count(),
+            'legacy_learning_excluded' => $legacyRuns->isNotEmpty(),
             'technical_error_count' => $runs->where('status', 'technical_error')->count(),
             'candle_event_count' => (int) ($candleSummary->total ?? 0),
             'accepted_candle_events' => (int) ($candleSummary->accepted ?? 0),

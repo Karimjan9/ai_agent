@@ -30,4 +30,5 @@ class PaperSignal extends Model
     public function marketSnapshot(): BelongsTo { return $this->belongsTo(SignalMarketSnapshot::class, 'signal_market_snapshot_id'); }
     public function order(): HasOne { return $this->hasOne(PaperOrder::class); }
     public function outcome(): HasOne { return $this->hasOne(PaperSignalOutcome::class); }
+    public function passport(): HasOne { return $this->hasOne(PaperSignalPassport::class); }
 }

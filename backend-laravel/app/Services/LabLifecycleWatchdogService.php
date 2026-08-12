@@ -45,7 +45,10 @@ class LabLifecycleWatchdogService
     /** @var Collection<int, int>|null */
     private ?Collection $auditModelVersionIds = null;
 
-    public function __construct(private readonly SystemLogService $logs) {}
+    public function __construct(
+        private readonly SystemLogService $logs,
+        private readonly LabQueueJobInspector $queueJobs,
+    ) {}
 
     public function inspect(bool $repair = false): array
     {
@@ -201,15 +204,12 @@ class LabLifecycleWatchdogService
     {
         if (! DB::getSchemaBuilder()->hasTable('jobs')) return false;
 
-        return DB::table('jobs')
-            ->whereIn('queue', array_values(array_unique(array_merge(
-                [(string) config('services.lab_queue.screening_queue', 'lab-screening')],
-                [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
-                (array) config('services.lab_queue.legacy_screening_queues', []),
-                ['lab-full-validation'],
-            ))))
-            ->where('payload', 'like', '%labAgentId%'.$agentId.'%')
-            ->exists();
+        return $this->queueJobs->hasAgentJob($agentId, array_values(array_unique(array_merge(
+            [(string) config('services.lab_queue.screening_queue', 'lab-screening')],
+            [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
+            (array) config('services.lab_queue.legacy_screening_queues', []),
+            ['lab-full-validation'],
+        ))));
     }
 
     private function replayLaneIsIdle(): bool
@@ -306,8 +306,7 @@ class LabLifecycleWatchdogService
     private function hasQueuedFullJob(int $agentId): bool
     {
         if (! DB::getSchemaBuilder()->hasTable('jobs')) return false;
-        return DB::table('jobs')->where('queue', 'lab-full-validation')
-            ->where('payload', 'like', '%labAgentId%'.$agentId.'%')->exists();
+        return $this->queueJobs->hasAgentJob($agentId, ['lab-full-validation']);
     }
 
     private function watchFullValidationStalls(bool $repair = false): array

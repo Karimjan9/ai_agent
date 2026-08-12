@@ -12,6 +12,7 @@ use App\Services\AgentConstitutionService;
 use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabPopulationService;
+use App\Services\LearningProtocolSafetyService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use App\Services\UniversalAgentCapabilityService;
@@ -33,7 +34,13 @@ class DispatchTrendDownSpecialistRescue extends Command
         UniversalAgentCapabilityService $universalCapabilities,
         StrategySemanticGroupService $semanticGroups,
         AdaptiveParentFrontierService $adaptiveParents,
+        LearningProtocolSafetyService $protocolSafety,
     ): int {
+        if ($protocolSafety->generationCreationPaused()) {
+            $this->info('Learning protocol paused: trend-down rescue deferred.');
+
+            return self::SUCCESS;
+        }
         $source = LabAgent::query()->with(['modelVersion', 'generation.laboratory'])->findOrFail((int) $this->argument('sourceAgent'));
         $sourceModel = $source->modelVersion;
         $lab = $source->generation?->laboratory;
@@ -41,6 +48,11 @@ class DispatchTrendDownSpecialistRescue extends Command
             $this->error('Source must be a completed screened laboratory agent.');
 
             return self::FAILURE;
+        }
+        if ((string) $lab->lifecycle_mode !== 'lighthouse') {
+            $this->info('Source laboratory shadow rejimida; trend-down rescue dispatch qilinmadi.');
+
+            return self::SUCCESS;
         }
         if ((float) data_get($sourceModel->metadata, 'last_screen_result.screening_survival.worst_regime_pf', 99) >= 1.0) {
             $this->error('This rescue is allowed only for an evidenced regime failure (worst regime PF < 1).');

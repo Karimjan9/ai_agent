@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
+use App\Models\CandidateGateDecision;
 use App\Models\LabEvaluationRun;
 use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
@@ -34,6 +35,11 @@ class DispatchFullLabValidation extends Command
         $timeframe = strtoupper((string) $this->option('timeframe'));
         foreach ($symbols as $symbol) {
             $lab = AiLaboratory::where('symbol', $symbol)->where('timeframe', $timeframe)->first();
+            if (! $lab || (string) $lab->lifecycle_mode !== 'lighthouse') {
+                $this->info("{$symbol} {$timeframe}: shadow lab; full-validation dispatch skipped.");
+
+                continue;
+            }
             // Role-complete council research is deliberately role-first. Do
             // not let an older completed generation steal the full-replay
             // lane from four mandatory specialist passports. This branch is

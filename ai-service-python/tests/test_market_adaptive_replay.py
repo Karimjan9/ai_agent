@@ -10,9 +10,9 @@ from app.strategies.laboratory import apply_hybrid_strategy
 
 class MarketAdaptiveReplayTest(unittest.TestCase):
     def setUp(self):
-        time = pd.Index([
-            *pd.date_range("2004-01-01", "2025-12-31", freq="D"),
-            *pd.date_range("2026-01-01", "2026-07-17", freq="h"),
+        time = pd.DatetimeIndex([
+            *pd.date_range("2004-01-01", "2025-12-31", freq="D", tz="UTC"),
+            *pd.date_range("2026-01-01", "2026-07-17", freq="h", tz="UTC"),
         ])
         close = pd.Series(range(len(time)), dtype=float).mod(37).add(100.0)
         self.df = pd.DataFrame({
@@ -27,39 +27,38 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
     def test_last_six_weeks_are_excluded_from_foundation_and_replay(self):
         parts = MarketAdaptiveReplayService().split_dataset(self.df)
 
-        self.assertLessEqual(parts["foundation"]["time"].max(), pd.Timestamp("2025-12-31 23:59:59"))
-        self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01"))
+        self.assertLessEqual(parts["foundation"]["time"].max(), pd.Timestamp("2025-12-31 23:59:59", tz="UTC"))
+        self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01", tz="UTC"))
         self.assertLess(parts["replay"]["time"].max(), parts["holdout"]["time"].min())
         self.assertGreaterEqual(parts["holdout"]["time"].min(), self.df["time"].max() - pd.Timedelta(weeks=6))
 
     def test_vendor_archive_starting_on_gbpusd_baseline_is_accepted(self):
-        gbpusd_archive = self.df[self.df["time"] >= pd.Timestamp("2005-01-02")]
+        gbpusd_archive = self.df[self.df["time"] >= pd.Timestamp("2005-01-02", tz="UTC")]
 
         parts = MarketAdaptiveReplayService().split_dataset(gbpusd_archive)
 
-        self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2005-01-02"))
+        self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2005-01-02", tz="UTC"))
 
     def test_xau_sunday_open_delay_is_accepted(self):
-        xau_archive = self.df[self.df["time"] >= pd.Timestamp("2005-01-02")].copy()
-        xau_archive.iloc[0, xau_archive.columns.get_loc("time")] = pd.Timestamp("2005-01-02 23:00")
+        xau_archive = self.df[self.df["time"] >= pd.Timestamp("2005-01-02", tz="UTC")].copy()
+        xau_archive.iloc[0, xau_archive.columns.get_loc("time")] = pd.Timestamp("2005-01-02 23:00", tz="UTC")
 
         parts = MarketAdaptiveReplayService().split_dataset(xau_archive)
 
-        self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2005-01-02 23:00"))
+        self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2005-01-02 23:00", tz="UTC"))
 
     def test_timezone_aware_candles_are_normalized_before_boundary_comparisons(self):
         aware_archive = self.df.copy()
-        aware_archive["time"] = aware_archive["time"].dt.tz_localize("UTC")
 
         parts = MarketAdaptiveReplayService().split_dataset(aware_archive)
 
-        self.assertIsNone(parts["foundation"]["time"].dt.tz)
-        self.assertIsNone(parts["replay"]["time"].dt.tz)
-        self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01"))
+        self.assertIsNotNone(parts["foundation"]["time"].dt.tz)
+        self.assertIsNotNone(parts["replay"]["time"].dt.tz)
+        self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01", tz="UTC"))
 
     def test_checkpoint_ledger_accepts_timezone_aware_trade_timestamps(self):
         service = MarketAdaptiveReplayService()
-        replay = pd.DataFrame({"time": pd.date_range("2026-01-01", periods=808, freq="h")})
+        replay = pd.DataFrame({"time": pd.date_range("2026-01-01", periods=808, freq="h", tz="UTC")})
         chronological = {
             "trade_ledger": [{
                 "entry_time": "2026-01-02T00:00:00+00:00",
@@ -80,7 +79,7 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
 
     def test_transition_and_blame_ledgers_accept_timezone_aware_trade_timestamps(self):
         service = MarketAdaptiveReplayService()
-        replay = self.df[self.df["time"] >= pd.Timestamp("2026-01-01")].head(808).reset_index(drop=True)
+        replay = self.df[self.df["time"] >= pd.Timestamp("2026-01-01", tz="UTC")].head(808).reset_index(drop=True)
         result = {
             "trades": [{
                 "signal_time": "2026-01-02T00:00:00+00:00",
@@ -100,17 +99,17 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         self.assertIn(blame["status"], {"assessed_visible_ledger", "no_visible_losses"})
 
     def test_separate_foundation_archive_can_back_the_canonical_rolling_stream(self):
-        foundation = self.df[self.df["time"] <= pd.Timestamp("2025-12-31 23:59:59")]
-        rolling = self.df[self.df["time"] >= pd.Timestamp("2026-01-01")]
+        foundation = self.df[self.df["time"] <= pd.Timestamp("2025-12-31 23:59:59", tz="UTC")]
+        rolling = self.df[self.df["time"] >= pd.Timestamp("2026-01-01", tz="UTC")]
 
         parts = MarketAdaptiveReplayService().split_dataset(rolling, foundation)
 
-        self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2004-01-01"))
-        self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01"))
+        self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2004-01-01", tz="UTC"))
+        self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01", tz="UTC"))
         self.assertTrue(parts["holdout"]["time"].min() > parts["replay"]["time"].max())
 
     def test_m15_uses_its_own_pre_2026_foundation_contract(self):
-        time = pd.date_range("2025-11-01", "2026-07-17 23:45:00", freq="15min")
+        time = pd.date_range("2025-11-01", "2026-07-17 23:45:00", freq="15min", tz="UTC")
         close = pd.Series(range(len(time)), dtype=float).mod(41).add(100.0)
         archive = pd.DataFrame({
             "time": time,
@@ -120,14 +119,14 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
             "close": close,
             "volume": 1,
         })
-        foundation = archive[archive["time"] < pd.Timestamp("2026-01-01")]
+        foundation = archive[archive["time"] < pd.Timestamp("2026-01-01", tz="UTC")]
 
         parts = MarketAdaptiveReplayService().split_dataset(archive, foundation, "M15")
 
         self.assertGreaterEqual(len(parts["foundation"]), 2000)
-        self.assertGreaterEqual(parts["foundation"]["time"].min(), pd.Timestamp("2025-11-01"))
-        self.assertLessEqual(parts["foundation"]["time"].max(), pd.Timestamp("2025-12-31 23:59:59"))
-        self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01"))
+        self.assertGreaterEqual(parts["foundation"]["time"].min(), pd.Timestamp("2025-11-01", tz="UTC"))
+        self.assertLessEqual(parts["foundation"]["time"].max(), pd.Timestamp("2025-12-31 23:59:59", tz="UTC"))
+        self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01", tz="UTC"))
         self.assertTrue(parts["holdout"]["time"].min() > parts["replay"]["time"].max())
 
     def test_holdout_runner_receives_only_the_sealed_tail(self):

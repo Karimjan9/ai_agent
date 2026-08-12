@@ -6,6 +6,7 @@ use App\Models\ModelVersion;
 use App\Services\LabPopulationService;
 use App\Services\LabTrialLedgerService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use RuntimeException;
 use Tests\TestCase;
 
 class LabTrialLedgerTest extends TestCase
@@ -64,5 +65,30 @@ class LabTrialLedgerTest extends TestCase
             'id' => $first['trial_id'],
             'run_id' => 'full-run-1',
         ]);
+    }
+
+    public function test_same_run_id_cannot_be_reused_for_a_different_replay_identity(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'trial_ledger_collision_test', true);
+        $agent = $generation->agents->first()->fresh(['modelVersion']);
+        $model = $agent->modelVersion;
+        $service = app(LabTrialLedgerService::class);
+        $base = [
+            'forward_score' => 55,
+            'equity_curve' => [10000, 10080, 10120, 10430],
+            'data_manifest' => ['sha256' => str_repeat('c', 64)],
+            'execution_contract' => ['execution_hash' => str_repeat('d', 64)],
+            'total_trades' => 30,
+            'profit_factor' => 1.3,
+        ];
+
+        $service->record($agent, $model, 'XAUUSD', 'H1', 'full_replay', $base, 'same-run-id');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('TRIAL_IDENTITY_RUN_ID_COLLISION');
+        $service->record($agent, $model, 'XAUUSD', 'H1', 'full_replay', [
+            ...$base,
+            'data_manifest' => ['sha256' => str_repeat('e', 64)],
+        ], 'same-run-id');
     }
 }
