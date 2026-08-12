@@ -62,6 +62,7 @@ class LabFailureStudyService
                 'screening_pass_agents' => [],
                 'technical_excluded_agent_ids' => [],
                 'legacy_excluded_agent_ids' => [],
+                'evidence_complete_insufficient_agent_ids' => [],
                 'failure_groups' => [],
                 'target_cells' => [],
                 'problem_study' => $this->problemStudy(0, 0, 1, 0),
@@ -84,6 +85,7 @@ class LabFailureStudyService
         $actionableAgentIds = [];
         $technicalExcluded = [];
         $legacyExcluded = [];
+        $evidenceCompleteInsufficient = [];
         $passAgents = [];
 
         foreach ($generation->agents as $agent) {
@@ -107,10 +109,20 @@ class LabFailureStudyService
                 static fn (mixed $reason): string => strtoupper(trim((string) $reason)),
                 (array) $decision->reason_codes,
             ))));
-            $technical = (string) $decision->decision === 'insufficient_evidence'
+            // ``insufficient_evidence`` is not automatically an infrastructure
+            // failure.  A completed replay with a durable request/response,
+            // trace, ledger and dataset hash may still lack the trade/sample
+            // evidence required by a quality gate.  Only the immutable replay
+            // eligibility result (or an explicit technical reason) belongs in
+            // technical quarantine.
+            $technical = ! $eligible['complete']
                 || collect($reasons)->contains(fn (string $reason): bool => $this->isTechnicalReason($reason));
             if (! $eligible['complete'] || $technical) {
                 $technicalExcluded[] = (int) $agent->id;
+                continue;
+            }
+            if ((string) $decision->decision === 'insufficient_evidence') {
+                $evidenceCompleteInsufficient[] = (int) $agent->id;
                 continue;
             }
             if ((string) $decision->decision === 'passed') {
@@ -183,6 +195,7 @@ class LabFailureStudyService
             'screening_pass_agents' => array_values(array_unique($passAgents)),
             'technical_excluded_agent_ids' => array_values(array_unique($technicalExcluded)),
             'legacy_excluded_agent_ids' => array_values(array_unique($legacyExcluded)),
+            'evidence_complete_insufficient_agent_ids' => array_values(array_unique($evidenceCompleteInsufficient)),
             'failure_groups' => array_values($failureGroups),
             'target_cells' => array_values($targetCells),
             'dominant_failure' => array_values($failureGroups)[0]['reason'] ?? null,
@@ -226,10 +239,11 @@ class LabFailureStudyService
 
     private function isTechnicalReason(string $reason): bool
     {
-        return str_contains($reason, 'EVIDENCE')
+        return $reason !== 'INSUFFICIENT_SCREENING_EVIDENCE'
+            && (str_contains($reason, 'EVIDENCE')
             || str_contains($reason, 'TECHNICAL')
             || str_contains($reason, 'SNAPSHOT')
-            || str_contains($reason, 'DATASET');
+            || str_contains($reason, 'DATASET'));
     }
 
     private function targetForReason(string $reason): ?string

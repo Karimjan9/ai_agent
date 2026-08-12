@@ -1,7 +1,9 @@
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 import json
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -36,6 +38,71 @@ from app.services.volume_features import (
 from app.strategies.registry import get_strategy, strategy_label
 
 
+@dataclass(frozen=True)
+class PreparedFeatureSnapshot:
+    """Normalized market/context features reusable by compatible lanes."""
+
+    source_frame: pd.DataFrame
+    frame: pd.DataFrame
+    unexpected_gap_count: int
+    data_quality: dict[str, object]
+
+
+@dataclass(frozen=True)
+class PreparedSignalSnapshot:
+    """Strategy/router signals on a feature snapshot, before execution state."""
+
+    source_frame: pd.DataFrame
+    frame: pd.DataFrame
+    unexpected_gap_count: int
+    data_quality: dict[str, object]
+
+
+def core_replay_gate(result: dict[str, object]) -> dict[str, object]:
+    """Decide whether expensive replay diagnostics are economically justified.
+
+    This is intentionally a cheap, fail-closed pre-gate.  It mirrors the
+    existing screening admission contract (minimum trade count and positive
+    PF) and does not replace any promotion gate.  Its only purpose is to stop
+    Monte Carlo, paired lanes and deep diagnostics from consuming time on a
+    candidate that has no core replay evidence.
+    """
+    try:
+        total_trades = int(result.get("total_trades", 0) or 0)
+    except (TypeError, ValueError):
+        total_trades = 0
+    try:
+        profit_factor = float(result.get("profit_factor", 0) or 0)
+    except (TypeError, ValueError):
+        profit_factor = 0.0
+    data_quality = result.get("data_quality", {})
+    if not isinstance(data_quality, dict):
+        data_quality = {}
+    try:
+        hard_gate_failures = int(data_quality.get("hard_gate_failure_count", 0) or 0)
+    except (TypeError, ValueError):
+        hard_gate_failures = 0
+
+    reasons: list[str] = []
+    if total_trades < 10:
+        reasons.append("insufficient_core_trades")
+    if not math.isfinite(profit_factor) or profit_factor <= 0:
+        reasons.append("non_positive_core_profit_factor")
+    if hard_gate_failures > 0:
+        reasons.append("historical_data_hard_gate_failure")
+    return {
+        "protocol": "core_replay_gate_v1",
+        "passed": not reasons,
+        "minimum_trades": 10,
+        "total_trades": total_trades,
+        "profit_factor": round(profit_factor, 6) if math.isfinite(profit_factor) else 0.0,
+        "hard_gate_failure_count": hard_gate_failures,
+        "reasons": reasons,
+        "promotion_evidence": False,
+        "rule": "Core gate only authorizes expensive diagnostics; it never promotes a candidate.",
+    }
+
+
 def run_backtest(payload: BacktestRequest) -> BacktestResponse:
     candles = load_candles(payload.dataset_path, payload.candles, payload.from_date, payload.to_date)
     strategy = payload.strategy
@@ -68,6 +135,57 @@ def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktes
     return run_simple_ema_rsi_backtest_on_dataframe(payload, df)
 
 
+def _prepare_simple_dataframe(payload: SimpleBacktestRequest, df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize and validate one candle stream exactly once per snapshot."""
+    frame = df.copy()
+    if "volume" not in frame.columns:
+        frame["volume"] = 0
+    if "volume_available" not in frame.columns:
+        frame["volume_available"] = False
+
+    required_columns = {"time", "open", "high", "low", "close", "volume"}
+    missing_columns = required_columns - set(frame.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Dataset is missing required columns: {missing}")
+
+    data_quality = _data_quality_diagnostics(frame)
+    if payload.execution.reject_unexpected_gaps and data_quality["hard_gate_failure_count"]:
+        raise ValueError(
+            "Historical data hard-gate failed: data_quality "
+            f"{data_quality['hard_gate_failures']}"
+        )
+
+    frame["time"] = pd.to_datetime(frame["time"], errors="coerce", utc=True)
+    for column in ["open", "high", "low", "close", "volume"]:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame["volume_available"] = frame["volume_available"].fillna(False).astype(bool)
+    frame = frame.dropna(subset=["time", "open", "high", "low", "close"])
+    frame = frame.sort_values("time").reset_index(drop=True)
+
+    unexpected_gap_count = _validate_data_gaps(frame, payload)
+    if unexpected_gap_count and payload.execution.reject_unexpected_gaps:
+        raise ValueError(
+            f"Historical data hard-gate failed: {unexpected_gap_count} unexpected candle gaps."
+        )
+    data_quality["rows_after_cleaning"] = len(frame)
+    data_quality["unexpected_gap_count"] = unexpected_gap_count
+    data_quality["status"] = "warning" if data_quality["hard_gate_failure_count"] or unexpected_gap_count else "passed"
+    frame.attrs["unexpected_gap_count"] = unexpected_gap_count
+    frame.attrs["data_quality"] = data_quality
+
+    if payload.from_date:
+        frame = frame[frame["time"].dt.date >= payload.from_date]
+    if payload.to_date:
+        frame = frame[frame["time"].dt.date <= payload.to_date]
+    frame = frame.reset_index(drop=True)
+    if len(frame) < 2:
+        raise ValueError("At least 2 candles are required for backtest.")
+    frame.attrs["unexpected_gap_count"] = unexpected_gap_count
+    frame.attrs["data_quality"] = data_quality
+    return frame
+
+
 def run_simple_ema_rsi_backtest_on_dataframe(
     payload: SimpleBacktestRequest,
     df: pd.DataFrame,
@@ -75,60 +193,79 @@ def run_simple_ema_rsi_backtest_on_dataframe(
     include_differential_pair: bool = True,
     lightweight: bool = False,
 ) -> SimpleBacktestResponse:
-    policy_boundary = enforce_policy_boundary(payload)
-    df = df.copy()
-
-    if "volume" not in df.columns:
-        df["volume"] = 0
-    if "volume_available" not in df.columns:
-        df["volume_available"] = False
-
-    required_columns = {"time", "open", "high", "low", "close", "volume"}
-    missing_columns = required_columns - set(df.columns)
-    if missing_columns:
-        missing = ", ".join(sorted(missing_columns))
-        raise ValueError(f"Dataset is missing required columns: {missing}")
-
-    data_quality = _data_quality_diagnostics(df)
-    if payload.execution.reject_unexpected_gaps and data_quality["hard_gate_failure_count"]:
-        raise ValueError(
-            "Historical data hard-gate failed: data_quality "
-            f"{data_quality['hard_gate_failures']}"
-        )
-
-    df["time"] = pd.to_datetime(df["time"], errors="coerce", utc=True)
-    for column in ["open", "high", "low", "close", "volume"]:
-        df[column] = pd.to_numeric(df[column], errors="coerce")
-    df["volume_available"] = df["volume_available"].fillna(False).astype(bool)
-
-    df = df.dropna(subset=["time", "open", "high", "low", "close"])
-    df = df.sort_values("time").reset_index(drop=True)
-
-    unexpected_gap_count = _validate_data_gaps(df, payload)
-    if unexpected_gap_count and payload.execution.reject_unexpected_gaps:
-        raise ValueError(
-            f"Historical data hard-gate failed: {unexpected_gap_count} unexpected candle gaps."
-        )
-    df.attrs["unexpected_gap_count"] = unexpected_gap_count
-    data_quality["rows_after_cleaning"] = len(df)
-    data_quality["unexpected_gap_count"] = unexpected_gap_count
-    data_quality["status"] = "warning" if data_quality["hard_gate_failure_count"] or unexpected_gap_count else "passed"
-    df.attrs["data_quality"] = data_quality
-
-    if payload.from_date:
-        df = df[df["time"].dt.date >= payload.from_date]
-    if payload.to_date:
-        df = df[df["time"].dt.date <= payload.to_date]
-
-    df = df.reset_index(drop=True)
-    if len(df) < 2:
-        raise ValueError("At least 2 candles are required for backtest.")
+    df = _prepare_simple_dataframe(payload, df)
 
     return _run_prepared_simple_backtest(
         payload,
         df,
         include_differential_pair=include_differential_pair,
         lightweight=lightweight,
+    )
+
+
+def prepare_feature_snapshot(
+    payload: SimpleBacktestRequest,
+    df: pd.DataFrame,
+) -> PreparedFeatureSnapshot:
+    """Build closed-context, volume and ATR features once per candle snapshot."""
+    normalized = _prepare_simple_dataframe(payload, df)
+    source = normalized.copy()
+    regime_source = _load_regime_source(payload)
+    prepared = _apply_execution_regime(normalized, regime_source)
+    prepared = add_volume_features(prepared, payload.volume_context)
+    previous_close = prepared["close"].shift(1)
+    true_range = pd.concat([
+        prepared["high"] - prepared["low"],
+        (prepared["high"] - previous_close).abs(),
+        (prepared["low"] - previous_close).abs(),
+    ], axis=1).max(axis=1)
+    prepared["_management_atr"] = true_range.rolling(14, min_periods=1).mean()
+    prepared.attrs["unexpected_gap_count"] = int(normalized.attrs.get("unexpected_gap_count", 0))
+    prepared.attrs["data_quality"] = dict(normalized.attrs.get("data_quality") or {})
+    prepared.attrs["regime_source"] = (
+        "closed_h1" if regime_source is not None else "execution_timeframe"
+    )
+    return PreparedFeatureSnapshot(
+        source_frame=source,
+        frame=prepared,
+        unexpected_gap_count=int(normalized.attrs.get("unexpected_gap_count", 0)),
+        data_quality=dict(normalized.attrs.get("data_quality") or {}),
+    )
+
+
+def prepare_signal_snapshot(
+    payload: SimpleBacktestRequest,
+    df: pd.DataFrame | None = None,
+    *,
+    feature_snapshot: PreparedFeatureSnapshot | None = None,
+) -> PreparedSignalSnapshot:
+    """Apply one strategy/router signal layer to a reusable feature snapshot."""
+    features = feature_snapshot or prepare_feature_snapshot(
+        payload,
+        df if df is not None else _load_simple_candles(payload),
+    )
+    prepared = features.frame.copy()
+    if payload.portfolio_members:
+        prepared = _apply_portfolio_strategy(prepared, payload.portfolio_members)
+    else:
+        strategy_function = get_strategy(payload.strategy, payload.base_strategy)
+        prepared = strategy_function(prepared, payload.parameters)
+        prepared = apply_volume_policy(
+            prepared,
+            payload.parameters,
+            payload.base_strategy or payload.strategy,
+        )
+    prepared = _apply_signal_delay(prepared, payload.signal_delay_candles)
+    prepared.attrs["unexpected_gap_count"] = features.unexpected_gap_count
+    prepared.attrs["data_quality"] = dict(features.data_quality)
+    prepared.attrs["regime_source"] = str(
+        features.frame.attrs.get("regime_source", "execution_timeframe")
+    )
+    return PreparedSignalSnapshot(
+        source_frame=features.source_frame,
+        frame=prepared,
+        unexpected_gap_count=features.unexpected_gap_count,
+        data_quality=dict(features.data_quality),
     )
 
 
@@ -188,33 +325,16 @@ def _run_prepared_simple_backtest(
     differential_lane: str | None = None,
     include_differential_pair: bool = True,
     lightweight: bool = False,
+    prepared_snapshot: PreparedSignalSnapshot | None = None,
 ) -> SimpleBacktestResponse:
     policy_boundary = enforce_policy_boundary(payload)
-    source_df = df.copy()
-    unexpected_gap_count = int(df.attrs.get("unexpected_gap_count", 0))
-    regime_source = _load_regime_source(payload)
-    df = _apply_execution_regime(df, regime_source)
-    df = add_volume_features(df, payload.volume_context)
-    # Use only the completed candle range for management decisions.  ATR is
-    # calculated here so every strategy family can evolve exits consistently.
-    previous_close = df["close"].shift(1)
-    true_range = pd.concat([
-        df["high"] - df["low"],
-        (df["high"] - previous_close).abs(),
-        (df["low"] - previous_close).abs(),
-    ], axis=1).max(axis=1)
-    df["_management_atr"] = true_range.rolling(14, min_periods=1).mean()
-    if payload.portfolio_members:
-        df = _apply_portfolio_strategy(df, payload.portfolio_members)
-    else:
-        strategy_function = get_strategy(payload.strategy, payload.base_strategy)
-        df = strategy_function(df, payload.parameters)
-        df = apply_volume_policy(
-            df,
-            payload.parameters,
-            payload.base_strategy or payload.strategy,
-        )
-    df = _apply_signal_delay(df, payload.signal_delay_candles)
+    snapshot = prepared_snapshot or prepare_signal_snapshot(payload, df)
+    source_df = snapshot.source_frame.copy()
+    df = snapshot.frame.copy()
+    unexpected_gap_count = snapshot.unexpected_gap_count
+    df.attrs["unexpected_gap_count"] = unexpected_gap_count
+    df.attrs["data_quality"] = dict(snapshot.data_quality)
+    regime_source_label = str(df.attrs.get("regime_source", "execution_timeframe"))
 
     balance = payload.initial_balance
     peak_balance = balance
@@ -759,12 +879,17 @@ def _run_prepared_simple_backtest(
         execution_contract=execution_contract_metadata(payload),
         control_root=control_root_for(payload.base_strategy or payload.strategy),
         policy_boundary=policy_boundary,
+        core_replay_gate=core_replay_gate({
+            "total_trades": total_trades,
+            "profit_factor": profit_factor,
+            "data_quality": dict(df.attrs.get("data_quality") or {}),
+        }),
         data_quality={**dict(df.attrs.get("data_quality") or {}),
                       "status": "warning" if (dict(df.attrs.get("data_quality") or {}).get("hard_gate_failure_count", 0) or unexpected_gap_count) else "passed",
                       "rows": len(df), "gap_control": True, "hard_gate": payload.execution.reject_unexpected_gaps,
                       "unexpected_gap_count": unexpected_gap_count,
                       "spread_quality": _spread_quality(df, payload),
-                      "regime_source": "closed_h1" if regime_source is not None else "execution_timeframe",
+                      "regime_source": regime_source_label,
                       "mtf_pilot": {
                           "protocol": "xauusd_h1_m15_mtf_v1",
                           "enabled": bool(payload.mtf_pilot.get("enabled", False)),
@@ -833,18 +958,31 @@ def _run_prepared_simple_backtest(
         and bool(payload.parameters.get("differential_pair_replay_enabled", True))
         and _is_differential_router(payload, df)
     ):
-        target_regime = _differential_target_regime(payload, df)
-        portfolio_non_target_trades = [trade for trade in trades if trade.market_regime != target_regime]
-        portfolio_target_trades = [trade for trade in trades if trade.market_regime == target_regime]
-        response.differential_router = {
-            **response.differential_router,
-            "paired_lane": _paired_differential_lane_report(
-                payload, source_df, _trade_summary(portfolio_non_target_trades),
-                _trade_summary(portfolio_target_trades),
-                bool(response.differential_router.get("non_target_signal_identity", False)),
-                bool(response.differential_router.get("non_target_confidence_identity", False)),
-            ),
-        }
+        if not lightweight and bool(response.core_replay_gate.get("passed", False)):
+            target_regime = _differential_target_regime(payload, df)
+            portfolio_non_target_trades = [trade for trade in trades if trade.market_regime != target_regime]
+            portfolio_target_trades = [trade for trade in trades if trade.market_regime == target_regime]
+            response.differential_router = {
+                **response.differential_router,
+                "paired_lane": _paired_differential_lane_report(
+                    payload, source_df, _trade_summary(portfolio_non_target_trades),
+                    _trade_summary(portfolio_target_trades),
+                    bool(response.differential_router.get("non_target_signal_identity", False)),
+                    bool(response.differential_router.get("non_target_confidence_identity", False)),
+                    prepared_snapshot=snapshot,
+                ),
+            }
+        else:
+            response.differential_router = {
+                **response.differential_router,
+                "paired_lane": {
+                    "protocol": "differential_paired_lane_v4_calendar_context_v1",
+                    "status": "deferred_until_core_gate",
+                    "core_gate": response.core_replay_gate,
+                    "promotion_evidence": False,
+                    "rule": "Paired differential replay runs only after the core candidate gate passes.",
+                },
+            }
     return response
 
 
@@ -939,7 +1077,12 @@ def _apply_signal_delay(df: pd.DataFrame, delay: int) -> pd.DataFrame:
     return delayed
 
 
-def _apply_portfolio_strategy(df: pd.DataFrame, members: list[object]) -> pd.DataFrame:
+def _apply_portfolio_strategy(
+    df: pd.DataFrame,
+    members: list[object],
+    *,
+    prepared_member_frames: list[pd.DataFrame] | None = None,
+) -> pd.DataFrame:
     """Apply a sealed complementary-member router to one candle stream.
 
     Members are never selected after seeing outcomes.  A member may speak only
@@ -950,16 +1093,23 @@ def _apply_portfolio_strategy(df: pd.DataFrame, members: list[object]) -> pd.Dat
     """
     prepared = df.copy()
     member_frames: list[tuple[dict[str, object], pd.DataFrame]] = []
-    for raw in members:
-        config = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
-        function = get_strategy(str(config["strategy"]), config.get("base_strategy"))
-        member = function(prepared.copy(), dict(config.get("parameters") or {}))
-        member = apply_volume_policy(
-            member,
-            dict(config.get("parameters") or {}),
-            str(config.get("base_strategy") or config.get("strategy") or ""),
-        )
-        member_frames.append((config, member))
+    if prepared_member_frames is not None:
+        if len(prepared_member_frames) != len(members):
+            raise ValueError("Prepared portfolio member snapshot count does not match the sealed council.")
+        for raw, member in zip(members, prepared_member_frames):
+            config = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+            member_frames.append((config, member.copy()))
+    else:
+        for raw in members:
+            config = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+            function = get_strategy(str(config["strategy"]), config.get("base_strategy"))
+            member = function(prepared.copy(), dict(config.get("parameters") or {}))
+            member = apply_volume_policy(
+                member,
+                dict(config.get("parameters") or {}),
+                str(config.get("base_strategy") or config.get("strategy") or ""),
+            )
+            member_frames.append((config, member))
 
     # Canonical archives contain 100k+ candles and a portfolio replay is
     # repeated for cost, temporal, adversarial and checkpoint evidence.  The
@@ -1724,6 +1874,7 @@ def _paired_differential_lane_report(
     portfolio_target: dict[str, object],
     signal_identity: bool = False,
     confidence_identity: bool = False,
+    prepared_snapshot: PreparedSignalSnapshot | None = None,
 ) -> dict[str, object]:
     """Run parent/child lane ledgers under identical data and cost rules."""
     target = _differential_target_regime(payload)
@@ -1734,13 +1885,16 @@ def _paired_differential_lane_report(
     # trade, ledger hash, branch identity, or gate outcome.
     paired_kwargs = {"include_differential_pair": False, "lightweight": True}
     parent_non_target = _run_prepared_simple_backtest(
-        payload, source_df.copy(), differential_lane="non_target_parent", **paired_kwargs
+        payload, source_df.copy(), differential_lane="non_target_parent",
+        prepared_snapshot=prepared_snapshot, **paired_kwargs
     )
     child_non_target = _run_prepared_simple_backtest(
-        payload, source_df.copy(), differential_lane="non_target_child", **paired_kwargs
+        payload, source_df.copy(), differential_lane="non_target_child",
+        prepared_snapshot=prepared_snapshot, **paired_kwargs
     )
     parent_target = _run_prepared_simple_backtest(
-        payload, source_df.copy(), differential_lane="target_parent", **paired_kwargs
+        payload, source_df.copy(), differential_lane="target_parent",
+        prepared_snapshot=prepared_snapshot, **paired_kwargs
     )
     parent_summary = _response_trade_summary(parent_non_target)
     child_summary = _response_trade_summary(child_non_target)

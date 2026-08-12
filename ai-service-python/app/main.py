@@ -17,8 +17,10 @@ import pandas as pd
 from app.routers.backtests import router as backtests_router
 from app.schemas import Candle, SimpleBacktestRequest, SimpleBacktestResponse
 from app.services.backtester import (
-    _advance_trailing_stop, _apply_execution_regime, _entry_price, _exit_distances, _exit_price, _intrabar_exit, _load_regime_source,
+    _advance_trailing_stop, _apply_execution_regime, _apply_portfolio_strategy, _apply_signal_delay, _entry_price, _exit_distances, _exit_price, _intrabar_exit, _load_regime_source,
     _load_simple_candles, _position_size_multiple, _resolve_dataset_path, _volatility_risk_multiplier, _volume_risk_multiplier,
+    PreparedFeatureSnapshot, PreparedSignalSnapshot, _run_prepared_simple_backtest,
+    prepare_feature_snapshot, prepare_signal_snapshot,
     run_simple_ema_rsi_backtest, run_simple_ema_rsi_backtest_on_dataframe,
 )
 from app.services.parameter_schema import validate_strategy_parameters
@@ -1274,26 +1276,22 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _run_mtf_variants(
+def _mtf_variant_payloads(
     base: SimpleBacktestRequest,
     h1_candles: list[object],
     m15_candles: list[object],
-    lightweight: bool,
-) -> dict[str, dict[str, object]]:
-    """Run the four MTF lanes on one exact data/execution profile.
-
-    The helper is also used by the bounded stress/forward diagnostics below.
-    Keeping lane construction in one place prevents a stress profile from
-    accidentally changing the H1/M15 routing semantics.
-    """
+) -> tuple[dict[str, SimpleBacktestRequest], dict[str, pd.DataFrame]]:
+    """Create lane payloads and candle frames once for one MTF snapshot."""
     pilot = dict(base.mtf_pilot or {})
+    h1_frame = pd.DataFrame([
+        item.model_dump() if isinstance(item, Candle) else item for item in h1_candles
+    ])
+    m15_frame = pd.DataFrame([
+        item.model_dump() if isinstance(item, Candle) else item for item in m15_candles
+    ])
+    h1_models = [item if isinstance(item, Candle) else Candle.model_validate(item) for item in h1_candles]
 
-    def variant_payload(
-        timeframe: str,
-        candles: list[object],
-        regime: list[object],
-        mode: str | None,
-    ) -> SimpleBacktestRequest:
+    def variant_payload(timeframe: str, mode: str | None, regime: list[Candle]) -> SimpleBacktestRequest:
         variant_pilot = dict(pilot)
         if mode is None:
             variant_pilot = {"enabled": False, "mode": "m15_only"}
@@ -1302,25 +1300,142 @@ def _run_mtf_variants(
             variant_pilot["mode"] = mode
         candidate = base.model_copy(update={
             "timeframe": timeframe,
-            "candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in candles],
-            "regime_candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in regime],
+            "candles": [],
+            "regime_candles": regime,
             "dataset_path": None,
             "regime_dataset_path": None,
             "mtf_pilot": variant_pilot,
         })
         return _prepare_paper_payload(candidate)
 
-    variants = {
-        "h1_only": (variant_payload("H1", h1_candles, [], None), h1_candles),
-        "m15_only": (variant_payload("M15", m15_candles, [], None), m15_candles),
-        "h1_regime_m15": (variant_payload("M15", m15_candles, h1_candles, "h1_regime_m15"), m15_candles),
-        "h1_veto_m15_risk": (variant_payload("M15", m15_candles, h1_candles, "h1_veto_m15_risk"), m15_candles),
+    return (
+        {
+            "h1_only": variant_payload("H1", None, []),
+            "m15_only": variant_payload("M15", None, []),
+            "h1_regime_m15": variant_payload("M15", "h1_regime_m15", h1_models),
+            "h1_veto_m15_risk": variant_payload("M15", "h1_veto_m15_risk", h1_models),
+        },
+        {"h1": h1_frame, "m15": m15_frame},
+    )
+
+
+def _mtf_signal_identity(payload: SimpleBacktestRequest) -> str:
+    """Identity of inputs that can change signal columns, excluding exits/costs."""
+    parameters = dict(payload.parameters or {})
+    for key in ("atr_stop_multiplier", "atr_target_multiplier"):
+        parameters.pop(key, None)
+    body = {
+        "strategy": payload.strategy,
+        "base_strategy": payload.base_strategy,
+        "version": payload.version,
+        "parameters": parameters,
+        "portfolio_members": [member.model_dump(mode="json") for member in payload.portfolio_members],
+        "volume_context": payload.volume_context,
+        "signal_delay_candles": payload.signal_delay_candles,
     }
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _mtf_snapshot_identity(
+    base: SimpleBacktestRequest,
+    h1_frame: pd.DataFrame,
+    m15_frame: pd.DataFrame,
+) -> str:
+    """Exact in-process identity for a shared MTF feature snapshot."""
+    def frame_hash(frame: pd.DataFrame) -> str:
+        columns = [column for column in ["time", "open", "high", "low", "close", "volume"] if column in frame]
+        values = pd.util.hash_pandas_object(frame[columns], index=False).values.tobytes()
+        return hashlib.sha256(values).hexdigest()
+
+    body = {
+        "symbol": base.symbol,
+        "timeframe": base.timeframe,
+        "h1": frame_hash(h1_frame),
+        "m15": frame_hash(m15_frame),
+        "volume_context": base.volume_context,
+        "from_date": str(base.from_date) if base.from_date else None,
+        "to_date": str(base.to_date) if base.to_date else None,
+        "reject_unexpected_gaps": base.execution.reject_unexpected_gaps,
+    }
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _build_mtf_feature_cache(
+    base: SimpleBacktestRequest,
+    h1_candles: list[object],
+    m15_candles: list[object],
+) -> dict[str, PreparedFeatureSnapshot]:
+    payloads, frames = _mtf_variant_payloads(base, h1_candles, m15_candles)
+    return {
+        "h1": prepare_feature_snapshot(payloads["h1_only"], frames["h1"]),
+        "m15": prepare_feature_snapshot(payloads["m15_only"], frames["m15"]),
+        "mtf": prepare_feature_snapshot(payloads["h1_veto_m15_risk"], frames["m15"]),
+    }
+
+
+def _run_mtf_variants(
+    base: SimpleBacktestRequest,
+    h1_candles: list[object],
+    m15_candles: list[object],
+    lightweight: bool,
+    *,
+    snapshot_cache: dict[str, object] | None = None,
+) -> dict[str, dict[str, object]]:
+    """Run four lanes while reusing features/signals across execution profiles."""
+    cache = snapshot_cache if snapshot_cache is not None else {}
+    payloads, frames = _mtf_variant_payloads(base, h1_candles, m15_candles)
+    snapshot_identity = _mtf_snapshot_identity(base, frames["h1"], frames["m15"])
+    feature_caches = cache.get("features_by_identity")
+    if not isinstance(feature_caches, dict):
+        feature_caches = {}
+        cache["features_by_identity"] = feature_caches
+    feature_cache = feature_caches.get(snapshot_identity)
+    feature_cache_hit = (
+        isinstance(feature_cache, dict)
+        and set(feature_cache) == {"h1", "m15", "mtf"}
+    )
+    if not feature_cache_hit:
+        feature_cache = _build_mtf_feature_cache(base, h1_candles, m15_candles)
+        feature_caches[snapshot_identity] = feature_cache
+        cache["feature_builds"] = int(cache.get("feature_builds", 0)) + 3
+    else:
+        cache["feature_cache_hits"] = int(cache.get("feature_cache_hits", 0)) + 1
+    # Keep the latest view for diagnostics/compatibility while the keyed map
+    # prevents a later hypothesis from reusing signals from a different
+    # volume/context snapshot.
+    cache["features"] = feature_cache
+    cache["snapshot_identity"] = snapshot_identity
+
+    signal_identity = _mtf_signal_identity(base)
+    signal_cache_key = f"{snapshot_identity}:{signal_identity}"
+    signals_by_identity = cache.get("signals_by_identity")
+    if not isinstance(signals_by_identity, dict):
+        signals_by_identity = {}
+        cache["signals_by_identity"] = signals_by_identity
+    signal_cache = signals_by_identity.get(signal_cache_key)
+    if not isinstance(signal_cache, dict):
+        mtf_signal = prepare_signal_snapshot(payloads["h1_veto_m15_risk"], feature_snapshot=feature_cache["mtf"])
+        signal_cache = {
+            "h1_only": prepare_signal_snapshot(payloads["h1_only"], feature_snapshot=feature_cache["h1"]),
+            "m15_only": prepare_signal_snapshot(payloads["m15_only"], feature_snapshot=feature_cache["m15"]),
+            # H1 regime and H1 veto modes share the exact same M15 signal
+            # snapshot; only the runtime permission/risk policy differs.
+            "h1_regime_m15": mtf_signal,
+            "h1_veto_m15_risk": mtf_signal,
+        }
+        signals_by_identity[signal_cache_key] = signal_cache
+        cache["signal_builds"] = int(cache.get("signal_builds", 0)) + 3
+    else:
+        cache["signal_cache_hits"] = int(cache.get("signal_cache_hits", 0)) + 1
+    cache["execution_replays"] = int(cache.get("execution_replays", 0)) + 4
+
+    frames_by_lane = {"h1_only": frames["h1"], "m15_only": frames["m15"], "h1_regime_m15": frames["m15"], "h1_veto_m15_risk": frames["m15"]}
     results: dict[str, dict[str, object]] = {}
-    for name, (payload, frame) in variants.items():
-        result = run_simple_ema_rsi_backtest_on_dataframe(
+    for name, payload in payloads.items():
+        result = _run_prepared_simple_backtest(
             payload,
-            pd.DataFrame(frame),
+            frames_by_lane[name],
+            prepared_snapshot=signal_cache[name],
             include_differential_pair=False,
             lightweight=lightweight,
         ).model_dump()
@@ -1390,6 +1505,94 @@ def _exit_stress_payload(base: SimpleBacktestRequest, profile: dict[str, object]
     })
 
 
+def _run_mtf_targeted_validation(
+    base: SimpleBacktestRequest,
+    h1_candles: list[object],
+    m15_candles: list[object],
+    lightweight: bool,
+    validation: dict[str, object],
+    *,
+    snapshot_cache: dict[str, object],
+) -> dict[str, object]:
+    """Run cost/exit/forward diagnostics with shared lane snapshots."""
+    cost_stress: dict[str, object] = {}
+    for raw_profile in list(validation.get("cost_profiles", []) or []):
+        if not isinstance(raw_profile, dict):
+            continue
+        name = str(raw_profile.get("name", "cost_stress"))
+        profile_base = _scaled_cost_execution(base, float(raw_profile.get("multiplier", 1.0) or 1.0))
+        profile_variants = _run_mtf_variants(
+            profile_base, h1_candles, m15_candles, lightweight,
+            snapshot_cache=snapshot_cache,
+        )
+        cost_stress[name] = {
+            "profile": raw_profile,
+            "lanes": _mtf_validation_lanes(profile_variants),
+            "promotion_evidence": False,
+        }
+
+    exit_stress: dict[str, object] = {}
+    for raw_profile in list(validation.get("exit_profiles", []) or []):
+        if not isinstance(raw_profile, dict):
+            continue
+        name = str(raw_profile.get("name", "exit_stress"))
+        profile_base = _exit_stress_payload(base, raw_profile)
+        profile_variants = _run_mtf_variants(
+            profile_base, h1_candles, m15_candles, lightweight,
+            snapshot_cache=snapshot_cache,
+        )
+        exit_stress[name] = {
+            "profile": raw_profile,
+            "lanes": _mtf_validation_lanes(profile_variants),
+            "promotion_evidence": False,
+        }
+
+    forward_m15 = list(validation.get("forward_m15_candles", []) or [])
+    forward_h1 = list(validation.get("forward_h1_candles", []) or [])
+    forward: dict[str, object] = {"status": "insufficient_rows", "promotion_evidence": False}
+    if len(forward_m15) >= 220 and len(forward_h1) >= 2:
+        # The cache is keyed by the exact H1/M15 snapshot identity, so the
+        # same cohort cache can safely hold the main snapshot and the forward
+        # snapshot. This avoids rebuilding the forward feature layer once per
+        # hypothesis in a batch.
+        forward_cache = snapshot_cache
+        before_forward = {
+            "feature_builds": int(forward_cache.get("feature_builds", 0)),
+            "signal_builds": int(forward_cache.get("signal_builds", 0)),
+            "execution_replays": int(forward_cache.get("execution_replays", 0)),
+        }
+        forward_variants = _run_mtf_variants(
+            base, forward_h1, forward_m15, lightweight,
+            snapshot_cache=forward_cache,
+        )
+        forward = {
+            "status": "completed",
+            "holdout_start": validation.get("holdout_start"),
+            "holdout_end": validation.get("holdout_end"),
+            "warmup_m15_rows": int(validation.get("warmup_m15_rows", 0) or 0),
+            "lanes": _mtf_validation_lanes(forward_variants),
+            "promotion_evidence": False,
+            "optimization": {
+                "feature_snapshot_builds": int(forward_cache.get("feature_builds", 0)) - before_forward["feature_builds"],
+                "signal_snapshot_builds": int(forward_cache.get("signal_builds", 0)) - before_forward["signal_builds"],
+                "execution_replays": int(forward_cache.get("execution_replays", 0)) - before_forward["execution_replays"],
+                "strategy_signal_recomputed_in_cost_stress": False,
+                "strategy_signal_recomputed_in_exit_stress": False,
+            },
+        }
+
+    return {
+        "protocol": "xauusd_mtf_targeted_validation_v1",
+        "same_symbol": True,
+        "same_h1_m15_contract": True,
+        "cost_stress": cost_stress,
+        "exit_stress": exit_stress,
+        "forward_validation": forward,
+        "promotion_evidence": False,
+        "rule": "Stress and chronological holdout are research diagnostics; neither can create paper or promotion evidence.",
+    }
+
+
 @app.post("/api/backtest/mtf-ablation")
 def run_mtf_ablation(body: dict[str, object]) -> dict[str, object]:
     """Run the four controlled XAUUSD MTF lanes under one data/cost contract.
@@ -1408,7 +1611,11 @@ def run_mtf_ablation(body: dict[str, object]) -> dict[str, object]:
 
         lightweight = bool(body.get("lightweight", True))
         pilot = dict(base.mtf_pilot or {})
-        results = _run_mtf_variants(base, h1_candles, m15_candles, lightweight)
+        snapshot_cache: dict[str, object] = {}
+        results = _run_mtf_variants(
+            base, h1_candles, m15_candles, lightweight,
+            snapshot_cache=snapshot_cache,
+        )
         response: dict[str, object] = {
             "protocol": "xauusd_mtf_ablation_v1",
             "pilot_id": pilot.get("pilot_id", "xauusd_h1_m15_v1"),
@@ -1417,64 +1624,106 @@ def run_mtf_ablation(body: dict[str, object]) -> dict[str, object]:
             "frozen_control": "m15_only",
             "promotion_evidence": False,
             "variants": results,
+            "optimization": {
+                "protocol": "mtf_shared_snapshot_replay_v1",
+                "feature_snapshot_builds": int(snapshot_cache.get("feature_builds", 0)),
+                "signal_snapshot_builds": int(snapshot_cache.get("signal_builds", 0)),
+                "feature_cache_hits": int(snapshot_cache.get("feature_cache_hits", 0)),
+                "signal_cache_hits": int(snapshot_cache.get("signal_cache_hits", 0)),
+                "execution_replays": int(snapshot_cache.get("execution_replays", 0)),
+                "strategy_signal_recomputed_in_cost_stress": False,
+                "strategy_signal_recomputed_in_exit_stress": False,
+                "promotion_evidence": False,
+            },
         }
 
         validation = body.get("validation")
         if isinstance(validation, dict):
-            cost_stress: dict[str, object] = {}
-            for raw_profile in list(validation.get("cost_profiles", []) or []):
-                if not isinstance(raw_profile, dict):
-                    continue
-                name = str(raw_profile.get("name", "cost_stress"))
-                profile_base = _scaled_cost_execution(base, float(raw_profile.get("multiplier", 1.0) or 1.0))
-                profile_variants = _run_mtf_variants(profile_base, h1_candles, m15_candles, lightweight)
-                cost_stress[name] = {
-                    "profile": raw_profile,
-                    "lanes": _mtf_validation_lanes(profile_variants),
-                    "promotion_evidence": False,
-                }
-
-            exit_stress: dict[str, object] = {}
-            for raw_profile in list(validation.get("exit_profiles", []) or []):
-                if not isinstance(raw_profile, dict):
-                    continue
-                name = str(raw_profile.get("name", "exit_stress"))
-                profile_base = _exit_stress_payload(base, raw_profile)
-                profile_variants = _run_mtf_variants(profile_base, h1_candles, m15_candles, lightweight)
-                exit_stress[name] = {
-                    "profile": raw_profile,
-                    "lanes": _mtf_validation_lanes(profile_variants),
-                    "promotion_evidence": False,
-                }
-
-            forward_m15 = list(validation.get("forward_m15_candles", []) or [])
-            forward_h1 = list(validation.get("forward_h1_candles", []) or [])
-            forward: dict[str, object] = {
-                "status": "insufficient_rows",
-                "promotion_evidence": False,
-            }
-            if len(forward_m15) >= 220 and len(forward_h1) >= 2:
-                forward_variants = _run_mtf_variants(base, forward_h1, forward_m15, lightweight)
-                forward = {
-                    "status": "completed",
-                    "holdout_start": validation.get("holdout_start"),
-                    "holdout_end": validation.get("holdout_end"),
-                    "warmup_m15_rows": int(validation.get("warmup_m15_rows", 0) or 0),
-                    "lanes": _mtf_validation_lanes(forward_variants),
-                    "promotion_evidence": False,
-                }
-
-            response["targeted_validation"] = {
-                "protocol": "xauusd_mtf_targeted_validation_v1",
-                "same_symbol": True,
-                "same_h1_m15_contract": True,
-                "cost_stress": cost_stress,
-                "exit_stress": exit_stress,
-                "forward_validation": forward,
-                "promotion_evidence": False,
-                "rule": "Stress and chronological holdout are research diagnostics; neither can create paper or promotion evidence.",
-            }
+            response["targeted_validation"] = _run_mtf_targeted_validation(
+                base, h1_candles, m15_candles, lightweight, validation,
+                snapshot_cache=snapshot_cache,
+            )
+            response["optimization"].update({
+                "targeted_validation_shared_cache": True,
+                "validation_execution_replays": int(snapshot_cache.get("execution_replays", 0)),
+            })
         return response
+    except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/backtest/mtf-hypothesis-batch")
+def run_mtf_hypothesis_batch(body: dict[str, object]) -> dict[str, object]:
+    """Evaluate a sealed hypothesis cohort through one shared MTF cache.
+
+    Hypotheses remain serial and deterministic; the expensive common H1/M15
+    feature layer is built once, while signal snapshots are keyed by their
+    signal-affecting identity. Cost/exit profiles reuse those snapshots too.
+    This endpoint is research-only and never creates promotion evidence.
+    """
+    try:
+        h1_candles = list(body.get("h1_candles", []) or [])
+        m15_candles = list(body.get("m15_candles", []) or [])
+        items = list(body.get("hypotheses", []) or [])
+        if len(h1_candles) < 2 or len(m15_candles) < 2:
+            raise ValueError("MTF hypothesis batch requires independent H1 and M15 candle streams.")
+        if not items:
+            raise ValueError("MTF hypothesis batch requires at least one hypothesis.")
+
+        lightweight = bool(body.get("lightweight", True))
+        shared_validation = body.get("validation")
+        shared_cache: dict[str, object] = {}
+        results: dict[str, object] = {}
+        seen_keys: set[str] = set()
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                raise ValueError(f"Hypothesis {index} must be an object.")
+            key = str(item.get("key") or item.get("hypothesis_key") or index)
+            if key in seen_keys:
+                raise ValueError(f"Duplicate hypothesis key: {key}")
+            seen_keys.add(key)
+            raw_request = item.get("base_request", item.get("request"))
+            if not isinstance(raw_request, dict):
+                raise ValueError(f"Hypothesis {key} is missing base_request.")
+            base = SimpleBacktestRequest.model_validate(raw_request)
+            variants = _run_mtf_variants(
+                base, h1_candles, m15_candles, lightweight,
+                snapshot_cache=shared_cache,
+            )
+            result: dict[str, object] = {
+                "key": key,
+                "variants": variants,
+                "promotion_evidence": False,
+            }
+            validation = item.get("validation", shared_validation)
+            if isinstance(validation, dict):
+                result["targeted_validation"] = _run_mtf_targeted_validation(
+                    base, h1_candles, m15_candles, lightweight, validation,
+                    snapshot_cache=shared_cache,
+                )
+            results[key] = result
+
+        return {
+            "protocol": "xauusd_mtf_hypothesis_batch_v1",
+            "hypothesis_count": len(results),
+            "results": results,
+            "optimization": {
+                "protocol": "mtf_shared_snapshot_replay_v1",
+                "execution_mode": "serial_deterministic_shared_cache",
+                "feature_snapshot_builds": int(shared_cache.get("feature_builds", 0)),
+                "feature_cache_hits": int(shared_cache.get("feature_cache_hits", 0)),
+                "signal_snapshot_builds": int(shared_cache.get("signal_builds", 0)),
+                "signal_cache_hits": int(shared_cache.get("signal_cache_hits", 0)),
+                "execution_replays": int(shared_cache.get("execution_replays", 0)),
+                "strategy_signal_recomputed_in_cost_stress": False,
+                "strategy_signal_recomputed_in_exit_stress": False,
+                "shared_validation_snapshot": isinstance(shared_validation, dict),
+                "promotion_evidence": False,
+            },
+            "same_data_contract": True,
+            "same_execution_contract": True,
+            "promotion_evidence": False,
+        }
     except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1502,6 +1751,9 @@ def _run_single_mtf_lane(
     h1_candles: list[object],
     m15_candles: list[object],
     lightweight: bool,
+    *,
+    feature_snapshot: PreparedFeatureSnapshot | None = None,
+    signal_snapshot: PreparedSignalSnapshot | None = None,
 ) -> dict[str, object]:
     """Run one declared member with the official H1-veto M15 mode."""
     pilot = dict(base.mtf_pilot or {})
@@ -1516,9 +1768,15 @@ def _run_single_mtf_lane(
         "mtf_pilot": pilot,
     })
     payload = _prepare_paper_payload(payload)
-    result = run_simple_ema_rsi_backtest_on_dataframe(
+    prepared = signal_snapshot or prepare_signal_snapshot(
         payload,
         pd.DataFrame(m15_candles),
+        feature_snapshot=feature_snapshot,
+    )
+    result = _run_prepared_simple_backtest(
+        payload,
+        pd.DataFrame(m15_candles),
+        prepared_snapshot=prepared,
         include_differential_pair=False,
         lightweight=lightweight,
     ).model_dump()
@@ -1546,22 +1804,11 @@ def run_mtf_council(body: dict[str, object]) -> dict[str, object]:
             raise ValueError("MTF council requires at least two declared specialists.")
 
         lightweight = bool(body.get("lightweight", True))
-        member_results: dict[str, object] = {}
-        for member in base.portfolio_members:
-            member_payload = base.model_copy(update={
-                "strategy": member.strategy,
-                "base_strategy": member.base_strategy,
-                "version": member.version,
-                "parameters": dict(member.parameters or {}),
-                "portfolio_members": [],
-            })
-            key = str(member.member_key or member.role or member.strategy)
-            member_results[key] = {
-                "member": member.model_dump(),
-                "official_mtf": _run_single_mtf_lane(member_payload, h1_candles, m15_candles, lightweight),
-                "promotion_evidence": False,
-            }
 
+        # Build the MTF feature layer once for the complete council. Member
+        # strategies see the same closed H1 context and M15 feature frame;
+        # only their signal columns differ. This keeps council evaluation
+        # serial/deterministic while removing repeated indicator/regime work.
         pilot = dict(base.mtf_pilot or {})
         pilot["enabled"] = True
         pilot["mode"] = "h1_veto_m15_risk"
@@ -1576,9 +1823,69 @@ def run_mtf_council(body: dict[str, object]) -> dict[str, object]:
             "mtf_pilot": pilot,
         })
         council_payload = _prepare_paper_payload(council_payload)
-        council_result = run_simple_ema_rsi_backtest_on_dataframe(
+        council_feature_snapshot = prepare_feature_snapshot(
+            council_payload, pd.DataFrame(m15_candles)
+        )
+
+        member_results: dict[str, object] = {}
+        prepared_member_frames: list[pd.DataFrame] = []
+        for member in base.portfolio_members:
+            member_payload = base.model_copy(update={
+                "strategy": member.strategy,
+                "base_strategy": member.base_strategy,
+                "version": member.version,
+                "parameters": dict(member.parameters or {}),
+                "portfolio_members": [],
+            })
+            member_payload = _prepare_paper_payload(member_payload)
+            key = str(member.member_key or member.role or member.strategy)
+            # The portfolio router must consume undelayed specialist signals;
+            # the global delay is applied once after routing, exactly as in the
+            # canonical portfolio replay. The standalone member lane applies
+            # the declared delay to its own signal snapshot.
+            raw_member_payload = member_payload.model_copy(update={"signal_delay_candles": 0})
+            raw_member_snapshot = prepare_signal_snapshot(
+                raw_member_payload, feature_snapshot=council_feature_snapshot
+            )
+            prepared_member_frames.append(raw_member_snapshot.frame)
+            official_frame = _apply_signal_delay(
+                raw_member_snapshot.frame, member_payload.signal_delay_candles
+            )
+            official_snapshot = PreparedSignalSnapshot(
+                source_frame=raw_member_snapshot.source_frame,
+                frame=official_frame,
+                unexpected_gap_count=raw_member_snapshot.unexpected_gap_count,
+                data_quality=raw_member_snapshot.data_quality,
+            )
+            member_results[key] = {
+                "member": member.model_dump(),
+                "official_mtf": _run_single_mtf_lane(
+                    member_payload,
+                    h1_candles,
+                    m15_candles,
+                    lightweight,
+                    feature_snapshot=council_feature_snapshot,
+                    signal_snapshot=official_snapshot,
+                ),
+                "promotion_evidence": False,
+            }
+
+        routed = _apply_portfolio_strategy(
+            council_feature_snapshot.frame.copy(),
+            council_payload.portfolio_members,
+            prepared_member_frames=prepared_member_frames,
+        )
+        routed = _apply_signal_delay(routed, council_payload.signal_delay_candles)
+        council_signal_snapshot = PreparedSignalSnapshot(
+            source_frame=council_feature_snapshot.source_frame,
+            frame=routed,
+            unexpected_gap_count=council_feature_snapshot.unexpected_gap_count,
+            data_quality=council_feature_snapshot.data_quality,
+        )
+        council_result = _run_prepared_simple_backtest(
             council_payload,
             pd.DataFrame(m15_candles),
+            prepared_snapshot=council_signal_snapshot,
             include_differential_pair=False,
             lightweight=lightweight,
         ).model_dump()
@@ -1596,6 +1903,15 @@ def run_mtf_council(body: dict[str, object]) -> dict[str, object]:
             "council": council_summary,
             "same_data_contract": True,
             "same_execution_contract": True,
+            "optimization": {
+                "protocol": "mtf_council_shared_snapshot_v1",
+                "feature_snapshot_builds": 1,
+                "member_signal_snapshot_builds": len(base.portfolio_members),
+                "combined_router_signal_builds": 1,
+                "execution_replays": len(base.portfolio_members) + 1,
+                "strategy_signal_recomputed_for_combined": False,
+                "promotion_evidence": False,
+            },
             "promotion_evidence": False,
         }
     except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:

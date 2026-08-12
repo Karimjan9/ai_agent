@@ -482,9 +482,9 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, self.candles(), lightweight=True)
 
         paired = result.differential_router["paired_lane"]
-        self.assertTrue(paired["non_target_signal_identity"])
-        self.assertTrue(paired["non_target_confidence_identity"])
-        self.assertEqual(paired["status"], "passed")
+        self.assertEqual(paired["status"], "deferred_until_core_gate")
+        self.assertFalse(paired["core_gate"]["passed"])
+        self.assertIn("insufficient_core_trades", paired["core_gate"]["reasons"])
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
     def test_window_survival_keeps_activity_absence_separate_from_edge_failure(self, _strategy):

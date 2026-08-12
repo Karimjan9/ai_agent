@@ -146,11 +146,14 @@ class RecoverLabEvaluationErrors extends Command
                         && (str_contains($reason, 'tz-naive')
                             || str_contains($reason, 'tz-aware')
                             || str_contains($reason, 'timestamp'));
+                    $pythonUndefinedName = str_contains($reason, 'nameerror:')
+                        && str_contains($reason, ' is not defined');
 
                     return $codeRepairAttempts < 1
                         && str_contains($reason, 'strategy verdict withheld')
                         && (str_contains($reason, 'undefined variable')
                             || str_contains($reason, 'undefined method')
+                            || $pythonUndefinedName
                             || $timestampNormalizationFailure);
                 }
                 if ($afterRuntimeSchemaRepair) {

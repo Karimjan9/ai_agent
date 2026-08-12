@@ -247,6 +247,7 @@ class SimpleBacktestResponse(BaseModel):
     execution_contract: dict[str, Any] = Field(default_factory=dict)
     control_root: dict[str, Any] = Field(default_factory=dict)
     policy_boundary: dict[str, Any] = Field(default_factory=dict)
+    core_replay_gate: dict[str, Any] = Field(default_factory=dict)
     data_quality: dict[str, Any] = Field(default_factory=dict)
     volume_quality: dict[str, Any] = Field(default_factory=dict)
     # Causal observability for the declared volume child lane. This is

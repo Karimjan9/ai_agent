@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CandidateGateDecision;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 
 /** Builds an auditable failure curriculum without turning failures into priors. */
@@ -26,13 +27,21 @@ class TargetedRescueProfileService
         $targetCounts = [];
         $incompleteAgentIds = [];
         $technicalExcludedAgentIds = [];
+        $evidence = app(LabImmutableEvidenceService::class);
         foreach ($decisions as $decision) {
             $reasons = array_values(array_unique(array_map('strtoupper', (array) $decision->reason_codes)));
-            $technical = (string) $decision->decision === 'insufficient_evidence'
+            $run = LabEvaluationRun::query()
+                ->where('lab_agent_id', $decision->lab_agent_id)
+                ->where('phase', 'screening')
+                ->latest('id')->first();
+            $eligible = $run ? $evidence->learningEligibility($run) : ['complete' => false];
+            $technical = ! $eligible['complete']
                 || collect($reasons)->contains(fn (string $reason): bool =>
-                    str_contains($reason, 'EVIDENCE')
-                    || str_contains($reason, 'TECHNICAL')
-                    || str_contains($reason, 'SNAPSHOT')
+                    $reason !== 'INSUFFICIENT_SCREENING_EVIDENCE'
+                    && (str_contains($reason, 'EVIDENCE')
+                        || str_contains($reason, 'TECHNICAL')
+                        || str_contains($reason, 'SNAPSHOT')
+                        || str_contains($reason, 'DATASET'))
                 );
             if ($technical) {
                 $incompleteAgentIds[] = (int) $decision->lab_agent_id;

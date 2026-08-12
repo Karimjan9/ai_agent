@@ -11,7 +11,13 @@ import math
 import pandas as pd
 
 from app.schemas import SimpleBacktestRequest
-from app.services.backtester import _apply_portfolio_strategy, run_simple_ema_rsi_backtest_on_dataframe
+from app.services.backtester import (
+    _apply_portfolio_strategy,
+    _run_prepared_simple_backtest,
+    core_replay_gate,
+    prepare_signal_snapshot,
+    run_simple_ema_rsi_backtest_on_dataframe,
+)
 from app.services.market_regime import apply_market_regime
 from app.services.red_team import RedTeamService
 from app.services.volume_features import add_volume_features, apply_volume_policy
@@ -125,7 +131,43 @@ class MarketAdaptiveReplayService:
         foundation_result = run_simple_ema_rsi_backtest_on_dataframe(
             foundation_payload, segments["foundation"], include_differential_pair=False, lightweight=True
         ).model_dump()
-        replay_result = run_simple_ema_rsi_backtest_on_dataframe(payload, segments["replay"]).model_dump()
+        # Phase one is deliberately cheap: it produces the same core ledger
+        # and metrics, but does not spend CPU on promotion-only diagnostics.
+        # The prepared signal snapshot is retained so a passing candidate can
+        # enter phase two without recreating features or strategy signals.
+        replay_snapshot = prepare_signal_snapshot(payload, segments["replay"])
+        core_replay_result = _run_prepared_simple_backtest(
+            payload,
+            segments["replay"],
+            prepared_snapshot=replay_snapshot,
+            include_differential_pair=True,
+            lightweight=True,
+        ).model_dump()
+        core_gate = core_replay_gate(core_replay_result)
+        if bool(core_gate.get("passed", False)):
+            replay_result = _run_prepared_simple_backtest(
+                payload,
+                segments["replay"],
+                prepared_snapshot=replay_snapshot,
+                include_differential_pair=True,
+                lightweight=False,
+            ).model_dump()
+            diagnostics_gate = {
+                "status": "completed",
+                "core_gate": core_gate,
+                "promotion_evidence": False,
+                "strategy_signal_recomputed": False,
+                "rule": "Full diagnostics are authorized only after the core replay gate passes.",
+            }
+        else:
+            replay_result = core_replay_result
+            diagnostics_gate = {
+                "status": "deferred_after_core_gate_failure",
+                "core_gate": core_gate,
+                "promotion_evidence": False,
+                "strategy_signal_recomputed": False,
+                "rule": "Candidates without core replay evidence do not receive full diagnostics.",
+            }
         # Preserve the raw chronological ledger diagnostics before replacing
         # the response-level attribution with the normal/stress cost profile.
         # Monthly passport evidence must be calculated from this same replay,
@@ -134,19 +176,38 @@ class MarketAdaptiveReplayService:
             **replay_result,
             "pf_attribution": dict(replay_result.get("pf_attribution", {}) or {}),
         }
-        # Re-run the identical sealed replay with zero and adverse execution
-        # costs. This distinguishes a weak signal from an edge consumed by
-        # spread/slippage/commission; it is not a synthetic adjustment.
-        replay_result["pf_attribution"] = self._cost_profile_attribution(payload, segments["replay"], replay_result)
-        replay_result["red_team"] = RedTeamService().evaluate(replay_result)
-        replay_result["edge_claim"] = self._falsify_claim(replay_result)
-        trade_rows = replay_result.get("trade_ledger") or replay_result.get("trades", [])
-        noise_values = [
-            float(row.get("profit_percent", 0))
-            for row in trade_rows
-            if isinstance(row, dict) and row.get("profit_percent") is not None
-        ]
-        replay_result["noise_sanity"] = noise_label_permutation_test(noise_values)
+        if bool(core_gate.get("passed", False)):
+            # Cost profiles use the exact same prepared signal snapshot; only
+            # the execution contract changes.
+            replay_result["pf_attribution"] = self._cost_profile_attribution(
+                payload, segments["replay"], replay_result, replay_snapshot
+            )
+            replay_result["red_team"] = RedTeamService().evaluate(replay_result)
+            replay_result["edge_claim"] = self._falsify_claim(replay_result)
+            trade_rows = replay_result.get("trade_ledger") or replay_result.get("trades", [])
+            noise_values = [
+                float(row.get("profit_percent", 0))
+                for row in trade_rows
+                if isinstance(row, dict) and row.get("profit_percent") is not None
+            ]
+            replay_result["noise_sanity"] = noise_label_permutation_test(noise_values)
+        else:
+            replay_result["cost_diagnostics"] = {
+                "status": "deferred_after_core_gate_failure",
+                "promotion_evidence": False,
+            }
+            replay_result["red_team"] = {
+                "status": "deferred_after_core_gate_failure",
+                "promotion_evidence": False,
+            }
+            replay_result["edge_claim"] = {
+                "status": "deferred_after_core_gate_failure",
+                "promotion_evidence": False,
+            }
+            replay_result["noise_sanity"] = {
+                "status": "deferred_after_core_gate_failure",
+                "promotion_evidence": False,
+            }
 
         train_score = score_calculator(foundation_result)
         del foundation_result, foundation_payload
@@ -156,18 +217,26 @@ class MarketAdaptiveReplayService:
             segments["replay"],
             score_calculator,
             chronological_replay_result,
-        )
+        ) if bool(core_gate.get("passed", False)) else []
         checkpoint_scores = [item["score"] for item in checkpoints]
         validation_score = round(sum(checkpoint_scores) / len(checkpoint_scores)) if checkpoint_scores else forward_score
         is_overfit = train_score - forward_score > self.overfit_threshold
 
-        adaptation = self._adaptation_evidence(segments["replay"], replay_result, checkpoints)
-        monthly_walk_forward = self._monthly_walk_forward(
-            payload, segments["replay"], score_calculator, chronological_replay_result
-        )
-        monthly_passport = self._monthly_passport(monthly_walk_forward)
-        failure_focused = self._failure_focused_replay(monthly_walk_forward)
-        transition_homework = self._transition_homework(segments["replay"], replay_result)
+        if bool(core_gate.get("passed", False)):
+            adaptation = self._adaptation_evidence(segments["replay"], replay_result, checkpoints)
+            monthly_walk_forward = self._monthly_walk_forward(
+                payload, segments["replay"], score_calculator, chronological_replay_result
+            )
+            monthly_passport = self._monthly_passport(monthly_walk_forward)
+            failure_focused = self._failure_focused_replay(monthly_walk_forward)
+            transition_homework = self._transition_homework(segments["replay"], replay_result)
+        else:
+            deferred = {"status": "deferred_after_core_gate_failure", "core_gate": core_gate, "promotion_evidence": False}
+            adaptation = deferred
+            monthly_walk_forward = deferred
+            monthly_passport = deferred
+            failure_focused = deferred
+            transition_homework = deferred
         replay_result["window_survival"] = {
             **dict(replay_result.get("window_survival", {})),
             "monthly_walk_forward": monthly_walk_forward,
@@ -177,8 +246,9 @@ class MarketAdaptiveReplayService:
         replay_result["transition_homework"] = transition_homework
         replay_result["evidence_streams"] = {
             "synthetic_forward_evidence": {
-                "status": "assessed", "source": "monthly_walk_forward_replay",
-                "promotion_sufficient": False, "passport_status": monthly_passport["status"],
+                "status": "assessed" if bool(core_gate.get("passed", False)) else "deferred",
+                "source": "monthly_walk_forward_replay",
+                "promotion_sufficient": False, "passport_status": monthly_passport.get("status"),
             },
             "real_time_paper_evidence": {
                 "status": "required", "source": "immutable_paper_signal_ledger",
@@ -205,6 +275,8 @@ class MarketAdaptiveReplayService:
                 "failure_focused_replay": failure_focused,
                 "transition_homework": transition_homework,
                 "adaptation": adaptation,
+                "core_gate": core_gate,
+                "diagnostics_gate": diagnostics_gate,
             },
         }
         result["permanent_unseen_challenge"] = {
@@ -240,18 +312,34 @@ class MarketAdaptiveReplayService:
                 "promotion_evidence": False,
                 "rule": "Trial multiplicity is carried into DSR/PBO diagnostics; it never relaxes an economic gate.",
             }
-        result["temporal_firewall"] = self._temporal_firewall(payload, segments["replay"], segments["holdout"])
-        result["secret_adversarial_arena"] = self._secret_adversarial_arena(payload, segments["replay"])
-        # These two ledgers deliberately use the same next-candle execution
-        # function as the replay.  Their verdicts are diagnostic evidence;
-        # they neither create trades nor change a promotion decision.
-        result["execution_digital_twin"] = self._execution_digital_twin(payload, segments["replay"], replay_result)
-        result["parameter_plateau"] = self._parameter_plateau(payload, segments["replay"], replay_result)
-        result["counterfactual_blame_graph"] = self._counterfactual_blame_graph(replay_result, segments["replay"])
-        result["metamorphic_universality"] = self._metamorphic_universality(payload, segments["replay"], replay_result)
-        if payload.portfolio_members:
+        if bool(core_gate.get("passed", False)):
+            result["temporal_firewall"] = self._temporal_firewall(payload, segments["replay"], segments["holdout"])
+            result["secret_adversarial_arena"] = self._secret_adversarial_arena(payload, segments["replay"])
+            # These two ledgers deliberately use the same next-candle execution
+            # function as the replay. Their verdicts are diagnostic evidence;
+            # they neither create trades nor change a promotion decision.
+            result["execution_digital_twin"] = self._execution_digital_twin(payload, segments["replay"], replay_result)
+            result["parameter_plateau"] = self._parameter_plateau(payload, segments["replay"], replay_result)
+            result["counterfactual_blame_graph"] = self._counterfactual_blame_graph(replay_result, segments["replay"])
+            result["metamorphic_universality"] = self._metamorphic_universality(payload, segments["replay"], replay_result)
+        else:
+            deferred = {"status": "deferred_after_core_gate_failure", "core_gate": core_gate, "promotion_evidence": False}
+            result["temporal_firewall"] = deferred
+            result["secret_adversarial_arena"] = deferred
+            result["execution_digital_twin"] = deferred
+            result["parameter_plateau"] = deferred
+            result["counterfactual_blame_graph"] = deferred
+            result["metamorphic_universality"] = deferred
+        if payload.portfolio_members and bool(core_gate.get("passed", False)):
             self._attach_portfolio_selection_statistics(result, payload)
             result["behavioral_diversity"] = self._portfolio_behavioral_diversity(result)
+        elif payload.portfolio_members:
+            result["behavioral_diversity"] = {
+                "status": "deferred_after_core_gate_failure",
+                "core_gate": core_gate,
+                "promotion_evidence": False,
+            }
+        result["diagnostics_gate"] = diagnostics_gate
         return {
             "train_score": train_score,
             "validation_score": validation_score,
@@ -1230,7 +1318,13 @@ class MarketAdaptiveReplayService:
         return result, self._period(segments["holdout"])
 
     @staticmethod
-    def _cost_profile_attribution(payload: SimpleBacktestRequest, replay: pd.DataFrame, normal_result: dict[str, object]) -> dict[str, object]:
+    def _cost_profile_attribution(
+        payload: SimpleBacktestRequest,
+        replay: pd.DataFrame,
+        normal_result: dict[str, object],
+        prepared_snapshot=None,
+    ) -> dict[str, object]:
+        """Attribute execution-cost damage without rebuilding strategy signals."""
         execution = payload.execution
         zero_execution = execution.model_copy(update={
             "spread_points": 0.0, "slippage_points": 0.0,
@@ -1242,15 +1336,20 @@ class MarketAdaptiveReplayService:
             "commission_percent": execution.commission_percent * 2.0,
             "swap_per_day_percent": execution.swap_per_day_percent * 2.0,
         })
-        zero = run_simple_ema_rsi_backtest_on_dataframe(
-            payload.model_copy(update={"execution": zero_execution}),
+        zero_payload = payload.model_copy(update={"execution": zero_execution})
+        stress_payload = payload.model_copy(update={"execution": stress_execution})
+        snapshot = prepared_snapshot or prepare_signal_snapshot(payload, replay)
+        zero = _run_prepared_simple_backtest(
+            zero_payload,
             replay,
+            prepared_snapshot=snapshot,
             include_differential_pair=False,
             lightweight=True,
         ).model_dump()
-        stress = run_simple_ema_rsi_backtest_on_dataframe(
-            payload.model_copy(update={"execution": stress_execution}),
+        stress = _run_prepared_simple_backtest(
+            stress_payload,
             replay,
+            prepared_snapshot=snapshot,
             include_differential_pair=False,
             lightweight=True,
         ).model_dump()
@@ -1267,6 +1366,12 @@ class MarketAdaptiveReplayService:
                 "stress_cost_pf": stress.get("profit_factor", 0),
                 "worst_session_pf": _minimum_pf(normal.get("pf_attribution", {}).get("by_session", {})),
                 "worst_regime_pf": _minimum_pf(normal.get("pf_attribution", {}).get("by_regime", {})),
+            },
+            "optimization": {
+                "prepared_signal_snapshot_reused": True,
+                "strategy_signal_recomputed": False,
+                "execution_profiles": 2,
+                "promotion_evidence": False,
             },
         }
 
