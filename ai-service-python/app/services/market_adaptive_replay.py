@@ -32,6 +32,18 @@ def _utc_timestamp(value: object) -> pd.Timestamp:
     return timestamp.tz_localize("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
 
 
+def _utc_month_keys(timestamps: pd.Series) -> pd.Series:
+    """Return UTC calendar-month keys without converting aware timestamps to Period."""
+    return pd.to_datetime(timestamps, errors="coerce", utc=True).dt.strftime("%Y-%m")
+
+
+def _utc_month_end(month_key: str) -> pd.Timestamp:
+    """Return the final nanosecond of a UTC calendar month."""
+    return (pd.Timestamp(f"{month_key}-01", tz="UTC") + pd.offsets.MonthEnd(1)).replace(
+        hour=23, minute=59, second=59, microsecond=999999, nanosecond=999,
+    )
+
+
 @dataclass(frozen=True)
 class MarketAdaptiveReplayService:
     foundation_start: str = "2004-01-01 00:00:00"
@@ -993,13 +1005,13 @@ class MarketAdaptiveReplayService:
         """
         normalized = replay.copy()
         normalized["time"] = pd.to_datetime(normalized["time"], utc=True, errors="coerce")
-        periods = list(normalized["time"].dt.to_period("M").drop_duplicates())
-        candidates = periods[2:][-6:]
+        month_keys = _utc_month_keys(normalized["time"])
+        candidates = list(month_keys.drop_duplicates())[2:][-6:]
         ledger_months = ((chronological_result.get("pf_attribution", {}) or {}).get("by_month", {}) or {})
         windows: list[dict[str, object]] = []
         for month in candidates:
-            test = normalized[normalized["time"].dt.to_period("M") == month]
-            train = normalized[normalized["time"].dt.to_period("M") < month]
+            test = normalized[month_keys == month]
+            train = normalized[month_keys < month]
             if len(test) < 202 or len(train) < 202:
                 continue
             month_result = self._month_result_from_attribution(ledger_months.get(str(month), {}) or {})
@@ -1022,7 +1034,7 @@ class MarketAdaptiveReplayService:
                     "indicator_warmup_preserved": True,
                     "source": "full_chronological_trade_ledger",
                 },
-                "feedback_available_at": (_utc_timestamp(month.end_time) + pd.Timedelta(seconds=1)).isoformat(),
+                "feedback_available_at": (_utc_month_end(str(month)) + pd.Timedelta(seconds=1)).isoformat(),
                 "used_for_same_month_mutation": False,
                 "state_continuity": "single_chronological_replay",
                 "state_reset": False,
@@ -1073,14 +1085,14 @@ class MarketAdaptiveReplayService:
             }
         normalized = replay.copy()
         normalized["time"] = pd.to_datetime(normalized["time"], utc=True, errors="coerce")
-        periods = list(normalized["time"].dt.to_period("M").drop_duplicates())
+        month_keys = _utc_month_keys(normalized["time"])
         # Keep the lane bounded; it is learning evidence in addition to the
         # full replay, not an unbounded optimization sweep.
-        candidates = periods[2:][-6:]
+        candidates = list(month_keys.drop_duplicates())[2:][-6:]
         windows: list[dict[str, object]] = []
         for month in candidates:
-            test = normalized[normalized["time"].dt.to_period("M") == month].reset_index(drop=True)
-            train = normalized[normalized["time"].dt.to_period("M") < month]
+            test = normalized[month_keys == month].reset_index(drop=True)
+            train = normalized[month_keys < month]
             if len(test) < 202 or len(train) < 202:
                 continue
             result = run_simple_ema_rsi_backtest_on_dataframe(payload, test).model_dump()
@@ -1095,7 +1107,7 @@ class MarketAdaptiveReplayService:
                 "net_profit_percent": result.get("net_profit_percent", 0),
                 "regime_performance": result.get("regime_performance", {}),
                 "window_survival": survival,
-                "feedback_available_at": (_utc_timestamp(month.end_time) + pd.Timedelta(seconds=1)).isoformat(),
+                "feedback_available_at": (_utc_month_end(str(month)) + pd.Timedelta(seconds=1)).isoformat(),
                 "used_for_same_month_mutation": False,
             })
         return {
