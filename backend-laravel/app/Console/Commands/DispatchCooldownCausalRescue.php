@@ -73,8 +73,11 @@ class DispatchCooldownCausalRescue extends Command
             return self::SUCCESS;
         }
 
-        $generation = DB::transaction(function () use ($source, $model, $geneticParent, $parentGroup, $lab, $schemas): ?LabGeneration {
+        $generation = DB::transaction(function () use ($source, $model, $geneticParent, $parentGroup, $lab, $schemas, $protocolSafety): ?LabGeneration {
             $lockedLab = $lab->newQuery()->whereKey($lab->id)->lockForUpdate()->firstOrFail();
+            if ($protocolSafety->generationCreationPaused()) {
+                return null;
+            }
             if ($lockedLab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->exists()) {
                 return null;
             }

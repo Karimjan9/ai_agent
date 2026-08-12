@@ -125,8 +125,12 @@ class DispatchVolumeResearch extends Command
                 $baseStrategy,
                 $baseParameters,
                 $shadow,
+                $protocolSafety,
             ): array {
                 $lockedLab = AiLaboratory::query()->whereKey($lab->id)->lockForUpdate()->firstOrFail();
+                if ($protocolSafety->generationCreationPaused()) {
+                    return [null, collect()];
+                }
                 $latestGeneration = $lockedLab->generations()->latest('generation')->lockForUpdate()->first();
                 if ($latestGeneration && in_array($latestGeneration->status, LabPopulationService::ACTIVE_GENERATION_STATUSES, true)) {
                     return [null, collect()];

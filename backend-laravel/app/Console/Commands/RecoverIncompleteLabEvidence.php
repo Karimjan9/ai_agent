@@ -19,16 +19,6 @@ class RecoverIncompleteLabEvidence extends Command
         $apply = (bool) $this->option('apply');
         $scheduledSweep = (bool) $this->option('scheduled-sweep');
         $approval = null;
-        if ($apply) {
-            try {
-                $approval = $approvals->requireForApply('recover-incomplete-lab-evidence', $this->option('approved-by'), $this->option('approval-reason'), [
-                    'symbol' => $this->argument('symbol'), 'timeframe' => $this->option('timeframe'), 'generation' => $this->option('generation'),
-                ]);
-            } catch (RuntimeException $exception) {
-                $this->error($exception->getMessage());
-                return self::FAILURE;
-            }
-        }
         $lock = $apply ? Cache::lock('trading:recover-incomplete-lab-evidence:v1', 300) : null;
         if ($lock !== null && ! $lock->get()) {
             $this->info('Incomplete-evidence recovery already active; this invocation was safely deferred.');
@@ -60,6 +50,17 @@ class RecoverIncompleteLabEvidence extends Command
                 }
 
                 return self::SUCCESS;
+            }
+
+            if ($apply) {
+                try {
+                    $approval = $approvals->requireForApply('recover-incomplete-lab-evidence', $this->option('approved-by'), $this->option('approval-reason'), [
+                        'symbol' => $this->argument('symbol'), 'timeframe' => $this->option('timeframe'), 'generation' => $this->option('generation'),
+                    ]);
+                } catch (RuntimeException $exception) {
+                    $this->error($exception->getMessage());
+                    return self::FAILURE;
+                }
             }
 
             $result = $recovery->recover(

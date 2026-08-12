@@ -162,6 +162,27 @@ class MtfStrategyResearchService
                 ],
             ],
             [
+                'key' => 'trend_up_risk_budget_v1',
+                'label' => 'Trend-up volatility risk budget',
+                'strategy' => 'differential_router_v1',
+                'family' => 'differential_router',
+                'mutation_class' => 'directional_risk_defense',
+                'target_gate' => 'trend_up_stability',
+                'hypothesis' => 'The trend-up differential lane retains entry alpha when its position risk is capped, reducing drawdown without changing H1 permission or non-target signals.',
+                'parameter_overrides' => [
+                    'differential_target_regime' => 'trend_up',
+                    'differential_router_version' => 'v2',
+                    'trend_up_risk_multiplier' => 0.75,
+                ],
+                'evidence_basis' => [
+                    'source' => 'Moreira & Muir (2017), Volatility-Managed Portfolios',
+                    'claim' => 'Reducing exposure when volatility risk is elevated can improve risk-adjusted outcomes without changing the underlying signal.',
+                    'translation' => 'Apply one fixed risk budget only to the previously observed trend-up child lane.',
+                    'source_url' => 'https://doi.org/10.1111/jofi.12513',
+                    'caveat' => 'This is a bounded XAUUSD hypothesis; lower drawdown is not sufficient if PF or forward stability collapses.',
+                ],
+            ],
+            [
                 'key' => 'gold_session_liquidity_router_v1',
                 'label' => 'Gold session-liquidity window',
                 'strategy' => 'differential_router_v1',
@@ -205,6 +226,168 @@ class MtfStrategyResearchService
                     'caveat' => 'The source establishes a regime-switching framework, not a trading rule; this is an engineering hypothesis.',
                 ],
             ],
+            ...$this->councilCatalog(),
+        ];
+    }
+
+    /**
+     * Role-complete council seats. Each seat owns one regime/volatility cell
+     * and one bounded mutation. These are intentionally appended after the
+     * general MTF catalog so the ordinary four-hypothesis budget remains
+     * unchanged unless a caller explicitly requests the council keys.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function councilCatalog(): array
+    {
+        return [
+            [
+                'key' => 'council_trend_up_specialist_v1',
+                'label' => 'Council trend-up momentum/crash specialist',
+                'strategy' => 'differential_router_v1',
+                'family' => 'differential_router',
+                'mutation_class' => 'council_directional_specialist',
+                'target_gate' => 'trend_up_stability',
+                'council_role' => 'trend_up_specialist',
+                'target_regime' => 'trend_up',
+                'target_volatility' => 'high_volatility',
+                'mutation' => [
+                    'parameter' => 'trend_up_risk_multiplier',
+                    'from' => 0.75,
+                    'to' => 0.65,
+                    'reason' => 'Tighten only the trend-up seat risk budget after the fresh snapshot raised drawdown.',
+                ],
+                'hypothesis' => 'Give the trend-up/high-volatility council seat its own momentum entry and crash-defense budget while all non-trend-up lanes remain frozen.',
+                'parameter_overrides' => [
+                    'differential_target_regime' => 'trend_up',
+                    'differential_router_version' => 'v2',
+                    'trend_up_roc_period' => 12,
+                    'trend_up_roc_threshold' => 0.20,
+                    'trend_up_ema_period' => 50,
+                    'trend_up_risk_multiplier' => 0.75,
+                    'high_volatility_risk_multiplier' => 0.35,
+                    'transition_firewall_enabled' => true,
+                    'transition_wait_candles' => 2,
+                ],
+                'evidence_basis' => [
+                    'source' => 'Daniel & Moskowitz (2016), Momentum Crashes; Moreira & Muir (2017), Volatility-Managed Portfolios',
+                    'claim' => 'Momentum exposure can be fragile around reversals; a bounded risk budget may reduce crash sensitivity.',
+                    'translation' => 'One trend-up specialist owns high-volatility entries; no global gate or parent transfer.',
+                    'source_url' => 'https://www.kentdaniel.net/papers/published/jfe_16.pdf',
+                    'caveat' => 'The seat remains shadow-only until its own forward passport and the combined council replay pass.',
+                ],
+            ],
+            [
+                'key' => 'council_trend_down_specialist_v1',
+                'label' => 'Council trend-down pullback specialist',
+                'strategy' => 'differential_router_v1',
+                'family' => 'differential_router',
+                'mutation_class' => 'council_directional_specialist',
+                'target_gate' => 'trend_down_opportunity_recall',
+                'council_role' => 'trend_down_specialist',
+                'target_regime' => 'trend_down',
+                'target_volatility' => 'normal_volatility',
+                'mutation' => [
+                    'parameter' => 'trend_down_pullback_atr_fraction',
+                    'from' => 0.60,
+                    'to' => 0.50,
+                    'reason' => 'Require a shallower pullback to test opportunity recall without changing directional ownership.',
+                ],
+                'hypothesis' => 'A dedicated trend-down pullback seat can recover directional opportunities without importing the trend-up mutation or range exits.',
+                'parameter_overrides' => [
+                    'differential_target_regime' => 'trend_down',
+                    'differential_router_version' => 'v2',
+                    'trend_down_strength_min' => 28.0,
+                    'trend_down_pullback_atr_fraction' => 0.60,
+                    'trend_down_risk_multiplier' => 0.50,
+                    'differential_target_min_signal_confidence' => 0.34,
+                    'transition_firewall_enabled' => true,
+                    'transition_wait_candles' => 2,
+                ],
+                'evidence_basis' => [
+                    'source' => 'Moskowitz, Ooi & Pedersen (2012), Time Series Momentum',
+                    'claim' => 'Directional persistence can be tested as a separate time-series momentum envelope.',
+                    'translation' => 'Strength and pullback genes are owned only by the trend-down/normal-volatility seat.',
+                    'source_url' => 'https://pages.stern.nyu.edu/~lpederse/papers/TimeSeriesMomentum.pdf',
+                    'caveat' => 'The source is cross-asset evidence; XAUUSD M15 must independently validate it.',
+                ],
+            ],
+            [
+                'key' => 'council_range_specialist_v1',
+                'label' => 'Council low-volatility range re-entry specialist',
+                'strategy' => 'hybrid_v1',
+                'family' => 'hybrid',
+                'mutation_class' => 'council_range_specialist',
+                'target_gate' => 'range_coverage_and_cost_survival',
+                'council_role' => 'range_specialist',
+                'target_regime' => 'range',
+                'target_volatility' => 'low_volatility',
+                'hypothesis' => 'A low-volatility range seat with re-entry confirmation can complement directional seats while refusing expansion conditions.',
+                'parameter_overrides' => [
+                    'trend_weight' => 0.50,
+                    'breakout_weight' => 0.50,
+                    'mean_reversion_weight' => 1.20,
+                    'minimum_confidence' => 1.20,
+                    'high_volatility_wait' => true,
+                    'range_lookback' => 20,
+                    'range_deviation' => 2.0,
+                    'range_adx_max' => 20.0,
+                    'range_low_volatility_only' => true,
+                    'range_reentry_required' => true,
+                    'range_signal_mode' => 'reentry',
+                    'transition_firewall_enabled' => true,
+                    'transition_wait_candles' => 3,
+                ],
+                'mutation' => [
+                    'parameter' => 'range_deviation',
+                    'from' => 2.0,
+                    'to' => 1.80,
+                    'reason' => 'Test a slightly earlier low-volatility re-entry while keeping range ownership and exits fixed.',
+                ],
+                'evidence_basis' => [
+                    'source' => 'Band-pass mean-reversion and volatility-regime separation (engineering hypothesis)',
+                    'claim' => 'Range re-entry should be isolated from trend and high-volatility expansion rather than voted globally.',
+                    'translation' => 'Low-volatility ownership plus re-entry confirmation; no trend seat parameter reuse.',
+                    'source_url' => 'https://doi.org/10.2307/1912559',
+                    'caveat' => 'The regime-switching source motivates state separation; it does not prove this range rule.',
+                ],
+            ],
+            [
+                'key' => 'council_transition_risk_router_v1',
+                'label' => 'Council transition/risk firewall router',
+                'strategy' => 'hybrid_v1',
+                'family' => 'hybrid',
+                'mutation_class' => 'council_transition_risk',
+                'target_gate' => 'transition_cost_and_drawdown',
+                'council_role' => 'transition_risk_router',
+                'target_regime' => 'trend_up',
+                'target_volatility' => 'high_volatility',
+                'hypothesis' => 'A risk-owned high-volatility transition seat should reduce exposure and abstain briefly after state changes; it must not rewrite another seat signal.',
+                'parameter_overrides' => [
+                    'trend_weight' => 0.70,
+                    'breakout_weight' => 0.50,
+                    'mean_reversion_weight' => 0.30,
+                    'minimum_confidence' => 1.30,
+                    'high_volatility_wait' => false,
+                    'high_volatility_risk_multiplier' => 0.35,
+                    'transition_firewall_enabled' => true,
+                    'transition_wait_candles' => 3,
+                    'weak_regime_wait_candles' => 4,
+                ],
+                'mutation' => [
+                    'parameter' => 'transition_wait_candles',
+                    'from' => 3,
+                    'to' => 2,
+                    'reason' => 'Shorten only the risk router confirmation window to test whether the current firewall over-abstains.',
+                ],
+                'evidence_basis' => [
+                    'source' => 'Hamilton (1989), regime switching; Daniel & Moskowitz (2016), momentum crash risk',
+                    'claim' => 'State changes and sharp reversals justify a separate risk/abstention owner.',
+                    'translation' => 'Routing-only council seat with explicit high-volatility risk reduction and transition wait.',
+                    'source_url' => 'https://doi.org/10.2307/1912559',
+                    'caveat' => 'This seat cannot pass as a champion; it must prove complementary risk contribution in combined replay.',
+                ],
+            ],
         ];
     }
 
@@ -216,7 +399,7 @@ class MtfStrategyResearchService
             $catalog = array_values(array_filter($catalog, fn (array $item): bool => $item['key'] === $hypothesis));
         }
 
-        return array_slice($catalog, 0, max(1, min(10, $limit)));
+        return array_slice($catalog, 0, max(1, min(12, $limit)));
     }
 
     /** @return array<string, mixed> */

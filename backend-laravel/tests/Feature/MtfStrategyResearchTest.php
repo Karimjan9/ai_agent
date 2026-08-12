@@ -18,23 +18,34 @@ class MtfStrategyResearchTest extends TestCase
     {
         $service = app(MtfStrategyResearchService::class);
         $catalog = $service->catalog();
+        $general = collect($catalog)->reject(fn (array $item): bool => str_starts_with((string) $item['key'], 'council_'));
+        $council = collect($catalog)->filter(fn (array $item): bool => str_starts_with((string) $item['key'], 'council_'));
 
-        $this->assertCount(10, $catalog);
-        $this->assertCount(10, collect($catalog)->pluck('key')->unique());
+        $this->assertCount(15, $catalog);
+        $this->assertCount(15, collect($catalog)->pluck('key')->unique());
+        $this->assertCount(11, $general);
+        $this->assertCount(4, $council);
         $this->assertEqualsCanonicalizing(
-            ['regime_ownership', 'evidence_abstention', 'entry_quality', 'risk_and_exit_topology', 'directional_specialist', 'range_specialist', 'volatility_risk_management', 'directional_risk_defense', 'temporal_session_filter', 'transition_abstention'],
-            collect($catalog)->pluck('mutation_class')->all(),
+            ['regime_ownership', 'evidence_abstention', 'entry_quality', 'risk_and_exit_topology', 'directional_specialist', 'range_specialist', 'volatility_risk_management', 'directional_risk_defense', 'temporal_session_filter', 'transition_abstention', 'directional_risk_defense'],
+            $general->pluck('mutation_class')->all(),
+        );
+        $this->assertEqualsCanonicalizing(
+            ['council_directional_specialist', 'council_directional_specialist', 'council_range_specialist', 'council_transition_risk'],
+            $council->pluck('mutation_class')->all(),
         );
         $this->assertTrue(collect($catalog)->every(fn (array $item): bool => ($item['parameter_overrides'] ?? []) !== []));
         $newResearch = collect($catalog)->filter(fn (array $item): bool => in_array($item['key'], [
             'volatility_managed_risk_v1',
             'trend_up_momentum_crash_firewall_v1',
+            'trend_up_risk_budget_v1',
             'gold_session_liquidity_router_v1',
             'transition_persistence_firewall_v1',
         ], true));
-        $this->assertCount(4, $newResearch);
+        $this->assertCount(5, $newResearch);
         $this->assertTrue($newResearch->every(fn (array $item): bool => ($item['evidence_basis']['source_url'] ?? '') !== ''));
         $this->assertContains('volatility_managed_risk_v1', collect($catalog)->pluck('key')->all());
+        $this->assertTrue($council->every(fn (array $item): bool => ($item['council_role'] ?? '') !== '' && ($item['mutation']['parameter'] ?? '') !== ''));
+        $this->assertCount(1, collect($service->select('council_transition_risk_router_v1', 4)));
     }
 
     public function test_report_classifies_entry_starvation_and_applies_family_budget_without_mutating_gates(): void
@@ -106,5 +117,11 @@ class MtfStrategyResearchTest extends TestCase
 
         $this->expectException(LogicException::class);
         MtfStrategyResearchRun::query()->firstOrFail()->update(['status' => 'promoted']);
+    }
+
+    public function test_council_research_is_lighthouse_only(): void
+    {
+        $this->artisan('trading:mtf-council-research', ['--symbol' => 'EURUSD'])
+            ->assertExitCode(1);
     }
 }

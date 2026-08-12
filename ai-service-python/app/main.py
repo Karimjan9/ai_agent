@@ -1274,6 +1274,122 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _run_mtf_variants(
+    base: SimpleBacktestRequest,
+    h1_candles: list[object],
+    m15_candles: list[object],
+    lightweight: bool,
+) -> dict[str, dict[str, object]]:
+    """Run the four MTF lanes on one exact data/execution profile.
+
+    The helper is also used by the bounded stress/forward diagnostics below.
+    Keeping lane construction in one place prevents a stress profile from
+    accidentally changing the H1/M15 routing semantics.
+    """
+    pilot = dict(base.mtf_pilot or {})
+
+    def variant_payload(
+        timeframe: str,
+        candles: list[object],
+        regime: list[object],
+        mode: str | None,
+    ) -> SimpleBacktestRequest:
+        variant_pilot = dict(pilot)
+        if mode is None:
+            variant_pilot = {"enabled": False, "mode": "m15_only"}
+        else:
+            variant_pilot["enabled"] = True
+            variant_pilot["mode"] = mode
+        candidate = base.model_copy(update={
+            "timeframe": timeframe,
+            "candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in candles],
+            "regime_candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in regime],
+            "dataset_path": None,
+            "regime_dataset_path": None,
+            "mtf_pilot": variant_pilot,
+        })
+        return _prepare_paper_payload(candidate)
+
+    variants = {
+        "h1_only": (variant_payload("H1", h1_candles, [], None), h1_candles),
+        "m15_only": (variant_payload("M15", m15_candles, [], None), m15_candles),
+        "h1_regime_m15": (variant_payload("M15", m15_candles, h1_candles, "h1_regime_m15"), m15_candles),
+        "h1_veto_m15_risk": (variant_payload("M15", m15_candles, h1_candles, "h1_veto_m15_risk"), m15_candles),
+    }
+    results: dict[str, dict[str, object]] = {}
+    for name, (payload, frame) in variants.items():
+        result = run_simple_ema_rsi_backtest_on_dataframe(
+            payload,
+            pd.DataFrame(frame),
+            include_differential_pair=False,
+            lightweight=lightweight,
+        ).model_dump()
+        results[name] = {
+            "protocol": "mtf_ablation_lane_v1",
+            "mode": payload.mtf_pilot.get("mode", "m15_only"),
+            "symbol": payload.symbol,
+            "timeframe": payload.timeframe,
+            "total_trades": result.get("total_trades", 0),
+            "profit_factor": result.get("profit_factor", 0),
+            "net_profit_percent": result.get("net_profit_percent", 0),
+            "max_drawdown_percent": result.get("max_drawdown_percent", result.get("max_drawdown", 0)),
+            "winrate": result.get("winrate", 0),
+            "mtf_pilot": (result.get("data_quality", {}) or {}).get("mtf_pilot", {}),
+            "execution_contract": result.get("execution_contract", {}),
+            "promotion_evidence": False,
+        }
+    return results
+
+
+def _mtf_validation_lanes(variants: dict[str, dict[str, object]]) -> dict[str, dict[str, object]]:
+    """Keep stress output compact while retaining the frozen control pair."""
+    return {
+        name: variants[name]
+        for name in ("m15_only", "h1_veto_m15_risk")
+        if name in variants
+    }
+
+
+def _scaled_cost_execution(base: SimpleBacktestRequest, multiplier: float) -> SimpleBacktestRequest:
+    """Create a diagnostic cost profile without pretending it is sealed."""
+    factor = max(1.0, float(multiplier))
+    execution = base.execution.model_copy(update={
+        "spread_points": base.execution.spread_points * factor,
+        "commission_percent": base.execution.commission_percent * factor,
+        "slippage_points": base.execution.slippage_points * factor,
+        "swap_per_day_percent": base.execution.swap_per_day_percent * factor,
+    })
+    return base.model_copy(update={
+        "execution": execution,
+        "execution_contract": {
+            "protocol": "mtf_research_cost_stress_v1",
+            "profile_multiplier": factor,
+            "parameters": execution.model_dump(),
+            "promotion_evidence": False,
+        },
+    })
+
+
+def _exit_stress_payload(base: SimpleBacktestRequest, profile: dict[str, object]) -> SimpleBacktestRequest:
+    """Apply only declared stop/target multipliers for exit-topology stress."""
+    parameters = dict(base.parameters or {})
+    stop_multiplier = float(profile.get("stop_multiplier", 1.0) or 1.0)
+    target_multiplier = float(profile.get("target_multiplier", 1.0) or 1.0)
+    if "atr_stop_multiplier" in parameters:
+        parameters["atr_stop_multiplier"] = max(0.5, min(4.0, float(parameters["atr_stop_multiplier"]) * stop_multiplier))
+    if "atr_target_multiplier" in parameters:
+        parameters["atr_target_multiplier"] = max(0.75, min(8.0, float(parameters["atr_target_multiplier"]) * target_multiplier))
+    return base.model_copy(update={
+        "parameters": parameters,
+        "execution_contract": {
+            "protocol": "mtf_research_exit_stress_v1",
+            "profile": str(profile.get("name", "unnamed")),
+            "parameters": parameters,
+            "promotion_evidence": False,
+        },
+    })
+
+
 @app.post("/api/backtest/mtf-ablation")
 def run_mtf_ablation(body: dict[str, object]) -> dict[str, object]:
     """Run the four controlled XAUUSD MTF lanes under one data/cost contract.
@@ -1292,53 +1408,8 @@ def run_mtf_ablation(body: dict[str, object]) -> dict[str, object]:
 
         lightweight = bool(body.get("lightweight", True))
         pilot = dict(base.mtf_pilot or {})
-
-        def variant_payload(timeframe: str, candles: list[object], regime: list[object], mode: str | None) -> SimpleBacktestRequest:
-            variant_pilot = dict(pilot)
-            if mode is None:
-                variant_pilot = {"enabled": False, "mode": "m15_only"}
-            else:
-                variant_pilot["enabled"] = True
-                variant_pilot["mode"] = mode
-            candidate = base.model_copy(update={
-                "timeframe": timeframe,
-                "candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in candles],
-                "regime_candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in regime],
-                "dataset_path": None,
-                "regime_dataset_path": None,
-                "mtf_pilot": variant_pilot,
-            })
-            return _prepare_paper_payload(candidate)
-
-        variants = {
-            "h1_only": (variant_payload("H1", h1_candles, [], None), h1_candles),
-            "m15_only": (variant_payload("M15", m15_candles, [], None), m15_candles),
-            "h1_regime_m15": (variant_payload("M15", m15_candles, h1_candles, "h1_regime_m15"), m15_candles),
-            "h1_veto_m15_risk": (variant_payload("M15", m15_candles, h1_candles, "h1_veto_m15_risk"), m15_candles),
-        }
-        results: dict[str, object] = {}
-        for name, (payload, frame) in variants.items():
-            result = run_simple_ema_rsi_backtest_on_dataframe(
-                payload,
-                pd.DataFrame(frame),
-                include_differential_pair=False,
-                lightweight=lightweight,
-            ).model_dump()
-            results[name] = {
-                "protocol": "mtf_ablation_lane_v1",
-                "mode": payload.mtf_pilot.get("mode", "m15_only"),
-                "symbol": payload.symbol,
-                "timeframe": payload.timeframe,
-                "total_trades": result.get("total_trades", 0),
-                "profit_factor": result.get("profit_factor", 0),
-                "net_profit_percent": result.get("net_profit_percent", 0),
-                "max_drawdown_percent": result.get("max_drawdown_percent", result.get("max_drawdown", 0)),
-                "winrate": result.get("winrate", 0),
-                "mtf_pilot": (result.get("data_quality", {}) or {}).get("mtf_pilot", {}),
-                "execution_contract": result.get("execution_contract", {}),
-                "promotion_evidence": False,
-            }
-        return {
+        results = _run_mtf_variants(base, h1_candles, m15_candles, lightweight)
+        response: dict[str, object] = {
             "protocol": "xauusd_mtf_ablation_v1",
             "pilot_id": pilot.get("pilot_id", "xauusd_h1_m15_v1"),
             "same_data_contract": True,
@@ -1346,6 +1417,186 @@ def run_mtf_ablation(body: dict[str, object]) -> dict[str, object]:
             "frozen_control": "m15_only",
             "promotion_evidence": False,
             "variants": results,
+        }
+
+        validation = body.get("validation")
+        if isinstance(validation, dict):
+            cost_stress: dict[str, object] = {}
+            for raw_profile in list(validation.get("cost_profiles", []) or []):
+                if not isinstance(raw_profile, dict):
+                    continue
+                name = str(raw_profile.get("name", "cost_stress"))
+                profile_base = _scaled_cost_execution(base, float(raw_profile.get("multiplier", 1.0) or 1.0))
+                profile_variants = _run_mtf_variants(profile_base, h1_candles, m15_candles, lightweight)
+                cost_stress[name] = {
+                    "profile": raw_profile,
+                    "lanes": _mtf_validation_lanes(profile_variants),
+                    "promotion_evidence": False,
+                }
+
+            exit_stress: dict[str, object] = {}
+            for raw_profile in list(validation.get("exit_profiles", []) or []):
+                if not isinstance(raw_profile, dict):
+                    continue
+                name = str(raw_profile.get("name", "exit_stress"))
+                profile_base = _exit_stress_payload(base, raw_profile)
+                profile_variants = _run_mtf_variants(profile_base, h1_candles, m15_candles, lightweight)
+                exit_stress[name] = {
+                    "profile": raw_profile,
+                    "lanes": _mtf_validation_lanes(profile_variants),
+                    "promotion_evidence": False,
+                }
+
+            forward_m15 = list(validation.get("forward_m15_candles", []) or [])
+            forward_h1 = list(validation.get("forward_h1_candles", []) or [])
+            forward: dict[str, object] = {
+                "status": "insufficient_rows",
+                "promotion_evidence": False,
+            }
+            if len(forward_m15) >= 220 and len(forward_h1) >= 2:
+                forward_variants = _run_mtf_variants(base, forward_h1, forward_m15, lightweight)
+                forward = {
+                    "status": "completed",
+                    "holdout_start": validation.get("holdout_start"),
+                    "holdout_end": validation.get("holdout_end"),
+                    "warmup_m15_rows": int(validation.get("warmup_m15_rows", 0) or 0),
+                    "lanes": _mtf_validation_lanes(forward_variants),
+                    "promotion_evidence": False,
+                }
+
+            response["targeted_validation"] = {
+                "protocol": "xauusd_mtf_targeted_validation_v1",
+                "same_symbol": True,
+                "same_h1_m15_contract": True,
+                "cost_stress": cost_stress,
+                "exit_stress": exit_stress,
+                "forward_validation": forward,
+                "promotion_evidence": False,
+                "rule": "Stress and chronological holdout are research diagnostics; neither can create paper or promotion evidence.",
+            }
+        return response
+    except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _mtf_lane_summary(result: dict[str, object], payload: SimpleBacktestRequest) -> dict[str, object]:
+    """Return the comparable, non-ledger part of one MTF lane."""
+    return {
+        "protocol": "mtf_council_member_lane_v1",
+        "mode": payload.mtf_pilot.get("mode", "m15_only"),
+        "symbol": payload.symbol,
+        "timeframe": payload.timeframe,
+        "total_trades": result.get("total_trades", 0),
+        "profit_factor": result.get("profit_factor", 0),
+        "net_profit_percent": result.get("net_profit_percent", 0),
+        "max_drawdown_percent": result.get("max_drawdown_percent", result.get("max_drawdown", 0)),
+        "winrate": result.get("winrate", 0),
+        "mtf_pilot": (result.get("data_quality", {}) or {}).get("mtf_pilot", {}),
+        "execution_contract": result.get("execution_contract", {}),
+        "promotion_evidence": False,
+    }
+
+
+def _run_single_mtf_lane(
+    base: SimpleBacktestRequest,
+    h1_candles: list[object],
+    m15_candles: list[object],
+    lightweight: bool,
+) -> dict[str, object]:
+    """Run one declared member with the official H1-veto M15 mode."""
+    pilot = dict(base.mtf_pilot or {})
+    pilot["enabled"] = True
+    pilot["mode"] = "h1_veto_m15_risk"
+    payload = base.model_copy(update={
+        "timeframe": "M15",
+        "candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in m15_candles],
+        "regime_candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in h1_candles],
+        "dataset_path": None,
+        "regime_dataset_path": None,
+        "mtf_pilot": pilot,
+    })
+    payload = _prepare_paper_payload(payload)
+    result = run_simple_ema_rsi_backtest_on_dataframe(
+        payload,
+        pd.DataFrame(m15_candles),
+        include_differential_pair=False,
+        lightweight=lightweight,
+    ).model_dump()
+    return _mtf_lane_summary(result, payload)
+
+
+@app.post("/api/backtest/mtf-council")
+def run_mtf_council(body: dict[str, object]) -> dict[str, object]:
+    """Screen a sealed multi-specialist MTF council on one candle snapshot.
+
+    Each member is evaluated alone under the same H1-veto execution lane,
+    then the exact declared members are replayed together through the existing
+    portfolio router. The router may abstain on disagreement and keeps the
+    selected member's exit parameters attached to the trade. This endpoint is
+    research-only; it does not create a portfolio passport or promotion
+    evidence.
+    """
+    try:
+        base = SimpleBacktestRequest.model_validate(body.get("base_request", body))
+        h1_candles = list(body.get("h1_candles", []) or [])
+        m15_candles = list(body.get("m15_candles", []) or [])
+        if len(h1_candles) < 2 or len(m15_candles) < 2:
+            raise ValueError("MTF council requires independent H1 and M15 candle streams.")
+        if len(base.portfolio_members) < 2:
+            raise ValueError("MTF council requires at least two declared specialists.")
+
+        lightweight = bool(body.get("lightweight", True))
+        member_results: dict[str, object] = {}
+        for member in base.portfolio_members:
+            member_payload = base.model_copy(update={
+                "strategy": member.strategy,
+                "base_strategy": member.base_strategy,
+                "version": member.version,
+                "parameters": dict(member.parameters or {}),
+                "portfolio_members": [],
+            })
+            key = str(member.member_key or member.role or member.strategy)
+            member_results[key] = {
+                "member": member.model_dump(),
+                "official_mtf": _run_single_mtf_lane(member_payload, h1_candles, m15_candles, lightweight),
+                "promotion_evidence": False,
+            }
+
+        pilot = dict(base.mtf_pilot or {})
+        pilot["enabled"] = True
+        pilot["mode"] = "h1_veto_m15_risk"
+        council_payload = base.model_copy(update={
+            "strategy": "portfolio_v1",
+            "base_strategy": "portfolio",
+            "timeframe": "M15",
+            "candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in m15_candles],
+            "regime_candles": [item if isinstance(item, Candle) else Candle.model_validate(item) for item in h1_candles],
+            "dataset_path": None,
+            "regime_dataset_path": None,
+            "mtf_pilot": pilot,
+        })
+        council_payload = _prepare_paper_payload(council_payload)
+        council_result = run_simple_ema_rsi_backtest_on_dataframe(
+            council_payload,
+            pd.DataFrame(m15_candles),
+            include_differential_pair=False,
+            lightweight=lightweight,
+        ).model_dump()
+        council_summary = _mtf_lane_summary(council_result, council_payload)
+        council_summary["portfolio_evidence"] = council_result.get("portfolio_evidence", {})
+
+        return {
+            "protocol": "xauusd_mtf_council_screen_v1",
+            "symbol": base.symbol,
+            "regime_timeframe": "H1",
+            "entry_timeframe": "M15",
+            "member_count": len(base.portfolio_members),
+            "declared_members": [member.model_dump() for member in base.portfolio_members],
+            "member_results": member_results,
+            "council": council_summary,
+            "same_data_contract": True,
+            "same_execution_contract": True,
+            "promotion_evidence": False,
         }
     except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

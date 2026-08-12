@@ -96,8 +96,11 @@ class DispatchExitTopologyExperiments extends Command
             ['atr_target_multiplier' => 2.0], ['atr_target_multiplier' => 3.0],
             ['trailing_atr_multiplier' => 1.0], ['time_stop_candles' => 24],
         ];
-        $agents = DB::transaction(function () use ($source, $parent, $geneticParent, $parentGroup, $lab, $family, $variants, $schemas) {
+        $agents = DB::transaction(function () use ($source, $parent, $geneticParent, $parentGroup, $lab, $family, $variants, $schemas, $protocolSafety) {
             $lockedLab = AiLaboratory::query()->whereKey($lab->id)->lockForUpdate()->firstOrFail();
+            if ($protocolSafety->generationCreationPaused()) {
+                return collect();
+            }
             if ($lockedLab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->exists()) {
                 return collect();
             }

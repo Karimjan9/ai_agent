@@ -260,7 +260,7 @@ class RepairLabIntegrity extends Command
             // Four bounded root specialists are enough to restart quality
             // research; the full twenty-slot screen remains available to the
             // normal scheduler after this clean cohort proves its contract.
-            $rebuilt = $this->createBoundedRootCohort($lab, $schemas, $semanticGroups, $executionContracts, $controlRoots, $rootInheritance);
+            $rebuilt = $this->createBoundedRootCohort($lab, $schemas, $semanticGroups, $executionContracts, $controlRoots, $rootInheritance, $protocolSafety);
             if ($rebuilt) {
                 $rootFailures = 0;
                 foreach ($rebuilt->load('agents.modelVersion')->agents as $agent) {
@@ -449,9 +449,13 @@ class RepairLabIntegrity extends Command
         ExecutionContractService $executionContracts,
         ControlRootCatalogueService $controlRoots,
         ControlRootInheritanceService $rootInheritance,
+        LearningProtocolSafetyService $protocolSafety,
     ): ?LabGeneration {
-        return DB::transaction(function () use ($lab, $schemas, $semanticGroups, $executionContracts, $controlRoots, $rootInheritance): ?LabGeneration {
+        return DB::transaction(function () use ($lab, $schemas, $semanticGroups, $executionContracts, $controlRoots, $rootInheritance, $protocolSafety): ?LabGeneration {
             $lockedLab = AiLaboratory::query()->whereKey($lab->id)->lockForUpdate()->firstOrFail();
+            if ($protocolSafety->generationCreationPaused()) {
+                return null;
+            }
             if ($lockedLab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->exists()) return null;
             $latest = $lockedLab->generations()->latest('generation')->lockForUpdate()->first();
             $number = (int) ($latest?->generation ?? 0) + 1;

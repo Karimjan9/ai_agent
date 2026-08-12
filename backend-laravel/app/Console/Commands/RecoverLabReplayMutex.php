@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use App\Models\LabEvaluationRun;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\OperatorApprovalService;
+use RuntimeException;
 
 /**
  * Removes only an orphaned evaluator overlap lock.
@@ -23,11 +25,14 @@ class RecoverLabReplayMutex extends Command
     protected $signature = 'trading:recover-lab-replay-mutex
         {--force-stale : Requeue only reservations proven stale after a worker restart; never deletes the job}
         {--stale-after=120 : Minimum reservation age in seconds for the explicit stale recovery}
-        {--dry-run : Report the proven stale owner without requeueing or deleting a lock}';
+        {--dry-run : Report the proven stale owner without requeueing or deleting a lock}
+        {--apply : Requeue/remove only after explicit operator approval}
+        {--approved-by=}
+        {--approval-reason=}';
 
     protected $description = 'Recover an orphaned single-lane lab replay mutex safely';
 
-    public function handle(): int
+    public function handle(OperatorApprovalService $approvals): int
     {
         // EvaluateLabAgentJob uses WithoutOverlapping::shared(), so Laravel
         // stores the cross-job mutex without the job-class hash. Derive the
@@ -43,7 +48,10 @@ class RecoverLabReplayMutex extends Command
         // reservation even when the lock row is absent. The normal operator
         // path remains a no-op when there is no mutex to recover.
         $forceStale = (bool) $this->option('force-stale');
-        $dryRun = (bool) $this->option('dry-run');
+        $apply = (bool) $this->option('apply') && ! (bool) $this->option('dry-run');
+        // Recovery is fail-closed by default. --force-stale without --apply
+        // remains a report-only probe, even when --dry-run is omitted.
+        $dryRun = ! $apply;
         if (! $lock && ! $forceStale) {
             return self::SUCCESS;
         }
@@ -118,6 +126,9 @@ class RecoverLabReplayMutex extends Command
                     if ($dryRun) {
                         $this->line('Would remove orphaned evaluator replay mutex; no reserved evaluator job is present.');
                     } else {
+                        if (! $this->approve($approvals, ['mode' => 'orphan_lock', 'lock_key' => $key])) {
+                            return self::FAILURE;
+                        }
                         $deleted = DB::table('cache_locks')->where('key', $key)->delete();
                         if ($deleted > 0) {
                             $this->warn('Removed orphaned evaluator replay mutex; no reserved evaluator job was present.');
@@ -179,6 +190,14 @@ class RecoverLabReplayMutex extends Command
                 return self::SUCCESS;
             }
 
+            if (! $this->approve($approvals, [
+                'mode' => 'stale_reservation',
+                'reservation_ids' => $staleOwners->pluck('id')->values()->all(),
+                'stale_after_seconds' => $staleAfter,
+            ])) {
+                return self::FAILURE;
+            }
+
             DB::transaction(function () use ($staleOwners, $key): void {
                 DB::table('jobs')->whereIn('id', $staleOwners->pluck('id')->all())->update([
                     'reserved_at' => null,
@@ -221,12 +240,32 @@ class RecoverLabReplayMutex extends Command
             return self::SUCCESS;
         }
 
-        $deleted = DB::table('cache_locks')->where('key', $key)->delete();
-        if ($deleted > 0) {
-            $this->warn('Removed orphaned evaluator replay mutex; no reserved lab replay was present.');
+        if ($dryRun) {
+            $this->line('Would remove orphaned evaluator replay mutex; no reserved lab replay was present.');
+        } elseif ($this->approve($approvals, ['mode' => 'orphan_lock', 'lock_key' => $key])) {
+            $deleted = DB::table('cache_locks')->where('key', $key)->delete();
+            if ($deleted > 0) {
+                $this->warn('Removed orphaned evaluator replay mutex; no reserved lab replay was present.');
+            }
+        } else {
+            return self::FAILURE;
         }
 
         return self::SUCCESS;
+    }
+
+    /** @param array<string, mixed> $scope */
+    private function approve(OperatorApprovalService $approvals, array $scope): bool
+    {
+        try {
+            $approvals->requireForApply('recover-lab-replay-mutex', $this->option('approved-by'), $this->option('approval-reason'), $scope);
+
+            return true;
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage());
+
+            return false;
+        }
     }
 
     private function labAgentIdFromPayload(string $payload): ?int

@@ -119,8 +119,12 @@ class DispatchDifferentialTrendDownRescue extends Command
             $semanticGroups,
             $target,
             $differentialNiche,
+            $protocolSafety,
         ): array {
             $lockedLab = AiLaboratory::query()->whereKey($lab->id)->lockForUpdate()->firstOrFail();
+            if ($protocolSafety->generationCreationPaused()) {
+                return [null, collect()];
+            }
             if ($lockedLab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->exists()) {
                 return [null, collect()];
             }

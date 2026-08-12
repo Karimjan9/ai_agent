@@ -348,6 +348,9 @@ class ImmutableLabEvidenceTest extends TestCase
         $this->artisan('trading:recover-lab-replay-mutex', [
             '--force-stale' => true,
             '--stale-after' => 120,
+            '--apply' => true,
+            '--approved-by' => 'test-operator',
+            '--approval-reason' => 'Verify stale owner recovery contract.',
         ])->assertExitCode(0);
 
         $this->assertDatabaseHas('jobs', ['id' => $staleJobId, 'reserved_at' => null]);

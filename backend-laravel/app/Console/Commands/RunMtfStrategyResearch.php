@@ -21,7 +21,8 @@ class RunMtfStrategyResearch extends Command
         {--hypothesis= : Run one catalog hypothesis by key}
         {--hypotheses= : Run comma-separated catalog hypotheses on one immutable candle snapshot}
         {--bootstrap-control : Create the exact frozen four-lane control when this snapshot has no matching control}
-        {--limit=4 : Maximum number of bounded hypotheses, up to six}
+        {--validate-forward : Add bounded cost/exit stress and chronological forward diagnostics to each immutable row}
+        {--limit=4 : Maximum number of bounded hypotheses, up to twelve}
         {--json : Print the immutable research rows as JSON}';
 
     protected $description = 'Run bounded XAUUSD H1/M15 strategy hypotheses under the sealed four-lane contract';
@@ -163,6 +164,15 @@ class RunMtfStrategyResearch extends Command
                 'parameters' => $parameters,
             ]);
             $contract = $research->contract($experiment, $symbol, (int) $candidate->id, $dataHash, $parameterHash, $executionHash, $frozenControl?->id);
+            if ($this->option('validate-forward')) {
+                $contract['targeted_validation'] = [
+                    'protocol' => 'xauusd_mtf_targeted_validation_v2',
+                    'cost_profiles' => ['cost_1_5x', 'cost_2x'],
+                    'exit_profiles' => ['wider_stop_tighter_target', 'tighter_stop_wider_target'],
+                    'chronological_holdout' => true,
+                    'promotion_evidence' => false,
+                ];
+            }
             $baseRunKey = $pilot->hash([
                 'research_protocol' => MtfStrategyResearchService::PROTOCOL,
                 'candidate_id' => $candidate->id,
@@ -173,6 +183,9 @@ class RunMtfStrategyResearch extends Command
                 'execution_hash' => $executionHash,
                 'frozen_control_run_id' => $frozenControl?->id,
                 'mtf_contract_hash' => data_get($pilot->requestPayload($symbol, 'M15', $strategy), 'contract_hash'),
+                'targeted_validation_protocol' => $this->option('validate-forward')
+                    ? 'xauusd_mtf_targeted_validation_v2'
+                    : null,
             ]);
 
             $existing = MtfStrategyResearchRun::query()->where('run_key', $baseRunKey)->first();
@@ -218,14 +231,21 @@ class RunMtfStrategyResearch extends Command
                 ];
             }
 
+            $requestBody = [
+                'base_request' => $payload,
+                'h1_candles' => $h1,
+                'm15_candles' => $m15,
+                'lightweight' => true,
+            ];
+            if ($this->option('validate-forward')) {
+                $requestBody['validation'] = $this->targetedValidationPayload($m15, $h1);
+            }
+
             $response = Http::timeout((int) config('services.ai_service.backtest_timeout_seconds', 900))
                 ->acceptJson()
                 ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
                 ->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/mtf-ablation', [
-                    'base_request' => $payload,
-                    'h1_candles' => $h1,
-                    'm15_candles' => $m15,
-                    'lightweight' => true,
+                    ...$requestBody,
                 ]);
 
             if ($response->failed()) {
@@ -296,6 +316,7 @@ class RunMtfStrategyResearch extends Command
             'data_hash' => $dataHash,
             'execution_hash' => $executionHash,
             'frozen_control_run_id' => $frozenControl?->id,
+            'bootstrapped_control' => $bootstrappedControl,
             'hypothesis_budget' => count($experiments),
             'promotion_evidence' => false,
             'rows' => $rows,
@@ -315,6 +336,48 @@ class RunMtfStrategyResearch extends Command
         }
 
         return $successful > 0 ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Build a deterministic chronological holdout with indicator warm-up.
+     * The Python evaluator starts its trade loop after 200 M15 rows, so the
+     * first 200 rows here are context only and the remaining rows are the
+     * research holdout. This is not the sealed project forward gate.
+     *
+     * @return array<string, mixed>
+     */
+    private function targetedValidationPayload(array $m15, array $h1): array
+    {
+        $total = count($m15);
+        $holdoutRows = min(1200, max(400, (int) floor($total * 0.20)));
+        $warmupRows = min(200, max(0, $total - $holdoutRows - 1));
+        $start = max(0, $total - $holdoutRows - $warmupRows);
+        $forwardM15 = array_values(array_slice($m15, $start));
+
+        // Keep enough H1 history to classify the entire M15 holdout while
+        // preserving the exact closed-H1 merge contract.
+        $forwardH1 = array_values(array_slice($h1, max(0, count($h1) - 500)));
+        $first = $forwardM15[0] ?? [];
+        $last = $forwardM15[array_key_last($forwardM15)] ?? [];
+
+        return [
+            'protocol' => 'xauusd_mtf_targeted_validation_v2',
+            'cost_profiles' => [
+                ['name' => 'cost_1_5x', 'multiplier' => 1.5],
+                ['name' => 'cost_2x', 'multiplier' => 2.0],
+            ],
+            'exit_profiles' => [
+                ['name' => 'wider_stop_tighter_target', 'stop_multiplier' => 1.15, 'target_multiplier' => 0.90],
+                ['name' => 'tighter_stop_wider_target', 'stop_multiplier' => 0.90, 'target_multiplier' => 1.10],
+            ],
+            'forward_m15_candles' => $forwardM15,
+            'forward_h1_candles' => $forwardH1,
+            'warmup_m15_rows' => $warmupRows,
+            'holdout_rows' => max(0, count($forwardM15) - $warmupRows),
+            'holdout_start' => data_get($first, 'time'),
+            'holdout_end' => data_get($last, 'time'),
+            'promotion_evidence' => false,
+        ];
     }
 
     /** @return array<string, mixed> */

@@ -101,8 +101,11 @@ class DispatchTrendDownSpecialistRescue extends Command
             1,
         );
         $sameFamilyParent = $parentSelection['parents']->first();
-        $generation = DB::transaction(function () use ($source, $sourceModel, $sameFamilyParent, $parentSelection, $specialistNiche, $lab, $schemas, $constitutions, $universalCapabilities, $semanticGroups) {
+        $generation = DB::transaction(function () use ($source, $sourceModel, $sameFamilyParent, $parentSelection, $specialistNiche, $lab, $schemas, $constitutions, $universalCapabilities, $semanticGroups, $protocolSafety) {
             $lockedLab = AiLaboratory::query()->whereKey($lab->id)->lockForUpdate()->firstOrFail();
+            if ($protocolSafety->generationCreationPaused()) {
+                return null;
+            }
             if ($lockedLab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->exists()) {
                 return null;
             }

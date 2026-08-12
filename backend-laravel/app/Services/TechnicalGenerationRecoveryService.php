@@ -52,6 +52,9 @@ class TechnicalGenerationRecoveryService
     {
         $probe = $this->readiness();
         if (! $probe['ready'] || ! $probe['idle']) return ['retried' => 0, 'quarantined' => 0, 'skipped' => 0, 'reason' => $probe['reason']];
+        if ($apply && $this->queueJobs->hasLabJobs()) {
+            return ['retried' => 0, 'quarantined' => 0, 'skipped' => 0, 'reason' => 'LAB_QUEUE_NOT_EMPTY'];
+        }
 
         // A killed worker can leave a database lock row until its explicit
         // expiry. An expired row is historical residue, not a live replay
