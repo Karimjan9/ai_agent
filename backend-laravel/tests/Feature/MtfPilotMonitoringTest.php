@@ -24,7 +24,18 @@ class MtfPilotMonitoringTest extends TestCase
         $report = app(MtfPilotMonitoringService::class)->inspect('XAUUSD', 24);
 
         $alignment = collect($report['checks'])->firstWhere('code', 'CLOSED_CANDLE_ALIGNMENT');
+        $volume = collect($report['checks'])->firstWhere('code', 'VOLUME_CONTEXT');
+        $frontier = collect($report['checks'])->firstWhere('code', 'CHALLENGER_FRONTIER');
+        $council = collect($report['checks'])->firstWhere('code', 'COUNCIL_PROXY');
+        $replacement = collect($report['checks'])->firstWhere('code', 'CONTROL_REPLACEMENT');
         $this->assertSame('ok', $alignment['status']);
+        $this->assertContains($volume['status'], ['ok', 'warning']);
+        $this->assertArrayHasKey('entry_quality', $volume['metrics']);
+        $this->assertArrayHasKey('regime_quality', $volume['metrics']);
+        $this->assertNotNull($frontier);
+        $this->assertNotNull($council);
+        $this->assertNotNull($replacement);
+        $this->assertFalse($replacement['metrics']['replacement_authorized']);
         $this->assertSame('warning', $report['status']);
         $this->assertDatabaseCount('mtf_pilot_monitor_runs', 1);
         $this->assertDatabaseHas('service_health_checks', [

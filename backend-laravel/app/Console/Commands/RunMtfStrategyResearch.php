@@ -7,10 +7,14 @@ use App\Models\MtfAblationRun;
 use App\Models\MtfStrategyResearchRun;
 use App\Services\ExecutionContractService;
 use App\Services\MarketData\CandlePayloadService;
+use App\Services\MarketData\MarketVolumeService;
 use App\Services\MtfStrategyResearchService;
+use App\Services\MtfStrategyResearchReportService;
+use App\Services\MtfResearchSnapshotService;
 use App\Services\MultiTimeframePilotService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
 class RunMtfStrategyResearch extends Command
@@ -21,6 +25,7 @@ class RunMtfStrategyResearch extends Command
         {--hypothesis= : Run one catalog hypothesis by key}
         {--hypotheses= : Run comma-separated catalog hypotheses on one immutable candle snapshot}
         {--bootstrap-control : Create the exact frozen four-lane control when this snapshot has no matching control}
+        {--control-run= : Reuse the exact immutable snapshot from an existing MTF ablation run id}
         {--validate-forward : Add bounded cost/exit stress and chronological forward diagnostics to each immutable row}
         {--limit=4 : Maximum number of bounded hypotheses, up to twelve}
         {--json : Print the immutable research rows as JSON}';
@@ -32,6 +37,9 @@ class RunMtfStrategyResearch extends Command
         MtfStrategyResearchService $research,
         MultiTimeframePilotService $pilot,
         StrategyParameterSchemaService $schemas,
+        MarketVolumeService $volumes,
+        MtfStrategyResearchReportService $researchReport,
+        MtfResearchSnapshotService $snapshots,
     ): int {
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', (string) $this->option('symbol')));
         $candidateQuery = ModelMarketPerformance::with('modelVersion')
@@ -65,18 +73,68 @@ class RunMtfStrategyResearch extends Command
                 return self::FAILURE;
             }
         } else {
-            $experiments = $research->select(
-                $this->option('hypothesis') ? (string) $this->option('hypothesis') : null,
-                max(1, (int) $this->option('limit')),
-            );
+            $limit = max(1, (int) $this->option('limit'));
+            if ($this->option('hypothesis')) {
+                $experiments = $research->select((string) $this->option('hypothesis'), $limit);
+            } else {
+                // Keep the four-lane control frozen, but rotate the bounded
+                // challenger frontier across still-unobserved families.
+                $report = $researchReport->report($symbol, 720);
+                $currentDataHash = (string) data_get($report, 'current_cohort_data_hash', '');
+                $observations = collect((array) data_get($report, 'runs', []))
+                    ->when($currentDataHash !== '', fn ($rows) => $rows->where('data_hash', $currentDataHash))
+                    ->values()
+                    ->all();
+                $experiments = $research->selectFrontier(
+                    $observations,
+                    (array) data_get($report, 'family_budget', []),
+                    $limit,
+                    $currentDataHash !== '' ? $currentDataHash : null,
+                );
+            }
         }
         if ($experiments === []) {
             $this->error('So‘ralgan MTF hypothesis catalog’da topilmadi.');
             return self::FAILURE;
         }
 
-        $m15 = $candles->candlesForBacktest($symbol, 'M15', 5000);
-        $h1 = $candles->candlesForBacktest($symbol, 'H1', 2000);
+        $snapshotRun = null;
+        $snapshot = null;
+        if (filled($this->option('control-run'))) {
+            $snapshotRun = MtfAblationRun::query()
+                ->whereKey((int) $this->option('control-run'))
+                ->where('model_market_performance_id', $candidate->id)
+                ->where('symbol', $symbol)
+                ->where('status', 'completed')
+                ->first();
+            $snapshot = $snapshots->load($snapshotRun);
+            if (! $snapshotRun || ! $snapshot) {
+                $this->error('Ko\'rsatilgan MTF control run immutable snapshotga ega emas yoki snapshot integrity tekshiruvidan o\'tmadi.');
+                return self::FAILURE;
+            }
+        }
+
+        $volumeContext = $snapshot
+            ? (array) ($snapshot['volume_context'] ?? [])
+            : $volumes->mtfContext($symbol);
+        $volumeHypotheses = array_values(array_filter(
+            $experiments,
+            fn (array $item): bool => (string) ($item['volume_lane'] ?? 'none') !== 'none',
+        ));
+        $volumeFreshness = $research->volumeResearchFreshness($volumeContext);
+        if ($volumeHypotheses !== [] && ! (bool) ($volumeFreshness['ready'] ?? false)) {
+            $this->error('Volume hypothesis replay bloklandi: canonical volume freshness contract bajarilmadi: '.json_encode($volumeFreshness, JSON_UNESCAPED_SLASHES));
+            return self::FAILURE;
+        }
+
+        // Every comparison now uses the same canonical price+volume snapshot.
+        // The no-volume control remains explicit through volume_lane=none.
+        $m15 = $snapshot
+            ? array_values((array) ($snapshot['m15_candles'] ?? []))
+            : $candles->candlesForBacktest($symbol, 'M15', 5000, true);
+        $h1 = $snapshot
+            ? array_values((array) ($snapshot['h1_candles'] ?? []))
+            : $candles->candlesForBacktest($symbol, 'H1', 2000, true);
         if (count($m15) < 200 || count($h1) < 200) {
             $this->error('Strategy research uchun mustaqil M15 va H1 candle stream yetarli emas.');
             return self::FAILURE;
@@ -93,9 +151,18 @@ class RunMtfStrategyResearch extends Command
             'h1_last' => data_get($latestH1, 'time'),
             'm15_first' => data_get($m15[0] ?? [], 'time'),
             'm15_last' => data_get($latestM15, 'time'),
+            'volume_context_hash' => $pilot->hash($volumeContext),
         ]);
         $executionHash = (string) data_get($execution, 'execution_hash', '');
-        $frozenControl = MtfAblationRun::query()
+        if ($snapshotRun && (string) $snapshotRun->data_hash !== $dataHash) {
+            $this->error('Control snapshot data hash qayta hisoblangan hash bilan mos emas; replay fail-closed qilindi.');
+            return self::FAILURE;
+        }
+        if ($snapshotRun && (string) $snapshotRun->execution_hash !== $executionHash) {
+            $this->error('Control snapshot execution hash joriy execution contract bilan mos emas; replay fail-closed qilindi.');
+            return self::FAILURE;
+        }
+        $frozenControl = $snapshotRun ?: MtfAblationRun::query()
             ->where('model_market_performance_id', $candidate->id)
             ->where('data_hash', $dataHash)
             ->where('execution_hash', $executionHash)
@@ -119,8 +186,9 @@ class RunMtfStrategyResearch extends Command
                 $controlPayload = [
                     'symbol' => $symbol, 'timeframe' => 'M15', 'strategy' => $model->strategy,
                     'base_strategy' => $schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $candidate->strategy_family),
-                    'parameters' => $model->parameters ?? [], 'initial_balance' => 10000, 'risk_per_trade' => 1,
+                    'parameters' => [...((array) ($model->parameters ?? [])), 'volume_lane' => 'none'], 'initial_balance' => 10000, 'risk_per_trade' => 1,
                     'execution' => $controlExecution['parameters'], 'execution_contract' => $controlExecution,
+                    'volume_context' => $volumeContext,
                     'mtf_pilot' => $controlPilot,
                 ];
                 $controlResponse = Http::timeout((int) config('services.ai_service.backtest_timeout_seconds', 900))
@@ -133,6 +201,17 @@ class RunMtfStrategyResearch extends Command
                     return self::FAILURE;
                 }
                 $controlResult = (array) $controlResponse->json();
+                $snapshotReference = $snapshots->store(
+                    $controlRunKey,
+                    $symbol,
+                    $h1,
+                    $m15,
+                    $volumeContext,
+                    $controlExecution['parameters'],
+                    $dataHash,
+                    $executionHash,
+                    $controlPilot,
+                );
                 $frozenControl = MtfAblationRun::firstOrCreate(
                     ['run_key' => $controlRunKey],
                     [
@@ -141,6 +220,7 @@ class RunMtfStrategyResearch extends Command
                         'symbol' => $symbol, 'regime_timeframe' => 'H1', 'entry_timeframe' => 'M15',
                         'run_key' => $controlRunKey, 'data_hash' => $dataHash, 'execution_hash' => $executionHash,
                         'status' => 'completed', 'variants' => (array) ($controlResult['variants'] ?? []),
+                        'snapshot_reference' => $snapshotReference,
                         'promotion_evidence' => false, 'completed_at' => now(),
                     ],
                 );
@@ -157,9 +237,16 @@ class RunMtfStrategyResearch extends Command
         if (count($experiments) > 1) {
             $batch = $this->runSharedHypothesisBatch(
                 $experiments, $candidate, $symbol, $m15, $h1, $execution,
-                $dataHash, $executionHash, $frozenControl, $bootstrappedControl,
-                $research, $pilot, $schemas,
+                $dataHash, $executionHash, $volumeContext, $frozenControl, $bootstrappedControl,
+                $research, $pilot, $schemas, false,
             );
+            if ($this->option('validate-forward')) {
+                $batch = $this->runTargetedValidationForBatch(
+                    $batch, $experiments, $candidate, $symbol, $m15, $h1, $execution,
+                    $dataHash, $executionHash, $volumeContext, $frozenControl,
+                    $research, $pilot, $schemas,
+                );
+            }
             $output = $batch['output'];
             if ($this->option('json')) {
                 $this->line(json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -182,14 +269,27 @@ class RunMtfStrategyResearch extends Command
 
         foreach ($experiments as $experiment) {
             $strategy = (string) $experiment['strategy'];
-            $baseStrategy = $schemas->runtimeBaseStrategy($strategy, null, (string) $experiment['family']);
+            $baseStrategy = $schemas->runtimeBaseStrategy(
+                $strategy,
+                null,
+                (string) ($experiment['runtime_family'] ?? $experiment['family']),
+            );
             $parameters = $research->parametersFor($candidate, $experiment);
             $parameterHash = $pilot->hash([
                 'strategy' => $strategy,
                 'base_strategy' => $baseStrategy,
                 'parameters' => $parameters,
             ]);
-            $contract = $research->contract($experiment, $symbol, (int) $candidate->id, $dataHash, $parameterHash, $executionHash, $frozenControl?->id);
+            $contract = $research->contract(
+                $experiment,
+                $symbol,
+                (int) $candidate->id,
+                $dataHash,
+                $parameterHash,
+                $executionHash,
+                $frozenControl?->id,
+                $volumeContext,
+            );
             if ($this->option('validate-forward')) {
                 $contract['targeted_validation'] = [
                     'protocol' => 'xauusd_mtf_targeted_validation_v1',
@@ -246,8 +346,16 @@ class RunMtfStrategyResearch extends Command
                 'risk_per_trade' => 1,
                 'execution' => $execution['parameters'],
                 'execution_contract' => $execution,
+                'volume_context' => $volumeContext,
                 'mtf_pilot' => $pilot->requestPayload($symbol, 'M15', $strategy),
             ];
+            $coreRun = $this->completedCoreRun(
+                $candidate,
+                (string) $experiment['key'],
+                $dataHash,
+                $parameterHash,
+                $executionHash,
+            );
             if ($technicalRecoveryOf !== null) {
                 $contract['technical_recovery'] = [
                     'protocol' => 'mtf_research_technical_retry_v1',
@@ -263,18 +371,51 @@ class RunMtfStrategyResearch extends Command
                 'm15_candles' => $m15,
                 'lightweight' => true,
             ];
+            $endpoint = '/api/backtest/mtf-ablation';
             if ($this->option('validate-forward')) {
+                if (! $coreRun) {
+                    $this->error("{$experiment['key']} uchun completed core replay topilmadi; avval core-only hypothesis replay ishlating.");
+                    return self::FAILURE;
+                }
+                $decision = $this->targetedValidationDecision(
+                    $coreRun,
+                    (string) ($experiment['target_gate'] ?? 'unknown'),
+                    $research,
+                );
+                if (! ($decision['eligible'] ?? false)) {
+                    $rows[] = [
+                        ...$this->rowFromRun($coreRun, true),
+                        'targeted_validation' => [
+                            'status' => 'deferred_until_target_gate',
+                            'admission' => $decision,
+                            'promotion_evidence' => false,
+                        ],
+                    ];
+                    $successful++;
+                    continue;
+                }
+                // Reuse the immutable core row and send only the paired
+                // diagnostic request. This prevents validation from rerunning
+                // all four controlled lanes.
+                $endpoint = '/api/backtest/mtf-targeted-validation';
+                $requestBody['core_result'] = (array) data_get($coreRun->result, 'variants.h1_veto_m15_risk', []);
                 $requestBody['validation'] = $this->targetedValidationPayload($m15, $h1);
             }
 
-            $response = Http::timeout((int) config('services.ai_service.backtest_timeout_seconds', 900))
-                ->acceptJson()
-                ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
-                ->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/mtf-ablation', [
-                    ...$requestBody,
-                ]);
+            $response = null;
+            $transportError = null;
+            try {
+                $response = Http::timeout((int) config('services.ai_service.backtest_timeout_seconds', 900))
+                    ->acceptJson()
+                    ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
+                    ->post(rtrim(config('services.ai_service.url'), '/').$endpoint, [
+                        ...$requestBody,
+                    ]);
+            } catch (ConnectionException $exception) {
+                $transportError = $exception->getMessage();
+            }
 
-            if ($response->failed()) {
+            if ($response === null || $response->failed()) {
                 $run = MtfStrategyResearchRun::create([
                     'model_market_performance_id' => $candidate->id,
                     'pilot_id' => (string) data_get($payload, 'mtf_pilot.pilot_id', config('services.mtf_pilot.pilot_id')),
@@ -293,8 +434,8 @@ class RunMtfStrategyResearch extends Command
                     'research_contract' => $contract,
                     'parameters' => $parameters,
                     'result' => [
-                        'http_status' => $response->status(),
-                        'body' => substr((string) $response->body(), 0, 1000),
+                        'http_status' => $response?->status(),
+                        'body' => substr((string) ($transportError ?? ($response?->body() ?? 'missing response')), 0, 1000),
                         'frozen_control' => $this->frozenControlPayload($frozenControl),
                         'technical_recovery_of_run_id' => $technicalRecoveryOf,
                         'promotion_evidence' => false,
@@ -307,6 +448,16 @@ class RunMtfStrategyResearch extends Command
             }
 
             $result = (array) $response->json();
+            if ($this->option('validate-forward')) {
+                $result = [
+                    'variants' => (array) data_get($coreRun?->result, 'variants', []),
+                    'targeted_validation' => (array) data_get($result, 'targeted_validation', []),
+                    'targeted_validation_optimization' => (array) data_get($result, 'optimization', []),
+                    'core_replay_reused' => true,
+                    'core_research_run_id' => $coreRun?->id,
+                    'promotion_evidence' => false,
+                ];
+            }
             $result['research_contract'] = $contract;
             $result['candidate_id'] = $candidate->id;
             $result['frozen_control'] = $this->frozenControlPayload($frozenControl);
@@ -380,11 +531,13 @@ class RunMtfStrategyResearch extends Command
         array $execution,
         string $dataHash,
         string $executionHash,
+        array $volumeContext,
         ?MtfAblationRun $frozenControl,
         bool $bootstrappedControl,
         MtfStrategyResearchService $research,
         MultiTimeframePilotService $pilot,
         StrategyParameterSchemaService $schemas,
+        bool $includeTargetedValidation = false,
     ): array {
         $rows = [];
         $successful = 0;
@@ -392,7 +545,11 @@ class RunMtfStrategyResearch extends Command
 
         foreach ($experiments as $experiment) {
             $strategy = (string) $experiment['strategy'];
-            $baseStrategy = $schemas->runtimeBaseStrategy($strategy, null, (string) $experiment['family']);
+            $baseStrategy = $schemas->runtimeBaseStrategy(
+                $strategy,
+                null,
+                (string) ($experiment['runtime_family'] ?? $experiment['family']),
+            );
             $parameters = $research->parametersFor($candidate, $experiment);
             $parameterHash = $pilot->hash([
                 'strategy' => $strategy,
@@ -407,8 +564,9 @@ class RunMtfStrategyResearch extends Command
                 $parameterHash,
                 $executionHash,
                 $frozenControl?->id,
+                $volumeContext,
             );
-            if ($this->option('validate-forward')) {
+            if ($includeTargetedValidation) {
                 $contract['targeted_validation'] = [
                     'protocol' => 'xauusd_mtf_targeted_validation_v1',
                     'cost_profiles' => ['cost_1_5x', 'cost_2x'],
@@ -427,7 +585,7 @@ class RunMtfStrategyResearch extends Command
                 'execution_hash' => $executionHash,
                 'frozen_control_run_id' => $frozenControl?->id,
                 'mtf_contract_hash' => data_get($pilot->requestPayload($symbol, 'M15', $strategy), 'contract_hash'),
-                'targeted_validation_protocol' => $this->option('validate-forward')
+                'targeted_validation_protocol' => $includeTargetedValidation
                     ? 'xauusd_mtf_targeted_validation_v1'
                     : null,
             ]);
@@ -462,6 +620,7 @@ class RunMtfStrategyResearch extends Command
                 'risk_per_trade' => 1,
                 'execution' => $execution['parameters'],
                 'execution_contract' => $execution,
+                'volume_context' => $volumeContext,
                 'mtf_pilot' => $pilot->requestPayload($symbol, 'M15', $strategy),
             ];
             if ($technicalRecoveryOf !== null) {
@@ -488,6 +647,7 @@ class RunMtfStrategyResearch extends Command
         }
 
         $batchResponse = null;
+        $batchTransportError = null;
         $batchResult = [];
         if ($pending !== []) {
             $items = array_map(function (array $item) use ($m15, $h1): array {
@@ -498,21 +658,29 @@ class RunMtfStrategyResearch extends Command
                 return $request;
             }, $pending);
 
-            $sharedValidation = $this->option('validate-forward')
+            $sharedValidation = $includeTargetedValidation
                 ? $this->targetedValidationPayload($m15, $h1)
                 : null;
 
-            $batchResponse = Http::timeout((int) config('services.ai_service.backtest_timeout_seconds', 900))
-                ->acceptJson()
-                ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
-                ->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/mtf-hypothesis-batch', [
-                    'hypotheses' => $items,
-                    'h1_candles' => $h1,
-                    'm15_candles' => $m15,
-                    'validation' => $sharedValidation,
-                    'lightweight' => true,
-                ]);
-            if ($batchResponse->successful()) {
+            try {
+                $batchResponse = Http::timeout((int) config('services.ai_service.backtest_timeout_seconds', 900))
+                    ->acceptJson()
+                    ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
+                    ->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/mtf-hypothesis-batch', [
+                        'hypotheses' => $items,
+                        'h1_candles' => $h1,
+                        'm15_candles' => $m15,
+                        'validation' => $sharedValidation,
+                        'lightweight' => true,
+                    ]);
+            } catch (ConnectionException $exception) {
+                // A transport timeout is technical evidence, never a strategy
+                // verdict. The immutable rows below make the failure visible
+                // and let the deterministic recovery identity retry it later.
+                $batchResponse = null;
+                $batchTransportError = $exception->getMessage();
+            }
+            if ($batchResponse !== null && $batchResponse->successful()) {
                 $batchResult = (array) $batchResponse->json();
             }
         }
@@ -539,7 +707,7 @@ class RunMtfStrategyResearch extends Command
                     'parameters' => $item['parameters'],
                     'result' => [
                         'http_status' => $batchResponse?->status(),
-                        'body' => substr((string) ($batchResponse?->body() ?? 'missing batch result'), 0, 1000),
+                        'body' => substr((string) ($batchTransportError ?? ($batchResponse?->body() ?? 'missing batch result')), 0, 1000),
                         'batch_endpoint' => '/api/backtest/mtf-hypothesis-batch',
                         'frozen_control' => $this->frozenControlPayload($frozenControl),
                         'technical_recovery_of_run_id' => $item['technical_recovery_of'],
@@ -599,6 +767,273 @@ class RunMtfStrategyResearch extends Command
                 'rows' => $rows,
             ],
             'successful' => $successful,
+        ];
+    }
+
+    /**
+     * Run expensive diagnostics only for core rows that beat the frozen
+     * reference on at least one declared observable metric. The core batch is
+     * deliberately cheap and complete before this method is entered; a
+     * timeout here can therefore never erase or reinterpret the screening
+     * result.
+     *
+     * @return array{output: array<string,mixed>, successful: int}
+     */
+    private function runTargetedValidationForBatch(
+        array $batch,
+        array $experiments,
+        ModelMarketPerformance $candidate,
+        string $symbol,
+        array $m15,
+        array $h1,
+        array $execution,
+        string $dataHash,
+        string $executionHash,
+        array $volumeContext,
+        MtfAblationRun $frozenControl,
+        MtfStrategyResearchService $research,
+        MultiTimeframePilotService $pilot,
+        StrategyParameterSchemaService $schemas,
+    ): array {
+        $experimentByKey = collect($experiments)->keyBy(fn (array $item): string => (string) $item['key']);
+        $targetedRows = [];
+        $eligible = [];
+        $deferred = [];
+
+        foreach ((array) data_get($batch, 'output.rows', []) as $row) {
+            $key = (string) ($row['hypothesis_key'] ?? '');
+            $experiment = $experimentByKey->get($key);
+            $coreRun = MtfStrategyResearchRun::query()->find((int) ($row['research_run_id'] ?? 0));
+            if (! $experiment || ! $coreRun || $coreRun->status !== 'completed') {
+                $deferred[] = ['hypothesis_key' => $key, 'reason' => 'core_row_not_completed'];
+                continue;
+            }
+
+            $decision = $this->targetedValidationDecision(
+                $coreRun,
+                (string) ($experiment['target_gate'] ?? 'unknown'),
+                $research,
+            );
+            if (! ($decision['eligible'] ?? false)) {
+                $deferred[] = ['hypothesis_key' => $key, 'reason' => $decision['reason'] ?? 'core_gate_or_target_not_improved'];
+                continue;
+            }
+            $eligible[] = $key;
+
+            $strategy = (string) $experiment['strategy'];
+            $baseStrategy = $schemas->runtimeBaseStrategy(
+                $strategy,
+                null,
+                (string) ($experiment['runtime_family'] ?? $experiment['family']),
+            );
+            $parameters = $research->parametersFor($candidate, $experiment);
+            $parameterHash = $pilot->hash([
+                'strategy' => $strategy,
+                'base_strategy' => $baseStrategy,
+                'parameters' => $parameters,
+            ]);
+            $contract = $research->contract(
+                $experiment,
+                $symbol,
+                (int) $candidate->id,
+                $dataHash,
+                $parameterHash,
+                $executionHash,
+                $frozenControl->id,
+                $volumeContext,
+            );
+            $contract['targeted_validation'] = [
+                'protocol' => 'xauusd_mtf_targeted_validation_v1',
+                'cost_profiles' => ['cost_1_5x', 'cost_2x'],
+                'exit_profiles' => ['wider_stop_tighter_target', 'tighter_stop_wider_target'],
+                'chronological_holdout' => true,
+                'admission' => $decision,
+                'promotion_evidence' => false,
+            ];
+            $baseRunKey = $pilot->hash([
+                'research_protocol' => MtfStrategyResearchService::PROTOCOL,
+                'candidate_id' => $candidate->id,
+                'hypothesis_key' => $experiment['key'],
+                'strategy' => $strategy,
+                'parameter_hash' => $parameterHash,
+                'data_hash' => $dataHash,
+                'execution_hash' => $executionHash,
+                'frozen_control_run_id' => $frozenControl->id,
+                'mtf_contract_hash' => data_get($pilot->requestPayload($symbol, 'M15', $strategy), 'contract_hash'),
+                'targeted_validation_protocol' => 'xauusd_mtf_targeted_validation_v1',
+            ]);
+            $existing = MtfStrategyResearchRun::query()->where('run_key', $baseRunKey)->first();
+            $technicalRecoveryOf = null;
+            $runKey = $baseRunKey;
+            if ($existing?->status === 'technical_error') {
+                $technicalRecoveryOf = $existing->id;
+                $runKey = $pilot->hash([
+                    'base_run_key' => $baseRunKey,
+                    'technical_recovery_protocol' => 'mtf_research_technical_retry_v1',
+                    'technical_recovery_of_run_id' => $technicalRecoveryOf,
+                ]);
+                $existing = MtfStrategyResearchRun::query()->where('run_key', $runKey)->first();
+            }
+            if ($existing) {
+                $targetedRows[] = $this->rowFromRun($existing, true);
+                continue;
+            }
+
+            $payload = [
+                'symbol' => $symbol,
+                'timeframe' => 'M15',
+                'strategy' => $strategy,
+                'base_strategy' => $baseStrategy,
+                'parameters' => $parameters,
+                'initial_balance' => 10000,
+                'risk_per_trade' => 1,
+                'execution' => $execution['parameters'],
+                'execution_contract' => $execution,
+                'volume_context' => $volumeContext,
+                'mtf_pilot' => $pilot->requestPayload($symbol, 'M15', $strategy),
+            ];
+            if ($technicalRecoveryOf !== null) {
+                $contract['technical_recovery'] = [
+                    'protocol' => 'mtf_research_technical_retry_v1',
+                    'recovery_of_run_id' => $technicalRecoveryOf,
+                    'reason' => 'previous_targeted_validation_was_technical_error',
+                    'promotion_evidence' => false,
+                ];
+            }
+
+            $response = null;
+            $transportError = null;
+            try {
+                $response = Http::timeout((int) config('services.ai_service.backtest_timeout_seconds', 900))
+                    ->acceptJson()
+                    ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
+                    ->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/mtf-targeted-validation', [
+                        'base_request' => $payload,
+                        'h1_candles' => $h1,
+                        'm15_candles' => $m15,
+                        'lightweight' => true,
+                        'core_result' => (array) data_get($coreRun->result, 'variants.h1_veto_m15_risk', []),
+                        'validation' => $this->targetedValidationPayload($m15, $h1),
+                    ]);
+            } catch (ConnectionException $exception) {
+                $transportError = $exception->getMessage();
+            }
+
+            if ($response === null || $response->failed()) {
+                $run = MtfStrategyResearchRun::create([
+                    'model_market_performance_id' => $candidate->id,
+                    'pilot_id' => (string) data_get($payload, 'mtf_pilot.pilot_id', config('services.mtf_pilot.pilot_id')),
+                    'symbol' => $symbol,
+                    'regime_timeframe' => 'H1',
+                    'entry_timeframe' => 'M15',
+                    'hypothesis_key' => $experiment['key'],
+                    'strategy_identity' => $strategy,
+                    'strategy_family' => $experiment['family'],
+                    'run_key' => $runKey,
+                    'data_hash' => $dataHash,
+                    'parameter_hash' => $parameterHash,
+                    'execution_hash' => $executionHash,
+                    'status' => 'technical_error',
+                    'failure_class' => 'evidence_recovery',
+                    'research_contract' => $contract,
+                    'parameters' => $parameters,
+                    'result' => [
+                        'http_status' => $response?->status(),
+                        'body' => substr((string) ($transportError ?? ($response?->body() ?? 'missing targeted validation result')), 0, 1000),
+                        'endpoint' => '/api/backtest/mtf-targeted-validation',
+                        'core_research_run_id' => $coreRun->id,
+                        'frozen_control' => $this->frozenControlPayload($frozenControl),
+                        'technical_recovery_of_run_id' => $technicalRecoveryOf,
+                        'promotion_evidence' => false,
+                    ],
+                    'promotion_evidence' => false,
+                    'completed_at' => now(),
+                ]);
+                $targetedRows[] = $this->rowFromRun($run, false);
+                continue;
+            }
+
+            $result = (array) $response->json();
+            $result = [
+                'variants' => (array) data_get($coreRun->result, 'variants', []),
+                'targeted_validation' => (array) data_get($result, 'targeted_validation', []),
+                'targeted_validation_optimization' => (array) data_get($result, 'optimization', []),
+                'core_replay_reused' => true,
+                'core_research_run_id' => $coreRun->id,
+                'research_contract' => $contract,
+                'candidate_id' => $candidate->id,
+                'frozen_control' => $this->frozenControlPayload($frozenControl),
+                'promotion_evidence' => false,
+            ];
+            $run = MtfStrategyResearchRun::create([
+                'model_market_performance_id' => $candidate->id,
+                'pilot_id' => (string) data_get($payload, 'mtf_pilot.pilot_id', config('services.mtf_pilot.pilot_id')),
+                'symbol' => $symbol,
+                'regime_timeframe' => 'H1',
+                'entry_timeframe' => 'M15',
+                'hypothesis_key' => $experiment['key'],
+                'strategy_identity' => $strategy,
+                'strategy_family' => $experiment['family'],
+                'run_key' => $runKey,
+                'data_hash' => $dataHash,
+                'parameter_hash' => $parameterHash,
+                'execution_hash' => $executionHash,
+                'status' => 'completed',
+                'research_contract' => $contract,
+                'parameters' => $parameters,
+                'result' => $result,
+                'promotion_evidence' => false,
+                'completed_at' => now(),
+            ]);
+            $targetedRows[] = $this->rowFromRun($run, false);
+        }
+
+        $batch['output']['targeted_validation'] = [
+            'protocol' => 'xauusd_mtf_targeted_validation_v1',
+            'eligible_hypotheses' => $eligible,
+            'deferred' => $deferred,
+            'rows' => $targetedRows,
+            'promotion_evidence' => false,
+            'rule' => 'Core screening completes first; only a measurable core gate improvement receives cost/exit/forward diagnostics.',
+        ];
+
+        return $batch;
+    }
+
+    /** @return array{eligible: bool, reason: string, core_gate: array<string,mixed>} */
+    private function targetedValidationDecision(
+        MtfStrategyResearchRun $run,
+        string $targetGate,
+        MtfStrategyResearchService $research,
+    ): array
+    {
+        $core = (array) data_get($run->result, 'variants.h1_veto_m15_risk', []);
+        $gate = (array) data_get($core, 'core_replay_gate', []);
+        if (! (bool) data_get($gate, 'passed', false)) {
+            return ['eligible' => false, 'reason' => 'core_gate_failed', 'core_gate' => $gate];
+        }
+        $pf = (float) data_get($core, 'profit_factor', 0);
+        $dd = (float) data_get($core, 'max_drawdown_percent', 0);
+        $control = (array) data_get($run->result, 'frozen_control.official_mtf', []);
+        $controlPf = (float) data_get($control, 'profit_factor', 0);
+        $controlDd = (float) data_get($control, 'max_drawdown_percent', 0);
+        $improved = $research->targetGateImproved($targetGate, $core, $control);
+        if (! $improved) {
+            return [
+                'eligible' => false,
+                'reason' => 'target_gate_not_improved_vs_frozen_control',
+                'target_gate' => $targetGate,
+                'core_gate' => $gate,
+                'candidate' => ['profit_factor' => $pf, 'max_drawdown_percent' => $dd],
+                'control' => ['profit_factor' => $controlPf, 'max_drawdown_percent' => $controlDd],
+            ];
+        }
+
+        return [
+            'eligible' => true,
+            'reason' => 'core_gate_passed_and_target_metric_improved',
+            'target_gate' => $targetGate,
+            'core_gate' => $gate,
         ];
     }
 
@@ -666,6 +1101,25 @@ class RunMtfStrategyResearch extends Command
             'veto_count' => (int) data_get($mtf, 'mtf_pilot.veto_count', 0),
             'promotion_evidence' => false,
         ];
+    }
+
+    private function completedCoreRun(
+        ModelMarketPerformance $candidate,
+        string $hypothesisKey,
+        string $dataHash,
+        string $parameterHash,
+        string $executionHash,
+    ): ?MtfStrategyResearchRun {
+        return MtfStrategyResearchRun::query()
+            ->where('model_market_performance_id', $candidate->id)
+            ->where('hypothesis_key', $hypothesisKey)
+            ->where('data_hash', $dataHash)
+            ->where('parameter_hash', $parameterHash)
+            ->where('execution_hash', $executionHash)
+            ->where('status', 'completed')
+            ->whereNull('failure_class')
+            ->latest('completed_at')
+            ->first();
     }
 
     /** @return array<string, mixed>|null */

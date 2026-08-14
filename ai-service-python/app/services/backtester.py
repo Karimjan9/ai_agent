@@ -159,7 +159,15 @@ def _prepare_simple_dataframe(payload: SimpleBacktestRequest, df: pd.DataFrame) 
     frame["time"] = pd.to_datetime(frame["time"], errors="coerce", utc=True)
     for column in ["open", "high", "low", "close", "volume"]:
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
-    frame["volume_available"] = frame["volume_available"].fillna(False).astype(bool)
+    # CSV/API payloads may materialize this marker as an object column when
+    # unavailable rows contain nulls.  Calling fillna directly on that object
+    # column emits pandas' future downcasting warning; in the bounded worker
+    # that warning is captured with stderr and can be misclassified as a
+    # technical replay failure.  Normalize through the nullable BooleanDtype
+    # before filling so the no-volume lane remains explicit and warning-free.
+    frame["volume_available"] = (
+        frame["volume_available"].astype("boolean").fillna(False).astype(bool)
+    )
     frame = frame.dropna(subset=["time", "open", "high", "low", "close"])
     frame = frame.sort_values("time").reset_index(drop=True)
 
@@ -441,6 +449,14 @@ def _run_prepared_simple_backtest(
                 signal_row.get("time"),
             )
             mtf_context = dict(mtf_policy.get("context", {}))
+            if emit_decision_trace:
+                signal_row = signal_row.copy()
+                signal_row["h1_context_hash"] = mtf_context.get("h1_context_hash")
+                signal_row["h1_closed_at"] = mtf_context.get("h1_closed_at")
+                signal_row["m15_raw_decision"] = signal
+                signal_row["risk_decision"] = mtf_policy.get("risk_decision")
+                signal_row["council_decision"] = mtf_policy.get("decision")
+                signal_row["specialist_strategy"] = lane_specialist
             mtf_contexts[str(mtf_context.get("h1_regime", mtf_context.get("status", "not_applicable")))] += 1
             if mtf_policy.get("decision") != signal:
                 if signal in {"BUY", "SELL"} and mtf_policy.get("decision") == "WAIT":
@@ -460,7 +476,9 @@ def _run_prepared_simple_backtest(
                 if emit_decision_trace:
                     decision_trace.append(_decision_trace_event(
                         index, candle, signal_row, 'signal_evaluation', 'WAIT', False, 'no_signal',
-                        {'position_open': False, 'loss_streak': loss_streak},
+                        {'position_open': False, 'loss_streak': loss_streak, 'h1_context': mtf_context,
+                         'm15_raw_decision': signal, 'risk_decision': mtf_policy.get('risk_decision'),
+                         'council_decision': mtf_policy.get('decision'), 'specialist_strategy': lane_specialist},
                     ))
                 continue
             # A portfolio owns both the signal and its sealed execution

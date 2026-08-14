@@ -49,6 +49,8 @@ class CandidateHandoffService
     public function noEligibleCandidate(LabGeneration $generation, string $reason = 'NO_ELIGIBLE_CANDIDATE'): CandidateHandoffEvent
     {
         $profile = $this->screeningFailureProfile($generation);
+        $profile['repair_anchors'] = app(FailureRepairAnchorService::class)->recordFromHandoff($generation, 'screening');
+        $profile['repair_anchor_protocol'] = FailureRepairAnchorService::PROTOCOL;
         $payload = [
             'market' => $generation->laboratory?->symbol, 'timeframe' => $generation->laboratory?->timeframe,
             'next_action' => 'targeted_generation_when_scheduler_capacity_allows',
@@ -74,6 +76,8 @@ class CandidateHandoffService
     public function noForwardCandidate(LabGeneration $generation, string $reason = 'NO_FORWARD_VALIDATED_CANDIDATE'): CandidateHandoffEvent
     {
         $profile = $this->forwardFailureProfile($generation);
+        $profile['repair_anchors'] = app(FailureRepairAnchorService::class)->recordFromHandoff($generation, 'forward');
+        $profile['repair_anchor_protocol'] = FailureRepairAnchorService::PROTOCOL;
         $payload = [
             'market' => $generation->laboratory?->symbol, 'timeframe' => $generation->laboratory?->timeframe,
             'next_action' => 'targeted_generation_when_scheduler_capacity_allows',

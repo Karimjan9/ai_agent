@@ -60,13 +60,28 @@ class DispatchControlledTargetedRescueCohort extends Command
         if ((int) data_get($profile, 'actionable_failure_count', 0) < 1) {
             return $this->failCommand("{$symbol} {$timeframe} G{$source->generation}: actionable screening failure yo'q; technical/legacy evidence rescue mutationga kiritilmadi.");
         }
-        $alreadyAdmitted = $lab->generations()->get()->contains(function (LabGeneration $generation) use ($source, $profile): bool {
-            return data_get($generation->trigger_context, 'controlled_rescue_admission.protocol') === LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL
-                && (int) data_get($generation->trigger_context, 'targeted_failure_profile.source_generation_id') === (int) $source->id
+        $priorRescues = $lab->generations()->get()->filter(function (LabGeneration $generation) use ($source, $profile): bool {
+            return (int) data_get($generation->trigger_context, 'targeted_failure_profile.source_generation_id') === (int) $source->id
                 && (string) data_get($generation->trigger_context, 'targeted_failure_profile.profile_hash') === (string) $profile['profile_hash'];
+        });
+        $alreadyAdmitted = $priorRescues->contains(function (LabGeneration $generation): bool {
+            $context = (array) $generation->trigger_context;
+            // A constructor-aborted cohort never reached the queue and is not
+            // an admitted rescue. It may be retried once after the compiler
+            // is repaired; a dispatched/admitted cohort remains idempotently
+            // protected forever.
+            return data_get($context, 'controlled_rescue_admission.protocol') === LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL
+                && ! data_get($context, 'controlled_rescue_constructor_abort.reason_code');
         });
         if ($alreadyAdmitted) {
             return $this->failCommand("{$symbol} {$timeframe} G{$source->generation}: shu source uchun controlled rescue allaqachon admitted.");
+        }
+        $abortedRescues = $priorRescues->filter(fn (LabGeneration $generation): bool => (string) data_get(
+            $generation->trigger_context,
+            'controlled_rescue_constructor_abort.reason_code',
+        ) === 'INCOMPLETE_CONTROLLED_RESCUE_POPULATION');
+        if ($abortedRescues->count() >= 2) {
+            return $this->failCommand("{$symbol} {$timeframe} G{$source->generation}: constructor-aborted rescue retry budget exhausted.");
         }
 
         $summary = [
@@ -105,6 +120,23 @@ class DispatchControlledTargetedRescueCohort extends Command
             true,
         );
         if (! $generation) return $this->failCommand('Rescue generation safety/data gate sabab yaratilmadi.');
+
+        // A controlled rescue is valid only as the complete five-by-four
+        // cohort. A partial constructor result is technical evidence and
+        // must never be dispatched as if it were a smaller strategy sample.
+        $generation = $generation->fresh(['agents']);
+        if ($generation->status !== 'draft' || $generation->agents->count() !== 20) {
+            return $this->failCommand(sprintf(
+                'Controlled rescue constructor contract failed: G%s status=%s, agents=%d/20. No replay dispatched.',
+                $generation->generation,
+                $generation->status,
+                $generation->agents->count(),
+            ));
+        }
+        $nonDraftAgents = $generation->agents->reject(fn ($agent): bool => $agent->lifecycle_status === 'draft');
+        if ($nonDraftAgents->isNotEmpty()) {
+            return $this->failCommand('Controlled rescue constructor contract failed: non-draft child present. No replay dispatched.');
+        }
 
         $safety->recordControlledRescueAdmission([
             ...$summary,

@@ -7,7 +7,10 @@ use App\Models\Symbol;
 
 class CandlePayloadService
 {
-    public function __construct(private MarketVolumeService $volumes) {}
+    public function __construct(
+        private MarketVolumeService $volumes,
+        private MarketTrainingDataService $training,
+    ) {}
 
     public function candlesForBacktest(string $symbol, string $timeframe, ?int $limit = null, bool $includeVolume = false): array
     {
@@ -58,5 +61,32 @@ class CandlePayloadService
                 return $row;
             })
             ->all();
+    }
+
+    /**
+     * Explicit training/archive payload for agents. This method never falls
+     * back to the canonical `candles` table; callers must name the dataset
+     * and provider so research history cannot silently become live evidence.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function candlesForTraining(
+        string $symbol,
+        string $timeframe,
+        string $dataset = MarketTrainingDataService::DEFAULT_DATASET,
+        string $provider = MarketTrainingDataService::DEFAULT_PROVIDER,
+        ?\DateTimeInterface $from = null,
+        ?\DateTimeInterface $to = null,
+        ?int $limit = null,
+    ): array {
+        return $this->training->candlesForAgent(
+            $dataset,
+            $provider,
+            $symbol,
+            $timeframe,
+            $from ? \Carbon\CarbonImmutable::instance($from)->utc() : null,
+            $to ? \Carbon\CarbonImmutable::instance($to)->utc() : null,
+            $limit,
+        );
     }
 }

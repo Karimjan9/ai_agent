@@ -64,10 +64,14 @@ class EliteAgentPassportService
         $requiresPromotionProof = data_get($model->metadata, 'g98_council_lane.protocol') === 'g98_failure_eliminator_v1';
         $requiresRobustnessGate = (int) data_get($model->metadata, 'robustness_gate_version', 0) >= 1;
         $repairLineage = (array) data_get($model->metadata, 'repair_lineage', []);
+        $repairAnchorId = (int) data_get($model->metadata, 'repair_anchor.id', 0);
         $repairProtocol = (int) data_get($repairLineage, 'attempt', 0) === 0 || (
-            count((array) ($agent?->parameter_diff ?? [])) === 1
-            && data_get($result, 'paired_replay.status') === 'confirmed'
-            && data_get($result, 'no_regression_contract.status') === 'passed'
+            $repairAnchorId > 0
+                ? data_get($result, 'repair_anchor_verification.status') === 'confirmed'
+                    && data_get($result, 'no_regression_contract.status') === 'passed'
+                : count((array) ($agent?->parameter_diff ?? [])) === 1
+                    && data_get($result, 'paired_replay.status') === 'confirmed'
+                    && data_get($result, 'no_regression_contract.status') === 'passed'
         );
         $forwardWindowIntegrity = ! $requiresRobustnessGate
             || (data_get($result, 'forward_window_protocol.independence_verified') === true

@@ -25,11 +25,38 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Queue\MaxAttemptsExceededException;
 use Tests\TestCase;
 
 class ImmutableLabEvidenceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_second_bounded_screen_failure_quarantines_only_the_current_agent_and_closes_generation(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'bounded_timeout_quarantine', true, 'H1');
+        $generation->update(['status' => 'screening', 'completed_at' => null]);
+        $agent = $generation->agents->first();
+        $generation->agents()->where('id', '<>', $agent->id)->update(['lifecycle_status' => 'screened']);
+        $agent->update([
+            'lifecycle_status' => 'screening',
+            'decision_reason' => 'replay running',
+        ]);
+        $agent->modelVersion()->update(['metadata' => ['evaluator_recovery_attempts' => 1]]);
+
+        $job = new EvaluateLabAgentJob($agent->id, $agent->symbol, 'screen');
+        $method = new \ReflectionMethod($job, 'markEvaluationError');
+        $method->setAccessible(true);
+        $method->invoke($job, $agent->fresh(['modelVersion']), new MaxAttemptsExceededException('bounded replay exhausted'));
+
+        $this->assertSame('technical_quarantine', $agent->fresh()->lifecycle_status);
+        $this->assertSame('technical_quarantine', $generation->fresh()->status);
+        $this->assertDatabaseHas('candidate_handoff_events', [
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'stage' => 'evaluation_error_quarantined',
+        ]);
+    }
 
     public function test_constitution_hash_survives_json_numeric_round_trip_and_separates_falsification(): void
     {

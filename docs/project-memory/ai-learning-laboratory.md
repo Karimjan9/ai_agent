@@ -6,7 +6,7 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-08-11
+updated: 2026-08-14
 ---
 
 # AI Learning Laboratory
@@ -67,6 +67,34 @@ is recorded as evidence recovery, never as strategy failure. The read-only
 compiles failure-to-mutation actions, and pauses a family in the report after
 three attempts without a gate improvement. It never changes a gate or paper
 state.
+The four-lane `h1_veto_m15_risk` result is a frozen control/reference, not an automatic
+winner. The default selector rotates an unseen challenger frontier across
+families, excludes council seats from ordinary research, skips completed
+identities on the current snapshot, and respects report-only family pauses.
+An explicit `--hypothesis` remains available for a deliberate retest or technical
+recovery. The frozen control is never replaced by a screening result; a
+challenger must still pass the normal full replay, stress, independent
+forward, paper, holdout, and champion gates.
+The optional `--validate-forward` path is staged: a shared core batch is
+completed first, then only a challenger with a measurable core-gate
+improvement receives cost/exit/chronological diagnostics. Those diagnostics
+replay only the challenger MTF lane; the immutable M15 control is referenced
+from the sealed ablation snapshot and is not recomputed. Transport timeouts
+are recorded as technical evidence recovery, never as strategy failure.
+The target gate is explicit: stress hypotheses must improve drawdown while
+preserving PF, while PF/coverage hypotheses use their declared PF/coverage
+comparison. The combined council proxy has a separate admission gate and its
+members cannot paper-trade individually. Control replacement is a separate
+read-only check: only an official paper candidate that beats the frozen
+control after cost-adjusted PF, net return and drawdown can reach operator
+review; the monitor never applies replacement automatically.
+Council replay also has a lab-screening queue-idle guard so its multi-seat
+replay does not compete with active screening workers. An operator may use
+`--allow-busy-queue` only after explicitly reviewing the queue.
+Volume hypotheses add a second safety contract: the canonical volume quality
+pass must also be fresh against the closed M15/H1 windows. A stale volume
+context blocks a new volume replay but never invalidates an already sealed
+snapshot.
 For the top three rejected near-miss candidates, use
 `trading:mtf-shadow-candidates`; settle their non-promotional outcomes with
 `trading:reconcile-mtf-shadow`.
@@ -110,6 +138,132 @@ Trade deficit targets entry filters; PF deficit targets stop/target/trailing/exi
 Parent eligibility is stricter than a forward-score sort: a reusable parent must independently meet PF >= 1.3, risk of ruin <= 10%, drawdown <= 15%, 30 trades, and three rolling forward wins. Regime mutations record and reuse a `market:*` or `volatility:*` scope, prioritising the weakest sufficiently sampled regime rather than applying one global parameter change.
 
 The parent layer is adaptive rather than champion-only. Read [[adaptive-evolution]] for the full contract. `EvolutionGovernorService` observes recent progress, stagnation and diversity; `AdaptiveParentFrontierService` then selects a dynamic K from the exact semantic cell. Causal/G98/differential repair remains one-parent, robust crossover can use 2-5 contributors, architecture/curiosity can revive young/archive lineages, and runtime ensemble policy can hold 3-8 sealed specialists. `EvolutionArchiveService` keeps convergence, diversity, young and failure archives separate. Failure evidence is preserved for diagnosis but never reintroduced as a parent. Every selected ID, module source and dynamic-K decision is recorded with `promotion_evidence=false` and all children repeat the normal replay/statistical/holdout/paper gates.
+
+Failure learning follows an explicit repair-anchor protocol: complete strategy failure -> technical/strategy classification -> target compiler -> immutable failed parameter snapshot -> one declared gene -> paired screen -> full replay -> independent forward confirmation. Technical or incomplete evidence never creates a mutation lesson. A failed model is therefore a repair baseline, not a genetic parent; only a confirmed repair may earn mutation credit and later parent eligibility. A normal generation is held when a terminal cohort has screening decisions but no screen pass, preventing repeated cold restarts while the failure curriculum is repaired.
+
+The repair lifecycle has four explicit evolutionary tiers. `Repair Anchor` is
+the immutable failed vector only. A passing screen creates a
+`Screen-validated Seed`, which can enter full replay but cannot be a parent.
+Paired full replay plus independent forward confirmation can create a
+`Skill Mentor`; the mentor contributes only its compatible declared gene to a
+bounded probe and never contributes genetic parent identity. Only a complete
+passport and unchanged council/forward gates create a `Full Parent`.
+
+Each anchor compiles a bounded four-member cohort: primary direction, reverse
+direction, alternative gene (or architecture escape after the escape rule),
+and frozen control. The control is the exact canonical anchor vector and is
+research-only. All siblings share one snapshot and execution contract. A
+failed sibling remains attached to the original anchor; it does not fork a new
+cold anchor. Three complete cohorts without target improvement trigger an
+architecture/specialist escape, while two independent forward failures
+quarantine the lineage. Technical evidence consumes neither budget nor
+mutation credit.
+
+Every complete screening/full-replay observation is written to the immutable
+`mutation_response_map_v1` surface: target delta, non-target regression,
+regime result, direction, cohort and forward confirmation. The compiler may
+reuse only a role-compatible confirmed mentor gene, and only one bounded seat
+per research group receives that mentor probe; other seats remain independent
+challengers. Anchor-derived mentors are normalized into the canonical
+`edge_quality`, `cost_stability`, `temporal_stability`, `regime_coverage`,
+`non_target_regression` or `architecture_control` role envelope before reuse.
+Reports expose seed/mentor/full-parent births, repeat failures,
+target deltas, zero-diff rate, response-map status and role-specific council
+frontiers. These projections never relax a gate or create paper evidence.
+
+The laboratory also has a separate two-speed learning protocol. The official
+Promotion lane remains `screen pass -> full replay -> cost stress -> independent
+forward -> paper -> parent`. A failed but causally useful near-miss may enter
+the research-only `learning_lane_v1` only after it is paired with a same
+generation control, compatible parent baseline or immutable repair anchor. The
+pair ledger stores candidate/control identity, snapshot and execution hashes,
+target delta, non-target regression and a state-aware failure signature. At
+most one bounded near-miss per specialist role (and four per generation by
+default) is dispatched to the serialized full-replay queue. Its result can
+create a provisional skill lesson and, after independent confirmation, a Skill
+Mentor, but it can never create forward/paper evidence or a genetic parent.
+Learning and promotion candidates never share a sealed cohort cache. Monitor
+the lane with `trading:monitor-learning-lane XAUUSD --timeframe=H1 --json`;
+dispatch is `trading:dispatch-learning-lane XAUUSD --timeframe=H1`, and
+duplicate pair projections are superseded without deleting immutable response
+maps. The global generation-creation pause does not disable this existing-
+candidate research lane; it only prevents new generation construction.
+
+The learning lane now has an explicit evolution loop. `tri_memory_bandit_v1`
+stores positive, negative and uncertainty observations. Three repeated causal
+failures down-rank a gene, five quarantine it for the current lineage, while a
+new architecture/state escape may test it again. Multi-gene observations remain
+diagnostic-only and cannot create causal credit or a mentor. The mutation
+compiler consumes the bandit recommendation after the existing safety and
+professional-budget filters.
+
+The final research allocation is controlled by
+`risk_bounded_exploration_governor_v1`. After history exists, the mutable
+frontier is assigned bounded roles: one frozen control, three targeted repairs,
+one screen/proven-gene refinement, one bold explorer, one regime/volume shadow
+explorer and one adversarial red-team seat. A screen pass or independent
+confirmation can increase the next numeric step only inside the declared gene;
+uncertainty reduces it. Bold, volume and red-team seats are research-only until
+the unchanged replay and forward gates pass. Monitor the admission/backpressure
+state with `trading:monitor-learning-velocity XAUUSD --timeframe=H1 --json`.
+
+`learning_velocity_gate_v1` prevents a normal new cohort from multiplying while
+a screen pass has no full-replay/forward observation. Technical errors produce a
+recovery status, never a strategy lesson. Explicit recovery, data-edge audit,
+controlled rescue and council handoff commands remain available because they
+consume or repair the backlog. Failure fingerprints are contextual across
+regime, volatility, transition, spread/liquidity, session and volume quality;
+the same gene is therefore not globally quarantined from a different market
+state.
+
+The MTF council has a `mtf_shadow_council_sandbox_v1` layer. Provisional
+specialists may be compared together for compatibility, but each keeps its own
+hypothesis and passport boundary. The sandbox is always research-only;
+combined proxy eligibility begins only after individual specialist validation.
+
+Parent evolution is now governed by `parent_mentor_broker_v1`. A parent is a
+contextual mentor, not a parameter-vector owner: it may propose one compatible
+gene with a source context, expected effect and evidence hash, while the child
+keeps an autonomous branch and must make a child-specific mutation. Trust is
+stored by `(parent, skill, regime, session, volume, cost, snapshot-age)` in
+`parent_context_trust_matrix_v1`; old evidence decays toward the neutral prior
+and a failure down-ranks only its matching context.
+
+Mentored candidates carry an immutable three-branch contract:
+`autonomous`, `mentored` and `ablated`. Parent incremental value is
+`mentored - autonomous`; parent credit is blocked until all branches share the
+same snapshot and execution contract. Evolution credit is separated into
+performance, learning and discovery events, so a clean falsification can teach
+the next mutation without being mistaken for a promotion pass. Monitor this
+with `trading:monitor-parent-evolution XAUUSD --timeframe=H1 --json`.
+
+Council composition also has a leave-one-out contract. Every declared
+specialist receives a same-snapshot ablation plan, and the combined proxy stays
+research-only until the full council and every required exclusion are observed.
+Technical recovery may keep this sandbox planned, but it cannot create
+strategy credit or paper evidence.
+
+`micro_replay_v1` expands the three sealed chronological screening windows into
+a cheap 2-of-3 confirmation exam. A hard failure blocks the expensive full
+replay; a deferred/failed pair is frozen for the snapshot and can only be
+reopened by a new evidence cell. `trading:pump-learning-lane` is the single-seat
+retry pump: it fail-closes when AI replay status is unknown, checks the shared
+queue/mutex, and invokes the existing serialized dispatch only when idle.
+
+`failure_dojo_v1` records the exact failure signature, state and expected repair
+action for focused counterfactual work. `council_disagreement_memory_v1`
+records specialist votes, H1 context, M15 decision, Risk Sentinel and council
+decision as research memory. `gene_interaction_lab_v1` only prepares pairwise
+interaction probes after two independent single-gene mentors exist; it never
+mixes genes into the promotion lane automatically. Historical control coverage
+can be previewed with `trading:materialize-learning-controls`; applying it is an
+operator-approved ledger action and requires the queue to be reviewed first.
+
+If the response-map migration is deployed after historical runs, first run
+`trading:backfill-mutation-response-map XAUUSD --timeframe=H1 --generation=12`
+as a dry-run, then repeat with `--apply`. It projects only complete immutable
+response artifacts into the append-only map; it never replays a strategy,
+changes a gate, attaches a parent, or opens paper promotion.
 
 ## Market-adaptive replay protocol
 

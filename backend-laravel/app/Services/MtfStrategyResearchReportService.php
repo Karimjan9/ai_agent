@@ -36,6 +36,21 @@ class MtfStrategyResearchReportService
                 ->get()
             : collect();
         $analyses = $runs->map(fn (MtfStrategyResearchRun $run): array => $this->analyseRun($run))->values()->all();
+        $resolvedRecoveryIds = collect($analyses)
+            ->filter(fn (array $analysis): bool => ($analysis['status'] ?? null) === 'completed')
+            ->map(fn (array $analysis): ?int => isset($analysis['technical_recovery_of_run_id'])
+                ? (int) $analysis['technical_recovery_of_run_id']
+                : null)
+            ->filter(fn (?int $id): bool => $id !== null && $id > 0)
+            ->values()
+            ->all();
+        $analyses = array_map(
+            fn (array $analysis): array => [
+                ...$analysis,
+                'technical_recovery_resolved' => in_array((int) ($analysis['research_run_id'] ?? 0), $resolvedRecoveryIds, true),
+            ],
+            $analyses,
+        );
         $latestAblation = $this->latestAblation($symbol);
         $currentDataHash = $latestAblation['data_hash'] ?? null;
         $currentRuns = $runs->filter(fn (MtfStrategyResearchRun $run): bool =>
@@ -98,7 +113,7 @@ class MtfStrategyResearchReportService
         $sampleStatus = $trades < 30 ? 'low_sample' : 'usable_screening_sample';
         $mutationEffective = $this->mutationEffective($mtf, $referenceMtf);
         $targetGate = (string) data_get($run->research_contract, 'target_gate', 'unknown');
-        $targetGateImproved = $mutationEffective && $this->targetGateImproved($targetGate, $mtf, $referenceMtf);
+        $targetGateImproved = $mutationEffective && $this->catalog->targetGateImproved($targetGate, $mtf, $referenceMtf);
         $classification = $frozenM15 === []
             ? 'frozen_control_missing'
             : ($run->status !== 'completed'
@@ -124,6 +139,7 @@ class MtfStrategyResearchReportService
             'data_hash' => $run->data_hash,
             'parameter_hash' => $run->parameter_hash,
             'execution_hash' => $run->execution_hash,
+            'technical_recovery_of_run_id' => data_get($run->research_contract, 'technical_recovery.recovery_of_run_id'),
             'sample_status' => $sampleStatus,
             'classification' => $classification,
             'mutation_effective' => $mutationEffective,
@@ -253,23 +269,6 @@ class MtfStrategyResearchReportService
             || abs((float) ($candidate['profit_factor'] ?? 0) - (float) ($reference['profit_factor'] ?? 0)) > 0.0001
             || abs((float) ($candidate['net_profit_percent'] ?? 0) - (float) ($reference['net_profit_percent'] ?? 0)) > 0.0001
             || abs((float) ($candidate['max_drawdown_percent'] ?? 0) - (float) ($reference['max_drawdown_percent'] ?? 0)) > 0.0001;
-    }
-
-    /** @param array<string, mixed> $candidate @param array<string, mixed> $reference */
-    private function targetGateImproved(string $gate, array $candidate, array $reference): bool
-    {
-        if ($reference === []) return false;
-        $pf = (float) ($candidate['profit_factor'] ?? 0);
-        $refPf = (float) ($reference['profit_factor'] ?? 0);
-        $dd = (float) ($candidate['max_drawdown_percent'] ?? 0);
-        $refDd = (float) ($reference['max_drawdown_percent'] ?? 0);
-
-        return match ($gate) {
-            'forward_profit_factor', 'range_profit_factor' => $pf > $refPf + 0.05,
-            'stress_drawdown', 'false_positive_control' => $dd < $refDd - 0.25 && $pf >= $refPf * 0.90,
-            'trend_up_stability', 'regime_coverage_and_drawdown' => $pf >= $refPf && $dd <= $refDd,
-            default => $pf >= $refPf && $dd <= $refDd,
-        };
     }
 
     /** @return array<string, mixed> */

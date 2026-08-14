@@ -56,26 +56,51 @@ class LabEvidenceAudit extends Command
         $seenAgents = $events->pluck('lab_agent_id')->filter()->unique()->count();
         $terminalRuns = $runs->whereIn('status', ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot'])->count();
         // A middleware release is a queue deferral, not an evaluator replay.
-        // Newer jobs do not create these rows, but older immutable rows must
-        // not be mistaken for response evidence merely because their
-        // operational envelope has a response hash.
+        // A projection-only skip is also not a replay: it records an
+        // idempotent duplicate recovery attempt after a valid screen result
+        // was already persisted. Newer jobs do not create these rows, but
+        // older immutable rows must not be mistaken for response evidence
+        // merely because their operational envelope has a response hash.
         $queueDeferredRunIds = $runs->filter(fn (LabEvaluationRun $run): bool => $run->status === 'retry_released'
             && data_get($run->metadata, 'reason_code') === 'QUEUE_MIDDLEWARE_RELEASE')
             ->pluck('run_id')->filter()->unique();
-        $replayRuns = $runs->reject(fn (LabEvaluationRun $run): bool => $queueDeferredRunIds->contains($run->run_id));
-        $replayTerminalRuns = $replayRuns->whereIn('status', ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot']);
-        $completedReplayRuns = $replayRuns->where('status', 'completed');
+        $projectionOnlyRunIds = $runs->filter(fn (LabEvaluationRun $run): bool => $run->status === 'skipped'
+            && data_get($run->metadata, 'projection_only') === true
+            && data_get($run->metadata, 'reason_code') === 'SCREEN_RESULT_ALREADY_PERSISTED')
+            ->pluck('run_id')->filter()->unique();
+        $replayRuns = $runs->reject(fn (LabEvaluationRun $run): bool => $queueDeferredRunIds->contains($run->run_id)
+            || $projectionOnlyRunIds->contains($run->run_id));
+
+        // A same-generation recovery appends a new immutable run. The old
+        // technical/incomplete attempt remains valuable audit history, but it
+        // must not poison the current evidence boundary after its agent has a
+        // later complete replay. Promotion and learning consumers already use
+        // the latest eligible run; make this audit report the same boundary.
+        $currentReplayRuns = $replayRuns
+            ->sortBy('id')
+            ->groupBy(fn (LabEvaluationRun $run): string => $run->lab_agent_id !== null
+                ? 'agent:'.$run->lab_agent_id
+                : 'run:'.$run->run_id)
+            ->map(fn ($agentRuns) => $agentRuns->last())
+            ->values();
+        $currentRunIds = $currentReplayRuns->pluck('run_id')->filter()->unique();
+        $replayTerminalRuns = $currentReplayRuns->whereIn('status', ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot']);
+        $completedReplayRuns = $currentReplayRuns->where('status', 'completed');
         $responseRunIds = $completedReplayRuns->filter(fn (LabEvaluationRun $run): bool => $run->response_hash !== null)->pluck('run_id')->filter()->unique();
         $responseRuns = $responseRunIds->count();
         $traceCompleteRunIds = $artifacts->where('artifact_type', 'decision_trace_manifest')
+            ->whereIn('run_id', $currentRunIds->all())
             ->filter(fn (LabEvidenceArtifact $artifact): bool => (bool) data_get($artifact->metadata, 'complete', data_get($artifact->payload, 'complete', false)))
             ->pluck('run_id')->filter()->unique();
         $traceComplete = $traceCompleteRunIds->count();
         $ledgerCompleteRunIds = $artifacts->filter(fn (LabEvidenceArtifact $artifact): bool => in_array($artifact->artifact_type, ['trade_ledger', 'agent_trade_ledger'], true))
+            ->whereIn('run_id', $currentRunIds->all())
             ->filter(fn (LabEvidenceArtifact $artifact): bool => (bool) data_get($artifact->metadata, 'complete', false))
             ->pluck('run_id')->filter()->unique();
-        $requestRunIds = $artifacts->where('artifact_type', 'evaluation_request')->pluck('run_id')->filter()->unique();
-        $runIdsWithLifecycle = $events->pluck('run_id')->filter()->unique();
+        $requestRunIds = $artifacts->where('artifact_type', 'evaluation_request')
+            ->whereIn('run_id', $currentRunIds->all())
+            ->pluck('run_id')->filter()->unique();
+        $runIdsWithLifecycle = $events->whereIn('run_id', $currentRunIds->all())->pluck('run_id')->filter()->unique();
         $orphanArtifactCount = $artifacts->filter(fn (LabEvidenceArtifact $artifact): bool => $artifact->run_id !== null && ! $runs->pluck('run_id')->contains($artifact->run_id))->count();
         $queueAttempts = $events->where('event_type', 'queue_attempt_started')->count();
         $releasedAttempts = $runs->where('status', 'retry_released')->count();
@@ -90,10 +115,10 @@ class LabEvidenceAudit extends Command
             && $responseRunIds->diff($ledgerCompleteRunIds)->isEmpty();
         $replayAgentIds = $replayRuns->pluck('lab_agent_id')->filter()->unique();
         $complete = $agents->count() > 0 && $createdAgents === $agents->count()
-            && $replayRuns->count() > 0 && $replayAgentIds->count() >= $agents->count()
-            && $replayTerminalRuns->count() === $replayRuns->count()
+            && $currentReplayRuns->count() > 0 && $replayAgentIds->count() >= $agents->count()
+            && $replayTerminalRuns->count() === $currentReplayRuns->count()
             && $completedReplayRuns->count() > 0
-            && $runIdsWithLifecycle->count() >= $runs->count()
+            && $runIdsWithLifecycle->count() >= $currentReplayRuns->count()
             && (! $strictTraceRequired || ($traceComplete >= $responseRuns && $strictResponseEvidence))
             && $orphanArtifactCount === 0
             && $legacy === 0;
@@ -105,12 +130,19 @@ class LabEvidenceAudit extends Command
             'agent_event_coverage_percent' => $eventCoverage,
             'missing_agent_ids' => $agents->reject(fn ($agent) => $events->where('lab_agent_id', $agent->id)->isNotEmpty())->pluck('id')->values()->all(),
             'evaluation_run_count' => $runs->count(), 'replay_run_count' => $replayRuns->count(),
+            'current_evidence_run_count' => $currentReplayRuns->count(),
+            'superseded_replay_run_count' => max(0, $replayRuns->count() - $currentReplayRuns->count()),
+            'projection_only_run_count' => $projectionOnlyRunIds->count(),
             'completed_replay_count' => $completedReplayRuns->count(),
             'queue_deferred_run_count' => $queueDeferredRunIds->count(),
             'terminal_run_count' => $terminalRuns,
             'terminal_run_coverage_percent' => $terminalCoverage,
             'response_runs' => $responseRuns, 'decision_trace_complete_runs' => $traceComplete,
-            'run_lifecycle_coverage_percent' => $runs->count() === 0 ? 0 : round(($runIdsWithLifecycle->count() / $runs->count()) * 100, 1),
+            // Lifecycle coverage is a current evidence-boundary metric. The
+            // denominator must exclude superseded immutable attempts, or a
+            // successful same-generation recovery will appear incomplete
+            // merely because its old technical run has no closing event.
+            'run_lifecycle_coverage_percent' => $currentReplayRuns->count() === 0 ? 0 : round(($runIdsWithLifecycle->count() / $currentReplayRuns->count()) * 100, 1),
             'request_artifact_runs' => $requestRunIds->count(),
             'ledger_complete_runs' => $ledgerCompleteRunIds->count(),
             'queue_attempt_count' => $queueAttempts,

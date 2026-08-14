@@ -311,7 +311,10 @@ return [
         // observed trades is too noisy even to spend a full replay on.
       'minimum_screening_trades' => (int) env('LAB_MINIMUM_SCREENING_TRADES', 10),
       'max_screening_jobs' => (int) env('LAB_MAX_SCREENING_JOBS', 40),
-      'screen_timeout_seconds' => (int) env('LAB_SCREEN_TIMEOUT_SECONDS', 900),
+      // The Python screening child is hard-bounded at 900 seconds. Keep a
+      // 30-second transport margin so a complete evidence response is not
+      // converted into an evaluator error by Laravel's HTTP client.
+      'screen_timeout_seconds' => (int) env('LAB_SCREEN_TIMEOUT_SECONDS', 930),
       'differential_screen_timeout_seconds' => (int) env('LAB_DIFFERENTIAL_SCREEN_TIMEOUT_SECONDS', 900),
       // The Python screen can return before Laravel persists the immutable
       // trace/ledger and gate projection. Stale reservation recovery must
@@ -391,6 +394,35 @@ return [
       'governor_lookback_generations' => (int) env('LAB_GOVERNOR_LOOKBACK_GENERATIONS', 3),
       'governor_diversity_collapse_threshold' => (float) env('LAB_GOVERNOR_DIVERSITY_COLLAPSE_THRESHOLD', .35),
       'governor_stagnation_generations' => (int) env('LAB_GOVERNOR_STAGNATION_GENERATIONS', 3),
+      // Risk-bounded exploration changes research allocation and mutation
+      // amplitude only. It never relaxes screening, replay, forward, paper or
+      // promotion gates.
+      'risk_bounded_exploration_enabled' => env('LAB_RISK_BOUNDED_EXPLORATION_ENABLED', true),
+      'risk_bounded_exploration_seats' => (int) env('LAB_RISK_BOUNDED_EXPLORATION_SEATS', 8),
+      'bold_mutation_step_multiplier' => (float) env('LAB_BOLD_MUTATION_STEP_MULTIPLIER', 2.0),
+      'proven_gene_step_multiplier' => (float) env('LAB_PROVEN_GENE_STEP_MULTIPLIER', 1.5),
+      'screen_pass_step_multiplier' => (float) env('LAB_SCREEN_PASS_STEP_MULTIPLIER', 1.2),
+      'uncertainty_step_multiplier' => (float) env('LAB_UNCERTAINTY_STEP_MULTIPLIER', .75),
+      // A screen-positive cohort must produce replay evidence before another
+      // generic cohort is allowed to multiply the unresolved learning queue.
+      'learning_velocity_enabled' => env('LAB_LEARNING_VELOCITY_ENABLED', true),
+      'learning_velocity_lookback_generations' => (int) env('LAB_LEARNING_VELOCITY_LOOKBACK_GENERATIONS', 3),
+      'learning_velocity_max_unresolved_screen_generations' => (int) env('LAB_LEARNING_VELOCITY_MAX_UNRESOLVED_SCREEN_GENERATIONS', 1),
+      // Parent-aware evolution. A parent can propose a bounded skill, but it
+      // cannot replace the child's autonomous branch or bypass evidence gates.
+      'parent_mentor_broker_enabled' => env('LAB_PARENT_MENTOR_BROKER_ENABLED', true),
+      'parent_assisted_seats' => (int) env('LAB_PARENT_ASSISTED_SEATS', 2),
+      'parent_autonomous_minimum_share' => (float) env('LAB_PARENT_AUTONOMOUS_MINIMUM_SHARE', .25),
+      'parent_trust_decay_days' => (int) env('LAB_PARENT_TRUST_DECAY_DAYS', 30),
+      'parent_trust_floor' => (float) env('LAB_PARENT_TRUST_FLOOR', .15),
+      'parent_trust_ceiling' => (float) env('LAB_PARENT_TRUST_CEILING', .85),
+      'parent_counterfactual_required' => env('LAB_PARENT_COUNTERFACTUAL_REQUIRED', true),
+      'parent_counterfactual_branches' => ['autonomous', 'mentored', 'ablated'],
+      'parent_credit_min_incremental_value' => (float) env('LAB_PARENT_CREDIT_MIN_INCREMENTAL_VALUE', .0001),
+      'evolution_credit_enabled' => env('LAB_EVOLUTION_CREDIT_ENABLED', true),
+      'evidence_quarantine_sandbox_enabled' => env('LAB_EVIDENCE_QUARANTINE_SANDBOX_ENABLED', true),
+      'council_ablation_required_before_official' => env('LAB_COUNCIL_ABLATION_REQUIRED_BEFORE_OFFICIAL', true),
+      'council_ablation_roles' => ['entry', 'risk', 'regime', 'volume_temporal'],
   ],
 
     'risk' => [
@@ -401,6 +433,21 @@ return [
         'fx_spread_points' => (float) env('RISK_FX_SPREAD_POINTS', 12),
         'xau_spread_points' => (float) env('RISK_XAU_SPREAD_POINTS', 35),
         'slippage_points' => (float) env('RISK_SLIPPAGE_POINTS', 2),
+    ],
+
+    // The learning lane is deliberately separate from promotion selection.
+    // It can spend a small, bounded amount of replay capacity on a paired
+    // near-miss, but it can never lower a gate or create paper evidence.
+    'learning_lane' => [
+        'enabled' => env('LAB_LEARNING_LANE_ENABLED', true),
+        'max_per_role' => (int) env('LAB_LEARNING_LANE_MAX_PER_ROLE', 1),
+        'max_total_per_generation' => (int) env('LAB_LEARNING_LANE_MAX_TOTAL_PER_GENERATION', 4),
+        'provisional_skill_ttl_days' => (int) env('LAB_LEARNING_LANE_PROVISIONAL_SKILL_TTL_DAYS', 30),
+        'independent_confirmations_required' => (int) env('LAB_LEARNING_LANE_INDEPENDENT_CONFIRMATIONS', 2),
+        'micro_windows_required' => (int) env('LAB_LEARNING_LANE_MICRO_WINDOWS_REQUIRED', 3),
+        'micro_positive_windows_required' => (int) env('LAB_LEARNING_LANE_MICRO_POSITIVE_WINDOWS_REQUIRED', 2),
+        'negative_downrank_after' => (int) env('LAB_LEARNING_LANE_NEGATIVE_DOWNRANK_AFTER', 3),
+        'negative_quarantine_after' => (int) env('LAB_LEARNING_LANE_NEGATIVE_QUARANTINE_AFTER', 5),
     ],
 
     // Versioned parameters consumed by lab, full replay, paper and holdout.

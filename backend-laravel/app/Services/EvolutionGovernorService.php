@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Models\AiLaboratory;
+use App\Models\AgentLearningLesson;
 use App\Models\LabAgent;
 use App\Models\LabEvolutionIsland;
 use App\Models\LabGeneration;
+use App\Models\LabMutationResponseMap;
 use App\Models\MarketDriftSnapshot;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Chooses the search posture for the next experiment without ever becoming a
@@ -27,6 +30,11 @@ class EvolutionGovernorService
         'monthly_survival', 'regime_coverage', 'volatility_session_stability', 'profit_factor', 'stress_cost', 'temporal_stability',
         'exit_topology', 'transition_firewall', 'portfolio_router',
         'opportunity_recall', 'unknown_state_curiosity',
+    ];
+
+    public const OUTCOME_MODES = [
+        'technical_error', 'strategy_failure', 'screen_pass',
+        'independent_pass', 'repeated_failure', 'uncertainty',
     ];
 
     /**
@@ -66,6 +74,7 @@ class EvolutionGovernorService
         $archiveTelemetry = $this->archiveTelemetry($lab);
         $driftTelemetry = $this->driftTelemetry($lab);
         $failedMutationTelemetry = $this->failedMutationTelemetry($agents);
+        $learningTelemetry = $this->learningTelemetry($lab);
         $collapseThreshold = (float) config('services.lab_selection.governor_diversity_collapse_threshold', .35);
         $stagnationThreshold = max(1, (int) config('services.lab_selection.governor_stagnation_generations', 3));
         $exploration = .20;
@@ -100,6 +109,13 @@ class EvolutionGovernorService
             'archive_coverage' => $archiveTelemetry,
             'market_drift' => $driftTelemetry,
             'repeated_failed_mutations' => $failedMutationTelemetry,
+            'learning_telemetry' => $learningTelemetry,
+            'evolution_modes' => $this->evolutionModePolicies($learningTelemetry),
+            'risk_bounded_exploration' => [
+                'protocol' => 'risk_bounded_exploration_governor_v1',
+                'enabled' => (bool) config('services.lab_selection.risk_bounded_exploration_enabled', true),
+                'promotion_evidence' => false,
+            ],
             'validation_budget' => [
                 'planned_slots' => count($plan),
                 'observed_agents' => $agents->count(),
@@ -139,6 +155,18 @@ class EvolutionGovernorService
             'archive_coverage' => ['island_count' => 0, 'active_entry_count' => 0, 'coverage_ratio' => 0],
             'market_drift' => ['status' => 'unknown', 'psi_score' => null, 'volatility_ratio' => null],
             'repeated_failed_mutations' => ['repeated_failure_count' => 0, 'fingerprints' => []],
+            'learning_telemetry' => [
+                'provisional_skill_count' => 0,
+                'confirmed_skill_count' => 0,
+                'positive_response_count' => 0,
+                'independent_confirmation_count' => 0,
+            ],
+            'evolution_modes' => $this->evolutionModePolicies([]),
+            'risk_bounded_exploration' => [
+                'protocol' => 'risk_bounded_exploration_governor_v1',
+                'enabled' => (bool) config('services.lab_selection.risk_bounded_exploration_enabled', true),
+                'promotion_evidence' => false,
+            ],
             'validation_budget' => ['planned_slots' => 0, 'observed_agents' => 0, 'lookback_agent_count' => 0, 'promotion_evidence' => false],
             'lineage_cap' => (float) config('services.lab_selection.parent_lineage_cap', .50),
             'planned_origin_counts' => [],
@@ -203,6 +231,83 @@ class EvolutionGovernorService
             'adaptive_k' => true,
             'promotion_evidence' => false,
         ];
+    }
+
+    /**
+     * Canonical outcome-to-action contract. It is descriptive and is reused
+     * by allocation metadata; it never opens a promotion gate.
+     *
+     * @return array<string, mixed>
+     */
+    public function evolutionModePolicy(string $mode, array $context = []): array
+    {
+        $mode = strtolower(trim($mode));
+        if (! in_array($mode, self::OUTCOME_MODES, true)) $mode = 'uncertainty';
+        $policy = match ($mode) {
+            'technical_error' => [
+                'mutation_allowed' => false,
+                'action' => 'recover_evidence_only',
+                'mutation_credit' => false,
+                'next_stage' => 'technical_recovery',
+            ],
+            'strategy_failure' => [
+                'mutation_allowed' => true,
+                'action' => 'one_failure_targeted_gene_mutation',
+                'max_changed_genes' => 1,
+                'mutation_credit' => false,
+                'next_stage' => 'paired_screening',
+            ],
+            'screen_pass' => [
+                'mutation_allowed' => true,
+                'action' => 'bounded_sibling_refinement',
+                'step_multiplier' => (float) config('services.lab_selection.screen_pass_step_multiplier', 1.2),
+                'mutation_credit' => 'provisional',
+                'next_stage' => 'micro_or_full_replay',
+            ],
+            'independent_pass' => [
+                'mutation_allowed' => true,
+                'action' => 'increase_confirmed_gene_step',
+                'step_multiplier' => (float) config('services.lab_selection.proven_gene_step_multiplier', 1.5),
+                'mutation_credit' => 'skill_mentor_candidate',
+                'next_stage' => 'skill_mentor_then_council_frontier',
+            ],
+            'repeated_failure' => [
+                'mutation_allowed' => true,
+                'action' => 'architecture_or_specialist_escape',
+                'gene_direction_closed' => true,
+                'mutation_credit' => false,
+                'next_stage' => 'architecture_escape_or_lineage_quarantine',
+            ],
+            default => [
+                'mutation_allowed' => true,
+                'action' => 'small_bounded_exploration_and_collect_evidence',
+                'step_multiplier' => (float) config('services.lab_selection.uncertainty_step_multiplier', .75),
+                'mutation_credit' => 'none',
+                'next_stage' => 'screening',
+            ],
+        };
+
+        return [
+            'protocol' => 'risk_bounded_exploration_governor_v1',
+            'mode' => $mode,
+            ...$policy,
+            'context' => $context,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function evolutionModePolicies(array $learningTelemetry): array
+    {
+        $policies = [];
+        foreach (self::OUTCOME_MODES as $mode) {
+            $policies[$mode] = $this->evolutionModePolicy($mode, [
+                'provisional_skill_count' => (int) data_get($learningTelemetry, 'provisional_skill_count', 0),
+                'confirmed_skill_count' => (int) data_get($learningTelemetry, 'confirmed_skill_count', 0),
+            ]);
+        }
+
+        return $policies;
     }
 
     /**
@@ -277,7 +382,195 @@ class EvolutionGovernorService
             $plan[$index] = $slot;
         }
 
+        // Keep a small, auditable risk budget beside the ordinary adaptive
+        // plan. The first slot is a frozen control, three are targeted repair
+        // siblings, one refines a proven/provisional gene, one is deliberately
+        // bold, one explores regime/volume context and one red-teams the
+        // current architecture. These are research postures, not promotion
+        // permissions. If the frontier is smaller than eight, the pattern is
+        // truncated rather than silently creating extra agents.
+        if ((bool) config('services.lab_selection.risk_bounded_exploration_enabled', true)) {
+            $riskIndexes = array_slice(
+                $mutable,
+                -min(count($mutable), max(1, (int) config('services.lab_selection.risk_bounded_exploration_seats', 8))),
+            );
+            $learning = (array) data_get($snapshot, 'learning_telemetry', []);
+            $hasProvisional = (int) data_get($learning, 'provisional_skill_count', 0) > 0;
+            $hasConfirmed = (int) data_get($learning, 'confirmed_skill_count', 0) > 0;
+            $patterns = [
+                [
+                    'mode' => 'frozen_control',
+                    'origin' => 'g98_council',
+                    'target' => null,
+                    'parent_lane' => 'frozen_control',
+                    'control_only' => true,
+                    'step_multiplier' => 1.0,
+                    'research_only' => true,
+                ],
+                [
+                    'mode' => $hasProvisional ? 'screen_pass' : 'targeted_repair',
+                    'origin' => 'g98_council',
+                    'target' => null,
+                    'parent_lane' => 'autonomous',
+                    'control_only' => false,
+                    'step_multiplier' => $hasProvisional
+                        ? (float) config('services.lab_selection.screen_pass_step_multiplier', 1.2)
+                        : 1.0,
+                    'research_only' => true,
+                ],
+                [
+                    'mode' => 'targeted_repair',
+                    'origin' => 'g98_council',
+                    'target' => null,
+                    'parent_lane' => 'autonomous',
+                    'control_only' => false,
+                    'step_multiplier' => 1.0,
+                    'research_only' => true,
+                ],
+                [
+                    'mode' => 'targeted_repair',
+                    'origin' => 'g98_council',
+                    'target' => null,
+                    'parent_lane' => 'mentor_assisted',
+                    'control_only' => false,
+                    'step_multiplier' => 1.0,
+                    'research_only' => true,
+                ],
+                [
+                    'mode' => $hasConfirmed ? 'proven_gene_refinement' : 'targeted_repair',
+                    'origin' => 'g98_council',
+                    'target' => null,
+                    'parent_lane' => 'mentor_assisted',
+                    'control_only' => false,
+                    'step_multiplier' => $hasConfirmed
+                        ? (float) config('services.lab_selection.proven_gene_step_multiplier', 1.5)
+                        : 1.0,
+                    'research_only' => true,
+                ],
+                [
+                    'mode' => 'bold_explorer',
+                    'origin' => 'robust_crossover',
+                    'target' => 'architecture',
+                    'parent_lane' => 'cross_skill_composition',
+                    'control_only' => false,
+                    'step_multiplier' => (float) config('services.lab_selection.bold_mutation_step_multiplier', 2.0),
+                    'research_only' => true,
+                ],
+                [
+                    'mode' => 'regime_volume_explorer',
+                    'origin' => 'curiosity_probe',
+                    'target' => 'regime_coverage',
+                    'parent_lane' => 'bold_discovery',
+                    'control_only' => false,
+                    'step_multiplier' => 1.0,
+                    'research_only' => true,
+                ],
+                [
+                    'mode' => 'adversarial_red_team',
+                    'origin' => 'architecture',
+                    'target' => 'stress_cost',
+                    'parent_lane' => 'adversarial_red_team',
+                    'control_only' => false,
+                    'step_multiplier' => 1.0,
+                    'research_only' => true,
+                ],
+            ];
+            foreach ($riskIndexes as $offset => $index) {
+                $pattern = $patterns[$offset % count($patterns)];
+                $slot = (array) $plan[$index];
+                $outcomeMode = match ((string) $pattern['mode']) {
+                    'screen_pass' => 'screen_pass',
+                    'proven_gene_refinement' => 'independent_pass',
+                    'targeted_repair' => 'strategy_failure',
+                    default => 'uncertainty',
+                };
+                $outcomePolicy = $this->evolutionModePolicy($outcomeMode, [
+                    'slot' => $index + 1,
+                    'evolution_mode' => $pattern['mode'],
+                    'parent_lane' => $pattern['parent_lane'],
+                ]);
+                $existingTarget = (string) ($slot['target'] ?? 'profit_factor');
+                $target = $pattern['target']
+                    ?: (in_array($existingTarget, self::CAUSAL_TARGETS, true) ? $existingTarget : 'profit_factor');
+                $slot['origin'] = $pattern['origin'];
+                $slot['target'] = $target;
+                $slot['evolution_mode'] = $pattern['mode'];
+                $slot['niche'] = [
+                    'protocol' => 'adaptive_exploration_lane_v1',
+                    'role' => 'adaptive_explorer',
+                    'regime' => data_get($slot, 'niche.regime'),
+                    'volatility' => data_get($slot, 'niche.volatility'),
+                    'direction' => data_get($slot, 'niche.direction'),
+                    'adaptive_origin' => $pattern['origin'],
+                    'evolution_mode' => $pattern['mode'],
+                    'outcome_mode' => $outcomeMode,
+                    'outcome_policy' => $outcomePolicy,
+                    'mutation_step_multiplier' => (float) $pattern['step_multiplier'],
+                    'control_only' => (bool) $pattern['control_only'],
+                    'exploration_domain' => $pattern['mode'] === 'regime_volume_explorer' ? 'regime_and_volume_shadow' : null,
+                    'volume_shadow' => $pattern['mode'] === 'regime_volume_explorer',
+                    'adversarial_red_team' => $pattern['mode'] === 'adversarial_red_team',
+                    'research_only_until_independent_replay' => (bool) $pattern['research_only'],
+                    'promotion_evidence' => false,
+                ];
+                $slot['adaptive_governor'] = [
+                    'protocol' => self::PROTOCOL,
+                    'risk_protocol' => 'risk_bounded_exploration_governor_v1',
+                    'mode' => $pattern['mode'],
+                    'parent_lane' => $pattern['parent_lane'],
+                    'outcome_mode' => $outcomeMode,
+                    'outcome_policy' => $outcomePolicy,
+                    'step_multiplier' => (float) $pattern['step_multiplier'],
+                    'reason' => $pressure >= .50 ? 'diversity_or_drift_pressure' : 'bounded_exploration_reserve',
+                    'exploration_ratio' => round($exploration, 4),
+                    'protected_causal_floor' => $protectedFloor,
+                    'promotion_evidence' => false,
+                ];
+                $plan[$index] = $slot;
+            }
+        }
+
         return array_values($plan);
+    }
+
+    /** @return array<string, int> */
+    private function learningTelemetry(AiLaboratory $lab): array
+    {
+        try {
+            if (! Schema::hasTable('agent_learning_lessons')) {
+                return [
+                    'provisional_skill_count' => 0,
+                    'confirmed_skill_count' => 0,
+                    'positive_response_count' => 0,
+                    'independent_confirmation_count' => 0,
+                ];
+            }
+            $lessons = AgentLearningLesson::query()
+                ->where('symbol', $lab->symbol)
+                ->where('timeframe', $lab->timeframe)
+                ->get(['status', 'confirmation_count', 'independent_window_count']);
+            $responses = Schema::hasTable('lab_mutation_response_maps')
+                ? LabMutationResponseMap::query()
+                    ->where('symbol', $lab->symbol)
+                    ->where('timeframe', $lab->timeframe)
+                    ->whereIn('status', ['positive', 'confirmed', 'independently_confirmed', 'validated'])
+                    ->count()
+                : 0;
+
+            return [
+                'provisional_skill_count' => $lessons->whereIn('status', ['provisional', 'screen_validated_seed', 'pending_confirmation'])->count(),
+                'confirmed_skill_count' => $lessons->whereIn('status', ['confirmed', 'skill_mentor', 'full_parent'])->count(),
+                'positive_response_count' => (int) $responses,
+                'independent_confirmation_count' => (int) $lessons->sum(fn ($lesson): int => max((int) $lesson->confirmation_count, (int) $lesson->independent_window_count)),
+            ];
+        } catch (\Throwable) {
+            return [
+                'provisional_skill_count' => 0,
+                'confirmed_skill_count' => 0,
+                'positive_response_count' => 0,
+                'independent_confirmation_count' => 0,
+            ];
+        }
     }
 
     /** @return array<string, mixed> */

@@ -20,6 +20,7 @@ from app.services.backtester import (
     _advance_trailing_stop, _apply_execution_regime, _apply_portfolio_strategy, _apply_signal_delay, _entry_price, _exit_distances, _exit_price, _intrabar_exit, _load_regime_source,
     _load_simple_candles, _position_size_multiple, _resolve_dataset_path, _volatility_risk_multiplier, _volume_risk_multiplier,
     PreparedFeatureSnapshot, PreparedSignalSnapshot, _run_prepared_simple_backtest,
+    core_replay_gate,
     prepare_feature_snapshot, prepare_signal_snapshot,
     run_simple_ema_rsi_backtest, run_simple_ema_rsi_backtest_on_dataframe,
 )
@@ -592,8 +593,13 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
     elif payload.evaluation_mode == "incremental":
         # Screening computes the full 5k-candle survival profile, including
         # chronological month attribution. Keep a strict wall-clock bound,
-        # but leave enough room for a normal Windows worker under load.
-        env_name, default, ceiling = "AI_REPLAY_SCREEN_HARD_TIMEOUT_SECONDS", 330, 330
+        # but leave enough room for a normal Windows worker under load. This
+        # is an operational budget only; it never changes a screening gate.
+        # The previous 330-second ceiling cut off legitimate CPU-active H1
+        # replays that completed between 350 and 390 seconds. G13 then
+        # demonstrated a second, heavier sealed cohort above 600 seconds;
+        # keep the hard bound finite while leaving room for that workload.
+        env_name, default, ceiling = "AI_REPLAY_SCREEN_HARD_TIMEOUT_SECONDS", 900, 900
     else:
         # Full replay includes the separate 2005-2025 foundation score and
         # several deterministic robustness lanes. The old 2220s bound
@@ -1068,7 +1074,7 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             df[column] = pd.to_numeric(df[column], errors="coerce")
         if "volume_available" not in df.columns:
             df["volume_available"] = False
-        df["volume_available"] = df["volume_available"].fillna(False).astype(bool)
+        df["volume_available"] = df["volume_available"].astype("boolean").fillna(False).astype(bool)
         df = df.dropna(subset=["time", "open", "high", "low", "close"]).sort_values("time").tail(1000).reset_index(drop=True)
         df = _apply_execution_regime(df, _load_regime_source(payload))
         df = add_volume_features(df, payload.volume_context)
@@ -1172,7 +1178,7 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
             df[column] = pd.to_numeric(df[column], errors="coerce")
         if "volume_available" not in df.columns:
             df["volume_available"] = False
-        df["volume_available"] = df["volume_available"].fillna(False).astype(bool)
+        df["volume_available"] = df["volume_available"].astype("boolean").fillna(False).astype(bool)
         df = df.dropna(subset=["time", "open", "high", "low", "close"]).sort_values("time").tail(1000).reset_index(drop=True)
         df = _apply_execution_regime(df, _load_regime_source(payload))
         df = add_volume_features(df, payload.volume_context)
@@ -1304,6 +1310,13 @@ def _mtf_variant_payloads(
             "regime_candles": regime,
             "dataset_path": None,
             "regime_dataset_path": None,
+            # H1 and M15 share the same source contract but not the same
+            # seasonality bucket. Keep the normalization timeframe explicit
+            # so the H1 feature snapshot cannot accidentally use M15 slots.
+            "volume_context": {
+                **dict(base.volume_context or {}),
+                "timeframe": timeframe,
+            },
             "mtf_pilot": variant_pilot,
         })
         return _prepare_paper_payload(candidate)
@@ -1380,8 +1393,15 @@ def _run_mtf_variants(
     lightweight: bool,
     *,
     snapshot_cache: dict[str, object] | None = None,
+    lane_names: tuple[str, ...] | None = None,
 ) -> dict[str, dict[str, object]]:
-    """Run four lanes while reusing features/signals across execution profiles."""
+    """Run declared lanes while reusing features/signals across profiles.
+
+    The initial screen evaluates all four controlled lanes. Diagnostic stress
+    only needs the frozen M15 control and official MTF lane, so callers can
+    request that pair and avoid replaying two lanes whose results are not
+    consumed by the stress report.
+    """
     cache = snapshot_cache if snapshot_cache is not None else {}
     payloads, frames = _mtf_variant_payloads(base, h1_candles, m15_candles)
     snapshot_identity = _mtf_snapshot_identity(base, frames["h1"], frames["m15"])
@@ -1427,11 +1447,16 @@ def _run_mtf_variants(
         cache["signal_builds"] = int(cache.get("signal_builds", 0)) + 3
     else:
         cache["signal_cache_hits"] = int(cache.get("signal_cache_hits", 0)) + 1
-    cache["execution_replays"] = int(cache.get("execution_replays", 0)) + 4
+    selected_lanes = tuple(lane_names or payloads.keys())
+    unknown_lanes = set(selected_lanes) - set(payloads)
+    if unknown_lanes:
+        raise ValueError(f"Unknown MTF lane(s): {sorted(unknown_lanes)}")
+    cache["execution_replays"] = int(cache.get("execution_replays", 0)) + len(selected_lanes)
 
     frames_by_lane = {"h1_only": frames["h1"], "m15_only": frames["m15"], "h1_regime_m15": frames["m15"], "h1_veto_m15_risk": frames["m15"]}
     results: dict[str, dict[str, object]] = {}
-    for name, payload in payloads.items():
+    for name in selected_lanes:
+        payload = payloads[name]
         result = _run_prepared_simple_backtest(
             payload,
             frames_by_lane[name],
@@ -1449,6 +1474,10 @@ def _run_mtf_variants(
             "net_profit_percent": result.get("net_profit_percent", 0),
             "max_drawdown_percent": result.get("max_drawdown_percent", result.get("max_drawdown", 0)),
             "winrate": result.get("winrate", 0),
+            "core_replay_gate": result.get("core_replay_gate", {}),
+            "volume_lane": str((payload.parameters or {}).get("volume_lane", "none") or "none"),
+            "volume_quality": result.get("volume_quality", {}),
+            "volume_policy": result.get("volume_policy", {}),
             "mtf_pilot": (result.get("data_quality", {}) or {}).get("mtf_pilot", {}),
             "execution_contract": result.get("execution_contract", {}),
             "promotion_evidence": False,
@@ -1457,10 +1486,17 @@ def _run_mtf_variants(
 
 
 def _mtf_validation_lanes(variants: dict[str, dict[str, object]]) -> dict[str, dict[str, object]]:
-    """Keep stress output compact while retaining the frozen control pair."""
+    """Keep stress output compact around the challenger MTF lane.
+
+    The frozen M15 control is already sealed in Laravel's immutable ablation
+    snapshot. Replaying it for every cost/exit profile doubles diagnostic
+    runtime without changing the challenger decision, so targeted validation
+    reports only the challenger lane and records that the reference was
+    reused rather than recomputed.
+    """
     return {
         name: variants[name]
-        for name in ("m15_only", "h1_veto_m15_risk")
+        for name in ("h1_veto_m15_risk",)
         if name in variants
     }
 
@@ -1514,7 +1550,13 @@ def _run_mtf_targeted_validation(
     *,
     snapshot_cache: dict[str, object],
 ) -> dict[str, object]:
-    """Run cost/exit/forward diagnostics with shared lane snapshots."""
+    """Run cost/exit/forward diagnostics with shared lane snapshots.
+
+    The core screen is deliberately executed by the caller first.  Expensive
+    diagnostics are only authorized for a hypothesis whose main MTF lane has
+    a positive core gate; this keeps bounded research from turning every
+    random child into a 15-minute replay.
+    """
     cost_stress: dict[str, object] = {}
     for raw_profile in list(validation.get("cost_profiles", []) or []):
         if not isinstance(raw_profile, dict):
@@ -1524,6 +1566,7 @@ def _run_mtf_targeted_validation(
         profile_variants = _run_mtf_variants(
             profile_base, h1_candles, m15_candles, lightweight,
             snapshot_cache=snapshot_cache,
+            lane_names=("h1_veto_m15_risk",),
         )
         cost_stress[name] = {
             "profile": raw_profile,
@@ -1540,6 +1583,7 @@ def _run_mtf_targeted_validation(
         profile_variants = _run_mtf_variants(
             profile_base, h1_candles, m15_candles, lightweight,
             snapshot_cache=snapshot_cache,
+            lane_names=("h1_veto_m15_risk",),
         )
         exit_stress[name] = {
             "profile": raw_profile,
@@ -1564,6 +1608,7 @@ def _run_mtf_targeted_validation(
         forward_variants = _run_mtf_variants(
             base, forward_h1, forward_m15, lightweight,
             snapshot_cache=forward_cache,
+            lane_names=("h1_veto_m15_risk",),
         )
         forward = {
             "status": "completed",
@@ -1572,12 +1617,20 @@ def _run_mtf_targeted_validation(
             "warmup_m15_rows": int(validation.get("warmup_m15_rows", 0) or 0),
             "lanes": _mtf_validation_lanes(forward_variants),
             "promotion_evidence": False,
+            "reference_control": {
+                "lane": "m15_only",
+                "replayed": False,
+                "source": "immutable_frozen_control_snapshot",
+                "promotion_evidence": False,
+            },
             "optimization": {
                 "feature_snapshot_builds": int(forward_cache.get("feature_builds", 0)) - before_forward["feature_builds"],
                 "signal_snapshot_builds": int(forward_cache.get("signal_builds", 0)) - before_forward["signal_builds"],
                 "execution_replays": int(forward_cache.get("execution_replays", 0)) - before_forward["execution_replays"],
                 "strategy_signal_recomputed_in_cost_stress": False,
                 "strategy_signal_recomputed_in_exit_stress": False,
+                "diagnostic_lanes": ["h1_veto_m15_risk"],
+                "frozen_control_replayed": False,
             },
         }
 
@@ -1588,6 +1641,17 @@ def _run_mtf_targeted_validation(
         "cost_stress": cost_stress,
         "exit_stress": exit_stress,
         "forward_validation": forward,
+        "reference_control": {
+            "lane": "m15_only",
+            "replayed": False,
+            "source": "immutable_frozen_control_snapshot",
+            "promotion_evidence": False,
+        },
+        "optimization": {
+            "diagnostic_lanes": ["h1_veto_m15_risk"],
+            "frozen_control_replayed": False,
+            "promotion_evidence": False,
+        },
         "promotion_evidence": False,
         "rule": "Stress and chronological holdout are research diagnostics; neither can create paper or promotion evidence.",
     }
@@ -1639,15 +1703,90 @@ def run_mtf_ablation(body: dict[str, object]) -> dict[str, object]:
 
         validation = body.get("validation")
         if isinstance(validation, dict):
-            response["targeted_validation"] = _run_mtf_targeted_validation(
-                base, h1_candles, m15_candles, lightweight, validation,
-                snapshot_cache=snapshot_cache,
+            core = dict(results.get("h1_veto_m15_risk", {}).get("core_replay_gate", {}))
+            # The compact lane summary carries the cheap gate explicitly; the
+            # fallback keeps compatibility with older in-process callers.
+            core = core or core_replay_gate(results.get("h1_veto_m15_risk", {}))
+            response["targeted_validation"] = (
+                _run_mtf_targeted_validation(
+                    base, h1_candles, m15_candles, lightweight, validation,
+                    snapshot_cache=snapshot_cache,
+                )
+                if bool(core.get("passed", False))
+                else {
+                    "protocol": "xauusd_mtf_targeted_validation_v1",
+                    "status": "deferred_until_core_gate",
+                    "core_gate": core,
+                    "promotion_evidence": False,
+                }
             )
             response["optimization"].update({
                 "targeted_validation_shared_cache": True,
                 "validation_execution_replays": int(snapshot_cache.get("execution_replays", 0)),
             })
         return response
+    except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/backtest/mtf-targeted-validation")
+def run_mtf_targeted_validation_endpoint(body: dict[str, object]) -> dict[str, object]:
+    """Run only cost/exit/chronological diagnostics for a sealed core row.
+
+    Laravel supplies the already persisted core MTF lane. Python verifies the
+    cheap gate from that immutable result and then evaluates only the two
+    diagnostic lanes that the validation report consumes. This endpoint never
+    reruns H1-only or H1-regime lanes and never creates promotion evidence.
+    """
+    try:
+        base = SimpleBacktestRequest.model_validate(body.get("base_request", body))
+        h1_candles = list(body.get("h1_candles", []) or [])
+        m15_candles = list(body.get("m15_candles", []) or [])
+        validation = body.get("validation")
+        if len(h1_candles) < 2 or len(m15_candles) < 2:
+            raise ValueError("Targeted MTF validation requires independent H1 and M15 candle streams.")
+        if not isinstance(validation, dict):
+            raise ValueError("Targeted MTF validation requires a validation contract.")
+
+        core_result = body.get("core_result", {})
+        if not isinstance(core_result, dict):
+            raise ValueError("Targeted MTF validation requires the immutable core result.")
+        core_gate = core_replay_gate(core_result)
+        if not bool(core_gate.get("passed", False)):
+            return {
+                "protocol": "xauusd_mtf_targeted_validation_v1",
+                "status": "deferred_until_core_gate",
+                "core_gate": core_gate,
+                "promotion_evidence": False,
+            }
+
+        cache: dict[str, object] = {}
+        targeted = _run_mtf_targeted_validation(
+            base,
+            h1_candles,
+            m15_candles,
+            bool(body.get("lightweight", True)),
+            validation,
+            snapshot_cache=cache,
+        )
+        return {
+            "protocol": "xauusd_mtf_targeted_validation_v1",
+            "status": "completed",
+            "core_gate": core_gate,
+            "targeted_validation": targeted,
+            "optimization": {
+                "protocol": "mtf_targeted_validation_pair_only_v1",
+                "core_replay_reused": True,
+                "full_ablation_replayed": False,
+                "feature_snapshot_builds": int(cache.get("feature_builds", 0)),
+                "feature_cache_hits": int(cache.get("feature_cache_hits", 0)),
+                "signal_snapshot_builds": int(cache.get("signal_builds", 0)),
+                "signal_cache_hits": int(cache.get("signal_cache_hits", 0)),
+                "execution_replays": int(cache.get("execution_replays", 0)),
+                "promotion_evidence": False,
+            },
+            "promotion_evidence": False,
+        }
     except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1697,9 +1836,19 @@ def run_mtf_hypothesis_batch(body: dict[str, object]) -> dict[str, object]:
             }
             validation = item.get("validation", shared_validation)
             if isinstance(validation, dict):
-                result["targeted_validation"] = _run_mtf_targeted_validation(
-                    base, h1_candles, m15_candles, lightweight, validation,
-                    snapshot_cache=shared_cache,
+                core = core_replay_gate(variants.get("h1_veto_m15_risk", {}))
+                result["targeted_validation"] = (
+                    _run_mtf_targeted_validation(
+                        base, h1_candles, m15_candles, lightweight, validation,
+                        snapshot_cache=shared_cache,
+                    )
+                    if bool(core.get("passed", False))
+                    else {
+                        "protocol": "xauusd_mtf_targeted_validation_v1",
+                        "status": "deferred_until_core_gate",
+                        "core_gate": core,
+                        "promotion_evidence": False,
+                    }
                 )
             results[key] = result
 
@@ -1740,6 +1889,9 @@ def _mtf_lane_summary(result: dict[str, object], payload: SimpleBacktestRequest)
         "net_profit_percent": result.get("net_profit_percent", 0),
         "max_drawdown_percent": result.get("max_drawdown_percent", result.get("max_drawdown", 0)),
         "winrate": result.get("winrate", 0),
+        "volume_lane": str((payload.parameters or {}).get("volume_lane", "none") or "none"),
+        "volume_quality": result.get("volume_quality", {}),
+        "volume_policy": result.get("volume_policy", {}),
         "mtf_pilot": (result.get("data_quality", {}) or {}).get("mtf_pilot", {}),
         "execution_contract": result.get("execution_contract", {}),
         "promotion_evidence": False,
@@ -1910,6 +2062,8 @@ def run_mtf_council(body: dict[str, object]) -> dict[str, object]:
                 "combined_router_signal_builds": 1,
                 "execution_replays": len(base.portfolio_members) + 1,
                 "strategy_signal_recomputed_for_combined": False,
+                "volume_feature_snapshot_builds": 1,
+                "volume_policy_applied_per_member": len(base.portfolio_members),
                 "promotion_evidence": False,
             },
             "promotion_evidence": False,

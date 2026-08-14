@@ -108,6 +108,54 @@ class RecoverLabReplayMutex extends Command
                 $this->error('Refusing stale recovery: evaluator reports an active or unknown replay.');
                 return self::FAILURE;
             }
+
+            // A worker can finish a recovery replay and lose the queue row
+            // before the old middleware attempt is closed. If a newer
+            // terminal run for the same agent exists, the old open row is
+            // provably superseded and must not remain an apparent active
+            // replay or become a second evidence boundary. Close only this
+            // exact, idempotent case; an orphan without a newer terminal run
+            // remains fail-closed for operator investigation.
+            $supersededOpenRuns = LabEvaluationRun::query()
+                ->where('status', 'started')
+                ->get()
+                ->filter(function (LabEvaluationRun $run): bool {
+                    return LabEvaluationRun::query()
+                        ->where('lab_agent_id', $run->lab_agent_id)
+                        ->where('id', '>', $run->id)
+                        ->whereIn('status', ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot'])
+                        ->exists();
+                })
+                ->values();
+
+            if ($supersededOpenRuns->isNotEmpty()) {
+                if ($dryRun) {
+                    $this->line('Would close '.$supersededOpenRuns->count().' superseded open evaluator run(s); newer terminal evidence is preserved.');
+                } elseif (! $this->approve($approvals, [
+                    'mode' => 'superseded_open_runs',
+                    'run_ids' => $supersededOpenRuns->pluck('id')->values()->all(),
+                    'agent_ids' => $supersededOpenRuns->pluck('lab_agent_id')->unique()->values()->all(),
+                ])) {
+                    return self::FAILURE;
+                } else {
+                    $evidence = app(LabImmutableEvidenceService::class);
+                    $supersededOpenRuns->each(function (LabEvaluationRun $run) use ($evidence): void {
+                        $evidence->finishIfOpen(
+                            $run,
+                            'retry_released',
+                            null,
+                            [],
+                            [
+                                'reason_code' => 'SUPERSEDED_BY_NEWER_TERMINAL_REPLAY',
+                                'recovery_protocol' => 'orphaned_replay_mutex_v1',
+                                'promotion_evidence' => false,
+                            ],
+                        );
+                    });
+                    $this->warn('Closed '.$supersededOpenRuns->count().' superseded open evaluator run(s); no evidence was deleted.');
+                }
+            }
+
             if ($reservedJobs->isEmpty()) {
                 // A worker can die after the queue reservation expires (or
                 // after a recovery command requeues it) while the shared

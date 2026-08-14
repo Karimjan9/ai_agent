@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Services\LabQueueJobInspector;
 use App\Services\LabReplayRecoveryService;
 use App\Services\OperatorApprovalService;
@@ -16,7 +17,7 @@ use RuntimeException;
 /** Requeues bounded evaluator failures without turning them into strategy evidence. */
 class RecoverLabEvaluationErrors extends Command
 {
-    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget} {--apply : Dispatch the bounded recovery after operator approval} {--approved-by=} {--approval-reason=}';
+    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-timeout-budget-repair : Retry only quarantined agents whose immutable screen run records a bounded replay timeout; generation is required} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget} {--apply : Dispatch the bounded recovery after operator approval} {--approved-by=} {--approval-reason=}';
 
     protected $description = 'Requeue transport/evaluator failures after a clean AI service restart';
 
@@ -57,6 +58,7 @@ class RecoverLabEvaluationErrors extends Command
         $afterCodeRepair = (bool) $this->option('after-code-repair');
         $afterRuntimeSchemaRepair = (bool) $this->option('after-runtime-schema-repair');
         $afterIpcRepair = (bool) $this->option('after-ipc-repair');
+        $afterTimeoutBudgetRepair = (bool) $this->option('after-timeout-budget-repair');
         $afterRetryBudgetRepair = (bool) $this->option('after-retry-budget-repair');
         if ($afterRetryBudgetRepair && $generationNumber === null) {
             $this->error('--after-retry-budget-repair requires --generation so the recovery scope is explicit.');
@@ -68,7 +70,12 @@ class RecoverLabEvaluationErrors extends Command
 
             return self::FAILURE;
         }
-        if (collect([$afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterRetryBudgetRepair])->filter()->count() > 1) {
+        if ($afterTimeoutBudgetRepair && $generationNumber === null) {
+            $this->error('--after-timeout-budget-repair requires --generation so the timeout-budget recovery scope is explicit.');
+
+            return self::FAILURE;
+        }
+        if (collect([$afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair])->filter()->count() > 1) {
             $this->error('Choose only one bounded repair mode.');
 
             return self::FAILURE;
@@ -85,10 +92,12 @@ class RecoverLabEvaluationErrors extends Command
         }
 
         $agents = LabAgent::query()->with(['modelVersion', 'generation'])
-            ->where('lifecycle_status', 'evaluation_error')
+            ->whereIn('lifecycle_status', $afterCodeRepair || $afterTimeoutBudgetRepair
+                ? ['evaluation_error', 'technical_quarantine']
+                : ['evaluation_error'])
             ->where('timeframe', $timeframe)
             ->when($symbol, fn ($query) => $query->where('symbol', $symbol))
-            ->whereHas('generation', function ($query) use ($afterRuntimeSchemaRepair, $afterRetryBudgetRepair, $generationNumber, $fullRecovery): void {
+            ->whereHas('generation', function ($query) use ($afterRuntimeSchemaRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $generationNumber, $fullRecovery): void {
                 if ($fullRecovery) {
                     // A full replay can finish the generation for its healthy
                     // peers while one candidate is quarantined as an
@@ -96,18 +105,24 @@ class RecoverLabEvaluationErrors extends Command
                     // recoverable without reopening screening evidence.
                     $query->whereIn('status', ['full_validation', 'completed', 'screened']);
                 } else {
-                    ($afterRuntimeSchemaRepair || $afterRetryBudgetRepair)
-                            ? $query->whereIn('status', $afterRuntimeSchemaRepair ? ['screening', 'screened', 'technical_quarantine'] : ['screening', 'screened'])
-                            : $query->where('status', 'screening');
+                    if ($afterRuntimeSchemaRepair) {
+                        $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
+                    } elseif ($afterTimeoutBudgetRepair) {
+                        $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
+                    } elseif ($afterRetryBudgetRepair) {
+                        $query->whereIn('status', ['screening', 'screened']);
+                    } else {
+                        $query->where('status', 'screening');
+                    }
                 }
                 if ($generationNumber !== null) {
                     $query->where('generation', $generationNumber);
                 }
             })
-            ->when(! $afterRuntimeSchemaRepair && ! $afterRetryBudgetRepair, fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)))
+            ->when(! $afterRuntimeSchemaRepair && ! $afterTimeoutBudgetRepair && ! $afterRetryBudgetRepair, fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)))
             ->orderBy('id')
             ->get()
-            ->filter(function (LabAgent $agent) use ($afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterRetryBudgetRepair, $mode): bool {
+            ->filter(function (LabAgent $agent) use ($afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $mode): bool {
                 $attempts = (int) data_get($agent->modelVersion?->metadata, 'evaluator_recovery_attempts', 0);
                 if ($this->hasQueuedJob($agent, $mode)) {
                     return false;
@@ -137,6 +152,7 @@ class RecoverLabEvaluationErrors extends Command
                 }
                 if ($afterCodeRepair) {
                     $reason = strtolower((string) $agent->decision_reason);
+                    $architecturePreflightFailure = $this->isArchitecturePreflightRepairable($agent);
                     // Keep the repair-specific budget independent from the
                     // generic evaluator recovery counter.  A prior bounded
                     // replay may already have consumed evaluator_recovery_
@@ -148,13 +164,19 @@ class RecoverLabEvaluationErrors extends Command
                             || str_contains($reason, 'timestamp'));
                     $pythonUndefinedName = str_contains($reason, 'nameerror:')
                         && str_contains($reason, ' is not defined');
+                    $pythonVolumeMarkerRuntime = str_contains($reason, 'volume_available')
+                        && (str_contains($reason, 'futurewarning')
+                            || str_contains($reason, 'fillna')
+                            || str_contains($reason, 'backtester.py'));
 
                     return $codeRepairAttempts < 1
-                        && str_contains($reason, 'strategy verdict withheld')
-                        && (str_contains($reason, 'undefined variable')
+                        && ($architecturePreflightFailure
+                            || (str_contains($reason, 'strategy verdict withheld')
+                                && (str_contains($reason, 'undefined variable')
                             || str_contains($reason, 'undefined method')
                             || $pythonUndefinedName
-                            || $timestampNormalizationFailure);
+                            || $timestampNormalizationFailure
+                            || $pythonVolumeMarkerRuntime)));
                 }
                 if ($afterRuntimeSchemaRepair) {
                     $reason = strtolower((string) $agent->decision_reason);
@@ -166,11 +188,23 @@ class RecoverLabEvaluationErrors extends Command
                     // bounded. Include FastAPI's literal_error form because
                     // the error is a transport/runtime verdict, not strategy
                     // evidence.
+                    // A replay may have reached the application successfully
+                    // but failed when a newly introduced evidence table was
+                    // absent from the live lab database. Once the additive
+                    // migration is applied, that historical 42S02 error is a
+                    // bounded runtime-schema recovery candidate, never a
+                    // strategy verdict.
+                    $missingRepairAnchorTable = str_contains($reason, 'lab_failure_repair_anchors')
+                        && (str_contains($reason, '42s02')
+                            || str_contains($reason, 'base table')
+                            || str_contains($reason, 'does not exist'));
+
                     return str_contains($reason, 'unknown parameter')
                         || str_contains($reason, 'noma\'lum parametr')
                         || str_contains($reason, 'schema')
                         || (str_contains($reason, 'literal_error') && str_contains($reason, 'target_direction'))
-                        || (str_contains($reason, 'dict_type') && str_contains($reason, 'volume_context'));
+                        || (str_contains($reason, 'dict_type') && str_contains($reason, 'volume_context'))
+                        || $missingRepairAnchorTable;
                 }
                 if ($afterIpcRepair) {
                     // The old bounded worker could block on a full stdout pipe
@@ -185,6 +219,30 @@ class RecoverLabEvaluationErrors extends Command
                     return (str_contains($reason, 'bounded ai replay exceeded')
                         || str_contains($reason, 'curl error'))
                         && str_contains($reason, 'strategy verdict withheld');
+                }
+                if ($afterTimeoutBudgetRepair) {
+                    // The finalizer may have replaced the mutable agent
+                    // reason with a quarantine explanation. The immutable
+                    // terminal run remains the source of truth for selecting
+                    // this one bounded timeout-budget repair.
+                    $run = LabEvaluationRun::query()
+                        ->where('lab_agent_id', $agent->id)
+                        ->where('phase', $mode === 'full' ? 'full_validation' : 'screening')
+                        ->latest('id')
+                        ->first();
+                    $runReason = strtolower((string) $run?->error_message);
+                    $agentReason = strtolower((string) $agent->decision_reason);
+                    // The timeout budget is configuration, not evidence. Do
+                    // not pin recovery to the historical 330s value: a
+                    // current bounded worker may legitimately record 600s or
+                    // another explicitly configured limit. The immutable
+                    // run/agent marker and withheld verdict are the safety
+                    // boundary; no strategy result is learned here.
+                    $boundedScreenTimeout = str_contains($runReason, 'bounded ai replay exceeded')
+                        || str_contains($agentReason, 'bounded ai replay exceeded');
+
+                    return $boundedScreenTimeout
+                        && str_contains($runReason.$agentReason, 'strategy verdict withheld');
                 }
                 if ($afterRetryBudgetRepair) {
                     $reason = strtolower((string) $agent->decision_reason);
@@ -216,6 +274,11 @@ class RecoverLabEvaluationErrors extends Command
             ->when($afterIpcRepair, function ($agents) {
                 return $agents->filter(function (LabAgent $agent): bool {
                     return (int) data_get($agent->modelVersion?->metadata, 'ipc_repair_recovery_attempts', 0) < 1;
+                });
+            })
+            ->when($afterTimeoutBudgetRepair, function ($agents) {
+                return $agents->filter(function (LabAgent $agent): bool {
+                    return (int) data_get($agent->modelVersion?->metadata, 'timeout_budget_repair_recovery_attempts', 0) < 1;
                 });
             })
             ->when($afterRetryBudgetRepair, function ($agents) {
@@ -286,7 +349,7 @@ class RecoverLabEvaluationErrors extends Command
             return self::FAILURE;
         }
 
-        DB::transaction(function () use ($agents, $afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterRetryBudgetRepair, $fullRecovery): void {
+        DB::transaction(function () use ($agents, $afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $fullRecovery): void {
             foreach ($agents as $agent) {
                 $metadata = $agent->modelVersion?->metadata ?? [];
                 $attempts = (int) data_get($metadata, 'evaluator_recovery_attempts', 0) + 1;
@@ -312,11 +375,30 @@ class RecoverLabEvaluationErrors extends Command
                     data_set($metadata, 'ipc_repair_recovery_attempts', (int) data_get($metadata, 'ipc_repair_recovery_attempts', 0) + 1);
                     data_set($metadata, 'last_ipc_repair_recovery_at', now()->utc()->toIso8601String());
                 }
+                if ($afterTimeoutBudgetRepair) {
+                    data_set($metadata, 'timeout_budget_repair_recovery_attempts', (int) data_get($metadata, 'timeout_budget_repair_recovery_attempts', 0) + 1);
+                    data_set($metadata, 'last_timeout_budget_repair_recovery_at', now()->utc()->toIso8601String());
+                }
                 if ($afterRetryBudgetRepair) {
                     data_set($metadata, 'retry_budget_repair_recovery_attempts', (int) data_get($metadata, 'retry_budget_repair_recovery_attempts', 0) + 1);
                     data_set($metadata, 'last_retry_budget_repair_recovery_at', now()->utc()->toIso8601String());
                 }
-                $agent->modelVersion?->update(['metadata' => $metadata]);
+                $restoreArchitecturePreflight = $afterCodeRepair && $this->isArchitecturePreflightRepairable($agent);
+                if ($restoreArchitecturePreflight) {
+                    data_set($metadata, 'preflight_quarantine.classification', 'repaired_integrity');
+                    data_set($metadata, 'preflight_quarantine.restored_at', now()->utc()->toIso8601String());
+                    data_set($metadata, 'preflight_quarantine.restoration_protocol', 'architecture_gene_preflight_repair_v1');
+                    data_set($metadata, 'preflight_quarantine.promotion_evidence', false);
+                }
+                $modelUpdate = ['metadata' => $metadata];
+                if ($restoreArchitecturePreflight) {
+                    $modelUpdate += [
+                        'evidence_status' => 'valid',
+                        'invalidated_at' => null,
+                        'invalidation_reason' => null,
+                    ];
+                }
+                $agent->modelVersion?->update($modelUpdate);
                 $recoveryPrefix = $afterAuthRepair
                     ? 'Post-auth-repair evaluator recovery attempt '
                     : ($afterServiceRepair
@@ -327,9 +409,11 @@ class RecoverLabEvaluationErrors extends Command
                             ? 'Post-runtime-schema-repair evaluator recovery attempt '
                             : ($afterIpcRepair
                                 ? 'Post-IPC-repair evaluator recovery attempt '
+                                : ($afterTimeoutBudgetRepair
+                                ? 'Post-timeout-budget-repair evaluator recovery attempt '
                                 : ($afterRetryBudgetRepair
                                     ? 'Post-retry-budget-repair evaluator recovery attempt '
-                                    : 'Evaluator recovery attempt ')))));
+                                    : 'Evaluator recovery attempt '))))));
                 $agent->update([
                     'lifecycle_status' => $fullRecovery ? 'full_queued' : 'queued',
                     'decision_reason' => $recoveryPrefix.$attempts.'; '.($fullRecovery ? 'full ' : '').'strategy verdict remains withheld until clean replay.',
@@ -376,6 +460,46 @@ class RecoverLabEvaluationErrors extends Command
             )));
 
         return app(LabQueueJobInspector::class)->hasAgentJob((int) $agent->id, $queues);
+    }
+
+    private function isArchitecturePreflightRepairable(LabAgent $agent): bool
+    {
+        if ($agent->lifecycle_status !== 'technical_quarantine') return false;
+
+        $errors = array_values(array_unique((array) data_get(
+            $agent->modelVersion?->metadata,
+            'preflight_quarantine.errors',
+            [],
+        )));
+
+        $reason = strtolower((string) $agent->decision_reason);
+        $legacyIdentityFailure = str_contains($reason, 'draft identity/integrity contract failed')
+            || str_contains($reason, 'one_gene_invariant_failed');
+        $constructorPassed = data_get($agent->modelVersion?->metadata, 'mutation_constructor_invariant.status') === 'passed';
+        $architectureChanged = (bool) data_get(
+            $agent->modelVersion?->metadata,
+            'mutation_constructor_invariant.architecture_changed',
+            false,
+        );
+        $architectureVariant = (string) data_get(
+            $agent->modelVersion?->metadata,
+            'mutation_constructor_invariant.architecture_variant',
+            data_get($agent->modelVersion?->metadata, 'portfolio_council_lane.architecture_variant', ''),
+        );
+
+        // G9 A544/A546 were created before the architecture-aware preflight
+        // metadata repair. Their old quarantine row was never projected into
+        // model_versions, but the immutable decision reason plus the sealed
+        // constructor contract still prove exactly why they were withheld.
+        // Accept only that narrow legacy shape; an arbitrary technical
+        // quarantine must remain fail-closed.
+        if ($legacyIdentityFailure && $constructorPassed && $architectureChanged && $architectureVariant !== '') {
+            return true;
+        }
+
+        return $errors === ['ONE_GENE_INVARIANT_FAILED']
+            && (bool) data_get($agent->modelVersion?->metadata, 'mutation_constructor_invariant.architecture_changed', false)
+            && (string) data_get($agent->modelVersion?->metadata, 'mutation_constructor_invariant.architecture_variant', '') !== '';
     }
 
     /** @return array{total: int, queues: array<string, int>} */

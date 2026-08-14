@@ -6,7 +6,7 @@ tags:
   - market-data
   - dukascopy
   - reliability
-updated: 2026-08-10
+updated: 2026-08-13
 ---
 
 # Market Data Continuity
@@ -14,6 +14,26 @@ updated: 2026-08-10
 ## Scope
 
 `MARKET_DATA_CANONICAL_PROVIDER=twelve` is the current promotion-evidence owner; Dukascopy is retained as secondary archive and discrepancy evidence and cannot silently replace a missing canonical candle. Long-history foundation training is a separate immutable CSV lane with its own hash and `promotion_evidence=false`; it never repairs or backfills the canonical candle table. `market_data_sync_states` is the persistent source of truth for each `provider + symbol + timeframe` recovery lifecycle.
+
+The database-backed training lane is stored separately in
+`market_training_archives` and `market_training_candles`. It is resumable via
+an explicit backfill cursor and remains `foundation_training_only`; it must not
+silently replace the canonical Twelve stream. Use
+`market-data:training-coverage` to inspect it and
+`market-data:export-training` to create an agent-ready CSV.
+
+For the current XAUUSD ten-year lane:
+
+```text
+php artisan market-data:backfill-training --symbol=XAUUSD --timeframe=M15 --max-chunks=1
+php artisan market-data:backfill-training --symbol=XAUUSD --timeframe=H1 --max-chunks=1
+php artisan market-data:training-coverage --symbol=XAUUSD --json
+php artisan market-data:export-training XAUUSD --timeframe=M15
+```
+
+Laravel agents can read the same rows through
+`CandlePayloadService::candlesForTraining(...)`; the dataset and provider are
+explicit arguments, so a training archive is never confused with live candles.
 
 ## States
 

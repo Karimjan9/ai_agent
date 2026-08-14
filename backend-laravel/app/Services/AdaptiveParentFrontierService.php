@@ -49,6 +49,7 @@ class AdaptiveParentFrontierService
     public function __construct(
         private EvolutionGovernorService $governor,
         private StrategySemanticGroupService $semanticGroups,
+        private ParentContextTrustService $parentTrust,
     ) {}
 
     /**
@@ -153,6 +154,7 @@ class AdaptiveParentFrontierService
                 'novelty_to_anchor' => round((float) $profile['novelty_to_anchor'], 4),
                 'parent_eligible' => (bool) data_get($profile, 'parent_eligible', false),
                 'research_seed_eligible' => (bool) data_get($profile, 'research_seed_eligible', false),
+                'context_trust' => data_get($profile, 'context_trust', ['trust_score' => .50, 'status' => 'no_context_evidence']),
                 'exclusion_reason' => data_get($profile, 'parent_exclusion_reason'),
                 'archive_type' => data_get($profile, 'archive_type'),
             ];
@@ -231,6 +233,14 @@ class AdaptiveParentFrontierService
         return $candidates->map(function (ModelVersion $model) use ($symbol, $timeframe, $family, $target, $niche, $performanceByModel): array {
             $performance = $performanceByModel->get($model->id);
             $metrics = (array) ($performance?->metrics ?? []);
+            $contextTrust = $this->parentTrust->score(
+                $model,
+                $symbol,
+                $timeframe,
+                $family,
+                (string) ($target ?: 'general_skill'),
+                (array) $niche,
+            );
             $statusBonus = match ((string) ($performance?->status ?? '')) {
                 'champion' => 8, 'forward_validated' => 6, 'challenger' => 4, 'paper' => 3,
                 default => 0,
@@ -240,7 +250,10 @@ class AdaptiveParentFrontierService
                 - (float) data_get($metrics, 'max_drawdown_percent', data_get($metrics, 'max_drawdown', 0))
                 - ((float) data_get($metrics, 'monte_carlo.risk_of_ruin_percent', 0) * 2)
                 + $statusBonus
-                + (float) data_get($model->metadata, 'target_progress.'.(string) $target.'.selection_score', 0);
+                + (float) data_get($model->metadata, 'target_progress.'.(string) $target.'.selection_score', 0)
+                // Context trust is only a bounded ranking adjustment. It
+                // cannot admit an ineligible parent or bypass any gate.
+                + (((float) data_get($contextTrust, 'trust_score', .50) - .50) * 5);
 
             $parameters = (array) ($model->parameters ?? []);
             ksort($parameters);
@@ -258,6 +271,7 @@ class AdaptiveParentFrontierService
                 'novelty_to_anchor' => 0.0,
                 'performance_id' => $performance?->id,
                 'archive_type' => $model->getAttribute('_adaptive_archive_type'),
+                'context_trust' => $contextTrust,
                 ...$this->parentEligibilityProfile($model, $performance),
                 'semantic_group_key' => data_get($this->semanticGroups->fromModel($model, $family), 'key'),
                 'niche' => $niche,
@@ -478,6 +492,10 @@ class AdaptiveParentFrontierService
         $researchSeed = $archiveType === 'young'
             || $performance === null
             || (bool) data_get($model->metadata, 'screening_seed_only', false);
+        $evolutionStage = (string) data_get($model->metadata, 'evolution_stage.stage', '');
+        $mentorOnly = in_array($evolutionStage, ['screen_validated_seed', 'skill_mentor', 'screen_validated_control', 'repair_anchor', 'repair_anchor_control'], true)
+            || data_get($model->metadata, 'skill_mentor.status') === 'confirmed';
+        $passportParentEligible = ($parentEligible || $rootSeed) && ! $mentorOnly;
 
         $confidence = $performance === null ? 0.0 : min(1.0, max(0.0,
             .20
@@ -489,12 +507,12 @@ class AdaptiveParentFrontierService
         ));
 
         return [
-            'parent_eligible' => $parentEligible || $rootSeed,
+            'parent_eligible' => $passportParentEligible,
             'root_seed_eligible' => $rootSeed,
             'research_seed_eligible' => $researchSeed,
-            'parent_exclusion_reason' => $parentEligible || $rootSeed
+            'parent_exclusion_reason' => $passportParentEligible
                 ? null
-                : ($performance === null ? 'no_independent_evidence' : 'parent_passport_incomplete'),
+                : ($mentorOnly ? 'skill_tier_not_full_parent' : ($performance === null ? 'no_independent_evidence' : 'parent_passport_incomplete')),
             'evidence_confidence' => round($confidence, 4),
         ];
     }

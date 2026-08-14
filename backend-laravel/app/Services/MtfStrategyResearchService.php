@@ -227,6 +227,7 @@ class MtfStrategyResearchService
                 ],
             ],
             ...$this->councilCatalog(),
+            ...$this->volumeCatalog(),
         ];
     }
 
@@ -251,6 +252,7 @@ class MtfStrategyResearchService
                 'council_role' => 'trend_up_specialist',
                 'target_regime' => 'trend_up',
                 'target_volatility' => 'high_volatility',
+                'volume_lane' => 'transition_volume_router',
                 'mutation' => [
                     'parameter' => 'trend_up_risk_multiplier',
                     'from' => 0.75,
@@ -287,6 +289,7 @@ class MtfStrategyResearchService
                 'council_role' => 'trend_down_specialist',
                 'target_regime' => 'trend_down',
                 'target_volatility' => 'normal_volatility',
+                'volume_lane' => 'low_volume_risk_firewall',
                 'mutation' => [
                     'parameter' => 'trend_down_pullback_atr_fraction',
                     'from' => 0.60,
@@ -322,6 +325,7 @@ class MtfStrategyResearchService
                 'council_role' => 'range_specialist',
                 'target_regime' => 'range',
                 'target_volatility' => 'low_volatility',
+                'volume_lane' => 'low_volume_risk_firewall',
                 'hypothesis' => 'A low-volatility range seat with re-entry confirmation can complement directional seats while refusing expansion conditions.',
                 'parameter_overrides' => [
                     'trend_weight' => 0.50,
@@ -362,6 +366,7 @@ class MtfStrategyResearchService
                 'council_role' => 'transition_risk_router',
                 'target_regime' => 'trend_up',
                 'target_volatility' => 'high_volatility',
+                'volume_lane' => 'transition_volume_router',
                 'hypothesis' => 'A risk-owned high-volatility transition seat should reduce exposure and abstain briefly after state changes; it must not rewrite another seat signal.',
                 'parameter_overrides' => [
                     'trend_weight' => 0.70,
@@ -391,6 +396,106 @@ class MtfStrategyResearchService
         ];
     }
 
+    /**
+     * Volume is a bounded child family of the existing MTF hypotheses. Each
+     * row changes one executable volume lane while keeping the H1/M15 router,
+     * cost contract and promotion gates unchanged. These rows are appended so
+     * the ordinary four-hypothesis budget does not silently change.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function volumeCatalog(): array
+    {
+        return [
+            [
+                'key' => 'volume_breakout_confirmation_v1',
+                'label' => 'M15 breakout volume confirmation',
+                'strategy' => 'hybrid_v1',
+                'family' => 'volume_context',
+                'runtime_family' => 'hybrid',
+                'mutation_class' => 'volume_entry_quality',
+                'target_gate' => 'volume_cost_survival',
+                'volume_lane' => 'breakout_volume_confirmation',
+                'hypothesis' => 'The existing H1-veto M15 router should accept expansion entries only when causal relative volume confirms the breakout specialist.',
+                'parameter_overrides' => [
+                    'volume_lane' => 'breakout_volume_confirmation',
+                ],
+                'evidence_basis' => [
+                    'source' => 'Canonical Dukascopy/Jetta tick-volume contract plus existing XAUUSD breakout shadow telemetry',
+                    'claim' => 'Relative activity can distinguish a supported expansion from a low-participation price move.',
+                    'translation' => 'Use the existing causal breakout confirmation lane as one gene; do not tune a volume threshold in the same run.',
+                    'source_url' => 'https://www.dukascopy.com/swiss/english/marketwatch/historical/',
+                    'caveat' => 'Tick volume is a participation proxy, not centralized traded volume; only same-snapshot forward evidence can validate it.',
+                ],
+            ],
+            [
+                'key' => 'volume_transition_shock_router_v1',
+                'label' => 'Volume-confirmed regime transition router',
+                'strategy' => 'hybrid_v1',
+                'family' => 'volume_context',
+                'runtime_family' => 'hybrid',
+                'mutation_class' => 'volume_transition_routing',
+                'target_gate' => 'transition_cost_and_drawdown',
+                'volume_lane' => 'transition_volume_router',
+                'hypothesis' => 'A closed-H1 state change should be tradable only when M15 participation shows a causal volume shock; otherwise Risk Sentinel waits.',
+                'parameter_overrides' => [
+                    'volume_lane' => 'transition_volume_router',
+                ],
+                'evidence_basis' => [
+                    'source' => 'Hamilton (1989) regime switching combined with the canonical relative-volume session protocol',
+                    'claim' => 'State changes and participation shocks are separate conditions; requiring both may reduce transition whipsaw.',
+                    'translation' => 'Keep the existing transition firewall and add only the sealed volume transition lane.',
+                    'source_url' => 'https://doi.org/10.2307/1912559',
+                    'caveat' => 'The regime-switching framework does not prove a volume rule; the candidate must survive cost and chronological validation.',
+                ],
+            ],
+            [
+                'key' => 'volume_low_liquidity_risk_firewall_v1',
+                'label' => 'Low-volume risk firewall',
+                'strategy' => 'hybrid_v1',
+                'family' => 'volume_context',
+                'runtime_family' => 'hybrid',
+                'mutation_class' => 'volume_risk_management',
+                'target_gate' => 'stress_drawdown',
+                'volume_lane' => 'low_volume_risk_firewall',
+                'hypothesis' => 'When relative volume is thin, the H1 direction may remain valid but M15 execution risk should abstain or halve size instead of changing the signal topology.',
+                'parameter_overrides' => [
+                    'volume_lane' => 'low_volume_risk_firewall',
+                ],
+                'evidence_basis' => [
+                    'source' => 'Moreira & Muir (2017), Volatility-Managed Portfolios, translated through the project canonical volume proxy',
+                    'claim' => 'Risk exposure can be reduced without claiming that the directional signal itself has changed.',
+                    'translation' => 'Use only the existing low-volume veto/reduced-risk policy; no adaptive sizing mutation is added.',
+                    'source_url' => 'https://doi.org/10.1111/jofi.12513',
+                    'caveat' => 'Lower drawdown alone is insufficient; PF, cost survival and forward sample must remain acceptable.',
+                ],
+            ],
+            [
+                'key' => 'volume_trend_up_differential_v1',
+                'label' => 'Trend-up differential with participation shock',
+                'strategy' => 'differential_router_v1',
+                'family' => 'volume_context',
+                'runtime_family' => 'differential_router',
+                'mutation_class' => 'volume_directional_specialist',
+                'target_gate' => 'trend_up_stability',
+                'volume_lane' => 'transition_volume_router',
+                'hypothesis' => 'The trend-up specialist’s observed alpha may be concentrated in participation-backed transitions; test the volume lane on that seat without changing its parent outside trend-up.',
+                'parameter_overrides' => [
+                    'differential_target_regime' => 'trend_up',
+                    'differential_router_version' => 'v2',
+                    'volume_lane' => 'transition_volume_router',
+                ],
+                'evidence_basis' => [
+                    'source' => 'Daniel & Moskowitz (2016), Momentum Crashes, plus the project trend-up differential evidence',
+                    'claim' => 'Directional continuation is vulnerable around reversals; participation confirmation may filter weak transition entries.',
+                    'translation' => 'Mutate volume context only on the existing trend-up differential family and compare against its frozen no-volume control.',
+                    'source_url' => 'https://www.kentdaniel.net/papers/published/jfe_16.pdf',
+                    'caveat' => 'The result is a hypothesis-specific shadow result, not permission to relax the H1 veto or promote the family.',
+                ],
+            ],
+        ];
+    }
+
     /** @return list<array<string, mixed>> */
     public function select(?string $hypothesis = null, int $limit = 4): array
     {
@@ -400,6 +505,104 @@ class MtfStrategyResearchService
         }
 
         return array_slice($catalog, 0, max(1, min(12, $limit)));
+    }
+
+    /**
+     * Select the next bounded challenger frontier for one frozen snapshot.
+     *
+     * The four-lane H1-veto/risk result remains the control. This method only
+     * chooses research candidates that have not completed on the same data
+     * cohort, skips families paused by the evidence budget, and rotates across
+     * families before taking a second candidate from the same family. Council
+     * seats are intentionally excluded because they have their own combined
+     * proxy command and must not be mistaken for ordinary challengers.
+     *
+     * Technical errors are not treated as completed experiments. Selecting
+     * their hypothesis again lets the deterministic recovery identity retry
+     * the runtime without spending strategy evidence on the error.
+     *
+     * @param list<array<string, mixed>> $observations
+     * @param array<string, array<string, mixed>> $familyBudgets
+     * @return list<array<string, mixed>>
+     */
+    public function selectFrontier(
+        array $observations = [],
+        array $familyBudgets = [],
+        int $limit = 4,
+        ?string $cohortDataHash = null,
+    ): array
+    {
+        $limit = max(1, min(12, $limit));
+        $history = collect($observations)
+            ->filter(fn (array $row): bool => (string) ($row['status'] ?? '') === 'completed');
+        $completed = $history
+            ->when($cohortDataHash !== null, fn ($rows) => $rows->where('data_hash', $cohortDataHash))
+            ->pluck('hypothesis_key')
+            ->filter(fn ($key): bool => filled($key))
+            ->map(fn ($key): string => (string) $key)
+            ->flip();
+        $pausedFamilies = collect($familyBudgets)
+            ->filter(fn (array $budget): bool => (string) ($budget['status'] ?? '') === 'pause_research_family')
+            ->keys()
+            ->flip();
+        $completedFamilyCounts = $history
+            ->groupBy(fn (array $row): string => (string) ($row['strategy_family'] ?? 'unknown'))
+            ->map(fn ($rows): int => $rows->count());
+        $completedKeyCounts = $history
+            ->groupBy(fn (array $row): string => (string) ($row['hypothesis_key'] ?? ''))
+            ->map(fn ($rows): int => $rows->count());
+
+        $candidates = collect($this->catalog())
+            ->reject(fn (array $item): bool => filled($item['council_role'] ?? null))
+            ->reject(fn (array $item): bool => $completed->has((string) $item['key']))
+            ->reject(fn (array $item): bool => $pausedFamilies->has((string) ($item['family'] ?? 'unknown')))
+            ->values();
+
+        if ($candidates->isEmpty()) {
+            return [];
+        }
+
+        // Least-observed families receive the first slot. The stable catalog
+        // order is the final tie-breaker, making the frontier reproducible.
+        $familyOrder = $candidates
+            ->pluck('family')
+            ->unique()
+            ->values()
+            ->sort(function (string $left, string $right) use ($completedFamilyCounts): int {
+                $leftCount = (int) $completedFamilyCounts->get($left, 0);
+                $rightCount = (int) $completedFamilyCounts->get($right, 0);
+                return $leftCount <=> $rightCount;
+            })
+            ->values()
+            ->all();
+        $byFamily = $candidates
+            ->groupBy(fn (array $item): string => (string) ($item['family'] ?? 'unknown'))
+            ->map(fn ($items) => $items
+                ->sortBy(fn (array $item): int => (int) $completedKeyCounts->get((string) $item['key'], 0))
+                ->values());
+        $selected = [];
+        $round = 0;
+
+        while (count($selected) < $limit) {
+            $added = false;
+            foreach ($familyOrder as $family) {
+                $item = $byFamily->get($family, collect())->values()->get($round);
+                if ($item === null) {
+                    continue;
+                }
+                $selected[] = $item;
+                $added = true;
+                if (count($selected) >= $limit) {
+                    break 2;
+                }
+            }
+            if (! $added) {
+                break;
+            }
+            $round++;
+        }
+
+        return $selected;
     }
 
     /** @return array<string, mixed> */
@@ -423,7 +626,16 @@ class MtfStrategyResearchService
     }
 
     /** @return array<string, mixed> */
-    public function contract(array $experiment, string $symbol, int $candidateId, string $dataHash, string $parameterHash, string $executionHash, ?int $frozenControlRunId = null): array
+    public function contract(
+        array $experiment,
+        string $symbol,
+        int $candidateId,
+        string $dataHash,
+        string $parameterHash,
+        string $executionHash,
+        ?int $frozenControlRunId = null,
+        ?array $volumeContext = null,
+    ): array
     {
         return [
             'protocol' => self::PROTOCOL,
@@ -433,6 +645,8 @@ class MtfStrategyResearchService
             'strategy_family' => $experiment['family'],
             'mutation_class' => $experiment['mutation_class'],
             'target_gate' => $experiment['target_gate'],
+            'volume_lane' => $experiment['volume_lane'] ?? 'none',
+            'volume_context' => $volumeContext,
             'hypothesis' => $experiment['hypothesis'],
             'evidence_basis' => (array) ($experiment['evidence_basis'] ?? []),
             'symbol' => $symbol,
@@ -450,5 +664,68 @@ class MtfStrategyResearchService
             'promotion_evidence' => false,
             'rule' => 'One hypothesis per run; no gate relaxation, paper promotion, or auto-learning from shadow outcomes.',
         ];
+    }
+
+    /**
+     * A volume quality pass is a coverage contract, not necessarily a
+     * real-time freshness pass. Volume hypotheses may only consume a context
+     * whose latest observations are aligned with the closed M15/H1 pilot
+     * windows; otherwise the result would mix current price data with stale
+     * participation data.
+     *
+     * @return array{ready: bool, reasons: list<string>, entry_lag_seconds: ?int, regime_lag_seconds: ?int}
+     */
+    public function volumeResearchFreshness(array $volumeContext): array
+    {
+        $entryLag = data_get($volumeContext, 'entry_quality.lag_seconds');
+        $regimeLag = data_get($volumeContext, 'regime_quality.lag_seconds');
+        $entryLag = is_numeric($entryLag) ? (int) $entryLag : null;
+        $regimeLag = is_numeric($regimeLag) ? (int) $regimeLag : null;
+        $entryMax = max(900, (int) config('services.mtf_pilot.monitor_max_m15_staleness_seconds', 1800));
+        $regimeMax = max(3600, (int) config('services.mtf_pilot.max_h1_staleness_seconds', 7200));
+        $reasons = [];
+
+        if ((string) data_get($volumeContext, 'status') !== 'passed') {
+            $reasons[] = 'volume_quality_gate_not_passed';
+        }
+        if ($entryLag === null || $entryLag > $entryMax) {
+            $reasons[] = 'm15_volume_freshness_exceeded';
+        }
+        if ($regimeLag === null || $regimeLag > $regimeMax) {
+            $reasons[] = 'h1_volume_freshness_exceeded';
+        }
+
+        return [
+            'ready' => $reasons === [],
+            'reasons' => $reasons,
+            'entry_lag_seconds' => $entryLag,
+            'regime_lag_seconds' => $regimeLag,
+            'entry_max_lag_seconds' => $entryMax,
+            'regime_max_lag_seconds' => $regimeMax,
+        ];
+    }
+
+    /**
+     * Decide whether the declared target gate improved enough to spend
+     * cost/exit/forward diagnostics. This is stricter than generic PF
+     * ranking and keeps every hypothesis accountable to its own objective.
+     *
+     * @param array<string, mixed> $candidate
+     * @param array<string, mixed> $reference
+     */
+    public function targetGateImproved(string $gate, array $candidate, array $reference): bool
+    {
+        if ($reference === []) return false;
+        $pf = (float) ($candidate['profit_factor'] ?? 0);
+        $refPf = (float) ($reference['profit_factor'] ?? 0);
+        $dd = (float) ($candidate['max_drawdown_percent'] ?? 0);
+        $refDd = (float) ($reference['max_drawdown_percent'] ?? 0);
+
+        return match ($gate) {
+            'forward_profit_factor', 'range_profit_factor' => $pf > $refPf + 0.05,
+            'stress_drawdown', 'false_positive_control' => $dd < $refDd - 0.25 && $pf >= $refPf * 0.90,
+            'trend_up_stability', 'regime_coverage_and_drawdown' => $pf >= $refPf && $dd <= $refDd,
+            default => $pf >= $refPf && $dd <= $refDd,
+        };
     }
 }

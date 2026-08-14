@@ -33,6 +33,26 @@ class CandidateGateDecisionService
         $decision = $reasons === [] ? 'passed' : 'failed';
         $decisionRow = $this->store(null, $agent, 'screening', $decision, $reasons, $result);
 
+        // A complete strategy failure becomes an immutable repair anchor. It
+        // is deliberately written after the gate projection and never turns
+        // the failed model into a genetic parent. Incomplete/technical
+        // evidence is rejected by the anchor service itself.
+        $anchors = app(FailureRepairAnchorService::class);
+        if ((int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0) > 0) {
+            // Repair children need a paired-screen observation on both pass
+            // and fail; a pass is what qualifies them for the next gate.
+            $anchors->recordRepairScreeningOutcome($agent, $result);
+            // A bounded sibling failure remains an observation against the
+            // original immutable anchor. Do not fork a new anchor from every
+            // failed sibling: that would reset the cohort budget, destroy the
+            // three-clean-attempt escape rule and turn local repair into an
+            // unbounded cold restart. The existing anchor service records the
+            // sibling/cohort outcome above; controls and architecture escapes
+            // are likewise kept research-only.
+        } elseif ($decision === 'failed') {
+            $anchors->recordFromScreeningDecision($agent, $decisionRow, $result);
+        }
+
         // Screening failures do not disappear into a generic rejection. They
         // explicitly enter the directed-mutation queue for the next replay.
         $funnel = (array) data_get($result, 'entry_funnel', []);
@@ -64,7 +84,17 @@ class CandidateGateDecisionService
             ->where('symbol', $performance->symbol)->where('timeframe', $performance->timeframe)
             ->latest('id')->first();
         $reasons = $this->economicReasons($result, 30, 1.3, 15.0, 10.0, 3);
+        if (data_get($agent?->modelVersion?->metadata, 'learning_lane.protocol') === LearningLaneService::PROTOCOL) {
+            // This gate row is retained for auditability, but a research-only
+            // learning replay can never be a forward/paper candidate.
+            $reasons[] = 'LEARNING_LANE_RESEARCH_ONLY';
+        }
         $reasons = [...$reasons, ...$this->freshReplayGateReasons($agent, $result, $performance->symbol, $performance->timeframe)];
+        if ((bool) data_get($agent?->modelVersion?->metadata, 'repair_anchor.control_only', false)
+            || in_array((string) data_get($agent?->modelVersion?->metadata, 'repair_anchor.sibling_kind', ''), ['frozen_control', 'architecture_escape'], true)
+            || in_array((string) data_get($agent?->modelVersion?->metadata, 'repair_anchor_sibling.kind', ''), ['frozen_control', 'architecture_escape'], true)) {
+            $reasons[] = 'CONTROL_ONLY_RESEARCH_MEMBER';
+        }
         $parentBenefit = $this->parentBenefitContract($agent, $result);
         $reasons = [...$reasons, ...(array) data_get($parentBenefit, 'reason_codes', [])];
         // Drift expiry is a safety stop, not a promotion shortcut. A stale
@@ -111,7 +141,12 @@ class CandidateGateDecisionService
                 if (count((array) ($agent?->parameter_diff ?? [])) !== 1) {
                     $reasons[] = 'FAILED_SINGLE_GENE_CONTRACT';
                 }
-                if (data_get($result, 'paired_replay.status') !== 'confirmed') {
+                $repairAnchorId = (int) data_get($agent?->modelVersion?->metadata, 'repair_anchor.id', 0);
+                if ($repairAnchorId > 0) {
+                    if (data_get($result, 'repair_anchor_verification.status') !== 'confirmed') {
+                        $reasons[] = 'FAILED_REPAIR_ANCHOR_CONFIRMATION';
+                    }
+                } elseif (data_get($result, 'paired_replay.status') !== 'confirmed') {
                     $reasons[] = 'FAILED_PAIRED_REPLAY_EVIDENCE';
                 }
                 if (data_get($result, 'no_regression_contract.status') !== 'passed') {
@@ -251,6 +286,18 @@ class CandidateGateDecisionService
         if (data_get($result, 'no_regression_contract.status') !== 'passed') {
             $reasons[] = 'PARENT_BENEFIT_NO_REGRESSION_NOT_PASSED';
         }
+        $broker = (array) data_get($agent?->modelVersion?->metadata, 'parent_mentor_broker', []);
+        $mentorLane = in_array((string) data_get($broker, 'lane', ''), ['mentor_assisted', 'cross_skill_composition'], true);
+        if ($mentorLane) {
+            $counterfactualStatus = (string) data_get(
+                $agent?->modelVersion?->metadata,
+                'parent_counterfactual.status',
+                data_get($result, 'parent_aware_credit.counterfactual.status', 'awaiting_branches'),
+            );
+            if (! in_array($counterfactualStatus, ['parent_helpful', 'child_independent'], true)) {
+                $reasons[] = 'PARENT_MENTOR_COUNTERFACTUAL_NOT_CONFIRMED';
+            }
+        }
 
         return [
             'protocol' => 'parent_benefit_contract_v1',
@@ -258,6 +305,10 @@ class CandidateGateDecisionService
             'parent_model_version_ids' => $parentIds,
             'paired_replay_status' => data_get($result, 'paired_replay.status', 'missing'),
             'no_regression_status' => data_get($result, 'no_regression_contract.status', 'missing'),
+            'mentor_lane' => $mentorLane,
+            'parent_counterfactual_status' => $mentorLane
+                ? data_get($agent?->modelVersion?->metadata, 'parent_counterfactual.status', data_get($result, 'parent_aware_credit.counterfactual.status', 'missing'))
+                : null,
             'reason_codes' => $reasons,
             'promotion_evidence' => $reasons === [],
             'rule' => 'A genetic child must beat its attached parent in the same replay and preserve every gate the parent had already passed.',

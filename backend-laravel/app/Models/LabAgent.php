@@ -15,6 +15,8 @@ class LabAgent extends Model
     public function parentLinks(): HasMany { return $this->hasMany(LabAgentParentLink::class, 'lab_agent_id'); }
     public function inheritanceAudits(): HasMany { return $this->hasMany(LabAgentInheritanceAudit::class, 'lab_agent_id'); }
     public function parentSelectionDecisions(): HasMany { return $this->hasMany(LabParentSelectionDecision::class, 'lab_agent_id'); }
+    public function parentCounterfactuals(): HasMany { return $this->hasMany(LabParentCounterfactual::class, 'candidate_agent_id'); }
+    public function evolutionCreditEvents(): HasMany { return $this->hasMany(LabEvolutionCreditEvent::class, 'lab_agent_id'); }
     public function evolutionArchiveEntries(): HasMany { return $this->hasMany(LabEvolutionArchiveEntry::class, 'lab_agent_id'); }
     public function mutationMemories(): HasMany { return $this->hasMany(MutationMemory::class); }
     public function knowledgeCard(): HasOne { return $this->hasOne(AgentKnowledgeCard::class); }

@@ -12,11 +12,12 @@ class MtfAblationRun extends Model
     protected $fillable = [
         'model_market_performance_id', 'pilot_id', 'symbol', 'regime_timeframe',
         'entry_timeframe', 'run_key', 'data_hash', 'execution_hash', 'status',
-        'variants', 'promotion_evidence', 'completed_at',
+        'variants', 'snapshot_reference', 'promotion_evidence', 'completed_at',
     ];
 
     protected $casts = [
         'variants' => 'array',
+        'snapshot_reference' => 'array',
         'promotion_evidence' => 'boolean',
         'completed_at' => 'datetime',
     ];

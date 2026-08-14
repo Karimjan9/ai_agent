@@ -6,7 +6,9 @@ use App\Models\ModelMarketPerformance;
 use App\Models\MtfAblationRun;
 use App\Services\ExecutionContractService;
 use App\Services\MarketData\CandlePayloadService;
+use App\Services\MarketData\MarketVolumeService;
 use App\Services\MultiTimeframePilotService;
+use App\Services\MtfResearchSnapshotService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
@@ -24,6 +26,8 @@ class RunMtfAblation extends Command
         CandlePayloadService $candles,
         MultiTimeframePilotService $pilot,
         StrategyParameterSchemaService $schemas,
+        MarketVolumeService $volumes,
+        MtfResearchSnapshotService $snapshots,
     ): int {
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', (string) $this->option('symbol')));
         $candidateQuery = ModelMarketPerformance::with('modelVersion')
@@ -45,8 +49,11 @@ class RunMtfAblation extends Command
             return self::FAILURE;
         }
 
-        $m15 = $candles->candlesForBacktest($symbol, 'M15', 5000);
-        $h1 = $candles->candlesForBacktest($symbol, 'H1', 2000);
+        // Keep the no-volume lane on the same canonical price+volume
+        // snapshot. Its volume_lane is explicit none, so volume can never
+        // alter the frozen control while the data contract stays paired.
+        $m15 = $candles->candlesForBacktest($symbol, 'M15', 5000, true);
+        $h1 = $candles->candlesForBacktest($symbol, 'H1', 2000, true);
         if (count($m15) < 200 || count($h1) < 200) {
             $this->error('Ablation uchun mustaqil M15 va H1 candle stream yetarli emas.');
             return self::FAILURE;
@@ -54,6 +61,7 @@ class RunMtfAblation extends Command
 
         $model = $candidate->modelVersion;
         $execution = app(ExecutionContractService::class)->for($symbol, 'M15');
+        $volumeContext = $volumes->mtfContext($symbol);
         $latestH1 = $h1[array_key_last($h1)] ?? [];
         $latestM15 = $m15[array_key_last($m15)] ?? [];
         $dataHash = $pilot->hash([
@@ -64,6 +72,7 @@ class RunMtfAblation extends Command
             'h1_last' => data_get($latestH1, 'time'),
             'm15_first' => data_get($m15[0] ?? [], 'time'),
             'm15_last' => data_get($latestM15, 'time'),
+            'volume_context_hash' => $pilot->hash($volumeContext),
         ]);
         $executionHash = (string) data_get($execution, 'execution_hash', '');
         $payload = [
@@ -71,11 +80,12 @@ class RunMtfAblation extends Command
             'timeframe' => 'M15',
             'strategy' => $model->strategy,
             'base_strategy' => $schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $candidate->strategy_family),
-            'parameters' => $model->parameters ?? [],
+            'parameters' => [...((array) ($model->parameters ?? [])), 'volume_lane' => 'none'],
             'initial_balance' => 10000,
             'risk_per_trade' => 1,
             'execution' => $execution['parameters'],
             'execution_contract' => $execution,
+            'volume_context' => $volumeContext,
             'mtf_pilot' => $pilot->requestPayload($symbol, 'M15', $model->strategy),
         ];
         $runKey = $pilot->hash([
@@ -103,6 +113,17 @@ class RunMtfAblation extends Command
         $result['candidate_id'] = $candidate->id;
         $result['candidate_model_version_id'] = $model->id;
         $result['promotion_evidence'] = false;
+        $snapshotReference = $snapshots->store(
+            $runKey,
+            $symbol,
+            $h1,
+            $m15,
+            $volumeContext,
+            $execution['parameters'],
+            $dataHash,
+            $executionHash,
+            $payload['mtf_pilot'],
+        );
         $ablationRun = MtfAblationRun::firstOrCreate(
             ['run_key' => $runKey],
             [
@@ -116,6 +137,7 @@ class RunMtfAblation extends Command
                 'execution_hash' => $executionHash,
                 'status' => 'completed',
                 'variants' => (array) ($result['variants'] ?? []),
+                'snapshot_reference' => $snapshotReference,
                 'promotion_evidence' => false,
                 'completed_at' => now(),
             ],

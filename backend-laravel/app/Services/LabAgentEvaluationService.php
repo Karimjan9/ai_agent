@@ -115,6 +115,21 @@ class LabAgentEvaluationService
             if ($cohort->isEmpty()) {
                 $cohort = collect([$agent]);
             }
+            // Promotion and research-only learning jobs may share a
+            // generation, but they must never share a sealed cohort cache.
+            // Otherwise a learning near-miss could alter the request
+            // manifest of a promotion candidate (or vice versa).
+            $learningLane = data_get($model->metadata, 'learning_lane.protocol') === LearningLaneService::PROTOCOL
+                && data_get($model->metadata, 'learning_lane.promotion_evidence', false) !== true;
+            $cohort = $cohort->filter(function (LabAgent $peer) use ($learningLane): bool {
+                $peerLearning = data_get($peer->modelVersion?->metadata, 'learning_lane.protocol') === LearningLaneService::PROTOCOL
+                    && data_get($peer->modelVersion?->metadata, 'learning_lane.promotion_evidence', false) !== true;
+
+                return $peerLearning === $learningLane;
+            })->values();
+            if ($cohort->isEmpty()) {
+                $cohort = collect([$agent]);
+            }
             $portfolioMemberOnly = data_get($model->metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1';
             // Portfolio members are independent sealed hypotheses. Replaying
             // several of them in one Python cohort multiplies the worst-case
@@ -375,6 +390,16 @@ class LabAgentEvaluationService
             $fullResult['train_score'] = $item['train_score'] ?? 0;
             $fullResult['validation_score'] = $item['validation_score'] ?? 0;
             $fullResult['is_overfit'] = $item['is_overfit'] ?? false;
+            // Council disagreement is a learning artifact. The full trace is
+            // already sealed in the evidence plane; this compact ledger keeps
+            // role disagreement queryable without exposing trace data to any
+            // promotion selector.
+            app(\App\Services\CouncilDisagreementService::class)->recordResult($fullResult, [
+                'symbol' => $agent->symbol,
+                'timeframe' => $agent->timeframe,
+                'family' => $agent->strategy_family,
+                'evidence_run_id' => $run->run_id,
+            ]);
             $result = $this->evidence->projectionPayload($fullResult);
             $model->update([
                 'best_score' => max((float) $model->best_score, (float) $item['score']),
@@ -491,7 +516,7 @@ class LabAgentEvaluationService
             // H1 context. Only the latest bounded tail is sent to screening.
             $request['regime_candles'] = $this->datasets->rowsFromSnapshot($regimeSnapshot['path'], 2000);
         }
-        // The HTTP budget must end before the job/worker budget.  A timeout
+        // The HTTP budget must end before the job/worker budget. A timeout
         // becomes evaluation_error, never a retry-derived strategy verdict.
         $isDifferential = $agent->strategy_family === 'differential_router'
             || data_get($model->metadata, 'differential_router_contract') !== null
@@ -500,12 +525,10 @@ class LabAgentEvaluationService
             ? (int) config('services.lab_selection.differential_screen_timeout_seconds', 900)
             : (int) config('services.lab_selection.screen_timeout_seconds', 300);
         // Differential screening contains four paired ledgers. Keep its
-        // longer transport budget explicit; ordinary screening remains capped
-        // at five minutes so a provider hang cannot stall a market queue.
-        // The bounded Python worker keeps a 30-second margin below this
-        // transport deadline: ordinary screening may use up to 330 seconds,
-        // differential screening up to 840 seconds.
-        $screenTimeout = min($isDifferential ? 900 : 360, max(30, $configuredScreenTimeout));
+        // longer transport budget explicit; ordinary screening remains
+        // hard-bounded at 930 seconds so the Python worker's 900-second
+        // operational budget has a 30-second response margin.
+        $screenTimeout = min($isDifferential ? 900 : 930, max(30, $configuredScreenTimeout));
         $requestId = 'screen-'.$agent->id.'-'.bin2hex(random_bytes(6));
         $manifest = [
             'candle_count' => count($rows),
@@ -550,6 +573,7 @@ class LabAgentEvaluationService
             'train_score' => $item['train_score'] ?? $item['score'] ?? 0,
             'validation_score' => $item['validation_score'] ?? $item['score'] ?? 0,
             'evidence_run_id' => $run->run_id,
+            'data_manifest' => $manifest,
         ]);
         if ($regimeSnapshot !== null) {
             // Keep the frozen H1 dependency in the bounded screen projection
@@ -582,6 +606,12 @@ class LabAgentEvaluationService
         $screenResult['trial_ledger'] = app(LabTrialLedgerService::class)->record(
             $agent, $model, $agent->symbol, $agent->timeframe, 'screening', $screenResult, $run->run_id
         );
+        app(\App\Services\CouncilDisagreementService::class)->recordResult($screenResult, [
+            'symbol' => $agent->symbol,
+            'timeframe' => $agent->timeframe,
+            'family' => $agent->strategy_family,
+            'evidence_run_id' => $run->run_id,
+        ]);
         // An operator may quarantine an invalid cohort while this worker is
         // finishing an already-started replay.  Re-read the mutable status
         // before any gate/handoff projection: the response remains immutable
@@ -675,6 +705,55 @@ class LabAgentEvaluationService
             'profit_factor' => $result['profit_factor'] ?? 0,
             'stress_profit_factor' => data_get($result, 'screening_survival.stress_cost_pf'),
         ], ['screen_decision_id' => $screenDecision->id]);
+
+        // CandidateGateDecisionService is also used by direct/unit callers,
+        // so it attempts the anchor write defensively before the run closes.
+        // The real evaluator closes the immutable evidence run here; repeat
+        // the idempotent write now so a complete strategy failure actually
+        // becomes a repair anchor in production rather than waiting for a
+        // later handoff backfill. Technical/incomplete runs never reach this
+        // block and therefore cannot teach the mutation compiler.
+        $completedScreenResult = [...$screenProjection, 'evidence_run_id' => $run->run_id];
+        $repairAnchors = app(FailureRepairAnchorService::class);
+        if ((int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0) > 0) {
+            $repairAnchors->recordRepairScreeningOutcome($agent, $completedScreenResult);
+        } elseif ($screenDecision->decision === 'failed') {
+            $repairAnchors->recordFromScreeningDecision($agent, $screenDecision, $completedScreenResult);
+        }
+        // A passed screen is a Seed milestone, not a parent promotion. The
+        // response map records the same immutable run for later mentor search.
+        try {
+            app(SkillMentorService::class)->markScreenValidatedSeed(
+                $agent->fresh(['modelVersion']),
+                $screenDecision->decision === 'passed',
+                $completedScreenResult,
+            );
+            $screeningResponseMap = app(MutationResponseMapService::class)->recordScreening(
+                $agent->fresh(['modelVersion']),
+                $completedScreenResult,
+            );
+            app(LearningLaneService::class)->pairScreeningObservation(
+                $agent->fresh(['modelVersion', 'generation']),
+                $completedScreenResult,
+                $screeningResponseMap,
+            );
+            $parentAwareCredit = app(ParentAwareCreditService::class)->recordScreening(
+                $agent->fresh(['modelVersion']),
+                $completedScreenResult,
+                (string) $screenDecision->decision,
+            );
+            $screenModel = $agent->fresh(['modelVersion'])->modelVersion;
+            if ($screenModel) {
+                $screenMetadata = (array) $screenModel->metadata;
+                data_set($screenMetadata, 'parent_aware_evolution.last_screening_credit', $parentAwareCredit);
+                $screenModel->update(['metadata' => $screenMetadata]);
+            }
+        } catch (\Throwable $exception) {
+            // Learning projections are secondary to the immutable gate and
+            // must never strand a completed candidate when their migration or
+            // payload is temporarily unavailable.
+            report($exception);
+        }
 
         try {
             app(AgentProgressCardService::class)->sync(

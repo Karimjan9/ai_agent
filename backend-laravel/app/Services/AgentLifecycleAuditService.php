@@ -275,35 +275,54 @@ class AgentLifecycleAuditService
         $audit = (array) data_get($context, 'constructor_audit', []);
         $invalid = [];
         $zeroDiff = [];
+        $technicalQuarantineInvalid = [];
+        $technicalQuarantineZeroDiff = [];
         foreach ($agents as $agent) {
             $metadata = (array) ($agent->modelVersion?->metadata ?? []);
             $control = $this->isControlOnly($agent);
+            $architectureOnly = $this->isArchitectureOnly($agent);
+            $technicalQuarantine = (string) $agent->lifecycle_status === 'technical_quarantine'
+                && data_get($metadata, 'preflight_quarantine.protocol') === LabAgentPreflightService::PROTOCOL;
             $invariant = (array) data_get($metadata, 'mutation_constructor_invariant', []);
-            if (! $control && data_get($invariant, 'status') !== 'passed') {
-                $invalid[] = $agent->id;
+            if (! $control && ! $architectureOnly && data_get($invariant, 'status') !== 'passed') {
+                if ($technicalQuarantine) {
+                    $technicalQuarantineInvalid[] = $agent->id;
+                } else {
+                    $invalid[] = $agent->id;
+                }
             }
-            if (! $control && $this->isZeroDiff((array) $agent->parameter_diff)) {
-                $zeroDiff[] = $agent->id;
+            if (! $control && ! $architectureOnly && $this->isZeroDiff((array) $agent->parameter_diff)) {
+                if ($technicalQuarantine) {
+                    $technicalQuarantineZeroDiff[] = $agent->id;
+                } else {
+                    $zeroDiff[] = $agent->id;
+                }
             }
         }
         $skipped = (array) data_get($audit, 'skipped_zero_diff_slots', []);
         $hasIssue = $invalid !== [] || $zeroDiff !== [] || $skipped !== [];
         $active = in_array((string) $generation->status, self::ACTIVE_GENERATION_STATUSES, true);
+        $technicalOnly = $technicalQuarantineInvalid !== [] || $technicalQuarantineZeroDiff !== [];
 
         return $this->check(
             'CONSTRUCTOR_INVARIANT',
-            $hasIssue ? ($active ? 'blocked' : 'attention') : 'passed',
+            $hasIssue ? ($active ? 'blocked' : 'attention') : ($technicalOnly ? 'attention' : 'passed'),
             $hasIssue
                 ? 'One-gene/control constructor evidence has an invalid or zero-diff member.'
-                : 'Constructor invariant is present for every non-control agent.',
+                : ($technicalOnly
+                    ? 'Constructor issue is isolated to technical quarantine; no strategy verdict is assigned.'
+                    : 'Constructor invariant is present for every non-control agent.'),
             [
                 'generation_id' => $generation->id,
                 'invalid_agent_ids' => array_slice($invalid, 0, 20),
                 'zero_diff_agent_ids' => array_slice($zeroDiff, 0, 20),
+                'technical_quarantine_invalid_agent_ids' => array_slice($technicalQuarantineInvalid, 0, 20),
+                'technical_quarantine_zero_diff_agent_ids' => array_slice($technicalQuarantineZeroDiff, 0, 20),
                 'skipped_zero_diff_slots' => array_slice($skipped, 0, 20),
                 'planned_slots' => (int) data_get($audit, 'planned_slots', $generation->population_size),
                 'created_agents' => (int) data_get($audit, 'created_agents', $agents->count()),
                 'control_only_count' => $agents->filter(fn (LabAgent $agent): bool => $this->isControlOnly($agent))->count(),
+                'architecture_only_count' => $agents->filter(fn (LabAgent $agent): bool => $this->isArchitectureOnly($agent))->count(),
                 'promotion_evidence' => false,
             ],
             $hasIssue && $active ? 'critical' : ($hasIssue ? 'warning' : 'info'),
@@ -1333,12 +1352,42 @@ class AgentLifecycleAuditService
             || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
     }
 
+    /**
+     * Architecture is a first-class causal experiment.  Its topology can
+     * change while the parameter vector remains identical, so an empty
+     * parameter_diff is valid research evidence when the sealed metadata
+     * explicitly identifies the architecture lane.  It is still research
+     * only and never promotion evidence.
+     */
+    private function isArchitectureOnly(LabAgent $agent): bool
+    {
+        $metadata = (array) ($agent->modelVersion?->metadata ?? []);
+        $invariant = (array) data_get($metadata, 'mutation_constructor_invariant', []);
+        $variant = (string) data_get($invariant, 'architecture_variant', '');
+
+        return (bool) data_get($invariant, 'architecture_changed', false)
+            && $variant !== ''
+            && (
+                (bool) data_get($metadata, 'portfolio_council_lane.architecture_experiment', false)
+                || (string) data_get($metadata, 'hypothesis_contract.changed_gene', '') === '__architecture'
+                || (string) data_get($metadata, 'g98_council_lane.lane', '') === 'architecture'
+            );
+    }
+
     private function isZeroDiff(array $diff): bool
     {
         if ($diff === []) return true;
 
         return collect($diff)->every(function ($change): bool {
             if (! is_array($change) || ! array_key_exists('old', $change) || ! array_key_exists('new', $change)) return false;
+
+            // JSON/database casts may preserve a numeric mutation as 0 vs
+            // 0.0 even though the executable value is identical. Keep audit
+            // semantics aligned with the constructor and preflight guards.
+            if (! is_bool($change['old']) && ! is_bool($change['new'])
+                && is_numeric($change['old']) && is_numeric($change['new'])) {
+                return (float) $change['old'] === (float) $change['new'];
+            }
 
             return json_encode($change['old'], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)
                 === json_encode($change['new'], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES);

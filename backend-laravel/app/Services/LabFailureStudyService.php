@@ -47,8 +47,13 @@ class LabFailureStudyService
     /** @return array<string, mixed> */
     private function studyLab(AiLaboratory $lab, bool $persist): array
     {
+        // A terminal cohort can be marked technical_quarantine when one or
+        // more seats remain unrecoverable. That must not make the study fall
+        // back to the previous generation: current clean failed decisions
+        // are still valid diagnostic evidence, while quarantined seats are
+        // excluded below. Only active/incomplete generations are ineligible.
         $generation = $lab->generations()
-            ->where('status', 'screened')
+            ->whereIn('status', ['screened', 'technical_quarantine', 'completed', 'failed', 'abandoned'])
             ->latest('generation')->first();
         if (! $generation) {
             return [
@@ -198,6 +203,7 @@ class LabFailureStudyService
             'evidence_complete_insufficient_agent_ids' => array_values(array_unique($evidenceCompleteInsufficient)),
             'failure_groups' => array_values($failureGroups),
             'target_cells' => array_values($targetCells),
+            'temporal_cell_analysis' => $this->cellAnalysisForGeneration($generation, array_unique($actionableAgentIds)),
             'dominant_failure' => array_values($failureGroups)[0]['reason'] ?? null,
             'next_action' => $actionableAgentIds === []
                 ? 'evidence_recovery_or_quarantine'
@@ -235,6 +241,145 @@ class LabFailureStudyService
         }
 
         return $report;
+    }
+
+    /**
+     * Locate the weakest observable temporal cells from the immutable
+     * response artifact. Month/session/direction labels are evidence
+     * coordinates only: this method never turns them into a mutation feature
+     * or a gate override.
+     *
+     * @param array<int, int>|null $onlyAgentIds
+     * @return array<string, mixed>
+     */
+    public function cellAnalysisForGeneration(LabGeneration $generation, ?array $onlyAgentIds = null): array
+    {
+        $generation->loadMissing('agents');
+        $allowedIds = $onlyAgentIds === null
+            ? null
+            : array_values(array_unique(array_map('intval', $onlyAgentIds)));
+        $agentIds = $generation->agents
+            ->when($allowedIds !== null, fn ($agents) => $agents->whereIn('id', $allowedIds))
+            ->pluck('id')->values()->all();
+        if ($agentIds === []) {
+            return [
+                'protocol' => 'temporal_failure_cell_audit_v1',
+                'agent_count' => 0,
+                'worst_frequency' => [],
+                'dominant_cells' => [],
+                'per_agent' => [],
+                'diagnostic_only' => true,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $decisions = CandidateGateDecision::query()
+            ->whereIn('lab_agent_id', $agentIds)
+            ->where('stage', 'screening')
+            ->latest('id')->get()
+            ->groupBy('lab_agent_id')
+            ->map(fn ($rows) => $rows->first());
+        $evidence = app(LabImmutableEvidenceService::class);
+        $dimensions = [
+            'month' => 'pf_attribution.breakdown.by_month',
+            'chunk' => 'pf_attribution.breakdown.by_temporal_chunk',
+            'session' => 'pf_attribution.breakdown.by_session',
+            'direction' => 'pf_attribution.breakdown.by_direction',
+            'regime' => 'pf_attribution.breakdown.by_regime',
+        ];
+        $frequencies = array_fill_keys(array_keys($dimensions), []);
+        $perAgent = [];
+
+        foreach ($agentIds as $agentId) {
+            $decision = $decisions->get($agentId);
+            if (! $decision || (string) $decision->decision !== 'failed') continue;
+            $reasons = array_values(array_unique(array_map(
+                static fn (mixed $reason): string => strtoupper(trim((string) $reason)),
+                (array) $decision->reason_codes,
+            )));
+            if (collect($reasons)->contains(fn (string $reason): bool => $this->isTechnicalReason($reason))) continue;
+            $run = LabEvaluationRun::query()
+                ->where('lab_agent_id', $agentId)
+                ->where('phase', 'screening')
+                ->latest('id')->first();
+            if (! $run || ! $evidence->learningEligibility($run)['complete']) continue;
+            $payload = $evidence->latestArtifactPayload($run);
+            if (! is_array($payload)) continue;
+            $breakdown = (array) data_get(
+                $payload,
+                'pf_attribution.breakdown',
+                data_get($payload, 'pf_attribution', []),
+            );
+            $cells = [];
+            foreach ($dimensions as $dimension => $path) {
+                $cell = $this->weakestCell((array) data_get($breakdown, str_replace('pf_attribution.breakdown.', '', $path), []));
+                if ($cell === null) continue;
+                $cells[$dimension] = $cell;
+                $key = (string) $cell['cell'];
+                $frequencies[$dimension][$key] ??= [
+                    'cell' => $key,
+                    'agents' => 0,
+                    'minimum_net_pf' => null,
+                    'trade_counts' => [],
+                ];
+                $frequencies[$dimension][$key]['agents']++;
+                $frequencies[$dimension][$key]['minimum_net_pf'] = $frequencies[$dimension][$key]['minimum_net_pf'] === null
+                    ? $cell['net_pf']
+                    : min((float) $frequencies[$dimension][$key]['minimum_net_pf'], (float) $cell['net_pf']);
+                $frequencies[$dimension][$key]['trade_counts'][] = (int) $cell['trades'];
+            }
+            if ($cells !== []) {
+                $perAgent[] = ['agent_id' => (int) $agentId, 'weakest_cells' => $cells];
+            }
+        }
+
+        $worstFrequency = [];
+        $dominantCells = [];
+        foreach ($frequencies as $dimension => $rows) {
+            $rows = array_values($rows);
+            foreach ($rows as &$row) {
+                $row['minimum_net_pf'] = round((float) $row['minimum_net_pf'], 4);
+                $row['trade_count_min'] = min((array) $row['trade_counts']);
+                $row['trade_count_max'] = max((array) $row['trade_counts']);
+                unset($row['trade_counts']);
+            }
+            unset($row);
+            usort($rows, static fn (array $a, array $b): int =>
+                ((int) $b['agents'] <=> (int) $a['agents'])
+                ?: ((float) $a['minimum_net_pf'] <=> (float) $b['minimum_net_pf']));
+            $worstFrequency[$dimension] = $rows;
+            if ($rows !== []) $dominantCells[$dimension] = $rows[0];
+        }
+
+        return [
+            'protocol' => 'temporal_failure_cell_audit_v1',
+            'agent_count' => count($perAgent),
+            'worst_frequency' => $worstFrequency,
+            'dominant_cells' => $dominantCells,
+            'per_agent' => $perAgent,
+            'minimum_trade_count_per_cell' => 3,
+            'diagnostic_only' => true,
+            'selection_rule' => 'Use cells to choose a research hypothesis only; never route or relax a quality gate by month/session/direction/regime label.',
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array{cell: string, net_pf: float, trades: int}|null */
+    private function weakestCell(array $rows): ?array
+    {
+        $candidates = [];
+        foreach ($rows as $key => $row) {
+            if (! is_array($row)) continue;
+            $trades = (int) data_get($row, 'trades', 0);
+            if ($trades < 3) continue;
+            $pf = (float) data_get($row, 'net_pf', data_get($row, 'profit_factor', 0));
+            $candidates[] = ['cell' => (string) $key, 'net_pf' => $pf, 'trades' => $trades];
+        }
+        usort($candidates, static fn (array $a, array $b): int =>
+            ((float) $a['net_pf'] <=> (float) $b['net_pf'])
+            ?: ((int) $b['trades'] <=> (int) $a['trades']));
+
+        return $candidates[0] ?? null;
     }
 
     private function isTechnicalReason(string $reason): bool

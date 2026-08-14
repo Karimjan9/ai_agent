@@ -8,12 +8,14 @@ use App\Jobs\Middleware\PreferFullValidationQueue;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use App\Models\LabLearningLaneDispatch;
 use App\Services\CandidateHandoffService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabGenerationReportService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabReplayRecoveryService;
+use App\Services\LearningLaneService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -31,6 +33,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 
     private const SCREEN_RETRY_WINDOW_MINUTES = 360;
     private const LEGACY_SCREEN_RETRY_WINDOW_MINUTES = 90;
+    private const FULL_RETRY_WINDOW_MINUTES = 180;
     private const UNIQUE_WINDOW_SECONDS = self::SCREEN_RETRY_WINDOW_MINUTES * 60;
 
     public int $timeout = 360;
@@ -107,7 +110,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         // into false evaluation_error records. Keep the lane bounded, but
         // give a full generation enough wall-clock time to drain.
         $this->screenQueuedAt = $mode === 'screen' ? now() : null;
-        $this->retryDeadline = now()->addMinutes($mode === 'screen' ? self::SCREEN_RETRY_WINDOW_MINUTES : 90);
+        $this->retryDeadline = now()->addMinutes($mode === 'screen' ? self::SCREEN_RETRY_WINDOW_MINUTES : self::FULL_RETRY_WINDOW_MINUTES);
     }
 
     /**
@@ -210,10 +213,17 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             return;
         }
         $agent = LabAgent::findOrFail($this->labAgentId);
+        $learningLane = $this->mode === 'full' && app(LearningLaneService::class)->isLearningAgent($agent);
+        if ($this->mode === 'full' && ! $learningLane) {
+            $this->updateLearningDispatch($agent, 'running');
+        } elseif ($this->mode === 'full' && $learningLane) {
+            $this->updateLearningDispatch($agent, 'running', ['stage' => 'full_replay']);
+        }
         // Defensive admission for every full-job producer, including
         // recovery/portfolio commands that do not pass through the global
-        // selector. A near-miss may seed targeted mutation, but it cannot
-        // start a full replay; the immutable screening chain must be complete.
+        // selector. Promotion jobs still require screen pass; the explicit
+        // research-only learning lane may replay a paired near-miss, but its
+        // immutable screening evidence must still be complete.
         if ($this->mode === 'full') {
             $admission = $this->fullValidationAdmission($agent, $evidence);
             if (! $admission['allowed']) {
@@ -248,6 +258,9 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                         'promotion_evidence' => false,
                     ],
                 );
+                $this->updateLearningDispatch($agent, 'blocked', [
+                    'reason_codes' => $admission['reason_codes'],
+                ]);
                 $evidence->recordLifecycle($agent, 'full_validation_blocked', [
                     'reason_code' => 'SCREENING_EVIDENCE_GATE',
                     'reason_codes' => $admission['reason_codes'],
@@ -292,6 +305,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         // work can outlive an operator quarantine, so consume the stale job
         // without reopening lifecycle state or producing a strategy verdict.
         if (in_array($agent->lifecycle_status, ['quarantined', 'technical_quarantine', 'legacy_quarantine'], true)) {
+            $this->updateLearningDispatch($agent, 'skipped', ['reason_code' => 'TECHNICAL_QUARANTINE_AGENT']);
             $evidence->markSkipped($run, 'TECHNICAL_QUARANTINE_AGENT', [
                 'lifecycle_status' => $agent->lifecycle_status,
                 'generation' => $agent->generation?->generation,
@@ -304,6 +318,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         // legacy/unscoped parent can never enter screening or full replay.
         $inspection = $preflight->inspect($agent, $this->mode === 'screen' ? 'screening' : 'full_validation');
         if (! $inspection['passed']) {
+            $this->updateLearningDispatch($agent, 'blocked', ['reason_code' => 'LAB_AGENT_PREFLIGHT_FAILED', 'preflight' => $inspection]);
             $preflight->quarantine($agent, $inspection, 'queue_admission');
             $evidence->markSkipped($run, 'LAB_AGENT_PREFLIGHT_FAILED', [
                 'preflight' => $inspection,
@@ -353,7 +368,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         // The first full-validation job evaluates and caches the selected
         // cohort.  A peer that has already been resolved must not reopen a
         // completed lifecycle state when its queued job is reached.
-        if ($this->mode === 'full' && $agent->lifecycle_status !== 'full_queued') {
+        if ($this->mode === 'full' && $agent->lifecycle_status !== 'full_queued' && ! ($learningLane && $agent->lifecycle_status === 'screened')) {
             // A worker can die after setting `training` and before the
             // response/evidence transaction closes. When the exact reserved
             // job is later recovered, leaving this state untouched would
@@ -365,6 +380,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                     'lifecycle_status' => 'full_queued',
                     'decision_reason' => 'Recovered stale training lifecycle after worker interruption; full replay remains sealed and verdict withheld.',
                 ]);
+                $this->updateLearningDispatch($agent, 'queued', ['reason_code' => 'REPLAY_LANE_CONTENTION']);
                 $evidence->finishRun($run, 'retry_released', null, [], [
                     'reason_code' => 'STALE_TRAINING_LIFECYCLE_RECOVERED',
                     'retry_after_seconds' => 60,
@@ -434,6 +450,13 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     {
         $evidence ??= app(LabImmutableEvidenceService::class);
         $reasonCode = $this->technicalFailureReason($e);
+        $learningLane = $this->mode === 'full' && app(LearningLaneService::class)->isLearningAgent($agent);
+        $dispatchStatus = $learningLane ? 'retry_ready' : 'technical_error';
+        $this->updateLearningDispatch($agent, $dispatchStatus, [
+            'reason_code' => $reasonCode,
+            'error_class' => $e::class,
+            'retry_ready' => $learningLane,
+        ]);
         // The old catch path persisted only the message, which made a PHP
         // ErrorException such as an undefined closure variable impossible to
         // locate from the immutable run. Keep the operational trace visible;
@@ -448,7 +471,12 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             ], $e);
         }
         $reason = ucfirst($this->mode).' queue technical error ['.$reasonCode.']; strategy verdict withheld: '.substr($e->getMessage(), 0, 500);
-        $agent->update(['lifecycle_status' => 'evaluation_error', 'decision_reason' => $reason]);
+        $agent->update([
+            'lifecycle_status' => $learningLane ? 'screened' : 'evaluation_error',
+            'decision_reason' => $learningLane
+                ? 'Learning-lane technical error; candidate returned to retry_ready. Strategy verdict withheld.'
+                : $reason,
+        ]);
         if ($this->mode === 'screen') {
             $generation = $agent->generation()->with('agents.modelVersion')->first();
             $generation?->update(['status' => 'screening', 'completed_at' => null]);
@@ -461,9 +489,15 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             $recoveryAttempts = (int) data_get($agent->modelVersion?->metadata, 'evaluator_recovery_attempts', 0);
             $openPeers = $generation?->agents->contains(fn (LabAgent $peer): bool => in_array($peer->lifecycle_status, ['draft', 'queued', 'screening'], true)
             ) ?? true;
-            $unrecoveredErrors = $generation?->agents->contains(fn (LabAgent $peer): bool => $peer->lifecycle_status === 'evaluation_error'
+            // The current job has just been projected to evaluation_error.
+            // It is the bounded retry that is being finalized here, not an
+            // additional unrecovered peer. Counting it made the second
+            // timeout strand the whole generation in screening forever.
+            $unrecoveredErrors = $generation?->agents
+                ->reject(fn (LabAgent $peer): bool => (int) $peer->id === (int) $agent->id)
+                ->contains(fn (LabAgent $peer): bool => $peer->lifecycle_status === 'evaluation_error'
                 && (int) data_get($peer->modelVersion?->metadata, 'evaluator_recovery_attempts', 0) < 1
-            ) ?? true;
+                ) ?? true;
             if ($generation && $recoveryAttempts >= 1 && ! $openPeers && ! $unrecoveredErrors) {
                 $agent->update([
                     'lifecycle_status' => 'technical_quarantine',
@@ -499,7 +533,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                 app(LabGenerationReportService::class)->record($generation->fresh(), 'screening_technical_quarantine');
             }
         }
-        if ($this->mode === 'full') {
+        if ($this->mode === 'full' && ! $learningLane) {
             app(CandidateHandoffService::class)->record($agent->generation, $agent, 'completed', 'failed', $reasonCode, [
                 'attempt' => $this->attempts(),
                 'failure_reason' => $e->getMessage(),
@@ -540,14 +574,22 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     /** @return array{allowed: bool, reason_codes: array<int, string>} */
     private function fullValidationAdmission(LabAgent $agent, LabImmutableEvidenceService $evidence): array
     {
+        $agent->loadMissing('modelVersion');
+        $learningLane = app(LearningLaneService::class)->isLearningAgent($agent);
         $reasons = [];
         $decision = CandidateGateDecision::query()
             ->where('lab_agent_id', $agent->id)
             ->where('stage', 'screening')
             ->latest('evaluated_at')
             ->first();
-        if (! $decision || $decision->decision !== 'passed') {
+        if (! $learningLane && (! $decision || $decision->decision !== 'passed')) {
             $reasons[] = 'SCREENING_NOT_PASSED';
+        }
+        if ($learningLane) {
+            $pairStatus = (string) data_get($agent->modelVersion?->metadata, 'learning_lane.pair_status', '');
+            if (! in_array($pairStatus, ['screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed'], true)) {
+                $reasons[] = 'LEARNING_PAIR_NOT_PAIRED';
+            }
         }
 
         $run = LabEvaluationRun::query()
@@ -564,4 +606,23 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 
         return ['allowed' => $reasons === [], 'reason_codes' => array_values(array_unique($reasons))];
     }
+
+    private function updateLearningDispatch(LabAgent $agent, string $status, array $metadata = []): void
+    {
+        $dispatchId = (int) data_get($agent->modelVersion?->metadata, 'learning_lane.dispatch_id', 0);
+        if ($dispatchId <= 0) return;
+
+        $dispatch = LabLearningLaneDispatch::query()->find($dispatchId);
+        if (! $dispatch) return;
+        $dispatch->update([
+            'status' => $status,
+            'completed_at' => in_array($status, ['completed', 'technical_error'], true) ? now() : null,
+            'metadata' => [
+                ...((array) $dispatch->metadata),
+                ...$metadata,
+                'updated_by' => self::class,
+                'promotion_evidence' => false,
+            ],
+            ]);
+        }
 }

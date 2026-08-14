@@ -360,7 +360,27 @@ class DispatchLabGeneration extends Command
             $roleControl = (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false)
                 || (bool) data_get($metadata, 'g98_council_lane.control_only', false)
                 || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
-            if (count($diff) === 0 && $roleControl) {
+            // Architecture rescue is a first-class causal mutation. Its
+            // executable parameter vector is intentionally frozen; the
+            // changed gene is the sealed strategy topology, not a scalar in
+            // parameter_diff. Keep this admission rule identical to
+            // LabAgentPreflightService so a valid topology variant cannot be
+            // quarantined merely because the legacy checker expected one
+            // numeric parameter.
+            $architectureVariant = (string) data_get(
+                $metadata,
+                'mutation_constructor_invariant.architecture_variant',
+                data_get($metadata, 'portfolio_council_lane.architecture_variant', ''),
+            );
+            $architectureChanged = (bool) data_get(
+                $metadata,
+                'mutation_constructor_invariant.architecture_changed',
+                false,
+            )
+                && $architectureVariant !== ''
+                && (string) data_get($metadata, 'strategy_architecture', '') === $architectureVariant
+                && (string) data_get($metadata, 'hypothesis_contract.changed_gene', '') === '__architecture';
+            if (count($diff) === 0 && ($roleControl || $architectureChanged)) {
                 return $violations;
             }
             $violations[] = count($diff) === 0 ? 'ISOLATED_ZERO_PARAMETER_DIFF' : 'ISOLATED_MULTI_PARAMETER_DIFF';

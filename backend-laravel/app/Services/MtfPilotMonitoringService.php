@@ -6,11 +6,13 @@ use App\Models\Candle;
 use App\Models\MarketDataSyncState;
 use App\Models\MtfAblationRun;
 use App\Models\MtfPilotMonitorRun;
+use App\Models\MtfStrategyResearchRun;
 use App\Models\PaperMtfShadowObservation;
 use App\Models\PaperSignalOutcome;
 use App\Models\PaperSignalPassport;
 use App\Models\ServiceHealthCheck;
 use App\Models\Symbol;
+use App\Services\MarketData\MarketVolumeService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Schema;
 
@@ -29,6 +31,10 @@ class MtfPilotMonitoringService
         private SystemLogService $logs,
         private PhaseTwoFoundationService $foundation,
         private MtfStrategyResearchReportService $researchReport,
+        private MtfStrategyResearchService $researchCatalog,
+        private MarketVolumeService $volumes,
+        private MtfCouncilGateService $councilGate,
+        private MtfControlReplacementGateService $replacementGate,
     ) {}
 
     /** @return array<string, mixed> */
@@ -123,6 +129,22 @@ class MtfPilotMonitoringService
 
         $this->appendFeedChecks($checks, $symbol, $addCheck);
 
+        $volume = $this->volumeStats($symbol);
+        $volumeFreshness = $this->researchCatalog->volumeResearchFreshness($volume);
+        $volume['research_freshness'] = $volumeFreshness;
+        $volumeReady = $volume['status'] === 'passed' && (bool) ($volumeFreshness['ready'] ?? false);
+        $addCheck(
+            $checks,
+            'VOLUME_CONTEXT',
+            $volumeReady ? 'ok' : 'warning',
+            $volumeReady
+                ? 'Canonical H1/M15 volume context is available and fresh for shadow hypotheses.'
+                : ($volume['status'] !== 'passed'
+                    ? 'Canonical volume context is unavailable; volume hypotheses remain blocked, while the no-volume control is unaffected.'
+                    : 'Canonical volume coverage exists but freshness is outside the live research contract; volume hypotheses remain blocked.'),
+            $volume,
+        );
+
         $passports = Schema::hasTable('paper_signal_passports')
             ? PaperSignalPassport::query()
                 ->where('symbol', $symbol)
@@ -205,6 +227,45 @@ class MtfPilotMonitoringService
             $research['status'],
             $research['message'],
             $research,
+        );
+
+        $frontier = $this->frontierStats($symbol, $lookbackHours, $volume);
+        $addCheck(
+            $checks,
+            'CHALLENGER_FRONTIER',
+            $frontier['status'],
+            $frontier['message'],
+            $frontier,
+        );
+
+        $council = $this->councilStats($symbol, (string) ($research['current_cohort_data_hash'] ?? ''));
+        $addCheck(
+            $checks,
+            'COUNCIL_PROXY',
+            $council['status'],
+            $council['message'],
+            $council,
+        );
+
+        $replacement = $this->replacementGate->inspect($symbol);
+        // No official paper candidate is the safe expected state before the
+        // forward gate. Keep it visible without turning normal quarantine
+        // into an operational failure.
+        $replacementStatus = (int) ($replacement['candidate_count'] ?? 0) === 0
+            && ($replacement['control']['run_id'] ?? null) !== null
+            ? 'ok'
+            : 'warning';
+        $replacementMessage = $replacementStatus === 'ok'
+            ? 'No official paper candidate exists; frozen-control replacement is correctly blocked.'
+            : (($replacement['status'] ?? 'blocked') === 'ready_for_operator_review'
+                ? 'A paper candidate may be ready for operator replacement review; no automatic replacement is authorized.'
+                : 'Control replacement is blocked until an official paper candidate beats the frozen control after costs.');
+        $addCheck(
+            $checks,
+            'CONTROL_REPLACEMENT',
+            $replacementStatus,
+            $replacementMessage,
+            $replacement,
         );
 
         $readiness = $this->paperReadiness->inspect();
@@ -302,6 +363,53 @@ class MtfPilotMonitoringService
                 'missing_timeframes' => $missing,
             ],
         );
+    }
+
+    /** @return array<string, mixed> */
+    private function volumeStats(string $symbol): array
+    {
+        try {
+            // Monitoring needs freshness/quality only. Avoid the expensive
+            // all-history snapshot hashes used by replay contracts; research
+            // commands still call mtfContext() when they seal a hypothesis.
+            $entry = (array) $this->volumes->inspect($symbol, 'M15');
+            $regime = (array) $this->volumes->inspect($symbol, 'H1');
+            $status = ($entry['status'] ?? null) === 'passed' && ($regime['status'] ?? null) === 'passed'
+                ? 'passed'
+                : 'volume_unavailable';
+
+            return [
+                'status' => $status,
+                'protocol' => MarketVolumeService::PROTOCOL,
+                'source_contract' => $entry['contract']['source_contract'] ?? $regime['contract']['source_contract'] ?? null,
+                'entry_timeframe' => 'M15',
+                'regime_timeframe' => 'H1',
+                'entry_quality' => [
+                    'status' => $entry['status'] ?? 'missing',
+                    'coverage_ratio' => $entry['coverage_ratio'] ?? null,
+                    'usable_ratio' => $entry['usable_ratio'] ?? null,
+                    'last_volume_at' => $entry['last_volume_at'] ?? null,
+                    'lag_seconds' => $entry['lag_seconds'] ?? null,
+                    'reasons' => $entry['reasons'] ?? [],
+                ],
+                'regime_quality' => [
+                    'status' => $regime['status'] ?? 'missing',
+                    'coverage_ratio' => $regime['coverage_ratio'] ?? null,
+                    'usable_ratio' => $regime['usable_ratio'] ?? null,
+                    'last_volume_at' => $regime['last_volume_at'] ?? null,
+                    'lag_seconds' => $regime['lag_seconds'] ?? null,
+                    'reasons' => $regime['reasons'] ?? [],
+                ],
+                'promotion_evidence' => false,
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'status' => 'volume_unavailable',
+                'reason' => 'volume_monitor_error',
+                'message' => $exception->getMessage(),
+                'promotion_evidence' => false,
+            ];
+        }
     }
 
     /** @return array<string, mixed> */
@@ -459,6 +567,7 @@ class MtfPilotMonitoringService
         $technical = collect((array) ($report['runs'] ?? []))
             ->filter(fn (array $run): bool => ($run['data_hash'] ?? null) === ($report['current_cohort_data_hash'] ?? null))
             ->where('status', '!=', 'completed')
+            ->filter(fn (array $run): bool => ! (bool) ($run['technical_recovery_resolved'] ?? false))
             ->count();
         $paused = collect((array) ($report['family_budget'] ?? []))
             ->filter(fn (array $budget): bool => ($budget['status'] ?? null) === 'pause_research_family')
@@ -482,6 +591,108 @@ class MtfPilotMonitoringService
             'current_cohort_run_count' => $currentCount,
             'technical_recovery_count' => $technical,
             'paused_families' => $paused,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function frontierStats(string $symbol, int $lookbackHours, array $volume): array
+    {
+        $report = $this->researchReport->report($symbol, max(720, $lookbackHours * 30));
+        $currentHash = (string) ($report['current_cohort_data_hash'] ?? '');
+        $observations = collect((array) ($report['runs'] ?? []))
+            ->when($currentHash !== '', fn ($rows) => $rows->where('data_hash', $currentHash))
+            ->values()
+            ->all();
+        $frontier = $this->researchCatalog->selectFrontier(
+            $observations,
+            (array) ($report['family_budget'] ?? []),
+            12,
+            $currentHash !== '' ? $currentHash : null,
+        );
+        $catalog = $this->researchCatalog->catalog();
+        $councilKeys = collect($catalog)->filter(fn (array $item): bool => filled($item['council_role'] ?? null))->pluck('key')->all();
+        $volumeKeys = collect($catalog)->filter(fn (array $item): bool => (string) ($item['family'] ?? '') === 'volume_context')->pluck('key')->all();
+        $currentRuns = collect($observations)->filter(fn (array $row): bool => ($row['status'] ?? null) === 'completed');
+        $councilRuns = $currentRuns->filter(fn (array $row): bool => (string) ($row['strategy_family'] ?? '') === 'council')->count();
+        $volumeRuns = $currentRuns->filter(fn (array $row): bool => in_array((string) ($row['hypothesis_key'] ?? ''), $volumeKeys, true))->count();
+        $volumeFreshness = $this->researchCatalog->volumeResearchFreshness($volume);
+
+        return [
+            'status' => $frontier !== [] ? 'ok' : 'warning',
+            'message' => $frontier !== []
+                ? 'Bounded challenger frontier is available across research families; frozen control remains unchanged.'
+                : 'No unobserved challenger remains for the current cohort; inspect paused families or seal a new snapshot.',
+            'current_cohort_data_hash' => $currentHash !== '' ? $currentHash : null,
+            'catalog_count' => count($catalog),
+            'frontier_count' => count($frontier),
+            'frontier_keys' => array_map(fn (array $item): string => (string) $item['key'], $frontier),
+            'council_seat_count' => count($councilKeys),
+            'council_completed_current_cohort' => $councilRuns,
+            'volume_hypothesis_count' => count($volumeKeys),
+            'volume_completed_current_cohort' => $volumeRuns,
+            'volume_research_ready' => (bool) ($volumeFreshness['ready'] ?? false),
+            'volume_freshness' => $volumeFreshness,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function councilStats(string $symbol, string $dataHash): array
+    {
+        if (! Schema::hasTable('mtf_strategy_research_runs')) {
+            return [
+                'status' => 'warning',
+                'message' => 'Council proxy evidence table is unavailable.',
+                'composite_count' => 0,
+                'passed_count' => 0,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $query = MtfStrategyResearchRun::query()
+            ->where('symbol', $symbol)
+            ->where('strategy_family', 'council')
+            ->where('hypothesis_key', 'like', 'council_composite_v1@%')
+            ->where('status', 'completed');
+        if ($dataHash !== '') $query->where('data_hash', $dataHash);
+        $rows = $query->latest('completed_at')->get();
+        $proxies = $rows->map(function (MtfStrategyResearchRun $run): array {
+            $result = (array) $run->result;
+            $gate = (array) data_get($result, 'combined_gate', []);
+            if ($gate === []) {
+                $gate = $this->councilGate->evaluate(
+                    (array) data_get($result, 'council', []),
+                    (array) data_get($result, 'variants.h1_veto_m15_risk', []),
+                    (array) data_get($result, 'declared_members', []),
+                );
+            }
+            return [
+                'research_run_id' => $run->id,
+                'pass' => data_get($result, 'council_pass'),
+                'gate_status' => data_get($gate, 'status', 'deferred'),
+                'reason_codes' => (array) data_get($gate, 'reason_codes', []),
+                'council_pf' => (float) data_get($result, 'council.profit_factor', 0),
+                'council_dd_percent' => (float) data_get($result, 'council.max_drawdown_percent', 0),
+                'council_trades' => (int) data_get($result, 'council.total_trades', 0),
+                'promotion_evidence' => false,
+            ];
+        })->values();
+        $passed = $proxies->where('gate_status', 'passed')->count();
+        $status = $proxies->isEmpty() ? 'warning' : ($passed > 0 ? 'ok' : 'warning');
+
+        return [
+            'status' => $status,
+            'message' => $proxies->isEmpty()
+                ? 'No combined council proxy has been replayed for the current snapshot.'
+                : ($passed > 0
+                    ? 'A combined council proxy passed its research gate; cost/exit and independent forward review remain mandatory.'
+                    : 'Combined council proxies exist, but none passed the separate control-admission gate.'),
+            'current_cohort_data_hash' => $dataHash !== '' ? $dataHash : null,
+            'composite_count' => $proxies->count(),
+            'passed_count' => $passed,
+            'proxies' => $proxies->all(),
+            'paper_eligible' => false,
             'promotion_evidence' => false,
         ];
     }

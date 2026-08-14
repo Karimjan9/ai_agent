@@ -87,23 +87,29 @@ class ProcessTargetedGenerationRequests extends Command
                 ->where('status', '!=', 'abandoned')
                 ->when($baseline !== null, fn ($query) => $query->where('generation', '>', $baseline))->get();
             $targetedAttempts = $targeted->filter(fn ($generation) => data_get($generation->trigger_context, 'generation_protocol') === LabPopulationService::GENERATION_PROTOCOL)->count();
+            $profile = (array) data_get($request->payload, 'screening_failure_profile', data_get($request->payload, 'forward_failure_profile', []));
+            $repairAnchorCount = count((array) data_get($profile, 'repair_anchors', []));
+            // Ordinary no-candidate rescues retain the strict two-generation
+            // budget. A failure-anchor curriculum gets one additional clean
+            // attempt so its three-cohort escape rule can be observed, but it
+            // still cannot open an unbounded mutation stream.
+            $targetedAttemptLimit = $repairAnchorCount > 0 ? 3 : 2;
             $budgetAlreadyClosed = CandidateHandoffEvent::query()->where('lab_generation_id', $source->id)
                 ->where('stage', 'targeted_generation_budget_exhausted')->get()
                 ->contains(fn ($event) => data_get($event->payload, 'protocol_version') === LabPopulationService::GENERATION_PROTOCOL)
-                && $targetedAttempts >= 2;
-            if ($targetedAttempts >= 2 || $budgetAlreadyClosed) {
+                && $targetedAttempts >= $targetedAttemptLimit;
+            if ($targetedAttempts >= $targetedAttemptLimit || $budgetAlreadyClosed) {
                 if (! $budgetAlreadyClosed) {
                     $handoffs->record($source, null, 'targeted_generation_budget_exhausted', 'blocked', 'TARGETED_GENERATION_BUDGET_EXHAUSTED', [
                         'baseline_generation' => $baseline, 'targeted_attempts' => $targetedAttempts,
                         'protocol_version' => LabPopulationService::GENERATION_PROTOCOL,
-                        'rule' => 'At most two targeted populations may follow one baseline without a new validated signal; require a data/edge audit before any further mutation.',
+                        'rule' => "At most {$targetedAttemptLimit} targeted populations may follow one baseline without a new validated signal; require a data/edge audit before any further mutation.",
                         'next_action' => 'data_edge_audit_required',
                     ]);
                     $this->warn("{$lab->symbol}: targeted generation budget exhausted; data/edge audit required before further mutation.");
                 }
                 continue;
             }
-            $profile = (array) data_get($request->payload, 'screening_failure_profile', data_get($request->payload, 'forward_failure_profile', []));
             $targetProfile = $this->targetProfile($source, $request, $profile);
             $created = $populations->build(
                 $lab->symbol,
@@ -171,6 +177,10 @@ class ProcessTargetedGenerationRequests extends Command
             'profile_hash' => (string) data_get($request->payload, 'handoff_profile_hash', hash('sha256', json_encode($profile))),
             'target_counts' => $targetCounts,
             'targets' => $targets,
+            'repair_anchors' => collect((array) data_get($profile, 'repair_anchors', []))
+                ->filter(fn (mixed $anchor): bool => is_array($anchor) && filled(data_get($anchor, 'id')))
+                ->values()->all(),
+            'repair_anchor_protocol' => (string) data_get($profile, 'repair_anchor_protocol', \App\Services\FailureRepairAnchorService::PROTOCOL),
             'observed_profile' => $profile,
             'promotion_evidence' => false,
             'rule' => 'Five four-seat groups: PF/stress, temporal/calendar, regime specialist, non-target regression and architecture/control. Full/forward/paper gates remain unchanged.',

@@ -60,8 +60,14 @@ class TargetedRescueProfileService
 
         $symbol = strtoupper((string) $generation->laboratory?->symbol);
         $timeframe = strtoupper((string) $generation->laboratory?->timeframe);
+        // This service is also called directly by the operator-approved
+        // rescue command. Reconcile anchors at this boundary so that command
+        // cannot silently lose the immutable failed vectors.
+        $repairAnchors = app(FailureRepairAnchorService::class)->recordFromHandoff($generation, 'screening');
+        $cellAudit = app(LabFailureStudyService::class)->cellAnalysisForGeneration($generation);
         $profile = [
             'protocol' => LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL,
+            'rescue_curriculum' => LabPopulationService::TARGETED_RESCUE_CURRICULUM,
             'rescue_protocol' => LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL,
             'temporary' => true,
             'population_size' => count(LabPopulationService::POPULATION_GROUPS) * LabPopulationService::POPULATION_GROUP_SEATS,
@@ -78,6 +84,15 @@ class TargetedRescueProfileService
             ])),
             'incomplete_evidence_agent_ids' => array_values(array_unique($incompleteAgentIds)),
             'technical_excluded_agent_ids' => array_values(array_unique($technicalExcludedAgentIds)),
+            'repair_anchors' => $repairAnchors,
+            'repair_anchor_protocol' => FailureRepairAnchorService::PROTOCOL,
+            'temporal_edge_audit' => [
+                'protocol' => 'temporal_failure_cell_audit_v1',
+                'source' => 'immutable_response_artifact_pf_attribution',
+                'dominant_cells' => (array) data_get($cellAudit, 'dominant_cells', []),
+                'diagnostic_only' => true,
+                'promotion_evidence' => false,
+            ],
             'actionable_failure_count' => array_sum($targetCounts),
             'causal_prior_allowed' => false,
             'promotion_evidence' => false,
@@ -90,7 +105,7 @@ class TargetedRescueProfileService
 
     private function targetForReason(string $reason): ?string
     {
-        return match ($reason) {
+        return app(FailureRepairAnchorService::class)->targetForReason($reason) ?? match ($reason) {
             'FAILED_PROFIT_FACTOR' => 'profit_factor',
             'FAILED_STRESS_COST' => 'stress_cost',
             'FAILED_TEMPORAL_CHUNK_SURVIVAL',

@@ -52,6 +52,48 @@ class MarketVolumeService
         ];
     }
 
+    /**
+     * Return the single volume provenance object used by the MTF laboratory.
+     *
+     * The execution frame is M15, so Python uses the M15 normalization bucket
+     * while the H1 quality result is retained as part of the immutable data
+     * contract.  A caller may still run a no-volume control when this object
+     * is unavailable, but a volume-dependent hypothesis must require both
+     * source checks to pass before it is replayed.
+     *
+     * @return array<string, mixed>
+     */
+    public function mtfContext(string $symbol): array
+    {
+        $symbol = strtoupper($symbol);
+        $entryQuality = $this->inspect($symbol, 'M15');
+        $regimeQuality = $this->inspect($symbol, 'H1');
+        $passed = data_get($entryQuality, 'status') === 'passed'
+            && data_get($regimeQuality, 'status') === 'passed';
+
+        return [
+            'enabled' => true,
+            'status' => $passed ? 'passed' : 'volume_unavailable',
+            'symbol' => $symbol,
+            'provider' => 'dukascopy',
+            'transport' => 'jetta',
+            'unit' => self::UNIT,
+            'semantic' => self::SEMANTIC,
+            'session' => 'UTC',
+            'source_contract' => self::SOURCE_CONTRACT,
+            'protocol' => 'relative_volume_session_v2',
+            'timeframe' => 'M15',
+            'entry_timeframe' => 'M15',
+            'regime_timeframe' => 'H1',
+            'entry_quality' => $entryQuality,
+            'regime_quality' => $regimeQuality,
+            'entry_snapshot_hash' => $this->snapshotHash($symbol, 'M15'),
+            'regime_snapshot_hash' => $this->snapshotHash($symbol, 'H1'),
+            'contract' => $this->contract(),
+            'promotion_evidence' => false,
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function sync(
         string $symbol,
@@ -140,6 +182,41 @@ class MarketVolumeService
             'chunk_pause_seconds' => $chunkPauseSeconds,
             'resumable' => true,
         ];
+    }
+
+    /**
+     * Incrementally refresh only the recent tail used by live MTF context.
+     * Full archive backfills remain available through sync() without a tail.
+     * The small rewind repairs a short provider gap without re-downloading the
+     * entire historical archive on every scheduler tick.
+     *
+     * @return array<string, mixed>
+     */
+    public function syncTail(string $symbol, string $timeframe = 'H1', int $tailHours = 168): array
+    {
+        $symbol = strtoupper($symbol);
+        $timeframe = strtoupper($timeframe);
+        $latestPrice = Candle::query()
+            ->whereHas('symbol', fn ($query) => $query->where('code', $symbol))
+            ->where('timeframe', $timeframe)
+            ->max('time');
+        if (! $latestPrice) {
+            return $this->sync($symbol, $timeframe);
+        }
+
+        $to = CarbonImmutable::parse($latestPrice, 'UTC');
+        $to = $timeframe === 'M15' ? $to->addMinutes(15) : $to->addHour();
+        $latestVolume = MarketVolumeObservation::query()
+            ->where('source_contract', self::SOURCE_CONTRACT)
+            ->where('symbol', $symbol)
+            ->where('timeframe', $timeframe)
+            ->max('time');
+        $rewindHours = $timeframe === 'M15' ? 48 : 168;
+        $from = $latestVolume
+            ? CarbonImmutable::parse($latestVolume, 'UTC')->subHours($rewindHours)
+            : $to->subHours(max(1, $tailHours));
+
+        return $this->sync($symbol, $timeframe, $from, $to);
     }
 
     /** @return array<string, mixed> */
@@ -281,6 +358,25 @@ class MarketVolumeService
     private function timeKey(mixed $time): string
     {
         return CarbonImmutable::parse($time, 'UTC')->format('Y-m-d H:i:s');
+    }
+
+    private function snapshotHash(string $symbol, string $timeframe): string
+    {
+        $rows = MarketVolumeObservation::query()
+            ->where('source_contract', self::SOURCE_CONTRACT)
+            ->where('symbol', strtoupper($symbol))
+            ->where('timeframe', strtoupper($timeframe))
+            ->orderBy('time')
+            ->get(['time', 'raw_volume', 'status'])
+            ->map(fn (MarketVolumeObservation $row): array => [
+                'time' => $this->timeKey($row->time),
+                'raw_volume' => (float) $row->raw_volume,
+                'status' => (string) $row->status,
+            ])
+            ->values()
+            ->all();
+
+        return hash('sha256', json_encode($rows, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES));
     }
 
     private function isExpectedVolumeCandle(mixed $time, string $symbol, string $timeframe): bool

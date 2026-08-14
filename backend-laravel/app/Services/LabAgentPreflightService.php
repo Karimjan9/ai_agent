@@ -242,9 +242,25 @@ class LabAgentPreflightService
             }
         }
         $singleGeneRequired = (bool) data_get($model?->metadata, 'mutation_constructor_invariant.single_gene_required', false);
-        if ($singleGeneRequired && ! $isControl && count($parameterDiff) !== 1) $errors[] = 'ONE_GENE_INVARIANT_FAILED';
+        // Architecture is a first-class causal gene. Architecture rescue
+        // seats intentionally keep parameter_diff empty while changing only
+        // the sealed strategy topology; treating that as a parameter
+        // one-gene failure quarantines the valid architecture variant before
+        // it can be screened. Controls remain separately marked control_only.
+        $architectureGeneChanged = (bool) data_get(
+            $model?->metadata,
+            'mutation_constructor_invariant.architecture_changed',
+            false,
+        ) && (string) data_get($model?->metadata, 'mutation_constructor_invariant.architecture_variant', '') !== '';
+        if ($singleGeneRequired && ! $isControl && count($parameterDiff) !== 1 && ! $architectureGeneChanged) {
+            $errors[] = 'ONE_GENE_INVARIANT_FAILED';
+        }
         if (! $isControl && $parameterDiff !== [] && collect($parameterDiff)->every(function ($change): bool {
             if (! is_array($change) || ! array_key_exists('old', $change) || ! array_key_exists('new', $change)) return false;
+            if (! is_bool($change['old']) && ! is_bool($change['new'])
+                && is_numeric($change['old']) && is_numeric($change['new'])) {
+                return (float) $change['old'] === (float) $change['new'];
+            }
             return json_encode($change['old'], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)
                 === json_encode($change['new'], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES);
         })) {

@@ -49,6 +49,41 @@ $scheduleArtisan('market-data:update', ['--timeframe' => 'H1', '--limit' => 1000
 $scheduleArtisan('market-data:update', ['--timeframe' => 'M15', '--limit' => 500])
     ->everyFifteenMinutes()
     ->withoutOverlapping();
+// Volume is a separate canonical feed. Keep its checkpoint cadence aligned
+// with the entry stream so volume hypotheses do not silently run on an old
+// tail while the price feed is fresh. The sync command is resumable and does
+// not alter the no-volume control or promotion state.
+$scheduleArtisan('market-data:sync-volume', ['symbol' => 'XAUUSD', '--timeframe' => 'M15', '--tail-hours' => 72])
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('market-data:sync-volume', ['symbol' => 'XAUUSD', '--timeframe' => 'H1', '--tail-hours' => 168])
+    ->hourlyAt(12)
+    ->withoutOverlapping();
+// Long XAUUSD training history is deliberately backfilled in bounded,
+// resumable chunks. It writes only market_training_candles and never replaces
+// the canonical Twelve candle stream used by live/paper gates.
+$scheduleArtisan('market-data:backfill-training', [
+    '--symbol' => 'XAUUSD',
+    '--timeframe' => 'M15',
+    '--chunk-days' => 31,
+    '--max-chunks' => 1,
+    '--dataset' => 'foundation_10y',
+    '--provider' => 'dukascopy',
+    '--transport' => 'jetta',
+])
+    ->everyThirtyMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('market-data:backfill-training', [
+    '--symbol' => 'XAUUSD',
+    '--timeframe' => 'H1',
+    '--chunk-days' => 31,
+    '--max-chunks' => 1,
+    '--dataset' => 'foundation_10y',
+    '--provider' => 'dukascopy',
+    '--transport' => 'jetta',
+])
+    ->everySixHours()
+    ->withoutOverlapping();
 $scheduleArtisan('market-data:audit', ['--timeframe' => 'H1'])
     ->hourlyAt(10)
     ->withoutOverlapping();
@@ -125,6 +160,53 @@ $scheduleArtisan('trading:dispatch-full-validation')
 $scheduleArtisan('trading:dispatch-full-validation', ['--timeframe' => 'M15'])
     ->everyFiveMinutes()
     ->withoutOverlapping();
+// Research-only near-miss learning runs are admitted only with a paired
+// control/parent/anchor baseline. The command defers while the serialized
+// heavy lane is busy and never changes the promotion clock.
+$scheduleArtisan('trading:dispatch-learning-lane', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+    '--limit' => 4,
+])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+// A single-seat pump retries only after the queue, shared replay mutex and AI
+// evaluator are idle. Micro-confirmation is enforced inside dispatch.
+$scheduleArtisan('trading:pump-learning-lane', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+    '--limit' => 1,
+])
+    ->everyMinute()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:monitor-learning-lane', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+    '--json' => true,
+])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:monitor-learning-velocity', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+    '--json' => true,
+])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:monitor-parent-evolution', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+    '--json' => true,
+])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:monitor-failure-dojo', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+    '--json' => true,
+])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
 $scheduleArtisan('trading:reconcile-lab-funnel')
     // Scheduled ticks are dry-run only. A state-changing reconciliation
     // requires an explicit operator-approved CLI invocation after the queue
@@ -135,6 +217,19 @@ $scheduleArtisan('trading:study-lab-failures', ['--persist' => true])
     // Failure grouping is a diagnostic learning step. It updates the
     // auditable study plane but never creates agents or relaxes a gate.
     ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:compile-failure-signatures', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:prepare-gene-interactions', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+    '--json' => true,
+])
+    ->everyFifteenMinutes()
     ->withoutOverlapping();
 $scheduleArtisan('trading:dispatch-portfolio-member-replay')
     // This is a research-only second lane for strong niche members whose
@@ -163,7 +258,7 @@ $scheduleArtisan('trading:recover-incomplete-lab-evidence', ['--limit' => 6, '--
 // Only the XAUUSD H1 lighthouse may be proposed by the rescue scheduler.
 // The tick is dry-run; creation still requires explicit operator approval.
 $scheduleArtisan('trading:dispatch-controlled-targeted-rescue', [
-    'XAUUSD',
+    'symbol' => 'XAUUSD',
     '--timeframe' => 'H1',
 ])
     ->everyFiveMinutes()

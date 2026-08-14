@@ -86,6 +86,81 @@ class AgentLifecycleAuditTest extends TestCase
         $this->assertSame('screening', $generation->fresh()->status);
     }
 
+    public function test_architecture_only_zero_parameter_diff_is_not_a_constructor_failure(): void
+    {
+        $this->fakeReplayStatus();
+        [$lab, $generation] = $this->generation('XAUUSD', 'H1', 1, [
+            'constructor_audit' => [
+                'planned_slots' => 1,
+                'created_agents' => 1,
+                'skipped_zero_diff_slots' => [],
+            ],
+        ]);
+        $agent = $this->agent($generation, 'portfolio_router');
+        $agent->update(['parameter_diff' => []]);
+        $agent->modelVersion->update(['metadata' => [
+            ...$agent->modelVersion->metadata,
+            'mutation_constructor_invariant' => [
+                'status' => 'passed',
+                'control_only' => false,
+                'architecture_changed' => true,
+                'architecture_variant' => 'regime_consensus',
+            ],
+            'portfolio_council_lane' => [
+                'architecture_experiment' => true,
+            ],
+        ]]);
+
+        $report = app(AgentLifecycleAuditService::class)->audit($lab->symbol, $lab->timeframe, false, false);
+        $constructor = $this->check($report, 'CONSTRUCTOR_INVARIANT');
+
+        $this->assertSame('passed', $constructor['status']);
+        $this->assertSame([], $constructor['metrics']['zero_diff_agent_ids']);
+        $this->assertSame(1, $constructor['metrics']['architecture_only_count']);
+    }
+
+    public function test_technical_zero_diff_quarantine_does_not_block_the_active_laboratory(): void
+    {
+        $this->fakeReplayStatus();
+        $auditService = app(AgentLifecycleAuditService::class);
+        $zeroDiff = new \ReflectionMethod($auditService, 'isZeroDiff');
+        $zeroDiff->setAccessible(true);
+        $this->assertTrue($zeroDiff->invoke($auditService, [
+            'partial_take_profit_fraction' => ['old' => 0, 'new' => 0.0],
+        ]));
+
+        [$lab, $generation] = $this->generation('XAUUSD', 'H1', 1, [
+            'constructor_audit' => [
+                'planned_slots' => 1,
+                'created_agents' => 1,
+                'skipped_zero_diff_slots' => [],
+            ],
+        ]);
+        $agent = $this->agent($generation, 'volatility_session_stability', [
+            'preflight_quarantine' => [
+                'protocol' => \App\Services\LabAgentPreflightService::PROTOCOL,
+                'errors' => ['ZERO_DIFF_INVARIANT_FAILED'],
+            ],
+            'mutation_constructor_invariant' => [
+                'status' => 'passed',
+                'control_only' => false,
+            ],
+        ]);
+        $agent->update([
+            'lifecycle_status' => 'technical_quarantine',
+            'parameter_diff' => [
+                'partial_take_profit_fraction' => ['old' => 0, 'new' => 0.0],
+            ],
+        ]);
+
+        $report = app(AgentLifecycleAuditService::class)->audit($lab->symbol, $lab->timeframe, false, false);
+        $constructor = $this->check($report, 'CONSTRUCTOR_INVARIANT');
+
+        $this->assertSame('attention', $constructor['status']);
+        $this->assertSame([], $constructor['metrics']['zero_diff_agent_ids']);
+        $this->assertSame([$agent->id], $constructor['metrics']['technical_quarantine_zero_diff_agent_ids']);
+    }
+
     public function test_m15_requires_a_frozen_closed_h1_regime_snapshot(): void
     {
         $this->fakeReplayStatus();

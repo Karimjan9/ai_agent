@@ -103,6 +103,26 @@ class MarketChampionService
                     && ! (bool) data_get($forwardWindowEvidence, 'stateful_diagnostic_only', false),
             ];
             $agent = LabAgent::query()->with(['mutationMemories', 'generation'])->where('model_version_id', $model->id)->latest()->first();
+            $learningLane = $agent !== null
+                && data_get($agent->modelVersion?->metadata, 'learning_lane.protocol') === LearningLaneService::PROTOCOL
+                && data_get($agent->modelVersion?->metadata, 'learning_lane.promotion_evidence', false) !== true;
+            if ($learningLane) {
+                $result['learning_lane'] = [
+                    ...((array) data_get($agent->modelVersion?->metadata, 'learning_lane', [])),
+                    'promotion_evidence' => false,
+                ];
+            }
+            if ($agent && (int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0) > 0) {
+                // The repair contract must be available before passport and
+                // backtest gates are built. Waiting until the memory update
+                // would make every valid repair look unverified at the gate.
+                $result['no_regression_contract'] = $this->evolutionQuality->noRegressionContract(
+                    app(FailureRepairAnchorService::class)->baselineResult($agent),
+                    $result,
+                );
+                $result['repair_anchor_verification'] = app(FailureRepairAnchorService::class)
+                    ->verifyRepairCandidate($agent, $result);
+            }
             $result['trial_ledger'] = [
                 'generation_id' => $agent?->lab_generation_id, 'model_version_id' => $model->id,
                 'generation_trials' => $agent ? LabAgent::query()->where('lab_generation_id', $agent->lab_generation_id)->count() : 1,
@@ -197,7 +217,18 @@ class MarketChampionService
             );
             $performance->update(['metrics' => $result]);
 
-            if ($champion?->id === $performance->id) {
+            if ($learningLane) {
+                // Learning-lane replays are deliberately economic
+                // observations, not a hidden forward/paper shortcut.  Even a
+                // score that beats the current frontier stays a challenger
+                // until it enters the ordinary screen -> full -> forward
+                // protocol in a fresh promotion lane.
+                $performance->update([
+                    'status' => 'challenger',
+                    'champion_slot' => null,
+                    'paper_status' => null,
+                ]);
+            } elseif ($champion?->id === $performance->id) {
                 $performance->update(['status' => 'champion', 'champion_slot' => 'champion']);
             } elseif ($this->backtestGatesPass($performance, $champion, $result)) {
                 $performance->update(['status' => 'forward_validated', 'champion_slot' => null]);
@@ -245,14 +276,100 @@ class MarketChampionService
                 'veto_policy_lab' => $result['veto_policy_lab'], 'transfer_matrix' => $result['transfer_matrix']]]);
             $this->diagnoses->diagnose($performance->fresh(), $result);
             $this->decisionLearning->learn($performance->fresh(), $result);
+            // Bind the parent counterfactual before recordForward evaluates
+            // the parent-benefit contract. This is still research evidence;
+            // it only makes an already-observed A/B/C branch visible to the
+            // gate and never grants promotion by itself.
+            if ($agent) {
+                try {
+                    $preForwardParentCredit = app(ParentAwareCreditService::class)->recordFullReplay(
+                        $agent->fresh(['modelVersion']),
+                        $result,
+                        $performance->fresh(),
+                        null,
+                    );
+                    $result['parent_aware_credit'] = $preForwardParentCredit;
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
             $forwardDecision = $this->gateDecisions->recordForward($performance->fresh(), $result);
-            $repairQuarantined = $agent
+            $repairQuarantined = $agent && ! $learningLane
                 ? $this->applyRepairQuarantine($agent, $model, $performance, $forwardDecision, $result)
                 : false;
             // The gate ledger is the authoritative evaluation record; mirror
             // its immutable decision into the operational handoff so the
             // screened -> ... -> forward_gate chain has no missing endpoint.
             if ($agent) {
+                // updateLabAgentAndMemory has now computed the verified skill
+                // contract. Only at this point can a screened Seed become a
+                // Mentor; the projection never opens a promotion gate.
+                try {
+                    $mentorContract = null;
+                    if ($learningLane) {
+                        $learningProjection = app(LearningLaneService::class)->recordFullReplayObservation(
+                            $agent->fresh(['modelVersion']),
+                            $performance->fresh(),
+                            $result,
+                        );
+                        $result['learning_lane_projection'] = $learningProjection;
+                        $mentorContract = data_get($agent->fresh('modelVersion')->modelVersion->metadata, 'skill_mentor');
+                        $result['skill_mentor'] = $mentorContract;
+                        $result['mutation_response_map'] = [
+                            'id' => data_get($learningProjection, 'response_map_id'),
+                            'status' => data_get($learningProjection, 'status', 'learning_observed'),
+                            'promotion_evidence' => false,
+                        ];
+                    } else {
+                        $mentorContract = app(SkillMentorService::class)->recordFullReplayOutcome(
+                            $agent->fresh(['modelVersion']),
+                            $performance->fresh(),
+                            $result,
+                            $forwardDecision,
+                        );
+                        $result['skill_mentor'] = $mentorContract;
+                        $result['mutation_response_map'] = app(MutationResponseMapService::class)->recordFullReplay(
+                            $agent->fresh(['modelVersion']),
+                            $result,
+                            $performance->fresh(),
+                            data_get($result, 'repair_anchor_verification', data_get($result, 'verified_mutation_skill')),
+                        );
+                        if ((int) data_get($result, 'repair_anchor_verification.repair_anchor_id', 0) > 0) {
+                            $result['repair_anchor_forward_outcome'] = app(FailureRepairAnchorService::class)
+                                ->recordRepairForwardOutcome(
+                                    $agent->fresh(['modelVersion']),
+                                    (array) data_get($result, 'repair_anchor_verification', []),
+                                    $result,
+                                );
+                        }
+                    }
+                    $performance->update(['metrics' => [...((array) $performance->metrics), 'skill_mentor' => $mentorContract, 'mutation_response_map' => $result['mutation_response_map'] ?? ['status' => 'learning_projection_unavailable', 'promotion_evidence' => false]]]);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+                try {
+                    // Parent-aware credit is deliberately downstream of the
+                    // immutable full-replay/forward decision. It records
+                    // performance, learning and discovery separately and
+                    // keeps parent credit blocked until autonomous/mentored/
+                    // ablated branches are observed on the same contract.
+                    $parentAwareCredit = app(ParentAwareCreditService::class)->recordFullReplay(
+                        $agent->fresh(['modelVersion']),
+                        $result,
+                        $performance->fresh(),
+                        $forwardDecision,
+                    );
+                    $result['parent_aware_credit'] = $parentAwareCredit;
+                    $performance->update([
+                        'metrics' => [
+                            ...((array) $performance->metrics),
+                            'parent_aware_credit' => $parentAwareCredit,
+                            'promotion_evidence' => false,
+                        ],
+                    ]);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
                 $this->handoffs->record($agent->generation, $agent, 'forward_gate', $forwardDecision->decision, null, [
                     'candidate_gate_decision_id' => $forwardDecision->id,
                     'performance_id' => $performance->id,
@@ -517,11 +634,18 @@ class MarketChampionService
             || ((int) data_get($result, 'challenger_protocol.observed_forward_windows', 0) >= $requiredWins
                 && (int) data_get($result, 'challenger_protocol.positive_forward_windows', 0) >= $requiredWins
                 && $forwardWindowIntegrity);
+        $candidate->loadMissing('modelVersion');
+        $researchOnlySibling = in_array((string) data_get($candidate->modelVersion?->metadata, 'repair_anchor.sibling_kind', ''), ['frozen_control', 'architecture_escape'], true)
+            || in_array((string) data_get($candidate->modelVersion?->metadata, 'repair_anchor_sibling.kind', ''), ['frozen_control', 'architecture_escape'], true);
         $repairLineage = (array) data_get($candidate->modelVersion?->metadata, 'repair_lineage', []);
+        $repairAnchorId = (int) data_get($candidate->modelVersion?->metadata, 'repair_anchor.id', 0);
         $repairReplayPasses = (int) data_get($repairLineage, 'attempt', 0) === 0
-            || (count((array) ($this->agentParameterDiff($candidate) ?? [])) === 1
-                && data_get($result, 'paired_replay.status') === 'confirmed'
-                && data_get($result, 'no_regression_contract.status') === 'passed');
+            || ($repairAnchorId > 0
+                ? data_get($result, 'repair_anchor_verification.status') === 'confirmed'
+                    && data_get($result, 'no_regression_contract.status') === 'passed'
+                : (count((array) ($this->agentParameterDiff($candidate) ?? [])) === 1
+                    && data_get($result, 'paired_replay.status') === 'confirmed'
+                    && data_get($result, 'no_regression_contract.status') === 'passed'));
 
         return $forwardGain >= ($champion ? 5 : 0)
             && (float) ($result['profit_factor'] ?? 0) >= 1.3
@@ -546,6 +670,7 @@ class MarketChampionService
             && $challengerProtocolPasses
             && $freshReplayPasses
             && $parentBenefitPasses
+            && ! $researchOnlySibling
             && (! $strictRobustnessProtocol || $repairReplayPasses);
     }
 
@@ -630,6 +755,7 @@ class MarketChampionService
         $agent = LabAgent::where('model_version_id', $performance->model_version_id)->latest()->first();
         if (! $agent) return;
         $agent->loadMissing('modelVersion', 'generation');
+        $repairAnchor = (int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0) > 0;
         $skillTree = $this->skillTree($result);
         $delta = $champion ? $performance->forward_score - $champion->forward_score : $performance->forward_score;
         $reason = match ($performance->status) {
@@ -699,12 +825,24 @@ class MarketChampionService
         // ranking diagnostics, but it is never a parent/child replay claim.
         $geneticParentPerformance = $parentA ?: $parentB;
         $parentPerformance = $geneticParentPerformance;
+        if ($repairAnchor) {
+            // A source performance may be used for a diagnostic score, but it
+            // must never open ordinary parent-benefit or genetic credit.
+            $geneticParentPerformance = null;
+            $geneticParentResult = null;
+            $parentPerformance = null;
+            $baseline = [
+                'type' => 'failure_repair_anchor',
+                'repair_anchor_id' => data_get($agent->modelVersion?->metadata, 'repair_anchor.id'),
+                'agent_ids' => [],
+            ];
+        }
         $frontierBaseline = $champion ? [...($champion->metrics ?? []), 'forward_score' => $champion->forward_score] : null;
-        if (! $parentPerformance && $champion) {
+        if (! $parentPerformance && $champion && ! $repairAnchor) {
             $parentPerformance = $champion;
             $baseline = ['type' => 'family_frontier', 'agent_ids' => [$champion->model_version_id]];
         }
-        if (! $parentPerformance) {
+        if (! $parentPerformance && ! $repairAnchor) {
             $previous = ModelMarketPerformance::with('modelVersion')->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)
                 ->where('strategy_family', $agent->strategy_family)->whereHas('modelVersion', fn ($query) => $query->where('generation', '<', $agent->generation?->generation ?? PHP_INT_MAX))
                 ->orderByDesc('forward_score')->first();
@@ -726,7 +864,12 @@ class MarketChampionService
             && ($adaptiveParentCount > 1 || in_array($agent->origin, [
                 'robust_crossover', 'architecture', 'crossover',
             ], true) || $agent->strategy_family === 'regime_ensemble');
-        $noRegression = $multiParent
+        $noRegression = $repairAnchor
+            ? $this->evolutionQuality->noRegressionContract(
+                app(FailureRepairAnchorService::class)->baselineResult($agent),
+                $result,
+            )
+            : ($multiParent
             ? $this->evolutionQuality->noRegressionAcrossParents(
                 $parentPerformances->map(fn (ModelMarketPerformance $candidate): array => [
                     'model_version_id' => $candidate->model_version_id,
@@ -734,11 +877,36 @@ class MarketChampionService
                 ])->all(),
                 $result,
             )
-            : $this->evolutionQuality->noRegressionContract($geneticParentResult, $result);
+            : $this->evolutionQuality->noRegressionContract($geneticParentResult, $result));
+        if ($repairAnchor) {
+            // A repair child has no genetic parent by design. Keep the failed
+            // source as an immutable comparison baseline only and publish the
+            // explicit verification contract after no-regression is known.
+            $result['no_regression_contract'] = $noRegression;
+            $result['repair_anchor_verification'] = app(FailureRepairAnchorService::class)
+                ->verifyRepairCandidate($agent, $result);
+            $repairConfirmed = data_get($result, 'repair_anchor_verification.status') === 'confirmed';
+            $repairMetadata = (array) $agent->modelVersion?->metadata;
+            data_set($repairMetadata, 'repair_anchor.verification', $result['repair_anchor_verification']);
+            data_set($repairMetadata, 'repair_anchor.parent_eligible_after_confirmation', $repairConfirmed);
+            data_set($repairMetadata, 'repair_anchor.mutation_credit_status', $repairConfirmed ? 'independently_confirmed' : 'pending_paired_full_replay_forward');
+            data_set($repairMetadata, 'repair_lineage.status', $repairConfirmed ? 'confirmed' : 'active');
+            data_set($repairMetadata, 'repair_lineage.parent_eligible', $repairConfirmed);
+            data_set($repairMetadata, 'repair_lineage.mutation_credit_status', $repairConfirmed ? 'independently_confirmed' : 'pending_paired_full_replay_forward');
+            $agent->modelVersion?->update(['metadata' => $repairMetadata]);
+        }
         $capabilityVector = $this->evolutionQuality->capabilityVector($result);
         $result['capability_vector'] = $capabilityVector;
         $operatingEnvelope = $this->evolutionQuality->operatingEnvelope($result);
-        $pairedReplay = $this->pairedReplayProjection(
+        $pairedReplay = $repairAnchor
+            ? [
+                'protocol' => FailureRepairAnchorService::PROTOCOL,
+                'status' => data_get($result, 'repair_anchor_verification.paired_screening.status') === 'confirmed'
+                    ? 'repair_baseline_confirmed' : 'pending',
+                'source_model_version_id' => data_get($result, 'repair_anchor_verification.source_model_version_id'),
+                'promotion_evidence' => false,
+            ]
+            : $this->pairedReplayProjection(
             $agent,
             $geneticParentResult,
             $result,
@@ -747,7 +915,15 @@ class MarketChampionService
         $pairedExperiment = (array) data_get($pairedReplay, 'experiment', []);
         $result['paired_replay'] = $pairedReplay;
         $result['no_regression_contract'] = $noRegression;
-        $mutationSkillContract = $this->mutationSkills->verify(
+        $mutationSkillContract = $repairAnchor
+            ? [
+                'protocol' => FailureRepairAnchorService::PROTOCOL,
+                'status' => data_get($result, 'repair_anchor_verification.status', 'not_confirmed'),
+                'repair_anchor_id' => data_get($result, 'repair_anchor_verification.repair_anchor_id'),
+                'parent_eligible_after_confirmation' => (bool) data_get($result, 'repair_anchor_verification.parent_eligible_after_confirmation', false),
+                'promotion_evidence' => false,
+            ]
+            : $this->mutationSkills->verify(
             $agent,
             $geneticParentPerformance?->modelVersion,
             $geneticParentResult,
@@ -781,7 +957,8 @@ class MarketChampionService
         $contractFailure = $noRegression['status'] === 'failed';
         $outcome = ($hardFailure || $contractFailure) ? 'harmful' : ($delta >= 5 ? 'beneficial' : ($delta <= -5 ? 'harmful' : 'neutral'));
         $learningDelta = ($hardFailure || $contractFailure) ? min($delta, -10) : $delta;
-        $skillConfirmed = data_get($mutationSkillContract, 'status') === 'confirmed';
+        $skillConfirmed = ! $repairAnchor && data_get($mutationSkillContract, 'status') === 'confirmed';
+        $repairConfirmed = $repairAnchor && data_get($result, 'repair_anchor_verification.status') === 'confirmed';
         $skillWindowCount = (int) data_get($mutationSkillContract, 'independent_forward_windows.confirmed_windows', 0);
         $skillOutcome = $skillConfirmed && data_get($mutationSkillContract, 'target_gate.improved') === true
             ? 'beneficial'
@@ -818,7 +995,9 @@ class MarketChampionService
             'lane' => data_get($g98Lane, 'lane'),
         ];
         $causalCredit = [
-            'status' => $skillConfirmed ? 'independently_confirmed' : ($isSingleMutation ? 'awaiting_verified_skill_confirmation' : 'bundle_unattributed'),
+            'status' => $repairAnchor
+                ? ($repairConfirmed ? 'independently_confirmed' : 'repair_exploratory_no_credit')
+                : ($skillConfirmed ? 'independently_confirmed' : ($isSingleMutation ? 'awaiting_verified_skill_confirmation' : 'bundle_unattributed')),
             'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
             'parent_model_version_ids' => $parentPerformances->pluck('model_version_id')->values()->all(),
             'changed_fields' => $changedFields,
@@ -827,10 +1006,13 @@ class MarketChampionService
             'counterfactual_replay_contract' => data_get($result, 'counterfactual_blame_graph'),
             'g98_failure_eliminator_lane' => $g98Lane ?: null,
             'verified_skill_contract' => $mutationSkillContract,
-            'rule' => 'Aggregate bundle outcome is never automatically credited to each changed parameter; G98 also requires all five counterfactual replays to be assessed.',
+            'repair_anchor_id' => $repairAnchor ? data_get($agent->modelVersion?->metadata, 'repair_anchor.id') : null,
+            'rule' => $repairAnchor
+                ? 'Repair-anchor evidence becomes mutation credit and future-parent eligibility only after paired screening, full replay and independent forward confirmation all pass.'
+                : 'Aggregate bundle outcome is never automatically credited to each changed parameter; G98 also requires all five counterfactual replays to be assessed.',
         ];
         $evidenceLedger = app(LabImmutableEvidenceService::class);
-        if (! $isSingleMutation && $changedFields !== []) {
+        if (! $repairAnchor && ! $isSingleMutation && $changedFields !== []) {
             $bundleMemory = MutationMemory::updateOrCreate(['lab_agent_id' => $agent->id, 'parameter_key' => '__bundle:'.substr($causalCredit['mutation_bundle_id'], 0, 16)], [
                 'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $agent->strategy_family,
                 'old_value' => ['fields' => $changedFields], 'new_value' => ['fields' => $changedFields], 'forward_delta' => $learningDelta,
@@ -859,33 +1041,38 @@ class MarketChampionService
                 'old_value' => ['value' => $change['old'] ?? null], 'new_value' => ['value' => $change['new'] ?? null],
                 'forward_delta' => $learningDelta, 'market_regime' => $regime,
                 'execution_contract_hash' => $executionContractHash !== '' ? $executionContractHash : null,
-                'independent_confirmation_count' => $skillConfirmed ? min(2, $skillWindowCount) : 0,
+                'independent_confirmation_count' => $repairConfirmed ? 2 : ($skillConfirmed ? min(2, $skillWindowCount) : 0),
                 'non_target_regression_status' => $nonTargetRegressionStatus,
-                'evidence_scope_status' => $skillConfirmed ? 'eligible_prior' : 'historical_failure_memory',
-                'outcome' => $isSingleMutation ? $skillOutcome : 'neutral',
+                'evidence_scope_status' => $repairConfirmed ? 'eligible_prior' : ($skillConfirmed ? 'eligible_prior' : 'historical_failure_memory'),
+                'outcome' => $repairAnchor ? ($repairConfirmed && data_get($result, 'repair_anchor_verification.target_gate.improved') === true ? 'beneficial' : 'screen_inconclusive') : ($isSingleMutation ? $skillOutcome : 'neutral'),
                 'confidence' => min(100, 50 + $performance->rolling_windows_count * 10),
                 'gate_transition' => $gateTransition,
-                'decision' => $skillConfirmed
+                'decision' => $repairAnchor
+                    ? ($repairConfirmed ? 'Repair evidence independently confirmed; the child may qualify as a future parent after ordinary quality gates.' : 'Repair anchor child remains exploratory; no causal credit or parent link.')
+                    : ($skillConfirmed
                     ? 'Verified beneficial skill; exact semantic descendants may reuse this gene.'
-                    : ($delta <= -5 ? 'Observed harmful/failed mutation; no beneficial skill credit.' : 'Neutral mutation; complete verification contract is still missing.'),
+                    : ($delta <= -5 ? 'Observed harmful/failed mutation; no beneficial skill credit.' : 'Neutral mutation; complete verification contract is still missing.')),
                 'behavioral_effect' => [...$behavioralEffect, 'causal_experiment' => $mutationEffect,
                     'gate_deficit_curriculum' => $curriculum, 'no_regression_contract' => $noRegression,
                     'capability_vector' => $capabilityVector, 'operating_envelope' => $operatingEnvelope,
                     'paired_experiment' => $pairedExperiment, 'causal_credit' => $causalCredit,
                     'verified_mutation_skill' => $mutationSkillContract, 'failure_signature' => $failureSignature],
             ]);
-            $evidenceLedger->recordMutationCredit($memory, [
-                'source' => 'full_replay_parameter_learning',
-                'model_market_performance_id' => $performance->id,
-                'mutation_bundle_id' => $causalCredit['mutation_bundle_id'],
-                'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
-                'control_model_version_id' => data_get($pairedExperiment, 'alternative_model_version_id'),
-                'paired_experiment' => $pairedExperiment,
-            ], data_get($result, 'evidence_run_id'));
+            if (! $repairAnchor || $repairConfirmed) {
+                $evidenceLedger->recordMutationCredit($memory, [
+                    'source' => $repairAnchor ? 'failure_repair_anchor_confirmation' : 'full_replay_parameter_learning',
+                    'model_market_performance_id' => $performance->id,
+                    'mutation_bundle_id' => $causalCredit['mutation_bundle_id'],
+                    'parent_model_version_id' => $geneticParentPerformance?->model_version_id,
+                    'control_model_version_id' => data_get($pairedExperiment, 'alternative_model_version_id'),
+                    'paired_experiment' => $pairedExperiment,
+                    'repair_anchor_id' => $causalCredit['repair_anchor_id'],
+                ], data_get($result, 'evidence_run_id'));
+            }
         }
         $architecture = data_get($agent->modelVersion?->metadata, 'strategy_architecture');
         $parentArchitecture = data_get($geneticParentPerformance?->modelVersion?->metadata, 'strategy_architecture');
-        if ($architecture && $architecture !== $parentArchitecture) {
+        if (! $repairAnchor && $architecture && $architecture !== $parentArchitecture) {
             $memory = MutationMemory::updateOrCreate([
                 'lab_agent_id' => $agent->id, 'parameter_key' => '__architecture',
             ], [

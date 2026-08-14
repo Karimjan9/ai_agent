@@ -4,12 +4,21 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.main import _candidate_cache_payload, _dataset_dependency_manifest, _run_all_backtests_sync
+from app.main import _bounded_replay_seconds, _candidate_cache_payload, _dataset_dependency_manifest, _run_all_backtests_sync
 from app.schemas import SimpleBacktestRequest
 from app.services.execution_contract import execution_contract_metadata
 
 
 class ReplayCacheContractTest(unittest.TestCase):
+    def test_incremental_screen_timeout_is_bounded_with_operational_margin(self):
+        payload = SimpleBacktestRequest(evaluation_mode="incremental")
+
+        with patch.dict("os.environ", {"AI_REPLAY_SCREEN_HARD_TIMEOUT_SECONDS": "999"}, clear=False):
+            self.assertEqual(900, _bounded_replay_seconds(payload, "run_all"))
+
+        with patch.dict("os.environ", {"AI_REPLAY_SCREEN_HARD_TIMEOUT_SECONDS": "450"}, clear=False):
+            self.assertEqual(450, _bounded_replay_seconds(payload, "run_all"))
+
     def test_candidate_cache_identity_is_independent_of_sibling_contracts(self):
         cohort = SimpleBacktestRequest(
             strategy="all",

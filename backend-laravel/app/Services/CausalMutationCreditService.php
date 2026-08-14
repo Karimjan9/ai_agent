@@ -25,6 +25,15 @@ class CausalMutationCreditService
                 // proves exact lineage, hashes, target progress and distinct
                 // non-overlapping windows.
                 $verification = (array) data_get($memory->behavioral_effect, 'verified_mutation_skill', []);
+                // Failure-anchor verification is a separate protocol: its
+                // failed source is an immutable repair baseline, not a
+                // genetic parent/control pair. MarketChampionService records
+                // its credit only after the anchor contract is confirmed;
+                // ordinary parent-based reconciliation must not overwrite
+                // that result with a zero-window verdict.
+                if (data_get($verification, 'protocol') === FailureRepairAnchorService::PROTOCOL) {
+                    continue;
+                }
                 if ($verification !== []) {
                     $confirmed = data_get($verification, 'status') === 'confirmed';
                     $windows = min(2, (int) data_get($verification, 'independent_forward_windows.confirmed_windows', 0));

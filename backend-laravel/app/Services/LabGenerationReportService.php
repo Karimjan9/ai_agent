@@ -11,6 +11,7 @@ use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\LabMutationCreditEvent;
 use App\Models\ModelMarketPerformance;
+use App\Services\LabPopulationService;
 use Illuminate\Support\Collection;
 
 /**
@@ -55,9 +56,17 @@ class LabGenerationReportService
             'status' => 'technical_quarantine',
         ])->values()->all());
 
-        $screenDecisions = $decisions->where('stage', 'screening');
+        // Recovery can append a new gate row. The report must use one current
+        // screening decision per agent, otherwise an old failed decision can
+        // continue to look like a second quality failure after a clean
+        // replay, or a technical row can inflate the denominator.
+        $screenDecisions = $decisions->where('stage', 'screening')
+            ->sortBy('id')
+            ->groupBy('lab_agent_id')
+            ->map(fn ($rows) => $rows->last())
+            ->values();
         $screenPassed = $screenDecisions->where('decision', 'passed')->count();
-        $failedReasons = $this->reasonCounts($decisions);
+        $failedReasons = $this->reasonCounts($screenDecisions);
         $best = $this->bestAgent($agents, $performances);
         $bestPerformance = $best ? $performances->get($best->model_version_id) : null;
         $bestResult = (array) ($bestPerformance?->metrics
@@ -139,13 +148,32 @@ class LabGenerationReportService
             ->where('phase', 'full_validation')
             ->where('status', 'technical_error')
             ->count();
+        $currentScreenRuns = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->where('phase', 'screening')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('lab_agent_id')
+            ->map(fn ($runs) => $runs->last())
+            ->values();
+        $screenTerminalStatuses = ['completed', 'technical_error', 'skipped', 'legacy_snapshot'];
+        $technicalCompletionRate = $agents->count() > 0
+            ? round($currentScreenRuns->whereIn('status', $screenTerminalStatuses)->count() / $agents->count() * 100, 2)
+            : 0;
+        $qualityFailedScreeningAgents = $screenDecisions
+            ->where('decision', 'failed')
+            ->pluck('lab_agent_id')->filter()->unique()->count();
         $screeningPassRate = $screenDecisions->count() > 0
             ? round($screenPassed / $screenDecisions->count() * 100, 2)
             : 0;
         $pipelineFailure = $technicalErrors !== [] || $technicalRunCount > 0 || $screenDecisions->count() === 0;
         $screeningFailureClassification = $screenPassed > 0
             ? 'agent_quality_signal_available'
-            : ($pipelineFailure ? 'pipeline_not_working' : 'agents_failed_screening_gate');
+            : ($screenDecisions->count() === 0
+                ? 'pipeline_not_working'
+                : ($pipelineFailure
+                    ? 'pipeline_and_agent_quality_are_separate'
+                    : 'agents_failed_screening_gate'));
         $evolutionSafe = $technicalErrors === []
             && $technicalRunCount === 0
             && $screeningPassRate > 0
@@ -164,10 +192,55 @@ class LabGenerationReportService
             ->pluck('target')->merge($agents->map(fn (LabAgent $agent) => data_get($agent->modelVersion?->metadata, 'generation_target')))
             ->filter()->unique()->values()->all();
         $targetedAttempts = $generation->laboratory
-            ? $generation->laboratory->generations()->where('generation', '<', $generation->generation)->where('trigger_type', 'candidate_handoff')->count()
+            ? $generation->laboratory->generations()->where('generation', '<', $generation->generation)->where('trigger_type', 'candidate_handoff')
+                ->where('status', '!=', 'abandoned')->get()
+                ->filter(fn (LabGeneration $candidate): bool => data_get($candidate->trigger_context, 'generation_protocol') === LabPopulationService::GENERATION_PROTOCOL)
+                ->count()
             : 0;
         $coverageKpis = $this->coverageKpis($agents, $performances);
         $populationGroupCheckpoints = $this->populationGroupCheckpoints($agents, $performances);
+        $responseMapProgress = app(MutationResponseMapService::class)->progress(
+            (string) $generation->laboratory?->symbol,
+            (string) $generation->laboratory?->timeframe,
+        );
+        $stageCounts = $agents->map(fn (LabAgent $agent): string =>
+            (string) data_get($agent->modelVersion?->metadata, 'evolution_stage.stage', 'unclassified')
+        )->countBy()->all();
+        $mentorCount = $agents->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'skill_mentor'
+        )->count();
+        $mentorBirths = $agents->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'skill_mentor.status') === 'confirmed'
+            && data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'skill_mentor'
+        )->count();
+        $seedCount = $agents->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'screen_validated_seed'
+        )->count();
+        $anchorSiblingCounts = $agents->filter(fn (LabAgent $agent): bool =>
+            filled(data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id'))
+        )->countBy(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id'))->all();
+        $roleFrontier = $agents->groupBy(fn (LabAgent $agent): string => (string) (
+            data_get($agent->modelVersion?->metadata, 'council_specialist_contract.role')
+            ?: data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.role')
+            ?: data_get($agent->modelVersion?->metadata, 'portfolio_council_lane.specialist_role')
+            ?: 'unassigned'
+        ))->map(function (Collection $members): array {
+            $eligible = $members->filter(fn (LabAgent $agent): bool =>
+                in_array((string) data_get($agent->modelVersion?->metadata, 'evolution_stage.stage'), ['full_parent', 'skill_mentor'], true)
+                && data_get($agent->modelVersion?->metadata, 'evolution_stage.parent_eligible', false) === true
+            );
+            $mentor = $members->filter(fn (LabAgent $agent): bool =>
+                data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'skill_mentor'
+            );
+            return [
+                'member_count' => $members->count(),
+                'eligible_frontier_count' => $eligible->count(),
+                'eligible_agent_ids' => $eligible->pluck('id')->values()->all(),
+                'skill_mentor_agent_ids' => $mentor->pluck('id')->values()->all(),
+                'singleton_forbidden' => true,
+                'promotion_evidence' => false,
+            ];
+        })->all();
 
         $report = [
             'protocol' => self::PROTOCOL,
@@ -205,6 +278,8 @@ class LabGenerationReportService
                     'member_model_version_ids' => data_get($checkpoint, 'checkpoint.member_model_version_ids', []),
                     'status' => data_get($checkpoint, 'checkpoint.status'),
                 ])->values()->all(),
+                'role_frontiers' => $roleFrontier,
+                'role_specific_skill_reuse' => true,
                 'combined_runtime_activation' => 'only_after_individual_member_passports_and_council_quorum',
                 'promotion_evidence' => false,
             ],
@@ -212,19 +287,36 @@ class LabGenerationReportService
             'gate_improvements' => $gateImprovements,
             'gate_failures' => $failedReasons,
             'technical_errors' => $technicalErrors,
+            'quality_failed_screening_agents' => $qualityFailedScreeningAgents,
             'failure_classification' => [
                 'screening_zero' => $screenPassed === 0,
                 'classification' => $screeningFailureClassification,
                 'pipeline_failure' => $pipelineFailure,
-                'agent_quality_failure' => $screenPassed === 0 && ! $pipelineFailure,
+                // A clean failed screening decision remains a quality result
+                // even when another seat is technically quarantined. Keep
+                // those two facts visible instead of collapsing the whole
+                // cohort into "pipeline not working".
+                'agent_quality_failure' => $qualityFailedScreeningAgents > 0,
                 'technical_full_runs' => $technicalRunCount,
+                'quality_failed_screening_agents' => $qualityFailedScreeningAgents,
+                'evidence_complete_screening_agents' => $screenDecisions->count(),
             ],
             'mutation_targets' => $targets,
             'population_group_checkpoints' => $populationGroupCheckpoints,
+            'evolution_stages' => [
+                'protocol' => SkillMentorService::PROTOCOL,
+                'counts' => $stageCounts,
+                'screen_validated_seeds' => $seedCount,
+                'skill_mentors' => $mentorCount,
+                'full_parents' => (int) ($stageCounts['full_parent'] ?? 0),
+                'repair_anchor_sibling_cohorts' => $anchorSiblingCounts,
+                'promotion_evidence' => false,
+            ],
+            'mutation_response_map' => $responseMapProgress,
             'targeted_rescue_attempts_before_generation' => $targetedAttempts,
             'kpis' => [
                 'evolution_safe' => $evolutionSafe,
-                'technical_completion_rate' => $agents->count() > 0 ? round($cleanTerminal / $agents->count() * 100, 2) : 0,
+                'technical_completion_rate' => $technicalCompletionRate,
                 'screening_pass_rate' => $screeningPassRate,
                 'screening_failure_classification' => $screeningFailureClassification,
                 'full_validation_completion_rate' => $fullValidationCompletionRate,
@@ -234,6 +326,21 @@ class LabGenerationReportService
                 'paper_eligible' => $paperEligible,
                 'pipeline_failure_count' => count($technicalErrors) + $technicalRunCount,
                 'paper_transition_time_seconds' => $paperTransition,
+                'screen_pass_rate' => $screeningPassRate,
+                'repeat_failure_rate' => $this->repeatFailureRate($agents),
+                'target_gate_delta_count' => $this->targetGateDeltaCount($agents),
+                'mutation_credit_rate' => $this->mutationCreditRate($agents),
+                'skill_mentor_birth_rate' => $agents->count() > 0 ? round($mentorBirths / $agents->count() * 100, 2) : 0,
+                'full_parent_birth_rate' => $agents->count() > 0 ? round((int) ($stageCounts['full_parent'] ?? 0) / $agents->count() * 100, 2) : 0,
+                // Intentional frozen controls and architecture-only topology
+                // experiments have no scalar parameter diff by design. They
+                // remain research-only, but must not inflate the technical
+                // zero-diff failure KPI.
+                'zero_diff_rate' => $agents->count() > 0 ? round($agents->filter(fn (LabAgent $agent): bool =>
+                    ! $this->isIntentionalZeroDiff($agent)
+                    && (array) $agent->parameter_diff === []
+                )->count() / $agents->count() * 100, 2) : 0,
+                'technical_failure_rate' => $agents->count() > 0 ? round(count($technicalErrors) / $agents->count() * 100, 2) : 0,
                 'population_groups' => collect($populationGroupCheckpoints)->map(fn (array $checkpoint): array => [
                     'key' => $checkpoint['key'],
                     'agent_count' => $checkpoint['agent_count'],
@@ -255,6 +362,56 @@ class LabGenerationReportService
         $generation->update(['trigger_context' => $context]);
 
         return $report;
+    }
+
+    private function repeatFailureRate(Collection $agents): float
+    {
+        $withAnchors = $agents->filter(fn (LabAgent $agent): bool =>
+            filled(data_get($agent->modelVersion?->metadata, 'repair_anchor.id'))
+        );
+        if ($withAnchors->isEmpty()) return 0.0;
+        $repeated = $withAnchors->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'repair_anchor.sibling_kind') !== 'frozen_control'
+            && data_get($agent->modelVersion?->metadata, 'repair_lineage.attempt', 0) > 1
+        )->count();
+        return round($repeated / $withAnchors->count() * 100, 2);
+    }
+
+    private function isIntentionalZeroDiff(LabAgent $agent): bool
+    {
+        $metadata = (array) ($agent->modelVersion?->metadata ?? []);
+        $invariant = (array) data_get($metadata, 'mutation_constructor_invariant', []);
+        $control = (bool) data_get($invariant, 'control_only', false)
+            || (bool) data_get($metadata, 'g98_council_lane.control_only', false)
+            || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
+        if ($control) return true;
+
+        $variant = (string) data_get($invariant, 'architecture_variant', '');
+        return (bool) data_get($invariant, 'architecture_changed', false)
+            && $variant !== ''
+            && (
+                (bool) data_get($metadata, 'portfolio_council_lane.architecture_experiment', false)
+                || (string) data_get($metadata, 'hypothesis_contract.changed_gene', '') === '__architecture'
+                || (string) data_get($metadata, 'g98_council_lane.lane', '') === 'architecture'
+            );
+    }
+
+    private function targetGateDeltaCount(Collection $agents): int
+    {
+        return $agents->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'repair_anchor.verification.target_gate.improved') === true
+            || data_get($agent->modelVersion?->metadata, 'skill_mentor.status') === 'confirmed'
+        )->count();
+    }
+
+    private function mutationCreditRate(Collection $agents): float
+    {
+        if ($agents->isEmpty()) return 0.0;
+        $confirmed = $agents->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'repair_anchor.mutation_credit_status') === 'independently_confirmed'
+            || data_get($agent->modelVersion?->metadata, 'skill_mentor.status') === 'confirmed'
+        )->count();
+        return round($confirmed / $agents->count() * 100, 2);
     }
 
     /**

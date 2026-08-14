@@ -22,6 +22,7 @@ VOLUME_LANES = {
 }
 VOLUME_PROTOCOL = "relative_volume_session_v2"
 SOURCE_CONTRACT = "dukascopy_jetta_bid_tick_volume_millions_v1"
+CALENDAR_PROTOCOL = "dukascopy_instrument_session_calendar_v2"
 
 
 def _utc_timestamp(value: object) -> pd.Timestamp:
@@ -70,6 +71,37 @@ def _seasonality_bucket(
     return times.dt.dayofweek * slots_per_day + intraday_slot
 
 
+def _expected_market_rows(times: pd.Series, context: dict[str, Any]) -> pd.Series:
+    """Match the Laravel canonical-volume eligible-candle calendar.
+
+    Closed-market and maintenance candles must not count as missing volume.
+    The mask is enabled only when the canonical context declares a symbol;
+    small local unit-test frames without provenance retain the old all-rows
+    behavior.
+    """
+    symbol = str(context.get("symbol") or "").replace("/", "").replace("_", "").replace("-", "").upper()
+    if not symbol:
+        return pd.Series(True, index=times.index, dtype=bool)
+
+    normalized = pd.to_datetime(times, errors="coerce", utc=True)
+    valid = normalized.notna()
+    weekday = normalized.dt.dayofweek
+    hour = normalized.dt.hour
+    holiday = ((normalized.dt.month == 1) & (normalized.dt.day == 1)) | (
+        (normalized.dt.month == 12) & (normalized.dt.day == 25)
+    )
+    closed = holiday | weekday.eq(5)
+    if symbol.startswith("XAU"):
+        closed |= weekday.eq(6) & hour.lt(23)
+        closed |= weekday.eq(4) & hour.ge(22)
+        closed |= hour.eq(22)
+    else:
+        closed |= weekday.eq(6) & hour.lt(21)
+        closed |= weekday.eq(4) & hour.ge(21)
+
+    return valid & ~closed
+
+
 def _causal_baselines(
     values: pd.Series,
     bucket: pd.Series,
@@ -114,6 +146,13 @@ def volume_quality_gate(
     provider = str(context.get("provider") or "dukascopy")
     unit = str(context.get("unit") or "millions")
     session = str(context.get("session") or "UTC")
+    expected = _expected_market_rows(
+        pd.to_datetime(frame.get("time"), errors="coerce", utc=True)
+        if "time" in frame
+        else pd.Series(pd.NaT, index=frame.index),
+        context,
+    )
+    expected_rows = int(expected.sum())
     if total == 0:
         return {
             "status": "volume_unavailable",
@@ -128,6 +167,8 @@ def volume_quality_gate(
             "coverage": 0.0,
             "usable_ratio": 0.0,
             "rows": 0,
+            "expected_rows": 0,
+            "excluded_closed_market_rows": 0,
             "promotion_evidence": False,
         }
 
@@ -148,11 +189,11 @@ def volume_quality_gate(
             "promotion_evidence": False,
         }
 
-    available = frame["volume_available"].fillna(False).astype(bool)
+    available = frame["volume_available"].fillna(False).astype(bool) & expected
     raw = pd.to_numeric(frame.get("volume", 0.0), errors="coerce")
     usable = available & raw.gt(0) & raw.notna() & np.isfinite(raw)
-    coverage = float(available.mean())
-    usable_ratio = float(usable.sum() / max(int(available.sum()), 1))
+    coverage = float(available.sum() / max(expected_rows, 1))
+    usable_ratio = float(usable.sum() / max(expected_rows, 1))
     status = (
         "passed"
         if coverage >= minimum_coverage and usable_ratio >= minimum_usable_ratio
@@ -179,6 +220,8 @@ def volume_quality_gate(
         "coverage": round(coverage, 6),
         "usable_ratio": round(usable_ratio, 6),
         "rows": total,
+        "expected_rows": expected_rows,
+        "excluded_closed_market_rows": max(0, total - expected_rows),
         "available_rows": int(available.sum()),
         "usable_rows": int(usable.sum()),
         "zero_rows": int((available & ~usable).sum()),
@@ -207,7 +250,9 @@ def add_volume_features(
         times = pd.to_datetime(out["time"], errors="coerce", utc=True)
     else:
         times = pd.Series(pd.NaT, index=out.index, dtype="datetime64[ns, UTC]")
-    available = out["volume_available"] & out["volume"].gt(0) & out["volume"].notna()
+    market_rows = _expected_market_rows(times, dict(context or {}))
+    out["volume_market_open"] = market_rows.astype(bool)
+    available = market_rows & out["volume_available"] & out["volume"].gt(0) & out["volume"].notna()
     raw = out["volume"].where(available)
 
     normalization = _normalization_context(context)
