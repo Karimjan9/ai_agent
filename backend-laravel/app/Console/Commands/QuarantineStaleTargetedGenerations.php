@@ -6,6 +6,7 @@ use App\Models\LabGeneration;
 use App\Models\SystemEvent;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\LabPopulationService;
+use App\Services\LabQueueJobInspector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -16,8 +17,25 @@ class QuarantineStaleTargetedGenerations extends Command
 
     protected $description = 'Quarantine stale empty draft candidate-handoff generations without touching active work';
 
-    public function handle(): int
+    public function handle(LabQueueJobInspector $queueInspector): int
     {
+        // This command predates the Redis queue migration and contains a
+        // destructive database-jobs delete path. Never let it infer an empty
+        // DB queue while Redis is the live transport. Recovery/quarantine
+        // commands that understand Redis own that path; this one fails closed
+        // until it is explicitly ported.
+        if ((string) config('queue.default') === 'redis') {
+            $snapshot = $queueInspector->queueSnapshot();
+            if (($snapshot['available'] ?? false) !== true) {
+                $this->error('Redis queue state is unavailable; stale generation quarantine was skipped.');
+
+                return self::FAILURE;
+            }
+            $this->line('Redis queue is active; DB-only stale-generation quarantine was skipped safely.');
+
+            return self::SUCCESS;
+        }
+
         $cutoff = now()->subMinutes(90);
         $pauseEvent = SystemEvent::query()->where('event_key', 'learning_protocol:generation_creation_paused')->first();
         $paused = app(LearningProtocolSafetyService::class)->generationCreationPaused();

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\LearningLaneService;
+use App\Services\LabQueueJobInspector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -16,14 +17,16 @@ class PumpLearningLane extends Command
 
     protected $description = 'Pump one micro-confirmed learning-lane replay only when the heavy evaluator is idle';
 
-    public function handle(LearningLaneService $learning): int
+    public function handle(LearningLaneService $learning, LabQueueJobInspector $queueState): int
     {
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
         $timeframe = strtoupper((string) $this->option('timeframe'));
         $limit = max(1, min(2, (int) $this->option('limit')));
         $queue = (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation');
         $mutexKey = Cache::getStore()->getPrefix().'laravel-queue-overlap:'.(string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay');
-        $queueJobs = (int) DB::table('jobs')->whereIn('queue', [$queue, 'lab-full-hold'])->count();
+        $queueSnapshot = $queueState->queueSnapshot([$queue, 'lab-full-hold']);
+        $queueAvailable = ($queueSnapshot['available'] ?? true) !== false;
+        $queueJobs = $queueAvailable ? (int) ($queueSnapshot['total'] ?? 0) : null;
         $mutex = DB::table('cache_locks')->where('key', $mutexKey)->exists();
         $ai = $this->aiReplayStatus();
         // An unavailable replay-status endpoint is not equivalent to idle.
@@ -32,10 +35,11 @@ class PumpLearningLane extends Command
         $statusKnown = is_array($ai);
         $aiBusy = $ai !== null && ((int) data_get($ai, 'active_requests', data_get($ai, 'active', 0)) > 0);
 
-        $ready = $queueJobs === 0 && ! $mutex && $statusKnown && ! $aiBusy;
+        $ready = $queueAvailable && $queueJobs === 0 && ! $mutex && $statusKnown && ! $aiBusy;
         $payload = [
             'protocol' => 'learning_lane_pump_v1', 'symbol' => $symbol, 'timeframe' => $timeframe,
-            'ready' => $ready, 'queue_jobs' => $queueJobs, 'mutex' => $mutex, 'ai_status_known' => $statusKnown, 'ai_busy' => $aiBusy,
+            'ready' => $ready, 'queue_jobs' => $queueJobs, 'queue_backend' => $queueSnapshot['backend'] ?? null,
+            'queue_state_known' => $queueAvailable, 'mutex' => $mutex, 'ai_status_known' => $statusKnown, 'ai_busy' => $aiBusy,
             'promotion_evidence' => false,
         ];
         if (! $ready) {

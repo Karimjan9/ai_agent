@@ -34,11 +34,18 @@ class IncompleteLabEvidenceRecoveryService
         // screening. Keep that lane bounded even when this service is called
         // directly (outside the scheduled command's queue guard).
         $frontierCapacity = null;
-        if ($apply && DB::getSchemaBuilder()->hasTable('jobs')) {
+        if ($apply) {
             $frontierLimit = max(1, (int) config('services.lab_queue.frontier_backlog_limit', 4));
-            $existingFrontier = (int) DB::table('jobs')
-                ->where('queue', (string) config('services.lab_queue.frontier_queue', 'lab-frontier'))
-                ->count();
+            $queueSnapshot = app(LabQueueJobInspector::class)->queueSnapshot([
+                (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
+            ]);
+            if (($queueSnapshot['available'] ?? true) === false) {
+                return [
+                    'selected' => 0, 'requeued' => 0, 'quarantined' => 0, 'skipped' => 0,
+                    'deferred' => true, 'action' => 'deferred_queue_state_unknown', 'rows' => [],
+                ];
+            }
+            $existingFrontier = (int) ($queueSnapshot['total'] ?? 0);
             $frontierCapacity = max(0, $frontierLimit - $existingFrontier);
             if ($frontierCapacity === 0) {
                 return [

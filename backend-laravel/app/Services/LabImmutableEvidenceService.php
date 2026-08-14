@@ -11,8 +11,11 @@ use App\Models\LabGeneration;
 use App\Models\LabLifecycleEvent;
 use App\Models\LabMutationCreditEvent;
 use App\Models\MutationMemory;
+use App\Jobs\ProjectLabCandleDecisionEvents;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -194,7 +197,12 @@ class LabImmutableEvidenceService
             'response_hash' => $responseHash,
             'trade_ledger_hash' => data_get($terminalResponse, 'trade_ledger_hash'),
             'response_meta' => $terminalResponse === null ? null : $this->responseManifest($terminalResponse, $run->data_hash),
-            'metrics' => $metrics ?: $this->metricsManifest($terminalResponse),
+            // The complete response remains immutable in the compressed
+            // artifact plane. Run metrics are a mutable selector projection;
+            // keep them bounded so retries do not rewrite trade/event arrays.
+            'metrics' => $metrics !== []
+                ? $this->projectionPayload($metrics)
+                : $this->metricsManifest($terminalResponse),
             'metadata' => array_merge((array) $run->metadata, $metadata, [
                 'terminal' => true, 'terminal_at' => $finished->toIso8601String(),
             ]),
@@ -748,8 +756,9 @@ class LabImmutableEvidenceService
     {
         $trace = data_get($payload, 'decision_trace', data_get($payload, 'candle_decision_trace', data_get($payload, 'decision_events')));
         $ledger = data_get($payload, 'trade_ledger');
+        $trades = data_get($payload, 'trades');
         $projected = $payload;
-        foreach (['decision_trace', 'candle_decision_trace', 'decision_events', 'trade_ledger'] as $key) {
+        foreach (['decision_trace', 'candle_decision_trace', 'decision_events', 'trade_ledger', 'trades'] as $key) {
             unset($projected[$key]);
         }
         $projected['observability_manifest'] = [
@@ -761,6 +770,10 @@ class LabImmutableEvidenceService
             'trade_ledger_present' => is_array($ledger),
             'trade_ledger_count' => is_array($ledger) ? count($ledger) : null,
             'trade_ledger_hash' => data_get($payload, 'trade_ledger_hash'),
+            'trades_present' => is_array($trades),
+            'trades_count' => is_array($trades) ? count($trades) : null,
+            'trades_hash' => is_array($trades) ? $this->hash($trades) : null,
+            'compact_projection' => true,
         ];
         if (is_array($projected['result'] ?? null)) {
             $projected['result'] = $this->projectionPayload($projected['result']);
@@ -796,57 +809,193 @@ class LabImmutableEvidenceService
             'event_count' => count($trace),
             'promotion_evidence' => false,
         ]);
-        $rows = [];
-        $recorded = 0;
-        foreach ($trace as $index => $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-            $features = (array) ($item['features'] ?? $item['feature_snapshot'] ?? []);
-            $state = (array) ($item['state'] ?? $item['state_snapshot'] ?? []);
-            $payload = $item;
-            $rows[] = [
-                'decision_id' => (string) Str::uuid(), 'run_id' => $run->run_id,
-                'lab_generation_id' => $run->lab_generation_id, 'lab_agent_id' => $run->lab_agent_id,
-                'candle_time' => (string) ($item['candle_time'] ?? $item['time'] ?? $item['signal_time'] ?? ''),
-                'candle_index' => isset($item['candle_index']) ? (int) $item['candle_index'] : (isset($item['index']) ? (int) $item['index'] : $index),
-                'event_type' => (string) ($item['event_type'] ?? 'signal_evaluation'),
-                'action' => (string) ($item['action'] ?? $item['signal'] ?? $item['decision'] ?? 'WAIT'),
-                'accepted' => array_key_exists('accepted', $item) ? (bool) $item['accepted'] : null,
-                'rejection_code' => $item['rejection_code'] ?? $item['reason'] ?? null,
-                'market_regime' => $item['market_regime'] ?? $item['regime'] ?? null,
-                'volatility_regime' => $item['volatility_regime'] ?? $item['volatility'] ?? null,
-                'confidence' => isset($item['confidence']) ? (float) $item['confidence'] : (isset($item['signal_confidence']) ? (float) $item['signal_confidence'] : null),
-                'price' => isset($item['price']) ? (float) $item['price'] : null,
-                // The complete feature/state/payload graph is in the
-                // compressed decision_trace artifact. Keep only scalar
-                // dimensions in MySQL so the learning aggregates stay fast
-                // without turning every candle into a multi-KB JSON row.
-                'features' => null, 'state' => null,
-                'payload_hash' => $this->hash($payload), 'payload' => null,
-                'recorded_at' => now(), 'created_at' => now(), 'updated_at' => now(),
-            ];
-            if (count($rows) >= 500) {
-                DB::table('lab_candle_decision_events')->insert($rows);
-                $recorded += count($rows);
-                $rows = [];
-            }
-        }
-        if ($rows !== []) {
-            DB::table('lab_candle_decision_events')->insert($rows);
-            $recorded += count($rows);
-        }
         $manifest = [
             'protocol' => 'candle_decision_trace_v1', 'complete' => true,
-            'event_count' => $recorded, 'result_hash' => $this->hash($response),
+            'event_count' => count($trace), 'result_hash' => $this->hash($response),
             'artifact_id' => $traceArtifact->artifact_id,
             'artifact_path' => $traceArtifact->storage_path,
             'artifact_sha256' => $traceArtifact->sha256,
+            'projection_protocol' => 'candle_decision_projection_v1',
+            'projection_mode' => (bool) config('services.lab_evidence.compact_decision_projection', true)
+                ? 'compact_rollup_v1' : 'full_rows_v1',
+            'projection_status' => 'queued',
             'promotion_evidence' => false,
         ];
-        $this->recordArtifact($run, 'decision_trace_manifest', $manifest, ['complete' => true, 'event_count' => $recorded]);
+        $this->recordArtifact($run, 'decision_trace_manifest', $manifest, ['complete' => true, 'event_count' => count($trace), 'projection_status' => 'queued']);
+        ProjectLabCandleDecisionEvents::dispatch($run->run_id);
 
         return $manifest;
+    }
+
+    /**
+     * Project the immutable trace into scalar candle rows. This method is
+     * intentionally separate from recordDecisionTrace so the replay request
+     * never waits on a million-row secondary insert.
+     *
+     * @return array<string, mixed>
+     */
+    public function projectDecisionTrace(LabEvaluationRun $run): array
+    {
+        $trace = $this->latestArtifactPayload($run, 'decision_trace');
+        if (! is_array($trace) || ! array_is_list($trace)) {
+            return ['protocol' => 'candle_decision_projection_v1', 'complete' => false, 'event_count' => 0];
+        }
+
+        $rows = [];
+        $rollups = [];
+        $recordable = 0;
+        $storedRows = 0;
+        $projectedAt = now()->utc();
+        $batchSize = 1000;
+        $compactProjection = (bool) config('services.lab_evidence.compact_decision_projection', true)
+            && Schema::hasTable('lab_candle_decision_rollups');
+        foreach ($trace as $index => $item) {
+            if (! is_array($item)) continue;
+            $eventType = (string) ($item['event_type'] ?? 'signal_evaluation');
+            $candleIndex = isset($item['candle_index']) ? (int) $item['candle_index'] : (isset($item['index']) ? (int) $item['index'] : $index);
+            $decisionId = $this->deterministicDecisionId($run->run_id, $candleIndex, $eventType, $index);
+            $payload = $item;
+            $action = (string) ($item['action'] ?? $item['signal'] ?? $item['decision'] ?? 'WAIT');
+            $accepted = array_key_exists('accepted', $item) ? (bool) $item['accepted'] : null;
+            $rejectionCode = $item['rejection_code'] ?? $item['reason'] ?? null;
+            $marketRegime = $item['market_regime'] ?? $item['regime'] ?? null;
+            $volatilityRegime = $item['volatility_regime'] ?? $item['volatility'] ?? null;
+            $candleTime = (string) ($item['candle_time'] ?? $item['time'] ?? $item['signal_time'] ?? '');
+            $keepRow = ! $compactProjection || $this->isHighValueDecisionEvent(
+                $eventType,
+                $action,
+                $accepted,
+                $rejectionCode,
+            );
+            if ($compactProjection) {
+                $rollupIdentity = [
+                    'run_id' => $run->run_id,
+                    'lab_generation_id' => $run->lab_generation_id,
+                    'lab_agent_id' => $run->lab_agent_id,
+                    'bucket_date' => $this->decisionBucketDate($candleTime),
+                    'event_type' => $eventType,
+                    'action' => $action,
+                    'accepted' => $accepted,
+                    'rejection_code' => $rejectionCode,
+                    'market_regime' => $marketRegime,
+                    'volatility_regime' => $volatilityRegime,
+                ];
+                $rollupKey = $this->hash($rollupIdentity);
+                if (! isset($rollups[$rollupKey])) {
+                    $rollups[$rollupKey] = [
+                        'rollup_key' => $rollupKey,
+                        'run_id' => $run->run_id,
+                        'lab_generation_id' => $run->lab_generation_id,
+                        'lab_agent_id' => $run->lab_agent_id,
+                        'bucket_date' => $rollupIdentity['bucket_date'],
+                        'event_type' => $eventType,
+                        'action' => $action,
+                        'accepted' => $accepted,
+                        'rejection_code' => $rejectionCode,
+                        'market_regime' => $marketRegime,
+                        'volatility_regime' => $volatilityRegime,
+                        'event_count' => 0,
+                        'accepted_count' => 0,
+                        'first_candle_time' => $candleTime !== '' ? $candleTime : null,
+                        'last_candle_time' => $candleTime !== '' ? $candleTime : null,
+                        'recorded_at' => $projectedAt,
+                        'created_at' => $projectedAt,
+                        'updated_at' => $projectedAt,
+                    ];
+                }
+                $rollups[$rollupKey]['event_count']++;
+                if ($accepted === true) $rollups[$rollupKey]['accepted_count']++;
+                if ($candleTime !== '') {
+                    $first = $rollups[$rollupKey]['first_candle_time'];
+                    $last = $rollups[$rollupKey]['last_candle_time'];
+                    if ($first === null || $candleTime < $first) $rollups[$rollupKey]['first_candle_time'] = $candleTime;
+                    if ($last === null || $candleTime > $last) $rollups[$rollupKey]['last_candle_time'] = $candleTime;
+                }
+            }
+            if (! $keepRow) {
+                $recordable++;
+                continue;
+            }
+            $rows[] = [
+                'decision_id' => $decisionId, 'run_id' => $run->run_id,
+                'lab_generation_id' => $run->lab_generation_id, 'lab_agent_id' => $run->lab_agent_id,
+                'candle_time' => $candleTime,
+                'candle_index' => $candleIndex, 'event_type' => $eventType,
+                'action' => $action,
+                'accepted' => $accepted,
+                'rejection_code' => $rejectionCode,
+                'market_regime' => $marketRegime,
+                'volatility_regime' => $volatilityRegime,
+                'confidence' => isset($item['confidence']) ? (float) $item['confidence'] : (isset($item['signal_confidence']) ? (float) $item['signal_confidence'] : null),
+                'price' => isset($item['price']) ? (float) $item['price'] : null,
+                'features' => null, 'state' => null,
+                'payload_hash' => $this->hash($payload), 'payload' => null,
+                // Projection time is operational metadata only. One shared
+                // timestamp avoids constructing three Carbon objects for
+                // every candle while the immutable trace remains canonical.
+                'recorded_at' => $projectedAt, 'created_at' => $projectedAt, 'updated_at' => $projectedAt,
+            ];
+            $recordable++;
+            $storedRows++;
+            if (count($rows) >= $batchSize) {
+                DB::table('lab_candle_decision_events')->insertOrIgnore($rows);
+                $rows = [];
+            }
+        }
+        if ($rows !== []) DB::table('lab_candle_decision_events')->insertOrIgnore($rows);
+        if ($compactProjection && $rollups !== []) {
+            foreach (array_chunk(array_values($rollups), $batchSize) as $rollupBatch) {
+                DB::table('lab_candle_decision_rollups')->insertOrIgnore($rollupBatch);
+            }
+        }
+
+        return [
+            'protocol' => 'candle_decision_projection_v1', 'complete' => true,
+            'event_count' => $recordable, 'run_id' => $run->run_id,
+            'idempotent' => true, 'batch_size' => $batchSize,
+            'stored_event_count' => $storedRows,
+            'compacted_event_count' => max(0, $recordable - $storedRows),
+            'rollup_count' => $compactProjection ? count($rollups) : 0,
+            'projection_mode' => $compactProjection ? 'compact_rollup_v1' : 'full_rows_v1',
+            'projection_optimization' => $compactProjection
+                ? 'compact_rollup_single_timestamp_batched_insert_v3'
+                : 'single_timestamp_batched_insert_v2',
+            'promotion_evidence' => false,
+        ];
+    }
+
+    private function isHighValueDecisionEvent(
+        string $eventType,
+        string $action,
+        ?bool $accepted,
+        mixed $rejectionCode,
+    ): bool {
+        if ($accepted === true) return true;
+        if (in_array(strtolower($eventType), [
+            'trade_entry', 'trade_exit', 'execution', 'technical_failure',
+            'veto', 'regime_transition', 'volume_transition',
+        ], true)) return true;
+        if ($rejectionCode === null || $rejectionCode === '') return true;
+
+        return ! in_array(strtolower((string) $rejectionCode), ['no_signal', 'position_open'], true)
+            || strtoupper($action) !== 'WAIT';
+    }
+
+    private function decisionBucketDate(string $candleTime): ?string
+    {
+        if ($candleTime === '') return null;
+        try {
+            return CarbonImmutable::parse($candleTime, 'UTC')->toDateString();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function deterministicDecisionId(string $runId, int $candleIndex, string $eventType, int $ordinal): string
+    {
+        $hex = hash('sha256', $runId.'|'.$candleIndex.'|'.$eventType.'|'.$ordinal);
+
+        return substr($hex, 0, 8).'-'.substr($hex, 8, 4).'-'.substr($hex, 12, 4).'-'.substr($hex, 16, 4).'-'.substr($hex, 20, 12);
     }
 
     public function hash(mixed $value): string

@@ -2,12 +2,13 @@ import hmac
 import os
 import math
 import hashlib
+import gzip
 import json
 import subprocess
 import sys
 import tempfile
 import time
-from threading import Lock
+from threading import BoundedSemaphore, Lock
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -21,7 +22,7 @@ from app.services.backtester import (
     _load_simple_candles, _position_size_multiple, _resolve_dataset_path, _volatility_risk_multiplier, _volume_risk_multiplier,
     PreparedFeatureSnapshot, PreparedSignalSnapshot, _run_prepared_simple_backtest,
     core_replay_gate,
-    prepare_feature_snapshot, prepare_signal_snapshot,
+    prepare_feature_snapshot, prepare_signal_snapshot, tail_feature_snapshot,
     run_simple_ema_rsi_backtest, run_simple_ema_rsi_backtest_on_dataframe,
 )
 from app.services.parameter_schema import validate_strategy_parameters
@@ -48,10 +49,19 @@ app = FastAPI(
 
 _replay_state_lock = Lock()
 _replay_lane_lock = Lock()
+# Screening is still bounded, but two independent child-process slots can
+# consume a shared immutable snapshot concurrently. Full validation remains a
+# single coordinator lane. The limit is deliberately environment-controlled
+# so a small machine can set it back to one without changing evidence logic.
+_screen_replay_concurrency = max(1, int(os.getenv("AI_SCREEN_REPLAY_CONCURRENCY", "2")))
+_screen_replay_slots = BoundedSemaphore(_screen_replay_concurrency)
 _active_replay_count = 0
+_active_screen_replay_count = 0
+_active_full_replay_count = 0
 _last_replay_started_at: str | None = None
 _last_replay_finished_at: str | None = None
 _last_replay_termination: str | None = None
+_last_replay_stage_timings: dict[str, float] = {}
 
 
 def _utc_timestamp(value: object) -> pd.Timestamp:
@@ -132,6 +142,9 @@ def _candidate_cache_contract_is_current(
 
 _last_replay_cache_cleanup = 0.0
 _replay_cache_cleanup_lock = Lock()
+_runtime_manifest_cache_signature: tuple[tuple[str, int, int], ...] | None = None
+_runtime_manifest_cache: dict[str, object] | None = None
+_dataset_manifest_cache: dict[tuple[tuple[str, str, int, int, int, int], ...], dict[str, object]] = {}
 
 
 @app.middleware("http")
@@ -192,14 +205,20 @@ def strategies() -> dict[str, object]:
 
 @app.get("/api/replay-status")
 def replay_status() -> dict[str, object]:
-    """Expose the single evaluator lane's liveness to safe mutex recovery."""
+    """Expose bounded screening slots and the single full lane to recovery."""
     with _replay_state_lock:
         return {
             "active_requests": _active_replay_count,
+            "screening_active": _active_screen_replay_count,
+            "screening_capacity": _screen_replay_concurrency,
+            "full_active": _active_full_replay_count,
             "last_replay_started_at": _last_replay_started_at,
             "last_replay_finished_at": _last_replay_finished_at,
             "last_replay_termination": _last_replay_termination,
+            "last_replay_stage_timings_ms": dict(_last_replay_stage_timings),
             "service_pid": os.getpid(),
+            # Keep the v2 protocol name for existing watchdogs; the additive
+            # lane counters below are backwards-compatible observability.
             "protocol": "replay_liveness_v2_bounded_worker",
         }
 
@@ -292,6 +311,19 @@ def _screening_insufficient_robustness_profile(
 
 
 def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
+    timing_started = time.perf_counter()
+    stage_timings: dict[str, float] = {}
+
+    def add_timing(stage: str, started: float) -> None:
+        stage_timings[stage] = round(stage_timings.get(stage, 0.0) + ((time.perf_counter() - started) * 1000), 3)
+
+    def run_timed(candidate_payload: SimpleBacktestRequest, frame: pd.DataFrame, **kwargs):
+        started = time.perf_counter()
+        try:
+            return _run_prepared_simple_backtest(candidate_payload, frame, **kwargs)
+        finally:
+            add_timing("stateful_replay_ms", started)
+
     leaderboard = []
     strategy_configs = payload.strategies or ([{
         "strategy": "portfolio_v1",
@@ -307,6 +339,34 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
         }
         for strategy_name in list_strategies()
     ])
+    resume_candidates = []
+    for config_index, raw_config in enumerate(strategy_configs):
+        config_value = raw_config.model_dump() if hasattr(raw_config, "model_dump") else dict(raw_config)
+        resume_candidates.append({
+            "candidate_key": str(config_value.get("lab_agent_id") or f"{config_value.get('strategy', 'unknown')}:{config_value.get('version', 'v1')}:{config_index}"),
+            "strategy": str(config_value.get("strategy", "unknown")),
+            "version": str(config_value.get("version", "v1")),
+        })
+    resume_manifest = {
+        "protocol": "replay_resume_cursor_v1",
+        "cohort_hash": hashlib.sha256(json.dumps({
+            "symbol": payload.symbol,
+            "timeframe": payload.timeframe,
+            "candidates": resume_candidates,
+            "dataset_path": payload.dataset_path,
+            "dataset_tail_rows": payload.dataset_tail_rows,
+        }, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest(),
+        "completed_candidates": [],
+        "pending_candidates": [item["candidate_key"] for item in resume_candidates],
+        "failed_candidates": [],
+        "snapshot_hash": None,
+        "promotion_evidence": False,
+    }
+    snapshot_transport = (payload.policy_context or {}).get("snapshot_transport", {})
+    if isinstance(snapshot_transport, dict):
+        resume_manifest["snapshot_hash"] = snapshot_transport.get(
+            "dataset_sha256", snapshot_transport.get("snapshot_sha256")
+        )
 
     try:
         # Do not load the large sealed archives until a candidate-cache miss
@@ -317,11 +377,45 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
         foundation_df = None
         walk_forward = WalkForwardService()
 
-        for config in strategy_configs:
+        # One generation request is a bounded cohort. Feature construction is
+        # independent of the candidate's strategy parameters, so cache it by
+        # immutable window/context and let each candidate own only its signal
+        # and stateful execution snapshot.
+        shared_feature_snapshots: dict[str, PreparedFeatureSnapshot] = {}
+        shared_snapshot_builds = 0
+        shared_snapshot_hits = 0
+
+        def shared_features(kind: str, candidate_payload: SimpleBacktestRequest, frame: pd.DataFrame) -> PreparedFeatureSnapshot:
+            nonlocal shared_snapshot_builds, shared_snapshot_hits
+            identity = {
+                "kind": kind,
+                "dataset_path": candidate_payload.dataset_path,
+                "dataset_tail_rows": candidate_payload.dataset_tail_rows,
+                "regime_dataset_path": candidate_payload.regime_dataset_path,
+                "regime_dataset_tail_rows": candidate_payload.regime_dataset_tail_rows,
+                "volume_context": candidate_payload.volume_context,
+                "from_date": str(candidate_payload.from_date) if candidate_payload.from_date else None,
+                "to_date": str(candidate_payload.to_date) if candidate_payload.to_date else None,
+                "rows": len(frame),
+                "first_time": str(frame.iloc[0].get("time")) if len(frame) else None,
+                "last_time": str(frame.iloc[-1].get("time")) if len(frame) else None,
+            }
+            key = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")).hexdigest()
+            if key not in shared_feature_snapshots:
+                started = time.perf_counter()
+                shared_feature_snapshots[key] = prepare_feature_snapshot(candidate_payload, frame)
+                add_timing("feature_snapshot_build_ms", started)
+                shared_snapshot_builds += 1
+            else:
+                shared_snapshot_hits += 1
+            return shared_feature_snapshots[key]
+
+        for config_index, config in enumerate(strategy_configs):
             if hasattr(config, "model_dump"):
                 config = config.model_dump()
 
             strategy_name = config["strategy"]
+            candidate_label = str(config.get("lab_agent_id") or f"{strategy_name}:{config.get('version', 'v1')}:{config_index}")
             is_portfolio_config = bool(payload.portfolio_members) and (
                 strategy_name == "portfolio_v1" or config.get("base_strategy") == "portfolio"
             )
@@ -358,10 +452,20 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 and _candidate_cache_contract_is_current(cached_item, candidate_payload)
             ):
                 leaderboard.append(cached_item)
+                # Cache-hit status is operational telemetry, not evidence.
+                # Keep the resumable manifest deterministic so a retry cannot
+                # change the canonical response hash merely because work was
+                # restored from an immutable cache.
+                resume_manifest["completed_candidates"].append(candidate_label)
+                resume_manifest["pending_candidates"] = [
+                    item for item in resume_manifest["pending_candidates"] if item != candidate_label
+                ]
                 continue
             if source_df is None:
+                started = time.perf_counter()
                 source_df = _load_simple_candles(payload)
                 foundation_df = _load_foundation_candles(payload) if payload.evaluation_mode == "replay" else None
+                add_timing("dataset_load_ms", started)
             if payload.evaluation_mode == "incremental":
                 ordered = source_df.sort_values("time").reset_index(drop=True)
                 # Tier 1 is deliberately cheap: it measures whether there is
@@ -373,7 +477,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 # candidate has observable activity, so do not spend four
                 # paired replays there as well. The full 5k survival replay
                 # below keeps the paired ledger evidence intact.
-                opportunity_payload = strategy_payload
+                opportunity_payload = strategy_payload.model_copy(update={"emit_decision_trace": False})
                 if len(ordered) >= 5000 and "differential_router" in str(
                     strategy_payload.base_strategy or strategy_payload.strategy
                 ).lower():
@@ -383,33 +487,66 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                             "differential_pair_replay_enabled": False,
                         },
                     })
-                opportunity_result = run_simple_ema_rsi_backtest_on_dataframe(
+                # Build the 5k survival feature layer once, then derive the
+                # cheaper 2k opportunity view from it.  This preserves
+                # indicator/ATR/H1 warmup while eliminating a second feature
+                # construction for every candidate in a cohort.
+                survival_df = ordered.tail(5000).reset_index(drop=True) if len(ordered) >= 5000 else None
+                survival_features = (
+                    shared_features("survival", strategy_payload, survival_df)
+                    if survival_df is not None
+                    else shared_features("opportunity", strategy_payload, opportunity_df)
+                )
+                opportunity_features = (
+                    tail_feature_snapshot(survival_features, len(opportunity_df))
+                    if survival_df is not None
+                    else survival_features
+                )
+                opportunity_signal = prepare_signal_snapshot(
+                    opportunity_payload,
+                    feature_snapshot=opportunity_features,
+                )
+                opportunity_result = run_timed(
                     opportunity_payload,
                     opportunity_df,
+                    prepared_snapshot=opportunity_signal,
                     include_differential_pair=False,
                     lightweight=True,
                 ).model_dump()
                 # Tier 2 is the only screen allowed to make a survival claim.
                 # An archive shorter than 5k is an evidence gap, not failure.
-                if len(ordered) >= 5000:
-                    survival_df = ordered.tail(5000).reset_index(drop=True)
+                if survival_df is not None:
                     # Screening is a routing/falsification stage.  Keep the
                     # same core execution, costs and full-ledger attribution,
                     # but defer Monte Carlo/DNA/promotion-only diagnostics to
                     # full validation.  This cannot create promotion or
                     # paper evidence and prevents one pathological specialist
                     # from monopolizing the screening queue.
-                    incremental_result = run_simple_ema_rsi_backtest_on_dataframe(
-                        strategy_payload, survival_df, lightweight=True
+                    survival_signal = prepare_signal_snapshot(
+                        strategy_payload,
+                        feature_snapshot=survival_features,
+                    )
+                    incremental_result = run_timed(
+                        strategy_payload,
+                        survival_df,
+                        prepared_snapshot=survival_signal,
+                        lightweight=True,
                     ).model_dump()
                     admission = _screening_robustness_admission(incremental_result)
+                    survival_started = time.perf_counter()
                     survival = (
                         MarketAdaptiveReplayService().screening_survival_profile(
-                            strategy_payload, survival_df, incremental_result, calculate_strategy_score
+                            strategy_payload,
+                            survival_df,
+                            incremental_result,
+                            calculate_strategy_score,
+                            feature_snapshot=survival_features,
+                            signal_snapshot=survival_signal,
                         )
                         if admission["passed"]
                         else _screening_insufficient_robustness_profile(incremental_result, admission)
                     )
+                    add_timing("screening_subreplay_ms", survival_started)
                     if "cost_profile" in survival:
                         incremental_result["pf_attribution"] = survival["cost_profile"]
                 else:
@@ -429,6 +566,20 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 }
                 incremental_result["screening_survival"] = survival
                 incremental_result["evaluation_mode"] = "incremental_two_tier"
+                incremental_result["optimization"] = {
+                    "protocol": "shared_feature_snapshot_bounded_cohort_v1",
+                    "feature_snapshot_builds": shared_snapshot_builds,
+                    "feature_snapshot_cache_hits": shared_snapshot_hits,
+                    "warmup_super_snapshot": bool(survival_df is not None),
+                    "warmup_snapshot_rows": len(survival_df) if survival_df is not None else len(opportunity_df),
+                    "opportunity_view_rows": len(opportunity_df),
+                    "signal_snapshot_per_candidate": True,
+                    "primary_trace": bool(strategy_payload.emit_decision_trace),
+                    "opportunity_trace": False,
+                    "stateful_subreplay_executor": "record_view_v2",
+                    "stateful_subreplay_parity": "stateful_subreplay_parity_v1",
+                    "promotion_evidence": False,
+                }
                 incremental_score = calculate_strategy_score(incremental_result)
                 analysis = {
                     "train_score": incremental_score, "validation_score": incremental_score,
@@ -458,6 +609,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
 
             candidate_item = {
                     "strategy": strategy_name,
+                    "lab_agent_id": config.get("lab_agent_id"),
                     "base_strategy": config.get("base_strategy"),
                     "version": config.get("version"),
                     "parameters": parameters,
@@ -472,6 +624,10 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "result": result_data,
             }
             leaderboard.append(candidate_item)
+            resume_manifest["completed_candidates"].append(candidate_label)
+            resume_manifest["pending_candidates"] = [
+                item for item in resume_manifest["pending_candidates"] if item != candidate_label
+            ]
             _store_immutable_replay_cache(candidate_cache_key, {
                 "protocol": "candidate_replay_cache_v1",
                 "strategy": strategy_name,
@@ -520,11 +676,22 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
 
     leaderboard = sorted(leaderboard, key=lambda item: item["score"], reverse=True)
 
+    stage_timings["total_ms"] = round((time.perf_counter() - timing_started) * 1000, 3)
+    # Operational timing is emitted out-of-band. It must never enter the
+    # immutable result hash, gate metrics, or replay cache value.
+    print("REPLAY_TIMING " + json.dumps({
+        "protocol": "replay_stage_timing_v1",
+        "stages_ms": stage_timings,
+        "candidate_count": len(leaderboard),
+        "promotion_evidence": False,
+    }, separators=(",", ":")), file=sys.stderr, flush=True)
+
     return {
         "symbol": payload.symbol,
         "timeframe": payload.timeframe,
         "leaderboard": leaderboard,
         "statistical_validation": cscv,
+        "resume_manifest": resume_manifest,
     }
 
 
@@ -588,6 +755,12 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
         # replay enough room for its long foundation lane on Windows. The
         # Laravel transport remains longer than this child deadline.
         env_name, default, ceiling = "AI_REPLAY_PORTFOLIO_HARD_TIMEOUT_SECONDS", 3600, 3600
+    elif payload.evaluation_mode == "incremental" and len(payload.strategies) > 1:
+        # A bounded cohort shares feature construction but still walks each
+        # candidate's independent state machine. Give the one child process a
+        # larger finite budget than a single screen, while Laravel keeps the
+        # batch worker timeout above it.
+        env_name, default, ceiling = "AI_REPLAY_SCREEN_BATCH_HARD_TIMEOUT_SECONDS", 1680, 2280
     elif payload.evaluation_mode == "incremental" and is_differential:
         env_name, default, ceiling = "AI_REPLAY_DIFFERENTIAL_SCREEN_HARD_TIMEOUT_SECONDS", 780, 840
     elif payload.evaluation_mode == "incremental":
@@ -671,7 +844,7 @@ def _terminate_replay_tree(process: subprocess.Popen | None, stdout_capture=None
 
 
 def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[str, object]:
-    """Execute one heavy replay in a killable, single-lane worker.
+    """Execute one bounded replay in a killable screening/full lane.
 
     ``multiprocessing`` spawn is not a reliable containment boundary on
     Windows when the request contains thousands of inline candle objects: the
@@ -679,7 +852,8 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
     observe a child failure. A standalone Python subprocess with a JSON pipe
     gives us a hard parent-controlled deadline and a deterministic kill path.
     """
-    global _last_replay_finished_at, _last_replay_termination
+    global _last_replay_finished_at, _last_replay_termination, _last_replay_stage_timings
+    global _active_screen_replay_count, _active_full_replay_count
 
     # The replay compiler is intentionally content addressed.  It is safe to
     # reuse only an *identical* payload under the same evaluator code digest;
@@ -689,6 +863,7 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
     cache_key = _replay_cache_key(operation, payload)
     cached = _load_immutable_replay_cache(cache_key)
     if cached is not None:
+        _last_replay_stage_timings = {"cache_hit": 1.0}
         _last_replay_finished_at = pd.Timestamp.now(tz="UTC").isoformat()
         _last_replay_termination = "cache_hit"
         return _with_replay_compiler_metadata(cached, cache_key, "immutable_cache_hit")
@@ -696,8 +871,19 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
     # Laravel's WithoutOverlapping is the primary queue mutex. This second
     # guard protects direct/API callers and makes contention fail fast rather
     # than queueing an HTTP request that will consume a client timeout.
-    if not _replay_lane_lock.acquire(blocking=False):
-        raise HTTPException(status_code=429, detail="AI replay lane is busy; retry after the current bounded replay.")
+    screening_lane = payload.evaluation_mode == "incremental"
+    lane_guard = _screen_replay_slots if screening_lane else _replay_lane_lock
+    with _replay_state_lock:
+        if screening_lane:
+            acquired = _active_full_replay_count == 0 and lane_guard.acquire(blocking=False)
+        else:
+            acquired = _active_screen_replay_count == 0 and lane_guard.acquire(blocking=False)
+        if not acquired:
+            raise HTTPException(status_code=429, detail="AI replay lane is busy; retry after the current bounded replay.")
+        if screening_lane:
+            _active_screen_replay_count += 1
+        else:
+            _active_full_replay_count += 1
 
     timeout_seconds = _bounded_replay_seconds(payload, operation)
     service_root = Path(__file__).resolve().parent.parent
@@ -765,6 +951,13 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
 
         stdout = _read_replay_capture(stdout_capture)
         stderr = _read_replay_capture(stderr_capture)
+        for line in stderr.splitlines():
+            if line.startswith("REPLAY_TIMING "):
+                try:
+                    timing_payload = json.loads(line[len("REPLAY_TIMING "):])
+                    _last_replay_stage_timings = dict(timing_payload.get("stages_ms", {}))
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
         if process.returncode != 0:
             _last_replay_termination = f"child_exit:{operation}:{process.returncode}"
@@ -809,7 +1002,12 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
                 except OSError:
                     pass
         _last_replay_finished_at = pd.Timestamp.now(tz="UTC").isoformat()
-        _replay_lane_lock.release()
+        with _replay_state_lock:
+            if screening_lane:
+                _active_screen_replay_count = max(0, _active_screen_replay_count - 1)
+            else:
+                _active_full_replay_count = max(0, _active_full_replay_count - 1)
+            lane_guard.release()
 
 
 def _replay_cache_key(operation: str, payload: SimpleBacktestRequest) -> str:
@@ -832,23 +1030,30 @@ def _runtime_dependency_manifest() -> dict[str, object]:
     changing a walk-forward/statistical helper, or editing a transitive local
     import must invalidate old replay evidence automatically.
     """
+    global _runtime_manifest_cache_signature, _runtime_manifest_cache
     app_root = Path(__file__).resolve().parent
+    paths = [path for path in sorted(app_root.rglob("*.py")) if "__pycache__" not in path.parts]
+    paths += [
+        app_root.parent / name
+        for name in ("requirements.txt", "pyproject.toml", "poetry.lock")
+        if (app_root.parent / name).is_file()
+    ]
+    signature = tuple((str(path), int(path.stat().st_mtime_ns), int(path.stat().st_size)) for path in paths)
+    if signature == _runtime_manifest_cache_signature and _runtime_manifest_cache is not None:
+        return _runtime_manifest_cache
+
     files: dict[str, str] = {}
-    for path in sorted(app_root.rglob("*.py")):
-        if "__pycache__" in path.parts:
-            continue
-        files[path.relative_to(app_root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    for path in paths:
+        key = path.relative_to(app_root).as_posix() if path.is_relative_to(app_root) else path.name
+        files[key] = hashlib.sha256(path.read_bytes()).hexdigest()
 
-    for name in ("requirements.txt", "pyproject.toml", "poetry.lock"):
-        path = app_root.parent / name
-        if path.is_file():
-            files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-
-    return {
+    _runtime_manifest_cache_signature = signature
+    _runtime_manifest_cache = {
         "protocol": "runtime_dependency_manifest_v2",
         "python": sys.version,
         "files": files,
     }
+    return _runtime_manifest_cache
 
 
 def _dataset_dependency_manifest(payload: SimpleBacktestRequest) -> dict[str, object]:
@@ -860,15 +1065,33 @@ def _dataset_dependency_manifest(payload: SimpleBacktestRequest) -> dict[str, ob
         # identity or a changed training archive could reuse old evidence.
         ("foundation_dataset", payload.foundation_dataset_path),
     ]
-    manifest: dict[str, object] = {}
+    resolved: list[tuple[str, str, Path, Path]] = []
     for key, raw_path in paths:
         if not raw_path:
             continue
         path = Path(raw_path)
         if not path.is_absolute():
             path = (Path(__file__).resolve().parent.parent / path).resolve()
+        resolved.append((key, raw_path, path, Path(str(path) + ".manifest.json")))
+
+    cache_signature = tuple(
+        (
+            key,
+            str(path),
+            int(path.stat().st_mtime_ns) if path.is_file() else 0,
+            int(path.stat().st_size) if path.is_file() else 0,
+            int(manifest_path.stat().st_mtime_ns) if manifest_path.is_file() else 0,
+            int(manifest_path.stat().st_size) if manifest_path.is_file() else 0,
+        )
+        for key, _, path, manifest_path in resolved
+    )
+    cached = _dataset_manifest_cache.get(cache_signature)
+    if cached is not None:
+        return cached
+
+    manifest: dict[str, object] = {}
+    for key, raw_path, path, manifest_path in resolved:
         item: dict[str, object] = {"requested_path": raw_path, "resolved_path": str(path)}
-        manifest_path = Path(str(path) + ".manifest.json")
         if manifest_path.is_file():
             try:
                 manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -883,22 +1106,31 @@ def _dataset_dependency_manifest(payload: SimpleBacktestRequest) -> dict[str, ob
         else:
             item["missing"] = True
         manifest[key] = item
+
+    _dataset_manifest_cache[cache_signature] = manifest
     return manifest
 
 
 def _replay_cache_path(cache_key: str) -> Path:
     root = Path(os.getenv("AI_REPLAY_IMMUTABLE_CACHE_DIR", str(Path(__file__).resolve().parent.parent / ".runtime" / "replay-cache")))
-    return root / f"{cache_key}.json"
+    return root / f"{cache_key}.json.gz"
 
 
 def _load_immutable_replay_cache(cache_key: str) -> dict[str, object] | None:
-    path = _replay_cache_path(cache_key)
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-        value = document.get("value")
-        return value if isinstance(value, dict) and document.get("key") == cache_key else None
-    except (OSError, json.JSONDecodeError):
-        return None
+    compressed = _replay_cache_path(cache_key)
+    candidates = [compressed, compressed.with_suffix("").with_suffix(".json")]
+    for path in candidates:
+        try:
+            raw = path.read_bytes()
+            if path.suffix == ".gz":
+                raw = gzip.decompress(raw)
+            document = json.loads(raw.decode("utf-8"))
+            value = document.get("value")
+            if isinstance(value, dict) and document.get("key") == cache_key:
+                return value
+        except (OSError, gzip.BadGzipFile, EOFError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    return None
 
 
 def _store_immutable_replay_cache(cache_key: str, value: dict[str, object]) -> None:
@@ -907,13 +1139,14 @@ def _store_immutable_replay_cache(cache_key: str, value: dict[str, object]) -> N
         path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic replace prevents a timeout/restart from ever exposing a
         # partial diagnostic as if it were a completed immutable replay.
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({
+        encoded = json.dumps({
             "protocol": "immutable_replay_cache_v2",
             "key": cache_key,
             "created_at": pd.Timestamp.now(tz="UTC").isoformat(),
             "value": value,
-        }, ensure_ascii=False, separators=(",", ":"), default=str), encoding="utf-8")
+        }, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
+        temporary = path.with_suffix(".tmp")
+        temporary.write_bytes(gzip.compress(encoded, compresslevel=1))
         temporary.replace(path)
         _cleanup_replay_cache(path.parent)
     except OSError:
@@ -938,7 +1171,7 @@ def _cleanup_replay_cache(root: Path) -> None:
         cutoff = now - retention_days * 86400
         files = []
         try:
-            for path in root.glob("*.json"):
+            for path in [*root.glob("*.json.gz"), *root.glob("*.json")]:
                 try:
                     stat = path.stat()
                     files.append((path, stat.st_mtime, stat.st_size))

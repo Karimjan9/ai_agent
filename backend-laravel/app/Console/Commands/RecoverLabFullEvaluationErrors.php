@@ -61,7 +61,7 @@ class RecoverLabFullEvaluationErrors extends Command
         $apply = (bool) $this->option('apply');
 
         $queueBacklog = $queue->labQueueBacklog();
-        if ($apply && $queueBacklog['total'] > 0) {
+        if ($apply && ($queueBacklog['total'] === null || $queueBacklog['total'] > 0)) {
             $result = [
                 'selected' => 0,
                 'dispatched' => 0,
@@ -353,16 +353,10 @@ class RecoverLabFullEvaluationErrors extends Command
 
     private function hasQueuedFullJob(LabAgent $agent): bool
     {
-        $needle = 'labAgentId";i:'.(int) $agent->id.';';
-
-        return DB::table('jobs')->where('queue', 'lab-full-validation')
-            ->get(['payload'])
-            ->contains(function (object $job) use ($needle): bool {
-                $payload = json_decode((string) $job->payload, true);
-                $command = (string) data_get($payload, 'data.command', '');
-
-                return str_contains($command, $needle);
-            });
+        return app(LabQueueJobInspector::class)->hasAgentJob(
+            (int) $agent->id,
+            [(string) config('services.lab_queue.full_validation_queue', 'lab-full-validation')],
+        );
     }
 
     private function isStaleTrainingWithoutEvidence(LabAgent $agent): bool

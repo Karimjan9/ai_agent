@@ -9,6 +9,7 @@ use App\Services\EliteAgentPortfolioGateService;
 use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
 use App\Services\LearningProtocolSafetyService;
+use App\Services\LabQueueJobInspector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,7 @@ class ValidateElitePortfolios extends Command
 
     protected $description = 'Replay complementary forward-valid specialists as one sealed portfolio';
 
-    public function handle(EliteAgentPortfolioGateService $portfolios, LabDatasetExportService $datasets, CalendarAlignmentEvidenceService $calendarAlignment, LearningProtocolSafetyService $protocolSafety): int
+    public function handle(EliteAgentPortfolioGateService $portfolios, LabDatasetExportService $datasets, CalendarAlignmentEvidenceService $calendarAlignment, LearningProtocolSafetyService $protocolSafety, LabQueueJobInspector $queueState): int
     {
         if ($protocolSafety->generationCreationPaused()) {
             $this->info('Learning protocol paused: elite portfolio replay deferred.');
@@ -35,7 +36,7 @@ class ValidateElitePortfolios extends Command
         // so it must never start while member recovery/full-validation work
         // is still reserved.  Otherwise the two requests compete for the
         // same process and a valid member can be misclassified as a timeout.
-        if ($this->fullReplayLaneActive()) {
+        if ($this->fullReplayLaneActive($queueState)) {
             $this->warn('lab-full-validation band: member/recovery replay faol; combined portfolio replay keyinga qoldirildi.');
             return self::SUCCESS;
         }
@@ -170,9 +171,10 @@ class ValidateElitePortfolios extends Command
         return self::SUCCESS;
     }
 
-    private function fullReplayLaneActive(): bool
+    private function fullReplayLaneActive(LabQueueJobInspector $queueState): bool
     {
-        if (DB::table('jobs')->where('queue', 'lab-full-validation')->exists()) {
+        $snapshot = $queueState->queueSnapshot(['lab-full-validation']);
+        if (($snapshot['available'] ?? true) === false || (int) ($snapshot['total'] ?? 0) > 0) {
             return true;
         }
 

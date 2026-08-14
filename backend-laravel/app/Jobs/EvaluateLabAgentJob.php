@@ -78,16 +78,16 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         public string $mode = 'full',
         ?array $recoveryContract = null,
         ?string $queue = null,
+        public ?int $screeningSlot = null,
     )
     {
         $this->recoveryContract = $recoveryContract;
         // The queue transport is an environment concern. Hard-coding the
         // database driver here makes Redis workers invisible to lab jobs.
         $this->onConnection((string) config('queue.default', 'redis'));
-        // Screening remains pair-local in its evidence, but all pair screens
-        // use one fair FIFO lane because the evaluator service and mutex are
-        // shared. Full validation uses its separate serialized lane because
-        // it is CPU and memory intensive.
+        // Screening remains pair-local in its evidence. It uses two bounded
+        // slot keys over one immutable cohort snapshot; full validation keeps
+        // its separate serialized lane because it is CPU and memory intensive.
         $this->onQueue($queue ?: ($mode === 'screen'
             ? (string) config('services.lab_queue.screening_queue', 'lab-screening')
             : 'lab-full-validation'));
@@ -114,10 +114,10 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * The Python evaluator is a bounded single-process CPU service. Pair-local
-     * jobs share one fair screening lane, but only one heavy replay may enter
-     * the service at a time. Contending jobs are released instead of waiting
-     * inside a 300s HTTP request and being misclassified as strategy failures.
+     * The Python evaluator is a bounded child-process service. Pair-local
+     * screening jobs use two slot keys; full replay remains one coordinator.
+     * Contenders are released instead of waiting inside an HTTP request and
+     * being misclassified as strategy failures.
      */
     public function middleware(): array
     {
@@ -125,7 +125,9 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             // Once a sealed full-validation cohort is waiting, ordinary
             // screening must yield before it reaches the shared replay lock.
             new PreferFullValidationQueue($this->mode),
-            (new WithoutOverlapping((string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay')))
+            (new WithoutOverlapping($this->mode === 'screen'
+                ? $this->screeningMutexKey()
+                : (string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay')))
                 // Share the exact lane key with direct portfolio replay and
                 // the stale-lock recovery command. Without this, Laravel
                 // prefixes the job-class hash and an operator cannot safely
@@ -191,6 +193,15 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         return (string) ($this->queue ?: ($this->mode === 'screen'
             ? config('services.lab_queue.screening_queue', 'lab-screening')
             : 'lab-full-validation'));
+    }
+
+    public function screeningMutexKey(): string
+    {
+        $slot = isset($this->screeningSlot) && $this->screeningSlot !== null
+            ? abs((int) $this->screeningSlot) % 2
+            : abs((int) $this->labAgentId) % 2;
+
+        return (string) config('services.lab_queue.screening_mutex_key', 'neurotrader-ai-screening-replay').":slot{$slot}";
     }
 
     public function handle(

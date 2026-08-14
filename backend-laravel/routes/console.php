@@ -39,6 +39,18 @@ $scheduleArtisan = static function (string $command, array $arguments = []) {
         ->name($command.':'.md5(json_encode($arguments)));
 };
 
+// Five-minute tasks used to become due in one burst on Windows. Keep each
+// command's cadence and overlap lock, but distribute read/append-only work
+// across the five minute slots. State-changing tasks remain separate calls;
+// this is scheduling pressure relief, not a semantic batch of gates.
+$scheduleStaggeredFive = static function (string $command, array $arguments = [], int $offset = 0) use ($scheduleArtisan) {
+    $offset = max(0, min(4, $offset));
+
+    return $scheduleArtisan($command, $arguments)
+        ->cron("{$offset}-59/5 * * * *")
+        ->withoutOverlapping();
+};
+
 $scheduleArtisan('trading:daily-report')->dailyAt('23:50');
 // --symbol berilmasa, command barcha active market_symbols instrumentlarini yangilaydi.
 $scheduleArtisan('market-data:update', ['--timeframe' => 'H1', '--limit' => 1000])
@@ -93,9 +105,7 @@ $scheduleArtisan('market-data:audit', ['--timeframe' => 'M15'])
 $scheduleArtisan('trading:daily-workflow')
     ->dailyAt('00:30')
     ->withoutOverlapping();
-$scheduleArtisan('system:health-check')
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+$scheduleStaggeredFive('system:health-check', [], 0);
 $scheduleArtisan('market:health')
     ->everyMinute()
     ->withoutOverlapping();
@@ -148,28 +158,22 @@ $scheduleArtisan('trading:dispatch-lab', ['--timeframe' => 'M15'])
 // entry/volume full-validation lane once its own foundation, fresh replay and
 // closed-H1 evidence are ready. Never substitute H1 history for M15 prices or
 // force a promotion from a stale/legacy screen.
-$scheduleArtisan('trading:dispatch-full-validation')
+$scheduleStaggeredFive('trading:dispatch-full-validation', [], 0);
     // Screening can finish after the old hourly selector has already run.
     // Poll for the newest eligible screened generation so a ready cohort is
     // picked up within one scheduler interval instead of waiting an hour.
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
 // M15 now has an independent pre-2026 foundation and can enter the same
 // sealed full-validation/council gates. Its H1 regime source is still passed
 // separately by the evaluator and is always delayed until the H1 candle closes.
-$scheduleArtisan('trading:dispatch-full-validation', ['--timeframe' => 'M15'])
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+$scheduleStaggeredFive('trading:dispatch-full-validation', ['--timeframe' => 'M15'], 1);
 // Research-only near-miss learning runs are admitted only with a paired
 // control/parent/anchor baseline. The command defers while the serialized
 // heavy lane is busy and never changes the promotion clock.
-$scheduleArtisan('trading:dispatch-learning-lane', [
+$scheduleStaggeredFive('trading:dispatch-learning-lane', [
     'XAUUSD',
     '--timeframe' => 'H1',
     '--limit' => 4,
-])
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+], 2);
 // A single-seat pump retries only after the queue, shared replay mutex and AI
 // evaluator are idle. Micro-confirmation is enforced inside dispatch.
 $scheduleArtisan('trading:pump-learning-lane', [
@@ -179,34 +183,26 @@ $scheduleArtisan('trading:pump-learning-lane', [
 ])
     ->everyMinute()
     ->withoutOverlapping();
-$scheduleArtisan('trading:monitor-learning-lane', [
+$scheduleStaggeredFive('trading:monitor-learning-lane', [
     'XAUUSD',
     '--timeframe' => 'H1',
     '--json' => true,
-])
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
-$scheduleArtisan('trading:monitor-learning-velocity', [
+], 2);
+$scheduleStaggeredFive('trading:monitor-learning-velocity', [
     'XAUUSD',
     '--timeframe' => 'H1',
     '--json' => true,
-])
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
-$scheduleArtisan('trading:monitor-parent-evolution', [
+], 3);
+$scheduleStaggeredFive('trading:monitor-parent-evolution', [
     'XAUUSD',
     '--timeframe' => 'H1',
     '--json' => true,
-])
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
-$scheduleArtisan('trading:monitor-failure-dojo', [
+], 4);
+$scheduleStaggeredFive('trading:monitor-failure-dojo', [
     'XAUUSD',
     '--timeframe' => 'H1',
     '--json' => true,
-])
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+], 0);
 $scheduleArtisan('trading:reconcile-lab-funnel')
     // Scheduled ticks are dry-run only. A state-changing reconciliation
     // requires an explicit operator-approved CLI invocation after the queue
@@ -236,44 +232,27 @@ $scheduleArtisan('trading:dispatch-portfolio-member-replay')
     // broad standalone calendar gate failed. It never emits paper signals.
     ->hourlyAt(22)
     ->withoutOverlapping();
-$scheduleArtisan('trading:process-targeted-generations')
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
-$scheduleArtisan('trading:lab-learn-from-history')
-    // History learning is a read/append-only operation. It runs before the
-    // next generation planner and never changes a quality or paper gate.
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
-$scheduleArtisan('trading:process-screening-learning-outbox')
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
-$scheduleArtisan('trading:recover-lab-evaluation-errors')
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
-$scheduleArtisan('trading:recover-incomplete-lab-evidence', ['--limit' => 6, '--scheduled-sweep' => true])
-    // Scheduled ticks are dry-run only. Same-generation replay recovery is
-    // dispatched only after an operator approval and an empty lab queue.
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+$scheduleStaggeredFive('trading:process-targeted-generations', [], 0);
+// History learning is a read/append-only operation. It runs before the next
+// generation planner and never changes a quality or paper gate.
+$scheduleStaggeredFive('trading:lab-learn-from-history', [], 1);
+$scheduleStaggeredFive('trading:process-screening-learning-outbox', [], 2);
+$scheduleStaggeredFive('trading:recover-lab-evaluation-errors', [], 3);
+// Scheduled ticks are dry-run only. Same-generation replay recovery is
+// dispatched only after an operator approval and an empty lab queue.
+$scheduleStaggeredFive('trading:recover-incomplete-lab-evidence', ['--limit' => 6, '--scheduled-sweep' => true], 4);
 // Only the XAUUSD H1 lighthouse may be proposed by the rescue scheduler.
 // The tick is dry-run; creation still requires explicit operator approval.
-$scheduleArtisan('trading:dispatch-controlled-targeted-rescue', [
+$scheduleStaggeredFive('trading:dispatch-controlled-targeted-rescue', [
     'symbol' => 'XAUUSD',
     '--timeframe' => 'H1',
-])
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
-$scheduleArtisan('trading:quarantine-stale-targeted-generations', ['--dry-run' => true])
-    // During the pause, retire only incomplete v1 handoffs that have no
-    // active agent or queued job. Completed cohorts and the controlled v2
-    // rescue contract are never touched by this cleanup.
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
-$scheduleArtisan('trading:recover-stale-lab-batches', ['--older-than' => 180, '--limit' => 50, '--dry-run' => true])
-    // Scheduled recovery is a dry-run. State-changing cancellation requires
-    // an explicit --apply and operator approval after the queue has drained.
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+], 0);
+// During the pause, retire only incomplete v1 handoffs that have no active
+// agent or queued job. Completed cohorts and controlled rescue are untouched.
+$scheduleStaggeredFive('trading:quarantine-stale-targeted-generations', ['--dry-run' => true], 1);
+// Scheduled recovery is a dry-run. State-changing cancellation requires
+// explicit --apply and operator approval after the queue has drained.
+$scheduleStaggeredFive('trading:recover-stale-lab-batches', ['--older-than' => 180, '--limit' => 50, '--dry-run' => true], 2);
 // A worker/process restart can leave a reserved job and the shared overlap
 // lock behind. Run the explicit fail-safe path every minute; it only acts
 // after the AI probe is idle and the reservation has exceeded the stale
@@ -288,15 +267,11 @@ $scheduleArtisan('trading:recover-lab-replay-mutex', ['--force-stale' => true, '
 $scheduleArtisan('trading:promote-lab-frontier')
     ->everyMinute()
     ->withoutOverlapping();
-$scheduleArtisan('trading:paper-monitor')
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+$scheduleStaggeredFive('trading:paper-monitor', [], 3);
 // This is the primary outcome monitor: it records the exact first missing
 // milestone from reproducible candidate through reality feedback. It never
 // creates a generation or promotes a paper candidate.
-$scheduleArtisan('trading:monitor-lighthouse-loop', ['--symbol' => 'XAUUSD', '--timeframe' => 'H1'])
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+$scheduleStaggeredFive('trading:monitor-lighthouse-loop', ['--symbol' => 'XAUUSD', '--timeframe' => 'H1'], 4);
 // XAUUSD MTF shadow outcomes are reconciled under the same next-M15 execution
 // contract, but they never write official paper orders or promotion evidence.
 $scheduleArtisan('trading:reconcile-mtf-shadow', ['--symbol' => 'XAUUSD', '--limit' => 50])
@@ -330,9 +305,7 @@ $scheduleArtisan('trading:validate-elite-portfolios')
     // combined routing interaction on the same canonical execution contract.
     ->hourlyAt(25)
     ->withoutOverlapping();
-$scheduleArtisan('trading:watch-lab-lifecycle')
-    ->everyFiveMinutes()
-    ->withoutOverlapping();
+$scheduleStaggeredFive('trading:watch-lab-lifecycle', [], 0);
 // The watchdog repairs only bounded abandoned replays.  This broader audit
 // is read-only for agent/evidence state and records the complete lifecycle
 // contract (population, lineage, queue, data, volume, evidence and gates).

@@ -748,21 +748,23 @@ class LighthouseVerticalLoopMonitoringService
     {
         $backlog = $this->queue->labQueueBacklog();
         $queues = $this->queue->labQueues();
-        $rows = Schema::hasTable('jobs')
-            ? DB::table('jobs')->whereIn('queue', $queues)->get(['queue', 'created_at', 'reserved_at', 'attempts'])
-            : collect();
-        $oldest = $rows->isEmpty() ? null : $rows->min('created_at');
-        $oldestReserved = $rows->filter(fn (object $row): bool => $row->reserved_at !== null)->min('reserved_at');
+        $snapshot = $this->queue->queueSnapshot($queues);
+        $stats = (array) ($snapshot['stats'] ?? []);
+        $rows = collect((array) ($snapshot['rows'] ?? []));
+        $oldest = collect($stats)->pluck('oldest_created_at')->filter(fn ($value): bool => $value !== null)->min();
+        $oldestReserved = collect($stats)->pluck('oldest_reserved_at')->filter(fn ($value): bool => $value !== null)->min();
+        $maxAttempts = collect($stats)->pluck('max_attempts')->filter(fn ($value): bool => $value !== null)->max() ?: 0;
         $replay = $this->replayState();
 
         return [
             'backlog' => [
                 ...$backlog,
-                'reserved' => $rows->whereNotNull('reserved_at')->count(),
-                'pending' => $rows->whereNull('reserved_at')->count(),
+                'reserved' => (int) collect($stats)->sum('reserved'),
+                'pending' => (int) collect($stats)->sum('pending'),
                 'oldest_age_seconds' => $oldest ? max(0, now()->timestamp - (int) $oldest) : null,
                 'oldest_reserved_age_seconds' => $oldestReserved ? max(0, now()->timestamp - (int) $oldestReserved) : null,
-                'max_attempts' => $rows->isEmpty() ? 0 : (int) $rows->max('attempts'),
+                'max_attempts' => (int) $maxAttempts,
+                'state_known' => ($snapshot['available'] ?? true) !== false,
             ],
             'configured_queues' => $queues,
             'priority_contract' => [

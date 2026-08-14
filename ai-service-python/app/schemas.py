@@ -56,6 +56,11 @@ class StrategyRuntimeConfig(BaseModel):
     base_strategy: str | None = None
     version: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # Stable Laravel-side identity for bounded laboratory cohorts.  It is
+    # carried through the evaluator response so the caller can project each
+    # result back to the correct agent even when parameter validation adds or
+    # normalizes defaults.
+    lab_agent_id: int | None = Field(default=None, ge=1)
     # Portfolio membership is sealed before replay.  These fields describe
     # ownership, not a label inferred from the replay outcome.
     member_key: str | None = None
@@ -98,11 +103,20 @@ class SimpleBacktestRequest(BaseModel):
     from_date: date | None = None
     to_date: date | None = None
     dataset_path: str | None = None
+    # Immutable snapshot transport: Laravel sends a sealed CSV/Parquet path
+    # plus its manifest instead of serialising thousands of candles into the
+    # HTTP body.  The tail is applied before normalisation so it is equivalent
+    # to the legacy bounded inline payload.
+    dataset_tail_rows: int | None = Field(default=None, ge=2)
     # Full replay may use a separately sealed pre-2026 foundation archive.
     # The primary dataset remains the canonical rolling/forward/paper stream.
     foundation_dataset_path: str | None = None
     candles: list[Candle] = Field(default_factory=list)
     regime_dataset_path: str | None = None
+    # M15 uses the last closed H1 context from the same immutable generation
+    # snapshot.  This keeps the request small without weakening the no-
+    # look-ahead contract.
+    regime_dataset_tail_rows: int | None = Field(default=None, ge=2)
     regime_candles: list[Candle] = Field(default_factory=list)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     # Laravel seals this map before lab/paper/holdout execution. A missing

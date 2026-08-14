@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\LabQueueStateService;
 use App\Services\OperatorApprovalService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -23,8 +24,12 @@ class PromoteLabFrontier extends Command
 
     protected $description = 'Promote incomplete recoveries and the bounded role cohort ahead of ordinary screening FIFO';
 
-    public function handle(LabImmutableEvidenceService $evidence, OperatorApprovalService $approvals): int
+    public function handle(LabImmutableEvidenceService $evidence, OperatorApprovalService $approvals, LabQueueStateService $queueState): int
     {
+        if ((string) config('queue.default', 'database') === 'redis') {
+            return $this->handleRedis($evidence, $approvals, $queueState);
+        }
+
         if (! DB::getSchemaBuilder()->hasTable('jobs')) {
             $this->info('Queue table is not available; frontier promotion skipped.');
 
@@ -142,6 +147,82 @@ class PromoteLabFrontier extends Command
         } finally {
             $lock->release();
         }
+    }
+
+    private function handleRedis(LabImmutableEvidenceService $evidence, OperatorApprovalService $approvals, LabQueueStateService $queueState): int
+    {
+        $screeningQueue = (string) config('services.lab_queue.screening_queue', 'lab-screening');
+        $frontierQueue = (string) config('services.lab_queue.frontier_queue', 'lab-frontier');
+        $frontierLimit = max(1, (int) ($this->option('limit') ?: config('services.lab_queue.frontier_backlog_limit', 4)));
+        $snapshot = $queueState->snapshot([$screeningQueue, $frontierQueue]);
+        if (($snapshot['available'] ?? false) !== true) {
+            $this->error('Redis queue state is unavailable; frontier promotion refused.');
+
+            return self::FAILURE;
+        }
+
+        $existingFrontier = (int) data_get($snapshot, "stats.{$frontierQueue}.total", 0);
+        $capacity = max(0, $frontierLimit - $existingFrontier);
+        if ($capacity === 0) {
+            $this->info("Frontier queue already has {$existingFrontier}/{$frontierLimit} jobs.");
+
+            return self::SUCCESS;
+        }
+
+        $candidates = [];
+        foreach ((array) ($snapshot['rows'] ?? []) as $row) {
+            if (count($candidates) >= $capacity || ($row['queue'] ?? null) !== $screeningQueue || ($row['redis_state'] ?? null) !== 'pending') continue;
+            $agentId = $this->agentIdFromPayload((string) ($row['payload'] ?? ''));
+            if ($agentId === null) continue;
+            if ($this->option('agent') !== null && (int) $this->option('agent') !== $agentId) continue;
+            $agent = LabAgent::query()->with(['generation', 'modelVersion'])->find($agentId);
+            $frontierReason = $agent ? $this->frontierReason($agent) : null;
+            if ($frontierReason === null) continue;
+            if ($this->option('generation') !== null && (int) $this->option('generation') !== (int) $agent->lab_generation_id) continue;
+            $candidates[] = compact('row', 'agent', 'frontierReason');
+        }
+
+        if ($candidates === []) {
+            $this->info('No eligible incomplete frontier recovery job was found in Redis.');
+
+            return self::SUCCESS;
+        }
+        if (! (bool) $this->option('apply')) {
+            $this->table(['agent', 'generation', 'job', 'reason', 'action'], array_map(
+                fn (array $candidate): array => [$candidate['agent']->id, $candidate['agent']->lab_generation_id, $candidate['row']['id'] ?? '', $candidate['frontierReason'], 'would_promote_after_operator_approval'],
+                $candidates,
+            ));
+            $this->info('Redis dry-run only: use --apply with operator approval for a bounded atomic queue move.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            $approvals->requireForApply('promote-lab-frontier', $this->option('approved-by'), $this->option('approval-reason'), [
+                'agent_ids' => array_map(fn (array $candidate): int => (int) $candidate['agent']->id, $candidates),
+                'generation_ids' => array_values(array_unique(array_map(fn (array $candidate): int => (int) $candidate['agent']->lab_generation_id, $candidates))),
+                'queue_from' => $screeningQueue, 'queue_to' => $frontierQueue, 'backend' => 'redis',
+            ]);
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $promoted = 0;
+        foreach ($candidates as $candidate) {
+            $row = $candidate['row'];
+            if (! $queueState->movePendingPayload($screeningQueue, $frontierQueue, (string) ($row['payload'] ?? ''))) continue;
+            $promoted++;
+            $evidence->recordLifecycle($candidate['agent'], 'frontier_queue_promoted', [
+                'reason_code' => $candidate['frontierReason'], 'queue_from' => $screeningQueue,
+                'queue_to' => $frontierQueue, 'job_id' => (string) ($row['id'] ?? ''),
+                'backend' => 'redis', 'promotion_evidence' => false,
+            ], 'screening', null, null, self::class);
+        }
+        $this->info("Promoted {$promoted} Redis frontier job(s) after operator approval.");
+
+        return self::SUCCESS;
     }
 
     private function frontierReason(LabAgent $agent): ?string

@@ -14,6 +14,7 @@ use App\Services\MultiTimeframePilotService;
 use App\Services\MtfCouncilGateService;
 use App\Services\MtfShadowCouncilSandboxService;
 use App\Services\CouncilAblationService;
+use App\Services\LabQueueJobInspector;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Console\Command;
@@ -55,6 +56,7 @@ class RunMtfCouncilResearch extends Command
         MtfCouncilGateService $councilGates,
         MtfShadowCouncilSandboxService $shadowSandbox,
         CouncilAblationService $councilAblations,
+        LabQueueJobInspector $queueState,
     ): int {
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', (string) $this->option('symbol')));
         if ($symbol !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL) {
@@ -62,14 +64,14 @@ class RunMtfCouncilResearch extends Command
 
             return self::FAILURE;
         }
-        if (! $this->option('allow-busy-queue') && Schema::hasTable('jobs')) {
-            $busyJobs = DB::table('jobs')
-                ->where('queue', 'lab-screening')
-                ->where(function ($query): void {
-                    $query->whereNotNull('reserved_at')
-                        ->orWhere('available_at', '<=', now()->timestamp);
-                })
-                ->count();
+        if (! $this->option('allow-busy-queue')) {
+            $queueSnapshot = $queueState->queueSnapshot(['lab-screening']);
+            if (($queueSnapshot['available'] ?? true) === false) {
+                $this->warn('Council queue state unavailable; research refused fail-closed.');
+                return self::FAILURE;
+            }
+            $busyJobs = (int) data_get($queueSnapshot, 'stats.lab-screening.pending', 0)
+                + (int) data_get($queueSnapshot, 'stats.lab-screening.reserved', 0);
             if ($busyJobs > 0) {
                 $this->warn("Council replay queue guard: {$busyJobs} lab-screening job(s) are pending or reserved; council was not started.");
                 $this->line('Run again after the queue is idle, or explicitly pass --allow-busy-queue after operator review.');

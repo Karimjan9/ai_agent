@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use App\Models\LabEvaluationRun;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\LabQueueStateService;
 use App\Services\OperatorApprovalService;
 use RuntimeException;
 
@@ -32,8 +33,12 @@ class RecoverLabReplayMutex extends Command
 
     protected $description = 'Recover an orphaned single-lane lab replay mutex safely';
 
-    public function handle(OperatorApprovalService $approvals): int
+    public function handle(OperatorApprovalService $approvals, LabQueueStateService $queueState): int
     {
+        if ((string) config('queue.default', 'database') === 'redis') {
+            return $this->handleRedis($approvals, $queueState);
+        }
+
         // EvaluateLabAgentJob uses WithoutOverlapping::shared(), so Laravel
         // stores the cross-job mutex without the job-class hash. Derive the
         // store prefix instead of freezing an environment-specific prefix.
@@ -298,6 +303,111 @@ class RecoverLabReplayMutex extends Command
         } else {
             return self::FAILURE;
         }
+
+        return self::SUCCESS;
+    }
+
+    private function handleRedis(OperatorApprovalService $approvals, LabQueueStateService $queueState): int
+    {
+        $queues = array_values(array_unique(array_merge(
+            [(string) config('services.lab_queue.screening_queue', 'lab-screening')],
+            [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
+            (array) config('services.lab_queue.legacy_screening_queues', []),
+            [(string) config('services.lab_queue.full_validation_queue', 'lab-full-validation')],
+        )));
+        $snapshot = $queueState->snapshot($queues);
+        if (($snapshot['available'] ?? false) !== true) {
+            $this->error('Refusing Redis recovery: queue state is unavailable.');
+
+            return self::FAILURE;
+        }
+
+        $forceStale = (bool) $this->option('force-stale');
+        $apply = (bool) $this->option('apply') && ! (bool) $this->option('dry-run');
+        $dryRun = ! $apply;
+        $reserved = collect((array) ($snapshot['rows'] ?? []))
+            ->filter(fn (array $row): bool => ($row['redis_state'] ?? null) === 'reserved')
+            ->values();
+        if (! $forceStale) {
+            if ($reserved->isNotEmpty()) $this->line('Redis has '.$reserved->count().' reserved lab replay(s); leaving them untouched.');
+
+            return self::SUCCESS;
+        }
+
+        try {
+            $status = Http::connectTimeout(2)->timeout(5)->acceptJson()
+                ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
+                ->get(rtrim((string) config('services.ai_service.url'), '/').'/api/replay-status');
+        } catch (\Throwable) {
+            $this->error('Refusing Redis stale recovery: evaluator liveness probe is unreachable.');
+
+            return self::FAILURE;
+        }
+        if (! $status->successful() || (int) $status->json('active_requests', -1) !== 0) {
+            $this->error('Refusing Redis stale recovery: evaluator reports an active or unknown replay.');
+
+            return self::FAILURE;
+        }
+
+        $hasFull = $reserved->contains(fn (array $row): bool => ($row['queue'] ?? null) === config('services.lab_queue.full_validation_queue', 'lab-full-validation'));
+        $timeout = $hasFull
+            ? max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900)) + max(300, (int) config('services.lab_selection.full_replay_post_processing_grace_seconds', 900))
+            : max(60, (int) config('services.lab_selection.screen_timeout_seconds', 900)) + max(300, (int) config('services.lab_selection.screen_replay_post_processing_grace_seconds', 300));
+        $staleAfter = max($timeout, (int) $this->option('stale-after'));
+        $cutoff = now()->timestamp - $staleAfter;
+        $stale = $reserved->filter(fn (array $row): bool => ((int) ($row['reserved_at'] ?? 0) <= $cutoff) || (int) ($row['attempts'] ?? 0) >= 10)->values();
+        if ($stale->isEmpty()) {
+            $this->error('Refusing Redis stale recovery: no reservation crossed the contention threshold.');
+
+            return self::FAILURE;
+        }
+
+        $agentIds = $stale->map(fn (array $row): ?int => $this->labAgentIdFromPayload((string) ($row['payload'] ?? '')))->filter()->unique()->values();
+        $openRunAgentIds = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds->all())->where('status', 'started')->pluck('lab_agent_id')->map(fn ($id): int => (int) $id)->unique()->values();
+        $staleOwners = $stale->filter(function (array $row) use ($openRunAgentIds): bool {
+            $agentId = $this->labAgentIdFromPayload((string) ($row['payload'] ?? ''));
+
+            return $agentId !== null && $openRunAgentIds->contains($agentId);
+        })->values();
+        if ($staleOwners->isEmpty() && $stale->count() === $reserved->count()) $staleOwners = $stale;
+        if ($staleOwners->isEmpty()) {
+            $this->error('Refusing Redis stale recovery: no stale reservation has an open evaluator run owner.');
+
+            return self::FAILURE;
+        }
+        if ($dryRun) {
+            $this->table(['queue', 'job', 'reserved_at', 'attempts', 'action'], $staleOwners->map(fn (array $row): array => [$row['queue'], $row['id'], $row['reserved_at'], $row['attempts'], 'would_release_to_pending'])->all());
+
+            return self::SUCCESS;
+        }
+        if (! $this->approve($approvals, [
+            'mode' => 'redis_stale_reservation',
+            'reservation_ids' => $staleOwners->pluck('id')->values()->all(),
+            'stale_after_seconds' => $staleAfter,
+            'backend' => 'redis',
+        ])) return self::FAILURE;
+
+        $released = 0;
+        foreach ($staleOwners as $row) {
+            if ($queueState->releaseReservedPayload((string) $row['queue'], (string) $row['payload'])) $released++;
+        }
+        $staleAgentIds = $staleOwners->map(fn (array $row): ?int => $this->labAgentIdFromPayload((string) ($row['payload'] ?? '')))->filter()->unique()->values();
+        $evidence = app(LabImmutableEvidenceService::class);
+        LabEvaluationRun::query()->whereIn('lab_agent_id', $staleAgentIds->all())->where('status', 'started')->get()->each(function (LabEvaluationRun $run) use ($evidence): void {
+            $evidence->finishIfOpen($run, 'retry_released', null, [], [
+                'reason_code' => 'STALE_REDIS_QUEUE_RESERVATION_RECOVERED',
+                'recovery_protocol' => 'orphaned_replay_mutex_redis_v1',
+                'promotion_evidence' => false,
+            ]);
+        });
+
+        // The lock is only force-released after the evaluator is idle and the
+        // exact stale reservation was moved atomically. A recent reserved
+        // contender keeps its lock until its own middleware exits.
+        if ($reserved->count() === $released) {
+            Cache::lock('laravel-queue-overlap:'.(string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'))->forceRelease();
+        }
+        $this->warn("Released {$released} stale Redis reservation(s); no job or evidence was deleted.");
 
         return self::SUCCESS;
     }

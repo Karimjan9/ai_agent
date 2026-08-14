@@ -81,7 +81,7 @@ class RecoverLabEvaluationErrors extends Command
             return self::FAILURE;
         }
         $queueBacklog = $this->queueBacklog();
-        if ($queueBacklog['total'] > 0) {
+        if ($queueBacklog['total'] === null || $queueBacklog['total'] > 0) {
             $this->info(sprintf(
                 'Evaluation-error recovery deferred: %d existing lab job(s) remain in %s.',
                 $queueBacklog['total'],
@@ -174,6 +174,7 @@ class RecoverLabEvaluationErrors extends Command
                             || (str_contains($reason, 'strategy verdict withheld')
                                 && (str_contains($reason, 'undefined variable')
                             || str_contains($reason, 'undefined method')
+                            || str_contains($reason, 'batch result identity mismatch')
                             || $pythonUndefinedName
                             || $timestampNormalizationFailure
                             || $pythonVolumeMarkerRuntime)));
@@ -505,20 +506,6 @@ class RecoverLabEvaluationErrors extends Command
     /** @return array{total: int, queues: array<string, int>} */
     private function queueBacklog(): array
     {
-        $queues = array_values(array_unique(array_filter([
-            (string) config('services.lab_queue.screening_queue', 'lab-screening'),
-            (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
-            (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
-            ...((array) config('services.lab_queue.legacy_screening_queues', [])),
-        ])));
-        $counts = DB::table('jobs')
-            ->whereIn('queue', $queues)
-            ->selectRaw('queue, COUNT(*) as total')
-            ->groupBy('queue')
-            ->pluck('total', 'queue')
-            ->map(fn ($count): int => (int) $count)
-            ->all();
-
-        return ['total' => array_sum($counts), 'queues' => $counts];
+        return app(LabQueueJobInspector::class)->labQueueBacklog();
     }
 }

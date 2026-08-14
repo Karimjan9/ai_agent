@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\ProcessLabScreeningLearningProjection;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\ModelVersion;
@@ -478,7 +479,13 @@ class LabAgentEvaluationService
                 'base_strategy' => $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $agent->strategy_family),
                 'version' => $model->version, 'parameters' => $model->parameters ?? [],
             ]],
-            'initial_balance' => 10000, 'risk_per_trade' => 1, 'candles' => $rows,
+            'initial_balance' => 10000,
+            // Immutable snapshot-path transport keeps the request/evidence
+            // contract intact while removing thousands of candle objects from
+            // HTTP JSON. Python applies the same bounded tail before
+            // normalisation, so the replay stream is unchanged.
+            'dataset_path' => $datasetSnapshot['path'],
+            'dataset_tail_rows' => 5000,
             'volume_context' => $volumeEnabled
                 ? $this->volumeContextOrFail($agent->symbol, $agent->timeframe)
                 : $this->disabledVolumeContext(),
@@ -503,6 +510,14 @@ class LabAgentEvaluationService
                     'parent_model_version_ids' => $this->parentGraphService->ids($agent),
                     'single_gene' => count((array) $agent->parameter_diff) === 1,
                 ],
+                'snapshot_transport' => [
+                    'protocol' => 'immutable_snapshot_path_v1',
+                    'dataset_path' => $datasetSnapshot['path'],
+                    'dataset_manifest_path' => $datasetSnapshot['path'].'.manifest.json',
+                    'dataset_sha256' => $datasetSnapshot['sha256'],
+                    'tail_rows' => 5000,
+                    'features_shared_per_generation_request' => true,
+                ],
             ],
             // Screening facts can influence the next mutation direction, so
             // the same complete trace/ledger contract is required here as in
@@ -514,7 +529,12 @@ class LabAgentEvaluationService
         if ($regimeSnapshot !== null) {
             // Screening and full replay consume the same generation-frozen
             // H1 context. Only the latest bounded tail is sent to screening.
-            $request['regime_candles'] = $this->datasets->rowsFromSnapshot($regimeSnapshot['path'], 2000);
+            $request['regime_dataset_path'] = $regimeSnapshot['path'];
+            $request['regime_dataset_tail_rows'] = 2000;
+            $request['policy_context']['snapshot_transport']['regime_dataset_path'] = $regimeSnapshot['path'];
+            $request['policy_context']['snapshot_transport']['regime_dataset_manifest_path'] = $regimeSnapshot['path'].'.manifest.json';
+            $request['policy_context']['snapshot_transport']['regime_dataset_sha256'] = $regimeSnapshot['sha256'];
+            $request['policy_context']['snapshot_transport']['regime_tail_rows'] = 2000;
         }
         // The HTTP budget must end before the job/worker budget. A timeout
         // becomes evaluation_error, never a retry-derived strategy verdict.
@@ -542,7 +562,7 @@ class LabAgentEvaluationService
             $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
         }
         $this->evidence->attachRequest($run, $request, ['request_id' => $requestId, 'data_hash' => $manifest['data_hash'], 'dataset_manifest' => $manifest]);
-        $this->assertAiReplayHealthy($requestId, $run);
+        $this->assertAiReplayHealthy($requestId, $run, true);
         $response = Http::connectTimeout(15)->timeout($screenTimeout)->withOptions([
             // Explicitly bound the cURL transfer on Windows as well as in
             // Laravel's PendingRequest abstraction. A provider/replay hang
@@ -706,73 +726,22 @@ class LabAgentEvaluationService
             'stress_profit_factor' => data_get($result, 'screening_survival.stress_cost_pf'),
         ], ['screen_decision_id' => $screenDecision->id]);
 
-        // CandidateGateDecisionService is also used by direct/unit callers,
-        // so it attempts the anchor write defensively before the run closes.
-        // The real evaluator closes the immutable evidence run here; repeat
-        // the idempotent write now so a complete strategy failure actually
-        // becomes a repair anchor in production rather than waiting for a
-        // later handoff backfill. Technical/incomplete runs never reach this
-        // block and therefore cannot teach the mutation compiler.
-        $completedScreenResult = [...$screenProjection, 'evidence_run_id' => $run->run_id];
-        $repairAnchors = app(FailureRepairAnchorService::class);
-        if ((int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0) > 0) {
-            $repairAnchors->recordRepairScreeningOutcome($agent, $completedScreenResult);
-        } elseif ($screenDecision->decision === 'failed') {
-            $repairAnchors->recordFromScreeningDecision($agent, $screenDecision, $completedScreenResult);
-        }
-        // A passed screen is a Seed milestone, not a parent promotion. The
-        // response map records the same immutable run for later mentor search.
+        // Gate/evidence are now closed. Everything below is a retryable
+        // learning projection and runs on its own queue, keeping the replay
+        // worker's critical path short without allowing a projection to
+        // promote or alter immutable evidence.
         try {
-            app(SkillMentorService::class)->markScreenValidatedSeed(
-                $agent->fresh(['modelVersion']),
-                $screenDecision->decision === 'passed',
-                $completedScreenResult,
-            );
-            $screeningResponseMap = app(MutationResponseMapService::class)->recordScreening(
-                $agent->fresh(['modelVersion']),
-                $completedScreenResult,
-            );
-            app(LearningLaneService::class)->pairScreeningObservation(
-                $agent->fresh(['modelVersion', 'generation']),
-                $completedScreenResult,
-                $screeningResponseMap,
-            );
-            $parentAwareCredit = app(ParentAwareCreditService::class)->recordScreening(
-                $agent->fresh(['modelVersion']),
-                $completedScreenResult,
-                (string) $screenDecision->decision,
-            );
-            $screenModel = $agent->fresh(['modelVersion'])->modelVersion;
-            if ($screenModel) {
-                $screenMetadata = (array) $screenModel->metadata;
-                data_set($screenMetadata, 'parent_aware_evolution.last_screening_credit', $parentAwareCredit);
-                $screenModel->update(['metadata' => $screenMetadata]);
-            }
-        } catch (\Throwable $exception) {
-            // Learning projections are secondary to the immutable gate and
-            // must never strand a completed candidate when their migration or
-            // payload is temporarily unavailable.
-            report($exception);
-        }
-
-        try {
-            app(AgentProgressCardService::class)->sync(
-                $agent->fresh(['modelVersion', 'generation']),
-                null,
+            ProcessLabScreeningLearningProjection::dispatch(
+                (int) $agent->id,
+                (string) $run->run_id,
+                (int) $screenDecision->id,
                 [...$screenProjection, 'evidence_run_id' => $run->run_id],
-                $screenDecision,
             );
         } catch (\Throwable $exception) {
-            report($exception);
-        }
-
-        try {
-            $this->knowledge->recordScreening(
-                $agent->fresh(['modelVersion', 'generation']),
-                [...$screenProjection, 'evidence_run_id' => $run->run_id],
-                $run->run_id,
-            );
-        } catch (\Throwable $exception) {
+            // A queue/serialization outage must not reopen a completed
+            // screening run. Immutable evidence remains complete; the
+            // learning projection job can be recovered by its unique queue
+            // identity or the legacy outbox command.
             report($exception);
         }
 
@@ -780,7 +749,6 @@ class LabAgentEvaluationService
             'screen_result_hash' => hash('sha256', json_encode($screenProjection)), 'sample_count' => $agent->sample_count,
             'evidence_run_id' => $run->run_id,
         ]);
-        $this->screeningOutbox->enqueue($agent->fresh(), $screenProjection, (float) ($item['forward_score'] ?? $item['score'] ?? 0));
 
         $generation = $agent->generation()->with('agents')->first();
         // An evaluator/transport failure is not a screen verdict. Keep the
@@ -808,6 +776,267 @@ class LabAgentEvaluationService
         }
     }
 
+    /**
+     * Evaluate a bounded cohort in one HTTP replay.
+     *
+     * Python receives one immutable snapshot path and builds H1/M15/volume/
+     * ATR features once for the request. The response is still split back
+     * into one evidence run and one gate decision per agent.
+     *
+     * @param array<int, int> $agentIds
+     */
+    public function screenBatch(array $agentIds, string $symbol): void
+    {
+        $ids = array_values(array_unique(array_map('intval', $agentIds)));
+        if ($ids === [] || count($ids) > 6) {
+            throw new RuntimeException('Screening batch 1–6 agent oralig‘ida bo‘lishi kerak.');
+        }
+        sort($ids);
+
+        $agents = LabAgent::query()
+            ->with('modelVersion', 'generation')
+            ->whereIn('id', $ids)
+            ->orderBy('id')
+            ->get();
+        if ($agents->count() !== count($ids)) {
+            throw new RuntimeException('Screening batch agentlaridan biri topilmadi.');
+        }
+        $first = $agents->first();
+        if (! $first || strtoupper((string) $first->symbol) !== strtoupper($symbol)) {
+            throw new RuntimeException('Screening batch symbol contract mos emas.');
+        }
+        foreach ($agents as $agent) {
+            if ((int) $agent->lab_generation_id !== (int) $first->lab_generation_id
+                || strtoupper((string) $agent->symbol) !== strtoupper((string) $first->symbol)
+                || strtoupper((string) $agent->timeframe) !== strtoupper((string) $first->timeframe)) {
+                throw new RuntimeException('Screening batch faqat bitta generation/symbol/timeframe uchun ruxsat etiladi.');
+            }
+            if (! $agent->modelVersion) {
+                throw new RuntimeException("Screening batch model version topilmadi: agent {$agent->id}.");
+            }
+        }
+        $generation = $first->generation;
+        $volumeEnabled = $agents->contains(fn (LabAgent $agent): bool => $this->volumeEnabled($agent->modelVersion));
+        $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($generation, $volumeEnabled);
+        $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], 5000);
+        if (count($rows) < 500) {
+            throw new RuntimeException('Screening batch uchun yetarli recent candle topilmadi.');
+        }
+        $regimeSnapshot = strtoupper((string) $first->timeframe) === 'M15'
+            ? $this->datasets->ensureGenerationRegimeSnapshot($generation)
+            : null;
+        $baseStrategy = $this->schemas->runtimeBaseStrategy(
+            $first->modelVersion->strategy,
+            data_get($first->modelVersion->metadata, 'base_strategy'),
+            $first->strategy_family,
+        );
+        $strategies = [];
+        $repairContracts = [];
+        foreach ($agents as $agent) {
+            $model = $agent->modelVersion;
+            $strategies[] = [
+                'lab_agent_id' => (int) $agent->id,
+                'strategy' => $model->strategy,
+                'base_strategy' => $this->schemas->runtimeBaseStrategy(
+                    $model->strategy,
+                    data_get($model->metadata, 'base_strategy'),
+                    $agent->strategy_family,
+                ),
+                'version' => $model->version,
+                'parameters' => $model->parameters ?? [],
+            ];
+            $repairContracts[(string) $agent->id] = [
+                'changed_gene' => count((array) $agent->parameter_diff) === 1
+                    ? array_key_first((array) $agent->parameter_diff) : null,
+                'repair_attempt' => (int) data_get($model->metadata, 'repair_lineage.attempt', 0),
+                'parent_model_version_id' => $agent->parent_a_model_version_id ?: $agent->parent_b_model_version_id,
+                'parent_model_version_ids' => $this->parentGraphService->ids($agent),
+                'single_gene' => count((array) $agent->parameter_diff) === 1,
+            ];
+        }
+        $request = [
+            'symbol' => $first->symbol,
+            'timeframe' => $first->timeframe,
+            'strategy' => $first->modelVersion->strategy,
+            'evaluation_mode' => 'incremental',
+            'strategies' => $strategies,
+            'initial_balance' => 10000,
+            'risk_per_trade' => 1,
+            'dataset_path' => $datasetSnapshot['path'],
+            'dataset_tail_rows' => 5000,
+            'volume_context' => $volumeEnabled
+                ? $this->volumeContextOrFail($first->symbol, $first->timeframe)
+                : $this->disabledVolumeContext(),
+            'execution' => $this->executionAssumptions($first->symbol),
+            'execution_contract' => app(ExecutionContractService::class)->for($first->symbol, $first->timeframe),
+            'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
+                $first->symbol,
+                $first->timeframe,
+                $first->modelVersion->strategy,
+                $regimeSnapshot['sha256'] ?? null,
+            ),
+            'policy_context' => [
+                'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($first->symbol, $first->timeframe),
+                'repair_contracts' => $repairContracts,
+                'snapshot_transport' => [
+                    'protocol' => 'immutable_snapshot_path_v1',
+                    'dataset_path' => $datasetSnapshot['path'],
+                    'dataset_manifest_path' => $datasetSnapshot['path'].'.manifest.json',
+                    'dataset_sha256' => $datasetSnapshot['sha256'],
+                    'tail_rows' => 5000,
+                    'features_shared_per_generation_request' => true,
+                    'bounded_batch_size' => count($agents),
+                ],
+            ],
+            // The canonical per-candidate result keeps its full decision
+            // trace. Cost/mutation projections turn this off in Python.
+            'emit_decision_trace' => true,
+        ];
+        if ($regimeSnapshot !== null) {
+            $request['regime_dataset_path'] = $regimeSnapshot['path'];
+            $request['regime_dataset_tail_rows'] = 2000;
+            $request['policy_context']['snapshot_transport']['regime_dataset_path'] = $regimeSnapshot['path'];
+            $request['policy_context']['snapshot_transport']['regime_dataset_manifest_path'] = $regimeSnapshot['path'].'.manifest.json';
+            $request['policy_context']['snapshot_transport']['regime_dataset_sha256'] = $regimeSnapshot['sha256'];
+            $request['policy_context']['snapshot_transport']['regime_tail_rows'] = 2000;
+        }
+
+        LabAgent::query()->whereIn('id', $ids)->where('lifecycle_status', 'queued')
+            ->update(['lifecycle_status' => 'screening']);
+        foreach ($agents as $agent) {
+            $agent->lifecycle_status = 'screening';
+        }
+
+        $manifest = [
+            'candle_count' => count($rows),
+            'data_hash' => $this->evidence->hash($rows),
+            'snapshot_sha256' => $datasetSnapshot['sha256'],
+            'snapshot_protocol' => $datasetSnapshot['protocol'],
+            'snapshot_generation_id' => $first->lab_generation_id,
+            'batch_protocol' => 'bounded_screening_batch_v1',
+            'batch_size' => count($agents),
+        ];
+        if ($regimeSnapshot !== null) {
+            $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
+            $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
+        }
+        $runs = [];
+        foreach ($agents as $agent) {
+            $run = $this->evidence->beginRun($agent, 'screening', 'incremental', [
+                'source' => 'bounded_screening_batch',
+                'batch_size' => count($agents),
+                'batch_agent_ids' => $ids,
+            ]);
+            $runs[(int) $agent->id] = $run;
+            $requestId = 'screen-batch-'.$agent->id.'-'.bin2hex(random_bytes(5));
+            $this->evidence->attachRequest($run, $request, [
+                'request_id' => $requestId,
+                'data_hash' => $manifest['data_hash'],
+                'dataset_manifest' => $manifest,
+            ]);
+        }
+        $requestId = 'screen-batch-'.implode('-', $ids).'-'.bin2hex(random_bytes(6));
+        $isDifferential = $agents->contains(fn (LabAgent $agent): bool => $agent->strategy_family === 'differential_router'
+            || data_get($agent->modelVersion->metadata, 'differential_router_contract') !== null);
+        $configuredTimeout = (int) config('services.lab_queue.screening_batch_timeout_seconds', 1800);
+        $screenTimeout = min($isDifferential ? 2400 : 1800, max(60, $configuredTimeout));
+        try {
+            $this->assertAiReplayHealthy($requestId, $runs[(int) $first->id], true);
+            $response = Http::connectTimeout(15)->timeout($screenTimeout)->withOptions([
+                'connect_timeout' => 15,
+                'timeout' => $screenTimeout,
+                'curl' => [
+                    CURLOPT_CONNECTTIMEOUT => 15,
+                    CURLOPT_CONNECTTIMEOUT_MS => 15000,
+                    CURLOPT_TIMEOUT => $screenTimeout,
+                    CURLOPT_TIMEOUT_MS => $screenTimeout * 1000,
+                ],
+            ])->acceptJson()->withHeaders([
+                'X-Internal-Token' => (string) config('services.internal_api.token'),
+                'X-Lab-Request-Id' => $requestId,
+            ])->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/run-all', $request);
+            if ($response->failed()) {
+                throw new RuntimeException($response->body());
+            }
+            $leaderboard = data_get($response->json(), 'leaderboard', []);
+            if (! is_array($leaderboard)) {
+                throw new RuntimeException('Empty screening batch result.');
+            }
+        } catch (\Throwable $exception) {
+            foreach ($runs as $agentId => $run) {
+                $this->evidence->finishRun($run, 'technical_error', null, [], [
+                    'reason_code' => 'BATCH_REPLAY_TRANSPORT_FAILURE',
+                    'batch_protocol' => 'bounded_screening_batch_v1',
+                    'quality_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ], $exception);
+                LabAgent::query()->whereKey($agentId)->whereIn('lifecycle_status', ['queued', 'screening'])
+                    ->update(['lifecycle_status' => 'evaluation_error', 'decision_reason' => 'Bounded screening batch transport failed; strategy verdict withheld.']);
+            }
+            // All attempts above are terminal technical evidence. Do not let
+            // a queue retry create a second batch of runs for the same
+            // immutable cohort; the recovery command can explicitly reopen
+            // these agent IDs after the transport is healthy.
+            report($exception);
+            return;
+        }
+
+        $unused = array_values($leaderboard);
+        foreach ($agents as $agent) {
+            $candidate = null;
+            foreach ($unused as $index => $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $itemAgentId = data_get($item, 'lab_agent_id');
+                if ($itemAgentId !== null && (int) $itemAgentId !== (int) $agent->id) {
+                    continue;
+                }
+                if ((string) data_get($item, 'strategy', '') !== (string) $agent->modelVersion->strategy) {
+                    continue;
+                }
+                // New batch responses carry the stable agent identity above.
+                // For legacy responses/caches, strategy is the sealed cohort
+                // identity; Python may normalize parameter defaults, so an
+                // exact PHP-array comparison would falsely quarantine a valid
+                // result after a successful replay.
+                $itemVersion = (string) data_get($item, 'version', '');
+                if ($itemVersion !== '' && $itemVersion !== (string) $agent->modelVersion->version) {
+                    continue;
+                }
+                $candidate = $item;
+                unset($unused[$index]);
+                break;
+            }
+            $run = $runs[(int) $agent->id];
+            if (! is_array($candidate)) {
+                $error = new RuntimeException("Batch result agent {$agent->id} uchun topilmadi.");
+                $this->evidence->finishRun($run, 'technical_error', null, [], [
+                    'reason_code' => 'BATCH_RESULT_IDENTITY_MISMATCH',
+                    'quality_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ], $error);
+                LabAgent::query()->whereKey($agent->id)->whereIn('lifecycle_status', ['queued', 'screening'])
+                    ->update(['lifecycle_status' => 'evaluation_error', 'decision_reason' => 'Batch result identity mismatch; strategy verdict withheld.']);
+                continue;
+            }
+            try {
+                $this->persistScreenBatchItem($agent, $run, $candidate, $manifest, $regimeSnapshot);
+            } catch (\Throwable $exception) {
+                if ((string) $run->fresh()->status !== 'technical_error' && (string) $run->fresh()->status !== 'completed') {
+                    $this->evidence->finishRun($run, 'technical_error', null, [], [
+                        'reason_code' => 'BATCH_ITEM_PROJECTION_FAILURE',
+                        'quality_verdict' => 'withheld',
+                        'promotion_evidence' => false,
+                    ], $exception);
+                }
+                LabAgent::query()->whereKey($agent->id)->whereIn('lifecycle_status', ['queued', 'screening'])
+                    ->update(['lifecycle_status' => 'evaluation_error', 'decision_reason' => 'Batch item evidence projection failed; strategy verdict withheld.']);
+                report($exception);
+            }
+        }
+    }
+
     private function volumeEnabled($model): bool
     {
         // The no-volume control in a volume council still replays the
@@ -817,6 +1046,198 @@ class LabAgentEvaluationService
         return data_get($model->metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
             || (bool) data_get($model->metadata, 'volume_research_contract.enabled', false)
             || data_get($model->parameters, 'volume_lane', 'none') !== 'none';
+    }
+
+    /**
+     * Persist one item returned by a bounded cohort replay.
+     *
+     * The method intentionally mirrors the single-agent screen gate path:
+     * every child owns a separate run, trace, gate decision and learning job;
+     * only the Python feature preparation was shared by the batch request.
+     */
+    private function persistScreenBatchItem(
+        LabAgent $agent,
+        LabEvaluationRun $run,
+        array $item,
+        array $manifest,
+        ?array $regimeSnapshot = null,
+    ): void {
+        $agent->loadMissing('modelVersion', 'generation');
+        $model = $agent->modelVersion;
+        if (! $model) {
+            $this->evidence->finishRun($run, 'technical_error', null, [], [
+                'reason_code' => 'MODEL_VERSION_MISSING',
+                'quality_verdict' => 'withheld',
+                'promotion_evidence' => false,
+            ]);
+            throw new RuntimeException('Batch screening model version topilmadi.');
+        }
+
+        $result = (array) ($item['result'] ?? []);
+        $screenResult = array_merge($result, [
+            'forward_score' => $item['forward_score'] ?? $item['score'] ?? 0,
+            'train_score' => $item['train_score'] ?? $item['score'] ?? 0,
+            'validation_score' => $item['validation_score'] ?? $item['score'] ?? 0,
+            'evidence_run_id' => $run->run_id,
+            'data_manifest' => $manifest,
+        ]);
+        if ($regimeSnapshot !== null) {
+            $screenResult['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
+            $screenResult['regime_snapshot_protocol'] = $regimeSnapshot['protocol'];
+        }
+        $screenResult['execution_contract'] = is_array(data_get($result, 'execution_contract'))
+            ? (array) data_get($result, 'execution_contract')
+            : app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe);
+        $screenEvidence = $this->evidence->replayEvidenceCompleteness($run, $screenResult);
+        if (! $screenEvidence['complete']) {
+            $this->evidence->finishRun($run, 'technical_error', $screenResult, [], [
+                'reason_code' => 'INCOMPLETE_LAB_EVIDENCE',
+                'evidence_quality' => $screenEvidence,
+                'quality_verdict' => 'withheld',
+                'promotion_evidence' => false,
+            ]);
+            throw new RuntimeException('SCREENING_EVIDENCE_INCOMPLETE: '.implode(',', $screenEvidence['reason_codes']));
+        }
+        $screenResult = $this->appendDifferentialNoRegressionEvidence(
+            $model,
+            $screenResult,
+            $agent->strategy_family,
+            $agent->symbol,
+            $agent->timeframe,
+        );
+        $screenResult['trial_ledger'] = app(LabTrialLedgerService::class)->record(
+            $agent,
+            $model,
+            $agent->symbol,
+            $agent->timeframe,
+            'screening',
+            $screenResult,
+            $run->run_id,
+        );
+        app(\App\Services\CouncilDisagreementService::class)->recordResult($screenResult, [
+            'symbol' => $agent->symbol,
+            'timeframe' => $agent->timeframe,
+            'family' => $agent->strategy_family,
+            'evidence_run_id' => $run->run_id,
+        ]);
+
+        $latestLifecycle = (string) LabAgent::query()->whereKey($agent->id)->value('lifecycle_status');
+        if (in_array($latestLifecycle, ['quarantined', 'technical_quarantine', 'legacy_quarantine'], true)) {
+            $this->evidence->finishRun($run, 'completed', $screenResult, [], [
+                'reason_code' => 'TECHNICAL_QUARANTINE_RACE_GUARD',
+                'quality_verdict' => 'withheld',
+                'promotion_evidence' => false,
+            ]);
+
+            return;
+        }
+
+        $screenProjection = $this->evidence->projectionPayload($screenResult);
+        if (data_get($model->metadata, 'coverage_rescue_contract.protocol') === CoverageRescueAuditService::PROTOCOL
+            && data_get($screenResult, 'differential_no_regression.status') !== 'passed') {
+            $model->update(['metadata' => array_merge($model->metadata ?? [], ['last_screen_result' => $screenProjection])]);
+            $agent->update([
+                'lifecycle_status' => 'technical_quarantine',
+                'decision_reason' => 'Coverage-rescue differential invariant breached; child quarantined without strategy-quality verdict.',
+            ]);
+            try {
+                app(AgentProgressCardService::class)->sync(
+                    $agent->fresh(['modelVersion', 'generation']),
+                    null,
+                    [...$screenProjection, 'evidence_run_id' => $run->run_id],
+                );
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+            $this->evidence->recordLifecycle($agent, 'coverage_rescue_invariant_quarantine', [
+                'reason_code' => 'COVERAGE_RESCUE_NON_TARGET_IDENTITY_BREACH',
+                'quality_verdict' => 'withheld',
+                'differential_no_regression' => data_get($screenResult, 'differential_no_regression'),
+            ], 'screening', $run->run_id, $run->attempt, self::class);
+            $this->evidence->finishRun($run, 'completed', $screenResult, [], ['technical_quarantine' => true]);
+
+            return;
+        }
+
+        $this->shadowVetoLedger->record($agent, $screenProjection, 'screening');
+        $screenDecision = $this->gateDecisions->recordScreening($agent, $screenProjection);
+        $model->update(['metadata' => array_merge($model->metadata ?? [], [
+            'last_screen_result' => $screenProjection,
+            'execution_contract' => $screenResult['execution_contract'],
+        ])]);
+        $screenedAttributes = [
+            'train_score' => $item['train_score'] ?? $item['score'] ?? 0,
+            'validation_score' => $item['validation_score'] ?? $item['score'] ?? 0,
+            'forward_score' => $item['forward_score'] ?? $item['score'] ?? 0,
+            'sample_count' => $result['total_trades'] ?? 0,
+            'profit_factor' => $result['profit_factor'] ?? 0,
+            'max_drawdown' => $result['max_drawdown_percent'] ?? $result['max_drawdown'] ?? 0,
+            'risk_of_ruin' => data_get($result, 'monte_carlo.risk_of_ruin_percent'),
+            'decision_reason' => data_get($model->metadata, 'causal_rescue_contract.kind') === 'loss_cooldown_single_gene'
+                ? ($screenDecision->decision === 'passed'
+                    ? 'Cooldown causal rescue passed its strict screen contract; awaiting global full-validation selection.'
+                    : 'Cooldown causal rescue rejected by its strict screen contract; no promotion path opened.')
+                : 'Incremental screening batch completed; awaiting global full-validation selection.',
+        ];
+        $screened = LabAgent::query()
+            ->whereKey($agent->id)
+            ->whereNotIn('lifecycle_status', ['quarantined', 'technical_quarantine', 'legacy_quarantine'])
+            ->update(['lifecycle_status' => 'screened', ...$screenedAttributes]);
+        if ($screened !== 1) {
+            $this->evidence->finishRun($run, 'completed', $screenResult, [], [
+                'reason_code' => 'TECHNICAL_QUARANTINE_RACE_GUARD',
+                'quality_verdict' => 'withheld',
+                'promotion_evidence' => false,
+            ]);
+
+            return;
+        }
+        $agent->refresh();
+        $this->evidence->finishRun($run, 'completed', $screenResult, [
+            'screen_decision' => $screenDecision->decision,
+            'total_trades' => $result['total_trades'] ?? 0,
+            'profit_factor' => $result['profit_factor'] ?? 0,
+            'stress_profit_factor' => data_get($result, 'screening_survival.stress_cost_pf'),
+        ], ['screen_decision_id' => $screenDecision->id]);
+
+        try {
+            ProcessLabScreeningLearningProjection::dispatch(
+                (int) $agent->id,
+                (string) $run->run_id,
+                (int) $screenDecision->id,
+                [...$screenProjection, 'evidence_run_id' => $run->run_id],
+            );
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        $this->handoffs->record($agent->generation, $agent, 'screened', 'completed', null, [
+            'screen_result_hash' => hash('sha256', json_encode($screenProjection)),
+            'sample_count' => $agent->sample_count,
+            'evidence_run_id' => $run->run_id,
+            'batch_protocol' => 'bounded_screening_batch_v1',
+        ]);
+
+        $generation = $agent->generation()->with('agents')->first();
+        if ($generation->agents->whereIn('lifecycle_status', [
+            'draft', 'queued', 'screening', 'evaluation_error',
+            'full_queued', 'full_validation', 'training',
+        ])->isEmpty()) {
+            $context = (array) ($generation->trigger_context ?? []);
+            $context['screening_terminal'] = [
+                'protocol' => 'generation_terminal_boundary_v1',
+                'status' => 'screened',
+                'completed_at' => now()->utc()->toIso8601String(),
+                'all_agents_terminal' => true,
+                'promotion_evidence' => false,
+            ];
+            $generation->update([
+                'status' => 'screened',
+                'completed_at' => now(),
+                'trigger_context' => $context,
+            ]);
+            app(LabGenerationReportService::class)->record($generation->fresh(), 'screening_completed');
+        }
     }
 
     /**
@@ -918,7 +1339,7 @@ class LabAgentEvaluationService
      * writes a gate decision and is recovered through the bounded evaluator
      * recovery command after a clean service restart.
      */
-    private function assertAiReplayHealthy(string $requestId, ?LabEvaluationRun $run = null): void
+    private function assertAiReplayHealthy(string $requestId, ?LabEvaluationRun $run = null, bool $allowScreeningConcurrency = false): void
     {
         try {
             $response = Http::connectTimeout(3)->timeout(5)->withOptions([
@@ -966,10 +1387,25 @@ class LabAgentEvaluationService
             }
             throw new RuntimeException('AI replay health preflight returned an unknown liveness protocol.');
         }
-        if ((int) data_get($status, 'active_requests', 0) > 0) {
+        $activeRequests = (int) data_get($status, 'active_requests', 0);
+        $screeningActive = (int) data_get($status, 'screening_active', 0);
+        $screeningCapacity = max(1, (int) data_get($status, 'screening_capacity', 1));
+        $fullActive = (int) data_get($status, 'full_active', 0);
+        $hasLaneTelemetry = array_key_exists('screening_capacity', $status)
+            && array_key_exists('full_active', $status);
+        $laneBusy = $allowScreeningConcurrency
+            ? ($hasLaneTelemetry
+                ? ($fullActive > 0 || $screeningActive >= $screeningCapacity)
+                : $activeRequests > 0)
+            : $activeRequests > 0;
+        if ($laneBusy) {
             if ($run) {
                 $this->evidence->recordLifecycle($run->agent, 'ai_health_lane_busy', [
-                    'request_id' => $requestId, 'active_requests' => data_get($status, 'active_requests'),
+                    'request_id' => $requestId,
+                    'active_requests' => $activeRequests,
+                    'screening_active' => $screeningActive,
+                    'screening_capacity' => $screeningCapacity,
+                    'full_active' => $fullActive,
                 ], $run->phase, $run->run_id, $run->attempt, self::class);
             }
             throw new RuntimeException('AI replay lane is busy; strategy verdict withheld for bounded retry.');

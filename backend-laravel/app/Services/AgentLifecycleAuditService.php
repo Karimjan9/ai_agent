@@ -55,6 +55,7 @@ class AgentLifecycleAuditService
         private readonly HistoricalDataQualityService $historicalData,
         private readonly MarketVolumeService $volumes,
         private readonly SystemLogService $logs,
+        private readonly LabQueueJobInspector $queueState,
     ) {
     }
 
@@ -1090,6 +1091,10 @@ class AgentLifecycleAuditService
     /** @return array<string, mixed> */
     private function queueHealth(): array
     {
+        if ((string) config('queue.default', 'database') === 'redis') {
+            return $this->redisQueueHealth();
+        }
+
         if (! Schema::hasTable('jobs')) {
             return [
                 'agent_ids' => [],
@@ -1165,6 +1170,66 @@ class AgentLifecycleAuditService
                 ['issues' => $issues, 'promotion_evidence' => false],
                 $status === 'blocked' ? 'critical' : ($status === 'attention' ? 'warning' : 'info'),
             ),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function redisQueueHealth(): array
+    {
+        $queues = array_values(array_unique(array_merge(
+            [(string) config('services.lab_queue.screening_queue', 'lab-screening')],
+            [(string) config('services.lab_queue.frontier_queue', 'lab-frontier')],
+            (array) config('services.lab_queue.legacy_screening_queues', []),
+            [(string) config('services.lab_queue.full_validation_queue', 'lab-full-validation')],
+        )));
+        $snapshot = $this->queueState->queueSnapshot($queues);
+        if (($snapshot['available'] ?? false) !== true) {
+            return [
+                'agent_ids' => [],
+                'metrics' => ['available' => false, 'backend' => 'redis', 'promotion_evidence' => false],
+                'check' => $this->check('QUEUE_HEALTH', 'blocked', 'Redis queue state is unavailable; queued lifecycle cannot be verified.', [], 'critical'),
+            ];
+        }
+
+        $stats = collect((array) ($snapshot['stats'] ?? []));
+        $rows = collect((array) ($snapshot['rows'] ?? []));
+        $now = now()->timestamp;
+        $pending = (int) $stats->sum('pending');
+        $reserved = (int) $stats->sum('reserved');
+        $oldestCreated = $stats->pluck('oldest_created_at')->filter(fn ($value): bool => $value !== null)->min();
+        $oldestReserved = $rows->where('redis_state', 'reserved')->pluck('reserved_at')->filter()->min();
+        $backlogAge = $oldestCreated ? max(0, $now - (int) $oldestCreated) : 0;
+        $reservedAge = $oldestReserved ? max(0, $now - (int) $oldestReserved) : 0;
+        $maxAttempts = (int) ($stats->pluck('max_attempts')->max() ?? 0);
+        $highAttemptJobs = $rows->filter(fn (array $row): bool => (int) ($row['attempts'] ?? 0) >= 3)->count();
+        $staleReserved = $rows->filter(fn (array $row): bool => ($row['redis_state'] ?? null) === 'reserved'
+            && (int) ($row['reserved_at'] ?? 0) > 0 && ($now - (int) $row['reserved_at']) > 1800)->count();
+        $recentRetryReleases = Schema::hasTable('lab_evaluation_runs')
+            ? LabEvaluationRun::query()->where('status', 'retry_released')->where('created_at', '>=', now()->subMinutes(15))->count()
+            : 0;
+        $agentIds = $rows->map(fn (array $row): ?int => $this->jobAgentId((string) ($row['payload'] ?? '')))->filter()->unique()->values()->all();
+        $retryStorm = $staleReserved > 0 || $recentRetryReleases >= 5;
+        $issues = [];
+        if ($backlogAge > 7200) $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_TWO_HOURS';
+        elseif ($backlogAge > 1800) $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_THIRTY_MINUTES';
+        if ($retryStorm) $issues[] = 'QUEUE_RETRY_OR_STALE_RESERVATION';
+        elseif ($highAttemptJobs > 0) $issues[] = 'QUEUE_HIGH_ATTEMPT_BACKLOG';
+        $status = $issues === [] ? 'passed' : (in_array('QUEUE_BACKLOG_OLDER_THAN_TWO_HOURS', $issues, true) ? 'blocked' : 'attention');
+
+        return [
+            'agent_ids' => $agentIds,
+            'metrics' => [
+                'available' => true, 'backend' => 'redis', 'queues' => $queues,
+                'total' => (int) ($snapshot['total'] ?? 0), 'pending' => $pending, 'reserved' => $reserved,
+                'oldest_job_age_seconds' => $backlogAge, 'oldest_reserved_age_seconds' => $reservedAge,
+                'stale_reserved_count' => $staleReserved, 'max_attempts' => $maxAttempts,
+                'high_attempt_jobs' => $highAttemptJobs, 'recent_retry_releases_15m' => $recentRetryReleases,
+                'retry_storm' => $retryStorm, 'promotion_evidence' => false,
+            ],
+            'check' => $this->check('QUEUE_HEALTH', $status,
+                $issues === [] ? 'Canonical Redis queue is available without a retry storm.' : 'Redis queue throughput or retry hygiene needs attention; no job was modified by this audit.',
+                ['issues' => $issues, 'promotion_evidence' => false],
+                $status === 'blocked' ? 'critical' : ($status === 'attention' ? 'warning' : 'info')),
         ];
     }
 

@@ -314,12 +314,18 @@ class MarketAdaptiveReplayService:
             }
         if bool(core_gate.get("passed", False)):
             result["temporal_firewall"] = self._temporal_firewall(payload, segments["replay"], segments["holdout"])
-            result["secret_adversarial_arena"] = self._secret_adversarial_arena(payload, segments["replay"])
+            result["secret_adversarial_arena"] = self._secret_adversarial_arena(
+                payload, segments["replay"], replay_snapshot
+            )
             # These two ledgers deliberately use the same next-candle execution
             # function as the replay. Their verdicts are diagnostic evidence;
             # they neither create trades nor change a promotion decision.
-            result["execution_digital_twin"] = self._execution_digital_twin(payload, segments["replay"], replay_result)
-            result["parameter_plateau"] = self._parameter_plateau(payload, segments["replay"], replay_result)
+            result["execution_digital_twin"] = self._execution_digital_twin(
+                payload, segments["replay"], replay_result, replay_snapshot
+            )
+            result["parameter_plateau"] = self._parameter_plateau(
+                payload, segments["replay"], replay_result, replay_snapshot
+            )
             result["counterfactual_blame_graph"] = self._counterfactual_blame_graph(replay_result, segments["replay"])
             result["metamorphic_universality"] = self._metamorphic_universality(payload, segments["replay"], replay_result)
         else:
@@ -498,8 +504,16 @@ class MarketAdaptiveReplayService:
             "rule": "At least two active specialists must own distinct sealed regime/volatility/direction niches.",
         }
 
-    def screening_survival_profile(self, payload: SimpleBacktestRequest, df: pd.DataFrame,
-                                   normal_result: dict[str, object], score_calculator) -> dict[str, object]:
+    def screening_survival_profile(
+        self,
+        payload: SimpleBacktestRequest,
+        df: pd.DataFrame,
+        normal_result: dict[str, object],
+        score_calculator,
+        *,
+        feature_snapshot=None,
+        signal_snapshot=None,
+    ) -> dict[str, object]:
         """Cheap pre-replay falsification for incremental screening.
 
         This is deliberately a survival predictor, not a promotion gate: a
@@ -514,7 +528,13 @@ class MarketAdaptiveReplayService:
                 "promotion_evidence": False,
             }
 
-        cost = self._cost_profile_attribution(payload, df, normal_result)
+        cost = self._cost_profile_attribution(
+            payload,
+            df,
+            normal_result,
+            prepared_snapshot=signal_snapshot,
+            feature_snapshot=feature_snapshot,
+        )
         # Equal-candle chunks describe temporal concentration, not calendar
         # months. Keep them separate so a strong January cannot be confused
         # with one third of the history merely because it is long.
@@ -538,7 +558,10 @@ class MarketAdaptiveReplayService:
             temporal_method = "three_equal_candle_segments"
             temporal_windows = [
                 run_simple_ema_rsi_backtest_on_dataframe(
-                    payload, chunk, include_differential_pair=False, lightweight=True
+                    payload.model_copy(update={"emit_decision_trace": False}),
+                    chunk,
+                    include_differential_pair=False,
+                    lightweight=True,
                 ).model_dump()
                 for chunk in chunks
             ]
@@ -567,7 +590,15 @@ class MarketAdaptiveReplayService:
                 month_metrics = ledger_months.get(str(month), {}) or {}
                 month_result = self._month_result_from_attribution(month_metrics)
             else:
-                month_result = run_simple_ema_rsi_backtest_on_dataframe(payload, month_frame).model_dump()
+                # This is a legacy fallback only. The normal path consumes
+                # the one chronological ledger and therefore does not reset
+                # indicators/risk state at month boundaries.
+                month_result = run_simple_ema_rsi_backtest_on_dataframe(
+                    payload.model_copy(update={"emit_decision_trace": False}),
+                    month_frame,
+                    include_differential_pair=False,
+                    lightweight=True,
+                ).model_dump()
             calendar_months[str(month)] = {
                 "candles": int(len(month_frame)),
                 "trades": int(month_result.get("total_trades", month_result.get("trades", 0))),
@@ -607,12 +638,29 @@ class MarketAdaptiveReplayService:
             value = float(changed[key])
             changed[key] = round(value + (max(abs(value), 1.0) * .05 * direction), 6)
             try:
-                variants.append(run_simple_ema_rsi_backtest_on_dataframe(
-                    payload.model_copy(update={"parameters": changed}),
-                    df,
-                    include_differential_pair=False,
-                    lightweight=True,
-                ).model_dump())
+                variant_payload = payload.model_copy(update={
+                    "parameters": changed,
+                    "emit_decision_trace": False,
+                })
+                if feature_snapshot is not None:
+                    variant_signal = prepare_signal_snapshot(
+                        variant_payload,
+                        feature_snapshot=feature_snapshot,
+                    )
+                    variants.append(_run_prepared_simple_backtest(
+                        variant_payload,
+                        df,
+                        prepared_snapshot=variant_signal,
+                        include_differential_pair=False,
+                        lightweight=True,
+                    ).model_dump())
+                else:
+                    variants.append(run_simple_ema_rsi_backtest_on_dataframe(
+                        variant_payload,
+                        df,
+                        include_differential_pair=False,
+                        lightweight=True,
+                    ).model_dump())
             except (ValueError, TypeError):
                 continue
 
@@ -713,7 +761,11 @@ class MarketAdaptiveReplayService:
         }
 
     @staticmethod
-    def _secret_adversarial_arena(payload: SimpleBacktestRequest, replay: pd.DataFrame) -> dict[str, object]:
+    def _secret_adversarial_arena(
+        payload: SimpleBacktestRequest,
+        replay: pd.DataFrame,
+        prepared_snapshot=None,
+    ) -> dict[str, object]:
         """Rotating hidden execution shocks; only the verdict is exposed to evolution."""
         import hashlib
         seed = int(hashlib.sha256(MarketAdaptiveReplayService._segment_hash(replay).encode()).hexdigest()[:8], 16)
@@ -729,21 +781,42 @@ class MarketAdaptiveReplayService:
             # This lane consumes only the deterministic PF verdict.  The
             # primary replay already owns all promotion diagnostics, so do not
             # recursively spend Monte Carlo/DNA/telemetry CPU here.
-            outcome = run_simple_ema_rsi_backtest_on_dataframe(
-                payload.model_copy(update={"execution": execution}),
-                replay,
-                include_differential_pair=False,
-                lightweight=True,
+            diagnostic_payload = payload.model_copy(update={"execution": execution, "emit_decision_trace": False})
+            outcome = (
+                _run_prepared_simple_backtest(
+                    diagnostic_payload,
+                    replay,
+                    prepared_snapshot=prepared_snapshot,
+                    include_differential_pair=False,
+                    lightweight=True,
+                )
+                if prepared_snapshot is not None
+                else run_simple_ema_rsi_backtest_on_dataframe(
+                    diagnostic_payload,
+                    replay,
+                    include_differential_pair=False,
+                    lightweight=True,
+                )
             ).model_dump()
             results.append(float(outcome.get("profit_factor", 0)) >= 1.0)
         return {
             "status": "passed" if all(results) else "failed", "evaluated_scenarios": len(results),
             "rotation_commitment": hashlib.sha256(f"{seed}|{len(results)}".encode()).hexdigest(),
+            "optimization": {
+                "prepared_signal_snapshot_reused": prepared_snapshot is not None,
+                "strategy_signal_recomputed": prepared_snapshot is None,
+                "decision_trace_emitted": False,
+            },
             "rule": "Scenario parameters remain hidden from the mutation policy until the next rotation.",
         }
 
     @staticmethod
-    def _execution_digital_twin(payload: SimpleBacktestRequest, replay: pd.DataFrame, normal: dict[str, object]) -> dict[str, object]:
+    def _execution_digital_twin(
+        payload: SimpleBacktestRequest,
+        replay: pd.DataFrame,
+        normal: dict[str, object],
+        prepared_snapshot=None,
+    ) -> dict[str, object]:
         """Deterministic adverse execution scenarios using the replay contract.
 
         Market evidence and contract evidence are deliberately separated. The
@@ -767,11 +840,22 @@ class MarketAdaptiveReplayService:
         scenarios: dict[str, object] = {}
         normal_net = float(normal.get("net_profit_percent", 0))
         for name, profile in profiles.items():
-            tested = run_simple_ema_rsi_backtest_on_dataframe(
-                payload.model_copy(update={"execution": profile}),
-                replay,
-                include_differential_pair=False,
-                lightweight=True,
+            diagnostic_payload = payload.model_copy(update={"execution": profile, "emit_decision_trace": False})
+            tested = (
+                _run_prepared_simple_backtest(
+                    diagnostic_payload,
+                    replay,
+                    prepared_snapshot=prepared_snapshot,
+                    include_differential_pair=False,
+                    lightweight=True,
+                )
+                if prepared_snapshot is not None
+                else run_simple_ema_rsi_backtest_on_dataframe(
+                    diagnostic_payload,
+                    replay,
+                    include_differential_pair=False,
+                    lightweight=True,
+                )
             ).model_dump()
             scenarios[name] = {
                 "status": "assessed", "profit_factor": tested.get("profit_factor", 0),
@@ -779,12 +863,35 @@ class MarketAdaptiveReplayService:
                 "max_drawdown_percent": tested.get("max_drawdown_percent", 0),
                 "cost_monotonic": float(tested.get("net_profit_percent", 0)) <= normal_net + 1e-9,
             }
-        latency = run_simple_ema_rsi_backtest_on_dataframe(
-            payload.model_copy(update={"signal_delay_candles": 1}),
-            replay,
-            include_differential_pair=False,
-            lightweight=True,
-        ).model_dump() if len(replay) > 203 else None
+        latency_payload = payload.model_copy(update={"signal_delay_candles": 1, "emit_decision_trace": False})
+        latency_snapshot = None
+        if prepared_snapshot is not None and getattr(prepared_snapshot, "feature_snapshot", None) is not None:
+            # A latency probe changes the signal timing, so reuse only the
+            # immutable feature layer and rebuild the delayed signal tape.
+            latency_snapshot = prepare_signal_snapshot(
+                latency_payload,
+                feature_snapshot=getattr(prepared_snapshot, "feature_snapshot", None),
+            )
+        latency = (
+            (
+                _run_prepared_simple_backtest(
+                    latency_payload,
+                    replay,
+                    prepared_snapshot=latency_snapshot,
+                    include_differential_pair=False,
+                    lightweight=True,
+                )
+                if latency_snapshot is not None
+                else run_simple_ema_rsi_backtest_on_dataframe(
+                    latency_payload,
+                    replay,
+                    include_differential_pair=False,
+                    lightweight=True,
+                )
+            ).model_dump()
+            if len(replay) > 203
+            else None
+        )
         scenarios["one_candle_latency"] = {
             "status": "assessed" if latency else "insufficient_rows",
             "profit_factor": latency.get("profit_factor", 0) if latency else None,
@@ -804,6 +911,12 @@ class MarketAdaptiveReplayService:
             "pass": stress_pass and fault_contract["status"] == "passed",
             "execution_contract": "closed candle decision -> next candle open fill -> conservative intrabar exit",
             "scenarios": scenarios, "fault_contract": fault_contract,
+            "optimization": {
+                "prepared_signal_snapshot_reused": prepared_snapshot is not None,
+                "strategy_signal_recomputed": prepared_snapshot is None,
+                "execution_profiles": len(profiles),
+                "decision_trace_emitted": False,
+            },
             "rule": "Unobservable broker failures remain pending; they are never simulated into a pass.",
         }
 
@@ -812,6 +925,7 @@ class MarketAdaptiveReplayService:
         payload: SimpleBacktestRequest,
         replay: pd.DataFrame,
         normal: dict[str, object],
+        prepared_snapshot=None,
     ) -> dict[str, object]:
         """Replay the selected repair gene on both sides of its value.
 
@@ -861,11 +975,30 @@ class MarketAdaptiveReplayService:
             changed[changed_gene] = proposed
             try:
                 validated = validate_strategy_parameters(payload.strategy, changed, payload.base_strategy)
-                tested = run_simple_ema_rsi_backtest_on_dataframe(
-                    payload.model_copy(update={"parameters": validated}),
-                    replay,
-                    include_differential_pair=False,
-                    lightweight=True,
+                variant_payload = payload.model_copy(update={"parameters": validated, "emit_decision_trace": False})
+                variant_snapshot = (
+                    prepare_signal_snapshot(
+                        variant_payload,
+                        feature_snapshot=getattr(prepared_snapshot, "feature_snapshot", None),
+                    )
+                    if prepared_snapshot is not None and getattr(prepared_snapshot, "feature_snapshot", None) is not None
+                    else None
+                )
+                tested = (
+                    _run_prepared_simple_backtest(
+                        variant_payload,
+                        replay,
+                        prepared_snapshot=variant_snapshot,
+                        include_differential_pair=False,
+                        lightweight=True,
+                    )
+                    if variant_snapshot is not None
+                    else run_simple_ema_rsi_backtest_on_dataframe(
+                        variant_payload,
+                        replay,
+                        include_differential_pair=False,
+                        lightweight=True,
+                    )
                 ).model_dump()
             except (ValueError, TypeError):
                 # A hard schema boundary is a real absence of two-sided
@@ -914,6 +1047,12 @@ class MarketAdaptiveReplayService:
             "min_net_profit_percent": round(min_net, 6),
             "max_drawdown_percent": round(max_dd, 6),
             "max_profit_factor_drop": round(max_pf_drop, 6),
+            "optimization": {
+                "feature_snapshot_reused": prepared_snapshot is not None
+                and getattr(prepared_snapshot, "feature_snapshot", None) is not None,
+                "signal_rebuilt_only_for_declared_gene": True,
+                "decision_trace_emitted": False,
+            },
             "rule": "Both +/-10% probes must retain positive cost-aware economics and avoid a catastrophic drawdown jump.",
             "promotion_evidence": True,
         }
@@ -932,7 +1071,7 @@ class MarketAdaptiveReplayService:
         strict_execution = payload.execution.model_copy(update={"reject_unexpected_gaps": True})
         try:
             run_simple_ema_rsi_backtest_on_dataframe(
-                payload.model_copy(update={"execution": strict_execution}),
+                payload.model_copy(update={"execution": strict_execution, "emit_decision_trace": False}),
                 damaged,
                 include_differential_pair=False,
                 lightweight=True,
@@ -1046,7 +1185,7 @@ class MarketAdaptiveReplayService:
             scaled[column] = scaled[column] * 10.0
         scaled_execution = payload.execution.model_copy(update={"point_size": payload.execution.point_size * 10.0, "spread_points": payload.execution.spread_points})
         scaled_result = run_simple_ema_rsi_backtest_on_dataframe(
-            payload.model_copy(update={"execution": scaled_execution}),
+            payload.model_copy(update={"execution": scaled_execution, "emit_decision_trace": False}),
             scaled,
             include_differential_pair=False,
             lightweight=True,
@@ -1183,7 +1322,12 @@ class MarketAdaptiveReplayService:
             train = normalized[month_keys < month]
             if len(test) < 202 or len(train) < 202:
                 continue
-            result = run_simple_ema_rsi_backtest_on_dataframe(payload, test).model_dump()
+            result = run_simple_ema_rsi_backtest_on_dataframe(
+                payload.model_copy(update={"emit_decision_trace": False}),
+                test,
+                include_differential_pair=False,
+                lightweight=True,
+            ).model_dump()
             survival = result.get("window_survival", {})
             windows.append({
                 "train_start": pd.Timestamp(train["time"].min()).date().isoformat(),
@@ -1323,6 +1467,7 @@ class MarketAdaptiveReplayService:
         replay: pd.DataFrame,
         normal_result: dict[str, object],
         prepared_snapshot=None,
+        feature_snapshot=None,
     ) -> dict[str, object]:
         """Attribute execution-cost damage without rebuilding strategy signals."""
         execution = payload.execution
@@ -1336,9 +1481,18 @@ class MarketAdaptiveReplayService:
             "commission_percent": execution.commission_percent * 2.0,
             "swap_per_day_percent": execution.swap_per_day_percent * 2.0,
         })
-        zero_payload = payload.model_copy(update={"execution": zero_execution})
-        stress_payload = payload.model_copy(update={"execution": stress_execution})
-        snapshot = prepared_snapshot or prepare_signal_snapshot(payload, replay)
+        # Cost/exit lanes are diagnostics over the same causal signal stream.
+        # They never need a candle-level trace: the primary chronological
+        # replay owns the immutable evidence and these profiles reference it
+        # through the shared snapshot protocol below.
+        diagnostic_payload = payload.model_copy(update={"emit_decision_trace": False})
+        zero_payload = diagnostic_payload.model_copy(update={"execution": zero_execution})
+        stress_payload = diagnostic_payload.model_copy(update={"execution": stress_execution})
+        snapshot = prepared_snapshot or prepare_signal_snapshot(
+            diagnostic_payload,
+            replay,
+            feature_snapshot=feature_snapshot,
+        )
         zero = _run_prepared_simple_backtest(
             zero_payload,
             replay,
@@ -1369,8 +1523,11 @@ class MarketAdaptiveReplayService:
             },
             "optimization": {
                 "prepared_signal_snapshot_reused": True,
+                "feature_snapshot_reused": feature_snapshot is not None,
                 "strategy_signal_recomputed": False,
                 "execution_profiles": 2,
+                "decision_trace_emitted": False,
+                "stateful_execution_replayed": True,
                 "promotion_evidence": False,
             },
         }

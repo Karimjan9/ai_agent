@@ -8,7 +8,7 @@ use App\Services\LabImmutableEvidenceService;
 use Closure;
 use Throwable;
 
-/** Records acquisition/release of the single heavy-replay lane. */
+/** Records acquisition/release of the bounded screening/full replay lanes. */
 class LabMutexEvidenceMiddleware
 {
     public function handle(object $job, Closure $next): mixed
@@ -19,20 +19,23 @@ class LabMutexEvidenceMiddleware
         $ledger = app(LabImmutableEvidenceService::class);
         $job->labMutexAcquired = true;
         $phase = $job->mode === 'screen' ? 'screening' : 'full_validation';
+        $mutex = $job->mode === 'screen'
+            ? $job->screeningMutexKey()
+            : (string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay');
         $ledger->recordLifecycle($agent, 'replay_mutex_acquired', [
             'run_id' => $job->evidenceRunId, 'attempt' => $job->attempts(), 'queue' => $job->effectiveQueue(),
-            'mutex' => (string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'),
+            'mutex' => $mutex,
         ], $phase, $job->evidenceRunId, $job->attempts(), self::class);
         try {
             return $next($job);
         } catch (Throwable $error) {
             $ledger->recordLifecycle($agent->fresh(), 'replay_mutex_error', [
-                'run_id' => $job->evidenceRunId, 'mutex' => (string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'), 'attempt' => $job->attempts(),
+                'run_id' => $job->evidenceRunId, 'mutex' => $mutex, 'attempt' => $job->attempts(),
             ], $phase, $job->evidenceRunId, $job->attempts(), self::class, $error);
             throw $error;
         } finally {
             $ledger->recordLifecycle($agent->fresh(), 'replay_mutex_released', [
-                'run_id' => $job->evidenceRunId, 'mutex' => (string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'), 'attempt' => $job->attempts(),
+                'run_id' => $job->evidenceRunId, 'mutex' => $mutex, 'attempt' => $job->attempts(),
             ], $phase, $job->evidenceRunId, $job->attempts(), self::class);
         }
     }

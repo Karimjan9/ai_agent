@@ -11,6 +11,7 @@ use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
 use App\Services\LabCandidateSelectionService;
 use App\Services\LearningProtocolSafetyService;
+use App\Services\LabQueueJobInspector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +31,7 @@ class DispatchPortfolioMemberReplay extends Command
         CandidateGateDecisionService $decisions,
         CandidateHandoffService $handoffs,
         LearningProtocolSafetyService $protocolSafety,
+        LabQueueJobInspector $queueState,
     ): int {
         if ($protocolSafety->generationCreationPaused()) {
             $this->info('Learning protocol paused: portfolio full replay dispatch deferred.');
@@ -39,7 +41,13 @@ class DispatchPortfolioMemberReplay extends Command
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
         $timeframe = strtoupper((string) $this->option('timeframe'));
 
-        $activeReplay = (int) DB::table('jobs')->where('queue', 'lab-full-validation')->count()
+        $queueSnapshot = $queueState->queueSnapshot(['lab-full-validation']);
+        if (($queueSnapshot['available'] ?? true) === false) {
+            $this->warn('Full-validation queue state unavailable; portfolio replay deferred fail-closed.');
+
+            return self::SUCCESS;
+        }
+        $activeReplay = (int) ($queueSnapshot['total'] ?? 0)
             + (int) DB::table('job_batches')->where('name', 'Portfolio member full validation')->whereNull('finished_at')->count();
         if ($activeReplay > 0) {
             $this->warn('lab-full-validation band: mavjud replay tugamaguncha yangi portfolio replay dispatch qilinmadi.');

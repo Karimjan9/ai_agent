@@ -429,9 +429,17 @@ class LearningLaneService
         $cancelledBatches = [];
         $extendedBatches = [];
         $fullQueue = (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation');
-        $batchJobs = DB::table('jobs')
-            ->whereIn('queue', [$fullQueue, 'lab-full-hold'])
-            ->get(['id', 'queue', 'payload']);
+        $queueState = app(LabQueueJobInspector::class);
+        if ((string) config('queue.default', 'database') === 'redis') {
+            $queueSnapshot = $queueState->queueSnapshot([$fullQueue, 'lab-full-hold']);
+            if (($queueSnapshot['available'] ?? false) !== true) return 0;
+            $batchJobs = collect((array) ($queueSnapshot['rows'] ?? []))
+                ->map(fn (array $row): object => (object) $row);
+        } else {
+            $batchJobs = DB::table('jobs')
+                ->whereIn('queue', [$fullQueue, 'lab-full-hold'])
+                ->get(['id', 'queue', 'payload']);
+        }
         $heldJobs = $batchJobs->where('queue', 'lab-full-hold');
         foreach ($dispatches as $dispatch) {
             $batch = $dispatch->queue_batch_id
@@ -467,18 +475,23 @@ class LearningLaneService
                     if (! is_object($decoded) || ! property_exists($decoded, 'retryDeadline')) continue;
                     $decoded->retryDeadline = now()->utc()->addMinutes(180);
                     data_set($payload, 'data.command', serialize($decoded));
-                    DB::table('jobs')->where('id', $batchJob->id)->update(['payload' => json_encode($payload, JSON_UNESCAPED_SLASHES)]);
+                    if ((string) config('queue.default', 'database') !== 'redis') {
+                        DB::table('jobs')->where('id', $batchJob->id)->update(['payload' => json_encode($payload, JSON_UNESCAPED_SLASHES)]);
+                    }
                     $extended++;
                 }
                 $extendedBatches[$dispatch->queue_batch_id] = $extended;
             }
             if ($activeHeldBatch && ! isset($requeuedBatches[$dispatch->queue_batch_id])) {
-                $jobIds = $heldForBatch->pluck('id')->map(fn ($id): int => (int) $id)->all();
-                DB::table('jobs')->whereIn('id', $jobIds)->where('queue', 'lab-full-hold')->update([
-                    'queue' => $fullQueue,
-                    'reserved_at' => null,
-                    'available_at' => now()->timestamp,
-                ]);
+                $jobIds = [];
+                foreach ($heldForBatch as $heldJob) {
+                    $moved = (string) config('queue.default', 'database') === 'redis'
+                        ? $queueState->movePendingPayload('lab-full-hold', $fullQueue, (string) $heldJob->payload)
+                        : (bool) DB::table('jobs')->where('id', $heldJob->id)->where('queue', 'lab-full-hold')->update([
+                            'queue' => $fullQueue, 'reserved_at' => null, 'available_at' => now()->timestamp,
+                        ]);
+                    if ($moved) $jobIds[] = $heldJob->id;
+                }
                 $requeuedBatches[$dispatch->queue_batch_id] = $jobIds;
             }
             if ($batch && $batch->finished_at === null && ! $activeHeldBatch && ! $orphanBatch) {
@@ -774,10 +787,10 @@ class LearningLaneService
             ->whereNull('finished_at')
             ->whereNull('cancelled_at')
             ->pluck('id');
-        $queuedReplayJobs = DB::table('jobs')
-            ->where('queue', (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'))
-            ->get(['payload'])
-            ->filter(fn ($job): bool => in_array((string) data_get(json_decode((string) $job->payload, true), 'data.batchId', ''), $learningBatchIds, true))
+        $fullQueue = (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation');
+        $queueSnapshot = app(LabQueueJobInspector::class)->queueSnapshot([$fullQueue]);
+        $queuedReplayJobs = collect((array) ($queueSnapshot['rows'] ?? []))
+            ->filter(fn (array $job): bool => in_array((string) data_get(json_decode((string) ($job['payload'] ?? ''), true), 'data.batchId', ''), $learningBatchIds, true))
             ->count();
         $completedReplays = $dispatches->where('status', 'completed')->count();
         $observedReplays = $activePairs->whereIn('status', ['learning_observed', 'confirmed'])->count();

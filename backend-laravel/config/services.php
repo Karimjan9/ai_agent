@@ -47,6 +47,18 @@ return [
         'strategy_lab_timeout_seconds' => (int) env('AI_SERVICE_STRATEGY_LAB_TIMEOUT_SECONDS', 2400),
     ],
 
+    'scheduler' => [
+        // One renewable process lease prevents PM2/Windows reloads from
+        // leaving two headless loops executing the same due callbacks.
+        'lease_key' => env('SCHEDULER_LEASE_KEY', 'trading:headless-scheduler:v1'),
+        // Scheduled data/backfill callbacks can legitimately exceed 90s on
+        // Windows. Keep the lease renewable, but make the stale-owner window
+        // longer than one bounded schedule tick.
+        'lease_seconds' => max(30, (int) env('SCHEDULER_LEASE_SECONDS', 900)),
+        'heartbeat_seconds' => max(5, (int) env('SCHEDULER_HEARTBEAT_SECONDS', 30)),
+        'duplicate_wait_seconds' => max(1, (int) env('SCHEDULER_DUPLICATE_WAIT_SECONDS', 5)),
+    ],
+
     'lab_queue' => [
         // All screening candidates share one FIFO lane. Symbol-specific names
         // remain available only for draining and observing legacy rows; a
@@ -68,6 +80,13 @@ return [
         // portfolio replay, and stale-lock recovery. Changing it requires a
         // controlled drain because existing cache-lock rows use the old key.
         'replay_mutex_key' => env('LAB_REPLAY_MUTEX_KEY', 'neurotrader-ai-heavy-replay'),
+        // Screening has its own bounded semaphore in the Python service. It
+        // may use two slots over one immutable snapshot, while full replay
+        // remains protected by the single coordinator key above.
+        'screening_mutex_key' => env('LAB_SCREENING_MUTEX_KEY', 'neurotrader-ai-screening-replay'),
+        'screening_batch_size' => max(1, min(6, (int) env('LAB_SCREENING_BATCH_SIZE', 4))),
+        'screening_batch_timeout_seconds' => max(60, min(2400, (int) env('LAB_SCREENING_BATCH_TIMEOUT_SECONDS', 1800))),
+        'learning_queue' => env('LAB_LEARNING_QUEUE', 'lab-learning'),
         // A screen may yield briefly for a sealed full replay, then it must
         // attempt the lane. This bounds fairness releases instead of burning
         // an unbounded retry stream for the whole full-replay window.
@@ -83,6 +102,9 @@ return [
 
     'lab_evidence' => [
         'disk' => env('LAB_EVIDENCE_DISK', 'lab_evidence'),
+        // Canonical trace artifacts remain complete. The SQL plane stores
+        // high-value events plus all low-value WAIT counts in a rollup table.
+        'compact_decision_projection' => filter_var(env('LAB_COMPACT_DECISION_PROJECTION', true), FILTER_VALIDATE_BOOL),
     ],
 
     'market_data' => [

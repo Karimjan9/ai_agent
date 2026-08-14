@@ -179,6 +179,33 @@ class ImmutableLabEvidenceTest extends TestCase
         $this->assertSame(1, LabCandleDecisionEvent::where('run_id', $run->run_id)->count());
     }
 
+    public function test_compact_projection_keeps_high_value_rows_and_rolls_up_wait_noise(): void
+    {
+        config()->set('services.lab_evidence.compact_decision_projection', true);
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'compact_projection', true);
+        $agent = $generation->agents->first();
+        $ledger = app(LabImmutableEvidenceService::class);
+        $run = $ledger->beginRun($agent, 'screening', 'incremental');
+
+        $ledger->finishRun($run, 'completed', [
+            'total_trades' => 1,
+            'decision_trace' => [
+                ['time' => '2026-01-01T00:00:00Z', 'action' => 'WAIT', 'accepted' => false, 'reason' => 'no_signal'],
+                ['time' => '2026-01-01T00:15:00Z', 'action' => 'WAIT', 'accepted' => false, 'reason' => 'no_signal'],
+                ['time' => '2026-01-01T00:30:00Z', 'action' => 'BUY', 'accepted' => true],
+                ['time' => '2026-01-01T00:45:00Z', 'event_type' => 'trade_exit', 'action' => 'BUY', 'accepted' => true],
+            ],
+        ]);
+
+        $this->assertSame(2, LabCandleDecisionEvent::where('run_id', $run->run_id)->count());
+        $this->assertDatabaseHas('lab_candle_decision_rollups', [
+            'run_id' => $run->run_id,
+            'rejection_code' => 'no_signal',
+            'event_count' => 2,
+        ]);
+        $this->assertSame(4, (int) DB::table('lab_candle_decision_rollups')->where('run_id', $run->run_id)->sum('event_count'));
+    }
+
     public function test_projection_is_bounded_and_terminal_run_cannot_be_rewritten(): void
     {
         $generation = app(LabPopulationService::class)->build('XAUUSD', 'immutable_projection', true);

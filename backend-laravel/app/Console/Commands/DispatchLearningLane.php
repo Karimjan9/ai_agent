@@ -10,6 +10,7 @@ use App\Services\CandidateHandoffService;
 use App\Services\LearningLaneService;
 use App\Services\LearningMemoryService;
 use App\Services\MicroReplayService;
+use App\Services\LabQueueJobInspector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -31,6 +32,7 @@ class DispatchLearningLane extends Command
         MicroReplayService $microReplay,
         CandidateGateDecisionService $decisions,
         CandidateHandoffService $handoffs,
+        LabQueueJobInspector $queueState,
     ): int {
         $retryQueued = (bool) $this->option('retry-queued');
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
@@ -86,7 +88,13 @@ class DispatchLearningLane extends Command
         }
 
         $queue = (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation');
-        $activeQueueWork = (int) DB::table('jobs')->where('queue', $queue)->count()
+        $queueSnapshot = $queueState->queueSnapshot([$queue, 'lab-full-hold']);
+        if (($queueSnapshot['available'] ?? true) === false) {
+            $this->warn('Redis/database queue state unavailable; learning lane deferred fail-closed.');
+
+            return self::SUCCESS;
+        }
+        $activeQueueWork = (int) ($queueSnapshot['total'] ?? 0)
             + (int) DB::table('job_batches')
                 ->where('name', 'Learning lane research replay')
                 ->whereNull('finished_at')
@@ -99,10 +107,12 @@ class DispatchLearningLane extends Command
             return self::SUCCESS;
         }
 
-        $mutexKey = Cache::getStore()->getPrefix()
-            .'laravel-queue-overlap:'
+        $mutexKey = 'laravel-queue-overlap:'
             .(string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay');
-        if (DB::table('cache_locks')->where('key', $mutexKey)->exists() && ! $this->option('dry-run')) {
+        $mutexProbe = Cache::lock($mutexKey, 1);
+        $mutexBusy = ! $mutexProbe->get();
+        if (! $mutexBusy) $mutexProbe->release();
+        if ($mutexBusy && ! $this->option('dry-run')) {
             $this->warn('Shared evaluator mutex band: learning lane queuega yangi heavy replay qo\'shilmadi.');
 
             return self::SUCCESS;

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\IncompleteLabEvidenceRecoveryService;
+use App\Services\LabQueueJobInspector;
 use App\Services\OperatorApprovalService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -14,7 +15,7 @@ class RecoverIncompleteLabEvidence extends Command
     protected $signature = 'trading:recover-incomplete-lab-evidence {symbol?} {--timeframe=} {--generation=} {--limit=20} {--apply : Dispatch one bounded same-generation replay per agent} {--approved-by=} {--approval-reason=} {--scheduled-sweep : Restrict automatic recovery to recent evidence-pipeline cohorts} {--json}';
     protected $description = 'Recover incomplete screening evidence without converting it into a strategy failure';
 
-    public function handle(IncompleteLabEvidenceRecoveryService $recovery, OperatorApprovalService $approvals): int
+    public function handle(IncompleteLabEvidenceRecoveryService $recovery, OperatorApprovalService $approvals, LabQueueJobInspector $queue): int
     {
         $apply = (bool) $this->option('apply');
         $scheduledSweep = (bool) $this->option('scheduled-sweep');
@@ -27,8 +28,8 @@ class RecoverIncompleteLabEvidence extends Command
         }
 
         try {
-            $queueBacklog = $this->queueBacklog();
-            if ($apply && $queueBacklog['total'] > 0) {
+            $queueBacklog = $queue->labQueueBacklog();
+            if ($apply && ($queueBacklog['total'] === null || $queueBacklog['total'] > 0)) {
                 $result = [
                     'selected' => 0,
                     'requeued' => 0,
@@ -92,27 +93,4 @@ class RecoverIncompleteLabEvidence extends Command
         }
     }
 
-    /** @return array{total: int, queues: array<string, int>} */
-    private function queueBacklog(): array
-    {
-        $queues = array_values(array_unique(array_filter([
-            (string) config('services.lab_queue.screening_queue', 'lab-screening'),
-            (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
-            (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
-            ...((array) config('services.lab_queue.legacy_screening_queues', [])),
-        ])));
-
-        $counts = DB::table('jobs')
-            ->whereIn('queue', $queues)
-            ->selectRaw('queue, COUNT(*) as total')
-            ->groupBy('queue')
-            ->pluck('total', 'queue')
-            ->map(fn ($count): int => (int) $count)
-            ->all();
-
-        return [
-            'total' => array_sum($counts),
-            'queues' => $counts,
-        ];
-    }
 }

@@ -261,7 +261,40 @@ class LabCandidateSelectionService
             (float) $agent->profit_factor,
             (int) $agent->sample_count,
             -(float) $agent->max_drawdown,
+            // Learning yield is deliberately the final tie-breaker. Economic
+            // quality and unchanged gates always dominate; among comparable
+            // candidates prefer the one that can answer a declared question
+            // with less replay budget and more uncertainty reduction.
+            $this->learningYield($agent),
         ];
+    }
+
+    private function learningYield(object $agent): float
+    {
+        $result = (array) $this->result($agent);
+        $metadata = (array) data_get($agent, 'modelVersion.metadata', []);
+        $targetDelta = max(
+            0.0,
+            (float) data_get($result, 'learning_signal.target_gate_delta',
+                data_get($metadata, 'learning_yield.target_gate_delta', 0.0)),
+        );
+        // A declared repair/exploration question still has information value
+        // when its measured delta is not available until replay. Keep this
+        // prior small so it cannot outrank any economic metric above it.
+        if ($targetDelta <= 0.0 && (data_get($metadata, 'repair_lineage') !== null || data_get($metadata, 'learning_lane') !== null)) {
+            $targetDelta = 0.25;
+        }
+        $novelty = max(0.1, min(2.0, (float) data_get($metadata, 'novelty_score', data_get($metadata, 'learning_yield.novelty', 1.0))));
+        $sampleCount = max(0, (int) ($agent->sample_count ?? 0));
+        $uncertainty = 1.0 / sqrt($sampleCount + 1.0);
+        $runtimeMs = max(1000.0, (float) data_get(
+            $result,
+            'optimization.stage_timings_ms.total_ms',
+            data_get($result, 'optimization.total_runtime_ms', 120000.0),
+        ));
+        $runtimeMinutes = max(1.0 / 60.0, $runtimeMs / 60000.0);
+
+        return round(($targetDelta * $novelty * $uncertainty) / $runtimeMinutes, 8);
     }
 
     private function declaredReplayRegime(object $agent): string

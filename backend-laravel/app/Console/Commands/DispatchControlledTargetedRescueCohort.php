@@ -10,6 +10,7 @@ use App\Services\LabPopulationService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\OperatorApprovalService;
 use App\Services\TargetedRescueProfileService;
+use App\Services\LabQueueJobInspector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -169,14 +170,9 @@ class DispatchControlledTargetedRescueCohort extends Command
 
     private function labQueueHasJobs(): bool
     {
-        $queues = array_values(array_unique([
-            (string) config('services.lab_queue.screening_queue', 'lab-screening'),
-            (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
-            (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
-            ...((array) config('services.lab_queue.legacy_screening_queues', [])),
-        ]));
+        $backlog = app(LabQueueJobInspector::class)->labQueueBacklog();
 
-        return DB::table('jobs')->whereIn('queue', $queues)->exists();
+        return $backlog['total'] === null || $backlog['total'] > 0;
     }
 
     private function hasEvidenceCompleteScreenPass(LabGeneration $generation): bool

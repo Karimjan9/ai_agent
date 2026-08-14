@@ -532,9 +532,13 @@ class CandidateGateDecisionService
             default => 'not_applicable',
         };
 
+        // Gate rows are mutable selectors, not the canonical response plane.
+        // Keep scalar/equity/gate summaries available to existing selectors,
+        // while moving trace/ledger/trade arrays to immutable artifacts.
+        $compactMetrics = app(LabImmutableEvidenceService::class)->projectionPayload($metrics);
         $decisionRow = CandidateGateDecision::updateOrCreate(
             ['model_market_performance_id' => $performance?->id, 'lab_agent_id' => $agent?->id, 'stage' => $stage],
-            ['decision' => $decision, 'reason_codes' => array_values(array_unique($reasons)), 'metrics' => $metrics,
+            ['decision' => $decision, 'reason_codes' => array_values(array_unique($reasons)), 'metrics' => $compactMetrics,
                 'attribution_status' => $attribution, 'evaluated_at' => now()],
         );
 

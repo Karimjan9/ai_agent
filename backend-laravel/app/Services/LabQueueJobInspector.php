@@ -5,6 +5,7 @@ namespace App\Services;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+
 /**
  * Match queued lab jobs by the serialized job field, not by an unbounded
  * substring search. A loose LIKE on the numeric agent id also matches batch
@@ -13,26 +14,30 @@ use Illuminate\Support\Facades\Schema;
  */
 class LabQueueJobInspector
 {
+    public function __construct(private readonly LabQueueStateService $state)
+    {
+    }
+
     /** @return array{total: int, queues: array<string, int>} */
     public function labQueueBacklog(): array
     {
-        if (! Schema::hasTable('jobs')) return ['total' => 0, 'queues' => []];
+        $snapshot = $this->state->snapshot($this->labQueues());
+        if (($snapshot['available'] ?? true) === false) return ['total' => null, 'queues' => []];
 
-        $queues = $this->labQueues();
-        $counts = DB::table('jobs')
-            ->whereIn('queue', $queues)
-            ->selectRaw('queue, COUNT(*) as total')
-            ->groupBy('queue')
-            ->pluck('total', 'queue')
-            ->map(fn ($count): int => (int) $count)
-            ->all();
+        return ['total' => (int) ($snapshot['total'] ?? 0), 'queues' => (array) ($snapshot['queues'] ?? [])];
+    }
 
-        return ['total' => array_sum($counts), 'queues' => $counts];
+    /** @return array<string, mixed> */
+    public function queueSnapshot(?array $queues = null): array
+    {
+        return $this->state->snapshot($queues ?? $this->labQueues());
     }
 
     public function hasLabJobs(): bool
     {
-        return $this->labQueueBacklog()['total'] > 0;
+        $total = $this->labQueueBacklog()['total'];
+
+        return $total === null || $total > 0;
     }
 
     /** @return array<int, string> */
@@ -55,19 +60,19 @@ class LabQueueJobInspector
     /**
      * @param array<int, int> $agentIds
      * @param array<int, string> $queues
-     * @return array<int, int>
+     * @return array<int, int|string>
      */
     public function queuedJobIdsForAgents(array $agentIds, array $queues = []): array
     {
         $agentIds = array_values(array_unique(array_filter(array_map('intval', $agentIds), static fn (int $id): bool => $id > 0)));
-        if ($agentIds === [] || ! Schema::hasTable('jobs')) return [];
+        if ($agentIds === []) return [];
 
-        $query = DB::table('jobs')->where('payload', 'like', '%labAgentId%');
-        if ($queues !== []) $query->whereIn('queue', array_values(array_unique($queues)));
+        $snapshot = $this->state->snapshot($queues !== [] ? array_values(array_unique($queues)) : $this->labQueues());
+        if (($snapshot['available'] ?? true) === false) return [];
 
-        return $query->get(['id', 'payload'])
-            ->filter(function (object $job) use ($agentIds): bool {
-                $decoded = json_decode((string) $job->payload, true);
+        return collect((array) ($snapshot['rows'] ?? []))
+            ->filter(function (array $job) use ($agentIds): bool {
+                $decoded = json_decode((string) ($job['payload'] ?? ''), true);
                 $command = (string) data_get($decoded, 'data.command', '');
                 if ($command === '') $command = (string) data_get($decoded, 'command', '');
 
@@ -86,8 +91,23 @@ class LabQueueJobInspector
                 return false;
             })
             ->pluck('id')
-            ->map(fn (mixed $id): int => (int) $id)
+            ->map(fn (mixed $id): int|string => is_numeric($id) && ! str_contains((string) $id, '-') ? (int) $id : (string) $id)
             ->values()
             ->all();
+    }
+
+    public function fullValidationIsWaiting(): bool
+    {
+        $queue = (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation');
+        $snapshot = $this->state->snapshot([$queue]);
+        if (($snapshot['available'] ?? true) === false) return true;
+
+        $stats = (array) data_get($snapshot, "stats.{$queue}", []);
+        if ((int) data_get($stats, 'pending', 0) > 0 || (int) data_get($stats, 'reserved', 0) > 0) return true;
+
+        return Schema::hasTable('job_batches')
+            && DB::table('job_batches')
+                ->whereIn('name', ['Portfolio member full validation', 'Global full validation'])
+                ->whereNull('finished_at')->where('pending_jobs', '>', 0)->exists();
     }
 }

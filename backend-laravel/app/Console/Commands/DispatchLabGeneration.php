@@ -2,13 +2,15 @@
 
 namespace App\Console\Commands;
 
-use App\Jobs\EvaluateLabAgentJob;
+use App\Jobs\EvaluateLabScreeningBatchJob;
 use App\Models\AiLaboratory;
+use App\Models\LabAgent;
 use App\Services\CandidateHandoffService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
+use App\Services\LabQueueJobInspector;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\MarketData\MarketDataContinuityService;
 use Illuminate\Console\Command;
@@ -22,7 +24,7 @@ class DispatchLabGeneration extends Command
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
-    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety): int
+    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LabQueueJobInspector $queueState): int
     {
         $populations->ensureLaboratories();
         $controlledRescue = (bool) $this->option('controlled-rescue');
@@ -44,16 +46,14 @@ class DispatchLabGeneration extends Command
         // evidence jobs.  Do not create another population while the pool is
         // already saturated: a large backlog makes every candidate stale and
         // turns the scheduler into a source of noisy, duplicated experiments.
-        if (Schema::hasTable('jobs')) {
-            $queues = array_values(array_unique(array_merge(
-                [
-                    (string) config('services.lab_queue.screening_queue', 'lab-screening'),
-                    (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
-                    'lab-full-validation',
-                ],
-                (array) config('services.lab_queue.legacy_screening_queues', []),
-            )));
-            $pending = (int) DB::table('jobs')->whereIn('queue', $queues)->count();
+        $queueSnapshot = $queueState->queueSnapshot();
+        if (($queueSnapshot['available'] ?? true) === false) {
+            $this->warn('Lab queue state unavailable; generation dispatch deferred fail-closed.');
+
+            return self::SUCCESS;
+        }
+        if (($queueSnapshot['total'] ?? 0) !== null) {
+            $pending = (int) ($queueSnapshot['total'] ?? 0);
             $limit = max(1, (int) config('services.lab_selection.max_screening_jobs', 40));
             if ($pending >= $limit) {
                 $this->warn("Lab screening backlog {$pending} >= {$limit}; dispatch deferred.");
@@ -238,7 +238,29 @@ class DispatchLabGeneration extends Command
                 $evidence->recordAgentStatusChanged($agent, 'draft', 'queued', 'DispatchLabGeneration.bulk_dispatch');
             }
             $generation->update(['status' => 'screening']);
-            $jobs = $agentIds->map(fn ($id) => new EvaluateLabAgentJob($id, $symbol, 'screen'))->all();
+            $configuredBatchSize = max(1, min(6, (int) config('services.lab_queue.screening_batch_size', 4)));
+            // Differential/volume/portfolio lanes have materially more
+            // stateful diagnostic work than a plain specialist. Keep those
+            // cohorts smaller so one HTTP deadline cannot strand four
+            // otherwise valid candidates. This is a scheduling budget only;
+            // every agent keeps the same snapshot, trace, ledger and gates.
+            $heavyScreeningBatch = $generation->agents
+                ->whereIn('id', $agentIds)
+                ->contains(function (LabAgent $agent): bool {
+                    $metadata = (array) ($agent->modelVersion?->metadata ?? []);
+
+                    return $agent->strategy_family === 'differential_router'
+                        || (bool) data_get($metadata, 'volume_research_contract.enabled', false)
+                        || data_get($metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
+                        || data_get($metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1';
+                });
+            $batchSize = $heavyScreeningBatch
+                ? min($configuredBatchSize, 2)
+                : $configuredBatchSize;
+            $jobs = collect(array_chunk($agentIds->map(fn ($id): int => (int) $id)->all(), $batchSize))
+                ->values()
+                ->map(fn (array $ids, int $index) => new EvaluateLabScreeningBatchJob($ids, $symbol, $index % 2))
+                ->all();
 
             $batch = Bus::batch($jobs)
                 ->name("{$symbol} {$timeframe} Lab G{$generation->generation} screening")
@@ -247,7 +269,15 @@ class DispatchLabGeneration extends Command
                 ->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))
                 ->dispatch();
 
-            $this->info("{$symbol}: {$batch->id}, ".count($jobs).' jobs dispatched.');
+            $this->info(sprintf(
+                '%s: %s, %d agents in %d bounded screening batches dispatched (batch_size=%d, heavy_lane=%s).',
+                $symbol,
+                $batch->id,
+                count($agentIds),
+                count($jobs),
+                $batchSize,
+                $heavyScreeningBatch ? 'yes' : 'no',
+            ));
         }
 
         return self::SUCCESS;

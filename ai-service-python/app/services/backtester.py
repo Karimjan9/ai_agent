@@ -56,6 +56,10 @@ class PreparedSignalSnapshot:
     frame: pd.DataFrame
     unexpected_gap_count: int
     data_quality: dict[str, object]
+    # Retain the immutable feature layer so parameter/exit diagnostic lanes
+    # can rebuild only the declared signal gene instead of recalculating H1,
+    # M15, volume and ATR features.
+    feature_snapshot: PreparedFeatureSnapshot | None = None
 
 
 def core_replay_gate(result: dict[str, object]) -> dict[str, object]:
@@ -241,6 +245,38 @@ def prepare_feature_snapshot(
     )
 
 
+def tail_feature_snapshot(
+    snapshot: PreparedFeatureSnapshot,
+    tail_rows: int,
+) -> PreparedFeatureSnapshot:
+    """Return a view of a prepared snapshot without rebuilding indicators.
+
+    The caller must prepare the larger/warmup window first.  Slicing after
+    rolling features, ATR and closed-H1 context have been computed preserves
+    the warmup values that would otherwise be lost by preparing a fresh 2k
+    frame.  The returned frames are reset copies so downstream signal and
+    execution code cannot mutate the shared cohort snapshot.
+    """
+    requested = max(1, int(tail_rows))
+    if requested >= len(snapshot.frame):
+        return snapshot
+
+    start = len(snapshot.frame) - requested
+    source = snapshot.source_frame.iloc[start:].reset_index(drop=True).copy()
+    frame = snapshot.frame.iloc[start:].reset_index(drop=True).copy()
+    frame.attrs = dict(snapshot.frame.attrs)
+    frame.attrs["warmup_source_rows"] = len(snapshot.frame)
+    frame.attrs["warmup_view_rows"] = requested
+    source.attrs = dict(snapshot.source_frame.attrs)
+
+    return PreparedFeatureSnapshot(
+        source_frame=source,
+        frame=frame,
+        unexpected_gap_count=snapshot.unexpected_gap_count,
+        data_quality=dict(snapshot.data_quality),
+    )
+
+
 def prepare_signal_snapshot(
     payload: SimpleBacktestRequest,
     df: pd.DataFrame | None = None,
@@ -274,6 +310,7 @@ def prepare_signal_snapshot(
         frame=prepared,
         unexpected_gap_count=features.unexpected_gap_count,
         data_quality=dict(features.data_quality),
+        feature_snapshot=features,
     )
 
 
@@ -291,6 +328,13 @@ def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
         csv_path = _resolve_dataset_path(dataset_path)
         df = pd.read_csv(csv_path)
 
+        # Read directly from the immutable snapshot path and retain only the
+        # sealed bounded tail.  This is semantically the same stream Laravel
+        # previously put in ``candles`` but avoids a multi-megabyte JSON
+        # encode/decode and a second in-memory copy in the API process.
+        if payload.dataset_tail_rows is not None:
+            df = df.tail(int(payload.dataset_tail_rows)).reset_index(drop=True)
+
     return df
 
 
@@ -298,7 +342,10 @@ def _load_regime_source(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
     if payload.regime_candles:
         return pd.DataFrame([candle.model_dump() if hasattr(candle, "model_dump") else candle for candle in payload.regime_candles])
     if payload.regime_dataset_path:
-        return pd.read_csv(_resolve_dataset_path(payload.regime_dataset_path))
+        frame = pd.read_csv(_resolve_dataset_path(payload.regime_dataset_path))
+        if payload.regime_dataset_tail_rows is not None:
+            frame = frame.tail(int(payload.regime_dataset_tail_rows)).reset_index(drop=True)
+        return frame
     return None
 
 
@@ -334,6 +381,7 @@ def _run_prepared_simple_backtest(
     include_differential_pair: bool = True,
     lightweight: bool = False,
     prepared_snapshot: PreparedSignalSnapshot | None = None,
+    fast_stateful: bool | None = None,
 ) -> SimpleBacktestResponse:
     policy_boundary = enforce_policy_boundary(payload)
     snapshot = prepared_snapshot or prepare_signal_snapshot(payload, df)
@@ -374,6 +422,19 @@ def _run_prepared_simple_backtest(
     accepted_by_month: Counter[str] = Counter()
     decision_trace: list[dict[str, object]] = []
     emit_decision_trace = bool(payload.emit_decision_trace)
+    # Canonical replay keeps the historical pandas access path so its full
+    # trace remains the reference implementation. Cost/mutation lanes do not
+    # emit a trace; they use immutable record views instead of constructing a
+    # pandas Series for every candle access. The records expose the same
+    # ``get``/index/copy/items contract used by the execution helpers, while
+    # preserving the stateful loss-streak/cooldown/position machine.
+    if fast_stateful is None:
+        fast_stateful = not emit_decision_trace
+    row_views = df.to_dict(orient="records") if fast_stateful else None
+
+    def row_at(row_index: int) -> object:
+        return row_views[row_index] if row_views is not None else df.iloc[row_index]
+
     # Shadow positions never touch balance, loss streak, or real-position
     # state.  They are a counterfactual evidence ledger, not hidden trades.
     shadow_positions: list[dict[str, object]] = []
@@ -395,15 +456,15 @@ def _run_prepared_simple_backtest(
     # A signal is only knowable after its candle closes. Execute it at the
     # following candle's open, then include that same candle in exit checks.
     for index in range(200, len(df)):
-        candle = df.iloc[index]
-        signal_row = df.iloc[index - 1]
-        transition_event = _regime_transitioned(signal_row, df.iloc[index - 2] if index >= 2 else None)
+        candle = row_at(index)
+        signal_row = row_at(index - 1)
+        transition_event = _regime_transitioned(signal_row, row_at(index - 2) if index >= 2 else None)
         if transition_event and bool(payload.parameters.get("transition_firewall_enabled", False)):
             transition_events += 1
             transition_wait_until = max(transition_wait_until, index + _transition_wait_duration(payload))
         transition_wait_active = bool(payload.parameters.get("transition_firewall_enabled", False)) and index < transition_wait_until
         _advance_shadow_positions(
-            shadow_positions, shadow_ledger, shadow_history, candle, df.iloc[index - 1], payload, index
+            shadow_positions, shadow_ledger, shadow_history, candle, row_at(index - 1), payload, index
         )
 
         if emit_decision_trace and position is not None:
@@ -523,7 +584,7 @@ def _run_prepared_simple_backtest(
                     transition_vetoes += 1
                 shadow = _open_shadow_position(candle, signal_row, signal, execution_payload, index, rejection_reason or "unknown")
                 if shadow is not None:
-                    settled = _advance_shadow_position(shadow, candle, df.iloc[index - 1], execution_payload, index)
+                    settled = _advance_shadow_position(shadow, candle, row_at(index - 1), execution_payload, index)
                     if settled is None:
                         shadow_positions.append(shadow)
                     else:
@@ -563,7 +624,7 @@ def _run_prepared_simple_backtest(
                 "position_size_multiple": _position_size_multiple(
                     entry_price, stop_loss, signal, execution_payload
                 ) * _volatility_risk_multiplier(signal_row, execution_payload) * _meta_risk_multiplier(signal_row, signal, execution_payload, meta_returns)
-                * _regime_transition_multiplier(signal_row, df.iloc[index - 2] if index >= 2 else None)
+                * _regime_transition_multiplier(signal_row, row_at(index - 2) if index >= 2 else None)
                 * _regime_specific_risk_multiplier(signal_row, execution_payload)
                 * _volume_risk_multiplier(signal_row)
                 * float(mtf_policy.get("risk_multiplier", 1.0) or 1.0)
@@ -595,7 +656,7 @@ def _run_prepared_simple_backtest(
 
         direction = str(position["direction"])
         position_payload = _payload_for_position(payload, position)
-        _advance_trailing_stop(position, df.iloc[index - 1], position_payload)
+        _advance_trailing_stop(position, row_at(index - 1), position_payload)
         time_stop = int(position_payload.parameters.get("time_stop_candles", 0) or 0)
         if time_stop and index - int(position["entry_index"]) >= time_stop:
             exit_price, exit_reason = _exit_price(float(candle["open"]), direction, position_payload), "time_stop"
@@ -741,7 +802,7 @@ def _run_prepared_simple_backtest(
     # observable close.  This is explicitly marked, rather than silently
     # dropping a veto from the evidence denominator.
     if shadow_positions:
-        final_candle = df.iloc[-1]
+        final_candle = row_at(len(df) - 1)
         for shadow in shadow_positions:
             _record_shadow_outcome(shadow_ledger, shadow_history, _force_close_shadow(shadow, final_candle, payload))
 
@@ -792,7 +853,7 @@ def _run_prepared_simple_backtest(
             "volatility_performance": volatility_performance,
             "monte_carlo": monte_carlo,
         }, [trade.model_dump() for trade in trades])
-    buy_hold_percent = ((float(df.iloc[-1]["close"]) - float(df.iloc[0]["close"])) / max(float(df.iloc[0]["close"]), 0.0000001)) * 100
+    buy_hold_percent = ((float(row_at(len(df) - 1)["close"]) - float(row_at(0)["close"])) / max(float(row_at(0)["close"]), 0.0000001)) * 100
     statistical_evidence = _statistical_evidence(trades, wins, total_trades)
     statistical_evidence["edge_quality"] = (
         {"status": "deferred_screening_subreplay", "promotion_evidence": False}
@@ -2852,6 +2913,19 @@ def _pf_attribution(
             for context, dimensions in values.items()
         }
 
+    # Temporal attribution is diagnostic only, but it is called once per
+    # trade.  Parsing the complete candle-time column inside that callback
+    # made this O(trades * candles).  Build the immutable UTC search index
+    # once; the labels and gate-facing values remain identical.
+    normalized_times = None
+    if df is not None and not df.empty and "time" in df.columns:
+        try:
+            normalized_times = pd.to_datetime(
+                df["time"], errors="coerce", utc=True
+            ).dropna().reset_index(drop=True)
+        except (TypeError, ValueError):
+            normalized_times = None
+
     def temporal_chunk(trade: SimpleTrade) -> str:
         """Assign a trade to its candle-history bucket without replaying it.
 
@@ -2861,15 +2935,14 @@ def _pf_attribution(
         authority for temporal survival; this bucket is a bounded screening
         accelerator that preserves the stateful single-ledger semantics.
         """
-        if df is None or df.empty or "time" not in df.columns:
+        if normalized_times is None:
             return "unknown"
         try:
-            times = pd.to_datetime(df["time"], errors="coerce", utc=True).dropna().reset_index(drop=True)
-            if len(times) < 3:
+            if len(normalized_times) < 3:
                 return "unknown"
-            position = int(times.searchsorted(pd.Timestamp(trade.entry_time), side="left"))
+            position = int(normalized_times.searchsorted(pd.Timestamp(trade.entry_time), side="left"))
             chunk_count = max(1, int(temporal_chunk_count))
-            chunk_size = max(1, len(times) // chunk_count)
+            chunk_size = max(1, len(normalized_times) // chunk_count)
             return f"chunk_{min(chunk_count, position // chunk_size + 1)}"
         except (TypeError, ValueError, IndexError):
             return "unknown"

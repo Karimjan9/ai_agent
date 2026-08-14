@@ -6,6 +6,7 @@ use App\Models\CandidateHandoffEvent;
 use App\Services\CandidateHandoffService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\LabPopulationService;
+use App\Services\LabQueueJobInspector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -134,17 +135,9 @@ class ProcessTargetedGenerationRequests extends Command
 
     private function screeningBacklogIsHigh(): bool
     {
-        if (! Schema::hasTable('jobs')) return false;
-
-        $queues = array_values(array_unique(array_merge(
-            [
-                (string) config('services.lab_queue.screening_queue', 'lab-screening'),
-                (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
-                'lab-full-validation',
-            ],
-            (array) config('services.lab_queue.legacy_screening_queues', []),
-        )));
-        $pending = (int) DB::table('jobs')->whereIn('queue', $queues)->count();
+        $snapshot = app(LabQueueJobInspector::class)->queueSnapshot();
+        if (($snapshot['available'] ?? true) === false) return true;
+        $pending = (int) ($snapshot['total'] ?? 0);
 
         return $pending >= max(1, (int) config('services.lab_selection.max_screening_jobs', 40));
     }

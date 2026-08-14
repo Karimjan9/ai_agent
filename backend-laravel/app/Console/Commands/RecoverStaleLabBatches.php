@@ -32,7 +32,7 @@ class RecoverStaleLabBatches extends Command
 
         if ($apply) {
             $backlog = $queue->labQueueBacklog();
-            if ($backlog['total'] > 0) {
+            if ($backlog['total'] === null || $backlog['total'] > 0) {
                 $this->warn(sprintf(
                     'Stale batch apply deferred: %d lab job(s) remain in %s.',
                     $backlog['total'],
@@ -62,6 +62,13 @@ class RecoverStaleLabBatches extends Command
             return self::SUCCESS;
         }
 
+        $queueSnapshot = $queue->queueSnapshot();
+        if (($queueSnapshot['available'] ?? true) === false) {
+            $this->line('Stale batch recovery skipped: queue state is unknown.');
+
+            return self::SUCCESS;
+        }
+        $queuedPayloads = collect((array) ($queueSnapshot['rows'] ?? []))->pluck('payload')->filter()->values();
         $batches = DB::table('job_batches')
             ->whereNull('finished_at')
             ->where('created_at', '<=', $cutoff)
@@ -75,9 +82,7 @@ class RecoverStaleLabBatches extends Command
         $cancelled = 0;
         $skipped = 0;
         foreach ($batches as $batch) {
-            $hasQueuedJob = DB::table('jobs')
-                ->where('payload', 'like', '%'.$batch->id.'%')
-                ->exists();
+            $hasQueuedJob = $queuedPayloads->contains(fn (string $payload): bool => str_contains($payload, (string) $batch->id));
 
             if ($hasQueuedJob) {
                 $skipped++;

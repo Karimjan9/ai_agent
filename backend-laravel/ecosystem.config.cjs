@@ -7,17 +7,35 @@ const laravelRouter = path.join(__dirname, 'vendor', 'laravel', 'framework', 'sr
 if (!fs.existsSync(tokenFile)) {
   throw new Error(`Missing internal API token file: ${tokenFile}`);
 }
-const sharedEnv = { INTERNAL_API_TOKEN_FILE: tokenFile };
+const sharedEnv = {
+  INTERNAL_API_TOKEN_FILE: tokenFile,
+  // Two bounded screening child slots; full validation remains exclusive in
+  // the Python lane admission guard.
+  AI_SCREEN_REPLAY_CONCURRENCY: process.env.AI_SCREEN_REPLAY_CONCURRENCY || '2',
+  // Replay cache is rebuildable operational state. Keep it bounded so legacy
+  // JSON artifacts cannot consume the disk while immutable evidence remains
+  // in Laravel's evidence disk.
+  AI_REPLAY_CACHE_RETENTION_DAYS: process.env.AI_REPLAY_CACHE_RETENTION_DAYS || '14',
+  AI_REPLAY_CACHE_MAX_BYTES: process.env.AI_REPLAY_CACHE_MAX_BYTES || '1610612736',
+  AI_REPLAY_CACHE_CLEANUP_INTERVAL_SECONDS: process.env.AI_REPLAY_CACHE_CLEANUP_INTERVAL_SECONDS || '300',
+};
 const secretPrefixes = ['OPENAI_', 'CODEX_', 'INTERNAL_API_TOKEN'];
 // Production web traffic is served by Nginx/Apache + PHP-FPM. The built-in
 // server remains available only for the local Windows development profile.
 const externalWebServer = process.env.WEB_SERVER_MODE === 'external' || process.env.NODE_ENV === 'production';
-const queueConnection = process.env.QUEUE_CONNECTION || (externalWebServer ? 'redis' : 'database');
+// Redis is the canonical local/production transport. Laravel's .env is not
+// loaded by Node/PM2, so the fallback must not silently resurrect the slower
+// database queue when PM2 is started without an inherited environment.
+const queueConnection = process.env.QUEUE_CONNECTION || 'redis';
 
 const worker = (name, queue, timeoutSeconds = 1200) => ({
   name,
   script: 'artisan',
   interpreter: php,
+  // PHP is a console-subsystem executable on Windows. PM2 must create it
+  // without an attached console or every scheduler/data-fetch child can
+  // briefly materialize a visible conhost window.
+  windowsHide: true,
   // EvaluateLabAgentJob has a bounded two-hour recovery window.  A CLI
   // Shared-AI contention is recoverable, but an evaluator outage must not
   // retry a single candidate for hours. Full validation gets a longer worker
@@ -54,6 +72,7 @@ module.exports = {
       args: ['-S', '127.0.0.1:8000', laravelRouter],
       cwd: path.join(__dirname, 'public'),
       autorestart: true,
+      windowsHide: true,
       max_memory_restart: '256M',
       time: true,
       env: sharedEnv,
@@ -65,6 +84,7 @@ module.exports = {
       interpreter: python,
       cwd: __dirname,
       autorestart: true,
+      windowsHide: true,
       max_memory_restart: '1G',
       time: true,
       env: sharedEnv,
@@ -77,6 +97,7 @@ module.exports = {
       args: 'schedule:headless-work',
       autorestart: true,
       restart_delay: 5000,
+      windowsHide: true,
       // Schedule ticks may materialize generation/foundation manifests and
       // briefly exceed 256M. A healthy scheduler must not restart in the
       // middle of a dispatch window and leave queue reservations half-open.
@@ -85,15 +106,15 @@ module.exports = {
       env: sharedEnv,
       filter_env: secretPrefixes,
     },
-    // One coordinator owns the shared AI replay lane. Keeping screening and
-    // full validation in separate workers makes every worker repeatedly pull
-    // the same mutex-contended job while the other worker is replaying; those
-    // releases are queue attempts, not useful work. Queue priority gives a
-    // waiting sealed full replay the first turn, while the single coordinator
-    // guarantees that only one queued replay can enter the Python service.
-    // Legacy symbol queues remain visible so already-serialized jobs cannot be
-    // stranded after a deploy.
-    worker('lab-replay', 'lab-full-validation,lab-frontier,lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', 4200),
+    // Full validation remains one priority coordinator. Screening has two
+    // bounded workers over the separate Python screening semaphore; the
+    // immutable snapshot and per-agent state stay shared/independent as
+    // required by the evidence contract. Legacy symbol queues remain visible
+    // so already-serialized jobs cannot be stranded after a deploy.
+    worker('lab-replay', 'lab-full-validation,lab-frontier', 4200),
+    worker('lab-screening-a', 'lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', 2400),
+    worker('lab-screening-b', 'lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', 2400),
+    worker('lab-learning', 'lab-learning', 900),
     worker('strategy-lab', 'strategy-lab', 2400),
     worker('backtests', 'backtests', 900),
   ],
