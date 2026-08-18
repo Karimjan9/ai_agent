@@ -4,6 +4,7 @@ import pandas as pd
 def apply_trend_specialist(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
     """Trend pullback continuation with a strength and re-entry filter."""
     p = parameters or {}
+    topology_variant = str(p.get("entry_topology_variant", "frozen") or "frozen")
     out = df.copy()
     fast, slow = int(p.get("ema_fast", 50)), int(p.get("ema_slow", 200))
     rsi_period = int(p.get("rsi_period", 14))
@@ -251,6 +252,7 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
     whole hybrid.
     """
     p = parameters or {}
+    topology_variant = str(p.get("entry_topology_variant", "frozen") or "frozen")
     out = df.copy()
     trend = apply_momentum_strategy(out, {
         "roc_period": int(p.get("trend_roc_period", 12)),
@@ -263,6 +265,7 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
         "lookback": int(p.get("breakout_lookback", 20)),
         "compression_ratio": float(p.get("breakout_compression_ratio", 0.75)),
         "expansion_multiplier": float(p.get("breakout_expansion_multiplier", 1.2)),
+        "breakout_confirmation": topology_variant == "breakout_retest_v1",
     })
     mean_reversion = apply_mean_reversion_strategy(out, {
         "lookback": int(p.get("range_lookback", 20)),
@@ -322,8 +325,41 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
     mean_confidence = clipped_confidence(mean_reversion)
 
     trend_regime = active & regime.isin(["trend_up", "trend_down"])
+    # These variants are executable topology hypotheses, not descriptive
+    # labels. They use only the closed rows already available to the router:
+    # consensus requires a second specialist vote, while transition hazard
+    # parks the first row at a regime/volatility boundary.
+    topology_transition = (
+        regime.ne(regime.shift(1)) | volatility.ne(volatility.shift(1))
+    ).fillna(True)
+    if topology_variant == "transition_hazard_v1":
+        active &= ~topology_transition
+    elif topology_variant == "volatility_persistence_v1":
+        active &= volatility.eq(volatility.shift(1)).fillna(False)
+    trend_regime = active & regime.isin(["trend_up", "trend_down"])
+
+    trend_confirmation = (
+        trend_signal.ne("WAIT")
+        & (trend_signal.eq(breakout_signal) | trend_signal.eq(mean_signal))
+    )
+    breakout_confirmation = (
+        breakout_signal.ne("WAIT")
+        & (breakout_signal.eq(trend_signal) | breakout_signal.eq(mean_signal))
+    )
+    range_confirmation = (
+        mean_signal.ne("WAIT")
+        & (mean_signal.eq(trend_signal) | mean_signal.eq(breakout_signal))
+    )
+    require_known_consensus = topology_variant in {
+        "regime_consensus_v1",
+        "trend_regime_confirmation_v1",
+    }
+    require_unknown_consensus = topology_variant == "regime_consensus_v1"
     trend_lane = trend_regime & trend_signal.ne("WAIT")
     breakout_lane = trend_regime & trend_signal.eq("WAIT")
+    if require_known_consensus:
+        trend_lane &= trend_confirmation
+        breakout_lane &= breakout_confirmation
     out.loc[trend_regime, "selected_specialist"] = "breakout"
     out.loc[trend_lane, "selected_specialist"] = "trend"
     out.loc[trend_lane, "signal"] = trend_signal.loc[trend_lane]
@@ -336,7 +372,12 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
     ]
 
     range_lane = active & regime.eq("range")
+    range_reentry = mean_signal.ne("WAIT") & mean_signal.shift(1).eq("WAIT")
     range_signal = range_lane & mean_signal.ne("WAIT")
+    if require_known_consensus:
+        range_signal &= range_confirmation
+    if topology_variant == "range_reentry_confirmation_v1":
+        range_signal = range_lane & range_reentry
     out.loc[range_lane, "selected_specialist"] = "range"
     out.loc[range_lane, "signal"] = mean_signal.loc[range_lane]
     out.loc[range_signal, "signal_confidence"] = mean_confidence.loc[range_signal]
@@ -350,8 +391,22 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
     mean_sell = mean_signal.eq("SELL").astype(float) * weights["mean_reversion"]
     buy_weight = trend_buy + breakout_buy + mean_buy
     sell_weight = trend_sell + breakout_sell + mean_sell
-    buy_lane = unknown_lane & buy_weight.ge(minimum) & buy_weight.gt(sell_weight)
-    sell_lane = unknown_lane & sell_weight.ge(minimum) & sell_weight.gt(buy_weight)
+    buy_votes = (
+        trend_signal.eq("BUY").astype(int)
+        + breakout_signal.eq("BUY").astype(int)
+        + mean_signal.eq("BUY").astype(int)
+    )
+    sell_votes = (
+        trend_signal.eq("SELL").astype(int)
+        + breakout_signal.eq("SELL").astype(int)
+        + mean_signal.eq("SELL").astype(int)
+    )
+    if require_unknown_consensus:
+        buy_lane = unknown_lane & buy_votes.ge(2) & buy_votes.gt(sell_votes)
+        sell_lane = unknown_lane & sell_votes.ge(2) & sell_votes.gt(buy_votes)
+    else:
+        buy_lane = unknown_lane & buy_weight.ge(minimum) & buy_weight.gt(sell_weight)
+        sell_lane = unknown_lane & sell_weight.ge(minimum) & sell_weight.gt(buy_weight)
 
     buy_confidence_weight = (
         trend_buy * trend_confidence
@@ -372,6 +427,12 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
     out.loc[sell_lane, "signal_confidence"] = (
         sell_confidence_weight / sell_weight.clip(lower=.0001)
     ).clip(lower=.35, upper=1.0).loc[sell_lane]
+    if require_known_consensus:
+        known_consensus_wait = active & regime.isin(["trend_up", "trend_down", "range"]) & out["signal"].eq("WAIT")
+        out.loc[known_consensus_wait, "selected_specialist"] = "topology_consensus_wait"
+    if topology_variant == "transition_hazard_v1":
+        out.loc[topology_transition, "selected_specialist"] = "transition_hazard_wait"
+    out["entry_topology_variant"] = topology_variant
     return out
 
 

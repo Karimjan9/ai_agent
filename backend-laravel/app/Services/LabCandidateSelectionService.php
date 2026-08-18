@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
+use App\Models\LabGeneration;
+use App\Models\LabLearningLanePair;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use Illuminate\Support\Collection;
@@ -17,7 +19,20 @@ class LabCandidateSelectionService
      */
     public function select(Collection $agents): Collection
     {
-        $ranked = $agents->filter(fn ($agent) => ! $this->isControlOnly($agent) && $this->isWorthFullReplay($agent))
+        $structural = $this->structuralCohortRequired($agents);
+        // A bounded repair cohort is interpretable only after its fresh
+        // frozen control has completed and passed on the same snapshot. The
+        // ordinary selector remains unchanged for legacy/normal generations.
+        if (! $this->frozenControlAllowsMutationReplay($agents)) return collect();
+
+        // Structural candidates must first prove a causal micro effect.
+        // Controls remain in the pool for parity, while candidates without a
+        // passed micro probe are diagnostic-only and cannot consume full replay.
+        $selectionPool = $structural
+            ? $agents->filter(fn ($agent): bool => $this->isControlOnly($agent) || $this->causalMicroProbePassed($agent))
+            : $agents;
+
+        $ranked = $selectionPool->filter(fn ($agent) => ! $this->isControlOnly($agent) && $this->isWorthFullReplay($agent))
             ->sortByDesc(fn ($agent) => [
             $this->survivalScore($agent),
             $this->stressRobustness($agent),
@@ -44,6 +59,47 @@ class LabCandidateSelectionService
      * from monopolising the only expensive validation worker. */
     public function selectValidationLanes(Collection $agents): array
     {
+        $structural = $this->structuralCohortRequired($agents);
+        $controlParity = $this->frozenControlParity($agents);
+        if (($controlParity['required'] ?? false) && ! ($controlParity['allowed'] ?? false)) {
+            if ($structural) {
+                return [
+                    'agents' => collect(),
+                    'lanes' => [],
+                    'replay_budget' => [
+                        'protocol' => 'adaptive_full_replay_frontier_v1',
+                        'eligible_frontier_count' => 0,
+                        'frozen_control_parity' => $controlParity,
+                        'causal_micro_probe_required_before_full_replay' => true,
+                        'promotion_evidence' => false,
+                    ],
+                    'council_role_coverage' => [],
+                ];
+            }
+            $shadow = $this->shadowResearchSelection($agents, $controlParity);
+            if (($shadow['allowed'] ?? false) === true) return $shadow['selection'];
+
+            return [
+                'agents' => collect(),
+                'lanes' => [],
+                'replay_budget' => [
+                    'protocol' => 'adaptive_full_replay_frontier_v1',
+                    'configured_cap' => null,
+                    'eligible_frontier_count' => 0,
+                    'all_distinct_frontier_allowed' => false,
+                    'frozen_control_parity' => $controlParity,
+                    'promotion_evidence' => false,
+                ],
+                'council_role_coverage' => [
+                    'protocol' => 'role_complete_council_selection_v1',
+                    'required_roles' => [],
+                    'selected_roles' => [],
+                    'missing_roles' => [],
+                    'full_replay_required' => false,
+                    'promotion_evidence' => false,
+                ],
+            ];
+        }
         $roleSelection = $this->selectRoleCompleteCouncilLanes($agents);
         $front = $this->select($agents)->values();
         $general = $front->first();
@@ -117,6 +173,11 @@ class LabCandidateSelectionService
                 : collect();
             $lanes = $selected->mapWithKeys(fn ($agent): array => [$agent->id => 'council_role_full_replay'])->all();
         }
+        if ($structural) {
+            $selected = $selected
+                ->filter(fn ($agent): bool => $this->causalMicroProbePassed($agent))
+                ->values();
+        }
 
         // The selector may collect several research lanes above. A positive
         // value is an explicit infrastructure budget; zero keeps the entire
@@ -147,6 +208,79 @@ class LabCandidateSelectionService
                 'missing_roles' => $roleSelection['missing_roles'],
                 'full_replay_required' => $roleComplete,
                 'promotion_evidence' => false,
+            ],
+        ];
+    }
+
+    /**
+     * A complete but failed control may still support bounded research-only
+     * replay. This branch is intentionally separate from the ordinary selector:
+     * it never returns a promotion lane and it never converts a failed control
+     * into a screen pass.
+     *
+     * @return array{allowed: bool, selection: array<string, mixed>}
+     */
+    private function shadowResearchSelection(Collection $agents, array $controlParity): array
+    {
+        $empty = [
+            'agents' => collect(),
+            'lanes' => [],
+            'replay_budget' => [
+                'protocol' => 'shadow_research_full_replay_v1',
+                'shadow_only' => true,
+                'promotion_evidence' => false,
+            ],
+            'council_role_coverage' => [
+                'protocol' => 'shadow_research_council_coverage_v1',
+                'full_replay_required' => false,
+                'promotion_evidence' => false,
+            ],
+        ];
+        $sample = $agents->first();
+        if (! $sample) return ['allowed' => false, 'selection' => $empty];
+
+        $generation = LabGeneration::query()->find((int) $sample->lab_generation_id);
+        if (! $generation) return ['allowed' => false, 'selection' => $empty];
+        $assessment = app(ShadowResearchGovernorService::class)->assess($generation);
+        if (! (bool) data_get($assessment, 'allowed', false)
+            || data_get($assessment, 'status') !== 'control_failed_shadow_allowed') {
+            return ['allowed' => false, 'selection' => $empty];
+        }
+
+        $limit = max(1, (int) config('services.lab_selection.shadow_research_max_full_replays_per_generation', 2));
+        $selected = $agents
+            ->filter(fn ($agent): bool => $this->isWorthFullReplay($agent))
+            ->sortByDesc(fn ($agent): array => [
+                $this->survivalScore($agent),
+                $this->stressRobustness($agent),
+                $this->coverage($agent),
+                (float) $agent->profit_factor,
+                (int) $agent->sample_count,
+            ])
+            ->take($limit)
+            ->values();
+        $lanes = $selected->mapWithKeys(fn ($agent): array => [$agent->id => 'shadow_research'])->all();
+
+        return [
+            'allowed' => true,
+            'selection' => [
+                'agents' => $selected,
+                'lanes' => $lanes,
+                'replay_budget' => [
+                    'protocol' => 'shadow_research_full_replay_v1',
+                    'shadow_only' => true,
+                    'control_parity' => $controlParity,
+                    'shadow_assessment' => $assessment,
+                    'configured_cap' => $limit,
+                    'eligible_frontier_count' => $selected->count(),
+                    'promotion_evidence' => false,
+                ],
+                'council_role_coverage' => [
+                    'protocol' => 'shadow_research_council_coverage_v1',
+                    'full_replay_required' => false,
+                    'shadow_only' => true,
+                    'promotion_evidence' => false,
+                ],
             ],
         ];
     }
@@ -273,15 +407,28 @@ class LabCandidateSelectionService
     {
         $result = (array) $this->result($agent);
         $metadata = (array) data_get($agent, 'modelVersion.metadata', []);
-        $targetDelta = max(
+        $observability = (array) data_get($result, 'mutation_observability', data_get($metadata, 'mutation_observability', []));
+        $hasControlRelative = array_key_exists('control_relative', $observability)
+            && data_get($observability, 'control_relative.control_agent_id') !== null;
+        $controlImproved = (bool) data_get($observability, 'control_relative.control_relative_improved', false);
+        $controlDelta = max(0.0, (float) data_get($observability, 'control_relative.control_delta', 0.0));
+        $anchorDelta = max(
             0.0,
-            (float) data_get($result, 'learning_signal.target_gate_delta',
-                data_get($metadata, 'learning_yield.target_gate_delta', 0.0)),
+            (float) data_get($result, 'mutation_observability.gate_margin.normalized_delta',
+                data_get($result, 'learning_signal.target_gate_delta',
+                    data_get($metadata, 'mutation_observability.gate_margin.normalized_delta',
+                        data_get($metadata, 'learning_yield.target_gate_delta', 0.0)))),
         );
+        // Anchor improvement is a learning observation. Competitive reward
+        // is the only reward allowed to influence comparable candidate
+        // ordering when a same-cohort frozen control exists.
+        $targetDelta = $hasControlRelative
+            ? ($controlImproved ? max($anchorDelta, $controlDelta) : 0.0)
+            : $anchorDelta;
         // A declared repair/exploration question still has information value
         // when its measured delta is not available until replay. Keep this
         // prior small so it cannot outrank any economic metric above it.
-        if ($targetDelta <= 0.0 && (data_get($metadata, 'repair_lineage') !== null || data_get($metadata, 'learning_lane') !== null)) {
+        if (! $hasControlRelative && $targetDelta <= 0.0 && (data_get($metadata, 'repair_lineage') !== null || data_get($metadata, 'learning_lane') !== null)) {
             $targetDelta = 0.25;
         }
         $novelty = max(0.1, min(2.0, (float) data_get($metadata, 'novelty_score', data_get($metadata, 'learning_yield.novelty', 1.0))));
@@ -293,6 +440,11 @@ class LabCandidateSelectionService
             data_get($result, 'optimization.total_runtime_ms', 120000.0),
         ));
         $runtimeMinutes = max(1.0 / 60.0, $runtimeMs / 60000.0);
+
+        $explicitInformationGain = data_get($observability, 'information_gain_per_minute');
+        if (is_numeric($explicitInformationGain) && (float) $explicitInformationGain > 0) {
+            return round((float) $explicitInformationGain, 8);
+        }
 
         return round(($targetDelta * $novelty * $uncertainty) / $runtimeMinutes, 8);
     }
@@ -830,10 +982,82 @@ class LabCandidateSelectionService
     private function isControlOnly(object $agent): bool
     {
         $metadata = (array) data_get($agent, 'modelVersion.metadata', []);
+        $portfolioLane = (array) data_get($metadata, 'portfolio_council_lane', []);
 
         return (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false)
             || (bool) data_get($metadata, 'g98_council_lane.control_only', false)
-            || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
+            || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control'
+            || (bool) data_get($portfolioLane, 'control_only', false)
+            || data_get($portfolioLane, 'structural_family') === 'frozen_control';
+    }
+
+    private function structuralCohortRequired(Collection $agents): bool
+    {
+        $sample = $agents->first();
+        if (! $sample) return false;
+        if (app(StructuralResearchCohortService::class)->isAgent($sample)) return true;
+
+        $generation = data_get($sample, 'generation');
+        if (! $generation) {
+            $generation = LabGeneration::query()->find((int) data_get($sample, 'lab_generation_id', 0));
+        }
+
+        return app(StructuralResearchCohortService::class)->isGeneration($generation);
+    }
+
+    private function causalMicroProbePassed(object $agent): bool
+    {
+        $pair = LabLearningLanePair::query()
+            ->where('candidate_agent_id', $agent->id ?? null)
+            ->latest('id')
+            ->first();
+        if (! $pair) return false;
+
+        $micro = (array) data_get($pair->metadata, 'micro_replay', []);
+        $causal = (array) data_get($micro, 'causal_probe', []);
+
+        return data_get($micro, 'protocol') === MicroReplayService::PROTOCOL
+            && data_get($micro, 'status') === 'passed'
+            && data_get($causal, 'status') === 'passed'
+            && data_get($micro, 'promotion_evidence', false) !== true;
+    }
+
+    /** @return array<string, mixed> */
+    private function frozenControlParity(Collection $agents): array
+    {
+        $special = $agents->first(fn ($agent): bool =>
+            data_get($agent, 'modelVersion.metadata.repair_anchor.cohort_contract') === 'four_siblings_plus_control_v1'
+            || data_get($agent, 'modelVersion.metadata.repair_anchor_sibling.cohort_contract') === 'four_siblings_plus_control_v1'
+        );
+        if (! $special) {
+            $sample = $agents->first();
+            $generation = data_get($sample, 'generation')
+                ?: LabGeneration::query()->find((int) data_get($sample, 'lab_generation_id', 0));
+            if ($generation && data_get($generation->trigger_context, 'shadow_research_lane.protocol') === ShadowResearchGovernorService::PROTOCOL) {
+                $special = $sample;
+            }
+            if ($generation && app(StructuralResearchCohortService::class)->isGeneration($generation)) {
+                $special = $sample;
+            }
+        }
+        if (! $special) return ['required' => false, 'allowed' => true, 'status' => 'not_applicable'];
+
+        $generation = LabGeneration::query()->find((int) $special->lab_generation_id);
+        if (! $generation) return ['required' => true, 'allowed' => false, 'status' => 'incomplete'];
+        $parity = app(FrozenControlParityService::class)->assess($generation);
+
+        return [
+            'required' => true,
+            'allowed' => data_get($parity, 'status') === 'passed',
+            ...$parity,
+        ];
+    }
+
+    private function frozenControlAllowsMutationReplay(Collection $agents): bool
+    {
+        $parity = $this->frozenControlParity($agents);
+
+        return ! ($parity['required'] ?? false) || ($parity['allowed'] ?? false);
     }
 
     private function isWorthFullReplay(object $agent): bool
@@ -1146,10 +1370,46 @@ class LabCandidateSelectionService
     {
         $metrics = data_get($candidate, 'modelVersion.metadata.last_result.behavioral_diversity', []);
         if (data_get($metrics, 'status') === 'near_duplicate') return true;
-        // Screening currently has no batch diversity evidence. Do not discard
-        // a different family simply because its indicators look similar; full
-        // replay computes signal/trade/equity similarity before promotion.
+
+        // Preserve the first representative of an identical behaviour
+        // cluster. Parameter diversity without signal/trade/event diversity
+        // is not useful information and must not consume another replay slot.
+        $fingerprint = $this->behaviorFingerprint($candidate);
+        if ($fingerprint !== '') {
+            $candidateIndex = $front->search(fn ($item): bool => (int) $item->id === (int) $candidate->id);
+            foreach ($front as $index => $other) {
+                if ($candidateIndex !== false && $index >= $candidateIndex) break;
+                if ($this->behaviorFingerprint($other) === $fingerprint) return true;
+            }
+        }
+
+        // Screening without all three hashes remains eligible. It is an
+        // evidence-health issue, not permission to invent a duplicate claim.
         return false;
+    }
+
+    private function behaviorFingerprint(object $agent): string
+    {
+        $metadata = (array) data_get($agent, 'modelVersion.metadata', []);
+        $result = $this->result($agent);
+        $observability = (array) data_get($result, 'mutation_observability', data_get($metadata, 'mutation_observability', []));
+        $fingerprint = (string) data_get(
+            $observability,
+            'behavior_fingerprint',
+            data_get($metadata, 'behavior_fingerprint', data_get($result, 'behavior_fingerprint', '')),
+        );
+        if ($fingerprint !== '') return $fingerprint;
+
+        $signal = (string) data_get($observability, 'signal_digest', data_get($result, 'signal_decision_hash', ''));
+        $trade = (string) data_get($observability, 'trade_ledger_hash', data_get($result, 'trade_ledger_hash', ''));
+        $event = (string) data_get($observability, 'event_ledger_hash', data_get($result, 'event_ledger_hash', ''));
+        if ($signal === '' || $trade === '' || $event === '') return '';
+
+        return hash('sha256', json_encode([
+            'signal_digest' => $signal,
+            'trade_ledger_hash' => $trade,
+            'event_ledger_hash' => $event,
+        ], JSON_UNESCAPED_SLASHES));
     }
 
     private function dominates(object $left, object $right): bool

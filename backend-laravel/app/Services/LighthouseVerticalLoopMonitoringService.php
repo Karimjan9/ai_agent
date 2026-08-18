@@ -89,7 +89,11 @@ class LighthouseVerticalLoopMonitoringService
             $scope,
         );
 
-        $queue = $this->queueState();
+        // Keep the global operational queue visible, but also carry a
+        // generation-owned queue projection. A research replay from another
+        // generation may keep the global queue busy without withholding this
+        // generation's final evidence boundary.
+        $queue = $this->queueState($generation);
         $queueStatus = $queue['backlog']['total'] > 0 ? 'attention' : 'passed';
         if (($queue['replay']['status'] ?? 'unknown') === 'unknown') {
             $queueStatus = 'blocked';
@@ -104,7 +108,9 @@ class LighthouseVerticalLoopMonitoringService
                 ? 'Lab queue is empty and the single replay lane is idle.'
                 : ($queueStatus === 'attention'
                     ? (($queue['replay']['status'] ?? null) === 'active'
-                        ? 'A single replay is active; it is being observed and must not be duplicated or interrupted.'
+                        ? (($queue['generation_backlog']['total'] ?? null) === 0
+                            ? 'A single replay is active for another research item; the current generation-owned queue is empty and the replay is being observed without interruption.'
+                            : 'A single replay is active; it is being observed and must not be duplicated or interrupted.')
                         : 'Lab queue still has work; reconcile/recover apply is deferred until the queue drains.')
                     : 'Replay coordinator liveness is unavailable or active; recovery remains fail-closed.'),
             $queue,
@@ -122,6 +128,22 @@ class LighthouseVerticalLoopMonitoringService
         $strategy = $this->strategyState($generation, $evidence);
         $paper = $this->paperState($generation, $milestones, $entryLayer);
         $reality = $this->realityState($generation, $milestones);
+
+        if (($technical['evidence_state'] ?? 'FINAL') === 'EVIDENCE_IN_PROGRESS') {
+            $addCheck(
+                $checks,
+                'EVIDENCE_STATE',
+                'attention',
+                'Evidence is still being produced; no final pipeline or strategy verdict is recorded yet.',
+                [
+                    'status' => 'EVIDENCE_IN_PROGRESS',
+                    'generation_status' => $generation->status,
+                    'in_progress_agent_ids' => $technical['in_progress_agent_ids'] ?? [],
+                    'missing_screen_run_agent_ids' => $technical['missing_screen_run_agent_ids'] ?? [],
+                    'promotion_evidence' => false,
+                ],
+            );
+        }
 
         $addCheck(
             $checks,
@@ -659,9 +681,13 @@ class LighthouseVerticalLoopMonitoringService
             return str_contains(strtolower((string) $run->error_class), 'maxattemptsexceeded')
                 || str_contains(strtolower((string) $run->error_message), 'maxattemptsexceeded');
         })->count();
-        $technicalBlocked = $technicalRows->isNotEmpty()
-            || $technicalAgents->isNotEmpty()
+        $generationInProgress = in_array((string) $generation->status, LabPopulationService::ACTIVE_GENERATION_STATUSES, true);
+        $evidenceInProgress = $generationInProgress
+            || $inProgressAgentIds->isNotEmpty()
             || $missingScreenAgentIds->isNotEmpty();
+        $technicalBlocked = ! $evidenceInProgress && ($technicalRows->isNotEmpty()
+            || $technicalAgents->isNotEmpty()
+            || $missingScreenAgentIds->isNotEmpty());
 
         return [
             'technical_error_run_count' => $technicalRows->count(),
@@ -669,6 +695,8 @@ class LighthouseVerticalLoopMonitoringService
             'technical_rows' => $technicalRows->values()->all(),
             'missing_screen_run_agent_ids' => $missingScreenAgentIds->all(),
             'in_progress_agent_ids' => $inProgressAgentIds->unique()->values()->all(),
+            'evidence_state' => $evidenceInProgress ? 'EVIDENCE_IN_PROGRESS' : 'FINAL',
+            'all_agents_terminal' => ! $evidenceInProgress,
             'incomplete_evidence_count' => $incompleteEvidence->count(),
             'incomplete_evidence' => $incompleteEvidence->values()->all(),
             'max_attempts_exceeded_count' => $maxAttempts,
@@ -744,7 +772,7 @@ class LighthouseVerticalLoopMonitoringService
     }
 
     /** @return array<string, mixed> */
-    private function queueState(): array
+    private function queueState(?LabGeneration $generation = null): array
     {
         $backlog = $this->queue->labQueueBacklog();
         $queues = $this->queue->labQueues();
@@ -755,6 +783,9 @@ class LighthouseVerticalLoopMonitoringService
         $oldestReserved = collect($stats)->pluck('oldest_reserved_at')->filter(fn ($value): bool => $value !== null)->min();
         $maxAttempts = collect($stats)->pluck('max_attempts')->filter(fn ($value): bool => $value !== null)->max() ?: 0;
         $replay = $this->replayState();
+        $generationBacklog = $generation
+            ? $this->queue->generationQueueBacklog($generation->agents->pluck('id')->map(fn ($id): int => (int) $id)->all())
+            : null;
 
         return [
             'backlog' => [
@@ -766,6 +797,7 @@ class LighthouseVerticalLoopMonitoringService
                 'max_attempts' => (int) $maxAttempts,
                 'state_known' => ($snapshot['available'] ?? true) !== false,
             ],
+            'generation_backlog' => $generationBacklog,
             'configured_queues' => $queues,
             'priority_contract' => [
                 'full_validation_queue' => (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
@@ -786,32 +818,7 @@ class LighthouseVerticalLoopMonitoringService
     /** @return array<string, mixed> */
     private function replayState(): array
     {
-        $url = rtrim((string) config('services.ai_service.url'), '/').'/api/replay-status';
-        $token = (string) config('services.internal_api.token');
-        if ($url === '/api/replay-status' || $token === '') {
-            return ['status' => 'unknown', 'reason' => 'configuration_unknown', 'active_requests' => null];
-        }
-        try {
-            $response = Http::connectTimeout(2)->timeout(4)->acceptJson()
-                ->withHeaders(['X-Internal-Token' => $token])->get($url);
-            if (! $response->successful()) {
-                return ['status' => 'unknown', 'reason' => 'health_unavailable', 'active_requests' => null, 'http_status' => $response->status()];
-            }
-            $active = (int) $response->json('active_requests', -1);
-            $protocol = (string) $response->json('protocol', '');
-            if ($active < 0 || $protocol === '') {
-                return ['status' => 'unknown', 'reason' => 'health_schema_invalid', 'active_requests' => null, 'protocol' => $protocol];
-            }
-
-            return [
-                'status' => $active === 0 ? 'ok' : 'active',
-                'reason' => $active === 0 ? 'idle' : 'replay_in_progress',
-                'active_requests' => $active,
-                'protocol' => $protocol,
-            ];
-        } catch (\Throwable $exception) {
-            return ['status' => 'unknown', 'reason' => 'health_exception', 'active_requests' => null, 'exception' => get_class($exception)];
-        }
+        return app(ReplayLivenessProbeService::class)->probe();
     }
 
     private function addMilestoneCheck(array &$checks, string $code, array $milestone): void

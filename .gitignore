@@ -15,6 +15,7 @@ venv/
 *.log
 *.tmp
 **/.runtime/
+runtime/
 
 # OSPanel/XAMPP local noise
 *.bak

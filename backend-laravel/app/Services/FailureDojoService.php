@@ -70,6 +70,7 @@ class FailureDojoService
                 ...((array) $run->evidence),
                 'micro_protocol' => $assessment['protocol'] ?? 'micro_replay_v1',
                 'windows' => $assessment['windows'] ?? [],
+                'causal_probe' => $assessment['causal_probe'] ?? [],
                 'reason' => $assessment['reason'] ?? null,
                 'promotion_evidence' => false,
             ],

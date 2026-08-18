@@ -9,6 +9,7 @@ use App\Models\Symbol;
 use App\Models\SystemEvent;
 use App\Models\SystemLog;
 use App\Services\MarketHealthService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -16,6 +17,18 @@ use Tests\TestCase;
 class MarketHealthEngineTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-08-17 12:00:00', 'UTC'));
+    }
+
+    protected function tearDown(): void
+    {
+        CarbonImmutable::setTestNow();
+        parent::tearDown();
+    }
 
     public function test_market_health_marks_fresh_mt5_feed_as_ok(): void
     {
@@ -121,6 +134,32 @@ class MarketHealthEngineTest extends TestCase
             'symbol' => 'XAUUSD',
             'timeframe' => 'M15',
             'status' => 'lost',
+        ]);
+    }
+
+    public function test_market_health_defers_freshness_during_a_closed_weekend_session(): void
+    {
+        config([
+            'services.mt5.provider' => 'twelve',
+            'services.mt5.symbols' => 'XAUUSD',
+            'services.mt5.timeframes' => 'H1',
+        ]);
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-08-16 06:00:00', 'UTC'));
+
+        $this->createCandle(CarbonImmutable::parse('2026-08-15 12:00:00', 'UTC'), 'twelve');
+
+        $checks = app(MarketHealthService::class)->check();
+
+        $this->assertSame('closed', $checks->first()->status);
+        $this->assertDatabaseHas('market_provider_health', [
+            'provider' => 'twelve',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'status' => 'closed',
+        ]);
+        $this->assertDatabaseHas('service_health_checks', [
+            'service_key' => 'market_feed:twelve:XAUUSD:H1',
+            'status' => 'ok',
         ]);
     }
 

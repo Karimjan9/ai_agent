@@ -498,6 +498,9 @@ class EvolutionGovernorService
                 $slot['niche'] = [
                     'protocol' => 'adaptive_exploration_lane_v1',
                     'role' => 'adaptive_explorer',
+                    'specialist_role' => $pattern['mode'] === 'regime_volume_explorer'
+                        ? 'volume_m15_specialist'
+                        : 'adaptive_explorer',
                     'regime' => data_get($slot, 'niche.regime'),
                     'volatility' => data_get($slot, 'niche.volatility'),
                     'direction' => data_get($slot, 'niche.direction'),
@@ -509,10 +512,29 @@ class EvolutionGovernorService
                     'control_only' => (bool) $pattern['control_only'],
                     'exploration_domain' => $pattern['mode'] === 'regime_volume_explorer' ? 'regime_and_volume_shadow' : null,
                     'volume_shadow' => $pattern['mode'] === 'regime_volume_explorer',
+                    'shadow_only' => $pattern['mode'] === 'regime_volume_explorer',
                     'adversarial_red_team' => $pattern['mode'] === 'adversarial_red_team',
                     'research_only_until_independent_replay' => (bool) $pattern['research_only'],
                     'promotion_evidence' => false,
                 ];
+                if ($pattern['mode'] === 'regime_volume_explorer') {
+                    // Volume shadow seats must own an executable volume gene
+                    // before they reach the constructor.  Previously this
+                    // mode only carried `volume_shadow=true` while retaining
+                    // the generic adaptive_explorer role; the council policy
+                    // then restored the proposed mutation and one slot was
+                    // silently dropped as a zero-diff child.
+                    $slot['niche']['shadow_mutation_gene'] = 'volume_lane';
+                    $slot['niche']['shadow_mutation_index'] = max(0, (int) $index);
+                    $slot['niche']['shadow_mutation_contract'] = [
+                        'protocol' => 'shadow_volume_mutation_v1',
+                        'gene' => 'volume_lane',
+                        'freshness_required' => true,
+                        'coverage_required' => true,
+                        'no_volume_control_required' => true,
+                        'promotion_evidence' => false,
+                    ];
+                }
                 $slot['adaptive_governor'] = [
                     'protocol' => self::PROTOCOL,
                     'risk_protocol' => 'risk_bounded_exploration_governor_v1',

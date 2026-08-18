@@ -49,6 +49,7 @@ app = FastAPI(
 
 _replay_state_lock = Lock()
 _replay_lane_lock = Lock()
+_shadow_micro_probe_lock = Lock()
 # Screening is still bounded, but two independent child-process slots can
 # consume a shared immutable snapshot concurrently. Full validation remains a
 # single coordinator lane. The limit is deliberately environment-controlled
@@ -62,6 +63,79 @@ _last_replay_started_at: str | None = None
 _last_replay_finished_at: str | None = None
 _last_replay_termination: str | None = None
 _last_replay_stage_timings: dict[str, float] = {}
+_last_replay_checkpoint: dict[str, object] = {}
+
+
+def _replay_checkpoint_root() -> Path:
+    return Path(os.getenv(
+        "AI_REPLAY_CHECKPOINT_DIR",
+        str(Path(__file__).resolve().parent.parent / ".runtime" / "replay-checkpoints"),
+    ))
+
+
+def _write_replay_checkpoint(
+    checkpoint_key: str,
+    stage: str,
+    resume_manifest: dict[str, object],
+    **details: object,
+) -> None:
+    """Write a tiny atomic heartbeat, never the full trace or trade ledger.
+
+    Candidate replay caches already make completed candidates resumable. This
+    manifest adds durable stage visibility and lets a killed worker restart
+    from the last completed candidate boundary without pretending that a
+    partial execution ledger is promotion evidence.
+    """
+    global _last_replay_checkpoint
+    completed = list(resume_manifest.get("completed_candidates", []))
+    pending = list(resume_manifest.get("pending_candidates", []))
+    payload = {
+        "protocol": "replay_checkpoint_v1",
+        "checkpoint_key": checkpoint_key,
+        "stage": stage,
+        "completed_candidates": completed[-32:],
+        "pending_candidates": pending[-32:],
+        "completed_count": len(completed),
+        "pending_count": len(pending),
+        "progress": round(len(completed) / max(1, len(completed) + len(pending)), 6),
+        "details": details,
+        "state_hash": hashlib.sha256(json.dumps({
+            "checkpoint_key": checkpoint_key,
+            "stage": stage,
+            "completed_candidates": completed,
+            "pending_candidates": pending,
+            "details": details,
+        }, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest(),
+        "heartbeat_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "promotion_evidence": False,
+    }
+    _last_replay_checkpoint = payload
+    try:
+        root = _replay_checkpoint_root()
+        root.mkdir(parents=True, exist_ok=True)
+        path = root / f"{checkpoint_key}.json"
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str), encoding="utf-8")
+        temporary.replace(path)
+    except OSError:
+        # Heartbeat loss is operational telemetry only. It must never turn a
+        # deterministic replay into a different strategy verdict.
+        return
+
+
+def _latest_replay_checkpoint() -> dict[str, object]:
+    try:
+        paths = sorted(_replay_checkpoint_root().glob("*.json"), key=lambda item: item.stat().st_mtime_ns, reverse=True)
+    except OSError:
+        return dict(_last_replay_checkpoint)
+    for path in paths[:8]:
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(value, dict) and value.get("protocol") == "replay_checkpoint_v1":
+                return value
+        except (OSError, json.JSONDecodeError):
+            continue
+    return dict(_last_replay_checkpoint)
 
 
 def _utc_timestamp(value: object) -> pd.Timestamp:
@@ -183,8 +257,26 @@ def _internal_api_token() -> str:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "neurotrader-ai-service"}
+def health() -> dict[str, object]:
+    with _replay_state_lock:
+        replay_liveness = {
+            "protocol": "replay_liveness_v2_health_projection",
+            "service_pid": os.getpid(),
+            "active_requests": _active_replay_count,
+            "screening_active": _active_screen_replay_count,
+            "screening_capacity": _screen_replay_concurrency,
+            "full_active": _active_full_replay_count,
+            "last_replay_started_at": _last_replay_started_at,
+            "last_replay_finished_at": _last_replay_finished_at,
+            "last_replay_termination": _last_replay_termination,
+            "last_replay_stage_timings_ms": dict(_last_replay_stage_timings),
+            "last_replay_checkpoint": _latest_replay_checkpoint(),
+        }
+    return {
+        "status": "ok",
+        "service": "neurotrader-ai-service",
+        "replay_liveness": replay_liveness,
+    }
 
 
 @app.get("/")
@@ -216,6 +308,7 @@ def replay_status() -> dict[str, object]:
             "last_replay_finished_at": _last_replay_finished_at,
             "last_replay_termination": _last_replay_termination,
             "last_replay_stage_timings_ms": dict(_last_replay_stage_timings),
+            "last_replay_checkpoint": _latest_replay_checkpoint(),
             "service_pid": os.getpid(),
             # Keep the v2 protocol name for existing watchdogs; the additive
             # lane counters below are backwards-compatible observability.
@@ -346,6 +439,9 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             "candidate_key": str(config_value.get("lab_agent_id") or f"{config_value.get('strategy', 'unknown')}:{config_value.get('version', 'v1')}:{config_index}"),
             "strategy": str(config_value.get("strategy", "unknown")),
             "version": str(config_value.get("version", "v1")),
+            "parameters_hash": hashlib.sha256(json.dumps(
+                config_value.get("parameters", {}), sort_keys=True, separators=(",", ":"), default=str
+            ).encode("utf-8")).hexdigest(),
         })
     resume_manifest = {
         "protocol": "replay_resume_cursor_v1",
@@ -362,6 +458,14 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
         "snapshot_hash": None,
         "promotion_evidence": False,
     }
+    checkpoint_key = resume_manifest["cohort_hash"]
+    _write_replay_checkpoint(
+        str(checkpoint_key),
+        "started",
+        resume_manifest,
+        evaluation_mode=payload.evaluation_mode,
+        candidate_count=len(resume_candidates),
+    )
     snapshot_transport = (payload.policy_context or {}).get("snapshot_transport", {})
     if isinstance(snapshot_transport, dict):
         resume_manifest["snapshot_hash"] = snapshot_transport.get(
@@ -466,6 +570,22 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 source_df = _load_simple_candles(payload)
                 foundation_df = _load_foundation_candles(payload) if payload.evaluation_mode == "replay" else None
                 add_timing("dataset_load_ms", started)
+                _write_replay_checkpoint(
+                    str(checkpoint_key),
+                    "snapshot_loaded",
+                    resume_manifest,
+                    source_rows=len(source_df),
+                    foundation_rows=len(foundation_df) if foundation_df is not None else 0,
+                )
+            if payload.evaluation_mode != "incremental":
+                _write_replay_checkpoint(
+                    str(checkpoint_key),
+                    "features_ready",
+                    resume_manifest,
+                    candidate=candidate_label,
+                    mode=payload.evaluation_mode,
+                    rows=len(source_df),
+                )
             if payload.evaluation_mode == "incremental":
                 ordered = source_df.sort_values("time").reset_index(drop=True)
                 # Tier 1 is deliberately cheap: it measures whether there is
@@ -501,6 +621,15 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     tail_feature_snapshot(survival_features, len(opportunity_df))
                     if survival_df is not None
                     else survival_features
+                )
+                _write_replay_checkpoint(
+                    str(checkpoint_key),
+                    "features_ready",
+                    resume_manifest,
+                    candidate=candidate_label,
+                    feature_snapshot_builds=shared_snapshot_builds,
+                    feature_snapshot_cache_hits=shared_snapshot_hits,
+                    rows=len(survival_df) if survival_df is not None else len(opportunity_df),
                 )
                 opportunity_signal = prepare_signal_snapshot(
                     opportunity_payload,
@@ -549,6 +678,13 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     add_timing("screening_subreplay_ms", survival_started)
                     if "cost_profile" in survival:
                         incremental_result["pf_attribution"] = survival["cost_profile"]
+                    _write_replay_checkpoint(
+                        str(checkpoint_key),
+                        "cost_lanes",
+                        resume_manifest,
+                        candidate=candidate_label,
+                        stress_profile=bool("cost_profile" in survival),
+                    )
                 else:
                     incremental_result = opportunity_result
                     survival = {
@@ -587,12 +723,65 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "rolling_windows_count": 0, "robustness_score": 0, "is_overfit": False,
                     "result": {**incremental_result, "evaluation_mode": "incremental"},
                 }
+            elif payload.evaluation_mode == "temporal_ablation":
+                # Clean temporal ablation windows are already sealed
+                # chronological datasets. They must not be routed through the
+                # normal 2026 rolling/foundation splitter, which would reject
+                # a valid pre-2026 window for lacking a synthetic 2026 tail.
+                # This lane is research-only and cannot create forward,
+                # paper, parent or champion evidence.
+                # Keep this research lane compact: temporal survival is
+                # represented by the event digest, temporal metrics and
+                # trade-ledger hash. A full candle trace for four 41k-candle
+                # arms can exhaust the bounded subprocess before Laravel
+                # receives the paired window response.
+                ablation_payload = strategy_payload.model_copy(update={"emit_decision_trace": False})
+                ablation_snapshot = prepare_signal_snapshot(ablation_payload, source_df)
+                ablation_result = _run_prepared_simple_backtest(
+                    ablation_payload,
+                    source_df,
+                    prepared_snapshot=ablation_snapshot,
+                    include_differential_pair=False,
+                    lightweight=True,
+                ).model_dump()
+                ablation_result["evaluation_mode"] = "temporal_ablation"
+                ablation_result["temporal_ablation"] = {
+                    "protocol": "temporal_clean_ablation_v2",
+                    "window_id": ((strategy_payload.policy_context or {}).get("temporal_ablation") or {}).get("window_id"),
+                    "promotion_evidence": False,
+                    "forward_evidence": False,
+                }
+                ablation_score = calculate_strategy_score(ablation_result)
+                analysis = {
+                    "train_score": ablation_score,
+                    "validation_score": ablation_score,
+                    "forward_score": ablation_score,
+                    "forward_window_scores": [],
+                    "rolling_windows_count": 0,
+                    "robustness_score": 0,
+                    "is_overfit": False,
+                    "result": ablation_result,
+                }
             elif payload.evaluation_mode == "replay":
                 analysis = MarketAdaptiveReplayService().run(
                     strategy_payload, source_df, calculate_strategy_score, foundation_df
                 )
             else:
                 analysis = walk_forward.run(strategy_payload, source_df, calculate_strategy_score)
+            _write_replay_checkpoint(
+                str(checkpoint_key),
+                "signal_loop",
+                resume_manifest,
+                candidate=candidate_label,
+                mode=payload.evaluation_mode,
+            )
+            _write_replay_checkpoint(
+                str(checkpoint_key),
+                "cost_lanes",
+                resume_manifest,
+                candidate=candidate_label,
+                mode=payload.evaluation_mode,
+            )
             result_data = analysis["result"]
             # Fitness is a ranking aid, not a promotion decision. Expose the
             # evidence components so Laravel can explain why a candidate was
@@ -633,6 +822,13 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 "strategy": strategy_name,
                 "item": candidate_item,
             })
+            _write_replay_checkpoint(
+                str(checkpoint_key),
+                "execution_state",
+                resume_manifest,
+                candidate=candidate_label,
+                candidate_cache_key=candidate_cache_key,
+            )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -673,6 +869,15 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             item["result"]["trial_ledger"] = {**prior_trials, "promotion_evidence": False}
 
     _attach_behavioral_diversity(leaderboard)
+
+    _write_replay_checkpoint(
+        str(checkpoint_key),
+        "evidence_persisted",
+        resume_manifest,
+        leaderboard_count=len(leaderboard),
+        feature_snapshot_builds=shared_snapshot_builds,
+        feature_snapshot_cache_hits=shared_snapshot_hits,
+    )
 
     leaderboard = sorted(leaderboard, key=lambda item: item["score"], reverse=True)
 
@@ -872,13 +1077,38 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
     # guard protects direct/API callers and makes contention fail fast rather
     # than queueing an HTTP request that will consume a client timeout.
     screening_lane = payload.evaluation_mode == "incremental"
+    policy_context = payload.policy_context or {}
+    shadow_micro_probe = bool(policy_context.get("shadow_micro_probe", False))
+    try:
+        micro_probe_max_rows = max(128, int(os.getenv("AI_SHADOW_MICRO_PROBE_MAX_ROWS", "512")))
+        micro_probe_max_candidates = max(1, int(os.getenv("AI_SHADOW_MICRO_PROBE_MAX_CANDIDATES", "6")))
+    except ValueError:
+        micro_probe_max_rows, micro_probe_max_candidates = 512, 6
+    micro_probe_valid = (
+        shadow_micro_probe
+        and screening_lane
+        and (payload.dataset_tail_rows is None or payload.dataset_tail_rows <= micro_probe_max_rows)
+        and len(payload.candles) <= micro_probe_max_rows
+        and len(payload.strategies or [payload]) <= micro_probe_max_candidates
+        and not payload.emit_decision_trace
+    )
     lane_guard = _screen_replay_slots if screening_lane else _replay_lane_lock
+    micro_probe_guard_acquired = False
     with _replay_state_lock:
         if screening_lane:
-            acquired = _active_full_replay_count == 0 and lane_guard.acquire(blocking=False)
+            if micro_probe_valid and _active_full_replay_count > 0:
+                # A micro-probe is the only screening exception allowed while
+                # the single heavy coordinator is active. It has a separate
+                # one-slot guard and a hard row/candidate budget.
+                micro_probe_guard_acquired = _shadow_micro_probe_lock.acquire(blocking=False)
+                acquired = micro_probe_guard_acquired and lane_guard.acquire(blocking=False)
+            else:
+                acquired = _active_full_replay_count == 0 and lane_guard.acquire(blocking=False)
         else:
             acquired = _active_screen_replay_count == 0 and lane_guard.acquire(blocking=False)
         if not acquired:
+            if micro_probe_guard_acquired:
+                _shadow_micro_probe_lock.release()
             raise HTTPException(status_code=429, detail="AI replay lane is busy; retry after the current bounded replay.")
         if screening_lane:
             _active_screen_replay_count += 1
@@ -1008,6 +1238,8 @@ def _run_bounded_replay(operation: str, payload: SimpleBacktestRequest) -> dict[
             else:
                 _active_full_replay_count = max(0, _active_full_replay_count - 1)
             lane_guard.release()
+            if micro_probe_guard_acquired:
+                _shadow_micro_probe_lock.release()
 
 
 def _replay_cache_key(operation: str, payload: SimpleBacktestRequest) -> str:

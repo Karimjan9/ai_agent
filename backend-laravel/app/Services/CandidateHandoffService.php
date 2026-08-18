@@ -155,6 +155,7 @@ class CandidateHandoffService
         $reasonCounts = [];
         $familyCounts = [];
         $familyReasons = [];
+        $nearMisses = [];
         foreach ($decisions as $decision) {
             $agent = $agents->get($decision->lab_agent_id);
             $family = (string) ($agent?->strategy_family ?? 'unknown');
@@ -163,6 +164,19 @@ class CandidateHandoffService
                 $reasonCounts[$code] = ($reasonCounts[$code] ?? 0) + 1;
                 $familyReasons[$family][$code] = ($familyReasons[$family][$code] ?? 0) + 1;
             }
+            $margin = (array) data_get($decision->metrics, 'gate_margin', []);
+            if ($margin === []) {
+                $margin = app(GateMarginService::class)->screening((array) $decision->metrics, (array) $decision->reason_codes);
+            }
+            $nearMisses[] = [
+                'agent_id' => (int) $decision->lab_agent_id,
+                'family' => $family,
+                'score' => (float) data_get($margin, 'near_miss_score', 0),
+                'dominant_target' => data_get($margin, 'dominant_target'),
+                'target_margin' => data_get($margin, 'target_margin'),
+                'total_normalized_deficit' => data_get($margin, 'total_normalized_deficit'),
+                'promotion_evidence' => false,
+            ];
         }
 
         arsort($reasonCounts);
@@ -183,6 +197,9 @@ class CandidateHandoffService
             'targets' => $targets,
             'family_counts' => $familyCounts,
             'family_reasons' => $familyReasons,
+            'near_miss_agents' => collect($nearMisses)->sortByDesc('score')->take(12)->values()->all(),
+            'near_miss_protocol' => GateMarginService::PROTOCOL,
+            'dominant_target' => collect($nearMisses)->pluck('dominant_target')->filter()->countBy()->sortDesc()->keys()->first(),
             'dominant_reason' => array_key_first($reasonCounts),
             'promotion_evidence' => false,
             'rule' => 'Gate failures are diagnostic evidence only; no near-miss is promoted to full validation or paper status.',

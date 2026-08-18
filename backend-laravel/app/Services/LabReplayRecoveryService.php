@@ -21,7 +21,7 @@ class LabReplayRecoveryService
     public function __construct(private LabDatasetExportService $datasets) {}
 
     /** @return array<string, mixed> */
-    public function prepare(LabAgent $agent, string $mode): array
+    public function prepare(LabAgent $agent, string $mode, bool $allowPriorDatasetContractMismatch = false): array
     {
         if (! in_array($mode, ['screen', 'full'], true)) {
             throw new RuntimeException('Recovery mode must be screen or full.');
@@ -73,7 +73,19 @@ class LabReplayRecoveryService
         ];
 
         $this->assertContractSnapshots($generation, $contract);
-        $this->assertPriorRunDidNotChangeDataset($agent, $mode, $contract);
+        $priorDatasetContractMismatches = $this->assertPriorRunDidNotChangeDataset(
+            $agent,
+            $mode,
+            $contract,
+            $allowPriorDatasetContractMismatch,
+        );
+        if ($priorDatasetContractMismatches !== []) {
+            $contract['prior_run_dataset_contract_repair'] = [
+                'protocol' => 'screening_dataset_contract_repair_v1',
+                'mismatches' => $priorDatasetContractMismatches,
+                'promotion_evidence' => false,
+            ];
+        }
 
         return $contract;
     }
@@ -129,7 +141,12 @@ class LabReplayRecoveryService
         }
     }
 
-    private function assertPriorRunDidNotChangeDataset(LabAgent $agent, string $mode, array $contract): void
+    private function assertPriorRunDidNotChangeDataset(
+        LabAgent $agent,
+        string $mode,
+        array $contract,
+        bool $allowPriorDatasetContractMismatch = false,
+    ): array
     {
         $phase = $mode === 'full' ? 'full_validation' : 'screening';
         $run = LabEvaluationRun::query()
@@ -137,7 +154,7 @@ class LabReplayRecoveryService
             ->where('phase', $phase)
             ->latest('id')
             ->first();
-        if (! $run) return;
+        if (! $run) return [];
         if ((int) $run->lab_generation_id !== (int) $agent->lab_generation_id) {
             throw new RuntimeException('RECOVERY_PRIOR_RUN_GENERATION_MISMATCH');
         }
@@ -148,21 +165,36 @@ class LabReplayRecoveryService
             'foundation' => data_get($manifest, 'foundation.sha256', data_get($manifest, 'foundation.snapshot_sha256')),
             'regime' => data_get($manifest, 'regime.sha256', data_get($manifest, 'regime_snapshot_sha256')),
         ];
+        $mismatches = [];
         foreach ($previous as $name => $hash) {
             if (! $this->isSha256((string) $hash)) continue;
             $expected = (string) data_get($contract, "dataset_hashes.{$name}", '');
             if ($expected !== '' && ! hash_equals($expected, (string) $hash)) {
-                throw new RuntimeException('RECOVERY_PRIOR_DATASET_HASH_MISMATCH:'.$name);
+                if (! $allowPriorDatasetContractMismatch) {
+                    throw new RuntimeException('RECOVERY_PRIOR_DATASET_HASH_MISMATCH:'.$name);
+                }
+                $mismatches[] = [
+                    'dataset' => $name,
+                    'prior_hash' => (string) $hash,
+                    'expected_hash' => $expected,
+                ];
             }
         }
+
+        return $mismatches;
     }
 
     private function volumeEnabled(LabAgent $agent): bool
     {
         $model = $agent->modelVersion;
+        $metadata = (array) ($model?->metadata ?? []);
 
-        return data_get($model?->metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
-            || (bool) data_get($model?->metadata, 'volume_research_contract.enabled', false)
+        return data_get($metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
+            || (bool) data_get($metadata, 'volume_research_contract.enabled', false)
+            || (bool) data_get($metadata, 'risk_bounded_evolution.volume_shadow', false)
+            || (bool) data_get($metadata, 'portfolio_council_lane.volume_shadow', false)
+            || data_get($metadata, 'portfolio_council_lane.role') === 'volume_m15_specialist'
+            || data_get($metadata, 'portfolio_council_lane.specialist_role') === 'volume_m15_specialist'
             || data_get($model?->parameters, 'volume_lane', 'none') !== 'none';
     }
 

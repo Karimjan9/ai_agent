@@ -66,7 +66,7 @@ class IncompleteLabEvidenceRecoveryService
             ? $requestedLimit
             : min($requestedLimit, $frontierCapacity);
         $agents = LabAgent::query()->with(['generation.laboratory', 'modelVersion'])
-            ->whereIn('lifecycle_status', ['screened', 'technical_quarantine'])
+            ->whereIn('lifecycle_status', ['screened', 'technical_quarantine', 'evaluation_error'])
             ->when($symbol, fn ($query) => $query->where('symbol', strtoupper($symbol)))
             ->when($timeframe, fn ($query) => $query->where('timeframe', strtoupper($timeframe)))
             ->when($generation !== null, fn ($query) => $query->whereHas('generation', fn ($g) => $g->where('generation', $generation)))
@@ -150,6 +150,9 @@ class IncompleteLabEvidenceRecoveryService
 
     private function isIncompleteScreenCandidate(LabAgent $agent): bool
     {
+        $run = LabEvaluationRun::query()->where('lab_agent_id', $agent->id)
+            ->where('phase', 'screening')->latest('id')->first();
+        $operationalRun = $this->isOperationalEvidenceQuarantine($run);
         $decision = CandidateGateDecision::query()
             ->where('lab_agent_id', $agent->id)->where('stage', 'screening')
             ->latest('id')->first();
@@ -159,15 +162,18 @@ class IncompleteLabEvidenceRecoveryService
         // immutable run is the authority for recovery, not the projection's
         // verdict label.  Accept both projection states and then require the
         // persisted evidence chain to be incomplete below.
-        if (! $decision || ! in_array((string) $decision->decision, ['failed', 'insufficient_evidence'], true)) return false;
+        // A batch item can fail while projecting its immutable result before
+        // a gate decision exists. Known operational projection/transport
+        // errors are recoverable evidence, not strategy verdicts.
+        if (! $decision && ! $operationalRun) return false;
+        if ($decision && ! in_array((string) $decision->decision, ['failed', 'insufficient_evidence'], true) && ! $operationalRun) return false;
 
-        $run = LabEvaluationRun::query()->where('lab_agent_id', $agent->id)
-            ->where('phase', 'screening')->latest('id')->first();
         if ($agent->lifecycle_status === 'technical_quarantine'
-            && ! $this->isOperationalEvidenceQuarantine($run)) return false;
+            && ! $operationalRun) return false;
+        if ($agent->lifecycle_status === 'evaluation_error' && ! $operationalRun) return false;
         if (! $run || $run->status !== 'completed') {
             return $agent->lifecycle_status === 'screened'
-                || $this->isOperationalEvidenceQuarantine($run);
+                || $operationalRun;
         }
 
         return ! $this->evidence->learningEligibility($run)['complete'];
@@ -181,6 +187,10 @@ class IncompleteLabEvidenceRecoveryService
             'STALE_QUEUE_RESERVATION_RECOVERED',
             'ORPHANED_OPEN_RUN_RECONCILED',
             'QUEUE_MIDDLEWARE_RELEASE',
+            'BATCH_ITEM_PROJECTION_FAILURE',
+            'BATCH_REPLAY_TRANSPORT_FAILURE',
+            'BATCH_RESULT_IDENTITY_MISMATCH',
+            'INCOMPLETE_LAB_EVIDENCE',
         ], true);
     }
 
@@ -226,7 +236,11 @@ class IncompleteLabEvidenceRecoveryService
                 $fresh->symbol,
                 'screen',
                 $contract,
-                (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
+                // Recovery is a screening replay.  Sending it through the
+                // frontier queue makes the mode correct but gives it to the
+                // canonical-replay worker, defeating the bounded screening
+                // lane and needlessly delaying the frozen-control check.
+                (string) config('services.lab_queue.screening_queue', 'lab-screening'),
             ));
         });
     }

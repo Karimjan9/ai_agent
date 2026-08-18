@@ -6,6 +6,7 @@ use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
 use App\Models\LabGeneration;
 use App\Models\LabEvaluationRun;
+use App\Models\LabAgent;
 use App\Models\LabTrialLedger;
 use App\Models\ModelVersion;
 use App\Services\LabAgentPreflightService;
@@ -32,7 +33,10 @@ class RepairLabIntegrity extends Command
         {--generation=* : Generation number(s) to audit; defaults to active generations}
         {--apply : Persist quarantine and lifecycle repairs}
         {--repair-missing-screen-evidence : Requeue screened agents that have no completed immutable screen run}
+        {--repair-architecture-escape-contract : Repair a draft-only scalar leak from a topology-only architecture hypothesis}
+        {--repair-stranded-screening-agents : Return queued/screening agents with no live or completed screen run to same-generation draft recovery}
         {--quarantine-contract-drift : Quarantine an active generation whose immutable population/constructor contract is already invalid}
+        {--quarantine-invalid-normal-contract : Quarantine a draft normal cohort whose exact causal control/structural contract is incomplete}
         {--rebuild-root : After applying, create one clean next generation from exact parents or group roots}';
 
     protected $description = 'Quarantine legacy lineage/evidence and optionally rebuild a clean semantic lab generation.';
@@ -74,10 +78,96 @@ class RepairLabIntegrity extends Command
         }
 
         $invalid = 0;
+        $architectureRepairs = 0;
+        $strandedRepairs = 0;
         $contractQuarantined = 0;
+        $normalContractQuarantined = 0;
+        $queueInspector = app(LabQueueJobInspector::class);
         foreach ($generations as $generation) {
             $generationInvalid = 0;
+            $normalContract = $this->invalidNormalContract($generation);
+            if ($this->option('apply')
+                && $this->option('quarantine-invalid-normal-contract')
+                && $normalContract['issues'] !== []
+                && in_array((string) $generation->status, ['draft', 'queued'], true)
+                && $this->generationHasNoEvidenceOrQueueJobs($generation, $queueInspector)) {
+                $this->warn("G{$generation->generation}: normal causal contract incomplete; draft cohort technical quarantine qilinmoqda.");
+                foreach ($generation->fresh(['agents.modelVersion'])->agents as $agent) {
+                    if (! in_array((string) $agent->lifecycle_status, ['draft', 'queued'], true)) continue;
+                    $fromStatus = (string) $agent->lifecycle_status;
+                    $agent->update([
+                        'lifecycle_status' => 'technical_quarantine',
+                        'decision_reason' => 'Normal causal contract incomplete; no strategy verdict or promotion evidence was created.',
+                    ]);
+                    $freshAgent = $agent->fresh(['modelVersion']);
+                    $evidence->recordLifecycle($freshAgent, 'normal_causal_contract_quarantine', [
+                        'reason_code' => 'NORMAL_CAUSAL_CONTRACT_INCOMPLETE',
+                        'issues' => $normalContract['issues'],
+                        'quality_verdict' => 'withheld',
+                        'evidence_preserved' => true,
+                        'promotion_evidence' => false,
+                    ], 'screening', null, null, self::class, null, $fromStatus, 'technical_quarantine');
+                    $normalContractQuarantined++;
+                }
+                $fresh = $generation->fresh(['agents']);
+                $context = (array) ($fresh->trigger_context ?? []);
+                $context['integrity_repair']['normal_causal_contract'] = [
+                    'protocol' => 'normal_causal_contract_quarantine_v1',
+                    'issues' => $normalContract['issues'],
+                    'metrics' => $normalContract['metrics'],
+                    'quarantined_at' => now()->utc()->toIso8601String(),
+                    'evidence_preserved' => true,
+                    'promotion_evidence' => false,
+                ];
+                $fresh->update([
+                    'trigger_context' => $context,
+                    'status' => 'technical_quarantine',
+                    'completed_at' => now(),
+                ]);
+                continue;
+            }
             foreach ($generation->agents as $agent) {
+                if ($this->option('apply') && $this->option('repair-architecture-escape-contract')) {
+                    $repair = $this->repairArchitectureEscapeContract($agent, $schemas);
+                    if ($repair !== null) {
+                        $architectureRepairs++;
+                        $fromStatus = (string) $agent->lifecycle_status;
+                        $agent->refresh();
+                        $agent->update([
+                            'parameter_diff' => [],
+                            'lifecycle_status' => 'draft',
+                            'decision_reason' => 'Architecture-only hypothesis contract repaired before screening; all promotion gates remain unchanged.',
+                        ]);
+                        $freshAgent = $agent->fresh(['modelVersion']);
+                        $evidence->recordLifecycle($freshAgent, 'architecture_escape_contract_repair', [
+                            'reason_code' => 'ARCHITECTURE_ESCAPE_SCALAR_LEAK_REMOVED',
+                            ...$repair,
+                            'promotion_evidence' => false,
+                        ], 'screening', null, null, self::class, null, $fromStatus, 'draft');
+                        $this->line("G{$generation->generation} A{$freshAgent->id}: architecture escape contract repaired; returned to draft.");
+                        $agent = $freshAgent;
+                    }
+                }
+                if ($this->option('apply') && $this->option('repair-stranded-screening-agents')) {
+                    $repair = $this->repairStrandedScreeningAgent($agent, $queueInspector);
+                    if ($repair !== null) {
+                        $strandedRepairs++;
+                        $fromStatus = (string) $agent->lifecycle_status;
+                        $agent->refresh();
+                        $agent->update([
+                            'lifecycle_status' => 'draft',
+                            'decision_reason' => 'Stranded screening admission repaired; no immutable screen run or live queue job existed.',
+                        ]);
+                        $freshAgent = $agent->fresh(['modelVersion']);
+                        $evidence->recordLifecycle($freshAgent, 'stranded_screening_admission_repair', [
+                            'reason_code' => 'STRANDED_SCREENING_AGENT_NO_RUN_OR_QUEUE_JOB',
+                            ...$repair,
+                            'promotion_evidence' => false,
+                        ], 'screening', null, null, self::class, null, $fromStatus, 'draft');
+                        $this->line("G{$generation->generation} A{$freshAgent->id}: stranded screening admission repaired; returned to draft.");
+                        $agent = $freshAgent;
+                    }
+                }
                 if ($agent->lifecycle_status === 'technical_quarantine'
                     && data_get($agent->modelVersion?->metadata, 'preflight_quarantine.protocol') === LabAgentPreflightService::PROTOCOL) {
                     continue;
@@ -105,6 +195,11 @@ class RepairLabIntegrity extends Command
                 && in_array((string) $generation->status, [
                     ...LabPopulationService::ACTIVE_GENERATION_STATUSES,
                     'screened',
+                    // A timed-out constructor can be quarantined while its
+                    // orphaned PHP process is still unwinding. Keep this
+                    // repair idempotent so agents appended during that race
+                    // are quarantined on the next audit as well.
+                    'technical_quarantine',
                 ], true)) {
                 $this->warn("G{$generation->generation}: immutable contract drift detected; queued agents will be consumed as technical quarantine.");
                 foreach ($generation->fresh(['agents.modelVersion'])->agents as $agent) {
@@ -134,6 +229,44 @@ class RepairLabIntegrity extends Command
                     'evidence_preserved' => true,
                     'promotion_evidence' => false,
                 ];
+                // Older constructors overwrote `population_size` with the
+                // number actually created, which hid a 20->19 partial build.
+                // Prefer the immutable contract/audit plan when deciding
+                // whether the cohort was incomplete.
+                $plannedPopulation = max(
+                    (int) $fresh->population_size,
+                    (int) data_get($fresh->trigger_context, 'population_group_contract.planned_population', 0),
+                    (int) data_get($fresh->trigger_context, 'constructor_audit.planned_slots', 0),
+                );
+                $actualPopulation = (int) $fresh->agents->count();
+                if ($plannedPopulation > 0 && $actualPopulation < $plannedPopulation) {
+                    // A command timeout can interrupt the constructor before
+                    // it writes its own audit. Mark the immutable partial
+                    // cohort as constructor-aborted so no lane can treat it
+                    // as a smaller valid population.
+                    $abortKey = (string) $fresh->trigger_type === 'shadow_research'
+                        ? 'shadow_research_constructor_abort'
+                        : ((string) $fresh->trigger_type === 'controlled_rescue'
+                            ? 'controlled_rescue_constructor_abort'
+                            : 'constructor_contract_abort');
+                    $context[$abortKey] = [
+                        'protocol' => (string) $fresh->trigger_type === 'shadow_research'
+                            ? 'shadow_research_constructor_v1'
+                            : ((string) $fresh->trigger_type === 'controlled_rescue'
+                                ? LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL
+                                : 'agent_constructor_invariant_v1'),
+                        'reason_code' => (string) $fresh->trigger_type === 'shadow_research'
+                            ? 'INCOMPLETE_SHADOW_RESEARCH_POPULATION'
+                            : ((string) $fresh->trigger_type === 'controlled_rescue'
+                                ? 'INCOMPLETE_CONTROLLED_RESCUE_POPULATION'
+                                : 'INCOMPLETE_GENERATION_POPULATION'),
+                        'planned_slots' => $plannedPopulation,
+                        'created_agents' => $actualPopulation,
+                        'aborted_at' => now()->utc()->toIso8601String(),
+                        'evidence_preserved' => true,
+                        'promotion_evidence' => false,
+                    ];
+                }
                 $fresh->update([
                     'trigger_context' => $context,
                     'status' => 'technical_quarantine',
@@ -237,7 +370,7 @@ class RepairLabIntegrity extends Command
         }
 
         $mode = $this->option('apply') ? 'APPLIED' : 'DRY_RUN';
-        $this->info("{$symbol} {$timeframe}: {$invalid} invalid lineage/preflight record(s), {$contractQuarantined} contract-drift agent(s) quarantined, {$terminalBackfilled} screened terminal boundary backfill(s), {$invalidExecutionEvidence} invalid execution-evidence row(s), {$missingScreenEvidence} missing-screen-evidence agent(s), {$missingScreenRequeued} requeued, {$missingScreenSkipped} skipped [{$mode}].");
+        $this->info("{$symbol} {$timeframe}: {$invalid} invalid lineage/preflight record(s), {$architectureRepairs} architecture escape contract repair(s), {$strandedRepairs} stranded screening admission repair(s), {$contractQuarantined} contract-drift agent(s) quarantined, {$normalContractQuarantined} invalid-normal-contract agent(s) quarantined, {$terminalBackfilled} screened terminal boundary backfill(s), {$invalidExecutionEvidence} invalid execution-evidence row(s), {$missingScreenEvidence} missing-screen-evidence agent(s), {$missingScreenRequeued} requeued, {$missingScreenSkipped} skipped [{$mode}].");
 
         if ($this->option('rebuild-root')) {
             if ($protocolSafety->generationCreationPaused()) {
@@ -276,6 +409,152 @@ class RepairLabIntegrity extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Repair only the known constructor defect where a topology-only escape
+     * inherited one stale scalar from the failed council attempt.  The
+     * immutable scalar diff itself identifies the exact value to restore; a
+     * multi-key or inconsistent row remains fail-closed and is not touched.
+     */
+    private function repairArchitectureEscapeContract(LabAgent $agent, StrategyParameterSchemaService $schemas): ?array
+    {
+        $model = $agent->modelVersion;
+        if (! $model || $agent->origin !== 'g98_council') {
+            return null;
+        }
+
+        $metadata = (array) $model->metadata;
+        $hypothesisGene = (string) data_get($metadata, 'hypothesis_contract.changed_gene', '');
+        $architectureChanged = (bool) data_get($metadata, 'mutation_constructor_invariant.architecture_changed', false);
+        $architectureVariant = (string) data_get(
+            $metadata,
+            'mutation_constructor_invariant.architecture_variant',
+            data_get($metadata, 'strategy_architecture', ''),
+        );
+        $strategyArchitecture = (string) data_get($metadata, 'strategy_architecture', '');
+        if ($hypothesisGene !== '__architecture'
+            || ! $architectureChanged
+            || $architectureVariant === ''
+            || $strategyArchitecture === ''
+            || $architectureVariant !== $strategyArchitecture) {
+            return null;
+        }
+
+        $diff = (array) $agent->parameter_diff;
+        if (count($diff) !== 1) {
+            return null;
+        }
+        $changedKey = (string) array_key_first($diff);
+        $change = (array) ($diff[$changedKey] ?? []);
+        $parameters = (array) $model->parameters;
+        if ($changedKey === ''
+            || ! array_key_exists($changedKey, $parameters)
+            || ! array_key_exists('old', $change)
+            || ! array_key_exists('new', $change)
+            || json_encode($parameters[$changedKey], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)
+                !== json_encode($change['new'], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)) {
+            return null;
+        }
+
+        $parameters[$changedKey] = $change['old'];
+        try {
+            $parameters = $schemas->normalizeForGeneration($agent->strategy_family, $parameters);
+            $parameters = $schemas->validate($agent->strategy_family, $parameters);
+        } catch (\Throwable) {
+            return null;
+        }
+        if (json_encode($parameters[$changedKey] ?? null, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)
+            !== json_encode($change['old'], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)) {
+            return null;
+        }
+
+        $canonical = $schemas->canonicalizeForIdentity($agent->strategy_family, $parameters);
+        $metadata['parameter_fingerprint'] = hash(
+            'sha256',
+            $agent->strategy_family.'|'.json_encode($canonical, JSON_PRESERVE_ZERO_FRACTION),
+        );
+        data_set(
+            $metadata,
+            'universal_genome.local_adapter.parameters_hash',
+            hash('sha256', json_encode($canonical, JSON_PRESERVE_ZERO_FRACTION)),
+        );
+        $metadata['mutation_constructor_invariant'] = [
+            ...(array) data_get($metadata, 'mutation_constructor_invariant', []),
+            'changed_parameter_keys' => [],
+            'parameter_diff_count' => 0,
+            'architecture_changed' => true,
+            'architecture_variant' => $strategyArchitecture,
+            'promotion_evidence' => false,
+        ];
+        $metadata['specialist_council_membership'] = [
+            ...(array) data_get($metadata, 'specialist_council_membership', []),
+            'parameter_specialties' => [],
+            'promotion_evidence' => false,
+        ];
+        $alignment = [
+            'status' => 'passed',
+            'target' => data_get($metadata, 'hypothesis_contract.target_lane'),
+            'changed_gene' => '__architecture',
+            'gene_allowed' => true,
+            'reason' => 'declared_structural_architecture_hypothesis',
+        ];
+        $metadata['tactic_alignment'] = $alignment;
+        $metadata['hypothesis_contract'] = [
+            ...(array) data_get($metadata, 'hypothesis_contract', []),
+            'changed_gene' => '__architecture',
+            'architecture_changed' => true,
+            'architecture_variant' => $strategyArchitecture,
+            'tactic_alignment' => $alignment,
+            'promotion_evidence' => false,
+        ];
+        $metadata['integrity_repair'] = [
+            ...(array) data_get($metadata, 'integrity_repair', []),
+            'protocol' => 'architecture_escape_contract_repair_v1',
+            'reason_code' => 'ARCHITECTURE_ESCAPE_SCALAR_LEAK_REMOVED',
+            'removed_gene' => $changedKey,
+            'restored_value' => $change['old'],
+            'repaired_at' => now()->utc()->toIso8601String(),
+            'evidence_preserved' => true,
+            'promotion_evidence' => false,
+        ];
+        $model->update(['parameters' => $parameters, 'metadata' => $metadata]);
+
+        return [
+            'removed_scalar_gene' => $changedKey,
+            'restored_value' => $change['old'],
+            'architecture' => $strategyArchitecture,
+            'parameter_vector_restored_to_topology_base' => true,
+        ];
+    }
+
+    /**
+     * A cancelled/expired continuation batch may leave its agent projection
+     * in `queued` even though no immutable screen run was ever created. Only
+     * that empty-evidence state is recoverable; any existing run remains the
+     * source of truth and is never silently retried here.
+     */
+    private function repairStrandedScreeningAgent(LabAgent $agent, LabQueueJobInspector $queue): ?array
+    {
+        if (! in_array((string) $agent->lifecycle_status, ['queued', 'screening'], true)) {
+            return null;
+        }
+
+        $hasScreenRun = DB::table('lab_evaluation_runs')
+            ->where('lab_agent_id', $agent->id)
+            ->where('phase', 'screening')
+            ->exists();
+        if ($hasScreenRun || $queue->hasAgentJob((int) $agent->id, $queue->labQueues())) {
+            return null;
+        }
+
+        return [
+            'agent_id' => (int) $agent->id,
+            'previous_status' => (string) $agent->lifecycle_status,
+            'screening_run_count' => 0,
+            'live_queue_job' => false,
+            'same_generation_recovery_only' => true,
+        ];
     }
 
     /**
@@ -440,6 +719,70 @@ class RepairLabIntegrity extends Command
                 'promotion_evidence' => false,
             ],
         ];
+    }
+
+    /** @return array{issues: array<int, string>, metrics: array<string, mixed>} */
+    private function invalidNormalContract(LabGeneration $generation): array
+    {
+        $context = (array) ($generation->trigger_context ?? []);
+        $mode = (string) data_get(
+            $context,
+            'research_allocation_budget.mode',
+            data_get($context, 'control_pairing_contract.mode', ''),
+        );
+        if ($mode !== 'normal_research') {
+            return ['issues' => [], 'metrics' => []];
+        }
+
+        $pairing = (array) data_get($context, 'control_pairing_contract', []);
+        $structural = (array) data_get($context, 'structural_research_contract', []);
+        $issues = [];
+        if ((string) data_get($pairing, 'protocol', '') !== 'frozen_control_pair_v1') {
+            $issues[] = 'NORMAL_CONTROL_PAIR_PROTOCOL_MISSING';
+        }
+        if (! (bool) data_get($pairing, 'allowed', false)) {
+            $issues[] = 'NORMAL_CONTROL_CANDIDATE_PAIR_INCOMPLETE';
+        }
+        if ((array) data_get($pairing, 'missing_execution_lanes', []) !== []) {
+            $issues[] = 'NORMAL_CONTROL_LANE_MISSING';
+        }
+        if ((array) data_get($pairing, 'missing_candidate_pairs', []) !== []) {
+            $issues[] = 'NORMAL_CANDIDATE_PAIR_MISSING';
+        }
+        $structuralExpected = (bool) data_get($context, 'normal_structural_research_expected', true);
+        if ($structuralExpected && (string) data_get($structural, 'protocol', '') !== 'normal_structural_research_v1') {
+            $issues[] = 'NORMAL_STRUCTURAL_CONTRACT_MISSING';
+        }
+        if ($structuralExpected && (int) data_get($structural, 'structural_candidate_count', 0) < 1) {
+            $issues[] = 'NORMAL_STRUCTURAL_CANDIDATE_MISSING';
+        }
+
+        return [
+            'issues' => array_values(array_unique($issues)),
+            'metrics' => [
+                'generation_id' => $generation->id,
+                'generation' => $generation->generation,
+                'pairing_allowed' => (bool) data_get($pairing, 'allowed', false),
+                'missing_candidate_pairs' => (array) data_get($pairing, 'missing_candidate_pairs', []),
+                'structural_expected' => $structuralExpected,
+                'structural_candidate_count' => (int) data_get($structural, 'structural_candidate_count', 0),
+                'promotion_evidence' => false,
+            ],
+        ];
+    }
+
+    private function generationHasNoEvidenceOrQueueJobs(LabGeneration $generation, LabQueueJobInspector $queueInspector): bool
+    {
+        foreach ($generation->agents as $agent) {
+            if (LabEvaluationRun::query()->where('lab_generation_id', $generation->id)->exists()) {
+                return false;
+            }
+            if ($queueInspector->hasAgentJob((int) $agent->id, $queueInspector->labQueues())) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function createBoundedRootCohort(

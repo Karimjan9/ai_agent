@@ -96,6 +96,42 @@ class FailureRepairAnchorTest extends TestCase
         $this->assertDatabaseCount('lab_failure_repair_anchors', 1);
     }
 
+    public function test_stale_repair_anchor_rebases_without_rewriting_the_old_snapshot(): void
+    {
+        [$agent] = $this->sourceAgent();
+        $service = app(FailureRepairAnchorService::class);
+        $oldHash = str_repeat('a', 64);
+        $newHash = str_repeat('c', 64);
+        $executionHash = str_repeat('b', 64);
+
+        $anchor = $service->recordForAgent($agent, 'FAILED_PROFIT_FACTOR', null, [
+            'screening_result' => [
+                'profit_factor' => .8,
+                'total_trades' => 40,
+                'data_manifest' => ['sha256' => $oldHash],
+                'execution_contract' => ['execution_hash' => $executionHash],
+            ],
+        ], true);
+        $this->assertNotNull($anchor);
+
+        $agent->modelVersion->update(['metadata' => ['repair_anchor' => ['id' => $anchor->id]]]);
+        $rebased = $service->recordForAgent($agent->fresh(['modelVersion', 'generation']), 'FAILED_PROFIT_FACTOR', null, [
+            'screening_result' => [
+                'profit_factor' => .75,
+                'total_trades' => 40,
+                'data_manifest' => ['sha256' => $newHash],
+                'execution_contract' => ['execution_hash' => $executionHash],
+            ],
+        ], true, true);
+
+        $this->assertNotNull($rebased);
+        $this->assertNotSame($anchor->id, $rebased->id);
+        $this->assertSame($oldHash, data_get($anchor->fresh()->evidence, 'screening_result.data_manifest.sha256'));
+        $this->assertSame($newHash, data_get($rebased->evidence, 'screening_result.data_manifest.sha256'));
+        $this->assertSame($anchor->id, data_get($rebased->evidence, 'rebase.from_anchor_id'));
+        $this->assertDatabaseCount('lab_failure_repair_anchors', 2);
+    }
+
     public function test_repair_child_uses_anchor_snapshot_and_changes_exactly_one_declared_gene_without_a_parent(): void
     {
         $schema = app(StrategyParameterSchemaService::class);
@@ -263,6 +299,217 @@ class FailureRepairAnchorTest extends TestCase
         $this->assertSame($anchor->parameter_snapshot, $control->modelVersion->parameters);
         $this->assertNull($control->parent_a_model_version_id);
         $this->assertNull($control->parent_b_model_version_id);
+    }
+
+    public function test_gate_margin_cohort_compiles_four_one_gene_siblings_plus_one_frozen_control(): void
+    {
+        [$source] = $this->sourceAgent();
+        $anchors = app(FailureRepairAnchorService::class);
+        $anchor = $anchors->recordForAgent(
+            $source,
+            'FAILED_TEMPORAL_CHUNK_SURVIVAL',
+            null,
+            ['screening_result' => ['profit_factor' => .8, 'total_trades' => 40]],
+            true,
+        );
+        $this->assertNotNull($anchor);
+
+        $method = new \ReflectionMethod(app(LabPopulationService::class), 'anchorSiblingPlan');
+        $method->setAccessible(true);
+        $plan = $method->invoke(app(LabPopulationService::class), $source->generation->laboratory, [
+            'source_generation_id' => $source->lab_generation_id,
+            'cohort_mode' => 'four_siblings_plus_control_v1',
+            'repair_anchors' => [$anchors->descriptor($anchor)],
+        ], 5);
+
+        $this->assertCount(5, $plan);
+        $this->assertSame(
+            ['primary_direction', 'reverse_direction', 'alternative_gene', 'secondary_alternative_gene', 'frozen_control'],
+            array_column(array_map(fn (array $seat): array => (array) data_get($seat, 'niche'), $plan), 'sibling_kind'),
+        );
+        $this->assertTrue(collect($plan)->every(fn (array $seat): bool =>
+            data_get($seat, 'niche.cohort_contract') === 'four_siblings_plus_control_v1'
+        ));
+        $this->assertNull(data_get($plan[4], 'niche.declared_gene'));
+    }
+
+    public function test_temporal_state_persistence_hypothesis_replaces_repeated_indicator_window_mutations(): void
+    {
+        [$source] = $this->sourceAgent();
+        $anchors = app(FailureRepairAnchorService::class);
+        $anchor = $anchors->recordForAgent(
+            $source,
+            'FAILED_TEMPORAL_CHUNK_SURVIVAL',
+            null,
+            ['screening_result' => ['profit_factor' => .8, 'total_trades' => 40]],
+            true,
+        );
+        $this->assertNotNull($anchor);
+
+        $service = app(LabPopulationService::class);
+        $planMethod = new \ReflectionMethod($service, 'anchorSiblingPlan');
+        $planMethod->setAccessible(true);
+        $plan = $planMethod->invoke($service, $source->generation->laboratory, [
+            'source_generation_id' => $source->lab_generation_id,
+            'cohort_mode' => 'four_siblings_plus_control_v1',
+            'repair_anchors' => [$anchors->descriptor($anchor)],
+            'temporal_edge_audit' => [
+                'protocol' => 'temporal_failure_cell_audit_v1',
+                'dominant_cells' => ['chunk' => ['cell' => 'chunk_4']],
+            ],
+        ], 5);
+
+        $expectedGenes = [
+            'max_loss_streak_before_wait',
+            'loss_cooldown_candles',
+            'loss_streak_wait_candles',
+            'weak_regime_wait_candles',
+        ];
+        $this->assertSame($expectedGenes, array_map(
+            fn (array $seat): mixed => data_get($seat, 'niche.declared_gene'),
+            array_slice($plan, 0, 4),
+        ));
+        $this->assertSame(['decrease', 'decrease', 'increase', 'increase'], array_map(
+            fn (array $seat): mixed => data_get($seat, 'niche.repair_direction'),
+            array_slice($plan, 0, 4),
+        ));
+        $this->assertTrue(collect($plan)->every(fn (array $seat): bool =>
+            data_get($seat, 'niche.temporal_mutation_hypothesis.protocol')
+                === LabPopulationService::TEMPORAL_STATE_PERSISTENCE_HYPOTHESIS
+        ));
+
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $source->generation->ai_laboratory_id,
+            'generation' => 2,
+            'trigger_type' => 'candidate_handoff',
+            'population_size' => 5,
+            'status' => 'draft',
+            'trigger_context' => [],
+        ]);
+        $create = new \ReflectionMethod($service, 'createAgent');
+        $create->setAccessible(true);
+        foreach ($plan as $index => $seat) {
+            $this->assertTrue($create->invoke(
+                $service,
+                $generation,
+                $seat['family'],
+                $seat['origin'],
+                $index + 1,
+                $seat['target'],
+                $seat['niche'],
+                null,
+                $seat['research_group'],
+                $index + 1,
+            ));
+        }
+
+        $children = $generation->agents()->with('modelVersion')->orderBy('id')->get();
+        foreach (array_slice($children->all(), 0, 4) as $index => $child) {
+            $diff = (array) $child->parameter_diff;
+            $this->assertCount(1, $diff);
+            $this->assertSame($expectedGenes[$index], array_key_first($diff));
+            $this->assertNotSame(
+                $anchor->parameter_snapshot[$expectedGenes[$index]],
+                $child->modelVersion->parameters[$expectedGenes[$index]],
+            );
+        }
+        $control = $children->last();
+        $this->assertSame([], (array) $control->parameter_diff);
+        $this->assertSame($anchor->parameter_snapshot, $control->modelVersion->parameters);
+    }
+
+    public function test_temporal_gate_movement_opens_one_shadow_state_machine_escape_seat(): void
+    {
+        [$source] = $this->sourceAgent();
+        $anchors = app(FailureRepairAnchorService::class);
+        $anchor = $anchors->recordForAgent(
+            $source,
+            'FAILED_TEMPORAL_CHUNK_SURVIVAL',
+            null,
+            ['screening_result' => ['profit_factor' => .8, 'total_trades' => 40]],
+            true,
+        );
+        $this->assertNotNull($anchor);
+
+        $descriptor = $anchors->descriptor($anchor);
+        $descriptor['policy'] = [
+            ...(array) data_get($descriptor, 'policy', []),
+            'parameter_attempts' => 1,
+            'target_improvements' => 1,
+        ];
+        $service = app(LabPopulationService::class);
+        $method = new \ReflectionMethod($service, 'anchorSiblingPlan');
+        $method->setAccessible(true);
+        $plan = $method->invoke($service, $source->generation->laboratory, [
+            'source_generation_id' => $source->lab_generation_id,
+            'cohort_mode' => 'four_siblings_plus_control_v1',
+            'repair_anchors' => [$descriptor],
+        ], 5);
+
+        $this->assertSame('architecture_escape', data_get($plan[3], 'niche.sibling_kind'));
+        $this->assertSame('state_machine_variant', data_get($plan[3], 'niche.declared_gene'));
+        $this->assertSame('neutral_transition_cooldown_reentry_v1', data_get($plan[3], 'niche.state_machine_variant'));
+        $this->assertTrue((bool) data_get($plan[3], 'niche.shadow_only'));
+        $this->assertSame('architecture', data_get($plan[3], 'niche.repair_direction'));
+
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $source->generation->ai_laboratory_id,
+            'generation' => 3,
+            'trigger_type' => 'candidate_handoff',
+            'population_size' => 5,
+            'status' => 'draft',
+            'trigger_context' => [],
+        ]);
+        $create = new \ReflectionMethod($service, 'createAgent');
+        $create->setAccessible(true);
+        $this->assertTrue($create->invoke(
+            $service,
+            $generation,
+            $plan[3]['family'],
+            $plan[3]['origin'],
+            4,
+            $plan[3]['target'],
+            $plan[3]['niche'],
+            null,
+            $plan[3]['research_group'],
+            4,
+        ));
+        $child = $generation->agents()->with('modelVersion')->firstOrFail();
+        $this->assertSame(['state_machine_variant'], array_keys((array) $child->parameter_diff));
+        $this->assertSame('neutral_transition_cooldown_reentry_v1', data_get($child->modelVersion->parameters, 'state_machine_variant'));
+        $this->assertFalse((bool) data_get($child->modelVersion->metadata, 'promotion_evidence', false));
+    }
+
+    public function test_mixed_temporal_profile_reserves_one_train_forward_robustness_seat(): void
+    {
+        [$source] = $this->sourceAgent();
+        $anchors = app(FailureRepairAnchorService::class);
+        $anchor = $anchors->recordForAgent(
+            $source,
+            'FAILED_TEMPORAL_CHUNK_SURVIVAL',
+            null,
+            ['screening_result' => ['profit_factor' => .8, 'total_trades' => 40]],
+            true,
+        );
+        $this->assertNotNull($anchor);
+
+        $method = new \ReflectionMethod(app(LabPopulationService::class), 'anchorSiblingPlan');
+        $method->setAccessible(true);
+        $plan = $method->invoke(app(LabPopulationService::class), $source->generation->laboratory, [
+            'source_generation_id' => $source->lab_generation_id,
+            'cohort_mode' => 'four_siblings_plus_control_v1',
+            'target_counts' => ['train_forward_robustness' => 1],
+            'failure_specific_lanes_observed' => ['temporal_stability', 'train_forward_robustness'],
+            'repair_anchors' => [$anchors->descriptor($anchor)],
+        ], 5);
+
+        $this->assertSame('transition_firewall_enabled', data_get($plan[0], 'niche.declared_gene'));
+        $this->assertSame('max_loss_streak_before_wait', data_get($plan[1], 'niche.declared_gene'));
+        $this->assertSame('loss_cooldown_candles', data_get($plan[2], 'niche.declared_gene'));
+        $this->assertSame('confidence_calibration_min_samples', data_get($plan[3], 'niche.declared_gene'));
+        $this->assertSame('robustness_split_specialist', data_get($plan[3], 'niche.specialist_role'));
+        $this->assertSame('immutable_same_train_forward_split', data_get($plan[3], 'niche.robustness_split_contract'));
+        $this->assertSame('train_forward_robustness', data_get($plan[3], 'niche.failure_specific_lane'));
     }
 
     public function test_screen_pass_creates_seed_stage_and_response_map_without_parent_credit(): void

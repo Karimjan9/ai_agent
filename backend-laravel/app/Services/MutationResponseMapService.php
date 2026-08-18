@@ -218,6 +218,10 @@ class MutationResponseMapService
         $target = (string) data_get($agent->modelVersion?->metadata, 'repair_anchor.failure_target', data_get($agent->modelVersion?->metadata, 'generation_target', ''));
         $direction = $this->direction($old, $new);
         $targetDelta = $this->targetDelta($target, $baseline, $result);
+        $observability = (array) data_get($result, 'mutation_observability', data_get($agent->modelVersion?->metadata, 'mutation_observability', []));
+        $controlRelative = (array) data_get($observability, 'control_relative', []);
+        $contextual = app(ContextualMutationBanditService::class)->context($agent, $result, $target, $key, $direction);
+        $banditReward = app(ContextualMutationBanditService::class)->reward($observability, $controlRelative);
         $responseKey = hash('sha256', json_encode([
             'protocol' => self::PROTOCOL,
             'agent' => $agent->id,
@@ -250,7 +254,7 @@ class MutationResponseMapService
             'baseline_metrics' => $this->compactMetrics($baseline),
             'observed_metrics' => $this->compactMetrics($result),
             'target_delta' => $targetDelta,
-            'non_target_regression' => data_get($result, 'no_regression_contract', data_get($result, 'differential_no_regression', [])),
+            'non_target_regression' => data_get($observability, 'non_target_regression', data_get($result, 'no_regression_contract', data_get($result, 'differential_no_regression', []))),
             'regime_result' => data_get($result, 'regime_performance', data_get($result, 'robustness_matrix', [])),
             'forward_confirmation' => $options['forward_confirmation'] ?? data_get($result, 'verified_mutation_skill', []),
             'metadata' => [
@@ -262,6 +266,13 @@ class MutationResponseMapService
                 'repair_anchor_sibling_cohort_id' => data_get($agent->modelVersion?->metadata, 'repair_anchor.sibling_cohort_id'),
                 'data_manifest_hash' => data_get($result, 'data_manifest.sha256', data_get($result, 'data_manifest.snapshot_sha256')),
                 'execution_hash' => data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash')),
+                'anchor_delta' => data_get($observability, 'anchor_delta', data_get($targetDelta, 'delta')),
+                'control_delta' => data_get($observability, 'control_delta'),
+                'control_relative_improved' => (bool) data_get($observability, 'control_relative_improved', false),
+                'observable_effect' => (bool) data_get($observability, 'observable_effect', data_get($observability, 'classification') === 'observable_effect'),
+                'holdout_confirmation' => data_get($observability, 'holdout_confirmation', ['confirmed' => false]),
+                'progress_ladder' => data_get($observability, 'progress_ladder', []),
+                'contextual_bandit' => [...$contextual, ...$banditReward],
                 'promotion_evidence' => false,
                 ...((array) ($options['metadata'] ?? [])),
             ],

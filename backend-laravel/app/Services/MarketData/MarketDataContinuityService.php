@@ -31,6 +31,30 @@ class MarketDataContinuityService
         string $error,
     ): void {
         $state = $this->state($provider, $symbol, $timeframe);
+
+        // Provider calls are still attempted around the weekend/session
+        // boundary, but a failed request over a fully closed interval is not
+        // evidence that the feed is offline. Keep the sync ready and clear
+        // only the closure-created retry marker; any interval containing an
+        // expected open candle remains a real outage below.
+        if (! $this->containsOpenInterval($from, $to, $symbol, $timeframe)) {
+            $state->update([
+                'status' => 'healthy',
+                'pending_from_at' => null,
+                'pending_to_at' => null,
+                'retry_count' => 0,
+                'last_error' => null,
+                'last_attempt_at' => now(),
+                'metrics' => array_merge($state->metrics ?? [], [
+                    'scheduled_closure' => true,
+                    'scheduled_closure_from' => $from->toIso8601String(),
+                    'scheduled_closure_to' => $to->toIso8601String(),
+                ]),
+            ]);
+
+            return;
+        }
+
         $state->update([
             'status' => 'offline',
             'pending_from_at' => $state->pending_from_at ?: $from,
@@ -38,6 +62,7 @@ class MarketDataContinuityService
             'retry_count' => $state->retry_count + 1,
             'last_error' => mb_substr($error, 0, 2000),
             'last_attempt_at' => now(),
+            'metrics' => array_merge($state->metrics ?? [], ['scheduled_closure' => false]),
         ]);
     }
 
@@ -148,6 +173,22 @@ class MarketDataContinuityService
         }
 
         return null;
+    }
+
+    private function containsOpenInterval(CarbonImmutable $from, CarbonImmutable $to, string $symbol, string $timeframe): bool
+    {
+        if ($to->lessThan($from)) {
+            return false;
+        }
+
+        $intervalMinutes = $this->intervalMinutes($timeframe);
+        for ($cursor = $this->alignToInterval($from, $timeframe); $cursor->lessThanOrEqualTo($to); $cursor = $cursor->addMinutes($intervalMinutes)) {
+            if ($this->historicalData->isContinuityMarketOpen($cursor, $symbol)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function lastClosedBoundary(CarbonImmutable $time, string $timeframe): CarbonImmutable

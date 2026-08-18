@@ -7,6 +7,7 @@ use App\Services\CandidateHandoffService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\LabPopulationService;
 use App\Services\LabQueueJobInspector;
+use App\Services\TargetedRescueProfileService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,7 @@ class ProcessTargetedGenerationRequests extends Command
     protected $signature = 'trading:process-targeted-generations';
     protected $description = 'Create one bounded targeted generation for each no-eligible-candidate handoff request';
 
-    public function handle(LabPopulationService $populations, CandidateHandoffService $handoffs): int
+    public function handle(LabPopulationService $populations, CandidateHandoffService $handoffs, TargetedRescueProfileService $profiles): int
     {
         // Scheduler-level withoutOverlapping() does not protect a manual
         // invocation from racing the scheduler.  Both paths can otherwise
@@ -41,13 +42,13 @@ class ProcessTargetedGenerationRequests extends Command
                 return self::SUCCESS;
             }
 
-            return $this->buildTargetedGenerations($populations, $handoffs);
+            return $this->buildTargetedGenerations($populations, $handoffs, $profiles);
         } finally {
             optional($lock)->release();
         }
     }
 
-    private function buildTargetedGenerations(LabPopulationService $populations, CandidateHandoffService $handoffs): int
+    private function buildTargetedGenerations(LabPopulationService $populations, CandidateHandoffService $handoffs, TargetedRescueProfileService $profiles): int
     {
         $requests = CandidateHandoffEvent::query()->with('generation.laboratory')
             ->where('stage', 'waiting_for_targeted_generation')->where('status', 'waiting')
@@ -111,7 +112,13 @@ class ProcessTargetedGenerationRequests extends Command
                 }
                 continue;
             }
-            $targetProfile = $this->targetProfile($source, $request, $profile);
+            // Rebuild the profile from current immutable evidence instead of
+            // trusting an old handoff projection. This is where gate-margin
+            // ranking selects one dominant failure and its five-seat control
+            // cohort; legacy profiles still resolve to the five-by-four path.
+            $currentProfile = $profiles->forGeneration($source);
+            $targetProfile = $this->targetProfile($source, $request, $currentProfile);
+            $populationSize = max(1, (int) data_get($targetProfile, 'population_size', 20));
             $created = $populations->build(
                 $lab->symbol,
                 'candidate_handoff',
@@ -120,13 +127,15 @@ class ProcessTargetedGenerationRequests extends Command
                 [],
                 false,
                 true,
-                20,
+                $populationSize,
                 $targetProfile,
             );
             if ($created) {
                 $handoffs->record($source, null, 'targeted_generation_created', 'completed', null, ['target_generation_id' => $created->id, 'generation' => $created->generation,
                     'targeted_failure_profile' => $targetProfile,
-                    'rule' => 'Five four-seat one-gene rescue groups are created from the immutable failure profile; no old screened candidate was force-replayed.']);
+                    'rule' => data_get($targetProfile, 'cohort_mode') === 'four_siblings_plus_control_v1'
+                        ? 'Four one-gene siblings plus one freshly replayed frozen control are created from the nearest failure margin; no old screened candidate was force-replayed.'
+                        : 'Five four-seat one-gene rescue groups are created from the immutable failure profile; no old screened candidate was force-replayed.']);
                 $this->info("{$lab->symbol}: targeted G{$created->generation} created.");
             } else $this->warn("{$lab->symbol}: targeted generation remains waiting for market-data readiness.");
         }
@@ -146,6 +155,7 @@ class ProcessTargetedGenerationRequests extends Command
     private function targetProfile($source, CandidateHandoffEvent $request, array $profile): array
     {
         $canonical = ['profit_factor', 'stress_cost', 'temporal_stability', 'regime_coverage'];
+        $special = data_get($profile, 'cohort_mode') === 'four_siblings_plus_control_v1';
         $targetCounts = [];
         foreach ((array) data_get($profile, 'targets', []) as $reason => $row) {
             $target = is_array($row) ? (string) data_get($row, 'target', '') : (string) $row;
@@ -158,6 +168,16 @@ class ProcessTargetedGenerationRequests extends Command
                 -array_search($target, $canonical, true),
             ])
             ->values()->all();
+
+        if ($special) {
+            return [
+                ...$profile,
+                'profile_hash' => (string) data_get($profile, 'profile_hash', data_get($request->payload, 'handoff_profile_hash', '')),
+                'source_generation_id' => $source->id,
+                'source_generation' => $source->generation,
+                'promotion_evidence' => false,
+            ];
+        }
 
         return [
             'protocol' => LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL,

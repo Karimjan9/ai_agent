@@ -681,6 +681,8 @@ class MtfStrategyResearchService
         $regimeLag = data_get($volumeContext, 'regime_quality.lag_seconds');
         $entryLag = is_numeric($entryLag) ? (int) $entryLag : null;
         $regimeLag = is_numeric($regimeLag) ? (int) $regimeLag : null;
+        $entrySnapshot = (string) data_get($volumeContext, 'entry_snapshot_hash', '');
+        $regimeSnapshot = (string) data_get($volumeContext, 'regime_snapshot_hash', '');
         $entryMax = max(900, (int) config('services.mtf_pilot.monitor_max_m15_staleness_seconds', 1800));
         $regimeMax = max(3600, (int) config('services.mtf_pilot.max_h1_staleness_seconds', 7200));
         $reasons = [];
@@ -694,12 +696,25 @@ class MtfStrategyResearchService
         if ($regimeLag === null || $regimeLag > $regimeMax) {
             $reasons[] = 'h1_volume_freshness_exceeded';
         }
+        if ($entryLag !== null && $entryLag < 0) $reasons[] = 'm15_volume_future_observation';
+        if ($regimeLag !== null && $regimeLag < 0) $reasons[] = 'h1_volume_future_observation';
+        // Lightweight monitor projections intentionally omit the expensive
+        // all-history hashes. The sealed research context must include them;
+        // only then do missing hashes become a hard research reason.
+        if (array_key_exists('entry_snapshot_hash', $volumeContext) && $entrySnapshot === '') {
+            $reasons[] = 'm15_volume_snapshot_hash_missing';
+        }
+        if (array_key_exists('regime_snapshot_hash', $volumeContext) && $regimeSnapshot === '') {
+            $reasons[] = 'h1_volume_snapshot_hash_missing';
+        }
 
         return [
             'ready' => $reasons === [],
             'reasons' => $reasons,
             'entry_lag_seconds' => $entryLag,
             'regime_lag_seconds' => $regimeLag,
+            'entry_snapshot_hash_present' => ! array_key_exists('entry_snapshot_hash', $volumeContext) || $entrySnapshot !== '',
+            'regime_snapshot_hash_present' => ! array_key_exists('regime_snapshot_hash', $volumeContext) || $regimeSnapshot !== '',
             'entry_max_lag_seconds' => $entryMax,
             'regime_max_lag_seconds' => $regimeMax,
         ];

@@ -770,6 +770,9 @@ class LabImmutableEvidenceService
             'trade_ledger_present' => is_array($ledger),
             'trade_ledger_count' => is_array($ledger) ? count($ledger) : null,
             'trade_ledger_hash' => data_get($payload, 'trade_ledger_hash'),
+            'event_ledger_hash' => data_get($payload, 'event_ledger_hash', data_get($payload, 'event_digest.hash')),
+            'event_ledger_count' => data_get($payload, 'event_ledger_count', data_get($payload, 'event_digest.count')),
+            'event_ledger_categories' => data_get($payload, 'event_ledger_categories', data_get($payload, 'event_digest.categories', [])),
             'trades_present' => is_array($trades),
             'trades_count' => is_array($trades) ? count($trades) : null,
             'trades_hash' => is_array($trades) ? $this->hash($trades) : null,
@@ -1081,6 +1084,8 @@ class LabImmutableEvidenceService
             'payload_hash' => $this->hash($response),
             'leaderboard_count' => is_array($response['leaderboard'] ?? null) ? count($response['leaderboard']) : null,
             'trade_ledger_hash' => data_get($response, 'trade_ledger_hash'),
+            'event_ledger_hash' => data_get($response, 'event_ledger_hash', data_get($response, 'event_digest.hash')),
+            'event_ledger_count' => data_get($response, 'event_ledger_count', data_get($response, 'event_digest.count')),
             'trade_ledger_count' => is_array($ledger) ? count($ledger) : null,
             'displayed_trade_count' => data_get($response, 'displayed_trade_count'),
             'trade_ledger_complete' => $this->tradeLedgerComplete($response),
@@ -1105,6 +1110,7 @@ class LabImmutableEvidenceService
             'screening_survival' => data_get($response, 'screening_survival'),
             'monthly_passport' => data_get($response, 'monthly_passport'),
             'gate_failure_context' => data_get($response, 'gate_failure_context'),
+            'event_ledger_hash' => data_get($response, 'event_ledger_hash', data_get($response, 'event_digest.hash')),
         ];
     }
 

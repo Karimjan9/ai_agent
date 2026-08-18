@@ -1,0 +1,84 @@
+
+   WARN  Tests\Feature\AgentLifecycleAuditTest
+  ! explicit parentless root is not reported as a lineage failure → file_get_contents(C:\x_programs\xamp\htdocs… 2.86s  
+  ! active population contract drift is blocked without rewriting agents → file_get_contents(C:\x_programs\xamp… 0.18s  
+  ! architecture only zero parameter diff is not a constructor failure → file_get_contents(C:\x_programs\xamp\h… 0.11s  
+  ! technical zero diff quarantine does not block the active laboratory → file_get_contents(C:\x_programs\xamp</>… 0.11s  
+  ! m15 requires a frozen closed h1 regime snapshot → file_get_contents(C:\x_programs\xamp\htdocs\laravel_proje… 0.12s  
+  ! forward and elite monitor waits without manufacturing promotion → file_get_contents(C:\x_programs\xamp\htdo… 0.11s  
+  ! forward candidate without auditable gate is blocked → file_get_contents(C:\x_programs\xamp\htdocs\laravel_p… 0.12s  
+  ! failed elite portfolio is reported without being repaired → file_get_contents(C:\x_programs\xamp\htdocs\lar… 0.12s  
+
+   WARN  Tests\Feature\AiLearningLaboratoryTest
+  ! each pair gets a bounded owned twenty agent population → file_get_contents(C:\x_programs\xamp\htdocs\larave… 1.32s  
+  ! generation is not repeated without enough new data → file_get_contents(C:\x_programs\xamp\htdocs\laravel_pr… 1.42s  
+  ! single hour drift does not create a generation storm → file_get_contents(C:\x_programs\xamp\htdocs\laravel_… 1.25s  
+  ! force cannot create a second generation while the current one is active → file_get_contents(C:\x_programs\x… 1.22s  
+  ! dispatcher does not reexport an already screening generation → file_get_contents(C:\x_programs\xamp\htdocs</>… 1.42s  
+  ! candidate handoff can create targeted generation after screening finishes → file_get_contents(C:\x_programs… 6.64s  
+  ! data edge audit trigger requires durable audit evidence → file_get_contents(C:\x_programs\xamp\htdocs\larav… 6.89s  
+  ! data edge audit can unlock a completed screened generation → file_get_contents(C:\x_programs\xamp\htdocs\la… 1.03s  
+  ! forward gate failure opens a targeted evolution handoff → file_get_contents(C:\x_programs\xamp\htdocs\larav… 1.44s  
+  ! generation report is durable and contains required kpis → file_get_contents(C:\x_programs\xamp\htdocs\larav… 3.11s  
+  ! current kpis refreshes legacy generation reports → file_get_contents(C:\x_programs\xamp\htdocs\laravel_proj… 2.42s  
+  ! pair laboratory dashboard renders learning evidence → file_get_contents(C:\x_programs\xamp\htdocs\laravel_p… 1.72s  
+  ! low quality challenger is never used as a parent → file_get_contents(C:\x_programs\xamp\htdocs\laravel_proj… 1.39s  
+  ! laboratory dashboard explains a candidate forward gate failure → file_get_contents(C:\x_programs\xamp\htdoc… 0.16s  
+  ! strategy architecture is a dynamic gene not just a parameter label → file_get_contents(C:\x_programs\xamp\h… 1.47s  
+  ! dynamic frontier does not spend full replay on two trade luck → file_get_contents(C:\x_programs\xamp\htdocs… 0.19s  
+  ! bounded root recovery reaches full replay without a forward score → file_get_contents(C:\x_programs\xamp\ht… 0.13s  
+  ! recall research reserves each regime before global dominance → file_get_contents(C:\x_programs\xamp\htdocs</>… 1.51s  
+  ! causal probe lane can replay a near miss without promotion → file_get_contents(C:\x_programs\xamp\htdocs\la… 0.12s  
+  ! causal probe bundle adds a same family control → file_get_contents(C:\x_programs\xamp\htdocs\laravel_projec… 0.12s  
+  ! strong calendar near miss can enter sealed portfolio research lane → file_get_contents(C:\x_programs\xamp\h… 0.12s  
+  ! directional temporal rescue is research only and keeps side evidence → file_get_contents(C:\x_programs\xamp… 1.67s  
+  ! non differential agent does not receive a paired regression failure → file_get_contents(C:\x_programs\xamp</>… 0.13s  
+  ! full replay projection preserves sealed cohort cache metadata → file_get_contents(C:\x_programs\xamp\htdocs… 0.11s  
+  ! generated trend parameters preserve indicator relationships → file_get_contents(C:\x_programs\xamp\htdocs\l… 0.11s  
+  ! trend up council uses directional single gene rescue variants → file_get_contents(C:\x_programs\xamp\htdocs… 0.11s  
+  ! state cluster uses context evidence and excludes calendar months → file_get_contents(C:\x_programs\xamp\htd… 0.13s  
+  ! state cluster monthly mutation is one bounded context gene → file_get_contents(C:\x_programs\xamp\htdocs\la… 0.11s  
+  ! agent knowledge card records lessons skills and child contract → file_get_contents(C:\x_programs\xamp\htdoc… 2.17s  
+  ! council sequence requires specialists then router before combined replay → file_get_contents(C:\x_programs</>… 0.14s  
+  ! professional exam ledger records hidden router and learning contracts → file_get_contents(C:\x_programs\xam… 1.54s  
+  ! teacher student shadow detects capability retention without using pf → file_get_contents(C:\x_programs\xamp… 1.20s  
+  ! drift expires skill and mutation budget blocks harmful direction → file_get_contents(C:\x_programs\xamp\htd… 1.25s  
+  ! council selection includes the passed router in combined replay → file_get_contents(C:\x_programs\xamp\htdo… 0.10s  
+  ! council members cannot start individual paper track → file_get_contents(C:\x_programs\xamp\htdocs\laravel_p… 0.11s  
+  ! historical novelty cannot add a second gene to an isolated child → file_get_contents(C:\x_programs\xamp\htd… 0.10s  
+  ! historical novelty cache is scoped to each generation → file_get_contents(C:\x_programs\xamp\htdocs\laravel… 0.09s  
+  ! parameter fingerprint is stable across numeric round trip types → file_get_contents(C:\x_programs\xamp\htdo… 0.09s  
+  ! targeted final novelty probe preserves a single declared gene → file_get_contents(C:\x_programs\xamp\htdocs… 0.10s  
+  ! historical novelty expands bounded probe when local ring is exhausted → file_get_contents(C:\x_programs\xam… 0.10s  
+  ! historical novelty expands integer ring past failed values → file_get_contents(C:\x_programs\xamp\htdocs\la… 0.11s  
+  ! historical novelty reports a fully exhausted boolean lane → file_get_contents(C:\x_programs\xamp\htdocs\lar… 0.10s  
+  ! council objectives select distinct range topologies → file_get_contents(C:\x_programs\xamp\htdocs\laravel_p… 0.09s  
+  ! role complete council uses safe owner mutations and wait invariants → file_get_contents(C:\x_programs\xamp</>… 0.10s  
+  ! role mutation firewall never falls back to another owner gene → file_get_contents(C:\x_programs\xamp\htdocs… 0.10s  
+  ! full validation fairness middleware is wired into evaluator jobs → file_get_contents(C:\x_programs\xamp\htd… 0.11s  
+  ! fresh role complete cohort is classified as frontier priority → file_get_contents(C:\x_programs\xamp\htdocs… 0.10s  
+  ! frontier promotion is dry run by default → file_get_contents(C:\x_programs\xamp\htdocs\laravel_projects\ai_… 0.10s  
+  ! targeted failure profile plan uses four distinct repair dimensions → file_get_contents(C:\x_programs\xamp\h… 0.11s  
+  ! controlled rescue plan is five by four and pause stays fail closed → file_get_contents(C:\x_programs\xamp\h… 0.16s  
+  ! screen retry window can wait behind a long full validation lane → file_get_contents(C:\x_programs\xamp\htdo… 0.09s  
+  ! screen fairness ignores a delayed full validation job → file_get_contents(C:\x_programs\xamp\htdocs\laravel… 0.11s  
+  ! screening curriculum keeps ranked bottlenecks for generation planning → file_get_contents(C:\x_programs\xam… 0.13s  
+  ! screen learning outbox keeps temporal screen failure inconclusive and non blocking → file_get_contents(C:\x… 1.88s  
+  ! screen learning outbox blocks missing evidence instead of teaching from it → file_get_contents(C:\x_program… 1.10s  
+
+   WARN  Tests\Feature\MutationObservabilityTest
+  ! exhausted gene gets a same target replacement before architecture escape → file_get_contents(C:\x_programs</>… 0.25s  
+  ! parameter change without signal or ledger change is not observable → file_get_contents(C:\x_programs\xamp\h… 0.25s  
+  ! changed signal and ledger are learning observable but not promotion evidence → file_get_contents(C:\x_progr… 0.12s  
+  ! event digest is required for final observability classification → file_get_contents(C:\x_programs\xamp\htdo… 0.12s  
+  ! shadow mutation contract blocks a parameter only probe → file_get_contents(C:\x_programs\xamp\htdocs\larave… 0.15s  
+
+   WARN  Tests\Feature\NormalCausalResearchContractTest
+  ! normal plan materializes exact controls and keeps structural candidate → file_get_contents(C:\x_programs\xa… 0.13s  
+  ! structural genes are schema and tactic declared → file_get_contents(C:\x_programs\xamp\htdocs\laravel_proje… 0.11s  
+  ! normal structural compiler reserves executable hypotheses → file_get_contents(C:\x_programs\xamp\htdocs\lar… 0.10s  
+  ! lone volume lane is materialized as a control candidate pair → file_get_contents(C:\x_programs\xamp\htdocs</>… 0.09s  
+
+  Tests:    72 warnings (341 assertions)
+  Duration: 54.40s
+

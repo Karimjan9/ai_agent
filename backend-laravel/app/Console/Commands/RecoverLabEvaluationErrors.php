@@ -17,7 +17,7 @@ use RuntimeException;
 /** Requeues bounded evaluator failures without turning them into strategy evidence. */
 class RecoverLabEvaluationErrors extends Command
 {
-    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-timeout-budget-repair : Retry only quarantined agents whose immutable screen run records a bounded replay timeout; generation is required} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget} {--apply : Dispatch the bounded recovery after operator approval} {--approved-by=} {--approval-reason=}';
+    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-timeout-budget-repair : Retry only quarantined agents whose immutable screen run records a bounded replay timeout; generation is required} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget} {--after-dataset-contract-repair : Retry only dataset-contract quarantine after per-lane immutable snapshot repair; generation is required} {--apply : Dispatch the bounded recovery after operator approval} {--approved-by=} {--approval-reason=}';
 
     protected $description = 'Requeue transport/evaluator failures after a clean AI service restart';
 
@@ -60,6 +60,7 @@ class RecoverLabEvaluationErrors extends Command
         $afterIpcRepair = (bool) $this->option('after-ipc-repair');
         $afterTimeoutBudgetRepair = (bool) $this->option('after-timeout-budget-repair');
         $afterRetryBudgetRepair = (bool) $this->option('after-retry-budget-repair');
+        $afterDatasetContractRepair = (bool) $this->option('after-dataset-contract-repair');
         if ($afterRetryBudgetRepair && $generationNumber === null) {
             $this->error('--after-retry-budget-repair requires --generation so the recovery scope is explicit.');
 
@@ -75,7 +76,17 @@ class RecoverLabEvaluationErrors extends Command
 
             return self::FAILURE;
         }
-        if (collect([$afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair])->filter()->count() > 1) {
+        if ($afterDatasetContractRepair && $generationNumber === null) {
+            $this->error('--after-dataset-contract-repair requires --generation so the recovery scope is explicit.');
+
+            return self::FAILURE;
+        }
+        if ($afterDatasetContractRepair && $fullRecovery) {
+            $this->error('--after-dataset-contract-repair is limited to screening recovery.');
+
+            return self::FAILURE;
+        }
+        if (collect([$afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair])->filter()->count() > 1) {
             $this->error('Choose only one bounded repair mode.');
 
             return self::FAILURE;
@@ -92,12 +103,12 @@ class RecoverLabEvaluationErrors extends Command
         }
 
         $agents = LabAgent::query()->with(['modelVersion', 'generation'])
-            ->whereIn('lifecycle_status', $afterCodeRepair || $afterTimeoutBudgetRepair
+            ->whereIn('lifecycle_status', $afterCodeRepair || $afterTimeoutBudgetRepair || $afterDatasetContractRepair
                 ? ['evaluation_error', 'technical_quarantine']
                 : ['evaluation_error'])
             ->where('timeframe', $timeframe)
             ->when($symbol, fn ($query) => $query->where('symbol', $symbol))
-            ->whereHas('generation', function ($query) use ($afterRuntimeSchemaRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $generationNumber, $fullRecovery): void {
+            ->whereHas('generation', function ($query) use ($afterRuntimeSchemaRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair, $generationNumber, $fullRecovery): void {
                 if ($fullRecovery) {
                     // A full replay can finish the generation for its healthy
                     // peers while one candidate is quarantined as an
@@ -111,6 +122,8 @@ class RecoverLabEvaluationErrors extends Command
                         $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
                     } elseif ($afterRetryBudgetRepair) {
                         $query->whereIn('status', ['screening', 'screened']);
+                    } elseif ($afterDatasetContractRepair) {
+                        $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
                     } else {
                         $query->where('status', 'screening');
                     }
@@ -119,10 +132,20 @@ class RecoverLabEvaluationErrors extends Command
                     $query->where('generation', $generationNumber);
                 }
             })
-            ->when(! $afterRuntimeSchemaRepair && ! $afterTimeoutBudgetRepair && ! $afterRetryBudgetRepair, fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)))
+            ->when(
+                ! $afterAuthRepair
+                    && ! $afterServiceRepair
+                    && ! $afterCodeRepair
+                    && ! $afterRuntimeSchemaRepair
+                    && ! $afterIpcRepair
+                    && ! $afterTimeoutBudgetRepair
+                    && ! $afterRetryBudgetRepair
+                    && ! $afterDatasetContractRepair,
+                fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)),
+            )
             ->orderBy('id')
             ->get()
-            ->filter(function (LabAgent $agent) use ($afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $mode): bool {
+            ->filter(function (LabAgent $agent) use ($afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair, $mode): bool {
                 $attempts = (int) data_get($agent->modelVersion?->metadata, 'evaluator_recovery_attempts', 0);
                 if ($this->hasQueuedJob($agent, $mode)) {
                     return false;
@@ -164,6 +187,15 @@ class RecoverLabEvaluationErrors extends Command
                             || str_contains($reason, 'timestamp'));
                     $pythonUndefinedName = str_contains($reason, 'nameerror:')
                         && str_contains($reason, ' is not defined');
+                    $latestRunReason = strtolower((string) LabEvaluationRun::query()
+                        ->where('lab_agent_id', $agent->id)
+                        ->where('phase', $mode === 'full' ? 'full_validation' : 'screening')
+                        ->latest('id')
+                        ->value('error_message'));
+                    $pythonRunCodeError = str_contains($latestRunReason, 'indentationerror')
+                        || str_contains($latestRunReason, 'syntaxerror')
+                        || (str_contains($latestRunReason, 'nameerror:')
+                            && str_contains($latestRunReason, ' is not defined'));
                     $pythonVolumeMarkerRuntime = str_contains($reason, 'volume_available')
                         && (str_contains($reason, 'futurewarning')
                             || str_contains($reason, 'fillna')
@@ -176,6 +208,7 @@ class RecoverLabEvaluationErrors extends Command
                             || str_contains($reason, 'undefined method')
                             || str_contains($reason, 'batch result identity mismatch')
                             || $pythonUndefinedName
+                            || $pythonRunCodeError
                             || $timestampNormalizationFailure
                             || $pythonVolumeMarkerRuntime)));
                 }
@@ -251,6 +284,14 @@ class RecoverLabEvaluationErrors extends Command
                     return str_contains($reason, 'attempted too many times')
                         && str_contains($reason, 'strategy verdict withheld');
                 }
+                if ($afterDatasetContractRepair) {
+                    $reason = strtolower((string) $agent->decision_reason);
+                    $attempts = (int) data_get($agent->modelVersion?->metadata, 'dataset_contract_recovery_attempts', 0);
+
+                    return $attempts < 1
+                        && str_contains($reason, 'screening dataset hash did not match')
+                        && str_contains($reason, 'strategy verdict withheld');
+                }
 
                 return $attempts < 1;
             })
@@ -287,6 +328,11 @@ class RecoverLabEvaluationErrors extends Command
                     return (int) data_get($agent->modelVersion?->metadata, 'retry_budget_repair_recovery_attempts', 0) < 1;
                 });
             })
+            ->when($afterDatasetContractRepair, function ($agents) {
+                return $agents->filter(function (LabAgent $agent): bool {
+                    return (int) data_get($agent->modelVersion?->metadata, 'dataset_contract_recovery_attempts', 0) < 1;
+                });
+            })
             // Recovery ordering is operational only: it never creates or
             // changes strategy evidence.  Role-complete council members are
             // recovered first so the mandatory specialist/router lane cannot
@@ -309,9 +355,9 @@ class RecoverLabEvaluationErrors extends Command
         // A hash mismatch is an infrastructure block, not a strategy failure;
         // leave the agent untouched and dispatch no replay for that row.
         $recoveryContracts = [];
-        $recoverable = $agents->filter(function (LabAgent $agent) use ($recovery, $mode, &$recoveryContracts): bool {
+        $recoverable = $agents->filter(function (LabAgent $agent) use ($recovery, $mode, $afterDatasetContractRepair, &$recoveryContracts): bool {
             try {
-                $recoveryContracts[$agent->id] = $recovery->prepare($agent, $mode);
+                $recoveryContracts[$agent->id] = $recovery->prepare($agent, $mode, $afterDatasetContractRepair);
 
                 return true;
             } catch (\Throwable $exception) {
@@ -350,7 +396,7 @@ class RecoverLabEvaluationErrors extends Command
             return self::FAILURE;
         }
 
-        DB::transaction(function () use ($agents, $afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $fullRecovery): void {
+        DB::transaction(function () use ($agents, $afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair, $fullRecovery): void {
             foreach ($agents as $agent) {
                 $metadata = $agent->modelVersion?->metadata ?? [];
                 $attempts = (int) data_get($metadata, 'evaluator_recovery_attempts', 0) + 1;
@@ -384,6 +430,10 @@ class RecoverLabEvaluationErrors extends Command
                     data_set($metadata, 'retry_budget_repair_recovery_attempts', (int) data_get($metadata, 'retry_budget_repair_recovery_attempts', 0) + 1);
                     data_set($metadata, 'last_retry_budget_repair_recovery_at', now()->utc()->toIso8601String());
                 }
+                if ($afterDatasetContractRepair) {
+                    data_set($metadata, 'dataset_contract_recovery_attempts', (int) data_get($metadata, 'dataset_contract_recovery_attempts', 0) + 1);
+                    data_set($metadata, 'last_dataset_contract_recovery_at', now()->utc()->toIso8601String());
+                }
                 $restoreArchitecturePreflight = $afterCodeRepair && $this->isArchitecturePreflightRepairable($agent);
                 if ($restoreArchitecturePreflight) {
                     data_set($metadata, 'preflight_quarantine.classification', 'repaired_integrity');
@@ -415,6 +465,9 @@ class RecoverLabEvaluationErrors extends Command
                                 : ($afterRetryBudgetRepair
                                     ? 'Post-retry-budget-repair evaluator recovery attempt '
                                     : 'Evaluator recovery attempt '))))));
+                if ($afterDatasetContractRepair) {
+                    $recoveryPrefix = 'Post-dataset-contract-repair evaluator recovery attempt ';
+                }
                 $agent->update([
                     'lifecycle_status' => $fullRecovery ? 'full_queued' : 'queued',
                     'decision_reason' => $recoveryPrefix.$attempts.'; '.($fullRecovery ? 'full ' : '').'strategy verdict remains withheld until clean replay.',

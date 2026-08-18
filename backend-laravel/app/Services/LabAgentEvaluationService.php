@@ -14,7 +14,7 @@ use RuntimeException;
 
 class LabAgentEvaluationService
 {
-    public function __construct(private CandlePayloadService $candles, private MarketChampionService $champions, private LabDatasetExportService $datasets, private ScreeningLearningOutboxService $screeningOutbox, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger, private CandidateHandoffService $handoffs, private CounterfactualBlameGraphService $blameGraph, private LearningProtocolSafetyService $protocolSafety, private LabImmutableEvidenceService $evidence, private StrategyParameterSchemaService $schemas, private MarketVolumeService $volumes, private AgentKnowledgeService $knowledge, private ParentContributionGraphService $parentGraphService) {}
+    public function __construct(private CandlePayloadService $candles, private MarketChampionService $champions, private LabDatasetExportService $datasets, private ScreeningLearningOutboxService $screeningOutbox, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger, private CandidateHandoffService $handoffs, private CounterfactualBlameGraphService $blameGraph, private LearningProtocolSafetyService $protocolSafety, private LabImmutableEvidenceService $evidence, private StrategyParameterSchemaService $schemas, private MarketVolumeService $volumes, private AgentKnowledgeService $knowledge, private ParentContributionGraphService $parentGraphService, private LabGenerationContextService $generationContext) {}
 
     public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
@@ -463,7 +463,11 @@ class LabAgentEvaluationService
         $model = $agent->modelVersion;
         $volumeEnabled = $this->volumeEnabled($model);
         $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
-        $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], 5000);
+        $microProbe = data_get($agent->generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
+        $screenRows = $microProbe
+            ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
+            : 5000;
+        $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], $screenRows);
         if (count($rows) < 500) {
             throw new RuntimeException('Screening uchun yetarli recent candle topilmadi.');
         }
@@ -485,7 +489,7 @@ class LabAgentEvaluationService
             // HTTP JSON. Python applies the same bounded tail before
             // normalisation, so the replay stream is unchanged.
             'dataset_path' => $datasetSnapshot['path'],
-            'dataset_tail_rows' => 5000,
+            'dataset_tail_rows' => $screenRows,
             'volume_context' => $volumeEnabled
                 ? $this->volumeContextOrFail($agent->symbol, $agent->timeframe)
                 : $this->disabledVolumeContext(),
@@ -501,6 +505,7 @@ class LabAgentEvaluationService
                 $regimeSnapshot['sha256'] ?? null,
             ),
             'policy_context' => [
+                'shadow_micro_probe' => $microProbe,
                 'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($agent->symbol, $agent->timeframe),
                 'repair_contract' => [
                     'changed_gene' => count((array) $agent->parameter_diff) === 1
@@ -515,7 +520,7 @@ class LabAgentEvaluationService
                     'dataset_path' => $datasetSnapshot['path'],
                     'dataset_manifest_path' => $datasetSnapshot['path'].'.manifest.json',
                     'dataset_sha256' => $datasetSnapshot['sha256'],
-                    'tail_rows' => 5000,
+                    'tail_rows' => $screenRows,
                     'features_shared_per_generation_request' => true,
                 ],
             ],
@@ -524,7 +529,7 @@ class LabAgentEvaluationService
             // full replay. The bounded Laravel projection still removes the
             // large arrays from mutable model metadata after this response is
             // sealed in the immutable evidence plane.
-            'emit_decision_trace' => true,
+            'emit_decision_trace' => ! $microProbe,
         ];
         if ($regimeSnapshot !== null) {
             // Screening and full replay consume the same generation-frozen
@@ -759,19 +764,20 @@ class LabAgentEvaluationService
             'draft', 'queued', 'screening', 'evaluation_error',
             'full_queued', 'full_validation', 'training',
         ])->isEmpty()) {
-            $context = (array) ($generation->trigger_context ?? []);
-            $context['screening_terminal'] = [
-                'protocol' => 'generation_terminal_boundary_v1',
-                'status' => 'screened',
-                'completed_at' => now()->utc()->toIso8601String(),
-                'all_agents_terminal' => true,
-                'promotion_evidence' => false,
-            ];
-            $generation->update([
+            $this->generationContext->updateWithAttributes($generation, [
                 'status' => 'screened',
                 'completed_at' => now(),
-                'trigger_context' => $context,
-            ]);
+            ], function (array $context): array {
+                $context['screening_terminal'] = [
+                    'protocol' => 'generation_terminal_boundary_v1',
+                    'status' => 'screened',
+                    'completed_at' => now()->utc()->toIso8601String(),
+                    'all_agents_terminal' => true,
+                    'promotion_evidence' => false,
+                ];
+
+                return $context;
+            });
             app(LabGenerationReportService::class)->record($generation->fresh(), 'screening_completed');
         }
     }
@@ -793,14 +799,26 @@ class LabAgentEvaluationService
         }
         sort($ids);
 
-        $agents = LabAgent::query()
+        // A stale Redis reservation may contain a bounded batch whose first
+        // members already finished before the worker died. Replaying the raw
+        // payload must be idempotent: only queued/screening members are
+        // eligible for a fresh evidence boundary. Terminal members keep
+        // their original run and gate decision.
+        $allAgents = LabAgent::query()
             ->with('modelVersion', 'generation')
             ->whereIn('id', $ids)
             ->orderBy('id')
             ->get();
-        if ($agents->count() !== count($ids)) {
+        if ($allAgents->count() !== count($ids)) {
             throw new RuntimeException('Screening batch agentlaridan biri topilmadi.');
         }
+        $agents = $allAgents
+            ->filter(fn (LabAgent $agent): bool => in_array((string) $agent->lifecycle_status, ['queued', 'screening'], true))
+            ->values();
+        if ($agents->isEmpty()) {
+            return;
+        }
+        $ids = $agents->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
         $first = $agents->first();
         if (! $first || strtoupper((string) $first->symbol) !== strtoupper($symbol)) {
             throw new RuntimeException('Screening batch symbol contract mos emas.');
@@ -816,9 +834,31 @@ class LabAgentEvaluationService
             }
         }
         $generation = $first->generation;
-        $volumeEnabled = $agents->contains(fn (LabAgent $agent): bool => $this->volumeEnabled($agent->modelVersion));
+        $datasetContracts = $agents
+            ->map(fn (LabAgent $agent): string => $this->volumeEnabled($agent->modelVersion) ? 'volume' : 'price')
+            ->unique()
+            ->values();
+        if ($datasetContracts->count() > 1) {
+            // A stale queue payload may have been assembled before the
+            // per-contract batching fix. Split it before any request/run is
+            // created; this preserves each agent's immutable snapshot and
+            // avoids turning a scheduler race into a strategy error.
+            foreach ($agents->groupBy(fn (LabAgent $agent): string => $this->volumeEnabled($agent->modelVersion) ? 'volume' : 'price') as $contractAgents) {
+                $this->screenBatch(
+                    $contractAgents->pluck('id')->map(fn ($id): int => (int) $id)->all(),
+                    $symbol,
+                );
+            }
+
+            return;
+        }
+        $volumeEnabled = $datasetContracts->first() === 'volume';
         $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($generation, $volumeEnabled);
-        $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], 5000);
+        $microProbe = data_get($generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
+        $screenRows = $microProbe
+            ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
+            : 5000;
+        $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], $screenRows);
         if (count($rows) < 500) {
             throw new RuntimeException('Screening batch uchun yetarli recent candle topilmadi.');
         }
@@ -863,7 +903,7 @@ class LabAgentEvaluationService
             'initial_balance' => 10000,
             'risk_per_trade' => 1,
             'dataset_path' => $datasetSnapshot['path'],
-            'dataset_tail_rows' => 5000,
+            'dataset_tail_rows' => $screenRows,
             'volume_context' => $volumeEnabled
                 ? $this->volumeContextOrFail($first->symbol, $first->timeframe)
                 : $this->disabledVolumeContext(),
@@ -876,6 +916,7 @@ class LabAgentEvaluationService
                 $regimeSnapshot['sha256'] ?? null,
             ),
             'policy_context' => [
+                'shadow_micro_probe' => $microProbe,
                 'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($first->symbol, $first->timeframe),
                 'repair_contracts' => $repairContracts,
                 'snapshot_transport' => [
@@ -883,14 +924,14 @@ class LabAgentEvaluationService
                     'dataset_path' => $datasetSnapshot['path'],
                     'dataset_manifest_path' => $datasetSnapshot['path'].'.manifest.json',
                     'dataset_sha256' => $datasetSnapshot['sha256'],
-                    'tail_rows' => 5000,
+                    'tail_rows' => $screenRows,
                     'features_shared_per_generation_request' => true,
                     'bounded_batch_size' => count($agents),
                 ],
             ],
             // The canonical per-candidate result keeps its full decision
             // trace. Cost/mutation projections turn this off in Python.
-            'emit_decision_trace' => true,
+            'emit_decision_trace' => ! $microProbe,
         ];
         if ($regimeSnapshot !== null) {
             $request['regime_dataset_path'] = $regimeSnapshot['path'];
@@ -910,6 +951,7 @@ class LabAgentEvaluationService
         $manifest = [
             'candle_count' => count($rows),
             'data_hash' => $this->evidence->hash($rows),
+            'dataset_contract' => $volumeEnabled ? 'volume' : 'price',
             'snapshot_sha256' => $datasetSnapshot['sha256'],
             'snapshot_protocol' => $datasetSnapshot['protocol'],
             'snapshot_generation_id' => $first->lab_generation_id,
@@ -1043,9 +1085,15 @@ class LabAgentEvaluationService
         // canonical volume snapshot with volume_lane=none.  This keeps the
         // control and every child on one immutable dataset hash; the lane
         // remains disabled, so volume cannot alter the control signal.
-        return data_get($model->metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
-            || (bool) data_get($model->metadata, 'volume_research_contract.enabled', false)
-            || data_get($model->parameters, 'volume_lane', 'none') !== 'none';
+        $metadata = (array) ($model?->metadata ?? []);
+
+        return data_get($metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
+            || (bool) data_get($metadata, 'volume_research_contract.enabled', false)
+            || (bool) data_get($metadata, 'risk_bounded_evolution.volume_shadow', false)
+            || (bool) data_get($metadata, 'portfolio_council_lane.volume_shadow', false)
+            || data_get($metadata, 'portfolio_council_lane.role') === 'volume_m15_specialist'
+            || data_get($metadata, 'portfolio_council_lane.specialist_role') === 'volume_m15_specialist'
+            || data_get($model?->parameters, 'volume_lane', 'none') !== 'none';
     }
 
     /**
@@ -1223,19 +1271,20 @@ class LabAgentEvaluationService
             'draft', 'queued', 'screening', 'evaluation_error',
             'full_queued', 'full_validation', 'training',
         ])->isEmpty()) {
-            $context = (array) ($generation->trigger_context ?? []);
-            $context['screening_terminal'] = [
-                'protocol' => 'generation_terminal_boundary_v1',
-                'status' => 'screened',
-                'completed_at' => now()->utc()->toIso8601String(),
-                'all_agents_terminal' => true,
-                'promotion_evidence' => false,
-            ];
-            $generation->update([
+            $this->generationContext->updateWithAttributes($generation, [
                 'status' => 'screened',
                 'completed_at' => now(),
-                'trigger_context' => $context,
-            ]);
+            ], function (array $context): array {
+                $context['screening_terminal'] = [
+                    'protocol' => 'generation_terminal_boundary_v1',
+                    'status' => 'screened',
+                    'completed_at' => now()->utc()->toIso8601String(),
+                    'all_agents_terminal' => true,
+                    'promotion_evidence' => false,
+                ];
+
+                return $context;
+            });
             app(LabGenerationReportService::class)->record($generation->fresh(), 'screening_completed');
         }
     }

@@ -51,4 +51,16 @@ class TacticCatalogueTest extends TestCase
             'differential_target_min_signal_confidence',
         )['status']);
     }
+
+    public function test_shadow_architecture_temporal_and_volume_genes_are_declared(): void
+    {
+        $service = app(TacticCatalogueService::class);
+        $contract = $service->for('differential_router', 'regime_router', 'architecture');
+
+        $this->assertSame('passed', $service->alignment($contract, 'architecture', 'entry_topology_variant')['status']);
+        $this->assertSame('passed', $service->alignment($contract, 'temporal_stability', 'signal_max_age_candles')['status']);
+        $this->assertSame('passed', $service->alignment($contract, 'regime_coverage', 'volume_lane')['status']);
+        $this->assertSame('passed', $service->alignment($contract, 'robustness', 'confidence_calibration_min_samples')['status']);
+        $this->assertSame('passed', $service->alignment($contract, null, null, true)['status']);
+    }
 }

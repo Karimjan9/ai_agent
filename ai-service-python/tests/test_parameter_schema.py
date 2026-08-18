@@ -1,7 +1,10 @@
 import unittest
+from unittest.mock import patch
+
+import pandas as pd
 
 from app.services.parameter_schema import strategy_family, validate_strategy_parameters
-from app.strategies.laboratory import apply_differential_router_strategy, apply_regime_ensemble_strategy
+from app.strategies.laboratory import apply_differential_router_strategy, apply_hybrid_strategy, apply_regime_ensemble_strategy
 from app.strategies.registry import get_strategy
 
 
@@ -20,6 +23,17 @@ class ParameterSchemaTest(unittest.TestCase):
     def test_unknown_evolution_parameter_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "noma'lum parametr"):
             validate_strategy_parameters("breakout_v2", {"invented_parameter": True})
+
+    def test_temporal_survival_genes_are_explicit_and_bounded(self):
+        values = validate_strategy_parameters("breakout_v2", {
+            "temporal_survival_enabled": True,
+            "adaptive_signal_expiry_enabled": True,
+            "signal_decay_half_life_candles": 3,
+            "temporal_followthrough_min_rate": .4,
+            "temporal_drift_lookback_candles": 48,
+        })
+        self.assertTrue(values["temporal_survival_enabled"])
+        self.assertEqual(values["signal_decay_half_life_candles"], 3)
 
     def test_out_of_range_parameter_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "10..100"):
@@ -52,6 +66,40 @@ class ParameterSchemaTest(unittest.TestCase):
         self.assertEqual(strategy_family(strategy, "breakout_v1"), "regime_ensemble")
         self.assertEqual(values["adx_max"], 20.0)
         self.assertIs(get_strategy(strategy, "breakout_v1"), apply_regime_ensemble_strategy)
+
+    def test_structural_entry_topology_changes_signal_surface(self):
+        frame = pd.DataFrame({
+            "time": pd.date_range("2026-01-01", periods=4, freq="h", tz="UTC"),
+            "open": [100.0] * 4,
+            "high": [101.0] * 4,
+            "low": [99.0] * 4,
+            "close": [100.0] * 4,
+            "market_regime": ["trend_up"] * 4,
+            "volatility_regime": ["normal_volatility"] * 4,
+        })
+
+        def trend(df, _parameters):
+            out = df.copy()
+            out["signal"] = "BUY"
+            out["signal_confidence"] = 1.0
+            return out
+
+        def wait(df, _parameters):
+            out = df.copy()
+            out["signal"] = "WAIT"
+            out["signal_confidence"] = 0.0
+            return out
+
+        with patch("app.strategies.laboratory.apply_momentum_strategy", side_effect=trend), \
+             patch("app.strategies.laboratory.apply_volatility_strategy", side_effect=wait), \
+             patch("app.strategies.laboratory.apply_mean_reversion_strategy", side_effect=wait):
+            frozen = apply_hybrid_strategy(frame, {"entry_topology_variant": "frozen"})
+            consensus = apply_hybrid_strategy(frame, {"entry_topology_variant": "regime_consensus_v1"})
+            transition = apply_hybrid_strategy(frame, {"entry_topology_variant": "transition_hazard_v1"})
+
+        self.assertGreater(int((frozen["signal"] == "BUY").sum()), 0)
+        self.assertEqual(int((consensus["signal"] == "BUY").sum()), 0)
+        self.assertLess(int((transition["signal"] == "BUY").sum()), int((frozen["signal"] == "BUY").sum()))
 
 
 if __name__ == "__main__":

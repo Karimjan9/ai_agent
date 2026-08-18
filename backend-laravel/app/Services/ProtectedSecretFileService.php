@@ -16,6 +16,10 @@ class ProtectedSecretFileService
     public function path(string $name): string
     {
         if (! array_key_exists($name, self::FILES)) throw new RuntimeException('Unsupported protected secret name.');
+        if ($name === 'internal_api') {
+            $configured = trim((string) env('INTERNAL_API_TOKEN_FILE', ''));
+            if ($configured !== '') return $configured;
+        }
         return storage_path('app/secrets/'.self::FILES[$name]);
     }
 

@@ -1,0 +1,12 @@
+
+   WARN  Tests\Feature\RescueCircuitBreakerTest
+  ! three same temporal cohorts and twelve siblings are blocked → file_get_contents(C:\x_programs\xamp\htdocs\l… 6.76s  
+  ! one rescue cannot reopen on the same dataset but a closed day tail can → file_get_contents(C:\x_programs\xa… 0.39s  
+  ! temporal ablation requires paired four variants and three windows → file_get_contents(C:\x_programs\xamp\ht… 0.35s  
+  ! clean temporal ablation without sealed windows is persistently blocked → file_get_contents(C:\x_programs\xa… 0.39s  
+  ! temporal ablation audit projection refreshes stale reason codes → file_get_contents(C:\x_programs\xamp\htdo… 0.28s  
+  ! challenger reason codes keep low pf and pending forward out of parent frontier → file_get_contents(C:\x_pro… 0.26s  
+
+  Tests:    6 warnings (28 assertions)
+  Duration: 9.14s
+

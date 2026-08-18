@@ -257,8 +257,12 @@ class MarketVolumeService
         $coverage = $expected > 0 ? $matched / $expected : 0.0;
         $usableRatio = $expected > 0 ? $usable / $expected : 0.0;
         $lastVolume = $volumeRows->last()?->time;
+        // Keep the lag signed. An observation newer than the last closed
+        // price candle is a future-data contract violation, not a harmless
+        // zero-lag refresh.
         $lagSeconds = $lastExpected && $lastVolume
-            ? max(0, CarbonImmutable::parse($lastExpected, 'UTC')->diffInSeconds(CarbonImmutable::parse($lastVolume, 'UTC'), absolute: true))
+            ? CarbonImmutable::parse($lastExpected, 'UTC')->timestamp
+                - CarbonImmutable::parse($lastVolume, 'UTC')->timestamp
             : null;
         $maxLagHours = max(0.0, (float) config('services.market_volume.max_lag_hours', 24));
         $minCoverage = (float) config('services.market_volume.minimum_coverage', .95);
@@ -268,6 +272,7 @@ class MarketVolumeService
         if ($coverage < $minCoverage) $reasons[] = 'VOLUME_COVERAGE_BELOW_THRESHOLD';
         if ($usableRatio < $minUsable) $reasons[] = 'VOLUME_ZERO_OR_UNAVAILABLE_RATIO_ABOVE_THRESHOLD';
         if ($expected > 0 && ! $lastVolume) $reasons[] = 'VOLUME_LATEST_OBSERVATION_MISSING';
+        if ($lagSeconds !== null && $lagSeconds < 0) $reasons[] = 'VOLUME_FUTURE_OBSERVATION';
         if ($lagSeconds !== null && $lagSeconds > ($maxLagHours * 3600)) $reasons[] = 'VOLUME_STALE_LAG';
         if (strtolower((string) config('services.market_volume.provider', 'dukascopy')) !== 'dukascopy') $reasons[] = 'VOLUME_SOURCE_CONTRACT_MISMATCH';
         if (strtolower((string) config('services.market_volume.transport', 'jetta')) !== 'jetta') $reasons[] = 'VOLUME_TRANSPORT_CONTRACT_MISMATCH';

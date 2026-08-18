@@ -32,7 +32,11 @@ class LearningLaneTest extends TestCase
             'lab_agent_id' => $control->id,
             'evidence_run_id' => 'control-run-1',
             'observed_metrics' => ['profit_factor' => 1.0, 'total_trades' => 40],
-            'metadata' => ['screening_decision' => 'passed'],
+            'metadata' => [
+                'screening_decision' => 'passed',
+                'execution_hash' => str_repeat('e', 64),
+                'data_manifest_hash' => str_repeat('d', 64),
+            ],
         ]);
         $candidateMap = LabMutationResponseMap::create([
             'response_key' => str_repeat('b', 64),
@@ -49,7 +53,11 @@ class LearningLaneTest extends TestCase
             'old_value' => ['value' => .9],
             'new_value' => ['value' => 1.0],
             'observed_metrics' => ['profit_factor' => 1.25, 'total_trades' => 40],
-            'metadata' => ['screening_decision' => 'failed'],
+            'metadata' => [
+                'screening_decision' => 'failed',
+                'execution_hash' => str_repeat('e', 64),
+                'data_manifest_hash' => str_repeat('d', 64),
+            ],
         ]);
 
         $pair = app(LearningLaneService::class)->pairScreeningObservation(
@@ -69,7 +77,40 @@ class LearningLaneTest extends TestCase
 
     public function test_provisional_skill_is_role_scoped_and_can_be_used_only_as_one_research_probe(): void
     {
-        [$candidate] = $this->agents();
+        [$candidate, $control] = $this->agents();
+        $executionHash = str_repeat('e', 64);
+        $dataHash = str_repeat('d', 64);
+        $controlMap = LabMutationResponseMap::create([
+            'response_key' => str_repeat('1', 64), 'stage' => 'screening', 'status' => 'control',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'profit_factor', 'lab_agent_id' => $control->id,
+            'evidence_run_id' => 'provisional-control-run',
+            'observed_metrics' => ['profit_factor' => 1.0],
+            'metadata' => ['execution_hash' => $executionHash, 'data_manifest_hash' => $dataHash],
+        ]);
+        $candidateMap = LabMutationResponseMap::create([
+            'response_key' => str_repeat('2', 64), 'stage' => 'screening', 'status' => 'screen_observed',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'profit_factor', 'lab_agent_id' => $candidate->id,
+            'evidence_run_id' => 'provisional-candidate-run',
+            'parameter_key' => 'minimum_confidence', 'direction' => 'increase',
+            'observed_metrics' => ['profit_factor' => 1.2],
+            'metadata' => [
+                'execution_hash' => $executionHash, 'data_manifest_hash' => $dataHash,
+                'causal_credit_eligible' => true,
+            ],
+        ]);
+        $pair = LabLearningLanePair::create([
+            'pair_key' => str_repeat('3', 64), 'lab_generation_id' => $candidate->lab_generation_id,
+            'candidate_agent_id' => $candidate->id, 'control_agent_id' => $control->id,
+            'candidate_response_map_id' => $candidateMap->id, 'control_response_map_id' => $controlMap->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'profit_factor', 'specialist_role' => 'edge_quality_specialist',
+            'baseline_source' => 'control', 'status' => 'provisional',
+            'candidate_metrics' => ['profit_factor' => 1.2], 'control_metrics' => ['profit_factor' => 1.0],
+            'target_delta' => ['delta' => .2, 'improved' => true],
+            'metadata' => ['same_snapshot' => true, 'same_execution_contract' => true],
+        ]);
         AgentLearningLesson::create([
             'lesson_id' => '00000000-0000-0000-0000-000000000001',
             'lesson_hash' => str_repeat('c', 128),
@@ -85,6 +126,7 @@ class LearningLaneTest extends TestCase
             'outcome' => 'beneficial',
             'evidence' => [
                 'specialist_role' => 'edge_quality_specialist',
+                'pair_id' => $pair->id,
                 'direction' => 'increase',
                 'target_delta' => ['delta' => .25, 'improved' => true],
                 'promotion_evidence' => false,
@@ -104,6 +146,38 @@ class LearningLaneTest extends TestCase
         $this->assertTrue($skill['research_only']);
         $this->assertFalse($skill['promotion_evidence']);
         $this->assertNull($otherRole);
+    }
+
+    public function test_baseline_without_contract_matched_control_stays_missing_control(): void
+    {
+        [$candidate] = $this->agents();
+        $candidateMap = LabMutationResponseMap::create([
+            'response_key' => str_repeat('f', 64),
+            'stage' => 'screening',
+            'status' => 'screen_observed',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'differential_router',
+            'target' => 'profit_factor',
+            'parameter_key' => 'minimum_confidence',
+            'lab_agent_id' => $candidate->id,
+            'evidence_run_id' => 'candidate-without-control',
+            'baseline_metrics' => ['profit_factor' => 1.0],
+            'observed_metrics' => ['profit_factor' => 1.25],
+            'metadata' => ['screening_decision' => 'failed'],
+        ]);
+
+        $pair = app(LearningLaneService::class)->pairScreeningObservation(
+            $candidate,
+            ['evidence_run_id' => 'candidate-without-control'],
+            $candidateMap->toArray(),
+        );
+
+        $this->assertNotNull($pair);
+        $this->assertSame('missing_control', $pair['status']);
+        $this->assertNull($pair['control_response_map_id']);
+        $this->assertFalse((bool) data_get($pair, 'target_delta.improved'));
+        $this->assertTrue((bool) data_get($pair, 'metadata.baseline_is_diagnostic_only'));
     }
 
     /** @return array{0:LabAgent,1:LabAgent} */

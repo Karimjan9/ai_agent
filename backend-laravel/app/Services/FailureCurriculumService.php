@@ -62,6 +62,17 @@ class FailureCurriculumService
 
     private function observedCaseResult(string $failureType, array $result): ?bool
     {
+        if (str_starts_with($failureType, 'wound_')) {
+            $row = collect((array) data_get($result, 'wound_set.cases', []))
+                ->first(fn (array $case): bool => (string) data_get($case, 'failure_type') === $failureType);
+
+            return match ((string) data_get($row, 'status', 'not_assessed')) {
+                'improved' => true,
+                'failed' => false,
+                default => null,
+            };
+        }
+
         return match ($failureType) {
             'cost_fragility' => (float) data_get($result, 'pf_attribution.stress_cost.profit_factor', 0) >= 1.05,
             'transition_failure' => (float) data_get($result, 'transition_homework.score', 0) >= 50,

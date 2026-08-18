@@ -7,7 +7,7 @@ use InvalidArgumentException;
 class StrategyParameterSchemaService
 {
     private const EXECUTION_SCHEMA = [
-        'volume_lane' => ['string', ['none', 'breakout_volume_confirmation', 'transition_volume_router', 'low_volume_risk_firewall']],
+        'volume_lane' => ['string', ['none', 'breakout_volume_confirmation', 'transition_volume_router', 'low_volume_risk_firewall', 'relative_volume_confirmation_v1']],
         'atr_stop_multiplier' => ['numeric', 0.5, 4.0],
         'atr_target_multiplier' => ['numeric', 0.75, 8.0],
         'trailing_atr_multiplier' => ['numeric', 0.0, 4.0],
@@ -24,9 +24,45 @@ class StrategyParameterSchemaService
         'weak_regime_wait_candles' => ['integer', 1, 96],
         'transition_firewall_enabled' => ['boolean'],
         'transition_wait_candles' => ['integer', 1, 6],
+        'state_machine_variant' => ['string', ['none', 'neutral_transition_cooldown_reentry_v1']],
+        // Structural entry topology is deliberately separate from scalar
+        // timing genes.  It changes how specialists are admitted to an
+        // entry, so a shadow result cannot be mistaken for a wait/EMA/ROC
+        // perturbation.
+        'entry_topology_variant' => ['string', [
+            'frozen', 'regime_consensus_v1', 'transition_hazard_v1',
+            'breakout_retest_v1', 'trend_regime_confirmation_v1',
+            'range_reentry_confirmation_v1', 'volatility_persistence_v1',
+        ]],
+        // Regime classification is a separate executable research axis. It
+        // changes how the closed candle stream is labelled before routing;
+        // it is never inferred from a calendar label or promoted by itself.
+        'regime_classifier_variant' => ['string', [
+            'frozen', 'adx_hysteresis_v1', 'ema_slope_consensus_v1',
+            'volatility_adaptive_v1',
+        ]],
         'confidence_calibration_enabled' => ['boolean'],
         'confidence_calibration_min_samples' => ['integer', 15, 200],
         'confidence_ev_lower_bound_enabled' => ['boolean'],
+        // Temporal survival is a research-only abstention contract. These
+        // genes are deliberately separate from transition/EMA/ROC/lookback
+        // mutations so a temporal failure cannot be relabelled as a generic
+        // parameter improvement.
+        'temporal_survival_enabled' => ['boolean'],
+        'adaptive_signal_expiry_enabled' => ['boolean'],
+        'drift_abstention_enabled' => ['boolean'],
+        'signal_max_age_candles' => ['integer', 1, 24],
+        'signal_decay_half_life_candles' => ['integer', 1, 24],
+        'temporal_followthrough_window' => ['integer', 1, 12],
+        'temporal_followthrough_min_rate' => ['numeric', 0.0, 1.0],
+        'temporal_followthrough_atr_fraction' => ['numeric', 0.05, 2.0],
+        'temporal_volatility_ratio_max' => ['numeric', 1.0, 4.0],
+        'temporal_spread_atr_ratio_max' => ['numeric', 0.01, 0.5],
+        'temporal_drift_zscore_max' => ['numeric', 0.5, 5.0],
+        'temporal_confidence_decay_floor' => ['numeric', 0.0, 1.0],
+        'temporal_loss_streak_limit' => ['integer', 1, 10],
+        'temporal_min_history' => ['integer', 5, 100],
+        'temporal_drift_lookback_candles' => ['integer', 10, 200],
         'dynamic_cooldown_enabled' => ['boolean'],
         'cooldown_shadow_min_samples' => ['integer', 3, 50],
         'cooldown_shadow_edge_pf' => ['numeric', 0.8, 2.0],
@@ -160,6 +196,34 @@ class StrategyParameterSchemaService
     {
         $schema = self::SCHEMAS[$this->family($strategy)] ?? [];
         return $schema ? [...$schema, ...self::EXECUTION_SCHEMA] : [];
+    }
+
+    /**
+     * Produce the stable identity representation used by every parameter
+     * hash. JSON/database hydration may expose an integer schema value as a
+     * float (or a numeric value with harmless trailing precision); that is a
+     * serialization detail, not a new executable topology.
+     */
+    public function canonicalizeForIdentity(string $strategy, array $parameters): array
+    {
+        $schema = $this->schema($strategy);
+        $canonical = [];
+
+        foreach ($parameters as $key => $value) {
+            [$type] = array_pad($schema[$key] ?? [], 3, null);
+
+            $canonical[$key] = match ($type) {
+                'integer' => is_numeric($value) ? (int) round((float) $value) : $value,
+                'numeric' => is_numeric($value) ? round((float) $value, 12) : $value,
+                'boolean' => (bool) $value,
+                'string' => (string) $value,
+                default => $value,
+            };
+        }
+
+        ksort($canonical, SORT_STRING);
+
+        return $canonical;
     }
 
     public function defaults(string $strategy): array
@@ -297,6 +361,10 @@ class StrategyParameterSchemaService
     private function executionDefaults(): array
     {
         return [
+            // The runtime schema already exposes this routing coordinate;
+            // keep its canonical default present in every generated model so
+            // the volume/M15 shadow lane can make a truthful one-gene probe.
+            'volume_lane' => 'none',
             'atr_stop_multiplier' => 1.5,
             'atr_target_multiplier' => 2.5,
             'trailing_atr_multiplier' => 0.0,
@@ -313,9 +381,27 @@ class StrategyParameterSchemaService
             'weak_regime_wait_candles' => 4,
             'transition_firewall_enabled' => false,
             'transition_wait_candles' => 2,
+            'state_machine_variant' => 'none',
+            'entry_topology_variant' => 'frozen',
+            'regime_classifier_variant' => 'frozen',
             'confidence_calibration_enabled' => true,
             'confidence_calibration_min_samples' => 15,
             'confidence_ev_lower_bound_enabled' => true,
+            'temporal_survival_enabled' => false,
+            'adaptive_signal_expiry_enabled' => false,
+            'drift_abstention_enabled' => false,
+            'signal_max_age_candles' => 2,
+            'signal_decay_half_life_candles' => 3,
+            'temporal_followthrough_window' => 3,
+            'temporal_followthrough_min_rate' => .40,
+            'temporal_followthrough_atr_fraction' => .25,
+            'temporal_volatility_ratio_max' => 2.5,
+            'temporal_spread_atr_ratio_max' => .25,
+            'temporal_drift_zscore_max' => 2.5,
+            'temporal_confidence_decay_floor' => .35,
+            'temporal_loss_streak_limit' => 4,
+            'temporal_min_history' => 12,
+            'temporal_drift_lookback_candles' => 48,
             'dynamic_cooldown_enabled' => true,
             'cooldown_shadow_min_samples' => 5,
             'cooldown_shadow_edge_pf' => 1.1,

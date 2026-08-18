@@ -49,12 +49,21 @@ class LearningLaneService
         if (! $map || $map->status === 'control') return null;
 
         $control = $this->resolveControl($agent, $map);
+        $controlVerified = $this->isVerifiedControl($control);
         $candidateMetrics = (array) $map->observed_metrics;
-        $controlMetrics = (array) data_get($control, 'metrics', []);
+        // A parent/anchor/baseline is useful diagnostic context, but it is
+        // not a causal control. Only a same-snapshot and same-execution
+        // frozen control may populate the learning ledger.
+        $controlMetrics = $controlVerified ? (array) data_get($control, 'metrics', []) : [];
         $target = (string) ($map->target ?: data_get($agent->modelVersion?->metadata, 'generation_target', ''));
-        $targetDelta = $controlMetrics !== []
+        $targetDelta = $controlVerified
             ? app(MutationResponseMapService::class)->targetDelta($target, $controlMetrics, $candidateMetrics)
-            : (array) $map->target_delta;
+            : [
+                'status' => 'missing_control',
+                'improved' => false,
+                'reason' => 'CONTROL_PAIR_REQUIRED',
+                'promotion_evidence' => false,
+            ];
         $signature = app(FailureSignatureCompilerService::class)->compile(
             $agent,
             $target,
@@ -81,18 +90,18 @@ class LearningLaneService
                 [
                 'lab_generation_id' => $agent->lab_generation_id,
                 'candidate_agent_id' => $agent->id,
-                'control_agent_id' => data_get($control, 'agent_id'),
+                'control_agent_id' => $controlVerified ? data_get($control, 'agent_id') : null,
                 'candidate_response_map_id' => $map->id,
-                'control_response_map_id' => data_get($control, 'map_id'),
+                'control_response_map_id' => $controlVerified ? data_get($control, 'map_id') : null,
                 'symbol' => strtoupper((string) $agent->symbol),
                 'timeframe' => strtoupper((string) $agent->timeframe),
                 'strategy_family' => (string) $agent->strategy_family,
                 'target' => $target !== '' ? $target : null,
                 'specialist_role' => data_get($signature, 'specialist_role'),
                 'baseline_source' => $baselineSource,
-                'status' => $controlMetrics !== [] ? 'screen_paired' : 'missing_control',
+                'status' => $controlVerified ? 'screen_paired' : 'missing_control',
                 'candidate_evidence_run_id' => $map->evidence_run_id,
-                'control_evidence_run_id' => data_get($control, 'evidence_run_id'),
+                'control_evidence_run_id' => $controlVerified ? data_get($control, 'evidence_run_id') : null,
                 'independent_window_key' => $this->windowKey($result),
                 'candidate_metrics' => $candidateMetrics,
                 'control_metrics' => $controlMetrics,
@@ -104,8 +113,10 @@ class LearningLaneService
                     'screening_decision' => data_get($map->metadata, 'screening_decision'),
                     'control_quality' => data_get($control, 'quality'),
                     'control_scope' => data_get($control, 'scope'),
-                    'same_snapshot' => (bool) data_get($control, 'same_snapshot', false),
-                    'same_execution_contract' => (bool) data_get($control, 'same_execution_contract', false),
+                    'same_snapshot' => $controlVerified && (bool) data_get($control, 'same_snapshot', false),
+                    'same_execution_contract' => $controlVerified && (bool) data_get($control, 'same_execution_contract', false),
+                    'control_pair_status' => $controlVerified ? 'verified' : 'missing_control',
+                    'baseline_is_diagnostic_only' => ! $controlVerified,
                     'promotion_evidence' => false,
                 ],
                 ],
@@ -113,24 +124,26 @@ class LearningLaneService
         }
 
         $microFrozen = in_array((string) $pair->status, ['micro_failed', 'micro_deferred'], true);
-        if ($controlMetrics !== [] && ! $microFrozen) {
+        if (! $microFrozen) {
             $pair->update([
-                'status' => 'screen_paired',
+                'status' => $controlVerified ? 'screen_paired' : 'missing_control',
                 'pair_key' => $pair->pair_key ?: $pairKey,
                 'lab_generation_id' => $agent->lab_generation_id,
                 'candidate_agent_id' => $agent->id,
-                'control_agent_id' => data_get($control, 'agent_id'),
-                'control_response_map_id' => data_get($control, 'map_id'),
-                'control_evidence_run_id' => data_get($control, 'evidence_run_id'),
-                'control_metrics' => $controlMetrics,
+                'control_agent_id' => $controlVerified ? data_get($control, 'agent_id') : null,
+                'control_response_map_id' => $controlVerified ? data_get($control, 'map_id') : null,
+                'control_evidence_run_id' => $controlVerified ? data_get($control, 'evidence_run_id') : null,
+                'control_metrics' => $controlVerified ? $controlMetrics : [],
                 'target_delta' => $targetDelta,
                 'baseline_source' => $baselineSource,
                 'metadata' => [
                     ...((array) $pair->metadata),
                     'control_quality' => data_get($control, 'quality'),
                     'control_scope' => data_get($control, 'scope'),
-                    'same_snapshot' => (bool) data_get($control, 'same_snapshot', false),
-                    'same_execution_contract' => (bool) data_get($control, 'same_execution_contract', false),
+                    'same_snapshot' => $controlVerified && (bool) data_get($control, 'same_snapshot', false),
+                    'same_execution_contract' => $controlVerified && (bool) data_get($control, 'same_execution_contract', false),
+                    'control_pair_status' => $controlVerified ? 'verified' : 'missing_control',
+                    'baseline_is_diagnostic_only' => ! $controlVerified,
                     'promotion_evidence' => false,
                 ],
             ]);
@@ -196,12 +209,111 @@ class LearningLaneService
         foreach ($pairs as $pair) {
             if (! $pair->candidateAgent || ! $pair->candidateResponseMap) continue;
             $control = $this->resolveControl($pair->candidateAgent, $pair->candidateResponseMap);
-            if (in_array((string) data_get($control, 'source'), ['control', 'frozen_control_global'], true)
-                && (array) data_get($control, 'metrics', []) !== []) {
+            if ($this->isVerifiedControl($control)) {
                 $pairable++;
             }
         }
         return ['available' => true, 'missing' => $pairs->count(), 'pairable' => $pairable, 'limit' => $limit];
+    }
+
+    /**
+     * Reconcile legacy pair rows against the strict control identity rule.
+     * Historical rows are never deleted or rewritten into promotion evidence;
+     * an unverified screen/provisional row is simply returned to
+     * `missing_control` until a real frozen control is materialized.
+     *
+     * @return array<string, mixed>
+     */
+    public function reconcileControlPairs(
+        string $symbol,
+        string $timeframe,
+        ?string $family = null,
+        int $limit = 1000,
+        bool $apply = false,
+    ): array {
+        if (! $this->available()) return ['available' => false, 'inspected' => 0, 'invalid' => 0, 'reconciled' => 0];
+
+        $pairs = LabLearningLanePair::query()
+            ->with(['candidateAgent.modelVersion', 'candidateResponseMap'])
+            ->where('symbol', strtoupper($symbol))
+            ->where('timeframe', strtoupper($timeframe))
+            ->when($family, fn ($query) => $query->where('strategy_family', $family))
+            ->whereIn('status', ['screen_paired', 'provisional'])
+            ->latest('id')
+            ->limit(max(1, $limit))
+            ->get();
+        $invalid = 0;
+        $reconciled = 0;
+        foreach ($pairs as $pair) {
+            $agent = $pair->candidateAgent;
+            $map = $pair->candidateResponseMap;
+            if (! $agent || ! $map) continue;
+            $control = $this->resolveControl($agent, $map);
+            if ($this->isVerifiedControl($control)) {
+                $reconciled++;
+                $controlMetrics = (array) data_get($control, 'metrics', []);
+                $target = (string) ($pair->target ?: $map->target ?: data_get($agent->modelVersion?->metadata, 'generation_target', ''));
+                $targetDelta = app(MutationResponseMapService::class)->targetDelta(
+                    $target,
+                    $controlMetrics,
+                    (array) $map->observed_metrics,
+                );
+                if ($apply) {
+                    $pair->update([
+                        'control_agent_id' => data_get($control, 'agent_id'),
+                        'control_response_map_id' => data_get($control, 'map_id'),
+                        'control_evidence_run_id' => data_get($control, 'evidence_run_id'),
+                        'control_metrics' => $controlMetrics,
+                        'target_delta' => $targetDelta,
+                        'baseline_source' => (string) data_get($control, 'source', 'control'),
+                        'metadata' => [
+                            ...((array) $pair->metadata),
+                            'control_pair_status' => 'verified',
+                            'same_snapshot' => true,
+                            'same_execution_contract' => true,
+                            'baseline_is_diagnostic_only' => false,
+                            'promotion_evidence' => false,
+                        ],
+                    ]);
+                }
+                continue;
+            }
+            $invalid++;
+            if (! $apply) continue;
+            $pair->update([
+                'status' => 'missing_control',
+                'control_agent_id' => null,
+                'control_response_map_id' => null,
+                'control_evidence_run_id' => null,
+                'control_metrics' => [],
+                'target_delta' => [
+                    'status' => 'missing_control',
+                    'improved' => false,
+                    'reason' => 'CONTROL_PAIR_REQUIRED',
+                    'promotion_evidence' => false,
+                ],
+                'metadata' => [
+                    ...((array) $pair->metadata),
+                    'control_pair_status' => 'missing_control',
+                    'baseline_is_diagnostic_only' => true,
+                    'reconciled_at' => now()->utc()->toIso8601String(),
+                    'promotion_evidence' => false,
+                ],
+            ]);
+        }
+
+        return [
+            'available' => true,
+            'symbol' => strtoupper($symbol),
+            'timeframe' => strtoupper($timeframe),
+            'family' => $family,
+            'limit' => max(1, $limit),
+            'apply' => $apply,
+            'inspected' => $pairs->count(),
+            'invalid' => $invalid,
+            'reconciled' => $reconciled,
+            'promotion_evidence' => false,
+        ];
     }
 
     /** @return Collection<int, LabLearningLanePair> */
@@ -234,6 +346,7 @@ class LearningLaneService
             ->reject(fn (LabLearningLanePair $pair): bool => in_array((int) $pair->candidate_agent_id, $dispatched, true))
             ->filter(fn (LabLearningLanePair $pair): bool => $pair->candidateAgent !== null
                 && in_array((string) $pair->candidateAgent->lifecycle_status, ['screened', 'challenger', 'rejected', 'stagnated'], true)
+                && $this->pairHasVerifiedControl($pair)
                 && is_numeric(data_get($pair->target_delta, 'delta')))
             ->sortByDesc(fn (LabLearningLanePair $pair): array => [
                 (bool) data_get($pair->target_delta, 'improved', false) ? 1 : 0,
@@ -287,6 +400,7 @@ class LearningLaneService
             ->get()
             ->map(fn (LabLearningLaneDispatch $dispatch): ?LabLearningLanePair => $dispatch->pair)
             ->filter()
+            ->filter(fn (LabLearningLanePair $pair): bool => $this->pairHasVerifiedControl($pair))
             ->unique('id')
             ->values();
     }
@@ -417,6 +531,16 @@ class LearningLaneService
             return 0;
         }
 
+        // Older cancellation recovery wrote cancelled_at but left
+        // finished_at null. That row is already terminal by definition; close
+        // only this invariant gap so historical batch metadata cannot keep a
+        // research dispatch looking active forever. No strategy or promotion
+        // state is changed.
+        DB::table('job_batches')
+            ->whereNotNull('cancelled_at')
+            ->whereNull('finished_at')
+            ->update(['finished_at' => DB::raw('cancelled_at')]);
+
         $dispatches = LabLearningLaneDispatch::query()
             ->with(['pair', 'agent'])
             ->where('symbol', strtoupper($symbol))
@@ -459,9 +583,20 @@ class LearningLaneService
                     ->where('lab_agent_id', $dispatch->lab_agent_id)
                     ->where('status', 'started')
                     ->exists());
+            $terminalBatch = (bool) ($batch
+                && ($batch->finished_at !== null || $batch->cancelled_at !== null));
             if ($orphanBatch && ! isset($cancelledBatches[$dispatch->queue_batch_id])) {
+                $cancelledAt = now()->timestamp;
                 DB::table('job_batches')->where('id', $dispatch->queue_batch_id)->update([
-                    'cancelled_at' => now(),
+                    // Laravel's default job_batches migration stores these
+                    // lifecycle fields as Unix integers (not datetimes).
+                    // Writing Carbon here is silently truncated by MySQL and
+                    // leaves the learning dispatch permanently `running`.
+                    // A cancelled batch is also terminal: leaving
+                    // finished_at null makes later queue monitors treat the
+                    // historical row as unfinished work.
+                    'cancelled_at' => $cancelledAt,
+                    'finished_at' => $cancelledAt,
                 ]);
                 $cancelledBatches[$dispatch->queue_batch_id] = true;
             }
@@ -494,7 +629,7 @@ class LearningLaneService
                 }
                 $requeuedBatches[$dispatch->queue_batch_id] = $jobIds;
             }
-            if ($batch && $batch->finished_at === null && ! $activeHeldBatch && ! $orphanBatch) {
+            if ($batch && $batch->finished_at === null && ! $activeHeldBatch && ! $orphanBatch && ! $terminalBatch) {
                 if ($jobsForBatch->isNotEmpty()) {
                     $dispatch->update([
                         'status' => 'queued',
@@ -540,11 +675,59 @@ class LearningLaneService
                     ],
                 ]);
             }
-            if ($dispatch->agent && in_array((string) $dispatch->agent->lifecycle_status, ['screened', 'evaluation_error', 'technical_quarantine'], true)) {
-                $dispatch->agent->update([
-                    'lifecycle_status' => 'screened',
-                    'decision_reason' => 'Learning-lane replay reopened after explicit technical/worker recovery; promotion remains blocked.',
-                ]);
+            if ($dispatch->agent) {
+                $recoveredAgent = $dispatch->agent->fresh(['modelVersion', 'generation']);
+                $performance = $recoveredAgent?->model_version_id
+                    ? ModelMarketPerformance::query()
+                        ->where('model_version_id', $recoveredAgent->model_version_id)
+                        ->where('symbol', $recoveredAgent->symbol)
+                        ->where('timeframe', $recoveredAgent->timeframe)
+                        ->latest('id')
+                        ->first()
+                    : null;
+                $latestFullRun = LabEvaluationRun::query()
+                    ->where('lab_agent_id', $recoveredAgent?->id)
+                    ->where('phase', 'full_validation')
+                    ->where('status', 'completed')
+                    ->latest('id')
+                    ->first();
+                $sealedEvidenceComplete = $latestFullRun !== null
+                    && app(LabImmutableEvidenceService::class)->learningEligibility($latestFullRun)['complete'] === true;
+
+                if ($performance !== null) {
+                    // A late queue callback must not move an already projected
+                    // candidate backwards. Restore the operational lifecycle
+                    // from the sealed performance projection only.
+                    $recoveredAgent->update([
+                        'lifecycle_status' => (string) $performance->status,
+                        'decision_reason' => 'Learning-lane recovery reconciled an already projected full replay; promotion remains blocked.',
+                    ]);
+                } elseif ($sealedEvidenceComplete) {
+                    // The immutable replay is valid but its mutable learning
+                    // projection was interrupted. Return the agent to the
+                    // research-screened state so the sealed cache can be
+                    // consumed exactly once by the bounded retry path. No
+                    // strategy verdict, parent credit or paper evidence is
+                    // invented here.
+                    $recoveredAgent->update([
+                        'lifecycle_status' => 'screened',
+                        'decision_reason' => 'Sealed full evidence exists but learning projection was interrupted; projection retry is allowed, promotion remains blocked.',
+                    ]);
+                    $dispatch->update([
+                        'metadata' => [
+                            ...((array) $dispatch->metadata),
+                            'recovery_protocol' => 'learning_lane_terminal_evidence_projection_retry_v1',
+                            'sealed_full_run_id' => $latestFullRun->run_id,
+                            'projection_retry_allowed' => true,
+                            'promotion_evidence' => false,
+                        ],
+                    ]);
+                } elseif (in_array((string) $recoveredAgent->lifecycle_status, ['screened', 'evaluation_error', 'technical_quarantine'], true)) {
+                    $recoveredAgent->update([
+                        'lifecycle_status' => 'screened',
+                        'decision_reason' => 'Learning-lane replay reopened after explicit technical/worker recovery; promotion remains blocked.',
+                    ]);
+                }
             }
             $recovered++;
         }
@@ -574,7 +757,8 @@ class LearningLaneService
             ->when($role !== null && $role !== '', fn (Collection $rows): Collection => $rows->filter(
                 fn (AgentLearningLesson $lesson): bool => (string) data_get($lesson->evidence, 'specialist_role', '') === $role,
             ))
-            ->filter(fn (AgentLearningLesson $lesson): bool => filled($lesson->parameter_key));
+            ->filter(fn (AgentLearningLesson $lesson): bool => filled($lesson->parameter_key)
+                && $this->lessonHasVerifiedControlPair($lesson));
         $lesson = $lessons->sortByDesc(fn (AgentLearningLesson $row): array => [
             $row->status === 'confirmed' ? 1 : 0,
             $this->targetUtility($target, (float) data_get($row->evidence, 'target_delta.delta', 0)),
@@ -593,6 +777,31 @@ class LearningLaneService
             'research_only' => true,
             'promotion_evidence' => false,
         ];
+    }
+
+    private function lessonHasVerifiedControlPair(AgentLearningLesson $lesson): bool
+    {
+        $pairId = (int) data_get($lesson->evidence, 'pair_id', 0);
+        if ($pairId <= 0) return false;
+        $pair = LabLearningLanePair::query()->find($pairId);
+        if (! $pair) return false;
+
+        return $this->pairHasVerifiedControl($pair);
+    }
+
+    private function pairHasVerifiedControl(LabLearningLanePair $pair): bool
+    {
+        return in_array((string) $pair->status, [
+            'screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed',
+        ], true)
+            && (int) $pair->control_response_map_id > 0
+            && (array) $pair->control_metrics !== []
+            && (bool) data_get($pair->metadata, 'same_snapshot', false)
+            && (bool) data_get($pair->metadata, 'same_execution_contract', false)
+            && LabMutationResponseMap::query()
+                ->whereKey($pair->control_response_map_id)
+                ->where('status', 'control')
+                ->exists();
     }
 
     /**
@@ -616,6 +825,13 @@ class LearningLaneService
             ->latest('id')
             ->first();
         if (! $pair) return ['status' => 'missing_pair', 'promotion_evidence' => false];
+        if (! $this->pairHasVerifiedControl($pair)) {
+            return [
+                'status' => 'missing_control',
+                'pair_id' => $pair->id,
+                'promotion_evidence' => false,
+            ];
+        }
         $dispatch = LabLearningLaneDispatch::query()
             ->where('pair_id', $pair->id)
             ->whereIn('status', ['selected', 'queued', 'running'])
@@ -763,9 +979,14 @@ class LearningLaneService
             app(LearningMemoryService::class)->recordPair($pair, $memoryStage, $memoryObservation);
             app(FailureDojoService::class)->recordPair($pair);
         }
-        $pairedCount = $activePairs->whereIn('status', ['screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed'])->count();
+        $pairedRows = $activePairs->whereIn('status', ['screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed']);
+        $pairedCount = $pairedRows->count();
         $missingCount = $activePairs->where('status', 'missing_control')->count();
-        $improvedCount = $activePairs->filter(fn (LabLearningLanePair $pair): bool => (bool) data_get($pair->target_delta, 'improved', false))->count();
+        // Only compare improvement against verified control-paired rows.  A
+        // micro-failed/missing-control row may retain a historical target
+        // delta, but it is not a causal control comparison and must not inflate
+        // this KPI above 100%.
+        $improvedCount = $pairedRows->filter(fn (LabLearningLanePair $pair): bool => (bool) data_get($pair->target_delta, 'improved', false))->count();
         $signatureCounts = $activePairs
             ->filter(fn (LabLearningLanePair $pair): bool => filled(data_get($pair->failure_signature, 'signature')))
             ->countBy(fn (LabLearningLanePair $pair): string => (string) data_get($pair->failure_signature, 'signature'));
@@ -776,6 +997,10 @@ class LearningLaneService
             ->where('lesson_type', 'skill_lesson')
             ->when($family, fn ($query) => $query->where('strategy_family', $family))
             ->get();
+        // Legacy lessons can outlive their pair.  They remain audit history,
+        // but only lessons backed by a verified control pair are usable by the
+        // learning lane and should appear in operational skill KPIs.
+        $usableLessons = $lessons->filter(fn (AgentLearningLesson $lesson): bool => $this->lessonHasVerifiedControlPair($lesson));
         $dispatches = LabLearningLaneDispatch::query()
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))
@@ -808,8 +1033,8 @@ class LearningLaneService
             'pairs' => $pairs->count(),
             'paired' => $pairedCount,
             'missing_control' => $missingCount,
-            'provisional_skills' => $lessons->where('status', 'provisional')->count(),
-            'confirmed_skills' => $lessons->where('status', 'confirmed')->count(),
+            'provisional_skills' => $usableLessons->where('status', 'provisional')->count(),
+            'confirmed_skills' => $usableLessons->where('status', 'confirmed')->count(),
             'active_dispatches' => $dispatches->filter(fn (LabLearningLaneDispatch $dispatch): bool => in_array((string) $dispatch->status, ['selected', 'queued', 'running'], true)
                 || ((string) $dispatch->status === 'retry_ready' && $activeBatchIds->contains((string) $dispatch->queue_batch_id)))->count(),
             'queued_replay_jobs' => $queuedReplayJobs,
@@ -817,11 +1042,11 @@ class LearningLaneService
                 'paired_delta_coverage_percent' => $coverageDenominator > 0 ? round(($pairedCount / $coverageDenominator) * 100, 2) : 0.0,
                 'target_improvement_rate_percent' => $pairedCount > 0 ? round(($improvedCount / $pairedCount) * 100, 2) : 0.0,
                 'repeat_failure_rate_percent' => $activePairs->count() > 0 ? round(($repeatCount / $activePairs->count()) * 100, 2) : 0.0,
-                'provisional_skill_birth_rate_percent' => $pairedCount > 0 ? round(($lessons->where('status', 'provisional')->count() / $pairedCount) * 100, 2) : 0.0,
-                'confirmed_mentor_birth_rate_percent' => $lessons->count() > 0 ? round(($lessons->where('status', 'confirmed')->count() / $lessons->count()) * 100, 2) : 0.0,
+                'provisional_skill_birth_rate_percent' => $pairedCount > 0 ? round(($usableLessons->where('status', 'provisional')->count() / $pairedCount) * 100, 2) : 0.0,
+                'confirmed_mentor_birth_rate_percent' => $usableLessons->count() > 0 ? round(($usableLessons->where('status', 'confirmed')->count() / $usableLessons->count()) * 100, 2) : 0.0,
                 'full_replay_throughput' => $completedReplays,
                 'full_replay_observed' => $observedReplays,
-                'forward_confirmation_rate_percent' => $observedReplays > 0 ? round(($lessons->where('status', 'confirmed')->count() / $observedReplays) * 100, 2) : 0.0,
+                'forward_confirmation_rate_percent' => $observedReplays > 0 ? round(($usableLessons->where('status', 'confirmed')->count() / $observedReplays) * 100, 2) : 0.0,
                 'queue_oldest_age_seconds' => $oldestQueuedAt ? max(0, now()->utc()->timestamp - $oldestQueuedAt->timestamp) : 0,
                 'superseded_duplicate_pairs' => $pairs->where('status', 'superseded')->count(),
             ],
@@ -866,8 +1091,9 @@ class LearningLaneService
             ->latest('id')
             ->get()
             ->first(fn (LabMutationResponseMap $row): bool => (int) ($row->agent?->lab_generation_id ?? 0) === (int) $agent->lab_generation_id
-                && ($candidateExecution === ''
-                    || $this->sameExecutionContract($candidate, $row)));
+                && $candidateExecution !== ''
+                && $this->sameExecutionContract($candidate, $row)
+                && $this->sameSnapshot($candidate, $row));
         if ($controls) {
             return [
                 'map_id' => $controls->id,
@@ -932,6 +1158,20 @@ class LearningLaneService
         return ['map_id' => null, 'agent_id' => null, 'evidence_run_id' => null, 'metrics' => [], 'source' => 'missing'];
     }
 
+    /**
+     * A causal pair is valid only when the baseline is an explicit control
+     * response and both immutable identities match. Parent/anchor/baseline
+     * rows remain visible for diagnosis but can never enter the learning
+     * frontier or earn a provisional skill.
+     */
+    private function isVerifiedControl(array $control): bool
+    {
+        return in_array((string) data_get($control, 'source'), ['control', 'frozen_control_global'], true)
+            && (array) data_get($control, 'metrics', []) !== []
+            && (bool) data_get($control, 'same_snapshot', false)
+            && (bool) data_get($control, 'same_execution_contract', false);
+    }
+
     private function sameExecutionContract(LabMutationResponseMap $candidate, LabMutationResponseMap $control): bool
     {
         $candidateHash = $this->executionHashOf($candidate);
@@ -991,7 +1231,7 @@ class LearningLaneService
         array $result = [],
         array $delta = [],
     ): ?AgentLearningLesson {
-        if ($pair->status === 'missing_control' || ! data_get($pair->target_delta, 'improved', false)) return null;
+        if (! $this->pairHasVerifiedControl($pair) || ! data_get($pair->target_delta, 'improved', false)) return null;
         if ((string) data_get($pair->metadata, 'screening_decision', '') === 'passed') return null;
         if (! (bool) data_get($pair->metadata, 'same_execution_contract', false)) return null;
         $runId = (string) ($pair->candidate_evidence_run_id ?: data_get($result, 'evidence_run_id', ''));

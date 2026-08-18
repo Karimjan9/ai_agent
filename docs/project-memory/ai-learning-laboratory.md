@@ -386,7 +386,7 @@ draining legacy rows:
 ```powershell
 php artisan schedule:headless-work
 # One coordinator prevents separate workers from polling the same replay mutex.
-php artisan queue:work database --queue=lab-full-validation,lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd --sleep=1 --tries=0 --timeout=4200 --max-time=3600
+php artisan queue:work redis --queue=lab-full-validation,lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd --sleep=1 --tries=0 --timeout=4200 --max-time=3600
 ```
 
 The M15 foundation is stored as `storage/app/lab-datasets/foundation/*_M15_2025-foundation.csv`; it is separate from the rolling snapshot and is never treated as promotion evidence. H1 regime data is passed separately and delayed until the H1 candle is closed. A screen without the generation-frozen H1 regime hash is automatically rescreened before full selection.

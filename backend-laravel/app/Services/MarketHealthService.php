@@ -8,6 +8,8 @@ use App\Models\MarketHealthSample;
 use App\Models\ServiceHealthCheck;
 use App\Models\Symbol;
 use App\Models\SystemEvent;
+use App\Services\MarketData\HistoricalDataQualityService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
@@ -18,6 +20,7 @@ class MarketHealthService
         private readonly TelegramAlertService $telegram,
         private readonly SystemLogService $logs,
         private readonly PhaseTwoFoundationService $foundation,
+        private readonly HistoricalDataQualityService $historicalData,
     ) {
     }
 
@@ -47,7 +50,8 @@ class MarketHealthService
         $lostAfter = (int) config('services.mt5.feed_lost_after_seconds', 1200);
         $staleAfter = (int) config('services.mt5.feed_stale_after_seconds', 900);
         $age = $latest ? max(0, (int) $latest->time->diffInSeconds(now())) : PHP_INT_MAX;
-        $status = $this->statusForAge($age, $staleAfter, $lostAfter);
+        $marketSessionOpen = $this->historicalData->isContinuityMarketOpen(CarbonImmutable::now('UTC'), $symbol);
+        $status = $this->statusForAge($age, $staleAfter, $lostAfter, $marketSessionOpen);
         $previous = MarketProviderHealth::query()
             ->where('provider', $provider)
             ->where('symbol', $symbol)
@@ -67,10 +71,13 @@ class MarketHealthService
                 'alert_sent_at' => $status === 'lost' ? $previous?->alert_sent_at : null,
                 'auto_recovery_attempted' => $status === 'lost' ? (bool) ($previous?->auto_recovery_attempted ?? false) : false,
                 'auto_recovery_attempted_at' => $status === 'lost' ? $previous?->auto_recovery_attempted_at : null,
-                'message' => $latest ? "Last {$symbol} {$timeframe} candle age {$age}s." : "No {$symbol} {$timeframe} candle found.",
+                'message' => $status === 'closed'
+                    ? "{$symbol} {$timeframe} market session is closed; feed freshness is deferred."
+                    : ($latest ? "Last {$symbol} {$timeframe} candle age {$age}s." : "No {$symbol} {$timeframe} candle found."),
                 'metrics' => [
                     'latest_candle_id' => $latest?->id,
                     'latest_candle_time' => $latest?->time?->toDateTimeString(),
+                    'market_session_open' => $marketSessionOpen,
                 ],
             ],
         );
@@ -124,8 +131,12 @@ class MarketHealthService
         return $query->latest('time')->first();
     }
 
-    private function statusForAge(int $age, int $staleAfter, int $lostAfter): string
+    private function statusForAge(int $age, int $staleAfter, int $lostAfter, bool $marketSessionOpen): string
     {
+        if (! $marketSessionOpen) {
+            return 'closed';
+        }
+
         if ($age === PHP_INT_MAX) {
             return 'lost';
         }
@@ -147,13 +158,19 @@ class MarketHealthService
             return;
         }
 
+        $serviceStatus = match ($health->status) {
+            'lost' => 'critical',
+            'stale' => 'warning',
+            default => 'ok',
+        };
+
         ServiceHealthCheck::updateOrCreate(
             ['service_key' => "market_feed:{$health->provider}:{$health->symbol}:{$health->timeframe}"],
             [
                 'service_label' => "Market Feed {$health->symbol} {$health->timeframe}",
-                'status' => $health->status === 'lost' ? 'critical' : ($health->status === 'stale' ? 'warning' : 'ok'),
-                'health_score' => $health->status === 'ok' ? 100 : ($health->status === 'stale' ? 60 : 0),
-                'last_ok_at' => $health->status === 'ok' ? now() : null,
+                'status' => $serviceStatus,
+                'health_score' => $serviceStatus === 'critical' ? 0 : ($serviceStatus === 'warning' ? 60 : 100),
+                'last_ok_at' => $serviceStatus === 'ok' ? now() : null,
                 'last_checked_at' => now(),
                 'stale_after_seconds' => $health->stale_after_seconds,
                 'message' => $health->message,
@@ -170,8 +187,15 @@ class MarketHealthService
 
         $eventType = match ($health->status) {
             'ok' => 'provider_recovered',
+            'closed' => 'provider_closed',
             'stale' => 'provider_stale',
             default => 'provider_lost',
+        };
+
+        $severity = match ($health->status) {
+            'lost' => 'critical',
+            'stale' => 'warning',
+            default => 'info',
         };
 
         $this->foundation->recordEvent([
@@ -180,7 +204,7 @@ class MarketHealthService
             'source_id' => $health->id,
             'symbol' => $health->symbol,
             'timeframe' => $health->timeframe,
-            'severity' => $health->status === 'lost' ? 'critical' : ($health->status === 'stale' ? 'warning' : 'info'),
+            'severity' => $severity,
             'summary' => "{$health->provider} {$health->symbol} {$health->timeframe} feed status: {$health->status}.",
             'payload' => [
                 'previous_status' => $previous?->status,
@@ -192,7 +216,7 @@ class MarketHealthService
             $eventType,
             "{$health->provider} {$health->symbol} {$health->timeframe} feed status changed to {$health->status}.",
             ['previous_status' => $previous?->status, 'age_seconds' => $health->age_seconds],
-            $health->status === 'lost' ? 'critical' : 'info',
+            $severity,
             'market_feed',
             $eventType,
             $health->status,

@@ -115,9 +115,11 @@ class FailureRepairAnchorService
         ?string $failureTarget = null,
         array $evidence = [],
         bool $evidenceComplete = false,
+        bool $allowStaleRebase = false,
     ): ?LabFailureRepairAnchor {
         $reason = strtoupper(trim($failureReason));
         $agent->loadMissing('modelVersion', 'generation');
+        $gateContract = app(GateContractService::class)->forReason($reason);
         $target = $this->normalizeTarget($failureTarget)
             ?: $this->resolveTarget($reason, $evidence)
             ?: $this->repairTargetFromMetadata($agent);
@@ -126,8 +128,21 @@ class FailureRepairAnchorService
         // anchor here would reset the bounded-attempt counter and make the
         // escape/quarantine policy impossible to reach. The screen/forward
         // outcome methods are the only legal learning projections for it.
-        if ((int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0) > 0) {
-            return null;
+        $existingAnchorId = (int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0);
+        $rebaseFromAnchorId = null;
+        $rebaseResult = (array) data_get($evidence, 'screening_result', []);
+        if ($existingAnchorId > 0) {
+            if (! $allowStaleRebase || $rebaseResult === []) return null;
+
+            $existingAnchor = LabFailureRepairAnchor::query()->find($existingAnchorId);
+            if (! $existingAnchor || $this->snapshotMatches($existingAnchor, $rebaseResult)) {
+                return null;
+            }
+
+            // A repair child evaluated on a different immutable dataset cannot
+            // be paired with its old anchor. Preserve that anchor unchanged
+            // and create a new baseline for the current evidence stream.
+            $rebaseFromAnchorId = $existingAnchorId;
         }
         if (! $evidenceComplete
             || $target === null
@@ -154,13 +169,18 @@ class FailureRepairAnchorService
             'strategy_family' => (string) $agent->strategy_family,
             'parameters' => $snapshot,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION));
-        $anchorKey = hash('sha256', json_encode([
+        $anchorKeyPayload = [
             'protocol' => self::PROTOCOL,
             'source_lab_agent_id' => $agent->id,
             'source_model_version_id' => $model->id,
             'failure_signature' => data_get($failureSignature, 'signature'),
             'parameter_fingerprint' => $fingerprint,
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        ];
+        if ($rebaseFromAnchorId !== null) {
+            $anchorKeyPayload['rebase_from_anchor_id'] = $rebaseFromAnchorId;
+            $anchorKeyPayload['rebase_data_hash'] = $this->snapshotHash($rebaseResult);
+        }
+        $anchorKey = hash('sha256', json_encode($anchorKeyPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
         $anchor = LabFailureRepairAnchor::firstOrCreate(
             ['anchor_key' => $anchorKey],
@@ -186,12 +206,21 @@ class FailureRepairAnchorService
                     'failure_class' => 'strategy',
                     'failure_reason' => $reason,
                     'failure_target' => $target,
+                    'optimization_target' => data_get($gateContract, 'optimization_target', $target),
+                    'optimization_gate' => data_get($gateContract, 'gate'),
+                    'failure_contract_protocol' => GateContractService::PROTOCOL,
                     'failure_signature' => $failureSignature,
                     'source_lifecycle_status' => $agent->lifecycle_status,
                     'source_origin' => $agent->origin,
                     'source_generation' => $agent->generation?->generation,
                     'source_parameter_diff_keys' => array_keys((array) ($agent->parameter_diff ?? [])),
                     'screening_result' => $evidence['screening_result'] ?? null,
+                    'rebase' => $rebaseFromAnchorId !== null ? [
+                        'protocol' => 'stale_anchor_rebase_v1',
+                        'from_anchor_id' => $rebaseFromAnchorId,
+                        'data_hash' => $this->snapshotHash($rebaseResult),
+                        'promotion_evidence' => false,
+                    ] : null,
                     'immutable_snapshot_hash' => $fingerprint,
                     'observed' => $evidence,
                     'promotion_evidence' => false,
@@ -231,6 +260,7 @@ class FailureRepairAnchorService
                     'screening_pair' => $screeningPair,
                     'screening_result' => $result,
                 ],
+                true,
                 true,
             );
             if ($anchor) $anchors[] = $anchor;
@@ -279,8 +309,10 @@ class FailureRepairAnchorService
                         'gate_decision_id' => $decision->id,
                         'evidence_run_id' => $run->run_id,
                         'handoff_backfill' => true,
+                        'screening_result' => (array) $decision->metrics,
                         'screening_pair' => $this->screeningPair($agent, (array) $decision->metrics),
                     ],
+                    true,
                     true,
                 );
                 if ($anchor) $anchors[] = $this->descriptor($anchor);
@@ -316,6 +348,20 @@ class FailureRepairAnchorService
     }
 
     /**
+     * A repair baseline is only comparable when both immutable hashes match.
+     * This is intentionally public so targeted-handoff planning can detect a
+     * stale inherited anchor without mutating the historical record.
+     */
+    public function snapshotMatches(LabFailureRepairAnchor $anchor, array $candidate): bool
+    {
+        $baseline = (array) data_get($anchor->evidence, 'screening_result', []);
+        if ($baseline === [] || $candidate === []) return false;
+
+        return $this->sameHash($baseline, $candidate, 'data_manifest.snapshot_sha256', 'data_manifest.sha256')
+            && $this->sameHash($baseline, $candidate, 'execution_contract.execution_hash', 'execution_hash');
+    }
+
+    /**
      * The anchor budget is measured across cohorts, not only the latest
      * generation. Three clean paired attempts without target improvement
      * leave the parameter surface and recommend an architecture/specialist
@@ -345,10 +391,15 @@ class FailureRepairAnchorService
             $kinds = $rows->pluck('sibling_kind')->filter()->unique()->values();
             $hasPrimary = $kinds->contains('primary_direction');
             $hasReverse = $kinds->contains('reverse_direction');
+            $newContract = $rows->contains(fn (mixed $row): bool =>
+                data_get($row, 'cohort_contract') === 'four_siblings_plus_control_v1'
+            );
             $hasThird = $kinds->contains('alternative_gene') || $kinds->contains('architecture_escape');
+            $hasFourth = $kinds->contains('secondary_alternative_gene') || $kinds->contains('architecture_escape');
             $hasControl = $kinds->contains('frozen_control');
 
-            return $hasPrimary && $hasReverse && $hasThird && $hasControl;
+            return $hasPrimary && $hasReverse && $hasThird && $hasControl
+                && (! $newContract || $hasFourth);
         });
         $cleanAttempts = $completeCohorts->filter(fn (Collection $rows): bool =>
             $rows->every(fn (mixed $row): bool => data_get($row, 'target_improved') !== true)
@@ -522,6 +573,7 @@ class FailureRepairAnchorService
             'status' => data_get($pair, 'status', 'not_confirmed'),
             'sibling_kind' => data_get($agent->modelVersion?->metadata, 'repair_anchor.sibling_kind', data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.kind')),
             'sibling_cohort_id' => data_get($agent->modelVersion?->metadata, 'repair_anchor.sibling_cohort_id', data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id')),
+            'cohort_contract' => data_get($agent->modelVersion?->metadata, 'repair_anchor.cohort_contract', data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_contract', 'legacy_three_siblings_plus_control_v1')),
             'target_improved' => data_get($pair, 'target_improved') === true,
             'evidence_run_id' => $eligibility['run_id'] ?? null,
             'child_lab_agent_id' => $agent->id,
@@ -607,6 +659,21 @@ class FailureRepairAnchorService
             || data_get($windows, 'independence_verified') !== true) {
             $reasons[] = 'REPAIR_INDEPENDENT_FORWARD_NOT_CONFIRMED';
         }
+        $cohortContract = (string) data_get(
+            $agent->modelVersion?->metadata,
+            'repair_anchor.cohort_contract',
+            data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_contract', ''),
+        );
+        $controlParity = null;
+        if ($cohortContract === 'four_siblings_plus_control_v1') {
+            $generation = LabGeneration::query()->find((int) $agent->lab_generation_id);
+            $controlParity = $generation
+                ? app(FrozenControlParityService::class)->assess($generation)
+                : ['status' => 'incomplete', 'promotion_evidence' => false];
+            if (data_get($controlParity, 'status') !== 'passed') {
+                $reasons[] = 'REPAIR_FROZEN_CONTROL_NOT_PASSED';
+            }
+        }
         if (! $targetImproved) $reasons[] = 'REPAIR_TARGET_GATE_NOT_IMPROVED';
 
         return [
@@ -630,6 +697,7 @@ class FailureRepairAnchorService
                 'runtime_policy' => data_get($childResult, 'full_replay_runtime_policy.protocol'),
             ],
             'independent_forward_windows' => $windows,
+            'frozen_control_parity' => $controlParity,
             'no_regression_status' => data_get($childResult, 'no_regression_contract.status'),
             'reason_codes' => $reasons,
             'parent_eligible_after_confirmation' => $reasons === [],
@@ -716,12 +784,22 @@ class FailureRepairAnchorService
         return is_string($left) && $left !== '' && is_string($right) && $right !== '' && hash_equals($left, $right);
     }
 
+    private function snapshotHash(array $result): string
+    {
+        return (string) data_get(
+            $result,
+            'data_manifest.snapshot_sha256',
+            data_get($result, 'data_manifest.sha256', ''),
+        );
+    }
+
     private function targetScore(string $target, array $metrics): ?float
     {
         $value = match ($target) {
             'profit_factor' => data_get($metrics, 'profit_factor'),
             'stress_cost' => data_get($metrics, 'screening_survival.stress_cost_pf', data_get($metrics, 'pf_attribution.stress_cost.profit_factor', data_get($metrics, 'stress_test.profit_factor'))),
-            'temporal_stability', 'monthly_survival' => data_get($metrics, 'screening_survival.worst_temporal_chunk_pf', data_get($metrics, 'screening_survival.worst_window_pf', data_get($metrics, 'monthly_passport.worst_month_pf'))),
+            'temporal_stability' => data_get($metrics, 'screening_survival.worst_temporal_chunk_pf', data_get($metrics, 'screening_survival.worst_window_pf', data_get($metrics, 'monthly_passport.worst_month_pf'))),
+            'monthly_survival' => data_get($metrics, 'monthly_passport.worst_month_pf', data_get($metrics, 'screening_survival.worst_window_pf')),
             'regime_coverage' => data_get($metrics, 'screening_survival.worst_regime_pf', data_get($metrics, 'statistical_evidence.edge_quality.worst_regime_pf')),
             'drawdown_risk' => data_get($metrics, 'max_drawdown_percent', data_get($metrics, 'max_drawdown')),
             'architecture' => data_get($metrics, 'profit_factor'),

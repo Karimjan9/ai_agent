@@ -91,7 +91,7 @@ class LearningVelocityGateService
         $activeLearning = 0;
 
         foreach ($generations as $generation) {
-            $agents = $generation->agents()->get();
+            $agents = $generation->agents()->with(['modelVersion', 'generation'])->get();
             $agentIds = $agents->pluck('id')->filter()->values();
             $screen = $agentIds->isEmpty() || ! Schema::hasTable('candidate_gate_decisions')
                 ? collect()
@@ -100,7 +100,9 @@ class LearningVelocityGateService
                     ->where('stage', 'screening')
                     ->get();
             $screenPasses = $screen->where('decision', 'passed')->count();
-            $technical = $agents->whereIn('lifecycle_status', ['evaluation_error', 'technical_quarantine'])->count();
+            $technical = $agents
+                ->filter(fn (LabAgent $agent): bool => $this->requiresTechnicalRecovery($agent))
+                ->count();
             $fullProgress = $this->fullProgressCount($agentIds);
             $active = $agents->whereIn('lifecycle_status', [
                 'queued', 'screening', 'training', 'full_queued', 'full_validation',
@@ -171,6 +173,73 @@ class LearningVelocityGateService
             'active_learning_agents' => $activeLearning,
             'observations' => $observations,
         ];
+    }
+
+    /**
+     * Count only technical states that still have an actionable recovery.
+     *
+     * A constructor may legitimately be unable to produce a non-zero
+     * mutation for a fully exhausted gene.  That candidate remains in
+     * technical_quarantine and remains excluded from every quality path, but
+     * replaying it cannot repair the invariant.  Treat only that exact,
+     * immutable zero-diff preflight shape as reconciled; every other
+     * technical quarantine continues to block learning fail-closed.
+     */
+    private function requiresTechnicalRecovery(LabAgent $agent): bool
+    {
+        if ((string) $agent->lifecycle_status === 'evaluation_error') {
+            return true;
+        }
+
+        if ((string) $agent->lifecycle_status !== 'technical_quarantine') {
+            return false;
+        }
+
+        // A closed generation-level constructor contract breach has no
+        // executable evidence to recover.  Replaying its surviving agents
+        // would create an incomplete cohort and would turn infrastructure
+        // history into a false strategy observation.  Keep the generation
+        // permanently quarantined and excluded from quality/learning, but do
+        // not let it block a fresh valid cohort forever.
+        $generationContext = (array) data_get($agent->generation?->trigger_context, 'integrity_repair', []);
+        $contractDrift = (array) data_get($generationContext, 'contract_drift', []);
+        $constructorAbort = data_get($agent->generation?->trigger_context, 'constructor_contract_abort.reason_code')
+            ?? data_get($agent->generation?->trigger_context, 'shadow_research_constructor_abort.reason_code')
+            ?? data_get($agent->generation?->trigger_context, 'controlled_rescue_constructor_abort.reason_code');
+        if ($contractDrift !== [] && $constructorAbort !== null) {
+            return false;
+        }
+
+        $errors = array_values(array_unique(array_map(
+            static fn (mixed $error): string => (string) $error,
+            (array) data_get($agent->modelVersion?->metadata, 'preflight_quarantine.errors', []),
+        )));
+        if ($errors !== ['ZERO_DIFF_INVARIANT_FAILED']) {
+            return true;
+        }
+
+        $diff = (array) $agent->parameter_diff;
+        if ($diff === []) {
+            return true;
+        }
+
+        foreach ($diff as $change) {
+            if (! is_array($change) || ! array_key_exists('old', $change) || ! array_key_exists('new', $change)) {
+                return true;
+            }
+
+            $old = $change['old'];
+            $new = $change['new'];
+            $same = is_numeric($old) && is_numeric($new)
+                ? (float) $old === (float) $new
+                : json_encode($old, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)
+                    === json_encode($new, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES);
+            if (! $same) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @param \Illuminate\Support\Collection<int, mixed> $agentIds */

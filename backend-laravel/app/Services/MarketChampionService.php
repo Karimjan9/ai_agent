@@ -106,10 +106,39 @@ class MarketChampionService
             $learningLane = $agent !== null
                 && data_get($agent->modelVersion?->metadata, 'learning_lane.protocol') === LearningLaneService::PROTOCOL
                 && data_get($agent->modelVersion?->metadata, 'learning_lane.promotion_evidence', false) !== true;
+            $shadowResearchLane = (bool) data_get($model->metadata, 'shadow_research_lane.shadow_only', false)
+                || data_get($model->metadata, 'shadow_research_lane.protocol') === ShadowResearchGovernorService::PROTOCOL;
+            $shadowRequalification = $shadowResearchLane && $agent
+                ? app(ShadowResearchGovernorService::class)->requalification($agent->fresh(['generation']))
+                : ['allowed' => false, 'status' => 'not_shadow_research', 'promotion_evidence' => false];
+            $shadowResearchOnly = $shadowResearchLane
+                && ! (bool) data_get($shadowRequalification, 'allowed', false);
+            if ($shadowResearchLane && ! $shadowResearchOnly) {
+                $shadowMetadata = (array) ($model->metadata ?? []);
+                $shadowMetadata['shadow_research_lane'] = [
+                    ...((array) data_get($shadowMetadata, 'shadow_research_lane', [])),
+                    'requalified' => true,
+                    'requalified_at' => now()->utc()->toIso8601String(),
+                    'requalification' => $shadowRequalification,
+                    'promotion_evidence' => false,
+                ];
+                $model->update(['metadata' => $shadowMetadata]);
+            }
             if ($learningLane) {
                 $result['learning_lane'] = [
                     ...((array) data_get($agent->modelVersion?->metadata, 'learning_lane', [])),
                     'promotion_evidence' => false,
+                ];
+            }
+            if ($shadowResearchLane) {
+                $result['shadow_research_lane'] = [
+                    ...((array) data_get($model->metadata, 'shadow_research_lane', [])),
+                    'status' => $shadowResearchOnly ? 'research_only' : 'requalified_for_official_funnel',
+                    'requalification' => $shadowRequalification,
+                    'promotion_evidence' => false,
+                    'mutation_credit' => $shadowResearchOnly ? false : 'pending_normal_gates',
+                    'parent_promotion' => $shadowResearchOnly ? false : 'pending_normal_gates',
+                    'official_paper_eligible' => $shadowResearchOnly ? false : 'pending_normal_gates',
                 ];
             }
             if ($agent && (int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0) > 0) {
@@ -217,7 +246,7 @@ class MarketChampionService
             );
             $performance->update(['metrics' => $result]);
 
-            if ($learningLane) {
+            if ($learningLane || $shadowResearchOnly) {
                 // Learning-lane replays are deliberately economic
                 // observations, not a hidden forward/paper shortcut.  Even a
                 // score that beats the current frontier stays a challenger
@@ -226,7 +255,11 @@ class MarketChampionService
                 $performance->update([
                     'status' => 'challenger',
                     'champion_slot' => null,
-                    'paper_status' => null,
+                    // The schema intentionally keeps paper_status non-null.
+                    // A learning-lane replay is research-only and is not
+                    // paper-eligible yet, so preserve the explicit pending
+                    // state instead of writing an invalid null value.
+                    'paper_status' => 'pending',
                 ]);
             } elseif ($champion?->id === $performance->id) {
                 $performance->update(['status' => 'champion', 'champion_slot' => 'champion']);
@@ -728,6 +761,11 @@ class MarketChampionService
 
     private function promote(ModelMarketPerformance $candidate, ?ModelMarketPerformance $champion, ModelVersion $model): void
     {
+        if (((bool) data_get($model->metadata, 'shadow_research_lane.shadow_only', false)
+            || data_get($model->metadata, 'shadow_research_lane.protocol') === ShadowResearchGovernorService::PROTOCOL)
+            && data_get($model->metadata, 'shadow_research_lane.requalified', false) !== true) {
+            return;
+        }
         if ((bool) config('services.promotion.freeze_champion', true)) {
             // Promotion is paused during evidence-pipeline repair. Keep the
             // candidate's forward/paper state and all gate evidence intact;

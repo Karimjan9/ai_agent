@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ModelMarketPerformance;
 use App\Services\MarketData\CandlePayloadService;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class LabIncrementalEvaluationService
@@ -13,6 +14,7 @@ class LabIncrementalEvaluationService
         private CandlePayloadService $candles,
         private StrategyParameterSchemaService $schemas,
         private RuntimeEnsemblePolicyService $runtimeEnsembles,
+        private LabQueueJobInspector $queue,
     ) {}
 
     /**
@@ -20,16 +22,34 @@ class LabIncrementalEvaluationService
      * evidence, not a promotion evaluation: promotion remains full rolling
      * walk-forward + paper trading + sealed holdout.
      *
-     * @return array{checked:int,degraded:int,skipped:int}
+     * @return array{checked:int,degraded:int,skipped:int,deferred?:bool,deferred_reason?:string}
      */
     public function evaluateChampions(): array
     {
         $summary = ['checked' => 0, 'degraded' => 0, 'skipped' => 0];
 
-        ModelMarketPerformance::with('modelVersion')
+        $champions = ModelMarketPerformance::with('modelVersion')
             ->where('status', 'champion')
-            ->orderBy('symbol')
-            ->each(function (ModelMarketPerformance $performance) use (&$summary): void {
+            ->orderBy('symbol');
+        $championCount = (clone $champions)->count();
+
+        // Full validation owns the serialized AI replay lane. A direct
+        // hourly health check must yield while a full job is pending or
+        // reserved; otherwise it can occupy the AI worker for several
+        // minutes and starve the evidence-bearing job that is already in the
+        // queue. Unknown queue state is also a defer: health evidence is
+        // optional, while replay ordering is a safety invariant.
+        $deferredReason = $this->incrementalAdmissionBlockReason();
+        if ($championCount > 0 && $deferredReason !== null) {
+            return [
+                ...$summary,
+                'skipped' => $championCount,
+                'deferred' => true,
+                'deferred_reason' => $deferredReason,
+            ];
+        }
+
+        $champions->each(function (ModelMarketPerformance $performance) use (&$summary): void {
                 $outcome = $this->evaluate($performance);
                 $summary['checked'] += $outcome['checked'] ? 1 : 0;
                 $summary['degraded'] += $outcome['degraded'] ? 1 : 0;
@@ -37,6 +57,21 @@ class LabIncrementalEvaluationService
             });
 
         return $summary;
+    }
+
+    private function incrementalAdmissionBlockReason(): ?string
+    {
+        try {
+            return $this->queue->fullValidationIsWaiting()
+                ? 'full_validation_lane_waiting'
+                : null;
+        } catch (\Throwable $exception) {
+            Log::warning('Incremental lab health check deferred because queue state is unknown.', [
+                'exception' => $exception::class,
+            ]);
+
+            return 'queue_state_unknown_fail_closed';
+        }
     }
 
     /** @return array{checked:bool,degraded:bool} */

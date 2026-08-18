@@ -140,13 +140,35 @@ class TacticCatalogueService
             'hypothesis' => 'Change one declared regime lane while copying the parent everywhere else.',
             'target_regimes' => ['trend_up', 'trend_down', 'range'],
             'entry_topology' => 'paired_non_target_parent_freeze',
-            'allowed_genes' => ['differential_target_min_signal_confidence', 'trend_up_strength_min', 'trend_down_strength_min', 'trend_up_roc_threshold', 'trend_down_roc_threshold', 'range_deviation'],
+            // The shadow architecture lane changes the executable entry
+            // topology as one causal gene.  Keep it explicit here so the
+            // tactic contract records structural mutations as legal research
+            // hypotheses rather than rejecting them as undeclared repairs.
+            'allowed_genes' => ['differential_target_min_signal_confidence', 'trend_up_strength_min', 'trend_down_strength_min', 'trend_up_roc_threshold', 'trend_down_roc_threshold', 'range_deviation', 'entry_topology_variant'],
         ],
     ];
 
     private const FAILURE_REPAIR_GENES = [
+        // Temporal survival is a first-class failure lane.  The finite
+        // state-machine escape is deliberately listed beside the bounded
+        // scalar abstention genes so its single causal change is admitted by
+        // the tactic contract instead of being mistaken for an undeclared
+        // architecture mutation.
+        'temporal_stability' => [
+            'max_loss_streak_before_wait', 'loss_cooldown_candles', 'loss_streak_wait_candles',
+            'weak_regime_wait_candles', 'state_machine_variant', 'signal_max_age_candles',
+            'signal_decay_half_life_candles', 'temporal_drift_zscore_max',
+        ],
         'monthly_survival' => ['session_filter_enabled', 'session_start', 'session_end', 'transition_firewall_enabled', 'transition_wait_candles', 'time_stop_candles'],
-        'regime_coverage' => ['trend_strength_min', 'lookback', 'high_volatility_risk_multiplier', 'minimum_signal_confidence'],
+        'regime_coverage' => [
+            'trend_strength_min', 'lookback', 'high_volatility_risk_multiplier',
+            'minimum_signal_confidence', 'volume_lane', 'max_spread_atr_ratio',
+        ],
+        'robustness' => [
+            'confidence_calibration_min_samples', 'weak_regime_min_samples',
+            'meta_label_min_history', 'cooldown_shadow_min_samples',
+            'weak_regime_wait_candles',
+        ],
         'volatility_session_stability' => ['session_filter_enabled', 'session_start', 'session_end', 'high_volatility_risk_multiplier', 'avoid_high_volatility'],
         'exit_topology' => ['atr_stop_multiplier', 'atr_target_multiplier', 'trailing_atr_multiplier', 'time_stop_candles', 'partial_take_profit_fraction'],
         'transition_firewall' => ['transition_firewall_enabled', 'transition_wait_candles', 'high_volatility_risk_multiplier'],
@@ -189,7 +211,11 @@ class TacticCatalogueService
             'entry_topology' => (string) $entry['entry_topology'],
             'allowed_genes' => array_values(array_unique(array_merge(
                 (array) $entry['allowed_genes'],
-                ['atr_stop_multiplier', 'atr_target_multiplier', 'trailing_atr_multiplier', 'time_stop_candles', 'minimum_signal_confidence'],
+                [
+                    'atr_stop_multiplier', 'atr_target_multiplier', 'trailing_atr_multiplier',
+                    'time_stop_candles', 'minimum_signal_confidence',
+                    'entry_topology_variant', 'state_machine_variant', 'regime_classifier_variant',
+                ],
             ))),
             'repair_lanes' => $failureLanes,
             'repair_genes_by_lane' => self::FAILURE_REPAIR_GENES,
@@ -200,10 +226,25 @@ class TacticCatalogueService
         ];
     }
 
-    public function alignment(array $contract, ?string $target, ?string $changedGene): array
+    public function alignment(array $contract, ?string $target, ?string $changedGene, bool $controlOnly = false): array
     {
         if ($changedGene === null || $changedGene === '') {
-            return ['status' => 'failed', 'reason' => 'no_single_changed_gene'];
+            return [
+                'status' => $controlOnly ? 'passed' : 'failed',
+                'target' => $target,
+                'changed_gene' => null,
+                'gene_allowed' => $controlOnly,
+                'reason' => $controlOnly ? 'explicit_no_change_control' : 'no_single_changed_gene',
+            ];
+        }
+        if ($changedGene === '__architecture') {
+            return [
+                'status' => 'passed',
+                'target' => $target,
+                'changed_gene' => $changedGene,
+                'gene_allowed' => true,
+                'reason' => 'declared_structural_architecture_hypothesis',
+            ];
         }
         $allowed = (array) data_get($contract, 'allowed_genes', []);
         $laneGenes = (array) data_get($contract, "repair_genes_by_lane.{$target}", []);

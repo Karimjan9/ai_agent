@@ -10,12 +10,15 @@ use RuntimeException;
 
 class WatchLabLifecycle extends Command
 {
-    protected $signature = 'trading:watch-lab-lifecycle {--repair : Apply bounded lifecycle repair after explicit approval} {--approved-by=} {--approval-reason=}';
+    protected $signature = 'trading:watch-lab-lifecycle {symbol? : Legacy scope argument; lifecycle audit remains laboratory-wide} {--repair : Apply bounded lifecycle repair after explicit approval} {--approved-by=} {--approval-reason=}';
 
     protected $description = 'Audit laboratory lifecycle and evidence ledgers without relaxing promotion gates';
 
     public function handle(LabLifecycleWatchdogService $watchdog, LabQueueJobInspector $queue, OperatorApprovalService $approvals): int
     {
+        if ($this->argument('symbol') !== null) {
+            $this->line('Legacy symbol argument accepted for scheduler compatibility; audit scope remains laboratory-wide.');
+        }
         $repair = (bool) $this->option('repair');
         if (! $repair) {
             $events = $watchdog->inspect(false);

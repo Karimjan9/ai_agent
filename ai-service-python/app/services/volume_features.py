@@ -19,6 +19,7 @@ VOLUME_LANES = {
     "breakout_volume_confirmation",
     "transition_volume_router",
     "low_volume_risk_firewall",
+    "relative_volume_confirmation_v1",
 }
 VOLUME_PROTOCOL = "relative_volume_session_v2"
 SOURCE_CONTRACT = "dukascopy_jetta_bid_tick_volume_millions_v1"
@@ -402,6 +403,15 @@ def apply_volume_policy(
         out.loc[hard_wait, "volume_policy_rejection"] = "low_volume_wait"
         out.loc[reduced, "volume_risk_multiplier"] = 0.5
         out.loc[reduced, "volume_policy_rejection"] = "low_volume_reduced_risk"
+
+    elif lane == "relative_volume_confirmation_v1":
+        # Structural shadow hypothesis: an entry is actionable only when
+        # causal relative volume confirms the move. Missing volume remains an
+        # unavailable state, never a low-volume veto.
+        veto = actionable & available & ratio.lt(1.0)
+        out.loc[veto, "signal"] = "WAIT"
+        out.loc[veto, "signal_confidence"] = 0.0
+        out.loc[veto, "volume_policy_rejection"] = "relative_volume_not_confirmed"
 
     return out
 

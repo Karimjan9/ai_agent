@@ -2,7 +2,10 @@ const php = process.env.PHP_BINARY || 'php';
 const python = process.env.PYTHON_BINARY || 'python';
 const fs = require('fs');
 const path = require('path');
-const tokenFile = path.join(__dirname, 'storage', 'app', 'secrets', 'internal-api.token');
+const runtimeTokenFile = path.resolve(__dirname, '..', 'runtime', 'internal-api.token');
+const legacyTokenFile = path.join(__dirname, 'storage', 'app', 'secrets', 'internal-api.token');
+const tokenFile = process.env.INTERNAL_API_TOKEN_FILE
+  || (fs.existsSync(runtimeTokenFile) ? runtimeTokenFile : legacyTokenFile);
 const laravelRouter = path.join(__dirname, 'vendor', 'laravel', 'framework', 'src', 'Illuminate', 'Foundation', 'resources', 'server.php');
 if (!fs.existsSync(tokenFile)) {
   throw new Error(`Missing internal API token file: ${tokenFile}`);
@@ -18,6 +21,14 @@ const sharedEnv = {
   AI_REPLAY_CACHE_RETENTION_DAYS: process.env.AI_REPLAY_CACHE_RETENTION_DAYS || '14',
   AI_REPLAY_CACHE_MAX_BYTES: process.env.AI_REPLAY_CACHE_MAX_BYTES || '1610612736',
   AI_REPLAY_CACHE_CLEANUP_INTERVAL_SECONDS: process.env.AI_REPLAY_CACHE_CLEANUP_INTERVAL_SECONDS || '300',
+};
+// The managed execution shell can deny the protected token file to a newly
+// spawned Python process even though Laravel already has the cached secret.
+// When the operator supplies the secret to PM2 for a controlled restart, pass
+// it explicitly only to the AI service; never write it to this file.
+const aiEnv = {
+  ...sharedEnv,
+  ...(process.env.INTERNAL_API_TOKEN ? { INTERNAL_API_TOKEN: process.env.INTERNAL_API_TOKEN } : {}),
 };
 const secretPrefixes = ['OPENAI_', 'CODEX_', 'INTERNAL_API_TOKEN'];
 // Production web traffic is served by Nginx/Apache + PHP-FPM. The built-in
@@ -47,7 +58,13 @@ const worker = (name, queue, timeoutSeconds = 1200) => ({
   // projection and causes exit code 12 after a healthy replay. PM2's
   // 2048M ceiling below is only useful when the Laravel worker receives the
   // same explicit limit.
-  args: `queue:work ${queueConnection} --queue=${queue} --sleep=1 --tries=0 --timeout=${timeoutSeconds} --memory=2048 --max-time=3600`,
+  // Never let PM2 recycle the coordinator while a legitimate replay is
+  // inside Laravel's timeout/post-processing window. A restart during a
+  // reserved Redis job leaves the visibility score in the future and makes
+  // the job look missing until retry_after expires. Keep the worker lease
+  // longer than its queue timeout plus a recovery margin; the explicit
+  // replay timeout and retryUntil() remain the real safety bounds.
+  args: `queue:work ${queueConnection} --queue=${queue} --sleep=1 --tries=0 --timeout=${timeoutSeconds} --memory=2048 --max-time=${Math.max(3600, timeoutSeconds + 1800)}`,
   autorestart: true,
   restart_delay: 5000,
   // Screening responses carry immutable ledgers and can legitimately exceed
@@ -84,10 +101,16 @@ module.exports = {
       interpreter: python,
       cwd: __dirname,
       autorestart: true,
+      restart_delay: 5000,
+      kill_timeout: 30000,
       windowsHide: true,
-      max_memory_restart: '1G',
+      // The bounded child can return a large immutable ledger through the
+      // parent before the HTTP response is committed. Keep PM2 above that
+      // legitimate peak; the replay child and request hard timeout remain
+      // the actual safety bounds.
+      max_memory_restart: '2G',
       time: true,
-      env: sharedEnv,
+      env: aiEnv,
       filter_env: secretPrefixes,
     },
     {
@@ -99,9 +122,11 @@ module.exports = {
       restart_delay: 5000,
       windowsHide: true,
       // Schedule ticks may materialize generation/foundation manifests and
-      // briefly exceed 256M. A healthy scheduler must not restart in the
-      // middle of a dispatch window and leave queue reservations half-open.
-      max_memory_restart: '512M',
+      // briefly exceed 512M before the command's own 256M bounded-memory
+      // rotation can return cleanly. Keep PM2 above that internal gate so a
+      // Windows memory restart cannot strand the Redis scheduler lease.
+      max_memory_restart: '768M',
+      kill_timeout: 30000,
       time: true,
       env: sharedEnv,
       filter_env: secretPrefixes,

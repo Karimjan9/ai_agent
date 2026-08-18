@@ -123,7 +123,7 @@ class SimpleBacktestRequest(BaseModel):
     # declaration is accepted for local unit tests but is never promotion
     # evidence.
     execution_contract: dict[str, Any] = Field(default_factory=dict)
-    evaluation_mode: Literal["incremental", "full", "replay"] = "full"
+    evaluation_mode: Literal["incremental", "full", "replay", "temporal_ablation"] = "full"
     # A delayed signal is a deterministic execution-stress variant.  OHLC,
     # regime and volume features stay anchored to their observed candle; only
     # signal-derived columns move forward so the test cannot introduce look-ahead.
@@ -292,6 +292,10 @@ class SimpleBacktestResponse(BaseModel):
     differential_router: dict[str, Any] = Field(default_factory=dict)
     differential_invariants: dict[str, Any] = Field(default_factory=dict)
     confidence_calibration: dict[str, Any] = Field(default_factory=dict)
+    # Online temporal survival/abstention telemetry. It is computed only
+    # from information available at each decision candle and is research
+    # evidence, never an automatic promotion signal.
+    temporal_survival: dict[str, Any] = Field(default_factory=dict)
     # Complete diagnostic attribution for failure-eliminator selection.  It is
     # deliberately not a routing feature: calendar is evidence only and the
     # mutation contract names the failing causal context instead.
@@ -315,6 +319,14 @@ class SimpleBacktestResponse(BaseModel):
     benchmark: dict[str, Any] = Field(default_factory=dict)
     trade_ledger_scope: str = "full evaluation"
     trade_ledger_hash: str = ""
+    # Compact event identity is emitted even when the full candle trace is
+    # disabled. It is the minimum evidence required to compare veto,
+    # cooldown, transition and exit-path behaviour.
+    event_ledger_hash: str = ""
+    event_ledger_count: int = 0
+    event_ledger_categories: dict[str, int] = Field(default_factory=dict)
+    event_digest: dict[str, Any] = Field(default_factory=dict)
+    state_machine: dict[str, Any] = Field(default_factory=dict)
     displayed_trade_count: int = 0
     top_mistakes: list[dict[str, int | str]]
     trades: list[SimpleTrade]

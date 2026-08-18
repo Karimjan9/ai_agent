@@ -223,7 +223,8 @@ def prepare_feature_snapshot(
     normalized = _prepare_simple_dataframe(payload, df)
     source = normalized.copy()
     regime_source = _load_regime_source(payload)
-    prepared = _apply_execution_regime(normalized, regime_source)
+    regime_variant = str(payload.parameters.get("regime_classifier_variant", "frozen") or "frozen")
+    prepared = _apply_execution_regime(normalized, regime_source, regime_variant)
     prepared = add_volume_features(prepared, payload.volume_context)
     previous_close = prepared["close"].shift(1)
     true_range = pd.concat([
@@ -349,19 +350,32 @@ def _load_regime_source(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
     return None
 
 
-def _apply_execution_regime(execution_df: pd.DataFrame, regime_source: pd.DataFrame | None) -> pd.DataFrame:
+def _apply_execution_regime(
+    execution_df: pd.DataFrame,
+    regime_source: pd.DataFrame | None,
+    regime_classifier_variant: str = "frozen",
+) -> pd.DataFrame:
     """Merge only closed H1 state into an M15 execution stream (no look-ahead)."""
+    def classify(frame: pd.DataFrame) -> pd.DataFrame:
+        # Keep the historical one-argument call for the frozen path. Besides
+        # avoiding needless API churn, this preserves compatibility with
+        # sealed test doubles and older local adapters.
+        return apply_market_regime(frame) if regime_classifier_variant == "frozen" else apply_market_regime(frame, regime_classifier_variant)
+
     if regime_source is None:
-        return apply_market_regime(execution_df)
+        return classify(execution_df)
     higher_raw = regime_source.copy()
     higher_raw["time"] = pd.to_datetime(higher_raw["time"], utc=True, errors="coerce")
-    higher = annotate_regime_source(apply_market_regime(higher_raw))
+    higher = annotate_regime_source(classify(higher_raw))
     if higher is None:
-        return apply_market_regime(execution_df)
+        return classify(execution_df)
+    if "regime_classifier_variant" not in higher.columns:
+        higher["regime_classifier_variant"] = regime_classifier_variant
     higher["regime_available_at"] = higher["_h1_closed_at"]
     columns = [
         "regime_available_at", "_h1_open_at", "_h1_closed_at", "_h1_context_hash",
         "market_regime", "volatility_regime", "adx", "atr_regime",
+        "regime_classifier_variant",
     ]
     base = execution_df.copy()
     base["time"] = pd.to_datetime(base["time"], utc=True)
@@ -370,6 +384,7 @@ def _apply_execution_regime(execution_df: pd.DataFrame, regime_source: pd.DataFr
     merged["volatility_regime"] = merged["volatility_regime"].fillna("normal_volatility")
     merged["adx"] = merged["adx"].fillna(0.0)
     merged["atr_regime"] = merged["atr_regime"].ffill().fillna(0.0)
+    merged["regime_classifier_variant"] = merged["regime_classifier_variant"].fillna(regime_classifier_variant)
     return merged
 
 
@@ -449,20 +464,69 @@ def _run_prepared_simple_backtest(
     transition_wait_until = -1
     transition_events = 0
     transition_vetoes = 0
+    state_machine_variant = str(
+        payload.parameters.get(
+            "state_machine_variant",
+            payload.policy_context.get("state_machine_variant", "none"),
+        )
+        or "none"
+    )
+    state_machine_enabled = state_machine_variant == "neutral_transition_cooldown_reentry_v1"
+    state_machine_state = "neutral"
+    state_machine_wait_until = -1
+    state_machine_transitions: Counter[str] = Counter()
+    state_machine_events: list[dict[str, object]] = []
+    temporal_state = _temporal_survival_state()
+    event_tokens: list[str] = []
+    event_categories: Counter[str] = Counter()
     mtf_vetoes = 0
     mtf_contexts: Counter[str] = Counter()
     entry_funnel["raw_strategy_signals"] = _count_lane_signals(df, differential_lane)
+
+    def record_event(category: str, code: str, index: int, context: str = "") -> None:
+        token = f"{index}|{category}|{code}|{context}"
+        event_tokens.append(token)
+        event_categories[f"{category}:{code}"] += 1
 
     # A signal is only knowable after its candle closes. Execute it at the
     # following candle's open, then include that same candle in exit checks.
     for index in range(200, len(df)):
         candle = row_at(index)
         signal_row = row_at(index - 1)
+        # Temporal probes are observational for every ablation arm, including
+        # the frozen control. Only the mutation arms may turn their
+        # assessment into an entry veto; otherwise the control would have a
+        # missing temporal score and every candidate would beat zero by
+        # construction.
+        _temporal_update_pending(temporal_state, candle, index, payload)
+        temporal_metrics = _temporal_context_metrics(signal_row, candle, temporal_state, index, payload)
+        _temporal_commit_features(temporal_state, temporal_metrics, signal_row)
         transition_event = _regime_transitioned(signal_row, row_at(index - 2) if index >= 2 else None)
+        if transition_event:
+            record_event("transition", "boundary", index, str(signal_row.get("market_regime", "unknown")))
         if transition_event and bool(payload.parameters.get("transition_firewall_enabled", False)):
             transition_events += 1
             transition_wait_until = max(transition_wait_until, index + _transition_wait_duration(payload))
         transition_wait_active = bool(payload.parameters.get("transition_firewall_enabled", False)) and index < transition_wait_until
+        if state_machine_enabled:
+            if transition_event:
+                state_machine_state = "transition"
+                state_machine_wait_until = max(state_machine_wait_until, index + _transition_wait_duration(payload))
+                state_machine_transitions["neutral_to_transition"] += 1
+                state_machine_events.append({"index": index, "event": "neutral_to_transition"})
+                record_event("state_machine", "neutral_to_transition", index)
+            elif state_machine_state == "transition" and index >= state_machine_wait_until:
+                state_machine_state = "cooldown"
+                state_machine_wait_until = index + max(1, int(payload.parameters.get("loss_cooldown_candles", 1) or 1))
+                state_machine_transitions["transition_to_cooldown"] += 1
+                state_machine_events.append({"index": index, "event": "transition_to_cooldown"})
+                record_event("state_machine", "transition_to_cooldown", index)
+            elif state_machine_state == "cooldown" and index >= state_machine_wait_until:
+                state_machine_state = "reentry_permission"
+                state_machine_wait_until = -1
+                state_machine_transitions["cooldown_to_reentry_permission"] += 1
+                state_machine_events.append({"index": index, "event": "cooldown_to_reentry_permission"})
+                record_event("state_machine", "cooldown_to_reentry_permission", index)
         _advance_shadow_positions(
             shadow_positions, shadow_ledger, shadow_history, candle, row_at(index - 1), payload, index
         )
@@ -523,6 +587,12 @@ def _run_prepared_simple_backtest(
                 if signal in {"BUY", "SELL"} and mtf_policy.get("decision") == "WAIT":
                     mtf_vetoes += 1
                     entry_funnel[f"rejected_mtf_{mtf_policy.get('reason', 'unknown')}"] += 1
+                    record_event(
+                        "veto",
+                        "mtf_" + str(mtf_policy.get("reason", "unknown")),
+                        index,
+                        str(mtf_context.get("h1_regime", "unknown")),
+                    )
                 signal_row = signal_row.copy()
                 signal_row["mtf_raw_signal"] = signal
                 signal_row["mtf_decision"] = mtf_policy.get("decision", "WAIT")
@@ -534,6 +604,13 @@ def _run_prepared_simple_backtest(
                 signal_row["mtf_decision"] = signal
                 signal_row["mtf_context"] = mtf_context
             if signal not in {"BUY", "SELL"}:
+                policy_rejection = str(signal_row.get("volume_policy_rejection", "") or "")
+                record_event(
+                    "veto" if policy_rejection else "signal",
+                    policy_rejection or "no_signal",
+                    index,
+                    str(mtf_context.get("h1_regime", "unknown")),
+                )
                 if emit_decision_trace:
                     decision_trace.append(_decision_trace_event(
                         index, candle, signal_row, 'signal_evaluation', 'WAIT', False, 'no_signal',
@@ -565,6 +642,13 @@ def _run_prepared_simple_backtest(
             confidence_assessment = _confidence_assessment(
                 signal_row, signal, confidence_history, execution_payload, candle
             )
+            temporal_assessment = _temporal_survival_assessment(
+                signal_row, temporal_metrics, execution_payload, loss_streak, temporal_state,
+            )
+            # Register the same prior-signal follow-through probe for control
+            # and mutation arms. The control remains behaviorally frozen
+            # because its assessment is telemetry-only.
+            _temporal_register_signal(temporal_state, signal_row, signal, index, execution_payload)
             liquid, rejection_reason = _entry_eligibility(
                 candle,
                 execution_payload,
@@ -577,11 +661,27 @@ def _run_prepared_simple_backtest(
                 weak_regime_wait_active=weak_regime_wait_active,
                 confidence_assessment=confidence_assessment,
                 transition_wait_active=transition_wait_active,
+                temporal_assessment=temporal_assessment,
             )
+            if state_machine_enabled and state_machine_state in {"transition", "cooldown"}:
+                liquid = False
+                rejection_reason = f"state_machine_{state_machine_state}"
             if not liquid:
                 entry_funnel[f"rejected_{rejection_reason or 'unknown'}"] += 1
                 if rejection_reason == "regime_transition_wait":
                     transition_vetoes += 1
+                if rejection_reason and rejection_reason.startswith("state_machine_"):
+                    record_event("state_machine", rejection_reason, index, context_key)
+                elif rejection_reason == "regime_transition_wait":
+                    record_event("transition", "veto", index, context_key)
+                elif rejection_reason in {"outside_session"}:
+                    record_event("veto", "session_filter", index, context_key)
+                elif rejection_reason in {"volume_policy", "volume_unavailable", "minimum_volume"}:
+                    record_event("veto", "volume_" + rejection_reason, index, context_key)
+                elif rejection_reason in {"spread_to_atr", "cost_exceeds_target"}:
+                    record_event("cost", "rejection", index, context_key)
+                else:
+                    record_event("entry", rejection_reason or "unknown", index, context_key)
                 shadow = _open_shadow_position(candle, signal_row, signal, execution_payload, index, rejection_reason or "unknown")
                 if shadow is not None:
                     settled = _advance_shadow_position(shadow, candle, row_at(index - 1), execution_payload, index)
@@ -595,13 +695,20 @@ def _run_prepared_simple_backtest(
                         rejection_reason or 'unknown', {
                             'position_open': False, 'loss_streak': loss_streak,
                             'context_key': context_key, 'confidence_assessment': confidence_assessment,
+                            'temporal_assessment': temporal_assessment,
                         },
                     ))
                 continue
             entry_funnel["accepted_entries"] += 1
+            record_event("entry", "accepted", index, context_key)
             accepted_by_month[month_key] += 1
             probe_active = recovery_probe or context_key in context_recovery_probes or weak_regime_probe
             probe_scope = "global" if recovery_probe else ("context" if context_key in context_recovery_probes else None)
+            if state_machine_enabled and state_machine_state == "reentry_permission":
+                state_machine_state = "neutral"
+                state_machine_transitions["reentry_permission_to_neutral"] += 1
+                state_machine_events.append({"index": index, "event": "reentry_permission_to_neutral"})
+                record_event("state_machine", "reentry_permission_to_neutral", index, context_key)
 
             market_price = float(candle["open"])
             entry_price = _entry_price(market_price, signal, execution_payload)
@@ -651,6 +758,7 @@ def _run_prepared_simple_backtest(
                         'stop_loss': stop_loss, 'take_profit': take_profit,
                         'position_size_multiple': position['position_size_multiple'],
                         'recovery_probe': probe_active, 'recovery_probe_scope': probe_scope,
+                        'temporal_assessment': temporal_assessment,
                     },
                 ))
 
@@ -692,6 +800,8 @@ def _run_prepared_simple_backtest(
         result = "WIN" if profit_percent > 0 else "LOSS"
         closed_signal_row = position["signal_row"]
         closed_context = str(position.get("risk_context", _risk_context(closed_signal_row, direction)))
+        record_event("exit", str(exit_reason or "unknown"), index, closed_context)
+        record_event("outcome", result, index, closed_context)
         was_recovery_probe = bool(position.get("recovery_probe", False))
         was_weak_regime_probe = bool(position.get("weak_regime_probe", False))
         probe_scope = position.get("recovery_probe_scope")
@@ -711,6 +821,19 @@ def _run_prepared_simple_backtest(
         else:
             loss_streak += 1
             loss_streak_by_context[closed_context] += 1
+        if state_machine_enabled:
+            if result == "LOSS":
+                state_machine_state = "cooldown"
+                state_machine_wait_until = index + max(1, int(payload.parameters.get("loss_cooldown_candles", 1) or 1))
+                state_machine_transitions["loss_to_cooldown"] += 1
+                state_machine_events.append({"index": index, "event": "loss_to_cooldown", "context": closed_context})
+                record_event("state_machine", "loss_to_cooldown", index, closed_context)
+            elif result == "WIN" and state_machine_state != "reentry_permission":
+                state_machine_state = "neutral"
+                state_machine_wait_until = -1
+                state_machine_transitions["win_to_neutral"] += 1
+                state_machine_events.append({"index": index, "event": "win_to_neutral", "context": closed_context})
+                record_event("state_machine", "win_to_neutral", index, closed_context)
         if result == "LOSS":
             cooldown, evidence = _dynamic_cooldown_duration(closed_signal_row, payload, loss_streak, shadow_history)
             cooldown_until_by_context[closed_context] = index + cooldown
@@ -884,6 +1007,7 @@ def _run_prepared_simple_backtest(
         "rule": "A regime or volatility boundary creates a finite WAIT state; it never uses future outcomes or lowers a gate.",
     }
     confidence_calibration = {} if lightweight else _confidence_calibration_report(confidence_history, payload)
+    temporal_survival = _temporal_survival_report(temporal_state, payload)
     robustness_matrix = _robustness_matrix(trades)
     # The paired differential lane is part of screening's causal contract,
     # even when promotion-only diagnostics are deferred.  Leaving this report
@@ -927,6 +1051,16 @@ def _run_prepared_simple_backtest(
         else volume_shadow_report(df, [trade.model_dump() for trade in trades], payload.volume_context)
     )
     volume_policy = _volume_policy_report(df, payload.parameters, volume_quality)
+    event_digest = _event_ledger_digest(event_tokens, event_categories)
+    state_machine_report = {
+        "protocol": "neutral_transition_cooldown_reentry_v1",
+        "variant": state_machine_variant,
+        "enabled": state_machine_enabled,
+        "final_state": state_machine_state,
+        "transition_counts": dict(state_machine_transitions),
+        "event_count": len(state_machine_events),
+        "promotion_evidence": False,
+    }
 
     response = SimpleBacktestResponse(
         strategy=strategy_label(payload.strategy),
@@ -997,6 +1131,7 @@ def _run_prepared_simple_backtest(
         cooldown_policy=cooldown_policy,
         transition_firewall=transition_firewall if not lightweight else {"status": "deferred_screening_subreplay", "promotion_evidence": False},
         confidence_calibration=confidence_calibration,
+        temporal_survival=temporal_survival,
         robustness_matrix=robustness_matrix,
         differential_router=differential_router,
         differential_invariants=differential_invariants,
@@ -1011,6 +1146,11 @@ def _run_prepared_simple_backtest(
         benchmark={"buy_and_hold_percent": round(buy_hold_percent, 3), "edge_vs_buy_and_hold_percent": round(net_profit - buy_hold_percent, 3)},
         trade_ledger_scope="full evaluation; API display is capped to the latest 20 closed trades",
         trade_ledger_hash=_trade_ledger_hash(trades),
+        event_ledger_hash=str(event_digest["hash"]),
+        event_ledger_count=int(event_digest["count"]),
+        event_ledger_categories=dict(event_digest["categories"]),
+        event_digest=event_digest,
+        state_machine=state_machine_report,
         displayed_trade_count=min(total_trades, 20),
         top_mistakes=top_mistakes,
         trades=trades[-20:],
@@ -1838,6 +1978,25 @@ def _trade_ledger_hash(trades: list[SimpleTrade]) -> str:
     return hashlib.sha256("\n".join(values).encode()).hexdigest()
 
 
+def _event_ledger_digest(tokens: list[str], categories: Counter[str]) -> dict[str, object]:
+    """Return compact event identity without retaining the candle trace.
+
+    The ordered token stream captures veto/cooldown/transition/exit changes;
+    category counts make the result inspectable. Full decision details remain
+    opt-in through ``emit_decision_trace``.
+    """
+    encoded = json.dumps(tokens, ensure_ascii=False, separators=(",", ":"), default=str)
+    return {
+        "protocol": "event_ledger_digest_v1",
+        "hash": hashlib.sha256(encoded.encode()).hexdigest(),
+        "count": len(tokens),
+        "categories": {str(key): int(value) for key, value in sorted(categories.items())},
+        "ordered": True,
+        "full_trace_emitted": False,
+        "promotion_evidence": False,
+    }
+
+
 def _decision_trace_event(
     index: int,
     candle: pd.Series,
@@ -2215,6 +2374,251 @@ def _transition_wait_duration(payload: SimpleBacktestRequest) -> int:
     return max(1, min(6, int(payload.parameters.get("transition_wait_candles", 2) or 2)))
 
 
+def _temporal_survival_state() -> dict[str, object]:
+    return {
+        "pending": [],
+        "followthrough_results": [],
+        "feature_history": [],
+        "confidence_history": [],
+        "assessments": [],
+        "vetoes": Counter(),
+        "signal_count": 0,
+        "drift_observations": 0,
+    }
+
+
+def _temporal_enabled(payload: SimpleBacktestRequest) -> bool:
+    return bool(payload.parameters.get("temporal_survival_enabled", False)) and (
+        bool(payload.parameters.get("adaptive_signal_expiry_enabled", False))
+        or bool(payload.parameters.get("drift_abstention_enabled", False))
+    )
+
+
+def _temporal_update_pending(
+    state: dict[str, object], candle: object, index: int, payload: SimpleBacktestRequest,
+) -> None:
+    """Close only prior signal probes; the current candle cannot veto itself.
+
+    Every pending probe was registered on an earlier decision candle. Its
+    favorable excursion is therefore safe to observe now and becomes usable
+    only on a later decision. This keeps follow-through evidence online and
+    prevents future candles from leaking into the current entry decision.
+    """
+    pending = list(state.get("pending", []))
+    if not pending:
+        return
+    completed = list(state.get("followthrough_results", []))
+    next_pending: list[dict[str, object]] = []
+    window = max(1, int(payload.parameters.get("temporal_followthrough_window", 3) or 3))
+    for item in pending:
+        start = int(item.get("start_index", index) or index)
+        if index <= start:
+            next_pending.append(item)
+            continue
+        direction = str(item.get("direction", "BUY"))
+        reference = float(item.get("reference_price", 0) or 0)
+        atr = max(float(item.get("atr", 0) or 0), 0.0000001)
+        high = float(candle.get("high", candle.get("open", reference)) or reference)
+        low = float(candle.get("low", candle.get("open", reference)) or reference)
+        favorable = (high - reference) / atr if direction == "BUY" else (reference - low) / atr
+        item["max_favorable_atr"] = max(float(item.get("max_favorable_atr", 0) or 0), favorable)
+        expiry = int(item.get("expiry_index", start + window) or (start + window))
+        if index >= expiry:
+            threshold = float(payload.parameters.get("temporal_followthrough_atr_fraction", .25) or .25)
+            completed.append(float(item.get("max_favorable_atr", 0) or 0) >= threshold)
+        else:
+            next_pending.append(item)
+    state["pending"] = next_pending[-500:]
+    state["followthrough_results"] = completed[-200:]
+
+
+def _temporal_register_signal(
+    state: dict[str, object], signal_row: object, direction: str, index: int,
+    payload: SimpleBacktestRequest,
+) -> None:
+    if direction not in {"BUY", "SELL"}:
+        return
+    reference = float(signal_row.get("close", 0) or 0)
+    atr = float(signal_row.get("_management_atr", 0) or 0)
+    if reference <= 0:
+        return
+    window = max(1, int(payload.parameters.get("temporal_followthrough_window", 3) or 3))
+    pending = list(state.get("pending", []))
+    pending.append({
+        "direction": direction,
+        "start_index": index,
+        "expiry_index": index + window,
+        "reference_price": reference,
+        "atr": atr,
+        "max_favorable_atr": 0.0,
+    })
+    state["pending"] = pending[-500:]
+    state["signal_count"] = int(state.get("signal_count", 0) or 0) + 1
+
+
+def _temporal_context_metrics(
+    signal_row: object, candle: object, state: dict[str, object], index: int,
+    payload: SimpleBacktestRequest,
+) -> dict[str, float | int | str | None]:
+    atr = float(signal_row.get("_management_atr", 0) or 0)
+    history = [float(value) for value in list(state.get("feature_history", [])) if float(value) > 0]
+    baseline = float(pd.Series(history[-100:]).median()) if history else atr
+    volatility_ratio = atr / baseline if baseline > 0 else 1.0
+    spread = float(payload.execution.spread_points or 0) * float(payload.execution.point_size or 0)
+    spread_ratio = spread / atr if atr > 0 else 0.0
+    confidence = float(signal_row.get("signal_confidence", 1.0) or 0)
+    confidence_history = [float(value) for value in list(state.get("confidence_history", []))]
+    confidence_baseline = float(pd.Series(confidence_history[-100:]).mean()) if confidence_history else confidence
+    confidence_ratio = confidence / confidence_baseline if confidence_baseline > 0 else 1.0
+    returns = pd.Series(history[-100:])
+    if len(returns) >= 5:
+        mean = float(returns.mean())
+        std = float(returns.std(ddof=0))
+        drift_zscore = abs((atr - mean) / std) if std > 0 else (0.0 if atr == mean else float("inf"))
+    else:
+        drift_zscore = 0.0
+    time_value = signal_row.get("signal_time") or signal_row.get("signal_timestamp")
+    age = 1
+    try:
+        if time_value is not None:
+            delta = pd.Timestamp(candle.get("time")) - pd.Timestamp(time_value)
+            candles_per_hour = 4 if payload.timeframe == "M15" else 1
+            age = max(1, int(delta.total_seconds() / 3600 * candles_per_hour))
+    except (TypeError, ValueError, OverflowError):
+        age = 1
+    declared_age = signal_row.get("signal_age_candles", signal_row.get("signal_age"))
+    if isinstance(declared_age, (int, float)) and not isinstance(declared_age, bool):
+        age = max(1, int(declared_age))
+    completed = [bool(value) for value in list(state.get("followthrough_results", []))]
+    return {
+        "signal_age_candles": age,
+        "atr": atr,
+        "volatility_ratio": volatility_ratio,
+        "spread_atr_ratio": spread_ratio,
+        "feature_drift_zscore": drift_zscore,
+        "raw_confidence": confidence,
+        "confidence_ratio": confidence_ratio,
+        "volatility_regime": str(signal_row.get("volatility_regime", "normal_volatility")),
+        "followthrough_sample_count": len(completed),
+        "followthrough_rate": sum(completed) / len(completed) if completed else None,
+        "index": index,
+    }
+
+
+def _temporal_commit_features(state: dict[str, object], metrics: dict[str, object], signal_row: object | None = None) -> None:
+    atr = float(metrics.get("atr", 0) or 0)
+    if atr > 0:
+        state["feature_history"] = [*list(state.get("feature_history", []))[-199:], atr]
+    direction = str(signal_row.get("signal", "WAIT")) if signal_row is not None else "WAIT"
+    if direction in {"BUY", "SELL"}:
+        state["confidence_history"] = [
+            *list(state.get("confidence_history", []))[-199:],
+            float(metrics.get("raw_confidence", 0) or 0),
+        ]
+
+
+def _temporal_survival_assessment(
+    signal_row: object, metrics: dict[str, object], payload: SimpleBacktestRequest, loss_streak: int,
+    state: dict[str, object],
+) -> dict[str, object]:
+    if not _temporal_enabled(payload):
+        return {"status": "disabled", "veto": False, "reasons": [], "metrics": metrics}
+
+    reasons: list[str] = []
+    adaptive = bool(payload.parameters.get("adaptive_signal_expiry_enabled", False))
+    drift = bool(payload.parameters.get("drift_abstention_enabled", False))
+    atr = float(metrics.get("atr", 0) or 0)
+    spread = float(payload.execution.spread_points or 0) * float(payload.execution.point_size or 0)
+    # Upstream temporal feature builders may already provide the ratio.  Do
+    # not erase that evidence merely because this small helper is being used
+    # without a candle ATR (the unit-test/diagnostic path does exactly that).
+    supplied_spread_ratio = metrics.get("spread_atr_ratio")
+    metrics["spread_atr_ratio"] = (
+        spread / atr
+        if atr > 0
+        else float(supplied_spread_ratio)
+        if _is_numeric(supplied_spread_ratio)
+        else 0.0
+    )
+    minimum = max(5, int(payload.parameters.get("temporal_min_history", 12) or 12))
+    age = int(metrics.get("signal_age_candles", 1) or 1)
+    raw_confidence = float(metrics.get("raw_confidence", 0) or 0)
+    if adaptive:
+        maximum_age = max(1, int(payload.parameters.get("signal_max_age_candles", 2) or 2))
+        half_life = max(1, int(payload.parameters.get("signal_decay_half_life_candles", 3) or 3))
+        decay = .5 ** (max(0, age - 1) / half_life)
+        metrics["signal_decay_factor"] = round(decay, 6)
+        metrics["decayed_confidence"] = round(raw_confidence * decay, 6)
+        if age > maximum_age:
+            reasons.append("signal_expiry")
+        if raw_confidence * decay < float(payload.parameters.get("temporal_confidence_decay_floor", .35) or .35):
+            reasons.append("signal_decay")
+
+    sample_count = int(metrics.get("followthrough_sample_count", 0) or 0)
+    followthrough_rate = metrics.get("followthrough_rate")
+    if sample_count >= minimum and _is_numeric(followthrough_rate) and float(followthrough_rate) < float(payload.parameters.get("temporal_followthrough_min_rate", .40) or .40):
+        reasons.append("followthrough_failure")
+
+    if drift:
+        ratio = float(metrics.get("volatility_ratio", 1.0) or 1.0)
+        if ratio > float(payload.parameters.get("temporal_volatility_ratio_max", 2.5) or 2.5):
+            reasons.append("volatility_shift")
+        zscore = float(metrics.get("feature_drift_zscore", 0.0) or 0.0)
+        if (not math.isfinite(zscore) or zscore > float(payload.parameters.get("temporal_drift_zscore_max", 2.5) or 2.5)) and len(list(state.get("feature_history", []))) >= minimum:
+            reasons.append("feature_drift")
+        spread_ratio = float(metrics.get("spread_atr_ratio", 0.0) or 0.0)
+        if spread_ratio > float(payload.parameters.get("temporal_spread_atr_ratio_max", .25) or .25):
+            reasons.append("spread_stress")
+        if loss_streak >= int(payload.parameters.get("temporal_loss_streak_limit", 4) or 4):
+            reasons.append("temporal_loss_streak")
+        if len(list(state.get("confidence_history", []))) >= minimum and float(metrics.get("confidence_ratio", 1.0) or 1.0) < float(payload.parameters.get("temporal_confidence_decay_floor", .35) or .35):
+            reasons.append("confidence_decay")
+
+    reason = reasons[0] if reasons else None
+    if reason:
+        state["vetoes"][reason] += 1
+        state["drift_observations"] = int(state.get("drift_observations", 0) or 0) + int(drift)
+    assessment = {
+        "status": "veto" if reason else "pass",
+        "veto": reason is not None,
+        "reason": reason,
+        "reasons": reasons,
+        "metrics": {key: value for key, value in metrics.items() if key != "index"},
+    }
+    state["assessments"] = [*list(state.get("assessments", []))[-499:], assessment]
+    return assessment
+
+
+def _is_numeric(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+
+def _temporal_survival_report(state: dict[str, object], payload: SimpleBacktestRequest) -> dict[str, object]:
+    completed = [bool(value) for value in list(state.get("followthrough_results", []))]
+    sample_count = len(completed)
+    rate = sum(completed) / sample_count if sample_count else None
+    minimum = max(5, int(payload.parameters.get("temporal_min_history", 12) or 12))
+    min_rate = float(payload.parameters.get("temporal_followthrough_min_rate", .40) or .40)
+    score = round(rate / min_rate, 6) if sample_count >= minimum and min_rate > 0 else None
+    return {
+        "protocol": "temporal_survival_abstention_v1",
+        "enabled": _temporal_enabled(payload),
+        "adaptive_signal_expiry": bool(payload.parameters.get("adaptive_signal_expiry_enabled", False)),
+        "drift_abstention": bool(payload.parameters.get("drift_abstention_enabled", False)),
+        "signal_count": int(state.get("signal_count", 0) or 0),
+        "abstention_count": int(sum((state.get("vetoes") or {}).values())),
+        "vetoes_by_reason": dict(state.get("vetoes") or {}),
+        "followthrough_sample_count": sample_count,
+        "followthrough_rate": round(rate, 6) if rate is not None else None,
+        "followthrough_min_rate": min_rate,
+        "temporal_survival_score": score,
+        "drift_observations": int(state.get("drift_observations", 0) or 0),
+        "recent_assessments": list(state.get("assessments", []))[-50:],
+        "rule": "Only prior completed signal probes and closed context evidence may cause a later abstention; calendar labels are not used as a router feature.",
+        "promotion_evidence": False,
+    }
+
+
 def _advance_trailing_stop(position: dict[str, object], previous_candle: pd.Series, payload: SimpleBacktestRequest) -> None:
     multiplier = float(payload.parameters.get("trailing_atr_multiplier", 0) or 0)
     atr = float(previous_candle.get("_management_atr", 0) or 0)
@@ -2232,7 +2636,7 @@ def _entry_eligibility(
     loss_streak: int = 0, cooldown_active: bool = False, regime_returns: dict[str, list[float]] | None = None,
     meta_returns: dict[str, list[float]] | None = None, loss_streak_wait_active: bool = False,
     weak_regime_wait_active: bool = False, confidence_assessment: dict[str, object] | None = None,
-    transition_wait_active: bool = False,
+    transition_wait_active: bool = False, temporal_assessment: dict[str, object] | None = None,
 ) -> tuple[bool, str | None]:
     if _is_volume_policy_veto(signal_row if signal_row is not None else row):
         return False, "volume_policy"
@@ -2265,6 +2669,8 @@ def _entry_eligibility(
             return False, "regime_transition_wait"
         if cooldown_active:
             return False, "loss_cooldown"
+        if temporal_assessment and bool(temporal_assessment.get("veto", False)):
+            return False, "temporal_" + str(temporal_assessment.get("reason", "survival"))
         confidence = float(signal_row.get("signal_confidence", 1.0) or 0)
         minimum_signal_confidence = float(payload.parameters.get("minimum_signal_confidence", 0.0) or 0)
         # Differential recall experiments may lower the entry threshold only

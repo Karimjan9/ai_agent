@@ -11,6 +11,7 @@ use App\Services\LabImmutableEvidenceService;
 use App\Services\LearningLaneService;
 use App\Services\MutationResponseMapService;
 use App\Services\ParentAwareCreditService;
+use App\Services\ProvisionalSkillCartridgeService;
 use App\Services\SkillMentorService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -74,6 +75,7 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         MutationResponseMapService $responseMap,
         LearningLaneService $learningLane,
         ParentAwareCreditService $parentCredit,
+        ProvisionalSkillCartridgeService $cartridges,
         AgentProgressCardService $progressCards,
         AgentKnowledgeService $knowledge,
     ): void {
@@ -106,6 +108,15 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
             $agent->fresh(['modelVersion']),
             $result,
         );
+        $cartridge = $cartridges->record(
+            $agent->fresh(['modelVersion']),
+            $result,
+            (array) data_get($result, 'mutation_observability', data_get($agent->modelVersion->metadata, 'mutation_observability', [])),
+            (array) data_get($result, 'mutation_observability.control_relative', []),
+        );
+        if ($cartridge !== null) {
+            $result['provisional_skill_cartridge'] = $cartridge;
+        }
         $learningLane->pairScreeningObservation(
             $agent->fresh(['modelVersion', 'generation']),
             $result,

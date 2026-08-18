@@ -17,7 +17,17 @@ class EvaluateLabIncrementally extends Command
     {
         try {
             $summary = $evaluations->evaluateChampions();
+            if (($summary['deferred'] ?? false) === true) {
+                $this->warn('Incremental checks deferred: '.($summary['deferred_reason'] ?? 'admission_gate').'.');
+            }
             $this->info("Incremental checks: {$summary['checked']} checked, {$summary['degraded']} degraded, {$summary['skipped']} skipped.");
+
+            // A deferred health check has no new degradation evidence. Do
+            // not build a degradation generation from an older counter while
+            // the serialized full-validation lane is waiting.
+            if (($summary['deferred'] ?? false) === true) {
+                return self::SUCCESS;
+            }
 
             $symbols = ModelMarketPerformance::query()
                 ->where('status', 'champion')

@@ -170,6 +170,7 @@ class AgentLifecycleAuditService
         $checks = [
             $this->populationCheck($generation, $agents),
             $this->constructorCheck($generation, $agents),
+            $this->causalResearchContractCheck($generation, $agents),
             $this->lineageCheck($generation, $agents, $deep),
             $this->lifecycleCheck($generation, $agents, $queuedAgentIds),
             $this->evidenceCheck($generation, $agents),
@@ -327,6 +328,79 @@ class AgentLifecycleAuditService
                 'promotion_evidence' => false,
             ],
             $hasIssue && $active ? 'critical' : ($hasIssue ? 'warning' : 'info'),
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function causalResearchContractCheck(LabGeneration $generation, $agents): array
+    {
+        $context = (array) $generation->trigger_context;
+        $mode = (string) data_get(
+            $context,
+            'research_allocation_budget.mode',
+            data_get($context, 'control_pairing_contract.mode', ''),
+        );
+        $normal = $mode === 'normal_research'
+            && (int) $generation->population_size >= 2
+            && ! in_array((string) $generation->trigger_type, ['shadow_research', 'coverage_rescue', 'candidate_handoff', 'controlled_rescue'], true);
+        if (! $normal) {
+            return $this->check(
+                'CAUSAL_RESEARCH_CONTRACT',
+                'info',
+                'Exact normal-generation control pairing is not required for this rescue/shadow generation.',
+                ['required' => false, 'promotion_evidence' => false],
+                'info',
+            );
+        }
+
+        $pairing = (array) data_get($context, 'control_pairing_contract', []);
+        $structuralExpected = (bool) data_get($context, 'normal_structural_research_expected', true);
+        $structural = (array) data_get($context, 'structural_research_contract', []);
+        $controls = $agents->filter(fn (LabAgent $agent): bool => $this->isControlOnly($agent))->values();
+        $candidates = $agents->reject(fn (LabAgent $agent): bool => $this->isControlOnly($agent))->values();
+        $controlPairs = $controls
+            ->map(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion?->metadata, 'control_pair_contract.pair_key', ''))
+            ->filter()
+            ->flip();
+        $missingCandidateContracts = $candidates
+            ->filter(function (LabAgent $agent) use ($controlPairs): bool {
+                $pair = (string) data_get($agent->modelVersion?->metadata, 'control_pair_contract.pair_key', '');
+                return $pair === '' || ! $controlPairs->has($pair);
+            })
+            ->pluck('id')->values()->all();
+        $structuralCandidates = $candidates
+            ->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'structural_research_contract.protocol') === 'normal_structural_hypothesis_v1')
+            ->pluck('id')->values()->all();
+        $issues = [];
+        if (data_get($pairing, 'protocol') !== 'frozen_control_pair_v1') $issues[] = 'NORMAL_CONTROL_PAIR_CONTRACT_MISSING';
+        if (! (bool) data_get($pairing, 'allowed', false)) $issues[] = 'NORMAL_CONTROL_PAIRING_NOT_ALLOWED';
+        if ((array) data_get($pairing, 'missing_execution_lanes', []) !== []) $issues[] = 'NORMAL_CONTROL_LANE_MISSING';
+        if ((array) data_get($pairing, 'missing_candidate_pairs', []) !== []) $issues[] = 'NORMAL_CANDIDATE_PAIR_MISSING';
+        if ($controls->isEmpty()) $issues[] = 'NORMAL_FROZEN_CONTROL_MISSING';
+        if ($missingCandidateContracts !== []) $issues[] = 'NORMAL_CANDIDATE_CONTROL_PAIR_MISSING';
+        if ($structuralExpected && data_get($structural, 'protocol') !== 'normal_structural_research_v1') $issues[] = 'NORMAL_STRUCTURAL_RESEARCH_CONTRACT_MISSING';
+        if ($structuralExpected && $structuralCandidates === []) $issues[] = 'NORMAL_STRUCTURAL_CANDIDATE_MISSING';
+        $active = in_array((string) $generation->status, self::ACTIVE_GENERATION_STATUSES, true);
+
+        return $this->check(
+            'CAUSAL_RESEARCH_CONTRACT',
+            $issues === [] ? 'passed' : ($active ? 'blocked' : 'attention'),
+            $issues === []
+                ? 'Normal research candidates have exact same-generation controls and structural hypotheses are declared.'
+                : 'Normal generation lacks an exact causal control/structural contract; interpretation and learning credit remain blocked.',
+            [
+                'required' => true,
+                'pairing_protocol' => data_get($pairing, 'protocol'),
+                'structural_protocol' => data_get($structural, 'protocol'),
+                'control_count' => $controls->count(),
+                'candidate_count' => $candidates->count(),
+                'structural_expected' => $structuralExpected,
+                'structural_candidate_count' => count($structuralCandidates),
+                'missing_candidate_contract_ids' => array_slice($missingCandidateContracts, 0, 30),
+                'issues' => $issues,
+                'promotion_evidence' => false,
+            ],
+            $issues !== [] && $active ? 'critical' : ($issues !== [] ? 'warning' : 'info'),
         );
     }
 
@@ -667,6 +741,10 @@ class AgentLifecycleAuditService
 
             return data_get($metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
                 || (bool) data_get($metadata, 'volume_research_contract.enabled', false)
+                || (bool) data_get($metadata, 'risk_bounded_evolution.volume_shadow', false)
+                || (bool) data_get($metadata, 'portfolio_council_lane.volume_shadow', false)
+                || data_get($metadata, 'portfolio_council_lane.role') === 'volume_m15_specialist'
+                || data_get($metadata, 'portfolio_council_lane.specialist_role') === 'volume_m15_specialist'
                 || data_get($agent->modelVersion?->parameters, 'volume_lane', 'none') !== 'none';
         });
         if (! $deep) {
@@ -1414,6 +1492,8 @@ class AgentLifecycleAuditService
 
         return (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false)
             || (bool) data_get($metadata, 'g98_council_lane.control_only', false)
+            || (data_get($metadata, 'control_pair_contract.protocol') === 'frozen_control_pair_v1'
+                && data_get($metadata, 'control_pair_contract.required_for_candidate') === false)
             || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
     }
 

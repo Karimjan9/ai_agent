@@ -52,6 +52,10 @@ class RiskBoundedEvolutionTest extends TestCase
         ], $modes);
         $this->assertTrue((bool) data_get($tail[0], 'niche.control_only'));
         $this->assertTrue((bool) data_get($tail[6], 'niche.volume_shadow'));
+        $this->assertTrue((bool) data_get($tail[6], 'niche.shadow_only'));
+        $this->assertSame('volume_m15_specialist', data_get($tail[6], 'niche.specialist_role'));
+        $this->assertSame('volume_lane', data_get($tail[6], 'niche.shadow_mutation_gene'));
+        $this->assertSame('volume_lane', data_get($tail[6], 'niche.shadow_mutation_contract.gene'));
         $this->assertTrue((bool) data_get($tail[7], 'niche.adversarial_red_team'));
         $this->assertFalse((bool) data_get($tail[5], 'adaptive_governor.promotion_evidence'));
     }
@@ -87,6 +91,129 @@ class RiskBoundedEvolutionTest extends TestCase
         $this->assertFalse($result['allowed']);
         $this->assertSame('blocked_learning_backlog', $result['status']);
         $this->assertContains('screen_pass_without_full_replay', $result['reason_codes']);
+    }
+
+    public function test_zero_diff_constructor_quarantine_is_reconciled_not_recovery_blocking(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Zero-diff reconciliation test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
+            'population_size' => 1, 'status' => 'technical_quarantine', 'trigger_context' => [],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'zero-diff-test', 'strategy' => 'zero-diff-test', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => [
+                'preflight_quarantine' => [
+                    'errors' => ['ZERO_DIFF_INVARIANT_FAILED'],
+                    'classification' => 'integrity',
+                ],
+            ],
+            'evidence_status' => 'stale_quarantine',
+            'invalidation_reason' => 'strict_lab_agent_preflight_failed',
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine',
+            'parameter_diff' => ['partial_take_profit_fraction' => ['old' => 0, 'new' => 0.0]],
+            'decision_reason' => 'Technical quarantine: strict lab preflight failed (ZERO_DIFF_INVARIANT_FAILED).',
+        ]);
+
+        $result = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame('healthy', $result['status']);
+        $this->assertSame(0, $result['technical_recovery_agents']);
+    }
+
+    public function test_closed_population_contract_quarantine_is_excluded_without_quality_credit(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Contract drift reconciliation test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'shadow_research',
+            'population_size' => 20, 'status' => 'technical_quarantine',
+            'trigger_context' => [
+                'integrity_repair' => [
+                    'contract_drift' => [
+                        'issues' => ['POPULATION_COUNT_MISMATCH'],
+                        'evidence_preserved' => true,
+                    ],
+                ],
+                'shadow_research_constructor_abort' => [
+                    'reason_code' => 'INCOMPLETE_SHADOW_RESEARCH_POPULATION',
+                    'planned_slots' => 20,
+                    'created_agents' => 16,
+                    'promotion_evidence' => false,
+                ],
+            ],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'contract-drift-test', 'strategy' => 'contract-drift-test', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => [
+                'preflight_quarantine' => ['errors' => ['POPULATION_CONTRACT_DRIFT']],
+            ],
+            'evidence_status' => 'stale_quarantine',
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'shadow_research', 'lifecycle_status' => 'technical_quarantine',
+            'parameter_diff' => ['entry_topology_variant' => ['old' => 'frozen', 'new' => 'regime_consensus_v1']],
+        ]);
+
+        $result = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame(0, $result['technical_recovery_agents']);
+        $this->assertSame('healthy', $result['status']);
+    }
+
+    public function test_closed_audited_generation_contract_quarantine_is_excluded_without_reopening_learning(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Audited contract drift test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'learning_trigger',
+            'population_size' => 20, 'status' => 'technical_quarantine',
+            'trigger_context' => [
+                'integrity_repair' => ['contract_drift' => ['issues' => ['POPULATION_COUNT_MISMATCH']]],
+                'constructor_contract_abort' => [
+                    'reason_code' => 'INCOMPLETE_GENERATION_POPULATION',
+                    'planned_slots' => 20, 'created_agents' => 19,
+                ],
+            ],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'audited-contract-drift-test', 'strategy' => 'audited-contract-drift-test', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => ['preflight_quarantine' => ['errors' => ['POPULATION_CONTRACT_DRIFT']]],
+            'evidence_status' => 'stale_quarantine',
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'learning_trigger', 'lifecycle_status' => 'technical_quarantine',
+            'parameter_diff' => ['volume_lane' => ['old' => 'none', 'new' => 'low_volume_risk_firewall']],
+        ]);
+
+        $result = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame(0, $result['technical_recovery_agents']);
+        $this->assertSame('healthy', $result['status']);
     }
 
     public function test_shadow_council_is_explicitly_research_only(): void

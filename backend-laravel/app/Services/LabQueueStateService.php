@@ -180,6 +180,23 @@ LUA, 3, $queue->getQueue($queueName).':reserved', $queue->getQueue($queueName), 
         return (int) $result === 1;
     }
 
+    /** Remove a reserved payload only after its immutable run is terminal. */
+    public function removeCompletedReservedPayload(string $queueName, string $payload): bool
+    {
+        $queue = app('queue')->connection('redis');
+        if (! $queue instanceof RedisQueue) return false;
+
+        $result = $queue->getConnection()->eval(<<<'LUA'
+local removed = redis.call('zrem', KEYS[1], ARGV[1])
+if removed == 1 then
+    return 1
+end
+return 0
+LUA, 1, $queue->getQueue($queueName).':reserved', $payload);
+
+        return (int) $result === 1;
+    }
+
     /** @return array<string, int|null> */
     private function statsFromRows(array $rows): array
     {

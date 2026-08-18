@@ -8,6 +8,11 @@ from app.services.backtester import (
     _differential_router_report,
     _entry_eligibility,
     _proof_carrying_replay,
+    _temporal_survival_assessment,
+    _temporal_register_signal,
+    _temporal_survival_report,
+    _temporal_survival_state,
+    _temporal_update_pending,
     _trade_ledger_hash,
     _validate_data_gaps,
     run_simple_ema_rsi_backtest_on_dataframe,
@@ -214,6 +219,96 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertIsNone(target_reason)
         self.assertFalse(non_target_allowed)
         self.assertEqual(non_target_reason, "minimum_confidence")
+
+    def test_adaptive_signal_expiry_abstains_on_stale_signal(self):
+        payload = self.payload(reject_gaps=False)
+        payload.parameters.update({
+            "temporal_survival_enabled": True,
+            "adaptive_signal_expiry_enabled": True,
+            "signal_max_age_candles": 2,
+            "signal_decay_half_life_candles": 3,
+        })
+        state = _temporal_survival_state()
+        metrics = {
+            "signal_age_candles": 4,
+            "raw_confidence": 1.0,
+            "followthrough_sample_count": 0,
+            "followthrough_rate": None,
+            "volatility_ratio": 1.0,
+            "spread_atr_ratio": 0.0,
+            "feature_drift_zscore": 0.0,
+        }
+        result = _temporal_survival_assessment(
+            {"signal": "BUY"}, metrics, payload, 0, state,
+        )
+        self.assertTrue(result["veto"])
+        self.assertIn("signal_expiry", result["reasons"])
+
+    def test_drift_abstention_uses_spread_drift_and_loss_state(self):
+        payload = self.payload(reject_gaps=False)
+        payload.parameters.update({
+            "temporal_survival_enabled": True,
+            "drift_abstention_enabled": True,
+            "temporal_spread_atr_ratio_max": .10,
+            "temporal_drift_zscore_max": 1.5,
+            "temporal_loss_streak_limit": 3,
+        })
+        state = _temporal_survival_state()
+        state["feature_history"] = [1.0] * 20
+        state["confidence_history"] = [1.0] * 20
+        metrics = {
+            "signal_age_candles": 1,
+            "raw_confidence": 1.0,
+            "followthrough_sample_count": 0,
+            "followthrough_rate": None,
+            "volatility_ratio": 1.0,
+            "spread_atr_ratio": .20,
+            "feature_drift_zscore": 2.0,
+        }
+        result = _temporal_survival_assessment(
+            {"signal": "BUY"}, metrics, payload, 3, state,
+        )
+        self.assertTrue(result["veto"])
+        self.assertIn("spread_stress", result["reasons"])
+        self.assertIn("feature_drift", result["reasons"])
+        self.assertIn("temporal_loss_streak", result["reasons"])
+        report = _temporal_survival_report(state, payload)
+        self.assertGreaterEqual(report["abstention_count"], 1)
+
+    @patch("app.services.backtester.get_strategy", return_value=cooldown_shadow_strategy)
+    def test_temporal_survival_report_is_emitted_by_replay(self, _strategy):
+        payload = self.payload(reject_gaps=False)
+        payload.parameters.update({
+            "temporal_survival_enabled": True,
+            "adaptive_signal_expiry_enabled": True,
+            "signal_max_age_candles": 2,
+            "temporal_followthrough_window": 2,
+        })
+        result = run_simple_ema_rsi_backtest_on_dataframe(payload, self.candles())
+
+        self.assertTrue(result.temporal_survival["enabled"])
+        self.assertIn("vetoes_by_reason", result.temporal_survival)
+
+    def test_frozen_control_collects_temporal_telemetry_without_veto(self):
+        payload = self.payload(reject_gaps=False)
+        payload.parameters.update({
+            "temporal_followthrough_window": 1,
+            "temporal_followthrough_min_rate": .40,
+            "temporal_min_history": 5,
+        })
+        state = _temporal_survival_state()
+        signal = {"signal": "BUY", "close": 100.0, "_management_atr": 1.0}
+        candle = {"open": 100.0, "high": 101.0, "low": 99.0}
+        for index in range(6):
+            _temporal_register_signal(state, signal, "BUY", index, payload)
+            _temporal_update_pending(state, candle, index + 1, payload)
+        _temporal_update_pending(state, candle, 7, payload)
+
+        report = _temporal_survival_report(state, payload)
+        self.assertFalse(report["enabled"])
+        self.assertGreaterEqual(report["followthrough_sample_count"], 5)
+        self.assertGreater(float(report["temporal_survival_score"]), 1.0)
+        self.assertEqual(report["abstention_count"], 0)
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
     def test_opt_in_decision_trace_carries_features_and_rejections(self, _strategy):
@@ -557,6 +652,28 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertEqual(profiles["method"], "identical_replay_execution_profiles")
         self.assertIn("profit_factor", profiles["zero_cost"])
         self.assertIn("profit_factor", profiles["stress_cost"])
+
+    @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
+    def test_compact_event_digest_is_emitted_without_full_decision_trace(self, _strategy):
+        result = run_simple_ema_rsi_backtest_on_dataframe(self.payload(reject_gaps=False), self.candles())
+
+        self.assertFalse(result.decision_trace)
+        self.assertEqual(result.event_digest["protocol"], "event_ledger_digest_v1")
+        self.assertEqual(result.event_ledger_hash, result.event_digest["hash"])
+        self.assertGreater(result.event_ledger_count, 0)
+        self.assertIn("entry:accepted", result.event_ledger_categories)
+
+    @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
+    def test_shadow_state_machine_is_explicit_and_finite(self, _strategy):
+        payload = self.payload(reject_gaps=False).model_copy(update={
+            "parameters": {"state_machine_variant": "neutral_transition_cooldown_reentry_v1"},
+        })
+        result = run_simple_ema_rsi_backtest_on_dataframe(payload, self.candles())
+
+        self.assertTrue(result.state_machine["enabled"])
+        self.assertEqual(result.state_machine["variant"], "neutral_transition_cooldown_reentry_v1")
+        self.assertIn(result.state_machine["final_state"], {"neutral", "transition", "cooldown", "reentry_permission"})
+        self.assertEqual(result.event_ledger_hash, result.event_digest["hash"])
 
 
 if __name__ == "__main__":

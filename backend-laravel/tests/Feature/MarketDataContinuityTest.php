@@ -91,6 +91,34 @@ class MarketDataContinuityTest extends TestCase
         $this->assertNull($state->pending_from_at);
     }
 
+    public function test_closed_weekend_failure_does_not_mark_the_feed_offline(): void
+    {
+        $state = MarketDataSyncState::create([
+            'provider' => 'twelve',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'status' => 'offline',
+            'retry_count' => 2,
+            'last_error' => 'Previous closed-session request failed.',
+        ]);
+
+        app(MarketDataContinuityService::class)->recordFailure(
+            'twelve',
+            'XAUUSD',
+            'H1',
+            CarbonImmutable::parse('2026-08-15 13:00:00', 'UTC'),
+            CarbonImmutable::parse('2026-08-16 06:00:00', 'UTC'),
+            'Provider timeout during the scheduled weekend closure.',
+        );
+
+        $state->refresh();
+        $this->assertSame('healthy', $state->status);
+        $this->assertSame(0, $state->retry_count);
+        $this->assertNull($state->last_error);
+        $this->assertNull($state->pending_from_at);
+        $this->assertTrue((bool) data_get($state->metrics, 'scheduled_closure'));
+    }
+
     private function candle(int $symbolId, CarbonImmutable $time, string $timeframe = 'H1'): void
     {
         Candle::create([

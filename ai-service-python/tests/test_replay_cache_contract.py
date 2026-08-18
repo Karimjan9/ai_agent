@@ -4,12 +4,44 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.main import _bounded_replay_seconds, _candidate_cache_payload, _dataset_dependency_manifest, _run_all_backtests_sync
+from app.main import (
+    _bounded_replay_seconds,
+    _candidate_cache_payload,
+    _dataset_dependency_manifest,
+    _latest_replay_checkpoint,
+    _run_all_backtests_sync,
+    _write_replay_checkpoint,
+)
 from app.schemas import SimpleBacktestRequest
 from app.services.execution_contract import execution_contract_metadata
 
 
 class ReplayCacheContractTest(unittest.TestCase):
+    def test_checkpoint_is_atomic_small_and_marks_no_promotion_evidence(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            "os.environ", {"AI_REPLAY_CHECKPOINT_DIR": directory}, clear=False
+        ):
+            manifest = {
+                "completed_candidates": ["agent-1"],
+                "pending_candidates": ["agent-2"],
+            }
+            _write_replay_checkpoint(
+                "checkpoint-test",
+                "execution_state",
+                manifest,
+                candidate="agent-1",
+                trace_size=0,
+            )
+
+            checkpoint = _latest_replay_checkpoint()
+
+            self.assertEqual("replay_checkpoint_v1", checkpoint["protocol"])
+            self.assertEqual("execution_state", checkpoint["stage"])
+            self.assertEqual(1, checkpoint["completed_count"])
+            self.assertEqual(1, checkpoint["pending_count"])
+            self.assertFalse(checkpoint["promotion_evidence"])
+            self.assertTrue((Path(directory) / "checkpoint-test.json").is_file())
+
     def test_incremental_screen_timeout_is_bounded_with_operational_margin(self):
         payload = SimpleBacktestRequest(evaluation_mode="incremental")
 

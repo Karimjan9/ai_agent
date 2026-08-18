@@ -20,14 +20,51 @@ class LearningProtocolSafetyService
     }
 
     /**
-     * A paused laboratory may admit one explicitly audited 20-seat rescue
-     * cohort. This is deliberately narrower than resuming generation
-     * creation: normal schedulers remain blocked and the rescue profile must
-     * carry the five-by-four group contract.
+     * A paused laboratory may admit one explicitly audited rescue cohort.
+     * Legacy profiles retain the 20-seat five-by-four contract. The newer
+     * gate-margin profile is intentionally narrower: five seats for one
+     * immutable anchor (four bounded siblings plus one control).
      */
     public function controlledRescueAllowed(string $trigger, ?int $populationLimit, ?array $profile): bool
     {
         $groups = (array) data_get($profile, 'group_plan', []);
+
+        if ((string) data_get($profile, 'cohort_mode') === StructuralResearchCohortService::COHORT_MODE
+            || (string) data_get($profile, 'structural_research_contract.protocol') === StructuralResearchCohortService::PROTOCOL) {
+            $families = (array) data_get($profile, 'structural_research_contract.structural_families', []);
+
+            return $trigger === 'candidate_handoff'
+                && (int) $populationLimit === StructuralResearchCohortService::POPULATION_SIZE
+                && (string) data_get($profile, 'rescue_protocol') === self::CONTROLLED_RESCUE_PROTOCOL
+                && (bool) data_get($profile, 'temporary', false)
+                && (bool) data_get($profile, 'promotion_evidence', true) === false
+                && strtoupper((string) data_get($profile, 'symbol')) === self::LIGHTHOUSE_SYMBOL
+                && strtoupper((string) data_get($profile, 'timeframe')) === self::LIGHTHOUSE_TIMEFRAME
+                && count($groups) === 5
+                && collect($groups)->every(fn (mixed $group): bool => count((array) data_get($group, 'targets', [])) === 4)
+                && data_get($profile, 'structural_research_contract.protocol') === StructuralResearchCohortService::PROTOCOL
+                && (int) data_get($profile, 'structural_research_contract.population_size') === StructuralResearchCohortService::POPULATION_SIZE
+                && (bool) data_get($profile, 'structural_research_contract.control_pair.required_for_every_candidate')
+                && (bool) data_get($profile, 'structural_research_contract.causal_micro_probe.required_before_full_replay')
+                && (bool) data_get($profile, 'structural_research_contract.independent_evidence.non_overlap_required')
+                && count($families) >= 5;
+        }
+
+        if ((string) data_get($profile, 'cohort_mode') === 'four_siblings_plus_control_v1') {
+            return $trigger === 'candidate_handoff'
+                && (int) $populationLimit === 5
+                && (string) data_get($profile, 'rescue_protocol') === self::CONTROLLED_RESCUE_PROTOCOL
+                && (bool) data_get($profile, 'temporary', false)
+                && (bool) data_get($profile, 'promotion_evidence', true) === false
+                && strtoupper((string) data_get($profile, 'symbol')) === self::LIGHTHOUSE_SYMBOL
+                && strtoupper((string) data_get($profile, 'timeframe')) === self::LIGHTHOUSE_TIMEFRAME
+                && count((array) data_get($profile, 'repair_anchors', [])) === 1
+                && count($groups) === 1
+                && count((array) data_get($groups, 'repair_anchor_cohort.targets', [])) === 5
+                && data_get($profile, 'cohort_contract.protocol') === 'four_siblings_plus_control_v1'
+                && (int) data_get($profile, 'cohort_contract.bounded_siblings') === 4
+                && (int) data_get($profile, 'cohort_contract.frozen_control') === 1;
+        }
 
         return $trigger === 'candidate_handoff'
             && (int) $populationLimit === 20

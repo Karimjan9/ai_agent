@@ -7,7 +7,6 @@ use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 
 /**
  * Repairs only operationally stale screening work.  It never emits a quality
@@ -23,22 +22,21 @@ class TechnicalGenerationRecoveryService
         private LabAgentPreflightService $preflight,
         private LabReplayRecoveryService $replayRecovery,
         private LabQueueJobInspector $queueJobs,
+        private ReplayLivenessProbeService $liveness,
     ) {}
 
     /** @return array{ready: bool, idle: bool, reason: string} */
     public function readiness(): array
     {
-        try {
-            $response = Http::connectTimeout(3)->timeout(8)->acceptJson()
-                ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
-                ->get(rtrim((string) config('services.ai_service.url'), '/').'/api/replay-status');
-            if (! $response->successful()) return ['ready' => false, 'idle' => false, 'reason' => 'AI_READINESS_PROBE_FAILED'];
-            $active = $response->json('active_requests');
-            if (! is_numeric($active)) return ['ready' => false, 'idle' => false, 'reason' => 'AI_READINESS_PROBE_INVALID'];
-            return ['ready' => true, 'idle' => (int) $active === 0, 'reason' => (int) $active === 0 ? 'AI_READY_IDLE' : 'AI_REPLAY_ACTIVE'];
-        } catch (\Throwable) {
-            return ['ready' => false, 'idle' => false, 'reason' => 'AI_READINESS_PROBE_UNREACHABLE'];
-        }
+        $probe = $this->liveness->probe();
+        return [
+            'ready' => in_array((string) ($probe['status'] ?? 'unknown'), ['ok', 'active'], true),
+            'idle' => ($probe['status'] ?? null) === 'ok',
+            'reason' => ($probe['status'] ?? null) === 'ok'
+                ? 'AI_READY_IDLE'
+                : (($probe['status'] ?? null) === 'active' ? 'AI_REPLAY_ACTIVE' : 'AI_READINESS_PROBE_UNAVAILABLE'),
+            'probe' => $probe,
+        ];
     }
 
     /**

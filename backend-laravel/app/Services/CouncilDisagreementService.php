@@ -68,7 +68,9 @@ class CouncilDisagreementService
                     'timeframe' => strtoupper((string) ($context['timeframe'] ?? data_get($result, 'timeframe', 'H1'))),
                     'family' => $context['family'] ?? data_get($event, 'family'),
                     'h1_context_hash' => $event['h1_context_hash'] ?? data_get($event, 'h1_context.hash', data_get($event, 'state.h1_context.h1_context_hash', data_get($event, 'features.h1_context_hash'))),
-                    'decision_at' => $this->timestamp($event['timestamp'] ?? $event['time'] ?? $event['decision_at']),
+                    'decision_at' => $this->timestamp(
+                        data_get($event, 'timestamp', data_get($event, 'time', data_get($event, 'decision_at')))
+                    ),
                     'regime' => $event['regime'] ?? data_get($event, 'h1_context.regime'),
                     'specialist_votes' => $votes,
                     'risk_decision' => $event['risk_decision'] ?? data_get($event, 'risk.decision', $votes['risk_sentinel'] ?? null),

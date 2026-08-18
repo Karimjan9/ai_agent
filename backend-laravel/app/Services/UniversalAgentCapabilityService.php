@@ -8,6 +8,10 @@ use App\Models\ModelVersion;
 /** Capability transfer is evidence transfer, never a cross-market promotion shortcut. */
 class UniversalAgentCapabilityService
 {
+    public function __construct(private StrategyParameterSchemaService $schemas)
+    {
+    }
+
     public function genome(
         string $symbol,
         string $timeframe,
@@ -34,7 +38,10 @@ class UniversalAgentCapabilityService
             'contributor_count' => $parentModels->count(),
             'local_adapter' => [
             'symbol' => $symbol, 'timeframe' => $timeframe, 'architecture' => $architecture,
-            'parameters_hash' => hash('sha256', json_encode($parameters, JSON_PRESERVE_ZERO_FRACTION)),
+            'parameters_hash' => hash('sha256', json_encode(
+                $this->schemas->canonicalizeForIdentity($family, $parameters),
+                JSON_PRESERVE_ZERO_FRACTION,
+            )),
             'operating_envelope' => 'local_evidence_required',
             ],
             'risk_guard' => ['unknown_state' => 'WAIT_OR_REDUCE_RISK', 'transfer_requires_leave_one_market_out' => true],

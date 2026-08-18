@@ -203,6 +203,10 @@ class CoverageRescueAuditTest extends TestCase
                     ],
                 ],
                 'behavioral_diversity' => ['status' => 'distinct'],
+                'forward_protocol' => [
+                    'status' => 'confirmed',
+                    'independent_windows' => 3,
+                ],
             ],
         ]);
 

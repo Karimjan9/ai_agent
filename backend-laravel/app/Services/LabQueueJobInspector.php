@@ -40,6 +40,51 @@ class LabQueueJobInspector
         return $total === null || $total > 0;
     }
 
+    /**
+     * Return only queued/reserved lab jobs owned by the supplied generation's
+     * agents. Global queue work from another generation or the research-only
+     * learning lane must not keep this generation's report in progress.
+     *
+     * Unknown queue state remains fail-closed (total=null). A row without an
+     * identifiable lab agent is also treated as unknown rather than silently
+     * attributed to a different generation.
+     *
+     * @param array<int, int> $agentIds
+     * @param array<int, string>|null $queues
+     * @return array<string, mixed>
+     */
+    public function generationQueueBacklog(array $agentIds, ?array $queues = null): array
+    {
+        $agentIds = array_values(array_unique(array_filter(
+            array_map('intval', $agentIds),
+            static fn (int $id): bool => $id > 0,
+        )));
+        if ($agentIds === []) {
+            return ['backend' => $this->state->backend(), 'total' => 0, 'queues' => [], 'rows' => [], 'scope' => 'generation_agents'];
+        }
+
+        $snapshot = $this->state->snapshot($queues ?? $this->labQueues());
+        if (($snapshot['available'] ?? true) === false) {
+            return [
+                'backend' => $this->backend(), 'available' => false, 'total' => null,
+                'queues' => [], 'rows' => [], 'scope' => 'generation_agents',
+            ];
+        }
+
+        $rows = collect((array) ($snapshot['rows'] ?? []))
+            ->filter(fn (array $row): bool => $this->payloadBelongsToAgents((string) ($row['payload'] ?? ''), $agentIds))
+            ->values();
+
+        return [
+            'backend' => $snapshot['backend'] ?? $this->backend(),
+            'available' => true,
+            'total' => $rows->count(),
+            'queues' => $rows->groupBy('queue')->map->count()->all(),
+            'rows' => $rows->all(),
+            'scope' => 'generation_agents',
+        ];
+    }
+
     /** @return array<int, string> */
     public function labQueues(): array
     {
@@ -71,29 +116,41 @@ class LabQueueJobInspector
         if (($snapshot['available'] ?? true) === false) return [];
 
         return collect((array) ($snapshot['rows'] ?? []))
-            ->filter(function (array $job) use ($agentIds): bool {
-                $decoded = json_decode((string) ($job['payload'] ?? ''), true);
-                $command = (string) data_get($decoded, 'data.command', '');
-                if ($command === '') $command = (string) data_get($decoded, 'command', '');
-
-                foreach ($agentIds as $agentId) {
-                    // Laravel's queued command is a serialized object after
-                    // JSON decoding: s:10:"labAgentId";i:123;. The second
-                    // marker keeps compatibility with compact test/legacy
-                    // payloads such as labAgentId;123 while preserving the
-                    // numeric boundary (123 must not match 1234).
-                    if (str_contains($command, 's:10:"labAgentId";i:'.$agentId.';')
-                        || preg_match('/labAgentId;'.preg_quote((string) $agentId, '/').'(?=\D|$)/', $command) === 1) {
-                        return true;
-                    }
-                }
-
-                return false;
-            })
+            ->filter(fn (array $job): bool => $this->payloadBelongsToAgents((string) ($job['payload'] ?? ''), $agentIds))
             ->pluck('id')
             ->map(fn (mixed $id): int|string => is_numeric($id) && ! str_contains((string) $id, '-') ? (int) $id : (string) $id)
             ->values()
             ->all();
+    }
+
+    /** @param array<int, int> $agentIds */
+    private function payloadBelongsToAgents(string $payload, array $agentIds): bool
+    {
+        $decoded = json_decode($payload, true);
+        $command = (string) data_get($decoded, 'data.command', '');
+        if ($command === '') $command = (string) data_get($decoded, 'command', '');
+        if ($command === '') return false;
+
+        foreach ($agentIds as $agentId) {
+            // Laravel's queued command is serialized as
+            // s:10:"labAgentId";i:123;. The compact marker preserves
+            // compatibility with older payloads without matching 1234.
+            if (str_contains($command, 's:10:"labAgentId";i:'.$agentId.';')
+                || preg_match('/labAgentId;'.preg_quote((string) $agentId, '/').'(?=\D|$)/', $command) === 1) {
+                return true;
+            }
+
+            // Screening batches carry an integer array instead of the
+            // singular labAgentId property. Keep the match inside the
+            // serialized labAgentIds field so a batch UUID or another
+            // serialized integer cannot accidentally claim ownership.
+            if (preg_match('/s:\d+:"labAgentIds";a:\d+:\{(.*?)\}/s', $command, $matches) === 1
+                && preg_match('/(?<!\d)i:'.preg_quote((string) $agentId, '/').';/', $matches[1]) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function fullValidationIsWaiting(): bool

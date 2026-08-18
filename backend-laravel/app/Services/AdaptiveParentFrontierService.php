@@ -88,6 +88,10 @@ class AdaptiveParentFrontierService
             // Disabling the adaptive scorer must not disable the evolutionary
             // contract. Causal lanes still need one isolated parent; only
             // robust/discovery lanes may receive the full legacy frontier.
+            $allProfiles = $this->profiles($candidates, $symbol, $timeframe, $family, $target, $niche);
+            $eligibleProfiles = $allProfiles
+                ->filter(fn (array $profile): bool => (bool) data_get($profile, 'parent_eligible', false))
+                ->values();
             $causal = in_array($origin, EvolutionGovernorService::CAUSAL_ORIGINS, true);
             $policy = $this->governor->selectionPolicy(
                 $family,
@@ -96,18 +100,26 @@ class AdaptiveParentFrontierService
                 $snapshot,
             );
             $selectedCandidates = $causal
-                ? $candidates->take(1)->values()
-                : $candidates->take((int) $policy['max_parents'] > 0 ? (int) $policy['max_parents'] : $candidates->count())->values();
-            $candidateIds = $candidates->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
+                ? $eligibleProfiles->take(1)->pluck('model')->values()
+                : $eligibleProfiles->take((int) $policy['max_parents'] > 0 ? (int) $policy['max_parents'] : $eligibleProfiles->count())->pluck('model')->values();
+            $candidateIds = $allProfiles->pluck('model.id')->map(fn ($id): int => (int) $id)->values()->all();
             $ids = $selectedCandidates->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
+            $candidateScores = $allProfiles->mapWithKeys(fn (array $profile): array => [(string) $profile['model']->id => [
+                'parent_eligible' => (bool) data_get($profile, 'parent_eligible', false),
+                'parent_selection_reason' => data_get($profile, 'parent_selection_reason', 'rejected_parent_passport'),
+                'parent_selection_reasons' => (array) data_get($profile, 'parent_selection_reasons', []),
+            ]])->all();
             $contract = [
                 'protocol' => 'adaptive_parent_frontier_v1',
                 'status' => 'disabled',
                 'mode' => 'legacy_frontier_projection',
-                'candidate_count' => $candidates->count(),
+                'candidate_count' => $allProfiles->count(),
                 'selected_count' => $selectedCandidates->count(),
                 'candidate_parent_model_version_ids' => $candidateIds,
                 'selected_parent_model_version_ids' => $ids,
+                'eligible_parent_model_version_ids' => $eligibleProfiles->pluck('model.id')->map(fn ($id): int => (int) $id)->values()->all(),
+                'candidate_scores' => $candidateScores,
+                'parent_firewall' => 'parent_eligible_true_only',
                 'causal_lane' => $causal,
                 'min_parents' => $policy['min_parents'],
                 'max_parents' => $policy['max_parents'],
@@ -156,6 +168,8 @@ class AdaptiveParentFrontierService
                 'research_seed_eligible' => (bool) data_get($profile, 'research_seed_eligible', false),
                 'context_trust' => data_get($profile, 'context_trust', ['trust_score' => .50, 'status' => 'no_context_evidence']),
                 'exclusion_reason' => data_get($profile, 'parent_exclusion_reason'),
+                'parent_selection_reason' => data_get($profile, 'parent_selection_reason', 'rejected_parent_passport'),
+                'parent_selection_reasons' => (array) data_get($profile, 'parent_selection_reasons', []),
                 'archive_type' => data_get($profile, 'archive_type'),
             ];
         }
@@ -184,6 +198,10 @@ class AdaptiveParentFrontierService
             'selection_seed' => $slot,
             'anchor_model_version_id' => $selected->first()?->id,
             'anchor_selection_rule' => 'slot-aware exploitation/exploration rotation; champion is a contributor, not a mandatory parent for every child',
+            'parent_firewall' => 'parent_eligible_true_only',
+            'selected_parent_reasons' => $selectedProfiles->mapWithKeys(fn (array $profile): array => [
+                (string) $profile['model']->id => data_get($profile, 'parent_selection_reason', 'eligible'),
+            ])->all(),
             'capability_modules' => array_keys((array) data_get($capability, 'modules', [])),
             'research_seed_only' => false,
             'research_seed_candidate_count' => $allProfiles->filter(
@@ -465,6 +483,10 @@ class AdaptiveParentFrontierService
     /** @return array<string, mixed> */
     private function parentEligibilityProfile(ModelVersion $model, ?ModelMarketPerformance $performance): array
     {
+        $shadowOnly = (
+            (bool) data_get($model->metadata, 'shadow_research_lane.shadow_only', false)
+            || data_get($model->metadata, 'shadow_research_lane.protocol') === ShadowResearchGovernorService::PROTOCOL
+        ) && data_get($model->metadata, 'shadow_research_lane.requalified', false) !== true;
         $metrics = (array) ($performance?->metrics ?? []);
         $bootstrap = (array) data_get($metrics, 'statistical_evidence.edge_quality.bootstrap_pf', []);
         $edge = (array) data_get($metrics, 'statistical_evidence.edge_quality', []);
@@ -472,7 +494,7 @@ class AdaptiveParentFrontierService
             || (float) data_get($bootstrap, 'pf_5_percentile_lower_bound', 0) >= 1.1;
         $regimePasses = ! (bool) data_get($edge, 'worst_regime_sampled', false)
             || (float) data_get($edge, 'worst_regime_pf', 0) >= 1.0;
-        $parentEligible = $performance !== null
+        $parentEligible = ! $shadowOnly && $performance !== null
             && $performance->evidence_status === 'valid'
             && $model->evidence_status === 'valid'
             && in_array((string) $performance->status, ['champion', 'challenger', 'forward_validated', 'paper'], true)
@@ -486,7 +508,7 @@ class AdaptiveParentFrontierService
             && $bootstrapPasses
             && $regimePasses
             && data_get($metrics, 'behavioral_diversity.status') !== 'near_duplicate';
-        $rootSeed = data_get($model->metadata, 'control_root_seed.protocol') === 'control_root_specialist_inheritance_v1'
+        $rootSeed = ! $shadowOnly && data_get($model->metadata, 'control_root_seed.protocol') === 'control_root_specialist_inheritance_v1'
             && data_get($model->metadata, 'control_root_seed.status') !== 'revoked';
         $archiveType = (string) $model->getAttribute('_adaptive_archive_type');
         $researchSeed = $archiveType === 'young'
@@ -496,6 +518,40 @@ class AdaptiveParentFrontierService
         $mentorOnly = in_array($evolutionStage, ['screen_validated_seed', 'skill_mentor', 'screen_validated_control', 'repair_anchor', 'repair_anchor_control'], true)
             || data_get($model->metadata, 'skill_mentor.status') === 'confirmed';
         $passportParentEligible = ($parentEligible || $rootSeed) && ! $mentorOnly;
+
+        // Challenger status is a lifecycle label, not independent forward
+        // evidence. Persist explicit rejection codes with every candidate
+        // score so a future selector cannot mistake a challenger row for a
+        // legal parent merely because its status string looks advanced.
+        $selectionReasons = [];
+        if ($shadowOnly) $selectionReasons[] = 'rejected_shadow_only';
+        if ($mentorOnly) $selectionReasons[] = 'rejected_mentor_only';
+        if ($performance !== null && (float) data_get($metrics, 'profit_factor', 0) < 1.3) {
+            $selectionReasons[] = 'rejected_low_pf';
+        }
+        $forwardStatuses = ['forward_validated', 'paper', 'champion'];
+        $independentForwardWindows = max(
+            (int) data_get($metrics, 'forward_protocol.independent_windows', 0),
+            (int) data_get($metrics, 'forward_validation.independent_windows', 0),
+            (int) data_get($metrics, 'independent_forward_windows', 0),
+        );
+        $independentForward = $performance !== null
+            && in_array((string) $performance->status, $forwardStatuses, true)
+            && ($independentForwardWindows >= 1
+                || ((int) $performance->rolling_windows_count >= 3
+                    && (int) $performance->rolling_forward_wins >= 3
+                    && data_get($metrics, 'forward_protocol.status') === 'confirmed'));
+        if (! $independentForward) $selectionReasons[] = 'rejected_no_independent_forward';
+        $pairedReplayStatus = strtolower((string) (
+            data_get($metrics, 'paired_replay.status')
+            ?: data_get($metrics, 'paired_replay_status', '')
+        ));
+        if (in_array($pairedReplayStatus, ['pending', 'queued', 'started', 'in_progress'], true)) {
+            $selectionReasons[] = 'rejected_pending_paired_replay';
+        }
+        if ($mentorOnly && $selectionReasons === []) $selectionReasons[] = 'rejected_mentor_only';
+        if (! $passportParentEligible && $selectionReasons === []) $selectionReasons[] = 'rejected_parent_passport';
+        if ($passportParentEligible) $selectionReasons = ['eligible'];
 
         $confidence = $performance === null ? 0.0 : min(1.0, max(0.0,
             .20
@@ -508,11 +564,15 @@ class AdaptiveParentFrontierService
 
         return [
             'parent_eligible' => $passportParentEligible,
+            'parent_selection_reason' => $selectionReasons[0] ?? 'rejected_parent_passport',
+            'parent_selection_reasons' => array_values(array_unique($selectionReasons)),
             'root_seed_eligible' => $rootSeed,
             'research_seed_eligible' => $researchSeed,
             'parent_exclusion_reason' => $passportParentEligible
                 ? null
-                : ($mentorOnly ? 'skill_tier_not_full_parent' : ($performance === null ? 'no_independent_evidence' : 'parent_passport_incomplete')),
+                : ($shadowOnly
+                    ? 'shadow_research_only_until_control_requalification'
+                    : ($mentorOnly ? 'skill_tier_not_full_parent' : ($performance === null ? 'no_independent_evidence' : 'parent_passport_incomplete'))),
             'evidence_confidence' => round($confidence, 4),
         ];
     }

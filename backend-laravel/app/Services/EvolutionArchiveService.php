@@ -175,7 +175,10 @@ class EvolutionArchiveService
         ?string $target,
         array $selection,
     ): LabParentSelectionDecision {
-        $contract = (array) ($selection['contract'] ?? []);
+        $contract = $this->normalizeParentSelectionContract(
+            (array) ($selection['contract'] ?? []),
+            (array) ($selection['selected_parent_ids'] ?? []),
+        );
 
         return LabParentSelectionDecision::create([
             'lab_generation_id' => $generation->id,
@@ -197,6 +200,85 @@ class EvolutionArchiveService
             'exploration_ratio' => (float) data_get($contract, 'exploration_ratio', 0),
             'promotion_evidence' => false,
         ]);
+    }
+
+    /**
+     * Keep the parent firewall explainable even when a repair lane bypasses
+     * the ordinary frontier selector.  Older repair contracts only stored
+     * `repair_anchor_only`, which made the policy correct but left the
+     * reason ledger blank.
+     *
+     * @param array<int, mixed> $selectedParentIds
+     * @return array<string, mixed>
+     */
+    public function normalizeParentSelectionContract(array $contract, array $selectedParentIds = []): array
+    {
+        $reasons = collect((array) ($contract['parent_selection_reasons'] ?? []))
+            ->map(fn (mixed $reason): string => trim((string) $reason))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $status = (string) data_get($contract, 'status', '');
+        $selectedCount = max(
+            (int) data_get($contract, 'selected_count', 0),
+            count(array_filter($selectedParentIds)),
+            count((array) data_get($contract, 'selected_parent_model_version_ids', [])),
+        );
+        $candidateCount = (int) data_get($contract, 'candidate_count', 0);
+        $repairOnly = $status === 'repair_anchor_only'
+            || (bool) data_get($contract, 'genetic_parent_forbidden', false);
+
+        if ($reasons === []) {
+            $reasons = $repairOnly
+                ? ['rejected_pending_paired_replay', 'rejected_no_independent_forward']
+                : ($selectedCount > 0
+                    ? ['eligible']
+                    : ($candidateCount <= 0
+                        ? ['rejected_no_independent_forward']
+                        : ['rejected_parent_passport']));
+        }
+        if ($repairOnly && ! in_array('rejected_pending_paired_replay', $reasons, true)) {
+            $reasons[] = 'rejected_pending_paired_replay';
+        }
+        if ($repairOnly && ! in_array('rejected_no_independent_forward', $reasons, true)) {
+            $reasons[] = 'rejected_no_independent_forward';
+        }
+
+        $contract['parent_selection_reason'] = (string) ($contract['parent_selection_reason'] ?? $reasons[0]);
+        $contract['parent_selection_reasons'] = array_values(array_unique($reasons));
+        $contract['selected_count'] = $selectedCount;
+        $contract['candidate_count'] = max($candidateCount, (int) data_get($contract, 'candidate_count', 0));
+        $contract['reason_ledger_protocol'] = 'parent_selection_reason_ledger_v1';
+        $contract['promotion_evidence'] = false;
+
+        return $contract;
+    }
+
+    /**
+     * Backfill missing reason fields on historical policy projections. This
+     * changes only audit metadata; it never changes selected parents or gate
+     * outcomes.
+     */
+    public function backfillParentSelectionReasons(?int $generationId = null): int
+    {
+        $query = LabParentSelectionDecision::query();
+        if ($generationId !== null) $query->where('lab_generation_id', $generationId);
+
+        $updated = 0;
+        $query->orderBy('id')->each(function (LabParentSelectionDecision $decision) use (&$updated): void {
+            $policy = $this->normalizeParentSelectionContract(
+                (array) $decision->policy,
+                (array) $decision->selected_parent_model_version_ids,
+            );
+            $before = json_encode((array) $decision->policy, JSON_UNESCAPED_SLASHES);
+            $after = json_encode($policy, JSON_UNESCAPED_SLASHES);
+            if ($before === $after) return;
+            $decision->update(['policy' => $policy]);
+            $updated++;
+        });
+
+        return $updated;
     }
 
     /**

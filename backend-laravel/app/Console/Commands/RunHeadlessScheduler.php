@@ -44,6 +44,8 @@ class RunHeadlessScheduler extends Command
         }
 
         $lastMinute = null;
+        $executedTicks = 0;
+        $maxTicksPerProcess = max(1, (int) config('services.scheduler.max_ticks_per_process', 1));
         $lastLeaseRefresh = microtime(true);
         $memoryLimitMb = max(128, (int) env('SCHEDULER_MEMORY_LIMIT_MB', 256));
         $memoryLimitBytes = $memoryLimitMb * 1024 * 1024;
@@ -96,37 +98,54 @@ class RunHeadlessScheduler extends Command
 
                 if ($minute !== $lastMinute) {
                     $lastMinute = $minute;
-                    try {
-                        $exitCode = Artisan::call('schedule:run', ['--whisper' => true]);
-                        if ($exitCode !== 0) {
-                            Log::warning('Headless scheduler tick returned a non-zero exit code.', [
+                    // Persist the minute claim so a bounded-memory restart
+                    // cannot immediately execute the same schedule minute a
+                    // second time. The in-process marker above only protects
+                    // one PHP lifetime; the cache key spans the PM2 restart.
+                    if ($this->claimMinute($minute)) {
+                        try {
+                            $exitCode = Artisan::call('schedule:run', ['--whisper' => true]);
+                            if ($exitCode !== 0) {
+                                Log::warning('Headless scheduler tick returned a non-zero exit code.', [
+                                    'minute' => $minute,
+                                    'exit_code' => $exitCode,
+                                ]);
+                            } else {
+                                Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinutes(10));
+                            }
+                        } catch (Throwable $exception) {
+                            // A transient MySQL deadlock must not kill the only
+                            // scheduler process. Mark this minute consumed so
+                            // the loop does not hammer the same lock; the next
+                            // minute retries the normal schedule tick.
+                            Log::warning('Headless scheduler tick failed; retrying on the next minute.', [
                                 'minute' => $minute,
-                                'exit_code' => $exitCode,
+                                'exception' => $exception,
                             ]);
-                        } else {
-                            Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinutes(10));
                         }
-                    } catch (Throwable $exception) {
-                        // A transient MySQL deadlock must not kill the only
-                        // scheduler process. Mark this minute consumed so the
-                        // loop does not hammer the same lock; the next minute
-                        // retries the normal schedule tick automatically.
-                        Log::warning('Headless scheduler tick failed; retrying on the next minute.', [
-                            'minute' => $minute,
-                            'exception' => $exception,
-                        ]);
-                    }
 
-                    gc_collect_cycles();
-                    $memoryBytes = memory_get_usage(true);
-                    if ($memoryBytes >= $memoryLimitBytes) {
-                        Log::warning('Headless scheduler reached its bounded memory limit; exiting for a clean supervisor restart.', [
-                            'minute' => $minute,
-                            'memory_bytes' => $memoryBytes,
-                            'memory_limit_mb' => $memoryLimitMb,
-                        ]);
+                        $executedTicks++;
+                        gc_collect_cycles();
 
-                        return self::SUCCESS;
+                        if ($executedTicks >= $maxTicksPerProcess) {
+                            Log::info('Headless scheduler process completed isolated tick.', [
+                                'executed_ticks' => $executedTicks,
+                                'max_ticks_per_process' => $maxTicksPerProcess,
+                            ]);
+
+                            return self::SUCCESS;
+                        }
+
+                        $memoryBytes = memory_get_usage(true);
+                        if ($memoryBytes >= $memoryLimitBytes) {
+                            Log::warning('Headless scheduler reached its bounded memory limit; exiting for a clean supervisor restart.', [
+                                'minute' => $minute,
+                                'memory_bytes' => $memoryBytes,
+                                'memory_limit_mb' => $memoryLimitMb,
+                            ]);
+
+                            return self::SUCCESS;
+                        }
                     }
                 }
 
@@ -148,5 +167,18 @@ class RunHeadlessScheduler extends Command
                 ]);
             }
         }
+    }
+
+    private function claimMinute(string $minute): bool
+    {
+        return Cache::add(
+            'system:scheduler-tick:'.$minute,
+            [
+                'protocol' => 'headless_scheduler_tick_claim_v1',
+                'minute' => $minute,
+                'pid' => getmypid(),
+            ],
+            now()->addMinutes(10),
+        );
     }
 }

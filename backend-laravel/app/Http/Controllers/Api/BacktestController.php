@@ -99,7 +99,7 @@ class BacktestController extends Controller
         try {
             if (! app()->environment('testing') && config('queue.default') === 'sync') {
                 return response()->json([
-                    'message' => 'Asynchronous queue sozlanmagan. QUEUE_CONNECTION=database yoki redis worker ishga tushiring.',
+                    'message' => 'Asynchronous Redis queue sozlanmagan. QUEUE_CONNECTION=redis worker ishga tushiring.',
                 ], 503);
             }
 

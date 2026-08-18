@@ -5,11 +5,11 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use App\Models\LabEvaluationRun;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabQueueStateService;
 use App\Services\OperatorApprovalService;
+use App\Services\ReplayLivenessProbeService;
 use RuntimeException;
 
 /**
@@ -33,10 +33,10 @@ class RecoverLabReplayMutex extends Command
 
     protected $description = 'Recover an orphaned single-lane lab replay mutex safely';
 
-    public function handle(OperatorApprovalService $approvals, LabQueueStateService $queueState): int
+    public function handle(OperatorApprovalService $approvals, LabQueueStateService $queueState, ReplayLivenessProbeService $liveness): int
     {
         if ((string) config('queue.default', 'database') === 'redis') {
-            return $this->handleRedis($approvals, $queueState);
+            return $this->handleRedis($approvals, $queueState, $liveness);
         }
 
         // EvaluateLabAgentJob uses WithoutOverlapping::shared(), so Laravel
@@ -101,15 +101,8 @@ class RecoverLabReplayMutex extends Command
             // contender that has been released repeatedly. Ask the AI lane
             // itself; force recovery is allowed only when the evaluator
             // explicitly reports zero active replay requests.
-            try {
-                $status = Http::connectTimeout(2)->timeout(5)->acceptJson()
-                    ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
-                    ->get(rtrim((string) config('services.ai_service.url'), '/').'/api/replay-status');
-            } catch (\Throwable) {
-                $this->error('Refusing stale recovery: evaluator liveness probe is unreachable.');
-                return self::FAILURE;
-            }
-            if (! $status->successful() || (int) $status->json('active_requests', -1) !== 0) {
+            $status = $liveness->probe();
+            if (($status['status'] ?? 'unknown') !== 'ok') {
                 $this->error('Refusing stale recovery: evaluator reports an active or unknown replay.');
                 return self::FAILURE;
             }
@@ -170,7 +163,7 @@ class RecoverLabReplayMutex extends Command
                 // probe above is the final safety proof: only an idle
                 // evaluator with no reserved lab replay may lose this lock.
                 if ($lock) {
-                    if (! $status->successful() || (int) $status->json('active_requests', -1) !== 0) {
+                    if (($status['status'] ?? 'unknown') !== 'ok') {
                         $this->error('Refusing orphan-lock recovery: evaluator reports an active or unknown replay.');
 
                         return self::FAILURE;
@@ -307,7 +300,7 @@ class RecoverLabReplayMutex extends Command
         return self::SUCCESS;
     }
 
-    private function handleRedis(OperatorApprovalService $approvals, LabQueueStateService $queueState): int
+    private function handleRedis(OperatorApprovalService $approvals, LabQueueStateService $queueState, ReplayLivenessProbeService $liveness): int
     {
         $queues = array_values(array_unique(array_merge(
             [(string) config('services.lab_queue.screening_queue', 'lab-screening')],
@@ -334,16 +327,8 @@ class RecoverLabReplayMutex extends Command
             return self::SUCCESS;
         }
 
-        try {
-            $status = Http::connectTimeout(2)->timeout(5)->acceptJson()
-                ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
-                ->get(rtrim((string) config('services.ai_service.url'), '/').'/api/replay-status');
-        } catch (\Throwable) {
-            $this->error('Refusing Redis stale recovery: evaluator liveness probe is unreachable.');
-
-            return self::FAILURE;
-        }
-        if (! $status->successful() || (int) $status->json('active_requests', -1) !== 0) {
+        $status = $liveness->probe();
+        if (($status['status'] ?? 'unknown') !== 'ok') {
             $this->error('Refusing Redis stale recovery: evaluator reports an active or unknown replay.');
 
             return self::FAILURE;
@@ -354,35 +339,148 @@ class RecoverLabReplayMutex extends Command
             ? max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900)) + max(300, (int) config('services.lab_selection.full_replay_post_processing_grace_seconds', 900))
             : max(60, (int) config('services.lab_selection.screen_timeout_seconds', 900)) + max(300, (int) config('services.lab_selection.screen_replay_post_processing_grace_seconds', 300));
         $staleAfter = max($timeout, (int) $this->option('stale-after'));
-        $cutoff = now()->timestamp - $staleAfter;
-        $stale = $reserved->filter(fn (array $row): bool => ((int) ($row['reserved_at'] ?? 0) <= $cutoff) || (int) ($row['attempts'] ?? 0) >= 10)->values();
-        if ($stale->isEmpty()) {
-            $this->error('Refusing Redis stale recovery: no reservation crossed the contention threshold.');
+        $nowTimestamp = now()->timestamp;
 
-            return self::FAILURE;
+        // RedisQueue stores the reserved sorted-set score as the visibility
+        // expiry (reserved_at + retry_after), not as the moment the worker
+        // reserved the job. Comparing that score with `now - staleAfter`
+        // makes an already-expired long replay look recent and strands it
+        // forever. First identify expired reservations; the open immutable
+        // run age check below still requires the full replay budget plus
+        // post-processing grace before anything can be released.
+        $stale = $reserved->filter(fn (array $row): bool =>
+            (((int) ($row['reserved_at'] ?? 0)) > 0 && (int) $row['reserved_at'] <= $nowTimestamp)
+            || (int) ($row['attempts'] ?? 0) >= 10
+        )->values();
+        // An unexpired reservation may still be recoverable when its exact
+        // recorded PHP worker has died. Include all reservations in the
+        // owner lookup for that restart-proof path; expiry-based recovery
+        // remains restricted to the $stale subset below.
+        // Use every reservation for owner identity lookup.  A stale screen
+        // row and an unexpired terminal full row may coexist; limiting the
+        // lookup to the former would hide the safe terminal cleanup path.
+        $candidateReservations = $reserved;
+        $agentIds = $candidateReservations
+            ->flatMap(fn (array $row): array => $this->labAgentIdsFromPayload((string) ($row['payload'] ?? '')))
+            ->filter(fn ($id): bool => (int) $id > 0)
+            ->map(fn ($id): int => (int) $id)
+            ->unique()->values();
+        $openRuns = LabEvaluationRun::query()
+            ->whereIn('lab_agent_id', $agentIds->all())
+            ->where('status', 'started')
+            ->get(['lab_agent_id', 'started_at', 'worker_pid']);
+        $openRunAgentIds = $openRuns->pluck('lab_agent_id')->map(fn ($id): int => (int) $id)->unique()->values();
+        $staleOwners = $stale->filter(function (array $row) use ($openRunAgentIds): bool {
+            return collect($this->labAgentIdsFromPayload((string) ($row['payload'] ?? '')))
+                ->contains(fn (int $agentId): bool => $openRunAgentIds->contains($agentId));
+        })->values();
+
+        // An expired Redis reservation alone is not enough: a healthy full
+        // replay may exceed retry_after while Laravel is still persisting
+        // its immutable evidence. Require the exact owner's open run to be
+        // older than the same timeout/grace budget before release.
+        $staleOwners = $staleOwners->filter(function (array $row) use ($openRuns, $staleAfter, $nowTimestamp): bool {
+            return $openRuns
+                ->whereIn('lab_agent_id', $this->labAgentIdsFromPayload((string) ($row['payload'] ?? '')))
+                ->contains(function (object $run) use ($staleAfter, $nowTimestamp): bool {
+                    $startedAt = $run->started_at ? strtotime((string) $run->started_at) : false;
+
+                    return $startedAt !== false && $startedAt <= ($nowTimestamp - $staleAfter);
+                });
+        })->values();
+
+        // A PM2/queue-worker restart can strand a still-reserved Redis job
+        // before Redis' visibility score expires. In that case the normal
+        // expiry test above cannot see the orphan for another retry_after
+        // window. The immutable run records the exact PHP worker PID; when
+        // that PID is gone and the AI evaluator is already idle, the job has
+        // no live owner and may be safely requeued after the short operator
+        // grace period. This is deliberately narrower than an age-only
+        // override: it requires an identified agent, an open run, a dead
+        // recorded worker, and an idle evaluator.
+        $workerRestartGrace = max(120, (int) $this->option('stale-after'));
+        $orphanedOwners = $reserved->filter(function (array $row) use ($openRuns, $workerRestartGrace, $nowTimestamp): bool {
+            return $openRuns
+                ->whereIn('lab_agent_id', $this->labAgentIdsFromPayload((string) ($row['payload'] ?? '')))
+                ->contains(function (object $run) use ($workerRestartGrace, $nowTimestamp): bool {
+                    $startedAt = $run->started_at ? strtotime((string) $run->started_at) : false;
+                    $workerPid = (int) ($run->worker_pid ?? 0);
+
+                    return $startedAt !== false
+                        && $startedAt <= ($nowTimestamp - $workerRestartGrace)
+                        && $workerPid > 0
+                        && ! $this->workerProcessExists($workerPid);
+                });
+        })->values();
+        if ($orphanedOwners->isNotEmpty()) {
+            $staleOwners = $staleOwners
+                ->concat($orphanedOwners)
+                ->unique(fn (array $row): string => (string) ($row['id'] ?? ''))
+                ->values();
         }
 
-        $agentIds = $stale->map(fn (array $row): ?int => $this->labAgentIdFromPayload((string) ($row['payload'] ?? '')))->filter()->unique()->values();
-        $openRunAgentIds = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds->all())->where('status', 'started')->pluck('lab_agent_id')->map(fn ($id): int => (int) $id)->unique()->values();
-        $staleOwners = $stale->filter(function (array $row) use ($openRunAgentIds): bool {
-            $agentId = $this->labAgentIdFromPayload((string) ($row['payload'] ?? ''));
+        // A worker can die after it has persisted a terminal immutable run
+        // but before Redis acknowledges the reserved queue payload. Releasing
+        // that payload back to pending would replay a completed candidate and
+        // create duplicate evidence. Remove it only when every payload agent
+        // has a terminal latest run, the recorded owner PID is dead, and the
+        // short restart grace has elapsed.
+        $terminalStatuses = ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot'];
+        $latestRuns = LabEvaluationRun::query()
+            ->whereIn('lab_agent_id', $agentIds->all())
+            ->orderByDesc('id')
+            ->get(['lab_agent_id', 'status', 'finished_at', 'worker_pid'])
+            ->groupBy('lab_agent_id')
+            ->map(fn ($runs): ?LabEvaluationRun => $runs->first());
+        $terminalOrphans = $reserved->filter(function (array $row) use ($latestRuns, $terminalStatuses, $workerRestartGrace, $nowTimestamp): bool {
+            $ids = $this->labAgentIdsFromPayload((string) ($row['payload'] ?? ''));
+            if ($ids === []) return false;
 
-            return $agentId !== null && $openRunAgentIds->contains($agentId);
+            return collect($ids)->every(function (int $agentId) use ($latestRuns, $terminalStatuses, $workerRestartGrace, $nowTimestamp): bool {
+                $run = $latestRuns->get($agentId);
+                $finishedAt = $run?->finished_at ? strtotime((string) $run->finished_at) : false;
+
+                return $run !== null
+                    && in_array((string) $run->status, $terminalStatuses, true)
+                    && $finishedAt !== false
+                    && $finishedAt <= ($nowTimestamp - $workerRestartGrace)
+                    && (int) ($run->worker_pid ?? 0) > 0
+                    && ! $this->workerProcessExists((int) $run->worker_pid);
+            });
         })->values();
-        if ($staleOwners->isEmpty() && $stale->count() === $reserved->count()) $staleOwners = $stale;
-        if ($staleOwners->isEmpty()) {
-            $this->error('Refusing Redis stale recovery: no stale reservation has an open evaluator run owner.');
+        $recoverable = $staleOwners
+            ->concat($terminalOrphans)
+            ->unique(fn (array $row): string => (string) ($row['id'] ?? ''))
+            ->values();
+        // Keep the legacy fallback only for payloads that cannot identify an
+        // agent at all. A payload with an agent id must pass the open-run age
+        // proof above; otherwise a currently running replay could be released
+        // merely because its Redis visibility window expired.
+        $allPayloadsWithoutAgentId = $stale->every(fn (array $row): bool =>
+            $this->labAgentIdsFromPayload((string) ($row['payload'] ?? '')) === []
+        );
+        if ($staleOwners->isEmpty() && $stale->count() === $reserved->count() && $allPayloadsWithoutAgentId) {
+            $staleOwners = $stale;
+        }
+        if ($recoverable->isEmpty()) {
+            $this->error($stale->isEmpty()
+                ? 'Refusing Redis stale recovery: no expired reservation or dead-worker owner was proven.'
+                : 'Refusing Redis stale recovery: no stale reservation has an open or terminal owner proof.');
 
             return self::FAILURE;
         }
         if ($dryRun) {
-            $this->table(['queue', 'job', 'reserved_at', 'attempts', 'action'], $staleOwners->map(fn (array $row): array => [$row['queue'], $row['id'], $row['reserved_at'], $row['attempts'], 'would_release_to_pending'])->all());
+            $this->table(['queue', 'job', 'reserved_at', 'attempts', 'action'], $recoverable->map(function (array $row) use ($terminalOrphans): array {
+                $terminal = $terminalOrphans->pluck('id')->contains($row['id']);
+
+                return [$row['queue'], $row['id'], $row['reserved_at'], $row['attempts'], $terminal ? 'would_remove_terminal_reservation' : 'would_release_to_pending'];
+            })->all());
 
             return self::SUCCESS;
         }
         if (! $this->approve($approvals, [
             'mode' => 'redis_stale_reservation',
-            'reservation_ids' => $staleOwners->pluck('id')->values()->all(),
+            'reservation_ids' => $recoverable->pluck('id')->values()->all(),
             'stale_after_seconds' => $staleAfter,
             'backend' => 'redis',
         ])) return self::FAILURE;
@@ -391,7 +489,15 @@ class RecoverLabReplayMutex extends Command
         foreach ($staleOwners as $row) {
             if ($queueState->releaseReservedPayload((string) $row['queue'], (string) $row['payload'])) $released++;
         }
-        $staleAgentIds = $staleOwners->map(fn (array $row): ?int => $this->labAgentIdFromPayload((string) ($row['payload'] ?? '')))->filter()->unique()->values();
+        $removedTerminal = 0;
+        foreach ($terminalOrphans as $row) {
+            if ($queueState->removeCompletedReservedPayload((string) $row['queue'], (string) $row['payload'])) $removedTerminal++;
+        }
+        $staleAgentIds = $staleOwners
+            ->flatMap(fn (array $row): array => $this->labAgentIdsFromPayload((string) ($row['payload'] ?? '')))
+            ->filter(fn ($id): bool => (int) $id > 0)
+            ->map(fn ($id): int => (int) $id)
+            ->unique()->values();
         $evidence = app(LabImmutableEvidenceService::class);
         LabEvaluationRun::query()->whereIn('lab_agent_id', $staleAgentIds->all())->where('status', 'started')->get()->each(function (LabEvaluationRun $run) use ($evidence): void {
             $evidence->finishIfOpen($run, 'retry_released', null, [], [
@@ -401,13 +507,34 @@ class RecoverLabReplayMutex extends Command
             ]);
         });
 
+        // Screening batches have slot-scoped overlap locks, not the heavy
+        // full-replay mutex. If a dead worker owned the stale batch, release
+        // only that slot when no other reserved job still claims it; a
+        // recent contender in the same slot must keep its lock untouched.
+        $remainingReserved = $reserved->reject(fn (array $row): bool =>
+            $staleOwners->pluck('id')->contains($row['id'])
+        )->values();
+        foreach ($staleOwners->where('queue', (string) config('services.lab_queue.screening_queue', 'lab-screening')) as $row) {
+            $slot = $this->screeningSlotFromPayload((string) ($row['payload'] ?? ''));
+            if ($slot === null) continue;
+            $slotClaimed = $remainingReserved->contains(function (array $other) use ($slot): bool {
+                return (string) ($other['queue'] ?? '') === (string) config('services.lab_queue.screening_queue', 'lab-screening')
+                    && $this->screeningSlotFromPayload((string) ($other['payload'] ?? '')) === $slot;
+            });
+            if (! $slotClaimed) {
+                Cache::lock(
+                    'laravel-queue-overlap:'.(string) config('services.lab_queue.screening_mutex_key', 'neurotrader-ai-screening-replay').":slot{$slot}"
+                )->forceRelease();
+            }
+        }
+
         // The lock is only force-released after the evaluator is idle and the
         // exact stale reservation was moved atomically. A recent reserved
         // contender keeps its lock until its own middleware exits.
-        if ($reserved->count() === $released) {
+        if ($reserved->count() === ($released + $removedTerminal)) {
             Cache::lock('laravel-queue-overlap:'.(string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'))->forceRelease();
         }
-        $this->warn("Released {$released} stale Redis reservation(s); no job or evidence was deleted.");
+        $this->warn("Released {$released} stale Redis reservation(s) and removed {$removedTerminal} terminal orphan reservation(s); no evidence was deleted.");
 
         return self::SUCCESS;
     }
@@ -428,15 +555,57 @@ class RecoverLabReplayMutex extends Command
 
     private function labAgentIdFromPayload(string $payload): ?int
     {
-        // Queue payloads are JSON-wrapped PHP-serialized commands, so the
-        // inner property quotes may be escaped as `\"`.  The old exact
-        // serialized-fragment regex missed those payloads and requeued the
-        // job without closing its open immutable run.  Anchor on the unique
-        // property name while accepting either representation.
-        if (preg_match('/labAgentId[^0-9]{1,24}(\d+)/', $payload, $matches) !== 1) {
+        return $this->labAgentIdsFromPayload($payload)[0] ?? null;
+    }
+
+    /**
+     * Extract both single-agent and bounded-batch payload identities.  A
+     * screening batch may already have terminal evidence for some members;
+     * callers therefore use this list only to prove/release the exact open
+     * member runs, never to manufacture a second strategy verdict.
+     *
+     * @return array<int, int>
+     */
+    private function labAgentIdsFromPayload(string $payload): array
+    {
+        $ids = [];
+        if (preg_match('/labAgentIds.*?a:\d+:\{(.*?)\}/s', $payload, $batch) === 1) {
+            preg_match_all('/i:\d+;i:(\d+)/', (string) ($batch[1] ?? ''), $matches);
+            $ids = array_map('intval', (array) ($matches[1] ?? []));
+        }
+        if ($ids === [] && preg_match('/labAgentId(?!s)[^0-9]{1,24}(\d+)/', $payload, $single) === 1) {
+            $ids = [(int) $single[1]];
+        }
+
+        return array_values(array_unique(array_filter($ids, static fn (int $id): bool => $id > 0)));
+    }
+
+    private function screeningSlotFromPayload(string $payload): ?int
+    {
+        if (preg_match('/screeningSlot[^0-9]{1,24}(\d+)/', $payload, $matches) !== 1) {
             return null;
         }
 
-        return (int) $matches[1];
+        return abs((int) $matches[1]) % 2;
+    }
+
+    private function workerProcessExists(int $pid): bool
+    {
+        if ($pid <= 0) return false;
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $output = [];
+            $exitCode = 1;
+            @exec('tasklist /FI "PID eq '.$pid.'" /FO CSV /NH', $output, $exitCode);
+
+            return $exitCode === 0
+                && preg_match('/"'.preg_quote((string) $pid, '/').'"/', implode("\n", $output)) === 1;
+        }
+
+        if (function_exists('posix_kill')) {
+            return @posix_kill($pid, 0);
+        }
+
+        return is_dir('/proc/'.$pid);
     }
 }

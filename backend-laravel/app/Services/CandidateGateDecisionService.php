@@ -9,7 +9,12 @@ use App\Models\PaperConfidenceCalibration;
 
 class CandidateGateDecisionService
 {
-    public function __construct(private PaperEvidenceReadinessService $paperEvidence, private ExecutionContractService $executionContracts) {}
+    public function __construct(
+        private PaperEvidenceReadinessService $paperEvidence,
+        private ExecutionContractService $executionContracts,
+        private GateMarginService $gateMargins,
+        private MutationObservabilityService $mutationObservability,
+    ) {}
 
     public function recordScreening(LabAgent $agent, array $result): CandidateGateDecision
     {
@@ -30,7 +35,55 @@ class CandidateGateDecisionService
         }
         $reasons = [...$reasons, ...$this->causalCooldownRescueReasons($agent, $result)];
         $reasons = array_values(array_unique($reasons));
+        $woundSet = app(FailureWoundSetService::class)->evaluateForScreening($agent, $result);
+        if (($woundSet['blocking_failure_count'] ?? 0) > 0) {
+            $reasons[] = 'FAILED_WOUND_SET_REGRESSION';
+            foreach ((array) data_get($woundSet, 'blocking_failures', []) as $failure) {
+                $reasons[] = match ((string) data_get($failure, 'target_key')) {
+                    'temporal_chunk' => 'FAILED_WOUND_TEMPORAL_CHUNK',
+                    'calendar_month' => 'FAILED_WOUND_CALENDAR_MONTH',
+                    'train_forward_gap' => 'FAILED_WOUND_TRAIN_FORWARD_GAP',
+                    'cost_exit_stress' => 'FAILED_WOUND_COST_EXIT_STRESS',
+                    default => 'FAILED_WOUND_SET_REGRESSION',
+                };
+            }
+        }
+        $reasons = array_values(array_unique($reasons));
+        // A parameter change is not learning evidence by itself. Compare the
+        // child with its immutable anchor/parent before storing the gate row;
+        // a non-observable child stays failed and is routed away from reuse,
+        // while the economic thresholds themselves remain unchanged.
+        $observability = $this->mutationObservability->assess($agent, [...$result, 'reason_codes' => $reasons]);
+        if (data_get($observability, 'classification') === 'mutation_no_observable_effect') {
+            $reasons[] = 'MUTATION_NON_OBSERVABLE';
+        }
+        // Shadow mutation contracts are admitted for research only when the
+        // executable decision/event/trade plane actually moved against a
+        // same-generation frozen control or immutable anchor. A changed
+        // parameter, a new hash, or an absent control is never enough.
+        $mutationContract = (array) data_get($observability, 'mutation_contract', []);
+        if ((bool) data_get($mutationContract, 'required', false)
+            && data_get($mutationContract, 'status') !== 'passed') {
+            $reasons[] = data_get($mutationContract, 'status') === 'failed_evidence_incomplete'
+                ? 'FAILED_BEHAVIORAL_MUTATION_EVIDENCE'
+                : 'FAILED_BEHAVIORAL_MUTATION_CONTRACT';
+        }
+        $reasons = array_values(array_unique($reasons));
+        // Gate margins are a research-ranking signal. They are attached to
+        // the same immutable evidence payload as the binary decision, but do
+        // not alter the strict reason list or open a later gate.
+        $result = [
+            ...$result,
+            'gate_margin' => $this->gateMargins->screening($result, $reasons),
+            'mutation_observability' => $observability,
+            'wound_set' => $woundSet,
+        ];
+        $this->mutationObservability->record($agent, $observability);
         $decision = $reasons === [] ? 'passed' : 'failed';
+        if ($decision === 'failed') {
+            $result['wound_set']['sealed'] = app(FailureWoundSetService::class)
+                ->sealFromScreening($agent, $result, $reasons);
+        }
         $decisionRow = $this->store(null, $agent, 'screening', $decision, $reasons, $result);
 
         // A complete strategy failure becomes an immutable repair anchor. It
@@ -177,6 +230,10 @@ class CandidateGateDecisionService
         if (data_get($result, 'proof_carrying_replay.status') === 'mismatch') {
             $reasons[] = 'QUARANTINED_PROOF_REPLAY_MISMATCH';
         }
+        $result = [
+            ...$result,
+            'gate_margin' => $this->gateMargins->forward($result, $reasons),
+        ];
         $identity = [
             'lab_agent_id' => $agent?->id, 'generation_id' => $agent?->lab_generation_id,
             'model_market_performance_id' => $performance->id, 'model_version_id' => $performance->model_version_id,

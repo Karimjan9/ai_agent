@@ -106,6 +106,14 @@ $scheduleArtisan('trading:daily-workflow')
     ->dailyAt('00:30')
     ->withoutOverlapping();
 $scheduleStaggeredFive('system:health-check', [], 0);
+$scheduleArtisan('system:runtime-monitor', [
+    '--json' => true,
+    '--persist' => true,
+])
+    // Keep Redis/queue/AI/scheduler/agent telemetry fresh even when the
+    // operator is not watching the terminal monitor process.
+    ->everyMinute()
+    ->withoutOverlapping();
 $scheduleArtisan('market:health')
     ->everyMinute()
     ->withoutOverlapping();

@@ -1,8 +1,13 @@
 <?php
 
 $protectedSecret = static function (string $file): ?string {
-    $path = storage_path('app/secrets/'.$file);
-    return is_file($path) ? trim((string) file_get_contents($path)) : null;
+    $configuredPath = $file === 'internal-api.token'
+        ? trim((string) env('INTERNAL_API_TOKEN_FILE', ''))
+        : '';
+    $path = $configuredPath !== '' ? $configuredPath : storage_path('app/secrets/'.$file);
+    if (! is_file($path)) return null;
+    $contents = @file_get_contents($path);
+    return is_string($contents) && trim($contents) !== '' ? trim($contents) : null;
 };
 
 return [
@@ -45,6 +50,8 @@ return [
         'default_dataset' => env('AI_SERVICE_DEFAULT_DATASET', '../datasets/XAUUSD_H1.csv'),
         'backtest_timeout_seconds' => (int) env('AI_SERVICE_BACKTEST_TIMEOUT_SECONDS', 900),
         'strategy_lab_timeout_seconds' => (int) env('AI_SERVICE_STRATEGY_LAB_TIMEOUT_SECONDS', 2400),
+        'shadow_micro_probe_max_rows' => max(128, (int) env('AI_SHADOW_MICRO_PROBE_MAX_ROWS', 512)),
+        'shadow_micro_probe_max_candidates' => max(1, (int) env('AI_SHADOW_MICRO_PROBE_MAX_CANDIDATES', 6)),
     ],
 
     'scheduler' => [
@@ -57,6 +64,9 @@ return [
         'lease_seconds' => max(30, (int) env('SCHEDULER_LEASE_SECONDS', 900)),
         'heartbeat_seconds' => max(5, (int) env('SCHEDULER_HEARTBEAT_SECONDS', 30)),
         'duplicate_wait_seconds' => max(1, (int) env('SCHEDULER_DUPLICATE_WAIT_SECONDS', 5)),
+        // One isolated tick per process resets PHP memory. PM2 restarts the
+        // hidden process; raising the memory cap would only hide leaks.
+        'max_ticks_per_process' => max(1, (int) env('SCHEDULER_MAX_TICKS_PER_PROCESS', 1)),
     ],
 
     'lab_queue' => [
@@ -98,6 +108,15 @@ return [
         // so a one-minute handoff keeps throughput responsive without
         // weakening full-validation priority.
         'mutex_release_seconds' => (int) env('LAB_QUEUE_MUTEX_RELEASE_SECONDS', 60),
+        // A research-only learning replay may retry a transport failure once;
+        // repeated full-lane failures become terminal technical quarantine so
+        // retry_ready cannot turn into an infinite learning loop.
+        'learning_lane_transport_failure_limit' => max(1, (int) env('LAB_LEARNING_LANE_TRANSPORT_FAILURE_LIMIT', 2)),
+        // A worker restart may legitimately recover one transient training
+        // lifecycle. A second stale-training recovery is terminal technical
+        // evidence, otherwise a reserved full job can cycle forever without
+        // ever reaching the evaluator.
+        'stale_training_recovery_limit' => max(1, (int) env('LAB_STALE_TRAINING_RECOVERY_LIMIT', 1)),
     ],
 
     'lab_evidence' => [
@@ -425,6 +444,12 @@ return [
       'proven_gene_step_multiplier' => (float) env('LAB_PROVEN_GENE_STEP_MULTIPLIER', 1.5),
       'screen_pass_step_multiplier' => (float) env('LAB_SCREEN_PASS_STEP_MULTIPLIER', 1.2),
       'uncertainty_step_multiplier' => (float) env('LAB_UNCERTAINTY_STEP_MULTIPLIER', .75),
+      // A complete, healthy frozen-control failure may open a research-only
+      // shadow cohort. This changes search allocation only; it never opens
+      // parent, paper, forward-promotion or champion permissions.
+      'shadow_research_enabled' => env('LAB_SHADOW_RESEARCH_ENABLED', true),
+      'shadow_research_max_consecutive_generations' => (int) env('LAB_SHADOW_RESEARCH_MAX_CONSECUTIVE_GENERATIONS', 3),
+      'shadow_research_max_full_replays_per_generation' => (int) env('LAB_SHADOW_RESEARCH_MAX_FULL_REPLAYS_PER_GENERATION', 2),
       // A screen-positive cohort must produce replay evidence before another
       // generic cohort is allowed to multiply the unresolved learning queue.
       'learning_velocity_enabled' => env('LAB_LEARNING_VELOCITY_ENABLED', true),
@@ -446,6 +471,30 @@ return [
       'council_ablation_required_before_official' => env('LAB_COUNCIL_ABLATION_REQUIRED_BEFORE_OFFICIAL', true),
       'council_ablation_roles' => ['entry', 'risk', 'regime', 'volume_temporal'],
   ],
+
+    // Targeted failure research has its own admission budget. A changed
+    // number inside the same temporal failure family is not new evidence.
+    'rescue_circuit_breaker' => [
+        'enabled' => env('LAB_RESCUE_CIRCUIT_BREAKER_ENABLED', true),
+        'consecutive_cohorts' => (int) env('LAB_RESCUE_CIRCUIT_BREAKER_COHORTS', 3),
+        'minimum_siblings' => (int) env('LAB_RESCUE_CIRCUIT_BREAKER_SIBLINGS', 12),
+        'max_siblings_per_hypothesis' => (int) env('LAB_RESCUE_MAX_SIBLINGS_PER_HYPOTHESIS', 12),
+        // H1 requires one closed-day tail; M15 is scaled to the equivalent
+        // four 15-minute bars per hour. A sealed independent holdout is an
+        // explicit alternative and never inferred from a profile hash.
+        'minimum_fresh_candles' => (int) env('LAB_RESCUE_MINIMUM_FRESH_CANDLES', 24),
+        'target_margin_threshold' => (float) env('LAB_RESCUE_TARGET_MARGIN_THRESHOLD', 1.0),
+        'minimum_margin_progress' => (float) env('LAB_RESCUE_MINIMUM_MARGIN_PROGRESS', .05),
+        'ablation_windows' => (int) env('LAB_TEMPORAL_ABLATION_WINDOWS', 3),
+        'temporal_threshold' => (float) env('LAB_TEMPORAL_ABLATION_THRESHOLD', 1.0),
+        // A clean ablation must start from a materially new foundation
+        // snapshot. Hashes alone are not enough: the operator manifest must
+        // also attest to coverage, source, timezone and bounded overlap.
+        'foundation_minimum_candles' => (int) env('LAB_TEMPORAL_FOUNDATION_MINIMUM_CANDLES', 72),
+        'foundation_max_overlap_ratio' => (float) env('LAB_TEMPORAL_FOUNDATION_MAX_OVERLAP_RATIO', 0.0),
+        'window_minimum_candles' => (int) env('LAB_TEMPORAL_WINDOW_MINIMUM_CANDLES', 24),
+        'window_minimum_trades' => (int) env('LAB_TEMPORAL_WINDOW_MINIMUM_TRADES', 5),
+    ],
 
     'risk' => [
         'max_open_positions' => (int) env('RISK_MAX_OPEN_POSITIONS', 3),

@@ -34,6 +34,17 @@ class AiLearningLaboratoryTest extends TestCase
         // one-gene robustness experiments, with four seats per layer. It no
         // longer spends promotion budget on random/PF-only explorers.
         $this->assertSame(20, $xau->agents->where('origin', 'g98_council')->count());
+        $structuralAgents = $xau->agents->filter(
+            fn (LabAgent $agent): bool => (bool) data_get($agent->modelVersion->metadata, 'structural_research_contract')
+                || (bool) data_get($agent->modelVersion->metadata, 'portfolio_council_lane.structural_research', false)
+        );
+        $this->assertGreaterThanOrEqual(4, $structuralAgents->count());
+        $this->assertTrue($structuralAgents->every(function (LabAgent $agent): bool {
+            $gene = (string) data_get($agent->modelVersion->metadata, 'structural_research_contract.declared_gene');
+            return $gene !== ''
+                && count((array) $agent->parameter_diff) === 1
+                && array_key_first((array) $agent->parameter_diff) === $gene;
+        }));
         foreach (['monthly_survival', 'regime_coverage', 'volatility_session_stability', 'exit_topology', 'portfolio_router'] as $target) {
             $this->assertSame(4, $xau->agents->where('origin', 'g98_council')->filter(
                 fn (LabAgent $agent) => data_get($agent->modelVersion->metadata, 'generation_target') === $target
@@ -45,6 +56,13 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertSame(4, $groupContract['core_seats_per_group']);
         $this->assertTrue($groupContract['balanced_core']);
         $this->assertTrue(data_get($xau->trigger_context, 'specialist_council_contract.global_champion_forbidden'));
+        $pairing = (array) data_get($xau->trigger_context, 'control_pairing_contract', []);
+        $this->assertTrue((bool) data_get($pairing, 'allowed'));
+        $this->assertSame([], (array) data_get($pairing, 'missing_candidate_pairs', []));
+        if (collect((array) data_get($pairing, 'required_execution_lanes', []))
+            ->contains(fn (array $lane): bool => data_get($lane, 'key') === 'volume|differential_router')) {
+            $this->assertGreaterThanOrEqual(1, (int) data_get($pairing, 'candidate_counts.volume|differential_router', 0));
+        }
         $this->assertTrue($xau->agents->every(
             fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'population_group.protocol') === 'population_group_checkpoint_v1'
         ));
@@ -198,7 +216,9 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertArrayHasKey('technical_completion_rate', $report['kpis']);
         $this->assertFalse($report['kpis']['evolution_safe']);
         $this->assertSame(0, $report['kpis']['screening_pass_rate']);
-        $this->assertSame('pipeline_not_working', $report['kpis']['screening_failure_classification']);
+        $this->assertSame('EVIDENCE_IN_PROGRESS', $report['kpis']['screening_failure_classification']);
+        $this->assertSame('EVIDENCE_IN_PROGRESS', $report['report_state']);
+        $this->assertFalse($report['evidence_state']['final_report_allowed']);
         $this->assertSame(0, $report['kpis']['independently_confirmed_mutations']);
         $this->assertArrayHasKey('parent_links', $report['kpis']);
         $this->assertArrayHasKey('paper_eligible', $report['kpis']);
@@ -1066,6 +1086,238 @@ class AiLearningLaboratoryTest extends TestCase
         ));
 
         $this->assertSame(['trend_up_strength_min'], $changed);
+    }
+
+    public function test_historical_novelty_cache_is_scoped_to_each_generation(): void
+    {
+        $service = app(LabPopulationService::class);
+        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $base = $schema->defaults('hybrid');
+        $first = [...$base, 'atr_stop_multiplier' => 1.15];
+
+        $fingerprintMethod = new \ReflectionMethod($service, 'parameterFingerprint');
+        $fingerprintMethod->setAccessible(true);
+        $fingerprint = $fingerprintMethod->invoke($service, 'hybrid', $first);
+
+        $history = new \ReflectionProperty($service, 'historicalParameterFingerprints');
+        $history->setAccessible(true);
+        // Simulate a long-lived container holding an old market/family cache;
+        // the generation-scoped snapshot must still see the failed topology.
+        $history->setValue($service, [
+            'XAUUSD|H1|hybrid' => [],
+            'XAUUSD|H1|hybrid|generation:50' => [$fingerprint],
+        ]);
+
+        $method = new \ReflectionMethod($service, 'ensureHistoricalNovelParameters');
+        $method->setAccessible(true);
+        $child = $method->invoke(
+            $service,
+            'XAUUSD',
+            'H1',
+            'hybrid',
+            $first,
+            1,
+            'profit_factor',
+            [],
+            'atr_stop_multiplier',
+            50,
+        );
+
+        $this->assertNotSame($first['atr_stop_multiplier'], $child['atr_stop_multiplier']);
+        $this->assertSame($base['atr_target_multiplier'], $child['atr_target_multiplier']);
+    }
+
+    public function test_parameter_fingerprint_is_stable_across_numeric_round_trip_types(): void
+    {
+        $service = app(LabPopulationService::class);
+        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $base = $schema->defaults('hybrid');
+        $databaseRoundTrip = $base;
+
+        foreach ($schema->schema('hybrid') as $key => $definition) {
+            [$type] = array_pad($definition, 3, null);
+            if (! array_key_exists($key, $databaseRoundTrip)) continue;
+
+            // Model JSON hydration can expose an integer schema value as a
+            // float while keeping its executable meaning unchanged.
+            if ($type === 'integer') {
+                $databaseRoundTrip[$key] = (float) $databaseRoundTrip[$key];
+            }
+        }
+
+        $fingerprintMethod = new \ReflectionMethod($service, 'parameterFingerprint');
+        $fingerprintMethod->setAccessible(true);
+
+        $this->assertSame(
+            $fingerprintMethod->invoke($service, 'hybrid', $base),
+            $fingerprintMethod->invoke($service, 'hybrid', $databaseRoundTrip),
+        );
+    }
+
+    public function test_targeted_final_novelty_probe_preserves_a_single_declared_gene(): void
+    {
+        $service = app(LabPopulationService::class);
+        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $base = $schema->defaults('hybrid');
+        $first = [...$base, 'atr_stop_multiplier' => 1.15];
+
+        $fingerprintMethod = new \ReflectionMethod($service, 'parameterFingerprint');
+        $fingerprintMethod->setAccessible(true);
+        $fingerprint = $fingerprintMethod->invoke($service, 'hybrid', $first);
+
+        $history = new \ReflectionProperty($service, 'historicalParameterFingerprints');
+        $history->setAccessible(true);
+        $history->setValue($service, [
+            'XAUUSD|H1|hybrid|generation:51' => [$fingerprint],
+        ]);
+
+        $method = new \ReflectionMethod($service, 'ensureHistoricalNovelParameters');
+        $method->setAccessible(true);
+        $child = $method->invoke(
+            $service,
+            'XAUUSD',
+            'H1',
+            'hybrid',
+            $first,
+            1,
+            'profit_factor',
+            [],
+            'atr_stop_multiplier',
+            51,
+        );
+
+        $diff = array_keys(array_filter(
+            $child,
+            fn ($value, $key): bool => ($base[$key] ?? null) !== $value,
+            ARRAY_FILTER_USE_BOTH,
+        ));
+
+        $this->assertSame(['atr_stop_multiplier'], $diff);
+        $this->assertNotSame(1.15, $child['atr_stop_multiplier']);
+    }
+
+    public function test_historical_novelty_expands_bounded_probe_when_local_ring_is_exhausted(): void
+    {
+        $service = app(LabPopulationService::class);
+        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $base = $schema->defaults('hybrid');
+        $first = [...$base, 'atr_stop_multiplier' => 1.15];
+        $leftRing = [...$first, 'atr_stop_multiplier' => 1.115];
+        $rightRing = [...$first, 'atr_stop_multiplier' => 1.185];
+
+        $fingerprintMethod = new \ReflectionMethod($service, 'parameterFingerprint');
+        $fingerprintMethod->setAccessible(true);
+        $fingerprints = collect([$first, $leftRing, $rightRing])
+            ->map(fn (array $parameters): string => $fingerprintMethod->invoke($service, 'hybrid', $parameters))
+            ->all();
+
+        $history = new \ReflectionProperty($service, 'historicalParameterFingerprints');
+        $history->setAccessible(true);
+        $history->setValue($service, [
+            'XAUUSD|H1|hybrid|generation:52' => $fingerprints,
+        ]);
+
+        $method = new \ReflectionMethod($service, 'ensureHistoricalNovelParameters');
+        $method->setAccessible(true);
+        $child = $method->invoke(
+            $service,
+            'XAUUSD',
+            'H1',
+            'hybrid',
+            $first,
+            1,
+            'profit_factor',
+            ['objective' => 'profit_factor', 'regime' => 'trend_down'],
+            'atr_stop_multiplier',
+            52,
+        );
+
+        $this->assertNotSame($first['atr_stop_multiplier'], $child['atr_stop_multiplier']);
+        $this->assertNotSame($leftRing['atr_stop_multiplier'], $child['atr_stop_multiplier']);
+        $this->assertNotSame($rightRing['atr_stop_multiplier'], $child['atr_stop_multiplier']);
+        $this->assertSame($base['atr_target_multiplier'], $child['atr_target_multiplier']);
+    }
+
+    public function test_historical_novelty_expands_integer_ring_past_failed_values(): void
+    {
+        $service = app(LabPopulationService::class);
+        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $base = $schema->defaults('differential_router');
+        $first = [...$base, 'trend_up_roc_period' => 15];
+
+        $fingerprintMethod = new \ReflectionMethod($service, 'parameterFingerprint');
+        $fingerprintMethod->setAccessible(true);
+        $fingerprints = collect(range(12, 17))
+            ->map(fn (int $value): string => $fingerprintMethod->invoke(
+                $service,
+                'differential_router',
+                [...$first, 'trend_up_roc_period' => $value],
+            ))
+            ->all();
+
+        $history = new \ReflectionProperty($service, 'historicalParameterFingerprints');
+        $history->setAccessible(true);
+        $history->setValue($service, [
+            'XAUUSD|H1|differential_router|generation:53' => $fingerprints,
+        ]);
+
+        $method = new \ReflectionMethod($service, 'ensureHistoricalNovelParameters');
+        $method->setAccessible(true);
+        $child = $method->invoke(
+            $service,
+            'XAUUSD',
+            'H1',
+            'differential_router',
+            $first,
+            1,
+            'regime_coverage',
+            ['objective' => 'regime_coverage', 'regime' => 'trend_up'],
+            'trend_up_roc_period',
+            53,
+        );
+
+        $this->assertNotContains((int) $child['trend_up_roc_period'], range(12, 17));
+        $this->assertSame($base['trend_down_roc_period'], $child['trend_down_roc_period']);
+    }
+
+    public function test_historical_novelty_reports_a_fully_exhausted_boolean_lane(): void
+    {
+        $service = app(LabPopulationService::class);
+        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $base = $schema->defaults('hybrid');
+        $first = [...$base, 'transition_firewall_enabled' => ! (bool) $base['transition_firewall_enabled']];
+
+        $fingerprintMethod = new \ReflectionMethod($service, 'parameterFingerprint');
+        $fingerprintMethod->setAccessible(true);
+        $fingerprints = [
+            $fingerprintMethod->invoke($service, 'hybrid', $base),
+            $fingerprintMethod->invoke($service, 'hybrid', $first),
+        ];
+
+        $history = new \ReflectionProperty($service, 'historicalParameterFingerprints');
+        $history->setAccessible(true);
+        $history->setValue($service, [
+            'XAUUSD|H1|hybrid|generation:54' => $fingerprints,
+        ]);
+
+        $method = new \ReflectionMethod($service, 'ensureHistoricalNovelParameters');
+        $method->setAccessible(true);
+        $exhausted = false;
+        $child = $method->invokeArgs($service, [
+            'XAUUSD',
+            'H1',
+            'hybrid',
+            $first,
+            1,
+            'temporal_stability',
+            ['objective' => 'temporal_stability'],
+            'transition_firewall_enabled',
+            54,
+            &$exhausted,
+        ]);
+
+        $this->assertTrue($exhausted);
+        $this->assertSame($first, $child);
     }
 
     public function test_council_objectives_select_distinct_range_topologies(): void

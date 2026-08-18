@@ -68,6 +68,33 @@ class LabGenerationReportService
         $screenPassed = $screenDecisions->where('decision', 'passed')->count();
         $failedReasons = $this->reasonCounts($screenDecisions);
         $best = $this->bestAgent($agents, $performances);
+        $nearMissAgents = $screenDecisions
+            ->map(function (CandidateGateDecision $decision) use ($agents): array {
+                $margin = (array) data_get($decision->metrics, 'gate_margin', []);
+                if ($margin === []) {
+                    $margin = app(GateMarginService::class)->screening((array) $decision->metrics, (array) $decision->reason_codes);
+                }
+                return [
+                    'agent_id' => (int) $decision->lab_agent_id,
+                    'strategy_family' => $agents->firstWhere('id', $decision->lab_agent_id)?->strategy_family,
+                    'score' => (float) data_get($margin, 'near_miss_score', 0),
+                    'dominant_target' => data_get($margin, 'dominant_target'),
+                    'target_margin' => data_get($margin, 'target_margin'),
+                    'total_normalized_deficit' => data_get($margin, 'total_normalized_deficit'),
+                    'decision' => $decision->decision,
+                    'reason_codes' => (array) $decision->reason_codes,
+                    'promotion_evidence' => false,
+                ];
+            })
+            ->sortByDesc('score')
+            ->values();
+        $nearMissTargetCounts = $nearMissAgents
+            ->pluck('dominant_target')
+            ->filter()
+            ->countBy()
+            ->sortDesc()
+            ->all();
+        $frozenControlParity = app(FrozenControlParityService::class)->assess($generation);
         $bestPerformance = $best ? $performances->get($best->model_version_id) : null;
         $bestResult = (array) ($bestPerformance?->metrics
             ?? data_get($best?->modelVersion?->metadata, 'last_result', data_get($best?->modelVersion?->metadata, 'last_screen_result', [])));
@@ -143,6 +170,17 @@ class LabGenerationReportService
             })
             ->unique('reconciliation_key')
             ->count();
+        $observableMutations = $agents->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'mutation_observability.classification') === 'observable_effect'
+        )->count();
+        $nonObservableMutations = $agents->filter(fn (LabAgent $agent): bool =>
+            in_array(data_get($agent->modelVersion?->metadata, 'mutation_observability.classification'), [
+                'mutation_no_observable_effect', 'zero_diff_mutation',
+            ], true)
+        )->count();
+        $gateMarginImprovementCount = $agents->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'mutation_observability.gate_margin.target_gate_improved') === true
+        )->count();
         $technicalRunCount = LabEvaluationRun::query()
             ->where('lab_generation_id', $generation->id)
             ->where('phase', 'full_validation')
@@ -160,20 +198,44 @@ class LabGenerationReportService
         $technicalCompletionRate = $agents->count() > 0
             ? round($currentScreenRuns->whereIn('status', $screenTerminalStatuses)->count() / $agents->count() * 100, 2)
             : 0;
+        $activeAgentStatuses = ['draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation'];
+        $activeRunCount = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->whereIn('status', ['queued', 'started', 'running', 'processing'])
+            ->count();
+        // Only jobs owned by this generation can keep its evidence report in
+        // progress. A queued learning replay or another market's full replay
+        // must not create a false EVIDENCE_IN_PROGRESS projection here.
+        $queueBacklog = app(LabQueueJobInspector::class)->generationQueueBacklog($agentIds);
+        $queueNotEmpty = ($queueBacklog['total'] ?? null) === null || (int) ($queueBacklog['total'] ?? 0) > 0;
+        $allAgentsTerminal = $agents->isNotEmpty()
+            && $agents->whereIn('lifecycle_status', $activeAgentStatuses)->isEmpty();
+        $screenEvidenceCoverage = $currentScreenRuns->count() >= $agents->count();
+        $batchTerminality = app(LabBatchTerminalityService::class)->reconcile($generation, true);
+        $batchFinalityAllowed = (bool) data_get($batchTerminality, 'finality.allowed', false);
+        $technicalQuarantine = (string) $generation->status === 'technical_quarantine';
+        $evidenceInProgress = ! $technicalQuarantine
+            && (! $allAgentsTerminal || $activeRunCount > 0 || $queueNotEmpty
+                || ! $screenEvidenceCoverage || ! $batchFinalityAllowed);
         $qualityFailedScreeningAgents = $screenDecisions
             ->where('decision', 'failed')
             ->pluck('lab_agent_id')->filter()->unique()->count();
         $screeningPassRate = $screenDecisions->count() > 0
             ? round($screenPassed / $screenDecisions->count() * 100, 2)
             : 0;
-        $pipelineFailure = $technicalErrors !== [] || $technicalRunCount > 0 || $screenDecisions->count() === 0;
-        $screeningFailureClassification = $screenPassed > 0
+        $pipelineFailure = ! $evidenceInProgress
+            && ($technicalErrors !== [] || $technicalRunCount > 0 || $screenDecisions->count() === 0);
+        $screeningFailureClassification = $technicalQuarantine
+            ? 'technical_quarantine'
+            : ($evidenceInProgress
+            ? 'EVIDENCE_IN_PROGRESS'
+            : ($screenPassed > 0
             ? 'agent_quality_signal_available'
             : ($screenDecisions->count() === 0
                 ? 'pipeline_not_working'
                 : ($pipelineFailure
                     ? 'pipeline_and_agent_quality_are_separate'
-                    : 'agents_failed_screening_gate'));
+                    : 'agents_failed_screening_gate'))));
         $evolutionSafe = $technicalErrors === []
             && $technicalRunCount === 0
             && $screeningPassRate > 0
@@ -219,6 +281,18 @@ class LabGenerationReportService
         $anchorSiblingCounts = $agents->filter(fn (LabAgent $agent): bool =>
             filled(data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id'))
         )->countBy(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id'))->all();
+        $progressLadderCounts = $agents->map(fn (LabAgent $agent): string =>
+            (string) data_get($agent->modelVersion?->metadata, 'mutation_observability.progress_ladder.stage', 'none')
+        )->countBy()->all();
+        $controlRelativeImprovements = $agents->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'mutation_observability.control_relative_improved') === true
+        )->count();
+        $provisionalSkillCartridges = $agents->filter(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion?->metadata, 'provisional_skill_cartridge.status') === 'screen_provisional'
+        )->count();
+        $contextBanditObservations = $agents->filter(fn (LabAgent $agent): bool =>
+            filled(data_get($agent->modelVersion?->metadata, 'mutation_observability.contextual_bandit.context_key'))
+        )->count();
         $roleFrontier = $agents->groupBy(fn (LabAgent $agent): string => (string) (
             data_get($agent->modelVersion?->metadata, 'council_specialist_contract.role')
             ?: data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.role')
@@ -286,10 +360,18 @@ class LabGenerationReportService
             'parent_delta' => $parentDelta,
             'gate_improvements' => $gateImprovements,
             'gate_failures' => $failedReasons,
+            'gate_margin' => [
+                'protocol' => GateMarginService::PROTOCOL,
+                'near_miss_agents' => $nearMissAgents->take(12)->all(),
+                'dominant_target_counts' => $nearMissTargetCounts,
+                'selected_target' => array_key_first($nearMissTargetCounts),
+                'promotion_evidence' => false,
+            ],
+            'frozen_control_parity' => $frozenControlParity,
             'technical_errors' => $technicalErrors,
             'quality_failed_screening_agents' => $qualityFailedScreeningAgents,
             'failure_classification' => [
-                'screening_zero' => $screenPassed === 0,
+                'screening_zero' => ! $evidenceInProgress && $screenPassed === 0,
                 'classification' => $screeningFailureClassification,
                 'pipeline_failure' => $pipelineFailure,
                 // A clean failed screening decision remains a quality result
@@ -300,6 +382,22 @@ class LabGenerationReportService
                 'technical_full_runs' => $technicalRunCount,
                 'quality_failed_screening_agents' => $qualityFailedScreeningAgents,
                 'evidence_complete_screening_agents' => $screenDecisions->count(),
+                'evidence_in_progress' => $evidenceInProgress,
+                'screen_evidence_coverage' => $screenEvidenceCoverage,
+            ],
+            'evidence_state' => [
+                'status' => $technicalQuarantine
+                    ? 'TECHNICAL_QUARANTINE'
+                    : ($evidenceInProgress ? 'EVIDENCE_IN_PROGRESS' : 'FINAL'),
+                'technical_quarantine' => $technicalQuarantine,
+                'all_agents_terminal' => $allAgentsTerminal,
+                'screen_evidence_coverage' => $screenEvidenceCoverage,
+                'active_run_count' => $activeRunCount,
+                'queue_total' => $queueBacklog['total'] ?? null,
+                'queue_empty' => ! $queueNotEmpty,
+                'batch_terminality' => $batchTerminality,
+                'final_report_allowed' => ! $technicalQuarantine && ! $evidenceInProgress,
+                'rule' => 'Final report is valid only after every agent, Redis queue/reserved jobs, worker runs and DB job batch projections are terminal.',
             ],
             'mutation_targets' => $targets,
             'population_group_checkpoints' => $populationGroupCheckpoints,
@@ -329,7 +427,18 @@ class LabGenerationReportService
                 'screen_pass_rate' => $screeningPassRate,
                 'repeat_failure_rate' => $this->repeatFailureRate($agents),
                 'target_gate_delta_count' => $this->targetGateDeltaCount($agents),
+                'gate_margin_improvement_count' => $gateMarginImprovementCount,
+                'observable_mutation_count' => $observableMutations,
+                'non_observable_mutation_count' => $nonObservableMutations,
+                'mutation_observability_rate' => $agents->isEmpty()
+                    ? 0
+                    : round($observableMutations / $agents->count() * 100, 2),
                 'mutation_credit_rate' => $this->mutationCreditRate($agents),
+                'progress_ladder_counts' => $progressLadderCounts,
+                'control_relative_improvement_count' => $controlRelativeImprovements,
+                'provisional_skill_cartridge_births' => $provisionalSkillCartridges,
+                'contextual_bandit_observation_count' => $contextBanditObservations,
+                'shadow_research_generation' => (string) $generation->trigger_type === 'shadow_research',
                 'skill_mentor_birth_rate' => $agents->count() > 0 ? round($mentorBirths / $agents->count() * 100, 2) : 0,
                 'full_parent_birth_rate' => $agents->count() > 0 ? round((int) ($stageCounts['full_parent'] ?? 0) / $agents->count() * 100, 2) : 0,
                 // Intentional frozen controls and architecture-only topology
@@ -348,18 +457,25 @@ class LabGenerationReportService
                 ])->values()->all(),
                 ...$coverageKpis,
             ],
-            'next_action' => $this->nextAction($generation, $technicalErrors, $screenPassed, $screenDecisions->count(), $selected, $forwardValidated, $targetedAttempts, $pipelineFailure),
+            'next_action' => $technicalQuarantine
+                ? 'TECHNICAL_QUARANTINE'
+                : $this->nextAction($generation, $technicalErrors, $screenPassed, $screenDecisions->count(), $selected, $forwardValidated, $targetedAttempts, $pipelineFailure, $evidenceInProgress),
+            'report_state' => $technicalQuarantine
+                ? 'TECHNICAL_QUARANTINE'
+                : ($evidenceInProgress ? 'EVIDENCE_IN_PROGRESS' : 'FINAL'),
             'promotion_evidence' => false,
             'rule' => 'A generation report describes evidence; it never changes a gate decision or creates paper eligibility.',
         ];
 
-        $context = (array) $generation->trigger_context;
-        $reports = collect((array) data_get($context, 'generation_reports', []))
-            ->reject(fn ($item): bool => data_get($item, 'phase') === $phase)
-            ->push($report)->values()->all();
-        $context['generation_reports'] = $reports;
-        $context['latest_generation_report'] = $report;
-        $generation->update(['trigger_context' => $context]);
+        app(LabGenerationContextService::class)->update($generation, function (array $context) use ($phase, $report): array {
+            $reports = collect((array) data_get($context, 'generation_reports', []))
+                ->reject(fn ($item): bool => data_get($item, 'phase') === $phase)
+                ->push($report)->values()->all();
+            $context['generation_reports'] = $reports;
+            $context['latest_generation_report'] = $report;
+
+            return $context;
+        });
 
         return $report;
     }
@@ -400,6 +516,7 @@ class LabGenerationReportService
     {
         return $agents->filter(fn (LabAgent $agent): bool =>
             data_get($agent->modelVersion?->metadata, 'repair_anchor.verification.target_gate.improved') === true
+            || data_get($agent->modelVersion?->metadata, 'mutation_observability.gate_margin.target_gate_improved') === true
             || data_get($agent->modelVersion?->metadata, 'skill_mentor.status') === 'confirmed'
         )->count();
     }
@@ -565,10 +682,12 @@ class LabGenerationReportService
             if ($generation && (
                 data_get($report, 'protocol') !== self::PROTOCOL
                 || collect($requiredKpis)->contains(fn (string $key): bool => ! array_key_exists($key, $storedKpis))
+                || $this->reportProjectionIsStale($generation, $report)
             )) {
-                // Older generations may have been recorded before the strict
-                // funnel packet existed. Refresh only that compatibility
-                // case; normal dashboard reads remain side-effect free.
+                // Refresh only when the durable projection is old or its live
+                // generation-owned evidence boundary changed. Unrelated
+                // research-lane work must not keep this generation stale, and
+                // every promotion gate remains unchanged by this refresh.
                 $report = $this->record($generation, 'kpi_refresh');
             }
             return [
@@ -582,6 +701,61 @@ class LabGenerationReportService
                 'paper_eligible' => data_get($report, 'kpis.paper_eligible', 0),
             ];
         })->values()->all();
+    }
+
+    /**
+     * Detect a stale report boundary without treating another generation's
+     * queue work as this generation's evidence. This is deliberately a
+     * projection check; it never changes a gate or creates promotion evidence.
+     */
+    private function reportProjectionIsStale(LabGeneration $generation, array $report): bool
+    {
+        $agents = $generation->relationLoaded('agents')
+            ? $generation->agents
+            : $generation->agents()->get();
+        $agentIds = $agents->pluck('id')->all();
+        $activeAgentStatuses = ['draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation'];
+        $screenRuns = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->where('phase', 'screening')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('lab_agent_id')
+            ->map(fn ($runs) => $runs->last());
+        $activeRunCount = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->whereIn('status', ['queued', 'started', 'running', 'processing'])
+            ->count();
+        $allAgentsTerminal = $agents->isNotEmpty()
+            && $agents->whereIn('lifecycle_status', $activeAgentStatuses)->isEmpty();
+        $screenEvidenceCoverage = $screenRuns->count() >= $agents->count();
+        $queue = app(LabQueueJobInspector::class)->generationQueueBacklog($agentIds);
+        $queueTotal = $queue['total'] ?? null;
+        $generationInProgress = in_array((string) $generation->status, LabPopulationService::ACTIVE_GENERATION_STATUSES, true);
+        $batchTerminality = app(LabBatchTerminalityService::class)->reconcile($generation, true);
+        $batchFinalityAllowed = (bool) data_get($batchTerminality, 'finality.allowed', false);
+        $technicalQuarantine = (string) $generation->status === 'technical_quarantine';
+        $expectedInProgress = ! $technicalQuarantine && ($generationInProgress
+            || ! $allAgentsTerminal
+            || ! $screenEvidenceCoverage
+            || $activeRunCount > 0
+            || $queueTotal === null
+            || (int) $queueTotal > 0
+            || ! $batchFinalityAllowed);
+        $expectedState = $technicalQuarantine
+            ? 'TECHNICAL_QUARANTINE'
+            : ($expectedInProgress ? 'EVIDENCE_IN_PROGRESS' : 'FINAL');
+        $storedState = (array) data_get($report, 'evidence_state', []);
+        $storedQueueTotal = data_get($storedState, 'queue_total');
+        $storedBatchFinality = (bool) data_get($storedState, 'batch_terminality.finality.allowed', false);
+
+        return (string) data_get($report, 'report_state', '') !== $expectedState
+            || (bool) data_get($storedState, 'all_agents_terminal', false) !== $allAgentsTerminal
+            || (bool) data_get($storedState, 'screen_evidence_coverage', false) !== $screenEvidenceCoverage
+            || (int) data_get($storedState, 'active_run_count', -1) !== $activeRunCount
+            || $storedQueueTotal !== $queueTotal
+            || (bool) data_get($storedState, 'queue_empty', false) !== ($queueTotal === 0)
+            || $storedBatchFinality !== $batchFinalityAllowed;
     }
 
     private function bestAgent(Collection $agents, Collection $performances): ?LabAgent
@@ -653,8 +827,9 @@ class LabGenerationReportService
         return is_numeric($value) ? (float) $value : $fallback;
     }
 
-    private function nextAction(LabGeneration $generation, array $technicalErrors, int $screenPassed, int $screenDecisions, int $selected, int $forwardValidated, int $targetedAttempts, bool $pipelineFailure = false): string
+    private function nextAction(LabGeneration $generation, array $technicalErrors, int $screenPassed, int $screenDecisions, int $selected, int $forwardValidated, int $targetedAttempts, bool $pipelineFailure = false, bool $evidenceInProgress = false): string
     {
+        if ($evidenceInProgress) return 'EVIDENCE_IN_PROGRESS';
         if ($pipelineFailure || $technicalErrors !== []) return 'recover_evidence_pipeline_before_quality_interpretation';
         if ($forwardValidated > 0) return 'paper_admission_handshake';
         if ($generation->status === 'screened' && $selected === 0) {

@@ -46,6 +46,25 @@ class ScreeningLearningService
             'volatility_regime' => data_get($model->metadata, 'causal_experiment_lane.volatility_regime'),
             'execution_contract_hash' => (string) data_get($result, 'execution_contract.execution_hash', hash('sha256', json_encode(data_get($result, 'execution_assumptions', []), JSON_PRESERVE_ZERO_FRACTION))),
         ];
+        $observability = (array) data_get($result, 'mutation_observability', data_get($model->metadata, 'mutation_observability', []));
+        $observabilityEffect = [
+            'protocol' => data_get($observability, 'protocol', MutationObservabilityService::PROTOCOL),
+            'classification' => data_get($observability, 'classification', 'not_recorded'),
+            'target_gate_delta' => data_get($observability, 'gate_margin.normalized_delta'),
+            'target_gate_improved' => data_get($observability, 'gate_margin.target_gate_improved', false),
+            'signal_changed' => data_get($observability, 'signal_decisions.changed'),
+            'trade_ledger_changed' => data_get($observability, 'trade_ledger.changed'),
+            'event_ledger_changed' => data_get($observability, 'event_ledger.changed'),
+            'anchor_delta' => data_get($observability, 'anchor_delta', data_get($observability, 'gate_margin.normalized_delta')),
+            'control_delta' => data_get($observability, 'control_delta', data_get($observability, 'control_relative.control_delta')),
+            'control_relative_improved' => data_get($observability, 'control_relative_improved', false),
+            'non_target_regression' => data_get($observability, 'non_target_regression', data_get($observability, 'control_relative.non_target_regression', [])),
+            'observable_effect' => data_get($observability, 'observable_effect', data_get($observability, 'classification') === 'observable_effect'),
+            'holdout_confirmation' => data_get($observability, 'holdout_confirmation', data_get($observability, 'control_relative.holdout_confirmation', [])),
+            'progress_ladder' => data_get($observability, 'progress_ladder', []),
+            'contextual_bandit' => data_get($observability, 'contextual_bandit', []),
+            'promotion_evidence' => false,
+        ];
         $cooldownRescueEffect = $this->cooldownRescueEffect($agent, $model, $result);
         $counterfactualEffect = $this->counterfactualEffect($agent, $model, $result);
 
@@ -91,9 +110,13 @@ class ScreeningLearningService
                     'evidence_scope_status' => 'historical_failure_memory',
                     'confidence' => $confidence, 'decision' => "screen_{$failure}; no causal credit",
                     'behavioral_effect' => $key === 'loss_cooldown_candles' && $cooldownRescueEffect !== null
-                        ? $cooldownRescueEffect
-                        : ($counterfactualEffect !== null ? $counterfactualEffect
-                        : ['causal_credit' => ['status' => 'screen_inconclusive', 'rule' => 'Only a paired full replay may label an individual parameter harmful or beneficial.']]),
+                        ? [...$cooldownRescueEffect, 'mutation_observability' => $observabilityEffect]
+                        : ($counterfactualEffect !== null
+                            ? [...$counterfactualEffect, 'mutation_observability' => $observabilityEffect]
+                            : [
+                                'causal_credit' => ['status' => 'screen_inconclusive', 'rule' => 'Only a paired full replay may label an individual parameter harmful or beneficial.'],
+                                'mutation_observability' => $observabilityEffect,
+                            ]),
                 ],
             );
             $ledger = app(LabImmutableEvidenceService::class);

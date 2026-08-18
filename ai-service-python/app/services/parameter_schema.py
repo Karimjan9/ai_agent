@@ -181,6 +181,7 @@ EXECUTION_PARAMETER_SCHEMA: dict[str, dict[str, Any]] = {
             "breakout_volume_confirmation",
             "transition_volume_router",
             "low_volume_risk_firewall",
+            "relative_volume_confirmation_v1",
         },
     },
     "atr_stop_multiplier": {"type": float, "min": 0.5, "max": 4.0},
@@ -199,9 +200,58 @@ EXECUTION_PARAMETER_SCHEMA: dict[str, dict[str, Any]] = {
     "weak_regime_wait_candles": {"type": int, "min": 1, "max": 96},
     "transition_firewall_enabled": {"type": bool},
     "transition_wait_candles": {"type": int, "min": 1, "max": 6},
+    # Shadow-only architecture escape. ``none`` preserves the frozen
+    # control's historical execution contract; the state-machine variant is
+    # admitted only by a research lane and is never a promotion shortcut.
+    "state_machine_variant": {
+        "type": str,
+        "choices": {"none", "neutral_transition_cooldown_reentry_v1"},
+    },
+    # Structural entry topology is separate from scalar timing mutations.
+    # Each non-frozen value changes signal admission in the laboratory router
+    # and remains research-only until the unchanged gates validate it.
+    "entry_topology_variant": {
+        "type": str,
+        "choices": {
+            "frozen",
+            "regime_consensus_v1",
+            "transition_hazard_v1",
+            "breakout_retest_v1",
+            "trend_regime_confirmation_v1",
+            "range_reentry_confirmation_v1",
+            "volatility_persistence_v1",
+        },
+    },
+    "regime_classifier_variant": {
+        "type": str,
+        "choices": {
+            "frozen",
+            "adx_hysteresis_v1",
+            "ema_slope_consensus_v1",
+            "volatility_adaptive_v1",
+        },
+    },
     "confidence_calibration_enabled": {"type": bool},
     "confidence_calibration_min_samples": {"type": int, "min": 15, "max": 200},
     "confidence_ev_lower_bound_enabled": {"type": bool},
+    # Temporal survival is an explicitly research-only abstention family.
+    # Keep it orthogonal to transition/EMA/ROC/lookback genes so a temporal
+    # failure cannot be re-labelled as an ordinary parameter mutation.
+    "temporal_survival_enabled": {"type": bool},
+    "adaptive_signal_expiry_enabled": {"type": bool},
+    "drift_abstention_enabled": {"type": bool},
+    "signal_max_age_candles": {"type": int, "min": 1, "max": 24},
+    "signal_decay_half_life_candles": {"type": int, "min": 1, "max": 24},
+    "temporal_followthrough_window": {"type": int, "min": 1, "max": 12},
+    "temporal_followthrough_min_rate": {"type": float, "min": 0.0, "max": 1.0},
+    "temporal_followthrough_atr_fraction": {"type": float, "min": 0.05, "max": 2.0},
+    "temporal_volatility_ratio_max": {"type": float, "min": 1.0, "max": 4.0},
+    "temporal_spread_atr_ratio_max": {"type": float, "min": 0.01, "max": 0.5},
+    "temporal_drift_zscore_max": {"type": float, "min": 0.5, "max": 5.0},
+    "temporal_confidence_decay_floor": {"type": float, "min": 0.0, "max": 1.0},
+    "temporal_loss_streak_limit": {"type": int, "min": 1, "max": 10},
+    "temporal_min_history": {"type": int, "min": 5, "max": 100},
+    "temporal_drift_lookback_candles": {"type": int, "min": 10, "max": 200},
     # Dynamic cooldown is an online policy: it may inspect only shadow trades
     # whose exits were already observable at the current candle.
     "dynamic_cooldown_enabled": {"type": bool},

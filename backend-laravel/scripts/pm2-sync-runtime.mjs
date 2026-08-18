@@ -58,7 +58,14 @@ try {
 // is idle, and stale-lock recovery remains the backstop for a killed worker.
 if (processes.some((entry) => entry.name === 'neurotrader-ai' && entry.pm2_env?.status === 'online')) {
     try {
-        const tokenFile = path.join(projectRoot, 'storage', 'app', 'secrets', 'internal-api.token');
+        // ecosystem.config.cjs and run-ai-service.py prefer the coordinated
+        // workspace runtime secret after rotation.  The legacy protected
+        // file can remain present for rollback, but probing with it would
+        // report a false 401 and allow a rolling reload during an active
+        // replay.
+        const runtimeTokenFile = path.resolve(projectRoot, '..', 'runtime', 'internal-api.token');
+        const legacyTokenFile = path.join(projectRoot, 'storage', 'app', 'secrets', 'internal-api.token');
+        const tokenFile = fs.existsSync(runtimeTokenFile) ? runtimeTokenFile : legacyTokenFile;
         const token = fs.readFileSync(tokenFile, 'utf8').trim();
         const response = await fetch('http://127.0.0.1:9000/api/replay-status', {
             headers: { 'X-Internal-Token': token },

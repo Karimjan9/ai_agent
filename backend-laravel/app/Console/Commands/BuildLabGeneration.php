@@ -16,7 +16,7 @@ class BuildLabGeneration extends Command
         // candle-event plane synchronously here can hold generation creation
         // for minutes without creating a row.  The population builder still
         // consumes the latest append-only insights and checkpoint inputs.
-        $refreshHistoricalLearning = (string) $this->option('trigger') !== 'candidate_handoff';
+        $refreshHistoricalLearning = ! in_array((string) $this->option('trigger'), ['candidate_handoff', 'data_edge_audit'], true);
         foreach ($symbols as $symbol) {
             $generation = $service->build(
                 $symbol,

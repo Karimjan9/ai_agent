@@ -9,6 +9,7 @@ use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\OperatorApprovalService;
+use App\Services\RescueCircuitBreakerService;
 use App\Services\TargetedRescueProfileService;
 use App\Services\LabQueueJobInspector;
 use Illuminate\Console\Command;
@@ -18,8 +19,8 @@ use RuntimeException;
 
 class DispatchControlledTargetedRescueCohort extends Command
 {
-    protected $signature = 'trading:dispatch-controlled-targeted-rescue {symbol} {--timeframe=H1} {--source-generation=} {--apply : Create and dispatch one five-by-four rescue cohort} {--approved-by=} {--approval-reason=} {--json}';
-    protected $description = 'Create one temporary 20-agent targeted rescue cohort while normal generation creation stays paused';
+    protected $signature = 'trading:dispatch-controlled-targeted-rescue {symbol} {--timeframe=H1} {--source-generation=} {--apply : Create and dispatch one audited targeted rescue cohort} {--approved-by=} {--approval-reason=} {--json}';
+    protected $description = 'Create one temporary targeted rescue cohort while normal generation creation stays paused';
 
     public function handle(
         LabPopulationService $populations,
@@ -27,6 +28,7 @@ class DispatchControlledTargetedRescueCohort extends Command
         TargetedRescueProfileService $profiles,
         LabImmutableEvidenceService $evidence,
         OperatorApprovalService $approvals,
+        RescueCircuitBreakerService $rescueCircuitBreaker,
     ): int {
         $symbol = strtoupper((string) $this->argument('symbol'));
         $timeframe = strtoupper((string) $this->option('timeframe'));
@@ -41,7 +43,7 @@ class DispatchControlledTargetedRescueCohort extends Command
             fn ($query) => $query->where('generation', (int) $this->option('source-generation')),
         )->latest('generation')->first();
         if (! $source) return $this->failCommand("{$symbol} {$timeframe}: source generation topilmadi.");
-        if (! in_array((string) $source->status, ['screened', 'technical_quarantine'], true)) {
+        if (! in_array((string) $source->status, ['screened', 'completed', 'technical_quarantine'], true)) {
             return $this->failCommand("{$symbol} {$timeframe} G{$source->generation}: source status {$source->status}; rescue faqat terminal cohort uchun.");
         }
         if ($source->agents->contains(fn ($agent): bool => in_array((string) $agent->lifecycle_status, ['draft', 'queued', 'screening', 'training', 'evaluation_error', 'full_queued', 'full_validation'], true))) {
@@ -55,11 +57,55 @@ class DispatchControlledTargetedRescueCohort extends Command
         }
 
         $profile = $profiles->forGeneration($source);
-        if (! $safety->controlledRescueAllowed('candidate_handoff', 20, $profile)) {
+        $populationSize = max(1, (int) data_get($profile, 'population_size', 20));
+        if (! $safety->controlledRescueAllowed('candidate_handoff', $populationSize, $profile)) {
             return $this->failCommand('Controlled rescue contract invalid; generation pause bypass qilinmadi.');
         }
         if ((int) data_get($profile, 'actionable_failure_count', 0) < 1) {
             return $this->failCommand("{$symbol} {$timeframe} G{$source->generation}: actionable screening failure yo'q; technical/legacy evidence rescue mutationga kiritilmadi.");
+        }
+        $independentEvidence = null;
+        if (app(\App\Services\StructuralResearchCohortService::class)->isProfile($profile)) {
+            $independentEvidence = $rescueCircuitBreaker->independentEvidenceAdmission(
+                $lab,
+                $source,
+                $profile,
+                $rescueCircuitBreaker->currentDataSnapshot($lab),
+            );
+            if (! (bool) data_get($independentEvidence, 'allowed', false)) {
+                $rescueCircuitBreaker->recordBlocked($lab, $independentEvidence, $source);
+                if ($this->option('json')) {
+                    $this->line(json_encode([
+                        'action' => 'blocked',
+                        'symbol' => $symbol,
+                        'timeframe' => $timeframe,
+                        'source_generation' => $source->generation,
+                        'cohort_mode' => $profile['cohort_mode'] ?? null,
+                        'independent_evidence_admission' => $independentEvidence,
+                        'promotion_evidence' => false,
+                    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                }
+                return $this->failCommand('Structural cohort uchun yangi non-overlap chronological evidence yoki sealed holdout hali tayyor emas.');
+            }
+        }
+        $rescueAdmission = $rescueCircuitBreaker->admission($lab, $profile, $source);
+        if (! (bool) data_get($rescueAdmission, 'allowed', false)) {
+            $rescueCircuitBreaker->recordBlocked($lab, $rescueAdmission, $source);
+            if ($this->option('json')) {
+                $this->line(json_encode([
+                    'action' => 'blocked',
+                    'symbol' => $symbol,
+                    'timeframe' => $timeframe,
+                    'source_generation' => $source->generation,
+                    'rescue_admission' => $rescueAdmission,
+                    'promotion_evidence' => false,
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            } else {
+                $this->error(RescueCircuitBreakerService::BLOCKED_NEED_NEW_EVIDENCE);
+                $this->line((string) data_get($rescueAdmission, 'rule', 'New independent market evidence is required.'));
+            }
+
+            return self::FAILURE;
         }
         $priorRescues = $lab->generations()->get()->filter(function (LabGeneration $generation) use ($source, $profile): bool {
             return (int) data_get($generation->trigger_context, 'targeted_failure_profile.source_generation_id') === (int) $source->id
@@ -91,10 +137,16 @@ class DispatchControlledTargetedRescueCohort extends Command
             'source_generation_id' => (int) $source->id,
             'source_generation' => (int) $source->generation,
             'profile_hash' => $profile['profile_hash'],
-            'population_size' => 20,
+            'cohort_mode' => $profile['cohort_mode'] ?? null,
+            'population_size' => $populationSize,
             'groups' => $profile['group_plan'],
             'reason_counts' => $profile['reason_counts'],
             'target_counts' => $profile['target_counts'],
+            'temporal_mutation_hypothesis' => $profile['temporal_mutation_hypothesis'] ?? null,
+            'temporal_edge_audit' => $profile['temporal_edge_audit'] ?? null,
+            'structural_research_contract' => $profile['structural_research_contract'] ?? null,
+            'independent_evidence_admission' => $independentEvidence,
+            'rescue_admission' => $rescueAdmission,
             'temporary' => true,
             'promotion_evidence' => false,
         ];
@@ -116,22 +168,23 @@ class DispatchControlledTargetedRescueCohort extends Command
             [],
             false,
             false,
-            20,
+            $populationSize,
             $profile,
             true,
         );
         if (! $generation) return $this->failCommand('Rescue generation safety/data gate sabab yaratilmadi.');
 
-        // A controlled rescue is valid only as the complete five-by-four
-        // cohort. A partial constructor result is technical evidence and
-        // must never be dispatched as if it were a smaller strategy sample.
+        // A controlled rescue is valid only as the complete declared cohort.
+        // A partial constructor result is technical evidence and must never
+        // be dispatched as if it were a smaller strategy sample.
         $generation = $generation->fresh(['agents']);
-        if ($generation->status !== 'draft' || $generation->agents->count() !== 20) {
+        if ($generation->status !== 'draft' || $generation->agents->count() !== $populationSize) {
             return $this->failCommand(sprintf(
-                'Controlled rescue constructor contract failed: G%s status=%s, agents=%d/20. No replay dispatched.',
+                'Controlled rescue constructor contract failed: G%s status=%s, agents=%d/%d. No replay dispatched.',
                 $generation->generation,
                 $generation->status,
                 $generation->agents->count(),
+                $populationSize,
             ));
         }
         $nonDraftAgents = $generation->agents->reject(fn ($agent): bool => $agent->lifecycle_status === 'draft');
@@ -197,7 +250,7 @@ class DispatchControlledTargetedRescueCohort extends Command
             $this->line(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         } else {
             $this->info(($payload['action'] ?? 'unknown').': '.($payload['symbol'] ?? '').' '.($payload['timeframe'] ?? '').' '.($payload['target_generation'] ?? '-'));
-            $this->line('Five groups x four seats = '.($payload['population_size'] ?? 20).'; promotion evidence=false.');
+            $this->line('Declared rescue cohort seats = '.($payload['population_size'] ?? 20).'; promotion evidence=false.');
             if (! empty($payload['dispatch_output'])) $this->line($payload['dispatch_output']);
         }
 
