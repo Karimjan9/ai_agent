@@ -54,6 +54,17 @@ return [
         'shadow_micro_probe_max_candidates' => max(1, (int) env('AI_SHADOW_MICRO_PROBE_MAX_CANDIDATES', 6)),
     ],
 
+    // Redis is the primary low-latency transport. The application does not
+    // silently change session/queue semantics at runtime; controlled
+    // failover is observable, audited and performed with the documented
+    // database profile instead.
+    'redis_availability' => [
+        'cache_failover_store' => env('CACHE_FAILOVER_STORE', 'redis_failover'),
+        'queue_failover_connection' => env('QUEUE_FAILOVER_CONNECTION', 'redis_failover'),
+        'session_failover_driver' => env('SESSION_FAILOVER_DRIVER', 'database'),
+        'alert_cache_store' => env('ALERT_CACHE_STORE', 'database'),
+    ],
+
     'scheduler' => [
         // One renewable process lease prevents PM2/Windows reloads from
         // leaving two headless loops executing the same due callbacks.
@@ -421,6 +432,17 @@ return [
       // are explicit infrastructure limits for a particular deployment.
       'population_max_size' => (int) env('LAB_POPULATION_MAX_SIZE', 0),
       'portfolio_council_max_niches' => (int) env('LAB_PORTFOLIO_COUNCIL_MAX_NICHES', 0),
+      'council_min_regime_specialists' => (int) env('LAB_COUNCIL_MIN_REGIME_SPECIALISTS', 2),
+      'council_max_members' => (int) env('LAB_COUNCIL_MAX_MEMBERS', 6),
+      'council_curriculum_enabled' => env('LAB_COUNCIL_CURRICULUM_ENABLED', true),
+      'transition_min_shadow_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_SHADOW_WINDOWS', 3),
+      'transition_min_hybrid_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_HYBRID_WINDOWS', 3),
+      'transition_min_council_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_COUNCIL_WINDOWS', 3),
+      'transition_min_anchor_ablation_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_ANCHOR_ABLATION_WINDOWS', 2),
+      'transition_baseline_tolerance' => (float) env('LAB_COUNCIL_TRANSITION_BASELINE_TOLERANCE', .03),
+      'transition_max_worst_window_regression' => (float) env('LAB_COUNCIL_TRANSITION_MAX_WORST_WINDOW_REGRESSION', .05),
+      'transition_max_router_switch_rate' => (float) env('LAB_COUNCIL_TRANSITION_MAX_ROUTER_SWITCH_RATE', .25),
+      'transition_max_anchor_dependency' => (float) env('LAB_COUNCIL_TRANSITION_MAX_ANCHOR_DEPENDENCY', .20),
       'portfolio_council_source_limit' => (int) env('LAB_PORTFOLIO_COUNCIL_SOURCE_LIMIT', 0),
       'forward_failure_source_limit' => (int) env('LAB_FORWARD_FAILURE_SOURCE_LIMIT', 0),
       'evidence_complement_source_limit' => (int) env('LAB_EVIDENCE_COMPLEMENT_SOURCE_LIMIT', 0),
@@ -470,6 +492,15 @@ return [
       'evidence_quarantine_sandbox_enabled' => env('LAB_EVIDENCE_QUARANTINE_SANDBOX_ENABLED', true),
       'council_ablation_required_before_official' => env('LAB_COUNCIL_ABLATION_REQUIRED_BEFORE_OFFICIAL', true),
       'council_ablation_roles' => ['entry', 'risk', 'regime', 'volume_temporal'],
+      // Brave research is explicit, deterministic and sandboxed. Percentages
+      // apply to experimental seats after frozen controls are reserved.
+      'hybrid_evolution_enabled' => env('LAB_HYBRID_EVOLUTION_ENABLED', true),
+      'hybrid_directed_repair_share' => (float) env('LAB_HYBRID_DIRECTED_REPAIR_SHARE', .60),
+      'hybrid_bold_structural_share' => (float) env('LAB_HYBRID_BOLD_STRUCTURAL_SHARE', .25),
+      'hybrid_adversarial_share' => (float) env('LAB_HYBRID_ADVERSARIAL_SHARE', .15),
+      'hybrid_control_seats' => (int) env('LAB_HYBRID_CONTROL_SEATS', 2),
+      'hybrid_bold_max_changed_genes' => (int) env('LAB_HYBRID_BOLD_MAX_CHANGED_GENES', 3),
+      'hybrid_adversarial_max_changed_genes' => (int) env('LAB_HYBRID_ADVERSARIAL_MAX_CHANGED_GENES', 3),
   ],
 
     // Targeted failure research has its own admission budget. A changed
@@ -496,6 +527,29 @@ return [
         'window_minimum_trades' => (int) env('LAB_TEMPORAL_WINDOW_MINIMUM_TRADES', 5),
     ],
 
+    // Champion and Council are observed as two independent runtime lanes.
+    // Shadow is the only safe default: it records capability-cell evidence
+    // without changing the incumbent paper owner.
+    'dual_track' => [
+        'enabled' => env('DUAL_TRACK_ENABLED', true),
+        'mode' => env('DUAL_TRACK_MODE', 'shadow'),
+        'default_lane' => env('DUAL_TRACK_DEFAULT_LANE', 'incumbent'),
+        'cell_routes' => [],
+        'require_independent_outputs' => env('DUAL_TRACK_REQUIRE_INDEPENDENT_OUTPUTS', true),
+        'unresolved_route' => env('DUAL_TRACK_UNRESOLVED_ROUTE', 'wait'),
+        'activate_certified_cells' => env('DUAL_TRACK_ACTIVATE_CERTIFIED_CELLS', false),
+        'cell_minimum_samples' => max(1, (int) env('DUAL_TRACK_CELL_MINIMUM_SAMPLES', 30)),
+        'cell_minimum_score_margin' => (float) env('DUAL_TRACK_CELL_MINIMUM_SCORE_MARGIN', 2.0),
+        'minimum_confidence_lower_bound' => (float) env('DUAL_TRACK_MINIMUM_CONFIDENCE_LOWER_BOUND', .55),
+        'require_calibration_for_active' => env('DUAL_TRACK_REQUIRE_CALIBRATION_FOR_ACTIVE', true),
+        'evaluator_minimum_samples' => max(1, (int) env('DUAL_TRACK_EVALUATOR_MINIMUM_SAMPLES', 20)),
+        'max_evaluator_calibration_error' => (float) env('DUAL_TRACK_MAX_EVALUATOR_CALIBRATION_ERROR', .20),
+        'max_risk_of_ruin_percent' => (float) env('DUAL_TRACK_MAX_RISK_OF_RUIN_PERCENT', 10),
+        'max_drawdown_percent' => (float) env('DUAL_TRACK_MAX_DRAWDOWN_PERCENT', 15),
+        'transition_size_multiplier' => (float) env('DUAL_TRACK_TRANSITION_SIZE_MULTIPLIER', .5),
+        'memory_minimum_confirmations' => max(2, (int) env('DUAL_TRACK_MEMORY_MINIMUM_CONFIRMATIONS', 3)),
+    ],
+
     'risk' => [
         'max_open_positions' => (int) env('RISK_MAX_OPEN_POSITIONS', 3),
         'max_positions_per_group' => (int) env('RISK_MAX_POSITIONS_PER_GROUP', 2),
@@ -513,6 +567,9 @@ return [
         'enabled' => env('LAB_LEARNING_LANE_ENABLED', true),
         'max_per_role' => (int) env('LAB_LEARNING_LANE_MAX_PER_ROLE', 1),
         'max_total_per_generation' => (int) env('LAB_LEARNING_LANE_MAX_TOTAL_PER_GENERATION', 4),
+        // Read-only control materialization previews are deliberately capped
+        // so a legacy backlog cannot compete with live replay workers.
+        'materialization_preview_limit' => max(1, (int) env('LAB_LEARNING_LANE_MATERIALIZATION_PREVIEW_LIMIT', 50)),
         'provisional_skill_ttl_days' => (int) env('LAB_LEARNING_LANE_PROVISIONAL_SKILL_TTL_DAYS', 30),
         'independent_confirmations_required' => (int) env('LAB_LEARNING_LANE_INDEPENDENT_CONFIRMATIONS', 2),
         'micro_windows_required' => (int) env('LAB_LEARNING_LANE_MICRO_WINDOWS_REQUIRED', 3),

@@ -69,7 +69,8 @@ class RescueCircuitBreakerService
             : 0;
         $currentCount = (int) data_get($snapshot, 'data_count', data_get($snapshot, 'count', 0));
         $freshCandles = max(0, $currentCount - $lastFamilyCount);
-        $holdout = $this->sealedIndependentHoldout($profile, $source, $snapshot);
+        $holdoutEvidence = $this->sealedIndependentHoldoutEvidence($profile, $source, $snapshot);
+        $holdout = (bool) data_get($holdoutEvidence, 'allowed', false);
         $minimumFreshCandles = $this->minimumFreshCandles((string) $lab->timeframe);
         $independentNewEvidence = $holdout || (
             $latestFamily !== null
@@ -141,6 +142,7 @@ class RescueCircuitBreakerService
                 'target_threshold_reached' => $margin['threshold_reached'],
                 'independent_new_evidence' => $independentNewEvidence,
                 'sealed_independent_holdout' => $holdout,
+                'sealed_holdout_evidence' => $holdoutEvidence,
                 'current_data_fingerprint' => data_get($snapshot, 'data_fingerprint'),
                 'last_family_data_fingerprint' => data_get($latestFamilySnapshot, 'data_fingerprint'),
                 'current_data_count' => $currentCount,
@@ -237,7 +239,8 @@ class RescueCircuitBreakerService
         $sourceLatest = (string) data_get($source?->trigger_context, 'latest_candle', '');
         $latestAdvanced = $currentLatest !== '' && ($sourceLatest === '' || $currentLatest > $sourceLatest);
         $fingerprintChanged = (string) data_get($snapshot, 'data_fingerprint', '') !== (string) ($source?->data_fingerprint ?: data_get($source?->trigger_context, 'data_fingerprint', ''));
-        $holdout = $this->sealedIndependentHoldout($profile, $source, $snapshot);
+        $holdoutEvidence = $this->sealedIndependentHoldoutEvidence($profile, $source, $snapshot);
+        $holdout = (bool) data_get($holdoutEvidence, 'allowed', false);
         $allowed = $holdout || ($source !== null && $fresh >= $minimum && $latestAdvanced && $fingerprintChanged);
 
         return [
@@ -253,6 +256,7 @@ class RescueCircuitBreakerService
             'latest_advanced' => $latestAdvanced,
             'data_fingerprint_changed' => $fingerprintChanged,
             'sealed_independent_holdout' => $holdout,
+            'sealed_holdout_evidence' => $holdoutEvidence,
             'one_candle_is_insufficient' => true,
             'promotion_evidence' => false,
         ];
@@ -504,7 +508,8 @@ class RescueCircuitBreakerService
         return $timeframe === 'M15' ? 96 : 24;
     }
 
-    private function sealedIndependentHoldout(array $profile, ?LabGeneration $source, array $snapshot): bool
+    /** @return array<string, mixed> */
+    private function sealedIndependentHoldoutEvidence(array $profile, ?LabGeneration $source, array $snapshot): array
     {
         $paths = [
             'evidence_admission.independent_holdout.status',
@@ -512,12 +517,101 @@ class RescueCircuitBreakerService
             'sealed_holdout.status',
         ];
         foreach ($paths as $path) {
-            if (in_array((string) data_get($profile, $path), ['sealed', 'verified', 'ready'], true)) return true;
+            if (in_array((string) data_get($profile, $path), ['sealed', 'verified', 'ready'], true)) {
+                return [
+                    'allowed' => true,
+                    'source' => 'profile_attestation',
+                    'status' => (string) data_get($profile, $path),
+                    'promotion_evidence' => false,
+                ];
+            }
         }
         $context = (array) ($source?->trigger_context ?? []);
         $status = (string) (data_get($context, 'sealed_holdout.status') ?: data_get($context, 'independent_holdout.status'));
+        if (in_array($status, ['sealed', 'verified', 'ready'], true)
+            && filled(data_get($snapshot, 'independent_data_hash'))) {
+            return [
+                'allowed' => true,
+                'source' => 'source_generation_attestation',
+                'status' => $status,
+                'data_hash' => data_get($snapshot, 'independent_data_hash'),
+                'promotion_evidence' => false,
+            ];
+        }
 
-        return in_array($status, ['sealed', 'verified', 'ready'], true)
-            && filled(data_get($snapshot, 'independent_data_hash'));
+        // A valid temporal foundation is an already-sealed research artifact,
+        // not a synthetic slice of the rolling canonical dataset.  Discover
+        // it by identity so a structural rescue can use the independent
+        // holdout without requiring the old generation profile to have
+        // copied a future manifest path into its trigger context.
+        if (! app(StructuralResearchCohortService::class)->isProfile($profile)) {
+            return [
+                'allowed' => false,
+                'source' => 'none',
+                'reason' => 'SEALED_HOLDOUT_NOT_DECLARED_FOR_PROFILE',
+                'promotion_evidence' => false,
+            ];
+        }
+        $symbol = strtoupper((string) ($profile['symbol'] ?? $source?->laboratory?->symbol ?? ''));
+        $timeframe = strtoupper((string) ($profile['timeframe'] ?? $source?->laboratory?->timeframe ?? ''));
+        $manifestPath = storage_path("app/temporal-ablation/{$symbol}_{$timeframe}_manifest.json");
+        if (! is_file($manifestPath)) {
+            return [
+                'allowed' => false,
+                'source' => 'none',
+                'reason' => 'SEALED_HOLDOUT_MANIFEST_MISSING',
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $manifest = json_decode((string) file_get_contents($manifestPath), true);
+        if (! is_array($manifest)
+            || (string) data_get($manifest, 'protocol') !== 'temporal_clean_ablation_manifest_v2'
+            || strtoupper((string) data_get($manifest, 'symbol')) !== $symbol
+            || strtoupper((string) data_get($manifest, 'timeframe')) !== $timeframe
+            || ! (bool) data_get($manifest, 'independent_attestation', false)
+            || ! (bool) data_get($manifest, 'independent_holdout', false)
+            || (string) data_get($manifest, 'data_identity_protocol') !== 'content_and_timestamp_disjoint_v1') {
+            return [
+                'allowed' => false,
+                'source' => 'manifest',
+                'reason' => 'SEALED_HOLDOUT_MANIFEST_INVALID',
+                'manifest_path' => $manifestPath,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $holdout = collect((array) data_get($manifest, 'windows', []))
+            ->first(fn (mixed $window): bool => is_array($window) && data_get($window, 'role') === 'sealed_holdout');
+        $datasetPath = (string) data_get($holdout, 'dataset_path', '');
+        $datasetHash = (string) data_get($holdout, 'data_hash', '');
+        $storageRoot = realpath(storage_path('app'));
+        $resolvedDatasetPath = $datasetPath !== '' ? realpath($datasetPath) : false;
+        $insideStorage = $storageRoot !== false
+            && $resolvedDatasetPath !== false
+            && str_starts_with(strtolower($resolvedDatasetPath), strtolower($storageRoot.DIRECTORY_SEPARATOR));
+        $fileMatchesManifest = $insideStorage
+            && $datasetHash !== ''
+            && hash_file('sha256', $resolvedDatasetPath) === $datasetHash;
+        $valid = is_array($holdout)
+            && (bool) data_get($holdout, 'sealed', false)
+            && (bool) data_get($holdout, 'independent_from_rescue', false)
+            && data_get($holdout, 'attestation') === 'derived_from_independent_source_non_overlap_v1'
+            && (int) data_get($holdout, 'candle_count', 0) >= $this->minimumFreshCandles($timeframe)
+            && $fileMatchesManifest;
+
+        return [
+            'allowed' => $valid,
+            'source' => 'temporal_ablation_manifest',
+            'manifest_path' => $manifestPath,
+            'window_id' => data_get($holdout, 'window_id'),
+            'data_hash' => $datasetHash !== '' ? $datasetHash : null,
+            'candle_count' => (int) data_get($holdout, 'candle_count', 0),
+            'sealed' => (bool) data_get($holdout, 'sealed', false),
+            'independent_from_rescue' => (bool) data_get($holdout, 'independent_from_rescue', false),
+            'file_hash_matches_manifest' => $fileMatchesManifest,
+            'reason' => $valid ? 'SEALED_INDEPENDENT_HOLDOUT_READY' : 'SEALED_HOLDOUT_ARTIFACT_INVALID',
+            'promotion_evidence' => false,
+        ];
     }
 }

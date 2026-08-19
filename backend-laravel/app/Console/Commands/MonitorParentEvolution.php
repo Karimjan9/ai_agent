@@ -3,9 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Services\ParentAwareCreditService;
-use Illuminate\Console\Command;
+use App\Console\Commands\Concerns\OperationalCommand;
 
-class MonitorParentEvolution extends Command
+class MonitorParentEvolution extends OperationalCommand
 {
     protected $signature = 'trading:monitor-parent-evolution
         {symbol? : Laboratory symbol}
@@ -21,12 +21,10 @@ class MonitorParentEvolution extends Command
             strtoupper((string) $this->option('timeframe')),
         );
         if ($this->option('json')) {
-            $this->line(json_encode($result, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+            $this->writeJson($result, pretty: true);
             return self::SUCCESS;
         }
-        $this->table(['Metric', 'Value'], collect($result)->except(['protocol', 'promotion_evidence'])->map(
-            fn ($value, $key): array => [(string) $key, is_scalar($value) || $value === null ? $value : json_encode($value)],
-        )->values()->all());
+        $this->writeMetrics($result, ['protocol', 'promotion_evidence']);
         return self::SUCCESS;
     }
 }

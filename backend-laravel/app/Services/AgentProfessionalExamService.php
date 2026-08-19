@@ -152,6 +152,9 @@ class AgentProfessionalExamService
         );
         $status = $objective === null ? 'unassessed'
             : ($sampleCount >= 15 && (float) ($abstention ?? 0) >= .50 && $waitInvariant ? 'assessed' : 'insufficient');
+        $routerContract = app(CausalSkillCompilerService::class)->routerContract(
+            (array) data_get($result, 'portfolio_evidence.specialist_signals', data_get($result, 'specialist_signals', [])),
+        );
 
         return [
             'protocol' => 'router_calibration_abstention_v1',
@@ -164,6 +167,7 @@ class AgentProfessionalExamService
             'disagreement_rows' => $disagreementRows,
             'disagreement_rate' => $disagreementRate,
             'disagreement_wait_invariant' => (bool) $waitInvariant,
+            'router_contract' => $routerContract,
             'profit_factor_used_for_training' => false,
             'promotion_evidence' => false,
             'rule' => 'Router learns confidence and safe WAIT; PF remains a separate economic gate.',

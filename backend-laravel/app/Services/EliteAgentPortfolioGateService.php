@@ -26,6 +26,10 @@ class EliteAgentPortfolioGateService
         private StrategyParameterSchemaService $schemas,
         private AgentKnowledgeService $knowledge,
         private CandidateGateDecisionService $gateDecisions,
+        private SpecialistPassportService $specialistPassports,
+        private CouncilCurriculumService $councilCurriculum,
+        private CouncilCompatibilityService $councilCompatibility,
+        private ChampionCouncilTransitionService $councilTransition,
     ) {}
 
     public function syncMarket(string $symbol, string $timeframe, Collection $candidates): array
@@ -55,6 +59,16 @@ class EliteAgentPortfolioGateService
         $selected = $sequence['active']
             ? $this->selectCouncilMembers($eligible)
             : $this->selectComplementaryMembers($eligible);
+        $compatibility = $this->councilCompatibility->assess($selected->all());
+        if ($sequence['active'] && $compatibility['status'] !== 'compatible') {
+            return [
+                'status' => 'waiting_for_council_compatibility',
+                'portfolio' => null,
+                'members' => $selected->values(),
+                'council_sequence' => $sequence,
+                'council_compatibility' => $compatibility,
+            ];
+        }
         $portfolioKey = self::PORTFOLIO_KEY;
         $membershipHash = hash('sha256', json_encode([
             'portfolio_policy' => $this->portfolioPolicy(),
@@ -71,7 +85,7 @@ class EliteAgentPortfolioGateService
             ['symbol' => $symbol, 'timeframe' => $timeframe, 'portfolio_key' => $portfolioKey],
             ['status' => 'waiting', 'gate_status' => 'waiting_for_combined_replay']
         );
-        $this->persistMembership($portfolio, $selected, $membershipHash, 'strict_forward_members');
+        $this->persistMembership($portfolio, $selected, $membershipHash, 'strict_forward_members', $compatibility);
 
         $portfolio->refresh()->load('members.performance.modelVersion');
         if ($selected->count() < 2 || $selected->pluck('strategy_family')->unique()->count() < 2
@@ -129,6 +143,16 @@ class EliteAgentPortfolioGateService
         $selected = $sequence['active']
             ? $this->selectCouncilMembers($eligible)
             : $this->selectComplementaryMembers($eligible);
+        $compatibility = $this->councilCompatibility->assess($selected->all());
+        if ($sequence['active'] && $compatibility['status'] !== 'compatible') {
+            return [
+                'status' => 'waiting_for_council_compatibility',
+                'portfolio' => null,
+                'members' => $selected->values(),
+                'council_sequence' => $sequence,
+                'council_compatibility' => $compatibility,
+            ];
+        }
         if ($selected->count() < 2 || $selected->pluck('strategy_family')->unique()->count() < 2
             || $selected->map(fn (ModelMarketPerformance $candidate): string => $this->targetRegime($candidate))->unique()->count() < 2) {
             return ['status' => 'waiting_for_complementary_niches', 'portfolio' => null, 'members' => $selected];
@@ -150,7 +174,7 @@ class EliteAgentPortfolioGateService
             ['symbol' => $symbol, 'timeframe' => $timeframe, 'portfolio_key' => $portfolioKey],
             ['status' => 'waiting', 'gate_status' => 'waiting_for_combined_replay']
         );
-        $this->persistMembership($portfolio, $selected, $membershipHash, 'portfolio_member_research_v1');
+        $this->persistMembership($portfolio, $selected, $membershipHash, 'portfolio_member_research_v1', $compatibility);
         $portfolio->refresh()->load('members.performance.modelVersion');
 
         return [
@@ -389,6 +413,15 @@ class EliteAgentPortfolioGateService
             ->latest('last_evaluated_at')->first();
 
         if (! $portfolio || ! $this->activePassport($portfolio)) return null;
+
+        // New council portfolios must complete the incumbent-to-council
+        // handoff before paper/live routing. Legacy rows without this
+        // contract remain auditable and are not retroactively invalidated.
+        $transition = (array) data_get($portfolio->evidence, 'transition', []);
+        if (data_get($transition, 'protocol') === ChampionCouncilTransitionService::PROTOCOL
+            && data_get($transition, 'decision') !== 'PROMOTE_COUNCIL') {
+            return null;
+        }
 
         return $portfolio;
     }
@@ -707,6 +740,24 @@ class EliteAgentPortfolioGateService
         // arena or calendar-alignment proof to reach paper.
         $passport = $this->portfolioPassport($result);
         $reasons = [...$reasons, ...$passport['reason_codes']];
+        // Persist a first-class council interpretation beside the legacy
+        // portfolio evidence. The underlying gates below remain authoritative;
+        // this record makes complementarity, contribution and replaceability
+        // observable instead of hiding them inside one aggregate PF.
+        $result['council_synergy'] = $this->councilCompatibility->combinedEvidence(
+            $portfolio->members->map(fn ($member): array => [
+                'role' => $member->role,
+                'target_regime' => $member->target_regime,
+                'target_volatility' => $member->target_volatility,
+                'target_direction' => $member->target_direction,
+            ])->all(),
+            $result,
+        );
+        $result['transition'] = $this->councilTransition->evaluate(
+            [],
+            [],
+            (array) data_get($result, 'transition_evidence', []),
+        );
         // Carry the exact combined passport into the proxy result.  The proxy
         // is a first-class forward candidate, so paper admission must be able
         // to verify the same passport without reading mutable portfolio state.
@@ -748,6 +799,8 @@ class EliteAgentPortfolioGateService
             'recorded_at' => now()->toIso8601String(),
             'promotion_evidence' => true,
             'portfolio_forward_gate' => $portfolioForward?->toArray(),
+            'council_synergy' => $result['council_synergy'],
+            'transition' => $result['transition'],
         ];
         $evidence['portfolio_performance_id'] = $proxy?->id;
         $portfolio->update([
@@ -1002,6 +1055,21 @@ class EliteAgentPortfolioGateService
 
     private function memberEvidence(ModelMarketPerformance $candidate): array
     {
+        $passport = $this->specialistPassports->build($candidate, [
+            'individual_forward_passed' => true,
+            'individual_passport_passed' => true,
+        ]);
+        $curriculum = (bool) config('services.lab_selection.council_curriculum_enabled', true)
+            ? $this->councilCurriculum->next([
+                'role' => data_get($passport, 'role'),
+                'stage' => data_get($passport, 'skill.stage', 'specialist_candidate'),
+            ])
+            : [
+                'protocol' => CouncilCurriculumService::PROTOCOL,
+                'status' => 'disabled_by_configuration',
+                'promotion_evidence' => false,
+            ];
+
         return [
             'performance_id' => $candidate->id,
             'status' => $candidate->status,
@@ -1018,13 +1086,15 @@ class EliteAgentPortfolioGateService
                 'evidence_protocol' => 'sealed_regime_volatility_direction_intersection_v1',
             ],
             'portfolio_contract' => data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract'),
+            'specialist_passport' => $passport,
+            'next_curriculum' => $curriculum,
         ];
     }
 
-    private function persistMembership(EliteAgentPortfolio $portfolio, Collection $selected, string $membershipHash, string $mode): void
+    private function persistMembership(EliteAgentPortfolio $portfolio, Collection $selected, string $membershipHash, string $mode, array $compatibility = []): void
     {
         $membershipChanged = $portfolio->membership_hash !== $membershipHash;
-        DB::transaction(function () use ($portfolio, $selected, $membershipHash, $membershipChanged, $mode): void {
+        DB::transaction(function () use ($portfolio, $selected, $membershipHash, $membershipChanged, $mode, $compatibility): void {
             if ($membershipChanged) {
                 $portfolio->members()->delete();
                 $portfolio->update([
@@ -1058,6 +1128,7 @@ class EliteAgentPortfolioGateService
                 'duplicate_trade_rule' => 'one_position_per_portfolio_signal',
                 'member_independence_required' => true,
                 'standalone_member_promotion' => false,
+                'council_compatibility' => $compatibility,
                 'transition_firewall' => $this->portfolioPolicy(),
             ],
                 'last_evaluated_at' => now(),

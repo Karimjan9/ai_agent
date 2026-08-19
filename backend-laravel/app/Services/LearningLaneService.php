@@ -47,6 +47,12 @@ class LearningLaneService
                 ->latest('id')
                 ->first();
         if (! $map || $map->status === 'control') return null;
+        if ($map->status === 'behavioral_duplicate'
+            || (bool) data_get($map->metadata, 'behavioral_duplicate', false)) {
+            // The response surface remains immutable and visible, but an
+            // identical decision/trade trace is not a new evolution seat.
+            return null;
+        }
 
         $control = $this->resolveControl($agent, $map);
         $controlVerified = $this->isVerifiedControl($control);
@@ -69,6 +75,21 @@ class LearningLaneService
             $target,
             [...$result, 'failure_reason' => data_get($map->metadata, 'screening_decision')],
             (string) data_get($map->metadata, 'screening_decision', 'SCREEN_OBSERVATION'),
+        );
+        $causalSkill = app(CausalSkillCompilerService::class)->compile(
+            $agent,
+            $signature,
+            [
+                ...$result,
+                'control_pair_available' => $controlVerified,
+                'same_snapshot' => (bool) data_get($control, 'same_snapshot', false),
+                'same_execution_contract' => (bool) data_get($control, 'same_execution_contract', false),
+                'mutation_observability' => [
+                    ...((array) data_get($result, 'mutation_observability', [])),
+                    'behavioral_delta' => $targetDelta,
+                ],
+            ],
+            $targetDelta,
         );
         $pairKey = hash('sha256', json_encode([
             self::PAIR_PROTOCOL,
@@ -117,6 +138,7 @@ class LearningLaneService
                     'same_execution_contract' => $controlVerified && (bool) data_get($control, 'same_execution_contract', false),
                     'control_pair_status' => $controlVerified ? 'verified' : 'missing_control',
                     'baseline_is_diagnostic_only' => ! $controlVerified,
+                    'causal_skill_compiler' => $causalSkill,
                     'promotion_evidence' => false,
                 ],
                 ],
@@ -144,6 +166,7 @@ class LearningLaneService
                     'same_execution_contract' => $controlVerified && (bool) data_get($control, 'same_execution_contract', false),
                     'control_pair_status' => $controlVerified ? 'verified' : 'missing_control',
                     'baseline_is_diagnostic_only' => ! $controlVerified,
+                    'causal_skill_compiler' => $causalSkill,
                     'promotion_evidence' => false,
                 ],
             ]);
@@ -198,22 +221,50 @@ class LearningLaneService
         int $limit = 500,
     ): array {
         if (! $this->available()) return ['available' => false, 'missing' => 0, 'pairable' => 0];
+        $requestedLimit = max(1, $limit);
+        // This is an operator preview, not a bulk repair worker. Keep one
+        // invocation bounded so a large legacy backlog cannot consume the
+        // same CPU/DB budget as live replay workers; callers can page with
+        // smaller bounded invocations when they need a complete audit.
+        $scanLimit = min(
+            $requestedLimit,
+            max(1, (int) config('services.learning_lane.materialization_preview_limit', 50)),
+        );
         $pairs = LabLearningLanePair::query()
             ->with(['candidateAgent', 'candidateResponseMap'])
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))
             ->where('status', 'missing_control')
             ->when($family, fn ($query) => $query->where('strategy_family', $family))
-            ->latest('id')->limit(max(1, $limit))->get();
+            ->latest('id')->limit($scanLimit)->get();
+        // Resolve every candidate against one immutable control snapshot.
+        // Calling resolveControl() with its default query inside this loop
+        // turned a read-only preview of the legacy rows into an N+1 scan and
+        // could starve the live evidence workers.
+        $controls = LabMutationResponseMap::query()
+            ->with('agent')
+            ->where('stage', 'screening')
+            ->where('status', 'control')
+            ->where('symbol', strtoupper($symbol))
+            ->where('timeframe', strtoupper($timeframe))
+            ->latest('id')
+            ->get();
         $pairable = 0;
         foreach ($pairs as $pair) {
             if (! $pair->candidateAgent || ! $pair->candidateResponseMap) continue;
-            $control = $this->resolveControl($pair->candidateAgent, $pair->candidateResponseMap);
+            $control = $this->resolveControl($pair->candidateAgent, $pair->candidateResponseMap, $controls);
             if ($this->isVerifiedControl($control)) {
                 $pairable++;
             }
         }
-        return ['available' => true, 'missing' => $pairs->count(), 'pairable' => $pairable, 'limit' => $limit];
+        return [
+            'available' => true,
+            'missing' => $pairs->count(),
+            'pairable' => $pairable,
+            'limit' => $scanLimit,
+            'requested_limit' => $requestedLimit,
+            'truncated' => $requestedLimit > $scanLimit,
+        ];
     }
 
     /**
@@ -351,6 +402,8 @@ class LearningLaneService
             ->sortByDesc(fn (LabLearningLanePair $pair): array => [
                 (bool) data_get($pair->target_delta, 'improved', false) ? 1 : 0,
                 $this->targetUtility((string) $pair->target, (float) data_get($pair->target_delta, 'delta', 0)),
+                data_get($pair->metadata, 'causal_skill_compiler.reusable_lesson.status') === 'reusable' ? 1 : 0,
+                (float) data_get($pair->metadata, 'information_gain_priority.score', data_get($pair->metadata, 'causal_skill_compiler.information_gain_priority.score', 0)),
                 (int) $pair->id,
             ])
             ->values();
@@ -1076,49 +1129,52 @@ class LearningLaneService
     }
 
     /** @return array{map_id:?int,agent_id:?int,evidence_run_id:?string,metrics:array<string,mixed>,source:string}|array<string,mixed> */
-    private function resolveControl(LabAgent $agent, LabMutationResponseMap $candidate): array
+    private function resolveControl(
+        LabAgent $agent,
+        LabMutationResponseMap $candidate,
+        ?Collection $controlRows = null,
+    ): array
     {
         $candidateExecution = $this->executionHashOf($candidate);
         $candidateSnapshot = $this->snapshotHashOf($candidate);
         $candidateWindow = (string) ($candidate->temporal_window_key ?: '');
-        $controls = LabMutationResponseMap::query()
+        $declaredPair = (array) data_get($agent->modelVersion?->metadata, 'control_pair_contract', []);
+        $sameGenerationControlRequired = (bool) data_get($declaredPair, 'same_generation', false)
+            || data_get($declaredPair, 'protocol') === ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL;
+        $controls = $controlRows ?? LabMutationResponseMap::query()
             ->with('agent')
             ->where('stage', 'screening')
             ->where('status', 'control')
             ->where('symbol', strtoupper((string) $agent->symbol))
             ->where('timeframe', strtoupper((string) $agent->timeframe))
-            ->where('strategy_family', (string) $agent->strategy_family)
             ->latest('id')
-            ->get()
-            ->first(fn (LabMutationResponseMap $row): bool => (int) ($row->agent?->lab_generation_id ?? 0) === (int) $agent->lab_generation_id
+            ->get();
+        $sameGenerationControl = $controls
+            ->first(fn (LabMutationResponseMap $row): bool => (string) $row->strategy_family === (string) $agent->strategy_family
+                && (int) ($row->agent?->lab_generation_id ?? 0) === (int) $agent->lab_generation_id
                 && $candidateExecution !== ''
                 && $this->sameExecutionContract($candidate, $row)
                 && $this->sameSnapshot($candidate, $row));
-        if ($controls) {
+        if ($sameGenerationControl) {
             return [
-                'map_id' => $controls->id,
-                'agent_id' => $controls->lab_agent_id,
-                'evidence_run_id' => $controls->evidence_run_id,
-                'metrics' => (array) $controls->observed_metrics,
+                'map_id' => $sameGenerationControl->id,
+                'agent_id' => $sameGenerationControl->lab_agent_id,
+                'evidence_run_id' => $sameGenerationControl->evidence_run_id,
+                'metrics' => (array) $sameGenerationControl->observed_metrics,
                 'source' => 'control',
                 'scope' => 'same_generation_family',
                 'quality' => 'same_generation_family',
-                'same_snapshot' => $this->sameSnapshot($candidate, $controls),
-                'same_execution_contract' => $this->sameExecutionContract($candidate, $controls),
+                'same_snapshot' => $this->sameSnapshot($candidate, $sameGenerationControl),
+                'same_execution_contract' => $this->sameExecutionContract($candidate, $sameGenerationControl),
             ];
         }
 
         // A family-specific control may not exist for a parentless research
         // family. Use the lighthouse frozen control only when the execution
         // contract matches; snapshot equality is reported, never assumed.
-        $globalControls = LabMutationResponseMap::query()
-            ->with('agent')
-            ->where('stage', 'screening')
-            ->where('status', 'control')
-            ->where('symbol', strtoupper((string) $agent->symbol))
-            ->where('timeframe', strtoupper((string) $agent->timeframe))
-            ->latest('id')
-            ->get()
+        $globalControl = $sameGenerationControlRequired
+            ? null
+            : $controls
             ->filter(function (LabMutationResponseMap $row) use ($agent, $candidate, $candidateExecution, $candidateSnapshot, $candidateWindow): bool {
                 $rowAgent = $row->agent;
                 if (! $rowAgent || (int) $rowAgent->id === (int) $agent->id) return false;
@@ -1133,18 +1189,18 @@ class LearningLaneService
                 return true;
             })
             ->first();
-        if ($globalControls) {
-            $sameFamily = (string) $globalControls->strategy_family === (string) $agent->strategy_family;
+        if ($globalControl) {
+            $sameFamily = (string) $globalControl->strategy_family === (string) $agent->strategy_family;
             return [
-                'map_id' => $globalControls->id,
-                'agent_id' => $globalControls->lab_agent_id,
-                'evidence_run_id' => $globalControls->evidence_run_id,
-                'metrics' => (array) $globalControls->observed_metrics,
+                'map_id' => $globalControl->id,
+                'agent_id' => $globalControl->lab_agent_id,
+                'evidence_run_id' => $globalControl->evidence_run_id,
+                'metrics' => (array) $globalControl->observed_metrics,
                 'source' => 'frozen_control_global',
                 'scope' => $sameFamily ? 'cross_generation_family' : 'lighthouse_global',
                 'quality' => $sameFamily ? 'cross_generation_family' : 'global_execution_matched',
-                'same_snapshot' => $this->sameSnapshot($candidate, $globalControls),
-                'same_execution_contract' => $this->sameExecutionContract($candidate, $globalControls),
+                'same_snapshot' => $this->sameSnapshot($candidate, $globalControl),
+                'same_execution_contract' => $this->sameExecutionContract($candidate, $globalControl),
             ];
         }
 

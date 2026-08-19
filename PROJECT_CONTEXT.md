@@ -16,6 +16,8 @@ updated: 2026-06-25
 > [!IMPORTANT]
 > **2026-07-12 priority override:** keyingi ishlab chiqishning asosiy fokusi AI Learning va pair-owned AI Laboratory hisoblanadi. Agentlar XAUUSD, EURUSD va GBPUSD uchun alohida population, rolling walk-forward, Monte Carlo, paper evidence, champion–challenger lifecycle hamda mutation memory orqali real avloddan-avlodga yaxshilanishini isbotlashi kerak. Knowledge Graph, AI Civilization, Theory Generation va boshqa katta modullar saqlanadi, lekin ikkinchi darajali cadence’da ishlaydi. Tezkor, amaldagi navigatsiya va gate qoidalari `docs/project-memory/ai-learning-laboratory.md` hamda `docs/project-memory/project-index.json`da.
 
+> **Canonical navigation:** current module and operations documentation is indexed in `docs/CANONICAL_INDEX.md`. This file retains historical implementation context; its recorded test totals are not a live test result.
+
 > [!IMPORTANT]
 > Bu fayl loyihaning **yagona asosiy xotirasi va Source of Truth** hisoblanadi.
 > Har bir Codex/AI agent ish boshlashdan oldin shu faylni to'liq o'qishi, ish tugagach esa real o'zgarishlar, qarorlar, testlar va keyingi qadamlarni shu faylga kiritishi shart.
@@ -5624,3 +5626,25 @@ Canonical 15–25'dan tashqaridagi backlog:
 - Multi-symbol support
 - Queue jobs for long training
 - Export reports
+
+### 2026-08-19 — Dual-Track Constitutional Intelligence qo‘shildi
+
+Status: `[IMPLEMENTED SHADOW MODE]`
+
+- Paper signal oqimida Champion raw strategy lane va typed Council lane bir xil immutable snapshot ustida explicit projection sifatida yoziladi.
+- `dual_track_runs` immutable observation ledger, fail-closed adjudicator va capability-cell router qo‘shildi.
+- `DUAL_TRACK_MODE=shadow` default bo‘lib, mavjud incumbent paper ownership va council fallback o‘zgarmaydi.
+- Qarama-qarshi actionable signal yoki actionable-vs-WAIT disagreement dual-track projectionda `WAIT` bo‘ladi.
+- Operator monitoring: `php artisan trading:monitor-dual-track XAUUSD --timeframe=H1 --json`.
+- Laravel targeted dual-track/council tests va Python `unittest discover` (104 test) o‘tdi; Laravel full suite 240 soniyalik limitda timeout bo‘ldi.
+- Active cell routing faqat mustaqil forward/paper evidence, baseline parity, canary va anchor-ablation shartlari bajarilgandan keyin operator tomonidan yoqiladi.
+
+### 2026-08-19 — Dual-Track outcome/evolution control plane joriy qilindi
+
+Status: `[IMPLEMENTED EVIDENCE-GATED CONTROL PLANE]`
+
+- `dual_track_outcomes` orqali Champion/Council natijasi, counterfactual regret, avoided-loss/missed-opportunity va risk faktlari settlementdan keyin yoziladi.
+- Per-cell `dual_track_cell_policies` Wilson lower-bound, sample minimum, score margin va risk violation orqali faqat tavsiya/certification holatini hisoblaydi; `DUAL_TRACK_ACTIVATE_CERTIFIED_CELLS=false` default saqlanadi.
+- Mustaqil `DualTrackRiskShieldService` active yo'lda constitution, snapshot, drawdown, risk-of-ruin, disagreement, calibration va confidence gate'larini tekshiradi; yetarli dalil bo'lmasa `WAIT`/reduced-size qaytaradi.
+- Evaluator calibration, layered memory lessons va evolution-island events production parent/constitution/modelni avtomatik o'zgartirmaydi; barcha yozuvlarda `promotion_evidence=false` invarianti saqlanadi.
+- Monitor endi run, outcome, cell policy, evaluator calibration, memory va evolution event statistikalarini bitta operator reportida qaytaradi.

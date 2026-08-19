@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LabCouncilDisagreement extends Model
 {
@@ -20,4 +21,9 @@ class LabCouncilDisagreement extends Model
         'outcome_score' => 'float',
         'promotion_evidence' => 'boolean',
     ];
+
+    public function adjudications(): HasMany
+    {
+        return $this->hasMany(LabCouncilAdjudication::class, 'disagreement_id');
+    }
 }

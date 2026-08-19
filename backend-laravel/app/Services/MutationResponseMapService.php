@@ -76,7 +76,11 @@ class MutationResponseMapService
             ? app(FailureRepairAnchorService::class)->baselineResult($agent)
             : $this->parentBaseline($agent));
         $skillStatus = (string) data_get($result, 'verified_mutation_skill.status', '');
-        $repairStatus = (string) data_get($verification, 'status', data_get($result, 'repair_anchor_verification.status', ''));
+        $skillVerification = (array) data_get($result, 'verified_mutation_skill', []);
+        $mentorContract = app(CausalSkillCompilerService::class)->mentorContract([
+            'independent_windows' => data_get($skillVerification, 'independent_forward_windows.independent_windows', 0),
+            'positive_windows' => data_get($skillVerification, 'independent_forward_windows.positive_windows', 0),
+        ]);
         $sibling = (string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', ''));
         $control = in_array($sibling, ['frozen_control', 'architecture_escape'], true)
             || (bool) data_get($metadata, 'causal_experiment_lane.control_only', false)
@@ -84,7 +88,7 @@ class MutationResponseMapService
 
         $status = $control
             ? 'control'
-            : (($skillStatus === 'confirmed' || $repairStatus === 'confirmed')
+            : (($skillStatus === 'confirmed' && data_get($mentorContract, 'status') === 'confirmed_shadow_mentor')
                 ? 'independently_confirmed'
                 : 'full_replay_observed');
 
@@ -98,6 +102,7 @@ class MutationResponseMapService
                 'protocol' => self::PROTOCOL,
                 'promotion_evidence' => false,
                 'performance_id' => $performance?->id,
+                'mentor_contract' => $mentorContract,
                 ...((array) ($options['metadata'] ?? [])),
             ],
         ]);
@@ -222,6 +227,31 @@ class MutationResponseMapService
         $controlRelative = (array) data_get($observability, 'control_relative', []);
         $contextual = app(ContextualMutationBanditService::class)->context($agent, $result, $target, $key, $direction);
         $banditReward = app(ContextualMutationBanditService::class)->reward($observability, $controlRelative);
+        $failureSignature = app(FailureSignatureCompilerService::class)->compile(
+            $agent,
+            $target,
+            $result,
+            (string) data_get($result, 'screen_decision', data_get($result, 'gate_reason', 'OBSERVATION')),
+        );
+        $causalSkill = app(CausalSkillCompilerService::class)->compile(
+            $agent,
+            $failureSignature,
+            $result,
+            $targetDelta,
+        );
+        $fingerprintHash = (string) data_get($causalSkill, 'behavioral_fingerprint.hash', '');
+        $duplicate = null;
+        if ($stage !== 'control' && $fingerprintHash !== '' && (bool) data_get($causalSkill, 'behavioral_fingerprint.has_behavioral_observation', false)) {
+            $duplicate = LabMutationResponseMap::query()
+                ->where('symbol', strtoupper((string) $agent->symbol))
+                ->where('timeframe', strtoupper((string) $agent->timeframe))
+                ->where('strategy_family', (string) $agent->strategy_family)
+                ->where('stage', $stage)
+                ->latest('id')
+                ->limit(300)
+                ->get()
+                ->first(fn (LabMutationResponseMap $row): bool => data_get($row->metadata, 'behavioral_fingerprint.hash') === $fingerprintHash);
+        }
         $responseKey = hash('sha256', json_encode([
             'protocol' => self::PROTOCOL,
             'agent' => $agent->id,
@@ -233,6 +263,9 @@ class MutationResponseMapService
         $status = (string) ($options['status'] ?? 'observed');
         if ($stage !== 'control' && ! $singleGene) {
             $status = 'diagnostic_multi_gene';
+        }
+        if ($duplicate !== null) {
+            $status = 'behavioral_duplicate';
         }
         $row = LabMutationResponseMap::firstOrCreate(['response_key' => $responseKey], [
             'stage' => $stage,
@@ -273,6 +306,11 @@ class MutationResponseMapService
                 'holdout_confirmation' => data_get($observability, 'holdout_confirmation', ['confirmed' => false]),
                 'progress_ladder' => data_get($observability, 'progress_ladder', []),
                 'contextual_bandit' => [...$contextual, ...$banditReward],
+                'behavioral_fingerprint' => data_get($causalSkill, 'behavioral_fingerprint'),
+                'causal_skill_compiler' => $causalSkill,
+                'counterfactual_contract' => data_get($causalSkill, 'counterfactual_replay'),
+                'behavioral_duplicate' => $duplicate !== null,
+                'duplicate_response_map_id' => $duplicate?->id,
                 'promotion_evidence' => false,
                 ...((array) ($options['metadata'] ?? [])),
             ],

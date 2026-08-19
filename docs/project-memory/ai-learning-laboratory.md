@@ -237,6 +237,17 @@ performance, learning and discovery events, so a clean falsification can teach
 the next mutation without being mistaken for a promotion pass. Monitor this
 with `trading:monitor-parent-evolution XAUUSD --timeframe=H1 --json`.
 
+The parent-candidate preparation lane is deliberately narrower than council
+membership. `trading:prepare-parent-candidates` selects only council agents
+that already pass the strict performance pre-check and creates bounded,
+research-only ideas: one autonomous/mentored/ablated reproduction and one
+single-gene immutable successor probe. It does not mutate the source model,
+set `promotion_evidence`, or classify a mentor as a genetic parent. Ideas
+remain planned until same-snapshot replay, non-target regression checks,
+independent forward evidence and the complete parent passport are present.
+Only then may a new `ModelVersion` successor be considered by the normal parent
+frontier.
+
 Council composition also has a leave-one-out contract. Every declared
 specialist receives a same-snapshot ablation plan, and the combined proxy stays
 research-only until the full council and every required exclusion are observed.

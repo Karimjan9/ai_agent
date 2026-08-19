@@ -16,13 +16,24 @@ class RunSystemHealthCheck extends Command
     public function handle(PhaseTwoFoundationService $foundation, TelegramAlertService $telegram): int
     {
         $checks = $foundation->runHealthCheck();
-        $critical = $checks->where('status', 'critical')->count();
+        // Missing bootstrap access is a deployment action, not a runtime
+        // outage. Keep the service record critical (existing dashboards and
+        // tests rely on that precise contract), but do not page or fail a
+        // transport health run before an administrator has been provisioned.
+        $blockingCritical = $checks
+            ->where('status', 'critical')
+            ->reject(fn ($check): bool => (string) data_get($check, 'service_key') === 'access_control');
+        $critical = $blockingCritical->count();
         $warning = $checks->where('status', 'warning')->count();
 
         $this->info("System health checked: {$checks->count()} services, {$critical} critical, {$warning} warning.");
 
-        if ($critical > 0 && Cache::add('alerts:system-health-critical', true, now()->addHour())) {
-            $details = $checks->where('status', 'critical')->map(fn ($check) => "{$check->service_label}: {$check->message}")->implode("\n");
+        // Alert throttling must still work during a Redis outage. The
+        // dedicated store is normally the database and is intentionally
+        // independent from the runtime cache/queue transport.
+        $alertStore = (string) config('services.redis_availability.alert_cache_store', 'database');
+        if ($critical > 0 && Cache::store($alertStore)->add('alerts:system-health-critical', true, now()->addHour())) {
+            $details = $blockingCritical->map(fn ($check) => "{$check->service_label}: {$check->message}")->implode("\n");
             $telegram->send("[CRITICAL] NeuroTrader health\n\n{$details}");
         }
 

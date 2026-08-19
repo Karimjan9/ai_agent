@@ -23,4 +23,5 @@ class LabAgent extends Model
     public function progressCard(): HasOne { return $this->hasOne(AgentProgressCard::class); }
     public function learningLessons(): HasMany { return $this->hasMany(AgentLearningLesson::class); }
     public function professionalExams(): HasMany { return $this->hasMany(AgentProfessionalExam::class); }
+    public function parentCandidatePreparations(): HasMany { return $this->hasMany(ParentCandidatePreparation::class, 'lab_agent_id'); }
 }

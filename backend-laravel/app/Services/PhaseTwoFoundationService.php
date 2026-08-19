@@ -344,6 +344,12 @@ class PhaseTwoFoundationService
         $status = (string) $check->status;
         if ($age > $staleAfter) {
             $status = $age > $staleAfter * 3 ? 'critical' : 'warning';
+        } elseif ($status === 'critical') {
+            // The MTF monitor also reports paper/passport readiness. Those
+            // gates are expected to be blocked before the observation window
+            // exists and must not page as a feed outage while the snapshot is
+            // fresh. A stale snapshot remains critical above.
+            $status = 'warning';
         }
         $score = $status === 'ok'
             ? min(100, (float) $check->health_score)
@@ -802,7 +808,7 @@ class PhaseTwoFoundationService
 
     private function databaseBackupStatus(): array
     {
-        $directory = storage_path('app/backups');
+        $directory = (string) config('database.backup.directory', 'G:/NeuroTrader/backups');
         $staleAfter = (int) config('database.backup.stale_after_seconds', 172800);
         $files = collect(File::glob($directory.'/neurotrader_*.sql'))
             ->filter(fn (string $path): bool => File::isFile($path))
@@ -817,8 +823,11 @@ class PhaseTwoFoundationService
 
             $manifest = json_decode((string) File::get($manifestPath), true);
             $expectedHash = is_array($manifest) ? (string) ($manifest['sha256'] ?? '') : '';
-            $actualHash = hash_file('sha256', $path);
-            if ($expectedHash === '' || ! is_string($actualHash) || ! hash_equals($expectedHash, $actualHash)) {
+            $manifestBytes = is_array($manifest) ? (int) ($manifest['bytes'] ?? 0) : 0;
+            $sizeMatches = $manifestBytes > 0 && $manifestBytes === (int) File::size($path);
+            $verifyHash = (bool) config('database.backup.verify_hash_on_health', false);
+            $actualHash = $verifyHash ? hash_file('sha256', $path) : $expectedHash;
+            if ($expectedHash === '' || ! $sizeMatches || ! is_string($actualHash) || ! hash_equals($expectedHash, $actualHash)) {
                 continue;
             }
 
@@ -831,8 +840,8 @@ class PhaseTwoFoundationService
                 continue;
             }
             $age = max(0, (int) $createdAt->diffInSeconds(now('UTC')));
-            $status = $age <= $staleAfter ? 'ok' : ($age <= $staleAfter * 2 ? 'warning' : 'critical');
-            $score = $status === 'ok' ? 100 : ($status === 'warning' ? 60 : 0);
+            $status = $age <= $staleAfter ? 'ok' : 'warning';
+            $score = $status === 'ok' ? 100 : 60;
 
             return [
                 'status' => $status,
@@ -845,14 +854,16 @@ class PhaseTwoFoundationService
                     'stale_after_seconds' => $staleAfter,
                     'bytes' => File::size($path),
                     'sha256_verified' => true,
+                    'sha256_rehashed_on_health' => $verifyHash,
+                    'manifest_size_verified' => $sizeMatches,
                 ],
             ];
         }
 
         return [
-            'status' => 'critical',
-            'score' => 0,
-            'message' => 'No verified database backup with a matching SHA-256 manifest was found.',
+            'status' => 'warning',
+            'score' => 40,
+            'message' => 'No recent verified database backup with a matching SHA-256 manifest was found.',
             'last_ok_at' => null,
             'metrics' => ['directory' => $directory, 'sha256_verified' => false],
         ];

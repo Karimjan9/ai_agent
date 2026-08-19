@@ -50,11 +50,16 @@ class SkillMentorService
         $learningLane = data_get($metadata, 'learning_lane.protocol') === LearningLaneService::PROTOCOL;
         $control = (bool) data_get($metadata, 'causal_experiment_lane.control_only', false)
             || in_array((string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', '')), ['frozen_control', 'architecture_escape'], true);
-        $repairConfirmed = data_get($result, 'repair_anchor_verification.status') === 'confirmed';
         $changedGenes = array_keys((array) $agent->parameter_diff);
         $singleGeneCredit = count($changedGenes) === 1;
-        $skillConfirmed = $singleGeneCredit && data_get($result, 'verified_mutation_skill.status') === 'confirmed';
-        $skillConfirmed = $skillConfirmed || $repairConfirmed;
+        $verification = (array) data_get($result, 'verified_mutation_skill', []);
+        $mentorContract = app(CausalSkillCompilerService::class)->mentorContract([
+            'independent_windows' => data_get($verification, 'independent_forward_windows.independent_windows', data_get($verification, 'required_windows', 0)),
+            'positive_windows' => data_get($verification, 'independent_forward_windows.positive_windows', data_get($verification, 'minimum_positive_windows', 0)),
+        ]);
+        $skillConfirmed = $singleGeneCredit
+            && data_get($verification, 'status') === 'confirmed'
+            && data_get($mentorContract, 'status') === 'confirmed_shadow_mentor';
         $researchOnly = in_array((string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', '')), ['frozen_control', 'architecture_escape'], true);
         $decisionPassed = $forwardDecision && data_get($forwardDecision, 'decision') === 'passed';
         $fullParent = ! $control && $decisionPassed && $this->fullParentPassport($agent, $performance, $result);
@@ -77,6 +82,8 @@ class SkillMentorService
             'forward_gate_decision' => $forwardDecision?->decision,
             'parent_eligible' => $fullParent,
             'learning_lane' => $learningLane,
+            'mentor_contract' => $mentorContract,
+            'shadow_only' => ! $fullParent,
             'promotion_evidence' => false,
         ];
         data_set($metadata, 'skill_mentor', $mentor);

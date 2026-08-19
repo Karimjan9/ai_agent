@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Candle;
 use App\Models\MarketDataSyncState;
 use App\Models\Symbol;
+use App\Services\MarketData\MarketDataAuditService;
 use App\Services\MarketData\MarketDataContinuityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -117,6 +118,26 @@ class MarketDataContinuityTest extends TestCase
         $this->assertNull($state->last_error);
         $this->assertNull($state->pending_from_at);
         $this->assertTrue((bool) data_get($state->metrics, 'scheduled_closure'));
+    }
+
+    public function test_audit_uses_the_canonical_holiday_aware_quality_gate(): void
+    {
+        config(['services.historical_data.minimum_rows' => 500]);
+        $symbol = Symbol::create(['code' => 'EURUSD', 'display_name' => 'Euro', 'asset_class' => 'forex', 'is_active' => true]);
+        $first = CarbonImmutable::parse('2025-12-14 03:00:00', 'UTC');
+        foreach (range(0, 249) as $offset) {
+            $this->candle($symbol->id, $first->addHours($offset));
+        }
+        $second = CarbonImmutable::parse('2025-12-25 13:00:00', 'UTC');
+        foreach (range(0, 249) as $offset) {
+            $this->candle($symbol->id, $second->addHours($offset));
+        }
+
+        $report = app(MarketDataAuditService::class)->audit('dukascopy', 'EURUSD', 'H1');
+
+        $this->assertSame('passed', $report['audit_status'], json_encode($report));
+        $this->assertSame(0, $report['unexpected_gaps']);
+        $this->assertSame('ready', $report['historical_quality_status']);
     }
 
     private function candle(int $symbolId, CarbonImmutable $time, string $timeframe = 'H1'): void

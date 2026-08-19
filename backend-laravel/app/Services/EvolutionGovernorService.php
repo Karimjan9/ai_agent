@@ -287,11 +287,23 @@ class EvolutionGovernorService
             ],
         };
 
+        $hybridOutcome = match ($mode) {
+            'technical_error' => 'technical_error',
+            'strategy_failure' => 'strategy_failure',
+            'independent_pass' => 'independent_pass',
+            'repeated_failure' => 'repeated_failure',
+            'screen_pass' => 'uncertainty',
+            default => 'uncertainty',
+        };
+
         return [
             'protocol' => 'risk_bounded_exploration_governor_v1',
             'mode' => $mode,
             ...$policy,
             'context' => $context,
+            'hybrid_failure_action' => app(HybridEvolutionContractService::class)->failureAction($hybridOutcome, [
+                'governor_mode' => $mode,
+            ]),
             'promotion_evidence' => false,
         ];
     }
@@ -489,6 +501,19 @@ class EvolutionGovernorService
                     'evolution_mode' => $pattern['mode'],
                     'parent_lane' => $pattern['parent_lane'],
                 ]);
+                $hybridLane = match ((string) $pattern['mode']) {
+                    'frozen_control' => 'frozen_control',
+                    'bold_explorer', 'regime_volume_explorer' => 'bold_structural',
+                    'adversarial_red_team' => 'adversarial_escape',
+                    default => 'directed_repair',
+                };
+                $hybridHypothesisId = hash('sha256', json_encode([
+                    HybridEvolutionContractService::PROTOCOL,
+                    data_get($snapshot, 'laboratory_id', data_get($slot, 'laboratory_id', 'unknown')),
+                    $index + 1,
+                    $pattern['mode'],
+                    $pattern['target'] ?? ($slot['target'] ?? 'profit_factor'),
+                ], JSON_UNESCAPED_SLASHES));
                 $existingTarget = (string) ($slot['target'] ?? 'profit_factor');
                 $target = $pattern['target']
                     ?: (in_array($existingTarget, self::CAUSAL_TARGETS, true) ? $existingTarget : 'profit_factor');
@@ -508,6 +533,14 @@ class EvolutionGovernorService
                     'evolution_mode' => $pattern['mode'],
                     'outcome_mode' => $outcomeMode,
                     'outcome_policy' => $outcomePolicy,
+                    'hybrid_evolution_lane' => $hybridLane,
+                    'hybrid_evolution_contract' => app(HybridEvolutionContractService::class)->seatContract(
+                        $slot,
+                        $hybridLane,
+                        $hybridHypothesisId,
+                        [],
+                        $hybridLane === 'frozen_control',
+                    ),
                     'mutation_step_multiplier' => (float) $pattern['step_multiplier'],
                     'control_only' => (bool) $pattern['control_only'],
                     'exploration_domain' => $pattern['mode'] === 'regime_volume_explorer' ? 'regime_and_volume_shadow' : null,

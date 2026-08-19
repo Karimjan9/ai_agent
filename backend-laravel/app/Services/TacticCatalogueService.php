@@ -144,7 +144,12 @@ class TacticCatalogueService
             // topology as one causal gene.  Keep it explicit here so the
             // tactic contract records structural mutations as legal research
             // hypotheses rather than rejecting them as undeclared repairs.
-            'allowed_genes' => ['differential_target_min_signal_confidence', 'trend_up_strength_min', 'trend_down_strength_min', 'trend_up_roc_threshold', 'trend_down_roc_threshold', 'range_deviation', 'entry_topology_variant'],
+            'allowed_genes' => [
+                'differential_target_min_signal_confidence', 'trend_up_strength_min', 'trend_down_strength_min',
+                'trend_up_roc_threshold', 'trend_down_roc_threshold', 'trend_up_risk_multiplier',
+                'trend_down_risk_multiplier', 'differential_router_version', 'range_deviation',
+                'entry_topology_variant',
+            ],
         ],
     ];
 

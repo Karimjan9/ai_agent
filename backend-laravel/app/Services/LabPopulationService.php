@@ -397,7 +397,11 @@ class LabPopulationService
         // prevents the faster M15 feed from creating noisy six-hour
         // generations while preserving its independent entry research lane.
         $minimumFreshCandles = $timeframe === 'M15' ? 96 : 24;
-        if (! $force && $latest && $newCandles < $minimumFreshCandles && ! in_array($trigger, ['degradation', 'candidate_handoff', 'data_edge_audit', 'shadow_research'], true)) {
+        // Shadow research is still a generation and therefore cannot recycle
+        // a sealed snapshot. It may remain diagnostic-only, but it must wait
+        // for a genuinely new candle identity or an explicitly audited
+        // independent holdout just like the normal lane.
+        if ($latest && $newCandles < $minimumFreshCandles && ! in_array($trigger, ['degradation', 'candidate_handoff', 'data_edge_audit'], true)) {
             return null;
         }
 
@@ -621,6 +625,17 @@ class LabPopulationService
                 // the next admission must repair the plan, never reinterpret
                 // an incomplete cohort as evidence.
                 if (! (bool) data_get($normalControlPairing, 'contract.allowed', false)) {
+                    return null;
+                }
+            }
+            if ($normalStructuralResearch !== null) {
+                $mutationDiversity = $this->normalMutationDiversityContract($plan);
+                $adaptiveEvolutionPolicy['mutation_diversity_contract'] = $mutationDiversity;
+                // A normal cohort with a scalar-heavy or incomplete structural
+                // plan is not an evolution cohort. Abort before model/queue
+                // persistence so it cannot inflate generation counts while
+                // testing the same wait/threshold family again.
+                if (! (bool) data_get($mutationDiversity, 'allowed', false)) {
                     return null;
                 }
             }
@@ -1262,10 +1277,13 @@ class LabPopulationService
                 ->reject(fn (int $index): bool => in_array($index, $assigned, true))
                 ->values()
                 ->all();
-            // Keep at least one structural seat for a family, and use the
-            // remaining seats only when the family has enough independent
-            // slots to leave a real scalar/control comparison behind.
-            $seatCount = min(count($familyHypotheses), max(1, intdiv(count($available), 3)));
+            // Reserve a material structural share for every executable
+            // family. The old one-third rule left small families with one
+            // structural seat and allowed a generation to become mostly
+            // transition-wait/cooldown probes. At least 35% of a family lane
+            // is now structural, while the explicit hypothesis list still
+            // bounds the number of distinct executable genes.
+            $seatCount = min(count($familyHypotheses), max(1, (int) ceil(count($available) * .35)));
             foreach (array_slice($familyHypotheses, 0, $seatCount) as $offset => $hypothesis) {
                 $index = $available[$offset] ?? null;
                 if ($index === null) continue;
@@ -1295,6 +1313,23 @@ class LabPopulationService
                 ], JSON_UNESCAPED_SLASHES));
                 $niche['structural_mutation_required'] = true;
                 $niche['shadow_only'] = false;
+                $niche['hypothesis_contract'] = [
+                    'protocol' => 'pre_registered_prediction_v1',
+                    'falsifiable_statement' => match ($hypothesis['gene']) {
+                        'regime_classifier_variant' => 'The closed regime classifier must reroute transition/regime cells and improve survival versus the frozen control.',
+                        'state_machine_variant' => 'The state machine must change transition entry/exit decisions and reduce false transition losses without non-target regression.',
+                        'entry_topology_variant' => 'The entry topology must change accepted signal cells and improve the declared target in at least two independent windows.',
+                        default => 'The structural operation must change the declared decision surface and improve its target versus the frozen control.',
+                    },
+                    'expected_behavioral_delta' => [
+                        'decision_ledger_changed' => true,
+                        'trade_or_abstention_ledger_changed' => true,
+                        'non_target_regression' => false,
+                    ],
+                    'non_target_invariants' => ['no_calendar_feature', 'no_gate_bypass', 'no_unbounded_drawdown'],
+                    'expected_window' => 'chronological_validation_and_sealed_holdout',
+                    'promotion_evidence' => false,
+                ];
                 $niche['promotion_evidence'] = false;
                 $plan[$index]['niche'] = $niche;
                 $hypotheses[] = [
@@ -1303,6 +1338,7 @@ class LabPopulationService
                     'gene' => $hypothesis['gene'],
                     'value' => $hypothesis['value'],
                     'operation' => $hypothesis['operation'],
+                    'hypothesis_contract' => $niche['hypothesis_contract'],
                 ];
             }
         }
@@ -1319,8 +1355,56 @@ class LabPopulationService
                 'structural_candidates' => $hypotheses,
                 'families_covered' => collect($hypotheses)->pluck('family')->unique()->values()->all(),
                 'no_calendar_feature' => true,
+                'mutation_diversity_contract' => [
+                    'protocol' => 'mutation_diversity_contract_v1',
+                    'scalar_wait_or_threshold_share_maximum' => .75,
+                    'structural_candidate_share_minimum' => .25,
+                    'behavioral_effect_required' => true,
+                    'promotion_evidence' => false,
+                ],
                 'promotion_evidence' => false,
             ],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function normalMutationDiversityContract(array $plan): array
+    {
+        $candidates = collect($plan)->filter(fn (array $slot): bool => ! (bool) data_get($slot, 'niche.control_only', false));
+        $structural = $candidates->filter(fn (array $slot): bool => (bool) data_get($slot, 'niche.structural_research', false));
+        $genes = $structural->pluck('niche.declared_gene')->filter()->unique()->values()->all();
+        $routerPresent = $candidates->contains(fn (array $slot): bool => in_array(
+            (string) data_get($slot, 'family', ''), ['hybrid', 'differential_router'], true,
+        ));
+        $requiredGenes = $routerPresent
+            ? ['entry_topology_variant', 'state_machine_variant', 'regime_classifier_variant']
+            : ['state_machine_variant', 'regime_classifier_variant'];
+        $missingGenes = array_values(array_diff($requiredGenes, $genes));
+        $candidateCount = $candidates->count();
+        $structuralCount = $structural->count();
+        $minimumStructural = max(2, (int) ceil($candidateCount * .25));
+        $scalarShare = $candidateCount > 0
+            ? round(($candidateCount - $structuralCount) / $candidateCount, 4)
+            : 1.0;
+        $allowed = $candidateCount > 0
+            && $structuralCount >= $minimumStructural
+            && $missingGenes === []
+            && $scalarShare <= .75;
+
+        return [
+            'protocol' => 'mutation_diversity_contract_v1',
+            'allowed' => $allowed,
+            'candidate_count' => $candidateCount,
+            'structural_candidate_count' => $structuralCount,
+            'minimum_structural_candidate_count' => $minimumStructural,
+            'structural_genes' => $genes,
+            'required_genes' => $requiredGenes,
+            'missing_genes' => $missingGenes,
+            'scalar_wait_or_threshold_share' => $scalarShare,
+            'scalar_wait_or_threshold_share_maximum' => .75,
+            'behavioral_effect_required' => true,
+            'promotion_evidence' => false,
+            'reason' => $allowed ? 'DIVERSITY_CONTRACT_VALID' : 'DIVERSITY_CONTRACT_BLOCKED',
         ];
     }
 
@@ -3816,6 +3900,21 @@ class LabPopulationService
         $evolutionMode = (string) data_get($niche, 'evolution_mode', '');
         $riskControlOnly = (bool) data_get($niche, 'control_only', false);
         $structuralResearch = (bool) data_get($niche, 'structural_research', false);
+        $hybridLane = (string) data_get($niche, 'hybrid_evolution_lane', '');
+        $hybridMultiGene = $structuralResearch
+            && in_array($hybridLane, ['bold_structural', 'adversarial_escape'], true)
+            && count((array) data_get($niche, 'declared_genes', [])) >= 2;
+        $hybridContract = (array) data_get(
+            $niche,
+            'hybrid_evolution_contract',
+            app(HybridEvolutionContractService::class)->seatContract(
+                ['family' => $family, 'target' => $target, 'research_group' => $researchGroup, 'niche' => $niche],
+                $hybridLane !== '' ? $hybridLane : 'directed_repair',
+                (string) data_get($niche, 'structural_hypothesis_id', hash('sha256', json_encode([$generation->id, $slot, $family, $target], JSON_UNESCAPED_SLASHES))),
+                (array) data_get($niche, 'declared_values', []),
+                $riskControlOnly,
+            ),
+        );
         $riskStepMultiplier = max(.25, min(3.0, (float) data_get($niche, 'mutation_step_multiplier', 1.0)));
         $repairAnchor = null;
         if ($repairAnchorId > 0) {
@@ -4741,7 +4840,7 @@ class LabPopulationService
         // early: historical novelty could toggle the proposed value back to
         // the parent and create a zero-diff agent.  Repair lanes also require
         // exactly one changed gene; a multi-gene child is not attributable.
-        $strictSingleGene = ! $repairControlOnly && ($structuralResearch || $g98Target
+        $strictSingleGene = ! $repairControlOnly && ! $hybridMultiGene && ($structuralResearch || $g98Target
             || in_array($origin, ['gate_targeted', 'risk_exit', 'causal_isolation', 'g98_council', 'targeted_failure_profile', 'coverage_rescue'], true)
             || $family === 'differential_router');
         if (! $architectureExperiment && ! $repairControlOnly && ! $riskControlOnly) {
@@ -4858,7 +4957,13 @@ class LabPopulationService
                 $skillMentorApplied = true;
             }
         }
-        if ($targetedFailureLane && $declaredGene !== '' && ! $architectureExperiment && ! $repairControlOnly && ! $riskControlOnly) {
+        if ($targetedFailureLane
+            && $declaredGene !== ''
+            && ! $hybridMultiGene
+            && ! $structuralResearch
+            && ! $architectureExperiment
+            && ! $repairControlOnly
+            && ! $riskControlOnly) {
             $declaredDiff = $this->diff($base, $parameters);
             if (count($declaredDiff) !== 1 || (string) array_key_first($declaredDiff) !== $declaredGene || $repairDirection !== '') {
                 $parameters = $this->declaredSingleGeneMutation(
@@ -4880,6 +4985,7 @@ class LabPopulationService
         // auditable rather than metadata-only.
         if ($targetedFailureLane
             && $declaredGene !== ''
+            && ! $hybridMultiGene
             && array_key_exists('declared_value', (array) $niche)
             && array_key_exists($declaredGene, $this->schemas->schema($family))
             && ! $architectureExperiment
@@ -4903,7 +5009,13 @@ class LabPopulationService
         // immutable model row is persisted.
         $historicalNoveltyAudit = null;
         $historicalNoveltyExhausted = false;
-        if ($targetedFailureLane && $declaredGene !== '' && ! $architectureExperiment && ! $repairControlOnly && ! $riskControlOnly) {
+        if ($targetedFailureLane
+            && $declaredGene !== ''
+            && ! $hybridMultiGene
+            && ! $structuralResearch
+            && ! $architectureExperiment
+            && ! $repairControlOnly
+            && ! $riskControlOnly) {
             $beforeHistoricalParameters = $parameters;
             $parameters = $this->ensureHistoricalNovelParameters(
                 $lab->symbol,
@@ -4984,8 +5096,30 @@ class LabPopulationService
             $parameters = $this->schemas->normalizeForGeneration($family, $parameters);
             $parameters = $this->schemas->validate($family, $parameters);
         }
+        // Bold/adversarial structural seats are the only lane allowed to
+        // change more than one executable gene. The declared values are
+        // applied as one coherent mechanism and remain research-only until
+        // the complete independent evidence contract passes.
+        if ($hybridMultiGene) {
+            $multiValues = (array) data_get($niche, 'declared_values', []);
+            if (count($multiValues) < 2 || count($multiValues) > 3) {
+                $failureReason = 'HYBRID_MULTI_GENE_CONTRACT_FAILED';
+                return false;
+            }
+            $multiCandidate = $base;
+            foreach ($multiValues as $gene => $value) {
+                if (! array_key_exists((string) $gene, $this->schemas->schema($family))) {
+                    $failureReason = 'HYBRID_MULTI_GENE_NOT_IN_SCHEMA';
+                    return false;
+                }
+                $multiCandidate[(string) $gene] = $value;
+            }
+            $multiCandidate = $this->schemas->normalizeForGeneration($family, $multiCandidate);
+            $multiCandidate = $this->schemas->validate($family, $multiCandidate);
+            $parameters = $multiCandidate;
+        }
         $parameterDiff = $this->diff($base, $parameters);
-        if ($structuralResearch) {
+        if ($structuralResearch && ! $hybridMultiGene && ! $riskControlOnly) {
             $structuralGene = (string) data_get($niche, 'declared_gene', '');
             $structuralValueDeclared = array_key_exists('declared_value', (array) $niche);
             $structuralValue = data_get($niche, 'declared_value');
@@ -5000,9 +5134,20 @@ class LabPopulationService
                 return false;
             }
         }
+        if ($hybridMultiGene) {
+            $declaredGenes = array_values(array_map('strval', array_keys((array) data_get($niche, 'declared_values', []))));
+            $changedGenes = array_values(array_map('strval', array_keys($parameterDiff)));
+            sort($declaredGenes);
+            sort($changedGenes);
+            if (count($parameterDiff) < 2 || count($parameterDiff) > 3 || $changedGenes !== $declaredGenes) {
+                $failureReason = 'HYBRID_MULTI_GENE_DIFF_MISMATCH';
+                return false;
+            }
+        }
         if ((bool) data_get($niche, 'shadow_only', false)
             && ! $repairControlOnly
             && ! $riskControlOnly
+            && ! $hybridMultiGene
             && ! (bool) data_get($niche, 'control_only', false)) {
             $expectedShadowGene = $entryTopologyEscape
                 ? 'entry_topology_variant'
@@ -5177,6 +5322,14 @@ class LabPopulationService
                     'research_only_until_independent_replay' => (bool) data_get($niche, 'research_only_until_independent_replay', false),
                      'promotion_evidence' => false,
                  ],
+                 'hybrid_evolution' => [
+                     ...$hybridContract,
+                     'lane' => $hybridLane !== '' ? $hybridLane : data_get($hybridContract, 'lane', 'directed_repair'),
+                     'multi_gene' => $hybridMultiGene,
+                     'changed_genes' => data_get($hybridContract, 'changed_genes', []),
+                     'research_only_until_independent_confirmation' => true,
+                     'promotion_evidence' => false,
+                 ],
                  // Keep the shadow admission contract on the model itself,
                  // not only in generation_plan/portfolio_council_lane.  Gate
                  // and learning services must be able to enforce it from the
@@ -5193,6 +5346,11 @@ class LabPopulationService
                      'hypothesis_id' => data_get($niche, 'structural_hypothesis_id'),
                      'operation' => data_get($niche, 'structural_operation'),
                      'declared_gene' => $declaredGene !== '' ? $declaredGene : null,
+                     'declared_genes' => $hybridMultiGene
+                         ? array_values(array_map('strval', array_keys((array) data_get($niche, 'declared_values', []))))
+                         : array_values(array_filter([$declaredGene !== '' ? $declaredGene : null])),
+                     'hybrid_evolution_lane' => $hybridLane !== '' ? $hybridLane : null,
+                     'max_changed_genes' => $hybridMultiGene ? (int) data_get($hybridContract, 'max_changed_genes', 3) : 1,
                      'declared_value' => data_get($niche, 'declared_value'),
                      'executable_parameter_diff_required' => true,
                      'signal_or_regime_behavior_required' => true,
@@ -5465,6 +5623,32 @@ class LabPopulationService
                     'rule' => 'One changed parameter only; requires parent and same-generation alternative before causal credit.',
                     'control_only' => $roleControl,
                 ] : null,
+                'strategic_research_director' => [
+                    'protocol' => StrategicResearchDirectorService::PROTOCOL,
+                    'action_space' => app(StrategicResearchDirectorService::class)->actionSpace(),
+                    'belief_state_protocol' => StrategicResearchDirectorService::BELIEF_PROTOCOL,
+                    'causal_decision_graph_protocol' => StrategicResearchDirectorService::CAUSAL_GRAPH_PROTOCOL,
+                    'prediction_market_protocol' => 'prediction_market_for_research_v1',
+                    'experiment_chain_protocol' => StrategicResearchDirectorService::EXPERIMENT_CHAIN_PROTOCOL,
+                    'hypothesis_retirement_protocol' => StrategicResearchDirectorService::RETIREMENT_PROTOCOL,
+                    'router_safety_protocol' => StrategicResearchDirectorService::ROUTER_PROTOCOL,
+                    'selected_action' => data_get($niche, 'strategic_research_action'),
+                    'required_fields' => [
+                        'failure_cause', 'decision_layer', 'falsifiable_hypothesis',
+                        'expected_behavioral_delta', 'exact_control',
+                        'disconfirming_result', 'next_experiment',
+                    ],
+                    'allowed_actions' => [
+                        'TRADE', 'ABSTAIN', 'REQUEST_NEW_DATA', 'RUN_COUNTERFACTUAL',
+                        'REQUEST_CONTROL', 'SWITCH_SPECIALIST',
+                        'WAIT_FOR_REGIME_CONFIRMATION', 'RETIRE_HYPOTHESIS',
+                    ],
+                    'pf_is_not_sufficient' => true,
+                    'research_only' => true,
+                    'mutation_credit' => false,
+                    'parent_eligible' => false,
+                    'promotion_evidence' => false,
+                ],
                 'hypothesis_contract' => ($g98Target || $targetedFailureLane || $origin === 'coverage_rescue' || $family === 'differential_router') ? [
                     'protocol' => 'hypothesis_laboratory_v1',
                     'hypothesis' => 'Improve only the declared operating-envelope failure without changing any protected lane.',
@@ -5476,16 +5660,31 @@ class LabPopulationService
                     ] : null,
                     'changed_gene' => $structuralChangedGene
                         ?? ($shadowMutationGene !== '' ? $shadowMutationGene : ($declaredGene !== '' ? $declaredGene : $isolatedKey)),
+                    'changed_genes' => $hybridMultiGene
+                        ? array_values(array_map('strval', array_keys((array) data_get($niche, 'declared_values', []))))
+                        : array_values(array_filter([$structuralChangedGene
+                            ?? ($shadowMutationGene !== '' ? $shadowMutationGene : ($declaredGene !== '' ? $declaredGene : $isolatedKey))])),
                     'architecture_changed' => $architectureChanged,
                     'architecture_variant' => $architectureExperiment && ! $stateMachineEscape ? $architecture : null,
                     'entry_topology_variant' => $entryTopologyEscape ? $entryTopologyVariant : null,
+                    'falsifiable_statement' => data_get($niche, 'hypothesis_contract.falsifiable_statement'),
+                    'expected_behavioral_delta' => data_get($niche, 'hypothesis_contract.expected_behavioral_delta'),
+                    'non_target_invariants' => data_get($niche, 'hypothesis_contract.non_target_invariants', []),
+                    'expected_window' => data_get($niche, 'hypothesis_contract.expected_window'),
+                    'pre_registered_prediction_protocol' => 'pre_registered_prediction_v1',
                     'unchanged_lane_invariant' => $family === 'differential_router'
                         ? 'Non-target signal, confidence and trade-ledger identities must equal the frozen parent.'
                         : 'Only the declared single gene may differ from the frozen parent/default.',
-                    'independent_reconfirmations_required' => 2,
+                    'independent_reconfirmations_required' => 3,
                     'retire_family_after_failed_independent_replays' => 2,
                     'parent_rule' => 'Only independently confirmed beneficial credits may become reusable mutation priors.',
                     'tactic_alignment' => $tacticAlignment,
+                    'hybrid_evolution' => $hybridContract,
+                    'causal_mechanism' => data_get($hybridContract, 'causal_mechanism'),
+                    'falsification_condition' => data_get($hybridContract, 'falsification_condition', []),
+                    'rollback_condition' => data_get($hybridContract, 'rollback_condition'),
+                    'kill_condition' => data_get($hybridContract, 'kill_condition'),
+                    'research_only_until_independent_confirmation' => true,
                 ] : null,
                 'mutation_bundle' => $this->evolutionQuality->curriculum($parentMetrics)['bounded_bundle'] ?? null,
                 'mutation_scope' => $mutationScope,
@@ -5518,6 +5717,11 @@ class LabPopulationService
                     'architecture_variant' => $architectureExperiment && ! $stateMachineEscape ? $architecture : null,
                     'entry_topology_variant' => $entryTopologyEscape ? $entryTopologyVariant : null,
                     'single_gene_required' => $strictSingleGene,
+                    'hybrid_multi_gene' => $hybridMultiGene,
+                    'hybrid_lane' => $hybridLane !== '' ? $hybridLane : null,
+                    'hybrid_max_changed_genes' => $hybridMultiGene
+                        ? (int) data_get($hybridContract, 'max_changed_genes', 3)
+                        : 1,
                     'changed_parameter_keys' => array_keys($parameterDiff),
                     'parameter_diff_count' => count($parameterDiff),
                     'parent_model_version_id' => $parentA?->id,

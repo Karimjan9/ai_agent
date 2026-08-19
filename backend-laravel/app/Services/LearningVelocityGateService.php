@@ -8,6 +8,7 @@ use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabMutationResponseMap;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -22,6 +23,87 @@ use Illuminate\Support\Facades\Schema;
 class LearningVelocityGateService
 {
     public const PROTOCOL = 'learning_velocity_gate_v1';
+
+    /**
+     * Bounded monitor projection. It intentionally avoids modelVersion
+     * hydration, per-agent joins and PHP-side recovery analysis. The detailed
+     * inspect() method remains available for forensic audits via --full.
+     *
+     * @return array<string, mixed>
+     */
+    public function summary(string|AiLaboratory $labOrSymbol, ?string $timeframe = null): array
+    {
+        $lab = $labOrSymbol instanceof AiLaboratory
+            ? $labOrSymbol
+            : AiLaboratory::query()->where('symbol', strtoupper($labOrSymbol))
+                ->where('timeframe', strtoupper((string) $timeframe))->first();
+        $symbol = strtoupper((string) ($lab?->symbol ?: ($labOrSymbol instanceof AiLaboratory ? '' : $labOrSymbol)));
+        $tf = strtoupper((string) ($lab?->timeframe ?: $timeframe));
+        $key = "learning-velocity:summary:{$symbol}:{$tf}";
+
+        return Cache::remember($key, now()->addSeconds(15), function () use ($lab, $symbol, $tf): array {
+            $base = [
+                'protocol' => self::PROTOCOL,
+                'symbol' => $symbol,
+                'timeframe' => $tf,
+                'monitor_mode' => 'lightweight_summary',
+                'enabled' => (bool) config('services.lab_selection.learning_velocity_enabled', true),
+                'promotion_evidence' => false,
+            ];
+            if (! $lab || ! Schema::hasTable('lab_generations')) {
+                return [...$base, 'status' => 'no_history', 'allowed' => true, 'observations' => [], 'cached_for_seconds' => 15];
+            }
+
+            $lookback = max(1, (int) config('services.lab_selection.learning_velocity_lookback_generations', 3));
+            $generations = $lab->generations()->select(['id', 'generation', 'status'])
+                ->whereIn('status', ['screened', 'completed', 'technical_quarantine', 'abandoned', 'failed'])
+                ->latest('generation')->limit($lookback)->get();
+            $generationIds = $generations->pluck('id')->all();
+            $agents = $generationIds === [] ? collect() : LabAgent::query()
+                ->select(['id', 'lab_generation_id', 'lifecycle_status'])
+                ->whereIn('lab_generation_id', $generationIds)->get();
+            $agentIds = $agents->pluck('id')->all();
+            $screenPasses = collect();
+            if ($agentIds !== [] && Schema::hasTable('candidate_gate_decisions')) {
+                $screenPasses = CandidateGateDecision::query()->select(['lab_agent_id', 'decision'])
+                    ->whereIn('lab_agent_id', $agentIds)->where('stage', 'screening')
+                    ->where('decision', 'passed')->get()->groupBy('lab_agent_id');
+            }
+            $fullStatuses = ['challenger', 'forward_validated', 'paper', 'champion'];
+            $observations = $generations->map(function ($generation) use ($agents, $screenPasses, $fullStatuses): array {
+                $rows = $agents->where('lab_generation_id', $generation->id);
+                $passed = $rows->filter(fn ($agent): bool => $screenPasses->has($agent->id))->count();
+                $full = $rows->whereIn('lifecycle_status', $fullStatuses)->count();
+                $active = $rows->whereIn('lifecycle_status', ['queued', 'screening', 'training', 'full_queued', 'full_validation'])->count();
+                return [
+                    'generation' => (int) $generation->generation,
+                    'generation_id' => (int) $generation->id,
+                    'status' => (string) $generation->status,
+                    'agent_count' => $rows->count(),
+                    'screen_passes' => $passed,
+                    'full_replay_or_forward_progress' => $full,
+                    'active_learning_agents' => $active,
+                    'unresolved_screen_pass' => $passed > 0 && $full === 0,
+                ];
+            })->values()->all();
+            $unresolved = collect($observations)->where('unresolved_screen_pass', true)->count();
+            $active = collect($observations)->sum('active_learning_agents');
+            $technical = collect($observations)->where('status', 'technical_quarantine')->count();
+            $allowed = $active === 0 && $unresolved < max(1, (int) config('services.lab_selection.learning_velocity_max_unresolved_screen_generations', 1));
+
+            return [
+                ...$base,
+                'allowed' => $allowed,
+                'status' => $active > 0 ? 'learning_in_progress' : ($unresolved > 0 ? 'blocked_learning_backlog' : ($technical > 0 ? 'technical_history_quarantined' : 'healthy')),
+                'technical_quarantine_generations' => $technical,
+                'unresolved_screen_generations' => $unresolved,
+                'active_learning_agents' => $active,
+                'lookback_generations' => $lookback,
+                'observations' => $observations,
+                'cached_for_seconds' => 15,
+            ];
+        });
+    }
 
     /** @return array<string, mixed> */
     public function inspect(string|AiLaboratory $labOrSymbol, ?string $timeframe = null): array

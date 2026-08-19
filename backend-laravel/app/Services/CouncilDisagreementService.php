@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\LabCouncilDisagreement;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
 /** Converts council/router disagreement traces into research memory. */
@@ -91,13 +92,22 @@ class CouncilDisagreementService
     public function progress(string $symbol, string $timeframe): array
     {
         if (! $this->available()) return ['available' => false];
-        $query = LabCouncilDisagreement::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe));
-        return [
-            'available' => true,
-            'total' => (clone $query)->count(),
-            'unresolved' => (clone $query)->where('outcome_status', 'unresolved')->count(),
-            'resolved' => (clone $query)->where('outcome_status', '!=', 'unresolved')->count(),
-        ];
+        $symbol = strtoupper($symbol);
+        $timeframe = strtoupper($timeframe);
+        return Cache::remember("council-disagreement:progress:{$symbol}:{$timeframe}", now()->addSeconds(15), function () use ($symbol, $timeframe): array {
+            $row = LabCouncilDisagreement::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
+                ->selectRaw('COUNT(*) AS total')
+                ->selectRaw("SUM(CASE WHEN outcome_status = 'unresolved' THEN 1 ELSE 0 END) AS unresolved")
+                ->selectRaw("SUM(CASE WHEN outcome_status <> 'unresolved' THEN 1 ELSE 0 END) AS resolved")
+                ->first();
+            return [
+                'available' => true,
+                'total' => (int) ($row->total ?? 0),
+                'unresolved' => (int) ($row->unresolved ?? 0),
+                'resolved' => (int) ($row->resolved ?? 0),
+                'cached_for_seconds' => 15,
+            ];
+        });
     }
 
     private function summaryEvent(array $result): array

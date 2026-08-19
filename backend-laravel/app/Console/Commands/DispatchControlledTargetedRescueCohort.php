@@ -58,6 +58,13 @@ class DispatchControlledTargetedRescueCohort extends Command
 
         $profile = $profiles->forGeneration($source);
         $populationSize = max(1, (int) data_get($profile, 'population_size', 20));
+        $causalRepair = null;
+        if ((int) $source->generation === 62) {
+            $causalRepair = app(\App\Services\G62CausalContractService::class)->audit($source);
+            if (! (bool) data_get($causalRepair, 'corrected_contract.allowed', false)) {
+                return $this->failCommand('G62 causal contract repair is not valid; controlled rescue remains closed.');
+            }
+        }
         if (! $safety->controlledRescueAllowed('candidate_handoff', $populationSize, $profile)) {
             return $this->failCommand('Controlled rescue contract invalid; generation pause bypass qilinmadi.');
         }
@@ -145,6 +152,7 @@ class DispatchControlledTargetedRescueCohort extends Command
             'temporal_mutation_hypothesis' => $profile['temporal_mutation_hypothesis'] ?? null,
             'temporal_edge_audit' => $profile['temporal_edge_audit'] ?? null,
             'structural_research_contract' => $profile['structural_research_contract'] ?? null,
+            'g62_causal_contract_repair' => $causalRepair,
             'independent_evidence_admission' => $independentEvidence,
             'rescue_admission' => $rescueAdmission,
             'temporary' => true,

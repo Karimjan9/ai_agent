@@ -19,21 +19,17 @@ class QuarantineStaleTargetedGenerations extends Command
 
     public function handle(LabQueueJobInspector $queueInspector): int
     {
-        // This command predates the Redis queue migration and contains a
-        // destructive database-jobs delete path. Never let it infer an empty
-        // DB queue while Redis is the live transport. Recovery/quarantine
-        // commands that understand Redis own that path; this one fails closed
-        // until it is explicitly ported.
-        if ((string) config('queue.default') === 'redis') {
-            $snapshot = $queueInspector->queueSnapshot();
-            if (($snapshot['available'] ?? false) !== true) {
-                $this->error('Redis queue state is unavailable; stale generation quarantine was skipped.');
+        // The original implementation stopped entirely once Redis became the
+        // queue transport because it inspected only the database `jobs`
+        // table. That left terminal cohorts permanently projected as
+        // `screening`. The inspector understands both transports, so require
+        // an observable queue snapshot and use generation-scoped ownership
+        // checks below. An unavailable snapshot remains fail-closed.
+        $snapshot = $queueInspector->queueSnapshot();
+        if (($snapshot['available'] ?? true) !== true) {
+            $this->error('Queue state is unavailable; stale generation quarantine was skipped.');
 
-                return self::FAILURE;
-            }
-            $this->line('Redis queue is active; DB-only stale-generation quarantine was skipped safely.');
-
-            return self::SUCCESS;
+            return self::FAILURE;
         }
 
         $cutoff = now()->subMinutes(90);
@@ -52,7 +48,10 @@ class QuarantineStaleTargetedGenerations extends Command
             ->whereIn('status', ['draft', 'screening', 'screened'])
             ->get();
         $quarantined = 0;
-        $orphanAgentsQuarantined = $this->quarantineOrphanDraftAgents((bool) $this->option('dry-run'));
+        $orphanAgentsQuarantined = $this->quarantineOrphanDraftAgents(
+            (bool) $this->option('dry-run'),
+            $queueInspector,
+        );
         foreach ($rows as $generation) {
             // The stale-age rule applies only to empty draft rows. A completed
             // screened cohort may be old by design and must never be
@@ -117,6 +116,52 @@ class QuarantineStaleTargetedGenerations extends Command
                 ->whereIn('lab_agent_id', $generation->agents->pluck('id')->all())
                 ->whereNull('finished_at')
                 ->exists();
+            $agentIds = $generation->agents->pluck('id')->map(fn ($id): int => (int) $id)->all();
+            $generationQueue = $queueInspector->generationQueueBacklog($agentIds);
+            if (($generationQueue['available'] ?? true) === false) {
+                $this->line("Skipped G{$generation->generation}: generation queue ownership is unavailable.");
+
+                continue;
+            }
+
+            // An interrupted pre-Redis generation may have completed all
+            // individual agents, including bounded technical errors, without
+            // ever closing the generation projection. Close only this exact
+            // stale/terminal shape; it records no quality verdict and cannot
+            // promote any candidate.
+            $terminalStatuses = ['screened', 'challenger', 'rejected', 'quarantined', 'technical_quarantine', 'evaluation_error'];
+            $allAgentsTerminal = $generation->agents->isNotEmpty()
+                && $generation->agents->every(fn ($agent): bool => in_array((string) $agent->lifecycle_status, $terminalStatuses, true));
+            $hasTechnicalTerminal = $generation->agents
+                ->whereIn('lifecycle_status', ['evaluation_error', 'quarantined', 'technical_quarantine'])
+                ->isNotEmpty();
+            $isStaleTerminalScreening = $generation->status === 'screening'
+                && ($generation->updated_at?->lte($cutoff) ?? true)
+                && $allAgentsTerminal
+                && $hasTechnicalTerminal;
+            if ($isStaleTerminalScreening) {
+                if ($hasOpenRun || (int) ($generationQueue['total'] ?? 0) > 0) {
+                    continue;
+                }
+                if ($this->option('dry-run')) {
+                    $this->line("Would finalize stale terminal screening G{$generation->generation} ({$generation->id}).");
+                } else {
+                    $generation->update([
+                        'status' => 'technical_quarantine',
+                        'completed_at' => now(),
+                        'trigger_context' => [...($generation->trigger_context ?? []), 'quarantine' => [
+                            'status' => 'stale_terminal_screening_projection',
+                            'current_protocol' => LabPopulationService::GENERATION_PROTOCOL,
+                            'verified_no_active_agent_or_job' => true,
+                            'verified_no_open_run' => true,
+                            'promotion_evidence' => false,
+                        ]],
+                    ]);
+                }
+                $quarantined++;
+
+                continue;
+            }
             $isPartialTargetedAdmission = (bool) $this->option('repair-partial')
                 && in_array((string) $generation->status, ['draft', 'queued', 'training', 'screening'], true)
                 && $generation->trigger_type === 'candidate_handoff'
@@ -129,12 +174,14 @@ class QuarantineStaleTargetedGenerations extends Command
                 && $allAgentsControlOnly
                 && ! $hasOpenRun;
             if ($isPartialTargetedAdmission) {
-                $jobIds = $this->queuedJobIdsForAgents($generation->agents->pluck('id')->map(fn ($id): int => (int) $id)->all());
+                $queuedJobCount = (int) ($generationQueue['total'] ?? 0);
+                if ($queuedJobCount > 0) {
+                    continue;
+                }
                 if ($this->option('dry-run')) {
-                    $this->line("Would quarantine partial control cohort G{$generation->generation} ({$generation->id}) status={$generation->status}, agents={$observedAgents}/{$plannedSlots}, jobs=".count($jobIds));
+                    $this->line("Would quarantine partial control cohort G{$generation->generation} ({$generation->id}) status={$generation->status}, agents={$observedAgents}/{$plannedSlots}, jobs={$queuedJobCount}");
                 }
                 if (! $this->option('dry-run')) {
-                    if ($jobIds !== []) DB::table('jobs')->whereIn('id', $jobIds)->delete();
                     foreach ($generation->agents as $agent) {
                         $agent->update([
                             'lifecycle_status' => 'technical_quarantine',
@@ -150,8 +197,7 @@ class QuarantineStaleTargetedGenerations extends Command
                             'required_population' => count(LabPopulationService::POPULATION_GROUPS) * LabPopulationService::POPULATION_GROUP_SEATS,
                             'observed_population' => $observedAgents,
                             'constructor_planned_slots' => $plannedSlots,
-                            'cancelled_job_ids' => $jobIds,
-                            'cancelled_job_count' => count($jobIds),
+                            'cancelled_job_count' => 0,
                             'verified_no_open_run' => true,
                             'promotion_evidence' => false,
                         ]],
@@ -173,22 +219,7 @@ class QuarantineStaleTargetedGenerations extends Command
                 ->whereIn('lifecycle_status', ['queued', 'screening', 'training', 'full_queued'])
                 ->pluck('id')->values()->all();
             if ($activeAgentIds !== []) continue;
-            $queuedPayloads = DB::table('jobs')->where('payload', 'like', '%labAgentId%')->pluck('payload');
-            $hasQueuedAgentJob = collect($generation->agents->pluck('id')->all())->contains(
-                function (int $agentId) use ($queuedPayloads): bool {
-                    $serializedMarker = 's:10:"labAgentId";i:'.$agentId.';';
-                    $legacyMarker = 'labAgentId;'.$agentId;
-
-                    return $queuedPayloads->contains(function (mixed $payload) use ($serializedMarker, $legacyMarker): bool {
-                        $decoded = json_decode((string) $payload, true);
-                        $command = (string) data_get($decoded, 'data.command', '');
-
-                        return str_contains($command, $serializedMarker)
-                            || str_contains($command, $legacyMarker);
-                    });
-                },
-            );
-            if ($hasQueuedAgentJob) continue;
+            if ((int) ($generationQueue['total'] ?? 0) > 0) continue;
             $quarantined++;
             if (! $this->option('dry-run')) {
                 $generation->update([
@@ -225,23 +256,18 @@ class QuarantineStaleTargetedGenerations extends Command
         return self::SUCCESS;
     }
 
-    private function quarantineOrphanDraftAgents(bool $dryRun): int
+    private function quarantineOrphanDraftAgents(bool $dryRun, LabQueueJobInspector $queueInspector): int
     {
         $generations = LabGeneration::query()->with('agents')
             ->whereIn('status', ['abandoned', 'technical_quarantine'])
-            ->where(function ($query): void {
-                $query->where('trigger_type', 'candidate_handoff')
-                    ->orWhere('trigger_type', 'data_edge_audit')
-                    ->orWhereJsonContains('trigger_context->quarantine->status', 'incomplete_draft_during_pause')
-                    ->orWhereJsonContains('trigger_context->targeted_failure_profile->protocol', LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL);
-            })
             ->get();
         $count = 0;
         foreach ($generations as $generation) {
             $agentIds = $generation->agents->pluck('id')->map(fn ($id): int => (int) $id)->all();
             if ($agentIds === []) continue;
             if (DB::table('lab_evaluation_runs')->whereIn('lab_agent_id', $agentIds)->whereNull('finished_at')->exists()) continue;
-            if ($this->queuedJobIdsForAgents($agentIds) !== []) continue;
+            $queue = $queueInspector->generationQueueBacklog($agentIds);
+            if (($queue['available'] ?? true) === false || (int) ($queue['total'] ?? 0) > 0) continue;
 
             $quarantineStatus = (string) data_get($generation->trigger_context, 'quarantine.status', '');
             $invalidTargetedGeneration = in_array($quarantineStatus, [
@@ -275,24 +301,5 @@ class QuarantineStaleTargetedGenerations extends Command
         }
 
         return $count;
-    }
-
-    /** @param array<int, int> $agentIds @return array<int, int> */
-    private function queuedJobIdsForAgents(array $agentIds): array
-    {
-        if ($agentIds === []) return [];
-
-        return DB::table('jobs')->where('payload', 'like', '%labAgentId%')->get(['id', 'payload'])
-            ->filter(function ($job) use ($agentIds): bool {
-                $decoded = json_decode((string) $job->payload, true);
-                $command = (string) data_get($decoded, 'data.command', '');
-                foreach ($agentIds as $agentId) {
-                    if (str_contains($command, 's:10:"labAgentId";i:'.$agentId.';')
-                        || str_contains($command, 'labAgentId;'.$agentId)) return true;
-                }
-
-                return false;
-            })
-            ->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
     }
 }

@@ -115,4 +115,13 @@ if (stale.length > 0) {
 }
 
 const reloaded = run(['reload', 'ecosystem.config.cjs', '--update-env']);
-process.exit(reloaded.status ?? 1);
+if (reloaded.status !== 0) {
+    process.exit(reloaded.status ?? 1);
+}
+
+// Reloading fixes the live daemon, but it does not protect the next daemon
+// restart unless the reconciled topology is persisted. Save only after a
+// successful reload so a failed/partial sync can never overwrite the last
+// known-good PM2 resurrection set.
+const saved = run(['save']);
+process.exit(saved.status ?? 1);

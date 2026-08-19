@@ -142,6 +142,11 @@ class CandidateGateDecisionService
             // learning replay can never be a forward/paper candidate.
             $reasons[] = 'LEARNING_LANE_RESEARCH_ONLY';
         }
+        $hybridLane = (string) data_get($agent?->modelVersion?->metadata, 'hybrid_evolution.lane', '');
+        if (in_array($hybridLane, ['bold_structural', 'adversarial_escape'], true)
+            && ! $this->hybridIndependentConfirmationPassed($result)) {
+            $reasons[] = 'HYBRID_RESEARCH_ONLY_UNTIL_INDEPENDENT_CONFIRMATION';
+        }
         $reasons = [...$reasons, ...$this->freshReplayGateReasons($agent, $result, $performance->symbol, $performance->timeframe)];
         if ((bool) data_get($agent?->modelVersion?->metadata, 'repair_anchor.control_only', false)
             || in_array((string) data_get($agent?->modelVersion?->metadata, 'repair_anchor.sibling_kind', ''), ['frozen_control', 'architecture_escape'], true)
@@ -478,6 +483,14 @@ class CandidateGateDecisionService
     {
         $minimum = max(50, (int) config('services.promotion.paper_min_samples', 50));
         $reasons = [];
+        $agent = LabAgent::query()->where('model_version_id', $performance->model_version_id)
+            ->where('symbol', $performance->symbol)->where('timeframe', $performance->timeframe)
+            ->latest('id')->first();
+        $hybridLane = (string) data_get($agent?->modelVersion?->metadata, 'hybrid_evolution.lane', '');
+        if (in_array($hybridLane, ['bold_structural', 'adversarial_escape'], true)
+            && ! $this->hybridIndependentConfirmationPassed($metrics)) {
+            $reasons[] = 'HYBRID_RESEARCH_ONLY_UNTIL_INDEPENDENT_CONFIRMATION';
+        }
         if ((int) data_get($metrics, 'sample_count', 0) < $minimum) $reasons[] = 'WAITING_FOR_SAMPLE';
         if ((int) data_get($metrics, 'sample_count', 0) >= $minimum) {
             if ((float) data_get($metrics, 'profit_factor', 0) < 1.3) $reasons[] = 'FAILED_PROFIT_FACTOR';
@@ -489,6 +502,14 @@ class CandidateGateDecisionService
         if (! data_get($readiness, 'gates.feed_uptime', false)) $reasons[] = 'FAILED_FEED_UPTIME';
         $decision = in_array('WAITING_FOR_SAMPLE', $reasons, true) ? 'waiting' : ($reasons === [] ? 'passed' : 'failed');
         return $this->store($performance, null, 'paper_observation', $decision, $reasons, [...$metrics, 'global_paper_readiness' => $readiness]);
+    }
+
+    private function hybridIndependentConfirmationPassed(array $evidence): bool
+    {
+        return data_get($evidence, 'hybrid_evolution_confirmation.status') === 'confirmed'
+            || data_get($evidence, 'forward_confirmation.status') === 'confirmed'
+            || data_get($evidence, 'verified_mutation_skill.status') === 'confirmed'
+            || (int) data_get($evidence, 'independent_confirmation_count', 0) >= 2;
     }
 
     /** Operational trace only: this never participates in promotion decisions. */

@@ -52,6 +52,11 @@ $scheduleStaggeredFive = static function (string $command, array $arguments = []
 };
 
 $scheduleArtisan('trading:daily-report')->dailyAt('23:50');
+$scheduleArtisan('ops:backup-database', [
+    '--retain' => config('database.backup.retention', 3),
+])
+    ->dailyAt(config('database.backup.schedule_time', '02:30'))
+    ->withoutOverlapping();
 // --symbol berilmasa, command barcha active market_symbols instrumentlarini yangilaydi.
 $scheduleArtisan('market-data:update', ['--timeframe' => 'H1', '--limit' => 1000])
     ->hourly()
@@ -191,26 +196,8 @@ $scheduleArtisan('trading:pump-learning-lane', [
 ])
     ->everyMinute()
     ->withoutOverlapping();
-$scheduleStaggeredFive('trading:monitor-learning-lane', [
-    'XAUUSD',
-    '--timeframe' => 'H1',
-    '--json' => true,
-], 2);
-$scheduleStaggeredFive('trading:monitor-learning-velocity', [
-    'XAUUSD',
-    '--timeframe' => 'H1',
-    '--json' => true,
-], 3);
-$scheduleStaggeredFive('trading:monitor-parent-evolution', [
-    'XAUUSD',
-    '--timeframe' => 'H1',
-    '--json' => true,
-], 4);
-$scheduleStaggeredFive('trading:monitor-failure-dojo', [
-    'XAUUSD',
-    '--timeframe' => 'H1',
-    '--json' => true,
-], 0);
+// Operator-facing monitor commands are intentionally disabled. They produce
+// diagnostic artifacts and are not part of the unattended worker lane.
 $scheduleArtisan('trading:reconcile-lab-funnel')
     // Scheduled ticks are dry-run only. A state-changing reconciliation
     // requires an explicit operator-approved CLI invocation after the queue
@@ -228,6 +215,18 @@ $scheduleArtisan('trading:compile-failure-signatures', [
 ])
     ->everyFiveMinutes()
     ->withoutOverlapping();
+$scheduleArtisan('trading:compile-causal-skills', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+    '--limit' => 500,
+])
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+$scheduleStaggeredFive('trading:compile-strategic-research-plans', [
+    'XAUUSD',
+    '--timeframe' => 'H1',
+    '--limit' => 100,
+], 4);
 $scheduleArtisan('trading:prepare-gene-interactions', [
     'XAUUSD',
     '--timeframe' => 'H1',
@@ -348,8 +347,7 @@ $scheduleArtisan('trading:sync-economic-calendar', ['--provider' => 'currents_ap
     ->withoutOverlapping();
 $scheduleArtisan('trading:detect-drift')->hourlyAt(45)->withoutOverlapping();
 $scheduleArtisan('trading:release-holdouts')->hourlyAt(40)->withoutOverlapping();
-// Database backups are managed outside this application. Do not create large
-// local dumps on the trading host unless an operator explicitly runs the
-// manual ops:backup-database command.
+// Database backups are written to the configured G: volume by the scheduled
+// ops:backup-database task above. Never add a local C: dump fallback here.
 // Gate-decision backfill is intentionally manual: it records reasons from
 // existing immutable replay evidence and never changes promotion status.

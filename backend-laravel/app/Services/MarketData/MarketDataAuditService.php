@@ -11,6 +11,10 @@ use Illuminate\Support\Collection;
 
 class MarketDataAuditService
 {
+    public function __construct(private readonly HistoricalDataQualityService $quality)
+    {
+    }
+
     /** @return array<string, mixed> */
     public function audit(string $provider, string $symbol, string $timeframe): array
     {
@@ -21,24 +25,33 @@ class MarketDataAuditService
             $allObservations = MarketCandleObservation::query()->where(compact('symbol', 'timeframe'))->latest('time')->take(2000)->get()->sortBy('time')->values();
             $observations = $allObservations->where('provider', $provider)->values();
         }
-        $gaps = $this->unexpectedGaps($observations, $timeframe);
+        $observationGaps = $this->unexpectedGaps($observations, $timeframe);
         // Observations are an audit ledger, whereas candles are the canonical
         // market-data store. A partial earlier audit/import must not turn an
         // otherwise complete canonical candle series into a false P0 warning.
         // Reconcile just the audited tail, then evaluate it again.
-        if ($gaps > 0) {
+        if ($observationGaps > 0) {
             $this->backfillCanonicalObservations($provider, $symbol, $timeframe);
             $allObservations = MarketCandleObservation::query()->where(compact('symbol', 'timeframe'))->latest('time')->take(2000)->get()->sortBy('time')->values();
             $observations = $allObservations->where('provider', $provider)->values();
-            $gaps = $this->unexpectedGaps($observations, $timeframe);
+            $observationGaps = $this->unexpectedGaps($observations, $timeframe);
         }
         $providerCounts = $allObservations->groupBy('provider')->map->count();
         $discrepancy = $this->closeDiscrepancyBps($allObservations);
-        $status = $observations->isEmpty() || $gaps > 0 ? 'warning' : 'passed';
+        // The observation ledger is a convenience/audit projection and used
+        // to apply a short tail reconcile above. It has an intentionally
+        // simple calendar, whereas the canonical quality gate knows FX and
+        // metal holiday closures. Promotion/readiness must follow that
+        // canonical gate; otherwise a Christmas closure creates a false gap
+        // warning and can halt a valid M15 backfill.
+        $quality = $this->quality->inspect($symbol, $timeframe, true);
+        $gaps = (int) data_get($quality, 'gap_intervals', 0);
+        $status = $observations->isEmpty() || data_get($quality, 'status') !== 'ready' ? 'warning' : 'passed';
         $metrics = [
             'audit_status' => $status, 'canonical_provider' => $provider, 'canonical_observations' => $observations->count(),
             'observations' => $allObservations->count(), 'providers' => $providerCounts,
-            'unexpected_gaps' => $gaps, 'close_discrepancy_bps' => $discrepancy,
+            'unexpected_gaps' => $gaps, 'observation_tail_gaps' => $observationGaps,
+            'historical_quality_status' => data_get($quality, 'status'), 'close_discrepancy_bps' => $discrepancy,
             'timezone' => 'UTC', 'flat_candles_retained' => true,
             'secondary_provider_discrepancy_observed' => $discrepancy !== null,
         ];

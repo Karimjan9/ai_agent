@@ -3,9 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Services\MtfPilotMonitoringService;
-use Illuminate\Console\Command;
+use App\Console\Commands\Concerns\OperationalCommand;
 
-class MonitorMtfPilot extends Command
+class MonitorMtfPilot extends OperationalCommand
 {
     protected $signature = 'trading:monitor-mtf-pilot
         {--symbol=XAUUSD : MTF pilot symbol}
@@ -23,7 +23,7 @@ class MonitorMtfPilot extends Command
         );
 
         if ($this->option('json')) {
-            $this->line(json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $this->writeJson($report, pretty: true);
         } else {
             $this->info(sprintf(
                 'MTF monitor %s: %s (score %s, run #%s).',
@@ -39,8 +39,6 @@ class MonitorMtfPilot extends Command
             $this->comment('Monitor read-only: strategy, gate thresholds, paper promotion and official evidence were not changed.');
         }
 
-        return $this->option('strict') && $report['status'] === 'critical'
-            ? self::FAILURE
-            : self::SUCCESS;
+        return $this->statusExitCode((string) $report['status'], (bool) $this->option('strict'));
     }
 }

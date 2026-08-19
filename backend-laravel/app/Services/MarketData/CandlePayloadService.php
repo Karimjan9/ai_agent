@@ -10,6 +10,7 @@ class CandlePayloadService
     public function __construct(
         private MarketVolumeService $volumes,
         private MarketTrainingDataService $training,
+        private FrozenPaperWindowService $paperWindows,
     ) {}
 
     public function candlesForBacktest(string $symbol, string $timeframe, ?int $limit = null, bool $includeVolume = false): array
@@ -79,13 +80,21 @@ class CandlePayloadService
         ?\DateTimeInterface $to = null,
         ?int $limit = null,
     ): array {
+        // The six-month paper range is an immutable out-of-sample contract.
+        // Even an explicit caller-provided end cannot extend training into it.
+        $frozenTrainingEnd = $this->paperWindows->trainingEnd($dataset, $provider, $symbol, $timeframe);
+        $requestedEnd = $to ? \Carbon\CarbonImmutable::instance($to)->utc() : null;
+        $effectiveEnd = $frozenTrainingEnd && ($requestedEnd === null || $frozenTrainingEnd->lessThan($requestedEnd))
+            ? $frozenTrainingEnd
+            : $requestedEnd;
+
         return $this->training->candlesForAgent(
             $dataset,
             $provider,
             $symbol,
             $timeframe,
             $from ? \Carbon\CarbonImmutable::instance($from)->utc() : null,
-            $to ? \Carbon\CarbonImmutable::instance($to)->utc() : null,
+            $effectiveEnd,
             $limit,
         );
     }

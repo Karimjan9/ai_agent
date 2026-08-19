@@ -68,4 +68,9 @@ class ModelVersion extends Model
     {
         return $this->hasMany(LabEvolutionArchiveEntry::class, 'model_version_id');
     }
+
+    public function parentCandidatePreparations(): HasMany
+    {
+        return $this->hasMany(ParentCandidatePreparation::class, 'model_version_id');
+    }
 }

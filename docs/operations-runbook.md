@@ -68,11 +68,12 @@ Never run PHPUnit with the production configuration cache. The repository test c
 
 ## Backup and restore drill
 
-- `php artisan ops:backup-database --retain=14` creates an atomic SQL file and full SHA-256 manifest under `storage/app/backups`. Run it from the approved external backup scheduler (the application scheduler deliberately does not create large local dumps).
-- Copy backups to an encrypted off-host location; a local backup is not disaster recovery.
+- `php artisan ops:backup-database` creates an atomic SQL file and full SHA-256 manifest only under `DATABASE_BACKUP_PATH` (default `G:/NeuroTrader/backups`). It refuses C: and fails loudly if G: is unavailable or unwritable.
+- The application scheduler runs this command daily at `DATABASE_BACKUP_SCHEDULE_TIME` (default `02:30`). `DATABASE_BACKUP_RETENTION=3` keeps the newest three SQL/manifest pairs and prunes older pairs after a successful backup.
+- Copy backups to an encrypted off-host location; a local G: backup is not disaster recovery.
 - Test quarterly in an isolated database: `php artisan ops:restore-database path/to/file.sql --confirm=RESTORE`.
 - Restore refuses missing/mismatched manifests. Never point a restore drill at the production database.
-- `php artisan system:health-check --strict` verifies the newest matching manifest/hash and backup age; keep `DATABASE_BACKUP_STALE_AFTER_SECONDS` aligned with the external backup schedule.
+- `php artisan system:health-check --strict` verifies the newest G: manifest/size and backup age; set `DATABASE_BACKUP_VERIFY_HASH_ON_HEALTH=true` only for an explicit deep integrity audit because production dumps are multi-gigabyte.
 
 ## Execution stages
 

@@ -19,7 +19,7 @@ class MonitorFailureDojo extends Command
         $result = [
             'protocol' => FailureDojoService::PROTOCOL,
             'scope' => [$symbol, $timeframe],
-            'progress' => $dojo->progress($symbol, $timeframe),
+            'progress' => $dojo->summary($symbol, $timeframe),
             'learning_lane' => $learning->status($symbol, $timeframe),
             'promotion_evidence' => false,
         ];

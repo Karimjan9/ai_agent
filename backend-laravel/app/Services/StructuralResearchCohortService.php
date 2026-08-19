@@ -106,6 +106,7 @@ class StructuralResearchCohortService
                 'one_candle_is_insufficient' => true,
                 'promotion_evidence' => false,
             ],
+            'hybrid_evolution' => app(HybridEvolutionContractService::class)->allocation(self::POPULATION_SIZE, 2),
             'promotion_evidence' => false,
             'source_generation_id' => data_get($profile, 'source_generation_id'),
         ];
@@ -181,6 +182,9 @@ class StructuralResearchCohortService
                     'structural_cohort_protocol' => self::PROTOCOL,
                     'structural_cohort_id' => $cohortId,
                     'structural_hypothesis_protocol' => self::HYPOTHESIS_PROTOCOL,
+                    // Frozen controls belong to the cohort but intentionally
+                    // have no executable mutation to validate.
+                    'structural_research' => ! (bool) ($niche['control_only'] ?? false),
                     'frozen_control_pair_required' => true,
                     'causal_micro_probe_required' => true,
                     'independent_evidence_required' => true,
@@ -245,14 +249,15 @@ class StructuralResearchCohortService
 
         // Three exit-lifecycle variants plus one immutable hybrid control.
         foreach ([
-            ['gene' => 'atr_stop_multiplier', 'target' => 'drawdown_risk'],
-            ['gene' => 'partial_take_profit_fraction', 'target' => 'drawdown_risk'],
-            ['gene' => 'time_stop_candles', 'target' => 'drawdown_risk'],
+            ['gene' => 'atr_stop_multiplier', 'value' => 1.25, 'target' => 'drawdown_risk'],
+            ['gene' => 'partial_take_profit_fraction', 'value' => .25, 'target' => 'drawdown_risk'],
+            ['gene' => 'time_stop_candles', 'value' => 12, 'target' => 'drawdown_risk'],
         ] as $probe) {
             $add('exit_topology', $hybrid, $probe['target'], 'cost_stability_specialist', [
                 'structural_family' => 'risk_exit_lifecycle',
                 'structural_operation' => 'cost_aware_exit_lifecycle',
                 'declared_gene' => $probe['gene'],
+                'declared_value' => $probe['value'],
             ]);
         }
         $add('exit_topology', $hybrid, 'architecture', 'control_specialist', [
@@ -286,7 +291,12 @@ class StructuralResearchCohortService
             'shadow_only' => false,
         ]);
 
-        return $plan;
+        // The structural cohort is also the first controlled implementation
+        // of the hybrid evolution budget. Controls stay inside the 20-seat
+        // cohort, while the 18 experimental seats receive deterministic
+        // directed, bold, or adversarial research postures.
+        return app(HybridEvolutionContractService::class)
+            ->decoratePlan($plan, $cohortId)['plan'];
     }
 
     /** @return array{allowed: bool, reason: string, seats: int, families: array<string, int>} */
@@ -299,8 +309,17 @@ class StructuralResearchCohortService
             if ($family !== '') $families[$family] = ($families[$family] ?? 0) + 1;
             if ((bool) data_get($seat, 'niche.control_only', false)) $controls++;
         }
+        $hybridAllocation = app(HybridEvolutionContractService::class)->allocation(count($plan), $controls);
+        $hybridCounts = collect($plan)
+            ->filter(fn (array $seat): bool => ! (bool) data_get($seat, 'niche.control_only', false))
+            ->countBy(fn (array $seat): string => (string) data_get($seat, 'niche.hybrid_evolution_lane', ''))
+            ->all();
+        $hybridAllocationValid = ! (bool) config('services.lab_selection.hybrid_evolution_enabled', true)
+            || collect((array) data_get($hybridAllocation, 'counts', []))
+                ->every(fn (int $count, string $lane): bool => (int) ($hybridCounts[$lane] ?? 0) === $count);
         $allowed = count($plan) === self::POPULATION_SIZE
             && $controls === 2
+            && $hybridAllocationValid
             && count(array_filter($families, fn (int $count, string $family): bool => $family !== 'frozen_control' && $count > 0, ARRAY_FILTER_USE_BOTH)) >= 5;
 
         return [
@@ -310,6 +329,12 @@ class StructuralResearchCohortService
             'reason' => $allowed ? 'STRUCTURAL_COHORT_CONTRACT_VALID' : 'STRUCTURAL_COHORT_CONTRACT_INVALID',
             'seats' => count($plan),
             'controls' => $controls,
+            'hybrid_evolution' => [
+                'allocation' => $hybridAllocation,
+                'observed_counts' => $hybridCounts,
+                'allowed' => $hybridAllocationValid,
+                'promotion_evidence' => false,
+            ],
             'families' => $families,
             'causal_micro_probe_required_before_full_replay' => true,
             'independent_chronological_evidence_required' => true,

@@ -244,20 +244,32 @@ class RepairLabIntegrity extends Command
                     // it writes its own audit. Mark the immutable partial
                     // cohort as constructor-aborted so no lane can treat it
                     // as a smaller valid population.
+                    // Controlled rescues deliberately use the normal
+                    // `candidate_handoff` trigger so their dispatch and
+                    // evidence lifecycle stays in the canonical lane.  The
+                    // trigger type alone therefore cannot tell a timed-out
+                    // rescue constructor from a normal generation.  Prefer
+                    // its immutable admission record when choosing the
+                    // abort key; otherwise the next rescue attempt treats a
+                    // partial cohort as already admitted forever.
+                    $isControlledRescue = data_get(
+                        $context,
+                        'controlled_rescue_admission.protocol',
+                    ) === LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL;
                     $abortKey = (string) $fresh->trigger_type === 'shadow_research'
                         ? 'shadow_research_constructor_abort'
-                        : ((string) $fresh->trigger_type === 'controlled_rescue'
+                        : ($isControlledRescue
                             ? 'controlled_rescue_constructor_abort'
                             : 'constructor_contract_abort');
                     $context[$abortKey] = [
                         'protocol' => (string) $fresh->trigger_type === 'shadow_research'
                             ? 'shadow_research_constructor_v1'
-                            : ((string) $fresh->trigger_type === 'controlled_rescue'
+                            : ($isControlledRescue
                                 ? LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL
                                 : 'agent_constructor_invariant_v1'),
                         'reason_code' => (string) $fresh->trigger_type === 'shadow_research'
                             ? 'INCOMPLETE_SHADOW_RESEARCH_POPULATION'
-                            : ((string) $fresh->trigger_type === 'controlled_rescue'
+                            : ($isControlledRescue
                                 ? 'INCOMPLETE_CONTROLLED_RESCUE_POPULATION'
                                 : 'INCOMPLETE_GENERATION_POPULATION'),
                         'planned_slots' => $plannedPopulation,

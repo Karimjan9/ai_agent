@@ -12,6 +12,7 @@ class ResearchAllocationPolicyService
 {
     public const PROTOCOL = 'research_allocation_budget_v1';
     public const SHADOW_ALLOCATION_PROTOCOL = 'smart_courage_allocation_v1';
+    public const CONTROL_PAIR_PROTOCOL = 'frozen_control_pair_v1';
 
     /** Authoritative normal shadow allocation. */
     public const SHADOW_SMART_SHARES = [
@@ -133,6 +134,13 @@ class ResearchAllocationPolicyService
                 'behavioral_delta_required' => true,
                 'trade_ledger_delta_required' => true,
                 'control_pair_required' => true,
+                'structural_escape_mode' => [
+                    'protocol' => 'structural_escape_mode_v1',
+                    'repeated_scalar_failure_threshold' => 2,
+                    'freeze_scalar_wait_threshold_search' => true,
+                    'required_axes' => ['signal_construction', 'entry_exit_state', 'regime_classification'],
+                    'promotion_evidence' => false,
+                ],
                 'promotion_evidence' => false,
             ],
             'promotion_evidence' => false,
@@ -172,6 +180,21 @@ class ResearchAllocationPolicyService
                 ? '0% until new chronological market evidence or sealed independent holdout is admitted.'
                 : 'At most 30% of a normal population may be spent on targeted rescue; each rescue still needs circuit admission.',
             'lane_rule' => '30% targeted rescue, 30% new architecture/signal, 20% regime/abstention, 20% frozen control/replication; blocked rescue share is redistributed without changing gates.',
+            'mutation_diversity_contract' => [
+                'protocol' => 'mutation_diversity_contract_v1',
+                'minimum_structural_candidate_share' => .25,
+                'maximum_scalar_wait_or_threshold_share' => .75,
+                'required_behavioral_axes' => ['signal_construction', 'entry_exit_state', 'regime_classification'],
+                'same_generation_control_required' => true,
+                'structural_escape_mode' => [
+                    'protocol' => 'structural_escape_mode_v1',
+                    'repeated_scalar_failure_threshold' => 2,
+                    'freeze_scalar_wait_threshold_search' => true,
+                    'required_axes' => ['signal_construction', 'entry_exit_state', 'regime_classification'],
+                    'promotion_evidence' => false,
+                ],
+                'promotion_evidence' => false,
+            ],
             'promotion_evidence' => false,
         ];
     }
@@ -471,6 +494,10 @@ class ResearchAllocationPolicyService
 
         return [
             ...$contract,
+            'hybrid_evolution' => app(HybridEvolutionContractService::class)->allocation(
+                count($plan),
+                collect($plan)->filter(fn (array $slot): bool => (bool) data_get($slot, 'niche.control_only', false))->count(),
+            ),
             'observed_lane_counts' => $counts,
             'target_lane_counts' => $targetCounts,
             'targeted_rescue_observed' => (int) ($counts['targeted_rescue'] ?? 0),

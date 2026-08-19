@@ -62,6 +62,26 @@ class MutationSkillVerificationTest extends TestCase
         $this->assertSame(2, $evidence['independent_windows']);
     }
 
+    public function test_skill_evidence_requires_three_independent_windows_but_only_two_positive_windows(): void
+    {
+        $evidence = app(MutationSkillVerificationService::class)->independentForwardWindows([
+            'walk_forward' => [
+                'windows' => [
+                    ['window' => 1, 'start' => '2026-01-01T00:00:00Z', 'end' => '2026-01-10T00:00:00Z', 'profit_factor' => 1.10, 'trades' => 20],
+                    ['window' => 2, 'start' => '2026-01-11T00:00:00Z', 'end' => '2026-01-20T00:00:00Z', 'profit_factor' => .90, 'trades' => 20],
+                    ['window' => 3, 'start' => '2026-01-21T00:00:00Z', 'end' => '2026-01-30T00:00:00Z', 'profit_factor' => 1.05, 'trades' => 20],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue($evidence['independence_verified']);
+        $this->assertSame(3, $evidence['required_windows']);
+        $this->assertSame(3, $evidence['independent_windows']);
+        $this->assertSame(2, $evidence['positive_windows']);
+        $this->assertSame(2, $evidence['confirmed_windows']);
+        $this->assertSame(2, $evidence['minimum_positive_windows']);
+    }
+
     public function test_constructor_skips_a_zero_diff_repair_when_all_genes_are_blocked(): void
     {
         $service = app(LabPopulationService::class);

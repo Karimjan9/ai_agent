@@ -78,6 +78,15 @@ return [
             'lock_connection' => env('REDIS_CACHE_LOCK_CONNECTION', 'default'),
         ],
 
+        // Opt-in operational profile. Redis remains first for normal
+        // performance, while a short outage falls back to durable database
+        // storage and finally local files. Use CACHE_STORE=redis_failover
+        // only after the recovery runbook has confirmed the database schema.
+        'redis_failover' => [
+            'driver' => 'failover',
+            'stores' => ['redis', 'database', 'file'],
+        ],
+
         'dynamodb' => [
             'driver' => 'dynamodb',
             'key' => env('AWS_ACCESS_KEY_ID'),

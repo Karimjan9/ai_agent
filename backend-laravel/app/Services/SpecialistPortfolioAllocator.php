@@ -18,6 +18,13 @@ class SpecialistPortfolioAllocator
      */
     public function ownsRegime(ModelMarketPerformance $candidate, Collection $universe, string $regime, string $volatility): bool
     {
+        // A specialist disagreement is an explicit epistemic boundary. The
+        // router may observe the disagreement for learning, but it must not
+        // resolve it by choosing the highest PF candidate.
+        if (data_get($candidate->metrics, 'router_contract.status') === 'wait_on_disagreement'
+            || data_get($candidate->metrics, 'router_evidence.disagreement_wait_invariant') === false) {
+            return false;
+        }
         // A certified multi-member portfolio gets first refusal. It is
         // routed by persisted niche ownership and combined replay evidence;
         // a strong standalone candidate can never silently become a portfolio

@@ -38,6 +38,13 @@ class GeneInteractionLabService
             foreach (array_chunk($genes, 2) as $pairGenes) {
                 if (count($pairGenes) !== 2) continue;
                 $first = $group->firstWhere('parameter_key', $pairGenes[0]);
+                $mentorEvidence = $group->whereIn('parameter_key', $pairGenes)->map(fn (LabMutationResponseMap $map): array => [
+                    'status' => 'confirmed_shadow_mentor',
+                    'response_map_id' => (int) $map->id,
+                    'independent_windows' => (int) data_get($map->forward_confirmation, 'independent_forward_windows.independent_windows', 0),
+                    'positive_windows' => (int) data_get($map->forward_confirmation, 'independent_forward_windows.positive_windows', 0),
+                ])->values()->all();
+                $interactionContract = app(CausalSkillCompilerService::class)->interactionContract($pairGenes, $mentorEvidence);
                 $key = hash('sha256', json_encode([
                     self::PROTOCOL, strtoupper($symbol), strtoupper($timeframe), $first?->strategy_family,
                     data_get($first?->metadata, 'specialist_role'), $first?->target, $pairGenes,
@@ -51,7 +58,13 @@ class GeneInteractionLabService
                         'target' => $first?->target, 'genes' => $pairGenes,
                         'mentor_ids' => $group->whereIn('parameter_key', $pairGenes)->pluck('id')->values()->all(),
                         'status' => 'awaiting_interaction_replay',
-                        'evidence' => ['protocol' => self::PROTOCOL, 'promotion_evidence' => false],
+                        'evidence' => [
+                            'protocol' => self::PROTOCOL,
+                            'interaction_contract' => $interactionContract,
+                            'exact_control_required' => true,
+                            'three_windows_required' => true,
+                            'promotion_evidence' => false,
+                        ],
                         'promotion_evidence' => false,
                     ],
                 );

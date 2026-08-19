@@ -391,6 +391,7 @@ class AgentKnowledgeService
             $screening,
             count($stateEvidence['strong_state_clusters']),
             $independentWindows,
+            (string) $windowEvidence['status'],
             $performance,
             $model,
             $retention['status'],
@@ -846,8 +847,12 @@ class AgentKnowledgeService
             'protocol' => 'independent_state_window_exam_v1',
             'observed_windows' => $windows->count(),
             'confirmed_windows' => min(3, $confirmed),
-            'required_windows' => 2,
-            'status' => $confirmed >= 2 ? 'confirmed' : ($windows->isEmpty() ? 'unassessed' : 'insufficient'),
+            'positive_windows' => $confirmed,
+            'required_windows' => CausalSkillCompilerService::REQUIRED_WINDOWS,
+            'minimum_positive_windows' => CausalSkillCompilerService::MINIMUM_POSITIVE_WINDOWS,
+            'status' => $windows->count() >= CausalSkillCompilerService::REQUIRED_WINDOWS
+                && $confirmed >= CausalSkillCompilerService::MINIMUM_POSITIVE_WINDOWS
+                ? 'confirmed' : ($windows->isEmpty() ? 'unassessed' : 'insufficient'),
             'control_status' => $controlStatus,
             'lower_confidence_status' => $lowerStatus,
             'lower_confidence_bound' => is_numeric($lowerBound) ? (float) $lowerBound : null,
@@ -888,6 +893,7 @@ class AgentKnowledgeService
         bool $screening,
         int $strongClusterCount,
         int $independentWindows,
+        string $windowStatus,
         ?ModelMarketPerformance $performance,
         ?ModelVersion $model,
         string $retentionStatus,
@@ -901,7 +907,8 @@ class AgentKnowledgeService
         $adversarial = data_get($performance?->metrics, 'secret_adversarial_arena.status') === 'passed';
         $temporal = data_get($performance?->metrics, 'temporal_firewall.status') === 'passed';
         $learningEvidence = $strongClusterCount >= 2
-            && $independentWindows >= 2
+            && $windowStatus === 'confirmed'
+            && $independentWindows >= CausalSkillCompilerService::MINIMUM_POSITIVE_WINDOWS
             && $controlStatus === 'assessed'
             && $lowerConfidenceStatus === 'positive';
         if ($passport && $retentionStatus === 'retained' && $adversarial && $temporal && $learningEvidence) return 'certified';

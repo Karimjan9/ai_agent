@@ -719,6 +719,33 @@ class DispatchLabGeneration extends Command
         }
 
         $diff = (array) $agent->parameter_diff;
+        $hybridMultiGene = (bool) data_get($metadata, 'hybrid_evolution.multi_gene', false);
+        if ($hybridMultiGene) {
+            $declaredGenes = array_values(array_filter(array_map('strval', (array) data_get(
+                $metadata,
+                'structural_research_contract.declared_genes',
+                data_get($metadata, 'hypothesis_contract.changed_genes', []),
+            ))));
+            $changedGenes = array_values(array_map('strval', array_keys($diff)));
+            sort($declaredGenes);
+            sort($changedGenes);
+            if (count($diff) < 2 || count($diff) > 3 || $declaredGenes === [] || $changedGenes !== $declaredGenes) {
+                $violations[] = 'HYBRID_MULTI_GENE_DECLARATION_MISMATCH';
+
+                return array_values(array_unique($violations));
+            }
+            foreach ($diff as $gene => $change) {
+                if (! array_key_exists((string) $gene, $parameters)
+                    || ! is_array($change)
+                    || ! array_key_exists('new', $change)
+                    || $parameters[$gene] != $change['new']) {
+                    $violations[] = 'HYBRID_MULTI_GENE_VALUE_MISMATCH';
+                    break;
+                }
+            }
+
+            return array_values(array_unique($violations));
+        }
         if (count($diff) !== 1) {
             // A role may exhaust every legal owner mutation after the
             // direction firewall has learned several harmful directions. The

@@ -62,7 +62,12 @@ class RuntimeMonitoringService
         $cacheStore = (string) config('cache.default', 'file');
         $queueBackend = (string) config('queue.default', 'sync');
         $sessionDriver = (string) config('session.driver', 'file');
-        $required = $cacheStore === 'redis' || $queueBackend === 'redis' || $sessionDriver === 'redis';
+        // A failover profile still probes Redis first; marking it optional
+        // would hide a degraded primary until the database fallback also
+        // failed.
+        $required = in_array($cacheStore, ['redis', 'redis_failover'], true)
+            || in_array($queueBackend, ['redis', 'redis_failover'], true)
+            || $sessionDriver === 'redis';
 
         if (! $required) {
             return [
@@ -376,8 +381,27 @@ class RuntimeMonitoringService
             $errorStatuses = collect($statusRows)
                 ->filter(fn (int $total, string $status): bool => $total > 0 && preg_match('/error|failed|quarantine/i', $status) === 1)
                 ->all();
+            $linkedModelIds = LabAgent::query()
+                ->whereNotNull('model_version_id')
+                ->distinct()
+                ->pluck('model_version_id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->values();
+            $allModelStatuses = Schema::hasTable('model_versions')
+                ? ModelVersion::query()
+                    ->selectRaw('status, COUNT(*) as total')
+                    ->groupBy('status')
+                    ->pluck('total', 'status')
+                    ->map(fn (mixed $total): int => (int) $total)
+                    ->all()
+                : [];
+            // Keep the agent projection cardinality aligned with the model
+            // projection used for evolution dashboards. Directly-created
+            // infrastructure/test models remain visible separately and must
+            // not create a false 1262-vs-1266 lifecycle discrepancy.
             $modelStatuses = Schema::hasTable('model_versions')
                 ? ModelVersion::query()
+                    ->whereIn('id', $linkedModelIds->all())
                     ->selectRaw('status, COUNT(*) as total')
                     ->groupBy('status')
                     ->pluck('total', 'status')
@@ -392,7 +416,7 @@ class RuntimeMonitoringService
                     ->map(fn (mixed $total): int => (int) $total)
                     ->all()
                 : [];
-            $championModels = (int) ($modelStatuses['champion'] ?? 0);
+            $championModels = (int) ($allModelStatuses['champion'] ?? 0);
             $championPerformances = (int) ($performanceStatuses['champion'] ?? 0);
             $championReady = $championModels > 0 || $championPerformances > 0;
             $activeStatuses = ['queued', 'screening', 'full_queued', 'training'];
@@ -420,6 +444,8 @@ class RuntimeMonitoringService
                     'statuses' => $statusRows,
                     'error_statuses' => $errorStatuses,
                     'model_statuses' => $modelStatuses,
+                    'all_model_statuses' => $allModelStatuses,
+                    'unlinked_model_count' => max(0, array_sum($allModelStatuses) - array_sum($modelStatuses)),
                     'performance_statuses' => $performanceStatuses,
                     'champion_models' => $championModels,
                     'champion_performances' => $championPerformances,

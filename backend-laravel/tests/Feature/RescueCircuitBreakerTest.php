@@ -77,6 +77,38 @@ class RescueCircuitBreakerTest extends TestCase
         $this->assertSame(24, data_get($newWindow, 'history.fresh_candles'));
     }
 
+    public function test_valid_sealed_temporal_holdout_manifest_admits_structural_evidence_without_fresh_tail(): void
+    {
+        $lab = $this->lab();
+        $source = new LabGeneration([
+            'data_fingerprint' => 'rolling-source',
+            'trigger_context' => ['data_count' => 6173],
+        ]);
+        $profile = [
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'protocol' => LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL,
+            'cohort_mode' => \App\Services\StructuralResearchCohortService::COHORT_MODE,
+        ];
+
+        $decision = app(RescueCircuitBreakerService::class)->independentEvidenceAdmission(
+            $lab,
+            $source,
+            $profile,
+            [
+                'data_fingerprint' => 'rolling-source-new',
+                'data_count' => 6180,
+                'latest_candle' => '2026-08-18 00:00:00',
+            ],
+        );
+
+        $this->assertTrue($decision['allowed']);
+        $this->assertSame('SEALED_INDEPENDENT_HOLDOUT_READY', data_get($decision, 'sealed_holdout_evidence.reason'));
+        $this->assertTrue(data_get($decision, 'sealed_holdout_evidence.file_hash_matches_manifest'));
+        $this->assertSame(7, $decision['fresh_candles']);
+        $this->assertFalse($decision['promotion_evidence']);
+    }
+
     public function test_temporal_ablation_requires_paired_four_variants_and_three_windows(): void
     {
         $service = app(TemporalAblationProtocolService::class);

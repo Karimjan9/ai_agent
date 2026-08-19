@@ -80,6 +80,8 @@ class ImmutableLabEvidenceTest extends TestCase
         $this->assertTrue($healthy['integrity']);
         $this->assertSame('verified', $healthy['status']);
         $this->assertSame('canonical_v2', $healthy['hash_version']);
+        $this->assertSame('blocked', data_get($healthy, 'strategic_evidence.status'));
+        $this->assertFalse((bool) data_get($healthy, 'strategic_evidence.promotion_evidence'));
         $this->assertTrue($falsified['integrity']);
         $this->assertSame('falsified', $falsified['status']);
         $this->assertTrue($falsified['falsified_by_evidence']);

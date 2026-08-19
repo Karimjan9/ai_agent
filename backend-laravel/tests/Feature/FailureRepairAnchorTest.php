@@ -763,7 +763,13 @@ class FailureRepairAnchorTest extends TestCase
             $performance,
             [
                 'evidence_run_id' => 'mentor-full-replay-1',
-                'verified_mutation_skill' => ['status' => 'confirmed'],
+                'verified_mutation_skill' => [
+                    'status' => 'confirmed',
+                    'independent_forward_windows' => [
+                        'independent_windows' => 3,
+                        'positive_windows' => 2,
+                    ],
+                ],
                 'profit_factor' => 1.2,
             ],
         );
@@ -775,7 +781,13 @@ class FailureRepairAnchorTest extends TestCase
             $agent->fresh(['modelVersion']),
             [
                 'evidence_run_id' => 'mentor-full-replay-1',
-                'verified_mutation_skill' => ['status' => 'confirmed'],
+                'verified_mutation_skill' => [
+                    'status' => 'confirmed',
+                    'independent_forward_windows' => [
+                        'independent_windows' => 3,
+                        'positive_windows' => 2,
+                    ],
+                ],
                 'profit_factor' => 1.2,
             ],
             $performance,

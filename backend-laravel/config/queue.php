@@ -81,6 +81,14 @@ return [
             'after_commit' => false,
         ],
 
+        // Opt-in continuity profile. It is deliberately not the default:
+        // workers must be restarted on this connection during a controlled
+        // failover so a Redis-reserved long replay is never duplicated.
+        'redis_failover' => [
+            'driver' => 'failover',
+            'connections' => ['redis', 'database'],
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

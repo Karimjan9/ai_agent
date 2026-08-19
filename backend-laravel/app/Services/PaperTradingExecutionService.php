@@ -9,6 +9,7 @@ use App\Models\PaperOrder;
 use App\Models\PaperSignal;
 use App\Models\PaperSignalOutcome;
 use App\Models\Symbol;
+use App\Models\EliteAgentPortfolio;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\MarketData\MarketReadinessService;
 use Illuminate\Support\Collection;
@@ -32,6 +33,9 @@ class PaperTradingExecutionService
         private RuntimeEnsemblePolicyService $runtimeEnsembles,
         private MultiTimeframePilotService $mtfPilot,
         private PaperMtfLedgerService $mtfLedger,
+        private ChampionCouncilCanaryRouterService $canaryRouter,
+        private DualTrackOrchestratorService $dualTrack,
+        private DualTrackOutcomeService $dualTrackOutcomes,
     ) {}
 
     public function run(): array
@@ -89,7 +93,9 @@ class PaperTradingExecutionService
         if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
             if (! filled($candidate->symbol) || ! filled($candidate->timeframe)) return false;
             $ready = $this->portfolios->ready($candidate->symbol, $candidate->timeframe);
-            return $ready !== null && (int) $ready->id === (int) data_get($candidate->metrics, 'elite_portfolio_id', 0);
+            if ($ready !== null && (int) $ready->id === (int) data_get($candidate->metrics, 'elite_portfolio_id', 0)) return true;
+            $transition = $this->portfolioTransition($candidate);
+            return in_array((string) data_get($transition, 'decision'), ['HYBRID_CANARY', 'COUNCIL_CANARY'], true);
         }
 
         $metadata = (array) ($candidate->modelVersion?->metadata ?? []);
@@ -114,6 +120,16 @@ class PaperTradingExecutionService
         if (count($rows) < 200) {
             $this->gateDecisions->recordPaperCapture($candidate, 'NO_SIGNAL_OPPORTUNITY', ['available_candles' => count($rows)]);
             return 0;
+        }
+        $transition = $this->portfolioTransition($candidate);
+        if ($transition !== []) {
+            $last = $rows[count($rows) - 1] ?? [];
+            $eventKey = implode('|', [$candidate->symbol, $candidate->timeframe, $candidate->id, data_get($last, 'time', data_get($last, 'timestamp', 'latest'))]);
+            $canary = $this->canaryRouter->decide($transition, $eventKey);
+            if ($canary['route'] !== 'council') {
+                $this->gateDecisions->recordPaperCapture($candidate, 'COUNCIL_CANARY_INCUMBENT_FALLBACK', ['canary' => $canary]);
+                return 0;
+            }
         }
 
         $model = $candidate->modelVersion;
@@ -151,6 +167,46 @@ class PaperTradingExecutionService
             $signal['signal'] = 'WAIT';
             $signal['allocator_reason'] = 'Another independent specialist owns the current regime risk budget.';
         }
+
+        // The raw strategy branch is the Champion lane and the typed/meta
+        // governor branch is the Council lane. Both are persisted against the
+        // same immutable signal snapshot. Shadow mode deliberately keeps the
+        // existing incumbent decision as the only paper execution owner.
+        $signal['dual_track'] = $this->dualTrack->observeSignal(
+            [
+                'symbol' => $candidate->symbol,
+                'timeframe' => $candidate->timeframe,
+                'task_type' => 'paper_signal',
+                'market_regime' => $signal['market_regime'] ?? 'unknown',
+                'volatility_regime' => $signal['volatility_regime'] ?? 'normal_volatility',
+                'event_key' => implode('|', [$candidate->id, $signal['signal_time'] ?? 'latest']),
+                'transition' => $transition,
+            ],
+            [
+                'decision' => $signal['agent_signal'] ?? $signal['signal'] ?? 'WAIT',
+                'confidence' => $signal['confidence'] ?? 0,
+                'source' => 'raw_strategy_signal',
+            ],
+            [
+                'decision' => data_get($signal, 'meta_agent.decision', $signal['signal'] ?? 'WAIT'),
+                'confidence' => $signal['confidence'] ?? 0,
+                'committee' => data_get($signal, 'meta_agent.council', []),
+                'source' => 'typed_agent_council',
+            ],
+            [
+                'constitution_integrity' => true,
+                'snapshot_integrity' => true,
+                'incumbent_decision' => $signal['signal'] ?? 'WAIT',
+                'catastrophic_regression' => false,
+                'promotion_evidence' => false,
+            ],
+            [
+                'candidate_id' => $candidate->id,
+                'model_version_id' => $candidate->model_version_id,
+                'paper_mode' => config('services.paper.mode', 'shadow'),
+            ],
+        );
+
         $captureReason = match (true) {
             ! $calibrated['allowed'] => 'BLOCKED_BY_CALIBRATION',
             isset($signal['meta_reason']) => 'BLOCKED_BY_META_AGENT',
@@ -376,6 +432,16 @@ class PaperTradingExecutionService
         return false;
     }
 
+    /** @return array<string, mixed> */
+    private function portfolioTransition(ModelMarketPerformance $candidate): array
+    {
+        $transition = (array) data_get($candidate->metrics, 'transition', []);
+        if ($transition !== []) return $transition;
+        $portfolioId = (int) data_get($candidate->metrics, 'elite_portfolio_id', 0);
+        if ($portfolioId < 1) return [];
+        return (array) data_get(EliteAgentPortfolio::query()->find($portfolioId)?->evidence, 'transition', []);
+    }
+
     private function reconcile(ModelMarketPerformance $candidate): int
     {
         $closed = 0;
@@ -408,6 +474,9 @@ class PaperTradingExecutionService
                 $outcome->update(['payload' => [...((array) $outcome->payload), 'self_audit' => $audit]]);
                 if ($outcome->wasRecentlyCreated && $order->paperSignal) {
                     $this->calibration->learn($candidate, $order->paperSignal);
+                }
+                if ($order->paperSignal) {
+                    $this->dualTrackOutcomes->settlePaperOutcome($candidate, $order, $outcome);
                 }
             }
             $this->recordClosedOrderMemory($candidate, $order->fresh());

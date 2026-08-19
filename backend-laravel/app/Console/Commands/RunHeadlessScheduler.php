@@ -59,6 +59,13 @@ class RunHeadlessScheduler extends Command
                 'started_at' => now()->toIso8601String(),
                 'lease_seconds' => $leaseSeconds,
             ], now()->addSeconds($leaseSeconds));
+            // Publish liveness as soon as the singleton lease is acquired.
+            // Previously this key was written only after a successful
+            // schedule:run call, so a healthy owner looked dead whenever a
+            // single scheduled callback returned non-zero. Callback success
+            // remains separately observable in the scheduler logs; this key
+            // is strictly process/lease liveness and never evidence.
+            Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinutes(10));
 
             while (true) {
                 $now = microtime(true);
@@ -85,6 +92,7 @@ class RunHeadlessScheduler extends Command
                         return self::FAILURE;
                     }
                     $lastLeaseRefresh = $now;
+                    Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinutes(10));
                     Cache::put('system:scheduler-lease', [
                         'protocol' => 'headless_scheduler_singleton_v1',
                         'pid' => getmypid(),

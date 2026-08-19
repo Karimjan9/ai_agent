@@ -87,6 +87,12 @@ class EliteAgentPassportService
             // corruption; both remain hard promotion gates.
             'constitution_falsification' => ! $requiresConstitution
                 || data_get($constitution, 'falsified_by_evidence') !== true,
+            // Cryptographic constitution integrity is not strategic evidence.
+            // New sealed agents must also carry an exact control, a real
+            // ledger delta and the independent three-window contract before
+            // a passport can be considered complete.
+            'strategy_evidence_contract' => ! array_key_exists('evidence_contract', $metadata['agent_constitution'] ?? [])
+                || $this->strategyEvidenceContractPassed($constitution),
             'signal_viability' => (int) data_get($result, 'entry_funnel.raw_strategy_signals', 0) > 0
                 && (int) data_get($result, 'entry_funnel.accepted_entries', 0) > 0,
             'veto_regret' => array_key_exists('shadow_trade_count', (array) data_get($result, 'veto_regret', [])),
@@ -241,6 +247,11 @@ class EliteAgentPassportService
             'final_exam_result_hash' => $resultHash,
             'generated_at' => now()->utc()->toIso8601String(),
         ];
+    }
+
+    private function strategyEvidenceContractPassed(array $constitution): bool
+    {
+        return data_get($constitution, 'strategic_evidence.status') === 'passed';
     }
 
     /** Freeze a near-forward parent; descendants must be separate model versions. */

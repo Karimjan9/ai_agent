@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\CandidateGateDecision;
 use App\Models\ModelMarketPerformance;
 use App\Models\SealedHoldoutRelease;
+use App\Services\MarketData\FrozenPaperWindowService;
+use App\Services\MarketData\MarketTrainingDataService;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -15,6 +17,7 @@ class SealedHoldoutService
         private MarketChampionService $champions,
         private StrategyParameterSchemaService $schemas,
         private RuntimeEnsemblePolicyService $runtimeEnsembles,
+        private FrozenPaperWindowService $paperWindows,
     ) {}
 
     public function release(ModelMarketPerformance $performance): SealedHoldoutRelease
@@ -68,15 +71,18 @@ class SealedHoldoutService
             return $existing->fresh();
         }
 
-        $datasetPath = $this->datasets->export($performance->symbol, $performance->timeframe);
-        $foundation = $this->datasets->ensureFoundationDataset($performance->symbol, $performance->timeframe);
-        $manifest = is_file($datasetPath.'.manifest.json')
-            ? (array) json_decode((string) file_get_contents($datasetPath.'.manifest.json'), true)
-            : [];
-        $hash = (string) data_get($manifest, 'sha256', '');
-        if ($hash === '' && is_file($datasetPath)) {
-            $hash = (string) hash_file('sha256', $datasetPath);
+        $paperWindow = $this->paperWindows->active(
+            MarketTrainingDataService::DEFAULT_DATASET,
+            MarketTrainingDataService::DEFAULT_PROVIDER,
+            $performance->symbol,
+            $performance->timeframe,
+        );
+        if (! $paperWindow) {
+            throw new RuntimeException('Frozen six-month paper window is required before sealed holdout.');
         }
+        $datasetPath = $this->paperWindows->snapshot($paperWindow);
+        $foundation = $this->datasets->ensureFoundationDataset($performance->symbol, $performance->timeframe);
+        $hash = $paperWindow->snapshot_sha256;
         if ($hash === '') {
             throw new RuntimeException('Holdout dataset manifest hash is missing.');
         }

@@ -66,7 +66,9 @@ class MutationSkillVerificationService
             'single_gene' => $singleGene,
             'target_gate_improved' => $targetImproved,
             'non_target_gates_preserved' => $nonTargetPassed,
-            'two_independent_forward_windows' => (int) data_get($windows, 'confirmed_windows', 0) >= 2,
+            'three_independent_forward_windows' => (int) data_get($windows, 'independent_windows', 0) >= 3
+                && data_get($windows, 'independence_verified') === true,
+            'minimum_positive_forward_windows' => (int) data_get($windows, 'positive_windows', 0) >= 2,
             'purged_embargoed_validation' => (bool) data_get($purgedValidation, 'promotion_evidence', false),
         ];
         $confirmed = ! in_array(false, $requirements, true);
@@ -103,7 +105,7 @@ class MutationSkillVerificationService
             'independent_forward_windows' => $windows,
             'purged_embargoed_validation' => $purgedValidation,
             'promotion_evidence' => false,
-            'rule' => 'A reusable skill requires an exact semantic parent, identical data/execution contracts, one changed gene, target-lane improvement, no non-target regression, two non-overlapping forward windows, and purged/embargoed validation evidence.',
+            'rule' => 'A reusable skill requires an exact semantic parent, identical data/execution contracts, one changed gene, target-lane improvement, no non-target regression, three independent non-overlapping chronological windows with at least two positive windows, and purged/embargoed validation evidence.',
         ];
     }
 
@@ -216,8 +218,9 @@ class MutationSkillVerificationService
             'observed_windows' => count($normalized),
             'independent_windows' => count($independent),
             'positive_windows' => count($positive),
-            'confirmed_windows' => $independenceVerified ? min(2, count($positive)) : 0,
-            'required_windows' => 2,
+            'confirmed_windows' => $independenceVerified ? min(3, count($positive)) : 0,
+            'required_windows' => 3,
+            'minimum_positive_windows' => 2,
             'independence_verified' => $independenceVerified,
             'overlap_detected' => $overlapDetected,
             'stateful_diagnostic_only' => $continuousDiagnostic,

@@ -22,7 +22,16 @@ return [
     'backup' => [
         'mysqldump_binary' => env('MYSQLDUMP_BINARY', 'mysqldump'),
         'mysql_binary' => env('MYSQL_BINARY', 'mysql'),
+        // Backups intentionally live outside the C: workspace. There is no
+        // local fallback: a missing G: volume must fail loudly.
+        'directory' => env('DATABASE_BACKUP_PATH', 'G:/NeuroTrader/backups'),
+        'retention' => max(1, (int) env('DATABASE_BACKUP_RETENTION', 3)),
+        'schedule_time' => env('DATABASE_BACKUP_SCHEDULE_TIME', '02:30'),
         'stale_after_seconds' => (int) env('DATABASE_BACKUP_STALE_AFTER_SECONDS', 172800),
+        // BackupDatabase computes SHA-256 before writing the manifest. A
+        // health probe must not rehash multi-gigabyte files every minute;
+        // enable this only for an explicit deep integrity audit.
+        'verify_hash_on_health' => env('DATABASE_BACKUP_VERIFY_HASH_ON_HEALTH', false),
     ],
 
     /*

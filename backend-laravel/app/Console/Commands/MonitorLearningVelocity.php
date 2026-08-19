@@ -3,12 +3,12 @@
 namespace App\Console\Commands;
 
 use App\Services\LearningVelocityGateService;
-use Illuminate\Console\Command;
+use App\Console\Commands\Concerns\OperationalCommand;
 
 /** Read-only monitor for research backpressure and evidence throughput. */
-class MonitorLearningVelocity extends Command
+class MonitorLearningVelocity extends OperationalCommand
 {
-    protected $signature = 'trading:monitor-learning-velocity {symbol?} {--timeframe=H1} {--json}';
+    protected $signature = 'trading:monitor-learning-velocity {symbol?} {--timeframe=H1} {--full : Run the detailed per-agent audit} {--json}';
 
     protected $description = 'Monitor screen-to-replay learning velocity and generation admission';
 
@@ -16,21 +16,16 @@ class MonitorLearningVelocity extends Command
     {
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
         $timeframe = strtoupper((string) $this->option('timeframe'));
-        $payload = $velocity->inspect($symbol, $timeframe);
+        $payload = $this->option('full')
+            ? $velocity->inspect($symbol, $timeframe)
+            : $velocity->summary($symbol, $timeframe);
         if ($this->option('json')) {
-            $this->line(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            $this->writeJson($payload);
 
             return self::SUCCESS;
         }
 
-        $this->table(['Metric', 'Value'], collect($payload)
-            ->except(['observations'])
-            ->map(fn ($value, $key): array => [
-                $key,
-                is_scalar($value) || $value === null
-                    ? $value
-                    : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            ])->values()->all());
+        $this->writeMetrics($payload, ['observations']);
         $this->line('Generations: '.json_encode($payload['observations'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
         return self::SUCCESS;

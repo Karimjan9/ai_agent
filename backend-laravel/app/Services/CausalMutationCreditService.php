@@ -9,6 +9,9 @@ use App\Models\MutationMemory;
 /** Reconciles isolated mutation credit only after a same-generation control exists. */
 class CausalMutationCreditService
 {
+    private const REQUIRED_WINDOWS = 3;
+    private const MINIMUM_POSITIVE_WINDOWS = 2;
+
     public function reconcileGeneration(int $generationId): int
     {
         $agents = LabAgent::query()->with(['modelVersion', 'mutationMemories', 'generation'])
@@ -35,8 +38,12 @@ class CausalMutationCreditService
                     continue;
                 }
                 if ($verification !== []) {
-                    $confirmed = data_get($verification, 'status') === 'confirmed';
-                    $windows = min(2, (int) data_get($verification, 'independent_forward_windows.confirmed_windows', 0));
+                    $confirmed = data_get($verification, 'status') === 'confirmed'
+                        && (int) data_get($verification, 'independent_forward_windows.independent_windows', 0) >= self::REQUIRED_WINDOWS
+                        && (int) data_get($verification, 'independent_forward_windows.positive_windows', 0) >= self::MINIMUM_POSITIVE_WINDOWS
+                        && data_get($verification, 'requirements.three_independent_forward_windows', true) === true
+                        && data_get($verification, 'requirements.minimum_positive_forward_windows', true) === true;
+                    $windows = min(self::REQUIRED_WINDOWS, (int) data_get($verification, 'independent_forward_windows.independent_windows', data_get($verification, 'independent_forward_windows.confirmed_windows', 0)));
                     $effect = (array) $memory->behavioral_effect;
                     $credit = (array) data_get($effect, 'causal_credit', []);
                     $credit['status'] = $confirmed ? 'independently_confirmed' : 'not_confirmed';
@@ -50,7 +57,9 @@ class CausalMutationCreditService
                             : 'Verification contract failed; mutation remains exploratory and cannot become a prior.',
                         'independent_confirmation_count' => $confirmed ? $windows : 0,
                         'non_target_regression_status' => (string) data_get($verification, 'non_target.status', 'failed'),
-                        'evidence_scope_status' => $confirmed && $windows >= 2 ? 'eligible_prior' : 'historical_failure_memory',
+                        'evidence_scope_status' => $confirmed && $windows >= self::REQUIRED_WINDOWS
+                            && (int) data_get($verification, 'independent_forward_windows.positive_windows', 0) >= self::MINIMUM_POSITIVE_WINDOWS
+                            ? 'eligible_prior' : 'historical_failure_memory',
                         'behavioral_effect' => $effect,
                     ]);
                     app(LabImmutableEvidenceService::class)->recordMutationCredit($memory->fresh(), [
@@ -87,12 +96,13 @@ class CausalMutationCreditService
                 );
 
                 // One replay can still be a lucky chronology. Individual
-                // mutation credit requires two temporal windows on the child,
-                // parent and same-family control before it can influence a
-                // later generation's prior.
-                $independentTemporalLanes = (int) data_get($verification, 'independent_forward_windows.confirmed_windows', 0) >= 2
-                    && (int) $parent->rolling_windows_count >= 2
-                    && (int) $alternative->rolling_windows_count >= 2;
+                // mutation credit requires three independent chronological
+                // windows, with at least two positive, on the child, parent
+                // and same-family control before it can influence a prior.
+                $independentTemporalLanes = (int) data_get($verification, 'independent_forward_windows.independent_windows', 0) >= self::REQUIRED_WINDOWS
+                    && (int) data_get($verification, 'independent_forward_windows.positive_windows', 0) >= self::MINIMUM_POSITIVE_WINDOWS
+                    && (int) $parent->rolling_windows_count >= self::REQUIRED_WINDOWS
+                    && (int) $alternative->rolling_windows_count >= self::REQUIRED_WINDOWS;
                 $g98Lane = (array) data_get($agent->modelVersion?->metadata, 'g98_council_lane', []);
                 $counterfactualProven = $g98Lane === [] || $this->fiveReplayProof(
                     (array) data_get($current->metrics, 'counterfactual_blame_graph', [])
@@ -119,12 +129,14 @@ class CausalMutationCreditService
                     'targeted_score' => (float) $current->forward_score,
                     'alternative_score' => (float) $alternative->forward_score,
                     'alternative_model_version_id' => $alternative->model_version_id,
-                    'independent_temporal_lanes' => $independentTemporalLanes ? 2 : 0,
-                    'positive_temporal_windows' => $independentTemporalLanes && (float) $current->forward_score > (float) $parent->forward_score ? 2 : 0,
+                    'independent_temporal_lanes' => $independentTemporalLanes ? self::REQUIRED_WINDOWS : 0,
+                    'positive_temporal_windows' => $independentTemporalLanes
+                        ? max(self::MINIMUM_POSITIVE_WINDOWS, min(self::REQUIRED_WINDOWS, (int) data_get($verification, 'independent_forward_windows.positive_windows', 0)))
+                        : 0,
                     'stress_cost_degraded' => (float) data_get($current->metrics, 'stress_test.profit_factor', 0) < (float) data_get($parent->metrics, 'stress_test.profit_factor', 0),
                     'five_replay_counterfactual_proven' => $counterfactualProven,
                     'reconciled_at' => now()->toIso8601String(),
-                    'rule' => 'Targeted mutation is retained only when it beats parent and same-protocol alternative across two temporal lanes.',
+                    'rule' => 'Targeted mutation is retained only when it beats parent and same-protocol alternative across three independent chronological lanes with at least two positive windows.',
                 ];
                 $effect = (array) $memory->behavioral_effect;
                 $effect['paired_experiment'] = $paired;
@@ -135,18 +147,19 @@ class CausalMutationCreditService
                     'alternative_model_version_id' => $alternative->model_version_id,
                     'verified_skill_contract' => $verification,
                     'reconciled_at' => now()->toIso8601String(),
-                    'rule' => 'Individual credit requires a single changed gene, a parent, a same-generation control and two temporal replay lanes.',
+                    'rule' => 'Individual credit requires a single changed gene, a parent, a same-generation control and three independent chronological replay lanes with at least two positive windows.',
                 ];
                 $memory->update([
                     'outcome' => $confirmed ? ((float) $memory->forward_delta > 0 ? 'beneficial' : 'harmful') : 'neutral',
                     'decision' => $confirmed ? 'Causal paired replay confirmed; gene may enter evidence frontier.' : 'Causal paired replay did not beat the parent and control; gene remains exploratory.',
                     'behavioral_effect' => $effect,
                     'independent_confirmation_count' => $confirmed
-                        ? max(2, min(2, (int) data_get($verification, 'independent_forward_windows.confirmed_windows', 0)))
+                        ? self::REQUIRED_WINDOWS
                         : 0,
                     'non_target_regression_status' => data_get($effect, 'differential_no_regression.status', 'passed'),
                     'evidence_scope_status' => $confirmed
-                        && (int) data_get($verification, 'independent_forward_windows.confirmed_windows', 0) >= 2
+                        && (int) data_get($verification, 'independent_forward_windows.independent_windows', 0) >= self::REQUIRED_WINDOWS
+                        && (int) data_get($verification, 'independent_forward_windows.positive_windows', 0) >= self::MINIMUM_POSITIVE_WINDOWS
                         ? 'eligible_prior' : 'historical_failure_memory',
                 ]);
                 app(LabImmutableEvidenceService::class)->recordMutationCredit($memory->fresh(), [

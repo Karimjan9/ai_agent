@@ -39,7 +39,7 @@ php artisan system:health-check --strict
 php artisan market:health --strict
 ```
 
-The system health probe also verifies that an active administrator exists, that the latest SQL backup has a matching SHA-256 manifest and is within `DATABASE_BACKUP_STALE_AFTER_SECONDS` (default 172,800 seconds), and that the lab lifecycle has no stalled queue/boundary state. Refresh the backup with `php artisan ops:backup-database --retain=14` before investigating an operational alert.
+The system health probe also verifies that an active administrator exists, that the latest G: SQL backup has a matching manifest and is within `DATABASE_BACKUP_STALE_AFTER_SECONDS` (default 172,800 seconds), and that the lab lifecycle has no stalled queue/boundary state. Refresh it with `php artisan ops:backup-database` before investigating an operational alert. The command refuses C: and retains only `DATABASE_BACKUP_RETENTION` (default 3) newest backup pairs.
 
 The scheduler writes a ten-minute liveness heartbeat after a successful minute tick. A registered schedule without a fresh heartbeat is warning/critical evidence, not a healthy scheduler claim.
 

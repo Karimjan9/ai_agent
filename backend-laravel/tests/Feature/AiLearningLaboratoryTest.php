@@ -788,6 +788,7 @@ class AiLearningLaboratoryTest extends TestCase
             'market_adaptive_replay' => ['checkpoint_windows' => [
                 ['window' => 1, 'trades' => 12, 'profit_factor' => 1.40, 'net_profit_percent' => 2.0],
                 ['window' => 2, 'trades' => 12, 'profit_factor' => 1.35, 'net_profit_percent' => 1.5],
+                ['window' => 3, 'trades' => 12, 'profit_factor' => .95, 'net_profit_percent' => -0.2],
             ]],
             'evidence_run_id' => $screen['evidence_run_id'],
         ];
