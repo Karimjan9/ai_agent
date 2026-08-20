@@ -73,8 +73,8 @@ class StructuralResearchCohortService
             'hypothesis_protocol' => self::HYPOTHESIS_PROTOCOL,
             'hypothesis' => 'Condition entry/exit topology and risk by closed H1 regime, transition quality, volume/session state, and directional asymmetry; scalar wait/EMA/ROC changes alone are not admissible.',
             'population_size' => self::POPULATION_SIZE,
-            'frozen_control_seats' => 2,
-            'candidate_seats' => 18,
+            'frozen_control_seats' => 5,
+            'candidate_seats' => 15,
             'structural_families' => array_keys(self::FAMILY_SEATS),
             'family_seats' => self::FAMILY_SEATS,
             'control_pair' => [
@@ -138,13 +138,13 @@ class StructuralResearchCohortService
                 'rescue_objective' => 'risk_exit_lifecycle',
                 'specialist_role' => 'cost_stability_specialist',
                 'structural_family' => 'risk_exit_lifecycle',
-                'targets' => array_fill(0, 4, 'drawdown_risk'),
+                'targets' => array_fill(0, 4, 'non_target_regression'),
             ],
             'portfolio_router' => [
                 'rescue_objective' => 'long_short_asymmetry',
                 'specialist_role' => 'regime_coverage_specialist',
                 'structural_family' => 'long_short_asymmetry',
-                'targets' => array_fill(0, 4, 'regime_coverage'),
+                'targets' => array_fill(0, 4, 'profit_factor'),
             ],
         ];
     }
@@ -199,7 +199,7 @@ class StructuralResearchCohortService
         // family, but each tests a different causal admission mechanism.
         foreach ([
             'regime_consensus_v1', 'transition_hazard_v1',
-            'trend_regime_confirmation_v1', 'range_reentry_confirmation_v1',
+            'trend_regime_confirmation_v1',
         ] as $variant) {
             $add('regime_coverage', $hybrid, 'regime_coverage', 'regime_coverage_specialist', [
                 'structural_family' => 'regime_entry_exit_topology',
@@ -211,6 +211,13 @@ class StructuralResearchCohortService
                 'architecture_variant' => null,
             ]);
         }
+        $add('regime_coverage', $hybrid, 'regime_coverage', 'control_specialist', [
+            'structural_family' => 'regime_entry_exit_topology',
+            'structural_operation' => 'frozen_control',
+            'control_only' => true,
+            'control_lane' => 'regime_coverage',
+            'shadow_only' => false,
+        ]);
 
         // State persistence is a different architecture question from a
         // scalar cooldown. One state-machine seat is executable; the other
@@ -219,7 +226,6 @@ class StructuralResearchCohortService
             ['gene' => 'state_machine_variant', 'value' => 'neutral_transition_cooldown_reentry_v1'],
             ['gene' => 'adaptive_signal_expiry_enabled', 'value' => true],
             ['gene' => 'drift_abstention_enabled', 'value' => true],
-            ['gene' => 'temporal_survival_enabled', 'value' => true],
         ] as $probe) {
             $add('monthly_survival', $hybrid, 'temporal_stability', 'temporal_calendar_specialist', [
                 'structural_family' => 'transition_quality_state_machine',
@@ -230,12 +236,19 @@ class StructuralResearchCohortService
                 'architecture_experiment' => $probe['gene'] === 'state_machine_variant',
             ]);
         }
+        $add('monthly_survival', $hybrid, 'temporal_stability', 'control_specialist', [
+            'structural_family' => 'transition_quality_state_machine',
+            'structural_operation' => 'frozen_control',
+            'control_only' => true,
+            'control_lane' => 'temporal_survival',
+            'shadow_only' => false,
+        ]);
 
         // Volume/session/M15 is kept shadow-only and uses one causal lane per
         // seat. The fourth lane is a relative-volume confirmation mode.
         foreach ([
             'breakout_volume_confirmation', 'transition_volume_router',
-            'low_volume_risk_firewall', 'relative_volume_confirmation_v1',
+            'low_volume_risk_firewall',
         ] as $variant) {
             $add('volatility_session_stability', $hybrid, 'stress_cost', 'volume_m15_specialist', [
                 'structural_family' => 'volume_session_m15',
@@ -246,12 +259,19 @@ class StructuralResearchCohortService
                 'volume_shadow' => true,
             ]);
         }
+        $add('volatility_session_stability', $hybrid, 'stress_cost', 'control_specialist', [
+            'structural_family' => 'volume_session_m15',
+            'structural_operation' => 'frozen_control',
+            'control_only' => true,
+            'control_lane' => 'stress_cost',
+            'shadow_only' => false,
+        ]);
 
         // Three exit-lifecycle variants plus one immutable hybrid control.
         foreach ([
-            ['gene' => 'atr_stop_multiplier', 'value' => 1.25, 'target' => 'drawdown_risk'],
-            ['gene' => 'partial_take_profit_fraction', 'value' => .25, 'target' => 'drawdown_risk'],
-            ['gene' => 'time_stop_candles', 'value' => 12, 'target' => 'drawdown_risk'],
+            ['gene' => 'atr_stop_multiplier', 'value' => 1.25, 'target' => 'non_target_regression'],
+            ['gene' => 'partial_take_profit_fraction', 'value' => .25, 'target' => 'non_target_regression'],
+            ['gene' => 'time_stop_candles', 'value' => 12, 'target' => 'non_target_regression'],
         ] as $probe) {
             $add('exit_topology', $hybrid, $probe['target'], 'cost_stability_specialist', [
                 'structural_family' => 'risk_exit_lifecycle',
@@ -260,8 +280,8 @@ class StructuralResearchCohortService
                 'declared_value' => $probe['value'],
             ]);
         }
-        $add('exit_topology', $hybrid, 'architecture', 'control_specialist', [
-            'structural_family' => 'frozen_control',
+        $add('exit_topology', $hybrid, 'non_target_regression', 'control_specialist', [
+            'structural_family' => 'risk_exit_lifecycle',
             'structural_operation' => 'frozen_control',
             'control_only' => true,
             'g98_control_only' => true,
@@ -276,15 +296,15 @@ class StructuralResearchCohortService
             ['regime' => 'trend_down', 'gene' => 'trend_down_risk_multiplier'],
             ['regime' => 'trend_up', 'gene' => 'trend_up_strength_min'],
         ] as $probe) {
-            $add('portfolio_router', $differential, 'regime_coverage', 'regime_coverage_specialist', [
+            $add('portfolio_router', $differential, 'profit_factor', 'edge_quality_specialist', [
                 'structural_family' => 'long_short_asymmetry',
                 'structural_operation' => 'long_short_directional_asymmetry',
                 'declared_gene' => $probe['gene'],
                 'regime' => $probe['regime'],
             ]);
         }
-        $add('portfolio_router', $differential, 'architecture', 'control_specialist', [
-            'structural_family' => 'frozen_control',
+        $add('portfolio_router', $differential, 'profit_factor', 'control_specialist', [
+            'structural_family' => 'long_short_asymmetry',
             'structural_operation' => 'frozen_control',
             'control_only' => true,
             'g98_control_only' => true,
@@ -315,10 +335,12 @@ class StructuralResearchCohortService
             ->countBy(fn (array $seat): string => (string) data_get($seat, 'niche.hybrid_evolution_lane', ''))
             ->all();
         $hybridAllocationValid = ! (bool) config('services.lab_selection.hybrid_evolution_enabled', true)
-            || collect((array) data_get($hybridAllocation, 'counts', []))
-                ->every(fn (int $count, string $lane): bool => (int) ($hybridCounts[$lane] ?? 0) === $count);
+            || (array_sum($hybridCounts) === (int) data_get($hybridAllocation, 'research_seats', 0)
+                && collect((array) data_get($hybridAllocation, 'counts', []))
+                    ->filter(fn (int $count, string $lane): bool => $lane !== 'frozen_control' && $count > 0)
+                    ->every(fn (int $count, string $lane): bool => (int) ($hybridCounts[$lane] ?? 0) > 0));
         $allowed = count($plan) === self::POPULATION_SIZE
-            && $controls === 2
+            && $controls === 5
             && $hybridAllocationValid
             && count(array_filter($families, fn (int $count, string $family): bool => $family !== 'frozen_control' && $count > 0, ARRAY_FILTER_USE_BOTH)) >= 5;
 

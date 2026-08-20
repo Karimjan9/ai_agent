@@ -26,6 +26,7 @@ class TargetedRescueProfileService
 
         $reasonCounts = [];
         $targetCounts = [];
+        $decompositionCounts = [];
         $incompleteAgentIds = [];
         $technicalExcludedAgentIds = [];
         $nearMisses = [];
@@ -56,6 +57,9 @@ class TargetedRescueProfileService
                 $target = $this->targetForReason($reason);
                 if ($target !== null) $targetCounts[$target] = ($targetCounts[$target] ?? 0) + 1;
             }
+            $decomposition = (array) data_get($decision->metrics, 'causal_funnel_attribution.failure_decomposition', []);
+            $primaryMode = (string) data_get($decomposition, 'primary_failure_mode', '');
+            if ($primaryMode !== '') $decompositionCounts[$primaryMode] = ($decompositionCounts[$primaryMode] ?? 0) + 1;
             $margin = (array) data_get($decision->metrics, 'gate_margin', []);
             if ($margin === []) {
                 $margin = app(GateMarginService::class)->screening((array) $decision->metrics, $reasons);
@@ -68,11 +72,13 @@ class TargetedRescueProfileService
                 'target_margin' => data_get($margin, 'target_margin'),
                 'total_normalized_deficit' => (float) data_get($margin, 'total_normalized_deficit', 0),
                 'reason_codes' => $reasons,
+                'failure_decomposition' => $decomposition,
                 'promotion_evidence' => false,
             ];
         }
         arsort($reasonCounts);
         arsort($targetCounts);
+        arsort($decompositionCounts);
 
         $symbol = strtoupper((string) $generation->laboratory?->symbol);
         $timeframe = strtoupper((string) $generation->laboratory?->timeframe);
@@ -221,7 +227,56 @@ class TargetedRescueProfileService
             'timeframe' => $timeframe,
             'reason_counts' => $reasonCounts,
             'target_counts' => $targetCounts,
+            'failure_decomposition_counts' => $decompositionCounts,
+            'primary_failure_mode' => (string) (array_key_first($decompositionCounts) ?: 'mixed_or_insufficient'),
+            'primary_decomposition_lane' => (string) data_get(
+                collect($nearMisses)->first(fn (array $row): bool => data_get($row, 'failure_decomposition.recommended_experiment_lane') !== null),
+                'failure_decomposition.recommended_experiment_lane',
+                'hold_or_replicate',
+            ),
             'targets' => $selectedTargets,
+            'targeted_repair_lanes' => [
+                [
+                    'lane' => 'profit_factor',
+                    'objective' => 'edge_quality',
+                    'target' => 'profit_factor',
+                    'control_pair_required' => true,
+                    'same_generation' => true,
+                    'stress_cost' => false,
+                ],
+                [
+                    'lane' => 'stress_cost',
+                    'objective' => 'cost_stability',
+                    'target' => 'stress_cost',
+                    'control_pair_required' => true,
+                    'same_generation' => true,
+                    'stress_cost' => true,
+                ],
+                [
+                    'lane' => 'temporal_survival',
+                    'objective' => 'temporal_survival',
+                    'target' => 'temporal_stability',
+                    'control_pair_required' => true,
+                    'same_generation' => true,
+                    'stress_cost' => false,
+                ],
+                [
+                    'lane' => 'regime_coverage',
+                    'objective' => 'regime_coverage',
+                    'target' => 'regime_coverage',
+                    'control_pair_required' => true,
+                    'same_generation' => true,
+                    'stress_cost' => false,
+                ],
+                [
+                    'lane' => 'non_target_regression',
+                    'objective' => 'protected_invariants',
+                    'target' => 'non_target_regression',
+                    'control_pair_required' => true,
+                    'same_generation' => true,
+                    'stress_cost' => false,
+                ],
+            ],
             'incomplete_evidence_agent_ids' => array_values(array_unique($incompleteAgentIds)),
             'technical_excluded_agent_ids' => array_values(array_unique($technicalExcludedAgentIds)),
             'repair_anchors' => $selectedAnchors,
@@ -338,6 +393,7 @@ class TargetedRescueProfileService
             'FAILED_TEMPORAL_CHUNK_SURVIVAL',
             'FAILED_CALENDAR_MONTH_SURVIVAL',
             'FAILED_TRAIN_FORWARD_GAP',
+            'FAILED_TEMPORAL_SCORE_DRIFT',
             'FAILED_PARAMETER_STABILITY',
             'FAILED_SIGNAL_TIMING_STABILITY' => 'temporal_stability',
             'FAILED_REGIME_COVERAGE',
@@ -362,6 +418,7 @@ class TargetedRescueProfileService
     {
         $reasonGates = [
             'FAILED_TRAIN_FORWARD_GAP' => 'train_forward_robustness',
+            'FAILED_TEMPORAL_SCORE_DRIFT' => 'temporal_stability',
             'FAILED_TEMPORAL_CHUNK_SURVIVAL' => 'temporal_stability',
             'FAILED_CALENDAR_MONTH_SURVIVAL' => 'calendar_stability',
             'FAILED_MONTHLY_SURVIVAL' => 'calendar_stability',

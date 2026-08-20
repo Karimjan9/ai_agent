@@ -32,7 +32,10 @@ class LearningEvolutionTest extends TestCase
             'target_delta' => ['baseline' => 10, 'observed' => 4, 'delta' => -6, 'improved' => true],
             'failure_signature' => ['signature' => 'risk_failure'], 'metadata' => ['same_execution_contract' => true],
         ]);
+        app(LearningMemoryService::class)->recordPair($pair, 'screening');
+        $beforeMonitor = LabLearningMemory::count();
         app(LearningLaneService::class)->status('XAUUSD', 'H1');
+        $this->assertSame($beforeMonitor, LabLearningMemory::count());
         $memory = LabLearningMemory::first();
         $this->assertNotNull($memory);
         $this->assertSame('positive', $memory->memory_type);
@@ -72,7 +75,10 @@ class LearningEvolutionTest extends TestCase
             'metadata' => ['micro_replay' => ['status' => 'failed', 'score' => .33]],
         ]);
 
+        app(LearningMemoryService::class)->recordPair($pair, 'micro', ['status' => 'failed', 'score' => .33]);
+        $beforeMonitor = LabLearningMemory::count();
         app(LearningLaneService::class)->status('XAUUSD', 'H1');
+        $this->assertSame($beforeMonitor, LabLearningMemory::count());
         $memory = LabLearningMemory::first();
 
         $this->assertNotNull($memory);

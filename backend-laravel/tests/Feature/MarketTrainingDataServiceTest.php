@@ -72,6 +72,20 @@ class MarketTrainingDataServiceTest extends TestCase
         $this->assertDatabaseCount('market_training_candles', 0);
     }
 
+    public function test_training_lane_rejects_paper_year_candles(): void
+    {
+        $this->expectExceptionMessage('2026 faqat paper lane');
+
+        app(MarketTrainingDataService::class)->upsertCandles('foundation_10y', 'dukascopy', 'XAUUSD', 'H1', [[
+            'time' => '2026-01-01 00:00:00',
+            'open' => 1550,
+            'high' => 1552,
+            'low' => 1549,
+            'close' => 1551,
+            'volume' => 1,
+        ]]);
+    }
+
     public function test_agent_payload_is_explicitly_read_from_the_training_lane(): void
     {
         $training = app(MarketTrainingDataService::class);

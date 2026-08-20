@@ -52,8 +52,8 @@ class RunMtfAblation extends Command
         // Keep the no-volume lane on the same canonical price+volume
         // snapshot. Its volume_lane is explicit none, so volume can never
         // alter the frozen control while the data contract stays paired.
-        $m15 = $candles->candlesForBacktest($symbol, 'M15', 5000, true);
-        $h1 = $candles->candlesForBacktest($symbol, 'H1', 2000, true);
+        $m15 = $candles->candlesForTraining($symbol, 'M15', limit: 5000, includeVolume: true);
+        $h1 = $candles->candlesForTraining($symbol, 'H1', limit: 2000, includeVolume: true);
         if (count($m15) < 200 || count($h1) < 200) {
             $this->error('Ablation uchun mustaqil M15 va H1 candle stream yetarli emas.');
             return self::FAILURE;

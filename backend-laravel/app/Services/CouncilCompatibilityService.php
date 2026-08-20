@@ -30,6 +30,13 @@ class CouncilCompatibilityService
             (string) data_get($member, 'target_direction', data_get($member, 'direction', 'any')),
         ]));
         $duplicateNiches = $niches->duplicates()->values()->all();
+        // Different declared roles can still be the same executable trader.
+        // Only durable replay fingerprints count here; missing telemetry is
+        // handled by the individual passport rather than guessed as a clone.
+        $behaviorSignatures = collect($members)
+            ->map(fn ($member): string => $this->behaviorSignature($member))
+            ->filter()->values();
+        $duplicateBehavior = $behaviorSignatures->duplicates()->values()->all();
         $reasons = [];
         if ($regimes->count() < (int) $this->setting('services.lab_selection.council_min_regime_specialists', 2)) {
             $reasons[] = 'COUNCIL_NEEDS_TWO_DISTINCT_REGIME_SPECIALISTS';
@@ -38,6 +45,7 @@ class CouncilCompatibilityService
             $reasons[] = 'COUNCIL_NEEDS_TRANSITION_RISK_ROUTER';
         }
         if ($duplicateNiches !== []) $reasons[] = 'COUNCIL_HAS_DUPLICATE_NICHE';
+        if ($duplicateBehavior !== []) $reasons[] = 'COUNCIL_HAS_BEHAVIORAL_CLONE';
         $max = (int) $this->setting('services.lab_selection.council_max_members', 6);
         if ($roles->count() > $max) $reasons[] = 'COUNCIL_MEMBER_LIMIT_EXCEEDED';
 
@@ -49,6 +57,7 @@ class CouncilCompatibilityService
             'regimes' => $regimes->all(),
             'member_count' => count($members),
             'duplicate_niches' => $duplicateNiches,
+            'duplicate_behavior_signatures' => $duplicateBehavior,
             'reason_codes' => $reasons,
             'objective' => 'individual_quality + coverage + complementarity + council_synergy - tail_risk - switching_instability',
         ];
@@ -111,6 +120,20 @@ class CouncilCompatibilityService
             ?: data_get($member, 'modelVersion.metadata.council_specialist_contract.owner_regime')
             ?: data_get($member, 'modelVersion.metadata.portfolio_research_contract.target_regime')
             ?: data_get($member, 'modelVersion.metadata.portfolio_council_lane.regime'));
+    }
+
+    private function behaviorSignature(mixed $member): string
+    {
+        $fingerprint = (string) (data_get($member, 'behavior_fingerprint')
+            ?: data_get($member, 'metrics.behavior_fingerprint')
+            ?: data_get($member, 'modelVersion.metadata.behavior_fingerprint'));
+        if ($fingerprint !== '') return $fingerprint;
+
+        $trade = (string) (data_get($member, 'metrics.trade_ledger_hash')
+            ?: data_get($member, 'modelVersion.metadata.last_screen_result.trade_ledger_hash'));
+        $event = (string) (data_get($member, 'metrics.event_ledger_hash')
+            ?: data_get($member, 'modelVersion.metadata.last_screen_result.event_ledger_hash'));
+        return $trade !== '' && $event !== '' ? hash('sha256', $trade.'|'.$event) : '';
     }
 
     private function setting(string $key, mixed $default): mixed

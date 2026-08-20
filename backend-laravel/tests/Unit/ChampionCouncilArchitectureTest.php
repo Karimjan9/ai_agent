@@ -32,6 +32,18 @@ class ChampionCouncilArchitectureTest extends TestCase
         $this->assertSame('compatible', $ready['status']);
     }
 
+    public function test_compatibility_rejects_hidden_behavioral_clones(): void
+    {
+        $result = (new CouncilCompatibilityService())->assess([
+            ['role' => 'trend_up_specialist', 'target_regime' => 'trend_up', 'behavior_fingerprint' => 'same-replay'],
+            ['role' => 'range_specialist', 'target_regime' => 'range', 'behavior_fingerprint' => 'same-replay'],
+            ['role' => 'transition_risk_router', 'target_regime' => 'transition', 'behavior_fingerprint' => 'router-replay'],
+        ]);
+
+        $this->assertSame('incompatible', $result['status']);
+        $this->assertContains('COUNCIL_HAS_BEHAVIORAL_CLONE', $result['reason_codes']);
+    }
+
     public function test_curriculum_turns_repeat_failure_into_architecture_escape(): void
     {
         $lesson = (new CouncilCurriculumService())->next(

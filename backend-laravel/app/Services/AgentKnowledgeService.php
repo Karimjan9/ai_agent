@@ -286,6 +286,24 @@ class AgentKnowledgeService
                 ->keys())
             ->unique()->values()->all();
         $budget = app(AgentProfessionalExamService::class)->mutationBudget($symbol, $timeframe, $family, $card);
+        // Canonical retrieval is deliberately attached to the child contract:
+        // it records what was available before a mutation is chosen, while
+        // the newborn agent still has to prove every imported capability.
+        $kernelPacket = app(LearningKernelService::class)->retrieveForGeneration(
+            $symbol,
+            $timeframe,
+            $family,
+            [
+                'regime' => data_get($niche, 'regime'),
+                'volatility' => data_get($niche, 'volatility'),
+                'transition_state' => data_get($niche, 'transition_state'),
+                'state_cluster_id' => data_get($niche, 'state_cluster'),
+            ],
+        );
+        $blockedMutations = array_values(array_unique([
+            ...$this->blockedMutationKeys($symbol, $timeframe, $family, $scope),
+            ...((array) data_get($kernelPacket, 'blocked_mutations', [])),
+        ]));
 
         return [
             'protocol' => self::CARD_PROTOCOL,
@@ -300,8 +318,10 @@ class AgentKnowledgeService
             'target' => $target,
             'target_state_cluster' => data_get($niche, 'state_cluster'),
             'preserve_skill_keys' => $preserve,
-            'blocked_mutations' => $this->blockedMutationKeys($symbol, $timeframe, $family, $scope),
+            'blocked_mutations' => $blockedMutations,
             'blocked_mutation_directions' => $this->blockedMutationDirections($symbol, $timeframe, $family, $scope),
+            'learning_packet' => $kernelPacket,
+            'required_experiment' => app(LearningKernelService::class)->proposeExperiment($kernelPacket, $target),
             'required_exams' => [
                 'no_change_control', 'independent_state_windows',
                 'retention', 'abstention_quality', 'drift_recheck',
@@ -408,8 +428,11 @@ class AgentKnowledgeService
             $drift,
         );
         $capability = (array) data_get($model?->metadata, 'capability_vector', []);
+        $twinContract = (array) data_get($model?->metadata, 'twin_intelligence', []);
         $contract = [
             'protocol' => self::CARD_PROTOCOL,
+            'organism_lane' => data_get($twinContract, 'profile.lane', 'champion'),
+            'organism_contract' => $twinContract,
             'stage' => $skillStage,
             'preserve_old_skills' => true,
             'unknown_state_action' => $this->unknownStateAction($result),
@@ -439,6 +462,8 @@ class AgentKnowledgeService
             'evidence_run_id' => $runId ?: data_get($result, 'evidence_run_id'),
             'screening' => $screening,
             'promotion_evidence' => false,
+            'organism_lane' => data_get($twinContract, 'profile.lane', 'champion'),
+            'organism_learning_objective' => data_get($twinContract, 'profile.learning_objective'),
                 'state_cluster_rule' => 'Calendar month is diagnostic only; skill scope is regime/volatility/transition/liquidity/veto.',
                 'learning_exams' => $windowEvidence,
             ];

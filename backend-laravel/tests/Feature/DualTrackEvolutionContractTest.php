@@ -83,6 +83,22 @@ class DualTrackEvolutionContractTest extends TestCase
         $this->assertSame('WAIT', $result['decision']);
     }
 
+    public function test_one_lane_luck_cannot_certify_a_dual_track_cell(): void
+    {
+        $base = [
+            'symbol' => 'USDJPY', 'timeframe' => 'H1', 'task_type' => 'paper_signal',
+            'cell_key' => 'USDJPY|H1|trend_up|normal|paper_signal', 'lane' => 'champion',
+            'outcome_status' => 'settled', 'decision' => 'BUY', 'actual_outcome' => 'win',
+            'reward' => 1, 'correct' => true, 'risk_percent' => .5, 'promotion_evidence' => false,
+        ];
+        for ($i = 0; $i < 30; $i++) DualTrackOutcome::create([...$base, 'outcome_key' => 'champion-only-'.$i]);
+
+        $result = app(DualTrackCellPolicyService::class)->update(DualTrackOutcome::query()->latest('id')->firstOrFail());
+
+        $this->assertNotSame('certified', $result['status']);
+        $this->assertSame('candidate', $result['status']);
+    }
+
     public function test_evaluator_calibration_and_layered_memory_are_not_promotion_shortcuts(): void
     {
         $calibration = app(DualTrackEvaluatorCalibrationService::class);

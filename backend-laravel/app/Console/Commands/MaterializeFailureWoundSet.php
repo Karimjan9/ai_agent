@@ -55,6 +55,7 @@ class MaterializeFailureWoundSet extends Command
                     in_array('FAILED_CALENDAR_MONTH_SURVIVAL', (array) $decision->reason_codes, true)
                         || in_array('FAILED_MONTHLY_SURVIVAL', (array) $decision->reason_codes, true) ? 'calendar_month' : null,
                     in_array('FAILED_TRAIN_FORWARD_GAP', (array) $decision->reason_codes, true) ? 'train_forward_gap' : null,
+                    in_array('FAILED_TEMPORAL_SCORE_DRIFT', (array) $decision->reason_codes, true) ? 'temporal_score_drift' : null,
                     in_array('FAILED_STRESS_COST', (array) $decision->reason_codes, true)
                         || in_array('FAILED_EXECUTION_STRESS_GATE', (array) $decision->reason_codes, true) ? 'cost_exit_stress' : null,
                 ])),

@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\DualTrackDriftState;
+use Illuminate\Support\Facades\Schema;
+
 /** Independent pessimistic admission layer; it can veto, reduce or WAIT. */
 class DualTrackRiskShieldService
 {
@@ -19,6 +22,11 @@ class DualTrackRiskShieldService
             'drawdown' => (float) ($evidence['max_drawdown_percent'] ?? 0) <= (float) config('services.dual_track.max_drawdown_percent', 15),
             'disagreement' => $this->compatible($champion, $council),
         ];
+        $driftStates = Schema::hasTable('dual_track_drift_states')
+            ? DualTrackDriftState::query()->where('cell_key', DualTrackDecisionService::cellKey($context))->whereIn('lane', ['champion', 'council'])->latest('id')->get()->groupBy('lane')->map(fn ($items) => $items->first())
+            : collect();
+        $quarantined = $driftStates->contains(fn ($row): bool => (string) $row->state === 'quarantine');
+        $checks['drift_quarantine_absent'] = ! $quarantined;
         $failed = array_keys(array_filter($checks, static fn (bool $passed): bool => ! $passed));
         $confidence = max(
             $this->number($champion, 'confidence_lower_bound', $this->number($champion, 'confidence', 0)),
@@ -34,8 +42,10 @@ class DualTrackRiskShieldService
         $allowed = $failed === [];
         $transition = (bool) ($context['transition'] ?? false) || (string) ($context['market_regime'] ?? '') === 'transition';
         $multiplier = $transition ? (float) config('services.dual_track.transition_size_multiplier', .5) : 1.0;
+        $riskReduce = $driftStates->contains(fn ($row): bool => in_array((string) $row->state, ['risk_reduce', 'recover'], true));
+        if ($riskReduce && $allowed) $multiplier *= .5;
         $decision = $allowed ? 'ALLOW' : 'WAIT';
-        if ($transition && $allowed) $decision = 'REDUCE_SIZE';
+        if (($transition || $riskReduce) && $allowed) $decision = 'REDUCE_SIZE';
 
         return [
             'protocol' => self::PROTOCOL, 'mode' => $mode,
@@ -44,6 +54,7 @@ class DualTrackRiskShieldService
             'position_size_multiplier' => $allowed ? $multiplier : 0.0,
             'confidence_lower_bound' => round($confidence, 6), 'calibrated' => $calibrated,
             'checks' => $checks, 'failed_checks' => array_values(array_unique($failed)),
+            'drift' => $driftStates->map(fn ($row): array => ['lane' => $row->lane, 'state' => $row->state, 'sample_count' => $row->sample_count])->values()->all(),
             'fallback' => 'WAIT', 'promotion_evidence' => false,
         ];
     }

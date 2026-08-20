@@ -13,6 +13,8 @@ class LabLearningLanePair extends Model
         'candidate_response_map_id', 'control_response_map_id', 'symbol', 'timeframe',
         'strategy_family', 'target', 'specialist_role', 'baseline_source', 'status',
         'candidate_evidence_run_id', 'control_evidence_run_id', 'independent_window_key',
+        'candidate_data_hash', 'control_data_hash', 'candidate_execution_hash',
+        'control_execution_hash', 'pair_integrity_status', 'same_generation',
         'candidate_metrics', 'control_metrics', 'target_delta', 'non_target_regression',
         'failure_signature', 'metadata',
     ];
@@ -21,6 +23,7 @@ class LabLearningLanePair extends Model
         'candidate_metrics' => 'array', 'control_metrics' => 'array',
         'target_delta' => 'array', 'non_target_regression' => 'array',
         'failure_signature' => 'array', 'metadata' => 'array',
+        'same_generation' => 'boolean',
     ];
 
     public function generation(): BelongsTo

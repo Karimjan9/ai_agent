@@ -399,6 +399,7 @@ class LabFailureStudyService
             'FAILED_TEMPORAL_CHUNK_SURVIVAL',
             'FAILED_CALENDAR_MONTH_SURVIVAL',
             'FAILED_TRAIN_FORWARD_GAP',
+            'FAILED_TEMPORAL_SCORE_DRIFT',
             'FAILED_PARAMETER_STABILITY',
             'FAILED_SIGNAL_TIMING_STABILITY' => 'temporal_stability',
             'FAILED_REGIME_COVERAGE',

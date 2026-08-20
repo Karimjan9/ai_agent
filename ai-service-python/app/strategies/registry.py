@@ -6,6 +6,7 @@ import pandas as pd
 from app.strategies.breakout import apply_breakout_continuation_strategy, apply_breakout_strategy
 from app.strategies.ema_rsi import apply_ema_rsi_strategy
 from app.strategies.fibonacci import apply_fibonacci_strategy
+from app.strategies.structure import apply_bos_retest_strategy, apply_choch_reversal_strategy, apply_fibonacci_structure_pullback_strategy, apply_liquidity_sweep_reversion_strategy
 from app.strategies.macd_trend import apply_macd_trend_strategy
 from app.strategies.laboratory import apply_differential_router_strategy, apply_differential_trend_down_router_strategy, apply_hybrid_consensus_strategy, apply_hybrid_strategy, apply_mean_reversion_rsi_strategy, apply_mean_reversion_strategy, apply_momentum_pullback_strategy, apply_momentum_strategy, apply_regime_ensemble_strategy, apply_session_mean_reversion_strategy, apply_session_strategy, apply_trend_retest_strategy, apply_trend_specialist, apply_volatility_breakout_strategy, apply_volatility_strategy
 from app.services.parameter_schema import strategy_family
@@ -18,6 +19,10 @@ STRATEGIES: dict[str, StrategyFunction] = {
     "ema_rsi_v1": apply_ema_rsi_strategy,
     "macd_trend_v1": apply_macd_trend_strategy,
     "fibonacci_v1": apply_fibonacci_strategy,
+    "fibonacci_structure_pullback_v1": apply_fibonacci_structure_pullback_strategy,
+    "bos_retest_continuation_v1": apply_bos_retest_strategy,
+    "choch_reversal_v1": apply_choch_reversal_strategy,
+    "liquidity_sweep_reversion_v1": apply_liquidity_sweep_reversion_strategy,
     "breakout_v1": apply_breakout_strategy,
     "breakout_continuation_v1": apply_breakout_continuation_strategy,
     "trend_v1": apply_trend_specialist,
@@ -40,6 +45,10 @@ STRATEGY_BASES: dict[str, StrategyFunction] = {
     "ema_rsi": apply_ema_rsi_strategy,
     "macd_trend": apply_macd_trend_strategy,
     "fibonacci": apply_fibonacci_strategy,
+    "fibonacci_structure_pullback": apply_fibonacci_structure_pullback_strategy,
+    "bos_retest_continuation": apply_bos_retest_strategy,
+    "choch_reversal": apply_choch_reversal_strategy,
+    "liquidity_sweep_reversion": apply_liquidity_sweep_reversion_strategy,
     "breakout": apply_breakout_strategy,
     "breakout_continuation": apply_breakout_continuation_strategy,
     "trend": apply_trend_specialist,
@@ -62,6 +71,10 @@ STRATEGY_LABELS = {
     "ema_rsi_v1": "EMA_RSI_V1",
     "macd_trend_v1": "MACD_TREND_V1",
     "fibonacci_v1": "FIBONACCI_V1",
+    "fibonacci_structure_pullback_v1": "FIBONACCI_STRUCTURE_PULLBACK_V1",
+    "bos_retest_continuation_v1": "BOS_RETEST_CONTINUATION_V1",
+    "choch_reversal_v1": "CHOCH_REVERSAL_V1",
+    "liquidity_sweep_reversion_v1": "LIQUIDITY_SWEEP_REVERSION_V1",
     "breakout_v1": "BREAKOUT_V1",
     "breakout_continuation_v1": "BREAKOUT_CONTINUATION_V1",
     "trend_v1": "TREND_V1", "volatility_v1": "VOLATILITY_V1", "volatility_breakout_v1": "VOLATILITY_BREAKOUT_V1",
@@ -76,6 +89,10 @@ AGENT_NAMES = {
     "ema_rsi_v1": "EMA RSI Agent",
     "macd_trend_v1": "MACD Trend Agent",
     "fibonacci_v1": "Fibonacci Pullback Agent",
+    "fibonacci_structure_pullback_v1": "Fibonacci Structure Pullback Agent",
+    "bos_retest_continuation_v1": "BOS Retest Specialist",
+    "choch_reversal_v1": "CHOCH Reversal Specialist",
+    "liquidity_sweep_reversion_v1": "Liquidity Sweep Specialist",
     "breakout_v1": "Breakout Agent", "breakout_continuation_v1": "Breakout Continuation Agent",
     "trend_v1": "Trend Agent", "volatility_v1": "Volatility Agent", "volatility_breakout_v1": "Volatility Breakout Agent",
     "trend_retest_v1": "Trend Retest Agent",

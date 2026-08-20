@@ -45,6 +45,26 @@ class FailureWoundSetTest extends TestCase
         $this->assertSame('improved', $improved['cases'][0]['status']);
     }
 
+    public function test_wound_does_not_block_a_different_window_protocol(): void
+    {
+        [$first, $second] = $this->agents();
+        $tail = $this->woundResult(.82);
+        $tail['screening_survival']['protocol'] = 'screening_survival_v2';
+        app(FailureWoundSetService::class)->sealFromScreening($first, $tail, ['FAILED_TEMPORAL_CHUNK_SURVIVAL']);
+
+        $stratified = $this->woundResult(.82);
+        $stratified['screening_survival'] = [
+            'protocol' => 'screening_survival_v2',
+            'worst_temporal_chunk_pf' => .82,
+            'stratified_historical_windows' => ['protocol' => 'historical_stratified_windows_v1'],
+        ];
+        $assessment = app(FailureWoundSetService::class)->evaluateForScreening($second, $stratified);
+
+        $this->assertSame('passed', $assessment['status']);
+        $this->assertSame('not_assessed', data_get($assessment, 'cases.0.status'));
+        $this->assertContains('window_protocol', (array) data_get($assessment, 'cases.0.compatibility.mismatches'));
+    }
+
     /** @return array{0: LabAgent, 1: LabAgent} */
     private function agents(): array
     {

@@ -56,7 +56,16 @@ class DispatchLabGeneration extends Command
 
             return self::FAILURE;
         }
-        if ($protocolSafety->generationCreationPaused() && ! $controlledRescue && ! $shadowResearch && ! $auditedDataEdge) {
+        // A protocol pause blocks new screening populations, but it must not
+        // strand a constructor-complete generation whose draft agents never
+        // received their first queue job. `--resume-draft-agents` is a
+        // same-generation recovery path; it creates no new generation and
+        // keeps all promotion gates unchanged.
+        if ($protocolSafety->generationCreationPaused()
+            && ! $controlledRescue
+            && ! $shadowResearch
+            && ! $auditedDataEdge
+            && ! $resumeDraftAgents) {
             $this->info('Learning protocol paused: normal screening dispatch deferred; existing recovery jobs remain untouched.');
 
             return self::SUCCESS;
@@ -99,6 +108,14 @@ class DispatchLabGeneration extends Command
                 continue;
             }
             $generation = $lab->generations()->with('agents')->latest('generation')->first();
+            $resumeExistingGeneration = $resumeDraftAgents
+                && $generation
+                && in_array((string) $generation->status, LabPopulationService::ACTIVE_GENERATION_STATUSES, true);
+            if ($resumeDraftAgents && ! $resumeExistingGeneration) {
+                $this->info("{$symbol}: no active constructor-complete generation available for draft recovery; no new generation created.");
+
+                continue;
+            }
             if ($shadowResearch && $generation && (string) $generation->trigger_type !== 'shadow_research') {
                 $this->info("{$symbol} {$timeframe}: latest generation shadow-research emas; shadow dispatch skipped.");
 
@@ -146,7 +163,9 @@ class DispatchLabGeneration extends Command
             if ($shouldBuildGeneration) {
                 $generation = $shadowResearch
                     ? $populations->build($symbol, 'shadow_research', false, $timeframe, [], false, false, (int) config('services.lab_selection.population_size', 20))
-                    : $populations->build($symbol, 'new_data', (bool) $this->option('force-generation'), $timeframe);
+                    : ($auditedDataEdge
+                        ? $populations->build($symbol, 'data_edge_audit', true, $timeframe)
+                        : $populations->build($symbol, 'new_data', (bool) $this->option('force-generation'), $timeframe));
             }
 
             if (! $generation) {
@@ -166,7 +185,7 @@ class DispatchLabGeneration extends Command
 
                 continue;
             }
-            if (! $controlledRescue && ! $shadowResearch && ! $auditedDataEdge) {
+            if (! $controlledRescue && ! $shadowResearch && ! $auditedDataEdge && ! $resumeExistingGeneration) {
                 $normalAdmission = $this->normalCausalAdmission($generation);
                 if (! (bool) data_get($normalAdmission, 'allowed', true)) {
                     $this->warn(sprintf(
@@ -178,6 +197,8 @@ class DispatchLabGeneration extends Command
 
                     continue;
                 }
+            } elseif ($resumeExistingGeneration) {
+                $this->info("{$symbol}: resuming existing G{$generation->generation} only; protocol pause remains active and promotion gates are unchanged.");
             }
 
             // Two scheduler instances can observe the same draft generation
@@ -380,8 +401,12 @@ class DispatchLabGeneration extends Command
             // rolling snapshot from the beginning. Screening may proceed
             // with the rolling tail, but full replay must never discover a
             // missing foundation only after queue admission.
-            $datasets->ensureGenerationFoundationSnapshot($generation);
-            $datasets->ensureGenerationSnapshot($generation, $includeVolume);
+            $foundationSnapshot = $datasets->ensureGenerationFoundationSnapshot($generation);
+            $rollingSnapshot = $datasets->ensureGenerationSnapshot($generation, $includeVolume);
+            // Verify the frozen split before changing any child to queued.
+            // A failed check leaves the generation draft/blocked instead of
+            // allowing a paper candle to influence evolutionary screening.
+            $datasets->assertGenerationDataPartition($generation, $foundationSnapshot, $rollingSnapshot);
             if ($timeframe === 'M15') {
                 // M15 entries are evaluated against one immutable H1 regime
                 // snapshot whose last candle is already closed. This keeps

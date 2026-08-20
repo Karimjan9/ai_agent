@@ -14,6 +14,8 @@ class CandidateGateDecisionService
         private ExecutionContractService $executionContracts,
         private GateMarginService $gateMargins,
         private MutationObservabilityService $mutationObservability,
+        private CausalFunnelAttributionService $causalFunnel,
+        private EvolutionArchiveService $evolutionArchive,
     ) {}
 
     public function recordScreening(LabAgent $agent, array $result): CandidateGateDecision
@@ -77,8 +79,12 @@ class CandidateGateDecisionService
             'gate_margin' => $this->gateMargins->screening($result, $reasons),
             'mutation_observability' => $observability,
             'wound_set' => $woundSet,
+            // Causal attribution makes the following generation choose the
+            // narrowest falsifiable lane; it cannot loosen this decision.
+            'causal_funnel_attribution' => $this->causalFunnel->assess([...$result, 'reason_codes' => $reasons]),
         ];
         $this->mutationObservability->record($agent, $observability);
+        $result['behavioral_map_elites'] = $this->evolutionArchive->recordScreeningBehavior($agent, $result);
         $decision = $reasons === [] ? 'passed' : 'failed';
         if ($decision === 'failed') {
             $result['wound_set']['sealed'] = app(FailureWoundSetService::class)

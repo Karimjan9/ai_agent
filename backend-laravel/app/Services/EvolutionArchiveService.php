@@ -19,6 +19,7 @@ use Illuminate\Support\Collection;
 class EvolutionArchiveService
 {
     public const PROTOCOL = 'adaptive_parent_archive_v1';
+    public const BEHAVIORAL_MAP_ELITES_PROTOCOL = 'behavioral_map_elites_v1';
 
     public function __construct(
         private StrategySemanticGroupService $semanticGroups,
@@ -163,6 +164,73 @@ class EvolutionArchiveService
         $this->updateIsland($generation, $symbol, $timeframe, $family, $islandKey, $selectedModels, $selection);
 
         return $written;
+    }
+
+    /**
+     * Record a screened candidate in a behaviour-space archive.  The older
+     * archive's island is semantic (and therefore correct for parent safety);
+     * this second projection is intentionally behavioural, so the planner can
+     * see that sixteen different genomes produced one repeated experiment.
+     * It is research telemetry only and never a promotion gate.
+     *
+     * @return array<string, mixed>
+     */
+    public function recordScreeningBehavior(LabAgent $agent, array $result): array
+    {
+        $model = $agent->modelVersion;
+        if (! $model instanceof ModelVersion) {
+            return ['protocol' => self::BEHAVIORAL_MAP_ELITES_PROTOCOL, 'status' => 'unavailable'];
+        }
+
+        $descriptor = $this->behaviorDescriptor($agent, $result);
+        $cellKey = 'behavior:'.substr(hash('sha256', json_encode($descriptor['cell'], JSON_PRESERVE_ZERO_FRACTION)), 0, 48);
+        $signature = hash('sha256', json_encode($descriptor['signature'], JSON_PRESERVE_ZERO_FRACTION));
+        $scope = LabEvolutionArchiveEntry::query()
+            ->where('symbol', strtoupper((string) $agent->symbol))
+            ->where('timeframe', strtoupper((string) $agent->timeframe))
+            ->where('strategy_family', (string) $agent->strategy_family)
+            ->where('archive_type', 'behavioral_map_elites');
+        $existingSignatures = (clone $scope)->pluck('behavior_signature')->filter()->unique()->values();
+        $novelty = $existingSignatures->contains($signature) ? 0.0 : 1.0;
+        $quality = $this->screeningQuality($result);
+        $entry = LabEvolutionArchiveEntry::updateOrCreate(
+            ['archive_type' => 'behavioral_map_elites', 'island_key' => $cellKey, 'model_version_id' => $model->id],
+            [
+                'symbol' => strtoupper((string) $agent->symbol),
+                'timeframe' => strtoupper((string) $agent->timeframe),
+                'strategy_family' => (string) $agent->strategy_family,
+                'lab_agent_id' => $agent->id,
+                'lab_generation_id' => $agent->lab_generation_id,
+                'rank' => 0,
+                'novelty_score' => $novelty,
+                'behavior_signature' => $signature,
+                'fitness_snapshot' => [
+                    'screening_quality' => $quality,
+                    'profit_factor' => data_get($result, 'profit_factor'),
+                    'stress_profit_factor' => data_get($result, 'stress_test.profit_factor', data_get($result, 'stress_cost_exit.profit_factor')),
+                    'total_trades' => data_get($result, 'total_trades'),
+                    'promotion_evidence' => false,
+                ],
+                'metadata' => [
+                    'protocol' => self::BEHAVIORAL_MAP_ELITES_PROTOCOL,
+                    'descriptor' => $descriptor,
+                    'repeated_behavior' => $novelty === 0.0,
+                    'quality_is_ranking_only' => true,
+                    'promotion_evidence' => false,
+                ],
+                'status' => 'active',
+            ],
+        );
+
+        return [
+            'protocol' => self::BEHAVIORAL_MAP_ELITES_PROTOCOL,
+            'status' => $novelty > 0 ? 'novel_behavior_cell' : 'repeated_behavior_cell',
+            'entry_id' => $entry->id,
+            'cell_key' => $cellKey,
+            'novelty_score' => $novelty,
+            'descriptor' => $descriptor,
+            'promotion_evidence' => false,
+        ];
     }
 
     public function recordParentSelectionDecision(
@@ -527,6 +595,66 @@ class EvolutionArchiveService
         $parameters = (array) ($model->parameters ?? []);
         ksort($parameters);
         return hash('sha256', json_encode($parameters, JSON_PRESERVE_ZERO_FRACTION));
+    }
+
+    /** @return array<string, mixed> */
+    private function behaviorDescriptor(LabAgent $agent, array $result): array
+    {
+        $metadata = (array) ($agent->modelVersion?->metadata ?? []);
+        $funnel = (array) data_get($result, 'entry_funnel', []);
+        $trades = max(0, (int) data_get($result, 'total_trades', 0));
+        $stressPf = (float) data_get($result, 'stress_test.profit_factor', data_get($result, 'stress_cost_exit.profit_factor', 0));
+        $frequency = $trades === 0 ? 'none' : ($trades < 15 ? 'sparse' : ($trades < 60 ? 'low' : ($trades < 180 ? 'medium' : 'high')));
+        $cost = $stressPf <= 0 ? 'unknown' : ($stressPf < 1 ? 'fails_cost' : ($stressPf < 1.05 ? 'fragile_cost' : 'cost_robust'));
+        $regimeBreakdown = (array) data_get($result, 'pf_attribution.breakdown.by_regime', data_get($result, 'pf_attribution.by_regime', []));
+        $regime = (string) collect($regimeBreakdown)->sortByDesc(fn (mixed $row): int => (int) data_get($row, 'trades', 0))->keys()->first();
+        $regime = $regime !== '' ? $regime : 'unknown_regime';
+        $topology = (string) (data_get($metadata, 'entry_topology_variant')
+            ?: data_get($metadata, 'state_machine_variant')
+            ?: data_get($metadata, 'strategy_architecture', 'baseline'));
+        $dominantRejection = (string) data_get($funnel, 'dominant_rejection', 'none');
+        $rejectedSignals = (array) data_get($funnel, 'rejected', []);
+        ksort($rejectedSignals);
+        $regimeDistribution = collect($regimeBreakdown)
+            ->mapWithKeys(fn (mixed $row, mixed $key): array => [(string) $key => (int) data_get($row, 'trades', 0)])
+            ->sortKeys()->all();
+        $exitDistribution = (array) data_get($result, 'exit_distribution', data_get($result, 'trade_attribution.by_exit', []));
+        ksort($exitDistribution);
+        $holding = (array) data_get($result, 'holding_time_distribution', data_get($result, 'trade_attribution.holding_time_distribution', []));
+        ksort($holding);
+        $stressLoss = (array) data_get($result, 'stress_test.trade_loss_profile', data_get($result, 'stress_cost_exit.trade_loss_profile', []));
+        ksort($stressLoss);
+        $cell = [
+            'regime' => $regime,
+            'frequency' => $frequency,
+            'cost' => $cost,
+            'topology' => $topology,
+        ];
+        $signature = [
+            ...$cell,
+            'event_ledger_hash' => data_get($result, 'event_ledger_hash'),
+            'trade_ledger_hash' => data_get($result, 'trade_ledger_hash'),
+            'accepted_entries' => data_get($funnel, 'accepted_entries'),
+            'dominant_rejection' => $dominantRejection,
+            // Parameter distance is only a construction check.  These are
+            // the replayed behavioural dimensions used to detect a hidden
+            // clone: same trade set/funnel/regime/exit behaviour consumes no
+            // additional experiment budget even when numeric genes differ.
+            'rejected_signal_reasons' => $rejectedSignals,
+            'regime_distribution' => $regimeDistribution,
+            'exit_distribution' => $exitDistribution,
+            'holding_time_distribution' => $holding,
+            'stress_trade_loss_profile' => $stressLoss,
+        ];
+        return ['cell' => $cell, 'signature' => $signature];
+    }
+
+    private function screeningQuality(array $result): float
+    {
+        $pf = max(0.0, (float) data_get($result, 'profit_factor', 0));
+        $stress = max(0.0, (float) data_get($result, 'stress_test.profit_factor', data_get($result, 'stress_cost_exit.profit_factor', 0)));
+        $trades = min(1.0, max(0.0, (int) data_get($result, 'total_trades', 0) / 100));
+        return round(($pf * 0.45) + ($stress * 0.35) + ($trades * 0.20), 4);
     }
 
     private function noveltyScore(ModelVersion $model, Collection $selected): float

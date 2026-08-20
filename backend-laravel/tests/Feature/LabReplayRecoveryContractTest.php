@@ -33,6 +33,8 @@ class LabReplayRecoveryContractTest extends TestCase
             'generation_id' => $generation->id,
         ]);
         $generation->update(['trigger_context' => $context]);
+        $foundation = app(\App\Services\LabDatasetExportService::class)
+            ->ensureGenerationFoundationSnapshot($generation->fresh(['laboratory']));
 
         $contract = [
             'protocol' => LabReplayRecoveryService::PROTOCOL,
@@ -42,7 +44,7 @@ class LabReplayRecoveryContractTest extends TestCase
             'symbol' => $agent->symbol,
             'timeframe' => $agent->timeframe,
             'include_volume' => false,
-            'dataset_hashes' => ['price' => $hash, 'foundation' => '', 'regime' => ''],
+            'dataset_hashes' => ['price' => $hash, 'foundation' => $foundation['sha256'], 'regime' => ''],
         ];
         $service = app(LabReplayRecoveryService::class);
         $service->assertContract($agent->fresh(), $contract);

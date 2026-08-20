@@ -69,6 +69,8 @@ class DualTrackLedgerTest extends TestCase
         $this->assertSame(1, $report['sample_size']);
         $this->assertSame(1, $report['disagreements']);
         $this->assertCount(1, $report['cells']);
+        $this->assertSame('execution_organism', $report['organisms']['champion']['profile']['identity']);
+        $this->assertSame('reasoning_governance_organism', $report['organisms']['council']['profile']['identity']);
         $this->assertFalse($report['promotion_evidence']);
     }
 }

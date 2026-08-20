@@ -75,9 +75,11 @@ return [
         'lease_seconds' => max(30, (int) env('SCHEDULER_LEASE_SECONDS', 900)),
         'heartbeat_seconds' => max(5, (int) env('SCHEDULER_HEARTBEAT_SECONDS', 30)),
         'duplicate_wait_seconds' => max(1, (int) env('SCHEDULER_DUPLICATE_WAIT_SECONDS', 5)),
-        // One isolated tick per process resets PHP memory. PM2 restarts the
-        // hidden process; raising the memory cap would only hide leaks.
-        'max_ticks_per_process' => max(1, (int) env('SCHEDULER_MAX_TICKS_PER_PROCESS', 1)),
+        // Zero keeps one long-lived headless scheduler process. A positive
+        // value is an explicit bounded-rotation override for maintenance;
+        // restarting after every tick makes Windows flash a console window
+        // even when PM2's windowsHide flag is set.
+        'max_ticks_per_process' => max(0, (int) env('SCHEDULER_MAX_TICKS_PER_PROCESS', 0)),
     ],
 
     'lab_queue' => [
@@ -359,6 +361,9 @@ return [
     ],
 
     'lab_selection' => [
+      // Constitutional data boundary: H1/M15 training, screening, replay and
+      // mutation stop before 2026. 2026 is paper-only evidence.
+      'training_end_exclusive' => env('LAB_TRAINING_END_EXCLUSIVE', '2026-01-01 00:00:00'),
         // A fast screen is only a hypothesis generator.  Fewer than this many
         // observed trades is too noisy even to spend a full replay on.
       'minimum_screening_trades' => (int) env('LAB_MINIMUM_SCREENING_TRADES', 10),
@@ -386,13 +391,14 @@ return [
       // evidence gate and is recorded in every replay artifact.
       'full_replay_bounded_cohort_foundation_rows' => (int) env('LAB_FULL_REPLAY_BOUNDED_COHORT_FOUNDATION_ROWS', 100000),
       'full_replay_max_cohort_size' => (int) env('LAB_FULL_REPLAY_MAX_COHORT_SIZE', 2),
-      // M15 has its own pre-2026 foundation slice built from the preserved
-      // M15 market history. It must never borrow H1 history as a foundation;
-      // H1 is supplied separately only as the closed regime context.
+      // M15 has its own full pre-2026 foundation archive. It must never
+      // borrow H1 history as a price foundation; H1 is supplied separately
+      // only as the closed regime context.
       'm15_foundation_minimum_rows' => (int) env('LAB_M15_FOUNDATION_MINIMUM_ROWS', 2000),
-      'm15_foundation_start' => env('LAB_M15_FOUNDATION_START', '2025-11-01 00:00:00'),
+      'm15_foundation_start' => env('LAB_M15_FOUNDATION_START', '2016-01-01 00:00:00'),
       'm15_foundation_end' => env('LAB_M15_FOUNDATION_END', '2025-12-31 23:59:59'),
       'm15_foundation_required_end' => env('LAB_M15_FOUNDATION_REQUIRED_END', '2025-12-01 00:00:00'),
+      'm15_foundation_require_full_history' => (bool) env('LAB_M15_FOUNDATION_REQUIRE_FULL_HISTORY', true),
       'm15_rolling_start' => env('LAB_M15_ROLLING_START', '2026-01-01 00:00:00'),
       'dataset_export_lock_wait_seconds' => (int) env('LAB_DATASET_EXPORT_LOCK_WAIT_SECONDS', 30),
       // Full replay is operationally expensive, but a fixed finalist count
@@ -477,6 +483,8 @@ return [
       'learning_velocity_enabled' => env('LAB_LEARNING_VELOCITY_ENABLED', true),
       'learning_velocity_lookback_generations' => (int) env('LAB_LEARNING_VELOCITY_LOOKBACK_GENERATIONS', 3),
       'learning_velocity_max_unresolved_screen_generations' => (int) env('LAB_LEARNING_VELOCITY_MAX_UNRESOLVED_SCREEN_GENERATIONS', 1),
+      'learning_starvation_stale_seconds' => (int) env('LAB_LEARNING_STARVATION_STALE_SECONDS', 1800),
+      'learning_starvation_min_pending_dojo' => (int) env('LAB_LEARNING_STARVATION_MIN_PENDING_DOJO', 1),
       // Parent-aware evolution. A parent can propose a bounded skill, but it
       // cannot replace the child's autonomous branch or bypass evidence gates.
       'parent_mentor_broker_enabled' => env('LAB_PARENT_MENTOR_BROKER_ENABLED', true),
@@ -550,11 +558,38 @@ return [
         'memory_minimum_confirmations' => max(2, (int) env('DUAL_TRACK_MEMORY_MINIMUM_CONFIRMATIONS', 3)),
     ],
 
+    'twin_intelligence' => [
+        'version' => env('TWIN_INTELLIGENCE_VERSION', '1.0.0'),
+        'require_independent_inference' => env('TWIN_INTELLIGENCE_REQUIRE_INDEPENDENT_INFERENCE', true),
+        'diversity_minimum_samples' => max(1, (int) env('TWIN_INTELLIGENCE_DIVERSITY_MINIMUM_SAMPLES', 20)),
+        'max_agreement_rate' => (float) env('TWIN_INTELLIGENCE_MAX_AGREEMENT_RATE', .95),
+        'reflection_minimum_confirmations' => max(2, (int) env('TWIN_INTELLIGENCE_REFLECTION_MINIMUM_CONFIRMATIONS', 2)),
+        'red_team_damage_threshold' => (float) env('TWIN_INTELLIGENCE_RED_TEAM_DAMAGE_THRESHOLD', .25),
+        // WAIT-only runs produce three applicable adversarial trials; an
+        // action run may produce four and is still required to pass all four.
+        'red_team_minimum_trials' => max(1, (int) env('TWIN_INTELLIGENCE_RED_TEAM_MINIMUM_TRIALS', 3)),
+        'promotion_decision_ttl_minutes' => max(1, (int) env('TWIN_INTELLIGENCE_PROMOTION_DECISION_TTL_MINUTES', 15)),
+        'require_snapshot_manifest' => env('TWIN_INTELLIGENCE_REQUIRE_SNAPSHOT_MANIFEST', true),
+        'drift_cusum_slack' => (float) env('TWIN_INTELLIGENCE_DRIFT_CUSUM_SLACK', .05),
+        'drift_cusum_threshold' => (float) env('TWIN_INTELLIGENCE_DRIFT_CUSUM_THRESHOLD', 2.5),
+        'gene_bootstrap_pf_floor' => (float) env('TWIN_INTELLIGENCE_GENE_BOOTSTRAP_PF_FLOOR', 1.05),
+        'gene_dsr_probability_floor' => (float) env('TWIN_INTELLIGENCE_GENE_DSR_PROBABILITY_FLOOR', .95),
+        'gene_pbo_ceiling' => (float) env('TWIN_INTELLIGENCE_GENE_PBO_CEILING', .20),
+    ],
+
     'risk' => [
         'max_open_positions' => (int) env('RISK_MAX_OPEN_POSITIONS', 3),
         'max_positions_per_group' => (int) env('RISK_MAX_POSITIONS_PER_GROUP', 2),
         'daily_loss_limit_percent' => (float) env('RISK_DAILY_LOSS_LIMIT_PERCENT', 2),
         'max_risk_per_trade_percent' => (float) env('RISK_MAX_RISK_PER_TRADE_PERCENT', 1),
+        // Risk Sentinel owns executable sizing. It may shrink the fixed
+        // ceiling, never raise it; martingale, full Kelly and automatic live
+        // geometric compounding are intentionally absent.
+        'paper_starting_equity' => (float) env('PAPER_STARTING_EQUITY', 10000),
+        'sentinel_capped_fractional_risk_percent' => (float) env('RISK_SENTINEL_CAPPED_FRACTIONAL_RISK_PERCENT', .75),
+        'sentinel_max_drawdown_percent' => (float) env('RISK_SENTINEL_MAX_DRAWDOWN_PERCENT', 15),
+        'sentinel_max_risk_of_ruin_percent' => (float) env('RISK_SENTINEL_MAX_RISK_OF_RUIN_PERCENT', 10),
+        'sentinel_min_reward_risk' => (float) env('RISK_SENTINEL_MIN_REWARD_RISK', 1),
         'fx_spread_points' => (float) env('RISK_FX_SPREAD_POINTS', 12),
         'xau_spread_points' => (float) env('RISK_XAU_SPREAD_POINTS', 35),
         'slippage_points' => (float) env('RISK_SLIPPAGE_POINTS', 2),

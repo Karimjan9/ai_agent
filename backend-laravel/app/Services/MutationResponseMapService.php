@@ -36,9 +36,7 @@ class MutationResponseMapService
             ? app(FailureRepairAnchorService::class)->baselineResult($agent)
             : $this->parentBaseline($agent);
         $sibling = (string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', ''));
-        $control = in_array($sibling, ['frozen_control', 'architecture_escape'], true)
-            || (bool) data_get($metadata, 'causal_experiment_lane.control_only', false)
-            || (bool) data_get($metadata, 'g98_council_lane.control_only', false);
+        $control = $this->isControlOnly($metadata, $sibling);
 
         return $this->persist($agent, 'screening', $result, $baseline, [
             'status' => $control ? 'control' : 'screen_observed',
@@ -82,9 +80,7 @@ class MutationResponseMapService
             'positive_windows' => data_get($skillVerification, 'independent_forward_windows.positive_windows', 0),
         ]);
         $sibling = (string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', ''));
-        $control = in_array($sibling, ['frozen_control', 'architecture_escape'], true)
-            || (bool) data_get($metadata, 'causal_experiment_lane.control_only', false)
-            || (bool) data_get($metadata, 'g98_council_lane.control_only', false);
+        $control = $this->isControlOnly($metadata, $sibling);
 
         $status = $control
             ? 'control'
@@ -210,9 +206,33 @@ class MutationResponseMapService
         }
     }
 
+    /**
+     * Constructor truth is authoritative: every control_only projection must
+     * produce a control response map. Without this invariant a no-change seat
+     * can be silently recorded as an ordinary mutation and later look like a
+     * candidate baseline.
+     *
+     * @param array<string, mixed> $metadata
+     */
+    private function isControlOnly(array $metadata, string $sibling = ''): bool
+    {
+        $portfolio = (array) data_get($metadata, 'portfolio_council_lane', []);
+
+        return in_array($sibling, ['frozen_control', 'control', 'architecture_escape'], true)
+            || (bool) data_get($metadata, 'repair_anchor.control_only', false)
+            || (bool) data_get($metadata, 'repair_anchor_sibling.control_only', false)
+            || (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false)
+            || (bool) data_get($metadata, 'causal_experiment_lane.control_only', false)
+            || (bool) data_get($metadata, 'g98_council_lane.control_only', false)
+            || (bool) data_get($metadata, 'role_complete_council.role_control', false)
+            || (bool) data_get($portfolio, 'control_only', false)
+            || (string) data_get($portfolio, 'structural_family', '') === 'frozen_control';
+    }
+
     /** @return array<string, mixed>|null */
     private function persist(LabAgent $agent, string $stage, array $result, array $baseline, array $options): ?array
     {
+        $metadata = (array) ($agent->modelVersion?->metadata ?? []);
         $diff = (array) ($agent->parameter_diff ?? []);
         $singleGene = count($diff) === 1;
         $key = $singleGene
@@ -261,6 +281,8 @@ class MutationResponseMapService
             'result' => hash('sha256', json_encode($result, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
         ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         $status = (string) ($options['status'] ?? 'observed');
+        $sibling = (string) ($options['sibling_kind'] ?? data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', '')));
+        $control = $this->isControlOnly($metadata, $sibling);
         if ($stage !== 'control' && ! $singleGene) {
             $status = 'diagnostic_multi_gene';
         }
@@ -276,7 +298,7 @@ class MutationResponseMapService
             'target' => $target !== '' ? $target : null,
             'parameter_key' => $key !== null && $key !== '' ? $key : null,
             'direction' => $direction,
-            'sibling_kind' => $options['sibling_kind'] ?? null,
+            'sibling_kind' => $options['sibling_kind'] ?? ($sibling !== '' ? $sibling : null),
             'lab_agent_id' => $agent->id,
             'model_version_id' => $agent->model_version_id,
             'repair_anchor_id' => $options['anchor_id'] ?? null,
@@ -293,8 +315,8 @@ class MutationResponseMapService
             'metadata' => [
                 'protocol' => self::PROTOCOL,
                 'single_gene' => $singleGene,
-                'causal_credit_eligible' => $stage === 'control' || $singleGene,
-                'mutation_credit_status' => $stage === 'control' || $singleGene ? 'eligible' : 'diagnostic_only',
+                'causal_credit_eligible' => $control || $singleGene,
+                'mutation_credit_status' => $control || $singleGene ? 'eligible' : 'diagnostic_only',
                 'specialist_role' => data_get($agent->modelVersion?->metadata, 'council_specialist_contract.role', data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.role', data_get($agent->modelVersion?->metadata, 'portfolio_council_lane.specialist_role'))),
                 'repair_anchor_sibling_cohort_id' => data_get($agent->modelVersion?->metadata, 'repair_anchor.sibling_cohort_id'),
                 'data_manifest_hash' => data_get($result, 'data_manifest.sha256', data_get($result, 'data_manifest.snapshot_sha256')),
@@ -315,6 +337,18 @@ class MutationResponseMapService
                 ...((array) ($options['metadata'] ?? [])),
             ],
         ]);
+
+        if ($stage !== 'control' && $control) {
+            $row->update([
+                'status' => 'control',
+                'sibling_kind' => $options['sibling_kind'] ?? $sibling ?: 'control',
+                'metadata' => [
+                    ...((array) $row->metadata),
+                    'constructor_control_invariant' => true,
+                    'promotion_evidence' => false,
+                ],
+            ]);
+        }
 
         return [
             'id' => (int) $row->id,

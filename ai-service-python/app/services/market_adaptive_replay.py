@@ -32,6 +32,85 @@ from app.services.parameter_schema import validate_strategy_parameters
 from app.strategies.registry import get_strategy
 
 
+def _powered_survival_assessment(
+    windows: list[dict[str, object]],
+    *,
+    minimum_trades: int,
+    minimum_powered_windows: int,
+    minimum_pass_ratio: float,
+    catastrophic_pf: float = 0.50,
+    catastrophic_minimum_trades: int | None = None,
+    catastrophic_net_loss_percent: float = -3.0,
+    catastrophic_drawdown_percent: float = 6.0,
+) -> dict[str, object]:
+    """Separate small-sample noise from repeatable temporal evidence.
+
+    A small losing cell is diagnostic, not a catastrophe.  The hard-stop
+    floor can never be lower than the powered-evidence floor, otherwise a
+    month with three-to-five trades becomes a strategy verdict while the same
+    month is simultaneously too small to be assessed as normal evidence. A
+    powered low-PF cell also needs a material net-loss or drawdown signature;
+    PF alone is a ratio and does not measure the economic size of the loss.
+    """
+    catastrophic_floor = max(
+        int(minimum_trades),
+        int(catastrophic_minimum_trades if catastrophic_minimum_trades is not None else minimum_trades),
+    )
+    active = [item for item in windows if int(item.get("trades", 0)) > 0]
+    powered = [item for item in active if int(item.get("trades", 0)) >= minimum_trades]
+    low_sample = [item for item in active if int(item.get("trades", 0)) < minimum_trades]
+    catastrophic: list[dict[str, object]] = []
+    for item in active:
+        net_profit = float(item.get("net_profit_percent", 0.0) or 0.0)
+        drawdown = float(item.get("max_drawdown_percent", item.get("max_drawdown", 0.0)) or 0.0)
+        large_loss = net_profit <= catastrophic_net_loss_percent
+        large_drawdown = drawdown >= catastrophic_drawdown_percent
+        if (
+            int(item.get("trades", 0)) >= catastrophic_floor
+            and float(item.get("profit_factor", 0.0)) < catastrophic_pf
+            and (large_loss or large_drawdown)
+        ):
+            catastrophic.append({
+                **item,
+                "catastrophic_severity": {
+                    "net_loss": large_loss,
+                    "drawdown": large_drawdown,
+                    "net_profit_percent": round(net_profit, 4),
+                    "max_drawdown_percent": round(drawdown, 4),
+                },
+            })
+    passes = [item for item in powered if float(item.get("profit_factor", 0.0)) >= 1.0]
+    pass_ratio = len(passes) / len(powered) if powered else None
+    status = "passed"
+    if catastrophic:
+        status = "catastrophic_failure"
+    elif len(powered) < minimum_powered_windows:
+        status = "insufficient_evidence"
+    elif pass_ratio is not None and pass_ratio < minimum_pass_ratio:
+        status = "failed"
+    return {
+        "status": status,
+        "active_windows": len(active),
+        "powered_windows": len(powered),
+        "low_sample_windows": len(low_sample),
+        "passing_powered_windows": len(passes),
+        "powered_pass_ratio": round(pass_ratio, 4) if pass_ratio is not None else None,
+        "minimum_trades": minimum_trades,
+        "minimum_powered_windows": minimum_powered_windows,
+        "minimum_pass_ratio": minimum_pass_ratio,
+        "catastrophic_pf": catastrophic_pf,
+        "catastrophic_minimum_trades": catastrophic_floor,
+        "catastrophic_net_loss_percent": catastrophic_net_loss_percent,
+        "catastrophic_drawdown_percent": catastrophic_drawdown_percent,
+        "catastrophic_windows": [str(item.get("window", "unknown")) for item in catastrophic],
+        "catastrophic_window_evidence": [
+            {"window": str(item.get("window", "unknown")), **dict(item.get("catastrophic_severity", {}))}
+            for item in catastrophic
+        ],
+        "low_sample_window_ids": [str(item.get("window", "unknown")) for item in low_sample],
+    }
+
+
 def _utc_timestamp(value: object) -> pd.Timestamp:
     """Normalize scalar timestamps to timezone-aware UTC."""
     timestamp = pd.Timestamp(value)
@@ -59,32 +138,117 @@ class MarketAdaptiveReplayService:
     # tolerance without inventing a missing 22:00 candle.
     latest_supported_foundation_start: str = "2005-01-03 00:00:00"
     rolling_start: str = "2026-01-01 00:00:00"
+    training_end_exclusive: str = "2026-01-01 00:00:00"
+    paper_only_replay_weeks: int = 52
     sealed_holdout_weeks: int = 6
     overfit_threshold: int = 25
     # Four windows allow an actual half-vs-half CSCV diagnostic (six splits),
     # while every window remains strictly before the sealed holdout.
     minimum_checkpoint_windows: int = 4
 
+    def stratified_historical_screening_evidence(
+        self,
+        payload: SimpleBacktestRequest,
+        source_df: pd.DataFrame,
+        score_calculator,
+    ) -> dict[str, object] | None:
+        """Evaluate independent pre-2026 windows without stitching regimes together."""
+        contract = ((payload.policy_context or {}).get("historical_stratified_windows", {}) or {})
+        if contract.get("protocol") != "historical_stratified_windows_v1":
+            return None
+        window_count = max(8, min(12, int(contract.get("window_count", 8))))
+        window_rows = max(750, int(contract.get("window_rows", 1500)))
+        ordered = source_df.sort_values("time").reset_index(drop=True)
+        if len(ordered) < window_rows * 2:
+            return {"status": "insufficient_evidence", "reason_codes": ["INSUFFICIENT_STRATIFIED_HISTORICAL_EVIDENCE"]}
+
+        last_start = len(ordered) - window_rows
+        starts = [round(index * last_start / max(1, window_count - 1)) for index in range(window_count)]
+        windows = []
+        for index, start in enumerate(starts, start=1):
+            frame = ordered.iloc[start:start + window_rows].reset_index(drop=True)
+            result = run_simple_ema_rsi_backtest_on_dataframe(
+                payload.model_copy(update={"emit_decision_trace": False}),
+                frame,
+                include_differential_pair=False,
+                lightweight=True,
+            ).model_dump()
+            windows.append({
+                "window": f"stratum_{index}",
+                "start": str(frame.iloc[0]["time"]),
+                "end": str(frame.iloc[-1]["time"]),
+                "candles": int(len(frame)),
+                "trades": int(result.get("total_trades", result.get("trades", 0))),
+                "profit_factor": round(float(result.get("profit_factor", 0.0)), 4),
+                "score": round(float(score_calculator(result)), 4),
+            })
+        evidence = _powered_survival_assessment(
+            windows,
+            minimum_trades=8,
+            minimum_powered_windows=4,
+            minimum_pass_ratio=.70,
+        )
+        scores = [float(item["score"]) for item in windows]
+        reasons = []
+        if evidence["status"] == "catastrophic_failure":
+            reasons.append("FAILED_STRATIFIED_HISTORICAL_CATASTROPHIC")
+        elif evidence["status"] == "insufficient_evidence":
+            reasons.append("INSUFFICIENT_STRATIFIED_HISTORICAL_EVIDENCE")
+        elif evidence["status"] == "failed":
+            reasons.append("FAILED_STRATIFIED_HISTORICAL_SURVIVAL")
+        return {
+            "protocol": "historical_stratified_windows_v1",
+            "status": "passed" if not reasons else "rescue_case",
+            "reason_codes": reasons,
+            "window_count": window_count,
+            "window_rows": window_rows,
+            "windows": windows,
+            "evidence": evidence,
+            "temporal_score_drift": round(abs(scores[0] - scores[-1]), 4) if len(scores) >= 2 else None,
+            "promotion_evidence": False,
+        }
+
     def split_dataset(
         self,
         df: pd.DataFrame,
         foundation_df: pd.DataFrame | None = None,
         timeframe: str = "H1",
+        paper_only_2026: bool = False,
     ) -> dict[str, pd.DataFrame]:
         normalized = self._normalize(df)
         foundation_source = self._normalize(foundation_df) if foundation_df is not None else normalized
-        holdout_start = normalized["time"].max() - pd.Timedelta(weeks=self.sealed_holdout_weeks)
+        cutoff = _utc_timestamp(self.training_end_exclusive)
+        if paper_only_2026:
+            # In the constitutional production lane, 2026 is paper-only. A
+            # replay request carrying a paper candle is a hard data-boundary
+            # violation, not a valid forward window.
+            if normalized.empty or normalized["time"].max() >= cutoff:
+                raise ValueError("Research replay dataset 2026-01-01 dan keyingi candle saqlamasligi kerak; 2026 faqat paper lane.")
+            if foundation_source.empty or foundation_source["time"].max() >= cutoff:
+                raise ValueError("Foundation dataset 2026-01-01 dan keyingi candle saqlamasligi kerak.")
+
+            holdout_start = normalized["time"].max() - pd.Timedelta(weeks=self.sealed_holdout_weeks)
+            replay_start = holdout_start - pd.Timedelta(weeks=self.paper_only_replay_weeks)
+        else:
+            holdout_start = normalized["time"].max() - pd.Timedelta(weeks=self.sealed_holdout_weeks)
+            replay_start = _utc_timestamp(self.rolling_start)
         is_m15 = str(timeframe).upper() == "M15"
-        foundation_start = _utc_timestamp("2025-11-01 00:00:00") if is_m15 else _utc_timestamp(self.foundation_start)
+        # M15 evolution uses the complete available pre-2026 archive just as
+        # H1 does. The first tradable candle may be later than 2016-01-01 for
+        # an instrument listed later; Laravel freezes the actual first row in
+        # the immutable manifest and the row-count/continuity gates enforce
+        # its integrity.
+        foundation_start = _utc_timestamp("2016-01-01 00:00:00") if is_m15 else _utc_timestamp(self.foundation_start)
         foundation_end = _utc_timestamp(self.foundation_end)
-        latest_supported_start = _utc_timestamp("2025-11-01 00:00:00") if is_m15 else _utc_timestamp(self.latest_supported_foundation_start)
+        latest_supported_start = _utc_timestamp("2016-01-01 00:00:00") if is_m15 else _utc_timestamp(self.latest_supported_foundation_start)
         minimum_foundation_rows = 2000 if is_m15 else 202
         foundation = foundation_source[
             (foundation_source.time >= foundation_start)
             & (foundation_source.time <= foundation_end)
+            & (foundation_source.time < replay_start)
         ]
         replay = normalized[
-            (normalized.time >= _utc_timestamp(self.rolling_start))
+            (normalized.time >= replay_start)
             & (normalized.time < holdout_start)
         ]
         holdout = normalized[normalized.time >= holdout_start]
@@ -95,11 +259,11 @@ class MarketAdaptiveReplayService:
         # unexplained market-open holes inside the available archive.
         if is_m15:
             if len(foundation) < minimum_foundation_rows or foundation["time"].empty:
-                raise ValueError("M15 foundation training uchun 2025-11-01 dan 2025-12-31 gacha kamida 2000 ta candle kerak.")
+                raise ValueError("M15 foundation training uchun 2016-01-01 dan 2025-12-31 gacha pre-2026 archive kerak.")
         elif len(foundation) < minimum_foundation_rows or foundation["time"].min() > latest_supported_start:
             raise ValueError("Foundation training uchun 2005-01-02 dan 2025-12-31 gacha tarix kerak.")
         if len(replay) < 202:
-            raise ValueError("2026 rolling replay uchun kamida 202 ta yopilgan candle kerak.")
+            raise ValueError("Research replay uchun kamida 202 ta yopilgan candle kerak.")
         if len(holdout) < 2:
             raise ValueError("Sealed holdout uchun candle yetarli emas.")
 
@@ -116,7 +280,9 @@ class MarketAdaptiveReplayService:
         score_calculator,
         foundation_df: pd.DataFrame | None = None,
     ) -> dict[str, object]:
-        segments = self.split_dataset(df, foundation_df, payload.timeframe)
+        boundary = (payload.policy_context or {}).get("data_boundary", {}) or {}
+        paper_only_2026 = boundary.get("protocol", "pre_2026_training_paper_only_v1") == "pre_2026_training_paper_only_v1"
+        segments = self.split_dataset(df, foundation_df, payload.timeframe, paper_only_2026=paper_only_2026)
         # Foundation is used only to calculate the train-side score.  The
         # promotion-only Monte Carlo/DNA/telemetry streams belong to the
         # chronological replay below; recomputing them on the 2004-2025
@@ -567,6 +733,21 @@ class MarketAdaptiveReplayService:
             ]
         temporal_scores = [float(score_calculator(window)) for window in temporal_windows]
         temporal_pfs = [float(window.get("profit_factor", 0)) for window in temporal_windows]
+        temporal_evidence = _powered_survival_assessment(
+            [
+                {
+                    "window": f"chunk_{index}",
+                    "trades": int(window.get("total_trades", window.get("trades", 0))),
+                    "profit_factor": float(window.get("profit_factor", 0)),
+                    "net_profit_percent": float(window.get("net_profit_percent", 0) or 0),
+                    "max_drawdown_percent": float(window.get("max_drawdown_percent", window.get("max_drawdown", 0)) or 0),
+                }
+                for index, window in enumerate(temporal_windows, start=1)
+            ],
+            minimum_trades=8,
+            minimum_powered_windows=2,
+            minimum_pass_ratio=0.67,
+        )
 
         # Calendar survival uses actual UTC calendar months. Months with no
         # executable opportunity are activity absence, not a fabricated loss.
@@ -603,6 +784,8 @@ class MarketAdaptiveReplayService:
                 "candles": int(len(month_frame)),
                 "trades": int(month_result.get("total_trades", month_result.get("trades", 0))),
                 "profit_factor": round(float(month_result.get("profit_factor", month_result.get("net_pf", 0))), 4),
+                "net_profit_percent": round(float(month_result.get("net_profit_percent", 0) or 0), 4),
+                "max_drawdown_percent": round(float(month_result.get("max_drawdown_percent", month_result.get("max_drawdown", 0)) or 0), 4),
                 "score": round(float(score_calculator(month_result)), 4),
             }
         assessed_months = {
@@ -610,6 +793,16 @@ class MarketAdaptiveReplayService:
         }
         inactive_months = [month for month, metrics in calendar_months.items() if int(metrics["trades"]) == 0]
         calendar_month_pfs = [float(metrics["profit_factor"]) for metrics in assessed_months.values()]
+        calendar_evidence = _powered_survival_assessment(
+            [dict(metrics, window=month) for month, metrics in calendar_months.items()],
+            # A calendar month with three-to-five trades is a useful
+            # hypothesis clue, but it is not enough evidence to label a
+            # strategy catastrophic.  It remains explicitly visible as a
+            # low-sample cell for the planner's research atlas.
+            minimum_trades=8,
+            minimum_powered_windows=3,
+            minimum_pass_ratio=0.70,
+        )
         context_months = ((normal_result.get("pf_attribution", {}) or {}).get("by_regime_volatility_month", {}) or {})
         context_failure_map = {
             context: {
@@ -628,15 +821,32 @@ class MarketAdaptiveReplayService:
         }
 
         parameters = dict(payload.parameters or {})
+        repair_contract = (payload.policy_context or {}).get("repair_contract", {}) or {}
+        declared_changed_gene = repair_contract.get("changed_gene")
+        changed_gene = declared_changed_gene if declared_changed_gene in parameters else None
+        if changed_gene is None:
+            parameter_diff = repair_contract.get("parameter_diff", {}) or {}
+            if isinstance(parameter_diff, dict) and len(parameter_diff) == 1:
+                candidate_gene = next(iter(parameter_diff))
+                changed_gene = candidate_gene if candidate_gene in parameters else None
         numeric = [key for key, value in parameters.items() if isinstance(value, (int, float)) and not isinstance(value, bool)]
+        boolean = [key for key, value in parameters.items() if isinstance(value, bool)]
+        perturbation_gene = changed_gene or (numeric[0] if numeric else (boolean[0] if boolean else None))
+        perturbation_status = "assessed" if perturbation_gene in numeric or perturbation_gene in boolean else (
+            "not_applicable_non_numeric_changed_gene" if changed_gene else "not_applicable_no_numeric_gene"
+        )
         variants = []
-        for direction in (-1.0, 1.0):
-            if not numeric:
+        directions = (-1.0, 1.0) if perturbation_gene in numeric else (1.0,)
+        for direction in directions:
+            if perturbation_status != "assessed":
                 break
-            key = numeric[0]
+            key = str(perturbation_gene)
             changed = dict(parameters)
-            value = float(changed[key])
-            changed[key] = round(value + (max(abs(value), 1.0) * .05 * direction), 6)
+            if key in boolean:
+                changed[key] = not bool(changed[key])
+            else:
+                value = float(changed[key])
+                changed[key] = round(value + (max(abs(value), 1.0) * .05 * direction), 6)
             try:
                 variant_payload = payload.model_copy(update={
                     "parameters": changed,
@@ -671,17 +881,24 @@ class MarketAdaptiveReplayService:
             union = baseline_times | variant_times
             timing.append(len(baseline_times & variant_times) / len(union) if union else 1.0)
         normal_pf = max(.0001, float(normal_result.get("profit_factor", 0)))
-        perturbation_ratio = min([float(item.get("profit_factor", 0)) / normal_pf for item in variants], default=0.0)
+        perturbation_ratio = min([float(item.get("profit_factor", 0)) / normal_pf for item in variants], default=None)
         worst_regime_pf = _minimum_pf((normal_result.get("pf_attribution", {}) or {}).get("by_regime", {}))
         stress_pf = float(cost.get("stress_cost", {}).get("profit_factor", 0))
-        train_forward_gap = abs(temporal_scores[0] - temporal_scores[-1]) if len(temporal_scores) >= 2 else 999.0
+        temporal_score_drift = abs(temporal_scores[0] - temporal_scores[-1]) if len(temporal_scores) >= 2 else None
         reasons = []
         if int(normal_result.get("total_trades", 0)) < 10: reasons.append("FAILED_TRADE_COUNT")
         if stress_pf < 1.05: reasons.append("FAILED_STRESS_COST")
-        if min(temporal_pfs, default=0.0) < 1.0: reasons.append("FAILED_TEMPORAL_CHUNK_SURVIVAL")
-        if not assessed_months:
+        if temporal_evidence["status"] == "catastrophic_failure":
+            reasons.append("FAILED_TEMPORAL_CHUNK_CATASTROPHIC")
+        elif temporal_evidence["status"] == "insufficient_evidence":
+            reasons.append("INSUFFICIENT_TEMPORAL_CHUNK_EVIDENCE")
+        elif temporal_evidence["status"] == "failed":
+            reasons.append("FAILED_TEMPORAL_CHUNK_SURVIVAL")
+        if calendar_evidence["status"] == "catastrophic_failure":
+            reasons.append("FAILED_CALENDAR_MONTH_CATASTROPHIC")
+        elif calendar_evidence["status"] == "insufficient_evidence":
             reasons.append("INSUFFICIENT_CALENDAR_MONTH_EVIDENCE")
-        elif min(calendar_month_pfs, default=0.0) < 1.0:
+        elif calendar_evidence["status"] == "failed":
             reasons.append("FAILED_CALENDAR_MONTH_SURVIVAL")
         # A candidate with no regime bucket meeting the minimum sample size
         # has no coverage evidence.  Treat that as an explicit rescue reason,
@@ -691,9 +908,14 @@ class MarketAdaptiveReplayService:
             reasons.append("INSUFFICIENT_REGIME_EVIDENCE")
         elif worst_regime_pf < 1.0:
             reasons.append("FAILED_REGIME_COVERAGE")
-        if perturbation_ratio < .80: reasons.append("FAILED_PARAMETER_STABILITY")
-        if train_forward_gap > self.overfit_threshold: reasons.append("FAILED_TRAIN_FORWARD_GAP")
-        if min(timing, default=0.0) < .50: reasons.append("FAILED_SIGNAL_TIMING_STABILITY")
+        if perturbation_status == "assessed" and perturbation_ratio is not None and perturbation_ratio < .80:
+            reasons.append("FAILED_PARAMETER_STABILITY")
+        if temporal_score_drift is None:
+            reasons.append("INSUFFICIENT_TEMPORAL_SCORE_DRIFT_EVIDENCE")
+        elif temporal_score_drift > self.overfit_threshold:
+            reasons.append("FAILED_TEMPORAL_SCORE_DRIFT")
+        if perturbation_status == "assessed" and min(timing, default=0.0) < .50:
+            reasons.append("FAILED_SIGNAL_TIMING_STABILITY")
         return {
             "protocol": "screening_survival_v2", "status": "survivor" if not reasons else "rescue_case",
             "reason_codes": reasons, "sample_count": int(normal_result.get("total_trades", 0)),
@@ -703,16 +925,20 @@ class MarketAdaptiveReplayService:
             "worst_window_pf": round(min(temporal_pfs, default=0.0), 4),
             "worst_temporal_chunk_pf": round(min(temporal_pfs, default=0.0), 4),
             "worst_calendar_month_pf": round(min(calendar_month_pfs, default=0.0), 4) if assessed_months else None,
-            "stress_cost_pf": round(stress_pf, 4), "parameter_perturbation_ratio": round(perturbation_ratio, 4),
-            "train_forward_gap": round(train_forward_gap, 4), "signal_timing_stability": round(min(timing, default=0.0), 4),
+            "stress_cost_pf": round(stress_pf, 4), "parameter_perturbation_ratio": round(perturbation_ratio, 4) if perturbation_ratio is not None else None,
+            "parameter_perturbation_gene": perturbation_gene,
+            "parameter_perturbation_status": perturbation_status,
+            "temporal_score_drift": round(temporal_score_drift, 4) if temporal_score_drift is not None else None,
+            "signal_timing_stability": round(min(timing, default=0.0), 4) if perturbation_status == "assessed" else None,
             "temporal_chunk_survival": {
                 "method": temporal_method, "window_scores": temporal_scores,
                 "window_profit_factors": [round(value, 4) for value in temporal_pfs],
+                "evidence": temporal_evidence,
             },
             "calendar_month_survival": {
                 "timezone": "UTC", "method": "calendar_month", "source": calendar_source, "months": calendar_months,
                 "assessed_months": list(assessed_months), "activity_absence_months": inactive_months,
-                "context_failure_map": context_failure_map,
+                "context_failure_map": context_failure_map, "evidence": calendar_evidence,
             },
             "window_scores": temporal_scores, "cost_profile": cost, "promotion_evidence": False,
             "rule": "Screening predicts survival under frozen perturbations; only full replay can produce promotion evidence.",
@@ -1451,7 +1677,9 @@ class MarketAdaptiveReplayService:
         df: pd.DataFrame,
         foundation_df: pd.DataFrame | None = None,
     ) -> tuple[dict[str, object], dict[str, object]]:
-        segments = self.split_dataset(df, foundation_df, payload.timeframe)
+        boundary = (payload.policy_context or {}).get("data_boundary", {}) or {}
+        paper_only_2026 = boundary.get("protocol", "pre_2026_training_paper_only_v1") == "pre_2026_training_paper_only_v1"
+        segments = self.split_dataset(df, foundation_df, payload.timeframe, paper_only_2026=paper_only_2026)
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, segments["holdout"]).model_dump()
         result["gold_holdout"] = {
             "protocol": "gold_holdout_v1", "status": "released_once",

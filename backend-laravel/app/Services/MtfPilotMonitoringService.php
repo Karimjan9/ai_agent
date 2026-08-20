@@ -127,7 +127,12 @@ class MtfPilotMonitoringService
             ],
         );
 
-        $this->appendFeedChecks($checks, $symbol, $addCheck);
+        $this->appendFeedChecks($checks, $symbol, $addCheck, [
+            'h1_age_seconds' => $h1Age,
+            'm15_age_seconds' => $m15Age,
+            'h1_max_age_seconds' => $h1MaxAge,
+            'm15_max_age_seconds' => $m15MaxAge,
+        ]);
 
         $volume = $this->volumeStats($symbol);
         $volumeFreshness = $this->researchCatalog->volumeResearchFreshness($volume);
@@ -334,7 +339,7 @@ class MtfPilotMonitoringService
     }
 
     /** @param callable(array, string, string, string, array): void $addCheck */
-    private function appendFeedChecks(array &$checks, string $symbol, callable $addCheck): void
+    private function appendFeedChecks(array &$checks, string $symbol, callable $addCheck, array $freshness = []): void
     {
         if (! Schema::hasTable('market_data_sync_states')) {
             $addCheck($checks, 'FEED_STATE', 'warning', 'Per-stream feed state is unavailable; candle freshness is the fallback.', []);
@@ -348,12 +353,24 @@ class MtfPilotMonitoringService
             ->keyBy(fn (MarketDataSyncState $state): string => strtoupper($state->timeframe));
         $bad = $states->filter(fn (MarketDataSyncState $state): bool => in_array(strtolower((string) $state->status), ['stale', 'lost', 'failed'], true));
         $missing = collect(['H1', 'M15'])->diff($states->keys())->values()->all();
-        $status = $bad->contains(fn (MarketDataSyncState $state): bool => strtolower((string) $state->status) === 'lost') ? 'critical' : ($bad->isNotEmpty() || $missing !== [] ? 'warning' : 'ok');
+        $h1Fresh = is_numeric($freshness['h1_age_seconds'] ?? null)
+            && (int) $freshness['h1_age_seconds'] <= (int) ($freshness['h1_max_age_seconds'] ?? 0);
+        $m15Fresh = is_numeric($freshness['m15_age_seconds'] ?? null)
+            && (int) $freshness['m15_age_seconds'] <= (int) ($freshness['m15_max_age_seconds'] ?? 0);
+        $freshnessFailures = [];
+        if (! $h1Fresh) $freshnessFailures[] = 'H1_FEED_FRESHNESS_FAILED';
+        if (! $m15Fresh) $freshnessFailures[] = 'M15_FEED_FRESHNESS_FAILED';
+        $lost = $bad->contains(fn (MarketDataSyncState $state): bool => in_array(strtolower((string) $state->status), ['lost', 'failed'], true));
+        $status = $lost || $freshnessFailures !== []
+            ? 'critical'
+            : ($bad->isNotEmpty() || $missing !== [] ? 'warning' : 'ok');
         $addCheck(
             $checks,
             'FEED_STATE',
             $status,
-            $status === 'ok' ? 'H1 and M15 feed states are healthy.' : 'One or more H1/M15 feed states are stale, lost, or missing.',
+            $status === 'ok'
+                ? 'H1 and M15 feed states are healthy and freshness-verified.'
+                : 'One or more H1/M15 feed states are stale, lost, missing, or freshness-invalid.',
             [
                 'states' => $states->map(fn (MarketDataSyncState $state): array => [
                     'status' => $state->status,
@@ -361,6 +378,11 @@ class MtfPilotMonitoringService
                     'last_error' => $state->last_error,
                 ])->all(),
                 'missing_timeframes' => $missing,
+                'freshness' => [
+                    ...$freshness,
+                    'healthy_requires_freshness' => true,
+                    'failed_reasons' => $freshnessFailures,
+                ],
             ],
         );
     }

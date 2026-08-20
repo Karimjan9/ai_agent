@@ -111,14 +111,6 @@ $scheduleArtisan('trading:daily-workflow')
     ->dailyAt('00:30')
     ->withoutOverlapping();
 $scheduleStaggeredFive('system:health-check', [], 0);
-$scheduleArtisan('system:runtime-monitor', [
-    '--json' => true,
-    '--persist' => true,
-])
-    // Keep Redis/queue/AI/scheduler/agent telemetry fresh even when the
-    // operator is not watching the terminal monitor process.
-    ->everyMinute()
-    ->withoutOverlapping();
 $scheduleArtisan('market:health')
     ->everyMinute()
     ->withoutOverlapping();
@@ -244,6 +236,7 @@ $scheduleStaggeredFive('trading:process-targeted-generations', [], 0);
 // generation planner and never changes a quality or paper gate.
 $scheduleStaggeredFive('trading:lab-learn-from-history', [], 1);
 $scheduleStaggeredFive('trading:process-screening-learning-outbox', [], 2);
+$scheduleStaggeredFive('trading:process-dual-track-evidence', ['--limit' => 10], 3);
 $scheduleStaggeredFive('trading:recover-lab-evaluation-errors', [], 3);
 // Scheduled ticks are dry-run only. Same-generation replay recovery is
 // dispatched only after an operator approval and an empty lab queue.

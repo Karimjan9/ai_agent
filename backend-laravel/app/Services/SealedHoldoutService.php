@@ -80,9 +80,12 @@ class SealedHoldoutService
         if (! $paperWindow) {
             throw new RuntimeException('Frozen six-month paper window is required before sealed holdout.');
         }
-        $datasetPath = $this->paperWindows->snapshot($paperWindow);
         $foundation = $this->datasets->ensureFoundationDataset($performance->symbol, $performance->timeframe);
-        $hash = $paperWindow->snapshot_sha256;
+        // Holdout is research evidence, not paper execution. It must use the
+        // pre-2026 foundation lane; the frozen 2026 window belongs only to the
+        // paper signal/ledger path.
+        $datasetPath = $foundation['path'];
+        $hash = (string) ($foundation['sha256'] ?? '');
         if ($hash === '') {
             throw new RuntimeException('Holdout dataset manifest hash is missing.');
         }
@@ -111,6 +114,15 @@ class SealedHoldoutService
                 'runtime_ensemble_policy' => (array) data_get($runtime, 'runtime_ensemble_policy', []),
                 'dataset_path' => $datasetPath,
                 'foundation_dataset_path' => $foundation['path'],
+                'policy_context' => [
+                    'data_boundary' => [
+                        'protocol' => 'pre_2026_training_paper_only_v1',
+                        'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                        'paper_allowed_for_replay' => false,
+                        'paper_allowed_for_mutation' => false,
+                        'promotion_evidence' => false,
+                    ],
+                ],
                 'initial_balance' => 10000,
                 'risk_per_trade' => 1,
                 'execution' => $executionContract['parameters'],

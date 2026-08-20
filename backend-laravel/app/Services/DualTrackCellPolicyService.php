@@ -11,6 +11,11 @@ class DualTrackCellPolicyService
 {
     public const PROTOCOL = 'dual_track_safe_cell_policy_v1';
 
+    public function __construct(
+        private ?DualTrackStatisticsService $statistics = null,
+        private ?DualTrackHierarchicalEvidenceService $hierarchy = null,
+    ) {}
+
     /** @return array<string, mixed> */
     public function route(array $context): array
     {
@@ -36,6 +41,7 @@ class DualTrackCellPolicyService
             'sample_count' => $policy->sample_count, 'confidence_margin' => $policy->confidence_margin,
             'disagreement_value' => $policy->disagreement_value, 'lane_statistics' => $policy->lane_statistics,
             'risk_bounds' => $policy->risk_bounds, 'promotion_evidence' => false,
+            'hierarchical_guidance' => $this->hierarchy?->guidance((string) $context['symbol'], (string) $context['timeframe'], $cell) ?? ['research_only' => true],
         ];
     }
 
@@ -45,10 +51,22 @@ class DualTrackCellPolicyService
         if (! $this->hasTable('dual_track_cell_policies')) return ['status' => 'unavailable', 'promotion_evidence' => false];
 
         $scope = ['symbol' => $outcome->symbol, 'timeframe' => $outcome->timeframe, 'cell_key' => $outcome->cell_key];
-        $rows = DualTrackOutcome::query()->where($scope)->where('outcome_status', 'settled')->get();
+        $materialized = $this->statistics?->forScope($outcome->symbol, $outcome->timeframe, $outcome->cell_key);
+        $rows = $materialized !== null && $materialized->isNotEmpty()
+            ? $materialized
+            : DualTrackOutcome::query()->where($scope)->where('outcome_status', 'settled')
+                ->select(['id', 'lane', 'correct', 'reward', 'risk_percent', 'regret', 'outcome_status', 'decision'])->get();
         $minimum = max(1, (int) config('services.dual_track.cell_minimum_samples', 30));
         $statistics = [];
-        foreach ($rows->groupBy('lane') as $lane => $laneRows) {
+        if ($materialized !== null && $materialized->isNotEmpty()) {
+            foreach ($materialized->groupBy('lane') as $lane => $laneRows) {
+                $sample = (int) $laneRows->sum('known_count');
+                $wins = (int) $laneRows->sum('wins');
+                $meanReward = (float) $laneRows->sum('reward_sum') / max(1, (int) $laneRows->sum('settled_count'));
+                $statistics[$lane] = ['sample_count' => $sample, 'wins' => $wins, 'win_rate' => $sample > 0 ? round($wins / $sample, 6) : 0.0, 'lower_bound' => round($this->wilsonLowerBound($wins, $sample), 6), 'mean_reward' => round($meanReward, 6), 'score' => round(($this->wilsonLowerBound($wins, $sample) * 100) + max(-10, min(10, $meanReward)), 6)];
+            }
+        }
+        foreach ($materialized !== null && $materialized->isNotEmpty() ? collect() : $rows->groupBy('lane') as $lane => $laneRows) {
             $known = $laneRows->filter(fn (DualTrackOutcome $row): bool => $row->correct !== null);
             $wins = $known->filter(fn (DualTrackOutcome $row): bool => $row->correct === true)->count();
             $sample = $known->count();
@@ -69,8 +87,15 @@ class DualTrackCellPolicyService
         $second = (float) ($ranked->skip(1)->first()['score'] ?? 0);
         $margin = $best - $second;
         $minimumMargin = (float) config('services.dual_track.cell_minimum_score_margin', 2.0);
-        $riskViolation = $rows->contains(fn (DualTrackOutcome $row): bool => (float) ($row->risk_percent ?? 0) > (float) config('services.risk.max_risk_per_trade_percent', 1));
-        $certified = $eligible->isNotEmpty() && $margin >= $minimumMargin && ! $riskViolation;
+        // A dual-track cell cannot be certified from one organism's evidence
+        // alone. Otherwise a Champion with 30 lucky outcomes could become a
+        // "winner" while Council has never been observed in that cell.
+        $bothLanesReady = collect(['champion', 'council'])->every(fn (string $lane): bool => ($statistics[$lane]['sample_count'] ?? 0) >= $minimum);
+        $riskViolation = $materialized !== null && $materialized->isNotEmpty()
+            ? ((int) $materialized->sum('risk_violation_count') > 0)
+            : $rows->contains(fn (DualTrackOutcome $row): bool => in_array($row->decision, ['BUY', 'SELL'], true)
+            && (! is_numeric($row->risk_percent) || (float) $row->risk_percent > (float) config('services.risk.max_risk_per_trade_percent', 1)));
+        $certified = $bothLanesReady && $margin >= $minimumMargin && ! $riskViolation;
         $status = $certified ? 'certified' : ($rows->isEmpty() ? 'learning' : 'candidate');
 
         $policy = DualTrackCellPolicy::query()->updateOrCreate(
@@ -81,10 +106,10 @@ class DualTrackCellPolicyService
                 'recommended_lane' => $recommended,
                 'active_lane' => 'incumbent',
                 'status' => $status,
-                'sample_count' => $rows->count(),
+                'sample_count' => $materialized !== null && $materialized->isNotEmpty() ? (int) $materialized->sum('settled_count') : $rows->count(),
                 'minimum_samples' => $minimum,
                 'confidence_margin' => round($margin, 6),
-                'disagreement_value' => round((float) $rows->sum(fn (DualTrackOutcome $row): float => (float) ($row->regret ?? 0)), 6),
+                'disagreement_value' => round((float) ($materialized !== null && $materialized->isNotEmpty() ? $materialized->sum('regret_sum') : $rows->sum(fn (DualTrackOutcome $row): float => (float) ($row->regret ?? 0))), 6),
                 'lane_statistics' => $statistics,
                 'risk_bounds' => ['risk_violation' => $riskViolation, 'promotion_evidence' => false],
                 'policy' => ['protocol' => self::PROTOCOL, 'rule' => 'lower_bound_plus_reward_margin', 'promotion_evidence' => false],

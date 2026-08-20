@@ -72,7 +72,14 @@ class BackfillTrainingMarketData extends Command
             $requestedFrom = $this->parseBoundary($this->option('from'));
             $requestedTo = $this->parseBoundary($this->option('to'));
             $targetFrom = $requestedFrom ?? CarbonImmutable::now('UTC')->subYears(10)->startOfDay();
+            $trainingCutoff = $training->trainingCutoff();
             $targetTo = $requestedTo ?? $this->lastClosedBoundary($timeframe);
+            if ($targetTo->greaterThan($trainingCutoff)) {
+                $targetTo = $trainingCutoff;
+            }
+            if ($targetFrom->greaterThanOrEqualTo($trainingCutoff)) {
+                throw new \InvalidArgumentException('Training archive 2026-01-01 dan keyin boshlanishi mumkin emas.');
+            }
             if ($targetFrom->greaterThanOrEqualTo($targetTo)) {
                 throw new \InvalidArgumentException('Training range bo\'sh bo\'lishi mumkin emas.');
             }
@@ -88,8 +95,22 @@ class BackfillTrainingMarketData extends Command
             $targetTo = CarbonImmutable::instance($archive->target_to)->utc();
             $explicitCursor = $this->parseBoundary($this->option('cursor'));
             if ($explicitCursor) {
+                if ($explicitCursor->greaterThanOrEqualTo($trainingCutoff)) {
+                    $archive->update([
+                        'target_to' => $trainingCutoff,
+                        'backfill_cursor_at' => $trainingCutoff,
+                        'status' => 'complete',
+                        'last_error' => null,
+                    ]);
+                    $this->info("{$symbol} {$timeframe}: pre-2026 training archive complete.");
+
+                    return self::SUCCESS;
+                }
                 if ($requestedTo) {
                     $targetTo = $requestedTo;
+                    if ($targetTo->greaterThan($trainingCutoff)) {
+                        $targetTo = $trainingCutoff;
+                    }
                 }
                 if ($explicitCursor->greaterThanOrEqualTo($targetTo)) {
                     throw new \InvalidArgumentException('--cursor --to dan oldin bo\'lishi kerak.');

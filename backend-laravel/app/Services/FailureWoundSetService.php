@@ -52,6 +52,11 @@ class FailureWoundSetService
             'direction' => 'lower',
             'paths' => ['screening_survival.train_forward_gap', 'train_forward_gap'],
         ],
+        'FAILED_TEMPORAL_SCORE_DRIFT' => [
+            'key' => 'temporal_score_drift',
+            'direction' => 'lower',
+            'paths' => ['screening_survival.temporal_score_drift'],
+        ],
         'FAILED_STRESS_COST' => [
             'key' => 'cost_exit_stress',
             'direction' => 'higher',
@@ -94,10 +99,10 @@ class FailureWoundSetService
             $evidence = (array) $case->evidence;
             $baseline = data_get($evidence, 'baseline.value');
             $candidate = $this->metric($result, (string) data_get($evidence, 'target_key', ''));
-            $sameData = $this->sameDataIdentity($result, (string) data_get($evidence, 'data_hash', ''));
+            $compatibility = $this->compatibility($result, $evidence);
 
             $status = match (true) {
-                ! $sameData => 'not_assessed',
+                ! $compatibility['compatible'] => 'not_assessed',
                 ! is_numeric($baseline) || ! is_numeric($candidate) => 'not_assessed',
                 $this->improved((float) $candidate, (float) $baseline, (string) data_get($evidence, 'direction', 'higher')) => 'improved',
                 default => 'failed',
@@ -109,7 +114,8 @@ class FailureWoundSetService
                 'target_key' => data_get($evidence, 'target_key'),
                 'baseline' => is_numeric($baseline) ? (float) $baseline : null,
                 'candidate' => is_numeric($candidate) ? (float) $candidate : null,
-                'same_data' => $sameData,
+                'same_data' => $compatibility['same_data'],
+                'compatibility' => $compatibility,
                 'status' => $status,
                 'promotion_evidence' => false,
             ];
@@ -189,6 +195,7 @@ class FailureWoundSetService
                         ],
                         'data_hash' => $dataHash,
                         'execution_hash' => (string) data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash', '')),
+                        'experiment_contract' => $this->experimentContract($result, $dataHash),
                         'sealed_windows' => $windowEvidence,
                         'promotion_evidence' => false,
                     ],
@@ -255,16 +262,50 @@ class FailureWoundSetService
         ) ?: hash('sha256', implode('|', [$agent->symbol, $agent->timeframe, (string) $agent->lab_generation_id]));
     }
 
-    private function sameDataIdentity(array $result, string $sealedHash): bool
+    /** @return array{compatible: bool, same_data: bool, mismatches: array<int, string>} */
+    private function compatibility(array $result, array $evidence): array
     {
-        if ($sealedHash === '') return false;
+        $sealed = (array) data_get($evidence, 'experiment_contract', []);
+        // Wounds sealed before protocol identity existed are useful history,
+        // but cannot validly block a candidate evaluated under a different
+        // sampling/gate contract.
+        if ($sealed === []) {
+            return ['compatible' => false, 'same_data' => false, 'mismatches' => ['legacy_contract_missing']];
+        }
         $candidateHash = (string) data_get(
             $result,
             'data_manifest.snapshot_sha256',
             data_get($result, 'data_manifest.sha256', data_get($result, 'dataset_hash', '')),
         );
+        $candidate = $this->experimentContract($result, $candidateHash);
+        $fields = ['foundation_hash', 'execution_hash', 'window_protocol', 'gate_semantics'];
+        $mismatches = [];
+        foreach ($fields as $field) {
+            $left = (string) data_get($sealed, $field, '');
+            $right = (string) data_get($candidate, $field, '');
+            // Legacy/unit evidence may intentionally omit a dimension on
+            // both sides. A one-sided omission is never comparable.
+            if ($left === '' && $right === '') continue;
+            if ($left === '' || $right === '' || ! hash_equals($left, $right)) $mismatches[] = $field;
+        }
 
-        return $candidateHash !== '' && hash_equals($sealedHash, $candidateHash);
+        return [
+            'compatible' => $mismatches === [],
+            'same_data' => ! in_array('foundation_hash', $mismatches, true),
+            'mismatches' => $mismatches,
+        ];
+    }
+
+    /** @return array<string, string> */
+    private function experimentContract(array $result, string $foundationHash): array
+    {
+        $stratified = (array) data_get($result, 'screening_survival.stratified_historical_windows', []);
+        return [
+            'foundation_hash' => $foundationHash,
+            'execution_hash' => (string) data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash', '')),
+            'window_protocol' => (string) data_get($stratified, 'protocol', data_get($result, 'screening_survival.protocol', '')),
+            'gate_semantics' => (string) data_get($result, 'screening_survival.protocol', ''),
+        ];
     }
 
     /** @return array<string, mixed> */
@@ -274,6 +315,7 @@ class FailureWoundSetService
             'temporal_chunk' => ['screening_survival.temporal_chunk_survival', 'screening_survival.window_profit_factors', 'screening_survival.worst_temporal_chunk_pf'],
             'calendar_month' => ['window_survival', 'monthly_passport', 'screening_survival.calendar_month_survival'],
             'train_forward_gap' => ['screening_survival.train_forward_gap', 'train_forward_gap', 'split_manifest'],
+            'temporal_score_drift' => ['screening_survival.temporal_score_drift', 'screening_survival.temporal_chunk_survival'],
             'cost_exit_stress' => ['screening_survival.stress_cost_pf', 'pf_attribution.stress_cost', 'stress_test'],
             default => [],
         };

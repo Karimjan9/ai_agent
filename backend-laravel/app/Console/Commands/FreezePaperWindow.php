@@ -15,9 +15,11 @@ class FreezePaperWindow extends Command
         {--dataset=foundation_10y}
         {--provider=dukascopy}
         {--months=6}
+        {--window=rolling_6m_v1 : Immutable policy key; e.g. paper_2026}
+        {--from= : UTC inclusive paper start; overrides --months}
         {--as-of= : UTC boundary; defaults to the current closed boundary}';
 
-    protected $description = 'Create the one-time immutable six-month paper window and lock the training cutoff';
+    protected $description = 'Create a one-time immutable paper window and lock the training cutoff';
 
     public function handle(FrozenPaperWindowService $windows): int
     {
@@ -29,6 +31,8 @@ class FreezePaperWindow extends Command
                 strtoupper((string) $this->option('timeframe')),
                 $this->asOf(),
                 (int) $this->option('months'),
+                $this->paperStart(),
+                (string) $this->option('window'),
             );
         } catch (\Throwable $exception) {
             $this->error($exception->getMessage());
@@ -40,6 +44,7 @@ class FreezePaperWindow extends Command
             'status' => 'frozen',
             'symbol' => $window->symbol,
             'timeframe' => $window->timeframe,
+            'window_key' => $window->window_key,
             'training_range' => [
                 'from' => $window->training_starts_at?->utc()->toIso8601String(),
                 'to_exclusive' => $window->training_ends_at?->utc()->toIso8601String(),
@@ -54,6 +59,13 @@ class FreezePaperWindow extends Command
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
         return self::SUCCESS;
+    }
+
+    private function paperStart(): ?CarbonImmutable
+    {
+        $raw = trim((string) $this->option('from'));
+
+        return $raw === '' ? null : CarbonImmutable::parse($raw, 'UTC')->utc();
     }
 
     private function asOf(): CarbonImmutable

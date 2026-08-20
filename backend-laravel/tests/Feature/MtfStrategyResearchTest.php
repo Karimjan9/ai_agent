@@ -250,8 +250,8 @@ class MtfStrategyResearchTest extends TestCase
         $reference = $service->store(
             $runKey,
             'XAUUSD',
-            [['time' => '2026-08-01 00:00:00', 'open' => 1, 'high' => 2, 'low' => 0.5, 'close' => 1.5, 'volume' => 1, 'volume_available' => true]],
-            [['time' => '2026-08-01 00:00:00', 'open' => 1, 'high' => 2, 'low' => 0.5, 'close' => 1.5, 'volume' => 1, 'volume_available' => true]],
+            [['time' => '2025-08-01 00:00:00', 'open' => 1, 'high' => 2, 'low' => 0.5, 'close' => 1.5, 'volume' => 1, 'volume_available' => true]],
+            [['time' => '2025-08-01 00:00:00', 'open' => 1, 'high' => 2, 'low' => 0.5, 'close' => 1.5, 'volume' => 1, 'volume_available' => true]],
             ['status' => 'passed', 'symbol' => 'XAUUSD'],
             ['spread_points' => 35],
             str_repeat('b', 64),

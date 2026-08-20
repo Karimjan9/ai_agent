@@ -306,7 +306,15 @@ class ResearchAllocationPolicyService
                 'family' => $family,
                 'execution_lane' => $lane,
             ], JSON_UNESCAPED_SLASHES));
-            $isControl = (int) ($controls[$key] ?? -1) === (int) $index;
+            $isPrimaryControl = (int) ($controls[$key] ?? -1) === (int) $index;
+            // A root portfolio deliberately has three frozen seats, two of
+            // them in the same execution family.  The normal pair contract
+            // only needs one primary control per family, but must not turn a
+            // declared extra frozen root control into an undeclared candidate.
+            $isControl = $isPrimaryControl || (
+                (bool) data_get($slot, 'niche.root_experiment_portfolio', false)
+                && (bool) data_get($slot, 'niche.control_only', false)
+            );
             $slot['niche'] = [
                 ...((array) ($slot['niche'] ?? [])),
                 'control_pair_contract' => [
@@ -348,12 +356,14 @@ class ResearchAllocationPolicyService
                     $slot['niche']['architecture_escape'],
                     $slot['niche']['architecture_control_only'],
                 );
-                $assignments[$key] = [
-                    'slot' => (int) $index + 1,
-                    'family' => $family,
-                    'execution_lane' => $lane,
-                    'pair_key' => $pairKey,
-                ];
+                if ($isPrimaryControl) {
+                    $assignments[$key] = [
+                        'slot' => (int) $index + 1,
+                        'family' => $family,
+                        'execution_lane' => $lane,
+                        'pair_key' => $pairKey,
+                    ];
+                }
             } else {
                 $slot['niche']['control_only'] = false;
                 $candidateCounts[$key] = ($candidateCounts[$key] ?? 0) + 1;

@@ -146,6 +146,9 @@ class SimpleBacktestRequest(BaseModel):
     # do not pay for a large trace. Laboratory runs set this true and persist
     # the returned immutable trace in the Laravel evidence plane.
     emit_decision_trace: bool = False
+    # Paper twin calls are sent to separate lane endpoints. The field is
+    # transport metadata only and never changes the canonical market data.
+    twin_lane: Literal["champion", "council"] | None = None
 
 
 class Metrics(BaseModel):

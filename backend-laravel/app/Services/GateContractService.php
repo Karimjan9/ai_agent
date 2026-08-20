@@ -18,6 +18,10 @@ class GateContractService
         'FAILED_CALENDAR_MONTH_SURVIVAL' => ['optimization_target' => 'calendar_stability', 'gate' => 'calendar_stability', 'lane' => 'calendar_session'],
         'FAILED_MONTHLY_SURVIVAL' => ['optimization_target' => 'monthly_survival', 'gate' => 'calendar_stability', 'lane' => 'calendar_session'],
         'FAILED_TRAIN_FORWARD_GAP' => ['optimization_target' => 'train_forward_robustness', 'gate' => 'train_forward_robustness', 'lane' => 'robustness_split'],
+        'FAILED_TEMPORAL_SCORE_DRIFT' => ['optimization_target' => 'temporal_score_drift', 'gate' => 'temporal_score_drift', 'lane' => 'temporal_state'],
+        'FAILED_STRATIFIED_HISTORICAL_SURVIVAL' => ['optimization_target' => 'temporal_stability', 'gate' => 'temporal_stability', 'lane' => 'temporal_state'],
+        'FAILED_STRATIFIED_HISTORICAL_CATASTROPHIC' => ['optimization_target' => 'temporal_stability', 'gate' => 'temporal_stability', 'lane' => 'temporal_state'],
+        'INSUFFICIENT_STRATIFIED_HISTORICAL_EVIDENCE' => ['optimization_target' => 'temporal_stability', 'gate' => 'temporal_stability', 'lane' => 'temporal_state'],
         'FAILED_PARAMETER_STABILITY' => ['optimization_target' => 'parameter_stability', 'gate' => 'parameter_stability', 'lane' => 'robustness_split'],
         'FAILED_SIGNAL_TIMING_STABILITY' => ['optimization_target' => 'temporal_stability', 'gate' => 'temporal_stability', 'lane' => 'temporal_state'],
         'FAILED_STRESS_COST' => ['optimization_target' => 'stress_cost', 'gate' => 'stress_cost', 'lane' => 'cost_exit'],
@@ -88,6 +92,11 @@ class GateContractService
         ],
         'train_forward_robustness' => [
             'paths' => ['screening_survival.train_forward_gap', 'train_forward_gap'],
+            'screening' => ['threshold' => 25.0, 'direction' => 'lower', 'scale' => 25.0],
+            'forward' => ['threshold' => 25.0, 'direction' => 'lower', 'scale' => 25.0],
+        ],
+        'temporal_score_drift' => [
+            'paths' => ['screening_survival.temporal_score_drift', 'screening_survival.worst_temporal_chunk_pf'],
             'screening' => ['threshold' => 25.0, 'direction' => 'lower', 'scale' => 25.0],
             'forward' => ['threshold' => 25.0, 'direction' => 'lower', 'scale' => 25.0],
         ],

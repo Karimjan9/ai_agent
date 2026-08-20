@@ -65,6 +65,11 @@ class LabAgentEvaluationService
         $currentSnapshotFileHash = is_file($currentSnapshotPath) ? hash_file('sha256', $currentSnapshotPath) : null;
         $currentFoundationFileHash = is_file($currentFoundationPath) ? hash_file('sha256', $currentFoundationPath) : null;
         $currentRegimeFileHash = is_file($currentRegimePath) ? hash_file('sha256', $currentRegimePath) : null;
+        // Full replay is research/training evidence. Its primary dataset is
+        // the immutable pre-2026 foundation, never the paper snapshot.
+        $currentReplayHash = $currentFoundationHash !== '' ? $currentFoundationHash : $currentSnapshotHash;
+        $currentReplayPath = $currentFoundationPath !== '' ? $currentFoundationPath : $currentSnapshotPath;
+        $currentReplayFileHash = is_file($currentReplayPath) ? hash_file('sha256', $currentReplayPath) : null;
         $cached = data_get($model->metadata, 'full_validation_batch');
         $cachedRuntimePolicy = (array) data_get($cached, 'full_replay_runtime_policy', []);
         $configuredFoundationThreshold = max(1, (int) config('services.lab_selection.full_replay_bounded_cohort_foundation_rows', 100000));
@@ -79,10 +84,10 @@ class LabAgentEvaluationService
             && is_array(data_get($cached, 'request_manifest'))
             && hash_equals($currentCodeHash, (string) data_get($cached, 'code_hash', ''))
             && hash_equals($currentParameterHash, (string) data_get($cached, 'parameter_hash', ''))
-            && $currentSnapshotHash !== ''
-            && hash_equals($currentSnapshotHash, (string) data_get($cached, 'data_hash', ''))
-            && is_string($currentSnapshotFileHash)
-            && hash_equals($currentSnapshotHash, $currentSnapshotFileHash)
+            && $currentReplayHash !== ''
+            && hash_equals($currentReplayHash, (string) data_get($cached, 'data_hash', ''))
+            && is_string($currentReplayFileHash)
+            && hash_equals($currentReplayHash, $currentReplayFileHash)
             && $currentFoundationHash !== ''
             && hash_equals($currentFoundationHash, (string) data_get($cached, 'foundation_data_hash', ''))
             && is_string($currentFoundationFileHash)
@@ -163,7 +168,7 @@ class LabAgentEvaluationService
                     $cohort,
                     $agent->lab_generation_id,
                     $currentCodeHash,
-                    (string) ($datasetSnapshot['sha256'] ?? ''),
+                    (string) ($foundationSnapshot['sha256'] ?? ''),
                     (string) ($foundationSnapshot['sha256'] ?? ''),
                     $foundationRowCount,
                     $boundedThreshold,
@@ -205,9 +210,11 @@ class LabAgentEvaluationService
                 $volumeEnabled = $selectedVolumeEnabled;
                 $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
             }
-            $dataset = $datasetSnapshot['path'];
-            $manifest = (array) ($datasetSnapshot['manifest'] ?? []);
-            $manifest['foundation'] = $foundationSnapshot['manifest'];
+            // The paper snapshot is retained in the generation context for
+            // the paper lane, but it is never sent as full-replay input.
+            $dataset = $foundationSnapshot['path'];
+            $manifest = (array) ($foundationSnapshot['manifest'] ?? []);
+            $manifest['paper'] = $datasetSnapshot['manifest'];
             if ($regimeSnapshot !== null) {
                 $manifest['regime'] = $regimeSnapshot['manifest'];
             }
@@ -223,6 +230,13 @@ class LabAgentEvaluationService
                 'policy_context' => [
                     'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($agent->symbol, $agent->timeframe),
                     'full_replay_runtime_policy' => $runtimePolicy,
+                    'data_boundary' => [
+                        'protocol' => 'pre_2026_training_paper_only_v1',
+                        'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                        'paper_allowed_for_replay' => false,
+                        'paper_allowed_for_mutation' => false,
+                        'promotion_evidence' => false,
+                    ],
                     // Each cohort member keeps its own one-gene contract;
                     // the Python replay selects the contract by strategy so
                     // a sibling's mutation can never be used for plateau
@@ -462,11 +476,18 @@ class LabAgentEvaluationService
         $agent->load('modelVersion', 'generation');
         $model = $agent->modelVersion;
         $volumeEnabled = $this->volumeEnabled($model);
-        $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
+        // The inexpensive genetic screen is an evolution operation, not a
+        // forward/paper observation.  Keep it entirely on the frozen
+        // pre-2026 foundation archive.  The generation snapshot is still
+        // frozen and recorded here so the later replay can use 2026 only as
+        // its independent paper/forward lane.
+        $paperSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
+        $datasetSnapshot = $this->datasets->ensureGenerationFoundationSnapshot($agent->generation);
         $microProbe = data_get($agent->generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
         $screenRows = $microProbe
             ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
             : 5000;
+        $stratifiedHistorical = ! $microProbe;
         $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], $screenRows);
         if (count($rows) < 500) {
             throw new RuntimeException('Screening uchun yetarli recent candle topilmadi.');
@@ -486,10 +507,13 @@ class LabAgentEvaluationService
             'initial_balance' => 10000,
             // Immutable snapshot-path transport keeps the request/evidence
             // contract intact while removing thousands of candle objects from
-            // HTTP JSON. Python applies the same bounded tail before
-            // normalisation, so the replay stream is unchanged.
+            // HTTP JSON. This path is deliberately pre-2026 training data;
+            // the 2026 generation snapshot is never a screening input.
             'dataset_path' => $datasetSnapshot['path'],
-            'dataset_tail_rows' => $screenRows,
+            // Normal evolution samples immutable windows across 2005–2025.
+            // Micro probes remain deliberately tail-bounded for their strict
+            // operational budget.
+            'dataset_tail_rows' => $stratifiedHistorical ? null : $screenRows,
             'volume_context' => $volumeEnabled
                 ? $this->volumeContextOrFail($agent->symbol, $agent->timeframe)
                 : $this->disabledVolumeContext(),
@@ -515,12 +539,25 @@ class LabAgentEvaluationService
                     'parent_model_version_ids' => $this->parentGraphService->ids($agent),
                     'single_gene' => count((array) $agent->parameter_diff) === 1,
                 ],
+                'historical_stratified_windows' => $stratifiedHistorical ? [
+                    'protocol' => 'historical_stratified_windows_v1',
+                    'window_count' => 8,
+                    'window_rows' => 1500,
+                    'source' => 'immutable_pre_2026_foundation',
+                ] : [],
                 'snapshot_transport' => [
-                    'protocol' => 'immutable_snapshot_path_v1',
-                    'dataset_path' => $datasetSnapshot['path'],
-                    'dataset_manifest_path' => $datasetSnapshot['path'].'.manifest.json',
-                    'dataset_sha256' => $datasetSnapshot['sha256'],
-                    'tail_rows' => $screenRows,
+                    'protocol' => 'historical_evolution_paper_forward_split_v1',
+                    'training_dataset_path' => $datasetSnapshot['path'],
+                    'training_dataset_manifest_path' => $datasetSnapshot['path'].'.manifest.json',
+                    'training_dataset_sha256' => $datasetSnapshot['sha256'],
+                    'training_tail_rows' => $screenRows,
+                    'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                    'paper_dataset_path' => $paperSnapshot['path'],
+                    'paper_dataset_manifest_path' => $paperSnapshot['path'].'.manifest.json',
+                    'paper_dataset_sha256' => $paperSnapshot['sha256'],
+                    'paper_start_inclusive' => '2026-01-01T00:00:00Z',
+                    'paper_allowed_for_screening' => false,
+                    'paper_allowed_for_mutation' => false,
                     'features_shared_per_generation_request' => true,
                 ],
             ],
@@ -561,6 +598,16 @@ class LabAgentEvaluationService
             'snapshot_sha256' => $datasetSnapshot['sha256'],
             'snapshot_protocol' => $datasetSnapshot['protocol'],
             'snapshot_generation_id' => $agent->lab_generation_id,
+            'data_partition' => [
+                'protocol' => 'historical_evolution_paper_forward_split_v1',
+                'screening_source' => 'pre_2026_foundation_training',
+                'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                'paper_source' => 'generation_canonical_snapshot',
+                'paper_start_inclusive' => '2026-01-01T00:00:00Z',
+                'paper_used_for_screening' => false,
+                'paper_used_for_mutation' => false,
+                'paper_snapshot_sha256' => $paperSnapshot['sha256'],
+            ],
         ];
         if ($regimeSnapshot !== null) {
             $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
@@ -853,11 +900,17 @@ class LabAgentEvaluationService
             return;
         }
         $volumeEnabled = $datasetContracts->first() === 'volume';
-        $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($generation, $volumeEnabled);
+        // Batch screening is the same genetic/evolutionary stage as the
+        // single-agent route: only pre-2026 history may influence it.  Keep
+        // the canonical generation snapshot as a separately sealed paper
+        // reference for the later full replay.
+        $paperSnapshot = $this->datasets->ensureGenerationSnapshot($generation, $volumeEnabled);
+        $datasetSnapshot = $this->datasets->ensureGenerationFoundationSnapshot($generation);
         $microProbe = data_get($generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
         $screenRows = $microProbe
             ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
             : 5000;
+        $stratifiedHistorical = ! $microProbe;
         $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], $screenRows);
         if (count($rows) < 500) {
             throw new RuntimeException('Screening batch uchun yetarli recent candle topilmadi.');
@@ -903,7 +956,7 @@ class LabAgentEvaluationService
             'initial_balance' => 10000,
             'risk_per_trade' => 1,
             'dataset_path' => $datasetSnapshot['path'],
-            'dataset_tail_rows' => $screenRows,
+            'dataset_tail_rows' => $stratifiedHistorical ? null : $screenRows,
             'volume_context' => $volumeEnabled
                 ? $this->volumeContextOrFail($first->symbol, $first->timeframe)
                 : $this->disabledVolumeContext(),
@@ -919,12 +972,25 @@ class LabAgentEvaluationService
                 'shadow_micro_probe' => $microProbe,
                 'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($first->symbol, $first->timeframe),
                 'repair_contracts' => $repairContracts,
+                'historical_stratified_windows' => $stratifiedHistorical ? [
+                    'protocol' => 'historical_stratified_windows_v1',
+                    'window_count' => 8,
+                    'window_rows' => 1500,
+                    'source' => 'immutable_pre_2026_foundation',
+                ] : [],
                 'snapshot_transport' => [
-                    'protocol' => 'immutable_snapshot_path_v1',
-                    'dataset_path' => $datasetSnapshot['path'],
-                    'dataset_manifest_path' => $datasetSnapshot['path'].'.manifest.json',
-                    'dataset_sha256' => $datasetSnapshot['sha256'],
-                    'tail_rows' => $screenRows,
+                    'protocol' => 'historical_evolution_paper_forward_split_v1',
+                    'training_dataset_path' => $datasetSnapshot['path'],
+                    'training_dataset_manifest_path' => $datasetSnapshot['path'].'.manifest.json',
+                    'training_dataset_sha256' => $datasetSnapshot['sha256'],
+                    'training_tail_rows' => $screenRows,
+                    'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                    'paper_dataset_path' => $paperSnapshot['path'],
+                    'paper_dataset_manifest_path' => $paperSnapshot['path'].'.manifest.json',
+                    'paper_dataset_sha256' => $paperSnapshot['sha256'],
+                    'paper_start_inclusive' => '2026-01-01T00:00:00Z',
+                    'paper_allowed_for_screening' => false,
+                    'paper_allowed_for_mutation' => false,
                     'features_shared_per_generation_request' => true,
                     'bounded_batch_size' => count($agents),
                 ],
@@ -955,6 +1021,16 @@ class LabAgentEvaluationService
             'snapshot_sha256' => $datasetSnapshot['sha256'],
             'snapshot_protocol' => $datasetSnapshot['protocol'],
             'snapshot_generation_id' => $first->lab_generation_id,
+            'data_partition' => [
+                'protocol' => 'historical_evolution_paper_forward_split_v1',
+                'screening_source' => 'pre_2026_foundation_training',
+                'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                'paper_source' => 'generation_canonical_snapshot',
+                'paper_start_inclusive' => '2026-01-01T00:00:00Z',
+                'paper_used_for_screening' => false,
+                'paper_used_for_mutation' => false,
+                'paper_snapshot_sha256' => $paperSnapshot['sha256'],
+            ],
             'batch_protocol' => 'bounded_screening_batch_v1',
             'batch_size' => count($agents),
         ];

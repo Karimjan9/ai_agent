@@ -10,6 +10,7 @@ class CapabilityCellRouterService
     public function __construct(
         private ChampionCouncilCanaryRouterService $canary,
         private DualTrackCellPolicyService $policies,
+        private ?DualTrackPromotionDecisionService $promotions = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -23,6 +24,8 @@ class CapabilityCellRouterService
             ? $configured
             : (string) ($policy['recommended_lane'] ?? $this->setting('services.dual_track.default_lane', 'incumbent'));
         $requested = in_array($requested, ['champion', 'council', 'hybrid', 'incumbent'], true) ? $requested : 'incumbent';
+        $promotion = $this->promotions?->assess([...$context, 'requested_lane' => $requested])
+            ?? ['allowed' => false, 'status' => 'unavailable', 'reasons' => ['promotion_authority_unavailable'], 'promotion_evidence' => false];
 
         if (! (bool) $this->setting('services.dual_track.enabled', true)) {
             $requested = 'incumbent';
@@ -38,11 +41,15 @@ class CapabilityCellRouterService
                 'observation_only' => true,
                 'policy' => $policy,
                 'fallback' => 'incumbent',
+                'promotion' => $promotion,
                 'promotion_evidence' => false,
             ];
         }
 
-        if ($requested === 'council' && $eventKey !== null) {
+        if (! ($promotion['allowed'] ?? false)) {
+            $route = 'incumbent';
+            $canary = null;
+        } elseif ($requested === 'council' && $eventKey !== null) {
             $canary = $this->canary->decide($transition, $eventKey.'|'.$cell);
             $route = $canary['route'] === 'council' ? 'council' : 'incumbent';
         } else {
@@ -59,6 +66,7 @@ class CapabilityCellRouterService
             'observation_only' => false,
             'canary' => $canary,
             'policy' => $policy,
+            'promotion' => $promotion,
             'fallback' => 'incumbent',
             'promotion_evidence' => false,
         ];

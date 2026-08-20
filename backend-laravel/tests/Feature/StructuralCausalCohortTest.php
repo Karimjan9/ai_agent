@@ -35,7 +35,7 @@ class StructuralCausalCohortTest extends TestCase
 
         $this->assertTrue($validation['allowed']);
         $this->assertCount(20, $plan);
-        $this->assertSame(2, $validation['controls']);
+        $this->assertSame(5, $validation['controls']);
         $this->assertGreaterThanOrEqual(5, count(array_filter(
             $validation['families'],
             fn (int $count, string $family): bool => $family !== 'frozen_control' && $count > 0,

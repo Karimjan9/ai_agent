@@ -335,6 +335,11 @@ class AgentLifecycleAuditService
     private function causalResearchContractCheck(LabGeneration $generation, $agents): array
     {
         $context = (array) $generation->trigger_context;
+        // A controlled rescue may be stored with an operational trigger such
+        // as `candidate_handoff`.  Its admission record is the authoritative
+        // classification: it has its own structural causal contract and must
+        // not be audited as an ordinary normal-research population.
+        $controlledRescue = is_array(data_get($context, 'controlled_rescue_admission'));
         $mode = (string) data_get(
             $context,
             'research_allocation_budget.mode',
@@ -342,6 +347,7 @@ class AgentLifecycleAuditService
         );
         $normal = $mode === 'normal_research'
             && (int) $generation->population_size >= 2
+            && ! $controlledRescue
             && ! in_array((string) $generation->trigger_type, ['shadow_research', 'coverage_rescue', 'candidate_handoff', 'controlled_rescue'], true);
         if (! $normal) {
             return $this->check(
@@ -1206,8 +1212,9 @@ class AgentLifecycleAuditService
             : 0;
         $agentIds = [];
         foreach ($rows as $row) {
-            $agentId = $this->jobAgentId((string) $row->payload);
-            if ($agentId !== null) $agentIds[] = $agentId;
+            foreach ($this->jobAgentIds((string) $row->payload) as $agentId) {
+                $agentIds[] = $agentId;
+            }
         }
         $agentIds = array_values(array_unique($agentIds));
         // A high attempt count can be historical backlog left by an earlier
@@ -1285,7 +1292,12 @@ class AgentLifecycleAuditService
         $recentRetryReleases = Schema::hasTable('lab_evaluation_runs')
             ? LabEvaluationRun::query()->where('status', 'retry_released')->where('created_at', '>=', now()->subMinutes(15))->count()
             : 0;
-        $agentIds = $rows->map(fn (array $row): ?int => $this->jobAgentId((string) ($row['payload'] ?? '')))->filter()->unique()->values()->all();
+        $agentIds = $rows
+            ->flatMap(fn (array $row): array => $this->jobAgentIds((string) ($row['payload'] ?? '')))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
         $retryStorm = $staleReserved > 0 || $recentRetryReleases >= 5;
         $issues = [];
         if ($backlogAge > 7200) $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_TWO_HOURS';
@@ -1550,14 +1562,21 @@ class AgentLifecycleAuditService
         }
     }
 
-    private function jobAgentId(string $payload): ?int
+    /** @return array<int, int> */
+    private function jobAgentIds(string $payload): array
     {
         $decoded = json_decode($payload, true);
         $serialized = (string) data_get(is_array($decoded) ? $decoded : [], 'data.command', '');
         if (preg_match('/s:\d+:"labAgentId";i:(\d+)/', $serialized, $match) === 1) {
-            return (int) $match[1];
+            return [(int) $match[1]];
         }
 
-        return null;
+        if (preg_match('/s:\\d+:"labAgentIds";a:\\d+:\\{(.*?)\\}/', $serialized, $batch) === 1) {
+            preg_match_all('/i:\\d+;i:(\\d+);/', $batch[1], $matches);
+
+            return array_values(array_unique(array_map('intval', $matches[1] ?? [])));
+        }
+
+        return [];
     }
 }

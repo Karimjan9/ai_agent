@@ -5648,3 +5648,13 @@ Status: `[IMPLEMENTED EVIDENCE-GATED CONTROL PLANE]`
 - Mustaqil `DualTrackRiskShieldService` active yo'lda constitution, snapshot, drawdown, risk-of-ruin, disagreement, calibration va confidence gate'larini tekshiradi; yetarli dalil bo'lmasa `WAIT`/reduced-size qaytaradi.
 - Evaluator calibration, layered memory lessons va evolution-island events production parent/constitution/modelni avtomatik o'zgartirmaydi; barcha yozuvlarda `promotion_evidence=false` invarianti saqlanadi.
 - Monitor endi run, outcome, cell policy, evaluator calibration, memory va evolution event statistikalarini bitta operator reportida qaytaradi.
+
+### 2026-08-19 — Twin Intelligence Operating System joriy qilindi
+
+Status: `[IMPLEMENTED LANE-SPECIFIC ORGANISM CONTRACTS]`
+
+- Champion va Council uchun alohida identity, mission, curriculum, lifecycle, error taxonomy, reward weights, memory namespace, evolution mode va promotion/transfer policy qo'shildi.
+- Champion `execution_robustness`, Council esa `collective_reasoning_quality` objective bilan ishlaydi; avoided-loss Council uchun risk-veto success, Champion uchun esa execution failure sifatida turlicha baholanadi.
+- `dual_track_exchange_packets` orqali faqat versionlangan capability packetlar almashadi; status, promotion evidence va private memory lane'lar orasida avtomatik ko'chmaydi.
+- `dual_track_lane_credits` counterfactual contribution'ni lane bo'yicha hisoblaydi; `dual_track_diversity_metrics` behavioral collapse, agreement rate va useful dissent'ni kuzatadi.
+- Monitor endi exchange packet, lane credit reward va diversity guard holatini ham qaytaradi.

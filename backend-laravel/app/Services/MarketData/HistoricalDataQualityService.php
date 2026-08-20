@@ -130,13 +130,13 @@ class HistoricalDataQualityService
     ): array {
         $symbol = strtoupper($symbol);
         $timeframe = strtoupper($timeframe);
-        // H1 keeps the long pre-2026 Dukascopy foundation contract. M15 has
-        // its own preserved pre-2026 slice; it never substitutes H1 data for
-        // M15 prices. H1 remains a separate closed-regime input at replay.
+        // H1 and M15 each keep their own pre-2026 foundation contract. M15
+        // never substitutes H1 data for prices; H1 remains a separate
+        // closed-regime input at replay.
         $isM15 = $timeframe === 'M15';
         $requiredFoundationStart = CarbonImmutable::parse(
             $isM15
-                ? (string) config('services.lab_selection.m15_foundation_start', '2025-11-01 00:00:00')
+                ? (string) config('services.lab_selection.m15_foundation_start', '2016-01-01 00:00:00')
                 : '2005-01-03 00:00:00',
             'UTC',
         );
@@ -224,12 +224,13 @@ class HistoricalDataQualityService
         }
 
         if ($isM15) {
-            // The three preserved symbols begin on different valid M15
-            // sessions (EUR/GBP earlier than XAU). The immutable manifest's
-            // actual first candle is therefore the source boundary; forcing
-            // one calendar start would reject a valid instrument for being
-            // listed later. Minimum rows plus the common 2025 end boundary
-            // remain the hard evidence requirements.
+            // Instruments can begin on different valid M15 sessions. The
+            // immutable manifest's actual first candle is therefore the
+            // source boundary; forcing one calendar start would reject a
+            // valid instrument for being listed later. The full-history
+            // policy is enforced by the archive producer and startup check;
+            // minimum rows plus the common 2025 end boundary remain the
+            // runtime evidence requirements.
             if ($foundationFirst === null) {
                 $reasons[] = 'M15_FOUNDATION_HISTORY_FROM_CONFIGURED_START_REQUIRED';
             }

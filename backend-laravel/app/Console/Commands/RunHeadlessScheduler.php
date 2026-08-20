@@ -45,10 +45,18 @@ class RunHeadlessScheduler extends Command
 
         $lastMinute = null;
         $executedTicks = 0;
-        $maxTicksPerProcess = max(1, (int) config('services.scheduler.max_ticks_per_process', 1));
+        // Zero is intentional: keep one long-lived scheduler process. A
+        // positive value is an explicit bounded-rotation override. Treating
+        // zero as one causes PM2 to restart PHP after every minute tick,
+        // which can materialize a visible console window on Windows.
+        $maxTicksPerProcess = max(0, (int) config('services.scheduler.max_ticks_per_process', 0));
         $lastLeaseRefresh = microtime(true);
-        $memoryLimitMb = max(128, (int) env('SCHEDULER_MEMORY_LIMIT_MB', 256));
-        $memoryLimitBytes = $memoryLimitMb * 1024 * 1024;
+        // A long-lived scheduler must not recycle after every heavy callback:
+        // on Windows each PM2 recycle can briefly materialize a conhost. Set
+        // a positive value only when an operator explicitly wants bounded
+        // memory rotation; zero leaves lifecycle control to PM2/monitoring.
+        $memoryLimitMb = max(0, (int) env('SCHEDULER_MEMORY_LIMIT_MB', 0));
+        $memoryLimitBytes = $memoryLimitMb > 0 ? $memoryLimitMb * 1024 * 1024 : 0;
         $heartbeatSeconds = max(5, min($leaseSeconds - 5, (int) config('services.scheduler.heartbeat_seconds', 20)));
 
         try {
@@ -135,7 +143,7 @@ class RunHeadlessScheduler extends Command
                         $executedTicks++;
                         gc_collect_cycles();
 
-                        if ($executedTicks >= $maxTicksPerProcess) {
+                        if ($maxTicksPerProcess > 0 && $executedTicks >= $maxTicksPerProcess) {
                             Log::info('Headless scheduler process completed isolated tick.', [
                                 'executed_ticks' => $executedTicks,
                                 'max_ticks_per_process' => $maxTicksPerProcess,
@@ -145,7 +153,7 @@ class RunHeadlessScheduler extends Command
                         }
 
                         $memoryBytes = memory_get_usage(true);
-                        if ($memoryBytes >= $memoryLimitBytes) {
+                        if ($memoryLimitBytes > 0 && $memoryBytes >= $memoryLimitBytes) {
                             Log::warning('Headless scheduler reached its bounded memory limit; exiting for a clean supervisor restart.', [
                                 'minute' => $minute,
                                 'memory_bytes' => $memoryBytes,

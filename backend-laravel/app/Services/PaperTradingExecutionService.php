@@ -4,14 +4,16 @@ namespace App\Services;
 
 use App\Models\AgentMemory;
 use App\Models\Candle;
+use App\Models\EliteAgentPortfolio;
 use App\Models\ModelMarketPerformance;
 use App\Models\PaperOrder;
 use App\Models\PaperSignal;
 use App\Models\PaperSignalOutcome;
 use App\Models\Symbol;
-use App\Models\EliteAgentPortfolio;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\MarketData\MarketReadinessService;
+use Carbon\CarbonImmutable;
+use Illuminate\Http\Client\Pool;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 
@@ -36,6 +38,11 @@ class PaperTradingExecutionService
         private ChampionCouncilCanaryRouterService $canaryRouter,
         private DualTrackOrchestratorService $dualTrack,
         private DualTrackOutcomeService $dualTrackOutcomes,
+        private TradingInstrumentOperatingSystemService $instruments,
+        private TradingCognitiveStackService $cognitiveStack,
+        private InstrumentSettlementProjectionService $instrumentSettlements,
+        private ExecutionRiskSentinelService $riskSentinel,
+        private ExecutionTacticSettlementService $tacticSettlements,
     ) {}
 
     public function run(): array
@@ -55,6 +62,7 @@ class PaperTradingExecutionService
         $portfolioStatuses = $allCandidates->groupBy(fn (ModelMarketPerformance $candidate): string => $candidate->symbol.'|'.$candidate->timeframe)
             ->map(function (Collection $marketCandidates, string $key): string {
                 [$symbol, $timeframe] = explode('|', $key, 2);
+
                 return $this->portfolios->syncMarket($symbol, $timeframe, $marketCandidates)['status'];
             })->all();
         $stats['portfolio_status'] = $portfolioStatuses;
@@ -64,14 +72,14 @@ class PaperTradingExecutionService
         // belongs to the passed combined council proxy; otherwise a strong
         // member could silently bypass the specialist -> router -> replay
         // sequence and reintroduce the portfolio-rescues-failure problem.
-        $candidates = $allCandidates->filter(fn (ModelMarketPerformance $candidate): bool =>
-            $this->paperTrackAllowed($candidate)
+        $candidates = $allCandidates->filter(fn (ModelMarketPerformance $candidate): bool => $this->paperTrackAllowed($candidate)
         )->values();
 
         foreach ($candidates as $candidate) {
             $this->gateDecisions->recordPaperAdmissionHandshake($candidate);
             if (! $this->marketReadiness->ready($candidate->symbol, $candidate->timeframe)) {
                 $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_PROVIDER');
+
                 continue;
             }
 
@@ -91,10 +99,15 @@ class PaperTradingExecutionService
     private function paperTrackAllowed(ModelMarketPerformance $candidate): bool
     {
         if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
-            if (! filled($candidate->symbol) || ! filled($candidate->timeframe)) return false;
+            if (! filled($candidate->symbol) || ! filled($candidate->timeframe)) {
+                return false;
+            }
             $ready = $this->portfolios->ready($candidate->symbol, $candidate->timeframe);
-            if ($ready !== null && (int) $ready->id === (int) data_get($candidate->metrics, 'elite_portfolio_id', 0)) return true;
+            if ($ready !== null && (int) $ready->id === (int) data_get($candidate->metrics, 'elite_portfolio_id', 0)) {
+                return true;
+            }
             $transition = $this->portfolioTransition($candidate);
+
             return in_array((string) data_get($transition, 'decision'), ['HYBRID_CANARY', 'COUNCIL_CANARY'], true);
         }
 
@@ -114,11 +127,14 @@ class PaperTradingExecutionService
         // transport. Sending an empty portfolio_members payload would make
         // Python interpret the proxy as a normal `portfolio` strategy and
         // either error or, worse, lose the explicit WAIT reason.
-        if (! $this->runtimePortfolioAllowed($candidate)) return 0;
+        if (! $this->runtimePortfolioAllowed($candidate)) {
+            return 0;
+        }
 
         $rows = $this->candles->candlesForBacktest($candidate->symbol, $candidate->timeframe, 1000);
         if (count($rows) < 200) {
             $this->gateDecisions->recordPaperCapture($candidate, 'NO_SIGNAL_OPPORTUNITY', ['available_candles' => count($rows)]);
+
             return 0;
         }
         $transition = $this->portfolioTransition($candidate);
@@ -128,22 +144,65 @@ class PaperTradingExecutionService
             $canary = $this->canaryRouter->decide($transition, $eventKey);
             if ($canary['route'] !== 'council') {
                 $this->gateDecisions->recordPaperCapture($candidate, 'COUNCIL_CANARY_INCUMBENT_FALLBACK', ['canary' => $canary]);
+
                 return 0;
             }
         }
 
         $model = $candidate->modelVersion;
-        $response = Http::timeout(120)->acceptJson()
-            ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])->post(
-            rtrim(config('services.ai_service.url'), '/').'/api/paper/signal',
-            $this->aiRequest($candidate, $rows),
-        );
-        if ($response->failed()) {
-            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_AI_SERVICE', ['http_status' => $response->status()]);
+        $request = $this->aiRequest($candidate, $rows);
+        $aiUrl = rtrim(config('services.ai_service.url'), '/');
+        $headers = ['X-Internal-Token' => (string) config('services.internal_api.token')];
+        // Champion and Council now cross separate lane endpoints in parallel.
+        // They receive the same sealed request but produce independent call,
+        // context and output hashes. A missing lane fails closed; the old
+        // single projection is never silently used as twin evidence.
+        $responses = Http::pool(function (Pool $pool) use ($aiUrl, $headers, $request): array {
+            return [
+                'champion' => $pool->as('champion')->timeout(120)->acceptJson()->withHeaders($headers)->post($aiUrl.'/api/paper/twin/champion', $request),
+                'council' => $pool->as('council')->timeout(120)->acceptJson()->withHeaders($headers)->post($aiUrl.'/api/paper/twin/council', $request),
+            ];
+        });
+        $championResponse = $responses['champion'] ?? null;
+        $councilResponse = $responses['council'] ?? null;
+        if (! $championResponse || ! $councilResponse || $championResponse->failed() || $councilResponse->failed()) {
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_TWIN_INFERENCE', [
+                'champion_http_status' => $championResponse?->status(),
+                'council_http_status' => $councilResponse?->status(),
+                'promotion_evidence' => false,
+            ]);
+
             return 0;
         }
 
-        $signal = $this->mtfPilot->enforcePaperResponse($candidate, (array) $response->json());
+        $championResult = (array) $championResponse->json();
+        $councilResult = (array) $councilResponse->json();
+        $championTrack = (array) data_get($championResult, 'dual_track.output', []);
+        $councilTrack = (array) data_get($councilResult, 'dual_track.output', []);
+        $championSnapshot = (string) data_get($championResult, 'dual_track.snapshot_hash', '');
+        $councilSnapshot = (string) data_get($councilResult, 'dual_track.snapshot_hash', '');
+        if ($championTrack === [] || $councilTrack === [] || $championSnapshot === '' || $championSnapshot !== $councilSnapshot) {
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_TWIN_SNAPSHOT_MISMATCH', [
+                'champion_snapshot' => $championSnapshot,
+                'council_snapshot' => $councilSnapshot,
+                'promotion_evidence' => false,
+            ]);
+
+            return 0;
+        }
+        $signal = $this->mtfPilot->enforcePaperResponse($candidate, [
+            ...$councilResult,
+            'dual_track' => [
+                'protocol' => 'dual_track_true_twin_inference_v1',
+                'snapshot_hash' => $councilSnapshot,
+                'snapshot_manifest' => data_get($councilResult, 'dual_track.snapshot_manifest'),
+                'champion' => $championTrack,
+                'council' => $councilTrack,
+                'selected_by_existing_governor' => $councilResult['signal'] ?? 'WAIT',
+                'independence_status' => 'dedicated_lane_endpoint',
+                'promotion_evidence' => false,
+            ],
+        ]);
         $rawConfidence = max(0, min(1, (float) ($signal['confidence'] ?? 0)));
         $calibrated = $this->calibration->calibrate($candidate, (string) ($signal['market_regime'] ?? 'unknown'), $rawConfidence);
         $news = $this->calendar->veto($candidate->symbol);
@@ -172,6 +231,7 @@ class PaperTradingExecutionService
         // governor branch is the Council lane. Both are persisted against the
         // same immutable signal snapshot. Shadow mode deliberately keeps the
         // existing incumbent decision as the only paper execution owner.
+        $twinTrack = (array) data_get($signal, 'dual_track', []);
         $signal['dual_track'] = $this->dualTrack->observeSignal(
             [
                 'symbol' => $candidate->symbol,
@@ -180,17 +240,24 @@ class PaperTradingExecutionService
                 'market_regime' => $signal['market_regime'] ?? 'unknown',
                 'volatility_regime' => $signal['volatility_regime'] ?? 'normal_volatility',
                 'event_key' => implode('|', [$candidate->id, $signal['signal_time'] ?? 'latest']),
+                'snapshot_hash' => data_get($twinTrack, 'snapshot_hash', data_get($signal, 'execution_contract.data_hash')),
+                'snapshot_manifest' => data_get($twinTrack, 'snapshot_manifest'),
+                'snapshot_manifest_hash' => data_get($twinTrack, 'snapshot_manifest.snapshot_hash', data_get($twinTrack, 'snapshot_hash')),
+                'candidate_id' => $candidate->id,
+                'risk_percent' => data_get($signal, 'execution_contract.risk_per_trade_percent', data_get($signal, 'execution_contract.risk_percent')),
                 'transition' => $transition,
             ],
             [
-                'decision' => $signal['agent_signal'] ?? $signal['signal'] ?? 'WAIT',
-                'confidence' => $signal['confidence'] ?? 0,
+                ...((array) data_get($twinTrack, 'champion', [])),
+                'decision' => data_get($twinTrack, 'champion.decision', $signal['agent_signal'] ?? $signal['signal'] ?? 'WAIT'),
+                'confidence' => data_get($twinTrack, 'champion.confidence', $signal['confidence'] ?? 0),
                 'source' => 'raw_strategy_signal',
             ],
             [
-                'decision' => data_get($signal, 'meta_agent.decision', $signal['signal'] ?? 'WAIT'),
-                'confidence' => $signal['confidence'] ?? 0,
-                'committee' => data_get($signal, 'meta_agent.council', []),
+                ...((array) data_get($twinTrack, 'council', [])),
+                'decision' => data_get($twinTrack, 'council.decision', data_get($signal, 'meta_agent.decision', $signal['signal'] ?? 'WAIT')),
+                'confidence' => data_get($twinTrack, 'council.confidence', $signal['confidence'] ?? 0),
+                'committee' => data_get($twinTrack, 'council.committee', data_get($signal, 'meta_agent.council', [])),
                 'source' => 'typed_agent_council',
             ],
             [
@@ -204,14 +271,57 @@ class PaperTradingExecutionService
                 'candidate_id' => $candidate->id,
                 'model_version_id' => $candidate->model_version_id,
                 'paper_mode' => config('services.paper.mode', 'shadow'),
+                // Durable evidence workers need the exact sealed request to
+                // replay red-team and ablation challenges later.
+                'twin_request' => $request,
             ],
         );
+
+        // The instrument router is a fail-closed execution governor. It may
+        // turn a candidate into WAIT, but it never replaces the sealed model
+        // with a different strategy or creates promotion evidence by itself.
+        if ($this->instruments->supports($candidate->symbol, $candidate->timeframe)) {
+            $instrumentRoute = $this->instruments->route($candidate->symbol, $candidate->timeframe, [
+                'decision_key' => implode('|', ['paper-instrument', $candidate->id, $signal['signal_time'] ?? 'latest']),
+                'regime' => (string) ($signal['market_regime'] ?? 'unknown'),
+                'm15_regime' => (string) ($signal['market_regime'] ?? 'unknown'),
+                'session' => $this->instrumentSession($signal),
+                'volatility' => $this->instrumentVolatility($signal),
+                'spread_atr_ratio' => data_get($signal, 'execution_contract.spread_atr_ratio', data_get($signal, 'spread_atr_ratio')),
+                'transition' => (bool) data_get($signal, 'transition.active', false),
+            ]);
+            $signal['trading_instrument_router'] = [
+                'decision' => $instrumentRoute['decision'], 'reason_code' => $instrumentRoute['reason_code'],
+                'playbook_key' => $instrumentRoute['playbook']?->playbook_key, 'state' => $instrumentRoute['state'],
+                'router_decision_id' => $instrumentRoute['router_decision']->id, 'promotion_evidence' => false,
+            ];
+            if ($instrumentRoute['decision'] === 'ABSTAIN') {
+                $signal['signal'] = 'WAIT';
+                $signal['instrument_router_reason'] = $instrumentRoute['reason_code'];
+            }
+            $cognitivePlan = $this->cognitiveStack->planFromRoute($instrumentRoute, [
+                'feed_healthy' => true,
+                'news_risk' => (bool) $news['active'],
+                'risk_of_ruin_percent' => (float) data_get($candidate->metrics, 'risk_of_ruin_percent', 0),
+                'drawdown_percent' => (float) data_get($candidate->metrics, 'drawdown_percent', 0),
+            ], [
+                'strategy_id' => (string) ($model->strategy ?? ''),
+                'mastery_stage' => (string) data_get($model->metadata, 'strategy_mastery.stage', 'apprentice'),
+                'innovation_allowed' => (bool) data_get($model->metadata, 'strategy_mastery.innovation_allowed', false),
+            ]);
+            $signal['trading_cognitive_stack'] = $cognitivePlan;
+            if ($cognitivePlan['decision'] === 'WAIT') {
+                $signal['signal'] = 'WAIT';
+                $signal['cognitive_stack_reason'] = $cognitivePlan['reason_codes'][0] ?? 'COGNITIVE_STACK_PREFLIGHT_VETO';
+            }
+        }
 
         $captureReason = match (true) {
             ! $calibrated['allowed'] => 'BLOCKED_BY_CALIBRATION',
             isset($signal['meta_reason']) => 'BLOCKED_BY_META_AGENT',
             $news['active'] => 'BLOCKED_BY_CALENDAR',
             isset($signal['allocator_reason']) => 'BLOCKED_BY_ALLOCATOR',
+            isset($signal['cognitive_stack_reason']) => 'BLOCKED_BY_COGNITIVE_STACK',
             ($signal['signal'] ?? 'WAIT') === 'WAIT' => 'NO_SIGNAL_OPPORTUNITY',
             default => 'SIGNAL_CAPTURED',
         };
@@ -278,9 +388,12 @@ class PaperTradingExecutionService
         if (! $signal) {
             return 0;
         }
-        if (! $this->runtimePortfolioAllowed($candidate)) return 0;
+        if (! $this->runtimePortfolioAllowed($candidate)) {
+            return 0;
+        }
         if ($this->executionState->signalInvalidatedByDisconnect($candidate, $signal)) {
             $this->executionState->record($candidate, 'cancelled', $signal, null, ['reason' => 'STALE_AFTER_PROVIDER_DISCONNECT']);
+
             return 0;
         }
 
@@ -305,6 +418,7 @@ class PaperTradingExecutionService
         if ($contractResponse->failed()) {
             $this->executionState->record($candidate, 'provider_disconnected', $signal, null, ['provider' => 'ai_execution_contract', 'reason' => 'EXECUTION_CONTRACT_UNAVAILABLE', 'latency_ms' => 120000]);
             $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_EXECUTION_CONTRACT', ['paper_signal_id' => $signal->id, 'http_status' => $contractResponse->status()]);
+
             return 0;
         }
         $contract = (array) $contractResponse->json();
@@ -322,10 +436,12 @@ class PaperTradingExecutionService
             $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_EXECUTION_CONTRACT', [
                 'paper_signal_id' => $signal->id, 'reason' => 'EXECUTION_CONTRACT_MISMATCH',
             ]);
+
             return 0;
         }
         if (($contract['decision'] ?? 'WAIT') !== $signal->decision) {
             $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_META_AGENT', ['paper_signal_id' => $signal->id, 'meta_reason' => data_get($contract, 'meta_agent.reason')]);
+
             return 0;
         }
         $passport = $signal->passport;
@@ -340,6 +456,7 @@ class PaperTradingExecutionService
                 $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_EXECUTION_CONTRACT', [
                     'paper_signal_id' => $signal->id, 'reason' => 'MTF_CONTEXT_HASH_MISMATCH',
                 ]);
+
                 return 0;
             }
         }
@@ -350,9 +467,24 @@ class PaperTradingExecutionService
             'stop_loss' => (float) $contract['stop_loss'], 'take_profit' => (float) $contract['take_profit'],
             'execution_contract' => $contract,
         ]);
+        $sentinelPlan = $this->riskSentinel->assess($candidate, $executionSignal, $contract);
+        $this->riskSentinel->record($signal, $candidate, $sentinelPlan);
+        if (! $sentinelPlan['approved']) {
+            $blockedOrder = PaperOrder::create([
+                'model_market_performance_id' => $candidate->id, 'paper_signal_id' => $signal->id, 'broker' => 'risk_sentinel',
+                'symbol' => $candidate->symbol, 'timeframe' => $candidate->timeframe, 'direction' => $signal->decision, 'units' => 0,
+                'entry_price' => $entry, 'stop_loss' => $executionSignal['stop_loss'], 'take_profit' => $executionSignal['take_profit'],
+                'status' => 'blocked', 'opened_at' => $entryCandle->time, 'signal_context' => ['signal' => $executionSignal, 'risk_sentinel' => $sentinelPlan],
+            ]);
+            $this->executionState->record($candidate, 'rejected', $signal, $blockedOrder, ['provider' => 'risk_sentinel', 'requested_price' => $entry, 'reason' => $sentinelPlan['reason_code']]);
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_RISK_SENTINEL', ['paper_signal_id' => $signal->id, 'reason' => $sentinelPlan['reason_code']]);
+
+            return 0;
+        }
+        $executionSignal['risk_sentinel'] = $sentinelPlan;
         $risk = $this->risk->canOpen($candidate, $executionSignal);
         $baseUnits = (float) config('services.paper.units', 1);
-        $sizeMultiple = (float) $contract['position_size_multiple'];
+        $sizeMultiple = min((float) $contract['position_size_multiple'], (float) $sentinelPlan['position_size_multiple']);
 
         if (! $risk['allowed']) {
             $blockedOrder = PaperOrder::create([
@@ -381,6 +513,7 @@ class PaperTradingExecutionService
                 'payload' => ['paper_signal_id' => $signal->id, 'risk' => $risk],
             ]);
             $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_RISK', ['paper_signal_id' => $signal->id, 'risk_reason' => $risk['reason'] ?? null]);
+
             return 0;
         }
 
@@ -401,7 +534,7 @@ class PaperTradingExecutionService
             'take_profit' => $executionSignal['take_profit'],
             'status' => 'open',
             'opened_at' => $entryCandle->time,
-            'signal_context' => ['signal' => $executionSignal, 'risk' => $risk, 'position_size_multiple' => $sizeMultiple, 'execution_contract' => $contract],
+            'signal_context' => ['signal' => $executionSignal, 'risk' => $risk, 'risk_sentinel' => $sentinelPlan, 'position_size_multiple' => $sizeMultiple, 'execution_contract' => $contract],
             'broker_payload' => ['execution_contract' => $contract],
         ]);
         $this->executionState->record($candidate, 'order_submitted', $signal, $order, ['provider' => $broker, 'requested_price' => $entry, 'requested_units' => $units]);
@@ -420,25 +553,65 @@ class PaperTradingExecutionService
 
     private function runtimePortfolioAllowed(ModelMarketPerformance $candidate): bool
     {
-        if (! (bool) data_get($candidate->metrics, 'portfolio_proxy', false)) return true;
+        if (! (bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
+            return true;
+        }
 
         $runtime = $this->runtimeEnsembles->requestPayload($candidate);
-        if (data_get($runtime, 'runtime_action') === 'ROUTE') return true;
+        if (data_get($runtime, 'runtime_action') === 'ROUTE') {
+            return true;
+        }
 
         $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_RUNTIME_PORTFOLIO_POLICY', [
             'runtime_reason' => data_get($runtime, 'runtime_ensemble_policy.reason', 'PORTFOLIO_PASSPORT_NOT_ACTIVE'),
             'runtime_policy' => data_get($runtime, 'runtime_ensemble_policy', []),
         ]);
+
         return false;
+    }
+
+    private function instrumentVolatility(array $signal): string
+    {
+        $value = strtolower((string) ($signal['volatility_regime'] ?? 'unknown'));
+        if (str_contains($value, 'high')) {
+            return 'high';
+        }
+        if (str_contains($value, 'low')) {
+            return 'low';
+        }
+
+        return $value === '' ? 'unknown' : 'normal';
+    }
+
+    private function instrumentSession(array $signal): string
+    {
+        $time = data_get($signal, 'signal_time');
+        $hour = $time ? (int) CarbonImmutable::parse($time)->utc()->format('H') : (int) now()->utc()->format('H');
+        if ($hour >= 12 && $hour <= 16) {
+            return 'london_new_york_overlap';
+        }
+        if ($hour >= 7 && $hour < 12) {
+            return 'london';
+        }
+        if ($hour > 16 && $hour <= 21) {
+            return 'new_york';
+        }
+
+        return 'asian';
     }
 
     /** @return array<string, mixed> */
     private function portfolioTransition(ModelMarketPerformance $candidate): array
     {
         $transition = (array) data_get($candidate->metrics, 'transition', []);
-        if ($transition !== []) return $transition;
+        if ($transition !== []) {
+            return $transition;
+        }
         $portfolioId = (int) data_get($candidate->metrics, 'elite_portfolio_id', 0);
-        if ($portfolioId < 1) return [];
+        if ($portfolioId < 1) {
+            return [];
+        }
+
         return (array) data_get(EliteAgentPortfolio::query()->find($portfolioId)?->evidence, 'transition', []);
     }
 
@@ -449,7 +622,9 @@ class PaperTradingExecutionService
             ->where('evidence_status', 'valid')->where('status', 'open')->get();
         foreach ($orders as $order) {
             $result = $this->simulatedExit($order);
-            if (! $result) continue;
+            if (! $result) {
+                continue;
+            }
             [$price, $profit, $exitReason] = $result;
 
             $order->update(['exit_price' => $price, 'profit_percent' => $profit, 'status' => 'closed', 'closed_at' => now()]);
@@ -462,21 +637,22 @@ class PaperTradingExecutionService
             ]);
             $this->executionState->record($candidate, 'closed', $order->paperSignal, $order, ['provider' => $order->broker, 'filled_price' => $price, 'filled_units' => $order->units, 'reason' => $exitReason]);
             if ($order->paper_signal_id) {
+                $audit = $this->selfAudit($candidate, $order, $exitReason, $profit);
                 $outcome = PaperSignalOutcome::firstOrCreate(['paper_signal_id' => $order->paper_signal_id], [
                     'paper_order_id' => $order->id,
                     'outcome' => $profit > 0 ? 'win' : ($profit < 0 ? 'loss' : 'flat'),
                     'exit_price' => $price,
                     'profit_percent' => $profit,
                     'exit_reason' => $exitReason,
-                    'payload' => ['broker' => $order->broker, 'closed_at' => now()->toIso8601String()],
+                    'payload' => ['broker' => $order->broker, 'closed_at' => now()->toIso8601String(), 'self_audit' => $audit],
                 ]);
-                $audit = $this->selfAudit($candidate, $order, $exitReason, $profit);
-                $outcome->update(['payload' => [...((array) $outcome->payload), 'self_audit' => $audit]]);
                 if ($outcome->wasRecentlyCreated && $order->paperSignal) {
                     $this->calibration->learn($candidate, $order->paperSignal);
                 }
                 if ($order->paperSignal) {
                     $this->dualTrackOutcomes->settlePaperOutcome($candidate, $order, $outcome);
+                    $this->instrumentSettlements->settle($order, $outcome);
+                    $this->tacticSettlements->settle($order, $outcome);
                 }
             }
             $this->recordClosedOrderMemory($candidate, $order->fresh());
@@ -490,7 +666,9 @@ class PaperTradingExecutionService
     {
         $candidate = $order->marketPerformance()->with('modelVersion')->first();
         $contract = (array) data_get($order->signal_context, 'execution_contract', []);
-        if (! $candidate || $contract === []) return null;
+        if (! $candidate || $contract === []) {
+            return null;
+        }
         $response = Http::timeout(120)->acceptJson()
             ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])->post(
                 rtrim(config('services.ai_service.url'), '/').'/api/paper/advance-contract', [
@@ -498,8 +676,11 @@ class PaperTradingExecutionService
                     'contract' => $contract, 'entry_time' => $order->opened_at?->toIso8601String(),
                 ],
             );
-        if ($response->failed() || ! $response->json('closed')) return null;
+        if ($response->failed() || ! $response->json('closed')) {
+            return null;
+        }
         $result = $response->json();
+
         return [(float) $result['exit_price'], (float) $result['profit_percent'], (string) $result['exit_reason']];
     }
 
@@ -507,7 +688,9 @@ class PaperTradingExecutionService
     {
         $orders = PaperOrder::where('model_market_performance_id', $candidate->id)
             ->where('evidence_status', 'valid')->where('status', 'closed')->orderBy('closed_at')->get();
-        if ($orders->isEmpty()) return;
+        if ($orders->isEmpty()) {
+            return;
+        }
         $wins = $orders->where('profit_percent', '>', 0)->sum('profit_percent');
         $loss = abs($orders->where('profit_percent', '<=', 0)->sum('profit_percent'));
         $balance = 10000;
@@ -529,7 +712,9 @@ class PaperTradingExecutionService
 
     private function recordClosedOrderMemory(ModelMarketPerformance $candidate, PaperOrder $order): void
     {
-        if (AgentMemory::query()->where('source_type', PaperOrder::class)->where('source_id', $order->id)->exists()) return;
+        if (AgentMemory::query()->where('source_type', PaperOrder::class)->where('source_id', $order->id)->exists()) {
+            return;
+        }
         $profit = (float) $order->profit_percent;
         $this->foundation->writeExperienceMemory([
             'strategy' => $candidate->modelVersion?->strategy ?? $candidate->strategy_family,
@@ -554,11 +739,22 @@ class PaperTradingExecutionService
         $constitution = (array) data_get($candidate->modelVersion?->metadata, 'agent_constitution', []);
         $allowed = (array) ($constitution['allowed_regimes'] ?? []);
         $mistakes = [];
-        if ($profit <= 0 && str_contains($exitReason, 'stop')) $mistakes[] = 'stop_too_close';
-        if ($profit <= 0 && str_contains($exitReason, 'time_stop')) $mistakes[] = 'target_too_far';
-        if ($allowed !== [] && ! in_array($signal?->market_regime, $allowed, true)) $mistakes[] = 'regime_mismatch';
-        if ((float) data_get($meta, 'expected_value.net_expected_value_percent', 0) > 0 && $profit <= 0) $mistakes[] = 'wrong_direction';
-        if ((float) data_get($meta, 'expected_value.net_expected_value_percent', 0) <= 0 && $profit <= 0) $mistakes[] = 'cost_destroyed_edge';
+        if ($profit <= 0 && str_contains($exitReason, 'stop')) {
+            $mistakes[] = 'stop_too_close';
+        }
+        if ($profit <= 0 && str_contains($exitReason, 'time_stop')) {
+            $mistakes[] = 'target_too_far';
+        }
+        if ($allowed !== [] && ! in_array($signal?->market_regime, $allowed, true)) {
+            $mistakes[] = 'regime_mismatch';
+        }
+        if ((float) data_get($meta, 'expected_value.net_expected_value_percent', 0) > 0 && $profit <= 0) {
+            $mistakes[] = 'wrong_direction';
+        }
+        if ((float) data_get($meta, 'expected_value.net_expected_value_percent', 0) <= 0 && $profit <= 0) {
+            $mistakes[] = 'cost_destroyed_edge';
+        }
+
         return [
             'protocol' => 'professional_self_audit_v1', 'predicted_direction' => $signal?->decision,
             'predicted_confidence' => $signal?->confidence, 'expected_value' => data_get($meta, 'expected_value', []),
@@ -571,10 +767,15 @@ class PaperTradingExecutionService
 
     private function canonicalize(array $value): array
     {
-        if (! array_is_list($value)) ksort($value);
-        foreach ($value as $key => $item) {
-            if (is_array($item)) $value[$key] = $this->canonicalize($item);
+        if (! array_is_list($value)) {
+            ksort($value);
         }
+        foreach ($value as $key => $item) {
+            if (is_array($item)) {
+                $value[$key] = $this->canonicalize($item);
+            }
+        }
+
         return $value;
     }
 
@@ -585,6 +786,7 @@ class PaperTradingExecutionService
         $runtime = $this->runtimeEnsembles->requestPayload($candidate);
         $portfolioMembers = (array) data_get($runtime, 'portfolio_members', []);
         $isPortfolio = count($portfolioMembers) >= 2;
+
         return [
             'symbol' => $candidate->symbol, 'timeframe' => $candidate->timeframe,
             'strategy' => $isPortfolio ? 'portfolio_v1' : $model->strategy,

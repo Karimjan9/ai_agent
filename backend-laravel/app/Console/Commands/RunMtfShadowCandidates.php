@@ -44,8 +44,8 @@ class RunMtfShadowCandidates extends Command
             return self::SUCCESS;
         }
 
-        $m15 = $candles->candlesForBacktest($symbol, 'M15', 1000);
-        $h1 = $candles->candlesForBacktest($symbol, 'H1', 2000);
+        $m15 = $candles->candlesForTraining($symbol, 'M15', limit: 1000);
+        $h1 = $candles->candlesForTraining($symbol, 'H1', limit: 2000);
         if (count($m15) < 200 || count($h1) < 200) {
             $this->error('Shadow candidate kuzatuvi uchun mustaqil M15/H1 candle stream yetarli emas.');
             return self::FAILURE;

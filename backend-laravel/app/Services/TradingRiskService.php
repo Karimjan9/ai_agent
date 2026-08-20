@@ -42,12 +42,15 @@ class TradingRiskService
 
         $entry = max(0.0000001, (float) ($signal['price'] ?? 0));
         $stop = (float) ($signal['stop_loss'] ?? $entry);
-        $risk = abs($entry - $stop) / $entry * 100 + $cost;
+        $sentinelBudget = data_get($signal, 'risk_sentinel.risk_budget_percent');
+        $risk = is_numeric($sentinelBudget)
+            ? (float) $sentinelBudget + $cost
+            : abs($entry - $stop) / $entry * 100 + $cost;
         if ($risk > (float) config('services.risk.max_risk_per_trade_percent', 1)) {
             return ['allowed' => false, 'reason' => 'Per-trade risk exceeds limit.', 'estimated_round_trip_cost_percent' => $cost];
         }
 
-        return ['allowed' => true, 'reason' => 'Risk controls passed.', 'estimated_round_trip_cost_percent' => $cost];
+        return ['allowed' => true, 'reason' => 'Risk controls passed.', 'estimated_round_trip_cost_percent' => $cost, 'risk_percent' => round($risk, 6)];
     }
 
     public function estimatedRoundTripCostPercent(string $symbol, float $price): float

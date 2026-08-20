@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from app.main import _run_all_backtests_sync
+from app.main import _assert_historical_evolution_screen_source, _run_all_backtests_sync
 from app.schemas import SimpleBacktestRequest
 from app.services.backtester import (
     _load_simple_candles,
@@ -13,7 +13,7 @@ from app.services.backtester import (
     run_simple_ema_rsi_backtest_on_dataframe,
     tail_feature_snapshot,
 )
-from app.services.market_adaptive_replay import MarketAdaptiveReplayService
+from app.services.market_adaptive_replay import MarketAdaptiveReplayService, _powered_survival_assessment
 from app.services.replay_parity import compare_stateful_replay
 
 
@@ -48,6 +48,85 @@ def test_snapshot_path_tail_is_bounded_before_replay(tmp_path: Path):
 
     assert len(loaded) == 3
     assert loaded.iloc[0]["time"] == frame.iloc[-3]["time"]
+
+
+def test_historical_evolution_screen_rejects_2026_paper_candles():
+    payload = SimpleBacktestRequest(
+        evaluation_mode="incremental",
+        candles=_candles(4),
+        policy_context={
+            "snapshot_transport": {
+                "protocol": "historical_evolution_paper_forward_split_v1",
+                "training_end_exclusive": "2026-01-01T00:00:00Z",
+            },
+        },
+    )
+    historical = pd.DataFrame(_candles(4))
+    _assert_historical_evolution_screen_source(payload, historical)
+
+    paper = historical.copy()
+    paper.loc[0, "time"] = "2026-01-01T00:00:00+00:00"
+    try:
+        _assert_historical_evolution_screen_source(payload, paper)
+        raise AssertionError("2026 paper candle historical evolution screeniga qabul qilindi.")
+    except ValueError as exception:
+        assert "pre-2026 foundation" in str(exception)
+
+
+def test_powered_survival_does_not_treat_one_losing_trade_as_a_temporal_failure():
+    assessment = _powered_survival_assessment(
+        [
+            {"window": "2021-01", "trades": 1, "profit_factor": 0.0},
+            {"window": "2021-02", "trades": 7, "profit_factor": 1.2},
+            {"window": "2021-03", "trades": 8, "profit_factor": 1.1},
+            {"window": "2021-04", "trades": 9, "profit_factor": 1.3},
+        ],
+        minimum_trades=5,
+        minimum_powered_windows=3,
+        minimum_pass_ratio=.70,
+    )
+
+    assert assessment["status"] == "passed"
+    assert assessment["low_sample_window_ids"] == ["2021-01"]
+    assert assessment["powered_pass_ratio"] == 1.0
+
+
+def test_powered_survival_keeps_repeatable_catastrophic_loss_as_hard_failure():
+    assessment = _powered_survival_assessment(
+        [
+            {"window": "chunk_1", "trades": 8, "profit_factor": 1.1},
+            {
+                "window": "chunk_2", "trades": 8, "profit_factor": 0.3,
+                "net_profit_percent": -4.2, "max_drawdown_percent": 8.1,
+            },
+        ],
+        minimum_trades=8,
+        minimum_powered_windows=2,
+        minimum_pass_ratio=.67,
+    )
+
+    assert assessment["status"] == "catastrophic_failure"
+    assert assessment["catastrophic_windows"] == ["chunk_2"]
+    assert assessment["catastrophic_window_evidence"][0]["net_loss"] is True
+    assert assessment["catastrophic_window_evidence"][0]["drawdown"] is True
+
+
+def test_powered_low_pf_without_material_loss_is_not_a_catastrophic_verdict():
+    assessment = _powered_survival_assessment(
+        [
+            {"window": "chunk_1", "trades": 8, "profit_factor": 1.1},
+            {
+                "window": "chunk_2", "trades": 8, "profit_factor": 0.3,
+                "net_profit_percent": -0.4, "max_drawdown_percent": 1.2,
+            },
+        ],
+        minimum_trades=8,
+        minimum_powered_windows=2,
+        minimum_pass_ratio=.67,
+    )
+
+    assert assessment["status"] == "failed"
+    assert assessment["catastrophic_windows"] == []
 
 
 def test_bounded_cohort_builds_features_once_and_keeps_primary_trace():

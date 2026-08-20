@@ -164,6 +164,64 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertNotNull($service->build('XAUUSD', 'data_edge_audit', true));
     }
 
+    public function test_root_data_edge_portfolio_keeps_every_declared_mutation_type_and_value(): void
+    {
+        $service = app(LabPopulationService::class);
+        $source = $service->build('XAUUSD', 'new_data', true);
+        $source->update([
+            'status' => 'completed',
+            'trigger_context' => [
+                ...($source->trigger_context ?? []),
+                'latest_generation_report' => ['next_action' => 'data_edge_audit_required'],
+                'data_edge_audit' => [
+                    'protocol' => 'data_edge_audit_v1',
+                    'finding' => 'Historical price windows are available for a pre-registered root portfolio.',
+                ],
+            ],
+        ]);
+
+        $generation = $service->build('XAUUSD', 'data_edge_audit', true)->fresh(['agents.modelVersion']);
+
+        $this->assertSame(20, $generation->population_size, json_encode(data_get($generation->trigger_context, 'constructor_audit.skipped_zero_diff_slots')));
+        $this->assertSame('draft', $generation->status);
+        $this->assertCount(20, $generation->agents);
+        $plan = (array) data_get($generation->trigger_context, 'generation_plan', []);
+        $defaults = app(\App\Services\StrategyParameterSchemaService::class);
+        $this->assertTrue((bool) data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.allowed'));
+        $this->assertSame(5, data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.controls'));
+        $this->assertSame(15, data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.candidates'));
+        $this->assertGreaterThanOrEqual(10, data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.independent_candidate_hypothesis_families'));
+        $this->assertSame([], data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.over_budget_hypothesis_families'));
+        $this->assertSame([], data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.declaration_or_pairing_violations'));
+
+        foreach ($generation->agents as $agent) {
+            $slot = (int) preg_replace('/^.*_a(\d+)$/', '$1', (string) $agent->modelVersion->strategy);
+            $seat = $plan[$slot - 1] ?? [];
+            $niche = (array) data_get($seat, 'niche', []);
+            $this->assertTrue((bool) data_get($niche, 'root_experiment_portfolio'));
+            if ((bool) data_get($niche, 'control_only')) {
+                $this->assertSame([], data_get($agent->modelVersion->metadata, 'mutation_constructor_invariant.changed_parameter_keys'));
+                continue;
+            }
+
+            $gene = (string) data_get($niche, 'declared_gene');
+            $this->assertNotEmpty(data_get($niche, 'hypothesis'));
+            $this->assertNotEmpty(data_get($niche, 'hypothesis_family'));
+            $this->assertNotEmpty(data_get($niche, 'behavioral_falsification.axes'));
+            $this->assertNotEmpty(data_get($niche, 'behavioral_falsification.expected_change'));
+            $this->assertTrue((bool) data_get($niche, 'control_pair_contract.required_for_candidate'));
+            $this->assertSame($gene, data_get($agent->modelVersion->metadata, 'root_experiment_contract.declared_gene'));
+            $this->assertSame(data_get($niche, 'declared_value'), data_get($agent->modelVersion->metadata, 'root_experiment_contract.declared_value'));
+            $this->assertSame(data_get($niche, 'hypothesis_family'), data_get($agent->modelVersion->metadata, 'root_experiment_contract.hypothesis_family'));
+            $this->assertSame([$gene], data_get($agent->modelVersion->metadata, 'mutation_constructor_invariant.changed_parameter_keys'));
+            $this->assertSame(data_get($niche, 'declared_value'), data_get($agent->modelVersion->parameters, $gene));
+            $this->assertNotSame(
+                data_get($defaults->defaults((string) $seat['family']), $gene),
+                data_get($agent->modelVersion->parameters, $gene),
+            );
+        }
+    }
+
     public function test_data_edge_audit_can_unlock_a_completed_screened_generation(): void
     {
         $service = app(LabPopulationService::class);

@@ -121,11 +121,12 @@ module.exports = {
       autorestart: true,
       restart_delay: 5000,
       windowsHide: true,
-      // Schedule ticks may materialize generation/foundation manifests and
-      // briefly exceed 512M before the command's own 256M bounded-memory
-      // rotation can return cleanly. Keep PM2 above that internal gate so a
-      // Windows memory restart cannot strand the Redis scheduler lease.
-      max_memory_restart: '768M',
+      // The scheduler is intentionally long-lived. Its callbacks can
+      // temporarily exceed 768M on Windows; recycling here creates orphaned
+      // PHP children and visible conhost flashes. The scheduler's explicit
+      // memory gate is opt-in via SCHEDULER_MEMORY_LIMIT_MB, while PM2 keeps
+      // a high emergency ceiling as the final containment boundary.
+      max_memory_restart: '2G',
       kill_timeout: 30000,
       time: true,
       env: sharedEnv,

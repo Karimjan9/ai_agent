@@ -109,7 +109,7 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         self.assertTrue(parts["holdout"]["time"].min() > parts["replay"]["time"].max())
 
     def test_m15_uses_its_own_pre_2026_foundation_contract(self):
-        time = pd.date_range("2025-11-01", "2026-07-17 23:45:00", freq="15min", tz="UTC")
+        time = pd.date_range("2016-01-01", "2026-07-17 23:45:00", freq="15min", tz="UTC")
         close = pd.Series(range(len(time)), dtype=float).mod(41).add(100.0)
         archive = pd.DataFrame({
             "time": time,
@@ -124,17 +124,41 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         parts = MarketAdaptiveReplayService().split_dataset(archive, foundation, "M15")
 
         self.assertGreaterEqual(len(parts["foundation"]), 2000)
-        self.assertGreaterEqual(parts["foundation"]["time"].min(), pd.Timestamp("2025-11-01", tz="UTC"))
+        self.assertGreaterEqual(parts["foundation"]["time"].min(), pd.Timestamp("2016-01-01", tz="UTC"))
         self.assertLessEqual(parts["foundation"]["time"].max(), pd.Timestamp("2025-12-31 23:59:59", tz="UTC"))
         self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01", tz="UTC"))
         self.assertTrue(parts["holdout"]["time"].min() > parts["replay"]["time"].max())
 
+    def test_paper_only_boundary_replays_historical_rows_without_2026(self):
+        pre_2026 = self.df[self.df["time"] < pd.Timestamp("2026-01-01", tz="UTC")].copy()
+
+        parts = MarketAdaptiveReplayService().split_dataset(
+            pre_2026,
+            pre_2026,
+            "H1",
+            paper_only_2026=True,
+        )
+
+        for segment in parts.values():
+            self.assertLess(segment["time"].max(), pd.Timestamp("2026-01-01", tz="UTC"))
+        self.assertGreaterEqual(len(parts["replay"]), 202)
+
+    def test_paper_only_boundary_rejects_a_2026_research_candle(self):
+        with self.assertRaisesRegex(ValueError, "faqat paper lane"):
+            MarketAdaptiveReplayService().split_dataset(
+                self.df,
+                self.df[self.df["time"] < pd.Timestamp("2026-01-01", tz="UTC")],
+                "H1",
+                paper_only_2026=True,
+            )
+
     def test_holdout_runner_receives_only_the_sealed_tail(self):
         service = MarketAdaptiveReplayService()
         payload = SimpleBacktestRequest(symbol="XAUUSD", timeframe="H1", strategy="trend_v1")
-        _, period = service.sealed_holdout(payload, self.df)
+        pre_2026 = self.df[self.df["time"] < pd.Timestamp("2026-01-01", tz="UTC")]
+        _, period = service.sealed_holdout(payload, pre_2026)
 
-        self.assertEqual(period["start"], service.split_dataset(self.df)["holdout"]["time"].min().isoformat())
+        self.assertEqual(period["start"], service.split_dataset(pre_2026, paper_only_2026=True)["holdout"]["time"].min().isoformat())
 
     def test_monthly_passport_marks_one_good_month_as_seasonal_not_consistent(self):
         passport = MarketAdaptiveReplayService._monthly_passport({"windows": [
@@ -251,6 +275,60 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         self.assertEqual(profile["calendar_month_survival"]["source"], "full_chronological_trade_ledger")
         self.assertEqual(month["trades"], 4)
         self.assertEqual(month["profit_factor"], 1.8)
+
+    def test_parameter_perturbation_uses_the_declared_changed_gene(self):
+        service = MarketAdaptiveReplayService()
+        payload = SimpleBacktestRequest(
+            symbol="XAUUSD", timeframe="H1", strategy="trend_v1",
+            parameters={"ema_fast": 20, "ema_slow": 55},
+            policy_context={"repair_contract": {"changed_gene": "ema_slow"}},
+        )
+        normal_result = {
+            "total_trades": 20, "profit_factor": 1.2, "trades": [],
+            "pf_attribution": {
+                "by_regime": {"trend_up": {"trades": 10, "net_pf": 1.2}},
+                "by_temporal_chunk": {
+                    "chunk_1": {"trades": 10, "net_pf": 1.2},
+                    "chunk_2": {"trades": 10, "net_pf": 1.2},
+                    "chunk_3": {"trades": 10, "net_pf": 1.2},
+                },
+                "by_month": {},
+            },
+        }
+        observed_parameters = []
+
+        def fake_run(variant_payload, *_args, **_kwargs):
+            observed_parameters.append(variant_payload.parameters)
+            return type("Result", (), {"model_dump": lambda self: {"profit_factor": 1.2, "total_trades": 10, "trades": []}})()
+
+        with patch.object(MarketAdaptiveReplayService, "_cost_profile_attribution", return_value={"stress_cost": {"profit_factor": 1.1}}), \
+             patch("app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe", side_effect=fake_run):
+            profile = service.screening_survival_profile(payload, self.df, normal_result, lambda item: item["profit_factor"])
+
+        self.assertEqual("ema_slow", profile["parameter_perturbation_gene"])
+        self.assertEqual("assessed", profile["parameter_perturbation_status"])
+        self.assertEqual([], [item for item in observed_parameters if item["ema_fast"] != 20])
+        self.assertEqual(
+            {52.25, 57.75},
+            {item["ema_slow"] for item in observed_parameters if item["ema_slow"] != 55},
+        )
+
+    def test_stratified_history_uses_independent_windows_across_the_archive(self):
+        service = MarketAdaptiveReplayService()
+        payload = SimpleBacktestRequest(
+            symbol="XAUUSD", timeframe="H1", strategy="trend_v1",
+            policy_context={"historical_stratified_windows": {
+                "protocol": "historical_stratified_windows_v1", "window_count": 8, "window_rows": 1500,
+            }},
+        )
+        with patch("app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe") as run:
+            run.return_value = type("Result", (), {"model_dump": lambda self: {"profit_factor": 1.2, "total_trades": 10}})()
+            evidence = service.stratified_historical_screening_evidence(payload, self.df, lambda item: item["profit_factor"])
+
+        self.assertEqual("passed", evidence["status"])
+        self.assertEqual(8, len(evidence["windows"]))
+        self.assertEqual(8, run.call_count)
+        self.assertNotEqual(evidence["windows"][0]["start"], evidence["windows"][-1]["start"])
 
 
 class HybridStrategyTest(unittest.TestCase):

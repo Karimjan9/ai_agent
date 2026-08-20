@@ -34,7 +34,14 @@ class ImportTrainingMarketDataCsv extends Command
             $from = $this->parseBoundary($this->option('from'));
             $to = $this->parseBoundary($this->option('to'));
             $targetFrom = $from ?? CarbonImmutable::now('UTC')->subYears(10)->startOfDay();
+            $trainingCutoff = $training->trainingCutoff();
             $targetTo = $to ?? $this->lastClosedBoundary($timeframe);
+            if ($targetTo->greaterThan($trainingCutoff)) {
+                $targetTo = $trainingCutoff;
+            }
+            if ($targetFrom->greaterThanOrEqualTo($trainingCutoff)) {
+                throw new \InvalidArgumentException('Training archive 2026-01-01 dan keyin boshlanishi mumkin emas.');
+            }
             if ($targetFrom->greaterThanOrEqualTo($targetTo)) {
                 throw new \InvalidArgumentException('Training range bo\'sh bo\'lishi mumkin emas.');
             }
@@ -47,7 +54,7 @@ class ImportTrainingMarketDataCsv extends Command
                 $targetFrom,
                 $targetTo,
             );
-            $result = $training->importCsv($archive, (string) $this->argument('path'), $from, $to);
+            $result = $training->importCsv($archive, (string) $this->argument('path'), $from, $targetTo);
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
 

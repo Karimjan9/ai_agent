@@ -72,11 +72,18 @@ class RescueCircuitBreakerService
         $holdoutEvidence = $this->sealedIndependentHoldoutEvidence($profile, $source, $snapshot);
         $holdout = (bool) data_get($holdoutEvidence, 'allowed', false);
         $minimumFreshCandles = $this->minimumFreshCandles((string) $lab->timeframe);
+        $holdoutAlreadyConsumed = $holdout && $this->holdoutConsumedByFamily($family, $holdoutEvidence);
         $independentNewEvidence = $holdout || (
             $latestFamily !== null
             && $freshCandles >= $minimumFreshCandles
             && (string) data_get($snapshot, 'data_fingerprint', '') !== (string) data_get($latestFamilySnapshot, 'data_fingerprint', '')
         );
+        // A sealed holdout is a finite independent evidence artifact.  Its
+        // hash can admit a new rescue family once, but changing only a repair
+        // anchor must never make that same file appear new again.
+        if ($holdoutAlreadyConsumed) {
+            $independentNewEvidence = false;
+        }
 
         $cohortCount = $cohortRows->count();
         $siblingCount = (int) $cohortRows->sum('sibling_count');
@@ -143,6 +150,7 @@ class RescueCircuitBreakerService
                 'independent_new_evidence' => $independentNewEvidence,
                 'sealed_independent_holdout' => $holdout,
                 'sealed_holdout_evidence' => $holdoutEvidence,
+                'sealed_holdout_consumed_by_family' => $holdoutAlreadyConsumed,
                 'current_data_fingerprint' => data_get($snapshot, 'data_fingerprint'),
                 'last_family_data_fingerprint' => data_get($latestFamilySnapshot, 'data_fingerprint'),
                 'current_data_count' => $currentCount,
@@ -420,6 +428,21 @@ class RescueCircuitBreakerService
             $identity['hypothesis_hash'] ?? '',
             $identity['dataset_hash'] ?? '',
         ]);
+    }
+
+    /** @param Collection<int, LabGeneration> $family */
+    private function holdoutConsumedByFamily(Collection $family, array $holdoutEvidence): bool
+    {
+        $holdoutHash = (string) data_get($holdoutEvidence, 'data_hash', '');
+        if ($holdoutHash === '') {
+            // A profile attestation without an immutable data identity cannot
+            // be safely reused as fresh evidence after any family admission.
+            return $family->isNotEmpty();
+        }
+
+        return $family->contains(function (LabGeneration $generation) use ($holdoutHash): bool {
+            return (string) data_get($generation->trigger_context, 'independent_evidence_admission.sealed_holdout_evidence.data_hash', '') === $holdoutHash;
+        });
     }
 
     /** @return Collection<int, array<string, mixed>> */

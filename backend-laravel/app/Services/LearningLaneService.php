@@ -56,6 +56,17 @@ class LearningLaneService
 
         $control = $this->resolveControl($agent, $map);
         $controlVerified = $this->isVerifiedControl($control);
+        $candidateDataHash = $this->snapshotHashOf($map);
+        $candidateExecutionHash = $this->executionHashOf($map);
+        $controlDataHash = (string) data_get($control, 'data_hash', '');
+        $controlExecutionHash = (string) data_get($control, 'execution_hash', '');
+        $sameGeneration = $controlVerified
+            && (int) data_get($control, 'generation_id', 0) === (int) $agent->lab_generation_id;
+        $pairIntegrityStatus = $controlVerified && $sameGeneration
+            && $candidateDataHash !== '' && $candidateExecutionHash !== ''
+            && $controlDataHash !== '' && $controlExecutionHash !== ''
+            ? 'verified'
+            : 'diagnostic_only';
         $candidateMetrics = (array) $map->observed_metrics;
         // A parent/anchor/baseline is useful diagnostic context, but it is
         // not a causal control. Only a same-snapshot and same-execution
@@ -123,6 +134,12 @@ class LearningLaneService
                 'status' => $controlVerified ? 'screen_paired' : 'missing_control',
                 'candidate_evidence_run_id' => $map->evidence_run_id,
                 'control_evidence_run_id' => $controlVerified ? data_get($control, 'evidence_run_id') : null,
+                'candidate_data_hash' => $candidateDataHash !== '' ? $candidateDataHash : null,
+                'control_data_hash' => $controlVerified && $controlDataHash !== '' ? $controlDataHash : null,
+                'candidate_execution_hash' => $candidateExecutionHash !== '' ? $candidateExecutionHash : null,
+                'control_execution_hash' => $controlVerified && $controlExecutionHash !== '' ? $controlExecutionHash : null,
+                'pair_integrity_status' => $pairIntegrityStatus,
+                'same_generation' => $sameGeneration,
                 'independent_window_key' => $this->windowKey($result),
                 'candidate_metrics' => $candidateMetrics,
                 'control_metrics' => $controlMetrics,
@@ -137,6 +154,8 @@ class LearningLaneService
                     'same_snapshot' => $controlVerified && (bool) data_get($control, 'same_snapshot', false),
                     'same_execution_contract' => $controlVerified && (bool) data_get($control, 'same_execution_contract', false),
                     'control_pair_status' => $controlVerified ? 'verified' : 'missing_control',
+                    'pair_integrity_status' => $pairIntegrityStatus,
+                    'same_generation' => $sameGeneration,
                     'baseline_is_diagnostic_only' => ! $controlVerified,
                     'causal_skill_compiler' => $causalSkill,
                     'promotion_evidence' => false,
@@ -155,6 +174,12 @@ class LearningLaneService
                 'control_agent_id' => $controlVerified ? data_get($control, 'agent_id') : null,
                 'control_response_map_id' => $controlVerified ? data_get($control, 'map_id') : null,
                 'control_evidence_run_id' => $controlVerified ? data_get($control, 'evidence_run_id') : null,
+                'candidate_data_hash' => $candidateDataHash !== '' ? $candidateDataHash : null,
+                'control_data_hash' => $controlVerified && $controlDataHash !== '' ? $controlDataHash : null,
+                'candidate_execution_hash' => $candidateExecutionHash !== '' ? $candidateExecutionHash : null,
+                'control_execution_hash' => $controlVerified && $controlExecutionHash !== '' ? $controlExecutionHash : null,
+                'pair_integrity_status' => $pairIntegrityStatus,
+                'same_generation' => $sameGeneration,
                 'control_metrics' => $controlVerified ? $controlMetrics : [],
                 'target_delta' => $targetDelta,
                 'baseline_source' => $baselineSource,
@@ -165,6 +190,8 @@ class LearningLaneService
                     'same_snapshot' => $controlVerified && (bool) data_get($control, 'same_snapshot', false),
                     'same_execution_contract' => $controlVerified && (bool) data_get($control, 'same_execution_contract', false),
                     'control_pair_status' => $controlVerified ? 'verified' : 'missing_control',
+                    'pair_integrity_status' => $pairIntegrityStatus,
+                    'same_generation' => $sameGeneration,
                     'baseline_is_diagnostic_only' => ! $controlVerified,
                     'causal_skill_compiler' => $causalSkill,
                     'promotion_evidence' => false,
@@ -289,7 +316,7 @@ class LearningLaneService
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))
             ->when($family, fn ($query) => $query->where('strategy_family', $family))
-            ->whereIn('status', ['screen_paired', 'provisional'])
+            ->whereIn('status', ['screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed'])
             ->latest('id')
             ->limit(max(1, $limit))
             ->get();
@@ -314,12 +341,20 @@ class LearningLaneService
                         'control_agent_id' => data_get($control, 'agent_id'),
                         'control_response_map_id' => data_get($control, 'map_id'),
                         'control_evidence_run_id' => data_get($control, 'evidence_run_id'),
+                        'candidate_data_hash' => $this->snapshotHashOf($map) ?: null,
+                        'control_data_hash' => data_get($control, 'data_hash') ?: null,
+                        'candidate_execution_hash' => $this->executionHashOf($map) ?: null,
+                        'control_execution_hash' => data_get($control, 'execution_hash') ?: null,
+                        'pair_integrity_status' => 'verified',
+                        'same_generation' => true,
                         'control_metrics' => $controlMetrics,
                         'target_delta' => $targetDelta,
                         'baseline_source' => (string) data_get($control, 'source', 'control'),
                         'metadata' => [
                             ...((array) $pair->metadata),
                             'control_pair_status' => 'verified',
+                            'pair_integrity_status' => 'verified',
+                            'same_generation' => true,
                             'same_snapshot' => true,
                             'same_execution_contract' => true,
                             'baseline_is_diagnostic_only' => false,
@@ -337,6 +372,12 @@ class LearningLaneService
                 'control_response_map_id' => null,
                 'control_evidence_run_id' => null,
                 'control_metrics' => [],
+                'candidate_data_hash' => $this->snapshotHashOf($map) ?: null,
+                'control_data_hash' => null,
+                'candidate_execution_hash' => $this->executionHashOf($map) ?: null,
+                'control_execution_hash' => null,
+                'pair_integrity_status' => 'diagnostic_only',
+                'same_generation' => false,
                 'target_delta' => [
                     'status' => 'missing_control',
                     'improved' => false,
@@ -346,6 +387,8 @@ class LearningLaneService
                 'metadata' => [
                     ...((array) $pair->metadata),
                     'control_pair_status' => 'missing_control',
+                    'pair_integrity_status' => 'diagnostic_only',
+                    'same_generation' => false,
                     'baseline_is_diagnostic_only' => true,
                     'reconciled_at' => now()->utc()->toIso8601String(),
                     'promotion_evidence' => false,
@@ -847,8 +890,16 @@ class LearningLaneService
         return in_array((string) $pair->status, [
             'screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed',
         ], true)
+            && (string) $pair->pair_integrity_status === 'verified'
+            && (bool) $pair->same_generation
             && (int) $pair->control_response_map_id > 0
             && (array) $pair->control_metrics !== []
+            && filled($pair->candidate_data_hash)
+            && filled($pair->control_data_hash)
+            && filled($pair->candidate_execution_hash)
+            && filled($pair->control_execution_hash)
+            && hash_equals((string) $pair->candidate_data_hash, (string) $pair->control_data_hash)
+            && hash_equals((string) $pair->candidate_execution_hash, (string) $pair->control_execution_hash)
             && (bool) data_get($pair->metadata, 'same_snapshot', false)
             && (bool) data_get($pair->metadata, 'same_execution_contract', false)
             && LabMutationResponseMap::query()
@@ -936,6 +987,10 @@ class LearningLaneService
         ]);
 
         app(LearningMemoryService::class)->recordPair($pair->fresh(), 'full_replay');
+        // Bridge the legacy replay lane into the canonical episode ledger.
+        // This is observational only; normal immutable promotion gates retain
+        // all authority.
+        $this->recordCanonicalFullReplay($agent, $pair->fresh(), $result, $causalCreditEligible, $delta);
         app(FailureDojoService::class)->recordPair($pair->fresh());
         app(CouncilDisagreementService::class)->recordResult($result, [
             'symbol' => $agent->symbol,
@@ -951,6 +1006,31 @@ class LearningLaneService
             $independent = $this->independentObservationCount($pair->fresh(), $result);
             $requiredIndependent = max(2, (int) config('services.learning_lane.independent_confirmations_required', 2));
             if ($independent >= $requiredIndependent && $this->independentConfirmationEligible($result, $requiredIndependent)) {
+                // A confirmed response map without a confirmed lesson is an
+                // incomplete learning loop. The lesson is the reusable skill
+                // artifact consumed by the next constructor, so require its
+                // materialization before declaring the skill confirmed.
+                $provisionalLesson = $lesson?->fresh();
+                if (! $provisionalLesson) {
+                    $pair->update([
+                        'status' => 'provisional',
+                        'metadata' => [
+                            ...((array) $pair->metadata),
+                            'confirmation_blocked' => 'CONFIRMED_SKILL_ARTIFACT_MISSING',
+                            'promotion_evidence' => false,
+                        ],
+                    ]);
+
+                    return [
+                        'protocol' => self::PROTOCOL,
+                        'status' => 'confirmed_skill_artifact_missing',
+                        'pair_id' => $pair->id,
+                        'dispatch_id' => $dispatch?->id,
+                        'target_delta' => $delta,
+                        'independent_observation_count' => $independent,
+                        'promotion_evidence' => false,
+                    ];
+                }
                 $verification = [
                     'status' => 'confirmed',
                     'protocol' => 'learning_lane_independent_skill_v1',
@@ -984,6 +1064,19 @@ class LearningLaneService
                         ],
                     ],
                 );
+                $provisionalLesson->update([
+                    'status' => 'confirmed',
+                    'independent_window_count' => $independent,
+                    'confirmation_count' => $requiredIndependent,
+                    'evidence' => [
+                        ...((array) $provisionalLesson->evidence),
+                        'confirmed_at' => now()->utc()->toIso8601String(),
+                        'verification' => $verification,
+                        'mentor' => $mentor,
+                        'promotion_evidence' => false,
+                    ],
+                    'expires_at' => null,
+                ]);
                 $pair->update(['status' => 'confirmed']);
             } else {
                 $pair->update(['status' => 'provisional']);
@@ -1022,19 +1115,16 @@ class LearningLaneService
             ->when($family, fn ($query) => $query->where('strategy_family', $family))
             ->get();
         $activePairs = $pairs->whereNotIn('status', ['superseded']);
-        foreach ($activePairs as $pair) {
-            $memoryStage = in_array((string) $pair->status, ['learning_observed', 'confirmed'], true)
-                ? 'full_replay'
-                : (in_array((string) $pair->status, ['micro_failed', 'micro_deferred'], true) ? 'micro' : 'screening');
-            $memoryObservation = $memoryStage === 'micro'
-                ? (array) data_get($pair->metadata, 'micro_replay', [])
-                : [];
-            app(LearningMemoryService::class)->recordPair($pair, $memoryStage, $memoryObservation);
-            app(FailureDojoService::class)->recordPair($pair);
-        }
-        $pairedRows = $activePairs->whereIn('status', ['screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed']);
+        // This method backs read-only monitoring commands. Learning memory
+        // and Failure Dojo materialization happen when a pair is created or
+        // settles, never while an operator merely observes the dashboard.
+        // Besides violating the monitor contract, mutating every historical
+        // pair here made status checks increasingly expensive over time.
+        $pairedRows = $activePairs
+            ->whereIn('status', ['screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed'])
+            ->filter(fn (LabLearningLanePair $pair): bool => $this->pairHasVerifiedControl($pair));
         $pairedCount = $pairedRows->count();
-        $missingCount = $activePairs->where('status', 'missing_control')->count();
+        $missingCount = $activePairs->filter(fn (LabLearningLanePair $pair): bool => ! $this->pairHasVerifiedControl($pair))->count();
         // Only compare improvement against verified control-paired rows.  A
         // micro-failed/missing-control row may retain a historical target
         // delta, but it is not a causal control comparison and must not inflate
@@ -1104,6 +1194,7 @@ class LearningLaneService
                 'superseded_duplicate_pairs' => $pairs->where('status', 'superseded')->count(),
             ],
             'memory' => app(LearningMemoryService::class)->progress($symbol, $timeframe),
+            'learning_kernel' => app(LearningKernelService::class)->pulse($symbol, $timeframe, $family),
             'failure_dojo' => app(FailureDojoService::class)->progress($symbol, $timeframe),
             'council_disagreement' => app(CouncilDisagreementService::class)->progress($symbol, $timeframe),
             'gene_interactions' => app(GeneInteractionLabService::class)->progress($symbol, $timeframe),
@@ -1137,10 +1228,6 @@ class LearningLaneService
     {
         $candidateExecution = $this->executionHashOf($candidate);
         $candidateSnapshot = $this->snapshotHashOf($candidate);
-        $candidateWindow = (string) ($candidate->temporal_window_key ?: '');
-        $declaredPair = (array) data_get($agent->modelVersion?->metadata, 'control_pair_contract', []);
-        $sameGenerationControlRequired = (bool) data_get($declaredPair, 'same_generation', false)
-            || data_get($declaredPair, 'protocol') === ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL;
         $controls = $controlRows ?? LabMutationResponseMap::query()
             ->with('agent')
             ->where('stage', 'screening')
@@ -1161,46 +1248,14 @@ class LearningLaneService
                 'agent_id' => $sameGenerationControl->lab_agent_id,
                 'evidence_run_id' => $sameGenerationControl->evidence_run_id,
                 'metrics' => (array) $sameGenerationControl->observed_metrics,
+                'generation_id' => (int) ($sameGenerationControl->agent?->lab_generation_id ?? 0),
+                'data_hash' => $this->snapshotHashOf($sameGenerationControl),
+                'execution_hash' => $this->executionHashOf($sameGenerationControl),
                 'source' => 'control',
                 'scope' => 'same_generation_family',
                 'quality' => 'same_generation_family',
                 'same_snapshot' => $this->sameSnapshot($candidate, $sameGenerationControl),
                 'same_execution_contract' => $this->sameExecutionContract($candidate, $sameGenerationControl),
-            ];
-        }
-
-        // A family-specific control may not exist for a parentless research
-        // family. Use the lighthouse frozen control only when the execution
-        // contract matches; snapshot equality is reported, never assumed.
-        $globalControl = $sameGenerationControlRequired
-            ? null
-            : $controls
-            ->filter(function (LabMutationResponseMap $row) use ($agent, $candidate, $candidateExecution, $candidateSnapshot, $candidateWindow): bool {
-                $rowAgent = $row->agent;
-                if (! $rowAgent || (int) $rowAgent->id === (int) $agent->id) return false;
-                // Do not call an unverified cross-family comparison a paired
-                // experiment. Old maps without a contract hash remain
-                // visible as missing-control until they can be replayed under
-                // the canonical contract.
-                if ($candidateExecution === '' || ! $this->sameExecutionContract($candidate, $row)) return false;
-                if ($candidateSnapshot !== '' && ! $this->sameSnapshot($candidate, $row)) return false;
-                if ($candidateSnapshot === '' && $candidateWindow !== '' && (string) ($row->temporal_window_key ?: '') !== $candidateWindow) return false;
-
-                return true;
-            })
-            ->first();
-        if ($globalControl) {
-            $sameFamily = (string) $globalControl->strategy_family === (string) $agent->strategy_family;
-            return [
-                'map_id' => $globalControl->id,
-                'agent_id' => $globalControl->lab_agent_id,
-                'evidence_run_id' => $globalControl->evidence_run_id,
-                'metrics' => (array) $globalControl->observed_metrics,
-                'source' => 'frozen_control_global',
-                'scope' => $sameFamily ? 'cross_generation_family' : 'lighthouse_global',
-                'quality' => $sameFamily ? 'cross_generation_family' : 'global_execution_matched',
-                'same_snapshot' => $this->sameSnapshot($candidate, $globalControl),
-                'same_execution_contract' => $this->sameExecutionContract($candidate, $globalControl),
             ];
         }
 
@@ -1222,8 +1277,11 @@ class LearningLaneService
      */
     private function isVerifiedControl(array $control): bool
     {
-        return in_array((string) data_get($control, 'source'), ['control', 'frozen_control_global'], true)
+        return data_get($control, 'source') === 'control'
             && (array) data_get($control, 'metrics', []) !== []
+            && (int) data_get($control, 'generation_id', 0) > 0
+            && filled(data_get($control, 'data_hash'))
+            && filled(data_get($control, 'execution_hash'))
             && (bool) data_get($control, 'same_snapshot', false)
             && (bool) data_get($control, 'same_execution_contract', false);
     }
@@ -1401,6 +1459,41 @@ class LearningLaneService
             $dataHash,
             $window,
         ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+    }
+
+    private function recordCanonicalFullReplay(
+        LabAgent $agent,
+        LabLearningLanePair $pair,
+        array $result,
+        bool $causalCreditEligible,
+        array $delta,
+    ): void {
+        try {
+            $kernel = app(LearningKernelService::class);
+            $map = $pair->candidateResponseMap;
+            $context = (array) data_get($pair->failure_signature, 'state', []);
+            $episode = $kernel->openEpisode($agent, [
+                'decision_key' => 'learning-lane:pair:'.$pair->id.':'.(string) data_get($result, 'evidence_run_id', 'full'),
+                'symbol' => $pair->symbol, 'timeframe' => $pair->timeframe, 'strategy_family' => $pair->strategy_family,
+                'stage' => 'full_replay', 'decision' => 'MUTATE', 'context' => $context,
+                'data_manifest_hash' => $map ? $this->snapshotHashOf($map) : null,
+                'execution_hash' => $map ? $this->executionHashOf($map) : null,
+                'parameter_hash' => $map?->response_key,
+            ]);
+            $settled = $kernel->settleOutcome($episode, [
+                'source_key' => 'learning-lane:full:'.$pair->id.':'.(string) data_get($result, 'evidence_run_id', 'none'),
+                'source_type' => LabLearningLanePair::class, 'source_id' => $pair->id, 'outcome_status' => 'settled',
+                'failure_class' => data_get($pair->failure_signature, 'failure_type', $pair->target),
+                'parameter_key' => $map?->parameter_key, 'independent_window_key' => $pair->independent_window_key,
+                'control_present' => $pair->control_agent_id !== null && (bool) data_get($pair->metadata, 'same_execution_contract', false),
+                'evidence_state' => $causalCreditEligible && (bool) data_get($delta, 'improved', false) ? 'positive' : 'negative',
+                'metrics' => $result,
+            ]);
+            $kernel->consolidate($settled['settlement']);
+        } catch (\Throwable) {
+            // A not-yet-migrated canonical ledger must not block a completed
+            // immutable replay. The bridge will be re-run by reconciliation.
+        }
     }
 
     private function available(): bool

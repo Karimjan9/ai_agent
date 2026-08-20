@@ -71,6 +71,93 @@ class MutationObservabilityTest extends TestCase
         );
     }
 
+    public function test_expected_invariants_do_not_count_as_a_behavioral_effect(): void
+    {
+        $service = app(MutationObservabilityService::class);
+        $method = new \ReflectionMethod($service, 'expectedBehavioralAssessment');
+        $method->setAccessible(true);
+
+        $assessment = $method->invoke($service, [
+            'raw_signal' => 'unchanged',
+            'veto_channel' => 'confidence',
+            'veto_direction' => 'decrease',
+            'accepted_entries' => 'increase_or_same',
+        ], [
+            'entry_funnel' => ['raw_strategy_signals' => 100, 'accepted_entries' => 12, 'rejected' => ['confidence' => 0]],
+        ], [
+            'entry_funnel' => ['raw_strategy_signals' => 100, 'accepted_entries' => 12, 'rejected' => ['confidence' => 0]],
+        ], false);
+
+        $this->assertSame('no_expected_effect', data_get($assessment, 'status'));
+        $this->assertSame('not_applicable_no_baseline_veto', data_get($assessment, 'checks.veto_channel.status'));
+    }
+
+    public function test_exit_mutation_is_checked_against_its_declared_exit_plane(): void
+    {
+        $service = app(MutationObservabilityService::class);
+        $method = new \ReflectionMethod($service, 'expectedBehavioralAssessment');
+        $method->setAccessible(true);
+
+        $assessment = $method->invoke($service, ['exit_state' => 'change'], [
+            'exit_distribution' => ['atr_stop' => 8, 'target' => 4],
+        ], [
+            'exit_distribution' => ['atr_stop' => 5, 'target' => 7],
+        ], true);
+
+        $this->assertSame('matched', data_get($assessment, 'status'));
+        $this->assertSame('matched', data_get($assessment, 'checks.exit_state.status'));
+    }
+
+    public function test_structural_claim_without_its_declared_plane_is_evidence_incomplete_not_generic_success(): void
+    {
+        $service = app(MutationObservabilityService::class);
+        $method = new \ReflectionMethod($service, 'expectedBehavioralAssessment');
+        $method->setAccessible(true);
+
+        $assessment = $method->invoke($service, [
+            'entry_topology' => 'change',
+            'regime_coverage' => 'change',
+            'accepted_trade_set' => 'change',
+        ], ['signal_decision_hash' => 'candidate-signal'], ['signal_decision_hash' => 'baseline-signal'], true);
+
+        $this->assertSame('evidence_incomplete', data_get($assessment, 'status'));
+        $this->assertSame('evidence_incomplete', data_get($assessment, 'checks.entry_topology.status'));
+        $this->assertSame('evidence_incomplete', data_get($assessment, 'checks.regime_coverage.status'));
+    }
+
+    public function test_exit_claim_is_contradicted_when_it_materially_changes_entry_count(): void
+    {
+        $service = app(MutationObservabilityService::class);
+        $method = new \ReflectionMethod($service, 'expectedBehavioralAssessment');
+        $method->setAccessible(true);
+
+        $assessment = $method->invoke($service, ['accepted_entries' => 'unchanged_or_near'], [
+            'entry_funnel' => ['accepted_entries' => 140],
+        ], [
+            'entry_funnel' => ['accepted_entries' => 100],
+        ], true);
+
+        $this->assertSame('contradicted', data_get($assessment, 'status'));
+        $this->assertSame('contradicted', data_get($assessment, 'checks.accepted_entries.status'));
+        $this->assertSame(10, data_get($assessment, 'checks.accepted_entries.tolerance'));
+    }
+
+    public function test_non_directional_veto_claim_matches_when_the_veto_opens(): void
+    {
+        $service = app(MutationObservabilityService::class);
+        $method = new \ReflectionMethod($service, 'expectedBehavioralAssessment');
+        $method->setAccessible(true);
+
+        $assessment = $method->invoke($service, ['veto_channel' => 'regime'], [
+            'entry_funnel' => ['rejected' => ['regime' => 312]],
+        ], [
+            'entry_funnel' => ['rejected' => ['regime' => 0]],
+        ], true);
+
+        $this->assertSame('matched', data_get($assessment, 'status'));
+        $this->assertSame('matched', data_get($assessment, 'checks.veto_channel.status'));
+    }
+
     public function test_changed_signal_and_ledger_are_learning_observable_but_not_promotion_evidence(): void
     {
         [$child, $candidate] = $this->childAndCandidate(true);
@@ -122,6 +209,40 @@ class MutationObservabilityTest extends TestCase
 
         $this->assertContains('FAILED_BEHAVIORAL_MUTATION_EVIDENCE', (array) $decision->reason_codes);
         $this->assertSame('failed', $decision->decision);
+    }
+
+    public function test_data_edge_root_cohort_is_not_failed_for_missing_parent_control_pair(): void
+    {
+        [$child, $candidate] = $this->childAndCandidate(false);
+        $child->generation->update([
+            'trigger_type' => 'data_edge_audit',
+            'trigger_context' => ['research_allocation_budget' => ['mode' => 'normal_research']],
+        ]);
+        $child->refresh()->load('modelVersion', 'parentA', 'generation');
+
+        $observability = app(MutationObservabilityService::class)->assess($child, $candidate);
+
+        $this->assertFalse(data_get($observability, 'mutation_contract.required'));
+        $this->assertSame('not_required', data_get($observability, 'mutation_contract.status'));
+        $this->assertTrue(data_get($observability, 'mutation_contract.root_data_edge_audit_exempt'));
+        $this->assertSame('root_seed_observability', data_get($observability, 'classification'));
+    }
+
+    public function test_root_portfolio_intervention_requires_its_declared_control_pair(): void
+    {
+        [$child, $candidate] = $this->childAndCandidate(true);
+        $child->generation->update(['trigger_type' => 'data_edge_audit']);
+        $metadata = (array) $child->modelVersion->metadata;
+        $metadata['root_experiment_portfolio'] = true;
+        $metadata['control_pair_contract'] = ['required_for_candidate' => true, 'pair_key' => 'root-pair'];
+        $child->modelVersion->update(['metadata' => $metadata]);
+        $child->refresh()->load('modelVersion', 'parentA', 'generation');
+
+        $observability = app(MutationObservabilityService::class)->assess($child, $candidate);
+
+        $this->assertTrue(data_get($observability, 'mutation_contract.required'));
+        $this->assertTrue(data_get($observability, 'mutation_contract.root_portfolio_intervention'));
+        $this->assertFalse(data_get($observability, 'mutation_contract.root_data_edge_audit_exempt'));
     }
 
     public function test_reconciliation_never_upgrades_a_failed_gate_projection(): void

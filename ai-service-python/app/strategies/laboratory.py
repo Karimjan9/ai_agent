@@ -86,6 +86,13 @@ def apply_volatility_breakout_strategy(df: pd.DataFrame, parameters: dict | None
 
 
 def apply_mean_reversion_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Range strategy with an explicit, runtime-active topology gene.
+
+    The default path stays the legacy contrarian extreme fade.  The
+    ``inverse_extreme`` variant is a separately testable continuation
+    hypothesis, so a candidate and its frozen mean-reversion control differ
+    by exactly one executable gene.
+    """
     p = parameters or {}
     out = df.copy()
     lookback, deviation = int(p.get("lookback", 20)), float(p.get("deviation", 2.0))
@@ -95,11 +102,23 @@ def apply_mean_reversion_strategy(df: pd.DataFrame, parameters: dict | None = No
     adx_max = float(p.get("adx_max", 20))
     low_volatility_only = bool(p.get("low_volatility_only", True))
     rsi_confirmation = bool(p.get("rsi_confirmation", False))
+    signal_mode = str(p.get("range_signal_mode", "reentry"))
     range_filter = out.get("adx", pd.Series(0, index=out.index)) <= adx_max
     if low_volatility_only:
         range_filter &= out.get("volatility_regime", pd.Series("normal_volatility", index=out.index)) == "low_volatility"
-    buy = range_filter & (out.close < mean - std * deviation)
-    sell = range_filter & (out.close > mean + std * deviation)
+    lower, upper = mean - std * deviation, mean + std * deviation
+    if signal_mode == "inverse_extreme":
+        # A failed fade can continue inside a low-ADX range label.  This is
+        # an explicit topology experiment, never an implicit sign flip.
+        buy = range_filter & (out.close > upper)
+        sell = range_filter & (out.close < lower)
+    elif signal_mode == "mid_cross":
+        buy = range_filter & (out.close.shift(1) < mean.shift(1)) & (out.close >= mean)
+        sell = range_filter & (out.close.shift(1) > mean.shift(1)) & (out.close <= mean)
+    else:
+        # `reentry` is the sealed legacy baseline for this family.
+        buy = range_filter & (out.close < lower)
+        sell = range_filter & (out.close > upper)
     if rsi_confirmation:
         rsi = _rsi(out.close, rsi_period)
         buy &= rsi <= float(p.get("rsi_oversold", 35))

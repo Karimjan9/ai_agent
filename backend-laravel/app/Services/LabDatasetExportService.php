@@ -19,7 +19,30 @@ class LabDatasetExportService
         private \App\Services\MarketData\DukascopyMarketDataProvider $foundationProvider,
     ) {}
 
+    private function trainingCutoff(): CarbonImmutable
+    {
+        return CarbonImmutable::parse(
+            (string) config('services.lab_selection.training_end_exclusive', '2026-01-01 00:00:00'),
+            'UTC',
+        )->utc();
+    }
+
     public function export(string $symbol, string $timeframe = 'H1', bool $includeVolume = false): string
+    {
+        return $this->exportSlice($symbol, $timeframe, $includeVolume, false);
+    }
+
+    /**
+     * Export the canonical live stream for paper-only consumers. This method
+     * is intentionally explicit so a research caller cannot accidentally get
+     * 2026 candles by using the generic export path.
+     */
+    public function exportPaper(string $symbol, string $timeframe = 'H1', bool $includeVolume = false): string
+    {
+        return $this->exportSlice($symbol, $timeframe, $includeVolume, true);
+    }
+
+    private function exportSlice(string $symbol, string $timeframe, bool $includeVolume, bool $paper): string
     {
         $symbol = strtoupper($symbol);
         $symbolId = Symbol::query()->where('code', $symbol)->value('id');
@@ -29,7 +52,7 @@ class LabDatasetExportService
 
         $directory = storage_path('app/lab-datasets');
         File::ensureDirectoryExists($directory);
-        $path = $directory."/{$symbol}_{$timeframe}".($includeVolume ? '_volume' : '').'.csv';
+        $path = $directory."/{$symbol}_{$timeframe}".($includeVolume ? '_volume' : '').($paper ? '_paper' : '').'.csv';
         $lock = fopen($path.'.lock', 'c');
         // Scheduler, manual dispatch, and full validation can request the
         // same export concurrently. Wait only a bounded interval: a real
@@ -69,20 +92,26 @@ class LabDatasetExportService
                 throw new RuntimeException("Dataset temporary faylini ochib bo'lmadi: {$temporaryPath}");
             }
 
-            $sourceCount = Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $timeframe)->count();
+            $sourceQuery = Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $timeframe);
+            if (! $paper) {
+                $sourceQuery->where('time', '<', $this->trainingCutoff());
+            }
+            $sourceCount = (clone $sourceQuery)->count();
             $volumeMap = $includeVolume ? $this->volumes->forDataset($symbol, $timeframe) : [];
             $written = 0;
+            $firstExportedAt = null;
+            $lastExportedAt = null;
             try {
                 fputcsv($handle, $includeVolume
                     ? ['time', 'open', 'high', 'low', 'close', 'volume', 'volume_available']
                     : ['time', 'open', 'high', 'low', 'close', 'volume']);
-                foreach (Candle::query()
-                    ->where('symbol_id', $symbolId)
-                    ->where('timeframe', $timeframe)
+                foreach ($sourceQuery
                     ->orderBy('time')
                     ->orderBy('id')
                     ->cursor() as $candle) {
                     $candleTime = $candle->time->copy()->utc();
+                    $firstExportedAt ??= $candleTime->toIso8601String();
+                    $lastExportedAt = $candleTime->toIso8601String();
                     $volume = $includeVolume
                         ? ($volumeMap[$candleTime->format('Y-m-d H:i:s')] ?? ['volume' => 0.0, 'available' => false])
                         : ['volume' => $candle->volume, 'available' => null];
@@ -111,8 +140,11 @@ class LabDatasetExportService
             $volumeQuality = $includeVolume ? $this->volumes->inspect($symbol, $timeframe) : null;
             $manifest = [
                 'schema_version' => $includeVolume ? 2 : 1, 'symbol' => $symbol, 'timeframe' => $timeframe,
+                'data_role' => $paper ? 'paper_only' : 'foundation_training_only',
+                'training_end_exclusive' => $this->trainingCutoff()->toIso8601String(),
                 'status' => $quality['status'], 'row_count' => $written,
-                'first_candle_at' => $quality['first_candle_at'], 'last_candle_at' => $quality['last_candle_at'],
+                'first_candle_at' => $firstExportedAt,
+                'last_candle_at' => $lastExportedAt,
                 'missing_open_hours' => $quality['missing_open_hours'], 'gap_intervals' => $quality['gap_intervals'],
                 'gap_examples' => $quality['gap_examples'], 'sha256' => hash_file('sha256', $path),
                 'volume_quality' => $volumeQuality,
@@ -169,7 +201,7 @@ class LabDatasetExportService
             ];
         }
 
-        $sourcePath = $this->export($symbol, $timeframe, $includeVolume);
+        $sourcePath = $this->exportPaper($symbol, $timeframe, $includeVolume);
         $sourceManifestPath = $sourcePath.'.manifest.json';
         $manifest = is_file($sourceManifestPath)
             ? (array) json_decode(File::get($sourceManifestPath), true)
@@ -292,6 +324,10 @@ class LabDatasetExportService
             if (! is_string($actualSha) || ! hash_equals($existingSha, $actualSha)) {
                 throw new RuntimeException("M15 H1 regime snapshot hash mismatch; evidence is frozen: {$existingPath}");
             }
+            $existingLast = data_get($existing, 'manifest.last_closed_candle_at');
+            if ($existingLast !== null && CarbonImmutable::parse((string) $existingLast, 'UTC')->greaterThanOrEqualTo($this->trainingCutoff())) {
+                throw new RuntimeException('M15 H1 regime snapshot 2026 candle saqlagan; 2026 faqat paper lane uchun.');
+            }
 
             return [
                 'path' => $existingPath,
@@ -301,9 +337,12 @@ class LabDatasetExportService
             ];
         }
 
-        $sourcePath = $this->export($symbol, 'H1', false);
+        // M15 evolution may use only the pre-2026 H1 regime context. The
+        // canonical 2026 stream is paper-only and must never become an H1
+        // feature input for an M15 research generation.
+        $sourcePath = $this->ensureFoundationDataset($symbol, 'H1')['path'];
         $rows = $this->rowsFromSnapshot($sourcePath);
-        $closedCutoff = now()->utc()->startOfHour()->subHour();
+        $closedCutoff = $this->trainingCutoff()->subSecond();
         $rows = array_values(array_filter($rows, static function (array $row) use ($closedCutoff): bool {
             try {
                 return CarbonImmutable::parse((string) ($row['time'] ?? ''), 'UTC')->lessThanOrEqualTo($closedCutoff);
@@ -648,9 +687,10 @@ class LabDatasetExportService
     }
 
     /**
-     * Build the M15 foundation from preserved canonical M15 history before
-     * the independent 2026 rolling stream. M15 never borrows H1 prices as a
-     * foundation; H1 is supplied separately as a closed regime source.
+     * Build the M15 foundation from the immutable 2016-2025 price archive
+     * before the independent 2026 rolling stream. M15 never borrows H1
+     * prices as a foundation; H1 is supplied separately as a closed regime
+     * source.
      *
      * @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string}
      */
@@ -658,7 +698,11 @@ class LabDatasetExportService
     {
         $directory = storage_path('app/lab-datasets/foundation');
         File::ensureDirectoryExists($directory);
-        $path = $directory."/{$symbol}_M15_2025-foundation.csv";
+        // Keep the old 2025 slice immutable for generations that already
+        // reference it. New generations must use the complete pre-2026
+        // archive under a versioned path so a stale short foundation can
+        // never be silently reused.
+        $path = $directory."/{$symbol}_M15_2016-2025.csv";
         $manifestPath = $path.'.manifest.json';
         if ($existing = $this->validFoundationSnapshot($path, $manifestPath)) {
             return $existing;
@@ -688,18 +732,41 @@ class LabDatasetExportService
                 return $existing;
             }
 
-            $symbolId = Symbol::query()->where('code', $symbol)->value('id');
-            if (! $symbolId) {
-                throw new RuntimeException("{$symbol} symbol topilmadi.");
-            }
             $from = CarbonImmutable::parse(
-                (string) config('services.lab_selection.m15_foundation_start', '2025-11-01 00:00:00'),
+                (string) config('services.lab_selection.m15_foundation_start', '2016-01-01 00:00:00'),
                 'UTC',
             );
             $to = CarbonImmutable::parse(
                 (string) config('services.lab_selection.m15_foundation_end', '2025-12-31 23:59:59'),
                 'UTC',
             )->addSecond();
+
+            // XAUUSD's immutable 10-year M15 archive already exists in the
+            // training lane and extends into 2026. Materialize only the
+            // requested pre-2026 interval; the paper tail is never copied
+            // into the foundation file.
+            if ($archive = $this->findReusableM15TrainingArchive($symbol, $from, $to)) {
+                return $this->materializeM15FoundationFromArchive(
+                    $archive['path'],
+                    $archive['manifest'],
+                    $path,
+                    $manifestPath,
+                    $from,
+                    $to,
+                );
+            }
+
+            if ((bool) config('services.lab_selection.m15_foundation_require_full_history', true)) {
+                throw new RuntimeException(
+                    "M15 full pre-2026 foundation archive topilmadi: {$symbol}. "
+                    .'2016-2025 source archive tayyorlanmasdan yangi avlod boshlanmaydi.'
+                );
+            }
+
+            $symbolId = Symbol::query()->where('code', $symbol)->value('id');
+            if (! $symbolId) {
+                throw new RuntimeException("{$symbol} symbol topilmadi.");
+            }
             $minimumRows = max(1, (int) config('services.lab_selection.m15_foundation_minimum_rows', 2000));
             $candles = Candle::query()
                 ->where('symbol_id', $symbolId)
@@ -801,6 +868,228 @@ class LabDatasetExportService
         }
     }
 
+    /** @return array{path: string, manifest: array<string, mixed>}|null */
+    private function findReusableM15TrainingArchive(
+        string $symbol,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+    ): ?array {
+        $directory = storage_path('app/lab-datasets/training');
+        $manifestPaths = glob($directory."/{$symbol}_M15*_foundation_10y.csv.manifest.json") ?: [];
+        foreach ($manifestPaths as $manifestPath) {
+            $manifest = json_decode((string) @file_get_contents($manifestPath), true);
+            if (! is_array($manifest)
+                || strtoupper((string) data_get($manifest, 'symbol', '')) !== strtoupper($symbol)
+                || strtoupper((string) data_get($manifest, 'timeframe', '')) !== 'M15'
+                || (int) data_get($manifest, 'row_count', 0) < (int) config('services.lab_selection.m15_foundation_minimum_rows', 2000)
+                || ! data_get($manifest, 'first_candle_at')
+                || ! data_get($manifest, 'last_candle_at')) {
+                continue;
+            }
+
+            $archivePath = substr($manifestPath, 0, -strlen('.manifest.json'));
+            if (! is_file($archivePath)) {
+                continue;
+            }
+
+            try {
+                $first = CarbonImmutable::parse((string) data_get($manifest, 'first_candle_at'), 'UTC');
+                $last = CarbonImmutable::parse((string) data_get($manifest, 'last_candle_at'), 'UTC');
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if ($first->greaterThan($from->addYear()) || $last->lessThan($to->subDay())) {
+                continue;
+            }
+
+            $expectedHash = (string) data_get($manifest, 'sha256', '');
+            $actualHash = hash_file('sha256', $archivePath);
+            if ($expectedHash === '' || ! is_string($actualHash) || ! hash_equals($expectedHash, $actualHash)) {
+                continue;
+            }
+
+            return ['path' => $archivePath, 'manifest' => $manifest];
+        }
+
+        return null;
+    }
+
+    /** @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string} */
+    private function materializeM15FoundationFromArchive(
+        string $archivePath,
+        array $archiveManifest,
+        string $path,
+        string $manifestPath,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+    ): array {
+        $temporaryPath = tempnam(dirname($path), '.m15_foundation_archive_');
+        if ($temporaryPath === false) {
+            throw new RuntimeException('M15 foundation archive temporary fayli yaratilmadi.');
+        }
+
+        $written = 0;
+        $first = null;
+        $last = null;
+        $lastTime = null;
+        $monthCounts = [];
+        $normalizedRows = 0;
+        try {
+            $input = fopen($archivePath, 'rb');
+            $output = fopen($temporaryPath, 'wb');
+            if ($input === false || $output === false) {
+                if (is_resource($input)) fclose($input);
+                if (is_resource($output)) fclose($output);
+                throw new RuntimeException('M15 foundation archive fayli ochilmadi.');
+            }
+
+            try {
+                $headers = fgetcsv($input);
+                if (! is_array($headers)) {
+                    throw new RuntimeException('M15 foundation archive header topilmadi.');
+                }
+                $headers = array_map(static fn ($header): string => strtolower(trim((string) $header)), $headers);
+                $indexes = [];
+                foreach (['time', 'open', 'high', 'low', 'close', 'volume'] as $column) {
+                    $indexes[$column] = array_search($column, $headers, true);
+                    if ($indexes[$column] === false && $column !== 'volume') {
+                        throw new RuntimeException("M15 foundation archive {$column} ustuni topilmadi.");
+                    }
+                }
+                fputcsv($output, ['time', 'open', 'high', 'low', 'close', 'volume']);
+
+                while (($values = fgetcsv($input)) !== false) {
+                    try {
+                        $time = CarbonImmutable::parse((string) ($values[$indexes['time']] ?? ''), 'UTC')->utc();
+                    } catch (\Throwable) {
+                        continue;
+                    }
+                    if ($time->lessThan($from) || $time->greaterThanOrEqualTo($to)) {
+                        continue;
+                    }
+                    if ($lastTime !== null && ! $time->greaterThan($lastTime)) {
+                        continue;
+                    }
+
+                    $row = [
+                        $time->format('Y-m-d H:i:s'),
+                        (float) ($values[$indexes['open']] ?? 0),
+                        (float) ($values[$indexes['high']] ?? 0),
+                        (float) ($values[$indexes['low']] ?? 0),
+                        (float) ($values[$indexes['close']] ?? 0),
+                        $indexes['volume'] === false ? 0.0 : (float) ($values[$indexes['volume']] ?? 0),
+                    ];
+                    if (! is_finite($row[1]) || ! is_finite($row[2])
+                        || ! is_finite($row[3]) || ! is_finite($row[4])) {
+                        continue;
+                    }
+                    [$row, $wasNormalized] = $this->normalizeFoundationOhlcValues($row, strtoupper((string) data_get($archiveManifest, 'symbol', '')));
+                    $normalizedRows += (int) $wasNormalized;
+                    fputcsv($output, $row);
+                    $lastTime = $time;
+                    $first ??= $time;
+                    $last = $time;
+                    $written++;
+                    $monthKey = $time->format('Y-m');
+                    $monthCounts[$monthKey] = ($monthCounts[$monthKey] ?? 0) + 1;
+                }
+            } finally {
+                fclose($input);
+                fclose($output);
+            }
+
+            if ($written < (int) config('services.lab_selection.m15_foundation_minimum_rows', 2000)
+                || $first === null
+                || $last === null
+                || $last->lessThan($to->subDay())) {
+                throw new RuntimeException("M15 full foundation archive baseline yetarli emas: {$archivePath} rows={$written}.");
+            }
+
+            $symbol = strtoupper((string) data_get($archiveManifest, 'symbol', ''));
+            $continuity = $this->quality->inspectCsvContinuity($temporaryPath, $symbol, 'M15');
+            $sourceGapAudit = null;
+            if ($continuity['status'] !== 'ready'
+                && (int) data_get($continuity, 'invalid_rows', 0) === 0
+                && (int) data_get($continuity, 'gap_intervals', 0) <= 8
+                && (int) data_get($continuity, 'missing_open_candles', 0) <= 32
+                && in_array('FOUNDATION_DATASET_CONTINUITY_GAPS', (array) data_get($continuity, 'reasons', []), true)) {
+                // Preserve the provider's exact source gaps instead of
+                // inventing OHLC values. They are explicitly audited and
+                // frozen in the manifest; no later candle can move them.
+                $sourceGapAudit = $continuity;
+                $continuity['status'] = 'ready';
+                $continuity['source_gap_policy'] = 'accepted_historical_provider_gaps_v1';
+                $continuity['accepted_source_gap_count'] = (int) ($sourceGapAudit['gap_intervals'] ?? 0);
+                $continuity['accepted_missing_open_candles'] = (int) ($sourceGapAudit['missing_open_candles'] ?? 0);
+                $continuity['accepted_gap_examples'] = (array) ($sourceGapAudit['gap_examples'] ?? []);
+                $continuity['unexpected_gap_count'] = 0;
+                $continuity['missing_open_candles'] = 0;
+                $continuity['missing_open_hours'] = 0;
+                $continuity['reasons'] = [];
+            }
+            if ($continuity['status'] !== 'ready') {
+                throw $this->foundationContinuityException($symbol, 'M15', $continuity);
+            }
+
+            if (! copy($temporaryPath, $path)) {
+                throw new RuntimeException("M15 foundation archive publish qilinmadi: {$path}");
+            }
+            $sha256 = hash_file('sha256', $path);
+            $gapQuality = [
+                'protocol' => 'foundation_gap_control_v1',
+                'status' => $sourceGapAudit === null ? 'passed' : 'accepted_source_gaps',
+                'source_missing_rows' => (int) data_get($sourceGapAudit, 'missing_open_candles', 0),
+                'repaired_rows' => 0,
+                'unresolved_rows' => 0,
+                'repair_intervals' => [],
+                'accepted_gap_intervals' => (array) data_get($sourceGapAudit, 'gap_examples', []),
+                'promotion_evidence' => false,
+            ];
+            $manifest = [
+                'protocol' => 'foundation_training_archive_v1',
+                'source_provider' => 'historical_training_archive',
+                'source_role' => 'm15_foundation_training_only',
+                'source_archive_path' => $archivePath,
+                'source_archive_sha256' => (string) data_get($archiveManifest, 'sha256', ''),
+                'canonical_rolling_provider' => (string) config('services.market_data.canonical_provider', 'twelve'),
+                'symbol' => $symbol,
+                'timeframe' => 'M15',
+                'foundation_range' => '2016-2025',
+                'foundation_start' => $from->toIso8601String(),
+                'foundation_end' => $to->subSecond()->toIso8601String(),
+                'first_candle_at' => $first->toIso8601String(),
+                'last_candle_at' => $last->toIso8601String(),
+                'row_count' => $written,
+                'minimum_rows' => (int) config('services.lab_selection.m15_foundation_minimum_rows', 2000),
+                'month_counts' => $monthCounts,
+                'ohlc_quality' => [
+                    'protocol' => 'foundation_ohlc_geometry_v1',
+                    'normalized_rows' => $normalizedRows,
+                    'final_invalid_rows' => 0,
+                    'promotion_evidence' => false,
+                ],
+                'continuity' => $continuity,
+                'source_gap_audit' => $sourceGapAudit,
+                'gap_quality' => $gapQuality,
+                'sha256' => $sha256,
+                'promotion_evidence' => false,
+                'rule' => 'M15 uses the immutable 2016-2025 foundation archive; 2026 remains generation-local rolling/forward/paper data and never enters screening or mutation.',
+                'generated_at' => now()->utc()->toIso8601String(),
+            ];
+            File::put($manifestPath, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+
+            return [
+                'path' => $path,
+                'manifest' => $manifest,
+                'sha256' => $sha256,
+                'protocol' => 'foundation_training_archive_v1',
+            ];
+        } finally {
+            File::delete($temporaryPath);
+        }
+    }
+
     /** @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string} */
     public function ensureGenerationFoundationSnapshot(LabGeneration $generation): array
     {
@@ -871,6 +1160,82 @@ class LabDatasetExportService
         return $snapshot;
     }
 
+    /**
+     * Fail closed at queue admission if the immutable generation split is not
+     * the declared research contract. This is intentionally checked before
+     * any screening job is queued, so a new generation cannot start with a
+     * paper candle in its evolutionary training lane.
+     *
+     * @param array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string} $foundation
+     * @param array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string} $rolling
+     * @return array<string, mixed>
+     */
+    public function assertGenerationDataPartition(
+        LabGeneration $generation,
+        array $foundation,
+        array $rolling,
+    ): array {
+        $symbol = strtoupper((string) ($generation->laboratory?->symbol ?? ''));
+        $timeframe = strtoupper((string) ($generation->laboratory?->timeframe ?? 'H1'));
+        $cutoff = CarbonImmutable::create(2026, 1, 1, 0, 0, 0, 'UTC');
+        $foundationManifest = (array) ($foundation['manifest'] ?? []);
+        $rollingManifest = (array) ($rolling['manifest'] ?? []);
+        $foundationLastRaw = data_get($foundationManifest, 'last_candle_at')
+            ?? data_get($foundationManifest, 'foundation_end');
+        $rollingLastRaw = data_get($rollingManifest, 'last_candle_at')
+            ?? data_get($rollingManifest, 'last_closed_candle_at');
+        try {
+            $foundationLast = CarbonImmutable::parse((string) $foundationLastRaw, 'UTC');
+            $rollingLast = CarbonImmutable::parse((string) $rollingLastRaw, 'UTC');
+        } catch (\Throwable) {
+            throw new RuntimeException('Generation data partition timestamp manifesti yaroqsiz.');
+        }
+
+        if ($foundationLast->greaterThanOrEqualTo($cutoff)) {
+            throw new RuntimeException(
+                "Generation foundation paper cutoffdan keyingi candle saqlagan: {$foundationLast->toIso8601String()}"
+            );
+        }
+        if ($rollingLast->lessThan($cutoff)) {
+            throw new RuntimeException('Generation rolling snapshot 2026 paper oynasiga yetib bormagan.');
+        }
+        if ($timeframe === 'M15'
+            && (bool) config('services.lab_selection.m15_foundation_require_full_history', true)
+            && data_get($foundationManifest, 'foundation_range') !== '2016-2025') {
+            throw new RuntimeException('M15 generation foundation 2016-2025 to‘liq archive emas; queue admission bloklandi.');
+        }
+
+        $paperWindow = app(\App\Services\MarketData\FrozenPaperWindowService::class)
+            ->active('foundation_10y', 'dukascopy', $symbol, $timeframe);
+        if ($paperWindow !== null
+            && ! CarbonImmutable::instance($paperWindow->paper_starts_at)->utc()->equalTo($cutoff)) {
+            throw new RuntimeException('Frozen paper marker generation cutoff bilan mos emas; queue admission bloklandi.');
+        }
+
+        $contract = [
+            'protocol' => 'historical_evolution_paper_forward_split_v1',
+            'training_source' => $foundation['path'],
+            'training_sha256' => $foundation['sha256'],
+            'training_end_exclusive' => $cutoff->toIso8601String(),
+            'paper_source' => $rolling['path'],
+            'paper_sha256' => $rolling['sha256'],
+            'paper_start_inclusive' => $cutoff->toIso8601String(),
+            'paper_used_for_screening' => false,
+            'paper_used_for_mutation' => false,
+            'verified_at' => now()->utc()->toIso8601String(),
+            'promotion_evidence' => false,
+        ];
+        $context = (array) $generation->trigger_context;
+        data_set($context, 'data_partition_startup_check', $contract);
+        if ($generation->exists) {
+            $generation->update(['trigger_context' => $context]);
+        } else {
+            $generation->setAttribute('trigger_context', $context);
+        }
+
+        return $contract;
+    }
+
     /** @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string}|null */
     private function validFoundationSnapshot(string $path, string $manifestPath): ?array
     {
@@ -887,6 +1252,18 @@ class LabDatasetExportService
             || data_get($manifest, 'protocol') !== 'foundation_training_archive_v1'
             || (int) data_get($manifest, 'row_count', 0) < $minimumRows
             || (string) data_get($manifest, 'sha256', '') === '') {
+            return null;
+        }
+
+        try {
+            $foundationLast = CarbonImmutable::parse(
+                (string) (data_get($manifest, 'last_candle_at') ?? data_get($manifest, 'foundation_end')),
+                'UTC',
+            );
+            if ($foundationLast->greaterThanOrEqualTo($this->trainingCutoff())) {
+                return null;
+            }
+        } catch (\Throwable) {
             return null;
         }
 
@@ -912,7 +1289,11 @@ class LabDatasetExportService
 
         $gapStatus = (string) data_get($manifest, 'gap_quality.status', '');
         $unresolvedGaps = (int) data_get($manifest, 'gap_quality.unresolved_rows', 0);
-        if (! in_array($gapStatus, ['passed', 'repaired'], true) || $unresolvedGaps > 0) {
+        $acceptedHistoricalGaps = $timeframe === 'M15'
+            && $gapStatus === 'accepted_source_gaps'
+            && data_get($manifest, 'continuity.source_gap_policy') === 'accepted_historical_provider_gaps_v1'
+            && (int) data_get($manifest, 'continuity.accepted_source_gap_count', 0) > 0;
+        if ((! in_array($gapStatus, ['passed', 'repaired'], true) && ! $acceptedHistoricalGaps) || $unresolvedGaps > 0) {
             return null;
         }
 

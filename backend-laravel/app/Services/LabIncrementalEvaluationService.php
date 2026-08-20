@@ -84,7 +84,11 @@ class LabIncrementalEvaluationService
 
         // Incremental health checks intentionally use only the recent sample.
         // Full selection always receives the complete exported history.
-        $rows = $this->candles->candlesForBacktest($performance->symbol, $performance->timeframe, 2500);
+        $rows = $this->candles->candlesForTraining(
+            $performance->symbol,
+            $performance->timeframe,
+            limit: 2500,
+        );
         if (count($rows) < 200) {
             return ['checked' => false, 'degraded' => false];
         }
@@ -103,7 +107,7 @@ class LabIncrementalEvaluationService
                 'evaluation_mode' => 'incremental',
                 'candles' => $rows,
                 'regime_candles' => strtoupper((string) $performance->timeframe) === 'M15'
-                    ? $this->candles->candlesForBacktest($performance->symbol, 'H1', 2000)
+                    ? $this->candles->candlesForTraining($performance->symbol, 'H1', limit: 2000)
                     : [],
                 'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
                     $performance->symbol,
@@ -121,6 +125,15 @@ class LabIncrementalEvaluationService
                 ]],
                 'initial_balance' => 10000,
                 'risk_per_trade' => 1,
+                'policy_context' => [
+                    'data_boundary' => [
+                        'protocol' => 'pre_2026_training_paper_only_v1',
+                        'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                        'paper_allowed_for_replay' => false,
+                        'paper_allowed_for_mutation' => false,
+                        'promotion_evidence' => false,
+                    ],
+                ],
             ],
         );
 

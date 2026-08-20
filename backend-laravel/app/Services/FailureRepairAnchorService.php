@@ -38,6 +38,7 @@ class FailureRepairAnchorService
         'FAILED_CALENDAR_MONTH_SURVIVAL' => 'temporal_stability',
         'FAILED_MONTHLY_SURVIVAL' => 'monthly_survival',
         'FAILED_TRAIN_FORWARD_GAP' => 'temporal_stability',
+        'FAILED_TEMPORAL_SCORE_DRIFT' => 'temporal_stability',
         'FAILED_PARAMETER_STABILITY' => 'temporal_stability',
         'FAILED_SIGNAL_TIMING_STABILITY' => 'temporal_stability',
         'FAILED_RESCUE_TEMPORAL_SURVIVAL' => 'temporal_stability',

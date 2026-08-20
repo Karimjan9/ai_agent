@@ -138,6 +138,13 @@ class ValidateElitePortfolios extends Command
                     'portfolio_members' => $portfolios->memberSpecs($portfolio->fresh(['members.performance.modelVersion'])),
                     'policy_context' => [
                         'portfolio_selection_context' => $portfolios->selectionContext($allCandidates),
+                        'data_boundary' => [
+                            'protocol' => 'pre_2026_training_paper_only_v1',
+                            'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                            'paper_allowed_for_replay' => false,
+                            'paper_allowed_for_mutation' => false,
+                            'promotion_evidence' => false,
+                        ],
                     ],
                     'initial_balance' => 10000,
                     'risk_per_trade' => 1,

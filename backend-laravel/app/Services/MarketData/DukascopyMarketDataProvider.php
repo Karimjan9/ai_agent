@@ -203,10 +203,7 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
         CarbonImmutable $to,
     ): array {
         $timeout = max(10, (int) config('services.dukascopy.timeout_seconds', 45));
-        $result = Process::timeout($timeout)
-            ->idleTimeout($timeout)
-            ->path(base_path())
-            ->run([
+        $result = $this->runNodeProcess([
                 (string) config('services.dukascopy.node_binary', 'node'),
                 base_path('scripts/fetch-dukascopy.cjs'),
                 '--instrument', $instrument,
@@ -218,7 +215,7 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
                 '--httpTimeoutMs', (string) ((int) config('services.dukascopy.http_timeout_seconds', 20) * 1000),
                 '--httpRetries', (string) config('services.dukascopy.http_retry_attempts', 3),
                 '--pauseMs', (string) config('services.dukascopy.pause_ms', 1000),
-            ]);
+            ], $timeout);
 
         if (! $result->successful()) {
             throw new RuntimeException('Dukascopy Jetta M15 fetch failed: '.trim((string) $result->errorOutput()));
@@ -566,10 +563,7 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             $timeout = max(10, (int) config('services.dukascopy.timeout_seconds', 45));
             try {
-                $result = Process::timeout($timeout)
-                    ->idleTimeout($timeout)
-                    ->path(base_path())
-                    ->run([
+                $result = $this->runNodeProcess([
                         (string) config('services.dukascopy.node_binary', 'node'),
                         base_path('scripts/fetch-dukascopy.cjs'),
                         '--instrument', $instrument,
@@ -581,7 +575,7 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
                         '--pauseMs', (string) config('services.dukascopy.pause_ms', 1000),
                         '--retryCount', (string) config('services.dukascopy.retry_attempts', 3),
                         '--retryPauseMs', (string) config('services.dukascopy.retry_pause_ms', 5000),
-                    ]);
+                    ], $timeout);
             } catch (Throwable $exception) {
                 Log::warning('Dukascopy chunk process exception.', [
                     'attempt' => $attempt, 'from' => $from->toDateTimeString(),
@@ -629,6 +623,60 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * Run the Node adapter without allowing Windows to materialize a console
+     * for each Symfony Process child. PowerShell and the actual child are
+     * both started hidden; stdout/stderr are captured and returned normally.
+     *
+     * @param array<int, string> $command
+     */
+    private function runNodeProcess(array $command, int $timeout): mixed
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return Process::timeout($timeout)
+                ->idleTimeout($timeout)
+                ->path(base_path())
+                ->run($command);
+        }
+
+        $payload = base64_encode((string) json_encode([
+            'file' => $command[0],
+            'args' => array_values(array_slice($command, 1)),
+            'cwd' => base_path(),
+        ], JSON_THROW_ON_ERROR));
+        $script = <<<'POWERSHELL'
+$data = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PAYLOAD__')) | ConvertFrom-Json
+$stdout = [IO.Path]::GetTempFileName()
+$stderr = [IO.Path]::GetTempFileName()
+try {
+    $child = Start-Process -FilePath ([string]$data.file) -ArgumentList ([string[]]$data.args) `
+        -WorkingDirectory ([string]$data.cwd) -WindowStyle Hidden -Wait -PassThru `
+        -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if (Test-Path -LiteralPath $stdout) { [Console]::Out.Write([IO.File]::ReadAllText($stdout)) }
+    if (Test-Path -LiteralPath $stderr) { [Console]::Error.Write([IO.File]::ReadAllText($stderr)) }
+    exit $child.ExitCode
+} finally {
+    Remove-Item -LiteralPath $stdout,$stderr -Force -ErrorAction SilentlyContinue
+}
+POWERSHELL;
+        $script = str_replace('__PAYLOAD__', $payload, $script);
+        $utf16 = function_exists('mb_convert_encoding')
+            ? mb_convert_encoding($script, 'UTF-16LE', 'UTF-8')
+            : iconv('UTF-8', 'UTF-16LE', $script);
+
+        return Process::timeout($timeout)
+            ->idleTimeout($timeout)
+            ->run([
+                'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+                '-NoProfile',
+                '-NonInteractive',
+                '-WindowStyle',
+                'Hidden',
+                '-EncodedCommand',
+                base64_encode((string) $utf16),
+            ]);
     }
 
     private function instrument(string $symbol, string $providerSymbol): string

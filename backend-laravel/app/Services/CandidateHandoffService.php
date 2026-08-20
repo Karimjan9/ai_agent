@@ -302,6 +302,7 @@ class CandidateHandoffService
             'FAILED_TEMPORAL_CHUNK_SURVIVAL' => ['temporal_chunk_survival', 'temporal_stability'],
             'FAILED_CALENDAR_MONTH_SURVIVAL', 'FAILED_MONTHLY_SURVIVAL' => ['temporal_monthly_survival', 'monthly_survival'],
             'FAILED_TRAIN_FORWARD_GAP', 'FAILED_PARAMETER_STABILITY', 'FAILED_SIGNAL_TIMING_STABILITY' => ['temporal_stability', 'temporal_stability'],
+            'FAILED_TEMPORAL_SCORE_DRIFT' => ['temporal_stability', 'temporal_stability'],
             'FAILED_REGIME_COVERAGE', 'FAILED_TRANSITION' => ['regime_coverage_quality', 'regime_coverage'],
             'FAILED_OVERFIT', 'FAILED_STATISTICAL' => ['overfit_structure', 'architecture'],
             'FAILED_CALENDAR_ALIGNMENT' => ['calendar_alignment', 'rolling_regime'],

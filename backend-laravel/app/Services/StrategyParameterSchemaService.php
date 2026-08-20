@@ -93,6 +93,22 @@ class StrategyParameterSchemaService
             'tolerance' => ['numeric', 0.0001, 0.05],
             'candle_confirmation' => ['boolean'], 'trend_confirmation' => ['boolean'],
         ],
+        'fibonacci_structure_pullback' => [
+            'swing_lookback' => ['integer', 10, 300], 'atr_period' => ['integer', 2, 100],
+            'equal_level_atr_fraction' => ['numeric', .02, 1.0],
+        ],
+        'bos_retest_continuation' => [
+            'swing_lookback' => ['integer', 10, 300], 'atr_period' => ['integer', 2, 100],
+            'retest_atr_fraction' => ['numeric', .05, 1.0], 'minimum_displacement_atr' => ['numeric', .1, 3.0],
+        ],
+        'choch_reversal' => [
+            'swing_lookback' => ['integer', 10, 300], 'atr_period' => ['integer', 2, 100],
+            'transition_confidence_min' => ['numeric', .05, 1.0],
+        ],
+        'liquidity_sweep_reversion' => [
+            'swing_lookback' => ['integer', 10, 300], 'atr_period' => ['integer', 2, 100],
+            'equal_level_atr_fraction' => ['numeric', .02, 1.0], 'zone_strength_min' => ['numeric', .05, 1.0],
+        ],
         'macd_trend' => [
             'ema_trend' => ['integer', 10, 500], 'macd_fast' => ['integer', 2, 100],
             'macd_slow' => ['integer', 3, 200], 'macd_signal' => ['integer', 2, 100],
@@ -113,6 +129,7 @@ class StrategyParameterSchemaService
         'mean_reversion' => [
             'lookback' => ['integer', 10, 200], 'deviation' => ['numeric', 0.5, 4.0],
             'rsi_period' => ['integer', 2, 100], 'adx_max' => ['numeric', 5, 35], 'low_volatility_only' => ['boolean'],
+            'range_signal_mode' => ['string', ['reentry', 'mean_reversion', 'inverse_extreme', 'mid_cross']],
         ],
         'session' => [
             'session_start' => ['integer', 0, 23], 'session_end' => ['integer', 1, 24],
@@ -232,7 +249,7 @@ class StrategyParameterSchemaService
             'breakout' => ['lookback' => 20, 'atr_period' => 14, 'atr_multiplier' => 0.2, 'confirmation_candles' => 1, 'retest_required' => true, 'trend_strength_min' => 20.0],
             'trend', 'ema_rsi' => ['ema_fast' => 50, 'ema_slow' => 200, 'rsi_period' => 14, 'rsi_buy_min' => 50.0, 'rsi_buy_max' => 70.0, 'rsi_sell_min' => 30.0, 'rsi_sell_max' => 50.0, 'trend_strength_min' => 20.0, 'pullback_atr_fraction' => 0.75],
             'volatility' => ['atr_period' => 14, 'atr_threshold' => 1.2, 'lookback' => 20, 'compression_ratio' => 0.75, 'expansion_multiplier' => 1.2],
-            'mean_reversion' => ['lookback' => 20, 'deviation' => 2.0, 'rsi_period' => 14, 'adx_max' => 20.0, 'low_volatility_only' => true],
+            'mean_reversion' => ['lookback' => 20, 'deviation' => 2.0, 'rsi_period' => 14, 'adx_max' => 20.0, 'low_volatility_only' => true, 'range_signal_mode' => 'reentry'],
             'session' => ['session_start' => 7, 'session_end' => 16, 'lookback' => 20],
             'momentum' => ['roc_period' => 12, 'roc_threshold' => 0.2, 'ema_period' => 50],
             'hybrid' => ['trend_weight' => 1.0, 'breakout_weight' => 1.0, 'mean_reversion_weight' => 1.0, 'minimum_confidence' => 1.0, 'high_volatility_wait' => true,
@@ -260,6 +277,10 @@ class StrategyParameterSchemaService
                 'trend_down_strength_min' => 28.0, 'trend_down_pullback_atr_fraction' => .60, 'trend_down_risk_multiplier' => .50,
                 'session_start' => 7, 'session_end' => 16, 'adx_max' => 20.0, 'deviation' => 2.0],
             'fibonacci' => ['lookback' => 50, 'fib_level' => 0.618, 'tolerance' => 0.002, 'candle_confirmation' => true, 'trend_confirmation' => false],
+            'fibonacci_structure_pullback' => ['swing_lookback' => 50, 'atr_period' => 14, 'equal_level_atr_fraction' => .15],
+            'bos_retest_continuation' => ['swing_lookback' => 40, 'atr_period' => 14, 'retest_atr_fraction' => .35, 'minimum_displacement_atr' => .5],
+            'choch_reversal' => ['swing_lookback' => 40, 'atr_period' => 14, 'transition_confidence_min' => .35],
+            'liquidity_sweep_reversion' => ['swing_lookback' => 40, 'atr_period' => 14, 'equal_level_atr_fraction' => .15, 'zone_strength_min' => .35],
             'macd_trend' => ['ema_trend' => 100, 'macd_fast' => 12, 'macd_slow' => 26, 'macd_signal' => 9, 'rsi_period' => 14],
             default => [],
         };
@@ -351,6 +372,13 @@ class StrategyParameterSchemaService
         $clean = array_intersect_key($parameters, $schema);
         foreach ($clean as $key => $value) {
             [$type, $min, $max] = array_pad($schema[$key], 3, null);
+            if ($type === 'integer' && is_numeric($value)) {
+                $clean[$key] = (int) round((float) $value);
+                $value = $clean[$key];
+            } elseif ($type === 'numeric' && is_numeric($value)) {
+                $clean[$key] = (float) $value;
+                $value = $clean[$key];
+            }
             if (in_array($type, ['integer', 'numeric'], true) && $min !== null && is_numeric($value)) {
                 $clean[$key] = max($min, min($max, $value));
             }

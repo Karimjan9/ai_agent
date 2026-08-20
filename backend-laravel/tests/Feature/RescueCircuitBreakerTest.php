@@ -109,6 +109,35 @@ class RescueCircuitBreakerTest extends TestCase
         $this->assertFalse($decision['promotion_evidence']);
     }
 
+    public function test_a_sealed_holdout_hash_cannot_reopen_the_same_rescue_family(): void
+    {
+        $lab = $this->lab();
+        $profile = [
+            ...$this->profile(),
+            'cohort_mode' => \App\Services\StructuralResearchCohortService::COHORT_MODE,
+        ];
+        $service = app(RescueCircuitBreakerService::class);
+        $profile['hypothesis_hash'] = $service->hypothesisHash($profile);
+        $generation = $this->rescueGeneration($lab, 1, 'rolling-source', 6173, $profile);
+        $holdoutHash = 'd9622f339dbb6c99d89234fa45306550d08aa5eb2ad688d48e72760a3bf4ccd1';
+        $generation->update(['trigger_context' => [
+            ...$generation->trigger_context,
+            'independent_evidence_admission' => [
+                'sealed_holdout_evidence' => ['data_hash' => $holdoutHash],
+            ],
+        ]]);
+
+        $decision = $service->admission($lab, $profile, $generation->fresh(), [
+            'data_fingerprint' => 'rolling-source',
+            'data_count' => 6173,
+            'latest_candle' => '2026-08-18 00:00:00',
+        ]);
+
+        $this->assertFalse($decision['allowed']);
+        $this->assertSame(RescueCircuitBreakerService::BLOCKED_NEED_NEW_EVIDENCE, $decision['decision']);
+        $this->assertTrue(data_get($decision, 'history.sealed_holdout_consumed_by_family'));
+    }
+
     public function test_temporal_ablation_requires_paired_four_variants_and_three_windows(): void
     {
         $service = app(TemporalAblationProtocolService::class);

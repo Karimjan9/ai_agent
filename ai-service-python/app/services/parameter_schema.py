@@ -29,6 +29,28 @@ PARAMETER_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
         "candle_confirmation": {"type": bool},
         "trend_confirmation": {"type": bool},
     },
+    "fibonacci_structure_pullback": {
+        "swing_lookback": {"type": int, "min": 10, "max": 300},
+        "atr_period": {"type": int, "min": 2, "max": 100},
+        "equal_level_atr_fraction": {"type": float, "min": 0.02, "max": 1.0},
+    },
+    "bos_retest_continuation": {
+        "swing_lookback": {"type": int, "min": 10, "max": 300},
+        "atr_period": {"type": int, "min": 2, "max": 100},
+        "retest_atr_fraction": {"type": float, "min": 0.05, "max": 1.0},
+        "minimum_displacement_atr": {"type": float, "min": 0.1, "max": 3.0},
+    },
+    "choch_reversal": {
+        "swing_lookback": {"type": int, "min": 10, "max": 300},
+        "atr_period": {"type": int, "min": 2, "max": 100},
+        "transition_confidence_min": {"type": float, "min": 0.05, "max": 1.0},
+    },
+    "liquidity_sweep_reversion": {
+        "swing_lookback": {"type": int, "min": 10, "max": 300},
+        "atr_period": {"type": int, "min": 2, "max": 100},
+        "equal_level_atr_fraction": {"type": float, "min": 0.02, "max": 1.0},
+        "zone_strength_min": {"type": float, "min": 0.05, "max": 1.0},
+    },
     "macd_trend": {
         "ema_trend": {"type": int, "min": 10, "max": 500},
         "macd_fast": {"type": int, "min": 2, "max": 100},
@@ -60,6 +82,7 @@ PARAMETER_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
         "rsi_period": {"type": int, "min": 2, "max": 100},
         "adx_max": {"type": float, "min": 5, "max": 35},
         "low_volatility_only": {"type": bool},
+        "range_signal_mode": {"type": str, "choices": {"reentry", "mean_reversion", "inverse_extreme", "mid_cross"}},
     },
     "session": {
         "session_start": {"type": int, "min": 0, "max": 23},

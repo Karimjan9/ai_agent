@@ -5,10 +5,13 @@ namespace App\Services;
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
+use App\Models\LabFailureDojoRun;
+use App\Models\LearningRecoveryEvent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabMutationResponseMap;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -89,16 +92,32 @@ class LearningVelocityGateService
             $unresolved = collect($observations)->where('unresolved_screen_pass', true)->count();
             $active = collect($observations)->sum('active_learning_agents');
             $technical = collect($observations)->where('status', 'technical_quarantine')->count();
-            $allowed = $active === 0 && $unresolved < max(1, (int) config('services.lab_selection.learning_velocity_max_unresolved_screen_generations', 1));
+            $starvation = $this->starvationSummary($symbol, $tf);
+            $noEvidenceGenerations = collect($observations)->filter(fn (array $row): bool => (int) ($row['agent_count'] ?? 0) > 0
+                && (string) ($row['status'] ?? '') !== 'technical_quarantine'
+                && (int) ($row['screen_passes'] ?? 0) === 0
+                && (int) ($row['full_replay_or_forward_progress'] ?? 0) === 0)->count();
+            if ($noEvidenceGenerations > 0) {
+                $starvation['starved'] = true;
+                $starvation['no_learning_evidence_generations'] = $noEvidenceGenerations;
+                $starvation['recovery_required'] = true;
+                $starvation['reason'] = 'NO_LEARNING_EVIDENCE_IN_RECENT_GENERATIONS';
+            }
+            $allowed = $active === 0
+                && ! (bool) data_get($starvation, 'starved', false)
+                && $unresolved < max(1, (int) config('services.lab_selection.learning_velocity_max_unresolved_screen_generations', 1));
 
             return [
                 ...$base,
                 'allowed' => $allowed,
-                'status' => $active > 0 ? 'learning_in_progress' : ($unresolved > 0 ? 'blocked_learning_backlog' : ($technical > 0 ? 'technical_history_quarantined' : 'healthy')),
+                'status' => (bool) data_get($starvation, 'starved', false)
+                    ? 'learning_starvation'
+                    : ($active > 0 ? 'learning_in_progress' : ($unresolved > 0 ? 'blocked_learning_backlog' : ($technical > 0 ? 'technical_history_quarantined' : 'healthy'))),
                 'technical_quarantine_generations' => $technical,
                 'unresolved_screen_generations' => $unresolved,
                 'active_learning_agents' => $active,
                 'lookback_generations' => $lookback,
+                'learning_starvation' => $starvation,
                 'observations' => $observations,
                 'cached_for_seconds' => 15,
             ];
@@ -197,6 +216,7 @@ class LearningVelocityGateService
                 'generation' => (int) $generation->generation,
                 'generation_id' => (int) $generation->id,
                 'status' => (string) $generation->status,
+                'agent_count' => $agents->count(),
                 'screen_decisions' => $screen->count(),
                 'screen_passes' => $screenPasses,
                 'technical_agents' => $technical,
@@ -207,6 +227,17 @@ class LearningVelocityGateService
         }
 
         $maxUnresolved = max(1, (int) config('services.lab_selection.learning_velocity_max_unresolved_screen_generations', 1));
+        $starvation = $this->starvationSummary($symbol, $tf);
+        $noEvidenceGenerations = collect($observations)->filter(fn (array $row): bool => (int) ($row['agent_count'] ?? 0) > 0
+            && (string) ($row['status'] ?? '') !== 'technical_quarantine'
+            && (int) ($row['screen_passes'] ?? 0) === 0
+            && (int) ($row['full_replay_or_forward_progress'] ?? 0) === 0)->count();
+        if ($noEvidenceGenerations > 0) {
+            $starvation['starved'] = true;
+            $starvation['no_learning_evidence_generations'] = $noEvidenceGenerations;
+            $starvation['recovery_required'] = true;
+            $starvation['reason'] = 'NO_LEARNING_EVIDENCE_IN_RECENT_GENERATIONS';
+        }
         $reasons = [];
         $allowed = true;
         $status = 'healthy';
@@ -240,6 +271,13 @@ class LearningVelocityGateService
         } elseif (collect($observations)->contains(fn (array $row): bool => (int) $row['screen_decisions'] > 0)) {
             $evolutionMode = 'strategy_failure';
         }
+        if ((bool) data_get($starvation, 'starved', false)) {
+            $allowed = false;
+            $status = 'learning_starvation';
+            $evolutionMode = 'uncertainty';
+            $nextAction = 'run_learning_reconciliation_recovery';
+            $reasons[] = 'LEARNING_STARVATION_DETECTED';
+        }
 
         return [
             ...$base,
@@ -253,6 +291,7 @@ class LearningVelocityGateService
             'unresolved_screen_generations' => $unresolved,
             'technical_recovery_agents' => $technicalRecovery,
             'active_learning_agents' => $activeLearning,
+            'learning_starvation' => $starvation,
             'observations' => $observations,
         ];
     }
@@ -352,5 +391,66 @@ class LearningVelocityGateService
         }
 
         return $count;
+    }
+
+    /**
+     * A pending curriculum is not progress. If dojo work, stale dispatches or
+     * failed lab jobs exist without an active recovery path, admission stays
+     * blocked and the monitor cannot report a false green.
+     *
+     * @return array<string, mixed>
+     */
+    private function starvationSummary(string $symbol, string $timeframe): array
+    {
+        $pendingDojo = Schema::hasTable('lab_failure_dojo_runs')
+            ? LabFailureDojoRun::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->where('status', 'pending')->count()
+            : 0;
+        $dispatches = Schema::hasTable('lab_learning_lane_dispatches')
+            ? LabLearningLaneDispatch::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->get(['status', 'queued_at', 'queue_batch_id'])
+            : collect();
+        $activeDispatches = $dispatches->whereIn('status', ['selected', 'queued', 'running'])->count();
+        $staleAfter = max(60, (int) config('services.lab_selection.learning_starvation_stale_seconds', 1800));
+        $staleDispatches = $dispatches->whereIn('status', ['selected', 'queued', 'running'])
+            ->filter(fn ($row): bool => $row->queued_at !== null && now()->utc()->diffInSeconds($row->queued_at) > $staleAfter)
+            ->count();
+        $failedJobs = 0;
+        if (Schema::hasTable('failed_jobs')) {
+            $queues = app(LabQueueJobInspector::class)->labQueues();
+            $failedJobs = DB::table('failed_jobs')->whereIn('queue', $queues)->get(['uuid', 'payload'])->filter(function ($job) use ($symbol, $timeframe): bool {
+                if (Schema::hasTable('learning_recovery_events')
+                    && LearningRecoveryEvent::query()->where('source_key', (string) $job->uuid)->whereIn('status', ['requeued', 'reconciled'])->exists()) {
+                    return false;
+                }
+                $command = (string) data_get(json_decode((string) $job->payload, true), 'data.command', $job->payload);
+                if (! preg_match('/labAgentId.*?i:(\d+);/s', $command, $match)) return true;
+                $agent = DB::table('lab_agents')->where('id', (int) $match[1])->first();
+                if (! $agent || strtoupper((string) $agent->symbol) !== strtoupper($symbol) || strtoupper((string) $agent->timeframe) !== strtoupper($timeframe)) return false;
+                return true;
+            })->count();
+            if (Schema::hasTable('learning_recovery_events')) {
+                $failedJobs += LearningRecoveryEvent::query()
+                    ->where('symbol', strtoupper($symbol))
+                    ->where('timeframe', strtoupper($timeframe))
+                    ->where('status', 'manual_review')
+                    ->count();
+            }
+        }
+        $minPending = max(1, (int) config('services.lab_selection.learning_starvation_min_pending_dojo', 1));
+        $starved = $staleDispatches > 0
+            || $failedJobs > 0
+            || ($pendingDojo >= $minPending && $activeDispatches === 0);
+
+        return [
+            'protocol' => 'learning_starvation_v1',
+            'starved' => $starved,
+            'pending_dojo' => $pendingDojo,
+            'active_dispatches' => $activeDispatches,
+            'stale_dispatches' => $staleDispatches,
+            'failed_lab_jobs' => $failedJobs,
+            'stale_after_seconds' => $staleAfter,
+            'minimum_pending_dojo' => $minPending,
+            'recovery_required' => $starved,
+            'promotion_evidence' => false,
+        ];
     }
 }

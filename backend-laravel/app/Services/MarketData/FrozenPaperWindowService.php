@@ -2,15 +2,17 @@
 
 namespace App\Services\MarketData;
 
+use App\Models\Candle;
 use App\Models\FrozenPaperWindow;
+use App\Models\Symbol;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
 /**
  * Owns the one-time chronological split between research/training and the
- * six-month paper window. The boundary is persisted and the paper rows are
- * copied to a hash-verified CSV, so it cannot silently move as new data lands.
+ * paper windows. The boundary is persisted and the paper rows are copied to
+ * a hash-verified CSV, so it cannot silently move as new data lands.
  */
 class FrozenPaperWindowService
 {
@@ -23,14 +25,21 @@ class FrozenPaperWindowService
         string $timeframe,
         CarbonImmutable $paperEndsAt,
         int $months = 6,
+        ?CarbonImmutable $paperStartsAt = null,
+        string $windowKey = 'rolling_6m_v1',
     ): FrozenPaperWindow {
         $symbol = strtoupper($symbol);
         $timeframe = strtoupper($timeframe);
         $months = max(1, $months);
+        $windowKey = trim($windowKey) !== '' ? trim($windowKey) : 'rolling_6m_v1';
         $paperEndsAt = $this->closedBoundary($paperEndsAt, $timeframe);
-        $identity = compact('dataset', 'provider', 'symbol', 'timeframe');
-        $identity['dataset_key'] = $identity['dataset'];
-        unset($identity['dataset']);
+        $identity = [
+            'dataset_key' => $dataset,
+            'provider' => $provider,
+            'symbol' => $symbol,
+            'timeframe' => $timeframe,
+            'window_key' => $windowKey,
+        ];
 
         $existing = FrozenPaperWindow::query()->where($identity)->first();
         if ($existing) {
@@ -39,13 +48,26 @@ class FrozenPaperWindowService
             return $existing;
         }
 
-        $base = $this->training->query($dataset, $provider, $symbol, $timeframe);
-        $first = (clone $base)->orderBy('time')->value('time');
+        // Training archive is strictly pre-2026. Paper rows come from the
+        // canonical market stream and are never copied into the training table.
+        $trainingBase = $this->training->query($dataset, $provider, $symbol, $timeframe);
+        $symbolId = Symbol::query()->where('code', $symbol)->value('id');
+        if (! $symbolId) {
+            throw new RuntimeException("Paper window symbol topilmadi: {$symbol}");
+        }
+        $paperBase = Candle::query()
+            ->where('symbol_id', $symbolId)
+            ->where('timeframe', $timeframe)
+            ->where('time', '>=', $this->training->trainingCutoff());
+        $first = (clone $trainingBase)->orderBy('time')->value('time');
         if (! $first) {
             throw new RuntimeException('Frozen paper window yaratilmadi: training archive bo\'sh.');
         }
         $trainingStartsAt = CarbonImmutable::parse((string) $first, 'UTC')->utc();
-        $latest = (clone $base)->orderByDesc('time')->value('time');
+        $latest = (clone $paperBase)->orderByDesc('time')->value('time');
+        if (! $latest) {
+            throw new RuntimeException('Frozen paper window yaratilmadi: canonical paper stream bo\'sh.');
+        }
         $latestAvailableEnd = $this->nextBoundary(CarbonImmutable::parse((string) $latest, 'UTC')->utc(), $timeframe);
         // A static window must end at a candle we actually possess. When the
         // archive tail is behind wall-clock time, seal its last closed candle
@@ -53,12 +75,17 @@ class FrozenPaperWindowService
         if ($latestAvailableEnd->lessThan($paperEndsAt)) {
             $paperEndsAt = $latestAvailableEnd;
         }
-        $paperStartsAt = $paperEndsAt->subMonthsNoOverflow($months);
+        $paperStartsAt = $paperStartsAt
+            ? $this->closedBoundary($paperStartsAt, $timeframe)
+            : $paperEndsAt->subMonthsNoOverflow($months);
+        if ($paperStartsAt->greaterThanOrEqualTo($paperEndsAt)) {
+            throw new RuntimeException('Frozen paper window start/end chegarasi yaroqsiz.');
+        }
         if ($trainingStartsAt->greaterThanOrEqualTo($paperStartsAt)) {
             throw new RuntimeException('Frozen paper window uchun 6 oylik oldingi training tarixi yetarli emas.');
         }
 
-        $rows = (clone $base)
+        $rows = (clone $paperBase)
             ->where('time', '>=', $paperStartsAt)
             ->where('time', '<', $paperEndsAt)
             ->orderBy('time')
@@ -69,7 +96,8 @@ class FrozenPaperWindowService
         $directory = storage_path('app/frozen-paper-windows');
         File::ensureDirectoryExists($directory);
         $stamp = $paperEndsAt->format('Ymd_His');
-        $path = $directory."/{$symbol}_{$timeframe}_{$stamp}_{$months}m.csv";
+        $safeWindowKey = preg_replace('/[^A-Za-z0-9_.-]+/', '_', $windowKey) ?: 'paper';
+        $path = $directory."/{$symbol}_{$timeframe}_{$safeWindowKey}_{$stamp}.csv";
         $temporary = tempnam($directory, ".{$symbol}_{$timeframe}_paper_");
         if ($temporary === false) {
             throw new RuntimeException('Frozen paper window temporary fayli yaratilmadi.');
@@ -122,7 +150,7 @@ class FrozenPaperWindowService
             'provider' => $provider,
             'symbol' => strtoupper($symbol),
             'timeframe' => strtoupper($timeframe),
-        ])->first();
+        ])->orderBy('training_ends_at')->first();
     }
 
     public function trainingEnd(string $dataset, string $provider, string $symbol, string $timeframe): ?CarbonImmutable

@@ -79,6 +79,7 @@ class CandlePayloadService
         ?\DateTimeInterface $from = null,
         ?\DateTimeInterface $to = null,
         ?int $limit = null,
+        bool $includeVolume = false,
     ): array {
         // The six-month paper range is an immutable out-of-sample contract.
         // Even an explicit caller-provided end cannot extend training into it.
@@ -88,7 +89,7 @@ class CandlePayloadService
             ? $frozenTrainingEnd
             : $requestedEnd;
 
-        return $this->training->candlesForAgent(
+        $rows = $this->training->candlesForAgent(
             $dataset,
             $provider,
             $symbol,
@@ -97,5 +98,15 @@ class CandlePayloadService
             $effectiveEnd,
             $limit,
         );
+
+        if ($includeVolume) {
+            $rows = array_map(static function (array $row): array {
+                $row['volume_available'] = is_numeric($row['volume'] ?? null);
+
+                return $row;
+            }, $rows);
+        }
+
+        return $rows;
     }
 }

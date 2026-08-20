@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from app.schemas import SimpleBacktestRequest, SimpleTrade, StrategyRuntimeConfig
-from app.strategies.laboratory import apply_differential_router_strategy, apply_differential_trend_down_router_strategy, apply_hybrid_strategy, apply_regime_ensemble_strategy
+from app.strategies.laboratory import apply_differential_router_strategy, apply_differential_trend_down_router_strategy, apply_hybrid_strategy, apply_mean_reversion_strategy, apply_regime_ensemble_strategy
 from app.services.backtester import _apply_portfolio_strategy, _pf_attribution, _portfolio_evidence, _portfolio_payload_for_signal, _router_evidence
 
 
@@ -37,6 +37,44 @@ def _portfolio_unsafe_confidence_strategy(frame: pd.DataFrame, _parameters: dict
 
 
 class RegimeEnsembleTest(unittest.TestCase):
+    def test_differential_v2_trend_down_roc_threshold_changes_target_lane_signal(self):
+        closes = [100.0 - index * .025 for index in range(80)]
+        frame = pd.DataFrame({
+            "time": pd.date_range("2025-01-01", periods=len(closes), freq="h"),
+            "open": closes, "high": [value + .1 for value in closes],
+            "low": [value - .1 for value in closes], "close": closes,
+            "market_regime": ["trend_down"] * len(closes),
+            "volatility_regime": ["normal_volatility"] * len(closes),
+            "adx": [30.0] * len(closes), "atr_regime": [1.0] * len(closes),
+        })
+
+        permissive = apply_differential_router_strategy(frame, {
+            "differential_target_regime": "trend_down", "differential_router_version": "v2",
+            "trend_down_roc_threshold": .20,
+        })
+        selective = apply_differential_router_strategy(frame, {
+            "differential_target_regime": "trend_down", "differential_router_version": "v2",
+            "trend_down_roc_threshold": .40,
+        })
+
+        self.assertGreater((permissive["signal"] == "SELL").sum(), (selective["signal"] == "SELL").sum())
+
+    def test_mean_reversion_inverse_extreme_is_an_executable_one_gene_topology(self):
+        closes = [100.0 + (index % 2) * .1 for index in range(24)] + [110.0]
+        frame = pd.DataFrame({
+            "time": pd.date_range("2025-01-01", periods=len(closes), freq="h"),
+            "open": closes, "high": [value + .2 for value in closes],
+            "low": [value - .2 for value in closes], "close": closes,
+            "adx": [10.0] * len(closes),
+            "volatility_regime": ["low_volatility"] * len(closes),
+        })
+
+        control = apply_mean_reversion_strategy(frame, {"range_signal_mode": "reentry"})
+        candidate = apply_mean_reversion_strategy(frame, {"range_signal_mode": "inverse_extreme"})
+
+        self.assertEqual("SELL", control.iloc[-1]["signal"])
+        self.assertEqual("BUY", candidate.iloc[-1]["signal"])
+
     def test_portfolio_evidence_preserves_member_context_and_month_intersection(self):
         request = SimpleBacktestRequest(
             symbol="XAUUSD",

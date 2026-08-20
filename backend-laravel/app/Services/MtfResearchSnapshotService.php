@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\MtfAblationRun;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
@@ -32,6 +33,8 @@ class MtfResearchSnapshotService
         if (! preg_match('/^[a-f0-9]{64}$/', $runKey)) {
             throw new RuntimeException('MTF snapshot run key invalid.');
         }
+        $this->assertPre2026Candles($h1);
+        $this->assertPre2026Candles($m15);
 
         $directory = storage_path('app/mtf-research-snapshots');
         File::ensureDirectoryExists($directory);
@@ -102,6 +105,12 @@ class MtfResearchSnapshotService
         $expectedHash = (string) ($payload['snapshot_hash'] ?? '');
         unset($payload['snapshot_hash']);
         if ($expectedHash === '' || $this->hash($payload) !== $expectedHash) return null;
+        try {
+            $this->assertPre2026Candles((array) ($payload['h1_candles'] ?? []));
+            $this->assertPre2026Candles((array) ($payload['m15_candles'] ?? []));
+        } catch (\Throwable) {
+            return null;
+        }
         $payload['snapshot_hash'] = $expectedHash;
 
         return $payload;
@@ -138,5 +147,20 @@ class MtfResearchSnapshotService
         }
 
         return $value;
+    }
+
+    /** @param array<int, array<string, mixed>> $candles */
+    private function assertPre2026Candles(array $candles): void
+    {
+        $cutoff = CarbonImmutable::parse(
+            (string) config('services.lab_selection.training_end_exclusive', '2026-01-01 00:00:00'),
+            'UTC',
+        );
+        foreach ($candles as $candle) {
+            $time = CarbonImmutable::parse((string) ($candle['time'] ?? ''), 'UTC');
+            if ($time->greaterThanOrEqualTo($cutoff)) {
+                throw new RuntimeException('MTF research snapshot 2026-01-01 dan keyingi candle qabul qilmaydi; 2026 faqat paper lane.');
+            }
+        }
     }
 }

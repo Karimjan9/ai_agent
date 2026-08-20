@@ -81,8 +81,8 @@ class HybridEvolutionContractTest extends TestCase
         $decorated = collect($plan);
 
         $this->assertCount(20, $plan);
-        $this->assertSame(2, $decorated->where('niche.hybrid_evolution_lane', 'frozen_control')->count());
-        $this->assertSame(4, $decorated->where('niche.hybrid_evolution_lane', 'bold_structural')->count());
+        $this->assertSame(5, $decorated->where('niche.hybrid_evolution_lane', 'frozen_control')->count());
+        $this->assertSame(3, $decorated->where('niche.hybrid_evolution_lane', 'bold_structural')->count());
         $this->assertSame(3, $decorated->where('niche.hybrid_evolution_lane', 'adversarial_escape')->count());
         $this->assertTrue($decorated->every(fn (array $seat): bool => data_get($seat, 'niche.control_only')
             || (bool) data_get($seat, 'niche.structural_research')));

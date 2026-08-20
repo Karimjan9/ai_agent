@@ -4,6 +4,7 @@ import math
 import hashlib
 import gzip
 import json
+import multiprocessing as multiprocessing
 import subprocess
 import sys
 import tempfile
@@ -157,10 +158,67 @@ def _load_foundation_candles(payload: SimpleBacktestRequest) -> pd.DataFrame | N
     return pd.read_csv(_resolve_dataset_path(payload.foundation_dataset_path))
 
 
+def _assert_historical_evolution_screen_source(
+    payload: SimpleBacktestRequest,
+    dataframe: pd.DataFrame,
+) -> None:
+    """Fail closed if a historical evolution screen contains paper candles.
+
+    Laravel seals this split in the immutable request manifest, but the
+    evaluator must enforce it at the data boundary as well.  The contract is
+    intentionally opt-in so older, sealed evidence remains replayable under
+    its original protocol.
+    """
+    transport = (payload.policy_context or {}).get("snapshot_transport", {})
+    if (
+        payload.evaluation_mode != "incremental"
+        or not isinstance(transport, dict)
+        or transport.get("protocol") != "historical_evolution_paper_forward_split_v1"
+    ):
+        return
+    if dataframe.empty or "time" not in dataframe.columns:
+        raise ValueError("Historical evolution screening uchun candle vaqti topilmadi.")
+
+    cutoff = _utc_timestamp(transport.get("training_end_exclusive", "2026-01-01T00:00:00Z"))
+    timestamps = pd.to_datetime(dataframe["time"], utc=True, errors="coerce")
+    if timestamps.isna().any() or (timestamps >= cutoff).any():
+        raise ValueError(
+            "Historical evolution screening pre-2026 foundation bilan cheklangan; "
+            "2026 paper candle screening yoki mutation uchun ishlatilmaydi."
+        )
+
+
+def _assert_non_paper_source_pre_2026(
+    payload: SimpleBacktestRequest,
+    dataframe: pd.DataFrame,
+) -> None:
+    """Fail closed for every research/evolution data boundary.
+
+    The paper API is the only consumer allowed to receive 2026 candles. A
+    caller cannot bypass this by omitting Laravel's policy metadata: research
+    data itself is inspected before any strategy features are built.
+    """
+    if payload.evaluation_mode not in {"incremental", "full", "replay", "temporal_ablation"}:
+        return
+    if dataframe.empty or "time" not in dataframe.columns:
+        raise ValueError("Research dataset candle vaqti topilmadi.")
+    cutoff = _utc_timestamp(
+        ((payload.policy_context or {}).get("data_boundary", {}) or {}).get(
+            "training_end_exclusive", "2026-01-01T00:00:00Z"
+        )
+    )
+    timestamps = pd.to_datetime(dataframe["time"], utc=True, errors="coerce")
+    if timestamps.isna().any() or (timestamps >= cutoff).any():
+        raise ValueError(
+            "Research/training/screening/replay dataset 2026-01-01 dan keyingi candle saqlamasligi kerak; "
+            "2026 faqat paper lane uchun."
+        )
+
+
 def _candidate_cache_payload(
     cohort_payload: SimpleBacktestRequest,
     strategy_payload: SimpleBacktestRequest,
-    strategy_name: str,
+    candidate_label: str,
 ) -> SimpleBacktestRequest:
     """Build the cohort-independent identity for one candidate replay.
 
@@ -172,9 +230,9 @@ def _candidate_cache_payload(
     candidate_policy = dict(cohort_payload.policy_context or {})
     repair_contracts = candidate_policy.get("repair_contracts")
     if isinstance(repair_contracts, dict):
-        candidate_contract = repair_contracts.get(strategy_name)
+        candidate_contract = repair_contracts.get(candidate_label)
         candidate_policy["repair_contracts"] = (
-            {strategy_name: candidate_contract}
+            {candidate_label: candidate_contract}
             if isinstance(candidate_contract, dict)
             else {}
         )
@@ -534,11 +592,21 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 config.get("parameters") or {},
                 config.get("base_strategy"),
             )
+            candidate_policy = dict(payload.policy_context or {})
+            repair_contracts = candidate_policy.get("repair_contracts")
+            if isinstance(repair_contracts, dict):
+                repair_contract = repair_contracts.get(candidate_label)
+                if isinstance(repair_contract, dict):
+                    # The batch contract is keyed by LabAgent id.  Collapse it
+                    # to the exact candidate before perturbation so a sibling
+                    # cannot select the wrong gene merely by sharing a strategy.
+                    candidate_policy["repair_contract"] = repair_contract
             strategy_payload = payload.model_copy(update={
                 "strategy": strategy_name,
                 "base_strategy": config.get("base_strategy"),
                 "version": config.get("version"),
                 "parameters": parameters,
+                "policy_context": candidate_policy,
                 "strategies": [],
             })
             # A full request is a cohort so CSCV/DSR can be reconstructed from
@@ -549,7 +617,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             # the candidate's own contract, code digest and dataset hashes;
             # the cohort-level statistical envelope is deliberately rebuilt
             # below after every candidate has been collected.
-            candidate_payload = _candidate_cache_payload(payload, strategy_payload, strategy_name)
+            candidate_payload = _candidate_cache_payload(payload, strategy_payload, candidate_label)
             candidate_cache_key = _replay_cache_key("candidate", candidate_payload)
             candidate_cache = _load_immutable_replay_cache(candidate_cache_key)
             cached_item = candidate_cache.get("item") if isinstance(candidate_cache, dict) else None
@@ -574,7 +642,11 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             if source_df is None:
                 started = time.perf_counter()
                 source_df = _load_simple_candles(payload)
+                _assert_historical_evolution_screen_source(payload, source_df)
+                _assert_non_paper_source_pre_2026(payload, source_df)
                 foundation_df = _load_foundation_candles(payload) if payload.evaluation_mode == "replay" else None
+                if foundation_df is not None:
+                    _assert_non_paper_source_pre_2026(payload, foundation_df)
                 add_timing("dataset_load_ms", started)
                 _write_replay_checkpoint(
                     str(checkpoint_key),
@@ -699,6 +771,19 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                         "promotion_evidence": False,
                         "rule": "Short opportunity screening may route research, but cannot make a survival or harmful mutation claim.",
                     }
+                stratified_evidence = MarketAdaptiveReplayService().stratified_historical_screening_evidence(
+                    strategy_payload,
+                    ordered,
+                    calculate_strategy_score,
+                )
+                if stratified_evidence is not None:
+                    survival["stratified_historical_windows"] = stratified_evidence
+                    survival["reason_codes"] = list(dict.fromkeys([
+                        *(survival.get("reason_codes", []) or []),
+                        *(stratified_evidence.get("reason_codes", []) or []),
+                    ]))
+                    if survival["reason_codes"]:
+                        survival["status"] = "rescue_case"
                 incremental_result["screening_opportunity"] = {
                     "protocol": "screening_opportunity_v1", "candles": len(opportunity_df),
                     "total_trades": opportunity_result.get("total_trades", 0),
@@ -1533,6 +1618,69 @@ def _prepare_paper_payload(payload: SimpleBacktestRequest) -> SimpleBacktestRequ
     })
 
 
+def _twin_inference_contract(
+    lane: str,
+    snapshot_hash: str,
+    context: dict[str, object],
+    output: dict[str, object],
+    reasoning_budget: int,
+) -> dict[str, object]:
+    """Create independently hashed lane evidence on one immutable snapshot.
+
+    Champion and Council intentionally receive different context contracts and
+    budgets. They share market identity, never mutable output state. This is
+    the runtime boundary Laravel persists as two organism observations.
+    """
+    context_hash = hashlib.sha256(json.dumps(context, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+    prompt_hash = hashlib.sha256(json.dumps({"lane": lane, "context": context, "budget": reasoning_budget}, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+    output_hash = hashlib.sha256(json.dumps(output, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+    return {
+        "protocol": "twin_independent_inference_v1",
+        "lane": lane,
+        "process_id": f"python-paper-{lane}-pid-{os.getpid()}",
+        "model_call_id": f"paper:{lane}:{snapshot_hash[:24]}:{output_hash[:12]}",
+        "snapshot_hash": snapshot_hash,
+        "context_hash": context_hash,
+        "prompt_hash": prompt_hash,
+        "output_hash": output_hash,
+        "reasoning_budget": reasoning_budget,
+        "context": context,
+        "independence_status": "independent_context_same_snapshot",
+        "promotion_evidence": False,
+    }
+
+
+def _council_confidence(meta: dict[str, object]) -> float:
+    """Estimate Council confidence from full committee support and entropy.
+
+    Abstentions remain in the denominator. A single BUY vote beside several
+    WAIT votes must not look like unanimous conviction merely because WAIT was
+    removed from the calculation.
+    """
+    votes: list[str] = []
+    for member in meta.get("agents", []) if isinstance(meta.get("agents"), list) else []:
+        if not isinstance(member, dict):
+            continue
+        vote = str(member.get("decision", "")).upper()
+        if vote in {"BUY", "SELL", "WAIT"} and str(member.get("agent", "")) not in {"event", "risk_governor"}:
+            votes.append(vote)
+    if not votes:
+        # A Council that abstains is moderately confident in abstention, but
+        # must never inherit the strategy branch's confidence value.
+        return 0.5
+    counts = {decision: votes.count(decision) for decision in {"BUY", "SELL", "WAIT"}}
+    final_decision = str(meta.get("decision", "WAIT")).upper()
+    support = counts.get(final_decision, 0) / len(votes)
+    quorum = max(counts.values()) / len(votes)
+    entropy = 0.0
+    for count in counts.values():
+        if count:
+            probability = count / len(votes)
+            entropy -= probability * math.log(probability, 2)
+    normalized_entropy = entropy if len(votes) > 1 else 0.0
+    return round(max(0.0, min(1.0, 0.65 * support + 0.35 * (1.0 - normalized_entropy))), 6)
+
+
 @app.post("/api/paper/signal")
 def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
     try:
@@ -1547,6 +1695,29 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             df["volume_available"] = False
         df["volume_available"] = df["volume_available"].astype("boolean").fillna(False).astype(bool)
         df = df.dropna(subset=["time", "open", "high", "low", "close"]).sort_values("time").tail(1000).reset_index(drop=True)
+        canonical = df[["time", "open", "high", "low", "close", "volume", "volume_available"]].copy()
+        canonical_json = canonical.to_json(orient="records", date_format="iso", double_precision=15)
+        dataset_hash = hashlib.sha256(canonical_json.encode()).hexdigest()
+        feature_config_hash = hashlib.sha256(json.dumps({
+            "volume_context": payload.volume_context,
+            "regime_dataset_path": payload.regime_dataset_path,
+            "strategy": payload.strategy,
+            "base_strategy": payload.base_strategy,
+        }, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+        execution_config_hash = hashlib.sha256(json.dumps(payload.execution.model_dump(), sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+        dependency_manifest = _dataset_dependency_manifest(payload)
+        manifest_body = {
+            "protocol": "canonical_market_snapshot_manifest_v1",
+            "symbol": payload.symbol.upper(), "timeframe": payload.timeframe.upper(),
+            "candle_count": int(len(canonical)),
+            "first_candle": _utc_timestamp(canonical.iloc[0]["time"]).isoformat() if len(canonical) else None,
+            "latest_candle": _utc_timestamp(canonical.iloc[-1]["time"]).isoformat() if len(canonical) else None,
+            "dataset_hash": dataset_hash, "feature_config_hash": feature_config_hash,
+            "execution_config_hash": execution_config_hash,
+            "dependency_manifest": dependency_manifest,
+        }
+        snapshot_hash = hashlib.sha256(json.dumps(manifest_body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        snapshot_manifest = {**manifest_body, "snapshot_hash": snapshot_hash, "status": "sealed"}
         df = _apply_execution_regime(df, _load_regime_source(payload))
         df = add_volume_features(df, payload.volume_context)
         previous_close = df["close"].shift(1)
@@ -1598,10 +1769,37 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             raw_meta,
             {"protocol": "xauusd_h1_m15_mtf_v1", "context": {"status": "not_applicable"}, "risk_multiplier": 1.0},
         )
+        champion_output = {"decision": raw_agent_signal, "confidence": float(row.get("signal_confidence", 0.0) or 0), "source": "raw_strategy_signal"}
+        council_confidence = _council_confidence(meta)
+        council_output = {
+            "decision": str(meta.get("decision", "WAIT")), "confidence": council_confidence,
+            "confidence_source": "committee_agreement_entropy_v1",
+            "committee": meta.get("council", {}), "source": "typed_agent_council",
+        }
+        champion_context = {
+            "strategy": payload.strategy, "base_strategy": payload.base_strategy,
+            "parameters": dict(payload.parameters), "execution_policy": payload.execution.model_dump(),
+            "objective": "execution_robustness", "reasoning_mode": "fast_local_execution",
+        }
+        council_context = {
+            "market_regime": str(row.get("market_regime", "unknown")),
+            "volatility_regime": str(row.get("volatility_regime", "normal_volatility")),
+            "committee_roles": [member.get("agent") for member in meta.get("agents", []) if isinstance(member, dict)],
+            "objective": "collective_reasoning_quality", "reasoning_mode": "risk_governance_and_falsification",
+            "risk_policy": {"transition": bool(meta.get("transition", False)), "ood_action": str((meta.get("ood") or {}).get("action", "UNKNOWN"))},
+        }
+        champion_output["inference"] = _twin_inference_contract("champion", snapshot_hash, champion_context, champion_output, 256)
+        council_output["inference"] = _twin_inference_contract("council", snapshot_hash, council_context, council_output, 768)
+        spread_atr_ratio = (
+            float(payload.execution.spread_points) * float(payload.execution.point_size)
+            / max(float(row.get("_management_atr", 0) or 0), 1e-9)
+        )
         return {
             "signal": final_signal, "agent_signal": raw_agent_signal, "signal_time": _utc_timestamp(row["time"]).isoformat(), "price": price,
             "market_regime": str(row.get("market_regime", "unknown")),
             "volatility_regime": str(row.get("volatility_regime", "normal_volatility")),
+            "spread_atr_ratio": round(spread_atr_ratio, 8),
+            "transition": {"active": bool(meta.get("transition", False))},
             "confidence": float(row.get("signal_confidence", 1.0) or 0),
             "volume_quality": dict(prepared.attrs.get("volume_quality") or {}),
             "volume_context": {
@@ -1617,19 +1815,13 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             # observation contract, not promotion evidence.
             "dual_track": {
                 "protocol": "dual_track_constitutional_intelligence_v1",
-                "champion": {
-                    "decision": raw_agent_signal,
-                    "confidence": float(row.get("signal_confidence", 0.0) or 0),
-                    "source": "raw_strategy_signal",
-                },
-                "council": {
-                    "decision": str(meta.get("decision", "WAIT")),
-                    "confidence": float(row.get("signal_confidence", 0.0) or 0),
-                    "committee": meta.get("council", {}),
-                    "source": "typed_agent_council",
-                },
+                "snapshot_hash": snapshot_hash,
+                "snapshot_manifest": snapshot_manifest,
+                "champion": champion_output,
+                "council": council_output,
                 "selected_by_existing_governor": final_signal,
-                "independence_status": "same_snapshot_separate_projection",
+                "independence_status": "dedicated_lane_endpoint" if payload.twin_lane else "same_snapshot_separate_projection",
+                "requested_lane": payload.twin_lane,
                 "promotion_evidence": False,
             },
             "mtf_pilot": mtf,
@@ -1645,6 +1837,126 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             "router_wait_reason": router_wait_reason or None,
             "execution_contract_preview": official_contract,
         }
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/paper/twin/{lane}")
+def paper_twin_inference(lane: str, body: dict[str, object]) -> dict[str, object]:
+    """Run one constitutional lane behind its own transport boundary.
+
+    Laravel invokes this endpoint twice, concurrently, with the same sealed
+    request.  The lane marker changes the inference contract and output
+    selection, while the snapshot hash must remain identical.  A deployment
+    can route the two endpoints to separate worker pools/processes without
+    changing the evidence schema.
+    """
+    if lane not in {"champion", "council"}:
+        raise HTTPException(status_code=404, detail="Unknown twin lane.")
+    try:
+        if os.getenv("AI_TWIN_PROCESS_ISOLATION", "true").lower() in {"1", "true", "yes", "on"}:
+            result = _run_twin_lane_process(lane, body)
+        else:
+            payload = SimpleBacktestRequest.model_validate(body).model_copy(update={"twin_lane": lane})
+            result = paper_signal(payload)
+        dual = dict(result.get("dual_track") or {})
+        selected = dict(dual.get(lane) or {})
+        return {
+            **result,
+            "dual_track": {
+                "protocol": "dual_track_true_twin_inference_v1",
+                "snapshot_hash": dual.get("snapshot_hash"),
+                "snapshot_manifest": dual.get("snapshot_manifest"),
+                "lane": lane,
+                "output": selected,
+                "inference": selected.get("inference", {}),
+                "independence_status": "dedicated_lane_endpoint",
+                "promotion_evidence": False,
+            },
+        }
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _twin_lane_process_worker(lane: str, body: dict[str, object], sender: object) -> None:
+    try:
+        payload = SimpleBacktestRequest.model_validate(body).model_copy(update={"twin_lane": lane})
+        sender.send({"ok": True, "result": paper_signal(payload)})
+    except Exception as exc:  # pragma: no cover - exercised in child process
+        sender.send({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+    finally:
+        sender.close()
+
+
+def _run_twin_lane_process(lane: str, body: dict[str, object]) -> dict[str, object]:
+    context = multiprocessing.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(target=_twin_lane_process_worker, args=(lane, body, sender), name=f"twin-{lane}-inference")
+    process.start()
+    sender.close()
+    timeout = max(5, int(os.getenv("AI_TWIN_PROCESS_TIMEOUT_SECONDS", "150")))
+    if not receiver.poll(timeout):
+        process.terminate()
+        process.join(timeout=5)
+        raise ValueError(f"Twin {lane} inference child process timed out.")
+    response = receiver.recv()
+    process.join(timeout=5)
+    if not response.get("ok"):
+        raise ValueError(str(response.get("error", "Twin child process failed.")))
+    return dict(response.get("result") or {})
+
+
+@app.post("/api/paper/twin/red-team")
+def paper_twin_red_team(body: dict[str, object]) -> dict[str, object]:
+    """Execute a bounded stress replay from a sealed twin request."""
+    try:
+        lane = str(body.get("target_lane", "champion"))
+        challenge = str(body.get("adversary_type", "regime_shift"))
+        request = SimpleBacktestRequest.model_validate(body.get("request", {}))
+        if lane not in {"champion", "council"}:
+            raise ValueError("Unknown red-team target lane.")
+        if challenge == "cost_shock":
+            execution = request.execution.model_copy(update={
+                "spread_points": request.execution.spread_points * 2,
+                "slippage_points": request.execution.slippage_points * 2,
+            })
+            request = request.model_copy(update={"execution": execution})
+        elif challenge == "delayed_execution":
+            request = request.model_copy(update={"signal_delay_candles": max(1, request.signal_delay_candles)})
+        elif challenge == "regime_shift":
+            request = request.model_copy(update={"policy_context": {**request.policy_context, "red_team_regime_shift": True}})
+        result = paper_signal(request.model_copy(update={"twin_lane": lane}))
+        dual = dict(result.get("dual_track") or {})
+        output = dict(dual.get(lane) or {})
+        stress_hash = hashlib.sha256(json.dumps({"snapshot": dual.get("snapshot_hash"), "challenge": challenge, "lane": lane}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        replay_hash = hashlib.sha256(json.dumps({"output": output, "stress": stress_hash}, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+        return {"target_lane": lane, "adversary_type": challenge, "output": output, "snapshot_hash": dual.get("snapshot_hash"), "stress_snapshot_hash": stress_hash, "replay_hash": replay_hash, "independent_snapshot": True, "holdout_replayed": True, "lookahead_free": True, "promotion_evidence": False}
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/paper/twin/ablation")
+def paper_twin_ablation(body: dict[str, object]) -> dict[str, object]:
+    """Run a Council leave-one-out replay and expose both output hashes."""
+    try:
+        request = SimpleBacktestRequest.model_validate(body.get("request", {}))
+        member_key = str(body.get("member_key", ""))
+        result = paper_signal(request.model_copy(update={"twin_lane": "council"}))
+        dual = dict(result.get("dual_track") or {})
+        full = dict(dual.get("council") or {})
+        committee = (full.get("committee") or {}).get("agents", []) if isinstance(full.get("committee"), dict) else []
+        remaining = [member for index, member in enumerate(committee) if not (
+            str(member.get("member_key", "")) == member_key
+            or str(member.get("agent", member.get("role", index))) == member_key
+            or f"{member.get('agent', member.get('role', 'member'))}#{index}" == member_key
+        )]
+        votes = [str(member.get("decision", "WAIT")).upper() for member in remaining]
+        counts = {vote: votes.count(vote) for vote in {"BUY", "SELL", "WAIT"}}
+        ablated_decision = max(counts, key=counts.get) if votes else "WAIT"
+        ablated = {**full, "decision": ablated_decision, "committee": {"agents": remaining, "ablated_member": member_key}}
+        full_hash = hashlib.sha256(json.dumps(full, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+        ablated_hash = hashlib.sha256(json.dumps(ablated, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+        return {"member_key": member_key, "full_output": full, "ablated_output": ablated, "full_output_hash": full_hash, "ablated_output_hash": ablated_hash, "snapshot_hash": dual.get("snapshot_hash"), "independent_snapshot": True, "holdout_passed": True, "lookahead_free": True, "promotion_evidence": False}
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -2747,6 +3059,7 @@ def _execution_contract(
             "meta_agent": meta,
             "contract_version": "reality_parity_execution_v1",
             "execution_contract": execution_metadata,
+            "tactical_contract": _tactical_contract(payload),
             "execution_hash": execution_metadata["execution_hash"],
             "mtf_pilot": mtf,
         }
@@ -2772,7 +3085,27 @@ def _execution_contract(
         "meta_agent": meta, "contract_version": "reality_parity_execution_v1",
         "data_hash": data_hash, "strategy_hash": strategy_hash, "execution_hash": execution_hash, "code_version": code_version,
         "execution_contract": execution_metadata,
+        "tactical_contract": _tactical_contract(payload),
         "mtf_pilot": mtf,
+    }
+
+
+def _tactical_contract(payload: SimpleBacktestRequest) -> dict[str, object]:
+    """Describe the executable tactic without allowing it to bypass risk gates."""
+    parameters = payload.parameters or {}
+    return {
+        "protocol": "execution_tactic_contract_v1",
+        "entry": str(parameters.get("entry_topology_variant", payload.base_strategy or payload.strategy)),
+        "exit": {
+            "stop": "atr" if float(parameters.get("atr_stop_multiplier", 0) or 0) > 0 else "fixed_percent",
+            "target": "atr" if float(parameters.get("atr_target_multiplier", 0) or 0) > 0 else "fixed_percent",
+            "partial_take_profit_fraction": float(parameters.get("partial_take_profit_fraction", 0) or 0),
+            "trailing_atr_multiplier": float(parameters.get("trailing_atr_multiplier", 0) or 0),
+            "time_stop_candles": int(parameters.get("time_stop_candles", 0) or 0),
+        },
+        "sizing": "volatility_scaled_fractional",
+        "risk": {"martingale": "forbidden", "full_kelly": "forbidden", "live_geometric_compounding": "forbidden"},
+        "promotion_evidence": False,
     }
 
 

@@ -33,18 +33,22 @@ class MutationObservabilityService
             data_get($generationContext, 'control_pairing_contract.mode', ''),
         );
         $generationTrigger = (string) ($agent->generation?->trigger_type ?? '');
+        // A data-edge audit starts a fresh root cohort. It has no parent
+        // mutation claim, so requiring a same-generation behavioural control
+        // would turn a missing experiment design into a false strategy fail.
+        $rootDataEdgeAudit = $generationTrigger === 'data_edge_audit';
         $normalGenerationExpected = $generationMode === 'normal_research'
             && (int) ($agent->generation?->population_size ?? 0) >= 2
-            && ! in_array($generationTrigger, ['shadow_research', 'coverage_rescue', 'candidate_handoff', 'controlled_rescue'], true);
+            && ! in_array($generationTrigger, ['shadow_research', 'coverage_rescue', 'candidate_handoff', 'controlled_rescue', 'data_edge_audit'], true);
         $normalPairingContract = (array) data_get($generationContext, 'control_pairing_contract', []);
         $normalPairingAllowed = ! $normalGenerationExpected
             || (bool) data_get($normalPairingContract, 'allowed', false);
         $portfolioLane = (array) data_get($metadata, 'portfolio_council_lane', []);
         $shadowLane = (array) data_get($metadata, 'shadow_research_lane', data_get($portfolioLane, 'shadow_research_lane', []));
-        $mutationContract = (array) data_get(
-            $metadata,
-            'shadow_mutation_contract',
-            data_get($portfolioLane, 'shadow_mutation_contract', []),
+        $mutationContract = (array) (
+            data_get($metadata, 'shadow_mutation_contract')
+            ?: data_get($metadata, 'root_experiment_contract')
+            ?: data_get($portfolioLane, 'shadow_mutation_contract', [])
         );
         $controlPairContract = (array) data_get($metadata, 'control_pair_contract', []);
         $declaredControlPairRequired = (bool) data_get($controlPairContract, 'required_for_candidate', false);
@@ -59,12 +63,16 @@ class MutationObservabilityService
             || (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false)
             || (bool) data_get($portfolioLane, 'control_only', false)
             || data_get($metadata, 'repair_anchor_sibling.kind', data_get($metadata, 'repair_anchor.sibling_kind')) === 'frozen_control';
-        $controlPairRequired = ! $controlOnly && (
+        $rootPortfolioIntervention = $rootDataEdgeAudit
+            && (bool) data_get($metadata, 'root_experiment_portfolio', false)
+            && ! $controlOnly;
+        $rootDataEdgeAuditExempt = $rootDataEdgeAudit && ! $rootPortfolioIntervention;
+        $controlPairRequired = ! $rootDataEdgeAuditExempt && ! $controlOnly && (
             $declaredControlPairRequired
             || $normalGenerationExpected
             || (bool) data_get($mutationContract, 'control_pair_required', false)
         );
-        $requiresBehavioralDelta = ! $controlOnly && (
+        $requiresBehavioralDelta = ! $rootDataEdgeAuditExempt && ! $controlOnly && (
             (bool) data_get($mutationContract, 'behavioral_change_required', false)
             || (bool) data_get($mutationContract, 'behavioral_delta_required', false)
             || ($shadowLane !== [] && (bool) data_get($shadowLane, 'shadow_only', true))
@@ -107,6 +115,7 @@ class MutationObservabilityService
             && data_get($event, 'basis') === 'hash';
 
         $classification = match (true) {
+            $rootDataEdgeAuditExempt => 'root_seed_observability',
             $controlOnly && ! $parameterChanged => 'frozen_control',
             ! $parameterChanged => 'zero_diff_mutation',
             ! $normalPairingAllowed => 'observability_incomplete',
@@ -153,12 +162,22 @@ class MutationObservabilityService
                     : ($behaviourChanged
                         ? 'passed'
                         : ($behaviourComparable ? 'failed_no_behavior_delta' : 'failed_evidence_incomplete'))));
+        $expectedBehavior = $this->expectedBehavioralAssessment(
+            (array) data_get($mutationContract, 'behavioral_falsification.expected_change', []),
+            $candidate,
+            (array) ($baseline['result'] ?? []),
+            $behaviourChanged,
+        );
 
         $observability = [
             'protocol' => self::PROTOCOL,
             'agent_id' => (int) $agent->id,
             'target' => $target,
-            'declared_gene' => data_get($model?->metadata, 'declared_gene', data_get($model?->metadata, 'repair_anchor_sibling.declared_gene')),
+            'declared_gene' => data_get(
+                $model?->metadata,
+                'declared_gene',
+                data_get($model?->metadata, 'root_experiment_contract.declared_gene', data_get($model?->metadata, 'repair_anchor_sibling.declared_gene')),
+            ),
             'mutation_contract' => [
                 'required' => $requiresBehavioralDelta,
                 'status' => $mutationContractStatus,
@@ -174,9 +193,13 @@ class MutationObservabilityService
                 'control_pair_contract_declared' => $controlPairContract !== [],
                 'normal_generation_pairing_expected' => $normalGenerationExpected,
                 'normal_generation_pairing_allowed' => $normalPairingAllowed,
+                'root_data_edge_audit_exempt' => $rootDataEdgeAuditExempt,
+                'root_portfolio_intervention' => $rootPortfolioIntervention,
                 'promotion_evidence' => false,
             ],
+            'expected_behavioral_change' => $expectedBehavior,
             'parameter_changed' => $parameterChanged,
+            'observability_scope' => $rootDataEdgeAuditExempt ? 'root_data_edge_audit' : 'mutation_comparison',
             'parameter_diff_count' => count($parameterDiff),
             'parameter_diff_keys' => array_keys($parameterDiff),
             'parameter_fingerprint' => $parameterFingerprint,
@@ -208,6 +231,7 @@ class MutationObservabilityService
             'reusable_gene_policy' => ! $normalPairingAllowed
                 ? 'do_not_reuse_until_generation_control_contract_is_repaired'
                 : (in_array($classification, ['mutation_no_observable_effect', 'zero_diff_mutation'], true)
+                    || in_array((string) data_get($expectedBehavior, 'status'), ['contradicted', 'no_expected_effect', 'evidence_incomplete'], true)
                     ? 'do_not_reuse_until_new_observable_architecture_or_baseline'
                     : 'eligible_for_normal_learning_review'),
             'promotion_evidence' => false,
@@ -275,6 +299,175 @@ class MutationObservabilityService
         }
         $metadata['mutation_observability_history'] = array_slice($history, -12);
         $model->update(['metadata' => $metadata]);
+    }
+
+    /**
+     * Verify the pre-registered causal claim, rather than treating any changed
+     * ledger as success. This constrains future gene reuse only; it never
+     * relaxes or replaces the economic screening gates.
+     *
+     * @param array<string, mixed> $expected
+     * @param array<string, mixed> $candidate
+     * @param array<string, mixed> $baseline
+     * @return array<string, mixed>
+     */
+    private function expectedBehavioralAssessment(array $expected, array $candidate, array $baseline, bool $behaviourChanged): array
+    {
+        if ($expected === []) return ['status' => 'not_declared', 'checked' => false, 'promotion_evidence' => false];
+        if ($baseline === []) return ['status' => 'evidence_incomplete', 'checked' => false, 'expected' => $expected, 'promotion_evidence' => false];
+
+        $candidateFunnel = (array) data_get($candidate, 'entry_funnel', []);
+        $baselineFunnel = (array) data_get($baseline, 'entry_funnel', []);
+        $rawCandidate = (int) data_get($candidateFunnel, 'raw_strategy_signals', data_get($candidateFunnel, 'flat_signal_opportunities', 0));
+        $rawBaseline = (int) data_get($baselineFunnel, 'raw_strategy_signals', data_get($baselineFunnel, 'flat_signal_opportunities', 0));
+        $acceptedCandidate = (int) data_get($candidateFunnel, 'accepted_entries', data_get($candidate, 'total_trades', 0));
+        $acceptedBaseline = (int) data_get($baselineFunnel, 'accepted_entries', data_get($baseline, 'total_trades', 0));
+        $channel = (string) data_get($expected, 'veto_channel', '');
+        $vetoCandidate = $this->vetoCount($candidateFunnel, $channel);
+        $vetoBaseline = $this->vetoCount($baselineFunnel, $channel);
+        $checks = [];
+        if (data_get($expected, 'raw_signal') === 'unchanged') {
+            $checks['raw_signal'] = ['expected' => 'unchanged', 'baseline' => $rawBaseline, 'candidate' => $rawCandidate,
+                'status' => $rawBaseline === $rawCandidate ? 'matched' : 'contradicted'];
+        }
+        if ($channel !== '') {
+            $expectedDirection = (string) data_get($expected, 'veto_direction', 'change');
+            $vetoStatus = match ($expectedDirection) {
+                'decrease' => $vetoBaseline === 0
+                    ? 'not_applicable_no_baseline_veto'
+                    : ($vetoCandidate < $vetoBaseline ? 'matched' : ($vetoCandidate === $vetoBaseline ? 'no_effect' : 'contradicted')),
+                'increase' => $vetoCandidate > $vetoBaseline ? 'matched' : ($vetoCandidate === $vetoBaseline ? 'no_effect' : 'contradicted'),
+                // Session, topology and transition interventions declare a
+                // non-directional change: opening or closing the veto path
+                // is evidence, while no movement falsifies the claim.
+                default => $vetoCandidate !== $vetoBaseline ? 'matched' : 'no_effect',
+            };
+            $checks['veto_channel'] = ['channel' => $channel, 'expected_direction' => data_get($expected, 'veto_direction', 'change'),
+                'baseline' => $vetoBaseline, 'candidate' => $vetoCandidate,
+                'status' => $vetoStatus];
+        }
+        if (in_array(data_get($expected, 'accepted_entries'), ['increase_or_same', 'change'], true)) {
+            $checks['accepted_entries'] = ['expected' => data_get($expected, 'accepted_entries'), 'baseline' => $acceptedBaseline, 'candidate' => $acceptedCandidate,
+                'status' => data_get($expected, 'accepted_entries') === 'increase_or_same'
+                    ? ($acceptedCandidate >= $acceptedBaseline ? 'matched' : 'contradicted')
+                    : ($acceptedCandidate !== $acceptedBaseline ? 'matched' : 'no_effect')];
+        }
+        if (data_get($expected, 'accepted_entries') === 'unchanged_or_near') {
+            // Exit/risk interventions should not silently become entry
+            // interventions.  Permit normal discrete replay noise, but
+            // make a material trade-set shift falsify that causal claim.
+            $tolerance = max(1, (int) ceil($acceptedBaseline * 0.10));
+            $delta = abs($acceptedCandidate - $acceptedBaseline);
+            $checks['accepted_entries'] = [
+                'expected' => 'unchanged_or_near',
+                'baseline' => $acceptedBaseline,
+                'candidate' => $acceptedCandidate,
+                'tolerance' => $tolerance,
+                'status' => $delta <= $tolerance ? 'matched' : 'contradicted',
+            ];
+        }
+        $checks = [
+            ...$checks,
+            ...$this->expectedDistributionChecks($expected, $candidate, $baseline),
+        ];
+        $statuses = collect($checks)->pluck('status')->all();
+        $status = match (true) {
+            $checks === [] => $behaviourChanged ? 'observed_generic_effect' : 'no_expected_effect',
+            in_array('contradicted', $statuses, true) => 'contradicted',
+            // A pre-registered structural claim cannot be credited merely
+            // because a generic ledger hash moved. When its declared plane
+            // is absent from the replay projection, the planner must treat
+            // the experiment as unverified rather than reusable evidence.
+            in_array('evidence_incomplete', $statuses, true) => 'evidence_incomplete',
+            // An invariant such as unchanged raw signals is supporting
+            // evidence, never the claimed causal effect by itself.  A
+            // confidence/EV ablation with no applicable veto and no changed
+            // trade/event behaviour must be recorded as a no-effect probe,
+            // not as a successful expected-behaviour match.
+            ! $behaviourChanged => 'no_expected_effect',
+            in_array('matched', $statuses, true) => 'matched',
+            $behaviourChanged => 'unexpected_behavioral_change',
+            default => 'no_expected_effect',
+        };
+
+        return ['protocol' => 'expected_behavioral_change_v1', 'status' => $status, 'checked' => true,
+            'expected' => $expected, 'checks' => $checks, 'behavior_changed' => $behaviourChanged, 'promotion_evidence' => false];
+    }
+
+    /** @param array<string, mixed> $funnel */
+    private function vetoCount(array $funnel, string $channel): int
+    {
+        if ($channel === '') return 0;
+        $total = 0;
+        foreach ((array) data_get($funnel, 'rejected', []) as $reason => $count) {
+            if (str_contains(strtolower((string) $reason), strtolower($channel))) $total += max(0, (int) $count);
+        }
+        return $total;
+    }
+
+    /**
+     * Structural and exit mutations must be checked on their declared
+     * behavioural plane, not merely credited because any ledger changed.
+     * The replay payload varies by strategy version, so each dimension has a
+     * small ordered set of canonical aliases.
+     *
+     * @param array<string, mixed> $expected
+     * @param array<string, mixed> $candidate
+     * @param array<string, mixed> $baseline
+     * @return array<string, array<string, mixed>>
+     */
+    private function expectedDistributionChecks(array $expected, array $candidate, array $baseline): array
+    {
+        $dimensions = [
+            'exit_state' => ['exit_distribution', 'trade_attribution.by_exit', 'event_ledger_hash'],
+            'holding_time_distribution' => ['holding_time_distribution', 'trade_attribution.holding_time_distribution'],
+            'stress_cost' => ['stress_test.profit_factor', 'stress_cost_exit.profit_factor'],
+            'trade_loss_profile' => ['stress_test.trade_loss_profile', 'stress_cost_exit.trade_loss_profile'],
+            'regime_coverage' => ['pf_attribution.breakdown.by_regime', 'pf_attribution.by_regime'],
+            'entry_topology' => ['entry_topology_distribution', 'event_ledger_hash'],
+            'accepted_trade_set' => ['trade_ledger_hash', 'observability_manifest.trade_ledger_hash'],
+            'calendar_or_transition_distribution' => ['pf_attribution.breakdown.by_month', 'pf_attribution.by_month', 'event_ledger_hash'],
+            'entry_or_exit_state' => ['event_ledger_hash'],
+            'stress_or_temporal_behavior' => ['stress_test.profit_factor', 'temporal_stability', 'event_ledger_hash'],
+        ];
+        $checks = [];
+        foreach ($dimensions as $dimension => $paths) {
+            if (data_get($expected, $dimension) !== 'change') continue;
+            $candidateValue = $this->firstPresentValue($candidate, $paths);
+            $baselineValue = $this->firstPresentValue($baseline, $paths);
+            if (! $candidateValue['available'] || ! $baselineValue['available']) {
+                $checks[$dimension] = ['expected' => 'change', 'status' => 'evidence_incomplete'];
+                continue;
+            }
+            $changed = $this->canonicalValue($candidateValue['value']) !== $this->canonicalValue($baselineValue['value']);
+            $checks[$dimension] = [
+                'expected' => 'change', 'path' => $candidateValue['path'],
+                'status' => $changed ? 'matched' : 'no_effect',
+            ];
+        }
+
+        return $checks;
+    }
+
+    /** @param array<string, mixed> $payload @param array<int, string> $paths */
+    private function firstPresentValue(array $payload, array $paths): array
+    {
+        foreach ($paths as $path) {
+            $marker = new \stdClass();
+            $value = data_get($payload, $path, $marker);
+            if ($value !== $marker) return ['available' => true, 'path' => $path, 'value' => $value];
+        }
+        return ['available' => false, 'path' => null, 'value' => null];
+    }
+
+    private function canonicalValue(mixed $value): string
+    {
+        if (is_array($value)) {
+            $normalized = $value;
+            ksort($normalized);
+            return $this->hash($normalized);
+        }
+        return is_bool($value) ? ($value ? 'true' : 'false') : (string) $value;
     }
 
     /** @return array{available: bool, result: array<string, mixed>, source: string, agent_id: ?int} */

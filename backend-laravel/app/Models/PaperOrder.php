@@ -10,5 +10,6 @@ class PaperOrder extends Model
     public function marketPerformance(): BelongsTo { return $this->belongsTo(ModelMarketPerformance::class); }
     public function fills(): HasMany { return $this->hasMany(PaperFill::class); }
     public function signal(): BelongsTo { return $this->belongsTo(PaperSignal::class, 'paper_signal_id'); }
+    public function paperSignal(): BelongsTo { return $this->belongsTo(PaperSignal::class, 'paper_signal_id'); }
     public function outcome(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(PaperSignalOutcome::class); }
 }

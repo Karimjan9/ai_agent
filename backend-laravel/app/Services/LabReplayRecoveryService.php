@@ -38,11 +38,11 @@ class LabReplayRecoveryService
         $priceKey = $includeVolume ? 'volume' : 'price';
         $this->assertFrozenSnapshotContext($context, $priceKey);
         $price = $this->datasets->ensureGenerationSnapshot($generation, $includeVolume);
-        $foundation = null;
-        if ($mode === 'full') {
-            $this->assertFrozenSnapshotContext($context, 'foundation');
-            $foundation = $this->datasets->ensureGenerationFoundationSnapshot($generation);
-        }
+        // Screening itself now runs against the pre-2026 foundation while
+        // retaining the canonical snapshot only as the later paper/forward
+        // reference. Both files must therefore be frozen on recovery.
+        $this->assertFrozenSnapshotContext($context, 'foundation');
+        $foundation = $this->datasets->ensureGenerationFoundationSnapshot($generation);
         $regime = null;
         if (strtoupper((string) $generation->laboratory->timeframe) === 'M15') {
             $this->assertFrozenSnapshotContext($context, 'regime');
@@ -119,9 +119,7 @@ class LabReplayRecoveryService
         $snapshots = [
             'price' => (array) data_get($context, "canonical_dataset_snapshots.{$priceKey}", []),
         ];
-        if ((string) data_get($contract, 'mode') === 'full') {
-            $snapshots['foundation'] = (array) data_get($context, 'canonical_dataset_snapshots.foundation', []);
-        }
+        $snapshots['foundation'] = (array) data_get($context, 'canonical_dataset_snapshots.foundation', []);
         if (strtoupper((string) data_get($contract, 'timeframe')) === 'M15') {
             $snapshots['regime'] = (array) data_get($context, 'canonical_dataset_snapshots.regime', []);
         }
@@ -160,9 +158,17 @@ class LabReplayRecoveryService
         }
 
         $manifest = (array) data_get($run->request_meta, 'dataset_manifest', []);
+        $screening = $mode === 'screen';
         $previous = [
-            'price' => data_get($manifest, 'snapshot_sha256', data_get($manifest, 'data_hash')),
-            'foundation' => data_get($manifest, 'foundation.sha256', data_get($manifest, 'foundation.snapshot_sha256')),
+            // Historical screening writes its primary snapshot hash as the
+            // foundation and carries the canonical paper hash separately.
+            // Full replay keeps the existing canonical-primary shape.
+            'price' => $screening
+                ? data_get($manifest, 'data_partition.paper_snapshot_sha256')
+                : data_get($manifest, 'snapshot_sha256', data_get($manifest, 'data_hash')),
+            'foundation' => $screening
+                ? data_get($manifest, 'snapshot_sha256', data_get($manifest, 'data_hash'))
+                : data_get($manifest, 'foundation.sha256', data_get($manifest, 'foundation.snapshot_sha256')),
             'regime' => data_get($manifest, 'regime.sha256', data_get($manifest, 'regime_snapshot_sha256')),
         ];
         $mismatches = [];

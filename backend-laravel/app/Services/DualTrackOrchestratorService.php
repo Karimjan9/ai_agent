@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\DualTrackRun;
+use App\Models\DualTrackSnapshotManifest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -16,6 +17,10 @@ class DualTrackOrchestratorService
         private DualTrackDecisionService $decisions,
         private CapabilityCellRouterService $router,
         private DualTrackRiskShieldService $riskShield,
+        private DualTrackExchangeService $exchange,
+        private DualTrackDiversityService $diversity,
+        private TwinInferenceEvidenceService $inferenceEvidence,
+        private TwinRedTeamService $redTeam,
     ) {}
 
     /** @return array<string, mixed> */
@@ -28,6 +33,7 @@ class DualTrackOrchestratorService
     ): array {
         $started = microtime(true);
         $context['task_type'] ??= 'signal';
+        $this->persistSnapshotManifest($context);
         $cellKey = DualTrackDecisionService::cellKey($context);
         $decision = $this->decisions->evaluate($context, $champion, $council, $evidence);
         $shield = $this->riskShield->assess($context, $champion, $council, $evidence);
@@ -96,6 +102,27 @@ class DualTrackOrchestratorService
         });
 
         $this->memoryObservation($row, $context, $decision);
+        $inference = $this->inferenceEvidence->record($row, $context, $champion, $council);
+        if (($inference['status'] ?? null) === 'projection_collision'
+            && (bool) config('services.twin_intelligence.require_independent_inference', true)) {
+            $decision['status'] = 'blocked';
+            $decision['selected_decision'] = 'WAIT';
+            $decision['reason'] = 'TWIN_INFERENCE_INDEPENDENCE_FAILURE';
+            $row->update(['status' => 'blocked', 'selected_decision' => 'WAIT', 'evidence' => [...((array) $row->evidence), 'twin_inference' => $inference, 'promotion_evidence' => false]]);
+        }
+        $exchange = $this->exchange->recordForRun($row, $champion, $council, $decision);
+        $diversity = $this->diversity->record($row, $champion, $council);
+        $redTeam = $this->redTeam->plan($row);
+        $forwardWork = null;
+        if (isset($metadata['candidate_id'])) {
+            $forwardWork = app(DualTrackEvidenceWorkItemService::class)->enqueue(
+                'forward_holdout',
+                $row->run_key.'|forward|'.(string) $metadata['candidate_id'],
+                $row,
+                ['candidate_id' => $metadata['candidate_id'], 'request' => data_get($metadata, 'twin_request', [])],
+                6,
+            );
+        }
 
         return [
             ...$decision,
@@ -104,6 +131,11 @@ class DualTrackOrchestratorService
             'routing' => $routing,
             'input_hash' => $inputHash,
             'output_hash' => $outputHash,
+            'inference' => $inference,
+            'exchange' => $exchange,
+            'diversity' => $diversity,
+            'red_team' => $redTeam,
+            'forward_work' => $forwardWork,
             'promotion_evidence' => false,
         ];
     }
@@ -111,6 +143,30 @@ class DualTrackOrchestratorService
     private function hash(array $payload): string
     {
         return hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+    }
+
+    private function persistSnapshotManifest(array $context): void
+    {
+        if (! Schema::hasTable('dual_track_snapshot_manifests')) return;
+        $manifest = (array) ($context['snapshot_manifest'] ?? []);
+        $hash = (string) ($manifest['snapshot_hash'] ?? $context['snapshot_hash'] ?? '');
+        if ($hash === '' || (string) ($manifest['dataset_hash'] ?? '') === '') return;
+        DualTrackSnapshotManifest::query()->updateOrCreate(
+            ['snapshot_hash' => $hash],
+            [
+                'symbol' => strtoupper((string) ($context['symbol'] ?? 'UNKNOWN')),
+                'timeframe' => strtoupper((string) ($context['timeframe'] ?? 'UNKNOWN')),
+                'candle_count' => (int) ($manifest['candle_count'] ?? 0),
+                'first_candle_at' => $manifest['first_candle'] ?? null,
+                'latest_candle_at' => $manifest['latest_candle'] ?? null,
+                'dataset_hash' => $manifest['dataset_hash'],
+                'feature_config_hash' => $manifest['feature_config_hash'] ?? null,
+                'execution_config_hash' => $manifest['execution_config_hash'] ?? null,
+                'manifest' => $manifest,
+                'status' => ($manifest['status'] ?? 'sealed') === 'sealed' ? 'sealed' : 'invalid',
+                'promotion_evidence' => false,
+            ],
+        );
     }
 
     private function memoryObservation(DualTrackRun $run, array $context, array $decision): void

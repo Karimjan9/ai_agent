@@ -131,10 +131,10 @@ class RunMtfStrategyResearch extends Command
         // The no-volume control remains explicit through volume_lane=none.
         $m15 = $snapshot
             ? array_values((array) ($snapshot['m15_candles'] ?? []))
-            : $candles->candlesForBacktest($symbol, 'M15', 5000, true);
+            : $candles->candlesForTraining($symbol, 'M15', limit: 5000, includeVolume: true);
         $h1 = $snapshot
             ? array_values((array) ($snapshot['h1_candles'] ?? []))
-            : $candles->candlesForBacktest($symbol, 'H1', 2000, true);
+            : $candles->candlesForTraining($symbol, 'H1', limit: 2000, includeVolume: true);
         if (count($m15) < 200 || count($h1) < 200) {
             $this->error('Strategy research uchun mustaqil M15 va H1 candle stream yetarli emas.');
             return self::FAILURE;

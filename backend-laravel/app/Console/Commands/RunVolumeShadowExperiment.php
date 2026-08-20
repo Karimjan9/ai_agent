@@ -177,6 +177,15 @@ class RunVolumeShadowExperiment extends Command
             'initial_balance' => 10000,
             'risk_per_trade' => 1,
             'volume_context' => $volumeContext,
+            'policy_context' => [
+                'data_boundary' => [
+                    'protocol' => 'pre_2026_training_paper_only_v1',
+                    'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                    'paper_allowed_for_replay' => false,
+                    'paper_allowed_for_mutation' => false,
+                    'promotion_evidence' => false,
+                ],
+            ],
             'execution' => $this->executionAssumptions((string) $source->symbol),
             'execution_contract' => app(ExecutionContractService::class)->for((string) $source->symbol, (string) $source->timeframe),
             'emit_decision_trace' => false,

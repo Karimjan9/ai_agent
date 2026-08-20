@@ -14,6 +14,14 @@ class MarketTrainingDataService
 
     public const DEFAULT_PROVIDER = 'dukascopy';
 
+    public function trainingCutoff(): CarbonImmutable
+    {
+        return CarbonImmutable::parse(
+            (string) config('services.lab_selection.training_end_exclusive', '2026-01-01 00:00:00'),
+            'UTC',
+        )->utc();
+    }
+
     /**
      * The archive manifest is the resumable control plane. The candle table
      * itself remains append/upsert-only so a retry can never create a second
@@ -27,6 +35,10 @@ class MarketTrainingDataService
         CarbonImmutable $from,
         CarbonImmutable $to,
     ): MarketTrainingArchive {
+        $cutoff = $this->trainingCutoff();
+        if ($to->greaterThan($cutoff)) {
+            $to = $cutoff;
+        }
         $identity = [
             'dataset_key' => $dataset,
             'provider' => $provider,
@@ -36,6 +48,13 @@ class MarketTrainingDataService
 
         $archive = MarketTrainingArchive::query()->where($identity)->first();
         if ($archive) {
+            if ($archive->target_to === null || CarbonImmutable::instance($archive->target_to)->utc()->greaterThan($to)) {
+                $archive->update([
+                    'target_to' => $to,
+                    'status' => 'partial',
+                    'last_error' => null,
+                ]);
+            }
             return $archive;
         }
 
@@ -65,6 +84,7 @@ class MarketTrainingDataService
         }
 
         $now = now();
+        $cutoff = $this->trainingCutoff();
         $rows = [];
         foreach ($candles as $candle) {
             $time = $this->normaliseTime($candle['time'] ?? null);
@@ -76,6 +96,11 @@ class MarketTrainingDataService
 
             if ($time === null || ! $this->validOhlc($open, $high, $low, $close) || ! is_finite($volume)) {
                 continue;
+            }
+            if (CarbonImmutable::parse($time, 'UTC')->greaterThanOrEqualTo($cutoff)) {
+                throw new RuntimeException(
+                    'Training archive 2026-01-01 dan keyingi candle qabul qilmaydi; 2026 faqat paper lane uchun.'
+                );
             }
 
             $rows[] = [
@@ -265,7 +290,8 @@ class MarketTrainingDataService
             ->where('dataset_key', $dataset)
             ->where('provider', $provider)
             ->where('symbol', strtoupper($symbol))
-            ->where('timeframe', strtoupper($timeframe));
+            ->where('timeframe', strtoupper($timeframe))
+            ->where('time', '<', $this->trainingCutoff());
     }
 
     /** @return array<string, mixed> */
