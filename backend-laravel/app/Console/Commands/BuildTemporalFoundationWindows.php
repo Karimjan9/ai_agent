@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\AiLaboratory;
+use App\Models\CandidateGateDecision;
 use App\Services\ExecutionContractService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -307,16 +308,34 @@ class BuildTemporalFoundationWindows extends Command
 
         $ranges = [];
         foreach ($targetedGenerations as $generation) {
-            $pattern = storage_path("app/lab-datasets/generations/G{$generation->generation}_id{$generation->id}_{$symbol}_{$timeframe}*.manifest.json");
-            foreach (glob($pattern) ?: [] as $path) {
-                $manifest = json_decode((string) file_get_contents($path), true);
-                if (! is_array($manifest)) continue;
-                $first = $this->timestamp(data_get($manifest, 'first_candle_at'));
-                $last = $this->timestamp(data_get($manifest, 'last_candle_at'));
-                if (! $first || ! $last || $last->lessThan($first)) continue;
-                $key = $first->toIso8601String().'|'.$last->toIso8601String();
-                $ranges[$key] = ['first' => $first, 'last' => $last, 'manifest' => $path];
-            }
+            // A generation dataset manifest describes the entire immutable
+            // foundation archive, not the bounded tail the evaluator actually
+            // consumed. Treating it as the replay range makes every earlier
+            // timestamp look contaminated and can make an independent holdout
+            // mathematically impossible. Screening gate decisions carry the
+            // immutable evaluated `period`; use that narrower evidence only.
+            $agentIds = $generation->agents()->pluck('id');
+            if ($agentIds->isEmpty()) continue;
+            CandidateGateDecision::query()
+                ->whereIn('lab_agent_id', $agentIds)
+                ->where('stage', 'screening')
+                ->orderBy('id')
+                ->get(['id', 'metrics'])
+                ->each(function (CandidateGateDecision $decision) use (&$ranges): void {
+                    $period = (string) data_get($decision->metrics, 'period', '');
+                    if (! preg_match('/^(\d{4}-\d{2}-\d{2})(?:[^-]*)\s+-\s+(\d{4}-\d{2}-\d{2})/', $period, $matches)) {
+                        return;
+                    }
+                    $first = $this->timestamp($matches[1]);
+                    $last = $this->timestamp($matches[2]);
+                    if (! $first || ! $last || $last->lessThan($first)) return;
+                    $key = $first->toIso8601String().'|'.$last->toIso8601String();
+                    $ranges[$key] = [
+                        'first' => $first,
+                        'last' => $last->endOfDay(),
+                        'manifest' => 'candidate_gate_decision:'.$decision->id,
+                    ];
+                });
         }
 
         usort($ranges, fn (array $left, array $right): int => $left['first']->getTimestamp() <=> $right['first']->getTimestamp());

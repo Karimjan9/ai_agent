@@ -36,7 +36,19 @@ class MutationResponseMapService
             ? app(FailureRepairAnchorService::class)->baselineResult($agent)
             : $this->parentBaseline($agent);
         $sibling = (string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', ''));
-        $control = $this->isControlOnly($metadata, $sibling);
+        $control = $this->hasFrozenControlContract($metadata);
+
+        // A control is sealed once, at its first immutable observation.  The
+        // pairer consumes only this contract; it never infers controlhood
+        // later from unrelated constructor metadata.
+        $controlContract = $control ? [
+            'protocol' => 'frozen_control_v2',
+            'control_only' => true,
+            'role' => 'control',
+            'generation_id' => (int) $agent->lab_generation_id,
+            'data_hash' => (string) data_get($result, 'data_manifest.sha256', data_get($result, 'data_manifest.snapshot_sha256', '')),
+            'execution_hash' => (string) data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash', '')),
+        ] : null;
 
         return $this->persist($agent, 'screening', $result, $baseline, [
             'status' => $control ? 'control' : 'screen_observed',
@@ -52,6 +64,7 @@ class MutationResponseMapService
                     'execution_hash',
                     data_get($result, 'observed_metrics.execution_contract.execution_hash'),
                 )),
+                'control_contract' => $controlContract,
             ],
         ]);
     }
@@ -80,7 +93,15 @@ class MutationResponseMapService
             'positive_windows' => data_get($skillVerification, 'independent_forward_windows.positive_windows', 0),
         ]);
         $sibling = (string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', ''));
-        $control = $this->isControlOnly($metadata, $sibling);
+        $control = $this->hasFrozenControlContract($metadata);
+        $controlContract = $control ? (array) data_get($options, 'metadata.control_contract', [
+            'protocol' => 'frozen_control_v2',
+            'control_only' => true,
+            'role' => 'control',
+            'generation_id' => (int) $agent->lab_generation_id,
+            'data_hash' => (string) data_get($result, 'data_manifest.sha256', data_get($result, 'data_manifest.snapshot_sha256', '')),
+            'execution_hash' => (string) data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash', '')),
+        ]) : null;
 
         $status = $control
             ? 'control'
@@ -229,6 +250,13 @@ class MutationResponseMapService
             || (string) data_get($portfolio, 'structural_family', '') === 'frozen_control';
     }
 
+    private function hasFrozenControlContract(array $metadata): bool
+    {
+        return (string) data_get($metadata, 'control_contract.protocol') === 'frozen_control_v2'
+            && data_get($metadata, 'control_contract.control_only') === true
+            && (string) data_get($metadata, 'control_contract.role') === 'control';
+    }
+
     /** @return array<string, mixed>|null */
     private function persist(LabAgent $agent, string $stage, array $result, array $baseline, array $options): ?array
     {
@@ -282,7 +310,15 @@ class MutationResponseMapService
         ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         $status = (string) ($options['status'] ?? 'observed');
         $sibling = (string) ($options['sibling_kind'] ?? data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', '')));
-        $control = $this->isControlOnly($metadata, $sibling);
+        $control = $this->hasFrozenControlContract($metadata);
+        $controlContract = $control ? (array) data_get($options, 'metadata.control_contract', [
+            'protocol' => 'frozen_control_v2',
+            'control_only' => true,
+            'role' => 'control',
+            'generation_id' => (int) $agent->lab_generation_id,
+            'data_hash' => (string) data_get($result, 'data_manifest.sha256', data_get($result, 'data_manifest.snapshot_sha256', '')),
+            'execution_hash' => (string) data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash', '')),
+        ]) : null;
         if ($stage !== 'control' && ! $singleGene) {
             $status = 'diagnostic_multi_gene';
         }
@@ -321,6 +357,7 @@ class MutationResponseMapService
                 'repair_anchor_sibling_cohort_id' => data_get($agent->modelVersion?->metadata, 'repair_anchor.sibling_cohort_id'),
                 'data_manifest_hash' => data_get($result, 'data_manifest.sha256', data_get($result, 'data_manifest.snapshot_sha256')),
                 'execution_hash' => data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash')),
+                'control_contract' => $controlContract,
                 'anchor_delta' => data_get($observability, 'anchor_delta', data_get($targetDelta, 'delta')),
                 'control_delta' => data_get($observability, 'control_delta'),
                 'control_relative_improved' => (bool) data_get($observability, 'control_relative_improved', false),
@@ -345,6 +382,7 @@ class MutationResponseMapService
                 'metadata' => [
                     ...((array) $row->metadata),
                     'constructor_control_invariant' => true,
+                    'control_contract' => $controlContract,
                     'promotion_evidence' => false,
                 ],
             ]);

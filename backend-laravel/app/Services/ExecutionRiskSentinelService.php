@@ -64,6 +64,32 @@ class ExecutionRiskSentinelService
         ]);
     }
 
+    /** In-trade layer: it can only hold, shrink, or abort an open paper position. */
+    public function assessInTrade(PaperOrder $order, array $market): array
+    {
+        $entry = max(.0000001, (float) $order->entry_price);
+        $price = (float) ($market['price'] ?? $entry);
+        $stop = (float) $order->stop_loss;
+        $adverse = $order->direction === 'BUY' ? max(0, ($entry - $price) / $entry * 100) : max(0, ($price - $entry) / $entry * 100);
+        $shock = (bool) ($market['volatility_shock'] ?? false) || (float) ($market['spread_atr_ratio'] ?? 0) > .30;
+        $drift = abs($price - $entry) / max(abs($entry - $stop), .0000001);
+        $action = $shock && $adverse > .25 ? 'ABORT' : (($shock || $drift > 1.25) ? 'SHRINK' : 'HOLD');
+
+        return ['protocol' => self::PROTOCOL, 'layer' => 'in_trade', 'action' => $action, 'adverse_excursion_percent' => round($adverse, 6), 'execution_drift_stop_units' => round($drift, 6), 'reason_code' => $action === 'ABORT' ? 'VOLATILITY_OR_EXECUTION_SHOCK' : ($action === 'SHRINK' ? 'IN_TRADE_CAUTION' : 'IN_TRADE_RISK_OK'), 'promotion_evidence' => false];
+    }
+
+    /** Portfolio layer reports correlated exposure and never expands risk. */
+    public function assessPortfolio(string $symbol): array
+    {
+        $open = PaperOrder::query()->where('status', 'open')->where('evidence_status', 'valid')->get();
+        $group = $this->exposureGroup($symbol);
+        $correlated = $open->filter(fn (PaperOrder $order): bool => $this->exposureGroup($order->symbol) === $group)->count();
+        $dailyLoss = abs(min(0, (float) PaperOrder::query()->where('status', 'closed')->where('closed_at', '>=', now()->startOfDay())->sum('profit_percent')));
+        $blocked = $correlated >= (int) config('services.risk.max_positions_per_group', 2) || $dailyLoss >= (float) config('services.risk.daily_loss_limit_percent', 2);
+
+        return ['protocol' => self::PROTOCOL, 'layer' => 'portfolio', 'correlated_open_positions' => $correlated, 'daily_loss_percent' => round($dailyLoss, 6), 'action' => $blocked ? 'VETO' : ($correlated > 0 ? 'SHRINK' : 'ALLOW'), 'promotion_evidence' => false];
+    }
+
     private function equity(): float
     {
         $equity = (float) config('services.risk.paper_starting_equity', 10000);

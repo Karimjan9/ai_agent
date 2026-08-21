@@ -250,6 +250,9 @@ class FailureDojoService
 
     private function outcomeFor(LabLearningLanePair $pair): string
     {
+        if (! $pair->loadMissing('controlResponseMap')->isVerifiedControlPair()) {
+            return 'diagnostic_only';
+        }
         $signature = (array) $pair->failure_signature;
         $type = strtolower((string) data_get($signature, 'failure_type', data_get($signature, 'type', '')));
         if (str_contains($type, 'technical') || str_contains($type, 'evidence')) return 'technical_error';

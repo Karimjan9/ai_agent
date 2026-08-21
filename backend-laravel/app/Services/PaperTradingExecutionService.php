@@ -39,10 +39,17 @@ class PaperTradingExecutionService
         private DualTrackOrchestratorService $dualTrack,
         private DualTrackOutcomeService $dualTrackOutcomes,
         private TradingInstrumentOperatingSystemService $instruments,
+        private InstrumentPolicyRouterService $instrumentPolicy,
         private TradingCognitiveStackService $cognitiveStack,
         private InstrumentSettlementProjectionService $instrumentSettlements,
+        private InstrumentInvocationLedgerService $instrumentInvocations,
         private ExecutionRiskSentinelService $riskSentinel,
         private ExecutionTacticSettlementService $tacticSettlements,
+        private RegimeCapabilityRouter $capabilityRouter,
+        private CausalAttributionService $causalAttributions,
+        private ProgressScoreboardService $progressScoreboard,
+        private MarketStateEstimatorService $marketStateEstimator,
+        private CapabilityCellOrchestrator $capabilityCells,
     ) {}
 
     public function run(): array
@@ -281,7 +288,9 @@ class PaperTradingExecutionService
         // turn a candidate into WAIT, but it never replaces the sealed model
         // with a different strategy or creates promotion evidence by itself.
         if ($this->instruments->supports($candidate->symbol, $candidate->timeframe)) {
-            $instrumentRoute = $this->instruments->route($candidate->symbol, $candidate->timeframe, [
+            $signal['market_state_estimator'] = $this->marketStateEstimator->estimate($candidate->symbol, $candidate->timeframe, ['spread_atr_ratio' => data_get($signal, 'execution_contract.spread_atr_ratio', data_get($signal, 'spread_atr_ratio'))], $news);
+            $signal['capability_cell_orchestrator'] = $this->capabilityCells->decide($candidate->symbol, $candidate->timeframe, ['spread_atr_ratio' => data_get($signal, 'execution_contract.spread_atr_ratio', data_get($signal, 'spread_atr_ratio'))], $news, ['session' => $this->instrumentSession($signal), 'strategy_id' => (string) ($model->strategy ?? '')]);
+            $instrumentRoute = $this->instrumentPolicy->route($candidate->symbol, $candidate->timeframe, [
                 'decision_key' => implode('|', ['paper-instrument', $candidate->id, $signal['signal_time'] ?? 'latest']),
                 'regime' => (string) ($signal['market_regime'] ?? 'unknown'),
                 'm15_regime' => (string) ($signal['market_regime'] ?? 'unknown'),
@@ -293,8 +302,10 @@ class PaperTradingExecutionService
             $signal['trading_instrument_router'] = [
                 'decision' => $instrumentRoute['decision'], 'reason_code' => $instrumentRoute['reason_code'],
                 'playbook_key' => $instrumentRoute['playbook']?->playbook_key, 'state' => $instrumentRoute['state'],
-                'router_decision_id' => $instrumentRoute['router_decision']->id, 'promotion_evidence' => false,
+                'router_decision_id' => $instrumentRoute['router_decision']->id,
+                'instrument_bundle' => $instrumentRoute['instrument_bundle'], 'promotion_evidence' => false,
             ];
+            $signal['instrument_bundle'] = $instrumentRoute['instrument_bundle'];
             if ($instrumentRoute['decision'] === 'ABSTAIN') {
                 $signal['signal'] = 'WAIT';
                 $signal['instrument_router_reason'] = $instrumentRoute['reason_code'];
@@ -314,6 +325,17 @@ class PaperTradingExecutionService
                 $signal['signal'] = 'WAIT';
                 $signal['cognitive_stack_reason'] = $cognitivePlan['reason_codes'][0] ?? 'COGNITIVE_STACK_PREFLIGHT_VETO';
             }
+            $capabilityRoute = $this->capabilityRouter->route($candidate->symbol, $candidate->timeframe, (array) ($instrumentRoute['state'] ?? []), [
+                'strategy_id' => (string) ($model->strategy ?? ''),
+                'tactic_id' => data_get($cognitivePlan, 'tactic_executor.tactic_id'),
+                'research_allowed' => (bool) data_get($model->metadata, 'strategy_mastery.innovation_allowed', false),
+                'risk_veto' => $cognitivePlan['decision'] === 'WAIT',
+            ]);
+            $signal['capability_organism'] = $capabilityRoute;
+            if (! $capabilityRoute['capital_authorized']) {
+                $signal['signal'] = 'WAIT';
+                $signal['capability_router_reason'] = $capabilityRoute['reason_code'];
+            }
         }
 
         $captureReason = match (true) {
@@ -322,6 +344,7 @@ class PaperTradingExecutionService
             $news['active'] => 'BLOCKED_BY_CALENDAR',
             isset($signal['allocator_reason']) => 'BLOCKED_BY_ALLOCATOR',
             isset($signal['cognitive_stack_reason']) => 'BLOCKED_BY_COGNITIVE_STACK',
+            isset($signal['capability_router_reason']) => 'BLOCKED_BY_CAPABILITY_ROUTER',
             ($signal['signal'] ?? 'WAIT') === 'WAIT' => 'NO_SIGNAL_OPPORTUNITY',
             default => 'SIGNAL_CAPTURED',
         };
@@ -369,10 +392,14 @@ class PaperTradingExecutionService
             'payload_hash' => hash('sha256', json_encode($this->canonicalize($signal), JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
         ]);
         $signal['payload_hash'] = $paperSignal->payload_hash;
+        $this->instrumentInvocations->recordDecision($paperSignal);
         $this->mtfLedger->recordOfficial($paperSignal, $signal);
         $this->mtfLedger->recordShadow($candidate, $paperSignal, $signal);
         $this->executionState->record($candidate, 'signal_created', $paperSignal, null, ['provider' => 'canonical_market_data',
             'requested_price' => $paperSignal->price, 'payload' => ['candle_time' => $paperSignal->candle_time?->toIso8601String()]]);
+        $this->executionState->transition($candidate, 'locate', $paperSignal, null, null, ['market_state' => data_get($signal, 'market_state_estimator')]);
+        $this->executionState->transition($candidate, 'trigger', $paperSignal, null, 'locate');
+        $this->executionState->transition($candidate, 'confirm', $paperSignal, null, 'trigger', ['tactic' => data_get($signal, 'trading_cognitive_stack.tactic_executor')]);
 
         return 1;
     }
@@ -545,6 +572,7 @@ class PaperTradingExecutionService
             'filled_at' => $entryCandle->time,
             'payload' => null,
         ]);
+        $this->executionState->transition($candidate, 'open', $signal, $order, 'confirm', ['risk_sentinel' => $sentinelPlan]);
         $this->executionState->record($candidate, 'filled', $signal, $order, ['provider' => $broker, 'requested_price' => $entry, 'filled_price' => $entry, 'requested_units' => $units, 'filled_units' => $units]);
         $candidate->update(['status' => 'paper', 'paper_status' => 'running']);
 
@@ -636,6 +664,8 @@ class PaperTradingExecutionService
                 'payload' => ['exit_reason' => $exitReason],
             ]);
             $this->executionState->record($candidate, 'closed', $order->paperSignal, $order, ['provider' => $order->broker, 'filled_price' => $price, 'filled_units' => $order->units, 'reason' => $exitReason]);
+            $this->executionState->transition($candidate, in_array($exitReason, ['stop_loss', 'invalidated'], true) ? 'abort' : 'manage', $order->paperSignal, $order, 'open', ['exit_reason' => $exitReason]);
+            $this->executionState->transition($candidate, 'review', $order->paperSignal, $order, in_array($exitReason, ['stop_loss', 'invalidated'], true) ? 'abort' : 'manage');
             if ($order->paper_signal_id) {
                 $audit = $this->selfAudit($candidate, $order, $exitReason, $profit);
                 $outcome = PaperSignalOutcome::firstOrCreate(['paper_signal_id' => $order->paper_signal_id], [
@@ -652,7 +682,10 @@ class PaperTradingExecutionService
                 if ($order->paperSignal) {
                     $this->dualTrackOutcomes->settlePaperOutcome($candidate, $order, $outcome);
                     $this->instrumentSettlements->settle($order, $outcome);
+                    $this->instrumentInvocations->settle($order, $outcome);
                     $this->tacticSettlements->settle($order, $outcome);
+                    $this->causalAttributions->attribute($order, $outcome);
+                    $this->progressScoreboard->measure($order->symbol, $order->timeframe);
                 }
             }
             $this->recordClosedOrderMemory($candidate, $order->fresh());

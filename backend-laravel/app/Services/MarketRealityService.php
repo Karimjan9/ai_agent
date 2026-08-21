@@ -10,15 +10,20 @@ use App\Models\MarketMemory;
 use App\Models\MarketSimilarityMatch;
 use App\Models\MarketSpecies;
 use App\Models\MarketStateSnapshot;
-use App\Models\StrategyScore;
 use App\Models\StrategySpeciesPerformance;
 use App\Models\Symbol;
 use App\Models\TrainingSession;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
 class MarketRealityService
 {
+    public function __construct(
+        private FeatureValueCatalogService $featureCatalog,
+        private FeatureSnapshotService $featureSnapshots,
+    ) {}
+
     public function analyzeSymbol(Symbol $symbol, string $timeframe = 'H1', int $limit = 500): void
     {
         if (! Schema::hasTable('market_state_snapshots')) {
@@ -38,6 +43,7 @@ class MarketRealityService
             return;
         }
 
+        $this->featureCatalog->seed();
         $createdGenomes = collect();
 
         foreach ($candles as $index => $candle) {
@@ -48,6 +54,7 @@ class MarketRealityService
             $window = $candles->slice(max(0, $index - 20), 20)->values();
             $features = $this->features($candle, $window);
             $state = $this->classifyState($features);
+            $this->featureSnapshots->capture($symbol->code, $timeframe, CarbonImmutable::parse($candle->time), $this->canonicalFeatureValues($features, $state));
             $species = $this->speciesFor($state, $features);
             $snapshot = $this->upsertSnapshot($symbol, $candle, $timeframe, $features, $state, $species);
             $this->upsertProbabilities($snapshot, $features, $state);
@@ -153,6 +160,24 @@ class MarketRealityService
             'breakout_up' => $breakoutUp,
             'breakout_down' => $breakoutDown,
             'fake_breakout' => $fakeBreakout,
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function canonicalFeatureValues(array $features, array $state): array
+    {
+        return [
+            ...$features,
+            'body' => abs((float) $features['close'] - (float) $features['open']),
+            'wick' => (float) $features['range'] - abs((float) $features['close'] - (float) $features['open']),
+            'true_range' => (float) $features['range'], 'atr' => (float) $features['avg_range'],
+            'relative_volume' => (float) $features['volume_ratio'], 'displacement_atr' => (float) $features['range_ratio'],
+            'liquidity_quality' => (float) $features['liquidity_proxy_score'],
+            'volatility_state' => $features['expansion_score'] >= 70 ? 'high' : ($features['compression_score'] >= 70 ? 'low' : 'normal'),
+            'state_confidence' => (float) $state['confidence_score'] / 100,
+            'transition_hazard' => $features['fake_breakout'] ? .75 : min(.5, (float) $features['panic_score'] / 200),
+            'regime_probability' => (float) $state['confidence_score'] / 100,
+            'lookahead_safe' => true,
         ];
     }
 
@@ -398,7 +423,7 @@ class MarketRealityService
 
             $confidence = $this->clamp((float) $state->avg_confidence + min(20, (int) $state->evidence_count));
             $title = "Market state {$state->market_state} repeated {$state->evidence_count} times";
-            $discovery = "{$state->market_state} appears as a recurring market species pattern with avg confidence ".round((float) $state->avg_confidence, 2)."%.";
+            $discovery = "{$state->market_state} appears as a recurring market species pattern with avg confidence ".round((float) $state->avg_confidence, 2).'%.';
 
             MarketDiscovery::updateOrCreate(
                 ['title' => $title],

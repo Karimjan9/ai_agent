@@ -24,7 +24,7 @@ class LearningIntegrityRegressionTest extends TestCase
         $model = ModelVersion::create([
             'name' => 'constructor-control', 'strategy' => 'constructor-control', 'version' => 'v1',
             'generation' => 1, 'status' => 'testing', 'parameters' => [],
-            'metadata' => ['mutation_constructor_invariant' => ['control_only' => true]],
+            'metadata' => ['mutation_constructor_invariant' => ['control_only' => true], 'control_contract' => ['protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control', 'generation_id' => $generation->id, 'data_hash' => str_repeat('d', 64), 'execution_hash' => str_repeat('e', 64)]],
         ]);
         $agent = LabAgent::create([
             'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,

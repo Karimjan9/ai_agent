@@ -36,6 +36,7 @@ class LearningLaneTest extends TestCase
                 'screening_decision' => 'passed',
                 'execution_hash' => str_repeat('e', 64),
                 'data_manifest_hash' => str_repeat('d', 64),
+                'control_contract' => ['protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control', 'generation_id' => $control->lab_generation_id, 'data_hash' => str_repeat('d', 64), 'execution_hash' => str_repeat('e', 64)],
             ],
         ]);
         $candidateMap = LabMutationResponseMap::create([
@@ -86,7 +87,7 @@ class LearningLaneTest extends TestCase
             'target' => 'profit_factor', 'lab_agent_id' => $control->id,
             'evidence_run_id' => 'provisional-control-run',
             'observed_metrics' => ['profit_factor' => 1.0],
-            'metadata' => ['execution_hash' => $executionHash, 'data_manifest_hash' => $dataHash],
+            'metadata' => ['execution_hash' => $executionHash, 'data_manifest_hash' => $dataHash, 'control_contract' => ['protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control', 'generation_id' => $control->lab_generation_id, 'data_hash' => $dataHash, 'execution_hash' => $executionHash]],
         ]);
         $candidateMap = LabMutationResponseMap::create([
             'response_key' => str_repeat('2', 64), 'stage' => 'screening', 'status' => 'screen_observed',

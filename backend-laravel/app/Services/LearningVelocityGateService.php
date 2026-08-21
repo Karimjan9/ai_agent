@@ -10,6 +10,10 @@ use App\Models\LearningRecoveryEvent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabMutationResponseMap;
+use App\Models\LabLearningLanePair;
+use App\Models\AgentLearningEpisode;
+use App\Models\AgentLearningLesson;
+use App\Models\AgentLearningSettlement;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -72,11 +76,10 @@ class LearningVelocityGateService
                     ->whereIn('lab_agent_id', $agentIds)->where('stage', 'screening')
                     ->where('decision', 'passed')->get()->groupBy('lab_agent_id');
             }
-            $fullStatuses = ['challenger', 'forward_validated', 'paper', 'champion'];
-            $observations = $generations->map(function ($generation) use ($agents, $screenPasses, $fullStatuses): array {
+            $observations = $generations->map(function ($generation) use ($agents, $screenPasses): array {
                 $rows = $agents->where('lab_generation_id', $generation->id);
                 $passed = $rows->filter(fn ($agent): bool => $screenPasses->has($agent->id))->count();
-                $full = $rows->whereIn('lifecycle_status', $fullStatuses)->count();
+                $full = $this->canonicalProgressCount($rows->pluck('id'));
                 $active = $rows->whereIn('lifecycle_status', ['queued', 'screening', 'training', 'full_queued', 'full_validation'])->count();
                 return [
                     'generation' => (int) $generation->generation,
@@ -106,18 +109,23 @@ class LearningVelocityGateService
             $allowed = $active === 0
                 && ! (bool) data_get($starvation, 'starved', false)
                 && $unresolved < max(1, (int) config('services.lab_selection.learning_velocity_max_unresolved_screen_generations', 1));
+            $truth = $this->truthScoreboard($symbol, $tf);
+            $broken = (int) ($truth['false_green_count'] ?? 0) > 0
+                || ((int) ($truth['verified_pair_count'] ?? 0) > 0 && (int) ($truth['settlement_count'] ?? 0) === 0)
+                || ((int) ($truth['evaluation_completed'] ?? 0) > 0 && (int) ($truth['canonical_episode_count'] ?? 0) === 0);
 
             return [
                 ...$base,
                 'allowed' => $allowed,
-                'status' => (bool) data_get($starvation, 'starved', false)
+                'status' => $broken ? 'learning_broken' : ((bool) data_get($starvation, 'starved', false)
                     ? 'learning_starvation'
-                    : ($active > 0 ? 'learning_in_progress' : ($unresolved > 0 ? 'blocked_learning_backlog' : ($technical > 0 ? 'technical_history_quarantined' : 'healthy'))),
+                    : ($active > 0 ? 'learning_in_progress' : ($unresolved > 0 ? 'blocked_learning_backlog' : ($technical > 0 ? 'technical_history_quarantined' : 'healthy')))),
                 'technical_quarantine_generations' => $technical,
                 'unresolved_screen_generations' => $unresolved,
                 'active_learning_agents' => $active,
                 'lookback_generations' => $lookback,
                 'learning_starvation' => $starvation,
+                'learning_truth' => $truth,
                 'observations' => $observations,
                 'cached_for_seconds' => 15,
             ];
@@ -204,7 +212,7 @@ class LearningVelocityGateService
             $technical = $agents
                 ->filter(fn (LabAgent $agent): bool => $this->requiresTechnicalRecovery($agent))
                 ->count();
-            $fullProgress = $this->fullProgressCount($agentIds);
+            $fullProgress = $this->canonicalProgressCount($agentIds);
             $active = $agents->whereIn('lifecycle_status', [
                 'queued', 'screening', 'training', 'full_queued', 'full_validation',
             ])->count();
@@ -292,6 +300,7 @@ class LearningVelocityGateService
             'technical_recovery_agents' => $technicalRecovery,
             'active_learning_agents' => $activeLearning,
             'learning_starvation' => $starvation,
+            'learning_truth' => $this->truthScoreboard($symbol, $tf),
             'observations' => $observations,
         ];
     }
@@ -391,6 +400,48 @@ class LearningVelocityGateService
         }
 
         return $count;
+    }
+
+    /** Only canonical, settled, exact-control pairs are learning progress. */
+    private function canonicalProgressCount($agentIds): int
+    {
+        if ($agentIds->isEmpty() || ! Schema::hasTable('agent_learning_settlements')) return 0;
+        $pairs = LabLearningLanePair::query()->with('controlResponseMap')
+            ->whereIn('candidate_agent_id', $agentIds)
+            ->where('status', 'canonical_episode_settled')->get()
+            ->filter(fn (LabLearningLanePair $pair): bool => $pair->isVerifiedControlPair());
+        if ($pairs->isEmpty()) return 0;
+
+        return AgentLearningSettlement::query()
+            ->where('source_type', LabLearningLanePair::class)
+            ->whereIn('source_id', $pairs->pluck('id'))
+            ->count();
+    }
+
+    /** @return array<string,int|float> */
+    private function truthScoreboard(string $symbol, string $timeframe): array
+    {
+        $scope = fn ($query) => $query->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe));
+        $pairs = Schema::hasTable('lab_learning_lane_pairs') ? $scope(LabLearningLanePair::query()->with('controlResponseMap'))->get() : collect();
+        $verified = $pairs->filter(fn (LabLearningLanePair $pair): bool => $pair->isVerifiedControlPair());
+        $settlements = Schema::hasTable('agent_learning_settlements') ? AgentLearningSettlement::query()
+            ->where('source_type', LabLearningLanePair::class)->whereIn('source_id', $verified->pluck('id'))->count() : 0;
+        $lessons = Schema::hasTable('agent_learning_lessons') ? $scope(AgentLearningLesson::query())->get() : collect();
+        $dispatches = Schema::hasTable('lab_learning_lane_dispatches') ? $scope(LabLearningLaneDispatch::query())->get() : collect();
+        $falseGreen = $dispatches->where('status', 'completed')->filter(fn ($row): bool => ! $verified->contains('id', $row->pair_id))->count()
+            + $pairs->where('status', 'canonical_failed')->count();
+        $technical = Schema::hasTable('lab_generations') ? LabGeneration::query()->where('status', 'technical_quarantine')->whereHas('laboratory', fn ($q) => $q->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe)))->count() : 0;
+        $episodes = Schema::hasTable('agent_learning_episodes') ? AgentLearningEpisode::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->count() : 0;
+        $evaluations = Schema::hasTable('lab_evaluation_runs') ? DB::table('lab_evaluation_runs')->where('status', 'completed')->whereIn('lab_agent_id', LabAgent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->pluck('id'))->count() : 0;
+        $usableLessons = $lessons->filter(function (AgentLearningLesson $lesson) use ($verified): bool {
+            $pairId = (int) data_get($lesson->evidence, 'pair_id', 0);
+            return $pairId > 0 && $verified->contains('id', $pairId);
+        });
+        $confirmed = $usableLessons->where('status', 'confirmed')->count();
+        $provisional = $usableLessons->where('status', 'provisional')->count();
+        $real = $settlements + $confirmed - $pairs->where('status', 'canonical_failed')->count() - $falseGreen;
+
+        return ['generation_activity' => Schema::hasTable('lab_generations') ? LabGeneration::query()->whereHas('laboratory', fn ($q) => $q->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe)))->count() : 0, 'evaluation_completed' => $evaluations, 'verified_pair_count' => $verified->count(), 'canonical_episode_count' => $episodes, 'settlement_count' => $settlements, 'provisional_lesson_count' => $provisional, 'confirmed_skill_count' => $confirmed, 'anti_skill_count' => 0, 'canonical_failure_count' => $pairs->where('status', 'canonical_failed')->count(), 'false_green_count' => $falseGreen, 'learning_starvation' => $settlements === 0 ? 1 : 0, 'technical_quarantine' => $technical, 'insufficient_activity' => Schema::hasTable('agent_learning_settlements') ? AgentLearningSettlement::query()->where('evidence_state', 'insufficient_evidence')->count() : 0, 'real_progress' => $real];
     }
 
     /**

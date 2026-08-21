@@ -6391,6 +6391,21 @@ class LabPopulationService
                 : 'Parent currently unavailable; agent starts without a parent and may use an exact parent in a later generation.',
         ]);
         $agent->setRelation('modelVersion', $model);
+        if ($roleControl) {
+            // Constructor-time declaration makes the control identity
+            // explicit before a worker touches it. MutationResponseMapService
+            // replaces the provisional hashes with the sealed replay hashes.
+            $controlMetadata = (array) $model->fresh()->metadata;
+            $execution = (array) data_get($controlMetadata, 'execution_contract', []);
+            $controlMetadata['control_contract'] = [
+                'protocol' => 'frozen_control_v2', 'control_only' => true,
+                'role' => 'control', 'generation_id' => (int) $generation->id,
+                'data_hash' => (string) ($generation->data_fingerprint ?: data_get($generation->trigger_context, 'dataset_manifest.snapshot_sha256', '')),
+                'execution_hash' => hash('sha256', json_encode($execution, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)),
+                'status' => 'control_sealed_pending_replay', 'promotion_evidence' => false,
+            ];
+            $model->update(['metadata' => $controlMetadata]);
+        }
         if ($controlRootSeedDeclaration !== null) {
             $this->controlRootInheritance->finalizeSeed($model, $agent);
         }

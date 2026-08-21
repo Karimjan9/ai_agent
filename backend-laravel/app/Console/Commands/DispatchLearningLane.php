@@ -8,6 +8,7 @@ use App\Models\LabLearningLaneDispatch;
 use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
 use App\Services\LearningLaneService;
+use App\Services\LearningEvidenceGate;
 use App\Services\LearningMemoryService;
 use App\Services\MicroReplayService;
 use App\Services\LabQueueJobInspector;
@@ -28,6 +29,7 @@ class DispatchLearningLane extends Command
 
     public function handle(
         LearningLaneService $learning,
+        LearningEvidenceGate $evidenceGate,
         LearningMemoryService $memory,
         MicroReplayService $microReplay,
         CandidateGateDecisionService $decisions,
@@ -138,6 +140,27 @@ class DispatchLearningLane extends Command
         $jobs = [];
         $dispatches = [];
         foreach ($pairs as $pair) {
+            // A micro pass is diagnostic evidence only. It cannot turn a
+            // legacy/missing-control row into a full replay candidate.
+            if (! $pair->loadMissing('controlResponseMap')->isVerifiedControlPair()) {
+                if (! $this->option('dry-run')) {
+                    $pair->update([
+                        'status' => 'diagnostic_only',
+                        'metadata' => [...((array) $pair->metadata), 'diagnostic_reason' => 'CONTROL_PAIR_INVALID', 'promotion_evidence' => false],
+                    ]);
+                    LabLearningLaneDispatch::query()->where('pair_id', $pair->id)
+                        ->whereIn('status', ['selected', 'queued', 'running', 'retry_ready'])
+                        ->update(['status' => 'diagnostic_only', 'completed_at' => null]);
+                }
+                continue;
+            }
+            $gate = $evidenceGate->allow($pair, null, 'micro_passed');
+            if (! $gate['allowed']) {
+                if (! $this->option('dry-run')) {
+                    $pair->update(['status' => $gate['status'], 'metadata' => [...((array) $pair->metadata), 'evidence_gate' => $gate, 'promotion_evidence' => false]]);
+                }
+                continue;
+            }
             $agent = $pair->candidateAgent?->fresh(['modelVersion', 'generation']);
             if (! $agent || ! in_array((string) $agent->lifecycle_status, ['screened', 'challenger', 'rejected', 'stagnated'], true)) {
                 continue;

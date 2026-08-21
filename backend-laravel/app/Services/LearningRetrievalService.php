@@ -19,7 +19,15 @@ class LearningRetrievalService
         $ranked = $rows->map(function (AgentLearningLesson $lesson) use ($context): array {
             $fields = ['regime', 'volatility', 'transition_state', 'spread_liquidity_state', 'state_cluster_id'];
             $exact = 0; $conflict = false; $specified = 0;
-            foreach ($fields as $field) { $stored = $lesson->{$field}; $requested = $context[$field] ?? null; if ($stored !== null && $stored !== '') { $specified++; if ($requested !== null && (string) $stored === (string) $requested) $exact++; elseif ($requested !== null) $conflict = true; } }
+            foreach ($fields as $field) {
+                $stored = $this->contextValue($lesson->{$field});
+                $requested = $this->contextValue($context[$field] ?? null);
+                if ($stored !== null && $stored !== '') {
+                    $specified++;
+                    if ($requested !== null && $stored === $requested) $exact++;
+                    elseif ($requested !== null) $conflict = true;
+                }
+            }
             return ['lesson' => $lesson, 'match_level' => $conflict ? 'incompatible' : ($specified > 0 && $exact === $specified ? 'exact_context' : ($specified > 0 ? 'family_prior' : 'broad_prior')), 'score' => ($lesson->status === 'confirmed' ? 2 : 1) + $exact + (float) ($lesson->lower_confidence_bound ?? 0)];
         })->reject(fn (array $row) => $row['match_level'] === 'incompatible')->sortByDesc('score')->values();
         $groups = ['positive_lessons' => [], 'harmful_lessons' => [], 'uncertainty_lessons' => []]; $ids = [];
@@ -31,5 +39,17 @@ class LearningRetrievalService
             $groups[$bucket][] = $payload; $ids[] = $lesson->parameter_key;
         }
         return ['packet_id' => $packetId, 'status' => 'ok', ...$groups, 'blocked_mutations' => array_values(array_unique(array_filter(array_column($groups['harmful_lessons'], 'parameter_key')))), 'recommended_genes' => array_values(array_unique(array_filter(array_column($groups['positive_lessons'], 'parameter_key')))), 'retrieval_count' => $ranked->count(), 'promotion_evidence' => false];
+    }
+
+    private function contextValue(mixed $value): ?string
+    {
+        if ($value === null) return null;
+        if (is_array($value)) {
+            if (! array_is_list($value)) ksort($value);
+
+            return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION) ?: null;
+        }
+
+        return is_scalar($value) || $value instanceof \Stringable ? (string) $value : null;
     }
 }

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ModelMarketPerformance;
+use App\Models\PaperOrder;
 use App\Services\ExecutionRiskSentinelService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -32,5 +33,15 @@ class ExecutionRiskSentinelServiceTest extends TestCase
 
         $this->assertFalse($plan['approved']);
         $this->assertSame('RISK_OF_RUIN_LIMIT', $plan['reason_code']);
+    }
+
+    public function test_in_trade_and_portfolio_layers_never_expand_exposure(): void
+    {
+        $order = new PaperOrder(['direction' => 'BUY', 'entry_price' => 100, 'stop_loss' => 99]);
+        $inTrade = app(ExecutionRiskSentinelService::class)->assessInTrade($order, ['price' => 99.5, 'volatility_shock' => true, 'spread_atr_ratio' => .4]);
+        $portfolio = app(ExecutionRiskSentinelService::class)->assessPortfolio('XAUUSD');
+
+        $this->assertSame('ABORT', $inTrade['action']);
+        $this->assertContains($portfolio['action'], ['ALLOW', 'SHRINK', 'VETO']);
     }
 }

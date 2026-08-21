@@ -887,25 +887,8 @@ class LearningLaneService
 
     private function pairHasVerifiedControl(LabLearningLanePair $pair): bool
     {
-        return in_array((string) $pair->status, [
-            'screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed',
-        ], true)
-            && (string) $pair->pair_integrity_status === 'verified'
-            && (bool) $pair->same_generation
-            && (int) $pair->control_response_map_id > 0
-            && (array) $pair->control_metrics !== []
-            && filled($pair->candidate_data_hash)
-            && filled($pair->control_data_hash)
-            && filled($pair->candidate_execution_hash)
-            && filled($pair->control_execution_hash)
-            && hash_equals((string) $pair->candidate_data_hash, (string) $pair->control_data_hash)
-            && hash_equals((string) $pair->candidate_execution_hash, (string) $pair->control_execution_hash)
-            && (bool) data_get($pair->metadata, 'same_snapshot', false)
-            && (bool) data_get($pair->metadata, 'same_execution_contract', false)
-            && LabMutationResponseMap::query()
-                ->whereKey($pair->control_response_map_id)
-                ->where('status', 'control')
-                ->exists();
+        return $pair->loadMissing('controlResponseMap')->isVerifiedControlPair()
+            && (array) $pair->control_metrics !== [];
     }
 
     /**
@@ -930,8 +913,10 @@ class LearningLaneService
             ->first();
         if (! $pair) return ['status' => 'missing_pair', 'promotion_evidence' => false];
         if (! $this->pairHasVerifiedControl($pair)) {
+            $pair->update(['status' => 'diagnostic_only', 'metadata' => [...((array) $pair->metadata), 'diagnostic_reason' => 'CONTROL_PAIR_INVALID', 'promotion_evidence' => false]]);
+            LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->whereIn('status', ['selected', 'queued', 'running', 'retry_ready'])->update(['status' => 'diagnostic_only', 'completed_at' => null]);
             return [
-                'status' => 'missing_control',
+                'status' => 'diagnostic_only',
                 'pair_id' => $pair->id,
                 'promotion_evidence' => false,
             ];
@@ -973,24 +958,11 @@ class LearningLaneService
                 'promotion_evidence' => false,
             ],
         ]);
-        $dispatch?->update([
-            'status' => 'completed',
-            'stage' => 'full_replay',
-            'micro_status' => 'passed',
-            'completed_at' => now(),
-            'metadata' => [
-                ...((array) $dispatch->metadata),
-                'last_response_map_id' => data_get($map, 'id'),
-                'last_target_delta' => $delta,
-                'promotion_evidence' => false,
-            ],
-        ]);
-
         app(LearningMemoryService::class)->recordPair($pair->fresh(), 'full_replay');
-        // Bridge the legacy replay lane into the canonical episode ledger.
-        // This is observational only; normal immutable promotion gates retain
-        // all authority.
-        $this->recordCanonicalFullReplay($agent, $pair->fresh(), $result, $causalCreditEligible, $delta);
+        $canonical = app(CanonicalLearningOutboxService::class)->record($agent, $pair->fresh(), $result, $causalCreditEligible, $delta);
+        if (($canonical['status'] ?? null) !== 'completed') {
+            return [...$canonical, 'pair_id' => $pair->id, 'dispatch_id' => $dispatch?->id];
+        }
         app(FailureDojoService::class)->recordPair($pair->fresh());
         app(CouncilDisagreementService::class)->recordResult($result, [
             'symbol' => $agent->symbol,
@@ -1013,10 +985,10 @@ class LearningLaneService
                 $provisionalLesson = $lesson?->fresh();
                 if (! $provisionalLesson) {
                     $pair->update([
-                        'status' => 'provisional',
                         'metadata' => [
                             ...((array) $pair->metadata),
                             'confirmation_blocked' => 'CONFIRMED_SKILL_ARTIFACT_MISSING',
+                            'skill_state' => 'provisional',
                             'promotion_evidence' => false,
                         ],
                     ]);
@@ -1077,15 +1049,30 @@ class LearningLaneService
                     ],
                     'expires_at' => null,
                 ]);
-                $pair->update(['status' => 'confirmed']);
+                $pair->fresh()->update(['metadata' => [
+                    ...((array) $pair->fresh()->metadata),
+                    'skill_state' => 'confirmed',
+                    'promotion_evidence' => false,
+                ]]);
             } else {
-                $pair->update(['status' => 'provisional']);
+                $pair->fresh()->update(['metadata' => [
+                    ...((array) $pair->fresh()->metadata),
+                    'skill_state' => 'provisional',
+                    'promotion_evidence' => false,
+                ]]);
             }
         }
 
+        $lessonState = $verification ? 'skill_confirmed' : ($lesson ? 'lesson_compiled' : 'canonical_settled');
+        $finalized = $lessonState === 'canonical_settled'
+            ? ['status' => 'canonical_settled', 'promotion_evidence' => false]
+            : app(CanonicalLearningOutboxService::class)->finalizeDispatch($pair->fresh(), $lessonState);
+
         return [
             'protocol' => self::PROTOCOL,
-            'status' => $verification ? 'skill_mentor_candidate' : ($lesson ? 'provisional_skill' : 'observed_without_skill'),
+            'status' => ($finalized['status'] ?? null) === $lessonState
+                ? ($verification ? 'skill_mentor_candidate' : ($lesson ? 'provisional_skill' : 'canonical_settled'))
+                : ($finalized['status'] ?? 'canonical_failed'),
             'pair_id' => $pair->id,
             'dispatch_id' => $dispatch?->id,
             'response_map_id' => data_get($map, 'id'),
@@ -1239,6 +1226,10 @@ class LearningLaneService
         $sameGenerationControl = $controls
             ->first(fn (LabMutationResponseMap $row): bool => (string) $row->strategy_family === (string) $agent->strategy_family
                 && (int) ($row->agent?->lab_generation_id ?? 0) === (int) $agent->lab_generation_id
+                && (string) data_get($row->metadata, 'control_contract.protocol') === 'frozen_control_v2'
+                && data_get($row->metadata, 'control_contract.control_only') === true
+                && (string) data_get($row->metadata, 'control_contract.role') === 'control'
+                && (int) data_get($row->metadata, 'control_contract.generation_id') === (int) $agent->lab_generation_id
                 && $candidateExecution !== ''
                 && $this->sameExecutionContract($candidate, $row)
                 && $this->sameSnapshot($candidate, $row));
@@ -1308,11 +1299,11 @@ class LearningLaneService
 
     private function executionHashOf(LabMutationResponseMap $map): string
     {
-        $direct = (string) data_get($map->metadata, 'execution_hash', data_get(
+        $direct = (string) data_get($map->metadata, 'control_contract.execution_hash', data_get($map->metadata, 'execution_hash', data_get(
             $map->observed_metrics,
             'execution_contract.execution_hash',
             data_get($map->observed_metrics, 'execution_hash', ''),
-        ));
+        )));
         if ($direct !== '') return $direct;
         $meta = $this->evidenceRequestMeta($map);
         return (string) data_get($meta, 'payload.execution_contract.execution_hash', data_get($meta, 'execution_contract.execution_hash', ''));
@@ -1320,11 +1311,11 @@ class LearningLaneService
 
     private function snapshotHashOf(LabMutationResponseMap $map): string
     {
-        $direct = (string) data_get($map->metadata, 'data_manifest_hash', data_get(
+        $direct = (string) data_get($map->metadata, 'control_contract.data_hash', data_get($map->metadata, 'data_manifest_hash', data_get(
             $map->observed_metrics,
             'data_manifest.sha256',
             data_get($map->observed_metrics, 'data_manifest.snapshot_sha256', data_get($map->observed_metrics, 'data_manifest_hash', '')),
-        ));
+        )));
         if ($direct !== '') return $direct;
         $meta = $this->evidenceRequestMeta($map);
         return (string) data_get($meta, 'dataset_manifest.snapshot_sha256', data_get($meta, 'dataset_manifest.data_hash', data_get($meta, 'dataset_hash', '')));
@@ -1467,33 +1458,8 @@ class LearningLaneService
         array $result,
         bool $causalCreditEligible,
         array $delta,
-    ): void {
-        try {
-            $kernel = app(LearningKernelService::class);
-            $map = $pair->candidateResponseMap;
-            $context = (array) data_get($pair->failure_signature, 'state', []);
-            $episode = $kernel->openEpisode($agent, [
-                'decision_key' => 'learning-lane:pair:'.$pair->id.':'.(string) data_get($result, 'evidence_run_id', 'full'),
-                'symbol' => $pair->symbol, 'timeframe' => $pair->timeframe, 'strategy_family' => $pair->strategy_family,
-                'stage' => 'full_replay', 'decision' => 'MUTATE', 'context' => $context,
-                'data_manifest_hash' => $map ? $this->snapshotHashOf($map) : null,
-                'execution_hash' => $map ? $this->executionHashOf($map) : null,
-                'parameter_hash' => $map?->response_key,
-            ]);
-            $settled = $kernel->settleOutcome($episode, [
-                'source_key' => 'learning-lane:full:'.$pair->id.':'.(string) data_get($result, 'evidence_run_id', 'none'),
-                'source_type' => LabLearningLanePair::class, 'source_id' => $pair->id, 'outcome_status' => 'settled',
-                'failure_class' => data_get($pair->failure_signature, 'failure_type', $pair->target),
-                'parameter_key' => $map?->parameter_key, 'independent_window_key' => $pair->independent_window_key,
-                'control_present' => $pair->control_agent_id !== null && (bool) data_get($pair->metadata, 'same_execution_contract', false),
-                'evidence_state' => $causalCreditEligible && (bool) data_get($delta, 'improved', false) ? 'positive' : 'negative',
-                'metrics' => $result,
-            ]);
-            $kernel->consolidate($settled['settlement']);
-        } catch (\Throwable) {
-            // A not-yet-migrated canonical ledger must not block a completed
-            // immutable replay. The bridge will be re-run by reconciliation.
-        }
+    ): array {
+        return app(CanonicalLearningOutboxService::class)->record($agent, $pair, $result, $causalCreditEligible, $delta);
     }
 
     private function available(): bool

@@ -11,14 +11,16 @@ class LearningRewardService
         'calibration' => .05, 'abstention_quality' => .05,
     ];
 
-    /** @return array{selection_reward:float,components:array<string,float>,hard_failure:bool,vetoes:list<string>,promotion_evidence:bool} */
+    /** @return array{selection_reward:float,components:array<string,float>,hard_failure:bool,vetoes:list<string>,evidence_state:string,insufficient_reasons:list<string>,promotion_evidence:bool} */
     public function score(array $outcome): array
     {
         $metrics = (array) ($outcome['metrics'] ?? $outcome);
         $components = [];
+        $missing = [];
         foreach (self::WEIGHTS as $key => $weight) {
             $value = $metrics[$key] ?? null;
-            $components[$key] = is_numeric($value) ? max(0.0, min(1.0, (float) $value)) : 0.0;
+            if (! is_numeric($value)) $missing[] = $key;
+            $components[$key] = is_numeric($value) ? max(0.0, min(1.0, (float) $value)) : null;
         }
         $vetoes = [];
         $drawdown = $this->number($metrics, ['drawdown_percent', 'max_drawdown_percent', 'drawdown']);
@@ -29,14 +31,23 @@ class LearningRewardService
         if ($stressPf !== null && $stressPf < 1.05) $vetoes[] = 'STRESS_PF_LIMIT';
         if (($metrics['temporal_firewall_passed'] ?? true) !== true) $vetoes[] = 'TEMPORAL_FIREWALL';
         if (($metrics['data_drift'] ?? false) === true || ($metrics['execution_drift'] ?? false) === true) $vetoes[] = 'TECHNICAL_QUARANTINE';
+        $trades = $this->number($metrics, ['total_trades', 'trade_count', 'executed_trades']);
+        $insufficientReasons = [];
+        if ($trades !== null && $trades <= 0) $insufficientReasons[] = 'INSUFFICIENT_ACTIVITY';
+        if (count($missing) > 0) $insufficientReasons[] = 'COVERAGE_FAILURE:'.implode(',', $missing);
+        if ((bool) ($metrics['opportunity_recall_failure'] ?? false)) $insufficientReasons[] = 'OPPORTUNITY_RECALL_FAILURE';
+        $availableWeight = array_sum(array_map(fn (string $key): float => $components[$key] === null ? 0.0 : self::WEIGHTS[$key], array_keys(self::WEIGHTS)));
         $reward = 0.0;
-        foreach (self::WEIGHTS as $key => $weight) $reward += $components[$key] * $weight;
+        foreach (self::WEIGHTS as $key => $weight) if ($components[$key] !== null) $reward += $components[$key] * $weight;
+        if ($availableWeight > 0) $reward /= $availableWeight;
         $hardFailure = $vetoes !== [];
         return [
             'selection_reward' => round($hardFailure ? min(-1.0, $reward - 1.0) : $reward, 6),
             'components' => $components,
             'hard_failure' => $hardFailure,
             'vetoes' => $vetoes,
+            'evidence_state' => $insufficientReasons !== [] ? 'insufficient_evidence' : ($hardFailure ? 'negative' : 'positive'),
+            'insufficient_reasons' => $insufficientReasons,
             // Only external immutable gates may set promotion evidence true.
             'promotion_evidence' => false,
         ];

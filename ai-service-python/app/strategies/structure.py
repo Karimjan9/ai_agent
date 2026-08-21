@@ -11,9 +11,61 @@ import numpy as np
 import pandas as pd
 
 
-def apply_structure_instruments(frame: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+def apply_causal_feature_layer(frame: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    """Canonical, causal value layer shared by structure playbooks.
+
+    Every rolling value is shifted where it could otherwise inspect an open
+    candle as history.  FVG/order-block/breaker are OHLC proxies, explicitly
+    not claims about an unavailable institutional order book.
+    """
     parameters = parameters or {}
     out = frame.copy()
+    previous_close = out["close"].shift(1)
+    tr = pd.concat([out["high"] - out["low"], (out["high"] - previous_close).abs(), (out["low"] - previous_close).abs()], axis=1).max(axis=1)
+    atr_period = max(2, int(parameters.get("atr_period", 14)))
+    out["atr"] = tr.rolling(atr_period, min_periods=2).mean().replace(0, np.nan)
+    out["true_range"] = tr
+    out["body"] = (out["close"] - out["open"]).abs()
+    out["wick"] = (out["high"] - out["low"] - out["body"]).clip(lower=0)
+    out["relative_volume"] = (out.get("volume", pd.Series(0, index=out.index)) / out.get("volume", pd.Series(0, index=out.index)).rolling(20, min_periods=2).mean().replace(0, np.nan)).fillna(1.0)
+
+    up = out["high"].diff().clip(lower=0)
+    down = (-out["low"].diff()).clip(lower=0)
+    plus_di = 100 * up.rolling(atr_period, min_periods=2).mean() / out["atr"]
+    minus_di = 100 * down.rolling(atr_period, min_periods=2).mean() / out["atr"]
+    out["plus_di"] = plus_di.fillna(0)
+    out["minus_di"] = minus_di.fillna(0)
+    out["adx"] = (100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)).rolling(atr_period, min_periods=2).mean().fillna(0)
+    basis = out["close"].rolling(20, min_periods=2).mean()
+    deviation = out["close"].rolling(20, min_periods=2).std().replace(0, np.nan)
+    upper, lower = basis + 2 * deviation, basis - 2 * deviation
+    out["bollinger_width"] = ((upper - lower) / basis.abs().replace(0, np.nan)).fillna(0)
+    out["bollinger_percent_b"] = ((out["close"] - lower) / (upper - lower).replace(0, np.nan)).clip(0, 1).fillna(.5)
+    out["z_score"] = ((out["close"] - basis) / deviation).clip(-6, 6).fillna(0)
+    out["macd"] = out["close"].ewm(span=12, adjust=False).mean() - out["close"].ewm(span=26, adjust=False).mean()
+    out["slope"] = (out["close"] - out["close"].shift(10)) / (out["atr"] * 10)
+
+    # The third candle is the first point at which a two-candle gap is known.
+    out["fvg"] = np.select([out["low"] > out["high"].shift(2), out["high"] < out["low"].shift(2)], ["bullish", "bearish"], default="none")
+    out["fvg_midpoint"] = np.where(out["fvg"] == "bullish", (out["low"] + out["high"].shift(2)) / 2, np.where(out["fvg"] == "bearish", (out["high"] + out["low"].shift(2)) / 2, np.nan))
+    displacement = (out["body"] / out["atr"]).fillna(0)
+    out["order_block"] = np.select([(out["close"] > out["open"]) & (displacement >= 1), (out["close"] < out["open"]) & (displacement >= 1)], ["bullish_proxy", "bearish_proxy"], default="none")
+    out["breaker_block"] = np.select([(out["order_block"].shift(1) == "bullish_proxy") & (out["close"] < out["low"].shift(1)), (out["order_block"].shift(1) == "bearish_proxy") & (out["close"] > out["high"].shift(1))], ["bearish_proxy", "bullish_proxy"], default="none")
+
+    times = pd.DatetimeIndex(pd.to_datetime(out.get("time", out.index), utc=True, errors="coerce"))
+    session = np.where((times.hour >= 7) & (times.hour < 12), "london", np.where((times.hour >= 12) & (times.hour <= 16), "london_new_york_overlap", np.where((times.hour > 16) & (times.hour <= 21), "new_york", "asian")))
+    out["session"] = session
+    session_day = pd.Series(times.date, index=out.index).astype(str) + "|" + pd.Series(session, index=out.index)
+    out["session_high"] = out["high"].groupby(session_day).cummax().shift(1)
+    out["session_low"] = out["low"].groupby(session_day).cummin().shift(1)
+    out["session_range"] = (out["session_high"] - out["session_low"]).fillna(0)
+    out["feature_lookahead_safe"] = True
+    return out
+
+
+def apply_structure_instruments(frame: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
+    parameters = parameters or {}
+    out = apply_causal_feature_layer(frame, parameters)
     lookback = max(10, int(parameters.get("swing_lookback", parameters.get("lookback", 40))))
     atr_period = max(2, int(parameters.get("atr_period", 14)))
     equal_atr = max(.02, float(parameters.get("equal_level_atr_fraction", .15)))

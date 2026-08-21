@@ -71,6 +71,24 @@ class LearningKernelServiceTest extends TestCase
         $this->assertSame(1.0, $pulse['retrieval_to_outcome_rate']);
     }
 
+    public function test_contextual_retrieval_handles_structured_runtime_context_without_casting_error(): void
+    {
+        AgentLearningLesson::create([
+            'lesson_id' => '00000000-0000-0000-0000-000000000113', 'lesson_hash' => str_repeat('c', 128),
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'lesson_type' => 'uncertainty_lesson', 'status' => 'provisional', 'failure_class' => 'transition',
+            'parameter_key' => 'transition_firewall', 'transition_state' => 'transition_wait',
+            'outcome' => 'uncertain', 'source_run_ids' => ['run-3'], 'evidence' => [], 'observed_at' => now(),
+        ]);
+
+        $packet = app(LearningKernelService::class)->retrieveForGeneration(
+            'XAUUSD', 'H1', 'hybrid', ['transition_state' => ['state' => 'transition_wait']],
+        );
+
+        $this->assertSame('ok', $packet['status']);
+        $this->assertSame(0, $packet['retrieval_count']);
+    }
+
     public function test_policy_versions_are_immutable_and_activation_requires_external_approval(): void
     {
         $registry = app(LearningPolicyRegistryService::class);

@@ -11,6 +11,8 @@ class TacticExecutorService
     public const PROTOCOL = 'tactic_executor_brain_v1';
 
     /** @return array<string,mixed> */
+    public function __construct(private TradeManagementLibraryService $management) {}
+
     public function compile(array $route, array $strategy, array $context = []): array
     {
         $key = (string) ($route['playbook']?->playbook_key ?? '');
@@ -36,6 +38,7 @@ class TacticExecutorService
             ],
             'telemetry' => ['mae', 'mfe', 'time_to_favorable_excursion', 'stop_efficiency', 'target_capture', 'slippage', 'cost_percent', 'follow_through'],
             'risk_authority' => 'execution_risk_sentinel',
+            'trade_management' => $this->management->compile(str_contains($key, 'range') ? 'range_fixed_target' : 'balanced_professional', (string) data_get($route, 'state.regime', 'trend')),
             'strategy_proposal_hash' => hash('sha256', json_encode($strategy, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)),
             'promotion_evidence' => false,
         ];

@@ -55,4 +55,35 @@ class LabLearningLanePair extends Model
     {
         return $this->hasMany(LabLearningLaneDispatch::class, 'pair_id');
     }
+
+    /**
+     * The only predicate that may unlock canonical learning.  Historical
+     * "screen_paired" rows are intentionally not grandfathered in: a control
+     * must carry the frozen-control contract as well as matching seals.
+     */
+    public function isVerifiedControlPair(): bool
+    {
+        $control = $this->controlResponseMap;
+        $contract = (array) data_get($control?->metadata, 'control_contract', []);
+
+        return (string) $this->pair_integrity_status === 'verified'
+            && (bool) $this->same_generation
+            && (int) $this->lab_generation_id > 0
+            && (int) $this->control_agent_id > 0
+            && (int) $this->control_response_map_id > 0
+            && $control !== null
+            && (string) $control->status === 'control'
+            && (string) data_get($contract, 'protocol') === 'frozen_control_v2'
+            && data_get($contract, 'control_only') === true
+            && (string) data_get($contract, 'role') === 'control'
+            && (int) data_get($contract, 'generation_id') === (int) $this->lab_generation_id
+            && filled($this->candidate_data_hash)
+            && filled($this->control_data_hash)
+            && filled($this->candidate_execution_hash)
+            && filled($this->control_execution_hash)
+            && hash_equals((string) $this->candidate_data_hash, (string) $this->control_data_hash)
+            && hash_equals((string) $this->candidate_execution_hash, (string) $this->control_execution_hash)
+            && hash_equals((string) $this->control_data_hash, (string) data_get($contract, 'data_hash'))
+            && hash_equals((string) $this->control_execution_hash, (string) data_get($contract, 'execution_hash'));
+    }
 }

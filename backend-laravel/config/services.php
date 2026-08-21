@@ -221,7 +221,11 @@ return [
         'node_binary' => env('DUKASCOPY_NODE_BINARY', 'node'),
         'transport' => env('DUKASCOPY_TRANSPORT', 'jetta'),
         'jetta_base_url' => env('DUKASCOPY_JETTA_BASE_URL', 'https://jetta.dukascopy.com'),
-        'm15_node_enabled' => env('DUKASCOPY_M15_NODE_ENABLED', true),
+        // Symfony/Process still materializes a transient cmd.exe wrapper on
+        // Windows, even when the nested PowerShell and Node processes use
+        // WindowStyle Hidden. The PHP Jetta M15 implementation is therefore
+        // the Windows default; Unix keeps the faster Node adapter.
+        'm15_node_enabled' => PHP_OS_FAMILY !== 'Windows' && env('DUKASCOPY_M15_NODE_ENABLED', true),
         'http_timeout_seconds' => (int) env('DUKASCOPY_HTTP_TIMEOUT_SECONDS', 20),
         'http_retry_attempts' => (int) env('DUKASCOPY_HTTP_RETRY_ATTEMPTS', 3),
         'http_retry_pause_ms' => (int) env('DUKASCOPY_HTTP_RETRY_PAUSE_MS', 2000),
@@ -611,6 +615,13 @@ return [
         'micro_positive_windows_required' => (int) env('LAB_LEARNING_LANE_MICRO_POSITIVE_WINDOWS_REQUIRED', 2),
         'negative_downrank_after' => (int) env('LAB_LEARNING_LANE_NEGATIVE_DOWNRANK_AFTER', 3),
         'negative_quarantine_after' => (int) env('LAB_LEARNING_LANE_NEGATIVE_QUARANTINE_AFTER', 5),
+    ],
+
+    // Sparse activation prevents a state router from silently turning every
+    // available indicator into one untestable mega-strategy.
+    'instrument_policy' => [
+        'minimum_active_instruments' => (int) env('INSTRUMENT_POLICY_MIN_ACTIVE', 3),
+        'maximum_active_instruments' => (int) env('INSTRUMENT_POLICY_MAX_ACTIVE', 6),
     ],
 
     // Versioned parameters consumed by lab, full replay, paper and holdout.

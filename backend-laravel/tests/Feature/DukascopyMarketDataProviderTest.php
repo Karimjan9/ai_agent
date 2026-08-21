@@ -9,6 +9,15 @@ use Tests\TestCase;
 
 class DukascopyMarketDataProviderTest extends TestCase
 {
+    public function test_windows_uses_the_http_m15_adapter_without_a_node_child_process(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $this->markTestSkipped('Windows-only console suppression policy.');
+        }
+
+        $this->assertFalse((bool) config('services.dukascopy.m15_node_enabled'));
+    }
+
     public function test_it_decodes_jettas_h1_history_without_a_child_process(): void
     {
         config([

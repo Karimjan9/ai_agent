@@ -23,9 +23,9 @@ class LearningOutcomeSettlementService
             $settlement = AgentLearningSettlement::query()->firstOrCreate(['episode_id' => $episode->id], [
                 'settlement_id' => (string) Str::uuid(), 'source_key' => $sourceKey, 'source_type' => $outcome['source_type'] ?? null,
                 'source_id' => $outcome['source_id'] ?? null, 'outcome_status' => (string) ($outcome['outcome_status'] ?? 'settled'),
-                'failure_class' => $reflection['failure'], 'evidence_state' => $reward['hard_failure'] ? 'negative' : (($outcome['evidence_state'] ?? null) ?: 'uncertain'),
+                'failure_class' => $reflection['failure'], 'evidence_state' => $reward['hard_failure'] ? 'negative' : (($outcome['evidence_state'] ?? null) ?: $reward['evidence_state']),
                 'selection_reward' => $reward['selection_reward'], 'hard_failure' => $reward['hard_failure'], 'outcome' => $outcome,
-                'reward_components' => [...$reward['components'], 'vetoes' => $reward['vetoes'], 'promotion_evidence' => false], 'reflection' => $reflection, 'settled_at' => now(),
+                'reward_components' => [...$reward['components'], 'vetoes' => $reward['vetoes'], 'insufficient_reasons' => $reward['insufficient_reasons'], 'promotion_evidence' => false], 'reflection' => $reflection, 'settled_at' => now(),
             ]);
             $episode->update(['status' => $reward['hard_failure'] ? 'technical_quarantine' : 'settled', 'settled_at' => now()]);
             return $settlement->fresh();

@@ -27,6 +27,7 @@ class TradingInstrumentOperatingSystemService
     {
         return DB::transaction(function (): array {
             $instruments = collect($this->instrumentDefinitions())->mapWithKeys(function (array $definition, string $key): array {
+                $definition['definition'] = $this->toolCard($key, $definition);
                 $instrument = TradingInstrument::updateOrCreate(['instrument_key' => $key], Arr::only($definition, ['label', 'role', 'tactic_id', 'promotion_state', 'is_abstention', 'definition']));
                 $instrument->contract()->updateOrCreate([], $definition['contract']);
 
@@ -285,6 +286,39 @@ class TradingInstrumentOperatingSystemService
             'transition_protection' => ['label' => 'Transition Protection', 'role' => 'risk', 'tactic_id' => null, 'promotion_state' => 'confirmed', 'is_abstention' => true, 'definition' => ['action' => 'wait'], 'contract' => [...$execution, 'compatible_regimes' => ['transition'], 'required_inputs' => ['regime']]],
             'loss_streak_cooldown' => ['label' => 'Loss-Streak Cooldown', 'role' => 'risk', 'tactic_id' => null, 'promotion_state' => 'confirmed', 'is_abstention' => true, 'definition' => ['action' => 'wait_after_loss_streak'], 'contract' => [...$execution, 'compatible_regimes' => [], 'required_inputs' => ['loss_streak']]],
             'cost_aware_exit' => ['label' => 'Cost-Aware Exit', 'role' => 'execution', 'tactic_id' => null, 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['target_stop_time_stop' => 'spread_and_volatility_aware'], 'contract' => $execution],
+        ];
+    }
+
+    /**
+     * Every persisted instrument exposes one complete, inspectable tool card.
+     * The old definitions held only their local indicator fields, which made
+     * a selected playbook impossible to audit as a decision instrument.
+     *
+     * @param array<string,mixed> $definition
+     * @return array<string,mixed>
+     */
+    private function toolCard(string $key, array $definition): array
+    {
+        $contract = (array) ($definition['contract'] ?? []);
+        $raw = (array) ($definition['definition'] ?? []);
+
+        return [
+            'instrument_id' => $key,
+            'label' => (string) ($definition['label'] ?? $key),
+            'role' => (string) ($definition['role'] ?? 'tactic'),
+            'preconditions' => (array) ($contract['required_inputs'] ?? []),
+            'outputs' => (array) ($raw['values'] ?? array_keys($raw)),
+            'usable_by' => ['market_state_estimator', 'strategy_proposer', 'tactic_executor', 'execution_risk_sentinel'],
+            'failure_conditions' => [
+                'forbidden_regimes' => (array) ($contract['forbidden_regimes'] ?? []),
+                'missing_inputs' => (array) ($contract['required_inputs'] ?? []),
+                'paired_control_required' => data_get($contract, 'control_contract.mode') === 'paired_isolated',
+            ],
+            'mutation_surface' => (array) ($contract['allowed_genes'] ?? []),
+            'learning_question' => 'Does '.$key.' improve conditional net edge versus its sealed paired control?',
+            'expected_edge' => (string) ($raw['hypothesis'] ?? 'Conditional decision quality improvement.'),
+            'promotion_evidence' => false,
+            ...$raw,
         ];
     }
 

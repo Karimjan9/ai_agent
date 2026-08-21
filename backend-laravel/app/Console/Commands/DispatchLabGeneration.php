@@ -14,6 +14,8 @@ use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use App\Services\LabQueueJobInspector;
 use App\Services\LearningProtocolSafetyService;
+use App\Services\LearningTechnicalCircuitBreakerService;
+use App\Services\LearningEvidenceGate;
 use App\Services\MarketData\MarketDataContinuityService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Console\Command;
@@ -28,7 +30,7 @@ class DispatchLabGeneration extends Command
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
-    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext): int
+    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LearningTechnicalCircuitBreakerService $technicalBreaker, LearningEvidenceGate $evidenceGate, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext): int
     {
         $populations->ensureLaboratories();
         $controlledRescue = (bool) $this->option('controlled-rescue');
@@ -94,6 +96,17 @@ class DispatchLabGeneration extends Command
 
         $timeframe = strtoupper((string) $this->option('timeframe'));
         foreach ($symbols as $symbol) {
+            if ($technicalBreaker->blocked($symbol, $timeframe) && ! $resumeDraftAgents) {
+                $this->warn("{$symbol} {$timeframe}: repeated technical failure circuit breaker active; new generation blocked pending technical repair.");
+                continue;
+            }
+            if (! $resumeDraftAgents && ! $controlledRescue && ! $shadowResearch && ! $auditedDataEdge) {
+                $generationGate = $evidenceGate->allowsNextGeneration($symbol, $timeframe);
+                if (! $generationGate['allowed']) {
+                    $this->warn("{$symbol} {$timeframe}: new generation blocked by Learning Evidence Gate ({$generationGate['reason']}).");
+                    continue;
+                }
+            }
             $lab = AiLaboratory::where('symbol', $symbol)->where('timeframe', $timeframe)->firstOrFail();
             if ($auditedDataEdge
                 && ($symbol !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL

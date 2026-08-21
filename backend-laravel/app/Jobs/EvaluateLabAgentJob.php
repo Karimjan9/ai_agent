@@ -532,6 +532,12 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     {
         $evidence ??= app(LabImmutableEvidenceService::class);
         $reasonCode = $this->technicalFailureReason($e);
+        $technicalQuarantine = app(\App\Services\LearningTechnicalCircuitBreakerService::class)->record(
+            (string) $agent->symbol,
+            (string) $agent->timeframe,
+            $e::class.': '.$e->getMessage(),
+            ['agent_id' => $agent->id, 'mode' => $this->mode, 'reason_code' => $reasonCode],
+        );
         $learningLane = $this->mode === 'full' && app(LearningLaneService::class)->isLearningAgent($agent);
         $transportFailures = $learningLane
             ? LabEvaluationRun::query()
@@ -541,7 +547,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                 ->count()
             : 0;
         $learningLaneFailureLimit = max(1, (int) config('services.lab_queue.learning_lane_transport_failure_limit', 2));
-        $quarantineLearningLane = $learningLane && $transportFailures >= $learningLaneFailureLimit;
+        $quarantineLearningLane = $technicalQuarantine || ($learningLane && $transportFailures >= $learningLaneFailureLimit);
         $dispatchStatus = $quarantineLearningLane ? 'technical_quarantine' : ($learningLane ? 'retry_ready' : 'technical_error');
         $this->updateLearningDispatch($agent, $dispatchStatus, [
             'reason_code' => $reasonCode,
@@ -775,6 +781,17 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 
         $dispatch = LabLearningLaneDispatch::query()->find($dispatchId);
         if (! $dispatch) return;
+        if ($status === 'completed') {
+            $gate = app(\App\Services\LearningEvidenceGate::class)->allow(
+                $dispatch->pair?->loadMissing('controlResponseMap'),
+                null,
+                'lesson_compiled',
+            );
+            if (! $gate['allowed']) {
+                $status = 'canonical_pending';
+                $metadata = [...$metadata, 'completion_blocked_by' => \App\Services\LearningEvidenceGate::PROTOCOL, 'completion_block_reasons' => $gate['reasons']];
+            }
+        }
         $dispatch->update([
             'status' => $status,
             'completed_at' => in_array($status, ['completed', 'technical_error', 'technical_quarantine'], true) ? now() : null,

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AiLaboratory;
+use App\Console\Commands\BuildTemporalFoundationWindows;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
@@ -75,6 +76,20 @@ class RescueCircuitBreakerTest extends TestCase
         $this->assertTrue($newWindow['allowed']);
         $this->assertTrue(data_get($newWindow, 'history.independent_new_evidence'));
         $this->assertSame(24, data_get($newWindow, 'history.fresh_candles'));
+    }
+
+    public function test_temporal_window_builder_uses_the_actual_screening_period_not_the_full_foundation_manifest(): void
+    {
+        $lab = $this->lab();
+        $this->rescueGeneration($lab, 1, 'dataset-a', 100, $this->profile());
+
+        $method = new \ReflectionMethod(BuildTemporalFoundationWindows::class, 'priorGenerationRanges');
+        $method->setAccessible(true);
+        $ranges = $method->invoke(app(BuildTemporalFoundationWindows::class), 'XAUUSD', 'H1');
+
+        $this->assertCount(1, $ranges);
+        $this->assertSame('2025-02-27 00:00:00', $ranges[0]['first']->format('Y-m-d H:i:s'));
+        $this->assertSame('2025-12-31 23:59:59', $ranges[0]['last']->format('Y-m-d H:i:s'));
     }
 
     public function test_valid_sealed_temporal_holdout_manifest_admits_structural_evidence_without_fresh_tail(): void
@@ -331,7 +346,10 @@ class RescueCircuitBreakerTest extends TestCase
                 'stage' => 'screening',
                 'decision' => 'failed',
                 'reason_codes' => ['FAILED_CALENDAR_MONTH_SURVIVAL'],
-                'metrics' => ['gate_margin' => ['target_margin' => -.72]],
+                'metrics' => [
+                    'period' => '2025-02-27 - 2025-12-31',
+                    'gate_margin' => ['target_margin' => -.72],
+                ],
                 'evaluated_at' => now(),
             ]);
         }

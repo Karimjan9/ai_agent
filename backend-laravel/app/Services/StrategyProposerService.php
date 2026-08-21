@@ -12,6 +12,8 @@ class StrategyProposerService
 {
     public const PROTOCOL = 'strategy_proposer_brain_v1';
 
+    public function __construct(private StrategyFeatureBundleService $featureBundles) {}
+
     /** @return array<string,mixed> */
     public function propose(array $route, array $context = [], array $agent = []): array
     {
@@ -22,6 +24,9 @@ class StrategyProposerService
         $abstention = ($route['decision'] ?? 'ABSTAIN') !== 'TRADE';
         $innovationAllowed = (bool) ($agent['innovation_allowed'] ?? false);
         $validated = in_array($masteryStage, ['validated_specialist', 'strategy_master_candidate', 'master'], true);
+        $symbol = (string) ($context['symbol'] ?? $playbook?->symbol ?? 'XAUUSD');
+        $timeframe = (string) ($context['timeframe'] ?? $playbook?->timeframe ?? 'M15');
+        $bundle = $this->featureBundles->latestFor($strategyId, $symbol, $timeframe);
 
         return [
             'protocol' => self::PROTOCOL,
@@ -30,6 +35,12 @@ class StrategyProposerService
             'playbook_key' => $playbookKey,
             'mastery_stage' => $masteryStage,
             'hypothesis' => $this->hypothesis($playbookKey, $route['state'] ?? []),
+            'hypothesis_contract' => [
+                'market_state' => $route['state'] ?? [], 'instrument_combination' => array_values((array) ($playbook?->instrument_keys ?? [])),
+                'strategy_family' => $strategyId, 'tactic' => $playbookKey, 'expected_edge' => $this->expectedEdge($route, $bundle),
+                'failure_condition' => $this->failureCondition($route, $bundle), 'promotion_evidence' => false,
+            ],
+            'feature_bundle' => $bundle,
             'state_scope' => [
                 'regime' => data_get($route, 'state.regime', 'unknown'),
                 'm15_regime' => data_get($route, 'state.m15_regime', 'unknown'),
@@ -92,5 +103,21 @@ class StrategyProposerService
             'non_target_regression_required' => true,
             'promotion_evidence' => false,
         ];
+    }
+
+    private function expectedEdge(array $route, array $bundle): string
+    {
+        return ($route['decision'] ?? 'ABSTAIN') === 'TRADE' && ($bundle['status'] ?? '') === 'eligible'
+            ? 'Conditional state-specific edge after provenance, cost and risk gates.'
+            : 'No executable edge until a provenance-eligible conditional bundle exists.';
+    }
+
+    private function failureCondition(array $route, array $bundle): array
+    {
+        return array_values(array_filter([
+            (bool) data_get($route, 'state.transition') ? 'transition_hazard' : null,
+            data_get($route, 'state.spread_state') === 'high' ? 'high_spread' : null,
+            ($bundle['status'] ?? '') !== 'eligible' ? 'feature_bundle_unavailable' : null,
+        ]));
     }
 }
