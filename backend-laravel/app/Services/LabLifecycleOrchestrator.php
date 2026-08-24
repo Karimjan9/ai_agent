@@ -74,6 +74,7 @@ class LabLifecycleOrchestrator
         private readonly LabAgentPreflightService $preflight,
         private readonly LearningVelocityGateService $velocity,
         private readonly GenerationAdmissionDecisionService $admission,
+        private readonly LabGenerationTerminalBoundaryService $terminalBoundaries,
     ) {
         $this->errors = new LabLifecycleErrorLogger;
     }
@@ -113,6 +114,12 @@ class LabLifecycleOrchestrator
             // strategy evolution. They must not keep healthy peers in a
             // permanent evaluation_error state or freeze the next cycle.
             $quarantined = $this->quarantineEvaluationErrors($symbol, $timeframe, $cycleId, $stage);
+
+            // A killed worker can leave the mutable generation projection in
+            // screening even after a later bounded attempt made every agent
+            // terminal. Repair only when agent, immutable-run, and queue
+            // ownership all prove that no work remains.
+            $this->terminalBoundaries->closeLatest($symbol, $timeframe);
 
             // Strategy gate / deadlock guard: never create a normal generation
             // while locked by the strategy gate. Bounded recovery is allowed.

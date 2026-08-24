@@ -5,11 +5,14 @@ namespace Tests\Feature;
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\ModelVersion;
 use App\Services\GenerationAdmissionDecisionService;
+use App\Services\LabGenerationTerminalBoundaryService;
+use App\Services\LabQueueJobInspector;
 use App\Services\LearningLaneService;
 use App\Services\LearningVelocityGateService;
 use App\Services\MutationResponseMapService;
@@ -112,6 +115,57 @@ class LearningIntegrityRegressionTest extends TestCase
 
         $this->assertSame('active', $model->fresh()->status);
         $this->assertSame('model_version_lifecycle_sync_v1', data_get($model->fresh()->metadata, 'lifecycle_sync.protocol'));
+    }
+
+    public function test_terminal_screening_boundary_closes_only_after_agent_run_and_queue_ownership_are_clear(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $generation->update(['status' => 'screening', 'completed_at' => null]);
+        $screenedModel = ModelVersion::create(['name' => 'boundary-screened', 'strategy' => 'boundary-screened', 'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+        $technicalModel = ModelVersion::create(['name' => 'boundary-technical', 'strategy' => 'boundary-technical', 'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+        LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $screenedModel->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => []]);
+        LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $technicalModel->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => []]);
+
+        $this->mock(LabQueueJobInspector::class, function ($mock): void {
+            $mock->shouldReceive('generationQueueBacklog')->andReturn([
+                'backend' => 'redis', 'available' => true, 'total' => 0, 'queues' => [], 'rows' => [],
+            ]);
+        });
+
+        $result = app(LabGenerationTerminalBoundaryService::class)->closeIfTerminal($generation);
+
+        $this->assertTrue($result['closed']);
+        $this->assertSame('screened', $generation->fresh()->status);
+        $this->assertNotNull($generation->fresh()->completed_at);
+        $this->assertSame(
+            LabGenerationTerminalBoundaryService::PROTOCOL,
+            data_get($generation->fresh()->trigger_context, 'screening_terminal_recovery.protocol'),
+        );
+        $this->assertFalse((bool) data_get($generation->fresh()->trigger_context, 'screening_terminal_recovery.promotion_evidence', true));
+    }
+
+    public function test_terminal_screening_boundary_fails_closed_while_an_immutable_run_is_open(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $generation->update(['status' => 'screening', 'completed_at' => null]);
+        $model = ModelVersion::create(['name' => 'boundary-open-run', 'strategy' => 'boundary-open-run', 'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+        $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => []]);
+        LabEvaluationRun::create([
+            'run_id' => 'boundary-open-run-1',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $model->id,
+            'phase' => 'screening',
+            'status' => 'started',
+            'started_at' => now()->subHour(),
+        ]);
+
+        $result = app(LabGenerationTerminalBoundaryService::class)->closeIfTerminal($generation);
+
+        $this->assertFalse($result['closed']);
+        $this->assertSame('OPEN_EVIDENCE_RUNS_REMAIN', $result['reason_code']);
+        $this->assertSame('screening', $generation->fresh()->status);
+        $this->assertNull($generation->fresh()->completed_at);
     }
 
     /** @return array{0:AiLaboratory,1:LabGeneration} */

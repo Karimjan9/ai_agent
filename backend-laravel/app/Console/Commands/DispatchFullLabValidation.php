@@ -15,6 +15,7 @@ use App\Services\LabDatasetExportService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabGenerationReportService;
 use App\Services\LabGenerationContextService;
+use App\Services\LabGenerationTerminalBoundaryService;
 use App\Services\MarketData\MarketDataContinuityService;
 use App\Services\MarketData\HistoricalDataQualityService;
 use App\Services\SystemLogService;
@@ -28,7 +29,7 @@ class DispatchFullLabValidation extends Command
 
     protected $description = 'Select the strongest screened agents from every pair and serialize full walk-forward validation';
 
-    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, HistoricalDataQualityService $quality, LabCandidateSelectionService $selection, CandidateGateDecisionService $decisions, SystemLogService $logs, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LabImmutableEvidenceService $evidence, GateContractService $gateContracts): int
+    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, HistoricalDataQualityService $quality, LabCandidateSelectionService $selection, CandidateGateDecisionService $decisions, SystemLogService $logs, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LabImmutableEvidenceService $evidence, GateContractService $gateContracts, LabGenerationTerminalBoundaryService $terminalBoundaries): int
     {
         $contractHealth = $gateContracts->health();
         if (! ($contractHealth['healthy'] ?? false)) {
@@ -68,7 +69,7 @@ class DispatchFullLabValidation extends Command
             // active/incomplete generation forever.
             if ($roleCandidate
                 && data_get($roleCandidate->trigger_context, 'role_complete_council') !== true
-                && $this->closeTerminalScreeningBoundary($roleCandidate)) {
+                && (bool) data_get($terminalBoundaries->closeIfTerminal($roleCandidate), 'closed', false)) {
                 $roleCandidate = $roleCandidate->fresh(['agents.modelVersion']);
             }
             $generation = null;
@@ -591,42 +592,4 @@ class DispatchFullLabValidation extends Command
         return $screened->reject(fn ($agent): bool => $stale->contains('id', $agent->id))->values();
     }
 
-    /**
-     * Restore the screening terminal boundary after a worker interruption.
-     * This only repairs a projection; it does not create strategy or
-     * promotion evidence and it never closes a generation with open work.
-     */
-    private function closeTerminalScreeningBoundary($generation): bool
-    {
-        $openStatuses = [
-            'draft', 'queued', 'screening', 'evaluation_error', 'full_queued',
-            'full_validation', 'training',
-        ];
-        if ($generation->agents->contains(fn ($agent): bool => in_array($agent->lifecycle_status, $openStatuses, true))) {
-            return false;
-        }
-
-        $screened = $generation->agents->where('lifecycle_status', 'screened')->isNotEmpty();
-        app(LabGenerationContextService::class)->updateWithAttributes($generation, [
-            'status' => $screened ? 'screened' : 'technical_quarantine',
-            'completed_at' => now(),
-        ], function (array $context) use ($screened): array {
-            $context['screening_terminal_recovery'] = [
-                'protocol' => 'generation_terminal_boundary_recovery_v1',
-                'recovered_from_status' => 'screening',
-                'status' => $screened ? 'screened' : 'technical_quarantine',
-                'recovered_at' => now()->utc()->toIso8601String(),
-                'all_agents_terminal' => true,
-                'promotion_evidence' => false,
-            ];
-
-            return $context;
-        });
-        app(LabGenerationReportService::class)->record(
-            $generation->fresh(['agents']),
-            $screened ? 'screening_completed_recovered' : 'screening_technical_quarantine_recovered',
-        );
-
-        return true;
-    }
 }
