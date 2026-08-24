@@ -4,6 +4,7 @@ namespace Tests\Unit\Lifecycle;
 
 use App\Models\AiLaboratory;
 use App\Models\LabGeneration;
+use App\Models\LabLearningLaneDispatch;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabLifecycleErrorLogger;
@@ -80,6 +81,31 @@ class LabLifecycleOrchestratorTest extends TestCase
         // Deadlock => normal generation is blocked; only bounded recovery runs.
         $this->assertSame(LabLifecycleOrchestrator::PHASE_LEARNING_RECOVERY, $result['stage']);
         $this->assertCount(0, LabGeneration::all());
+    }
+
+    public function test_daily_budget_blocks_new_allocation_but_not_an_existing_retry_seat(): void
+    {
+        $this->seedLaboratory();
+        config(['services.lifecycle_orchestrator.max_recovery_dispatch_per_day' => 2]);
+        foreach ([1, 2] as $seat) {
+            LabLearningLaneDispatch::create([
+                'dispatch_key' => 'allocated-seat-'.$seat,
+                'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+                'strategy_family' => 'regime', 'status' => 'retry_ready',
+                'stage' => 'micro', 'micro_status' => 'pending',
+                'selected_at' => now(),
+            ]);
+        }
+        $this->bindPopulation($paused = true, pendingDojo: 2);
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-003-budget');
+
+        $this->assertSame(LabLifecycleOrchestrator::PHASE_LEARNING_RECOVERY, $result['stage']);
+        $this->assertSame(
+            'daily_budget_full_existing_retry',
+            data_get($result, 'data.records.reconciliation_skipped_reason'),
+        );
+        $this->assertSame(2, data_get($result, 'data.records.allocated_micro_seats'));
     }
 
     public function test_runtime_outage_fails_closed(): void

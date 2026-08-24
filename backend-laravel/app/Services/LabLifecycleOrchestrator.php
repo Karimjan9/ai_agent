@@ -314,24 +314,42 @@ class LabLifecycleOrchestrator
         $todayDispatches = LabLearningLaneDispatch::query()
             ->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
             ->where('selected_at', '>=', now('Asia/Tashkent')->startOfDay()->utc())->count();
-        if (Cache::has($cooldownKey) || $todayDispatches >= $dailyLimit) {
+        $allocatedMicroSeats = LabLearningLaneDispatch::query()
+            ->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
+            ->where('stage', 'micro')->where('micro_status', 'pending')
+            ->whereIn('status', ['retry_ready', 'selected'])->count();
+        if (Cache::has($cooldownKey) || ($todayDispatches >= $dailyLimit && $allocatedMicroSeats === 0)) {
             return ['dispatched' => 0, 'limit' => $limit, 'records' => [], 'strategy' => $strategy,
                 'paused_reason' => Cache::has($cooldownKey) ? 'recovery_cooldown' : 'daily_recovery_budget_exhausted'];
         }
 
         if ((int) data_get($strategy, 'actionable_pending_dojo', 0) > 0) {
             try {
-                Artisan::call('trading:reconcile-learning-recovery', [
-                    'symbol' => strtoupper($symbol),
-                    '--timeframe' => $timeframe,
-                    '--limit' => $limit,
-                    '--apply' => true,
-                    '--autonomous' => true,
-                    '--json' => true,
-                ]);
-                $out = json_decode(Artisan::output(), true);
-                $records = is_array($out) ? $out : [];
-                $reconciled = (int) data_get($records, 'dojo_recovery_queued', 0);
+                $remainingDailySeats = max(0, $dailyLimit - $todayDispatches);
+                $reconciled = 0;
+                if ($remainingDailySeats > 0) {
+                    Artisan::call('trading:reconcile-learning-recovery', [
+                        'symbol' => strtoupper($symbol),
+                        '--timeframe' => $timeframe,
+                        // Never allocate beyond the remaining daily budget.
+                        '--limit' => min($limit, $remainingDailySeats),
+                        '--apply' => true,
+                        '--autonomous' => true,
+                        '--json' => true,
+                    ]);
+                    $out = json_decode(Artisan::output(), true);
+                    $records = is_array($out) ? $out : [];
+                    $reconciled = (int) data_get($records, 'dojo_recovery_queued', 0);
+                } else {
+                    // A seat already counted against the daily allocation
+                    // must be allowed to reach a terminal state. Blocking its
+                    // execution here strands retry_ready work forever.
+                    $records = [
+                        'dojo_recovery_queued' => 0,
+                        'reconciliation_skipped_reason' => 'daily_budget_full_existing_retry',
+                        'allocated_micro_seats' => $allocatedMicroSeats,
+                    ];
+                }
 
                 // Reconciliation creates retry_ready records only. Existing
                 // actionable rows may already have been reconciled by an

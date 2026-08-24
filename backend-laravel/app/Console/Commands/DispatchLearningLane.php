@@ -232,7 +232,13 @@ class DispatchLearningLane extends Command
                     ->latest('id')
                     ->first();
             }
-            if ($existing && in_array((string) $existing->status, ['selected', 'queued', 'running', 'completed'], true)) {
+            $pendingMicroSeat = $existing
+                && (string) $existing->stage === 'micro'
+                && (string) $existing->micro_status === 'pending'
+                && in_array((string) $existing->status, ['retry_ready', 'selected'], true);
+            if ($existing
+                && ! $pendingMicroSeat
+                && in_array((string) $existing->status, ['selected', 'queued', 'running', 'completed'], true)) {
                 continue;
             }
             $micro = $microReplay->assessPair($pair, ! $this->option('dry-run'));
