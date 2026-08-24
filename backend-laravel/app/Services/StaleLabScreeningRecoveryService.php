@@ -105,31 +105,46 @@ class StaleLabScreeningRecoveryService
                 }
 
                 $agent = $run->agent()->first();
-                if (! $agent || ! in_array((string) $agent->lifecycle_status, ['queued', 'screening'], true)) {
+                if (! $agent) {
                     return null;
                 }
 
                 $fromStatus = (string) $agent->lifecycle_status;
+                $agentStillOpen = in_array($fromStatus, ['queued', 'screening'], true);
+                $reasonCode = $agentStillOpen
+                    ? 'STALE_SCREENING_RUN_RECLAIMED'
+                    : 'STALE_SCREENING_RUN_CLOSED_AFTER_TERMINAL_ATTEMPT';
                 $this->evidence->finishIfOpen($run, 'technical_error', null, [], [
                     'protocol' => self::PROTOCOL,
-                    'reason_code' => 'STALE_SCREENING_RUN_RECLAIMED',
+                    'reason_code' => $reasonCode,
                     'quality_verdict' => 'withheld',
                     'strategy_verdict' => 'withheld',
                     'promotion_evidence' => false,
                     'recovery_cutoff' => $cutoff->toIso8601String(),
                 ]);
-                $agent->update([
-                    'lifecycle_status' => 'evaluation_error',
-                    'decision_reason' => 'Stale screening run reclaimed after bounded timeout; strategy verdict withheld.',
-                ]);
-                $this->evidence->recordLifecycle($agent, 'stale_screening_run_reclaimed', [
+
+                // A later attempt may already have placed the agent in a
+                // terminal state while an earlier worker-owned run remained
+                // open. Close that orphaned ledger row, but never overwrite
+                // the later attempt's agent verdict or decision reason.
+                if ($agentStillOpen) {
+                    $agent->update([
+                        'lifecycle_status' => 'evaluation_error',
+                        'decision_reason' => 'Stale screening run reclaimed after bounded timeout; strategy verdict withheld.',
+                    ]);
+                    $reclaimedAgents[] = (int) $agent->id;
+                }
+
+                $this->evidence->recordLifecycle($agent->fresh(), $agentStillOpen
+                    ? 'stale_screening_run_reclaimed'
+                    : 'stale_screening_run_closed_after_terminal_attempt', [
                     'protocol' => self::PROTOCOL,
-                    'reason_code' => 'STALE_SCREENING_RUN_RECLAIMED',
+                    'reason_code' => $reasonCode,
                     'run_id' => $run->run_id,
                     'quality_verdict' => 'withheld',
                     'promotion_evidence' => false,
-                ], 'screening', $run->run_id, (int) $run->attempt, self::class, null, $fromStatus, 'evaluation_error');
-                $reclaimedAgents[] = (int) $agent->id;
+                ], 'screening', $run->run_id, (int) $run->attempt, self::class, null, $fromStatus,
+                    $agentStillOpen ? 'evaluation_error' : $fromStatus);
 
                 return $run->fresh();
             }, 1);

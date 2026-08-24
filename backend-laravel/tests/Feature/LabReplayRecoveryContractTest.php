@@ -9,6 +9,8 @@ use App\Services\LabAgentPreflightService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use App\Services\LabReplayRecoveryService;
+use App\Services\LabQueueJobInspector;
+use App\Services\StaleLabScreeningRecoveryService;
 use App\Services\CandidateHandoffService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -103,5 +105,45 @@ class LabReplayRecoveryContractTest extends TestCase
         }
 
         $this->assertSame([], (array) data_get($generation->fresh()->trigger_context, 'canonical_dataset_snapshots', []));
+    }
+
+    public function test_stale_run_is_closed_without_overwriting_a_later_terminal_agent_attempt(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'terminal_attempt_orphan', true);
+        $agent = $generation->agents->first();
+        $run = app(LabImmutableEvidenceService::class)->beginRun($agent, 'screening', 'screen', [
+            'attempt' => 1,
+            'source' => 'worker_killed_before_retry',
+        ]);
+        $run->forceFill(['started_at' => now()->subHours(2)])->save();
+        $agent->update([
+            'lifecycle_status' => 'evaluation_error',
+            'decision_reason' => 'Later bounded attempt reached a terminal technical error.',
+        ]);
+
+        $this->mock(LabQueueJobInspector::class, function ($mock): void {
+            $mock->shouldReceive('generationQueueBacklog')->andReturn([
+                'backend' => 'redis',
+                'available' => true,
+                'total' => 0,
+                'queues' => [],
+                'rows' => [],
+            ]);
+        });
+
+        $result = app(StaleLabScreeningRecoveryService::class)->recover($generation->fresh(), 30);
+
+        $this->assertSame(1, $result['reclaimed_runs']);
+        $this->assertSame(0, $result['reclaimed_agents']);
+        $this->assertSame('technical_error', $run->fresh()->status);
+        $this->assertSame(
+            'STALE_SCREENING_RUN_CLOSED_AFTER_TERMINAL_ATTEMPT',
+            data_get($run->fresh()->metadata, 'reason_code'),
+        );
+        $this->assertSame('evaluation_error', $agent->fresh()->lifecycle_status);
+        $this->assertSame(
+            'Later bounded attempt reached a terminal technical error.',
+            $agent->fresh()->decision_reason,
+        );
     }
 }
