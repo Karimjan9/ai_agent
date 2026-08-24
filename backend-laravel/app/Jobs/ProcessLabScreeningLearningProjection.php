@@ -3,16 +3,21 @@
 namespace App\Jobs;
 
 use App\Models\CandidateGateDecision;
+use App\Models\AgentLearningEpisode;
 use App\Models\LabAgent;
 use App\Services\AgentKnowledgeService;
+use App\Services\AdversarialCoEvolutionService;
 use App\Services\AgentProgressCardService;
 use App\Services\FailureRepairAnchorService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LearningLaneService;
+use App\Services\LearningKernelService;
+use App\Services\LearningReceiptService;
 use App\Services\MutationResponseMapService;
 use App\Services\ParentAwareCreditService;
 use App\Services\ProvisionalSkillCartridgeService;
 use App\Services\SkillMentorService;
+use App\Services\SkillZooService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -78,6 +83,10 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         ProvisionalSkillCartridgeService $cartridges,
         AgentProgressCardService $progressCards,
         AgentKnowledgeService $knowledge,
+        LearningKernelService $learningKernel,
+        LearningReceiptService $learningReceipts,
+        SkillZooService $skillZoo,
+        AdversarialCoEvolutionService $adversarialMarket,
     ): void {
         $agent = LabAgent::with('modelVersion', 'generation')->find($this->labAgentId);
         $decision = CandidateGateDecision::find($this->decisionId);
@@ -108,6 +117,11 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
             $agent->fresh(['modelVersion']),
             $result,
         );
+        $skillZooEntry = $skillZoo->record($agent->fresh(['modelVersion']), $result, $screeningResponseMap);
+        if ($skillZooEntry !== null) $result['skill_zoo_entry'] = $skillZooEntry;
+        // Planning a bounded scenario creates no replay or queue job. The
+        // existing sealed red-team worker remains the only execution path.
+        $result['adversarial_scenarios'] = $adversarialMarket->plan($agent->fresh(['modelVersion']));
         $cartridge = $cartridges->record(
             $agent->fresh(['modelVersion']),
             $result,
@@ -117,11 +131,15 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         if ($cartridge !== null) {
             $result['provisional_skill_cartridge'] = $cartridge;
         }
-        $learningLane->pairScreeningObservation(
+        $pairProjection = $learningLane->pairScreeningObservation(
             $agent->fresh(['modelVersion', 'generation']),
             $result,
             $screeningResponseMap,
         );
+        $pair = is_array($pairProjection) && filled($pairProjection['id'])
+            ? \App\Models\LabLearningLanePair::find((int) $pairProjection['id'])
+            : null;
+        $learningReceipts->settle($agent->fresh(['modelVersion']), $result, $pair);
         $credit = $parentCredit->recordScreening(
             $agent->fresh(['modelVersion']),
             $result,
@@ -145,5 +163,29 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
             $result,
             $this->runId,
         );
+
+        // The retrieval packet was created before mutation selection and
+        // consumed only after the child identity existed.  Settle that exact
+        // decision at screening so consumed lessons are connected to an
+        // outcome rather than accumulating as orphaned advice.  This remains
+        // research evidence; it does not grant a promotion or skill claim.
+        $freshModel = $agent->fresh(['modelVersion'])->modelVersion;
+        $episodeId = (int) data_get($freshModel?->metadata, 'learning_decision.episode_id', 0);
+        $episode = $episodeId > 0 ? AgentLearningEpisode::find($episodeId) : null;
+        if ($episode) {
+            $learningKernel->settleOutcome($episode, [
+                'source_key' => 'screening-decision:'.$agent->id.':'.$this->runId,
+                'source_type' => LabAgent::class,
+                'source_id' => $agent->id,
+                'outcome_status' => 'settled',
+                'failure_class' => data_get($result, 'mutation_observability.declared_target', data_get($freshModel?->metadata, 'generation_target', 'profit_factor')),
+                'parameter_key' => data_get($freshModel?->metadata, 'learning_decision.selected_gene'),
+                'metrics' => $result,
+            ]);
+            $metadata = (array) $freshModel->metadata;
+            $metadata['learning_decision']['outcome_status'] = 'screening_settled';
+            $metadata['learning_decision']['settled_evidence_run_id'] = $this->runId;
+            $freshModel->update(['metadata' => $metadata]);
+        }
     }
 }

@@ -260,6 +260,7 @@ class AgentKnowledgeService
         ?array $niche,
         string $target,
         array $contributors = [],
+        ?array $decisionPacket = null,
     ): array {
         $parentModels = collect([$parent, ...$contributors])
             ->filter(fn ($model): bool => $model instanceof ModelVersion)
@@ -289,17 +290,7 @@ class AgentKnowledgeService
         // Canonical retrieval is deliberately attached to the child contract:
         // it records what was available before a mutation is chosen, while
         // the newborn agent still has to prove every imported capability.
-        $kernelPacket = app(LearningKernelService::class)->retrieveForGeneration(
-            $symbol,
-            $timeframe,
-            $family,
-            [
-                'regime' => data_get($niche, 'regime'),
-                'volatility' => data_get($niche, 'volatility'),
-                'transition_state' => data_get($niche, 'transition_state'),
-                'state_cluster_id' => data_get($niche, 'state_cluster'),
-            ],
-        );
+        $kernelPacket = $decisionPacket ?? $this->decisionPacket($symbol, $timeframe, $family, $niche);
         $blockedMutations = array_values(array_unique([
             ...$this->blockedMutationKeys($symbol, $timeframe, $family, $scope),
             ...((array) data_get($kernelPacket, 'blocked_mutations', [])),
@@ -337,6 +328,25 @@ class AgentKnowledgeService
             'rule' => 'A child may learn from a parent card, but must re-prove every capability on frozen evidence.',
             'multi_parent_rule' => 'Confirmed capability priors may be unioned across selected parents; blocked lessons remain independently re-earned and never become promotion evidence.',
         ];
+    }
+
+    /** @return array<string, mixed> */
+    public function decisionPacket(string $symbol, string $timeframe, string $family, ?array $niche): array
+    {
+        return app(LearningKernelService::class)->retrieveForGeneration(
+            $symbol,
+            $timeframe,
+            $family,
+            [
+                'regime' => data_get($niche, 'regime'),
+                'volatility' => data_get($niche, 'volatility'),
+                'transition_state' => data_get($niche, 'transition_state'),
+                'state_cluster_id' => data_get($niche, 'state_cluster'),
+            ],
+            null,
+            null,
+            5,
+        );
     }
 
     /** Mark members as elite only after the portfolio gate itself passed. */

@@ -11,7 +11,9 @@ namespace App\Services;
 class ResearchAllocationPolicyService
 {
     public const PROTOCOL = 'research_allocation_budget_v1';
+
     public const SHADOW_ALLOCATION_PROTOCOL = 'smart_courage_allocation_v1';
+
     public const CONTROL_PAIR_PROTOCOL = 'frozen_control_pair_v1';
 
     /** Authoritative normal shadow allocation. */
@@ -50,7 +52,9 @@ class ResearchAllocationPolicyService
             static fn (float $share): int => (int) floor($population * $share),
             $shares,
         );
-        foreach (array_keys($shares) as $lane) $counts[$lane] = max(0, $counts[$lane]);
+        foreach (array_keys($shares) as $lane) {
+            $counts[$lane] = max(0, $counts[$lane]);
+        }
         $counts['frozen_control'] = max(1, $counts['frozen_control']);
 
         $remaining = $population - array_sum($counts);
@@ -74,7 +78,9 @@ class ResearchAllocationPolicyService
                 ->sortDesc()
                 ->keys()
                 ->first(fn (string $candidate): bool => $candidate !== 'frozen_control' && $counts[$candidate] > 0);
-            if ($lane === null) break;
+            if ($lane === null) {
+                break;
+            }
             $counts[$lane]--;
             $remaining++;
         }
@@ -162,7 +168,9 @@ class ResearchAllocationPolicyService
             $remaining = 1.0;
             $nonTargetTotal = array_sum(array_slice($effective, 1));
             foreach (array_keys($effective) as $lane) {
-                if ($lane === 'targeted_rescue') continue;
+                if ($lane === 'targeted_rescue') {
+                    continue;
+                }
                 $effective[$lane] = $nonTargetTotal > 0
                     ? round($effective[$lane] / $nonTargetTotal * $remaining, 4)
                     : 0.0;
@@ -207,7 +215,9 @@ class ResearchAllocationPolicyService
             ? $this->shadowContract($targetedRescueBlocked, count($plan))
             : $this->contract($targetedRescueBlocked, count($plan));
         foreach ($plan as &$slot) {
-            if (! is_array($slot)) continue;
+            if (! is_array($slot)) {
+                continue;
+            }
             $slot['allocation_lane'] = $this->laneFor($slot, $shadowMode);
             $slot['allocation_budget_protocol'] = (string) ($shadowMode
                 ? data_get($shadowAllocation, 'protocol', self::SHADOW_ALLOCATION_PROTOCOL)
@@ -247,11 +257,19 @@ class ResearchAllocationPolicyService
         // the all-gates fail-closed rule.
         $volumePairRepair = $this->ensureNormalVolumeCandidate($plan);
         $plan = (array) data_get($volumePairRepair, 'plan', $plan);
+        // The volume repair can legitimately consume the second seat of a
+        // price-family pair. Rebalance only a generic risk-management seat
+        // from an overrepresented family on the same execution lane. Tactic,
+        // structural and validated-lineage identities remain immutable.
+        $familyPairabilityRepair = $this->ensureNormalFamilyPairability($plan);
+        $plan = (array) data_get($familyPairabilityRepair, 'plan', $plan);
         $required = [];
         $controls = [];
         foreach ($plan as $index => $slot) {
             $family = (string) data_get($slot, 'family', '');
-            if ($family === '') continue;
+            if ($family === '') {
+                continue;
+            }
             $lane = $this->executionLane($slot);
             $key = $lane.'|'.$family;
             $required[$key] = ['lane' => $lane, 'family' => $family, 'key' => $key];
@@ -264,27 +282,43 @@ class ResearchAllocationPolicyService
         }
 
         foreach ($required as $key => $contract) {
-            if (array_key_exists($key, $controls)) continue;
+            if (array_key_exists($key, $controls)) {
+                continue;
+            }
             foreach ($plan as $index => $slot) {
-                if (($controls[$key] ?? null) === (int) $index) continue;
+                if (($controls[$key] ?? null) === (int) $index) {
+                    continue;
+                }
                 $family = (string) data_get($slot, 'family', '');
-                if ($family !== $contract['family'] || $this->executionLane($slot) !== $contract['lane']) continue;
+                if ($family !== $contract['family'] || $this->executionLane($slot) !== $contract['lane']) {
+                    continue;
+                }
                 $role = (string) data_get($slot, 'niche.role', data_get($slot, 'niche.specialist_role', ''));
-                if ($role === 'frozen_control' || (bool) data_get($slot, 'niche.control_only', false)) continue;
+                if ($role === 'frozen_control' || (bool) data_get($slot, 'niche.control_only', false)) {
+                    continue;
+                }
                 // Keep a structural hypothesis interpretable whenever a
                 // non-structural seat is available.  The control is a
                 // frozen baseline, not a converted topology experiment.
-                if ((bool) data_get($slot, 'niche.structural_research', false)) continue;
+                if ((bool) data_get($slot, 'niche.structural_research', false)) {
+                    continue;
+                }
                 $controls[$key] = (int) $index;
                 break;
             }
             if (! array_key_exists($key, $controls)) {
                 foreach ($plan as $index => $slot) {
-                    if (($controls[$key] ?? null) === (int) $index) continue;
+                    if (($controls[$key] ?? null) === (int) $index) {
+                        continue;
+                    }
                     $family = (string) data_get($slot, 'family', '');
-                    if ($family !== $contract['family'] || $this->executionLane($slot) !== $contract['lane']) continue;
+                    if ($family !== $contract['family'] || $this->executionLane($slot) !== $contract['lane']) {
+                        continue;
+                    }
                     $role = (string) data_get($slot, 'niche.role', data_get($slot, 'niche.specialist_role', ''));
-                    if ($role === 'frozen_control' || (bool) data_get($slot, 'niche.control_only', false)) continue;
+                    if ($role === 'frozen_control' || (bool) data_get($slot, 'niche.control_only', false)) {
+                        continue;
+                    }
                     $controls[$key] = (int) $index;
                     break;
                 }
@@ -297,7 +331,9 @@ class ResearchAllocationPolicyService
             $family = (string) data_get($slot, 'family', '');
             $lane = $this->executionLane($slot);
             $key = $lane.'|'.$family;
-            if ($family === '' || ! isset($required[$key])) continue;
+            if ($family === '' || ! isset($required[$key])) {
+                continue;
+            }
             $pairKey = hash('sha256', json_encode([
                 'protocol' => 'frozen_control_pair_v1',
                 'generation_id' => $generationId,
@@ -336,7 +372,7 @@ class ResearchAllocationPolicyService
                 $slot['niche']['role'] = 'frozen_control';
                 $slot['niche']['specialist_role'] = 'frozen_control';
                 $slot['niche']['control_only'] = true;
-                    $slot['niche']['control_lane'] = $lane;
+                $slot['niche']['control_lane'] = $lane;
                 $slot['niche']['control_family'] = $family;
                 unset(
                     $slot['niche']['declared_gene'],
@@ -391,11 +427,85 @@ class ResearchAllocationPolicyService
                 'candidate_counts' => $candidateCounts,
                 'missing_candidate_pairs' => $missingCandidates,
                 'volume_pair_repair' => data_get($volumePairRepair, 'repair'),
+                'family_pairability_repairs' => data_get($familyPairabilityRepair, 'repairs', []),
                 'allowed' => $missing === [] && $missingCandidates === [],
                 'missing_control_action' => 'generation_diagnostic_only_no_learning_credit_no_full_replay',
                 'promotion_evidence' => false,
             ],
         ];
+    }
+
+    /**
+     * A causal execution lane needs at least two seats per family: one frozen
+     * control and one candidate. Smart composition deliberately carries
+     * several generic risk-management variants in the same family, so one of
+     * those excess seats may be reassigned to a singleton family without
+     * changing the 6/6/5/3 composition budget or any family-bound tactic.
+     *
+     * @return array{plan: array<int, array<string, mixed>>, repairs: array<int, array<string, mixed>>}
+     */
+    private function ensureNormalFamilyPairability(array $plan): array
+    {
+        $repairs = [];
+
+        while (true) {
+            $counts = collect($plan)->countBy(fn (array $slot): string => $this->executionLane($slot).'|'.(string) data_get($slot, 'family', '')
+            );
+            $deficitKey = $counts
+                ->filter(fn (int $count, string $key): bool => $count === 1 && ! str_ends_with($key, '|'))
+                ->keys()
+                ->first();
+            if ($deficitKey === null) {
+                break;
+            }
+
+            [$lane, $family] = explode('|', (string) $deficitKey, 2);
+            $donorIndex = collect($plan)->keys()
+                ->filter(fn (int $index): bool => $this->executionLane($plan[$index]) === $lane)
+                ->filter(fn (int $index): bool => (string) data_get($plan[$index], 'niche.composition_lane') === 'risk_management_mutation')
+                ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.control_only', false))
+                ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.structural_research', false))
+                ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.validated_parent_required', false))
+                ->filter(function (int $index) use ($counts, $plan): bool {
+                    $key = $this->executionLane($plan[$index]).'|'.(string) data_get($plan[$index], 'family', '');
+
+                    return (int) $counts->get($key, 0) >= 3;
+                })
+                ->sortByDesc(function (int $index) use ($counts, $plan): int {
+                    $slot = $plan[$index];
+                    $key = $this->executionLane($slot).'|'.(string) data_get($slot, 'family', '');
+
+                    return (int) $counts->get($key, 0);
+                })
+                ->first();
+            if ($donorIndex === null) {
+                break;
+            }
+
+            $previousFamily = (string) data_get($plan[$donorIndex], 'family', '');
+            $plan[$donorIndex]['family'] = $family;
+            $plan[$donorIndex]['niche'] = [
+                ...((array) data_get($plan[$donorIndex], 'niche', [])),
+                'family_pairability_repair' => [
+                    'protocol' => 'normal_family_pairability_repair_v1',
+                    'from_family' => $previousFamily,
+                    'to_family' => $family,
+                    'execution_lane' => $lane,
+                    'reason' => 'singleton_family_lane_requires_frozen_control_and_candidate',
+                    'promotion_evidence' => false,
+                ],
+            ];
+            $repairs[] = [
+                'slot' => (int) $donorIndex + 1,
+                'from_family' => $previousFamily,
+                'to_family' => $family,
+                'execution_lane' => $lane,
+                'composition_lane' => 'risk_management_mutation',
+                'promotion_evidence' => false,
+            ];
+        }
+
+        return ['plan' => array_values($plan), 'repairs' => $repairs];
     }
 
     /**
@@ -414,7 +524,9 @@ class ResearchAllocationPolicyService
             ->groupBy(fn (array $slot): string => (string) data_get($slot, 'family', ''));
 
         foreach ($volumeSlots as $family => $slots) {
-            if ($family === '' || $slots->count() >= 2) continue;
+            if ($family === '' || $slots->count() >= 2) {
+                continue;
+            }
 
             $volumeIndex = (int) $slots->keys()->first();
             $candidateIndex = collect($plan)
@@ -426,7 +538,9 @@ class ResearchAllocationPolicyService
                 ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.shadow_only', false))
                 ->values()
                 ->first();
-            if ($candidateIndex === null) continue;
+            if ($candidateIndex === null) {
+                continue;
+            }
 
             $niche = (array) data_get($plan[$candidateIndex], 'niche', []);
             unset(
@@ -526,12 +640,16 @@ class ResearchAllocationPolicyService
                 'niche.shadow_research_lane.role',
                 data_get($slot, 'shadow_research_lane.role', ''),
             );
-            if ($role !== '') return $role;
+            if ($role !== '') {
+                return $role;
+            }
         }
         $origin = (string) data_get($slot, 'origin', '');
         $target = (string) data_get($slot, 'target', '');
         $niche = (array) data_get($slot, 'niche', []);
-        if ($origin === 'targeted_failure_profile' || $origin === 'gate_targeted') return 'targeted_rescue';
+        if ($origin === 'targeted_failure_profile' || $origin === 'gate_targeted') {
+            return 'targeted_rescue';
+        }
         if ((bool) data_get($niche, 'control_only', false)
             || (bool) data_get($niche, 'role_control', false)
             || $origin === 'lineage_root_rebuild'

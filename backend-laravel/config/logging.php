@@ -127,6 +127,30 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | NeuroTrader Lifecycle Channels
+        |--------------------------------------------------------------------------
+        | Dedicated structured channels for the lifecycle orchestrator. Errors are
+        | written as JSONL under storage/logs/neurotrader/lifecycle-errors and are
+        | retained per config('logging.channels.neurotrader_lifecycle.retention_days').
+        */
+        'neurotrader_lifecycle_errors' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/neurotrader/lifecycle-errors/laravel.log'),
+            'level' => 'debug',
+            'days' => (int) env('NEUROTRADER_LIFECYCLE_LOG_RETENTION_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        'neurotrader_lifecycle_summaries' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/neurotrader/lifecycle-summaries/laravel.log'),
+            'level' => 'info',
+            'days' => (int) env('NEUROTRADER_LIFECYCLE_LOG_RETENTION_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

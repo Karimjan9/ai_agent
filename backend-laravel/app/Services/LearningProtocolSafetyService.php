@@ -2,8 +2,12 @@
 
 namespace App\Services;
 
+use App\Models\AgentLearningSettlement;
 use App\Models\AiLaboratory;
+use App\Models\CandidateGateDecision;
+use App\Models\LabLearningLanePair;
 use App\Models\SystemEvent;
+use Illuminate\Support\Facades\Schema;
 
 /** Persistent, auditable safety controls for an evolution-protocol rollout. */
 class LearningProtocolSafetyService
@@ -63,7 +67,8 @@ class LearningProtocolSafetyService
                 && count((array) data_get($groups, 'repair_anchor_cohort.targets', [])) === 5
                 && data_get($profile, 'cohort_contract.protocol') === 'four_siblings_plus_control_v1'
                 && (int) data_get($profile, 'cohort_contract.bounded_siblings') === 4
-                && (int) data_get($profile, 'cohort_contract.frozen_control') === 1;
+                && (int) data_get($profile, 'cohort_contract.frozen_control') === 1
+                && $this->boundedPilotP0Ready($profile);
         }
 
         return $trigger === 'candidate_handoff'
@@ -75,6 +80,22 @@ class LearningProtocolSafetyService
             && strtoupper((string) data_get($profile, 'timeframe')) === self::LIGHTHOUSE_TIMEFRAME
             && count($groups) === 5
             && collect($groups)->every(fn (mixed $group): bool => count((array) data_get($group, 'targets', [])) === 4);
+    }
+
+    /**
+     * A five-seat rescue is admitted only after its causal evidence plan is
+     * complete.  Values are supplied by the read-only plan/audit path; this
+     * method performs no reconciliation, dispatch or retry by itself.
+     */
+    public function boundedPilotP0Ready(array $profile): bool
+    {
+        $p0 = (array) data_get($profile, 'p0_completion', []);
+
+        return (int) data_get($p0, 'causal_observation_incomplete_count', PHP_INT_MAX) === 0
+            && (int) data_get($p0, 'numeric_target_delta_candidates', 0) >= 4
+            && (int) data_get($p0, 'micro_replay_terminal_candidates', 0) >= 4
+            && (int) data_get($p0, 'retrieval_associated_candidates', 0) >= 4
+            && (int) data_get($p0, 'consumed_or_settled_lessons', 0) >= 1;
     }
 
     /** Record an explicit rescue admission without lifting the global pause. */
@@ -149,6 +170,7 @@ class LearningProtocolSafetyService
             'severity' => 'info',
             'summary' => 'Lab-generation creation resumed after protocol verification.',
             'payload' => ['paused' => false, 'reason' => $reason, 'execution_contract' => self::EXECUTION_CONTRACT,
+                'readiness' => $readiness,
                 'resumed_at' => now()->utc()->toIso8601String()],
             'occurred_at' => now(),
         ]);
@@ -185,6 +207,13 @@ class LearningProtocolSafetyService
                 'parent_links' => (int) data_get($kpis, 'parent_links', 0) > 0,
                 'paper_eligible' => (int) data_get($kpis, 'paper_eligible', 0) > 0,
             ];
+            // The initial protocol freeze can otherwise never be resumed:
+            // champion/paper evidence is produced only after new cohorts run.
+            // Keep the real funnel checks visible and admit a distinct,
+            // auditable bootstrap mode instead of falsely marking them green.
+            $zeroPassBootstrap = $this->bootstrapResumeReady($lab);
+            $learningRepairBootstrap = $this->learningRepairResumeReady($lab);
+            $bootstrapResume = $zeroPassBootstrap || $learningRepairBootstrap;
             $labs[] = [
                 'symbol' => $lab->symbol,
                 'timeframe' => $lab->timeframe,
@@ -193,13 +222,95 @@ class LearningProtocolSafetyService
                 'status' => $latest?->status,
                 'checks' => $checks,
                 'failed_checks' => array_values(array_keys(array_filter($checks, fn (bool $passed): bool => ! $passed))),
+                'bootstrap_resume_ready' => $bootstrapResume,
+                'resume_mode' => $learningRepairBootstrap
+                    ? 'canonical_learning_repair_bootstrap'
+                    : ($zeroPassBootstrap ? 'zero_screen_pass_bootstrap' : 'full_funnel'),
             ];
         }
 
         return [
-            'ready' => $labs !== [] && collect($labs)->every(fn (array $lab): bool => $lab['failed_checks'] === []),
+            'ready' => $labs !== [] && collect($labs)->every(fn (array $lab): bool => $lab['failed_checks'] === []
+                || (bool) $lab['bootstrap_resume_ready']),
             'required' => $required,
             'labs' => $labs,
         ];
+    }
+
+    private function bootstrapResumeReady(AiLaboratory $lab): bool
+    {
+        $generations = $lab->generations()
+            ->whereIn('status', ['screened', 'completed', 'technical_quarantine', 'failed', 'abandoned'])
+            ->latest('generation')
+            ->limit(3)
+            ->with('agents:id,lab_generation_id,lifecycle_status')
+            ->get();
+        if ($generations->count() < 3) return false;
+
+        foreach ($generations as $generation) {
+            $agents = $generation->agents;
+            if ($agents->isEmpty() || $agents->contains(fn ($agent): bool => in_array(
+                (string) $agent->lifecycle_status,
+                ['draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation'],
+                true,
+            ))) {
+                return false;
+            }
+            $passes = CandidateGateDecision::query()
+                ->whereIn('lab_agent_id', $agents->pluck('id'))
+                ->where('stage', 'screening')
+                ->where('decision', 'passed')
+                ->exists();
+            if ($passes) return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Reopen generation creation after the repaired learning loop has proved
+     * one real canonical settlement. This never grants forward, paper,
+     * parent or champion evidence; those gates remain unchanged downstream.
+     */
+    private function learningRepairResumeReady(AiLaboratory $lab): bool
+    {
+        if (! Schema::hasTable('agent_learning_settlements')
+            || ! Schema::hasTable('lab_learning_lane_pairs')) {
+            return false;
+        }
+
+        $latestGenerationIds = $lab->generations()
+            ->latest('generation')
+            ->limit(4)
+            ->pluck('id');
+        if ($latestGenerationIds->isEmpty()) return false;
+
+        $active = $lab->generations()
+            ->whereIn('id', $latestGenerationIds)
+            ->whereHas('agents', fn ($query) => $query->whereIn('lifecycle_status', [
+                'draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation',
+            ]))
+            ->exists();
+        if ($active) return false;
+
+        $settledPairIds = AgentLearningSettlement::query()
+            ->where('source_type', LabLearningLanePair::class)
+            ->whereHas('episode', fn ($query) => $query
+                ->where('symbol', strtoupper((string) $lab->symbol))
+                ->where('timeframe', strtoupper((string) $lab->timeframe)))
+            ->pluck('source_id');
+        if ($settledPairIds->isEmpty()) return false;
+
+        return LabLearningLanePair::query()
+            ->with('controlResponseMap')
+            ->whereIn('id', $settledPairIds)
+            ->whereIn('lab_generation_id', $latestGenerationIds)
+            ->where('pair_integrity_status', 'verified')
+            ->where('same_generation', true)
+            ->whereColumn('candidate_data_hash', 'control_data_hash')
+            ->whereColumn('candidate_execution_hash', 'control_execution_hash')
+            ->whereIn('status', ['canonical_episode_settled', 'lesson_compiled', 'skill_confirmed'])
+            ->get()
+            ->contains(fn (LabLearningLanePair $pair): bool => $pair->isVerifiedControlPair());
     }
 }

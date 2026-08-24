@@ -171,21 +171,19 @@ $scheduleStaggeredFive('trading:dispatch-full-validation', [], 0);
 // sealed full-validation/council gates. Its H1 regime source is still passed
 // separately by the evaluator and is always delayed until the H1 candle closes.
 $scheduleStaggeredFive('trading:dispatch-full-validation', ['--timeframe' => 'M15'], 1);
-// Research-only near-miss learning runs are admitted only with a paired
-// control/parent/anchor baseline. The command defers while the serialized
-// heavy lane is busy and never changes the promotion clock.
-$scheduleStaggeredFive('trading:dispatch-learning-lane', [
-    'XAUUSD',
-    '--timeframe' => 'H1',
-    '--limit' => 4,
-], 2);
 // A single-seat pump retries only after the queue, shared replay mutex and AI
-// evaluator are idle. Micro-confirmation is enforced inside dispatch.
+// evaluator are idle. Micro-confirmation is enforced inside dispatch. Fresh
+// pairs are materialized by the screening projection; the scheduler does not
+// rescan the entire historical response-map plane every five minutes.
 $scheduleArtisan('trading:pump-learning-lane', [
     'XAUUSD',
     '--timeframe' => 'H1',
     '--limit' => 1,
+    '--autonomous' => true,
 ])
+    ->everyMinute()
+    ->withoutOverlapping();
+$scheduleArtisan('trading:process-canonical-learning-outbox', ['--limit' => 25])
     ->everyMinute()
     ->withoutOverlapping();
 // Operator-facing monitor commands are intentionally disabled. They produce
@@ -340,6 +338,21 @@ $scheduleArtisan('trading:sync-economic-calendar', ['--provider' => 'currents_ap
     ->withoutOverlapping();
 $scheduleArtisan('trading:detect-drift')->hourlyAt(45)->withoutOverlapping();
 $scheduleArtisan('trading:release-holdouts')->hourlyAt(40)->withoutOverlapping();
+
+// NeuroTrader Lifecycle Orchestrator — resumable, idempotent cycle.
+// Runs after drift detection so a new generation is built from the freshest
+// evidence. Locks per symbol/timeframe; withoutOverlapping prevents overlap.
+$scheduleArtisan('trading:run-lifecycle-cycle', [
+    '--symbol' => 'XAUUSD',
+    '--timeframe' => 'H1',
+])
+    ->description('Lifecycle orchestrator (XAUUSD/H1) — resumable cycle')
+    // A terminal generation is picked up quickly: ensureGeneration() only
+    // creates the successor after the prior lifecycle has no active work and
+    // every existing strategy/learning gate is open. The service lock keeps
+    // repeated ticks idempotent.
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
 // Database backups are written to the configured G: volume by the scheduled
 // ops:backup-database task above. Never add a local C: dump fallback here.
 // Gate-decision backfill is intentionally manual: it records reasons from

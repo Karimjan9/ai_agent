@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\AiLaboratory;
+use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\ModelVersion;
+use App\Services\GenerationAdmissionDecisionService;
 use App\Services\LearningLaneService;
 use App\Services\LearningVelocityGateService;
 use App\Services\MutationResponseMapService;
@@ -60,18 +62,45 @@ class LearningIntegrityRegressionTest extends TestCase
         $this->assertGreaterThan(0, $status['missing_control']);
     }
 
-    public function test_learning_velocity_blocks_recent_generations_without_learning_evidence(): void
+    public function test_three_consecutive_zero_pass_generations_open_strategy_deadlock_not_learning_starvation(): void
     {
         [$lab, $generation] = $this->scope();
-        $generation->update(['status' => 'screened']);
-        $model = ModelVersion::create(['name' => 'no-evidence-model', 'strategy' => 'no-evidence-model', 'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
-        LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => []]);
+        config()->set('services.lab_selection.zero_pass_circuit_breaker_generations', 3);
+        $firstDecision = null;
+        foreach (range(1, 3) as $number) {
+            $current = $number === 1
+                ? $generation
+                : LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => $number, 'trigger_type' => 'test', 'population_size' => 1, 'status' => 'screened', 'trigger_context' => []]);
+            $model = ModelVersion::create(['name' => 'zero-pass-model-'.$number, 'strategy' => 'zero-pass-model-'.$number, 'version' => 'v1', 'generation' => $number, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+            $agent = LabAgent::create(['lab_generation_id' => $current->id, 'model_version_id' => $model->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => []]);
+            CandidateGateDecision::create(['lab_agent_id' => $agent->id, 'stage' => 'screening', 'decision' => 'failed', 'reason_codes' => ['FAILED_PROFIT_FACTOR'], 'metrics' => [], 'evaluated_at' => now()]);
+            if ($number === 1) {
+                $firstDecision = app(GenerationAdmissionDecisionService::class)->decide(
+                    $lab,
+                    $current,
+                    ['trigger' => 'new_data', 'force' => true],
+                    false,
+                );
+            }
+        }
 
         $summary = app(LearningVelocityGateService::class)->summary('XAUUSD', 'H1');
+        $escapeDecision = app(GenerationAdmissionDecisionService::class)->decide(
+            $lab,
+            LabGeneration::query()->where('ai_laboratory_id', $lab->id)->latest('generation')->firstOrFail(),
+            ['trigger' => 'new_data'],
+            false,
+        );
 
+        $this->assertSame(GenerationAdmissionDecisionService::BLOCK_HARD, $firstDecision['decision']);
+        $this->assertFalse($firstDecision['allowed']);
         $this->assertFalse($summary['allowed']);
-        $this->assertSame('learning_starvation', $summary['status']);
-        $this->assertTrue($summary['learning_starvation']['starved']);
+        $this->assertSame('strategy_deadlock', $summary['status']);
+        $this->assertTrue($summary['health_layers']['strategy_deadlock']['active']);
+        $this->assertSame(3, $summary['health_layers']['strategy_deadlock']['consecutive_zero_pass_generations']);
+        $this->assertFalse($summary['health_layers']['live_learning_backlog']['active']);
+        $this->assertSame(GenerationAdmissionDecisionService::OPEN_STRUCTURAL_ESCAPE, $escapeDecision['decision']);
+        $this->assertTrue($escapeDecision['allowed']);
     }
 
     public function test_model_version_status_follows_agent_lifecycle(): void
@@ -90,6 +119,7 @@ class LearningIntegrityRegressionTest extends TestCase
     {
         $lab = AiLaboratory::create(['symbol' => 'XAUUSD', 'name' => 'Integrity test lab', 'timeframe' => 'H1', 'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse']);
         $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test', 'population_size' => 1, 'status' => 'screened', 'trigger_context' => []]);
+
         return [$lab, $generation];
     }
 }

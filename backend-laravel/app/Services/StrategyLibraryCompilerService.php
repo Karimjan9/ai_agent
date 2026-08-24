@@ -40,6 +40,33 @@ class StrategyLibraryCompilerService
         return ['protocol' => self::PROTOCOL, 'strategy_spec' => $spec, 'feature_contract' => ['required_values' => $spec['required_values'], 'lookahead_safe' => true, 'external_values_require_available_at' => in_array($spec['family'], ['macro_fundamental', 'positioning'], true)], 'tactic_contract' => ['regime_lens' => $spec['regime'], 'bias' => $spec['bias'], 'setup' => $spec['setup'], 'trigger' => $spec['trigger'], 'confirmation' => $spec['confirmation'], 'risk_owner' => 'risk_sentinel', 'exit' => ['partial' => '1R', 'target' => '2R', 'trailing' => 'atr']], 'mutation_contract' => ['allowed' => $spec['allowed_mutations'], 'forbidden' => ['risk_owner', 'data_source', 'execution_contract'], 'one_axis_only' => true], 'lifecycle' => $spec['status'] === 'shadow_only' ? ['state' => 'SHADOW', 'routable' => false] : ['state' => 'EXECUTABLE_RESEARCH', 'routable' => false], 'promotion_evidence' => false];
     }
 
+    /**
+     * Map an executable research spec to a runtime family/topology already
+     * implemented by the replay engine. Shadow-only macro/positioning specs
+     * deliberately return null: external data availability cannot be faked.
+     *
+     * @return array{family:string, architecture:string}|null
+     */
+    public function runtime(string $id): ?array
+    {
+        $spec = collect($this->library())->firstWhere('id', $id);
+        if (! $spec || (string) $spec['status'] === 'shadow_only') return null;
+
+        return match ($id) {
+            'str_001_ema_adx_pullback' => ['family' => 'trend', 'architecture' => 'trend_pullback'],
+            'str_003_donchian_breakout' => ['family' => 'breakout', 'architecture' => 'breakout_retest'],
+            'str_010_bollinger_squeeze' => ['family' => 'volatility', 'architecture' => 'volatility_compression_expansion'],
+            'str_020_bb_rsi_reversion' => ['family' => 'mean_reversion', 'architecture' => 'range_mean_reversion'],
+            'str_022_zscore_reversion' => ['family' => 'mean_reversion', 'architecture' => 'range_rsi_reversion'],
+            'str_031_bos_retest', 'str_037_fvg_retest' => ['family' => 'trend', 'architecture' => 'trend_breakout_retest'],
+            'str_032_choch_reversal' => ['family' => 'hybrid', 'architecture' => 'regime_consensus'],
+            'str_040_asia_london_breakout' => ['family' => 'session', 'architecture' => 'session_breakout'],
+            'mix_001_trend_beast', 'mix_002_breakout_beast', 'mix_003_smc_trend_pullback' => ['family' => 'hybrid', 'architecture' => 'regime_router'],
+            'mix_006_range_killer' => ['family' => 'hybrid', 'architecture' => 'regime_consensus'],
+            default => null,
+        };
+    }
+
     private function spec(string $id, string $family, string $regime, array $bias, array $setup, array $trigger, array $confirmation, array $mutations, string $status = 'research'): array
     {
         return ['id' => $id, 'family' => $family, 'status' => $status, 'timeframes' => ['H1', 'M15'], 'regime' => ['allowed' => $regime === 'any' ? [] : [$regime], 'confidence_min' => .65], 'bias' => $bias, 'setup' => $setup, 'trigger' => $trigger, 'confirmation' => $confirmation, 'required_values' => array_values(array_unique([...$bias, ...$setup, ...$confirmation, 'atr', 'spread_atr_ratio'])), 'allowed_mutations' => $mutations, 'failure_modes' => ['range_false_signal', 'late_entry', 'high_spread', 'transition']];

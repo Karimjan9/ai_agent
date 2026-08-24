@@ -1062,6 +1062,13 @@ class LabCandidateSelectionService
 
     private function isWorthFullReplay(object $agent): bool
     {
+        // Screening is the inexpensive behavioral preflight. A historical
+        // MAP-Elites duplicate must not consume scarce full-replay capacity:
+        // changing a parameter vector without changing the observed
+        // decision/trade/event behaviour is not a new experiment.
+        if ((float) data_get($this->result($agent), 'behavioral_map_elites.novelty_score', 1) <= 0) {
+            return false;
+        }
         if ($this->isControlOnly($agent)) return false;
         // A candidate with an explicit failed screening gate is a learning
         // case, not a scarce full-replay candidate.  Older test/legacy rows

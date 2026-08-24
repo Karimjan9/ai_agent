@@ -9,6 +9,47 @@ use App\Models\ModelMarketPerformance;
 /** Persistent regression curriculum; an ordinary replay cannot silently mark a case fixed. */
 class FailureCurriculumService
 {
+    /**
+     * Freeze a repeated harmful direction after two observations and retire a
+     * gene after three independent no-effect observations.  The caller still
+     * owns legal schema bounds and can choose an architecture escape.
+     *
+     * @return array{blocked_keys:array<int,string>,blocked_directions:array<int,array<string,mixed>>,repeat_failure_rate:float}
+     */
+    public function mutationCircuit(string $symbol, string $timeframe, string $family, ?string $scope = null): array
+    {
+        $rows = \App\Models\MutationMemory::query()
+            ->where(compact('symbol', 'timeframe'))
+            ->where('strategy_family', $family)
+            ->get()
+            ->filter(function (\App\Models\MutationMemory $memory) use ($scope): bool {
+                if ($scope === null || $scope === '') return true;
+                return (string) $memory->market_regime === $scope
+                    || (string) data_get($memory->behavioral_effect, 'trait_ledger.applicable_context') === $scope;
+            });
+        $blockedDirections = $rows
+            ->filter(fn ($row): bool => data_get($row->behavioral_effect, 'trait_ledger.status') === 'harmful')
+            ->groupBy(fn ($row): string => (string) $row->parameter_key.'|'.json_encode(data_get($row->new_value, 'value')))
+            ->filter(fn ($group): bool => $group->count() >= 2)
+            ->map(function ($group): array {
+                $row = $group->first();
+                return [
+                    'parameter_key' => (string) $row->parameter_key,
+                    'new_value' => data_get($row->new_value, 'value'),
+                    'signature' => (string) $row->parameter_key.'|'.json_encode(data_get($row->new_value, 'value')),
+                    'reason' => 'REPEATED_HARMFUL_DIRECTION',
+                ];
+            })->values()->all();
+        $blockedKeys = $rows
+            ->filter(fn ($row): bool => data_get($row->behavioral_effect, 'trait_ledger.status') === 'no_effect')
+            ->groupBy('parameter_key')
+            ->filter(fn ($group): bool => $group->count() >= 3)
+            ->keys()->map('strval')->values()->all();
+        $repeat = $rows->count() === 0 ? 0.0 : round((count($blockedDirections) + count($blockedKeys)) / $rows->count(), 6);
+
+        return ['blocked_keys' => $blockedKeys, 'blocked_directions' => $blockedDirections, 'repeat_failure_rate' => $repeat];
+    }
+
     public function evaluate(ModelMarketPerformance $performance, array $result): array
     {
         $cases = AgentFailureCase::query()

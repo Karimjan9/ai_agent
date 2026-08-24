@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Jobs\Middleware\PreferFullValidationQueue;
 use App\Models\LabAgent;
 use App\Services\LabAgentEvaluationService;
+use App\Services\FrozenControlScreeningAdmissionService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -32,13 +33,25 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
     /** @var array<int, int> */
     public array $labAgentIds;
 
-    public function __construct(array $labAgentIds, public string $symbol, public ?int $screeningSlot = null)
+    public function __construct(
+        array $labAgentIds,
+        public string $symbol,
+        public ?int $screeningSlot = null,
+        public ?int $labGenerationId = null,
+        public string $timeframe = 'H1',
+        public string $jobSchemaVersion = 'lab_screening_batch_v2',
+    )
     {
         $this->labAgentIds = array_values(array_unique(array_map('intval', $labAgentIds)));
         if (count($this->labAgentIds) < 1 || count($this->labAgentIds) > 6) {
             throw new \InvalidArgumentException('Screening batch 1–6 agent oralig‘ida bo‘lishi kerak.');
         }
         sort($this->labAgentIds);
+        if ($this->labGenerationId === null) {
+            $scope = LabAgent::query()->whereKey($this->labAgentIds[0])->first(['lab_generation_id', 'timeframe']);
+            $this->labGenerationId = $scope?->lab_generation_id;
+            $this->timeframe = strtoupper((string) ($scope?->timeframe ?: $this->timeframe));
+        }
         $this->onConnection((string) config('queue.default', 'redis'));
         $this->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'));
     }
@@ -78,9 +91,28 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
         return (string) config('services.lab_queue.screening_mutex_key', 'neurotrader-ai-screening-replay').":slot{$slot}";
     }
 
-    public function handle(LabAgentEvaluationService $service): void
+    public function handle(LabAgentEvaluationService $service, FrozenControlScreeningAdmissionService $controlAdmission): void
     {
         if ($this->batch()?->cancelled()) {
+            return;
+        }
+
+        $admission = $controlAdmission->batchAdmission($this->labAgentIds);
+        if ($admission['status'] === 'waiting') {
+            // Control batches are scheduled ahead of candidates. A second
+            // screening slot can still dequeue a candidate first, so release
+            // it without creating a strategy/technical verdict.
+            $this->release(30);
+            return;
+        }
+        if ($admission['status'] === 'blocked') {
+            $reasons = collect($admission['blocked'])->pluck('reason')->unique()->implode(', ');
+            LabAgent::query()->whereIn('id', $this->labAgentIds)
+                ->where('lifecycle_status', 'queued')
+                ->update([
+                    'lifecycle_status' => 'technical_quarantine',
+                    'decision_reason' => 'Frozen control admission failed before screening; strategy verdict withheld: '.$reasons.'.',
+                ]);
             return;
         }
 

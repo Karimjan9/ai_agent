@@ -10,6 +10,7 @@ use App\Services\CandidateHandoffService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabGenerationContextService;
+use App\Services\GenerationSnapshotAdmissionService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use App\Services\LabQueueJobInspector;
@@ -30,7 +31,7 @@ class DispatchLabGeneration extends Command
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
-    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LearningTechnicalCircuitBreakerService $technicalBreaker, LearningEvidenceGate $evidenceGate, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext): int
+    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LearningTechnicalCircuitBreakerService $technicalBreaker, LearningEvidenceGate $evidenceGate, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext, GenerationSnapshotAdmissionService $snapshotAdmission): int
     {
         $populations->ensureLaboratories();
         $controlledRescue = (bool) $this->option('controlled-rescue');
@@ -96,6 +97,18 @@ class DispatchLabGeneration extends Command
 
         $timeframe = strtoupper((string) $this->option('timeframe'));
         foreach ($symbols as $symbol) {
+            // Idempotency is evaluated before admission gates. An already
+            // queued/screening/full-validation generation needs neither new
+            // evidence nor a technical-breaker decision; it simply remains
+            // the owner of this laboratory stream.
+            $existingLab = AiLaboratory::where('symbol', $symbol)->where('timeframe', $timeframe)->firstOrFail();
+            $existingGeneration = $existingLab->generations()->latest('generation')->first();
+            if (! $resumeDraftAgents
+                && $existingGeneration
+                && in_array((string) $existingGeneration->status, ['queued', 'training', 'screening', 'full_queued', 'full_validation'], true)) {
+                $this->info("{$symbol}: generation is already dispatched or evaluated.");
+                continue;
+            }
             if ($technicalBreaker->blocked($symbol, $timeframe) && ! $resumeDraftAgents) {
                 $this->warn("{$symbol} {$timeframe}: repeated technical failure circuit breaker active; new generation blocked pending technical repair.");
                 continue;
@@ -415,7 +428,12 @@ class DispatchLabGeneration extends Command
             // with the rolling tail, but full replay must never discover a
             // missing foundation only after queue admission.
             $foundationSnapshot = $datasets->ensureGenerationFoundationSnapshot($generation);
-            $rollingSnapshot = $datasets->ensureGenerationSnapshot($generation, $includeVolume);
+            // A volume lane adds evidence; it never replaces the mandatory
+            // immutable price snapshot used by generation admission.
+            $priceSnapshot = $datasets->ensureGenerationSnapshot($generation, false);
+            $rollingSnapshot = $includeVolume
+                ? $datasets->ensureGenerationSnapshot($generation, true)
+                : $priceSnapshot;
             // Verify the frozen split before changing any child to queued.
             // A failed check leaves the generation draft/blocked instead of
             // allowing a paper candle to influence evolutionary screening.
@@ -426,6 +444,17 @@ class DispatchLabGeneration extends Command
                 // screening reproducible and prevents a later open H1 candle
                 // from changing the meaning of an earlier M15 candidate.
                 $datasets->ensureGenerationRegimeSnapshot($generation);
+            }
+            $generation = $generation->fresh(['agents.modelVersion']);
+            $snapshotCheck = $snapshotAdmission->inspect($generation);
+            if (! $snapshotCheck['allowed']) {
+                $this->warn(sprintf(
+                    '%s: G%s immutable snapshot/execution admission failed; screening was not queued (%s).',
+                    $symbol,
+                    $generation->generation,
+                    implode(',', $snapshotCheck['reasons']),
+                ));
+                continue;
             }
             $generation->agents()->whereIn('id', $agentIds)->update(['lifecycle_status' => 'queued']);
             foreach ($generation->agents->whereIn('id', $draftAgents->pluck('id')) as $agent) {
@@ -478,7 +507,7 @@ class DispatchLabGeneration extends Command
             }
             $jobs = collect($chunks)
                 ->values()
-                ->map(fn (array $ids, int $index) => new EvaluateLabScreeningBatchJob($ids, $symbol, $index % 2))
+                ->map(fn (array $ids, int $index) => new EvaluateLabScreeningBatchJob($ids, $symbol, $index % 2, $generation->id, $timeframe))
                 ->all();
 
             $batch = Bus::batch($jobs)

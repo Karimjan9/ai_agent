@@ -488,7 +488,11 @@ return [
       'learning_velocity_lookback_generations' => (int) env('LAB_LEARNING_VELOCITY_LOOKBACK_GENERATIONS', 3),
       'learning_velocity_max_unresolved_screen_generations' => (int) env('LAB_LEARNING_VELOCITY_MAX_UNRESOLVED_SCREEN_GENERATIONS', 1),
       'learning_starvation_stale_seconds' => (int) env('LAB_LEARNING_STARVATION_STALE_SECONDS', 1800),
-      'learning_starvation_min_pending_dojo' => (int) env('LAB_LEARNING_STARVATION_MIN_PENDING_DOJO', 1),
+        'learning_starvation_min_pending_dojo' => (int) env('LAB_LEARNING_STARVATION_MIN_PENDING_DOJO', 1),
+        // Three terminal zero-pass cohorts are a strategy deadlock, not a
+        // learning-worker outage. Normal evolution stops; only a bounded,
+        // shadow/rescue plan may be considered with operator approval.
+        'zero_pass_circuit_breaker_generations' => (int) env('LAB_ZERO_PASS_CIRCUIT_BREAKER_GENERATIONS', 3),
       // Parent-aware evolution. A parent can propose a bounded skill, but it
       // cannot replace the child's autonomous branch or bypass evidence gates.
       'parent_mentor_broker_enabled' => env('LAB_PARENT_MENTOR_BROKER_ENABLED', true),
@@ -604,6 +608,11 @@ return [
     // near-miss, but it can never lower a gate or create paper evidence.
     'learning_lane' => [
         'enabled' => env('LAB_LEARNING_LANE_ENABLED', true),
+        // Autonomous replay is research-only and serialized through the same
+        // heavy evaluator mutex. Keep one seat per scheduler tick so a legacy
+        // backlog cannot starve screening or promotion validation.
+        'autonomous_dispatch_enabled' => env('LAB_LEARNING_LANE_AUTONOMOUS_ENABLED', true),
+        'autonomous_max_dispatch' => max(1, min(2, (int) env('LAB_LEARNING_LANE_AUTONOMOUS_MAX_DISPATCH', 1))),
         'max_per_role' => (int) env('LAB_LEARNING_LANE_MAX_PER_ROLE', 1),
         'max_total_per_generation' => (int) env('LAB_LEARNING_LANE_MAX_TOTAL_PER_GENERATION', 4),
         // Read-only control materialization previews are deliberately capped
@@ -658,12 +667,45 @@ return [
     'live_trading' => [
         'enabled' => env('LIVE_TRADING_ENABLED', false),
         'kill_switch_engaged' => env('LIVE_KILL_SWITCH_ENGAGED', true),
-        // Hard stop is intentionally independent from operator env toggles;
-        // live deployment stays unavailable until the evidence protocol is
-        // explicitly reopened after this repair cycle.
         'hard_stop' => env('LIVE_TRADING_HARD_STOP', true),
         'human_approval_sha256' => env('LIVE_HUMAN_APPROVAL_SHA256'),
         'max_capital' => (float) env('LIVE_MAX_CAPITAL', 0),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | NeuroTrader Lifecycle Orchestrator
+    |--------------------------------------------------------------------------
+    | Safe defaults for the resumable lifecycle orchestrator. Operators may
+    | override via environment variables. None of these bypass project gates.
+    */
+    'lifecycle_orchestrator' => [
+        // Master enable/disable flag for the cycle command.
+        'enabled' => env('NEUROTRADER_LIFECYCLE_ENABLED', true),
+        // Maximum bound for a single recovery dispatch batch (dojo tasks).
+        'max_recovery_dispatch' => (int) env('NEUROTRADER_LIFECYCLE_MAX_RECOVERY_DISPATCH', 3),
+        // Cooldown (seconds) between a generation being created and the next.
+        'generation_cooldown_seconds' => (int) env('NEUROTRADER_LIFECYCLE_GENERATION_COOLDOWN_SECONDS', 300),
+        // Cycle lock TTL (seconds) so a crashed cycle does not block forever.
+        'lock_ttl_seconds' => (int) env('NEUROTRADER_LIFECYCLE_LOCK_TTL_SECONDS', 600),
+        // Error-log retention in days.
+        'log_retention_days' => (int) env('NEUROTRADER_LIFECYCLE_LOG_RETENTION_DAYS', 14),
+        'draft_timeout_seconds' => (int) env('NEUROTRADER_LIFECYCLE_DRAFT_TIMEOUT_SECONDS', 5400),
+        'max_job_attempts' => (int) env('NEUROTRADER_LIFECYCLE_MAX_JOB_ATTEMPTS', 3),
+        'max_stale_reserved_jobs' => (int) env('NEUROTRADER_LIFECYCLE_MAX_STALE_RESERVED_JOBS', 1),
+        'max_failed_jobs' => (int) env('NEUROTRADER_LIFECYCLE_MAX_FAILED_JOBS', 1),
+        'failed_job_window_seconds' => (int) env('NEUROTRADER_LIFECYCLE_FAILED_JOB_WINDOW_SECONDS', 3600),
+        'recovery_cooldown_seconds' => (int) env('NEUROTRADER_LIFECYCLE_RECOVERY_COOLDOWN_SECONDS', 900),
+        'max_recovery_dispatch_per_day' => (int) env('NEUROTRADER_LIFECYCLE_MAX_RECOVERY_DISPATCH_PER_DAY', 9),
+        'autonomous_learning_recovery_enabled' => env('NEUROTRADER_AUTONOMOUS_LEARNING_RECOVERY_ENABLED', true),
+    ],
+
+    // Bounded learning-recovery dispatch limit reuse (shadow lane only).
+    'learning_lane_recovery_limit' => (int) env('NEUROTRADER_LEARNING_RECOVERY_LIMIT', 3),
+
+    'release_seal' => [
+        'required' => env('RELEASE_SEAL_REQUIRED', false),
+        'manifest_path' => env('RELEASE_SEAL_MANIFEST_PATH') ?: storage_path('app/release/release-manifest.json'),
     ],
 
 ];

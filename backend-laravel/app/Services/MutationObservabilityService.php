@@ -82,13 +82,17 @@ class MutationObservabilityService
         $baseline = $this->baseline($agent);
         $candidateSnapshot = $this->snapshot($candidate);
         $baselineSnapshot = $this->snapshot($baseline['result']);
-        $target = (string) data_get(
+        $declaredTarget = (string) data_get(
             $model?->metadata,
             'repair_anchor.failure_target',
             data_get($model?->metadata, 'generation_target', 'profit_factor'),
         );
         $candidateMargin = app(GateMarginService::class)->screening($candidate, (array) data_get($candidate, 'reason_codes', []));
-        $target = (string) data_get($candidateMargin, 'optimization_target', $target);
+        // The generation target is pre-registered.  A later gate calculation
+        // may diagnose a different dominant failure, but must never rewrite
+        // what this mutation was designed to test.
+        $target = $declaredTarget !== '' ? $declaredTarget : (string) data_get($candidateMargin, 'optimization_target', 'profit_factor');
+        $observedTarget = (string) data_get($candidateMargin, 'optimization_target', $target);
         $baselineMargin = $baseline['result'] !== []
             ? app(GateMarginService::class)->screening($baseline['result'], (array) data_get($baseline['result'], 'reason_codes', []))
             : [];
@@ -173,6 +177,17 @@ class MutationObservabilityService
             'protocol' => self::PROTOCOL,
             'agent_id' => (int) $agent->id,
             'target' => $target,
+            'declared_target' => $target,
+            'observed_target_delta' => [
+                'dominant_target' => $observedTarget,
+                'target_changed' => $observedTarget !== '' && $observedTarget !== $target,
+                'gate_margin_vector' => (array) data_get($candidateMargin, 'gate_margin_vector', []),
+            ],
+            'secondary_failure_targets' => array_values(array_filter(
+                (array) data_get($candidateMargin, 'failure_targets', []),
+                fn ($failureTarget): bool => is_string($failureTarget) && $failureTarget !== '' && $failureTarget !== $target,
+            )),
+            'next_experiment_target' => $observedTarget !== '' && $observedTarget !== $target ? $observedTarget : null,
             'declared_gene' => data_get(
                 $model?->metadata,
                 'declared_gene',

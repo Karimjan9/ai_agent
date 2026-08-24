@@ -82,7 +82,10 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent) => $agent->lifecycle_status === 'draft'));
         $this->assertContains(data_get($xau->agents->first()->modelVersion->metadata, 'generation_target'), ['monthly_survival', 'regime_coverage', 'volatility_session_stability', 'exit_topology', 'portfolio_router']);
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent) => str_starts_with($agent->modelVersion->strategy, 'xauusd_')));
-        $this->assertEqualsCanonicalizing(['breakout', 'differential_router', 'hybrid', 'regime_ensemble', 'trend', 'volatility'], $xau->agents->pluck('strategy_family')->unique()->all());
+        // The smart-composition cohort gives each executable tactic family a
+        // real runtime seat instead of concentrating the normal generation
+        // in differential-router/hybrid metadata.
+        $this->assertEqualsCanonicalizing(['breakout', 'hybrid', 'mean_reversion', 'session', 'trend', 'volatility'], $xau->agents->pluck('strategy_family')->unique()->all());
     }
 
     public function test_generation_is_not_repeated_without_enough_new_data(): void
@@ -416,7 +419,14 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_recall_research_reserves_each_regime_before_global_dominance(): void
     {
         $generation = app(LabPopulationService::class)->build('XAUUSD', 'recall_selector_test', true);
-        $agents = $generation->agents->take(2)->values();
+        // The normal cohort now materializes frozen controls before model
+        // construction. This selector fixture needs two actual mutation
+        // candidates; a frozen control must never be relabelled as recall
+        // research merely to exercise the ranking branch.
+        $agents = $generation->agents->filter(fn (LabAgent $agent): bool =>
+            ! (bool) data_get($agent->modelVersion->metadata, 'mutation_constructor_invariant.control_only', false)
+                && ! (bool) data_get($agent->modelVersion->metadata, 'portfolio_council_lane.control_only', false)
+        )->take(2)->values();
 
         foreach ([
             [$agents[0], 'trend_up', ['FAILED_CALENDAR_MONTH_SURVIVAL']],

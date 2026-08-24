@@ -19,6 +19,7 @@ use Illuminate\Support\Collection;
 class EvolutionArchiveService
 {
     public const PROTOCOL = 'adaptive_parent_archive_v1';
+
     public const BEHAVIORAL_MAP_ELITES_PROTOCOL = 'behavioral_map_elites_v1';
 
     public function __construct(
@@ -31,7 +32,7 @@ class EvolutionArchiveService
      * exact requested semantic cell. Failure archive entries are excluded by
      * construction.
      *
-     * @param iterable<ModelVersion> $diagnostic
+     * @param  iterable<ModelVersion>  $diagnostic
      */
     public function augmentFrontier(
         iterable $diagnostic,
@@ -46,7 +47,9 @@ class EvolutionArchiveService
             ->filter(fn ($model): bool => $model instanceof ModelVersion)
             ->values();
 
-        if (! (bool) config('services.lab_selection.adaptive_archive_enabled', true)) return $frontier;
+        if (! (bool) config('services.lab_selection.adaptive_archive_enabled', true)) {
+            return $frontier;
+        }
 
         $allowedTypes = ['convergence', 'diversity'];
         if (in_array($origin, ['architecture', 'curiosity_probe', 'robust_crossover', 'crossover'], true)
@@ -64,13 +67,19 @@ class EvolutionArchiveService
             ->whereIn('archive_type', $allowedTypes)
             ->whereIn('status', ['active', 'retained'])
             ->latest('novelty_score');
-        if ($archiveLimit > 0) $entryQuery->limit($archiveLimit);
+        if ($archiveLimit > 0) {
+            $entryQuery->limit($archiveLimit);
+        }
         $entries = $entryQuery->get();
 
         foreach ($entries as $entry) {
             $model = $entry->modelVersion;
-            if (! $model instanceof ModelVersion) continue;
-            if (! $this->semanticGroups->exactParentCompatible($model, $symbol, $timeframe, $family, $niche)) continue;
+            if (! $model instanceof ModelVersion) {
+                continue;
+            }
+            if (! $this->semanticGroups->exactParentCompatible($model, $symbol, $timeframe, $family, $niche)) {
+                continue;
+            }
             // Keep the archive projection attached to the in-memory model so
             // the downstream selector can distinguish a validated frontier
             // entry from a young research seed. This attribute is never saved
@@ -89,8 +98,8 @@ class EvolutionArchiveService
      * Store current frontier placement and refresh the local island summary.
      * This method records hypotheses, not validation evidence.
      *
-     * @param iterable<ModelVersion> $diagnostic
-     * @param iterable<ModelVersion> $selected
+     * @param  iterable<ModelVersion>  $diagnostic
+     * @param  iterable<ModelVersion>  $selected
      */
     public function sync(
         LabGeneration $generation,
@@ -104,7 +113,9 @@ class EvolutionArchiveService
         ?array $niche,
         array $selection = [],
     ): array {
-        if (! (bool) config('services.lab_selection.adaptive_archive_enabled', true)) return [];
+        if (! (bool) config('services.lab_selection.adaptive_archive_enabled', true)) {
+            return [];
+        }
 
         $selectedModels = collect($selected)->filter(fn ($model): bool => $model instanceof ModelVersion)->unique('id')->values();
         $diagnosticModels = collect($diagnostic)->filter(fn ($model): bool => $model instanceof ModelVersion)->unique('id')->values();
@@ -227,6 +238,7 @@ class EvolutionArchiveService
             'status' => $novelty > 0 ? 'novel_behavior_cell' : 'repeated_behavior_cell',
             'entry_id' => $entry->id,
             'cell_key' => $cellKey,
+            'behavior_signature' => $signature,
             'novelty_score' => $novelty,
             'descriptor' => $descriptor,
             'promotion_evidence' => false,
@@ -276,7 +288,7 @@ class EvolutionArchiveService
      * `repair_anchor_only`, which made the policy correct but left the
      * reason ledger blank.
      *
-     * @param array<int, mixed> $selectedParentIds
+     * @param  array<int, mixed>  $selectedParentIds
      * @return array<string, mixed>
      */
     public function normalizeParentSelectionContract(array $contract, array $selectedParentIds = []): array
@@ -331,7 +343,9 @@ class EvolutionArchiveService
     public function backfillParentSelectionReasons(?int $generationId = null): int
     {
         $query = LabParentSelectionDecision::query();
-        if ($generationId !== null) $query->where('lab_generation_id', $generationId);
+        if ($generationId !== null) {
+            $query->where('lab_generation_id', $generationId);
+        }
 
         $updated = 0;
         $query->orderBy('id')->each(function (LabParentSelectionDecision $decision) use (&$updated): void {
@@ -341,7 +355,9 @@ class EvolutionArchiveService
             );
             $before = json_encode((array) $decision->policy, JSON_UNESCAPED_SLASHES);
             $after = json_encode($policy, JSON_UNESCAPED_SLASHES);
-            if ($before === $after) return;
+            if ($before === $after) {
+                return;
+            }
             $decision->update(['policy' => $policy]);
             $updated++;
         });
@@ -376,17 +392,23 @@ class EvolutionArchiveService
             ->whereIn('archive_type', ['convergence', 'diversity'])
             ->whereIn('status', ['active', 'retained'])
             ->latest('novelty_score');
-        if ($limit > 0) $rowQuery->limit($limit * 4);
+        if ($limit > 0) {
+            $rowQuery->limit($limit * 4);
+        }
         $rows = $rowQuery->get();
 
         $candidates = [];
         foreach ($rows as $entry) {
             $model = $entry->modelVersion;
-            if (! $model instanceof ModelVersion) continue;
+            if (! $model instanceof ModelVersion) {
+                continue;
+            }
             $sourceGroup = $this->semanticGroups->fromModel($model, $family);
             $exact = $this->semanticGroups->exactParentCompatible($model, $symbol, $timeframe, $family, $niche);
             $compatible = $this->semanticGroups->parentCompatible($model, $family, $niche);
-            if (! $compatible) continue;
+            if (! $compatible) {
+                continue;
+            }
             $candidates[] = [
                 'model_version_id' => (int) $model->id,
                 'source_island_key' => (string) $entry->island_key,
@@ -402,7 +424,9 @@ class EvolutionArchiveService
                     : 'compatible cell is knowledge-only; cross-cell genetic edge is forbidden',
                 'promotion_evidence' => false,
             ];
-            if ($limit > 0 && count($candidates) >= $limit) break;
+            if ($limit > 0 && count($candidates) >= $limit) {
+                break;
+            }
         }
 
         return [
@@ -439,27 +463,34 @@ class EvolutionArchiveService
         $diversity = $entries->isEmpty() ? 1.0 : min(1.0, $signatures / max(1, $entries->count()));
         $snapshot = $this->governor->scopeSnapshot($symbol, $timeframe);
 
-        LabEvolutionIsland::updateOrCreate(
-            [
+        // `updateOrCreate` performs a read followed by an insert and can race
+        // with the scheduler while a constructor is syncing the same island.
+        // Use the database unique key as an atomic upsert boundary instead.
+        LabEvolutionIsland::query()->upsert(
+            [[
                 'symbol' => strtoupper($symbol),
                 'timeframe' => strtoupper($timeframe),
                 'strategy_family' => $family,
                 'island_key' => $islandKey,
-            ],
-            [
                 'local_champion_model_version_id' => $champion?->model_version_id,
-                'archive_counts' => $counts,
+                'archive_counts' => json_encode($counts, JSON_UNESCAPED_SLASHES),
                 'diversity_score' => round($diversity, 4),
                 'progress_score' => (float) data_get($selection, 'contract.progress_score', data_get($snapshot, 'progress_score', .5)),
                 'stagnation_generations' => (int) data_get($selection, 'contract.stagnation_generations', data_get($snapshot, 'stagnation_generations', 0)),
                 'status' => 'active',
-                'metadata' => [
+                'metadata' => json_encode([
                     'protocol' => self::PROTOCOL,
                     'last_generation_id' => $generation->id,
                     'selected_parent_model_version_ids' => $selected->pluck('id')->values()->all(),
                     'last_migration_plan' => data_get($selection, 'contract.island_migration', []),
                     'promotion_evidence' => false,
-                ],
+                ], JSON_UNESCAPED_SLASHES),
+            ]],
+            ['symbol', 'timeframe', 'strategy_family', 'island_key'],
+            [
+                'local_champion_model_version_id', 'archive_counts',
+                'diversity_score', 'progress_score', 'stagnation_generations',
+                'status', 'metadata', 'updated_at',
             ],
         );
     }
@@ -479,11 +510,15 @@ class EvolutionArchiveService
         // remain active in a convergence/diversity archive merely because it
         // fell outside an arbitrary "latest N" window. A positive value is
         // available only as an explicit operational backfill budget.
-        if ($limit > 0) $agentQuery->limit($limit);
+        if ($limit > 0) {
+            $agentQuery->limit($limit);
+        }
         $agents = $agentQuery->get();
 
         foreach ($agents as $agent) {
-            if (! $agent->modelVersion) continue;
+            if (! $agent->modelVersion) {
+                continue;
+            }
             // Once a lineage has a durable failure outcome, any earlier
             // convergence/diversity/young projection is retired so the same
             // model cannot sneak back through a non-failure archive type.
@@ -541,7 +576,9 @@ class EvolutionArchiveService
 
     private function convergenceQuality(?ModelMarketPerformance $performance): bool
     {
-        if (! $performance || $performance->evidence_status !== 'valid') return false;
+        if (! $performance || $performance->evidence_status !== 'valid') {
+            return false;
+        }
         $metrics = (array) ($performance->metrics ?? []);
         $edge = (array) data_get($metrics, 'statistical_evidence.edge_quality', []);
         $bootstrap = (array) data_get($edge, 'bootstrap_pf', []);
@@ -555,6 +592,7 @@ class EvolutionArchiveService
         $regimePasses = ! (bool) data_get($edge, 'worst_regime_sampled', false)
             || (float) data_get($edge, 'worst_regime_pf', 0) >= 1.0;
         $behaviorPasses = data_get($metrics, 'behavioral_diversity.status') !== 'near_duplicate';
+
         return in_array((string) $performance->status, ['champion', 'challenger', 'forward_validated', 'paper'], true)
             && (float) data_get($metrics, 'profit_factor', 0) >= 1.3
             && (float) data_get($metrics, 'max_drawdown_percent', data_get($metrics, 'max_drawdown', 100)) <= 15
@@ -576,6 +614,7 @@ class EvolutionArchiveService
     private function fitnessSnapshot(?ModelMarketPerformance $performance, ModelVersion $model): array
     {
         $metrics = (array) ($performance?->metrics ?? []);
+
         return [
             'model_best_score' => $model->best_score,
             'forward_score' => $performance?->forward_score,
@@ -591,9 +630,12 @@ class EvolutionArchiveService
     private function behaviorSignature(ModelVersion $model, ?ModelMarketPerformance $performance): string
     {
         $stored = data_get($model->metadata, 'behavior_signature', data_get($performance?->metrics, 'behavior_signature'));
-        if (filled($stored)) return substr((string) $stored, 0, 128);
+        if (filled($stored)) {
+            return substr((string) $stored, 0, 128);
+        }
         $parameters = (array) ($model->parameters ?? []);
         ksort($parameters);
+
         return hash('sha256', json_encode($parameters, JSON_PRESERVE_ZERO_FRACTION));
     }
 
@@ -646,6 +688,7 @@ class EvolutionArchiveService
             'holding_time_distribution' => $holding,
             'stress_trade_loss_profile' => $stressLoss,
         ];
+
         return ['cell' => $cell, 'signature' => $signature];
     }
 
@@ -654,22 +697,28 @@ class EvolutionArchiveService
         $pf = max(0.0, (float) data_get($result, 'profit_factor', 0));
         $stress = max(0.0, (float) data_get($result, 'stress_test.profit_factor', data_get($result, 'stress_cost_exit.profit_factor', 0)));
         $trades = min(1.0, max(0.0, (int) data_get($result, 'total_trades', 0) / 100));
+
         return round(($pf * 0.45) + ($stress * 0.35) + ($trades * 0.20), 4);
     }
 
     private function noveltyScore(ModelVersion $model, Collection $selected): float
     {
-        if ($selected->isEmpty()) return 1.0;
+        if ($selected->isEmpty()) {
+            return 1.0;
+        }
         $parameters = (array) ($model->parameters ?? []);
         $distances = $selected->reject(fn (ModelVersion $candidate): bool => (int) $candidate->id === (int) $model->id)
             ->map(fn (ModelVersion $candidate): float => $this->parameterDistance($parameters, (array) $candidate->parameters));
+
         return round($distances->isEmpty() ? 0.0 : (float) $distances->max(), 4);
     }
 
     private function parameterDistance(array $left, array $right): float
     {
         $keys = array_values(array_unique(array_merge(array_keys($left), array_keys($right))));
-        if ($keys === []) return 0.0;
+        if ($keys === []) {
+            return 0.0;
+        }
         $different = 0;
         foreach ($keys as $key) {
             if (json_encode($left[$key] ?? null, JSON_PRESERVE_ZERO_FRACTION)
@@ -677,6 +726,7 @@ class EvolutionArchiveService
                 $different++;
             }
         }
+
         return $different / count($keys);
     }
 }

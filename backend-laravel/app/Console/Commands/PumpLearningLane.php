@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Services\LearningLaneService;
 use App\Services\LabQueueJobInspector;
+use App\Services\LearningLaneService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Http;
 /** Single-seat learning-lane pump. It never competes with an active replay. */
 class PumpLearningLane extends Command
 {
-    protected $signature = 'trading:pump-learning-lane {symbol?} {--timeframe=H1} {--limit=1} {--dry-run}';
+    protected $signature = 'trading:pump-learning-lane {symbol?} {--timeframe=H1} {--limit=1} {--dry-run} {--autonomous : Use the bounded lighthouse scheduler contract}';
 
     protected $description = 'Pump one micro-confirmed learning-lane replay only when the heavy evaluator is idle';
 
@@ -44,26 +44,62 @@ class PumpLearningLane extends Command
         ];
         if (! $ready) {
             $this->line(json_encode([...$payload, 'status' => 'deferred'], JSON_UNESCAPED_SLASHES));
+
             return self::SUCCESS;
         }
+        $pendingMicro = $learning->pendingMicroPairs($symbol, $timeframe, null, $limit);
+        $existingFrontier = $learning->frontier($symbol, $timeframe, null, $limit, false);
+        $actualPlan = $pendingMicro
+            ->concat($existingFrontier->reject(fn ($pair): bool => $pendingMicro->contains('id', $pair->id)))
+            ->take($limit)
+            ->values();
+        $payload['actual_plan'] = [
+            'pair_ids' => $actualPlan->pluck('id')->map(fn ($id): int => (int) $id)->all(),
+            'agent_ids' => $actualPlan->pluck('candidate_agent_id')->filter()->map(fn ($id): int => (int) $id)->all(),
+            'existing_frontier_count' => $actualPlan->count(),
+            'fresh_materialization_required' => $actualPlan->isEmpty(),
+        ];
         if ($this->option('dry-run')) {
-            $this->line(json_encode([...$payload, 'status' => 'would_dispatch'], JSON_UNESCAPED_SLASHES));
+            $this->line(json_encode([
+                ...$payload,
+                'status' => $actualPlan->isNotEmpty() ? 'would_dispatch' : 'no_actionable_learning_work',
+            ], JSON_UNESCAPED_SLASHES));
+
             return self::SUCCESS;
         }
 
         $lock = Cache::lock('learning-lane-pump:'.$symbol.':'.$timeframe, 120);
         if (! $lock->get()) {
             $this->line(json_encode([...$payload, 'status' => 'pump_lock_busy'], JSON_UNESCAPED_SLASHES));
+
             return self::SUCCESS;
         }
         try {
-            $exit = Artisan::call('trading:dispatch-learning-lane', [
-                'symbol' => $symbol, '--timeframe' => $timeframe, '--limit' => $limit, '--retry-queued' => true,
-            ]);
-            $this->line(json_encode([...$payload, 'status' => 'dispatch_called', 'exit_code' => $exit], JSON_UNESCAPED_SLASHES));
+            $arguments = [
+                'symbol' => $symbol,
+                '--timeframe' => $timeframe,
+                '--limit' => $limit,
+                '--autonomous' => (bool) $this->option('autonomous'),
+            ];
+            // Retry the durable frontier first. If it is empty, allow the
+            // dispatcher to materialize one fresh verified frontier. This is
+            // the only path that omits --retry-queued.
+            if ($actualPlan->isNotEmpty()) {
+                $arguments['--retry-queued'] = true;
+            }
+            $exit = Artisan::call('trading:dispatch-learning-lane', $arguments);
+            $dispatchOutput = Artisan::output();
+            $noWork = str_contains($dispatchOutput, "frontier hozircha bo'sh");
+            $this->line(json_encode([
+                ...$payload,
+                'status' => $noWork ? 'no_actionable_learning_work' : 'dispatch_called',
+                'mode' => $actualPlan->isNotEmpty() ? 'retry_existing_frontier' : 'materialize_fresh_verified_frontier',
+                'exit_code' => $exit,
+            ], JSON_UNESCAPED_SLASHES));
         } finally {
             $lock->release();
         }
+
         return self::SUCCESS;
     }
 
@@ -75,6 +111,7 @@ class PumpLearningLane extends Command
             $response = Http::timeout(4)->acceptJson()
                 ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])
                 ->get($base.'/api/replay-status');
+
             return $response->successful() ? (array) $response->json() : null;
         } catch (\Throwable) {
             return null;

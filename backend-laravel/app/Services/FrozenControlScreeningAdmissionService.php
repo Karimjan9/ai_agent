@@ -1,0 +1,98 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
+use App\Models\LabMutationResponseMap;
+
+/**
+ * Holds mutation candidates behind their same-generation frozen control.
+ * A control's strategy result may fail; only its immutable completed replay
+ * is required before a candidate can be interpreted causally.
+ */
+class FrozenControlScreeningAdmissionService
+{
+    public const PROTOCOL = 'frozen_control_first_screening_v1';
+
+    /** @param array<int, int> $agentIds */
+    public function batchAdmission(array $agentIds): array
+    {
+        $agents = LabAgent::query()->with('modelVersion')->whereIn('id', $agentIds)->get();
+        $waiting = [];
+        $blocked = [];
+        foreach ($agents as $agent) {
+            $result = $this->admission($agent);
+            if ($result['status'] === 'waiting') $waiting[] = $result;
+            if ($result['status'] === 'blocked') $blocked[] = $result;
+        }
+
+        return [
+            'protocol' => self::PROTOCOL,
+            'allowed' => $waiting === [] && $blocked === [],
+            'status' => $blocked !== [] ? 'blocked' : ($waiting !== [] ? 'waiting' : 'ready'),
+            'waiting' => $waiting,
+            'blocked' => $blocked,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function admission(LabAgent $agent): array
+    {
+        $agent->loadMissing('modelVersion');
+        if ($this->isControl($agent)) {
+            return ['agent_id' => $agent->id, 'status' => 'ready', 'reason' => 'CONTROL_SELF'];
+        }
+
+        $controls = LabAgent::query()->with('modelVersion')
+            ->where('lab_generation_id', $agent->lab_generation_id)
+            ->where('strategy_family', $agent->strategy_family)
+            ->get()
+            ->filter(fn (LabAgent $row): bool => $this->isControl($row));
+        if ($controls->isEmpty()) {
+            return ['agent_id' => $agent->id, 'status' => 'blocked', 'reason' => 'FROZEN_CONTROL_MISSING'];
+        }
+
+        foreach ($controls as $control) {
+            $run = LabEvaluationRun::query()
+                ->where('lab_agent_id', $control->id)
+                ->where('phase', 'screening')
+                ->latest('id')
+                ->first();
+            if ($run === null || (string) $run->status === 'started') {
+                return ['agent_id' => $agent->id, 'status' => 'waiting', 'reason' => 'FROZEN_CONTROL_REPLAY_PENDING', 'control_agent_id' => $control->id];
+            }
+            if ((string) $run->status !== 'completed') {
+                return ['agent_id' => $agent->id, 'status' => 'blocked', 'reason' => 'FROZEN_CONTROL_REPLAY_INCOMPLETE', 'control_agent_id' => $control->id];
+            }
+            $map = LabMutationResponseMap::query()
+                ->where('lab_agent_id', $control->id)
+                ->where('stage', 'screening')->where('status', 'control')->latest('id')->first();
+            if ($map === null || ! $this->controlMapMatchesContract($map, $agent->lab_generation_id)) {
+                return ['agent_id' => $agent->id, 'status' => 'blocked', 'reason' => 'FROZEN_CONTROL_EVIDENCE_INVALID', 'control_agent_id' => $control->id];
+            }
+        }
+
+        return ['agent_id' => $agent->id, 'status' => 'ready', 'reason' => 'FROZEN_CONTROL_REPLAY_COMPLETED'];
+    }
+
+    private function isControl(LabAgent $agent): bool
+    {
+        return data_get($agent->modelVersion?->metadata, 'control_contract.protocol') === 'frozen_control_v2'
+            && data_get($agent->modelVersion?->metadata, 'control_contract.control_only') === true
+            && data_get($agent->modelVersion?->metadata, 'control_contract.role') === 'control'
+            && (int) data_get($agent->modelVersion?->metadata, 'control_contract.generation_id') === (int) $agent->lab_generation_id;
+    }
+
+    private function controlMapMatchesContract(LabMutationResponseMap $map, int $generationId): bool
+    {
+        $contract = (array) data_get($map->metadata, 'control_contract', []);
+        return data_get($contract, 'protocol') === 'frozen_control_v2'
+            && data_get($contract, 'control_only') === true
+            && data_get($contract, 'role') === 'control'
+            && (int) data_get($contract, 'generation_id') === $generationId
+            && filled(data_get($contract, 'data_hash'))
+            && filled(data_get($contract, 'execution_hash'));
+    }
+}

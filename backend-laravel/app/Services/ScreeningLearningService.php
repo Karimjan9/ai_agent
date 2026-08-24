@@ -96,6 +96,12 @@ class ScreeningLearningService
         }
 
         foreach ($agent->parameter_diff ?? [] as $key => $change) {
+            $trait = app(TraitEvidenceLedgerService::class)->assess($agent, (string) $key, $observabilityEffect);
+            $traitOutcome = match ((string) data_get($trait, 'status')) {
+                'locally_beneficial' => 'provisional_beneficial',
+                'harmful' => 'provisional_harmful',
+                default => 'screen_inconclusive',
+            };
             $memory = MutationMemory::updateOrCreate(
                 ['lab_agent_id' => $agent->id, 'parameter_key' => $key],
                 [
@@ -104,18 +110,23 @@ class ScreeningLearningService
                     ...$scope,
                     'old_value' => ['value' => $change['old'] ?? null],
                     'new_value' => ['value' => $change['new'] ?? null],
-                    'forward_delta' => 0, 'outcome' => 'screen_inconclusive',
+                    // A strict global screen can fail while one isolated
+                    // trait improves its declared control-relative gate.
+                    // Preserve that provisional evidence without relaxing a
+                    // promotion rule or calling it a confirmed skill.
+                    'forward_delta' => (float) (data_get($trait, 'target_delta') ?? 0), 'outcome' => $traitOutcome,
                     'independent_confirmation_count' => 0,
                     'non_target_regression_status' => (string) data_get($result, 'differential_no_regression.status', 'not_applicable'),
                     'evidence_scope_status' => 'historical_failure_memory',
                     'confidence' => $confidence, 'decision' => "screen_{$failure}; no causal credit",
                     'behavioral_effect' => $key === 'loss_cooldown_candles' && $cooldownRescueEffect !== null
-                        ? [...$cooldownRescueEffect, 'mutation_observability' => $observabilityEffect]
+                        ? [...$cooldownRescueEffect, 'mutation_observability' => $observabilityEffect, 'trait_ledger' => $trait]
                         : ($counterfactualEffect !== null
-                            ? [...$counterfactualEffect, 'mutation_observability' => $observabilityEffect]
+                            ? [...$counterfactualEffect, 'mutation_observability' => $observabilityEffect, 'trait_ledger' => $trait]
                             : [
                                 'causal_credit' => ['status' => 'screen_inconclusive', 'rule' => 'Only a paired full replay may label an individual parameter harmful or beneficial.'],
                                 'mutation_observability' => $observabilityEffect,
+                                'trait_ledger' => $trait,
                             ]),
                 ],
             );

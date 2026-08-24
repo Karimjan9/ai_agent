@@ -5,11 +5,11 @@ namespace Tests\Feature;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
-use App\Models\ModelVersion;
-use App\Models\ModelMarketPerformance;
 use App\Models\LabMutationResponseMap;
-use App\Services\FailureRepairAnchorService;
+use App\Models\ModelMarketPerformance;
+use App\Models\ModelVersion;
 use App\Services\CandidateGateDecisionService;
+use App\Services\FailureRepairAnchorService;
 use App\Services\LabPopulationService;
 use App\Services\MutationResponseMapService;
 use App\Services\SkillMentorService;
@@ -190,7 +190,9 @@ class FailureRepairAnchorTest extends TestCase
         $this->assertSame('minimum_signal_confidence', $gene);
         $this->assertNotSame($parameters[$gene], $child->modelVersion->parameters[$gene]);
         foreach (array_keys($schema->schema('differential_router')) as $key) {
-            if ($key === $gene) continue;
+            if ($key === $gene) {
+                continue;
+            }
             $this->assertEquals($parameters[$key] ?? null, $child->modelVersion->parameters[$key] ?? null, $key);
         }
     }
@@ -327,8 +329,7 @@ class FailureRepairAnchorTest extends TestCase
             ['primary_direction', 'reverse_direction', 'alternative_gene', 'secondary_alternative_gene', 'frozen_control'],
             array_column(array_map(fn (array $seat): array => (array) data_get($seat, 'niche'), $plan), 'sibling_kind'),
         );
-        $this->assertTrue(collect($plan)->every(fn (array $seat): bool =>
-            data_get($seat, 'niche.cohort_contract') === 'four_siblings_plus_control_v1'
+        $this->assertTrue(collect($plan)->every(fn (array $seat): bool => data_get($seat, 'niche.cohort_contract') === 'four_siblings_plus_control_v1'
         ));
         $this->assertNull(data_get($plan[4], 'niche.declared_gene'));
     }
@@ -373,8 +374,7 @@ class FailureRepairAnchorTest extends TestCase
             fn (array $seat): mixed => data_get($seat, 'niche.repair_direction'),
             array_slice($plan, 0, 4),
         ));
-        $this->assertTrue(collect($plan)->every(fn (array $seat): bool =>
-            data_get($seat, 'niche.temporal_mutation_hypothesis.protocol')
+        $this->assertTrue(collect($plan)->every(fn (array $seat): bool => data_get($seat, 'niche.temporal_mutation_hypothesis.protocol')
                 === LabPopulationService::TEMPORAL_STATE_PERSISTENCE_HYPOTHESIS
         ));
 
@@ -824,6 +824,12 @@ class FailureRepairAnchorTest extends TestCase
         $this->assertSame('full_parent', $parent['stage']);
         $this->assertTrue($parent['parent_eligible']);
         $this->assertSame('full_parent', data_get($agent->fresh('modelVersion')->modelVersion->metadata, 'evolution_stage.stage'));
+        $this->assertSame('eligible_parent', data_get($parent, 'parent_foundry.status'));
+        $this->assertDatabaseHas('lab_parent_candidate_preparations', [
+            'model_version_id' => $model->id,
+            'idea_type' => 'parent_foundry_funnel',
+            'status' => 'eligible_parent',
+        ]);
     }
 
     /** @return array{0: LabAgent, 1: array<string, mixed>} */

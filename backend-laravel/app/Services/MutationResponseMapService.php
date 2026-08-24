@@ -428,11 +428,15 @@ class MutationResponseMapService
     {
         $value = match ($target) {
             'profit_factor' => data_get($metrics, 'profit_factor'),
-            'stress_cost' => data_get($metrics, 'screening_survival.stress_cost_pf', data_get($metrics, 'pf_attribution.stress_cost.profit_factor', data_get($metrics, 'stress_test.profit_factor'))),
+            'stress_cost', 'volatility_session_stability', 'exit_topology', 'risk_exit', 'transition_firewall' => data_get($metrics, 'screening_survival.stress_cost_pf', data_get($metrics, 'pf_attribution.stress_cost.profit_factor', data_get($metrics, 'stress_test.profit_factor'))),
             'temporal_stability', 'monthly_survival' => data_get($metrics, 'screening_survival.worst_temporal_chunk_pf', data_get($metrics, 'screening_survival.worst_window_pf', data_get($metrics, 'monthly_passport.worst_month_pf'))),
-            'regime_coverage' => data_get($metrics, 'screening_survival.worst_regime_pf', data_get($metrics, 'statistical_evidence.edge_quality.worst_regime_pf')),
+            'regime_coverage', 'rolling_regime', 'portfolio_router', 'unknown_state_curiosity' => data_get($metrics, 'screening_survival.worst_regime_pf', data_get($metrics, 'statistical_evidence.edge_quality.worst_regime_pf')),
             'drawdown_risk' => data_get($metrics, 'max_drawdown_percent', data_get($metrics, 'max_drawdown')),
             'trade_frequency' => data_get($metrics, 'total_trades', data_get($metrics, 'entry_funnel.accepted_entries')),
+            // Historical semantic recall rows predate the compact recall
+            // projection. Their sealed trade count remains the canonical
+            // screening gate fallback; new rows retain the direct metric.
+            'opportunity_recall' => data_get($metrics, 'opportunity_recall.opportunity_recall', data_get($metrics, 'opportunity_metrics.recall', data_get($metrics, 'total_trades', data_get($metrics, 'entry_funnel.accepted_entries')))),
             'architecture' => data_get($metrics, 'profit_factor', data_get($metrics, 'forward_score')),
             default => null,
         };
@@ -442,12 +446,46 @@ class MutationResponseMapService
     /** @return array<string, mixed> */
     private function compactMetrics(array $metrics): array
     {
-        return collect($metrics)->only([
+        $compact = collect($metrics)->only([
             'profit_factor', 'forward_score', 'total_trades', 'winrate',
             'max_drawdown_percent', 'max_drawdown', 'net_profit_percent',
             'screening_survival', 'window_survival', 'monthly_passport', 'pf_attribution',
+            'stress_test', 'opportunity_recall', 'opportunity_metrics',
+            'regime_performance', 'statistical_evidence',
             'monte_carlo', 'data_manifest', 'execution_contract',
         ])->all();
+
+        // These fields are the minimum causal observation required by the
+        // micro-replay gate.  Keeping them in a normalized projection avoids
+        // a response-map "compaction" silently turning a reproducible screen
+        // into CAUSAL_OBSERVATION_INCOMPLETE downstream.
+        $compact['causal_observation'] = $this->causalObservation($metrics);
+
+        return $compact;
+    }
+
+    /** @return array<string, mixed> */
+    private function causalObservation(array $metrics): array
+    {
+        $first = static function (array $paths) use ($metrics): mixed {
+            foreach ($paths as $path) {
+                $value = data_get($metrics, $path);
+                if ($value !== null && $value !== '') return $value;
+            }
+
+            return null;
+        };
+
+        return [
+            'protocol' => 'causal_observation_v1',
+            'trade_ledger_hash' => $first(['trade_ledger_hash', 'trade_set_hash', 'observability_manifest.trade_ledger_hash', 'mutation_observability.trade_ledger_hash']),
+            'event_ledger_hash' => $first(['event_ledger_hash', 'event_digest.hash', 'execution_event_hash', 'observability_manifest.event_ledger_hash', 'mutation_observability.event_ledger_hash']),
+            'signal_decision_hash' => $first(['signal_decision_hash', 'signal_digest.hash', 'observability_manifest.signal_decision_hash', 'mutation_observability.signal_digest']),
+            'parameter_hash' => $first(['parameter_hash', 'parameter_fingerprint', 'mutation_observability.parameter_fingerprint']),
+            'entry_funnel' => (array) $first(['entry_funnel']) ?: [],
+            'exit_funnel' => (array) $first(['exit_funnel']) ?: [],
+            'abstention_count' => $first(['abstention_count', 'temporal_survival.abstention_count', 'veto_metrics.abstention_count']),
+        ];
     }
 
     private function direction(mixed $old, mixed $new): ?string

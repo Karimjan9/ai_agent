@@ -18,7 +18,9 @@ class SkillMentorService
     public function markScreenValidatedSeed(LabAgent $agent, bool $passed, array $result = []): void
     {
         $agent->loadMissing('modelVersion');
-        if (! $agent->modelVersion || ! $passed) return;
+        if (! $agent->modelVersion || ! $passed) {
+            return;
+        }
         $metadata = (array) $agent->modelVersion->metadata;
         $control = (bool) data_get($metadata, 'causal_experiment_lane.control_only', false)
             || in_array((string) data_get($metadata, 'repair_anchor.sibling_kind'), ['frozen_control', 'architecture_escape'], true)
@@ -36,6 +38,7 @@ class SkillMentorService
         ]);
         data_set($metadata, 'screening_seed_only', true);
         $agent->modelVersion->update(['metadata' => $metadata]);
+        app(ParentFoundryService::class)->recordSeed($agent->fresh(['modelVersion', 'generation']), $result);
     }
 
     public function recordFullReplayOutcome(
@@ -45,7 +48,9 @@ class SkillMentorService
         ?object $forwardDecision = null,
     ): array {
         $agent->loadMissing('modelVersion');
-        if (! $agent->modelVersion) return ['stage' => 'unknown', 'promotion_evidence' => false];
+        if (! $agent->modelVersion) {
+            return ['stage' => 'unknown', 'promotion_evidence' => false];
+        }
         $metadata = (array) $agent->modelVersion->metadata;
         $learningLane = data_get($metadata, 'learning_lane.protocol') === LearningLaneService::PROTOCOL;
         $control = (bool) data_get($metadata, 'causal_experiment_lane.control_only', false)
@@ -62,7 +67,9 @@ class SkillMentorService
             && data_get($mentorContract, 'status') === 'confirmed_shadow_mentor';
         $researchOnly = in_array((string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', '')), ['frozen_control', 'architecture_escape'], true);
         $decisionPassed = $forwardDecision && data_get($forwardDecision, 'decision') === 'passed';
-        $fullParent = ! $control && $decisionPassed && $this->fullParentPassport($agent, $performance, $result);
+        $learningParentEligible = ! $learningLane || $this->learningParentEligible($metadata, $verification);
+        $fullParent = ! $control && $decisionPassed && $learningParentEligible
+            && $this->fullParentPassport($agent, $performance, $result);
         $stage = $researchOnly
             ? ((string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', '')) === 'architecture_escape'
                 ? 'architecture_escape'
@@ -109,6 +116,12 @@ class SkillMentorService
             // prevents parent selection from treating it as full parent.
             $agent->update(['decision_reason' => 'Verified skill mentor; full-parent passport is still required.']);
         }
+        $mentor['parent_foundry'] = app(ParentFoundryService::class)->record(
+            $agent->fresh(['modelVersion', 'generation']),
+            $performance,
+            $mentor,
+        );
+
         return $mentor;
     }
 
@@ -116,10 +129,13 @@ class SkillMentorService
     public function bestFor(string $symbol, string $timeframe, string $family, string $target, ?string $role = null): ?array
     {
         try {
-            if (! Schema::hasTable('lab_mutation_response_maps')) return null;
+            if (! Schema::hasTable('lab_mutation_response_maps')) {
+                return null;
+            }
         } catch (\Throwable) {
             return null;
         }
+
         return app(MutationResponseMapService::class)->bestMentor($symbol, $timeframe, $family, $target, $role);
     }
 
@@ -133,7 +149,10 @@ class SkillMentorService
     {
         $metrics = (array) $performance->metrics;
         $repair = (array) data_get($agent->modelVersion?->metadata, 'repair_anchor', []);
-        if ($repair !== [] && data_get($repair, 'parent_eligible_after_confirmation') !== true) return false;
+        if ($repair !== [] && data_get($repair, 'parent_eligible_after_confirmation') !== true) {
+            return false;
+        }
+
         return $performance->evidence_status === 'valid'
             && $agent->modelVersion?->evidence_status === 'valid'
             && in_array((string) $performance->status, ['forward_validated', 'paper', 'champion'], true)
@@ -145,5 +164,21 @@ class SkillMentorService
             && (int) $performance->rolling_windows_count >= 3
             && (int) $performance->rolling_forward_wins >= 3
             && data_get($result, 'elite_agent_passport.status') === 'passed';
+    }
+
+    private function learningParentEligible(array $metadata, array $verification): bool
+    {
+        if (data_get($verification, 'status') !== 'confirmed') {
+            return false;
+        }
+        $role = (string) data_get($metadata, 'causal_learning_cohort.role', '');
+        if (in_array($role, ['blinded', 'frozen_control'], true)) {
+            return false;
+        }
+        if ($role === 'memory_guided') {
+            return data_get($metadata, 'causal_learning_experiment.status') === 'confirmed';
+        }
+
+        return true;
     }
 }

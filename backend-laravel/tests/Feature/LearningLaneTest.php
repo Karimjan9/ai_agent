@@ -6,12 +6,15 @@ use App\Models\AgentLearningLesson;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
+use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\ModelVersion;
 use App\Services\LearningLaneService;
+use App\Services\MicroReplayService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery as m;
 use Tests\TestCase;
 
 class LearningLaneTest extends TestCase
@@ -182,6 +185,106 @@ class LearningLaneTest extends TestCase
         $this->assertNull($pair['control_response_map_id']);
         $this->assertFalse((bool) data_get($pair, 'target_delta.improved'));
         $this->assertTrue((bool) data_get($pair, 'metadata.baseline_is_diagnostic_only'));
+    }
+
+    public function test_verified_pair_with_an_incomplete_target_delta_still_reaches_the_micro_frontier(): void
+    {
+        [$candidate, $control] = $this->agents();
+        $dataHash = str_repeat('d', 64);
+        $executionHash = str_repeat('e', 64);
+        $controlMap = LabMutationResponseMap::create([
+            'response_key' => str_repeat('7', 64), 'stage' => 'screening', 'status' => 'control',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'regime_coverage', 'lab_agent_id' => $control->id,
+            'observed_metrics' => ['profit_factor' => 1.0],
+            'metadata' => [
+                'control_contract' => [
+                    'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
+                    'generation_id' => $control->lab_generation_id, 'data_hash' => $dataHash,
+                    'execution_hash' => $executionHash,
+                ],
+            ],
+        ]);
+        $candidateMap = LabMutationResponseMap::create([
+            'response_key' => str_repeat('8', 64), 'stage' => 'screening', 'status' => 'screen_observed',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'regime_coverage', 'lab_agent_id' => $candidate->id,
+            'observed_metrics' => ['profit_factor' => 1.1], 'metadata' => [],
+        ]);
+        $pair = LabLearningLanePair::create([
+            'pair_key' => str_repeat('9', 64), 'lab_generation_id' => $candidate->lab_generation_id,
+            'candidate_agent_id' => $candidate->id, 'control_agent_id' => $control->id,
+            'candidate_response_map_id' => $candidateMap->id, 'control_response_map_id' => $controlMap->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'regime_coverage', 'baseline_source' => 'control', 'status' => 'screen_paired',
+            'candidate_data_hash' => $dataHash, 'control_data_hash' => $dataHash,
+            'candidate_execution_hash' => $executionHash, 'control_execution_hash' => $executionHash,
+            'pair_integrity_status' => 'verified', 'same_generation' => true,
+            'candidate_metrics' => ['profit_factor' => 1.1], 'control_metrics' => ['profit_factor' => 1.0],
+            'target_delta' => ['baseline' => null, 'observed' => null, 'delta' => null, 'improved' => false],
+            'metadata' => ['same_snapshot' => true, 'same_execution_contract' => true],
+        ]);
+
+        $frontier = app(LearningLaneService::class)->frontier('XAUUSD', 'H1', null, 1, false);
+
+        $this->assertTrue($frontier->contains('id', $pair->id));
+
+        $pair->update([
+            'status' => 'micro_failed',
+            'metadata' => [
+                ...((array) $pair->metadata),
+                'micro_replay' => [
+                    'reason' => 'MICRO_CONFIRMATION_FAILED',
+                    'positive_windows' => 2,
+                    'hard_failures' => 1,
+                    'promotion_evidence' => false,
+                ],
+            ],
+        ]);
+        $recovery = app(LearningLaneService::class)->boundedRecoveryPairs('XAUUSD', 'H1', 1, 1);
+
+        $this->assertTrue($recovery->contains('id', $pair->id));
+
+        $pair->update(['status' => 'learning_queued']);
+        LabLearningLaneDispatch::create([
+            'dispatch_key' => str_repeat('4', 64),
+            'pair_id' => $pair->id,
+            'lab_generation_id' => $candidate->lab_generation_id,
+            'lab_agent_id' => $candidate->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'differential_router',
+            'target' => 'regime_coverage',
+            'status' => 'blocked',
+            'stage' => 'full_replay',
+            'micro_status' => 'research_admitted',
+            'metadata' => ['reason_codes' => ['LEARNING_PAIR_NOT_PAIRED'], 'promotion_evidence' => false],
+        ]);
+
+        $technicalRetry = app(LearningLaneService::class)->boundedRecoveryPairs('XAUUSD', 'H1', 1, 1);
+
+        $this->assertTrue($technicalRetry->contains('id', $pair->id));
+
+        $pair->update([
+            'status' => 'micro_failed',
+            'metadata' => [
+                ...((array) $pair->metadata),
+                'micro_replay' => ['reason' => 'MISSING_FROZEN_CONTROL_PAIR'],
+            ],
+        ]);
+        $micro = m::mock(MicroReplayService::class);
+        $micro->shouldReceive('assessPair')->once()->withArgs(
+            fn (LabLearningLanePair $candidate, bool $persist): bool => $candidate->id === $pair->id && ! $persist,
+        )->andReturn([
+            'reason' => 'MICRO_CONFIRMATION_FAILED',
+            'positive_windows' => 2,
+            'hard_failures' => 1,
+        ]);
+        app()->instance(MicroReplayService::class, $micro);
+
+        $materializedControlRetry = app(LearningLaneService::class)->boundedRecoveryPairs('XAUUSD', 'H1', 1, 1);
+
+        $this->assertTrue($materializedControlRetry->contains('id', $pair->id));
     }
 
     /** @return array{0:LabAgent,1:LabAgent} */

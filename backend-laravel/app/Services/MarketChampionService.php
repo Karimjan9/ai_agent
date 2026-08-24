@@ -3,9 +3,9 @@
 namespace App\Services;
 
 use App\Models\CandidateGateDecision;
+use App\Models\LabAgent;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
-use App\Models\LabAgent;
 use App\Models\MutationMemory;
 use App\Models\PaperTradingEvaluation;
 use App\Services\MarketData\MarketReadinessService;
@@ -175,8 +175,7 @@ class MarketChampionService
                         ->whereIn('model_version_id', $parentModelIds)
                         ->where('symbol', $symbol)->where('timeframe', $timeframe)
                         ->latest('id')->get()
-                        ->filter(fn (ModelMarketPerformance $candidate): bool =>
-                            $candidate->modelVersion !== null
+                        ->filter(fn (ModelMarketPerformance $candidate): bool => $candidate->modelVersion !== null
                             && $this->semanticGroups->sameGroup(
                                 $model,
                                 $family,
@@ -209,7 +208,7 @@ class MarketChampionService
             // passport to reach the gate before hidden-state/drift/router
             // evidence was considered.
             if ($agent && data_get($model->metadata, 'role_complete_council.protocol') === 'role_complete_council_v1') {
-                $result['professional_exams'] = app(\App\Services\AgentProfessionalExamService::class)
+                $result['professional_exams'] = app(AgentProfessionalExamService::class)
                     ->assessAndRecord($agent, $model, null, $result, null);
             }
             $elitePassport = $this->passport->build($model, $agent, $result);
@@ -344,6 +343,7 @@ class MarketChampionService
                             $agent->fresh(['modelVersion']),
                             $performance->fresh(),
                             $result,
+                            $forwardDecision,
                         );
                         $result['learning_lane_projection'] = $learningProjection;
                         $mentorContract = data_get($agent->fresh('modelVersion')->modelVersion->metadata, 'skill_mentor');
@@ -400,6 +400,37 @@ class MarketChampionService
                             'promotion_evidence' => false,
                         ],
                     ]);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+                try {
+                    // Trait credit is a separate immutable lineage ledger.
+                    // It rewards no parent until this child has independently
+                    // passed forward, and it never changes promotion status.
+                    $descendantCredit = app(DescendantTraitCreditService::class)->record(
+                        $agent->fresh(['modelVersion']),
+                        $result,
+                        $forwardDecision,
+                    );
+                    $result['descendant_trait_credit'] = $descendantCredit;
+                    $performance->update(['metrics' => [
+                        ...((array) $performance->metrics),
+                        'descendant_trait_credit' => $descendantCredit,
+                        'promotion_evidence' => false,
+                    ]]);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+                try {
+                    $mutationBrain = app(MutationBrainService::class)->settle(
+                        $agent->fresh(['modelVersion']),
+                        $result,
+                        (array) ($result['descendant_trait_credit'] ?? []),
+                    );
+                    $result['mutation_brain'] = $mutationBrain;
+                    $performance->update(['metrics' => [
+                        ...((array) $performance->metrics), 'mutation_brain' => $mutationBrain, 'promotion_evidence' => false,
+                    ]]);
                 } catch (\Throwable $exception) {
                     report($exception);
                 }
@@ -469,6 +500,7 @@ class MarketChampionService
                     report($exception);
                 }
             }
+
             return $performance->fresh();
         });
     }
@@ -497,6 +529,7 @@ class MarketChampionService
                 && data_get($metrics, 'data_manifest.sha256') === data_get($current, 'data_manifest.sha256');
             $sameExecution = filled(data_get($metrics, 'execution_contract.execution_hash'))
                 && data_get($metrics, 'execution_contract.execution_hash') === data_get($current, 'execution_contract.execution_hash');
+
             return [
                 'parent_model_version_id' => $parentModelId,
                 'status' => data_get($experiment, 'status') === 'confirmed' && $sameData && $sameExecution
@@ -512,6 +545,7 @@ class MarketChampionService
         $experiment = $firstParentRow['experiment'] ?? $this->evolutionQuality->pairedExperiment($agent, $parentResult, $current);
         $status = $parentRows->isNotEmpty() && $parentRows->every(fn (array $row): bool => $row['status'] === 'confirmed')
             && $sameData && $sameExecution ? 'confirmed' : data_get($experiment, 'status', 'pending');
+
         return [
             'protocol' => 'paired_parent_child_replay_v1',
             'status' => $status,
@@ -530,21 +564,26 @@ class MarketChampionService
 
     public function finalizeHoldout(ModelMarketPerformance $performance, array $holdout): ModelMarketPerformance
     {
-        return DB::transaction(function() use($performance,$holdout){
-            $performance=ModelMarketPerformance::query()->where('evidence_status', 'valid')->lockForUpdate()->findOrFail($performance->id);
-            $result=$holdout['result']??[]; $score=(float)($holdout['score']??0);
-            $passed=$performance->paper_status==='passed' && $score>=50
-                && (float)($result['profit_factor']??0)>=1.3
-                && (float)($result['max_drawdown_percent']??100)<=15
-                && (float)data_get($result,'monte_carlo.risk_of_ruin_percent',100)<=10
-                && (int)($result['total_trades']??0)>=30;
-            $performance->update(['holdout_status'=>$passed?'passed':'failed','holdout_score'=>$score,
-                'status'=>$passed?'paper':'rejected']);
-            if($passed && $this->marketReadiness->promotionReady() && $this->paperEvidence->ready()){$champion=$this->groupChampion(
-                $performance->symbol, $performance->timeframe, $performance->strategy_family, $performance->modelVersion,
-            );
-                if($this->backtestGatesPass($performance,$champion,$performance->metrics??[]))$this->promote($performance,$champion,$performance->modelVersion);}
-            LabAgent::where('model_version_id',$performance->model_version_id)->get()->each(fn (LabAgent $agent) => $agent->update([
+        return DB::transaction(function () use ($performance, $holdout) {
+            $performance = ModelMarketPerformance::query()->where('evidence_status', 'valid')->lockForUpdate()->findOrFail($performance->id);
+            $result = $holdout['result'] ?? [];
+            $score = (float) ($holdout['score'] ?? 0);
+            $passed = $performance->paper_status === 'passed' && $score >= 50
+                && (float) ($result['profit_factor'] ?? 0) >= 1.3
+                && (float) ($result['max_drawdown_percent'] ?? 100) <= 15
+                && (float) data_get($result, 'monte_carlo.risk_of_ruin_percent', 100) <= 10
+                && (int) ($result['total_trades'] ?? 0) >= 30;
+            $performance->update(['holdout_status' => $passed ? 'passed' : 'failed', 'holdout_score' => $score,
+                'status' => $passed ? 'paper' : 'rejected']);
+            if ($passed && $this->marketReadiness->promotionReady() && $this->paperEvidence->ready()) {
+                $champion = $this->groupChampion(
+                    $performance->symbol, $performance->timeframe, $performance->strategy_family, $performance->modelVersion,
+                );
+                if ($this->backtestGatesPass($performance, $champion, $performance->metrics ?? [])) {
+                    $this->promote($performance, $champion, $performance->modelVersion);
+                }
+            }
+            LabAgent::where('model_version_id', $performance->model_version_id)->get()->each(fn (LabAgent $agent) => $agent->update([
                 'lifecycle_status' => $performance->fresh()->status,
                 'decision_reason' => $passed ? 'Sealed holdout and paper gates passed.' : 'Sealed holdout failed.',
             ]));
@@ -561,6 +600,7 @@ class MarketChampionService
                     report($exception);
                 }
             });
+
             return $performance->fresh();
         });
     }
@@ -568,6 +608,7 @@ class MarketChampionService
     private function groupChampion(string $symbol, string $timeframe, string $family, ModelVersion $candidate): ?ModelMarketPerformance
     {
         $candidateHasDeclaredGroup = $this->semanticGroups->hasDeclaredGroup($candidate, $family);
+
         return ModelMarketPerformance::query()
             ->with('modelVersion')
             ->where(compact('symbol', 'timeframe'))
@@ -710,6 +751,7 @@ class MarketChampionService
     private function agentParameterDiff(ModelMarketPerformance $candidate): ?array
     {
         $agent = LabAgent::query()->where('model_version_id', $candidate->model_version_id)->latest('id')->first();
+
         return $agent?->parameter_diff;
     }
 
@@ -720,7 +762,9 @@ class MarketChampionService
         CandidateGateDecision $decision,
         array $result,
     ): bool {
-        if ($decision->decision === 'passed') return false;
+        if ($decision->decision === 'passed') {
+            return false;
+        }
         $agent->loadMissing('modelVersion');
         $lineage = (array) data_get($model->metadata, 'repair_lineage', []);
         $attempt = (int) data_get($lineage, 'attempt', 0);
@@ -730,7 +774,9 @@ class MarketChampionService
                 'QUARANTINED_PROOF_REPLAY_MISMATCH',
             ], true),
         );
-        if ((! $statisticalFalsifier && $attempt < 2) || data_get($lineage, 'status') === 'quarantined') return false;
+        if ((! $statisticalFalsifier && $attempt < 2) || data_get($lineage, 'status') === 'quarantined') {
+            return false;
+        }
 
         $fromStatus = (string) $agent->lifecycle_status;
         $lineage['status'] = 'quarantined';
@@ -756,6 +802,7 @@ class MarketChampionService
             'attempt' => $attempt,
             'result_hash' => hash('sha256', json_encode($result, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
         ], 'statistical_forward_gate', data_get($result, 'evidence_run_id'), null, self::class, null, $fromStatus, 'quarantined');
+
         return true;
     }
 
@@ -791,7 +838,9 @@ class MarketChampionService
     private function updateLabAgentAndMemory(ModelMarketPerformance $performance, ?ModelMarketPerformance $champion, array &$result): void
     {
         $agent = LabAgent::where('model_version_id', $performance->model_version_id)->latest()->first();
-        if (! $agent) return;
+        if (! $agent) {
+            return;
+        }
         $agent->loadMissing('modelVersion', 'generation');
         $repairAnchor = (int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0) > 0;
         $skillTree = $this->skillTree($result);
@@ -828,8 +877,7 @@ class MarketChampionService
                 ->where('timeframe', $agent->timeframe)
                 ->latest('id')
                 ->get()
-                ->filter(fn (ModelMarketPerformance $candidate): bool =>
-                    $candidate->modelVersion !== null
+                ->filter(fn (ModelMarketPerformance $candidate): bool => $candidate->modelVersion !== null
                     && $this->semanticGroups->sameGroup(
                         $agent->modelVersion,
                         $agent->strategy_family,
@@ -838,8 +886,7 @@ class MarketChampionService
                     )
                 )
                 ->unique('model_version_id')
-                ->sortBy(fn (ModelMarketPerformance $candidate): int =>
-                    array_search((int) $candidate->model_version_id, $parentModelIds, true) === false
+                ->sortBy(fn (ModelMarketPerformance $candidate): int => array_search((int) $candidate->model_version_id, $parentModelIds, true) === false
                         ? PHP_INT_MAX
                         : (int) array_search((int) $candidate->model_version_id, $parentModelIds, true)
                 )
@@ -849,11 +896,9 @@ class MarketChampionService
         // every contributor is re-checked at evaluation time so historical
         // metadata cannot create new genetic credit after the protocol
         // upgrade.
-        $parentA = $parentPerformances->first(fn (ModelMarketPerformance $candidate): bool =>
-            (int) $candidate->model_version_id === (int) ($agent->parent_a_model_version_id ?: 0)
+        $parentA = $parentPerformances->first(fn (ModelMarketPerformance $candidate): bool => (int) $candidate->model_version_id === (int) ($agent->parent_a_model_version_id ?: 0)
         ) ?: $parentPerformances->first();
-        $parentB = $parentPerformances->first(fn (ModelMarketPerformance $candidate): bool =>
-            $parentA && (int) $candidate->model_version_id !== (int) $parentA->model_version_id
+        $parentB = $parentPerformances->first(fn (ModelMarketPerformance $candidate): bool => $parentA && (int) $candidate->model_version_id !== (int) $parentA->model_version_id
         );
         $baseline = $parentA
             ? ['type' => $parentPerformances->count() > 1 ? 'parent_contribution_graph' : 'parent_a', 'agent_ids' => $parentPerformances->pluck('model_version_id')->values()->all()]
@@ -945,11 +990,11 @@ class MarketChampionService
                 'promotion_evidence' => false,
             ]
             : $this->pairedReplayProjection(
-            $agent,
-            $geneticParentResult,
-            $result,
-            $parentPerformances->all(),
-        );
+                $agent,
+                $geneticParentResult,
+                $result,
+                $parentPerformances->all(),
+            );
         $pairedExperiment = (array) data_get($pairedReplay, 'experiment', []);
         $result['paired_replay'] = $pairedReplay;
         $result['no_regression_contract'] = $noRegression;
@@ -962,21 +1007,20 @@ class MarketChampionService
                 'promotion_evidence' => false,
             ]
             : $this->mutationSkills->verify(
-            $agent,
-            $geneticParentPerformance?->modelVersion,
-            $geneticParentResult,
-            $result,
-            (array) $agent->parameter_diff,
-            $noRegression,
-        );
+                $agent,
+                $geneticParentPerformance?->modelVersion,
+                $geneticParentResult,
+                $result,
+                (array) $agent->parameter_diff,
+                $noRegression,
+            );
         $result['verified_mutation_skill'] = $mutationSkillContract;
         $selfKnowledge = $this->universalCapabilities->selfKnowledge($result);
         $retention = $this->universalCapabilities->retention(
             $parentResult,
             $result,
             $multiParent
-                ? $parentPerformances->filter(fn (ModelMarketPerformance $candidate): bool =>
-                    $candidate->model_version_id !== $geneticParentPerformance?->model_version_id
+                ? $parentPerformances->filter(fn (ModelMarketPerformance $candidate): bool => $candidate->model_version_id !== $geneticParentPerformance?->model_version_id
                 )->map(fn (ModelMarketPerformance $candidate): array => [
                     'model_version_id' => $candidate->model_version_id,
                     'capability_vector' => data_get($candidate->metrics, 'capability_vector', []),
@@ -1185,6 +1229,7 @@ class MarketChampionService
             'before' => $parent === null ? null : data_get($parent, 'diagnostic_telemetry.exit_distribution', []),
             'after' => data_get($current, 'diagnostic_telemetry.exit_distribution', []),
         ];
+
         return $effect;
     }
 
@@ -1200,6 +1245,7 @@ class MarketChampionService
         $previousIneffective = $previous->count() === 2 && $previous->every(
             fn (MutationMemory $memory) => data_get($memory->behavioral_effect, 'causal_experiment.parameter_effective') === false,
         );
+
         return [
             'parameter_effective' => $changed ? true : ($previousIneffective ? false : null),
             'behavior_changed' => $changed, 'repeat_count_before' => $previous->count(),
@@ -1219,6 +1265,7 @@ class MarketChampionService
         $stress = (float) data_get($result, 'pf_attribution.stress_cost.profit_factor', 0);
         $news = data_get($result, 'red_team.scenarios.news_window.status') === 'assessed'
             ? (bool) data_get($result, 'red_team.scenarios.news_window.pass') : null;
+
         return [
             'trend_skill' => round(min(100, $trend * 20), 2),
             'range_skill' => round(min(100, $range * 20), 2),

@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use App\Models\MutationMemory;
 use App\Services\LabPopulationService;
 use App\Services\StrategyParameterSchemaService;
+use App\Services\StrategySemanticGroupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -67,6 +69,44 @@ class ProgressiveInheritanceTest extends TestCase
         $this->assertSame($rawWinner->id, $parents->get(1)->id);
     }
 
+    public function test_resumable_constructor_finalizes_the_mandatory_lineage_contract(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'XAUUSD H1', 'timeframe' => 'H1',
+            'strategy_families' => ['differential_router'], 'is_active' => true,
+            'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = $lab->generations()->create([
+            'generation' => 2, 'trigger_type' => 'operator_successor',
+            'trigger_context' => ['adaptive_evolution_policy' => ['smart_composition_cohort' => [
+                'lineage_continuation_families' => ['differential_router'],
+            ]]],
+            'data_fingerprint' => 'lineage-test', 'population_size' => 1,
+            'status' => 'draft', 'started_at' => now(),
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'lineage-parented-child', 'strategy' => 'lineage_parented_child',
+            'version' => 'v1', 'generation' => 2, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('differential_router'),
+            'metadata' => [], 'evidence_status' => 'valid',
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'parent_a_model_version_id' => $model->id, 'symbol' => 'XAUUSD',
+            'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'origin' => 'operator_successor', 'lifecycle_status' => 'draft',
+            'parameter_diff' => [],
+        ]);
+
+        $method = new \ReflectionMethod(LabPopulationService::class, 'finalizeLineageContinuationContract');
+        $method->setAccessible(true);
+        $finalized = $method->invoke(app(LabPopulationService::class), $generation);
+
+        $this->assertTrue((bool) data_get($finalized->trigger_context, 'lineage_continuation_contract.allowed'));
+        $this->assertSame(['differential_router'], data_get($finalized->trigger_context, 'lineage_continuation_contract.covered_families'));
+        $this->assertEquals(100.0, data_get($finalized->trigger_context, 'lineage_continuation_contract.coverage_percent'));
+    }
+
     public function test_child_carries_parent_parameters_lineage_and_confirmed_traits(): void
     {
         $service = app(LabPopulationService::class);
@@ -75,7 +115,7 @@ class ProgressiveInheritanceTest extends TestCase
 
         $schema = app(StrategyParameterSchemaService::class)->defaults('differential_router');
         $schema['trend_ema_period'] = 31;
-        $groups = app(\App\Services\StrategySemanticGroupService::class);
+        $groups = app(StrategySemanticGroupService::class);
         $parent = ModelVersion::create([
             'name' => 'progressive-parent', 'strategy' => 'xauusd_progressive_parent', 'version' => 'v1',
             'generation' => 1, 'status' => 'testing', 'parameters' => $schema,
@@ -121,6 +161,7 @@ class ProgressiveInheritanceTest extends TestCase
         ]);
 
         $generation = $service->build('XAUUSD', 'progressive_inheritance_child', true);
+        $this->assertNotNull($generation, json_encode($service->lastBuildOutcome(), JSON_UNESCAPED_SLASHES));
         $child = $generation->agents
             ->first(fn (LabAgent $agent): bool => $agent->strategy_family === 'differential_router'
                 && $agent->parent_a_model_version_id === $parent->id);
@@ -147,7 +188,7 @@ class ProgressiveInheritanceTest extends TestCase
     public function test_parent_frontier_rejects_a_foreign_semantic_council_role(): void
     {
         $schema = app(StrategyParameterSchemaService::class)->defaults('differential_router');
-        $groups = app(\App\Services\StrategySemanticGroupService::class);
+        $groups = app(StrategySemanticGroupService::class);
         $wrong = ModelVersion::create([
             'name' => 'trend-down-parent', 'strategy' => 'xauusd_trend_down_parent', 'version' => 'v1',
             'generation' => 1, 'status' => 'testing', 'parameters' => $schema,

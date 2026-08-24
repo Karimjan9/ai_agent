@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\AgentLearningSettlement;
+use App\Models\CandidateGateDecision;
+use App\Models\LabGeneration;
 use App\Models\LabEvaluationRun;
 use App\Models\LabLearningLanePair;
 
@@ -42,7 +44,38 @@ class LearningEvidenceGate
     {
         $settled = AgentLearningSettlement::query()->whereHas('episode', fn ($q) => $q->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe)))->exists();
         $recovered = \App\Models\LearningRecoveryEvent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->whereIn('status', ['reconciled', 'technical_recovery_completed'])->exists();
-        return ['allowed' => $settled || $recovered, 'reason' => $settled ? 'CANONICAL_SETTLEMENT_EXISTS' : ($recovered ? 'TECHNICAL_RECOVERY_COMPLETED' : 'LEARNING_EVIDENCE_REQUIRED')];
+        if ($settled || $recovered) {
+            return ['allowed' => true, 'reason' => $settled ? 'CANONICAL_SETTLEMENT_EXISTS' : 'TECHNICAL_RECOVERY_COMPLETED'];
+        }
+
+        // A cohort with zero screening passes cannot produce a settlement or
+        // recovery event by definition. Requiring one here deadlocks the
+        // generator after consecutive all-fail cohorts. Allow one fresh
+        // research cohort in that state; full replay, promotion and paper
+        // gates remain unchanged downstream.
+        $latest = LabGeneration::query()
+            ->whereHas('laboratory', fn ($query) => $query
+                ->where('symbol', strtoupper($symbol))
+                ->where('timeframe', strtoupper($timeframe)))
+            ->whereIn('status', ['screened', 'completed', 'technical_quarantine', 'failed', 'abandoned'])
+            ->latest('generation')
+            ->first();
+        if ($latest) {
+            $agentIds = $latest->agents()->pluck('id');
+            $screenPasses = $agentIds->isEmpty() ? 0 : CandidateGateDecision::query()
+                ->whereIn('lab_agent_id', $agentIds)
+                ->where('stage', 'screening')
+                ->where('decision', 'passed')
+                ->count();
+            $active = $latest->agents()->whereIn('lifecycle_status', [
+                'draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation',
+            ])->exists();
+            if ($screenPasses === 0 && ! $active) {
+                return ['allowed' => true, 'reason' => 'NO_SCREEN_PASS_REQUIRES_NEW_RESEARCH_COHORT'];
+            }
+        }
+
+        return ['allowed' => false, 'reason' => 'LEARNING_EVIDENCE_REQUIRED'];
     }
 
     private function run(LabEvaluationRun|array|string|null $run): ?LabEvaluationRun

@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\AiLaboratory;
+use App\Services\LabPopulationService;
 use App\Services\ResearchAllocationPolicyService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\TacticCatalogueService;
-use App\Models\AiLaboratory;
 use Tests\TestCase;
 
 class NormalCausalResearchContractTest extends TestCase
@@ -70,7 +71,7 @@ class NormalCausalResearchContractTest extends TestCase
 
     public function test_normal_structural_compiler_reserves_executable_hypotheses(): void
     {
-        $service = app(\App\Services\LabPopulationService::class);
+        $service = app(LabPopulationService::class);
         $reflection = new \ReflectionMethod($service, 'normalStructuralResearchPlan');
         $reflection->setAccessible(true);
         $lab = new AiLaboratory(['strategy_families' => ['hybrid', 'differential_router']]);
@@ -123,5 +124,37 @@ class NormalCausalResearchContractTest extends TestCase
         $this->assertSame(1, data_get($result, 'contract.candidate_counts.volume|differential_router'));
         $this->assertSame('volume', data_get($result, 'plan.1.niche.data_lane'));
         $this->assertSame('volume_lane', data_get($result, 'plan.1.niche.shadow_mutation_gene'));
+    }
+
+    public function test_volume_repair_preserves_the_source_price_family_pair(): void
+    {
+        $result = app(ResearchAllocationPolicyService::class)->materializeNormalControlPairing(
+            [
+                [
+                    'family' => 'mean_reversion',
+                    'target' => 'regime_coverage',
+                    'niche' => ['volume_shadow' => true, 'shadow_only' => true],
+                ],
+                ['family' => 'mean_reversion', 'target' => 'profit_factor', 'niche' => []],
+                ['family' => 'mean_reversion', 'target' => 'monthly_survival', 'niche' => []],
+                [
+                    'family' => 'hybrid',
+                    'target' => 'stress_cost',
+                    'niche' => ['composition_lane' => 'risk_management_mutation'],
+                ],
+                ['family' => 'hybrid', 'target' => 'profit_factor', 'niche' => []],
+                ['family' => 'hybrid', 'target' => 'monthly_survival', 'niche' => []],
+            ],
+            'XAUUSD',
+            'H1',
+            789,
+        );
+
+        $this->assertTrue((bool) data_get($result, 'contract.allowed'));
+        $this->assertSame([], data_get($result, 'contract.missing_candidate_pairs'));
+        $this->assertSame('hybrid', data_get($result, 'contract.family_pairability_repairs.0.from_family'));
+        $this->assertSame('mean_reversion', data_get($result, 'contract.family_pairability_repairs.0.to_family'));
+        $this->assertSame(1, data_get($result, 'contract.candidate_counts.price|mean_reversion'));
+        $this->assertSame(1, data_get($result, 'contract.candidate_counts.volume|mean_reversion'));
     }
 }

@@ -21,7 +21,8 @@ class FailureDojoService
     {
         if (! $this->available() || ! $pair->failure_signature) return null;
 
-        $pair->loadMissing('candidateAgent.modelVersion');
+        $pair->loadMissing('candidateAgent.modelVersion', 'controlResponseMap');
+        $verifiedControl = $pair->isVerifiedControlPair();
         $signature = (array) $pair->failure_signature;
         $repairAnchorId = (int) data_get($pair->candidateAgent?->modelVersion?->metadata, 'repair_anchor.id', 0);
         $parameterDiff = (array) ($pair->candidateAgent?->parameter_diff ?? []);
@@ -73,13 +74,19 @@ class FailureDojoService
                 'target' => $pair->target,
                 'state_signature' => data_get($signature, 'signature') ?: data_get($signature, 'failure_type'),
                 'expected_action' => $this->expectedAction($pair),
-                'status' => 'pending',
+                // A historical baseline remains useful diagnostic context,
+                // but it must never turn into actionable replay backlog. New
+                // rows therefore fail closed at creation time; legacy rows
+                // remain immutable and are classified separately by summary().
+                'status' => $verifiedControl ? 'pending' : 'diagnostic_only',
                 'failure_signature' => $signature,
                 'evidence' => [
                     'protocol' => self::PROTOCOL,
                     'failure_state' => data_get($signature, 'state', []),
                     'counterfactual_status' => 'pending',
                     'frozen_control_required' => true,
+                    'control_pair_status' => $verifiedControl ? 'verified' : 'diagnostic_only',
+                    'diagnostic_reason' => $verifiedControl ? null : 'CONTROL_PAIR_INVALID',
                     'causal_skill_compiler' => $causalSkill,
                     'information_gain_priority' => $priority,
                     'structural_escape' => $structuralEscape,
@@ -198,8 +205,14 @@ class FailureDojoService
                 ->selectRaw("SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending")
                 ->selectRaw("SUM(CASE WHEN status = 'passed' THEN 1 ELSE 0 END) AS passed")
                 ->selectRaw("SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed")
-                ->selectRaw("SUM(CASE WHEN status = 'pending' AND expected_action IS NOT NULL THEN 1 ELSE 0 END) AS actionable_pending")
                 ->first();
+            $pendingRuns = $this->scopedQuery($symbol, $timeframe)
+                ->where('status', 'pending')
+                ->with('pair.controlResponseMap')
+                ->get();
+            $actionable = $pendingRuns->filter(fn (LabFailureDojoRun $run): bool => $run->pair !== null
+                && $run->pair->isVerifiedControlPair()
+                && filled($run->expected_action));
 
             return [
                 'available' => true,
@@ -207,7 +220,8 @@ class FailureDojoService
                 'pending' => (int) ($row->pending ?? 0),
                 'passed' => (int) ($row->passed ?? 0),
                 'failed' => (int) ($row->failed ?? 0),
-                'actionable_pending' => (int) ($row->actionable_pending ?? 0),
+                'actionable_pending' => $actionable->count(),
+                'legacy_invalid_pending' => $pendingRuns->count() - $actionable->count(),
                 'cached_for_seconds' => 15,
             ];
         });
@@ -236,7 +250,9 @@ class FailureDojoService
             ->where('status', 'pending')
             ->latest('id')
             ->limit(max(1, min(500, $limit * 20)))
+            ->with('pair.controlResponseMap')
             ->get()
+            ->filter(fn (LabFailureDojoRun $run): bool => $run->pair !== null && $run->pair->isVerifiedControlPair())
             ->sortByDesc(fn (LabFailureDojoRun $run): array => [
                 (float) data_get($run->evidence, 'strategic_research_director.experiment_value.score', 0),
                 (float) data_get($run->evidence, 'information_gain_priority.score', 0),

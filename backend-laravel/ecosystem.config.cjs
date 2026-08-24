@@ -39,6 +39,28 @@ const externalWebServer = process.env.WEB_SERVER_MODE === 'external' || process.
 // database queue when PM2 is started without an inherited environment.
 const queueConnection = process.env.QUEUE_CONNECTION || 'redis';
 
+// A sealed release is optional for local development and fail-closed when
+// explicitly enabled in production. The preflight covers every app in this
+// ecosystem, including Python, so pending schema or source drift cannot leave
+// workers and the AI API on different contracts.
+if (['1', 'true', 'yes', 'on'].includes(String(process.env.RELEASE_SEAL_REQUIRED || '').toLowerCase())) {
+  const { spawnSync } = require('child_process');
+  const preflight = spawnSync(php, ['artisan', 'trading:release-seal', 'verify', '--json'], {
+    cwd: __dirname,
+    encoding: 'utf8',
+    windowsHide: true,
+    env: process.env,
+  });
+  if (preflight.status !== 0) {
+    let reason = 'release seal verification failed';
+    try {
+      const result = JSON.parse(String(preflight.stdout || '').trim());
+      reason = Array.isArray(result.reason_codes) ? result.reason_codes.join(',') : reason;
+    } catch (_) {}
+    throw new Error(`NeuroTrader startup blocked: ${reason}`);
+  }
+}
+
 const worker = (name, queue, timeoutSeconds = 1200) => ({
   name,
   script: 'artisan',

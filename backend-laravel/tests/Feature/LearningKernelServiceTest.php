@@ -73,7 +73,7 @@ class LearningKernelServiceTest extends TestCase
 
     public function test_contextual_retrieval_handles_structured_runtime_context_without_casting_error(): void
     {
-        AgentLearningLesson::create([
+        $lesson = AgentLearningLesson::create([
             'lesson_id' => '00000000-0000-0000-0000-000000000113', 'lesson_hash' => str_repeat('c', 128),
             'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
             'lesson_type' => 'uncertainty_lesson', 'status' => 'provisional', 'failure_class' => 'transition',
@@ -86,7 +86,26 @@ class LearningKernelServiceTest extends TestCase
         );
 
         $this->assertSame('ok', $packet['status']);
-        $this->assertSame(0, $packet['retrieval_count']);
+        $this->assertSame(1, $packet['retrieval_count']);
+        $this->assertSame($lesson->id, $packet['uncertainty_lessons'][0]['lesson_id']);
+    }
+
+    public function test_pulse_does_not_turn_legacy_confirmed_lessons_into_learning_velocity(): void
+    {
+        AgentLearningLesson::create([
+            'lesson_id' => '00000000-0000-0000-0000-000000000114', 'lesson_hash' => str_repeat('d', 128),
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'lesson_type' => 'skill_lesson', 'status' => 'confirmed', 'failure_class' => 'profit_factor',
+            'parameter_key' => 'entry_threshold', 'outcome' => 'beneficial', 'source_run_ids' => ['legacy-run'], 'evidence' => [], 'observed_at' => now(),
+        ]);
+
+        $pulse = app(LearningKernelService::class)->pulse('XAUUSD', 'H1', 'hybrid');
+
+        $this->assertSame(1, $pulse['legacy_confirmed_lessons']);
+        $this->assertSame(0, $pulse['lessons_confirmed']);
+        $this->assertSame(0, $pulse['canonical_settlements']);
+        $this->assertSame(0.0, $pulse['learning_velocity']);
+        $this->assertSame('no_canonical_settlements', $pulse['learning_velocity_status']);
     }
 
     public function test_policy_versions_are_immutable_and_activation_requires_external_approval(): void

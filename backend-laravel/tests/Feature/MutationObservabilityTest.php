@@ -165,6 +165,8 @@ class MutationObservabilityTest extends TestCase
         $observability = app(MutationObservabilityService::class)->assess($child, $candidate);
 
         $this->assertSame('observable_effect', $observability['classification']);
+        $this->assertSame('profit_factor', $observability['declared_target']);
+        $this->assertSame('profit_factor', $observability['target']);
         $this->assertTrue(data_get($observability, 'signal_decisions.changed'));
         $this->assertTrue(data_get($observability, 'trade_ledger.changed'));
         $this->assertFalse($observability['promotion_evidence']);

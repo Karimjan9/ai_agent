@@ -9,6 +9,8 @@ use App\Services\GateMarginService;
 use App\Services\LabCandidateSelectionService;
 use App\Services\LabPopulationService;
 use App\Services\LearningProtocolSafetyService;
+use App\Services\MutationResponseMapService;
+use App\Services\StrategyParameterSchemaService;
 use App\Services\TargetedRescueProfileService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -46,6 +48,30 @@ class GateMarginAndControlParityTest extends TestCase
         $this->assertLessThan(0, $margin['gates']['temporal_stability']['margin']);
         $this->assertFalse($margin['all_known_gates_passed']);
         $this->assertFalse((bool) $margin['promotion_evidence']);
+    }
+
+    public function test_semantic_learning_targets_use_their_canonical_gate_metrics(): void
+    {
+        $control = [
+            'total_trades' => 8,
+            'screening_survival' => ['stress_cost_pf' => .92],
+        ];
+        $candidate = [
+            'total_trades' => 12,
+            'screening_survival' => ['stress_cost_pf' => 1.08],
+        ];
+        $maps = app(MutationResponseMapService::class);
+
+        $exitDelta = $maps->targetDelta('exit_topology', $control, $candidate);
+        $recallDelta = $maps->targetDelta('opportunity_recall', $control, $candidate);
+        $parity = app(GateMarginService::class)->compare($candidate, $control, 'exit_topology');
+
+        $this->assertSame(.16, $exitDelta['delta']);
+        $this->assertTrue($exitDelta['improved']);
+        $this->assertSame(4.0, $recallDelta['delta']);
+        $this->assertTrue($recallDelta['improved']);
+        $this->assertSame('stress_cost', $parity['optimization_target']);
+        $this->assertGreaterThan(0, $parity['margin_delta']);
     }
 
     public function test_control_parity_is_not_applicable_for_an_ordinary_generation(): void
@@ -89,9 +115,19 @@ class GateMarginAndControlParityTest extends TestCase
                 'bounded_siblings' => 4,
                 'frozen_control' => 1,
             ],
+            'p0_completion' => [
+                'causal_observation_incomplete_count' => 0,
+                'numeric_target_delta_candidates' => 4,
+                'micro_replay_terminal_candidates' => 4,
+                'retrieval_associated_candidates' => 4,
+                'consumed_or_settled_lessons' => 1,
+            ],
         ];
 
         $this->assertTrue(app(LearningProtocolSafetyService::class)->controlledRescueAllowed('candidate_handoff', 5, $profile));
+        $incomplete = $profile;
+        $incomplete['p0_completion']['causal_observation_incomplete_count'] = 1;
+        $this->assertFalse(app(LearningProtocolSafetyService::class)->controlledRescueAllowed('candidate_handoff', 5, $incomplete));
         $this->assertFalse(app(LearningProtocolSafetyService::class)->controlledRescueAllowed('candidate_handoff', 4, $profile));
         $this->assertFalse(app(LearningProtocolSafetyService::class)->controlledRescueAllowed('new_data', 5, $profile));
     }
@@ -123,7 +159,7 @@ class GateMarginAndControlParityTest extends TestCase
         $geneMethod->setAccessible(true);
         $plan = $geneMethod->invoke(app(LabPopulationService::class), 'temporal_stability', 'hybrid', [
             'failure_reason' => 'FAILED_TRAIN_FORWARD_GAP',
-            'parameter_snapshot' => app(\App\Services\StrategyParameterSchemaService::class)->defaults('hybrid'),
+            'parameter_snapshot' => app(StrategyParameterSchemaService::class)->defaults('hybrid'),
         ]);
 
         $this->assertSame([

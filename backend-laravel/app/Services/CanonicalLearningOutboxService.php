@@ -141,7 +141,7 @@ class CanonicalLearningOutboxService
     private function markCanonicalSettled(LabLearningLanePair $pair, CanonicalLearningOutbox $row): void
     {
         LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->whereIn('status', ['selected', 'queued', 'running'])->update([
-            'status' => 'canonical_settled', 'stage' => 'full_replay', 'micro_status' => 'passed', 'completed_at' => null,
+            'status' => 'canonical_settled', 'stage' => 'full_replay', 'completed_at' => null,
         ]);
         $pair->update(['status' => 'canonical_episode_settled', 'metadata' => [...((array) $pair->metadata), 'canonical_outbox_id' => $row->id, 'canonical_settled_at' => now()->utc()->toIso8601String(), 'promotion_evidence' => false]]);
     }
@@ -159,9 +159,19 @@ class CanonicalLearningOutboxService
         }
         if (! $gate['allowed']) return $this->fail($pair, null, implode(',', $gate['reasons']));
         LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->whereIn('status', ['selected', 'queued', 'running', 'canonical_settled'])->update([
-            'status' => 'completed', 'stage' => 'full_replay', 'micro_status' => 'passed', 'completed_at' => now(),
+            'status' => 'completed', 'stage' => 'full_replay', 'completed_at' => now(),
         ]);
         $pair->update(['status' => $lessonState, 'metadata' => [...((array) $pair->metadata), 'lesson_state' => $lessonState, 'promotion_evidence' => false]]);
+        if ($lessonState === 'skill_confirmed') {
+            $candidate = $pair->candidateAgent()->with('modelVersion')->first();
+            if ($candidate) {
+                app(CompositionLibrarySettlementService::class)->consolidateConfirmed($candidate, [
+                    'pair_id' => $pair->id,
+                    'lesson_id' => $lesson->id,
+                    'quality_score' => (float) data_get($pair->target_delta, 'score', data_get($pair->target_delta, 'relative_improvement', 0)),
+                ]);
+            }
+        }
         return ['status' => $lessonState, 'promotion_evidence' => false];
     }
 
@@ -188,5 +198,5 @@ class CanonicalLearningOutboxService
     private function available(): bool { return Schema::hasTable('canonical_learning_outbox') && Schema::hasTable('agent_learning_episodes') && Schema::hasTable('agent_learning_settlements'); }
     private function tradeCount(array $result): int { return max(0, (int) data_get($result, 'total_trades', data_get($result, 'metrics.total_trades', data_get($result, 'entry_funnel.executed_trades', 0)))); }
     private function hasMissingRewardCoverage(array $result): bool { return $this->tradeCount($result) === 0 || (bool) data_get($result, 'coverage_failure', false); }
-    private function independentWindows(LabLearningLanePair $pair): int { return max(1, LabLearningLanePair::query()->where('candidate_agent_id', $pair->candidate_agent_id)->where('pair_integrity_status', 'verified')->where('status', 'canonical_episode_settled')->distinct('independent_window_key')->count('independent_window_key')); }
+    private function independentWindows(LabLearningLanePair $pair): int { return max(1, LabLearningLanePair::query()->where('candidate_agent_id', $pair->candidate_agent_id)->where('pair_integrity_status', 'verified')->whereIn('status', ['canonical_episode_settled', 'lesson_compiled', 'skill_confirmed'])->distinct('independent_window_key')->count('independent_window_key')); }
 }

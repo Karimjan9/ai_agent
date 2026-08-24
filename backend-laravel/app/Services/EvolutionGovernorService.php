@@ -37,6 +37,10 @@ class EvolutionGovernorService
         'independent_pass', 'repeated_failure', 'uncertainty',
     ];
 
+    public function __construct(private EvolutionVelocityService $velocity)
+    {
+    }
+
     /**
      * Snapshot the recent research state for a laboratory. This is deliberately
      * descriptive: no field returned here is evidence of promotion.
@@ -75,6 +79,8 @@ class EvolutionGovernorService
         $driftTelemetry = $this->driftTelemetry($lab);
         $failedMutationTelemetry = $this->failedMutationTelemetry($agents);
         $learningTelemetry = $this->learningTelemetry($lab);
+        $velocity = $this->velocity->snapshot($lab, max(3, $lookback));
+        $operatingSystem = app(EvolutionOperatingSystemService::class)->blueprint($lab);
         $collapseThreshold = (float) config('services.lab_selection.governor_diversity_collapse_threshold', .35);
         $stagnationThreshold = max(1, (int) config('services.lab_selection.governor_stagnation_generations', 3));
         $exploration = .20;
@@ -110,6 +116,8 @@ class EvolutionGovernorService
             'market_drift' => $driftTelemetry,
             'repeated_failed_mutations' => $failedMutationTelemetry,
             'learning_telemetry' => $learningTelemetry,
+            'evolution_velocity' => $velocity,
+            'quality_diversity_operating_system' => $operatingSystem,
             'evolution_modes' => $this->evolutionModePolicies($learningTelemetry),
             'risk_bounded_exploration' => [
                 'protocol' => 'risk_bounded_exploration_governor_v1',
@@ -161,6 +169,8 @@ class EvolutionGovernorService
                 'positive_response_count' => 0,
                 'independent_confirmation_count' => 0,
             ],
+            'evolution_velocity' => ['protocol' => EvolutionVelocityService::PROTOCOL, 'status' => 'no_laboratory', 'promotion_evidence' => false],
+            'quality_diversity_operating_system' => ['protocol' => EvolutionOperatingSystemService::PROTOCOL, 'status' => 'no_laboratory', 'promotion_evidence' => false],
             'evolution_modes' => $this->evolutionModePolicies([]),
             'risk_bounded_exploration' => [
                 'protocol' => 'risk_bounded_exploration_governor_v1',

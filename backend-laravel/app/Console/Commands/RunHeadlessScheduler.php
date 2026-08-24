@@ -4,9 +4,9 @@ namespace App\Console\Commands;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 class RunHeadlessScheduler extends Command
@@ -25,10 +25,15 @@ class RunHeadlessScheduler extends Command
         // changes a trading gate or evidence decision.
         $leaseKey = (string) config('services.scheduler.lease_key', 'trading:headless-scheduler:v1');
         $leaseSeconds = max(30, (int) config('services.scheduler.lease_seconds', 90));
+        $heartbeatSeconds = max(5, min($leaseSeconds - 5, (int) config('services.scheduler.heartbeat_seconds', 20)));
         $duplicateWaitSeconds = max(1, (int) config('services.scheduler.duplicate_wait_seconds', 5));
         $lease = Cache::lock($leaseKey, $leaseSeconds);
         $lastDuplicateLog = 0.0;
         while (! $lease->get()) {
+            if ($this->recoverStaleLocalLease($lease, $leaseKey, $heartbeatSeconds)) {
+                continue;
+            }
+
             // A duplicate/manual launch must stay completely passive rather
             // than exiting into a PM2 restart storm. It waits for the owner
             // or for a stale TTL to expire, but never runs schedule:run.
@@ -57,14 +62,14 @@ class RunHeadlessScheduler extends Command
         // memory rotation; zero leaves lifecycle control to PM2/monitoring.
         $memoryLimitMb = max(0, (int) env('SCHEDULER_MEMORY_LIMIT_MB', 0));
         $memoryLimitBytes = $memoryLimitMb > 0 ? $memoryLimitMb * 1024 * 1024 : 0;
-        $heartbeatSeconds = max(5, min($leaseSeconds - 5, (int) config('services.scheduler.heartbeat_seconds', 20)));
-
         try {
             Cache::put('system:scheduler-lease', [
                 'protocol' => 'headless_scheduler_singleton_v1',
                 'pid' => getmypid(),
+                'hostname' => $this->hostname(),
                 'lease_key' => $leaseKey,
                 'started_at' => now()->toIso8601String(),
+                'heartbeat_at' => now()->toIso8601String(),
                 'lease_seconds' => $leaseSeconds,
             ], now()->addSeconds($leaseSeconds));
             // Publish liveness as soon as the singleton lease is acquired.
@@ -78,36 +83,10 @@ class RunHeadlessScheduler extends Command
             while (true) {
                 $now = microtime(true);
                 if (($now - $lastLeaseRefresh) >= $heartbeatSeconds) {
-                    try {
-                        if (! $lease->refresh($leaseSeconds)) {
-                            Log::critical('Headless scheduler lease was lost; exiting for a clean supervisor restart.', [
-                                'lease_key' => $leaseKey,
-                                'pid' => getmypid(),
-                            ]);
-
-                            return self::SUCCESS;
-                        }
-                    } catch (Throwable $exception) {
-                        // Continuing after a failed refresh could create two
-                        // active schedulers once the old TTL expires. Fail
-                        // closed and let PM2 restart one clean owner.
-                        Log::critical('Headless scheduler lease refresh failed; exiting.', [
-                            'lease_key' => $leaseKey,
-                            'pid' => getmypid(),
-                            'exception' => $exception,
-                        ]);
-
+                    if (! $this->refreshLease($lease, $leaseKey, $leaseSeconds)) {
                         return self::FAILURE;
                     }
                     $lastLeaseRefresh = $now;
-                    Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinutes(10));
-                    Cache::put('system:scheduler-lease', [
-                        'protocol' => 'headless_scheduler_singleton_v1',
-                        'pid' => getmypid(),
-                        'lease_key' => $leaseKey,
-                        'heartbeat_at' => now()->toIso8601String(),
-                        'lease_seconds' => $leaseSeconds,
-                    ], now()->addSeconds($leaseSeconds));
                 }
 
                 $minute = CarbonImmutable::now()->format('Y-m-d H:i');
@@ -120,7 +99,26 @@ class RunHeadlessScheduler extends Command
                     // one PHP lifetime; the cache key spans the PM2 restart.
                     if ($this->claimMinute($minute)) {
                         try {
-                            $exitCode = Artisan::call('schedule:run', ['--whisper' => true]);
+                            // Each tick gets a bounded child process. Scheduled
+                            // callbacks can hydrate large evidence ledgers;
+                            // keeping them inside this long-lived singleton
+                            // accumulated that memory forever and prevented a
+                            // heartbeat while an hourly burst was running.
+                            $process = $this->scheduleProcess();
+                            $process->start();
+                            while ($process->isRunning()) {
+                                $now = microtime(true);
+                                if (($now - $lastLeaseRefresh) >= $heartbeatSeconds) {
+                                    if (! $this->refreshLease($lease, $leaseKey, $leaseSeconds)) {
+                                        $process->stop(5);
+
+                                        return self::FAILURE;
+                                    }
+                                    $lastLeaseRefresh = $now;
+                                }
+                                usleep(250_000);
+                            }
+                            $exitCode = $process->getExitCode() ?? self::FAILURE;
                             if ($exitCode !== 0) {
                                 Log::warning('Headless scheduler tick returned a non-zero exit code.', [
                                     'minute' => $minute,
@@ -183,6 +181,140 @@ class RunHeadlessScheduler extends Command
                 ]);
             }
         }
+    }
+
+    private function refreshLease(mixed $lease, string $leaseKey, int $leaseSeconds): bool
+    {
+        try {
+            if (! $lease->refresh($leaseSeconds)) {
+                Log::critical('Headless scheduler lease was lost; exiting for a clean supervisor restart.', [
+                    'lease_key' => $leaseKey,
+                    'pid' => getmypid(),
+                ]);
+
+                return false;
+            }
+
+            Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinutes(10));
+            $currentMetadata = Cache::get('system:scheduler-lease');
+            Cache::put('system:scheduler-lease', [
+                'protocol' => 'headless_scheduler_singleton_v1',
+                'pid' => getmypid(),
+                'hostname' => $this->hostname(),
+                'lease_key' => $leaseKey,
+                'started_at' => is_array($currentMetadata) && filled($currentMetadata['started_at'] ?? null)
+                    ? $currentMetadata['started_at']
+                    : now()->toIso8601String(),
+                'heartbeat_at' => now()->toIso8601String(),
+                'lease_seconds' => $leaseSeconds,
+            ], now()->addSeconds($leaseSeconds));
+
+            return true;
+        } catch (Throwable $exception) {
+            // Continuing after a failed refresh could create two active
+            // schedulers once the old TTL expires. Fail closed and let PM2
+            // restart one clean owner.
+            Log::critical('Headless scheduler lease refresh failed; exiting.', [
+                'lease_key' => $leaseKey,
+                'pid' => getmypid(),
+                'exception' => $exception,
+            ]);
+
+            return false;
+        }
+    }
+
+    private function scheduleProcess(): Process
+    {
+        $process = new Process([PHP_BINARY, base_path('artisan'), 'schedule:run', '--whisper'], base_path());
+        $process->setTimeout(null);
+        $process->disableOutput();
+        if (PHP_OS_FAMILY === 'Windows') {
+            $process->setOptions([
+                'create_new_console' => false,
+            ]);
+        }
+
+        return $process;
+    }
+
+    /**
+     * Recover only a provably stale lease from a dead process on this host.
+     * A live process may be inside a long callback and is never pre-empted.
+     */
+    private function recoverStaleLocalLease(mixed $lease, string $leaseKey, int $heartbeatSeconds): bool
+    {
+        $metadata = Cache::get('system:scheduler-lease');
+        if (! is_array($metadata) || ($metadata['lease_key'] ?? null) !== $leaseKey) {
+            return false;
+        }
+
+        $ownerHost = trim((string) ($metadata['hostname'] ?? ''));
+        $ownerPid = (int) ($metadata['pid'] ?? 0);
+        $heartbeatAt = $metadata['heartbeat_at'] ?? $metadata['started_at'] ?? null;
+        if ($ownerHost === '' || ! hash_equals($this->hostname(), $ownerHost) || $ownerPid <= 0 || ! $heartbeatAt) {
+            return false;
+        }
+
+        try {
+            $ageSeconds = max(0, (int) floor(CarbonImmutable::parse((string) $heartbeatAt)->diffInSeconds(now())));
+        } catch (Throwable) {
+            return false;
+        }
+
+        if ($ageSeconds < max(60, $heartbeatSeconds * 3) || $this->localProcessIsRunning($ownerPid) !== false) {
+            return false;
+        }
+
+        $lease->forceRelease();
+        Cache::forget('system:scheduler-lease');
+        Cache::forget('system:scheduler-heartbeat');
+        Log::critical('Recovered a stale headless scheduler lease from a dead local process.', [
+            'lease_key' => $leaseKey,
+            'stale_pid' => $ownerPid,
+            'stale_age_seconds' => $ageSeconds,
+            'replacement_pid' => getmypid(),
+        ]);
+
+        return true;
+    }
+
+    private function hostname(): string
+    {
+        return (string) (gethostname() ?: php_uname('n'));
+    }
+
+    /**
+     * Null means that the platform could not prove either state.
+     */
+    private function localProcessIsRunning(int $pid): ?bool
+    {
+        if ($pid <= 0) {
+            return false;
+        }
+
+        if (PHP_OS_FAMILY !== 'Windows') {
+            if (function_exists('posix_kill')) {
+                return @posix_kill($pid, 0);
+            }
+
+            return is_dir('/proc/'.$pid) ? true : null;
+        }
+
+        $output = [];
+        $exitCode = 1;
+        @exec('tasklist /FI "PID eq '.$pid.'" /FO CSV /NH 2>NUL', $output, $exitCode);
+        if ($exitCode !== 0) {
+            return null;
+        }
+
+        foreach ($output as $line) {
+            if (preg_match('/^"[^"]+","'.preg_quote((string) $pid, '/').'",/i', trim((string) $line)) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function claimMinute(string $minute): bool

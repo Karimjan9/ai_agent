@@ -17,7 +17,15 @@ class StrategyCurriculumService
 
     public function enroll(ModelVersion $model, ?LabAgent $agent = null): StrategyCurriculumContract
     {
-        $definition = $this->definition($model->strategy);
+        // Older/imported model rows may predate the executable `strategy`
+        // identity. Creating a LabAgent must still be safe: use the agent's
+        // persisted family (or the model metadata family) as the bounded
+        // curriculum identity instead of crashing the model observer.
+        $strategy = trim((string) ($model->strategy
+            ?: $agent?->strategy_family
+            ?: data_get($model->metadata, 'strategy_family')
+            ?: 'hybrid'));
+        $definition = $this->definition($strategy);
         $key = $agent ? "lab-agent:{$agent->id}:curriculum" : "model-version:{$model->id}:curriculum";
 
         return StrategyCurriculumContract::updateOrCreate(['contract_key' => $key], [

@@ -63,6 +63,11 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     /** Persisted across queue releases; prevents a fairness polling storm. */
     public int $fullValidationDeferrals = 0;
 
+    /** Durable scope fields make failed queue evidence classifiable. */
+    public ?int $labGenerationId = null;
+    public string $timeframe = 'H1';
+    public string $jobSchemaVersion = 'lab_evaluation_v2';
+
     public \DateTimeInterface $retryDeadline;
 
     /**
@@ -83,6 +88,9 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         public ?int $screeningSlot = null,
     )
     {
+        $scope = LabAgent::query()->whereKey($labAgentId)->first(['lab_generation_id', 'timeframe']);
+        $this->labGenerationId = $scope?->lab_generation_id;
+        $this->timeframe = strtoupper((string) ($scope?->timeframe ?: $this->timeframe));
         $this->recoveryContract = $recoveryContract;
         // The queue transport is an environment concern. Hard-coding the
         // database driver here makes Redis workers invisible to lab jobs.

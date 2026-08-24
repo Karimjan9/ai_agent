@@ -2,18 +2,18 @@
 
 namespace App\Services;
 
-use App\Models\AiLaboratory;
-use App\Models\CandidateGateDecision;
-use App\Models\LabAgent;
-use App\Models\LabFailureDojoRun;
-use App\Models\LearningRecoveryEvent;
-use App\Models\LabGeneration;
-use App\Models\LabLearningLaneDispatch;
-use App\Models\LabMutationResponseMap;
-use App\Models\LabLearningLanePair;
 use App\Models\AgentLearningEpisode;
 use App\Models\AgentLearningLesson;
 use App\Models\AgentLearningSettlement;
+use App\Models\AiLaboratory;
+use App\Models\CandidateGateDecision;
+use App\Models\LabAgent;
+use App\Models\LabGeneration;
+use App\Models\LabLearningLaneDispatch;
+use App\Models\LabLearningLanePair;
+use App\Models\LabMutationResponseMap;
+use App\Models\LearningRecoveryEvent;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -70,22 +70,25 @@ class LearningVelocityGateService
                 ->select(['id', 'lab_generation_id', 'lifecycle_status'])
                 ->whereIn('lab_generation_id', $generationIds)->get();
             $agentIds = $agents->pluck('id')->all();
-            $screenPasses = collect();
+            $screenDecisions = collect();
             if ($agentIds !== [] && Schema::hasTable('candidate_gate_decisions')) {
-                $screenPasses = CandidateGateDecision::query()->select(['lab_agent_id', 'decision'])
+                $screenDecisions = CandidateGateDecision::query()->select(['lab_agent_id', 'decision'])
                     ->whereIn('lab_agent_id', $agentIds)->where('stage', 'screening')
-                    ->where('decision', 'passed')->get()->groupBy('lab_agent_id');
+                    ->get()->groupBy('lab_agent_id');
             }
-            $observations = $generations->map(function ($generation) use ($agents, $screenPasses): array {
+            $observations = $generations->map(function ($generation) use ($agents, $screenDecisions): array {
                 $rows = $agents->where('lab_generation_id', $generation->id);
-                $passed = $rows->filter(fn ($agent): bool => $screenPasses->has($agent->id))->count();
+                $decisions = $rows->flatMap(fn ($agent) => $screenDecisions->get($agent->id, collect()));
+                $passed = $decisions->where('decision', 'passed')->count();
                 $full = $this->canonicalProgressCount($rows->pluck('id'));
                 $active = $rows->whereIn('lifecycle_status', ['queued', 'screening', 'training', 'full_queued', 'full_validation'])->count();
+
                 return [
                     'generation' => (int) $generation->generation,
                     'generation_id' => (int) $generation->id,
                     'status' => (string) $generation->status,
                     'agent_count' => $rows->count(),
+                    'screen_decisions' => $decisions->count(),
                     'screen_passes' => $passed,
                     'full_replay_or_forward_progress' => $full,
                     'active_learning_agents' => $active,
@@ -96,35 +99,40 @@ class LearningVelocityGateService
             $active = collect($observations)->sum('active_learning_agents');
             $technical = collect($observations)->where('status', 'technical_quarantine')->count();
             $starvation = $this->starvationSummary($symbol, $tf);
-            $noEvidenceGenerations = collect($observations)->filter(fn (array $row): bool => (int) ($row['agent_count'] ?? 0) > 0
-                && (string) ($row['status'] ?? '') !== 'technical_quarantine'
-                && (int) ($row['screen_passes'] ?? 0) === 0
-                && (int) ($row['full_replay_or_forward_progress'] ?? 0) === 0)->count();
-            if ($noEvidenceGenerations > 0) {
-                $starvation['starved'] = true;
-                $starvation['no_learning_evidence_generations'] = $noEvidenceGenerations;
-                $starvation['recovery_required'] = true;
-                $starvation['reason'] = 'NO_LEARNING_EVIDENCE_IN_RECENT_GENERATIONS';
-            }
+            $layers = $this->healthLayers($symbol, $tf, $observations, $starvation);
             $allowed = $active === 0
-                && ! (bool) data_get($starvation, 'starved', false)
+                && ! (bool) data_get($layers, 'live_learning_backlog.active', false)
+                && ! (bool) data_get($layers, 'strategy_deadlock.active', false)
                 && $unresolved < max(1, (int) config('services.lab_selection.learning_velocity_max_unresolved_screen_generations', 1));
             $truth = $this->truthScoreboard($symbol, $tf);
             $broken = (int) ($truth['false_green_count'] ?? 0) > 0
                 || ((int) ($truth['verified_pair_count'] ?? 0) > 0 && (int) ($truth['settlement_count'] ?? 0) === 0)
                 || ((int) ($truth['evaluation_completed'] ?? 0) > 0 && (int) ($truth['canonical_episode_count'] ?? 0) === 0);
+            $summaryStatus = 'healthy';
+            if ($broken) {
+                $summaryStatus = 'learning_broken';
+            } elseif ((bool) data_get($layers, 'strategy_deadlock.active', false)) {
+                $summaryStatus = 'strategy_deadlock';
+            } elseif ((bool) data_get($layers, 'live_learning_backlog.active', false)) {
+                $summaryStatus = 'live_learning_backlog';
+            } elseif ($active > 0) {
+                $summaryStatus = 'learning_in_progress';
+            } elseif ($unresolved > 0) {
+                $summaryStatus = 'blocked_learning_backlog';
+            } elseif ($technical > 0) {
+                $summaryStatus = 'technical_history_quarantined';
+            }
 
             return [
                 ...$base,
                 'allowed' => $allowed,
-                'status' => $broken ? 'learning_broken' : ((bool) data_get($starvation, 'starved', false)
-                    ? 'learning_starvation'
-                    : ($active > 0 ? 'learning_in_progress' : ($unresolved > 0 ? 'blocked_learning_backlog' : ($technical > 0 ? 'technical_history_quarantined' : 'healthy')))),
+                'status' => $summaryStatus,
                 'technical_quarantine_generations' => $technical,
                 'unresolved_screen_generations' => $unresolved,
                 'active_learning_agents' => $active,
                 'lookback_generations' => $lookback,
                 'learning_starvation' => $starvation,
+                'health_layers' => $layers,
                 'learning_truth' => $truth,
                 'observations' => $observations,
                 'cached_for_seconds' => 15,
@@ -212,14 +220,27 @@ class LearningVelocityGateService
             $technical = $agents
                 ->filter(fn (LabAgent $agent): bool => $this->requiresTechnicalRecovery($agent))
                 ->count();
+            $capabilityQuarantined = $agents
+                ->filter(fn (LabAgent $agent): bool => in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true))
+                ->filter(fn (LabAgent $agent): bool => data_get(
+                    app(TechnicalFailureClassifierService::class)->forAgent($agent),
+                    'class',
+                ) === TechnicalFailureClassifierService::CAPABILITY)
+                ->count();
             $fullProgress = $this->canonicalProgressCount($agentIds);
             $active = $agents->whereIn('lifecycle_status', [
                 'queued', 'screening', 'training', 'full_queued', 'full_validation',
             ])->count();
-            if ($active > 0) $activeLearning += $active;
-            if ($technical > 0 && $screenPasses === 0 && $fullProgress === 0) $technicalRecovery += $technical;
+            if ($active > 0) {
+                $activeLearning += $active;
+            }
+            if ($technical > 0 && $screenPasses === 0 && $fullProgress === 0) {
+                $technicalRecovery += $technical;
+            }
             $isUnresolved = $screenPasses > 0 && $fullProgress === 0;
-            if ($isUnresolved) $unresolved++;
+            if ($isUnresolved) {
+                $unresolved++;
+            }
             $observations[] = [
                 'generation' => (int) $generation->generation,
                 'generation_id' => (int) $generation->id,
@@ -228,6 +249,7 @@ class LearningVelocityGateService
                 'screen_decisions' => $screen->count(),
                 'screen_passes' => $screenPasses,
                 'technical_agents' => $technical,
+                'capability_quarantined_agents' => $capabilityQuarantined,
                 'full_replay_or_forward_progress' => $fullProgress,
                 'active_learning_agents' => $active,
                 'unresolved_screen_pass' => $isUnresolved,
@@ -236,16 +258,7 @@ class LearningVelocityGateService
 
         $maxUnresolved = max(1, (int) config('services.lab_selection.learning_velocity_max_unresolved_screen_generations', 1));
         $starvation = $this->starvationSummary($symbol, $tf);
-        $noEvidenceGenerations = collect($observations)->filter(fn (array $row): bool => (int) ($row['agent_count'] ?? 0) > 0
-            && (string) ($row['status'] ?? '') !== 'technical_quarantine'
-            && (int) ($row['screen_passes'] ?? 0) === 0
-            && (int) ($row['full_replay_or_forward_progress'] ?? 0) === 0)->count();
-        if ($noEvidenceGenerations > 0) {
-            $starvation['starved'] = true;
-            $starvation['no_learning_evidence_generations'] = $noEvidenceGenerations;
-            $starvation['recovery_required'] = true;
-            $starvation['reason'] = 'NO_LEARNING_EVIDENCE_IN_RECENT_GENERATIONS';
-        }
+        $layers = $this->healthLayers($symbol, $tf, $observations, $starvation);
         $reasons = [];
         $allowed = true;
         $status = 'healthy';
@@ -268,6 +281,17 @@ class LearningVelocityGateService
             $evolutionMode = 'screen_pass';
             $reasons[] = 'screen_pass_without_full_replay';
             $nextAction = 'dispatch_learning_lane_or_full_replay_before_new_generation';
+        } elseif ((bool) data_get($layers, 'strategy_deadlock.active', false)) {
+            $allowed = false;
+            $status = 'strategy_deadlock';
+            $evolutionMode = 'strategy_failure';
+            $reasons[] = 'CONSECUTIVE_ZERO_PASS_GENERATIONS';
+            $nextAction = 'prepare_bounded_shadow_rescue_plan';
+        } elseif ((bool) data_get($layers, 'live_learning_backlog.active', false)) {
+            $allowed = false;
+            $status = 'live_learning_backlog';
+            $reasons[] = 'VALID_LEARNING_WORK_UNDISPATCHED';
+            $nextAction = 'operator_approved_learning_recovery';
         } elseif ($generations->isEmpty()) {
             $status = 'no_history';
             $nextAction = 'collect_first_screening_evidence';
@@ -278,13 +302,6 @@ class LearningVelocityGateService
             $nextAction = 'prioritize_learning_lane';
         } elseif (collect($observations)->contains(fn (array $row): bool => (int) $row['screen_decisions'] > 0)) {
             $evolutionMode = 'strategy_failure';
-        }
-        if ((bool) data_get($starvation, 'starved', false)) {
-            $allowed = false;
-            $status = 'learning_starvation';
-            $evolutionMode = 'uncertainty';
-            $nextAction = 'run_learning_reconciliation_recovery';
-            $reasons[] = 'LEARNING_STARVATION_DETECTED';
         }
 
         return [
@@ -300,6 +317,7 @@ class LearningVelocityGateService
             'technical_recovery_agents' => $technicalRecovery,
             'active_learning_agents' => $activeLearning,
             'learning_starvation' => $starvation,
+            'health_layers' => $layers,
             'learning_truth' => $this->truthScoreboard($symbol, $tf),
             'observations' => $observations,
         ];
@@ -317,6 +335,13 @@ class LearningVelocityGateService
      */
     private function requiresTechnicalRecovery(LabAgent $agent): bool
     {
+        if (! in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true)) {
+            return false;
+        }
+        $classification = app(TechnicalFailureClassifierService::class)->forAgent($agent);
+        if (data_get($classification, 'blocks_global_generation') !== true) {
+            return false;
+        }
         if ((string) $agent->lifecycle_status === 'evaluation_error') {
             return true;
         }
@@ -372,10 +397,12 @@ class LearningVelocityGateService
         return false;
     }
 
-    /** @param \Illuminate\Support\Collection<int, mixed> $agentIds */
+    /** @param Collection<int, mixed> $agentIds */
     private function fullProgressCount($agentIds): int
     {
-        if ($agentIds->isEmpty()) return 0;
+        if ($agentIds->isEmpty()) {
+            return 0;
+        }
 
         $count = LabAgent::query()
             ->whereIn('id', $agentIds)
@@ -405,12 +432,16 @@ class LearningVelocityGateService
     /** Only canonical, settled, exact-control pairs are learning progress. */
     private function canonicalProgressCount($agentIds): int
     {
-        if ($agentIds->isEmpty() || ! Schema::hasTable('agent_learning_settlements')) return 0;
+        if ($agentIds->isEmpty() || ! Schema::hasTable('agent_learning_settlements')) {
+            return 0;
+        }
         $pairs = LabLearningLanePair::query()->with('controlResponseMap')
             ->whereIn('candidate_agent_id', $agentIds)
-            ->where('status', 'canonical_episode_settled')->get()
+            ->whereIn('status', ['canonical_episode_settled', 'lesson_compiled', 'skill_confirmed'])->get()
             ->filter(fn (LabLearningLanePair $pair): bool => $pair->isVerifiedControlPair());
-        if ($pairs->isEmpty()) return 0;
+        if ($pairs->isEmpty()) {
+            return 0;
+        }
 
         return AgentLearningSettlement::query()
             ->where('source_type', LabLearningLanePair::class)
@@ -435,13 +466,14 @@ class LearningVelocityGateService
         $evaluations = Schema::hasTable('lab_evaluation_runs') ? DB::table('lab_evaluation_runs')->where('status', 'completed')->whereIn('lab_agent_id', LabAgent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->pluck('id'))->count() : 0;
         $usableLessons = $lessons->filter(function (AgentLearningLesson $lesson) use ($verified): bool {
             $pairId = (int) data_get($lesson->evidence, 'pair_id', 0);
+
             return $pairId > 0 && $verified->contains('id', $pairId);
         });
         $confirmed = $usableLessons->where('status', 'confirmed')->count();
         $provisional = $usableLessons->where('status', 'provisional')->count();
         $real = $settlements + $confirmed - $pairs->where('status', 'canonical_failed')->count() - $falseGreen;
 
-        return ['generation_activity' => Schema::hasTable('lab_generations') ? LabGeneration::query()->whereHas('laboratory', fn ($q) => $q->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe)))->count() : 0, 'evaluation_completed' => $evaluations, 'verified_pair_count' => $verified->count(), 'canonical_episode_count' => $episodes, 'settlement_count' => $settlements, 'provisional_lesson_count' => $provisional, 'confirmed_skill_count' => $confirmed, 'anti_skill_count' => 0, 'canonical_failure_count' => $pairs->where('status', 'canonical_failed')->count(), 'false_green_count' => $falseGreen, 'learning_starvation' => $settlements === 0 ? 1 : 0, 'technical_quarantine' => $technical, 'insufficient_activity' => Schema::hasTable('agent_learning_settlements') ? AgentLearningSettlement::query()->where('evidence_state', 'insufficient_evidence')->count() : 0, 'real_progress' => $real];
+        return ['generation_activity' => Schema::hasTable('lab_generations') ? LabGeneration::query()->whereHas('laboratory', fn ($q) => $q->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe)))->count() : 0, 'evaluation_completed' => $evaluations, 'verified_pair_count' => $verified->count(), 'canonical_episode_count' => $episodes, 'settlement_count' => $settlements, 'provisional_lesson_count' => $provisional, 'confirmed_skill_count' => $confirmed, 'legacy_lesson_count' => max(0, $lessons->count() - $usableLessons->count()), 'legacy_confirmed_label_count' => $lessons->where('status', 'confirmed')->reject(fn (AgentLearningLesson $lesson): bool => $usableLessons->contains('id', $lesson->id))->count(), 'anti_skill_count' => 0, 'canonical_failure_count' => $pairs->where('status', 'canonical_failed')->count(), 'false_green_count' => $falseGreen, 'learning_starvation' => $settlements === 0 ? 1 : 0, 'technical_quarantine' => $technical, 'insufficient_activity' => Schema::hasTable('agent_learning_settlements') ? AgentLearningSettlement::query()->where('evidence_state', 'insufficient_evidence')->count() : 0, 'real_progress' => $real];
     }
 
     /**
@@ -453,9 +485,12 @@ class LearningVelocityGateService
      */
     private function starvationSummary(string $symbol, string $timeframe): array
     {
-        $pendingDojo = Schema::hasTable('lab_failure_dojo_runs')
-            ? LabFailureDojoRun::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->where('status', 'pending')->count()
-            : 0;
+        $dojo = Schema::hasTable('lab_failure_dojo_runs')
+            ? app(FailureDojoService::class)->summary($symbol, $timeframe)
+            : ['pending' => 0, 'actionable_pending' => 0, 'legacy_invalid_pending' => 0];
+        $pendingDojo = (int) ($dojo['pending'] ?? 0);
+        $actionableDojo = (int) ($dojo['actionable_pending'] ?? 0);
+        $legacyDojo = (int) ($dojo['legacy_invalid_pending'] ?? 0);
         $dispatches = Schema::hasTable('lab_learning_lane_dispatches')
             ? LabLearningLaneDispatch::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->get(['status', 'queued_at', 'queue_batch_id'])
             : collect();
@@ -465,6 +500,7 @@ class LearningVelocityGateService
             ->filter(fn ($row): bool => $row->queued_at !== null && now()->utc()->diffInSeconds($row->queued_at) > $staleAfter)
             ->count();
         $failedJobs = 0;
+        $unscopedDebt = 0;
         if (Schema::hasTable('failed_jobs')) {
             $queues = app(LabQueueJobInspector::class)->labQueues();
             $failedJobs = DB::table('failed_jobs')->whereIn('queue', $queues)->get(['uuid', 'payload'])->filter(function ($job) use ($symbol, $timeframe): bool {
@@ -473,13 +509,20 @@ class LearningVelocityGateService
                     return false;
                 }
                 $command = (string) data_get(json_decode((string) $job->payload, true), 'data.command', $job->payload);
-                if (! preg_match('/labAgentId.*?i:(\d+);/s', $command, $match)) return true;
+                // A payload without a durable agent scope is operational debt,
+                // not proof that this market's live learning lane is blocked.
+                if (! preg_match('/labAgentId.*?i:(\d+);/s', $command, $match)) {
+                    return false;
+                }
                 $agent = DB::table('lab_agents')->where('id', (int) $match[1])->first();
-                if (! $agent || strtoupper((string) $agent->symbol) !== strtoupper($symbol) || strtoupper((string) $agent->timeframe) !== strtoupper($timeframe)) return false;
+                if (! $agent || strtoupper((string) $agent->symbol) !== strtoupper($symbol) || strtoupper((string) $agent->timeframe) !== strtoupper($timeframe)) {
+                    return false;
+                }
+
                 return true;
             })->count();
             if (Schema::hasTable('learning_recovery_events')) {
-                $failedJobs += LearningRecoveryEvent::query()
+                $unscopedDebt = LearningRecoveryEvent::query()
                     ->where('symbol', strtoupper($symbol))
                     ->where('timeframe', strtoupper($timeframe))
                     ->where('status', 'manual_review')
@@ -489,19 +532,83 @@ class LearningVelocityGateService
         $minPending = max(1, (int) config('services.lab_selection.learning_starvation_min_pending_dojo', 1));
         $starved = $staleDispatches > 0
             || $failedJobs > 0
-            || ($pendingDojo >= $minPending && $activeDispatches === 0);
+            || ($actionableDojo >= $minPending && $activeDispatches === 0);
 
         return [
             'protocol' => 'learning_starvation_v1',
             'starved' => $starved,
             'pending_dojo' => $pendingDojo,
+            'actionable_pending_dojo' => $actionableDojo,
+            'legacy_invalid_pending_dojo' => $legacyDojo,
             'active_dispatches' => $activeDispatches,
             'stale_dispatches' => $staleDispatches,
             'failed_lab_jobs' => $failedJobs,
+            'unscoped_failed_job_debt' => $unscopedDebt,
             'stale_after_seconds' => $staleAfter,
             'minimum_pending_dojo' => $minPending,
             'recovery_required' => $starved,
             'promotion_evidence' => false,
+        ];
+    }
+
+    /**
+     * Keep three independent failures visible. Legacy evidence is retained
+     * for audit, but it cannot make a valid live cohort look dispatchable or
+     * turn a zero-pass strategy result into a queue-recovery recommendation.
+     *
+     * @param  array<int, array<string, mixed>>  $observations
+     * @param  array<string, mixed>  $starvation
+     * @return array<string, array<string, mixed>>
+     */
+    private function healthLayers(string $symbol, string $timeframe, array $observations, array $starvation): array
+    {
+        $pairs = Schema::hasTable('lab_learning_lane_pairs')
+            ? LabLearningLanePair::query()->with('controlResponseMap')
+                ->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
+                ->where('status', '!=', 'superseded')->get()
+            : collect();
+        $verified = $pairs->filter(fn (LabLearningLanePair $pair): bool => $pair->isVerifiedControlPair());
+        $liveGenerationIds = collect($observations)->pluck('generation_id')->map(fn ($id): int => (int) $id)->all();
+        $livePairs = $pairs->whereIn('lab_generation_id', $liveGenerationIds);
+        $liveVerified = $livePairs->filter(fn (LabLearningLanePair $pair): bool => $pair->isVerifiedControlPair());
+        $legacyPairs = $pairs->reject(fn (LabLearningLanePair $pair): bool => $pair->isVerifiedControlPair());
+        $legacyMissingControl = $legacyPairs->filter(fn (LabLearningLanePair $pair): bool => ! $pair->control_agent_id || ! $pair->control_response_map_id)->count();
+        $legacyMissingSnapshot = $legacyPairs->filter(fn (LabLearningLanePair $pair): bool => ! filled($pair->candidate_data_hash)
+            || ! filled($pair->control_data_hash))->count();
+        $zeroPass = collect($observations)->filter(fn (array $row): bool => (int) ($row['agent_count'] ?? 0) > 0
+            && (int) ($row['screen_decisions'] ?? 0) > 0
+            && (int) ($row['screen_passes'] ?? 0) === 0
+            && (int) ($row['full_replay_or_forward_progress'] ?? 0) === 0)->count();
+        $threshold = max(1, (int) config('services.lab_selection.zero_pass_circuit_breaker_generations', 3));
+
+        return [
+            'strategy_deadlock' => [
+                'active' => $zeroPass >= $threshold,
+                'consecutive_zero_pass_generations' => $zeroPass,
+                'threshold' => $threshold,
+                'next_action' => 'prepare_bounded_shadow_rescue_plan',
+            ],
+            'live_learning_backlog' => [
+                'active' => (bool) ($starvation['starved'] ?? false),
+                'live_pair_count' => $livePairs->count(),
+                'live_verified_pairs' => $liveVerified->count(),
+                'live_pair_coverage_percent' => $livePairs->isEmpty() ? 0.0 : round(($liveVerified->count() / $livePairs->count()) * 100, 2),
+                'actionable_pending_dojo' => (int) ($starvation['actionable_pending_dojo'] ?? 0),
+                'active_dispatches' => (int) ($starvation['active_dispatches'] ?? 0),
+                'next_action' => 'operator_approved_learning_recovery',
+            ],
+            'legacy_evidence_debt' => [
+                'active' => $pairs->count() > $verified->count()
+                    || (int) ($starvation['legacy_invalid_pending_dojo'] ?? 0) > 0
+                    || (int) ($starvation['unscoped_failed_job_debt'] ?? 0) > 0,
+                'legacy_unverified_pairs' => $legacyPairs->count(),
+                'legacy_missing_controls' => $legacyMissingControl,
+                'legacy_missing_snapshot_hash' => $legacyMissingSnapshot,
+                'legacy_unrecoverable_pairs' => $legacyPairs->count(),
+                'legacy_invalid_pending_dojo' => (int) ($starvation['legacy_invalid_pending_dojo'] ?? 0),
+                'unscoped_failed_job_debt' => (int) ($starvation['unscoped_failed_job_debt'] ?? 0),
+                'next_action' => 'audit_only_no_automatic_repair',
+            ],
         ];
     }
 }

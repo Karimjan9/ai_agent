@@ -325,7 +325,11 @@ class RuntimeMonitoringService
             }
 
             $heartbeatAt = Carbon::parse((string) $heartbeat);
-            $age = max(0, now()->diffInSeconds($heartbeatAt));
+            // Carbon 3 returns a signed difference by default. Calling the
+            // method on `now()` makes every past heartbeat negative and the
+            // old max(0, ...) expression therefore reported stale schedulers
+            // as 0 seconds old forever.
+            $age = max(0, (int) floor($heartbeatAt->diffInSeconds(now())));
             $criticalAfter = max(900, (int) config('services.scheduler.lease_seconds', 900));
             $warningAfter = min(600, max(300, intdiv($criticalAfter, 2)));
             $status = $age > $criticalAfter ? 'critical' : ($age > $warningAfter ? 'warning' : 'ok');
@@ -340,6 +344,7 @@ class RuntimeMonitoringService
                     'heartbeat_age_seconds' => $age,
                     'lease' => is_array($lease) ? [
                         'pid' => $lease['pid'] ?? null,
+                        'hostname' => $lease['hostname'] ?? null,
                         'started_at' => $lease['started_at'] ?? null,
                         'lease_key' => $lease['lease_key'] ?? null,
                     ] : null,
@@ -465,7 +470,7 @@ class RuntimeMonitoringService
     }
 
     /**
-     * @param array<string, array<string, mixed>> $checks
+     * @param  array<string, array<string, mixed>>  $checks
      */
     private function persistChecks(array $checks): void
     {

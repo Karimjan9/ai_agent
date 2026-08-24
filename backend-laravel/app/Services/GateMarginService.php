@@ -132,17 +132,24 @@ class GateMarginService
         $controlMargin = $this->screening($control, []);
         $target ??= (string) data_get($candidateMargin, 'dominant_target', 'profit_factor');
         $target = $target !== '' ? $target : 'profit_factor';
-        $candidateScore = $this->targetObservation($target, $candidateMargin);
-        $controlScore = $this->targetObservation($target, $controlMargin);
-        $candidateMarginValue = $this->targetMargin($target, (array) $candidateMargin['gates']);
-        $controlMarginValue = $this->targetMargin($target, (array) $controlMargin['gates']);
+        $optimizationTarget = match ($target) {
+            'volatility_session_stability', 'exit_topology', 'risk_exit', 'transition_firewall' => 'stress_cost',
+            'opportunity_recall' => 'trade_frequency',
+            'rolling_regime', 'portfolio_router', 'unknown_state_curiosity' => 'regime_coverage',
+            default => $target,
+        };
+        $candidateScore = $this->targetObservation($optimizationTarget, $candidateMargin);
+        $controlScore = $this->targetObservation($optimizationTarget, $controlMargin);
+        $candidateMarginValue = $this->targetMargin($optimizationTarget, (array) $candidateMargin['gates']);
+        $controlMarginValue = $this->targetMargin($optimizationTarget, (array) $controlMargin['gates']);
         $improved = $candidateScore !== null && $controlScore !== null
-            ? ($target === 'drawdown_risk' ? $candidateScore < $controlScore : $candidateScore > $controlScore)
+            ? ($optimizationTarget === 'drawdown_risk' ? $candidateScore < $controlScore : $candidateScore > $controlScore)
             : null;
 
         return [
             'protocol' => 'frozen_control_parity_v1',
             'target' => $target,
+            'optimization_target' => $optimizationTarget,
             'candidate_observation' => $candidateScore,
             'control_observation' => $controlScore,
             'candidate_margin' => $candidateMarginValue,

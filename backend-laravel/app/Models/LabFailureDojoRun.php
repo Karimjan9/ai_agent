@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class LabFailureDojoRun extends Model
 {
@@ -18,4 +19,9 @@ class LabFailureDojoRun extends Model
         'score' => 'float',
         'evaluated_at' => 'datetime',
     ];
+
+    public function pair(): BelongsTo
+    {
+        return $this->belongsTo(LabLearningLanePair::class, 'pair_id');
+    }
 }

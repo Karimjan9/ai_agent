@@ -9,6 +9,8 @@ use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\ModelVersion;
 use App\Services\MicroReplayService;
+use App\Services\MutationResponseMapService;
+use App\Services\LearningLaneService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\StructuralResearchCohortService;
 use App\Services\StrategyParameterSchemaService;
@@ -97,8 +99,9 @@ class StructuralCausalCohortTest extends TestCase
         ]);
         $metrics = [
             'profit_factor' => 1.0, 'total_trades' => 4,
-            'trade_ledger_hash' => 'same-trades', 'event_ledger_hash' => 'same-events',
+            'trade_ledger_hash' => 'same-trades', 'event_ledger_hash' => 'same-events', 'signal_decision_hash' => 'same-signals',
             'parameter_hash' => 'same-parameter', 'entry_funnel' => ['accepted_entries' => 4],
+            'exit_funnel' => ['accepted_exits' => 4], 'abstention_count' => 0,
             'screening_survival' => ['temporal_chunk_survival' => ['window_profit_factors' => [1.1, 1.1, 1.1]]],
         ];
         $candidateMap = LabMutationResponseMap::create([
@@ -128,5 +131,61 @@ class StructuralCausalCohortTest extends TestCase
         $this->assertSame('failed', $assessment['status']);
         $this->assertSame('PARAMETER_ONLY_NO_CAUSAL_EFFECT', $assessment['reason']);
         $this->assertTrue($assessment['causal_probe']['parameter_hash_alone_is_insufficient']);
+    }
+
+    public function test_screening_response_maps_preserve_causal_payload_through_pair_and_micro_replay(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Causal map integration lab', 'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
+            'population_size' => 2, 'status' => 'screened', 'data_fingerprint' => 'snapshot-hash', 'trigger_context' => [],
+        ]);
+        $parameters = app(StrategyParameterSchemaService::class)->defaults('hybrid');
+        $controlModel = ModelVersion::create([
+            'name' => 'causal-control', 'strategy' => 'causal-control', 'version' => 'v1', 'generation' => 1,
+            'status' => 'testing', 'parameters' => $parameters, 'metadata' => ['control_contract' => [
+                'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
+            ]],
+        ]);
+        $candidateModel = ModelVersion::create([
+            'name' => 'causal-candidate', 'strategy' => 'causal-candidate', 'version' => 'v1', 'generation' => 1,
+            'status' => 'testing', 'parameters' => $parameters, 'metadata' => ['generation_target' => 'profit_factor'],
+        ]);
+        $control = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $controlModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened',
+        ]);
+        $candidate = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $candidateModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened',
+            'parameter_diff' => ['entry_threshold' => ['old' => 1, 'new' => 2]],
+        ]);
+        $base = [
+            'evidence_run_id' => 'causal-run', 'data_manifest' => ['sha256' => 'snapshot-hash'],
+            'execution_contract' => ['execution_hash' => 'execution-hash'], 'total_trades' => 4,
+            'profit_factor' => 1.0, 'trade_ledger_hash' => 'control-trades', 'event_ledger_hash' => 'control-events',
+            'signal_decision_hash' => 'control-signals', 'parameter_hash' => 'control-parameters',
+            'entry_funnel' => ['accepted_entries' => 4], 'exit_funnel' => ['accepted_exits' => 4], 'abstention_count' => 0,
+            'screening_survival' => ['temporal_chunk_survival' => ['window_profit_factors' => [1.1, 1.1, 1.1]]],
+        ];
+        $maps = app(MutationResponseMapService::class);
+        $controlMap = $maps->recordScreening($control->fresh(['modelVersion']), $base);
+        $candidateResult = [...$base, 'evidence_run_id' => 'causal-run-candidate', 'profit_factor' => 1.3,
+            'trade_ledger_hash' => 'candidate-trades', 'event_ledger_hash' => 'candidate-events',
+            'signal_decision_hash' => 'candidate-signals', 'parameter_hash' => 'candidate-parameters',
+            'entry_funnel' => ['accepted_entries' => 5], 'exit_funnel' => ['accepted_exits' => 5],
+        ];
+        $candidateMap = $maps->recordScreening($candidate->fresh(['modelVersion']), $candidateResult);
+
+        $this->assertSame('causal_observation_v1', data_get(LabMutationResponseMap::findOrFail($candidateMap['id'])->observed_metrics, 'causal_observation.protocol'));
+        $pair = app(LearningLaneService::class)->pairScreeningObservation($candidate->fresh(['modelVersion', 'generation']), $candidateResult, $candidateMap);
+        $this->assertSame('screen_paired', $pair['status']);
+        $assessment = app(MicroReplayService::class)->assessPair(LabLearningLanePair::findOrFail($pair['id']), false);
+        $this->assertNotSame('CAUSAL_OBSERVATION_INCOMPLETE', $assessment['reason']);
+        $this->assertTrue((bool) data_get($assessment, 'causal_probe.causal_observation_complete'));
+        $this->assertNotNull($controlMap);
     }
 }

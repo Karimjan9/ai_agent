@@ -124,7 +124,7 @@ class MicroReplayService
     {
         $metadata = (array) $pair->metadata;
         $verified = in_array((string) $pair->status, [
-            'screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed',
+            'screen_paired', 'provisional', 'learning_queued', 'learning_observed', 'confirmed', 'micro_failed',
         ], true)
             && (int) $pair->control_agent_id > 0
             && (int) $pair->control_response_map_id > 0
@@ -159,7 +159,9 @@ class MicroReplayService
     {
         $candidateView = $this->causalView($candidate);
         $controlView = $this->causalView($control);
-        $hashAvailable = $candidateView['trade_set_hash'] !== '' && $controlView['trade_set_hash'] !== '';
+        $hashAvailable = $candidateView['trade_set_hash'] !== '' && $controlView['trade_set_hash'] !== ''
+            && $candidateView['event_hash'] !== '' && $controlView['event_hash'] !== ''
+            && $candidateView['signal_hash'] !== '' && $controlView['signal_hash'] !== '';
         $tradeSetChanged = $hashAvailable && ! hash_equals($candidateView['trade_set_hash'], $controlView['trade_set_hash']);
         $entryChanged = $candidateView['accepted_entry_count'] !== null
             && $controlView['accepted_entry_count'] !== null
@@ -170,6 +172,11 @@ class MicroReplayService
         $eventChanged = $candidateView['event_hash'] !== '' && $controlView['event_hash'] !== ''
             && ! hash_equals($candidateView['event_hash'], $controlView['event_hash']);
         $abstentionAvailable = $candidateView['abstention_count'] !== null && $controlView['abstention_count'] !== null;
+        $causalObservationComplete = $hashAvailable
+            && $candidateView['accepted_entry_count'] !== null && $controlView['accepted_entry_count'] !== null
+            && $candidateView['accepted_exit_count'] !== null && $controlView['accepted_exit_count'] !== null
+            && $abstentionAvailable
+            && $candidateView['parameter_hash'] !== '' && $controlView['parameter_hash'] !== '';
         $abstentionRemovedRealTrade = $abstentionAvailable
             && $candidateView['abstention_count'] > $controlView['abstention_count']
             && (($candidateView['trade_count'] ?? 0) < ($controlView['trade_count'] ?? 0)
@@ -183,7 +190,7 @@ class MicroReplayService
             || (string) data_get($candidate, 'parameter_hash', '') !== (string) data_get($control, 'parameter_hash', '');
 
         $reason = match (true) {
-            ! $hashAvailable => 'CAUSAL_OBSERVATION_INCOMPLETE',
+            ! $causalObservationComplete => 'CAUSAL_OBSERVATION_INCOMPLETE',
             ! $behaviorChanged && $parameterChanged => 'PARAMETER_ONLY_NO_CAUSAL_EFFECT',
             ! $behaviorChanged => 'CAUSAL_BEHAVIOR_UNCHANGED',
             ! $marginImproved => 'NO_TARGET_GATE_IMPROVEMENT',
@@ -195,6 +202,7 @@ class MicroReplayService
             'status' => $reason === 'CAUSAL_EFFECT_CONFIRMED' ? 'passed' : 'failed',
             'reason' => $reason,
             'trade_set_hash_changed' => $tradeSetChanged,
+            'causal_observation_complete' => $causalObservationComplete,
             'candidate_trade_set_hash' => $candidateView['trade_set_hash'],
             'control_trade_set_hash' => $controlView['trade_set_hash'],
             'accepted_entry_count_changed' => $entryChanged,
@@ -204,6 +212,8 @@ class MicroReplayService
             'candidate_accepted_exit_count' => $candidateView['accepted_exit_count'],
             'control_accepted_exit_count' => $controlView['accepted_exit_count'],
             'event_digest_changed' => $eventChanged,
+            'signal_decision_hash_changed' => $candidateView['signal_hash'] !== '' && $controlView['signal_hash'] !== ''
+                && ! hash_equals($candidateView['signal_hash'], $controlView['signal_hash']),
             'abstention_check_available' => $abstentionAvailable,
             'abstention_removed_real_trade' => $abstentionRemovedRealTrade,
             'candidate_abstention_count' => $candidateView['abstention_count'],
@@ -221,7 +231,7 @@ class MicroReplayService
     private function causalView(array $metrics): array
     {
         $tradeHash = '';
-        foreach (['trade_set_hash', 'trade_ledger_hash', 'observability_manifest.trade_ledger_hash', 'trade_digest.hash'] as $path) {
+        foreach (['causal_observation.trade_ledger_hash', 'trade_set_hash', 'trade_ledger_hash', 'observability_manifest.trade_ledger_hash', 'trade_digest.hash'] as $path) {
             $value = data_get($metrics, $path);
             if (is_scalar($value) && trim((string) $value) !== '') {
                 $tradeHash = (string) $value;
@@ -229,10 +239,18 @@ class MicroReplayService
             }
         }
         $eventHash = '';
-        foreach (['event_ledger_hash', 'event_digest.hash', 'execution_event_hash', 'observability_manifest.event_ledger_hash'] as $path) {
+        foreach (['causal_observation.event_ledger_hash', 'event_ledger_hash', 'event_digest.hash', 'execution_event_hash', 'observability_manifest.event_ledger_hash'] as $path) {
             $value = data_get($metrics, $path);
             if (is_scalar($value) && trim((string) $value) !== '') {
                 $eventHash = (string) $value;
+                break;
+            }
+        }
+        $signalHash = '';
+        foreach (['causal_observation.signal_decision_hash', 'signal_decision_hash', 'signal_digest.hash', 'observability_manifest.signal_decision_hash'] as $path) {
+            $value = data_get($metrics, $path);
+            if (is_scalar($value) && trim((string) $value) !== '') {
+                $signalHash = (string) $value;
                 break;
             }
         }
@@ -240,16 +258,18 @@ class MicroReplayService
         return [
             'trade_set_hash' => $tradeHash,
             'event_hash' => $eventHash,
+            'signal_hash' => $signalHash,
+            'parameter_hash' => (string) data_get($metrics, 'causal_observation.parameter_hash', data_get($metrics, 'parameter_hash', '')),
             'accepted_entry_count' => $this->firstNumeric($metrics, [
-                'entry_funnel.accepted_entries', 'accepted_entry_count', 'accepted_entries',
+                'causal_observation.entry_funnel.accepted_entries', 'entry_funnel.accepted_entries', 'accepted_entry_count', 'accepted_entries',
             ]),
             'accepted_exit_count' => $this->firstNumeric($metrics, [
-                'exit_funnel.accepted_exits', 'accepted_exit_count', 'accepted_exits',
+                'causal_observation.exit_funnel.accepted_exits', 'exit_funnel.accepted_exits', 'accepted_exit_count', 'accepted_exits',
                 'closed_trade_count', 'total_trades', 'trade_count',
             ]),
             'trade_count' => $this->firstNumeric($metrics, ['total_trades', 'trade_count', 'sample_count']),
             'abstention_count' => $this->firstNumeric($metrics, [
-                'abstention_count', 'temporal_survival.abstention_count',
+                'causal_observation.abstention_count', 'abstention_count', 'temporal_survival.abstention_count',
                 'temporal_survival_abstention.abstention_count', 'veto_metrics.abstention_count',
             ]),
         ];
