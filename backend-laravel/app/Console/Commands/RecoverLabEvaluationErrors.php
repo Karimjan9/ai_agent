@@ -5,9 +5,12 @@ namespace App\Console\Commands;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use App\Models\SystemEvent;
 use App\Services\LabQueueJobInspector;
 use App\Services\LabReplayRecoveryService;
+use App\Services\LearningProtocolSafetyService;
 use App\Services\OperatorApprovalService;
+use App\Services\TechnicalFailureClassifierService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +20,7 @@ use RuntimeException;
 /** Requeues bounded evaluator failures without turning them into strategy evidence. */
 class RecoverLabEvaluationErrors extends Command
 {
-    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-timeout-budget-repair : Retry only quarantined agents whose immutable screen run records a bounded replay timeout; generation is required} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget} {--after-dataset-contract-repair : Retry only dataset-contract quarantine after per-lane immutable snapshot repair; generation is required} {--apply : Dispatch the bounded recovery after operator approval} {--approved-by=} {--approval-reason=}';
+    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-timeout-budget-repair : Retry only quarantined agents whose immutable screen run records a bounded replay/transport timeout; generation is required} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget} {--after-dataset-contract-repair : Retry only dataset-contract quarantine after per-lane immutable snapshot repair; generation is required} {--apply : Dispatch the bounded recovery after operator approval} {--autonomous : One-shot timeout recovery under the lighthouse lifecycle policy} {--approved-by=} {--approval-reason=} {--json}';
 
     protected $description = 'Requeue transport/evaluator failures after a clean AI service restart';
 
@@ -53,6 +56,7 @@ class RecoverLabEvaluationErrors extends Command
         }
         $fullRecovery = $mode === 'full';
         $apply = (bool) $this->option('apply');
+        $autonomous = (bool) $this->option('autonomous');
         $afterAuthRepair = (bool) $this->option('after-auth-repair');
         $afterServiceRepair = (bool) $this->option('after-service-repair');
         $afterCodeRepair = (bool) $this->option('after-code-repair');
@@ -61,6 +65,21 @@ class RecoverLabEvaluationErrors extends Command
         $afterTimeoutBudgetRepair = (bool) $this->option('after-timeout-budget-repair');
         $afterRetryBudgetRepair = (bool) $this->option('after-retry-budget-repair');
         $afterDatasetContractRepair = (bool) $this->option('after-dataset-contract-repair');
+        if ($autonomous) {
+            $lighthouse = $symbol === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+                && $timeframe === LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME;
+            if (! $apply
+                || ! (bool) config('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', false)
+                || ! $lighthouse
+                || ! $afterTimeoutBudgetRepair
+                || $fullRecovery
+                || $generationNumber === null) {
+                $this->error('Autonomous technical recovery requires --apply, XAUUSD H1, --generation, screen mode, and --after-timeout-budget-repair under the enabled lighthouse policy.');
+
+                return self::FAILURE;
+            }
+            $limit = min($limit, max(1, (int) config('services.lifecycle_orchestrator.autonomous_technical_recovery_max_dispatch', 2)));
+        }
         if ($afterRetryBudgetRepair && $generationNumber === null) {
             $this->error('--after-retry-budget-repair requires --generation so the recovery scope is explicit.');
 
@@ -264,19 +283,16 @@ class RecoverLabEvaluationErrors extends Command
                         ->where('phase', $mode === 'full' ? 'full_validation' : 'screening')
                         ->latest('id')
                         ->first();
-                    $runReason = strtolower((string) $run?->error_message);
-                    $agentReason = strtolower((string) $agent->decision_reason);
-                    // The timeout budget is configuration, not evidence. Do
-                    // not pin recovery to the historical 330s value: a
-                    // current bounded worker may legitimately record 600s or
-                    // another explicitly configured limit. The immutable
-                    // run/agent marker and withheld verdict are the safety
-                    // boundary; no strategy result is learned here.
-                    $boundedScreenTimeout = str_contains($runReason, 'bounded ai replay exceeded')
-                        || str_contains($agentReason, 'bounded ai replay exceeded');
+                    $classification = app(TechnicalFailureClassifierService::class)->forAgent($agent);
 
-                    return $boundedScreenTimeout
-                        && str_contains($runReason.$agentReason, 'strategy verdict withheld');
+                    // A host suspend can make libcurl expire before the AI
+                    // parent gets a chance to return its own bounded 504. The
+                    // immutable run still classifies as the same transport
+                    // timeout. It is recoverable once, against the exact
+                    // frozen snapshot, and never becomes strategy evidence.
+                    return data_get($classification, 'class') === TechnicalFailureClassifierService::TRANSIENT
+                        && data_get($classification, 'reason_code') === 'REPLAY_TRANSPORT_TIMEOUT'
+                        && str_contains(strtolower((string) $agent->decision_reason), 'strategy verdict withheld');
                 }
                 if ($afterRetryBudgetRepair) {
                     $reason = strtolower((string) $agent->decision_reason);
@@ -382,21 +398,46 @@ class RecoverLabEvaluationErrors extends Command
             return self::SUCCESS;
         }
 
-        try {
-            $approvals->requireForApply('recover-lab-evaluation-errors', $this->option('approved-by'), $this->option('approval-reason'), [
+        $autonomousScope = null;
+        if (! $autonomous) {
+            try {
+                $approvals->requireForApply('recover-lab-evaluation-errors', $this->option('approved-by'), $this->option('approval-reason'), [
+                    'symbol' => $symbol,
+                    'timeframe' => $timeframe,
+                    'generation' => $generationNumber,
+                    'mode' => $mode,
+                    'agent_ids' => $agents->pluck('id')->values()->all(),
+                ]);
+            } catch (RuntimeException $exception) {
+                $this->error($exception->getMessage());
+
+                return self::FAILURE;
+            }
+        } else {
+            $autonomousScope = [
+                'protocol' => 'autonomous_technical_recovery_v1',
+                'policy' => 'lighthouse_one_shot_timeout_only',
                 'symbol' => $symbol,
                 'timeframe' => $timeframe,
                 'generation' => $generationNumber,
                 'mode' => $mode,
                 'agent_ids' => $agents->pluck('id')->values()->all(),
-            ]);
-        } catch (RuntimeException $exception) {
-            $this->error($exception->getMessage());
-
-            return self::FAILURE;
+                'promotion_evidence' => false,
+            ];
         }
 
-        DB::transaction(function () use ($agents, $afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair, $fullRecovery): void {
+        DB::transaction(function () use ($agents, $afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair, $fullRecovery, $autonomous, $autonomousScope): void {
+            if ($autonomous && is_array($autonomousScope)) {
+                SystemEvent::create([
+                    'event_type' => 'lab_autonomous_recovery_authorization',
+                    'event_key' => 'lab:autonomous-recovery:'.hash('sha256', json_encode([$autonomousScope, now()->utc()->toIso8601String()], JSON_UNESCAPED_SLASHES)),
+                    'agent' => 'lifecycle-orchestrator',
+                    'severity' => 'warning',
+                    'summary' => 'Lifecycle authorized one-shot technical timeout recovery against frozen evidence.',
+                    'payload' => $autonomousScope,
+                    'occurred_at' => now(),
+                ]);
+            }
             foreach ($agents as $agent) {
                 $metadata = $agent->modelVersion?->metadata ?? [];
                 $attempts = (int) data_get($metadata, 'evaluator_recovery_attempts', 0) + 1;
@@ -425,6 +466,12 @@ class RecoverLabEvaluationErrors extends Command
                 if ($afterTimeoutBudgetRepair) {
                     data_set($metadata, 'timeout_budget_repair_recovery_attempts', (int) data_get($metadata, 'timeout_budget_repair_recovery_attempts', 0) + 1);
                     data_set($metadata, 'last_timeout_budget_repair_recovery_at', now()->utc()->toIso8601String());
+                    if ($autonomous) {
+                        data_set($metadata, 'autonomous_technical_recovery.protocol', 'autonomous_technical_recovery_v1');
+                        data_set($metadata, 'autonomous_technical_recovery.attempts', (int) data_get($metadata, 'autonomous_technical_recovery.attempts', 0) + 1);
+                        data_set($metadata, 'autonomous_technical_recovery.last_at', now()->utc()->toIso8601String());
+                        data_set($metadata, 'autonomous_technical_recovery.promotion_evidence', false);
+                    }
                 }
                 if ($afterRetryBudgetRepair) {
                     data_set($metadata, 'retry_budget_repair_recovery_attempts', (int) data_get($metadata, 'retry_budget_repair_recovery_attempts', 0) + 1);
@@ -494,7 +541,20 @@ class RecoverLabEvaluationErrors extends Command
             $batches[] = $batch->id;
         }
 
-        $this->info('Queued '.$agents->count().' '.$mode.' evaluator recoveries; batches '.implode(', ', $batches).'. No promotion evidence was created.');
+        $result = [
+            'protocol' => $autonomous ? 'autonomous_technical_recovery_v1' : 'operator_evaluator_recovery_v1',
+            'dispatched' => $agents->count(),
+            'agent_ids' => $agents->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+            'batch_ids' => $batches,
+            'mode' => $mode,
+            'generation' => $generationNumber,
+            'promotion_evidence' => false,
+        ];
+        if ((bool) $this->option('json')) {
+            $this->line(json_encode($result, JSON_UNESCAPED_SLASHES));
+        } else {
+            $this->info('Queued '.$agents->count().' '.$mode.' evaluator recoveries; batches '.implode(', ', $batches).'. No promotion evidence was created.');
+        }
 
         return self::SUCCESS;
     }

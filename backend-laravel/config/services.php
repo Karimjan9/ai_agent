@@ -698,6 +698,13 @@ return [
         'recovery_cooldown_seconds' => (int) env('NEUROTRADER_LIFECYCLE_RECOVERY_COOLDOWN_SECONDS', 900),
         'max_recovery_dispatch_per_day' => (int) env('NEUROTRADER_LIFECYCLE_MAX_RECOVERY_DISPATCH_PER_DAY', 9),
         'autonomous_learning_recovery_enabled' => env('NEUROTRADER_AUTONOMOUS_LEARNING_RECOVERY_ENABLED', true),
+        // The scheduler may retry only immutable screening transport
+        // timeouts, once per agent, after authenticated AI readiness and
+        // same-generation dataset-hash verification. Other technical faults
+        // still require an explicit operator repair mode.
+        'autonomous_technical_recovery_enabled' => env('NEUROTRADER_AUTONOMOUS_TECHNICAL_RECOVERY_ENABLED', true),
+        'autonomous_technical_recovery_max_dispatch' => max(1, min(2, (int) env('NEUROTRADER_AUTONOMOUS_TECHNICAL_RECOVERY_MAX_DISPATCH', 2))),
+        'autonomous_technical_recovery_daily_limit' => max(1, min(6, (int) env('NEUROTRADER_AUTONOMOUS_TECHNICAL_RECOVERY_DAILY_LIMIT', 2))),
     ],
 
     // Bounded learning-recovery dispatch limit reuse (shadow lane only).

@@ -46,6 +46,8 @@ class LabLifecycleOrchestrator
 
     public const PHASE_LEARNING_RECOVERY = 'learning_recovery';
 
+    public const PHASE_TECHNICAL_RECOVERY = 'technical_recovery';
+
     public const STATUS_READY = 'ready';
 
     public const STATUS_RUNNING = 'running';
@@ -131,8 +133,11 @@ class LabLifecycleOrchestrator
                 if ($startCycle) {
                     $strategy = ['state' => 'open', 'reason' => 'operator_start_prioritizes_healthy_agents', 'quarantined' => $quarantined];
                 } else {
-                    $recovered = $this->learningRecovery($symbol, $timeframe, $cycleId, $strategy);
-                    $stage = self::PHASE_LEARNING_RECOVERY;
+                    $technical = ($strategy['reason'] ?? null) === GenerationAdmissionDecisionService::RECOVER_TECHNICAL;
+                    $recovered = $technical
+                        ? $this->technicalRecovery($symbol, $timeframe, $cycleId, $strategy)
+                        : $this->learningRecovery($symbol, $timeframe, $cycleId, $strategy);
+                    $stage = $technical ? self::PHASE_TECHNICAL_RECOVERY : self::PHASE_LEARNING_RECOVERY;
 
                     return $this->summarize($cycleId, $symbol, $timeframe,
                         $recovered['dispatched'] > 0 ? self::STATUS_RUNNING : self::STATUS_PAUSED,
@@ -387,6 +392,75 @@ class LabLifecycleOrchestrator
             'records' => $records,
             'strategy' => $strategy,
         ];
+    }
+
+    /**
+     * Re-open only the latest generation's immutable transport timeouts.
+     *
+     * This is deliberately separate from learning recovery: it has its own
+     * daily budget, one-shot per-agent counter, audited machine authority,
+     * authenticated AI readiness probe and frozen dataset hash contract.
+     */
+    private function technicalRecovery(string $symbol, string $timeframe, string $cycleId, array $strategy): array
+    {
+        if (! (bool) config('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', false)) {
+            return ['dispatched' => 0, 'strategy' => $strategy, 'paused_reason' => 'autonomous_technical_recovery_disabled'];
+        }
+
+        $generationId = (int) data_get($strategy, 'generation_admission.latest_generation_id', 0);
+        $generation = $generationId > 0 ? LabGeneration::query()->find($generationId) : null;
+        if (! $generation) {
+            return ['dispatched' => 0, 'strategy' => $strategy, 'paused_reason' => 'technical_recovery_generation_missing'];
+        }
+
+        $limit = max(1, min(2, (int) config('services.lifecycle_orchestrator.autonomous_technical_recovery_max_dispatch', 2)));
+        $dailyLimit = max(1, (int) config('services.lifecycle_orchestrator.autonomous_technical_recovery_daily_limit', 2));
+        $today = now('Asia/Tashkent')->startOfDay()->utc();
+        $todayDispatches = SystemEvent::query()
+            ->where('event_type', 'lab_autonomous_recovery_authorization')
+            ->where('occurred_at', '>=', $today)
+            ->get()
+            ->sum(fn (SystemEvent $event): int => count((array) data_get($event->payload, 'agent_ids', [])));
+        $remaining = max(0, $dailyLimit - $todayDispatches);
+        if ($remaining === 0) {
+            return ['dispatched' => 0, 'strategy' => $strategy, 'paused_reason' => 'daily_technical_recovery_budget_exhausted'];
+        }
+
+        $cooldownKey = 'lifecycle-technical-recovery:'.strtoupper($symbol).':'.strtoupper($timeframe);
+        if (Cache::has($cooldownKey)) {
+            return ['dispatched' => 0, 'strategy' => $strategy, 'paused_reason' => 'technical_recovery_cooldown'];
+        }
+
+        try {
+            $exitCode = Artisan::call('trading:recover-lab-evaluation-errors', [
+                'symbol' => strtoupper($symbol),
+                '--timeframe' => strtoupper($timeframe),
+                '--generation' => (int) $generation->generation,
+                '--limit' => min($limit, $remaining),
+                '--mode' => 'screen',
+                '--after-timeout-budget-repair' => true,
+                '--apply' => true,
+                '--autonomous' => true,
+                '--json' => true,
+            ]);
+            $output = trim(Artisan::output());
+            $record = json_decode($output, true);
+            $dispatched = $exitCode === 0 && is_array($record) ? (int) ($record['dispatched'] ?? 0) : 0;
+            if ($dispatched > 0) {
+                Cache::put($cooldownKey, true, now()->addSeconds(max(60, (int) config('services.lifecycle_orchestrator.recovery_cooldown_seconds', 900))));
+            }
+
+            return [
+                'dispatched' => $dispatched,
+                'limit' => min($limit, $remaining),
+                'records' => is_array($record) ? $record : ['command_output' => $output, 'exit_code' => $exitCode],
+                'strategy' => $strategy,
+            ];
+        } catch (Throwable $e) {
+            $this->errors->record($cycleId, $symbol, $timeframe, self::PHASE_TECHNICAL_RECOVERY, $e, (int) $generation->id);
+
+            return ['dispatched' => 0, 'strategy' => $strategy, 'paused_reason' => 'technical_recovery_failed_closed'];
+        }
     }
 
     private function ensureGeneration(string $symbol, string $timeframe, string $cycleId, string $stage, bool $startCycle = false): ?LabGeneration

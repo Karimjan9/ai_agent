@@ -108,6 +108,37 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->assertSame(2, data_get($result, 'data.records.allocated_micro_seats'));
     }
 
+    public function test_typed_transport_timeout_uses_separate_bounded_technical_recovery(): void
+    {
+        $lab = $this->seedLaboratory();
+        LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 94,
+            'status' => 'screened',
+            'population_size' => 20,
+            'data_fingerprint' => 'g94-frozen',
+            'trigger_type' => 'test',
+            'trigger_context' => [],
+        ]);
+        config([
+            'services.lifecycle_orchestrator.autonomous_technical_recovery_enabled' => true,
+            'services.lifecycle_orchestrator.autonomous_technical_recovery_daily_limit' => 2,
+        ]);
+        $this->bindPopulation(
+            paused: true,
+            pendingDojo: 0,
+            expectBuild: false,
+            velocityStatus: 'blocked_technical_recovery',
+        );
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-technical-recovery');
+
+        $this->assertSame('running', $result['status']);
+        $this->assertSame(LabLifecycleOrchestrator::PHASE_TECHNICAL_RECOVERY, $result['stage']);
+        $this->assertSame(2, data_get($result, 'data.dispatched'));
+        $this->assertSame([1786, 1787], data_get($result, 'data.records.agent_ids'));
+    }
+
     public function test_runtime_outage_fails_closed(): void
     {
         $this->seedLaboratory();
@@ -165,24 +196,25 @@ class LabLifecycleOrchestratorTest extends TestCase
 
     // ---- helpers ----
 
-    private function seedLaboratory(): void
+    private function seedLaboratory(): AiLaboratory
     {
-        AiLaboratory::create([
+        return AiLaboratory::create([
             'symbol' => 'XAUUSD', 'name' => 'XAUUSD H1 lighthouse',
             'timeframe' => 'H1', 'strategy_families' => ['regime', 'volatility'],
             'is_active' => true, 'lifecycle_mode' => 'lighthouse',
         ]);
     }
 
-    private function bindPopulation(bool $paused = false, int $pendingDojo = 0, bool $throwOnBuild = false, bool $expectBuild = true): void
+    private function bindPopulation(bool $paused = false, int $pendingDojo = 0, bool $throwOnBuild = false, bool $expectBuild = true, ?string $velocityStatus = null): void
     {
         $safety = m::mock(LearningProtocolSafetyService::class);
         $safety->shouldReceive('generationCreationPaused')->andReturn($paused);
 
         $velocity = m::mock(LearningVelocityGateService::class);
+        $velocityStatus ??= $paused ? 'strategy_deadlock' : 'healthy';
         $velocity->shouldReceive('inspect')->andReturn($paused ? [
             'allowed' => false,
-            'status' => 'strategy_deadlock',
+            'status' => $velocityStatus,
             'learning_starvation' => [
                 'starved' => $pendingDojo > 0,
                 'actionable_pending_dojo' => $pendingDojo,
@@ -252,9 +284,25 @@ class LabLifecycleOrchestratorTest extends TestCase
         } else {
             $learningDispatch->zeroOrMoreTimes();
         }
+        $technicalRecovery = Artisan::shouldReceive('call')
+            ->with(
+                m::on(fn ($cmd) => $cmd === 'trading:recover-lab-evaluation-errors'),
+                m::on(fn ($arguments) => is_array($arguments)
+                    && ($arguments['--autonomous'] ?? false) === true
+                    && ($arguments['--after-timeout-budget-repair'] ?? false) === true
+                    && ($arguments['--generation'] ?? null) === 94),
+            )
+            ->andReturn(0);
+        if ($velocityStatus === 'blocked_technical_recovery') {
+            $technicalRecovery->once();
+        } else {
+            $technicalRecovery->zeroOrMoreTimes();
+        }
         Artisan::shouldReceive('output')
             ->zeroOrMoreTimes()
-            ->andReturn(json_encode(['dojo_diagnostic_only' => 2, 'dispatched' => 2]));
+            ->andReturn(json_encode($velocityStatus === 'blocked_technical_recovery'
+                ? ['protocol' => 'autonomous_technical_recovery_v1', 'dispatched' => 2, 'agent_ids' => [1786, 1787]]
+                : ['dojo_diagnostic_only' => 2, 'dispatched' => 2]));
 
         app()->instance(LearningProtocolSafetyService::class, $safety);
         app()->instance(LearningVelocityGateService::class, $velocity);

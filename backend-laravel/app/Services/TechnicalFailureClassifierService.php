@@ -36,6 +36,7 @@ class TechnicalFailureClassifierService
             || str_contains($normalized, 'volume coverage')) {
             return [
                 'class' => self::CAPABILITY,
+                'reason_code' => 'VOLUME_CAPABILITY_MISSING',
                 'capability' => 'volume',
                 'blocks_global_generation' => false,
                 'action' => 'QUARANTINE_CAPABILITY_LANE',
@@ -50,6 +51,7 @@ class TechnicalFailureClassifierService
             || str_contains($normalized, 'not executable')) {
             return [
                 'class' => self::TERMINAL,
+                'reason_code' => 'IMMUTABLE_EXPERIMENT_TERMINAL',
                 'capability' => null,
                 'blocks_global_generation' => false,
                 'action' => 'TERMINAL_DIAGNOSTIC',
@@ -57,8 +59,19 @@ class TechnicalFailureClassifierService
             ];
         }
 
+        $reasonCode = match (true) {
+            str_contains($normalized, 'bounded ai replay exceeded'),
+            str_contains($normalized, 'curl error 28'),
+            str_contains($normalized, 'operation timed out'),
+            str_contains($normalized, 'timed out after') => 'REPLAY_TRANSPORT_TIMEOUT',
+            str_contains($normalized, 'failed to connect'),
+            str_contains($normalized, 'connection refused') => 'AI_SERVICE_UNAVAILABLE',
+            default => 'UNCLASSIFIED_TRANSIENT',
+        };
+
         return [
             'class' => self::TRANSIENT,
+            'reason_code' => $reasonCode,
             'capability' => null,
             'blocks_global_generation' => true,
             'action' => 'RECOVER_TECHNICAL',
