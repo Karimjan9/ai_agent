@@ -89,7 +89,7 @@ class LabLifecycleOrchestratorTest extends TestCase
         config(['services.lifecycle_orchestrator.max_recovery_dispatch_per_day' => 2]);
         foreach ([1, 2] as $seat) {
             LabLearningLaneDispatch::create([
-                'dispatch_key' => 'allocated-seat-'.$seat,
+                'dispatch_key' => 'recovery:dojo:'.$seat,
                 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
                 'strategy_family' => 'regime', 'status' => 'retry_ready',
                 'stage' => 'micro', 'micro_status' => 'pending',
@@ -106,6 +106,27 @@ class LabLifecycleOrchestratorTest extends TestCase
             data_get($result, 'data.records.reconciliation_skipped_reason'),
         );
         $this->assertSame(2, data_get($result, 'data.records.allocated_micro_seats'));
+    }
+
+    public function test_normal_replays_do_not_consume_the_learning_recovery_budget(): void
+    {
+        $this->seedLaboratory();
+        config(['services.lifecycle_orchestrator.max_recovery_dispatch_per_day' => 2]);
+        foreach ([1, 2] as $seat) {
+            LabLearningLaneDispatch::create([
+                'dispatch_key' => 'normal-full-replay-'.$seat,
+                'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+                'strategy_family' => 'regime', 'status' => 'completed',
+                'stage' => 'full_replay', 'micro_status' => 'research_admitted',
+                'selected_at' => now(), 'completed_at' => now(),
+            ]);
+        }
+        $this->bindPopulation($paused = true, pendingDojo: 2);
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-003-normal-budget');
+
+        $this->assertSame(LabLifecycleOrchestrator::PHASE_LEARNING_RECOVERY, $result['stage']);
+        $this->assertNotSame('daily_recovery_budget_exhausted', data_get($result, 'data.paused_reason'));
     }
 
     public function test_typed_transport_timeout_uses_separate_bounded_technical_recovery(): void

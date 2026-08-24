@@ -316,8 +316,13 @@ class LabLifecycleOrchestrator
 
         $cooldownKey = 'lifecycle-recovery:'.strtoupper($symbol).':'.strtoupper($timeframe);
         $dailyLimit = max(1, (int) config('services.lifecycle_orchestrator.max_recovery_dispatch_per_day', 9));
+        // This budget protects the exceptional recovery lane. Normal
+        // autonomous/full-replay dispatches have their own admission limits
+        // and must not consume recovery seats, otherwise a healthy replay day
+        // can strand newly-created actionable dojo work until midnight.
         $todayDispatches = LabLearningLaneDispatch::query()
             ->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
+            ->where('dispatch_key', 'like', 'recovery:dojo:%')
             ->where('selected_at', '>=', now('Asia/Tashkent')->startOfDay()->utc())->count();
         $allocatedMicroSeats = LabLearningLaneDispatch::query()
             ->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
