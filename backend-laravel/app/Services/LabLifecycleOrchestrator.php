@@ -333,17 +333,17 @@ class LabLifecycleOrchestrator
                 $records = is_array($out) ? $out : [];
                 $reconciled = (int) data_get($records, 'dojo_recovery_queued', 0);
 
-                // Reconciliation creates retry_ready records only. Advance
-                // them through the existing learning lane so recovery becomes
-                // actual replay work instead of only a DB projection.
-                if ($reconciled > 0) {
-                    Artisan::call('trading:dispatch-learning-lane', [
-                        'symbol' => strtoupper($symbol),
-                        '--timeframe' => $timeframe,
-                        '--limit' => $limit,
-                        '--autonomous' => true,
-                    ]);
-                }
+                // Reconciliation creates retry_ready records only. Existing
+                // actionable rows may already have been reconciled by an
+                // earlier cycle, so dispatch must not depend on this cycle
+                // creating a new row. The command remains bounded and
+                // idempotent over the same verified pair identities.
+                Artisan::call('trading:dispatch-learning-lane', [
+                    'symbol' => strtoupper($symbol),
+                    '--timeframe' => $timeframe,
+                    '--limit' => $limit,
+                    '--autonomous' => true,
+                ]);
                 $dispatched = LabLearningLaneDispatch::query()
                     ->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
                     ->whereIn('status', ['selected', 'queued', 'running'])

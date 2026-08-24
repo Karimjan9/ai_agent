@@ -211,10 +211,16 @@ class LabLifecycleOrchestratorTest extends TestCase
             ->zeroOrMoreTimes()
             ->with(m::on(fn ($cmd) => $cmd === 'trading:reconcile-learning-recovery'), m::type('array'))
             ->andReturn(0);
-        Artisan::shouldReceive('call')
-            ->zeroOrMoreTimes()
+        $learningDispatch = Artisan::shouldReceive('call')
             ->with(m::on(fn ($cmd) => $cmd === 'trading:dispatch-learning-lane'), m::type('array'))
             ->andReturn(0);
+        if ($paused && $pendingDojo > 0) {
+            // An existing actionable backlog must be dispatched even when
+            // reconciliation creates zero new retry_ready rows this cycle.
+            $learningDispatch->once();
+        } else {
+            $learningDispatch->zeroOrMoreTimes();
+        }
         Artisan::shouldReceive('output')
             ->zeroOrMoreTimes()
             ->andReturn(json_encode(['dojo_diagnostic_only' => 2, 'dispatched' => 2]));
