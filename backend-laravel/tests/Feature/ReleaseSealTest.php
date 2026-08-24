@@ -21,4 +21,13 @@ class ReleaseSealTest extends TestCase
         $this->assertSame(['RELEASE_MANIFEST_MISSING'], $result['reason_codes']);
         $this->artisan('trading:release-seal', ['action' => 'verify'])->assertExitCode(1);
     }
+
+    public function test_release_scope_attests_the_python_replay_runtime(): void
+    {
+        $snapshot = app(ReleaseSealService::class)->snapshot();
+
+        $this->assertContains('../ai-service-python/app', $snapshot['release_scope']);
+        $this->assertContains('../ai-service-python/requirements.txt', $snapshot['release_scope']);
+        $this->assertNotSame('', $snapshot['source_checksum']);
+    }
 }

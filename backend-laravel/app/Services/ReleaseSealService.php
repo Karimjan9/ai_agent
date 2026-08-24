@@ -9,7 +9,7 @@ use Symfony\Component\Process\Process;
 /** Fail-closed source, migration, schema, config and test release attestation. */
 class ReleaseSealService
 {
-    public const PROTOCOL = 'neurotrader_release_seal_v1';
+    public const PROTOCOL = 'neurotrader_release_seal_v2';
 
     /** @return array<string, mixed> */
     public function build(string $testRunId, bool $testsPassed): array
@@ -72,6 +72,9 @@ class ReleaseSealService
         unset($unsigned['seal_checksum']);
         $snapshot = $this->snapshot();
         $reasons = [];
+        if ((string) data_get($manifest, 'protocol') !== self::PROTOCOL) {
+            $reasons[] = 'RELEASE_PROTOCOL_MISMATCH';
+        }
         if ($seal === '' || ! hash_equals($seal, $this->hash($unsigned))) {
             $reasons[] = 'SEAL_CHECKSUM_MISMATCH';
         }
@@ -106,6 +109,11 @@ class ReleaseSealService
             'app', 'bootstrap', 'config', 'database/migrations', 'routes', 'scripts',
             'composer.json', 'composer.lock', 'package.json', 'package-lock.json',
             'ecosystem.config.cjs', 'artisan', '.env.example',
+            // The replay engine is part of the same production protocol.
+            // A Laravel-only seal could otherwise attest a deployment while
+            // the executable AI evidence contract had changed underneath it.
+            '../ai-service-python/app', '../ai-service-python/scripts',
+            '../ai-service-python/requirements.txt', '../ai-service-python/.env.example',
         ];
         $status = $this->git(['status', '--porcelain=v1', '--', ...$scope], false);
         $migrationFiles = array_values(array_filter($this->files([database_path('migrations')]), fn (string $path): bool => str_ends_with($path, '.php')));
@@ -160,7 +168,13 @@ class ReleaseSealService
                 continue;
             }
             foreach (File::allFiles($root) as $file) {
-                $files[] = $file->getRealPath();
+                $path = $file->getRealPath();
+                $normalized = str_replace('\\', '/', $path);
+                if (str_contains($normalized, '/__pycache__/')
+                    || in_array(strtolower($file->getExtension()), ['pyc', 'pyo'], true)) {
+                    continue;
+                }
+                $files[] = $path;
             }
         }
         sort($files, SORT_STRING);
@@ -172,8 +186,12 @@ class ReleaseSealService
     private function fileChecksum(array $files): string
     {
         $rows = [];
+        $workspaceRoot = realpath(base_path('..')) ?: dirname(base_path());
         foreach ($files as $path) {
-            $relative = str_replace('\\', '/', ltrim(str_replace(base_path(), '', $path), '\\/'));
+            // Anchor every entry to the shared repository root so a seal is
+            // portable across machines and sibling runtimes never fall back
+            // to an absolute, host-specific path.
+            $relative = str_replace('\\', '/', ltrim(str_replace($workspaceRoot, '', $path), '\\/'));
             $rows[$relative] = hash_file('sha512', $path);
         }
         ksort($rows);

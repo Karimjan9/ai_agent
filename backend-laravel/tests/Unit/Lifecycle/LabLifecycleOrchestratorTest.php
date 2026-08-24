@@ -212,7 +212,12 @@ class LabLifecycleOrchestratorTest extends TestCase
             ->with(m::on(fn ($cmd) => $cmd === 'trading:reconcile-learning-recovery'), m::type('array'))
             ->andReturn(0);
         $learningDispatch = Artisan::shouldReceive('call')
-            ->with(m::on(fn ($cmd) => $cmd === 'trading:dispatch-learning-lane'), m::type('array'))
+            ->with(
+                m::on(fn ($cmd) => $cmd === 'trading:dispatch-learning-lane'),
+                m::on(fn ($arguments) => is_array($arguments)
+                    && ($arguments['--autonomous'] ?? false) === true
+                    && ($arguments['--retry-queued'] ?? false) === true),
+            )
             ->andReturn(0);
         if ($paused && $pendingDojo > 0) {
             // An existing actionable backlog must be dispatched even when

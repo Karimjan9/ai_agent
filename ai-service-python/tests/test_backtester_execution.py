@@ -662,6 +662,11 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertEqual(result.event_ledger_hash, result.event_digest["hash"])
         self.assertGreater(result.event_ledger_count, 0)
         self.assertIn("entry:accepted", result.event_ledger_categories)
+        self.assertEqual(result.signal_decision_digest["protocol"], "signal_decision_digest_v1")
+        self.assertEqual(result.signal_decision_hash, result.signal_decision_digest["hash"])
+        self.assertEqual(len(result.signal_decision_hash), 64)
+        self.assertGreater(result.signal_decision_count, 0)
+        self.assertTrue(result.signal_decision_digest["streaming"])
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
     def test_shadow_state_machine_is_explicit_and_finite(self, _strategy):

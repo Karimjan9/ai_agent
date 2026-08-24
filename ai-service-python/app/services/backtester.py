@@ -479,6 +479,9 @@ def _run_prepared_simple_backtest(
     temporal_state = _temporal_survival_state()
     event_tokens: list[str] = []
     event_categories: Counter[str] = Counter()
+    signal_decision_hasher = hashlib.sha256()
+    signal_decision_count = 0
+    signal_decision_categories: Counter[str] = Counter()
     mtf_vetoes = 0
     mtf_contexts: Counter[str] = Counter()
     entry_funnel["raw_strategy_signals"] = _count_lane_signals(df, differential_lane)
@@ -487,6 +490,29 @@ def _run_prepared_simple_backtest(
         token = f"{index}|{category}|{code}|{context}"
         event_tokens.append(token)
         event_categories[f"{category}:{code}"] += 1
+
+    def record_signal_decision(
+        index: int,
+        phase: str,
+        action: str,
+        accepted: bool,
+        reason: str = "",
+        context: str = "",
+    ) -> None:
+        """Stream a deterministic policy-decision identity in bounded memory."""
+        nonlocal signal_decision_count
+        token = json.dumps(
+            [index, phase, action, accepted, reason, context],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        ).encode()
+        # Length-prefixing makes concatenation unambiguous without retaining
+        # the full candle trace in process memory.
+        signal_decision_hasher.update(len(token).to_bytes(8, "big"))
+        signal_decision_hasher.update(token)
+        signal_decision_count += 1
+        signal_decision_categories[f"{phase}:{'accepted' if accepted else reason or 'observed'}"] += 1
 
     # A signal is only knowable after its candle closes. Execute it at the
     # following candle's open, then include that same candle in exit checks.
@@ -536,6 +562,15 @@ def _run_prepared_simple_backtest(
                 index, candle, signal_row, 'position_management', 'WAIT', False, 'position_open',
                 {'position_open': True, 'loss_streak': loss_streak},
             ))
+        if position is not None:
+            record_signal_decision(
+                index,
+                "position_management",
+                str(position.get("direction", "WAIT")),
+                True,
+                "position_open",
+                str(position.get("risk_context", "")),
+            )
 
         # A completed wait earns exactly one reduced-risk probe.  This is
         # evaluated even when there is no signal so expiry is driven by time,
@@ -605,6 +640,19 @@ def _run_prepared_simple_backtest(
                 signal_row["mtf_context"] = mtf_context
             if signal not in {"BUY", "SELL"}:
                 policy_rejection = str(signal_row.get("volume_policy_rejection", "") or "")
+                signal_reason = str(
+                    signal_row.get("mtf_veto_reason", "")
+                    or policy_rejection
+                    or "no_signal"
+                )
+                signal_context = "|".join([
+                    str(mtf_context.get("h1_regime", "unknown")),
+                    str(signal_row.get("mtf_raw_signal", signal)),
+                ])
+                record_signal_decision(
+                    index, "signal_evaluation", "WAIT", False,
+                    signal_reason, signal_context,
+                )
                 record_event(
                     "veto" if policy_rejection else "signal",
                     policy_rejection or "no_signal",
@@ -668,6 +716,10 @@ def _run_prepared_simple_backtest(
                 rejection_reason = f"state_machine_{state_machine_state}"
             if not liquid:
                 entry_funnel[f"rejected_{rejection_reason or 'unknown'}"] += 1
+                record_signal_decision(
+                    index, "signal_evaluation", signal, False,
+                    rejection_reason or "unknown", context_key,
+                )
                 if rejection_reason == "regime_transition_wait":
                     transition_vetoes += 1
                 if rejection_reason and rejection_reason.startswith("state_machine_"):
@@ -700,6 +752,9 @@ def _run_prepared_simple_backtest(
                     ))
                 continue
             entry_funnel["accepted_entries"] += 1
+            record_signal_decision(
+                index, "signal_evaluation", signal, True, "accepted", context_key,
+            )
             record_event("entry", "accepted", index, context_key)
             accepted_by_month[month_key] += 1
             probe_active = recovery_probe or context_key in context_recovery_probes or weak_regime_probe
@@ -1052,6 +1107,21 @@ def _run_prepared_simple_backtest(
     )
     volume_policy = _volume_policy_report(df, payload.parameters, volume_quality)
     event_digest = _event_ledger_digest(event_tokens, event_categories)
+    signal_decision_digest = {
+        "protocol": "signal_decision_digest_v1",
+        # An empty replay has no causal decision identity. Returning SHA-256
+        # of an empty stream would look complete to downstream evidence gates.
+        "hash": signal_decision_hasher.hexdigest() if signal_decision_count > 0 else "",
+        "count": signal_decision_count,
+        "categories": {
+            str(key): int(value)
+            for key, value in sorted(signal_decision_categories.items())
+        },
+        "ordered": True,
+        "streaming": True,
+        "full_trace_emitted": emit_decision_trace,
+        "promotion_evidence": False,
+    }
     state_machine_report = {
         "protocol": "neutral_transition_cooldown_reentry_v1",
         "variant": state_machine_variant,
@@ -1150,6 +1220,10 @@ def _run_prepared_simple_backtest(
         event_ledger_count=int(event_digest["count"]),
         event_ledger_categories=dict(event_digest["categories"]),
         event_digest=event_digest,
+        signal_decision_hash=str(signal_decision_digest["hash"]),
+        signal_decision_count=int(signal_decision_digest["count"]),
+        signal_decision_categories=dict(signal_decision_digest["categories"]),
+        signal_decision_digest=signal_decision_digest,
         state_machine=state_machine_report,
         displayed_trade_count=min(total_trades, 20),
         top_mistakes=top_mistakes,

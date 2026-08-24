@@ -329,6 +329,13 @@ class SimpleBacktestResponse(BaseModel):
     event_ledger_count: int = 0
     event_ledger_categories: dict[str, int] = Field(default_factory=dict)
     event_digest: dict[str, Any] = Field(default_factory=dict)
+    # Bounded, ordered identity of the policy decisions made at each candle.
+    # It is emitted even when the verbose decision trace is disabled so a
+    # frozen control and its candidate remain causally comparable.
+    signal_decision_hash: str = ""
+    signal_decision_count: int = 0
+    signal_decision_categories: dict[str, int] = Field(default_factory=dict)
+    signal_decision_digest: dict[str, Any] = Field(default_factory=dict)
     state_machine: dict[str, Any] = Field(default_factory=dict)
     displayed_trade_count: int = 0
     top_mistakes: list[dict[str, int | str]]

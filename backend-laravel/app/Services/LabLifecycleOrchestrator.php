@@ -343,6 +343,11 @@ class LabLifecycleOrchestrator
                     '--timeframe' => $timeframe,
                     '--limit' => $limit,
                     '--autonomous' => true,
+                    // Recovery consumes the already-paired, immutable
+                    // frontier. Re-materializing and deduplicating every
+                    // historical response map here made a one-seat cycle
+                    // memory-unbounded and delayed the scheduler for minutes.
+                    '--retry-queued' => true,
                 ]);
                 $dispatched = LabLearningLaneDispatch::query()
                     ->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
