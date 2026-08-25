@@ -13,13 +13,17 @@ class TradeManagementLibraryService
         $profiles = [
             'balanced_professional' => ['entry' => ['confirmation_entry' => .5, 'retest_confirmation_add' => .3, 'structure_confirmation_add' => .2], 'profit' => ['tp_ladder_r' => [['r' => 1, 'close_fraction' => .4], ['r' => 2, 'close_fraction' => .3]], 'runner_fraction' => .3], 'stop' => ['breakeven_after' => 'tp1_or_structure', 'trail' => 'atr_or_structure'], 'exit' => ['time_stop' => true, 'news_exit' => true]],
             'range_fixed_target' => ['entry' => ['single_confirmation_entry' => 1], 'profit' => ['fixed_target_r' => 1.25, 'close_fraction' => 1], 'stop' => ['breakeven_after' => 'none'], 'exit' => ['time_stop' => true, 'session_exit' => true]],
+            'structure_runner' => ['profit' => ['tp_ladder_r' => [['r' => 1, 'close_fraction' => .25]], 'runner_fraction' => .75], 'stop' => ['breakeven_after' => 'confirmed_m5_structure', 'trail' => 'm5_then_m15_structure'], 'exit' => ['time_stop' => true, 'cost_aware_exit' => true]],
+            'breakout_measured_move' => ['profit' => ['tp_ladder_r' => [['r' => 1, 'close_fraction' => .4]], 'target' => 'measured_move', 'runner_fraction' => .6], 'stop' => ['breakeven_after' => 'retest_hold', 'trail' => 'm5_structure'], 'exit' => ['time_stop' => true]],
+            'reversal_reduced_risk' => ['profit' => ['tp_ladder_r' => [['r' => 1, 'close_fraction' => .5]], 'runner_fraction' => .5], 'stop' => ['breakeven_after' => 'opposite_liquidity_reaction', 'trail' => 'm5_structure'], 'exit' => ['volatility_exit' => true, 'time_stop' => true]],
+            'session_orb' => ['profit' => ['target' => 'opening_range_multiple', 'runner_fraction' => .4], 'stop' => ['trail' => 'm5_structure'], 'exit' => ['session_exit' => true, 'news_exit' => true, 'time_stop' => true]],
         ];
         $plan = $profiles[$profile] ?? $profiles['balanced_professional'];
         if ($regime === 'range') {
             $plan = $profiles['range_fixed_target'];
         }
 
-        return ['protocol' => self::PROTOCOL, 'profile' => $profile, 'state' => 'NEW', 'plan' => $plan, 'basket' => ['total_risk_must_not_increase' => true, 'weighted_average_entry' => true, 'max_open_heat_owned_by' => 'risk_sentinel'], 'state_machine' => ['NEW', 'ARMED', 'LOCATE', 'TRIGGERED', 'CONFIRMED', 'RISK_APPROVED', 'OPEN', 'MANAGE', 'REDUCE_ONLY', 'CLOSED', 'REVIEW'], 'forbidden' => ['averaging_down', 'grid', 'martingale', 'soft_martingale', 'capped_martingale'], 'promotion_contract' => ['paired_control' => true, 'same_execution_hash' => true, 'independent_windows' => 3], 'promotion_evidence' => false];
+        return ['protocol' => self::PROTOCOL, 'profile' => $profile, 'state' => 'NEW', 'plan' => $plan, 'management_timeframe_escalation' => ['initial' => 'execution_timeframe', 'after_1R' => 'invalidation_timeframe', 'after_2R' => 'setup_timeframe', 'final_target' => 'bias_timeframe'], 'basket' => ['total_risk_must_not_increase' => true, 'weighted_average_entry' => true, 'max_open_heat_owned_by' => 'risk_sentinel', 'winner_only_pyramiding_shadow' => true], 'state_machine' => ['NEW', 'ARMED', 'LOCATE', 'TRIGGERED', 'CONFIRMED', 'RISK_APPROVED', 'OPEN', 'MANAGE', 'REDUCE_ONLY', 'CLOSED', 'REVIEW'], 'forbidden' => ['averaging_down', 'grid', 'martingale', 'soft_martingale', 'capped_martingale', 'loser_add'], 'promotion_contract' => ['paired_control' => true, 'same_execution_hash' => true, 'independent_windows' => 3], 'promotion_evidence' => false];
     }
 
     /** @return array<string,mixed> */

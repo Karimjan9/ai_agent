@@ -168,8 +168,15 @@ class LearningLaneService
             );
         }
 
-        $microFrozen = in_array((string) $pair->status, ['micro_failed', 'micro_deferred'], true);
-        if (! $microFrozen) {
+        // Pair state is monotonic once an expensive/canonical boundary has
+        // been reached. A late screening projection may refresh diagnostics,
+        // but it must never roll a settled pair back to screen_paired.
+        $projectionFrozen = in_array((string) $pair->status, [
+            'micro_failed', 'micro_deferred', 'canonical_pending',
+            'canonical_episode_settled', 'lesson_compiled', 'skill_confirmed',
+            'diagnostic_only', 'canonical_failed',
+        ], true);
+        if (! $projectionFrozen) {
             $pair->update([
                 'status' => $controlVerified ? 'screen_paired' : 'missing_control',
                 'pair_key' => $pair->pair_key ?: $pairKey,

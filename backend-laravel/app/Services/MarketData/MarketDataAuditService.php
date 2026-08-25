@@ -64,26 +64,28 @@ class MarketDataAuditService
 
     private function unexpectedGaps(Collection $observations, string $timeframe): int
     {
-        if (! in_array(strtoupper($timeframe), ['H1', 'M15'], true) || $observations->count() < 2) return 0;
-        $intervalMinutes = strtoupper($timeframe) === 'M15' ? 15 : 60;
+        if (! in_array(strtoupper($timeframe), ['M1', 'M5', 'M15', 'M30', 'H1'], true) || $observations->count() < 2) return 0;
+        $intervalMinutes = match (strtoupper($timeframe)) {
+            'M1' => 1, 'M5' => 5, 'M15' => 15, 'M30' => 30, default => 60,
+        };
         $gaps = 0; $previous = null;
         foreach ($observations as $observation) {
             $current = CarbonImmutable::instance($observation->time)->utc();
-            if ($previous && $this->hasUnexpectedGap($previous, $current, $intervalMinutes)) $gaps++;
+            if ($previous && $this->hasUnexpectedGap($previous, $current, $intervalMinutes, $symbol)) $gaps++;
             $previous = $current;
         }
 
         return $gaps;
     }
 
-    private function hasUnexpectedGap(CarbonImmutable $previous, CarbonImmutable $current, int $intervalMinutes): bool
+    private function hasUnexpectedGap(CarbonImmutable $previous, CarbonImmutable $current, int $intervalMinutes, string $symbol): bool
     {
         if ($current->lessThanOrEqualTo($previous->addMinutes($intervalMinutes))) {
             return false;
         }
 
         for ($cursor = $previous->addMinutes($intervalMinutes); $cursor->lessThan($current); $cursor = $cursor->addMinutes($intervalMinutes)) {
-            if ($this->isExpectedMarketOpen($cursor)) {
+            if ($this->isExpectedMarketOpen($cursor, $symbol, $intervalMinutes)) {
                 return true;
             }
         }
@@ -91,8 +93,12 @@ class MarketDataAuditService
         return false;
     }
 
-    private function isExpectedMarketOpen(CarbonImmutable $time): bool
+    private function isExpectedMarketOpen(CarbonImmutable $time, string $symbol, int $intervalMinutes): bool
     {
+        if (str_starts_with(strtoupper($symbol), 'XAU') && $intervalMinutes < 60
+            && $time->addMinutes($intervalMinutes)->startOfDay()->greaterThan($time->startOfDay())) {
+            return false;
+        }
         return match ($time->dayOfWeek) {
             CarbonImmutable::SATURDAY => false,
             CarbonImmutable::SUNDAY => $time->hour >= 22,

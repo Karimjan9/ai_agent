@@ -166,7 +166,7 @@ class MarketDataContinuityService
 
         $intervalMinutes = $this->intervalMinutes($timeframe);
         for ($cursor = $this->alignToInterval($from, $timeframe); $cursor->lessThanOrEqualTo($to); $cursor = $cursor->addMinutes($intervalMinutes)) {
-            if ($this->historicalData->isContinuityMarketOpen($cursor, $symbol)
+            if ($this->historicalData->isContinuityMarketOpen($cursor, $symbol, $intervalMinutes)
                 && ! $existing->has($cursor->format('Y-m-d H:i:s'))) {
                 return $cursor;
             }
@@ -183,7 +183,7 @@ class MarketDataContinuityService
 
         $intervalMinutes = $this->intervalMinutes($timeframe);
         for ($cursor = $this->alignToInterval($from, $timeframe); $cursor->lessThanOrEqualTo($to); $cursor = $cursor->addMinutes($intervalMinutes)) {
-            if ($this->historicalData->isContinuityMarketOpen($cursor, $symbol)) {
+            if ($this->historicalData->isContinuityMarketOpen($cursor, $symbol, $intervalMinutes)) {
                 return true;
             }
         }
@@ -199,7 +199,10 @@ class MarketDataContinuityService
     private function intervalMinutes(string $timeframe): int
     {
         return match (strtoupper($timeframe)) {
+            'M1' => 1,
+            'M5' => 5,
             'M15' => 15,
+            'M30' => 30,
             'H1' => 60,
             default => throw new \InvalidArgumentException("Unsupported continuity timeframe: {$timeframe}"),
         };

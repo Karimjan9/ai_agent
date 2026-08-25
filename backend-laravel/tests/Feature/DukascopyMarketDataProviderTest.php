@@ -159,6 +159,37 @@ class DukascopyMarketDataProviderTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_it_exposes_m1_and_derives_m5_and_m30_from_the_same_minute_archive(): void
+    {
+        config([
+            'services.dukascopy.transport' => 'jetta',
+            'services.dukascopy.jetta_base_url' => 'https://jetta.test',
+            'services.dukascopy.http_retry_attempts' => 1,
+            'services.dukascopy.m15_node_enabled' => false,
+        ]);
+        $start = CarbonImmutable::parse('2020-01-02 00:00:00', 'UTC');
+        $payload = [
+            'timestamp' => $start->getTimestampMs(), 'shift' => 60_000, 'multiplier' => 1,
+            'open' => 100, 'high' => 100, 'low' => 100, 'close' => 100,
+            'times' => array_merge([0], array_fill(0, 29, 1)),
+            'opens' => array_fill(0, 30, 0), 'highs' => array_fill(0, 30, 0),
+            'lows' => array_fill(0, 30, 0), 'closes' => array_fill(0, 30, 0),
+            'volumes' => array_fill(0, 30, 1),
+        ];
+        Http::fake(['https://jetta.test/v1/candles/minute/EUR-USD/BID/2020/1/2' => Http::response($payload)]);
+
+        $provider = app(DukascopyMarketDataProvider::class);
+        $m1 = $provider->fetchCandles('EURUSD', 'EUR/USD', 'M1', 100, $start, $start->addMinutes(30));
+        $m5 = $provider->fetchCandles('EURUSD', 'EUR/USD', 'M5', 100, $start, $start->addMinutes(30));
+        $m30 = $provider->fetchCandles('EURUSD', 'EUR/USD', 'M30', 100, $start, $start->addMinutes(30));
+
+        $this->assertCount(30, $m1);
+        $this->assertCount(6, $m5);
+        $this->assertCount(1, $m30);
+        $this->assertSame(5.0, $m5[0]['volume']);
+        $this->assertSame(30.0, $m30[0]['volume']);
+    }
+
     public function test_it_uses_timestamp_history_directly_for_the_open_month(): void
     {
         config([

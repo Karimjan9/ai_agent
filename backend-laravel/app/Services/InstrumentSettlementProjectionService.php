@@ -9,7 +9,7 @@ use InvalidArgumentException;
 /** Projects a settled paper result only when its sealed paired control exists. */
 class InstrumentSettlementProjectionService
 {
-    public function __construct(private TradingInstrumentOperatingSystemService $instruments) {}
+    public function __construct(private TradingInstrumentOperatingSystemService $instruments, private CompositionSettlementFanoutService $fanout) {}
 
     /** @return array<string,mixed> */
     public function settle(PaperOrder $order, PaperSignalOutcome $outcome): array
@@ -44,6 +44,12 @@ class InstrumentSettlementProjectionService
             return ['status' => 'awaiting_paired_control', 'reason' => $exception->getMessage(), 'promotion_evidence' => false];
         }
 
-        return ['status' => 'recorded', 'playbook_posterior_id' => $posterior->id, 'promotion_evidence' => false];
+        $passport = (array) data_get($signal?->payload, 'smart_composition.composition_passport', data_get($signal?->payload, 'composition_passport', []));
+        $fanout = $this->fanout->settle([
+            'source_key' => 'paper-outcome:'.$outcome->id, 'symbol' => $order->symbol, 'timeframe' => $order->timeframe,
+            'state_key' => data_get($router, 'state.state_key', 'unknown'), 'after_cost_r' => $metrics['net_edge'] - $metrics['cost_penalty'],
+            'composition_passport' => $passport, 'causal_packet' => data_get($signal?->payload, 'smart_composition.causal_packet', []),
+        ]);
+        return ['status' => 'recorded', 'playbook_posterior_id' => $posterior->id, 'composition_fanout' => $fanout, 'promotion_evidence' => false];
     }
 }

@@ -12,6 +12,7 @@ use App\Models\SystemEvent;
 use App\Services\GenerationConstructionAdmissionService;
 use App\Services\GenerationConstructionReconciliationService;
 use App\Services\LabPopulationService;
+use App\Services\LearningVelocityGateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -105,9 +106,8 @@ class GenerationConstructionAdmissionServiceTest extends TestCase
             'model_version_id' => $agent->model_version_id,
             'phase' => 'screening',
             'mode' => 'screen',
-            'status' => 'completed',
+            'status' => 'started',
             'started_at' => now()->subMinute(),
-            'finished_at' => now(),
         ]);
         $pair = LabLearningLanePair::create([
             'pair_key' => 'contaminated-generation-pair',
@@ -131,7 +131,16 @@ class GenerationConstructionAdmissionServiceTest extends TestCase
         $this->assertSame('technical_quarantine', $agent->fresh()->lifecycle_status);
         $this->assertSame('diagnostic_only', $pair->fresh()->status);
         $this->assertSame('invalid_generation_construction', $pair->fresh()->pair_integrity_status);
+        $run = LabEvaluationRun::where('lab_generation_id', $generation->id)->firstOrFail();
+        $this->assertSame('technical_error', $run->status);
+        $this->assertSame('GenerationConstructionContamination', $run->error_class);
+        $this->assertNotNull($run->finished_at);
         $this->assertTrue(SystemEvent::where('event_key', 'generation-construction-contamination:'.$generation->id)->exists());
+
+        $repeat = app(GenerationConstructionReconciliationService::class)->reconcile($generation->fresh());
+        $this->assertFalse($repeat['closed']);
+        $this->assertSame('already_abandoned_diagnostic_only', $repeat['status']);
+        $this->assertSame(0, app(LearningVelocityGateService::class)->inspect($generation->laboratory->fresh())['technical_recovery_agents']);
     }
 
     /** @param array<string, mixed> $extraContext */

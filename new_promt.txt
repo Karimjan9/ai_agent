@@ -1,0 +1,125 @@
+SENING REJIMING: CONTROLLED PROCESS HANDOFF, KEYIN DAILY MONITOR.
+
+Loyiha:
+C:\x_programs\xamp\htdocs\laravel_projects\ai_agent\backend-laravel
+
+Operator yangi kod/ishlarni allaqachon qo‘shib bo‘lgan.
+Sening vazifang kodni o‘zgartirish emas.
+
+MAQSAD:
+1. Eski processlar ichidagi faol ishlar tugashini kut.
+2. Eski processlar to‘liq yopilganini tasdiqla.
+3. Yangi processlarni yangi kod bilan ishga tushir.
+4. Yangi runtime sog‘lomligini tekshir.
+5. Keyin faqat kunlik monitoring rejimida qol.
+
+QAT’IYAN TAQIQLANADI:
+- Kod, config, `.env`, migration, seed, test yoki DB’ni o‘zgartirish.
+- Fix, patch, git write, tinker, raw SQL.
+- `php artisan migrate`, `db:seed`, dispatch, replay, repair, recovery.
+- Force-kill ishlatma.
+- Agar schema/migration xatosi chiqsa, uni tuzatma; faqat report qil.
+- Secret, token, `.env`, PM2 jlist yoki process command-line chiqarmagin.
+
+BOSQICH 1 — PRE-DEPLOY HOLAT:
+Quyidagilarni o‘qi:
+1. `node .\node_modules\pm2\bin\pm2 list --no-color`
+2. `php artisan system:runtime-monitor --json`
+3. `php artisan trading:audit-agent-lifecycle --shallow --no-persist --json`
+
+BOSQICH 2 — YANGI JOBLARNI TO‘XTAT:
+Avval scheduler’ni to‘xtat:
+`node .\node_modules\pm2\bin\pm2 stop neurotrader-scheduler`
+
+Scheduler stopped bo‘lganini tekshir.
+
+BOSQICH 3 — ESKI ISHLAR TUGASHINI KUT:
+- `screening`, `training`, `full_validation` yoki reserved queue job mavjud bo‘lsa, kut.
+- Workerlarni majburan to‘xtatma.
+- Har 60 soniyada lifecycle audit qil.
+- Har 5 daqiqada quyidagicha report ber:
+
+“Deployment waiting:
+- screening: N
+- full validation: N
+- reserved jobs: N
+- old processlar tugashi kutilmoqda.”
+
+- Faol ishlar 0 bo‘lmaguncha keyingi bosqichga o‘tma.
+
+BOSQICH 4 — ESKI PROCESSLARNI YOP:
+Faol ishlar 0 bo‘lgach quyidagi app’larni bittalab stop qil va har biri stopped ekanini tekshir:
+
+- lab-replay
+- lab-screening-a
+- lab-screening-b
+- lab-learning
+- strategy-lab
+- backtests
+- neurotrader-ai
+- neurotrader-web-dev (mavjud bo‘lsa)
+
+Buyruq:
+`node .\node_modules\pm2\bin\pm2 stop <APP_NAME>`
+
+Barcha eski processlar stopped bo‘lmaguncha yangi process start qilma.
+
+BOSQICH 5 — YANGI PROCESSLARNI ISHGA TUSHIR:
+Quyidagi tartibda start qil:
+
+1. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only neurotrader-ai`
+2. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only neurotrader-web-dev`
+   - faqat oldin mavjud bo‘lgan bo‘lsa
+3. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only lab-replay`
+4. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only lab-screening-a`
+5. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only lab-screening-b`
+6. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only lab-learning`
+7. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only strategy-lab`
+8. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only backtests`
+9. Scheduler eng oxirida:
+   `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only neurotrader-scheduler`
+
+BOSQICH 6 — YANGI KOD RUNTIME TEKSHIRUVI:
+Yangi processlar start bo‘lgach 60 soniya kut.
+
+Keyin faqat read-only tekshir:
+1. `node .\node_modules\pm2\bin\pm2 list --no-color`
+2. `php artisan system:runtime-monitor --json`
+3. `php artisan trading:audit-agent-lifecycle --shallow --no-persist --json`
+4. `php artisan trading:monitor-lighthouse-loop --symbol=XAUUSD --timeframe=H1 --no-persist --json`
+
+Agar barcha kerakli app online va runtime critical bo‘lmasa:
+“Yangi processlar yangi ishlar bilan muvaffaqiyatli ishga tushdi” deb yoz.
+
+Agar error bo‘lsa:
+- Fix qilma.
+- Restart qilma.
+- Faqat aynan qaysi process yoki runtime check bloklanganini report qil.
+
+BOSQICH 7 — KEYINGI REJIM:
+Deployment tugagach 1-prompt’dagi STRICT READ-ONLY DAILY MONITOR rejimiga o‘t.
+Endi faqat bugungi progressni kuzat.
+Hech qanday processni qayta o‘zgartirma.
+
+DEPLOYMENT HISOBOTI:
+
+# New Runtime Handoff
+Vaqt: <Asia/Tashkent>
+Holat: 🟢 TUGADI | 🟡 KUTILMOQDA | 🔴 BLOKLANGAN
+
+| Bosqich | Holat | Izoh |
+|---|---|---|
+| Scheduler yopildi | 🟢/🔴 | |
+| Eski ishlar tugadi | 🟢/🟡 | |
+| Eski processlar yopildi | 🟢/🟡 | |
+| Yangi AI service | 🟢/🔴 | |
+| Yangi workers | 🟢/🔴 | |
+| Yangi scheduler | 🟢/🔴 | |
+| Runtime verification | 🟢/🟡/🔴 | |
+
+Oxirida:
+- Eski processlar to‘liq yopildi: HA / YO‘Q
+- Yangi processlar ishga tushdi: HA / YO‘Q
+- Yangi runtime sog‘lom: HA / YO‘Q
+- Migration/fix kerak: HA / YO‘Q
+- Action taken: PROCESS HANDOFF ONLY

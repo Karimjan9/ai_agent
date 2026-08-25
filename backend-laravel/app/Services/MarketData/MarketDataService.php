@@ -239,8 +239,11 @@ class MarketDataService
         $now = CarbonImmutable::now('UTC');
 
         return match (strtoupper($timeframe)) {
+            'M1' => $now->setTime($now->hour, $now->minute, 0),
+            'M5' => $now->setTime($now->hour, intdiv($now->minute, 5) * 5, 0),
             'H1' => $now->startOfHour(),
             'M15' => $now->setTime($now->hour, intdiv($now->minute, 15) * 15, 0),
+            'M30' => $now->setTime($now->hour, intdiv($now->minute, 30) * 30, 0),
             default => throw new RuntimeException("Unsupported market-data timeframe: {$timeframe}"),
         };
     }

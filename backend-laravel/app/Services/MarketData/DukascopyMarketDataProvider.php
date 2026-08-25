@@ -19,7 +19,7 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
         ?\DateTimeInterface $from = null,
         ?\DateTimeInterface $to = null,
     ): array {
-        if (! in_array(strtoupper($timeframe), ['H1', 'M15'], true)) {
+        if (! in_array(strtoupper($timeframe), ['M1', 'M5', 'M15', 'M30', 'H1'], true)) {
             throw new RuntimeException("Dukascopy timeframe qo'llab-quvvatlanmaydi: {$timeframe}");
         }
 
@@ -76,13 +76,13 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
     ): array {
         $transport = strtolower((string) config('services.dukascopy.transport', 'jetta'));
 
-        if (strtoupper($timeframe) === 'M15' && $transport !== 'legacy') {
+        if (in_array(strtoupper($timeframe), ['M1', 'M5', 'M15', 'M30'], true) && $transport !== 'legacy') {
             try {
-                return (bool) config('services.dukascopy.m15_node_enabled', true)
+                return strtoupper($timeframe) === 'M15' && (bool) config('services.dukascopy.m15_node_enabled', true)
                     ? $this->fetchJettaM15NodeChunk($instrument, $from, $to)
-                    : $this->fetchJettaM15Chunk($instrument, $from, $to);
+                    : $this->fetchJettaMinuteAggregateChunk($instrument, $from, $to, $this->minuteInterval($timeframe));
             } catch (Throwable $exception) {
-                if ($transport !== 'auto') {
+                if ($transport !== 'auto' || $timeframe !== 'M15') {
                     throw $exception;
                 }
 
@@ -126,6 +126,22 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
         CarbonImmutable $from,
         CarbonImmutable $to,
     ): array {
+        return $this->fetchJettaMinuteAggregateChunk($instrument, $from, $to, 15);
+    }
+
+    /**
+     * The minute archive is the only allowed source for M1/M5/M15/M30
+     * shadow research. Higher intraday frames are built deterministically
+     * from closed M1 candles, never requested as unrelated provider series.
+     *
+     * @return array<int, array{time: string, open: float, high: float, low: float, close: float, volume: float}>
+     */
+    private function fetchJettaMinuteAggregateChunk(
+        string $instrument,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        int $intervalMinutes,
+    ): array {
         $normalized = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', $instrument));
         if (strlen($normalized) !== 6) {
             throw new RuntimeException("Dukascopy Jetta instrument qo'llab-quvvatlanmaydi: {$instrument}");
@@ -158,7 +174,7 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
 
             foreach ($minuteRows as $row) {
                 $minute = CarbonImmutable::parse($row['time'], 'UTC');
-                $bucket = $minute->startOfHour()->addMinutes(intdiv($minute->minute, 15) * 15);
+                $bucket = $minute->startOfHour()->addMinutes(intdiv($minute->minute, $intervalMinutes) * $intervalMinutes);
                 if ($bucket->lessThan($from) || ! $bucket->lessThan($to)) {
                     continue;
                 }
@@ -188,6 +204,17 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
         ksort($candles);
 
         return array_values($candles);
+    }
+
+    private function minuteInterval(string $timeframe): int
+    {
+        return match (strtoupper($timeframe)) {
+            'M1' => 1,
+            'M5' => 5,
+            'M15' => 15,
+            'M30' => 30,
+            default => throw new RuntimeException("Minute aggregation timeframe qo'llab-quvvatlanmaydi: {$timeframe}"),
+        };
     }
 
     /**

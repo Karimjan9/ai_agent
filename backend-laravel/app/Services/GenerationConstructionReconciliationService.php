@@ -40,6 +40,19 @@ class GenerationConstructionReconciliationService
     /** @return array<string, mixed> */
     public function reconcile(LabGeneration $generation): array
     {
+        // The first reconciliation has already terminalized this cohort. A
+        // later scheduler tick must treat it as immutable history; returning
+        // `closed=true` forever would block every successor generation.
+        if ((string) $generation->status === 'abandoned'
+            && data_get($generation->trigger_context, 'constructor_contamination.protocol') === 'generation_construction_contamination_v1') {
+            return [
+                'protocol' => 'generation_construction_reconciliation_v1',
+                'status' => 'already_abandoned_diagnostic_only',
+                'closed' => false,
+                'generation_id' => (int) $generation->id,
+                'promotion_evidence' => false,
+            ];
+        }
         $inspection = $this->admission->inspect($generation);
         $planned = (int) data_get($inspection, 'planned_slots', 0);
         $actual = (int) data_get($inspection, 'actual_agents', 0);
@@ -82,6 +95,33 @@ class GenerationConstructionReconciliationService
                 'completed_at' => now(),
                 'trigger_context' => $context,
             ]);
+
+            // Only nonterminal rows are closed. Completed/failed immutable
+            // attempts keep their original envelope; an orphan `started` row
+            // would otherwise advertise work that can never finish after the
+            // contaminated generation has been abandoned.
+            foreach (LabEvaluationRun::query()
+                ->where('lab_generation_id', $locked->id)
+                ->where('phase', 'screening')
+                ->whereNull('finished_at')
+                ->where('status', 'started')
+                ->get() as $run) {
+                $run->update([
+                    'status' => 'technical_error',
+                    'finished_at' => now(),
+                    'duration_ms' => $run->started_at
+                        ? (int) $run->started_at->diffInMilliseconds(now())
+                        : null,
+                    'error_class' => 'GenerationConstructionContamination',
+                    'error_message' => 'Run terminalized because screening started before the generation construction contract was admitted.',
+                    'metadata' => [
+                        ...((array) $run->metadata),
+                        'reason_code' => 'SCREENING_BEFORE_CONSTRUCTION_ADMISSION',
+                        'strategy_verdict' => 'withheld',
+                        'promotion_evidence' => false,
+                    ],
+                ]);
+            }
 
             foreach ($locked->agents()->with('modelVersion')->get() as $agent) {
                 $agent->update([

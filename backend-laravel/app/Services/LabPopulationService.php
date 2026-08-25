@@ -968,6 +968,19 @@ class LabPopulationService
                 // portfolio. Re-composing it would rewrite declared genes and
                 // make its own post-pairing integrity contract fail.
                 && $rootExperimentPortfolio === null) {
+                // Receipts affect the NEXT population only through this
+                // bounded director. It labels an exploit/repair seat only
+                // when a scoped receipt exists; otherwise it degrades to an
+                // explicit explorer rather than pretending a raw PnL is
+                // inheritable knowledge.
+                $learningDirected = app(EvolutionDirectorService::class)->materialize(
+                    $plan,
+                    $lockedLab->symbol,
+                    $lockedLab->timeframe,
+                    (int) $generation->generation,
+                );
+                $plan = $learningDirected['plan'];
+                $adaptiveEvolutionPolicy['learning_driven_evolution'] = $learningDirected['contract'];
                 $composition = $this->compositionPlanner->materialize(
                     $plan,
                     (int) $generation->generation,
@@ -997,6 +1010,16 @@ class LabPopulationService
                     (int) $generation->id,
                 );
                 $plan = (array) data_get($causalLearningCohort, 'plan', $plan);
+                $plan = array_map(function (array $slot): array {
+                    $experiment = (array) data_get($slot, 'niche.causal_learning_cohort', []);
+                    $passport = (array) data_get($slot, 'niche.composition_passport', []);
+                    if ($experiment !== [] && $passport !== []) {
+                        data_set($slot, 'niche.composition_passport', app(CompositionAuthorityKernelService::class)
+                            ->bindLearningExperiment($passport, $experiment));
+                    }
+
+                    return $slot;
+                }, $plan);
                 $adaptiveEvolutionPolicy['causal_learning_counterfactual_cohort'] = data_get($causalLearningCohort, 'contract');
             }
             $normalControlPairing = null;
@@ -6754,6 +6777,11 @@ class LabPopulationService
                     'risk_library_id' => data_get($niche, 'risk_library_id'),
                     'risk_library_contract' => $riskLibraryContract !== [] ? $riskLibraryContract : null,
                     'risk_mutation_gene' => $riskMutationGene !== '' ? $riskMutationGene : null,
+                    // A composition is authoritative only when the planner
+                    // sealed this exact passport before agent construction.
+                    // It remains immutable for the replay/trade lifetime.
+                    'composition_passport' => data_get($niche, 'composition_passport'),
+                    'causal_packet' => data_get($niche, 'causal_packet'),
                     'paired_control_required' => true,
                     'promotion_evidence' => false,
                 ] : null,
@@ -7202,6 +7230,10 @@ class LabPopulationService
                     'promotion_evidence' => false,
                 ],
                 'agent_knowledge_contract' => $knowledgeContract,
+                // The evolution director can only influence a child through
+                // this sealed directive and the manifest emitted below. Raw
+                // accounting observations are deliberately absent here.
+                'learning_evolution_directive' => data_get($niche, 'learning_evolution'),
                 // A frozen near-forward parent is never edited in place.
                 // This child is the only allowed research fork from it.
                 'elite_candidate_fork' => data_get($parentA?->metadata, 'elite_agent_passport.freeze.status') === 'frozen'
@@ -7276,6 +7308,38 @@ class LabPopulationService
                 : 'Parent currently unavailable; agent starts without a parent and may use an exact parent in a later generation.',
         ]);
         $agent->setRelation('modelVersion', $model);
+        $inheritanceDirective = (array) data_get($niche, 'learning_evolution', []);
+        $causalInheritance = (array) data_get($niche, 'causal_learning_cohort', []);
+        if ($causalInheritance !== []) {
+            $causalRole = (string) data_get($causalInheritance, 'role', '');
+            $inheritanceDirective = [
+                ...$inheritanceDirective,
+                'experiment_role' => in_array($causalRole, ['memory_guided', 'blinded'], true) ? 'falsification' : 'explore',
+                'required_component' => 'learning_policy',
+                'required_gene' => $causalRole === 'frozen_control' ? null : data_get($causalInheritance, 'gene'),
+                'mutation_from' => $causalRole === 'frozen_control' ? null : data_get($parameterDiff, data_get($causalInheritance, 'gene').'.old'),
+                'mutation_to' => $causalRole === 'frozen_control' ? null : data_get($causalInheritance, 'value'),
+                'mutation_reason' => 'Pre-registered '.$causalRole.' arm for canonical lesson '.data_get($causalInheritance, 'source_lesson_id'),
+                'source_lesson_ids' => array_values(array_filter([(int) data_get($causalInheritance, 'source_lesson_id', 0)])),
+                'control_pair_required' => $causalRole !== 'frozen_control',
+                'full_replay_required' => true,
+                'settlement_required' => true,
+            ];
+        }
+        $inheritanceManifest = app(InheritanceEnforcerService::class)->seal(
+            $agent,
+            $inheritanceDirective,
+            $parentA?->id,
+            $parameterDiff,
+            (array) data_get($model->metadata, 'smart_composition.composition_passport', []),
+        );
+        if (($inheritanceManifest['status'] ?? null) === 'rejected') {
+            throw new \RuntimeException('INHERITANCE_MANIFEST_REJECTED '.json_encode($inheritanceManifest['validation'] ?? [], JSON_UNESCAPED_SLASHES));
+        }
+        $manifestMetadata = (array) $model->fresh()->metadata;
+        $manifestMetadata['inheritance_manifest'] = $inheritanceManifest['manifest'] ?? null;
+        $manifestMetadata['inheritance_manifest_validation'] = $inheritanceManifest['validation'] ?? null;
+        $model->update(['metadata' => $manifestMetadata]);
         $selectedGene = array_key_first($parameterDiff);
         $decisionEpisode = app(LearningKernelService::class)->openEpisode($agent, [
             'decision_key' => 'generation:'.$generation->id.':agent:'.$agent->id,

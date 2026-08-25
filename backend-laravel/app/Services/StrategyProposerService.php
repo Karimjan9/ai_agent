@@ -12,14 +12,21 @@ class StrategyProposerService
 {
     public const PROTOCOL = 'strategy_proposer_brain_v1';
 
-    public function __construct(private StrategyFeatureBundleService $featureBundles) {}
+    public function __construct(
+        private StrategyFeatureBundleService $featureBundles,
+        private StrategyLibraryCompilerService $library,
+    ) {}
 
     /** @return array<string,mixed> */
     public function propose(array $route, array $context = [], array $agent = []): array
     {
         $playbook = $route['playbook'] ?? null;
         $playbookKey = $playbook instanceof PlaybookComposition ? (string) $playbook->playbook_key : null;
-        $strategyId = (string) ($agent['strategy_id'] ?? $this->strategyFor($playbookKey));
+        // Composition passports provide the sole canonical library identity.
+        // The old playbook mapping survives only as a legacy fallback for
+        // existing paper records that predate the Foundry.
+        $strategyLibraryId = (string) ($agent['strategy_library_id'] ?? data_get($agent, 'composition_passport.components.strategy_id', ''));
+        $strategyId = $strategyLibraryId !== '' ? $strategyLibraryId : (string) ($agent['strategy_id'] ?? $this->strategyFor($playbookKey));
         $masteryStage = (string) ($agent['mastery_stage'] ?? 'apprentice');
         $abstention = ($route['decision'] ?? 'ABSTAIN') !== 'TRADE';
         $innovationAllowed = (bool) ($agent['innovation_allowed'] ?? false);
@@ -32,6 +39,7 @@ class StrategyProposerService
             'protocol' => self::PROTOCOL,
             'status' => $abstention ? 'WAIT_THESIS' : 'CONDITIONAL_THESIS',
             'strategy_id' => $strategyId,
+            'strategy_library_contract' => $strategyLibraryId !== '' ? $this->library->compile($strategyLibraryId) : null,
             'playbook_key' => $playbookKey,
             'mastery_stage' => $masteryStage,
             'hypothesis' => $this->hypothesis($playbookKey, $route['state'] ?? []),

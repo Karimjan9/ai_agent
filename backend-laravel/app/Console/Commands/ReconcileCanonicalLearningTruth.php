@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\LabEvaluationRun;
+use App\Models\CanonicalLearningOutbox;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
 use App\Services\CanonicalLearningOutboxService;
@@ -11,7 +12,7 @@ use Illuminate\Console\Command;
 /** Replays only sealed, exact-control historical evidence into the truth ledger. */
 class ReconcileCanonicalLearningTruth extends Command
 {
-    protected $signature = 'trading:reconcile-canonical-learning {symbol?} {--timeframe=H1} {--limit=4} {--dry-run}';
+    protected $signature = 'trading:reconcile-canonical-learning {symbol?} {--timeframe=H1} {--limit=4} {--dry-run} {--reproject-completed}';
     protected $description = 'Reconcile valid historical full replays into canonical settlements; legacy invalid rows remain diagnostic-only';
 
     public function handle(CanonicalLearningOutboxService $outbox): int
@@ -19,6 +20,20 @@ class ReconcileCanonicalLearningTruth extends Command
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
         $timeframe = strtoupper((string) $this->option('timeframe'));
         $limit = max(1, min(100, (int) $this->option('limit')));
+        if ($this->option('reproject-completed')) {
+            $rows = CanonicalLearningOutbox::query()->where('status', 'completed')
+                ->whereHas('pair', fn ($query) => $query->where('symbol', $symbol)->where('timeframe', $timeframe))
+                ->oldest('id')->limit($limit)->get();
+            $reprojected = 0;
+            if (! $this->option('dry-run')) {
+                foreach ($rows as $row) {
+                    if (($outbox->reproject($row)['status'] ?? null) === 'reprojected') $reprojected++;
+                }
+            }
+            $this->table(['eligible_completed', 'reprojected', 'dry_run'], [[$rows->count(), $reprojected, $this->option('dry-run') ? 'yes' : 'no']]);
+
+            return self::SUCCESS;
+        }
         $pairs = LabLearningLanePair::query()->with(['candidateAgent', 'controlResponseMap'])
             ->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->whereIn('status', ['learning_observed', 'provisional', 'confirmed', 'canonical_failed'])

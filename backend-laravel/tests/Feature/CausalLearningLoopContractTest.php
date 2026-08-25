@@ -192,8 +192,10 @@ class CausalLearningLoopContractTest extends TestCase
             'evidence_run_id' => 'forward-proof',
             'forward_window_protocol' => [
                 'independence_verified' => true, 'overlap_detected' => false,
-                'observed_windows' => 2, 'positive_windows' => 2,
-                'windows' => [['window_key' => 'w1'], ['window_key' => 'w2']],
+                'observed_windows' => 3, 'positive_windows' => 2,
+                'windows' => [['window_key' => 'w1'], ['window_key' => 'w2'], ['window_key' => 'w3']],
+                'purge_embargo_applied' => true, 'label_holding_period_purged' => true,
+                'purge_bars' => 12, 'embargo_bars' => 1,
             ],
         ];
         $service = app(CausalLearningConfirmationService::class);

@@ -20,7 +20,7 @@ class CausalLearningCohortPlannerService
             'generation_id' => $generationId,
             'status' => 'no_eligible_canonical_memory',
             'roles' => ['memory_guided', 'blinded', 'frozen_control'],
-            'required_independent_windows' => max(2, (int) config('services.learning_lane.independent_confirmations_required', 2)),
+            'required_independent_windows' => max(3, (int) config('services.learning_lane.independent_confirmations_required', 3)),
             'promotion_evidence' => false,
         ];
         if (! Schema::hasTable('agent_learning_lessons') || ! Schema::hasTable('agent_learning_settlements')) {

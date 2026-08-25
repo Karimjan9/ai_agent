@@ -18,7 +18,7 @@ use Carbon\Carbon;
  */
 class OfficialUsdCalendarBackfillService
 {
-    private const BLS_SCHEDULE_URL = 'https://www.bls.gov/schedule/2026/home.htm';
+    private const BLS_SCHEDULE_URL = 'https://www.bls.gov/schedule/2026/';
     private const BLS_CPI_URL = 'https://www.bls.gov/schedule/news_release/cpi.htm';
 
     /** @return array{status:string, inserted:int, updated:int, skipped:int, source?:string} */
@@ -53,7 +53,7 @@ class OfficialUsdCalendarBackfillService
                 'source_timezone' => 'America/New_York',
                 'scheduled_at_precision' => 'official_release_time',
                 'curated_release' => true,
-                'curated_at' => '2026-08-03T00:00:00Z',
+                'curated_at' => '2026-08-25T00:00:00Z',
                 'reference_period' => $row['reference_period'],
             ];
             $event = EconomicEvent::query()->updateOrCreate(
@@ -98,6 +98,16 @@ class OfficialUsdCalendarBackfillService
             ['external_id' => 'cpi-2026-06-10', 'title' => 'Consumer Price Index', 'reference_period' => 'May 2026', 'date' => '2026-06-10', 'time' => '08:30'],
             ['external_id' => 'employment-situation-2026-07-02', 'title' => 'Employment Situation', 'reference_period' => 'June 2026', 'date' => '2026-07-02', 'time' => '08:30'],
             ['external_id' => 'cpi-2026-07-14', 'title' => 'Consumer Price Index', 'reference_period' => 'June 2026', 'date' => '2026-07-14', 'time' => '08:30'],
+            ['external_id' => 'employment-situation-2026-08-07', 'title' => 'Employment Situation', 'reference_period' => 'July 2026', 'date' => '2026-08-07', 'time' => '08:30'],
+            ['external_id' => 'cpi-2026-08-12', 'title' => 'Consumer Price Index', 'reference_period' => 'July 2026', 'date' => '2026-08-12', 'time' => '08:30'],
+            ['external_id' => 'employment-situation-2026-09-04', 'title' => 'Employment Situation', 'reference_period' => 'August 2026', 'date' => '2026-09-04', 'time' => '08:30'],
+            ['external_id' => 'cpi-2026-09-11', 'title' => 'Consumer Price Index', 'reference_period' => 'August 2026', 'date' => '2026-09-11', 'time' => '08:30'],
+            ['external_id' => 'employment-situation-2026-10-02', 'title' => 'Employment Situation', 'reference_period' => 'September 2026', 'date' => '2026-10-02', 'time' => '08:30'],
+            ['external_id' => 'cpi-2026-10-14', 'title' => 'Consumer Price Index', 'reference_period' => 'September 2026', 'date' => '2026-10-14', 'time' => '08:30'],
+            ['external_id' => 'employment-situation-2026-11-06', 'title' => 'Employment Situation', 'reference_period' => 'October 2026', 'date' => '2026-11-06', 'time' => '08:30'],
+            ['external_id' => 'cpi-2026-11-10', 'title' => 'Consumer Price Index', 'reference_period' => 'October 2026', 'date' => '2026-11-10', 'time' => '08:30'],
+            ['external_id' => 'employment-situation-2026-12-04', 'title' => 'Employment Situation', 'reference_period' => 'November 2026', 'date' => '2026-12-04', 'time' => '08:30'],
+            ['external_id' => 'cpi-2026-12-10', 'title' => 'Consumer Price Index', 'reference_period' => 'November 2026', 'date' => '2026-12-10', 'time' => '08:30'],
         ];
     }
 }

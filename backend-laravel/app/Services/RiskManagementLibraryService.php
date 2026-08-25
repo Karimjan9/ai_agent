@@ -33,10 +33,21 @@ class RiskManagementLibraryService
         return [
             'protocol' => self::PROTOCOL,
             'profile' => $profile,
+            // Strategies may request admission but the governor owns account
+            // risk. These are hard constraints, not mutation suggestions.
+            'central_risk_governor' => [
+                'protocol' => 'xauusd_central_risk_governor_v1',
+                'position_size' => 'allowed_account_risk / executable_stop_distance',
+                'executable_stop_distance' => ['structural_invalidation', 'volatility_allowance', 'execution_cost_allowance'],
+                'high_volatility' => 'wider_stop_smaller_size_same_account_risk_or_wait',
+                'hard_bans' => ['fixed_lot', 'martingale', 'loser_add', 'risk_increase_after_loss'],
+                'guards' => ['daily_loss_limit', 'loss_streak_circuit_breaker', 'drawdown_scaling', 'news_cost_firewall', 'single_xauusd_net_exposure_ledger'],
+                'promotion_evidence' => false,
+            ],
             'mutation_contract' => [
                 'one_axis_only' => true,
                 'allowed_gene' => $profile['gene'],
-                'forbidden' => ['position_size_increase_after_loss', 'martingale', 'execution_contract'],
+                'forbidden' => ['position_size_increase_after_loss', 'martingale', 'fixed_lot', 'loser_add', 'execution_contract'],
             ],
             'paired_control_required' => true,
             'promotion_evidence' => false,

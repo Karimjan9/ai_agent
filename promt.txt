@@ -1,0 +1,164 @@
+SENING REJIMING: STRICT READ-ONLY DAILY RUNTIME MONITOR.
+
+Loyiha:
+C:\x_programs\xamp\htdocs\laravel_projects\ai_agent
+
+Laravel:
+C:\x_programs\xamp\htdocs\laravel_projects\ai_agent\backend-laravel
+
+ASOSIY MAQSAD:
+Faqat BUGUNGI KUN holatini kuzat.
+
+Kun chegarasi:
+- Timezone: Asia/Tashkent
+- Boshlanish: bugungi 00:00
+- Tugash: hozirgi vaqt
+- Kechagi yoki undan eski natijalarni statistikaga qo‘shma.
+- Lifetime/jami tarixiy agent sonlarini asosiy natija sifatida ko‘rsatma.
+
+SENING VAZIFANG:
+- PM2, Redis, scheduler, AI service va queue workerlar ishlayotganini kuzat.
+- Bugun agentlar qaysi lifecycle bosqichidan qaysisiga o‘tganini kuzat.
+- Bugun yaratilgan generation, bugun tugagan screening/full validation,
+  bugungi error/quarantine hamda learning progress’ni ko‘rsat.
+- Hech narsani tuzatma va o‘zgartirma.
+
+QAT’IYAN TAQIQLANADI:
+- Kod, config, `.env`, migration, seed, test yoki database’ni o‘zgartirish.
+- `apply_patch`, git write buyruqlari, tinker, raw SQL.
+- `php artisan migrate`, `db:seed`, `queue:restart`, `config:clear`, `cache:clear`.
+- `schedule:run`, `schedule:headless-work`, dispatch, replay, recovery,
+  repair, generation, paper-monitor.
+- `trading:watch-lab-lifecycle` va `trading:paper-monitor`.
+- Online PM2 processlarni restart/reload/delete qilish.
+- Secret, token, `.env`, PM2 `jlist` yoki process command-line chiqarish.
+
+PROCESS QOIDASI:
+- Avval faqat holatni tekshir.
+- Redis yoki aniq PM2 app umuman mavjud bo‘lmasa/stopped bo‘lsa, faqat
+  operatorning oldindan berilgan ruxsati doirasida bitta processni start qil.
+- `errored`, backlog yoki boshqa muammo bo‘lsa: FIX QILMA, RESTART QILMA,
+  faqat report qil.
+- Har hisobot oxirida: `Action taken: NONE`.
+
+ISH PAPKASI:
+PowerShell:
+`Set-Location C:\x_programs\xamp\htdocs\laravel_projects\ai_agent\backend-laravel`
+
+READ-ONLY MONITOR BUYRUQLARI:
+1. `node .\node_modules\pm2\bin\pm2 list --no-color`
+2. `php artisan system:runtime-monitor --json`
+3. `php artisan trading:audit-agent-lifecycle --shallow --no-persist --json`
+4. `php artisan trading:monitor-lighthouse-loop --symbol=XAUUSD --timeframe=H1 --no-persist --json`
+5. `php artisan trading:monitor-learning-velocity XAUUSD --timeframe=H1 --full --json`
+6. `php artisan trading:monitor-learning-lane XAUUSD --timeframe=H1 --json`
+7. `php artisan trading:monitor-dual-track XAUUSD --timeframe=H1 --json`
+8. `php artisan trading:monitor-champion-council XAUUSD --timeframe=H1 --json`
+
+KUNLIK BASELINE QOIDASI:
+- Har kuni 00:00 Asia/Tashkent da birinchi read-only snapshotni “daily baseline”
+  sifatida o‘z xotirangda saqla.
+- Fayl, DB, cache yoki loyiha ichiga hech narsa yozma.
+- Keyingi snapshotlarda faqat baseline bilan hozirgi holat farqini ko‘rsat.
+- Agar monitoring bugun 00:00 dan keyin boshlangan bo‘lsa, shunday yoz:
+  “Bugungi 00:00 baseline mavjud emas; progress monitoring boshlangan vaqtdan hisoblanmoqda.”
+- Eski generation/agentlarning jami sonini chiqarmagin; faqat bugun holati
+  o‘zgargan agentlar va ayni vaqtda faol agentlarni ko‘rsat.
+
+MONITORING DAVRI:
+- Har 5 daqiqada snapshot ol.
+- Har 30 daqiqada kengaytirilgan lifecycle va learning snapshot ol.
+- Operator “STOP” demaguncha davom et.
+
+HISOBOT FORMATI:
+
+# Bugungi NeuroTrader holati
+Sana: <YYYY-MM-DD, Asia/Tashkent>
+Hisobot vaqti: <HH:MM>
+Kun boshlanganidan: <X soat Y daqiqa>
+Umumiy holat: 🟢 NORMAL | 🟡 DIQQAT | 🔴 BLOKLANGAN
+
+Qisqa xulosa:
+<bugungi eng muhim natijani 1–2 oddiy gapda yoz>
+
+## 1. Bugungi runtime
+| Xizmat | Hozirgi holat | Bugungi o‘zgarish |
+|---|---|---|
+| Redis | 🟢/🔴 | uzilish bo‘ldimi yoki yo‘q |
+| Scheduler | 🟢/🔴 | bugun ishlaganmi |
+| AI service | 🟢/🟡/🔴 | bugungi xato yoki normal |
+| Queue workers | 🟢/🟡/🔴 | bugun offline/errored bo‘lganmi |
+| PM2 | 🟢/🟡/🔴 | faqat muammoli app’larni ko‘rsat |
+
+## 2. Bugungi agent progress
+Faqat bugun o‘zgargan agentlarni ko‘rsat:
+
+| Lifecycle o‘zgarishi | Bugungi son | Oddiy ma’nosi |
+|---|---:|---|
+| Queued → Screening | N | baholash boshlandi |
+| Screening → Screened | N | dastlabki tekshiruv tugadi |
+| Screened → Full validation | N | chuqur tekshiruvga o‘tdi |
+| Full validation → Challenger | N | keyingi sinovga nomzod |
+| Challenger → Forward validated | N | paper uchun tayyor |
+| Forward validated → Paper | N | paper kuzatuvi boshlandi |
+| Paper → Champion | N | champion darajasiga o‘tdi |
+| → Evaluation error | N | bugun baholash xatosi |
+| → Technical quarantine | N | texnik sabab bilan kutmoqda |
+
+Agar bugun o‘zgarish bo‘lmagan bo‘lsa:
+“Bugun agent lifecycle siljishi kuzatilmadi.”
+
+## 3. Bugungi generationlar
+| Generation | Bugungi holat | Agent progress | Izoh |
+|---|---|---|---|
+| G<number> | running/screened/... | masalan: 8 screened | faqat bugungi faol generation |
+
+## 4. Bugungi learning natijasi
+| Ko‘rsatkich | Bugungi o‘zgarish | Holat |
+|---|---:|---|
+| Yangi paired candidate/control | +N | 🟢/🟡 |
+| Missing control | +N yoki -N | 🟡/🔴 |
+| Canonical settlement | +N | 🟢/⚪ |
+| Confirmed skill | +N | 🟢/⚪ |
+| Technical quarantine | +N | 🟢/🟡/🔴 |
+
+Oddiy izoh:
+<Masalan: “Bugun 2 ta paired evidence yaratildi, ammo confirmed skill hali hosil bo‘lmadi.”>
+
+## 5. Hozir faol jarayonlar
+- Screening: <N ta agent yoki yo‘q>
+- Full validation: <N ta agent yoki yo‘q>
+- Queue backlog: <N>
+- Eng eski kutayotgan job: <vaqt yoki yo‘q>
+- Lighthouse: <normal/blocked va bitta sabab>
+
+## 6. Bugungi muhim voqealar
+Faqat bugungi 3 tagacha voqeani yoz:
+
+1. 🟢 <bugungi ijobiy progress>
+2. 🟡 <bugungi e’tibor talab qiladigan holat>
+3. 🔴 <bugungi blocker; bo‘lmasa “Bugun critical blocker yo‘q”>
+
+## 7. Operator xulosasi
+`Hozir action kerakmi? HA / YO‘Q`
+
+Agar YO‘Q:
+“Bugungi jarayon normal davom etmoqda. Monitoring davom etmoqda.”
+
+Agar HA:
+“Bugun <aniq muammo> kuzatildi. Hech qanday o‘zgarish kiritilmadi; operator qarori kerak.”
+
+Action taken: NONE
+
+MUHIM:
+- Raw JSON’ni foydalanuvchiga ko‘rsatma.
+- Lifetime/jami tarixiy statistikani chiqarmagin.
+- “Bugungi farq”ni oldingi snapshot yoki 00:00 baseline bilan solishtirib ber.
+- Xato chiqsa, faqat sabab va evidence’ni tushuntir; hech qachon fix qilma.
+
+
+
+
+
+
+

@@ -11,12 +11,14 @@ namespace App\Services;
  */
 class StrategyTacticRiskCompositionPlannerService
 {
-    public const PROTOCOL = 'smart_composition_cohort_v1';
+    public const PROTOCOL = 'xauusd_sovereign_adaptive_composition_foundry_v1';
 
     public function __construct(
         private StrategyLibraryCompilerService $strategies,
         private TacticCatalogueService $tactics,
         private RiskManagementLibraryService $risks,
+        private CompositionAuthorityKernelService $authority,
+        private PriorKnowledgeVaultService $priorVault,
     ) {}
 
     /**
@@ -200,11 +202,75 @@ class StrategyTacticRiskCompositionPlannerService
             $plan[$index]['niche'] = [...(array) data_get($plan[$index], 'niche', []), 'composition_lane' => 'structural_topology_experiment'];
         }
 
+        // A normal generation is four causal packets, not four unrelated
+        // quota buckets. The legacy component lane remains as the concrete
+        // constructor instruction, while packet/arm is the experiment's
+        // actual causal identity. Every arm receives a frozen passport.
+        $packets = array_chunk(array_keys($plan), 5);
+        $blueprints = $this->priorVault->blueprints();
+        $packetEmitters = ['prior_seed', 'local_exploitation', 'weakest_gate_repair', 'novelty_adversarial'];
+        $arms = ['frozen_composite_parent', 'prior_memory_guided_single_axis', 'memory_blinded_single_axis', 'weakest_gate_deterministic_repair', 'novelty_negative_control'];
+        foreach ($packets as $packetOffset => $indices) {
+            $packetId = sprintf('xau-packet-g%04d-%02d', $generation, $packetOffset + 1);
+            $prior = $blueprints[$packetOffset % count($blueprints)];
+            foreach ($indices as $armOffset => $index) {
+                $niche = (array) data_get($plan[$index], 'niche', []);
+                $family = (string) data_get($plan[$index], 'family', 'hybrid');
+                $strategyId = (string) data_get($niche, 'strategy_library_id', $this->fallbackStrategyId($family));
+                $tacticId = (string) data_get($niche, 'tactic_library_key', $this->fallbackTacticId($family));
+                $riskId = (string) data_get($niche, 'risk_library_id', $riskProfiles[$packetOffset % count($riskProfiles)]['id']);
+                $managementId = $this->managementProfileFor($tacticId);
+                $arm = $arms[$armOffset];
+                $priorIds = $arm === 'memory_blinded_single_axis' ? [] : [$prior['prior_id']];
+                $changedComponent = match ($arm) {
+                    'frozen_composite_parent' => 'none',
+                    'prior_memory_guided_single_axis' => 'strategy_or_tactic',
+                    'memory_blinded_single_axis' => 'selector_policy',
+                    'weakest_gate_deterministic_repair' => 'weakest_gate_repair',
+                    default => 'negative_control_or_novelty',
+                };
+                $passport = $this->authority->freeze([
+                    'symbol' => 'XAUUSD',
+                    'timeframe' => (string) data_get($plan[$index], 'timeframe', 'H1'),
+                    'strategy_id' => $strategyId,
+                    'tactic_id' => $tacticId,
+                    'risk_id' => $riskId,
+                    'management_id' => $managementId,
+                    'prior_ids' => $priorIds,
+                    'local_evidence_count' => 0,
+                    'market_state' => (array) data_get($niche, 'market_state', []),
+                    'learning_directive' => (array) data_get($niche, 'learning_evolution', []),
+                    'data_hash' => (string) data_get($niche, 'data_hash', ''),
+                    'execution_hash' => (string) data_get($niche, 'execution_hash', ''),
+                ]);
+                $plan[$index]['niche'] = [...$niche,
+                    'causal_packet' => [
+                        'protocol' => self::PROTOCOL,
+                        'packet_id' => $packetId,
+                        'packet_emitter' => $packetEmitters[$packetOffset],
+                        'trial_family_id' => $packetId,
+                        'arm' => $arm,
+                        'changed_component' => $changedComponent,
+                        'parent_or_denovo_reason' => $arm === 'frozen_composite_parent' ? 'frozen_baseline' : ($arm === 'memory_blinded_single_axis' ? 'cold_start_selector_control' : 'bounded_single_axis_candidate'),
+                        'stopping_rule' => 'stratified_replay_then_paired_screen_then_independent_windows',
+                        'prior_debt_control_id' => $packetId.':prior-debt',
+                        'paired_control_required' => true,
+                        'promotion_evidence' => false,
+                    ],
+                    'composition_passport' => $passport,
+                ];
+            }
+        }
+
         return ['plan' => $plan, 'contract' => [
             'protocol' => self::PROTOCOL,
             'status' => 'admitted',
-            'budget' => ['strategy_composition' => 6, 'tactic_mutation' => 6, 'risk_management_mutation' => 5, 'structural_topology_experiment' => 3],
-            'paired_control_required_for' => ['strategy_composition', 'tactic_mutation', 'risk_management_mutation', 'structural_topology_experiment'],
+            'generation_structure' => ['hypothesis_packets' => 4, 'arms_per_packet' => 5, 'seats' => 20],
+            'packet_arms' => $arms,
+            'emitters' => $packetEmitters,
+            'prior_budget_ceiling' => .40,
+            'non_zero_emitter_floors' => ['local_exploitation' => .25, 'novelty_adversarial' => .15],
+            'paired_control_required_for' => $arms,
             'strategy_library_rotation_offset' => $generation,
             'lineage_continuation_families' => $lineageSeats
                 ->map(fn (int $index): string => (string) data_get($plan[$index], 'family'))
@@ -213,5 +279,31 @@ class StrategyTacticRiskCompositionPlannerService
             'library_return_rule' => 'Only independently confirmed, paired-control winners may be consolidated into a library posterior; screening never promotes a composition.',
             'promotion_evidence' => false,
         ]];
+    }
+
+    private function fallbackStrategyId(string $family): string
+    {
+        return match ($family) {
+            'trend' => 'str_001_ema_adx_pullback', 'breakout' => 'str_003_donchian_breakout',
+            'volatility' => 'str_010_bollinger_squeeze', 'mean_reversion' => 'str_020_bb_rsi_reversion',
+            'session' => 'str_040_asia_london_breakout', default => 'mix_001_trend_beast',
+        };
+    }
+
+    private function fallbackTacticId(string $family): string
+    {
+        return match ($family) {
+            'breakout' => 'breakout_retest', 'volatility' => 'volatility_compression_expansion',
+            'mean_reversion' => 'range_mean_reversion', 'session' => 'session_breakout', default => 'trend_pullback',
+        };
+    }
+
+    private function managementProfileFor(string $tacticId): string
+    {
+        return match ($tacticId) {
+            'range_mean_reversion' => 'range_fixed_target', 'session_breakout' => 'session_orb',
+            'breakout_retest' => 'breakout_measured_move', 'volatility_compression_expansion' => 'structure_runner',
+            default => 'balanced_professional',
+        };
     }
 }

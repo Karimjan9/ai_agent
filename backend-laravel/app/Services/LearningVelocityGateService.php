@@ -338,6 +338,14 @@ class LearningVelocityGateService
         if (! in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true)) {
             return false;
         }
+        // GenerationConstructionReconciliationService has permanently
+        // withheld this partial cohort. Its quarantined agents are immutable
+        // diagnostics, not recoverable work; counting them here would keep
+        // every fresh cohort behind a technical-recovery gate forever.
+        if ((string) $agent->generation?->status === 'abandoned'
+            && data_get($agent->generation?->trigger_context, 'constructor_contamination.protocol') === 'generation_construction_contamination_v1') {
+            return false;
+        }
         $classification = app(TechnicalFailureClassifierService::class)->forAgent($agent);
         if (data_get($classification, 'blocks_global_generation') !== true) {
             return false;

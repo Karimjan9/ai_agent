@@ -225,6 +225,10 @@ class MutationSkillVerificationService
             'overlap_detected' => $overlapDetected,
             'stateful_diagnostic_only' => $continuousDiagnostic,
             'window_ids' => array_values(array_map(static fn (array $window): string => $window['id'], $independent)),
+            'purge_bars' => (int) data_get($result, 'walk_forward.forward_window_protocol.purge_bars', 0),
+            'embargo_bars' => (int) data_get($result, 'walk_forward.forward_window_protocol.embargo_bars', 0),
+            'label_holding_period_purged' => data_get($result, 'walk_forward.forward_window_protocol.label_holding_period_purged') === true,
+            'purge_embargo_applied' => data_get($result, 'walk_forward.forward_window_protocol.purge_embargo_applied') === true,
             'promotion_evidence' => false,
         ];
     }

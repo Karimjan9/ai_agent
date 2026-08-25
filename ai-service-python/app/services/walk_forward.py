@@ -29,8 +29,15 @@ class WalkForwardService:
             "forward": normalized.iloc[validation_end:].reset_index(drop=True),
         }
 
-    def rolling_windows(self, df: pd.DataFrame) -> tuple[list[dict[str, pd.DataFrame]], pd.DataFrame]:
+    def rolling_windows(
+        self,
+        df: pd.DataFrame,
+        purge_bars: int = 0,
+        embargo_bars: int = 1,
+    ) -> tuple[list[dict[str, pd.DataFrame]], pd.DataFrame]:
         normalized = self._normalize(df)
+        purge_bars = max(0, int(purge_bars))
+        embargo_bars = max(1, int(embargo_bars))
         first = normalized["time"].min()
         holdout_start = normalized["time"].max() - pd.DateOffset(years=self.final_holdout_years)
         windows: list[dict[str, pd.DataFrame]] = []
@@ -43,11 +50,11 @@ class WalkForwardService:
             if forward_end > holdout_start:
                 break
 
-            window = {
+            window = self._purge_segments({
                 "train": normalized[(normalized.time >= cursor) & (normalized.time < train_end)],
                 "validation": normalized[(normalized.time >= train_end) & (normalized.time < validation_end)],
                 "forward": normalized[(normalized.time >= validation_end) & (normalized.time < forward_end)],
-            }
+            }, purge_bars, embargo_bars)
             if all(len(segment) >= 2 for segment in window.values()):
                 windows.append({key: value.reset_index(drop=True) for key, value in window.items()})
             cursor += pd.DateOffset(years=self.step_years)
@@ -61,7 +68,7 @@ class WalkForwardService:
         # calendar interval has no candles. Preserve chronology and the final
         # untouched two-year holdout, then build expanding rolling windows by
         # observed rows before that holdout.
-        row_windows = self._row_rolling_windows(normalized, holdout_start)
+        row_windows = self._row_rolling_windows(normalized, holdout_start, purge_bars, embargo_bars)
         if len(row_windows) < self.minimum_windows:
             raise ValueError(
                 "Rolling walk-forward uchun kamida 3 ta oyna va 2 yillik final holdout kerak."
@@ -73,6 +80,8 @@ class WalkForwardService:
         self,
         normalized: pd.DataFrame,
         holdout_start: pd.Timestamp,
+        purge_bars: int = 0,
+        embargo_bars: int = 1,
     ) -> list[dict[str, pd.DataFrame]]:
         selection = normalized[normalized.time < holdout_start].reset_index(drop=True)
         if len(selection) < 30:
@@ -98,18 +107,21 @@ class WalkForwardService:
             if forward_end > len(selection):
                 continue
 
-            window = {
+            window = self._purge_segments({
                 "train": selection.iloc[:validation_start].reset_index(drop=True),
                 "validation": selection.iloc[validation_start:validation_end].reset_index(drop=True),
                 "forward": selection.iloc[forward_start:forward_end].reset_index(drop=True),
-            }
+            }, purge_bars, embargo_bars)
             if all(len(segment) >= 2 for segment in window.values()):
                 windows.append(window)
 
         return windows
 
     def run(self, payload: SimpleBacktestRequest, df: pd.DataFrame, score_calculator) -> dict[str, object]:
-        windows, holdout = self.rolling_windows(df)
+        holding_horizon = max(0, int((payload.parameters or {}).get("time_stop_candles", 0) or 0))
+        purge_bars = holding_horizon
+        embargo_bars = 1
+        windows, holdout = self.rolling_windows(df, purge_bars, embargo_bars)
         evaluations: list[dict[str, object]] = []
 
         for index, segments in enumerate(windows, start=1):
@@ -175,7 +187,9 @@ class WalkForwardService:
                 "walk_forward": {
                     "mode": "rolling",
                     "windows": evaluations,
-                    "forward_window_protocol": self._forward_window_protocol(evaluations),
+                    "forward_window_protocol": self._forward_window_protocol(
+                        evaluations, purge_bars, embargo_bars
+                    ),
                     "final_holdout": {
                         "period": f"{holdout.time.min().date()} - {holdout.time.max().date()}",
                         "rows": len(holdout),
@@ -186,7 +200,11 @@ class WalkForwardService:
         }
 
     @staticmethod
-    def _forward_window_protocol(evaluations: list[dict[str, object]]) -> dict[str, object]:
+    def _forward_window_protocol(
+        evaluations: list[dict[str, object]],
+        purge_bars: int = 0,
+        embargo_bars: int = 1,
+    ) -> dict[str, object]:
         bounds: list[tuple[str, str]] = []
         for evaluation in evaluations:
             period = (evaluation.get("periods", {}) or {}).get("forward", "")
@@ -195,17 +213,45 @@ class WalkForwardService:
             start, end = period.split(" - ", 1)
             bounds.append((start, end))
         overlap = any(bounds[index][0] <= bounds[index - 1][1] for index in range(1, len(bounds)))
+        positive = sum(
+            float(((evaluation.get("scores", {}) or {}).get("forward", 0)) or 0) > 0
+            for evaluation in evaluations
+        )
+        applied = purge_bars > 0 and embargo_bars > 0
         return {
             "protocol": "disjoint_forward_folds_v1",
             "source": "walk_forward_forward_segments",
             "observed_windows": len(bounds),
+            "positive_windows": positive,
             "overlap_detected": overlap,
             "independence_verified": bool(bounds) and not overlap,
-            "purge_bars": 0,
-            "embargo_bars": 1,
-            "label_holding_period_purged": False,
+            "purge_bars": purge_bars,
+            "embargo_bars": embargo_bars,
+            "label_holding_period_purged": applied,
+            "purge_embargo_applied": applied,
             "promotion_evidence": False,
-            "rule": "Only disjoint forward intervals are reported; candle-level label purge remains a separate required protocol.",
+            "rule": "Every fold cold-starts; the declared maximum holding horizon is purged and one or more bars are embargoed before forward evaluation.",
+        }
+
+    @staticmethod
+    def _purge_segments(
+        segments: dict[str, pd.DataFrame],
+        purge_bars: int,
+        embargo_bars: int,
+    ) -> dict[str, pd.DataFrame]:
+        train = segments["train"]
+        validation = segments["validation"]
+        forward = segments["forward"]
+        if purge_bars > 0:
+            train = train.iloc[:-purge_bars] if len(train) > purge_bars else train.iloc[0:0]
+            validation = validation.iloc[:-purge_bars] if len(validation) > purge_bars else validation.iloc[0:0]
+        validation = validation.iloc[embargo_bars:]
+        forward = forward.iloc[embargo_bars:]
+
+        return {
+            "train": train.reset_index(drop=True),
+            "validation": validation.reset_index(drop=True),
+            "forward": forward.reset_index(drop=True),
         }
 
     def _run_segment(self, payload: SimpleBacktestRequest, segment: pd.DataFrame, name: str) -> dict[str, object]:

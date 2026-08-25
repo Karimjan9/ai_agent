@@ -53,6 +53,7 @@ class CausalLearningConfirmationService
             'independent_window_keys' => $windows['keys'],
             'independent_window_count' => $windows['count'],
             'independence_verified' => $windows['verified'],
+            'purge_embargo_verified' => $windows['purge_embargo_verified'],
             'positive_windows' => $windows['positive'],
             'evidence_run_id' => data_get($result, 'evidence_run_id'),
             'performance_id' => $performance?->id,
@@ -73,7 +74,8 @@ class CausalLearningConfirmationService
                 'promotion_evidence' => false,
             ];
         }
-        $required = max(2, (int) config('services.learning_lane.independent_confirmations_required', 2));
+        $required = max(3, (int) config('services.learning_lane.independent_confirmations_required', 3));
+        $positiveRequired = 2;
         $guidedIntent = AgentLearningMutationIntent::query()->where('lab_agent_id', $experiment->guided_agent_id)->first();
         $guidedAgent = LabAgent::query()->with('modelVersion')->find($experiment->guided_agent_id);
         $receiptValid = data_get($guidedAgent?->modelVersion?->metadata, 'learning_receipt.integrity.valid') === true
@@ -109,8 +111,9 @@ class CausalLearningConfirmationService
             $reasons[] = 'GUIDED_DID_NOT_BEAT_BLINDED';
         }
         if (data_get($guided, 'independence_verified') !== true
+            || data_get($guided, 'purge_embargo_verified') !== true
             || (int) data_get($guided, 'independent_window_count', 0) < $required
-            || (int) data_get($guided, 'positive_windows', 0) < $required) {
+            || (int) data_get($guided, 'positive_windows', 0) < $positiveRequired) {
             $reasons[] = 'INDEPENDENT_WINDOWS_INSUFFICIENT';
         }
         if ($reasons !== []) {
@@ -166,6 +169,37 @@ class CausalLearningConfirmationService
                     'promotion_evidence' => false,
                 ],
             ]);
+            $canonicalSettlement = $guidedPair
+                ? \App\Models\AgentLearningSettlement::query()
+                    ->where('source_type', LabLearningLanePair::class)
+                    ->where('source_id', $guidedPair->id)
+                    ->where('evidence_state', 'positive')
+                    ->where('hard_failure', false)
+                    ->latest('id')
+                    ->first()
+                : null;
+            if ($guidedPair && $canonicalSettlement) {
+                app(LearningCompilerService::class)->compileCanonical([
+                    'source_key' => 'confirmed-causal-experiment:'.$experiment->id,
+                    'pair_id' => $guidedPair->id,
+                    'settlement_id' => $canonicalSettlement->id,
+                    'causal_experiment_id' => $experiment->id,
+                    'lab_agent_id' => $guidedPair->candidate_agent_id,
+                    'lab_generation_id' => $experiment->lab_generation_id,
+                    'symbol' => $experiment->symbol,
+                    'timeframe' => $experiment->timeframe,
+                    'parameter_key' => $experiment->gene_key,
+                    'old_value' => $guidedIntent?->old_value,
+                    'new_value' => $guidedIntent?->new_value,
+                    'causal_uplift_r' => (float) data_get($guided, 'target_delta.delta', 0),
+                    'scope' => ['strategy_family' => $experiment->strategy_family],
+                    'source_experiments' => ['causal-experiment-'.$experiment->id],
+                    'support' => max(1, (int) data_get($guided, 'independent_window_count', 0)),
+                    'independent_windows' => (int) data_get($guided, 'independent_window_count', 0),
+                    'positive_windows' => (int) data_get($guided, 'positive_windows', 0),
+                    'non_target_regression' => false,
+                ]);
+            }
         }
         $guidedIntent?->update(['status' => 'settled', 'metadata' => [
             ...((array) $guidedIntent?->metadata),
@@ -277,7 +311,7 @@ class CausalLearningConfirmationService
         );
     }
 
-    /** @return array{keys: array<int, string>, count: int, verified: bool, positive: int} */
+    /** @return array{keys: array<int, string>, count: int, verified: bool, purge_embargo_verified: bool, positive: int} */
     private function windows(LabLearningLanePair $pair, array $result): array
     {
         $protocol = (array) data_get($result, 'forward_window_protocol', []);
@@ -292,6 +326,10 @@ class CausalLearningConfirmationService
             'count' => max($keys->count(), $observed),
             'verified' => data_get($protocol, 'independence_verified') === true
                 && data_get($protocol, 'overlap_detected') !== true,
+            'purge_embargo_verified' => data_get($protocol, 'purge_embargo_applied') === true
+                && data_get($protocol, 'label_holding_period_purged') === true
+                && (int) data_get($protocol, 'purge_bars', 0) > 0
+                && (int) data_get($protocol, 'embargo_bars', 0) > 0,
             'positive' => max((int) data_get($protocol, 'positive_windows', 0), (int) data_get($protocol, 'confirmed_windows', 0)),
         ];
     }

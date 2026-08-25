@@ -857,6 +857,44 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 analysis = MarketAdaptiveReplayService().run(
                     strategy_payload, source_df, calculate_strategy_score, foundation_df
                 )
+                confirmation_contracts = (payload.policy_context or {}).get(
+                    "learning_confirmation_contracts", {}
+                )
+                confirmation_contract = (
+                    confirmation_contracts.get(strategy_name, {})
+                    if isinstance(confirmation_contracts, dict)
+                    else {}
+                )
+                if isinstance(confirmation_contract, dict) and confirmation_contract:
+                    confirmation_evidence = {
+                        **confirmation_contract,
+                        "status": "blocked",
+                        "promotion_evidence": False,
+                    }
+                    if confirmation_contract.get("admitted") is True:
+                        cold_start = walk_forward.run(
+                            strategy_payload, source_df, calculate_strategy_score
+                        )
+                        cold_result = cold_start.get("result", {})
+                        if isinstance(cold_result, dict):
+                            analysis_result = analysis.get("result", {})
+                            if isinstance(analysis_result, dict):
+                                analysis_result["walk_forward"] = cold_result.get("walk_forward", {})
+                                confirmation_evidence = {
+                                    **confirmation_contract,
+                                    "status": "completed",
+                                    "forward_window_protocol": (
+                                        cold_result.get("walk_forward", {}) or {}
+                                    ).get("forward_window_protocol", {}),
+                                    "promotion_evidence": False,
+                                }
+                                analysis_result["learning_confirmation"] = confirmation_evidence
+                                analysis["result"] = analysis_result
+                    else:
+                        analysis_result = analysis.get("result", {})
+                        if isinstance(analysis_result, dict):
+                            analysis_result["learning_confirmation"] = confirmation_evidence
+                            analysis["result"] = analysis_result
             else:
                 analysis = walk_forward.run(strategy_payload, source_df, calculate_strategy_score)
             _write_replay_checkpoint(

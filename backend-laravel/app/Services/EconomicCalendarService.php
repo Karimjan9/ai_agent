@@ -11,55 +11,32 @@ class EconomicCalendarService
     public function sync(?string $requestedProvider = null, ?Carbon $from = null, ?Carbon $to = null): array
     {
         $provider = $requestedProvider ?: (string) config('services.economic_calendar.provider', 'financial_modeling_prep');
-        $apiKey = $this->apiKey($provider);
-        if (! $this->providerEnabled($provider) || ! $apiKey) {
+        $apiKeys = $this->apiKeys($provider);
+        if (! $this->providerEnabled($provider) || $apiKeys === []) {
             return ['status' => 'not_configured', 'synced' => 0];
         }
-
-        $params = $provider === 'alpha_vantage_news'
-            ? [
-                'function' => 'NEWS_SENTIMENT', 'apikey' => $apiKey,
-                'topics' => 'economy_macro,economy_monetary,financial_markets',
-                'sort' => 'LATEST', 'limit' => 200,
-            ]
-            : ($provider === 'currents_api_news'
-                ? [
-                    'apiKey' => $apiKey,
-                    'language' => 'en',
-                    'category' => 'business',
-                    'page_size' => (int) config('services.currents_api.page_size', 100),
-                ]
-            : ($provider === 'financial_modeling_prep'
-            ? [
-                'apikey' => $apiKey,
-                // The normal scheduler keeps a small rolling window. An
-                // explicit historical range is available for passport
-                // backfill when the configured provider plan supports it.
-                'from' => ($from ?: now('UTC')->subDay())->toDateString(),
-                'to' => ($to ?: now('UTC')->addDays(14))->toDateString(),
-            ]
-            : ['c' => $apiKey]));
-        try {
-            $response = Http::timeout((int) config('services.economic_calendar.timeout_seconds', 30))
-                ->acceptJson()->get($this->endpoint($provider), $params);
-        } catch (\Throwable $exception) {
-            // Optional intelligence must never become a hard dependency for
-            // market-data, lab, or paper-monitor scheduling. Keep the last
-            // known calendar evidence and expose a visible failed status.
-            $reason = preg_replace(
-                '/([?&](?:apiKey|apikey|key|token|access_token)=)[^&]+/i',
-                '$1[REDACTED]',
-                $exception->getMessage()
-            ) ?: get_class($exception);
-
-            return [
-                'status' => 'failed',
-                'synced' => 0,
-                'reason' => 'Economic calendar provider unavailable: '.$reason,
-            ];
+        $response = null;
+        $failure = null;
+        foreach ($apiKeys as $index => $apiKey) {
+            try {
+                $candidate = Http::timeout((int) config('services.economic_calendar.timeout_seconds', 30))
+                    ->acceptJson()->get($this->endpoint($provider), $this->params($provider, $apiKey, $from, $to));
+            } catch (\Throwable $exception) {
+                $reason = preg_replace('/([?&](?:apiKey|apikey|key|token|access_token)=)[^&]+/i', '$1[REDACTED]', $exception->getMessage()) ?: get_class($exception);
+                $failure = 'Economic calendar provider unavailable: '.$reason;
+                continue;
+            }
+            if ($candidate->successful()) {
+                $response = $candidate;
+                break;
+            }
+            $failure = 'Economic calendar provider returned HTTP '.$candidate->status();
+            if ($provider !== 'financial_modeling_prep' || ! in_array($candidate->status(), [401, 402, 429], true) || $index === count($apiKeys) - 1) {
+                break;
+            }
         }
-        if ($response->failed()) {
-            return ['status' => 'failed', 'synced' => 0, 'reason' => 'Economic calendar provider returned HTTP '.$response->status()];
+        if (! $response) {
+            return ['status' => 'failed', 'synced' => 0, 'reason' => $failure ?? 'Economic calendar provider returned no response.'];
         }
 
         $synced = 0;
@@ -111,9 +88,9 @@ class EconomicCalendarService
     public function veto(string $symbol, ?Carbon $at = null): array
     {
         $provider = (string) config('services.economic_calendar.provider', 'financial_modeling_prep');
-        $calendarEnabled = $this->providerEnabled($provider) && $this->apiKey($provider);
+        $calendarEnabled = $this->providerEnabled($provider) && $this->apiKeys($provider) !== [];
         $headlineSources = collect(['alpha_vantage_news', 'currents_api_news'])
-            ->filter(fn (string $source) => $this->providerEnabled($source) && $this->apiKey($source))
+            ->filter(fn (string $source) => $this->providerEnabled($source) && $this->apiKeys($source) !== [])
             ->values();
         if (! $calendarEnabled && $headlineSources->isEmpty()) {
             return ['active' => false, 'status' => 'not_configured'];
@@ -150,12 +127,26 @@ class EconomicCalendarService
     }
     private function string(mixed $value): ?string { return $value === null ? null : (string) $value; }
 
-    private function apiKey(string $provider): ?string
+    /** @return list<string> */
+    private function apiKeys(string $provider): array
+    {
+        $keys = match ($provider) {
+            'alpha_vantage_news' => [config('services.alpha_vantage.api_key')],
+            'currents_api_news' => [config('services.currents_api.api_key')],
+            default => [config('services.economic_calendar.api_key'), config('services.economic_calendar.api_key_secondary')],
+        };
+
+        return array_values(array_unique(array_filter($keys, fn ($key): bool => is_string($key) && trim($key) !== '')));
+    }
+
+    /** @return array<string, mixed> */
+    private function params(string $provider, string $apiKey, ?Carbon $from, ?Carbon $to): array
     {
         return match ($provider) {
-            'alpha_vantage_news' => config('services.alpha_vantage.api_key'),
-            'currents_api_news' => config('services.currents_api.api_key'),
-            default => config('services.economic_calendar.api_key'),
+            'alpha_vantage_news' => ['function' => 'NEWS_SENTIMENT', 'apikey' => $apiKey, 'topics' => 'economy_macro,economy_monetary,financial_markets', 'sort' => 'LATEST', 'limit' => 200],
+            'currents_api_news' => ['apiKey' => $apiKey, 'language' => 'en', 'category' => 'business', 'page_size' => (int) config('services.currents_api.page_size', 100)],
+            'financial_modeling_prep' => ['apikey' => $apiKey, 'from' => ($from ?: now('UTC')->subDay())->toDateString(), 'to' => ($to ?: now('UTC')->addDays(14))->toDateString()],
+            default => ['c' => $apiKey],
         };
     }
 

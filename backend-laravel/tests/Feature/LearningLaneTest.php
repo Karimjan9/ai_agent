@@ -77,6 +77,14 @@ class LearningLaneTest extends TestCase
         $this->assertSame($controlMap->id, $pair['control_response_map_id']);
         $this->assertSame(0, AgentLearningLesson::count(), 'A non-complete test run cannot create learning credit.');
         $this->assertFalse((bool) data_get($candidate->fresh('modelVersion')->modelVersion->metadata, 'learning_lane.promotion_evidence', false));
+
+        LabLearningLanePair::query()->findOrFail($pair['id'])->update(['status' => 'canonical_episode_settled']);
+        $lateProjection = app(LearningLaneService::class)->pairScreeningObservation(
+            $candidate,
+            ['evidence_run_id' => 'candidate-run-1'],
+            $candidateMap->toArray(),
+        );
+        $this->assertSame('canonical_episode_settled', $lateProjection['status'], 'A late screening projection must not roll canonical state backward.');
     }
 
     public function test_provisional_skill_is_role_scoped_and_can_be_used_only_as_one_research_probe(): void

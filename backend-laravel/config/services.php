@@ -183,6 +183,14 @@ return [
 
     'historical_data' => [
         'minimum_rows' => (int) env('HISTORICAL_MINIMUM_ROWS', 5000),
+        // M1/M5/M30 are an isolated XAUUSD shadow plane. They earn no live
+        // execution authority until the separate bid/ask execution contract
+        // is complete, but still require enough rows for a meaningful audit.
+        'intraday_shadow_minimum_rows' => [
+            'M1' => (int) env('INTRADAY_SHADOW_M1_MINIMUM_ROWS', 10000),
+            'M5' => (int) env('INTRADAY_SHADOW_M5_MINIMUM_ROWS', 2500),
+            'M30' => (int) env('INTRADAY_SHADOW_M30_MINIMUM_ROWS', 500),
+        ],
         'allowed_missing_open_hours' => (int) env('HISTORICAL_ALLOWED_MISSING_OPEN_HOURS', 0),
         'gap_repair_limit' => (int) env('HISTORICAL_GAP_REPAIR_LIMIT', 100),
     ],
@@ -334,6 +342,10 @@ return [
         'provider' => env('ECONOMIC_CALENDAR_PROVIDER', 'financial_modeling_prep'),
         'endpoint' => env('ECONOMIC_CALENDAR_ENDPOINT', 'https://financialmodelingprep.com/stable/economic-calendar'),
         'api_key' => env('FMP_API_KEY', env('ECONOMIC_CALENDAR_API_KEY')),
+        // A quota/plan refusal from one FMP credential must not silently
+        // disable the XAUUSD execution-news veto when an explicitly supplied
+        // secondary credential is available.
+        'api_key_secondary' => env('FMP_API_KEY_2'),
         'timeout_seconds' => (int) env('ECONOMIC_CALENDAR_TIMEOUT_SECONDS', 30),
         'pre_event_minutes' => (int) env('ECONOMIC_CALENDAR_PRE_EVENT_MINUTES', 30),
         'post_event_minutes' => (int) env('ECONOMIC_CALENDAR_POST_EVENT_MINUTES', 30),

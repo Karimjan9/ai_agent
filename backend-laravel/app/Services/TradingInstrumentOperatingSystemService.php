@@ -96,6 +96,8 @@ class TradingInstrumentOperatingSystemService
         ]);
 
         return [
+            'symbol' => strtoupper($symbol),
+            'timeframe' => strtoupper($timeframe),
             'decision' => $decision,
             'reason_code' => $reason,
             'state' => $state,

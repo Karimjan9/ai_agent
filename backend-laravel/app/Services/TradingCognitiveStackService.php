@@ -14,6 +14,12 @@ class TradingCognitiveStackService
         private TradingInstrumentOperatingSystemService $instruments,
         private StrategyProposerService $strategies,
         private TacticExecutorService $tactics,
+        private OpportunityFunnelLedgerService $funnel,
+        private EvidenceOrthogonalityService $orthogonality,
+        private LocationAtlasService $locations,
+        private RiskHysteresisControllerService $riskHysteresis,
+        private VolumeProvenanceContractService $volumeProvenance,
+        private SessionNewsStateMachineService $sessionNews,
     ) {}
 
     /** @return array<string,mixed> */
@@ -29,12 +35,47 @@ class TradingCognitiveStackService
         $strategy = $this->strategies->propose($route, $context, $agent);
         $tactic = $this->tactics->compile($route, $strategy, $context);
         $preflight = $this->preflight($route, $state, $context);
-        $decision = $preflight['approved'] && ($route['decision'] ?? 'ABSTAIN') === 'TRADE' ? 'TRADE' : 'WAIT';
+        $passport = (array) data_get($agent, 'composition_passport', data_get($agent, 'smart_composition.composition_passport', []));
+        $foundryComposition = (string) data_get($passport, 'protocol') === CompositionAuthorityKernelService::PROTOCOL;
+        $symbol = strtoupper((string) ($route['symbol'] ?? $context['symbol'] ?? 'XAUUSD'));
+        $timeframe = strtoupper((string) ($route['timeframe'] ?? $context['timeframe'] ?? 'H1'));
+        $location = $this->locations->thesis((array) ($context['location'] ?? []));
+        $signals = array_merge((array) data_get($strategy, 'strategy_library_contract.strategy_spec.required_values', []), (array) data_get($passport, 'decision_tools', []));
+        $orthogonality = $this->orthogonality->assess($signals);
+        $riskHysteresis = $this->riskHysteresis->persist($symbol, $timeframe, (array) ($context['risk_metrics'] ?? []));
+        $volume = $this->volumeProvenance->compile((array) ($context['volume_provenance'] ?? []));
+        $sessionNews = $this->sessionNews->compile([
+            ...((array) ($context['session_news'] ?? [])),
+            'news_state' => $context['news_state'] ?? data_get($passport, 'news_state', 'normal'),
+            'session_state' => $context['session_state'] ?? data_get($passport, 'session_handoff_state', 'unclassified'),
+        ]);
+        $checks = [
+            'setup_detected' => ($route['decision'] ?? 'ABSTAIN') === 'TRADE',
+            'regime_allowed' => ! (bool) ($state['transition'] ?? false),
+            'htf_direction_allowed' => ($state['regime'] ?? 'unknown') !== 'unknown',
+            'location_valid' => ['passed' => $foundryComposition ? (bool) $location['trigger_admissible'] : true, 'rejected_reason' => $location['rejection_reason'] ?? 'LOCATION_VALID_REJECTED'],
+            'session_valid' => ! (bool) ($context['session_blocked'] ?? false) && ($sessionNews['session_handoff_state'] ?? 'unclassified') !== 'late_session_decay',
+            'volatility_valid' => ($state['volatility'] ?? 'normal') !== 'extreme',
+            'news_clear' => ! (bool) ($context['news_risk'] ?? $state['news_risk'] ?? false) && ! (bool) ($sessionNews['news_quarantined'] ?? false),
+            'trigger_confirmed' => ($route['decision'] ?? 'ABSTAIN') === 'TRADE',
+            'spread_and_cost_valid' => ($state['spread_state'] ?? 'normal') !== 'high',
+            'risk_approved' => $preflight['approved'],
+            'executed' => $preflight['approved'] && ($route['decision'] ?? 'ABSTAIN') === 'TRADE',
+        ];
+        $funnel = $this->funnel->record([
+            'opportunity_key' => (string) ($context['opportunity_key'] ?? data_get($route, 'router_decision.decision_key') ?? ''),
+            'symbol' => $symbol, 'timeframe' => $timeframe, 'composition_id' => data_get($passport, 'composition_id'),
+            'checks' => $checks, 'evidence_snapshot' => ['market_state' => $state, 'location' => $location, 'orthogonality' => $orthogonality, 'session_news' => $sessionNews, 'volume' => $volume],
+            'available_at' => $context['available_at'] ?? data_get($route, 'router_decision.decided_at') ?? now(),
+            'decided_at' => now(),
+        ]);
+        if ($foundryComposition) $location = $this->locations->record($symbol, $timeframe, (array) ($context['location'] ?? []));
+        $decision = $preflight['approved'] && $funnel['decision'] === 'EXECUTE' ? 'TRADE' : 'WAIT';
 
         return [
             'protocol' => self::PROTOCOL,
             'decision' => $decision,
-            'reason_codes' => $preflight['reason_codes'],
+            'reason_codes' => array_values(array_unique(array_filter([...$preflight['reason_codes'], $funnel['rejected_reason']]))),
             'market_state_estimator' => [
                 'state' => $state,
                 'state_key' => $state['state_key'] ?? null,
@@ -43,6 +84,17 @@ class TradingCognitiveStackService
             ],
             'strategy_proposer' => $strategy,
             'tactic_executor' => $tactic,
+            'causal_edge_accounting' => [
+                'opportunity_funnel' => $funnel,
+                'location_thesis' => $location,
+                'evidence_orthogonality' => $orthogonality,
+                'temporal_authority' => data_get($passport, 'temporal_owners'),
+                'risk_hysteresis' => $riskHysteresis,
+                'volume_provenance' => $volume,
+                'session_news_contract' => $sessionNews,
+                'trade_path_laboratory_required_after_entry' => $foundryComposition,
+                'promotion_evidence' => false,
+            ],
             'risk_sentinel' => [
                 'approved_preflight' => $preflight['approved'],
                 'reason_codes' => $preflight['reason_codes'],
@@ -82,7 +134,7 @@ class TradingCognitiveStackService
         return [
             'protocol' => self::PROTOCOL,
             'brains' => ['market_state_estimator', 'strategy_proposer', 'instrument_composer', 'tactic_executor', 'risk_sentinel', 'execution_quality_monitor', 'learning_reflector', 'innovation_manager', 'council_governor'],
-            'control_flow' => ['observe', 'fingerprint', 'propose', 'compose', 'compile_tactic', 'risk_veto', 'execute_or_wait', 'settle', 'reflect', 'mutate_one_axis', 'paired_replay', 'consolidate'],
+            'control_flow' => ['observe', 'fingerprint', 'horizon_bind', 'location_thesis', 'propose', 'compose', 'compile_tactic', 'evidence_orthogonality_gate', 'temporal_authority_check', 'opportunity_funnel', 'risk_hysteresis_veto', 'execute_or_wait', 'trade_path_counterfactual', 'settle', 'reflect', 'mutate_one_axis', 'paired_replay', 'consolidate'],
             'authority_order' => ['data_integrity', 'risk_sentinel', 'execution_contract', 'strategy', 'tactic', 'innovation'],
             'promotion_evidence' => false,
         ];

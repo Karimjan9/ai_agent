@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\AiLaboratory;
 use App\Models\CanonicalLearningOutbox;
+use App\Models\AgentLearningLesson;
+use App\Models\EvolutionLearningReceipt;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLaneDispatch;
@@ -50,6 +52,31 @@ class LearningTruthProtocolTest extends TestCase
         $this->assertContains('INSUFFICIENT_ACTIVITY', $reward['insufficient_reasons']);
     }
 
+    public function test_positive_canonical_settlement_preserves_pair_and_executed_gene_in_learning_projections(): void
+    {
+        [$agent, $pair] = $this->pair(true);
+        $result = app(CanonicalLearningOutboxService::class)->record($agent, $pair, [
+            'evidence_run_id' => 'truth-valid', 'total_trades' => 24,
+            'profit_factor' => 1.25, 'mutation_observability' => ['observable_effect' => true],
+        ], true, ['improved' => true]);
+
+        $this->assertSame('completed', $result['status']);
+        $lesson = AgentLearningLesson::query()->where('lab_agent_id', $agent->id)->latest('id')->firstOrFail();
+        $this->assertSame($pair->id, data_get($lesson->evidence, 'pair_id'));
+        $this->assertSame(['value' => 1.1], data_get($lesson->evidence, 'new_value'));
+        $receipt = EvolutionLearningReceipt::query()->where('lab_agent_id', $agent->id)->firstOrFail();
+        $this->assertSame('provisional', $receipt->status);
+        $this->assertSame('minimum_confidence', data_get($receipt->evidence, 'input.parameter_key'));
+        $this->assertSame(0, data_get($receipt->evidence, 'input.independent_windows'));
+
+        $receipt->delete();
+        $pair->fresh()->update(['status' => 'canonical_episode_settled']);
+        $reprojected = app(CanonicalLearningOutboxService::class)->reproject(CanonicalLearningOutbox::firstOrFail());
+        $this->assertSame('reprojected', $reprojected['status']);
+        $this->assertDatabaseCount('evolution_learning_receipts', 1);
+        $this->assertSame('canonical_episode_settled', $pair->fresh()->status);
+    }
+
     /** @return array{LabAgent,LabLearningLanePair} */
     private function pair(bool $valid): array
     {
@@ -60,7 +87,7 @@ class LearningTruthProtocolTest extends TestCase
         $candidate = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $candidateModel->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => ['entry' => ['old' => 1, 'new' => 2]]]);
         $control = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $controlModel->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => []]);
         $data = str_repeat('a', 64); $execution = str_repeat('b', 64);
-        $candidateMap = LabMutationResponseMap::create(['response_key' => 'truth-candidate-'.$valid, 'stage' => 'screening', 'status' => 'screen_observed', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'lab_agent_id' => $candidate->id, 'observed_metrics' => [], 'metadata' => ['data_manifest_hash' => $data, 'execution_hash' => $execution]]);
+        $candidateMap = LabMutationResponseMap::create(['response_key' => 'truth-candidate-'.$valid, 'stage' => 'screening', 'status' => 'screen_observed', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'lab_agent_id' => $candidate->id, 'parameter_key' => 'minimum_confidence', 'direction' => 'increase', 'old_value' => ['value' => 1.0], 'new_value' => ['value' => 1.1], 'observed_metrics' => [], 'metadata' => ['data_manifest_hash' => $data, 'execution_hash' => $execution]]);
         $controlMap = LabMutationResponseMap::create(['response_key' => 'truth-control-'.$valid, 'stage' => 'screening', 'status' => 'control', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'lab_agent_id' => $control->id, 'observed_metrics' => ['profit_factor' => 1], 'metadata' => ['control_contract' => ['protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control', 'generation_id' => $generation->id, 'data_hash' => $data, 'execution_hash' => $execution]]]);
         $pair = LabLearningLanePair::create(['pair_key' => 'truth-pair-'.$valid, 'lab_generation_id' => $generation->id, 'candidate_agent_id' => $candidate->id, 'control_agent_id' => $control->id, 'candidate_response_map_id' => $candidateMap->id, 'control_response_map_id' => $controlMap->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'status' => 'learning_observed', 'pair_integrity_status' => $valid ? 'verified' : 'diagnostic_only', 'same_generation' => $valid, 'candidate_data_hash' => $data, 'control_data_hash' => $data, 'candidate_execution_hash' => $execution, 'control_execution_hash' => $execution, 'candidate_metrics' => ['profit_factor' => 1], 'control_metrics' => ['profit_factor' => 1], 'metadata' => ['promotion_evidence' => false]]);
         if ($valid) {

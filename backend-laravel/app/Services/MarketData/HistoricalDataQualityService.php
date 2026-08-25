@@ -36,7 +36,8 @@ class HistoricalDataQualityService
             $rowCount = (clone $query)->count();
             $first = (clone $query)->min('time');
             $last = (clone $query)->max('time');
-            $minimumRows = max(500, (int) config('services.historical_data.minimum_rows', 5000));
+            $minimumRows = max(100, (int) (config("services.historical_data.intraday_shadow_minimum_rows.{$timeframe}")
+                ?? config('services.historical_data.minimum_rows', 5000)));
             // The existing configuration is expressed in H1-equivalent hours.
             // Convert it to bars so a zero-tolerance gate remains equally strict
             // for M15 without changing the established H1 contract.
@@ -494,7 +495,7 @@ class HistoricalDataQualityService
 
         $missing = 0;
         for ($cursor = $previous->addMinutes($intervalMinutes); $cursor->lessThan($current); $cursor = $cursor->addMinutes($intervalMinutes)) {
-            if ($this->isExpectedMarketOpen($cursor, $symbol)) {
+            if ($this->isExpectedMarketOpen($cursor, $symbol, $intervalMinutes)) {
                 $missing++;
             }
         }
@@ -502,7 +503,7 @@ class HistoricalDataQualityService
         return $missing;
     }
 
-    public function isExpectedMarketOpen(CarbonImmutable $time, string $symbol): bool
+    public function isExpectedMarketOpen(CarbonImmutable $time, string $symbol, ?int $intervalMinutes = null): bool
     {
         if (($time->month === 1 && $time->day === 1) || ($time->month === 12 && $time->day === 25)) {
             return false;
@@ -516,6 +517,14 @@ class HistoricalDataQualityService
         }
 
         if (str_starts_with($symbol, 'XAU')) {
+            // Jetta's BID minute archive publishes through 23:58 and resumes
+            // at 00:00. A candle bucket ending at midnight is therefore a
+            // known session maintenance partial, not a missing observation.
+            // Keep the older H1 session rule unchanged.
+            if ($intervalMinutes !== null && $intervalMinutes < 60
+                && $time->addMinutes($intervalMinutes)->startOfDay()->greaterThan($time->startOfDay())) {
+                return false;
+            }
             // Preserve the archive's historical 00:00 UTC maintenance hole
             // and account for the current 17:00 New York daily maintenance
             // hour (21:00/22:00 UTC depending on DST).
@@ -532,7 +541,7 @@ class HistoricalDataQualityService
         };
     }
 
-    public function isContinuityMarketOpen(CarbonImmutable $time, string $symbol): bool
+    public function isContinuityMarketOpen(CarbonImmutable $time, string $symbol, ?int $intervalMinutes = null): bool
     {
         $time = $time->utc();
 
@@ -554,7 +563,7 @@ class HistoricalDataQualityService
             return true;
         }
 
-        return $this->isExpectedMarketOpen($time, $symbol);
+        return $this->isExpectedMarketOpen($time, $symbol, $intervalMinutes);
     }
 
     public function isScheduledClosure(CarbonImmutable $previous, CarbonImmutable $current, string $symbol): bool
@@ -661,7 +670,10 @@ class HistoricalDataQualityService
     private function intervalMinutes(string $timeframe): int
     {
         return match ($timeframe) {
+            'M1' => 1,
+            'M5' => 5,
             'M15' => 15,
+            'M30' => 30,
             'H1' => 60,
             default => throw new \InvalidArgumentException("Unsupported historical-data timeframe: {$timeframe}"),
         };

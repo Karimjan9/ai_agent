@@ -55,6 +55,21 @@ class WalkForwardSplitTest(unittest.TestCase):
         self.assertEqual(3, len(windows))
         self.assertLess(windows[-1]["forward"]["time"].max(), holdout["time"].min())
 
+    def test_confirmation_protocol_requires_and_reports_bounded_horizon_purge(self):
+        evaluations = [
+            {"periods": {"forward": "2014-01-01 - 2015-12-31"}, "scores": {"forward": 10}},
+            {"periods": {"forward": "2016-01-01 - 2017-12-31"}, "scores": {"forward": 8}},
+            {"periods": {"forward": "2018-01-01 - 2019-12-31"}, "scores": {"forward": -2}},
+        ]
+
+        blocked = WalkForwardService._forward_window_protocol(evaluations)
+        confirmed = WalkForwardService._forward_window_protocol(evaluations, purge_bars=12, embargo_bars=1)
+
+        self.assertFalse(blocked["purge_embargo_applied"])
+        self.assertTrue(confirmed["purge_embargo_applied"])
+        self.assertTrue(confirmed["label_holding_period_purged"])
+        self.assertEqual(2, confirmed["positive_windows"])
+
 
 class OverfitDetectionTest(unittest.TestCase):
     def test_train_forward_gap_over_threshold_is_overfit(self):

@@ -253,6 +253,31 @@ class LabAgentEvaluationService
                             'single_gene' => count($diff) === 1,
                         ]];
                     })->all(),
+                    // Only the pre-registered guided/blinded causal arms may
+                    // spend the extra cold-start walk-forward budget. A zero
+                    // time stop has no bounded label horizon and therefore
+                    // remains explicitly blocked from independent evidence.
+                    'learning_confirmation_contracts' => $cohort->mapWithKeys(function (LabAgent $peer): array {
+                        $receipt = (array) data_get($peer->modelVersion?->metadata, 'learning_receipt', []);
+                        $role = (string) data_get($receipt, 'causal_influence', '');
+                        if (! in_array($role, ['memory_guided', 'blinded_counterfactual'], true)
+                            || data_get($receipt, 'integrity.valid') !== true) {
+                            return [];
+                        }
+                        $holding = max(0, (int) data_get($peer->modelVersion?->parameters, 'time_stop_candles', 0));
+
+                        return [$peer->modelVersion->strategy => [
+                            'protocol' => 'bounded_cold_start_learning_confirmation_v1',
+                            'role' => $role,
+                            'causal_intent_id' => data_get($receipt, 'causal_intent_id'),
+                            'maximum_holding_bars' => $holding,
+                            'purge_bars' => $holding,
+                            'embargo_bars' => 1,
+                            'admitted' => $holding > 0,
+                            'blocker' => $holding > 0 ? null : 'UNBOUNDED_HOLDING_HORIZON',
+                            'promotion_evidence' => false,
+                        ]];
+                    })->all(),
                 ],
                 'execution' => $this->executionAssumptions($agent->symbol),
                 'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe),
@@ -460,6 +485,13 @@ class LabAgentEvaluationService
         });
         $generation = $agent->generation()->with('agents')->first();
         if ($generation->agents->whereIn('lifecycle_status', ['draft', 'queued', 'training', 'full_queued'])->isEmpty()) {
+            $bridgeCovered = $generation->agents->contains(fn ($candidate): bool => data_get($candidate->modelVersion?->metadata, 'learning_evolution_directive.protocol') === EvolutionDirectorService::PROTOCOL);
+            $closedLoop = app(ClosedLoopGenerationAuditService::class)->assess($generation);
+            if ($bridgeCovered && ! $closedLoop['generation_may_close']) {
+                $generation->update(['status' => 'learning_settlement_pending']);
+                $this->handoffs->record($generation, $agent, 'closed_loop_audit', 'pending', 'CLOSED_LOOP_COVERAGE_INCOMPLETE', $closedLoop);
+                return;
+            }
             $generation->update(['status' => 'completed', 'completed_at' => now()]);
             $generation = $generation->fresh(['agents']);
             app(LabGenerationReportService::class)->record($generation, 'full_completed');

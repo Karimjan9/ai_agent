@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /** Durable, idempotent hand-off between replay evidence and learning truth. */
 class CanonicalLearningOutbox extends Model
@@ -16,4 +17,9 @@ class CanonicalLearningOutbox extends Model
     ];
 
     protected $casts = ['payload' => 'array', 'processed_at' => 'datetime'];
+
+    public function pair(): BelongsTo
+    {
+        return $this->belongsTo(LabLearningLanePair::class, 'pair_id');
+    }
 }

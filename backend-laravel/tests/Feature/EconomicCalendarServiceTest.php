@@ -37,6 +37,32 @@ class EconomicCalendarServiceTest extends TestCase
         Http::assertSent(fn ($request) => $request['apikey'] === 'test-fmp-key' && filled($request['from']) && filled($request['to']));
     }
 
+    public function test_fmp_calendar_uses_secondary_key_after_primary_quota_refusal(): void
+    {
+        config([
+            'services.economic_calendar.enabled' => true,
+            'services.economic_calendar.provider' => 'financial_modeling_prep',
+            'services.economic_calendar.endpoint' => 'https://financialmodelingprep.com/stable/economic-calendar',
+            'services.economic_calendar.api_key' => 'primary-key',
+            'services.economic_calendar.api_key_secondary' => 'secondary-key',
+        ]);
+        Http::fake([
+            'financialmodelingprep.com/stable/economic-calendar*' => Http::sequence()
+                ->push(['message' => 'plan required'], 402)
+                ->push([[
+                    'date' => '2026-08-25 12:30:00', 'event' => 'US PPI', 'country' => 'US',
+                    'currency' => 'USD', 'impact' => 'High',
+                ]]),
+        ]);
+
+        $result = app(EconomicCalendarService::class)->sync();
+
+        $this->assertSame('ok', $result['status']);
+        $this->assertSame(1, $result['synced']);
+        Http::assertSentCount(2);
+        Http::assertSent(fn ($request) => $request['apikey'] === 'secondary-key');
+    }
+
     public function test_alpha_vantage_macro_headline_becomes_short_lived_usd_execution_veto(): void
     {
         config([
@@ -165,7 +191,13 @@ class EconomicCalendarServiceTest extends TestCase
 
         $this->assertSame(14, $first['inserted']);
         $this->assertSame(0, $second['inserted']);
-        $this->assertSame(14, EconomicEvent::where('source', 'official_bls')->count());
+        $fullYear = $service->backfill(
+            now('UTC')->setDate(2026, 1, 1)->startOfDay(),
+            now('UTC')->setDate(2026, 12, 31)->endOfDay(),
+            2026,
+        );
+        $this->assertSame(10, $fullYear['inserted']);
+        $this->assertSame(24, EconomicEvent::where('source', 'official_bls')->count());
         $this->assertSame('official_release_date_backfill_v1', EconomicEvent::where('source', 'official_bls')->first()->payload['protocol']);
         $this->assertSame('America/New_York', EconomicEvent::where('source', 'official_bls')->first()->payload['source_timezone']);
     }
