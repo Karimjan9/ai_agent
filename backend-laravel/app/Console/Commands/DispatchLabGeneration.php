@@ -11,6 +11,7 @@ use App\Services\LabAgentPreflightService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabGenerationContextService;
 use App\Services\GenerationSnapshotAdmissionService;
+use App\Services\GenerationConstructionAdmissionService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use App\Services\LabQueueJobInspector;
@@ -31,7 +32,7 @@ class DispatchLabGeneration extends Command
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
-    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LearningTechnicalCircuitBreakerService $technicalBreaker, LearningEvidenceGate $evidenceGate, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext, GenerationSnapshotAdmissionService $snapshotAdmission): int
+    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LearningTechnicalCircuitBreakerService $technicalBreaker, LearningEvidenceGate $evidenceGate, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext, GenerationSnapshotAdmissionService $snapshotAdmission, GenerationConstructionAdmissionService $constructionAdmission): int
     {
         $populations->ensureLaboratories();
         $controlledRescue = (bool) $this->option('controlled-rescue');
@@ -196,6 +197,17 @@ class DispatchLabGeneration extends Command
 
             if (! $generation) {
                 $this->warn("{$symbol}: new learning evidence is not available.");
+
+                continue;
+            }
+            $construction = $constructionAdmission->inspect($generation);
+            if (! (bool) data_get($construction, 'allowed', false)) {
+                $this->warn(sprintf(
+                    '%s: G%s constructor/lineage contract incomplete; screening dispatch bloklandi (%s).',
+                    $symbol,
+                    $generation->generation,
+                    implode(',', (array) data_get($construction, 'reason_codes', ['GENERATION_CONSTRUCTION_NOT_ADMITTED'])),
+                ));
 
                 continue;
             }

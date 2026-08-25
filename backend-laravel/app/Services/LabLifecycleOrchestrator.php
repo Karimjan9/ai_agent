@@ -76,6 +76,8 @@ class LabLifecycleOrchestrator
         private readonly LabAgentPreflightService $preflight,
         private readonly LearningVelocityGateService $velocity,
         private readonly GenerationAdmissionDecisionService $admission,
+        private readonly GenerationConstructionAdmissionService $constructionAdmission,
+        private readonly GenerationConstructionReconciliationService $constructionReconciliation,
         private readonly LabGenerationTerminalBoundaryService $terminalBoundaries,
     ) {
         $this->errors = new LabLifecycleErrorLogger;
@@ -123,6 +125,20 @@ class LabLifecycleOrchestrator
             // ownership all prove that no work remains.
             $this->terminalBoundaries->closeLatest($symbol, $timeframe);
 
+            // A partial population is resumable only while no screening run
+            // exists. Once evaluation has started, completing the remaining
+            // seats would mix two different admission states into one cohort.
+            // Preserve those runs as diagnostics and close the generation.
+            $constructionReconciliation = $this->constructionReconciliation->reconcileLatest($symbol, $timeframe);
+            if ((bool) data_get($constructionReconciliation, 'closed', false)) {
+                return $this->summarize($cycleId, $symbol, $timeframe, self::STATUS_PAUSED,
+                    'Contaminated incomplete generation was closed as diagnostic-only evidence.',
+                    $stage, [
+                        'construction_reconciliation' => $constructionReconciliation,
+                        'next_action' => 'admit_a_fresh_generation_on_the_next_cycle',
+                    ]);
+            }
+
             // Strategy gate / deadlock guard: never create a normal generation
             // while locked by the strategy gate. Bounded recovery is allowed.
             $strategy = $this->strategyGateState($symbol, $timeframe, $startCycle);
@@ -164,6 +180,16 @@ class LabLifecycleOrchestrator
                     $stage, [
                         'generation_outcome' => $outcome,
                         'next_action' => $retryable ? 'retry_next_scheduled_cycle' : 'review_population_admission_reason',
+                    ]);
+            }
+            $constructionAdmission = $this->constructionAdmission->inspect($generation);
+            if (! (bool) data_get($constructionAdmission, 'allowed', false)) {
+                return $this->summarize($cycleId, $symbol, $timeframe, self::STATUS_PAUSED,
+                    'Generation construction is incomplete; screening remains fail-closed.',
+                    $stage, [
+                        'generation_outcome' => $this->lastGenerationOutcome,
+                        'construction_admission' => $constructionAdmission,
+                        'next_action' => 'continue_bounded_generation_construction',
                     ]);
             }
             if ((bool) ($strategy['consume_successor_request'] ?? false)

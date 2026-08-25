@@ -1412,7 +1412,11 @@ class LabPopulationService
             'promotion_evidence' => false,
         ];
         if ($complete) {
-            unset($context['constructor_contract_abort']);
+            unset(
+                $context['constructor_contract_abort'],
+                $context['shadow_research_constructor_abort'],
+                $context['controlled_rescue_constructor_abort'],
+            );
             $context['constructor_audit'] = [
                 'protocol' => 'agent_constructor_invariant_v1',
                 'planned_slots' => count($plan), 'created_agents' => count($plan),
