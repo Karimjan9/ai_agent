@@ -21,10 +21,14 @@ class TechnicalFailureClassifierService
             ->whereIn('status', ['technical_error', 'failed'])
             ->latest('id')
             ->first();
-        $message = strtolower((string) ($run?->error_message
-            ?: data_get($agent->modelVersion?->metadata, 'preflight_quarantine.errors.0', $agent->decision_reason)));
+        $preflightErrors = array_values(array_filter(array_map(
+            'strval',
+            (array) data_get($agent->modelVersion?->metadata, 'preflight_quarantine.errors', []),
+        )));
+        $message = $run?->error_message
+            ?: trim(implode(' ', [implode(' ', $preflightErrors), (string) $agent->decision_reason]));
 
-        return $this->classify($message, $run?->error_class);
+        return $this->classify(strtolower((string) $message), $run?->error_class);
     }
 
     /** @return array<string, mixed> */

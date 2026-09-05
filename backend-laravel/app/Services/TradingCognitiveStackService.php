@@ -20,6 +20,7 @@ class TradingCognitiveStackService
         private RiskHysteresisControllerService $riskHysteresis,
         private VolumeProvenanceContractService $volumeProvenance,
         private SessionNewsStateMachineService $sessionNews,
+        private ConfirmationEntryContractService $confirmationEntry,
     ) {}
 
     /** @return array<string,mixed> */
@@ -49,33 +50,62 @@ class TradingCognitiveStackService
             'news_state' => $context['news_state'] ?? data_get($passport, 'news_state', 'normal'),
             'session_state' => $context['session_state'] ?? data_get($passport, 'session_handoff_state', 'unclassified'),
         ]);
+        $routeActionable = ($route['decision'] ?? 'ABSTAIN') === 'TRADE';
+        $entry = $this->confirmationEntry->compile(
+            (array) ($context['entry_contract'] ?? []),
+            $routeActionable,
+            (bool) ($context['entry_contract_required'] ?? false),
+            (bool) ($context['entry_contract_attested'] ?? true),
+        );
+        $entryRequired = (bool) ($context['entry_contract_required'] ?? false);
+        $entryFillRequired = $entryRequired
+            || ($entry['protocol'] ?? null) === ConfirmationEntryContractService::PROTOCOL;
+        $entryFill = (array) ($context['entry_fill_admission'] ?? [
+            'allowed' => ! $entryFillRequired,
+            'status' => $entryFillRequired ? 'missing' : 'not_applicable',
+            'reason' => $entryFillRequired ? 'ENTRY_FILL_ADMISSION_REQUIRED' : null,
+        ]);
+        $entryAttested = (bool) ($entry['attested'] ?? false);
+        $setupReason = ! $entryAttested
+            ? (($entry['reason_codes'][0] ?? null) ?: 'ENTRY_CONTRACT_ATTESTATION_FAILED')
+            : 'ENTRY_SETUP_MISSING';
         $checks = [
-            'setup_detected' => ($route['decision'] ?? 'ABSTAIN') === 'TRADE',
+            'setup_detected' => ['passed' => $routeActionable && $entryAttested && (bool) data_get($entry, 'checks.setup'), 'rejected_reason' => $setupReason],
             'regime_allowed' => ! (bool) ($state['transition'] ?? false),
-            'htf_direction_allowed' => ($state['regime'] ?? 'unknown') !== 'unknown',
-            'location_valid' => ['passed' => $foundryComposition ? (bool) $location['trigger_admissible'] : true, 'rejected_reason' => $location['rejection_reason'] ?? 'LOCATION_VALID_REJECTED'],
+            'htf_direction_allowed' => ($state['regime'] ?? 'unknown') !== 'unknown' && (bool) data_get($entry, 'checks.context'),
+            'location_valid' => ['passed' => ($foundryComposition ? (bool) $location['trigger_admissible'] : true) && (bool) data_get($entry, 'checks.location'), 'rejected_reason' => $location['rejection_reason'] ?? 'ENTRY_LOCATION_INVALID'],
+            'confirmation_valid' => ['passed' => (bool) data_get($entry, 'checks.confirmation'), 'rejected_reason' => 'ENTRY_CONFIRMATION_MISSING'],
+            'trigger_confirmed' => ['passed' => (bool) data_get($entry, 'checks.trigger'), 'rejected_reason' => 'ENTRY_TRIGGER_MISSING'],
+            'invalidation_valid' => ['passed' => (bool) data_get($entry, 'checks.invalidation'), 'rejected_reason' => 'ENTRY_INVALIDATION_INVALID'],
+            'reward_space_valid' => ['passed' => (bool) data_get($entry, 'checks.reward_space'), 'rejected_reason' => 'ENTRY_REWARD_SPACE_INSUFFICIENT'],
+            'chase_valid' => ['passed' => (bool) data_get($entry, 'checks.chase'), 'rejected_reason' => 'ENTRY_CHASING_VETO'],
             'session_valid' => ! (bool) ($context['session_blocked'] ?? false) && ($sessionNews['session_handoff_state'] ?? 'unclassified') !== 'late_session_decay',
             'volatility_valid' => ($state['volatility'] ?? 'normal') !== 'extreme',
-            'news_clear' => ! (bool) ($context['news_risk'] ?? $state['news_risk'] ?? false) && ! (bool) ($sessionNews['news_quarantined'] ?? false),
-            'trigger_confirmed' => ($route['decision'] ?? 'ABSTAIN') === 'TRADE',
-            'spread_and_cost_valid' => ($state['spread_state'] ?? 'normal') !== 'high',
+            'news_clear' => ! (bool) ($context['news_risk'] ?? $state['news_risk'] ?? false) && ! (bool) ($sessionNews['news_quarantined'] ?? false) && (bool) data_get($entry, 'checks.event'),
+            'spread_and_cost_valid' => [
+                'passed' => ($state['spread_state'] ?? 'normal') !== 'high' && (bool) ($entryFill['allowed'] ?? false),
+                'rejected_reason' => (string) ($entryFill['reason'] ?? 'ENTRY_SPREAD_AND_COST_INVALID'),
+            ],
             'risk_approved' => $preflight['approved'],
-            'executed' => $preflight['approved'] && ($route['decision'] ?? 'ABSTAIN') === 'TRADE',
+            'executed' => $preflight['approved'] && $routeActionable
+                && (bool) ($entry['executable'] ?? false) && (bool) ($entryFill['allowed'] ?? false),
         ];
         $funnel = $this->funnel->record([
             'opportunity_key' => (string) ($context['opportunity_key'] ?? data_get($route, 'router_decision.decision_key') ?? ''),
             'symbol' => $symbol, 'timeframe' => $timeframe, 'composition_id' => data_get($passport, 'composition_id'),
-            'checks' => $checks, 'evidence_snapshot' => ['market_state' => $state, 'location' => $location, 'orthogonality' => $orthogonality, 'session_news' => $sessionNews, 'volume' => $volume],
+            'checks' => $checks, 'evidence_snapshot' => ['market_state' => $state, 'location' => $location, 'entry_contract' => $entry, 'entry_fill_admission' => $entryFill, 'orthogonality' => $orthogonality, 'session_news' => $sessionNews, 'volume' => $volume],
             'available_at' => $context['available_at'] ?? data_get($route, 'router_decision.decided_at') ?? now(),
             'decided_at' => now(),
         ]);
-        if ($foundryComposition) $location = $this->locations->record($symbol, $timeframe, (array) ($context['location'] ?? []));
+        if ($foundryComposition) {
+            $location = $this->locations->record($symbol, $timeframe, (array) ($context['location'] ?? []));
+        }
         $decision = $preflight['approved'] && $funnel['decision'] === 'EXECUTE' ? 'TRADE' : 'WAIT';
 
         return [
             'protocol' => self::PROTOCOL,
             'decision' => $decision,
-            'reason_codes' => array_values(array_unique(array_filter([...$preflight['reason_codes'], $funnel['rejected_reason']]))),
+            'reason_codes' => array_values(array_unique(array_filter([...$preflight['reason_codes'], ...($entry['reason_codes'] ?? []), $funnel['rejected_reason']]))),
             'market_state_estimator' => [
                 'state' => $state,
                 'state_key' => $state['state_key'] ?? null,
@@ -87,6 +117,8 @@ class TradingCognitiveStackService
             'causal_edge_accounting' => [
                 'opportunity_funnel' => $funnel,
                 'location_thesis' => $location,
+                'confirmation_entry_contract' => $entry,
+                'entry_fill_admission' => $entryFill,
                 'evidence_orthogonality' => $orthogonality,
                 'temporal_authority' => data_get($passport, 'temporal_owners'),
                 'risk_hysteresis' => $riskHysteresis,
@@ -105,6 +137,9 @@ class TradingCognitiveStackService
             'instrument_composer' => [
                 'playbook_key' => $route['playbook']?->playbook_key,
                 'instrument_keys' => array_values((array) ($route['playbook']?->instrument_keys ?? [])),
+                'professional_research_playbooks' => data_get($strategy, 'professional_playbook_toolbox.active_study_set', []),
+                'model_dispatch_policy' => data_get($strategy, 'professional_playbook_toolbox.model_dispatch_policy', []),
+                'confirmation_entry_contract' => $entry,
                 'candidate_control_comparison' => true,
                 'composition_posterior_required' => true,
             ],
@@ -134,7 +169,7 @@ class TradingCognitiveStackService
         return [
             'protocol' => self::PROTOCOL,
             'brains' => ['market_state_estimator', 'strategy_proposer', 'instrument_composer', 'tactic_executor', 'risk_sentinel', 'execution_quality_monitor', 'learning_reflector', 'innovation_manager', 'council_governor'],
-            'control_flow' => ['observe', 'fingerprint', 'horizon_bind', 'location_thesis', 'propose', 'compose', 'compile_tactic', 'evidence_orthogonality_gate', 'temporal_authority_check', 'opportunity_funnel', 'risk_hysteresis_veto', 'execute_or_wait', 'trade_path_counterfactual', 'settle', 'reflect', 'mutate_one_axis', 'paired_replay', 'consolidate'],
+            'control_flow' => ['observe', 'fingerprint', 'horizon_bind', 'location_thesis', 'propose', 'compose', 'setup', 'independent_confirmation', 'exact_trigger', 'logical_invalidation', 'reward_space_and_chase_gate', 'compile_tactic', 'evidence_orthogonality_gate', 'temporal_authority_check', 'opportunity_funnel', 'risk_hysteresis_veto', 'execute_or_wait', 'trade_path_counterfactual', 'settle', 'reflect', 'mutate_one_axis', 'paired_replay', 'consolidate'],
             'authority_order' => ['data_integrity', 'risk_sentinel', 'execution_contract', 'strategy', 'tactic', 'innovation'],
             'promotion_evidence' => false,
         ];
@@ -185,7 +220,7 @@ class TradingCognitiveStackService
 
     private function learningContract(): array
     {
-        return ['mode' => 'paired_control_learning', 'failure_action' => 'reflect_then_one_bounded_repair', 'required_metrics' => ['net_edge_after_cost', 'profit_factor', 'drawdown', 'temporal_survival', 'regime_coverage', 'non_target_regression', 'abstention_quality', 'mae', 'mfe'], 'independent_windows' => 3, 'positive_windows_required' => 2, 'exact_control_required' => true, 'confirmed_skill_requires_independent_confirmation' => true, 'promotion_evidence' => false];
+        return ['mode' => 'paired_control_learning', 'failure_action' => 'reflect_then_one_bounded_repair', 'required_metrics' => ['net_edge_after_cost', 'profit_factor', 'drawdown', 'temporal_survival', 'regime_coverage', 'non_target_regression', 'abstention_quality', 'mae', 'mfe', 'mfe_capture_ratio', 'process_outcome_quality', 'seven_block_operating_system'], 'independent_windows' => 3, 'positive_windows_required' => 2, 'exact_control_required' => true, 'confirmed_skill_requires_independent_confirmation' => true, 'promotion_evidence' => false];
     }
 
     private function innovationContract(array $agent): array

@@ -3,8 +3,10 @@
 namespace Tests\Unit\Lifecycle;
 
 use App\Models\AiLaboratory;
+use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLaneDispatch;
+use App\Models\ModelVersion;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabLifecycleErrorLogger;
@@ -160,6 +162,56 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->assertSame([1786, 1787], data_get($result, 'data.records.agent_ids'));
     }
 
+    public function test_exact_retry_budget_exhaustion_uses_one_shot_autonomous_recovery(): void
+    {
+        $lab = $this->seedLaboratory();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 94,
+            'status' => 'screening',
+            'population_size' => 1,
+            'data_fingerprint' => 'g94-frozen',
+            'trigger_type' => 'learning_confirmation',
+            'trigger_context' => [],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'retry-budget-agent',
+            'strategy' => 'regime',
+            'version' => 'v94',
+            'generation' => 94,
+            'status' => 'testing',
+            'parameters' => [],
+            'metadata' => [],
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $generation->id,
+            'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'regime',
+            'origin' => 'test',
+            'lifecycle_status' => 'evaluation_error',
+            'parameter_diff' => [],
+            'decision_reason' => 'Bounded screening batch exhausted operational retries; strategy verdict withheld.',
+        ]);
+        config([
+            'services.lifecycle_orchestrator.autonomous_technical_recovery_enabled' => true,
+            'services.lifecycle_orchestrator.autonomous_technical_recovery_daily_limit' => 2,
+        ]);
+        $this->bindPopulation(
+            paused: true,
+            pendingDojo: 0,
+            expectBuild: false,
+            velocityStatus: 'blocked_technical_recovery',
+            technicalRepairMode: 'retry_budget',
+        );
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-retry-budget-recovery');
+
+        $this->assertSame(LabLifecycleOrchestrator::PHASE_TECHNICAL_RECOVERY, $result['stage']);
+        $this->assertSame(2, data_get($result, 'data.dispatched'));
+    }
+
     public function test_runtime_outage_fails_closed(): void
     {
         $this->seedLaboratory();
@@ -226,7 +278,7 @@ class LabLifecycleOrchestratorTest extends TestCase
         ]);
     }
 
-    private function bindPopulation(bool $paused = false, int $pendingDojo = 0, bool $throwOnBuild = false, bool $expectBuild = true, ?string $velocityStatus = null): void
+    private function bindPopulation(bool $paused = false, int $pendingDojo = 0, bool $throwOnBuild = false, bool $expectBuild = true, ?string $velocityStatus = null, string $technicalRepairMode = 'timeout_budget'): void
     {
         $safety = m::mock(LearningProtocolSafetyService::class);
         $safety->shouldReceive('generationCreationPaused')->andReturn($paused);
@@ -310,7 +362,9 @@ class LabLifecycleOrchestratorTest extends TestCase
                 m::on(fn ($cmd) => $cmd === 'trading:recover-lab-evaluation-errors'),
                 m::on(fn ($arguments) => is_array($arguments)
                     && ($arguments['--autonomous'] ?? false) === true
-                    && ($arguments['--after-timeout-budget-repair'] ?? false) === true
+                    && ($arguments[$technicalRepairMode === 'retry_budget'
+                        ? '--after-retry-budget-repair'
+                        : '--after-timeout-budget-repair'] ?? false) === true
                     && ($arguments['--generation'] ?? null) === 94),
             )
             ->andReturn(0);

@@ -123,6 +123,103 @@ Response:
 }
 ```
 
+## Paper execution and immutable management
+
+`POST /api/paper/execution-contract` returns the strategy-owned entry contract.
+In addition to entry, stop, target, position size and execution hashes, it now
+contains `management_contract` with protocol `paper_trade_management_v1`.
+The management hash seals partial-profit, trailing-stop and time-stop settings
+at entry.
+
+`POST /api/paper/advance-contract` must receive that original contract and the
+same immutable strategy/execution request. A present-but-different strategy,
+execution or management hash is rejected. A closed response includes:
+
+```json
+{
+  "closed": true,
+  "exit_price": 110.0,
+  "profit_percent": 5.55,
+  "exit_reason": "partial_target+intrabar_target",
+  "management_audit": {
+    "protocol": "paper_management_audit_v1",
+    "management_attested": true,
+    "execution_attested": true,
+    "strategy_attested": true,
+    "contract_followed": true,
+    "stop_widened": false,
+    "partial_closed": true,
+    "holding_bars": 3,
+    "realized_r_multiple": 5.55,
+    "mfe_r": 10.5,
+    "mae_r": 0.5,
+    "promotion_evidence": false
+  }
+}
+```
+
+Legacy contracts without `management_contract` may be settled but are marked
+unattested; Laravel quarantines them from calibration and promotion evidence.
+
+## Confirmation and entry contract
+
+`confirmation_entry_mtf_v1` is M5-only and accepts sealed M5 candles plus
+independent closed H4/H1/M15 streams and one declared `entry_model`:
+
+```json
+{
+  "strategy": "confirmation_entry_mtf_v1",
+  "parameters": {
+    "entry_model": "trend_continuation",
+    "entry_mode": "balanced",
+    "minimum_independent_confirmations": 3,
+    "minimum_reward_space_r": 1.5,
+    "max_chase_atr": 1.25
+  },
+  "mtf_dataset_paths": {"H4": "...", "H1": "...", "M15": "..."}
+}
+```
+
+Allowed models are `trend_continuation`, `breakout_retest`,
+`false_break_reversal`, `range_sweep` and `htf_reversal`. Allowed modes are
+`aggressive`, `balanced` and `conservative`.
+
+`POST /api/paper/signal` and replay use the same feature/signal compiler. The
+paper result and `execution_contract_preview` expose an `entry_contract` with
+separate context, location, setup, confirmation, trigger, invalidation,
+reward-space, chase and event checks. A missing/stale MTF stream returns WAIT.
+Invalid OHLC geometry or negative volume invalidates the entire M5 entry stream
+or affected context stream.
+
+The projection additionally exposes `reference_price`, `invalidation_price`,
+`target_reference_price`, `trigger_anchor_price`, `structure_atr`,
+`causal_context` and `contract_hash`. Laravel requires the top-level projection
+and `entry_fill_admission` to equal their copies sealed in
+`execution_contract_preview` for this strategy, and recomputes the contract's
+canonical SHA-256. Missing, mismatched or hash-invalid evidence cannot use the
+legacy route fallback.
+
+`entry_fill_admission` reports the execution-boundary recheck. It recalculates
+effective R:R and chase distance after gaps, both spread/slippage legs and
+round-trip commission, uses the structural target in both replay and paper
+execution, and returns an explicit WAIT reason
+such as `entry_contract_fill_reward_space` or `entry_contract_fill_chase` when
+the signal-close contract is no longer executable.
+
+Backtest responses expose `entry_contract_funnel`; it records WAIT opportunities,
+stage conversion, no-trade reasons and confirmation-cost diagnostics. Neither
+this funnel nor the A+/A/B score has risk, live or promotion authority.
+
+Replay observability protocol version 2 also emits `management_evidence` and
+per-trade `initial_risk_distance`, `initial_risk_percent`, `mfe_r`, `mae_r`,
+`realized_r_multiple` and `mfe_capture_ratio`. `initial_risk_percent` includes
+spread, slippage and commission at the initial stop, so realized-R is tied to
+executable account risk rather than a raw chart distance. Aggregate management
+evidence is powered at eight observed paths plus five winner paths. Exit-bar
+OHLC order is unknown and declared explicitly; stop efficiency and premature
+stop rate remain null until a same-entry counterfactual supplies that evidence.
+All fields are learning telemetry with `promotion_evidence=false`.
+
 ## Monte Carlo Survival Metrics
 
 Every simple backtest result includes `monte_carlo`. The service shuffles the strategy trade list across 1000 simulations and reports survival-focused metrics:

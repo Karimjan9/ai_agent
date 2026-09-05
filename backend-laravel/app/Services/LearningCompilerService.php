@@ -27,10 +27,13 @@ class LearningCompilerService
         $action = (string) ($input['action'] ?? 'observe');
         $uplift = isset($input['causal_uplift_r']) ? (float) $input['causal_uplift_r'] : null;
         $scope = $this->scope((array) ($input['scope'] ?? []));
+        $parameterKey = (string) ($input['parameter_key'] ?? '');
         $sourceType = (string) ($input['source_type'] ?? self::class);
         $sourceKey = (string) ($input['source_key'] ?? hash('sha256', json_encode($input, JSON_UNESCAPED_SLASHES)));
         $claim = (string) ($input['claim'] ?? "{$component} {$action} in contextual scope");
-        $claimKey = hash('sha256', json_encode([$symbol, $timeframe, $component, $action, $scope, $input['replacement'] ?? null], JSON_UNESCAPED_SLASHES));
+        $claimKey = hash('sha256', json_encode([
+            $symbol, $timeframe, $component, $parameterKey, $action, $scope, $input['replacement'] ?? null,
+        ], JSON_UNESCAPED_SLASHES));
         $support = max(0, (int) ($input['support'] ?? 1));
         $status = $this->state($input, $support);
         $confidence = max(0, min(1, (float) ($input['confidence'] ?? $this->confidence($status, $support, $uplift))));
@@ -97,6 +100,18 @@ class LearningCompilerService
         $settlement = $authority['settlement'];
         $gene = (string) ($pair->candidateResponseMap?->parameter_key ?: ($input['parameter_key'] ?? 'unknown'));
         $uplift = (float) ($input['causal_uplift_r'] ?? 0);
+        $absoluteViability = ! (bool) $settlement->hard_failure
+            && (string) $settlement->evidence_state === 'positive';
+        if (! $absoluteViability) {
+            // A mutation may be less bad than its control while both are
+            // economically unsafe. Preserve that relative observation, but
+            // never publish it as an executable `prefer`/`avoid` directive.
+            $input['action'] = 'observe';
+            $input['absolute_viability_failed'] = true;
+            $input['settlement_evidence_state'] = (string) $settlement->evidence_state;
+            $input['settlement_hard_failure'] = (bool) $settlement->hard_failure;
+            $input['settlement_vetoes'] = (array) data_get($settlement->reward_components, 'vetoes', []);
+        }
         return $this->compile([
             ...$input,
             'source_type' => $input['source_type'] ?? 'canonical_controlled_experiment',
@@ -110,6 +125,8 @@ class LearningCompilerService
             'canonical_authority' => [
                 'pair_id' => (int) $pair->id,
                 'settlement_id' => (int) $settlement->id,
+                'candidate_model_version_id' => (int) ($pair->candidateAgent?->model_version_id ?? 0),
+                'control_model_version_id' => (int) ($pair->controlAgent?->model_version_id ?? 0),
                 'verified_control' => true,
                 'causal_experiment_id' => $authority['causal_experiment_id'],
                 'independent_confirmation' => $authority['independent_confirmation'],
@@ -123,7 +140,7 @@ class LearningCompilerService
         if (! Schema::hasTable('lab_learning_lane_pairs') || ! Schema::hasTable('agent_learning_settlements')) {
             return ['valid' => false, 'reason_codes' => ['CANONICAL_AUTHORITY_TABLES_UNAVAILABLE']];
         }
-        $pair = LabLearningLanePair::query()->with(['candidateResponseMap', 'controlResponseMap'])
+        $pair = LabLearningLanePair::query()->with(['candidateResponseMap', 'controlResponseMap', 'candidateAgent', 'controlAgent'])
             ->find((int) ($input['pair_id'] ?? 0));
         $settlement = AgentLearningSettlement::query()->find((int) ($input['settlement_id'] ?? 0));
         $reasons = [];
@@ -138,6 +155,8 @@ class LearningCompilerService
 
         $windows = max(0, (int) ($input['independent_windows'] ?? 0));
         $positive = max(0, (int) ($input['positive_windows'] ?? 0));
+        $input['observed_independent_windows'] = $windows;
+        $input['observed_positive_windows'] = $positive;
         $requiresConfirmation = $windows >= 3 || $positive >= 2;
         $experimentId = (int) ($input['causal_experiment_id'] ?? 0);
         $experiment = $experimentId > 0 && Schema::hasTable('agent_learning_causal_experiments')

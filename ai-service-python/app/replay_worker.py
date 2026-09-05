@@ -14,6 +14,7 @@ from fastapi import HTTPException
 
 from app.main import _run_all_backtests_sync, _run_portfolio_backtest_sync
 from app.schemas import SimpleBacktestRequest
+from app.services.backtester import run_simple_ema_rsi_backtest
 
 
 def main() -> int:
@@ -26,11 +27,12 @@ def main() -> int:
         envelope = json.loads(sys.stdin.read() or "{}")
         operation = str(envelope.get("operation", "run_all"))
         payload = SimpleBacktestRequest.model_validate(envelope.get("payload", {}))
-        value = (
-            _run_all_backtests_sync(payload)
-            if operation == "run_all"
-            else _run_portfolio_backtest_sync(payload)
-        )
+        if operation == "simple":
+            value = run_simple_ema_rsi_backtest(payload).model_dump()
+        elif operation == "run_all":
+            value = _run_all_backtests_sync(payload)
+        else:
+            value = _run_portfolio_backtest_sync(payload)
         message = {"ok": True, "value": value}
     except FileNotFoundError as exc:
         message = {"ok": False, "kind": "not_found", "detail": str(exc)}

@@ -30,4 +30,25 @@ class TwelveDataMarketDataProviderTest extends TestCase
         $this->assertSame(1.1705, $candles[0]['close']);
         Http::assertSent(fn ($request) => $request->url() && str_contains($request->url(), 'symbol=EUR%2FUSD'));
     }
+
+    public function test_it_requests_m1_for_audited_intraday_gap_repair(): void
+    {
+        config()->set('services.twelve_data.api_key', 'test-key');
+        Http::fake(['api.twelvedata.com/*' => Http::response([
+            'status' => 'ok',
+            'values' => [[
+                'datetime' => '2026-02-12 10:00:00', 'open' => '2900', 'high' => '2901',
+                'low' => '2899', 'close' => '2900.5', 'volume' => '0',
+            ]],
+        ])]);
+
+        $candles = app(TwelveDataMarketDataProvider::class)->fetchCandles(
+            'XAUUSD', 'XAUUSD', 'M1', 60,
+            CarbonImmutable::parse('2026-02-12 10:00:00', 'UTC'),
+            CarbonImmutable::parse('2026-02-12 10:01:00', 'UTC'),
+        );
+
+        $this->assertSame('2026-02-12 10:00:00', $candles[0]['time']);
+        Http::assertSent(fn ($request) => $request->url() && str_contains($request->url(), 'interval=1min'));
+    }
 }

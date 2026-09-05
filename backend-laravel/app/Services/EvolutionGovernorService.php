@@ -3,11 +3,15 @@
 namespace App\Services;
 
 use App\Models\AiLaboratory;
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\AgentLearningLesson;
+use App\Models\AgentLearningSettlement;
+use App\Models\EvolutionLearningReceipt;
 use App\Models\LabAgent;
 use App\Models\LabEvolutionIsland;
 use App\Models\LabGeneration;
 use App\Models\LabMutationResponseMap;
+use App\Models\LabLearningLanePair;
 use App\Models\MarketDriftSnapshot;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
@@ -598,35 +602,60 @@ class EvolutionGovernorService
         return array_values($plan);
     }
 
-    /** @return array<string, int> */
+    /** @return array<string, mixed> */
     private function learningTelemetry(AiLaboratory $lab): array
     {
         try {
-            if (! Schema::hasTable('agent_learning_lessons')) {
+            if (! Schema::hasTable('evolution_learning_receipts')) {
                 return [
                     'provisional_skill_count' => 0,
                     'confirmed_skill_count' => 0,
                     'positive_response_count' => 0,
                     'independent_confirmation_count' => 0,
+                    'authority' => 'canonical_evolution_learning_receipts_only',
+                    'legacy_labels_excluded' => true,
                 ];
             }
-            $lessons = AgentLearningLesson::query()
+            $receipts = EvolutionLearningReceipt::query()
                 ->where('symbol', $lab->symbol)
                 ->where('timeframe', $lab->timeframe)
-                ->get(['status', 'confirmation_count', 'independent_window_count']);
-            $responses = Schema::hasTable('lab_mutation_response_maps')
-                ? LabMutationResponseMap::query()
+                ->get(['status', 'claim_key']);
+            $pairIds = Schema::hasTable('lab_learning_lane_pairs')
+                ? LabLearningLanePair::query()
                     ->where('symbol', $lab->symbol)
                     ->where('timeframe', $lab->timeframe)
-                    ->whereIn('status', ['positive', 'confirmed', 'independently_confirmed', 'validated'])
+                    ->pluck('id')
+                : collect();
+            $positiveSettlements = Schema::hasTable('agent_learning_settlements') && $pairIds->isNotEmpty()
+                ? AgentLearningSettlement::query()
+                    ->where('source_type', LabLearningLanePair::class)
+                    ->whereIn('source_id', $pairIds)
+                    ->where('evidence_state', 'positive')
+                    ->where('hard_failure', false)
+                    ->count()
+                : 0;
+            $confirmedExperiments = Schema::hasTable('agent_learning_causal_experiments')
+                ? AgentLearningCausalExperiment::query()
+                    ->where('symbol', $lab->symbol)
+                    ->where('timeframe', $lab->timeframe)
+                    ->where('status', 'confirmed')
+                    ->get(['independent_window_count'])
+                : collect();
+            $excludedLessonLabels = Schema::hasTable('agent_learning_lessons')
+                ? AgentLearningLesson::query()
+                    ->where('symbol', $lab->symbol)
+                    ->where('timeframe', $lab->timeframe)
                     ->count()
                 : 0;
 
             return [
-                'provisional_skill_count' => $lessons->whereIn('status', ['provisional', 'screen_validated_seed', 'pending_confirmation'])->count(),
-                'confirmed_skill_count' => $lessons->whereIn('status', ['confirmed', 'skill_mentor', 'full_parent'])->count(),
-                'positive_response_count' => (int) $responses,
-                'independent_confirmation_count' => (int) $lessons->sum(fn ($lesson): int => max((int) $lesson->confirmation_count, (int) $lesson->independent_window_count)),
+                'provisional_skill_count' => $receipts->whereIn('status', ['provisional', 'replicated'])->unique('claim_key')->count(),
+                'confirmed_skill_count' => $receipts->where('status', 'confirmed')->unique('claim_key')->count(),
+                'positive_response_count' => (int) $positiveSettlements,
+                'independent_confirmation_count' => (int) $confirmedExperiments->sum('independent_window_count'),
+                'authority' => 'canonical_evolution_learning_receipts_only',
+                'legacy_labels_excluded' => true,
+                'excluded_lesson_projection_count' => (int) $excludedLessonLabels,
             ];
         } catch (\Throwable) {
             return [
@@ -634,6 +663,8 @@ class EvolutionGovernorService
                 'confirmed_skill_count' => 0,
                 'positive_response_count' => 0,
                 'independent_confirmation_count' => 0,
+                'authority' => 'canonical_evolution_learning_receipts_only',
+                'legacy_labels_excluded' => true,
             ];
         }
     }

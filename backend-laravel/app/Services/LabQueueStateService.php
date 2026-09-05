@@ -197,6 +197,15 @@ LUA, 1, $queue->getQueue($queueName).':reserved', $payload);
         return (int) $result === 1;
     }
 
+    /** Remove one exact delayed payload during an audited recovery. */
+    public function removeDelayedPayload(string $queueName, string $payload): bool
+    {
+        $queue = app('queue')->connection('redis');
+        if (! $queue instanceof RedisQueue) return false;
+
+        return (int) $queue->getConnection()->zrem($queue->getQueue($queueName).':delayed', $payload) === 1;
+    }
+
     /** @return array<string, int|null> */
     private function statsFromRows(array $rows): array
     {

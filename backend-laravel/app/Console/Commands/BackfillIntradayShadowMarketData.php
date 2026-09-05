@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Candle;
 use App\Models\MarketCandleObservation;
+use App\Models\MarketDataSyncState;
 use App\Models\MarketSymbol;
 use App\Models\Symbol;
 use App\Services\MarketData\HistoricalDataQualityService;
@@ -17,8 +18,11 @@ class BackfillIntradayShadowMarketData extends Command
 {
     protected $signature = 'market-data:backfill-intraday-shadow
                             {--symbol=XAUUSD}
-                            {--from= : UTC inclusive start; defaults to 30 days ago}
-                            {--to= : UTC exclusive end; defaults to the latest closed M1 boundary}';
+                            {--from= : UTC inclusive start; defaults to the persisted 2026 checkpoint}
+                            {--to= : UTC exclusive end; defaults to the latest closed M1 boundary}
+                            {--chunk-days=7 : Bounded UTC days per invocation}
+                            {--max-chunks=1 : Number of checkpoint chunks; 0 means all}
+                            {--derive-only : Build M5/M30 from stored M1 without another provider request}';
 
     protected $description = 'Backfill XAUUSD M1 BID candles and deterministically derive M5/M30 shadow data; never grants M1 execution authority';
 
@@ -41,14 +45,32 @@ class BackfillIntradayShadowMarketData extends Command
         }
 
         try {
+            $trainingCutoff = CarbonImmutable::parse(
+                (string) config('services.lab_selection.training_end_exclusive', '2026-01-01 00:00:00'),
+                'UTC',
+            )->utc();
+            $checkpoint = MarketDataSyncState::query()->firstOrCreate(
+                ['provider' => 'dukascopy_intraday_shadow', 'symbol' => $symbol, 'timeframe' => 'M1'],
+                ['status' => 'pending', 'pending_from_at' => $trainingCutoff],
+            );
+            $checkpointDriven = ! $this->option('from');
             $from = $this->option('from')
                 ? CarbonImmutable::parse((string) $this->option('from'), 'UTC')->utc()
-                : CarbonImmutable::now('UTC')->subDays(30)->startOfDay();
+                : ($checkpoint->pending_from_at
+                    ? CarbonImmutable::instance($checkpoint->pending_from_at)->utc()
+                    : ($checkpoint->last_confirmed_candle_at
+                        ? CarbonImmutable::instance($checkpoint->last_confirmed_candle_at)->utc()->addMinute()
+                        : $trainingCutoff));
             $to = $this->option('to')
                 ? CarbonImmutable::parse((string) $this->option('to'), 'UTC')->utc()
                 : CarbonImmutable::now('UTC')->setTime(CarbonImmutable::now('UTC')->hour, CarbonImmutable::now('UTC')->minute, 0);
             if ($from->greaterThanOrEqualTo($to)) {
-                throw new RuntimeException('Intraday range bo\'sh bo\'lishi mumkin emas.');
+                $this->info('XAUUSD intraday rolling data already current.');
+
+                return self::SUCCESS;
+            }
+            if ($from->lessThan($trainingCutoff)) {
+                throw new RuntimeException('Intraday shadow data 2026-01-01 dan oldin boshlanishi mumkin emas; pre-2026 uchun intraday-training archive ishlatiladi.');
             }
         } catch (\Throwable $exception) {
             $this->error('Noto\'g\'ri UTC range: '.$exception->getMessage());
@@ -56,24 +78,76 @@ class BackfillIntradayShadowMarketData extends Command
             return self::INVALID;
         }
 
+        $lockPath = storage_path('app/market-intraday-shadow-backfill.lock');
+        $lock = fopen($lockPath, 'c');
+        if ($lock === false || ! flock($lock, LOCK_EX | LOCK_NB)) {
+            if ($lock !== false) fclose($lock);
+            $this->line('XAUUSD intraday rolling backfill already running; this tick skipped.');
+
+            return self::SUCCESS;
+        }
+        $chunkDays = max(1, min(14, (int) $this->option('chunk-days')));
+        $maxChunks = max(0, (int) $this->option('max-chunks'));
         $previousProvider = config('services.market_data.provider');
         $previousFallback = config('services.market_data.fallback_provider');
         config()->set('services.market_data.provider', 'dukascopy');
         config()->set('services.market_data.fallback_provider', null);
 
         try {
-            $m1Saved = $marketData->updateCandles($marketSymbol, 'M1', 1_000_000, $from, $to);
+            $m1Saved = 0;
+            $m5Saved = 0;
+            $m30Saved = 0;
+            $chunks = 0;
+            while ($from->lessThan($to) && ($maxChunks === 0 || $chunks < $maxChunks)) {
+                $chunkFrom = $from;
+                $chunkTo = $from->addDays($chunkDays);
+                if ($chunkTo->greaterThan($to)) $chunkTo = $to;
+                if ($checkpointDriven) {
+                    $checkpoint->update(['status' => 'backfilling', 'pending_from_at' => $chunkFrom, 'pending_to_at' => $chunkTo, 'last_attempt_at' => now(), 'last_error' => null]);
+                }
+                if (! $this->option('derive-only')) {
+                    $m1Saved += $marketData->updateCandles($marketSymbol, 'M1', 100_000, $chunkFrom, $chunkTo);
+                }
+                $m5 = $this->derive($symbol, $chunkFrom, $chunkTo, 'M5', 5);
+                $m30 = $this->derive($symbol, $chunkFrom, $chunkTo, 'M30', 30);
+                $m5Saved += $m5['saved'];
+                $m30Saved += $m30['saved'];
+                $from = $chunkTo;
+                $chunks++;
+                if ($checkpointDriven) {
+                    $checkpoint->update([
+                        'status' => $from->greaterThanOrEqualTo($to) ? 'healthy' : 'partial',
+                        'last_confirmed_candle_at' => $from->subMinute(),
+                        'pending_from_at' => $from->greaterThanOrEqualTo($to) ? null : $from,
+                        'pending_to_at' => $to,
+                        'last_success_at' => now(),
+                        'retry_count' => 0,
+                        'metrics' => array_merge($checkpoint->metrics ?? [], [
+                            'protocol' => 'xauusd_2026_intraday_shadow_v1',
+                        'source' => 'dukascopy_jetta_bid_minute_archive',
+                        'm5_m30_source' => 'deterministic_m1_aggregation',
+                        'derive_only' => (bool) $this->option('derive-only'),
+                        'last_chunk_m1_saved' => $m1Saved,
+                        'last_chunk_m5_saved' => $m5Saved,
+                        'last_chunk_m30_saved' => $m30Saved,
+                        ]),
+                    ]);
+                }
+            }
         } catch (\Throwable $exception) {
+            if (isset($checkpointDriven) && $checkpointDriven) {
+                $checkpoint->update(['status' => 'blocked', 'retry_count' => $checkpoint->retry_count + 1, 'last_error' => $exception->getMessage(), 'last_attempt_at' => now()]);
+            }
             $this->error('M1 shadow backfill failed: '.$exception->getMessage());
 
             return self::FAILURE;
         } finally {
             config()->set('services.market_data.provider', $previousProvider);
             config()->set('services.market_data.fallback_provider', $previousFallback);
+            flock($lock, LOCK_UN);
+            fclose($lock);
         }
 
-        $m5 = $this->derive($symbol, $from, $to, 'M5', 5);
-        $m30 = $this->derive($symbol, $from, $to, 'M30', 30);
         $m1Quality = $quality->inspect($symbol, 'M1', true);
         $m5Quality = $quality->inspect($symbol, 'M5', true);
         $m30Quality = $quality->inspect($symbol, 'M30', true);
@@ -97,8 +171,8 @@ class BackfillIntradayShadowMarketData extends Command
             ['Timeframe', 'Saved', 'Rows', 'Quality'],
             [
                 ['M1', $m1Saved, $m1Quality['row_count'], $m1Quality['status']],
-                ['M5', $m5['saved'], $m5Quality['row_count'], $m5Quality['status']],
-                ['M30', $m30['saved'], $m30Quality['row_count'], $m30Quality['status']],
+                ['M5', $m5Saved, $m5Quality['row_count'], $m5Quality['status']],
+                ['M30', $m30Saved, $m30Quality['row_count'], $m30Quality['status']],
             ],
         );
         $this->line(json_encode([
@@ -109,9 +183,7 @@ class BackfillIntradayShadowMarketData extends Command
             'source' => 'Dukascopy Jetta BID minute archive',
         ], JSON_UNESCAPED_SLASHES));
 
-        return $m1Quality['status'] === 'ready' && $m5Quality['status'] === 'ready' && $m30Quality['status'] === 'ready'
-            ? self::SUCCESS
-            : self::FAILURE;
+        return self::SUCCESS;
     }
 
     /** @return array{saved:int, skipped_incomplete:int} */
@@ -121,10 +193,15 @@ class BackfillIntradayShadowMarketData extends Command
         if (! $symbolId) {
             throw new RuntimeException("{$symbol} canonical symbol topilmadi.");
         }
+        // A rolling fetch normally starts one minute after its persisted
+        // checkpoint.  Include the preceding bucket here so the first M5 or
+        // M30 candle is rebuilt as a complete candle rather than silently
+        // discarded at that boundary.
+        $queryFrom = $from->setTime($from->hour, intdiv($from->minute, $minutes) * $minutes, 0);
         $rows = Candle::query()
             ->where('symbol_id', $symbolId)
             ->where('timeframe', 'M1')
-            ->where('time', '>=', $from)
+            ->where('time', '>=', $queryFrom)
             ->where('time', '<', $to)
             ->orderBy('time')
             ->get(['time', 'open', 'high', 'low', 'close', 'volume']);

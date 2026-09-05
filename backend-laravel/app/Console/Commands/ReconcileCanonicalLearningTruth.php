@@ -2,17 +2,19 @@
 
 namespace App\Console\Commands;
 
-use App\Models\LabEvaluationRun;
 use App\Models\CanonicalLearningOutbox;
+use App\Models\LabEvaluationRun;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
 use App\Services\CanonicalLearningOutboxService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 
 /** Replays only sealed, exact-control historical evidence into the truth ledger. */
 class ReconcileCanonicalLearningTruth extends Command
 {
     protected $signature = 'trading:reconcile-canonical-learning {symbol?} {--timeframe=H1} {--limit=4} {--dry-run} {--reproject-completed}';
+
     protected $description = 'Reconcile valid historical full replays into canonical settlements; legacy invalid rows remain diagnostic-only';
 
     public function handle(CanonicalLearningOutboxService $outbox): int
@@ -21,13 +23,28 @@ class ReconcileCanonicalLearningTruth extends Command
         $timeframe = strtoupper((string) $this->option('timeframe'));
         $limit = max(1, min(100, (int) $this->option('limit')));
         if ($this->option('reproject-completed')) {
-            $rows = CanonicalLearningOutbox::query()->where('status', 'completed')
+            $rows = new Collection;
+            CanonicalLearningOutbox::query()->where('status', 'completed')
                 ->whereHas('pair', fn ($query) => $query->where('symbol', $symbol)->where('timeframe', $timeframe))
-                ->oldest('id')->limit($limit)->get();
+                ->oldest('id')
+                ->chunkById(100, function (Collection $chunk) use ($outbox, $rows, $limit): bool {
+                    foreach ($chunk as $row) {
+                        if ($outbox->requiresReprojection($row)) {
+                            $rows->push($row);
+                        }
+                        if ($rows->count() >= $limit) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
             $reprojected = 0;
             if (! $this->option('dry-run')) {
                 foreach ($rows as $row) {
-                    if (($outbox->reproject($row)['status'] ?? null) === 'reprojected') $reprojected++;
+                    if (($outbox->reproject($row)['status'] ?? null) === 'reprojected') {
+                        $reprojected++;
+                    }
                 }
             }
             $this->table(['eligible_completed', 'reprojected', 'dry_run'], [[$rows->count(), $reprojected, $this->option('dry-run') ? 'yes' : 'no']]);
@@ -57,7 +74,9 @@ class ReconcileCanonicalLearningTruth extends Command
         foreach ($valid as $pair) {
             $run = LabEvaluationRun::query()->where('lab_agent_id', $pair->candidate_agent_id)
                 ->where('phase', 'full_validation')->where('status', 'completed')->latest('id')->first();
-            if (! $run) continue;
+            if (! $run) {
+                continue;
+            }
             if (! $this->option('dry-run')) {
                 $result = [...((array) $run->metrics), 'evidence_run_id' => $run->run_id];
                 $outbox->record($pair->candidateAgent, $pair, $result, count((array) $pair->candidateAgent?->parameter_diff) === 1, (array) $pair->target_delta);
@@ -65,6 +84,7 @@ class ReconcileCanonicalLearningTruth extends Command
             $reconciled++;
         }
         $this->table(['valid_replayed', 'legacy_diagnostic_only', 'dry_run'], [[$reconciled, $invalid->count(), $this->option('dry-run') ? 'yes' : 'no']]);
+
         return self::SUCCESS;
     }
 }

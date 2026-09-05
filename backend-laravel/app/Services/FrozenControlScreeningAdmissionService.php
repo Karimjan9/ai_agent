@@ -69,7 +69,15 @@ class FrozenControlScreeningAdmissionService
             $map = LabMutationResponseMap::query()
                 ->where('lab_agent_id', $control->id)
                 ->where('stage', 'screening')->where('status', 'control')->latest('id')->first();
-            if ($map === null || ! $this->controlMapMatchesContract($map, $agent->lab_generation_id)) {
+            // The immutable screening run and its learning projection are
+            // written by different queues. A completed run without a map is
+            // therefore unresolved evidence, not invalid evidence. Keep the
+            // candidate waiting until lab-learning projects the control; only
+            // a present map that breaches the frozen contract is terminal.
+            if ($map === null) {
+                return ['agent_id' => $agent->id, 'status' => 'waiting', 'reason' => 'FROZEN_CONTROL_LEARNING_PROJECTION_PENDING', 'control_agent_id' => $control->id];
+            }
+            if (! $this->controlMapMatchesContract($map, $agent->lab_generation_id)) {
                 return ['agent_id' => $agent->id, 'status' => 'blocked', 'reason' => 'FROZEN_CONTROL_EVIDENCE_INVALID', 'control_agent_id' => $control->id];
             }
         }
@@ -77,7 +85,8 @@ class FrozenControlScreeningAdmissionService
         return ['agent_id' => $agent->id, 'status' => 'ready', 'reason' => 'FROZEN_CONTROL_REPLAY_COMPLETED'];
     }
 
-    private function isControl(LabAgent $agent): bool
+    /** Canonical control identity shared by admission and queue scheduling. */
+    public function isControl(LabAgent $agent): bool
     {
         return data_get($agent->modelVersion?->metadata, 'control_contract.protocol') === 'frozen_control_v2'
             && data_get($agent->modelVersion?->metadata, 'control_contract.control_only') === true

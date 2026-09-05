@@ -31,6 +31,9 @@ class LearningRewardService
         if ($stressPf !== null && $stressPf < 1.05) $vetoes[] = 'STRESS_PF_LIMIT';
         if (($metrics['temporal_firewall_passed'] ?? true) !== true) $vetoes[] = 'TEMPORAL_FIREWALL';
         if (($metrics['data_drift'] ?? false) === true || ($metrics['execution_drift'] ?? false) === true) $vetoes[] = 'TECHNICAL_QUARANTINE';
+        if (data_get($metrics, 'process_outcome_audit.hard_veto') === 'BAD_PROCESS_OUTCOME') {
+            $vetoes[] = 'BAD_PROCESS_OUTCOME';
+        }
         $trades = $this->number($metrics, ['total_trades', 'trade_count', 'executed_trades']);
         $insufficientReasons = [];
         if ($trades !== null && $trades <= 0) $insufficientReasons[] = 'INSUFFICIENT_ACTIVITY';

@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
-Timeframe = Literal["M15", "H1"]
+Timeframe = Literal["M5", "M15", "H1", "H4", "D1"]
 Direction = Literal["long", "short"]
 TradeResult = Literal["win", "loss", "open"]
 
@@ -118,6 +118,23 @@ class SimpleBacktestRequest(BaseModel):
     # look-ahead contract.
     regime_dataset_tail_rows: int | None = Field(default=None, ge=2)
     regime_candles: list[Candle] = Field(default_factory=list)
+    # Generic closed-context stack used by research-only role-separated MTF
+    # playbooks. The primary `candles`/`dataset_path` remains the execution
+    # stream (M5 for Liquidity Trap MTF); these are independent H4/H1/M15
+    # streams whose candle availability is enforced by the replay engine.
+    mtf_streams: dict[str, list[Candle]] = Field(default_factory=dict)
+    mtf_dataset_paths: dict[str, str] = Field(default_factory=dict)
+    mtf_dataset_tail_rows: dict[str, int] = Field(default_factory=dict)
+    # Optional, independently sealed related-market context.  It is used only
+    # by cross-market research hypotheses such as SMT; an absent stream must
+    # produce WAIT rather than a synthetic confirmation.
+    related_mtf_streams: dict[str, list[Candle]] = Field(default_factory=dict)
+    related_mtf_dataset_paths: dict[str, str] = Field(default_factory=dict)
+    related_mtf_dataset_tail_rows: dict[str, int] = Field(default_factory=dict)
+    # Laravel seals hashes, source/aggregation rules and the common cutoff
+    # here. It is observability evidence; Python independently uses only
+    # closed candles when merging each stream.
+    mtf_snapshot_manifest: dict[str, Any] = Field(default_factory=dict)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     # Laravel seals this map before lab/paper/holdout execution. A missing
     # declaration is accepted for local unit tests but is never promotion
@@ -146,6 +163,10 @@ class SimpleBacktestRequest(BaseModel):
     # do not pay for a large trace. Laboratory runs set this true and persist
     # the returned immutable trace in the Laravel evidence plane.
     emit_decision_trace: bool = False
+    # Economic evidence is independent from the verbose candle trace. Causal
+    # metric folds request the complete trade ledger while retaining the fast
+    # stateful execution path; the bounded audit slice owns decision details.
+    emit_trade_ledger: bool = False
     # Paper twin calls are sent to separate lane endpoints. The field is
     # transport metadata only and never changes the canonical market data.
     twin_lane: Literal["champion", "council"] | None = None
@@ -232,6 +253,20 @@ class SimpleTrade(BaseModel):
     # Sealed portfolio ownership is copied from the pre-replay router. It is
     # diagnostic attribution, never an outcome-derived label.
     portfolio_member: str | None = None
+    # Management-path evidence is measured against the immutable initial
+    # invalidation distance. Candle extrema include the exit candle, so these
+    # fields are diagnostic bounds rather than a promotion shortcut.
+    initial_risk_distance: float | None = None
+    initial_risk_percent: float | None = None
+    mfe_r: float | None = None
+    mae_r: float | None = None
+    # Conservative path bound measured only through the candle preceding the
+    # exit candle. Unlike mfe_r, it cannot benefit from unknown intrabar order
+    # between the stop/target touch and the exit candle's later extreme.
+    mfe_r_before_exit_bar: float | None = None
+    mae_r_before_exit_bar: float | None = None
+    realized_r_multiple: float | None = None
+    mfe_capture_ratio: float | None = None
 
 
 class SimpleBacktestResponse(BaseModel):
@@ -277,6 +312,31 @@ class SimpleBacktestResponse(BaseModel):
     # from one whose execution/risk filters reject otherwise valid signals.
     # This is evidence for the evolutionary loop, never a promotion shortcut.
     entry_funnel: dict[str, Any] = Field(default_factory=dict)
+    # Strategy-owned WHERE->WHY->PROVE->TRIGGER funnel. Unlike entry_funnel,
+    # it retains WAIT opportunities that never became raw trade signals.
+    entry_contract_funnel: dict[str, Any] = Field(default_factory=dict)
+    # Architecture Genesis needs the entire decision-to-outcome chain even
+    # when a stage truthfully observed zero entries. Values are structured
+    # observations; their presence is not an edge or promotion claim.
+    edge_observability: dict[str, Any] = Field(default_factory=dict)
+    confirmation_entry_observed: bool = False
+    behavior_delta_observed: bool = False
+    context_declared_before_replay: bool = False
+    context_occurrences: int = 0
+    # A declared Edge context is authority only when the evaluator proves that
+    # out-of-scope signals were converted to WAIT before entry. Declaration
+    # alone is deliberately insufficient.
+    edge_context_enforcement: dict[str, Any] = Field(default_factory=dict)
+    risk_governor_compliant: bool = False
+    forbidden_risk_bypass: bool = False
+    after_cost_expectancy_r: float = 0.0
+    # Replay-side management observability. This reports attested MFE/MAE and
+    # realized-R capture without pretending that bar-level path order is
+    # known, and it never authorizes promotion by itself.
+    management_evidence: dict[str, Any] = Field(default_factory=dict)
+    # Post-replay Academy telemetry: it is forbidden from runtime inference,
+    # ranking, and promotion, and unavailable oracle inputs stay unavailable.
+    edge_formation_academy_diagnostic: dict[str, Any] = Field(default_factory=dict)
     behavioral_signature: dict[str, Any] = Field(default_factory=dict)
     diagnostic_telemetry: dict[str, Any] = Field(default_factory=dict)
     # Learning evidence only.  These counterfactual outcomes are never used as

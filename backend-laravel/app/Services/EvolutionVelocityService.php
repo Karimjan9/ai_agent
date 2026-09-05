@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AdversarialValidatorFinding;
 use App\Models\AgentLearningLesson;
+use App\Models\EvolutionLearningReceipt;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabEvolutionArchiveEntry;
@@ -35,6 +36,9 @@ class EvolutionVelocityService
             $archive = $scope(LabEvolutionArchiveEntry::query())->where('archive_type', 'behavioral_map_elites')->get();
             $responses = $scope(LabMutationResponseMap::query())->get();
             $lessons = $scope(AgentLearningLesson::query())->get();
+            $canonicalReceipts = Schema::hasTable('evolution_learning_receipts')
+                ? $scope(EvolutionLearningReceipt::query())->get()
+                : collect();
             $credits = $scope(LabEvolutionCreditEvent::query())->where('event_type', 'descendant_trait')->get();
             $skillZoo = Schema::hasTable('lab_skill_zoo_entries') ? $scope(LabSkillZooEntry::query())->get() : collect();
             $mutationActions = Schema::hasTable('lab_mutation_actions') ? $scope(LabMutationAction::query())->get() : collect();
@@ -42,8 +46,7 @@ class EvolutionVelocityService
             $receipts = $agents->map(fn (LabAgent $agent): array => (array) data_get($agent->modelVersion?->metadata, 'learning_receipt', []))
                 ->filter(fn (array $receipt): bool => data_get($receipt, 'protocol') === LearningReceiptService::PROTOCOL);
             $settled = $receipts->filter(fn (array $receipt): bool => in_array((string) data_get($receipt, 'settlement.status'), ['provisional', 'harmful', 'no_effect', 'context_mismatch'], true));
-            $confirmedSkills = $lessons->whereIn('status', ['confirmed', 'skill_mentor', 'full_parent'])->count();
-            $confirmedResponses = $responses->whereIn('status', ['confirmed', 'independently_confirmed', 'validated'])->count();
+            $confirmedSkills = $canonicalReceipts->where('status', 'confirmed')->unique('claim_key')->count();
             $novel = $archive->where('novelty_score', '>', 0)->count();
             $duplicate = $archive->count() - $novel;
             $failure = $completed->filter(fn (LabAgent $agent): bool => in_array((string) $agent->lifecycle_status, ['rejected', 'failed', 'overfit', 'stagnated'], true))->count();
@@ -61,7 +64,7 @@ class EvolutionVelocityService
                 'scope' => ['symbol' => strtoupper($lab->symbol), 'timeframe' => strtoupper($lab->timeframe), 'lab_id' => $lab->id],
                 'lookback_generations' => $generations->count(), 'population_observed' => $agents->count(),
                 'archive_coverage_growth' => ['new_behavioral_cells' => $novel, 'behavioral_cells' => $archive->count(), 'growth_per_generation' => round($novel / max(1, $generations->count()), 4)],
-                'new_confirmed_skills_per_100_experiments' => round((($confirmedSkills + $confirmedResponses + $confirmedZooSkills) / max(1, $completed->count())) * 100, 4),
+                'new_confirmed_skills_per_100_experiments' => round((($confirmedSkills + $confirmedZooSkills) / max(1, $completed->count())) * 100, 4),
                 'settled_learning_receipts_per_completed_experiment' => round($settled->count() / max(1, $completed->count()), 4),
                 'settled_knowledge_per_compute_hour' => $computeHours > 0 ? round(($settled->count() + $settledActions->count()) / $computeHours, 4) : null,
                 'behavioral_duplicate_rate' => round($duplicate / max(1, $archive->count()), 4),
@@ -71,13 +74,20 @@ class EvolutionVelocityService
                 'skill_retention_in_inheritance' => ['issued_receipts' => $receipts->count(), 'settled_receipts' => $settled->count(), 'rate' => round($settled->count() / max(1, $receipts->count()), 4)],
                 'adversarial_survival_rate' => ['observed' => $adversarial->count(), 'passed' => $adversarial->where('verdict', 'passed')->count(), 'rate' => round($adversarial->where('verdict', 'passed')->count() / max(1, $adversarial->count()), 4)],
                 'surrogate_prediction_hit_rate' => ['status' => 'not_claimed_without_sealed_surrogate_predictions', 'value' => null],
-                'time_to_first_causal_evidence' => $this->timeToFirstCausalEvidence($generations, $responses),
+                'time_to_first_causal_evidence' => $this->timeToFirstCausalEvidence($generations, $canonicalReceipts),
                 'generation_knowledge_rate' => round($generations->filter(fn (LabGeneration $generation): bool => $agents->where('lab_generation_id', $generation->id)->contains(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'learning_receipt.settlement.status') !== null))->count() / max(1, $generations->count()), 4),
                 'north_star' => [
                     'name' => 'validated_new_knowledge_artifacts_times_behavioral_diversity',
-                    'validated_new_knowledge_artifacts' => $confirmedSkills + $confirmedResponses + $confirmedZooSkills + $confirmedDescendants,
+                    'validated_new_knowledge_artifacts' => $confirmedSkills + $confirmedZooSkills + $confirmedDescendants,
                     'validated_behavioral_diversity' => $novel,
-                    'value' => ($confirmedSkills + $confirmedResponses + $confirmedZooSkills + $confirmedDescendants) * $novel,
+                    'value' => ($confirmedSkills + $confirmedZooSkills + $confirmedDescendants) * $novel,
+                    'promotion_evidence' => false,
+                ],
+                'knowledge_authority' => [
+                    'protocol' => LearningCompilerService::PROTOCOL,
+                    'confirmed_receipt_claims' => $confirmedSkills,
+                    'legacy_or_projection_lessons_excluded' => $lessons->count(),
+                    'response_map_statuses_are_not_skill_authority' => true,
                     'promotion_evidence' => false,
                 ],
                 'rule' => 'Throughput is diagnostic only. No scorecard field can select a parent, dispatch a replay, or promote a champion.',
@@ -88,11 +98,11 @@ class EvolutionVelocityService
         }
     }
 
-    private function timeToFirstCausalEvidence($generations, $responses): ?int
+    private function timeToFirstCausalEvidence($generations, $receipts): ?int
     {
-        $first = $responses->first(fn (LabMutationResponseMap $row): bool => in_array((string) $row->status, ['confirmed', 'independently_confirmed', 'validated'], true));
+        $first = $receipts->sortBy('compiled_at')->first(fn (EvolutionLearningReceipt $row): bool => in_array((string) $row->status, ['provisional', 'replicated', 'confirmed'], true));
         if (! $first) return null;
-        $generation = $generations->firstWhere('id', $first->lab_generation_id);
+        $generation = $generations->firstWhere('id', (int) $first->lab_generation_id);
         return $generation ? (int) $generation->generation : null;
     }
 
@@ -100,7 +110,8 @@ class EvolutionVelocityService
     {
         try {
             return Schema::hasTable('lab_evolution_archive_entries') && Schema::hasTable('lab_mutation_response_maps')
-                && Schema::hasTable('agent_learning_lessons') && Schema::hasTable('lab_evolution_credit_events');
+                && Schema::hasTable('agent_learning_lessons') && Schema::hasTable('lab_evolution_credit_events')
+                && Schema::hasTable('evolution_learning_receipts');
         } catch (\Throwable) {
             return false;
         }

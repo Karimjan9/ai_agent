@@ -29,6 +29,23 @@ const run = (args, options = {}) => spawnSync(process.execPath, [pm2Cli, ...args
     ...options,
 });
 
+const assertDurableReplayIdle = () => {
+    const preflight = spawnSync(process.env.PHP_BINARY || 'php', [
+        'artisan', 'system:runtime-reload-preflight', '--json',
+    ], {
+        cwd: projectRoot,
+        env: cleanEnvironment,
+        windowsHide: true,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (preflight.status !== 0) {
+        process.stderr.write(preflight.stdout || preflight.stderr
+            || 'Durable replay preflight refused the PM2 rolling sync.\n');
+        process.exit(2);
+    }
+};
+
 const listed = spawnSync(process.execPath, [pm2Cli, 'jlist'], {
     cwd: projectRoot,
     env: cleanEnvironment,
@@ -56,6 +73,7 @@ try {
 // into a release/defer burst. Refuse a rolling sync while the AI service
 // reports an active replay; the operator/scheduler can retry after the lane
 // is idle, and stale-lock recovery remains the backstop for a killed worker.
+assertDurableReplayIdle();
 if (processes.some((entry) => entry.name === 'neurotrader-ai' && entry.pm2_env?.status === 'online')) {
     try {
         // ecosystem.config.cjs and run-ai-service.py prefer the coordinated
@@ -98,6 +116,10 @@ if (processes.some((entry) => entry.name === 'neurotrader-ai' && entry.pm2_env?.
                 console.error('Replay lane became active during the idle grace window; PM2 rolling sync was refused.');
                 process.exit(2);
             }
+            // Close the queue-preparation blind spot as late as possible. A
+            // worker may reserve a job after the first durable check but
+            // before Python increments active_requests.
+            assertDurableReplayIdle();
         } else {
             console.warn(`Replay liveness probe returned HTTP ${response.status}; continuing with the configured sync.`);
         }

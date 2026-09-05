@@ -6,7 +6,7 @@ tags:
   - project-memory
   - agent-context
   - neurotrader
-updated: 2026-07-12
+updated: 2026-08-28
 ---
 
 # Agent Project Memory
@@ -30,5 +30,7 @@ Bu papka loyihani qayta-qayta to'liq skan qilmasdan tushunish uchun ixcham, Obsi
 - [[operations]] — ishga tushirish, test va xavfsiz operatsion eslatmalar.
 - [[ai-learning-laboratory]] — laboratoriya lifecycle, gate va scheduler qoidalari.
 - [[market-data-continuity]] — Dukascopy outage recovery va candle continuity qoidalari.
+- [Smart Discipline](../architecture/smart-discipline-engine.md) — paper execution process-integrity, hard veto va outcome-quality qoidalari.
+- [Confirmation & Entry System](../architecture/trading-confirmation-entry-system.md) — `setup != confirmation != trigger`, closed MTF role ownership, R:R/chase gates va WAIT evidence.
 
 `PROJECT_CONTEXT.md` tarixiy batafsil kontekst sifatida saqlanadi. Ushbu papka esa tezkor navigatsiya uchun birinchi manba hisoblanadi.

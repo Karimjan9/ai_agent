@@ -252,6 +252,7 @@ class TacticCatalogueService
                     'atr_stop_multiplier', 'atr_target_multiplier', 'trailing_atr_multiplier',
                     'time_stop_candles', 'minimum_signal_confidence',
                     'entry_topology_variant', 'state_machine_variant', 'regime_classifier_variant',
+                    'architecture_interaction_variant',
                 ],
             ))),
             'repair_lanes' => $failureLanes,

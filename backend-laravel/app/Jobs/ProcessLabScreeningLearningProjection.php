@@ -117,8 +117,9 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
             $agent->fresh(['modelVersion']),
             $result,
         );
-        $skillZooEntry = $skillZoo->record($agent->fresh(['modelVersion']), $result, $screeningResponseMap);
-        if ($skillZooEntry !== null) $result['skill_zoo_entry'] = $skillZooEntry;
+        // Screening is intentionally too early for a reusable cartridge:
+        // canonical Skill Zoo projection happens only after paired settlement.
+        $result['skill_zoo_entry'] = ['status' => 'deferred_until_canonical_paired_settlement', 'promotion_evidence' => false];
         // Planning a bounded scenario creates no replay or queue job. The
         // existing sealed red-team worker remains the only execution path.
         $result['adversarial_scenarios'] = $adversarialMarket->plan($agent->fresh(['modelVersion']));

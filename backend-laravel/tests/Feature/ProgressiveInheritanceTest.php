@@ -11,6 +11,7 @@ use App\Services\LabPopulationService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ProgressiveInheritanceTest extends TestCase
@@ -158,6 +159,15 @@ class ProgressiveInheritanceTest extends TestCase
                 ]],
                 'behavioral_diversity' => ['status' => 'distinct'],
             ],
+        ]);
+        DB::table('evolutionary_authority_ledgers')->insert([
+            'authority_key' => hash('sha256', 'progressive-parent-test|'.$parent->id),
+            'model_version_id' => $parent->id, 'lab_agent_id' => $parentAgent->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'authority_stage' => 'eligible_parent', 'status' => 'passed',
+            'data_hash' => str_repeat('a', 64), 'execution_hash' => str_repeat('b', 64),
+            'evidence' => json_encode(['protocol' => 'evolutionary_authority_foundry_v1', 'fixture' => true, 'promotion_evidence' => false]),
+            'evaluated_at' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
 
         $generation = $service->build('XAUUSD', 'progressive_inheritance_child', true);

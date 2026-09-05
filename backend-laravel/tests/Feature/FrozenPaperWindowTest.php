@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\FrozenPaperWindow;
 use App\Models\Candle;
+use App\Models\FrozenPaperWindow;
 use App\Models\Symbol;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\MarketData\FrozenPaperWindowService;
@@ -17,22 +17,22 @@ class FrozenPaperWindowTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_it_seals_the_last_six_months_and_excludes_them_from_training_payloads(): void
+    public function test_it_seals_all_available_2026_as_paper_and_excludes_it_from_training_payloads(): void
     {
         $training = app(MarketTrainingDataService::class);
         $training->upsertCandles('foundation_10y', 'dukascopy', 'XAUUSD', 'H1', [
             $this->candle('2016-01-04 00:00:00'),
         ]);
-        $this->paperCandles(['2026-02-18 23:00:00', '2026-02-19 00:00:00', '2026-08-18 23:00:00']);
+        $this->paperCandles(['2026-01-01 00:00:00', '2026-02-18 23:00:00', '2026-02-19 00:00:00', '2026-08-18 23:00:00']);
 
         $window = app(FrozenPaperWindowService::class)->freeze(
             'foundation_10y', 'dukascopy', 'XAUUSD', 'H1',
             CarbonImmutable::parse('2026-08-19 00:00:00', 'UTC'),
         );
 
-        $this->assertSame('2026-02-19 00:00:00', $window->training_ends_at->utc()->format('Y-m-d H:i:s'));
-        $this->assertSame('2026-02-19 00:00:00', $window->paper_starts_at->utc()->format('Y-m-d H:i:s'));
-        $this->assertSame(2, $window->row_count);
+        $this->assertSame('2026-01-01 00:00:00', $window->training_ends_at->utc()->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-01-01 00:00:00', $window->paper_starts_at->utc()->format('Y-m-d H:i:s'));
+        $this->assertSame(4, $window->row_count);
         $this->assertFileExists($window->snapshot_path);
 
         $trainingRows = app(CandlePayloadService::class)->candlesForTraining('XAUUSD', 'H1');
@@ -80,12 +80,34 @@ class FrozenPaperWindowTest extends TestCase
         $this->assertSame('2026-01-01 00:00:00', $annual->training_ends_at->utc()->format('Y-m-d H:i:s'));
         $this->assertSame('2026-01-01 00:00:00', $annual->paper_starts_at->utc()->format('Y-m-d H:i:s'));
         $this->assertSame(2, $annual->row_count);
+        $legacy = $annual->replicate();
+        $legacy->window_key = 'rolling_6m_v1';
+        $legacy->save();
         $this->assertSame($annual->id, app(FrozenPaperWindowService::class)
             ->active('foundation_10y', 'dukascopy', 'XAUUSD', 'H1')?->id);
         $trainingRows = app(CandlePayloadService::class)->candlesForTraining('XAUUSD', 'H1');
         $this->assertCount(2, $trainingRows);
         $this->assertStringStartsWith('2025-', $trainingRows[1]['time']);
         File::delete($annual->snapshot_path);
+    }
+
+    public function test_it_rejects_a_rolling_2026_start_that_would_leak_paper_into_training(): void
+    {
+        app(MarketTrainingDataService::class)->upsertCandles('foundation_10y', 'dukascopy', 'XAUUSD', 'H1', [
+            $this->candle('2025-12-31 23:00:00'),
+        ]);
+        $this->paperCandles(['2026-01-01 00:00:00', '2026-08-18 23:00:00']);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('paper start faqat 2026-01-01');
+
+        app(FrozenPaperWindowService::class)->freeze(
+            'foundation_10y', 'dukascopy', 'XAUUSD', 'H1',
+            CarbonImmutable::parse('2026-08-19 00:00:00', 'UTC'),
+            6,
+            CarbonImmutable::parse('2026-02-19 00:00:00', 'UTC'),
+            'rolling_6m_forbidden',
+        );
     }
 
     /** @return array<string, float|string> */

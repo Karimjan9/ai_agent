@@ -9,6 +9,7 @@ use App\Services\LabHistoricalLearningService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -94,5 +95,56 @@ class LabHistoricalLearningTest extends TestCase
         $this->assertGreaterThan(0, LabLearningConsumptionEvent::where('lab_generation_id', $next->id)
             ->where('lab_learning_insight_id', $insight?->id)->count());
         $this->assertTrue($next->agents->every(fn ($agent): bool => data_get($agent->modelVersion->metadata, 'historical_learning.protocol') === LabHistoricalLearningService::PROTOCOL));
+    }
+
+    public function test_compact_rollup_replaces_its_same_run_raw_subset_without_double_counting(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'rollup_history_seed', true);
+        $agent = $generation->agents->first();
+        $run = app(LabImmutableEvidenceService::class)->beginRun($agent, 'screening', 'incremental');
+        app(LabImmutableEvidenceService::class)->finishRun($run, 'completed', []);
+
+        LabCandleDecisionEvent::create([
+            'decision_id' => (string) Str::uuid(),
+            'run_id' => $run->run_id,
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'candle_time' => '2026-01-01T00:00:00Z',
+            'candle_index' => 1,
+            'event_type' => 'signal_evaluation',
+            'action' => 'WAIT',
+            'accepted' => false,
+            'rejection_code' => 'regime_transition_wait',
+            'market_regime' => 'transition',
+            'volatility_regime' => 'normal_volatility',
+            'payload_hash' => hash('sha256', 'rollup-raw-subset'),
+            'recorded_at' => now(),
+        ]);
+        DB::table('lab_candle_decision_rollups')->insert([
+            'rollup_key' => hash('sha256', 'rollup-history-test'),
+            'run_id' => $run->run_id,
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'bucket_date' => '2026-01-01',
+            'event_type' => 'signal_evaluation',
+            'action' => 'WAIT',
+            'accepted' => false,
+            'rejection_code' => 'regime_transition_wait',
+            'market_regime' => 'transition',
+            'volatility_regime' => 'normal_volatility',
+            'event_count' => 4,
+            'accepted_count' => 0,
+            'recorded_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $learning = app(LabHistoricalLearningService::class);
+        $learning->refreshForLab('XAUUSD', 'H1');
+        $insight = $learning->latestForFamily('XAUUSD', 'H1', $agent->strategy_family);
+
+        $this->assertSame(4, data_get($insight?->metrics, 'candle_event_count'));
+        $this->assertSame(4, data_get($insight?->metrics, 'rejected_candle_events'));
+        $this->assertSame(4, data_get($insight?->failure_signature, 'dominant_rejections.0.occurrences'));
     }
 }

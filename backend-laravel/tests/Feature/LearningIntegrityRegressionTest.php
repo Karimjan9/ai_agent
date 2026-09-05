@@ -106,6 +106,34 @@ class LearningIntegrityRegressionTest extends TestCase
         $this->assertTrue($escapeDecision['allowed']);
     }
 
+    public function test_learning_confirmation_consumes_dispatch_learning_without_bypassing_other_blocks(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $generation->update(['status' => 'abandoned', 'completed_at' => now()]);
+        $this->mock(LearningVelocityGateService::class, function ($mock): void {
+            $mock->shouldReceive('inspect')->once()->andReturn([
+                'allowed' => false,
+                'status' => 'live_learning_backlog',
+                'learning_starvation' => [
+                    'actionable_pending_dojo' => 0,
+                    'active_dispatches' => 0,
+                ],
+                'observations' => [],
+            ]);
+        });
+
+        $decision = app(GenerationAdmissionDecisionService::class)->decide(
+            $lab,
+            $generation->fresh(),
+            ['trigger' => 'learning_confirmation', 'learning_confirmation' => true],
+            false,
+        );
+
+        $this->assertSame(GenerationAdmissionDecisionService::DISPATCH_LEARNING, $decision['decision']);
+        $this->assertTrue($decision['allowed']);
+        $this->assertContains('CAUSAL_CONFIRMATION_SATISFIES_LEARNING_DISPATCH', $decision['reason_codes']);
+    }
+
     public function test_model_version_status_follows_agent_lifecycle(): void
     {
         [$lab, $generation] = $this->scope();

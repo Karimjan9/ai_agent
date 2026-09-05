@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
-use App\Models\LabGeneration;
 use App\Models\LabTrialLedger;
 use App\Models\ModelVersion;
 use Illuminate\Database\QueryException;
@@ -214,55 +213,61 @@ class LabTrialLedgerService
      */
     private function trialEvidence(string $symbol, string $timeframe, $ledgerQuery): array
     {
+        // This path runs once per replayed candidate. Never hydrate every
+        // model metadata JSON here: mature model rows contain large replay
+        // projections, and decoding the whole laboratory turned a bounded
+        // screening projection into a multi-hour O(N * payload_size) pass.
+        // Counts below stay in SQL and touch only indexed scalar columns (or
+        // explicit JSON predicates for the rare legacy-grid diagnostic).
         $agents = LabAgent::query()
-            ->where('symbol', $symbol)
-            ->where('timeframe', $timeframe)
-            ->get(['id', 'lab_generation_id', 'model_version_id', 'lifecycle_status']);
-        $agentIds = $agents->pluck('id')->filter()->values();
-        $ledgerAgentIds = (clone $ledgerQuery)->whereNotNull('lab_agent_id')->pluck('lab_agent_id')->map(fn ($id): int => (int) $id)->all();
-        $ledgerAgentSet = array_fill_keys($ledgerAgentIds, true);
-
+            ->where('lab_agents.symbol', $symbol)
+            ->where('lab_agents.timeframe', $timeframe);
+        $ledgerAgentIds = (clone $ledgerQuery)
+            ->select('lab_agent_id')
+            ->whereNotNull('lab_agent_id');
         $quarantineStatuses = ['quarantined', 'technical_quarantine', 'overfit', 'rejected', 'stagnated'];
-        $quarantined = $agents->whereIn('lifecycle_status', $quarantineStatuses)->count();
-        $unrecordedQuarantine = $agents
+        $quarantined = (clone $agents)->whereIn('lab_agents.lifecycle_status', $quarantineStatuses)->count();
+        $unrecordedQuarantine = (clone $agents)
             ->whereIn('lifecycle_status', $quarantineStatuses)
-            ->reject(fn (LabAgent $agent): bool => isset($ledgerAgentSet[(int) $agent->id]))
+            ->whereNotIn('lab_agents.id', clone $ledgerAgentIds)
             ->count();
 
-        $evaluationRuns = $agentIds->isEmpty()
-            ? collect()
-            : LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)->get(['id', 'status', 'phase', 'lab_generation_id']);
+        $agentIds = (clone $agents)->select('lab_agents.id');
         $technicalRunStatuses = ['failed', 'evaluation_error', 'technical_quarantine', 'abandoned'];
-        $technicalErrors = $evaluationRuns->whereIn('status', ['failed', 'evaluation_error', 'technical_quarantine'])->count()
-            + $agents->where('lifecycle_status', 'evaluation_error')->reject(fn (LabAgent $agent): bool => isset($ledgerAgentSet[(int) $agent->id]))->count();
-        $generations = $agents->pluck('lab_generation_id')->filter()->isEmpty()
-            ? collect()
-            : LabGeneration::query()->whereIn('id', $agents->pluck('lab_generation_id')->filter())->get(['id', 'status']);
-        $abandonedGenerationIds = $generations->where('status', 'abandoned')->pluck('id')->map(fn ($id): int => (int) $id)->all();
-        $abandoned = $agents->whereIn('lab_generation_id', $abandonedGenerationIds)->count();
-        $unrecordedAbandoned = $agents
-            ->whereIn('lab_generation_id', $abandonedGenerationIds)
-            ->reject(fn (LabAgent $agent): bool => isset($ledgerAgentSet[(int) $agent->id]))
+        $technicalErrors = LabEvaluationRun::query()
+            ->whereIn('lab_agent_id', clone $agentIds)
+            ->whereIn('status', ['failed', 'evaluation_error', 'technical_quarantine'])
+            ->count()
+            + (clone $agents)
+                ->where('lab_agents.lifecycle_status', 'evaluation_error')
+                ->whereNotIn('lab_agents.id', clone $ledgerAgentIds)
+                ->count();
+        $abandonedScope = (clone $agents)->whereHas(
+            'generation',
+            fn ($query) => $query->where('status', 'abandoned'),
+        );
+        $abandoned = (clone $abandonedScope)->count();
+        $unrecordedAbandoned = (clone $abandonedScope)
+            ->whereNotIn('lab_agents.id', clone $ledgerAgentIds)
             ->count();
 
-        $models = $agents->pluck('model_version_id')->filter()->isEmpty()
-            ? collect()
-            : ModelVersion::query()->whereIn('id', $agents->pluck('model_version_id')->filter())->get(['id', 'metadata']);
-        $legacyGrid = $models->filter(function (ModelVersion $model): bool {
-            $metadata = (array) ($model->metadata ?? []);
-            return data_get($metadata, 'legacy_parameter_grid') === true
-                || data_get($metadata, 'parameter_grid') !== null
-                || data_get($metadata, 'trial_origin') === 'parameter_grid';
-        })->count() + (clone $ledgerQuery)->whereIn('stage', ['parameter_grid', 'legacy_grid', 'grid_search'])->count();
-        $unrecordedLegacyGrid = $models->filter(function (ModelVersion $model): bool {
-            $metadata = (array) ($model->metadata ?? []);
-            return data_get($metadata, 'legacy_parameter_grid') === true
-                || data_get($metadata, 'parameter_grid') !== null
-                || data_get($metadata, 'trial_origin') === 'parameter_grid';
-        })->reject(fn (ModelVersion $model): bool => in_array((int) $model->id, $agents->pluck('model_version_id')->map(fn ($id): int => (int) $id)->all(), true))->count();
+        // Legacy grids that entered canonical selection already declare their
+        // stage in this compact ledger. Scanning every historical model JSON
+        // to infer an unrecorded grid belongs to an offline audit, not the
+        // replay hot path; the old implementation's "unrecorded" projection
+        // was zero by construction anyway because it re-used the same agent
+        // model-id set for both sides of the rejection.
+        $legacyGrid = (clone $ledgerQuery)
+            ->whereIn('stage', ['parameter_grid', 'legacy_grid', 'grid_search'])
+            ->count();
+        $unrecordedLegacyGrid = 0;
 
         $crossFamily = (clone $ledgerQuery)->whereNotNull('strategy_family')->count();
         $unrecorded = $unrecordedQuarantine + $technicalErrors + $unrecordedAbandoned + $unrecordedLegacyGrid;
+        $technicalRunStatusesObserved = LabEvaluationRun::query()
+            ->whereIn('lab_agent_id', clone $agentIds)
+            ->whereIn('status', $technicalRunStatuses)
+            ->count();
 
         return [
             'unrecorded_trial_count' => $unrecorded,
@@ -274,7 +279,7 @@ class LabTrialLedgerService
                 'abandoned_generation' => $abandoned,
                 'legacy_parameter_grid' => $legacyGrid,
                 'cross_family_same_data' => $crossFamily,
-                'technical_run_statuses_observed' => $evaluationRuns->whereIn('status', $technicalRunStatuses)->count(),
+                'technical_run_statuses_observed' => $technicalRunStatusesObserved,
             ],
         ];
     }

@@ -6,6 +6,7 @@ use App\Models\ModelVersion;
 use App\Services\LabPopulationService;
 use App\Services\LabTrialLedgerService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -90,5 +91,20 @@ class LabTrialLedgerTest extends TestCase
             ...$base,
             'data_manifest' => ['sha256' => str_repeat('e', 64)],
         ], 'same-run-id');
+    }
+
+    public function test_hot_path_trial_counts_never_scan_large_model_metadata_json(): void
+    {
+        app(LabPopulationService::class)->build('XAUUSD', 'trial_ledger_query_shape_test', true);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        app(LabTrialLedgerService::class)->selectionContext('XAUUSD', 'H1');
+
+        $queries = collect(DB::getQueryLog())->pluck('query')->map('strtolower');
+        $this->assertFalse($queries->contains(
+            fn (string $sql): bool => str_contains($sql, 'model_versions') && str_contains($sql, 'metadata'),
+        ));
+        $this->assertLessThanOrEqual(15, $queries->count());
     }
 }

@@ -166,6 +166,8 @@ class MutationSkillVerificationService
                 'profit_factor' => $this->numericOrNull($row, ['profit_factor', 'net_pf', 'summary.net_pf', 'results.forward.profit_factor', 'results.forward.net_pf']),
                 'net_profit_percent' => $this->numericOrNull($row, ['net_profit_percent', 'summary.net_profit_percent', 'results.forward.net_profit_percent']),
                 'trades' => (int) data_get($row, 'trades', data_get($row, 'summary.trades', data_get($row, 'results.forward.total_trades', 0))),
+                'regime_performance' => (array) data_get($row, 'regime_performance', data_get($row, 'results.forward.regime_performance', [])),
+                'volatility_performance' => (array) data_get($row, 'volatility_performance', data_get($row, 'results.forward.volatility_performance', [])),
             ];
         }
 
@@ -225,10 +227,19 @@ class MutationSkillVerificationService
             'overlap_detected' => $overlapDetected,
             'stateful_diagnostic_only' => $continuousDiagnostic,
             'window_ids' => array_values(array_map(static fn (array $window): string => $window['id'], $independent)),
+            'windows' => array_values($independent),
             'purge_bars' => (int) data_get($result, 'walk_forward.forward_window_protocol.purge_bars', 0),
             'embargo_bars' => (int) data_get($result, 'walk_forward.forward_window_protocol.embargo_bars', 0),
             'label_holding_period_purged' => data_get($result, 'walk_forward.forward_window_protocol.label_holding_period_purged') === true,
             'purge_embargo_applied' => data_get($result, 'walk_forward.forward_window_protocol.purge_embargo_applied') === true,
+            'declared_time_stop_candles' => (int) data_get($result, 'walk_forward.forward_window_protocol.declared_time_stop_candles', 0),
+            'effective_time_stop_candles' => (int) data_get($result, 'walk_forward.forward_window_protocol.effective_time_stop_candles', 0),
+            'maximum_holding_bars' => (int) data_get($result, 'walk_forward.forward_window_protocol.maximum_holding_bars', 0),
+            'execution_horizon_overlay_applied' => data_get($result, 'walk_forward.forward_window_protocol.execution_horizon_overlay_applied') === true,
+            'minimum_trades_per_powered_window' => data_get($result, 'walk_forward.forward_window_protocol.minimum_trades_per_powered_window'),
+            'powered_windows' => data_get($result, 'walk_forward.forward_window_protocol.powered_windows'),
+            'minimum_powered_windows' => data_get($result, 'walk_forward.forward_window_protocol.minimum_powered_windows'),
+            'power_quorum_passed' => data_get($result, 'walk_forward.forward_window_protocol.power_quorum_passed'),
             'promotion_evidence' => false,
         ];
     }

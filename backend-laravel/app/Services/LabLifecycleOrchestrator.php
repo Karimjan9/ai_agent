@@ -119,6 +119,38 @@ class LabLifecycleOrchestrator
             // permanent evaluation_error state or freeze the next cycle.
             $quarantined = $this->quarantineEvaluationErrors($symbol, $timeframe, $cycleId, $stage);
 
+            // Retry-budget exhaustion occurs before an evaluator request, so
+            // generation admission may otherwise see an ordinary resumable
+            // `screening` cohort and never enter its technical-recovery arm.
+            // Intercept only this exact one-shot signature before resuming the
+            // generation. The recovery command still enforces AI readiness,
+            // empty lab queues, daily budget and frozen snapshot hashes.
+            $retryAgent = LabAgent::query()
+                ->with(['generation', 'modelVersion'])
+                ->where('symbol', $symbol)
+                ->where('timeframe', $timeframe)
+                ->where('lifecycle_status', 'evaluation_error')
+                ->latest('id')
+                ->get()
+                ->first(fn (LabAgent $agent): bool => $this->isRetryBudgetRecoveryPending($agent));
+            if (! $startCycle && $retryAgent?->generation) {
+                $recovered = $this->technicalRecovery($symbol, $timeframe, $cycleId, [
+                    'state' => 'recovery_required',
+                    'reason' => GenerationAdmissionDecisionService::RECOVER_TECHNICAL,
+                    'generation_admission' => ['latest_generation_id' => (int) $retryAgent->lab_generation_id],
+                ]);
+
+                return $this->summarize(
+                    $cycleId,
+                    $symbol,
+                    $timeframe,
+                    ($recovered['dispatched'] ?? 0) > 0 ? self::STATUS_RUNNING : self::STATUS_PAUSED,
+                    GenerationAdmissionDecisionService::RECOVER_TECHNICAL,
+                    self::PHASE_TECHNICAL_RECOVERY,
+                    [...$recovered, 'quarantined' => $quarantined],
+                );
+            }
+
             // A killed worker can leave the mutable generation projection in
             // screening even after a later bounded attempt made every agent
             // terminal. Repair only when agent, immutable-run, and queue
@@ -463,13 +495,22 @@ class LabLifecycleOrchestrator
         }
 
         try {
+            // A frozen-control waiter can expire during a Redis/worker outage
+            // without ever calling the evaluator. Recover that exact
+            // infrastructure signature through the same daily, one-shot,
+            // hash-verified authority as transport timeouts. It never
+            // broadens recovery to an economic/quality failure.
+            $retryBudgetPending = $generation->agents()->with('modelVersion')
+                ->where('lifecycle_status', 'evaluation_error')
+                ->get()
+                ->contains(fn (LabAgent $agent): bool => $this->isRetryBudgetRecoveryPending($agent));
             $exitCode = Artisan::call('trading:recover-lab-evaluation-errors', [
                 'symbol' => strtoupper($symbol),
                 '--timeframe' => strtoupper($timeframe),
                 '--generation' => (int) $generation->generation,
                 '--limit' => min($limit, $remaining),
                 '--mode' => 'screen',
-                '--after-timeout-budget-repair' => true,
+                $retryBudgetPending ? '--after-retry-budget-repair' : '--after-timeout-budget-repair' => true,
                 '--apply' => true,
                 '--autonomous' => true,
                 '--json' => true,
@@ -609,10 +650,18 @@ class LabLifecycleOrchestrator
             ->where('symbol', $symbol)
             ->where('timeframe', $timeframe)
             ->where('lifecycle_status', 'evaluation_error')
-            ->with('generation')
+            ->with(['generation', 'modelVersion'])
             ->get();
         $ids = [];
         foreach ($agents as $agent) {
+            // This exact failure happened before an evaluator request and is
+            // still eligible for the lifecycle's one-shot, daily-bounded,
+            // frozen-snapshot recovery. Quarantining it here would erase the
+            // classifier before technicalRecovery() can select it. After its
+            // single repair attempt is consumed, the next cycle isolates it
+            // like every other unresolved evaluator error.
+            if ($this->isRetryBudgetRecoveryPending($agent)) continue;
+
             $agent->update([
                 'lifecycle_status' => 'technical_quarantine',
                 'decision_reason' => 'Technical quarantine: evaluator error isolated by lifecycle cycle; strategy verdict withheld.',
@@ -631,6 +680,16 @@ class LabLifecycleOrchestrator
         }
 
         return $ids;
+    }
+
+    private function isRetryBudgetRecoveryPending(LabAgent $agent): bool
+    {
+        $reason = strtolower((string) $agent->decision_reason);
+
+        return (int) data_get($agent->modelVersion?->metadata, 'retry_budget_repair_recovery_attempts', 0) < 1
+            && str_contains($reason, 'strategy verdict withheld')
+            && (str_contains($reason, 'attempted too many times')
+                || str_contains($reason, 'bounded screening batch exhausted operational retries'));
     }
 
     private function dispatchScreening(LabGeneration $generation, string $cycleId, string $stage): void
@@ -856,13 +915,22 @@ class LabLifecycleOrchestrator
 
     private function queueRisk(array $snapshot): ?string
     {
-        $maxAttempts = 0;
+        // Research-only toolbox priors cannot promote an agent and must not
+        // poison the canonical generation circuit breaker when they yield or
+        // retry. Canonical screening/full-validation rows remain fail-closed.
+        $canonicalRows = collect((array) ($snapshot['rows'] ?? []))->reject(function (array $row): bool {
+            $payload = (string) ($row['payload'] ?? '');
+            return str_contains($payload, 'App\\\\Jobs\\\\EvaluateMtfPlaybookPriorJob')
+                || str_contains($payload, 'App\\Jobs\\EvaluateMtfPlaybookPriorJob')
+                || str_contains($payload, 'App\\\\Jobs\\\\ValidateMtfPoweredPriorJob')
+                || str_contains($payload, 'App\\Jobs\\ValidateMtfPoweredPriorJob');
+        });
+        $maxAttempts = (int) ($canonicalRows->max(fn (array $row): int => (int) ($row['attempts'] ?? 0)) ?? 0);
         $staleReserved = 0;
         foreach ((array) ($snapshot['stats'] ?? []) as $stats) {
-            $maxAttempts = max($maxAttempts, (int) ($stats['max_attempts'] ?? 0));
             $staleReserved += (int) ($stats['stale_reserved_count'] ?? 0);
         }
-        if ((bool) data_get($snapshot, 'retry_storm', false) || $maxAttempts >= (int) config('services.lifecycle_orchestrator.max_job_attempts', 3)) {
+        if ($maxAttempts >= (int) config('services.lifecycle_orchestrator.max_job_attempts', 3)) {
             return 'queue_retry_storm';
         }
         if ($staleReserved >= (int) config('services.lifecycle_orchestrator.max_stale_reserved_jobs', 1)) {
@@ -870,6 +938,8 @@ class LabLifecycleOrchestrator
         }
         if (Schema::hasTable('failed_jobs') && DB::table('failed_jobs')->whereIn('queue', $this->labQueues())
             ->where('failed_at', '>=', now()->subSeconds(max(60, (int) config('services.lifecycle_orchestrator.failed_job_window_seconds', 3600))))
+            ->where('payload', 'not like', '%EvaluateMtfPlaybookPriorJob%')
+            ->where('payload', 'not like', '%ValidateMtfPoweredPriorJob%')
             ->count() >= (int) config('services.lifecycle_orchestrator.max_failed_jobs', 1)) {
             return 'queue_failed_jobs';
         }

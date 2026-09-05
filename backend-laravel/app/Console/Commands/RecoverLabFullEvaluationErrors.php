@@ -271,6 +271,10 @@ class RecoverLabFullEvaluationErrors extends Command
         $reason = strtolower($reason);
 
         return str_contains($reason, 'full queue evaluation error')
+            || str_contains($reason, 'full queue technical error')
+            || str_contains($reason, 'bounded ai replay exceeded')
+            || str_contains($reason, 'causal confirmation fold')
+            || str_contains($reason, 'causal confirmation exhausted')
             || str_contains($reason, 'dataset export lock')
             || str_contains($reason, 'foundation training')
             || str_contains($reason, 'foundation archive')
@@ -288,8 +292,16 @@ class RecoverLabFullEvaluationErrors extends Command
         }
 
         $reason = strtolower((string) $agent->decision_reason);
+        $causalTransportQuarantine = $agent->generation?->trigger_type === 'learning_confirmation'
+            && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
+                'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+            ], true)
+            && (str_contains($reason, 'bounded learning-lane transport failures')
+                || str_contains($reason, 'bounded ai replay exceeded')
+                || str_contains($reason, 'causal confirmation fold'));
 
-        return str_contains($reason, 'full_replay_dataset_coverage_insufficient')
+        return $causalTransportQuarantine
+            || str_contains($reason, 'full_replay_dataset_coverage_insufficient')
             || str_contains($reason, 'foundation_dataset_continuity_passport_invalid')
             || str_contains($reason, 'foundation training')
             || str_contains($reason, 'foundation archive')

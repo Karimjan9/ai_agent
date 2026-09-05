@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "name": "NeuroTrader Lab",
   "repository_root": "../..",
-  "updated": "2026-08-10",
+  "updated": "2026-08-28",
   "purpose": "Historical-market strategy research, backtesting, agent evaluation, and paper-trading foundation.",
   "read_order": [
     "README.md",
@@ -55,15 +55,30 @@
     },
     {
       "id": "paper-trading",
-      "status": "foundation-in-progress",
+      "status": "process-integrity-protected",
       "path": "../../backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "responsibility": "Paper order/fill/evaluation records and the feedback-loop foundation.",
-      "notes": "Treat live-trading capability as unverified unless a task explicitly validates it."
+      "responsibility": "Paper signal/order/fill/outcome records, risk-gated execution, process review and compliant feedback settlement.",
+      "notes": "Treat live-trading capability as unverified unless a task explicitly validates it. Smart Discipline applies only to paper execution and cannot raise risk or create promotion evidence."
+    },
+    {
+      "id": "smart-discipline",
+      "status": "implemented-paper-execution",
+      "path": "../../backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "responsibility": "Account/session hard gates, risk hysteresis sizing, immutable pre/post process decisions, outcome-quality quadrants and learning quarantine.",
+      "notes": "Read ../architecture/smart-discipline-engine.md before changing thresholds or paper settlement eligibility. Defaults are containment guardrails, not alpha claims."
+    },
+    {
+      "id": "confirmation-entry-system",
+      "status": "implemented-research-paper-observability",
+      "path": "../../ai-service-python/app/strategies/confirmation_entry.py",
+      "responsibility": "Closed-MTF context/location/setup/confirmation/trigger separation, logical invalidation, reward-space/chase admission and WAIT-opportunity evidence.",
+      "notes": "Read ../architecture/trading-confirmation-entry-system.md before changing entry modes, model definitions or confirmation gates. The strategy is M5-only; paper transport and fill geometry fail closed. Scores are diagnostic and promotion_evidence remains false."
     }
   ],
   "contracts": [
     "../ai-service-contract.md",
-    "../AUTO_TRAINING_SCHEDULER.md"
+    "../AUTO_TRAINING_SCHEDULER.md",
+    "../architecture/trading-confirmation-entry-system.md"
   ],
   "historical_context": "../../PROJECT_CONTEXT.md",
   "change_log": [
@@ -158,6 +173,22 @@
     {
       "date": "2026-08-10",
       "change": "Added a shared configurable heavy-replay mutex, bounded full-replay runtime policy for large foundation archives, evidence-safe stale reservation recovery, and operational documentation for PM2 secret-metadata hygiene."
+    },
+    {
+      "date": "2026-08-27",
+      "change": "Added Smart Discipline paper process integrity: deterministic account/session hard gates, real-history risk hysteresis sizing, immutable pre/post decision ledgers, NO_TRADE reason taxonomy, Good/Bad Win/Loss review, invalid-process learning quarantine, and an operator discipline report."
+    },
+    {
+      "date": "2026-08-27",
+      "change": "Closed paper/replay trade-management parity: entry now seals partial-profit, trailing-stop and time-stop parameters; reconciliation verifies strategy/execution/management hashes, executes partial TP, emits realized/MFE/MAE R and stop-widening audit, and quarantines unattested or non-compliant outcomes from learning."
+    },
+    {
+      "date": "2026-08-27",
+      "change": "Added the Confirmation & Entry System: five closed-MTF entry-model hypotheses, setup/confirmation/trigger separation, independent-evidence accounting, logical invalidation, reward-space/chase/event gates, paper/replay compiler parity, frozen-control comparisons and a WAIT-aware entry-contract funnel."
+    },
+    {
+      "date": "2026-08-28",
+      "change": "Hardened Confirmation & Entry after an end-to-end audit: enforced M5-only and H1 range ownership, rejected invalid M5/HTF OHLC streams, separated structure from displacement evidence, froze breakout geometry, supplied paper HTF streams, canonically attested top-level contract and fill admission against sealed copies, rejected inconsistent Laravel geometry/evidence, and revalidated net-cost structural R:R/chase at fill time."
     }
  ]
 }

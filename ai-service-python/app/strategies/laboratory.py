@@ -291,6 +291,7 @@ def apply_hybrid_strategy(df: pd.DataFrame, parameters: dict | None = None) -> p
         "deviation": float(p.get("range_deviation", 2.0)),
         "adx_max": float(p.get("range_adx_max", 20.0)),
         "low_volatility_only": bool(p.get("range_low_volatility_only", True)),
+        "range_signal_mode": str(p.get("range_signal_mode", "reentry")),
     })
     weights = {
         "trend": float(p.get("trend_weight", 1.0)),
@@ -476,6 +477,7 @@ def apply_hybrid_consensus_strategy(df: pd.DataFrame, parameters: dict | None = 
         "deviation": float(p.get("range_deviation", 2.0)),
         "adx_max": float(p.get("range_adx_max", 20.0)),
         "low_volatility_only": bool(p.get("range_low_volatility_only", True)),
+        "range_signal_mode": str(p.get("range_signal_mode", "reentry")),
     })
     regime = out.get("market_regime", pd.Series("unknown", index=out.index)).astype(str)
     unknown = ~regime.isin(["trend_up", "trend_down", "range"])

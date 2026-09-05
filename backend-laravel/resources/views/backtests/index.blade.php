@@ -34,6 +34,7 @@
                     <option value="macd_trend_v1">macd_trend_v1</option>
                     <option value="fibonacci_v1">fibonacci_v1</option>
                     <option value="breakout_v1">breakout_v1</option>
+                    <option value="liquidity_trap_mtf_v1">liquidity_trap_mtf_v1 (shadow: H4/H1/M15 → M5)</option>
                 </select>
             </label>
             <label>Initial balance
@@ -50,5 +51,6 @@
             </label>
             <button type="submit">Run</button>
         </form>
+        <p class="muted" style="margin: 12px 0 0;">Liquidity Trap MTF tanlansa, yuqoridagi timeframe faqat so'rov metama'lumoti bo'ladi: replay H4/H1/M15 ni bitta immutable snapshotda muzlatib, M5 yopilishidan keyingi signalni sinaydi. Bu paper/live ruxsati emas.</p>
     </article>
 @endsection

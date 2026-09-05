@@ -15,6 +15,7 @@ class StrategyProposerService
     public function __construct(
         private StrategyFeatureBundleService $featureBundles,
         private StrategyLibraryCompilerService $library,
+        private AgentResearchPlaybookToolboxService $researchPlaybooks,
     ) {}
 
     /** @return array<string,mixed> */
@@ -34,6 +35,10 @@ class StrategyProposerService
         $symbol = (string) ($context['symbol'] ?? $playbook?->symbol ?? 'XAUUSD');
         $timeframe = (string) ($context['timeframe'] ?? $playbook?->timeframe ?? 'M15');
         $bundle = $this->featureBundles->latestFor($strategyId, $symbol, $timeframe);
+        $playbookToolbox = $this->researchPlaybooks->forAgent($agent, $symbol, $timeframe, [
+            'regime' => data_get($route, 'state.regime'),
+            'session' => data_get($route, 'state.session'),
+        ]);
 
         return [
             'protocol' => self::PROTOCOL,
@@ -56,6 +61,7 @@ class StrategyProposerService
                 'volatility' => data_get($route, 'state.volatility', 'unknown'),
             ],
             'selected_instruments' => array_values((array) ($playbook?->instrument_keys ?? [])),
+            'professional_playbook_toolbox' => $playbookToolbox,
             'alternatives' => collect((array) ($route['candidates'] ?? []))->map(fn (array $candidate): array => [
                 'playbook_key' => $candidate['playbook_key'] ?? null,
                 'instrument_keys' => array_values((array) ($candidate['instrument_keys'] ?? [])),
@@ -70,6 +76,7 @@ class StrategyProposerService
                 'max_changed_axis' => 1,
                 'allowed_axes' => ['entry_topology', 'confirmation_order', 'exit_policy', 'state_filter', 'cost_filter'],
                 'requires_behavior_delta' => true,
+                'creative_window' => $playbookToolbox['creative_window'],
             ],
             'cannot' => ['set_position_size', 'raise_risk', 'override_risk_sentinel', 'create_promotion_evidence', 'use_future_training_data'],
             'evidence_contract' => $this->evidenceContract(),

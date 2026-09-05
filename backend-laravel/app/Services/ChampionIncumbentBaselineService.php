@@ -27,7 +27,10 @@ class ChampionIncumbentBaselineService
             ->where('status', 'champion')->whereNull('invalidated_at')
             ->orderBy('champion_slot')->orderByDesc('promoted_at')->get();
         if ($performances->isEmpty()) {
-            return $this->blocked($symbol, $timeframe, 'INCUMBENT_CHAMPION_MISSING');
+            // Genesis is a benchmark envelope, never a substitute champion.
+            // It breaks the first-champion comparison deadlock while keeping
+            // trade authority and automatic replacement fully disabled.
+            return app(GenesisBenchmarkBundleService::class)->freeze($symbol, $timeframe);
         }
 
         $lab = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->first();
@@ -83,7 +86,7 @@ class ChampionIncumbentBaselineService
             'status' => 'frozen', 'baseline_id' => (int) $baseline->id,
             'snapshot_hash' => (string) $baseline->snapshot_hash,
             'frozen_at' => $baseline->frozen_at?->toIso8601String(),
-        ] : $this->blocked(strtoupper($symbol), strtoupper($timeframe), 'INCUMBENT_BASELINE_MISSING');
+        ] : $this->genesisCurrent(strtoupper($symbol), strtoupper($timeframe));
     }
 
     /** @return array<string, mixed> */
@@ -123,5 +126,15 @@ class ChampionIncumbentBaselineService
     private function blocked(string $symbol, string $timeframe, string $reason): array
     {
         return ['status' => 'blocked', 'symbol' => $symbol, 'timeframe' => $timeframe, 'reason_code' => $reason, 'promotion_evidence' => false];
+    }
+
+    /** @return array<string,mixed> */
+    private function genesisCurrent(string $symbol, string $timeframe): array
+    {
+        $baseline = LearningProtocolBaseline::query()->where('protocol_version', GenesisBenchmarkBundleService::PROTOCOL)
+            ->whereHas('generation.laboratory', fn ($query) => $query->where('symbol', $symbol)->where('timeframe', $timeframe))->latest('id')->first();
+        return $baseline ? ['status' => 'genesis_frozen', 'baseline_id' => (int) $baseline->id, 'snapshot_hash' => (string) $baseline->snapshot_hash,
+            'frozen_at' => $baseline->frozen_at?->toIso8601String(), 'trade_authority' => false, 'promotion_evidence' => false]
+            : $this->blocked($symbol, $timeframe, 'INCUMBENT_BASELINE_MISSING');
     }
 }

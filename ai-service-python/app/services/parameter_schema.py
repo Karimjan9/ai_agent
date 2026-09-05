@@ -51,6 +51,80 @@ PARAMETER_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
         "equal_level_atr_fraction": {"type": float, "min": 0.02, "max": 1.0},
         "zone_strength_min": {"type": float, "min": 0.05, "max": 1.0},
     },
+    "liquidity_trap_mtf": {
+        "swing_lookback": {"type": int, "min": 10, "max": 300},
+        "atr_period": {"type": int, "min": 2, "max": 100},
+        "equal_level_atr_fraction": {"type": float, "min": 0.02, "max": 1.0},
+        "m5_minimum_displacement_atr": {"type": float, "min": 0.1, "max": 3.0},
+        "m15_trap_expiry_minutes": {"type": int, "min": 5, "max": 180},
+        "m5_retest_expiry_minutes": {"type": int, "min": 5, "max": 60},
+        "entry_mode": {"type": str, "choices": {"aggressive", "balanced", "conservative"}},
+        "h4_context_max_age_bars": {"type": float, "min": 1.0, "max": 6.0},
+        "h1_context_max_age_bars": {"type": float, "min": 1.0, "max": 6.0},
+        "m15_context_max_age_bars": {"type": float, "min": 1.0, "max": 8.0},
+    },
+    "confirmation_entry_mtf": {
+        "entry_model": {"type": str, "choices": {
+            "trend_continuation", "breakout_retest", "false_break_reversal",
+            "range_sweep", "htf_reversal",
+        }},
+        "breakout_setup_timeframe": {"type": str, "choices": {"H1", "M15"}},
+        "entry_mode": {"type": str, "choices": {"aggressive", "balanced", "conservative"}},
+        "confirmation_family_policy": {"type": str, "choices": {
+            "all_three_simultaneous", "structure_plus_reaction", "structure_plus_participation",
+            "sequential_three", "state_adaptive_two_of_three",
+        }},
+        "trigger_topology_policy": {"type": str, "choices": {
+            "aggressive_structure_close", "balanced_retest_reaction", "conservative_continuation",
+            "session_adaptive", "volatility_adaptive",
+        }},
+        "setup_topology_policy": {"type": str, "choices": {
+            "breakout_and_retest", "pullback_rejection", "liquidity_sweep_reclaim",
+            "range_reentry", "compression_expansion",
+        }},
+        "swing_lookback": {"type": int, "min": 10, "max": 300},
+        "atr_period": {"type": int, "min": 2, "max": 100},
+        "equal_level_atr_fraction": {"type": float, "min": 0.02, "max": 1.0},
+        "m5_minimum_displacement_atr": {"type": float, "min": 0.1, "max": 3.0},
+        "breakout_minimum_expansion_atr": {"type": float, "min": 0.05, "max": 3.0},
+        "m15_trap_expiry_minutes": {"type": int, "min": 5, "max": 180},
+        "m5_retest_expiry_minutes": {"type": int, "min": 5, "max": 60},
+        "conservative_expiry_minutes": {"type": int, "min": 5, "max": 120},
+        "location_tolerance_atr": {"type": float, "min": 0.05, "max": 2.0},
+        "rejection_wick_ratio": {"type": float, "min": 0.1, "max": 0.9},
+        "invalidation_buffer_atr": {"type": float, "min": 0.0, "max": 1.0},
+        "minimum_independent_confirmations": {"type": int, "min": 1, "max": 3},
+        "attribution_confirmation_bypass": {"type": bool},
+        "minimum_reward_space_r": {"type": float, "min": 0.5, "max": 5.0},
+        "max_chase_atr": {"type": float, "min": 0.1, "max": 5.0},
+        "h1_range_adx_max": {"type": float, "min": 5.0, "max": 40.0},
+        "h4_context_max_age_bars": {"type": float, "min": 1.0, "max": 6.0},
+        "h1_context_max_age_bars": {"type": float, "min": 1.0, "max": 6.0},
+        "m15_context_max_age_bars": {"type": float, "min": 1.0, "max": 8.0},
+    },
+    "mtf_research_control": {
+        "swing_lookback": {"type": int, "min": 10, "max": 300},
+        "atr_period": {"type": int, "min": 2, "max": 100},
+        "equal_level_atr_fraction": {"type": float, "min": 0.02, "max": 1.0},
+        "m5_minimum_displacement_atr": {"type": float, "min": 0.1, "max": 3.0},
+    },
+    "mtf_research_playbook": {
+        "research_model_id": {"type": str, "choices": {
+            "ict_2022_raid_mss_fvg", "po3_amd_session", "london_judas_swing",
+            "turtle_soup_mtf", "silver_bullet_window", "smt_sweep_mss",
+            "wyckoff_spring_utad", "elder_triple_screen_liquidity", "orb_htf_bias",
+            "orb_vwap_reclaim", "adaptive_timeframe_confirmation",
+        }},
+        "swing_lookback": {"type": int, "min": 10, "max": 300},
+        "atr_period": {"type": int, "min": 2, "max": 100},
+        "equal_level_atr_fraction": {"type": float, "min": 0.02, "max": 1.0},
+        "m5_minimum_displacement_atr": {"type": float, "min": 0.1, "max": 3.0},
+        "m15_trap_expiry_minutes": {"type": int, "min": 5, "max": 180},
+        "m5_retest_expiry_minutes": {"type": int, "min": 5, "max": 60},
+        "session_start_utc": {"type": int, "min": 0, "max": 23},
+        "session_end_utc": {"type": int, "min": 1, "max": 24},
+        "opening_range_minutes": {"type": int, "min": 15, "max": 180},
+    },
     "macd_trend": {
         "ema_trend": {"type": int, "min": 10, "max": 500},
         "macd_fast": {"type": int, "min": 2, "max": 100},
@@ -254,6 +328,14 @@ EXECUTION_PARAMETER_SCHEMA: dict[str, dict[str, Any]] = {
             "volatility_adaptive_v1",
         },
     },
+    # Fixed architecture interaction bundle.  Keeping the bundle behind one
+    # explicit macro gene preserves exact counterfactual attribution while
+    # allowing the already-tested classifier and state machine to express a
+    # synergy that neither single-axis replay can measure.
+    "architecture_interaction_variant": {
+        "type": str,
+        "choices": {"frozen", "state_classifier_coherence_v1"},
+    },
     "confidence_calibration_enabled": {"type": bool},
     "confidence_calibration_min_samples": {"type": int, "min": 15, "max": 200},
     "confidence_ev_lower_bound_enabled": {"type": bool},
@@ -316,6 +398,9 @@ def _strategy_family_alias(value: str) -> str:
         "regime_consensus": "hybrid",
         "differential_router": "differential_router",
         "regime_ensemble": "regime_ensemble",
+        "mtf_research_control": "mtf_research_control",
+        "mtf_research_playbook": "mtf_research_playbook",
+        "confirmation_entry_mtf": "confirmation_entry_mtf",
     }.get(value, value)
 
 

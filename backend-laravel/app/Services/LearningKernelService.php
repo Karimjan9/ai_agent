@@ -90,6 +90,13 @@ class LearningKernelService
                 'episode_id' => $episode?->id ?? $row->episode_id,
                 'metadata' => [
                     ...((array) $row->metadata),
+                    'retrieval_decision' => [
+                        ...((array) data_get($row->metadata, 'retrieval_decision', [])),
+                        'considered' => true,
+                        'compatible' => true,
+                        'accepted' => $state === 'consumed',
+                        'reason' => $state === 'consumed' ? 'EXPERIMENT_GENE_SELECTED' : 'NOT_SELECTED_OR_BLOCKED',
+                    ],
                     'selection_status' => $causallyApplied
                         ? 'causally_applied'
                         : ($state === 'consumed' ? 'selected_context_only' : 'rejected'),
@@ -113,7 +120,13 @@ class LearningKernelService
     /** Link actually used lessons back to the settled decision outcome. */
     public function linkOutcome(AgentLearningEpisode $episode): int
     {
-        return AgentLearningRetrieval::query()->where('episode_id', $episode->id)->where('retrieval_state', 'consumed')->whereNull('outcome_linked_at')->update(['outcome_linked_at' => now()]);
+        $rows = AgentLearningRetrieval::query()->where('episode_id', $episode->id)->where('retrieval_state', 'consumed')->whereNull('outcome_linked_at')->get();
+        foreach ($rows as $row) {
+            $row->update(['outcome_linked_at' => now(), 'metadata' => [...((array) $row->metadata), 'retrieval_decision' => [
+                ...((array) data_get($row->metadata, 'retrieval_decision', [])), 'outcome_settlement_id' => $episode->settlement?->settlement_id,
+            ]]]);
+        }
+        return $rows->count();
     }
 
     /** @return array<string,mixed> */

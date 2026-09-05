@@ -74,6 +74,11 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            // The application and immutable evidence plane use UTC. Without
+            // an explicit session timezone MariaDB returns TIMESTAMP values
+            // in the Windows host timezone, making cooldown/lease ages five
+            // hours wrong even though the stored instant is valid.
+            'timezone' => env('DB_TIMEZONE', '+00:00'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
@@ -94,6 +99,7 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
+            'timezone' => env('DB_TIMEZONE', '+00:00'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],

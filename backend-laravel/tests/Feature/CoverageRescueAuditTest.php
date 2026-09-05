@@ -11,6 +11,7 @@ use App\Models\CandidateGateDecision;
 use App\Services\CoverageRescueAuditService;
 use App\Services\LabPopulationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class CoverageRescueAuditTest extends TestCase
@@ -209,6 +210,7 @@ class CoverageRescueAuditTest extends TestCase
                 ],
             ],
         ]);
+        $this->grantParentAuthority($validatedParent, 'differential_router');
 
         $generation = $service->build('XAUUSD', 'parent_selection_role_complete', true, 'H1', [], true);
         $roleAgent = $generation->agents->firstWhere('origin', 'council_role_complete');
@@ -235,6 +237,7 @@ class CoverageRescueAuditTest extends TestCase
             'metadata' => [],
             'evidence_status' => 'valid',
         ]);
+        $this->grantParentAuthority($parent, 'differential_router');
 
         $audit = [
             'protocol' => CoverageRescueAuditService::PROTOCOL,
@@ -258,5 +261,18 @@ class CoverageRescueAuditTest extends TestCase
         $this->assertNotNull($generation);
         $this->assertSame('coverage_rescue', $generation->trigger_type);
         $this->assertCount(20, $generation->agents);
+    }
+
+    private function grantParentAuthority(ModelVersion $model, string $family): void
+    {
+        DB::table('evolutionary_authority_ledgers')->insert([
+            'authority_key' => hash('sha256', 'coverage-rescue-fixture|'.$model->id),
+            'model_version_id' => $model->id, 'lab_agent_id' => null,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => $family,
+            'authority_stage' => 'eligible_parent', 'status' => 'passed',
+            'data_hash' => str_repeat('a', 64), 'execution_hash' => str_repeat('b', 64),
+            'evidence' => json_encode(['protocol' => 'evolutionary_authority_foundry_v1', 'fixture' => true, 'promotion_evidence' => false]),
+            'evaluated_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
     }
 }

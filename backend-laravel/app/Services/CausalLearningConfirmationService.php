@@ -7,6 +7,7 @@ use App\Models\AgentLearningLesson;
 use App\Models\AgentLearningMutationIntent;
 use App\Models\AgentLearningPolicy;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabLearningLanePair;
 use App\Models\ModelMarketPerformance;
 use Illuminate\Support\Facades\Schema;
@@ -14,6 +15,228 @@ use Illuminate\Support\Facades\Schema;
 /** Confirms memory only when it beats both blinded mutation and frozen control. */
 class CausalLearningConfirmationService
 {
+    /** @return array<string, mixed> */
+    public function recordEvaluationOutcome(
+        LabAgent $agent,
+        array $result,
+        ?ModelMarketPerformance $performance = null,
+        ?object $forwardDecision = null,
+    ): array {
+        $experiment = AgentLearningCausalExperiment::query()
+            ->where('guided_agent_id', $agent->id)
+            ->orWhere('blinded_agent_id', $agent->id)
+            ->orWhere('control_agent_id', $agent->id)
+            ->first();
+        if (! $experiment) {
+            return ['status' => 'not_applicable', 'confirmed' => false, 'promotion_evidence' => false];
+        }
+        $candidateId = (int) $agent->id === (int) $experiment->control_agent_id
+            ? (int) $experiment->guided_agent_id
+            : (int) $agent->id;
+        $pair = LabLearningLanePair::query()
+            ->with('controlResponseMap')
+            ->where('candidate_agent_id', $candidateId)
+            ->where('control_agent_id', $experiment->control_agent_id)
+            ->latest('id')
+            ->first();
+        if (! $pair) {
+            return ['status' => 'missing_causal_pair', 'confirmed' => false, 'promotion_evidence' => false];
+        }
+        $delta = (array) $pair->target_delta;
+        if ((int) $agent->id === (int) $experiment->control_agent_id) {
+            $delta = ['delta' => 0.0, 'improved' => false];
+        }
+        $lesson = AgentLearningLesson::query()
+            ->where('lab_agent_id', $agent->id)
+            ->where('parameter_key', $experiment->gene_key)
+            ->where('lesson_type', 'skill_lesson')
+            ->latest('id')
+            ->first();
+
+        $outcome = $this->recordOutcome(
+            $agent,
+            $pair,
+            $result,
+            $delta,
+            $lesson,
+            $performance,
+            $forwardDecision,
+        );
+        // Bind and settle only full candidate/control evidence. Screening
+        // run IDs are preserved in pair metadata but can never satisfy this
+        // causal settlement boundary.
+        $canonical = $this->reconcileCanonicalPairs($experiment->fresh());
+        $experiment->refresh();
+        $allOutcomesPresent = collect([$this->guidedRole($experiment), 'blinded', 'frozen_control'])
+            ->every(fn (string $role): bool => (array) data_get($experiment->evidence, 'outcomes.'.$role, []) !== []);
+        if ($allOutcomesPresent && (string) $experiment->status !== 'confirmed') {
+            $freshPair = $pair->fresh('controlResponseMap');
+            $freshDelta = (int) $agent->id === (int) $experiment->control_agent_id
+                ? ['delta' => 0.0, 'improved' => false]
+                : (array) $freshPair->target_delta;
+            $outcome = $this->recordOutcome(
+                $agent,
+                $freshPair,
+                $result,
+                $freshDelta,
+                $lesson,
+                $performance,
+                $forwardDecision,
+            );
+        }
+
+        return [
+            ...$outcome,
+            'canonical_pair_settlements' => $canonical,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /**
+     * Project the two candidate/control pairs after both sides have terminal
+     * full replay evidence. This method is idempotent through the canonical
+     * outbox key and never treats a screening run as settlement authority.
+     *
+     * @return array<string, mixed>
+     */
+    private function reconcileCanonicalPairs(AgentLearningCausalExperiment $experiment): array
+    {
+        $outcomes = (array) data_get($experiment->evidence, 'outcomes', []);
+        $control = (array) data_get($outcomes, 'frozen_control', []);
+        if ($control === [] || ! filled(data_get($control, 'evidence_run_id'))) {
+            return ['status' => 'awaiting_full_control', 'settled_pair_ids' => [], 'promotion_evidence' => false];
+        }
+
+        $settled = [];
+        $pending = [];
+        $projections = [];
+        foreach ([$this->guidedRole($experiment), 'blinded'] as $role) {
+            $candidate = (array) data_get($outcomes, $role, []);
+            if ($candidate === [] || ! filled(data_get($candidate, 'evidence_run_id'))) {
+                $pending[] = $role;
+                continue;
+            }
+            $pair = LabLearningLanePair::query()->with('controlResponseMap')
+                ->where('candidate_agent_id', (int) data_get($candidate, 'agent_id'))
+                ->where('control_agent_id', (int) $experiment->control_agent_id)
+                ->latest('id')->first();
+            $agent = LabAgent::query()->with('modelVersion')->find((int) data_get($candidate, 'agent_id'));
+            $performance = ModelMarketPerformance::query()->find((int) data_get($candidate, 'performance_id'));
+            if (! $pair || ! $agent || ! $performance) {
+                $pending[] = $role;
+                continue;
+            }
+            $candidateRunId = (string) data_get($candidate, 'evidence_run_id');
+            $controlRunId = (string) data_get($control, 'evidence_run_id');
+            $candidateRun = LabEvaluationRun::query()->where('run_id', $candidateRunId)->first();
+            $controlRun = LabEvaluationRun::query()->where('run_id', $controlRunId)->first();
+            if (! $candidateRun || ! $controlRun
+                || (string) $candidateRun->phase !== 'full_validation'
+                || (string) $controlRun->phase !== 'full_validation'
+                || (string) $candidateRun->status !== 'completed'
+                || (string) $controlRun->status !== 'completed') {
+                $pending[] = $role;
+                $projections[$role] = [
+                    'status' => 'awaiting_terminal_full_pair',
+                    'candidate_run_phase' => $candidateRun?->phase,
+                    'candidate_run_status' => $candidateRun?->status,
+                    'control_run_phase' => $controlRun?->phase,
+                    'control_run_status' => $controlRun?->status,
+                    'promotion_evidence' => false,
+                ];
+                continue;
+            }
+            $comparison = $this->compareWindows($candidate, $control, 3);
+            $delta = [
+                'protocol' => 'causal_full_window_delta_v1',
+                'baseline' => 0.0,
+                'observed' => (float) data_get($comparison, 'mean_delta', 0),
+                'delta' => (float) data_get($comparison, 'mean_delta', 0),
+                'improved' => (bool) data_get($comparison, 'protocol_verified', false)
+                    && (float) data_get($comparison, 'mean_delta', 0) > 0.00000001,
+                'positive_windows' => (int) data_get($comparison, 'positive_delta_windows', 0),
+                'common_windows' => (int) data_get($comparison, 'common_window_count', 0),
+            ];
+            $metadata = (array) $pair->metadata;
+            $bindingHistory = (array) data_get($metadata, 'causal_full_replay_bindings', []);
+            $binding = [
+                'protocol' => 'causal_pair_full_evidence_binding_v1',
+                'candidate_full_run_id' => $candidateRunId,
+                'control_full_run_id' => $controlRunId,
+                'previous_candidate_run_id' => $pair->candidate_evidence_run_id,
+                'previous_control_run_id' => $pair->control_evidence_run_id,
+                'experiment_id' => (int) $experiment->id,
+                'bound_at' => now()->utc()->toIso8601String(),
+                'promotion_evidence' => false,
+            ];
+            $bindingKey = hash('sha256', json_encode([
+                $candidateRunId, $controlRunId, (int) $experiment->id,
+            ]));
+            $bindingHistory[$bindingKey] = $binding;
+            $pair->update([
+                'candidate_evidence_run_id' => $candidateRunId,
+                'control_evidence_run_id' => $controlRunId,
+                'candidate_metrics' => $this->outcomeMetrics($candidate),
+                'control_metrics' => $this->outcomeMetrics($control),
+                'target_delta' => $delta,
+                'status' => 'causal_full_paired',
+                'metadata' => [
+                    ...$metadata,
+                    'causal_experiment_id' => (int) $experiment->id,
+                    'causal_full_replay_bindings' => $bindingHistory,
+                    'promotion_evidence' => false,
+                ],
+            ]);
+            $result = (array) $performance->metrics;
+            $result['evidence_run_id'] = $candidateRunId;
+            $receipt = (array) data_get($agent->modelVersion?->metadata, 'learning_receipt', []);
+            $guidedRole = $this->guidedRole($experiment);
+            $expectedInfluence = $guidedRole === 'repair_guided' ? 'causal_repair_guided' : 'memory_guided';
+            $causalCreditEligible = $role === $guidedRole
+                && data_get($receipt, 'integrity.valid') === true
+                && data_get($receipt, 'causal_influence') === $expectedInfluence
+                && (bool) $delta['improved'];
+            $projection = app(CanonicalLearningOutboxService::class)->record(
+                $agent,
+                $pair->fresh('controlResponseMap'),
+                $result,
+                $causalCreditEligible,
+                $delta,
+            );
+            $projections[$role] = $projection;
+            if (in_array((string) data_get($projection, 'status'), ['completed', 'duplicate'], true)) {
+                $settled[] = (int) $pair->id;
+            } else {
+                $pending[] = $role;
+            }
+        }
+
+        return [
+            'status' => $pending === [] ? 'settled' : 'partially_settled',
+            'settled_pair_ids' => array_values(array_unique($settled)),
+            'pending_roles' => array_values(array_unique($pending)),
+            'projections' => $projections,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function outcomeMetrics(array $outcome): array
+    {
+        return [
+            'protocol' => 'causal_full_outcome_projection_v1',
+            'evidence_run_id' => data_get($outcome, 'evidence_run_id'),
+            'performance_id' => data_get($outcome, 'performance_id'),
+            'independent_window_count' => (int) data_get($outcome, 'independent_window_count', 0),
+            'positive_windows' => (int) data_get($outcome, 'positive_windows', 0),
+            'powered_windows' => (int) data_get($outcome, 'powered_windows', 0),
+            'minimum_powered_windows' => (int) data_get($outcome, 'minimum_powered_windows', 0),
+            'minimum_trades_per_window' => (int) data_get($outcome, 'minimum_trades_per_window', 0),
+            'windows' => (array) data_get($outcome, 'windows', []),
+            'promotion_evidence' => false,
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function recordOutcome(
         LabAgent $agent,
@@ -35,8 +258,19 @@ class CausalLearningConfirmationService
         if (! $experiment) {
             return ['status' => 'not_applicable', 'confirmed' => false, 'promotion_evidence' => false];
         }
+        // Confirmation is monotonic. A duplicate queue callback may replay
+        // an already persisted outcome, but it can never reopen or downgrade
+        // a confirmed causal skill.
+        if ((string) $experiment->status === 'confirmed') {
+            return [
+                'status' => 'confirmed',
+                'confirmed' => true,
+                'experiment_id' => (int) $experiment->id,
+                'promotion_evidence' => false,
+            ];
+        }
         $role = match ((int) $agent->id) {
-            (int) $experiment->guided_agent_id => 'memory_guided',
+            (int) $experiment->guided_agent_id => $this->guidedRole($experiment),
             (int) $experiment->blinded_agent_id => 'blinded',
             default => 'frozen_control',
         };
@@ -55,6 +289,14 @@ class CausalLearningConfirmationService
             'independence_verified' => $windows['verified'],
             'purge_embargo_verified' => $windows['purge_embargo_verified'],
             'positive_windows' => $windows['positive'],
+            'minimum_trades_per_window' => $windows['minimum_trades_per_window'],
+            'powered_windows' => $windows['powered_windows'],
+            'minimum_powered_windows' => $windows['minimum_powered_windows'],
+            'power_contract_declared' => $windows['power_contract_declared'],
+            'power_quorum_verified' => $windows['power_quorum_verified'],
+            'windows' => $windows['windows'],
+            'maximum_holding_bars' => $windows['maximum_holding_bars'],
+            'execution_horizon_overlay_applied' => $windows['execution_horizon_overlay_applied'],
             'evidence_run_id' => data_get($result, 'evidence_run_id'),
             'performance_id' => $performance?->id,
             'forward_decision' => data_get($forwardDecision, 'decision'),
@@ -64,9 +306,11 @@ class CausalLearningConfirmationService
         ];
         $experiment->update(['evidence' => $evidence, 'status' => 'outcomes_pending']);
         $experiment = $experiment->fresh();
-        $guided = (array) data_get($experiment->evidence, 'outcomes.memory_guided', []);
+        $guidedRole = $this->guidedRole($experiment);
+        $guided = (array) data_get($experiment->evidence, 'outcomes.'.$guidedRole, []);
         $blinded = (array) data_get($experiment->evidence, 'outcomes.blinded', []);
-        if ($guided === [] || $blinded === []) {
+        $control = (array) data_get($experiment->evidence, 'outcomes.frozen_control', []);
+        if ($guided === [] || $blinded === [] || $control === []) {
             return [
                 'status' => 'awaiting_counterfactual_outcomes',
                 'confirmed' => false,
@@ -78,23 +322,73 @@ class CausalLearningConfirmationService
         $positiveRequired = 2;
         $guidedIntent = AgentLearningMutationIntent::query()->where('lab_agent_id', $experiment->guided_agent_id)->first();
         $guidedAgent = LabAgent::query()->with('modelVersion')->find($experiment->guided_agent_id);
-        $receiptValid = data_get($guidedAgent?->modelVersion?->metadata, 'learning_receipt.integrity.valid') === true
-            && data_get($guidedAgent?->modelVersion?->metadata, 'learning_receipt.status') === 'provisional';
-        $guidedUtility = (float) data_get($guided, 'utility', 0);
-        $blindedUtility = (float) data_get($blinded, 'utility', 0);
-        $guidedBeatsControl = (bool) data_get($guided, 'target_delta.improved', false) && $guidedUtility > 0;
-        $guidedBeatsBlinded = $guidedUtility > $blindedUtility;
+        $guidedReceipt = (array) data_get($guidedAgent?->modelVersion?->metadata, 'learning_receipt', []);
+        // Screening receipt status is diagnostic, not confirmation authority.
+        // Requiring an early `provisional` result here makes the full causal
+        // experiment circular: a screening no-effect could never be disproved
+        // by the three independent full-replay windows it was sent to obtain.
+        $repairExperiment = $guidedRole === 'repair_guided';
+        $expectedInfluence = $repairExperiment ? 'causal_repair_guided' : 'memory_guided';
+        $receiptValid = data_get($guidedReceipt, 'protocol') === LearningReceiptService::PROTOCOL
+            && data_get($guidedReceipt, 'integrity.valid') === true
+            && data_get($guidedReceipt, 'causal_influence') === $expectedInfluence
+            && (string) data_get($guidedReceipt, 'changed_gene') === (string) $experiment->gene_key
+            && ($repairExperiment
+                ? ((array) data_get($guidedReceipt, 'causally_applied_lesson_ids', []) === []
+                    && (int) data_get($experiment->evidence, 'source_causal_experiment_id', 0) > 0)
+                : in_array((int) $experiment->source_lesson_id, array_map(
+                    'intval',
+                    (array) data_get($guidedReceipt, 'causally_applied_lesson_ids', []),
+                ), true));
+        $componentEffect = $this->compareWindows($guided, $control, $required);
+        $selectorEffect = $this->compareWindows($guided, $blinded, $required);
+        $guidedBeatsControl = (bool) data_get($componentEffect, 'passed', false);
+        $guidedBeatsBlinded = (bool) data_get($selectorEffect, 'passed', false);
+        $confirmedWindowCount = (int) data_get($componentEffect, 'common_window_count', 0);
+        $causalPositiveWindows = (int) data_get($componentEffect, 'positive_delta_windows', 0);
+        $guidedPairId = (int) data_get($guided, 'pair_id', 0);
+        $guidedPair = $guidedPairId > 0 ? LabLearningLanePair::query()->find($guidedPairId) : null;
+        $canonicalSettlement = $guidedPair
+            ? \App\Models\AgentLearningSettlement::query()
+                ->where('source_type', LabLearningLanePair::class)
+                ->where('source_id', $guidedPair->id)
+                ->where('evidence_state', 'positive')
+                ->where('hard_failure', false)
+                ->latest('id')
+                ->first()
+            : null;
+        $latestCanonicalSettlement = $guidedPair
+            ? \App\Models\AgentLearningSettlement::query()
+                ->where('source_type', LabLearningLanePair::class)
+                ->where('source_id', $guidedPair->id)
+                ->latest('id')
+                ->first()
+            : null;
+        $nonTargetSafe = $this->nonTargetSafe($guidedPair);
         $reasons = [];
         if ((string) $experiment->status === 'invalid_counterfactual_contract'
             || data_get($experiment->evidence, 'construction_validation.status') !== 'ready_for_replay') {
             $reasons[] = 'COUNTERFACTUAL_CONSTRUCTION_INVALID';
         }
-        if ($guidedIntent?->influence_type !== 'memory_guided'
+        if ($repairExperiment) {
+            if ($guidedIntent?->influence_type !== 'causal_repair_guided'
+                || (array) $guidedIntent?->causally_applied_lesson_ids !== []) {
+                $reasons[] = 'GUIDED_REPAIR_FRONTIER_NOT_CAUSALLY_APPLIED';
+            }
+        } elseif ($guidedIntent?->influence_type !== 'memory_guided'
             || (array) $guidedIntent?->causally_applied_lesson_ids === []) {
             $reasons[] = 'GUIDED_MEMORY_NOT_CAUSALLY_APPLIED';
         }
         if (! $receiptValid) {
             $reasons[] = 'GUIDED_RECEIPT_INVALID';
+        }
+        if (! $guidedPair || ! $latestCanonicalSettlement) {
+            $reasons[] = 'GUIDED_CANONICAL_SETTLEMENT_MISSING';
+        } elseif (! $canonicalSettlement) {
+            $reasons[] = 'GUIDED_ABSOLUTE_VIABILITY_FAILED';
+        }
+        if (! $nonTargetSafe) {
+            $reasons[] = 'NON_TARGET_REGRESSION_UNSAFE';
         }
         if (data_get($guided, 'verified_control') !== true
             || (int) data_get($guided, 'control_agent_id') !== (int) $experiment->control_agent_id) {
@@ -104,42 +398,97 @@ class CausalLearningConfirmationService
             || (int) data_get($blinded, 'control_agent_id') !== (int) $experiment->control_agent_id) {
             $reasons[] = 'BLINDED_CONTROL_MISMATCH';
         }
+        if (data_get($control, 'verified_control') !== true
+            || (int) data_get($control, 'agent_id') !== (int) $experiment->control_agent_id) {
+            $reasons[] = 'FROZEN_CONTROL_OUTCOME_MISSING_OR_INVALID';
+        }
         if (! $guidedBeatsControl) {
             $reasons[] = 'GUIDED_DID_NOT_BEAT_CONTROL';
         }
         if (! $guidedBeatsBlinded) {
             $reasons[] = 'GUIDED_DID_NOT_BEAT_BLINDED';
         }
-        if (data_get($guided, 'independence_verified') !== true
-            || data_get($guided, 'purge_embargo_verified') !== true
-            || (int) data_get($guided, 'independent_window_count', 0) < $required
-            || (int) data_get($guided, 'positive_windows', 0) < $positiveRequired) {
+        if (! (bool) data_get($componentEffect, 'protocol_verified', false)
+            || ! (bool) data_get($selectorEffect, 'protocol_verified', false)
+            || (int) data_get($componentEffect, 'common_window_count', 0) < (int) data_get($componentEffect, 'required_common_windows', $required)
+            || (int) data_get($componentEffect, 'positive_delta_windows', 0) < (int) data_get($componentEffect, 'required_positive_windows', $positiveRequired)) {
             $reasons[] = 'INDEPENDENT_WINDOWS_INSUFFICIENT';
         }
         if ($reasons !== []) {
+            $repairDepth = (int) data_get($experiment->evidence, 'repair_lineage.depth', 0);
+            $experimentKind = (string) data_get($experiment->evidence, 'experiment_kind');
+            $interactionExperiment = $experimentKind === 'causal_architecture_interaction';
+            $architectureExperiment = in_array($experimentKind, [
+                'causal_architecture_escape', 'causal_architecture_interaction',
+            ], true);
+            $architectureDepth = (int) data_get($experiment->evidence, 'architecture_lineage.depth', 0);
+            $scalarBudgetExhausted = $repairExperiment && ! $architectureExperiment && $repairDepth >= 3;
+            $architectureBudgetExhausted = ! $interactionExperiment && $architectureExperiment && $architectureDepth >= 3;
             $experiment->update([
                 'status' => 'provisional',
-                'independent_window_count' => (int) data_get($guided, 'independent_window_count', 0),
+                'independent_window_count' => $confirmedWindowCount,
                 'guided_beats_blinded' => $guidedBeatsBlinded,
                 'guided_beats_control' => $guidedBeatsControl,
-                'evidence' => [...((array) $experiment->evidence), 'confirmation_blockers' => $reasons, 'promotion_evidence' => false],
+                'evidence' => [...((array) $experiment->evidence),
+                    'component_effect' => $componentEffect,
+                    'selector_effect' => $selectorEffect,
+                    'confirmation_blockers' => $reasons,
+                    'absolute_viability' => [
+                        'status' => $canonicalSettlement ? 'passed' : ($latestCanonicalSettlement ? 'failed' : 'missing'),
+                        'settlement_id' => $latestCanonicalSettlement?->id,
+                        'evidence_state' => $latestCanonicalSettlement?->evidence_state,
+                        'hard_failure' => $latestCanonicalSettlement?->hard_failure,
+                        'vetoes' => (array) data_get($latestCanonicalSettlement?->reward_components, 'vetoes', []),
+                        'rule' => 'Relative uplift cannot become inheritable skill while absolute economic safety vetoes fail.',
+                        'promotion_evidence' => false,
+                    ],
+                    'repair_frontier' => [
+                        'status' => ! $latestCanonicalSettlement
+                            ? 'awaiting_settlement'
+                            : ($interactionExperiment
+                                ? 'architecture_portfolio_exhausted'
+                                : ($architectureExperiment
+                                ? ($architectureBudgetExhausted ? 'architecture_portfolio_required' : 'architecture_escape_retry_required')
+                                : ($scalarBudgetExhausted ? 'architecture_escape_required' : 'bounded_repair_required'))),
+                        'preserve_as_observation_only' => (bool) data_get($componentEffect, 'passed', false),
+                        'inherit_gene' => false,
+                        'target' => (string) ($latestCanonicalSettlement?->failure_class ?: 'evidence_completion'),
+                        'next_experiment' => $interactionExperiment
+                            ? 'manual_architecture_redesign_required'
+                            : ($scalarBudgetExhausted
+                                ? 'architecture_hypothesis_paired_replay'
+                                : ($architectureExperiment
+                                ? ($architectureBudgetExhausted
+                                    ? 'bounded_architecture_interaction_paired_replay'
+                                    : 'one_gene_structural_paired_replay')
+                                : 'one_gene_paired_replay')),
+                        'scalar_repair_depth' => $repairDepth,
+                        'scalar_repair_budget' => 3,
+                        'architecture_escape_depth' => $architectureDepth,
+                        'architecture_escape_budget' => 3,
+                        'required_controls' => ['frozen_control', 'memory_blinded', 'non_target_invariants'],
+                        'promotion_evidence' => false,
+                    ],
+                    'promotion_evidence' => false,
+                ],
             ]);
 
             return ['status' => 'provisional', 'confirmed' => false, 'reason_codes' => $reasons, 'promotion_evidence' => false];
         }
         $experiment->update([
             'status' => 'confirmed',
-            'independent_window_count' => (int) data_get($guided, 'independent_window_count', 0),
+            'independent_window_count' => $confirmedWindowCount,
             'guided_beats_blinded' => true,
             'guided_beats_control' => true,
             'confirmed_at' => now(),
             'evidence' => [...((array) $experiment->evidence),
-                'confirmation_protocol' => 'memory_guided_vs_blinded_vs_frozen_control_v1',
+                'confirmation_protocol' => $this->confirmationProtocol($experiment),
+                'component_effect' => $componentEffect,
+                'selector_effect' => $selectorEffect,
                 'confirmation_blockers' => [],
                 'promotion_evidence' => false,
             ],
         ]);
-        $guidedPairId = (int) data_get($guided, 'pair_id', 0);
         $guidedLesson = AgentLearningLesson::query()
             ->where('lab_agent_id', $experiment->guided_agent_id)
             ->where('parameter_key', $experiment->gene_key)
@@ -149,38 +498,23 @@ class CausalLearningConfirmationService
             ->first();
         $guidedLesson?->update([
             'status' => 'confirmed',
-            'independent_window_count' => (int) data_get($guided, 'independent_window_count', 0),
+            'independent_window_count' => $confirmedWindowCount,
             'confirmation_count' => $required,
             'evidence' => [...((array) $guidedLesson?->evidence),
                 'causal_experiment_id' => (int) $experiment->id,
-                'confirmation_protocol' => 'memory_guided_vs_blinded_vs_frozen_control_v1',
+                'confirmation_protocol' => $this->confirmationProtocol($experiment),
                 'confirmed_at' => now()->utc()->toIso8601String(),
                 'promotion_evidence' => false,
             ],
             'expires_at' => null,
         ]);
         if ($guidedPairId > 0) {
-            $guidedPair = LabLearningLanePair::query()->find($guidedPairId);
-            $guidedPair?->update([
-                'status' => 'skill_confirmed',
-                'metadata' => [...((array) $guidedPair?->metadata),
-                    'skill_state' => 'confirmed',
-                    'causal_experiment_id' => (int) $experiment->id,
-                    'promotion_evidence' => false,
-                ],
-            ]);
-            $canonicalSettlement = $guidedPair
-                ? \App\Models\AgentLearningSettlement::query()
-                    ->where('source_type', LabLearningLanePair::class)
-                    ->where('source_id', $guidedPair->id)
-                    ->where('evidence_state', 'positive')
-                    ->where('hard_failure', false)
-                    ->latest('id')
-                    ->first()
-                : null;
             if ($guidedPair && $canonicalSettlement) {
                 app(LearningCompilerService::class)->compileCanonical([
-                    'source_key' => 'confirmed-causal-experiment:'.$experiment->id,
+                    // Upgrade the provisional receipt produced by the
+                    // canonical outbox instead of creating a parallel memory
+                    // row for the same replay evidence.
+                    'source_key' => 'canonical-pair:'.$guidedPair->id.':'.(string) data_get($guided, 'evidence_run_id', 'none'),
                     'pair_id' => $guidedPair->id,
                     'settlement_id' => $canonicalSettlement->id,
                     'causal_experiment_id' => $experiment->id,
@@ -194,11 +528,18 @@ class CausalLearningConfirmationService
                     'causal_uplift_r' => (float) data_get($guided, 'target_delta.delta', 0),
                     'scope' => ['strategy_family' => $experiment->strategy_family],
                     'source_experiments' => ['causal-experiment-'.$experiment->id],
-                    'support' => max(1, (int) data_get($guided, 'independent_window_count', 0)),
-                    'independent_windows' => (int) data_get($guided, 'independent_window_count', 0),
-                    'positive_windows' => (int) data_get($guided, 'positive_windows', 0),
+                    'support' => max(1, $confirmedWindowCount),
+                    'independent_windows' => $confirmedWindowCount,
+                    'positive_windows' => $causalPositiveWindows,
                     'non_target_regression' => false,
                 ]);
+                $guidedPair->update(['metadata' => [
+                    ...((array) $guidedPair->metadata),
+                    'skill_state' => 'confirmed',
+                    'causal_experiment_id' => (int) $experiment->id,
+                    'promotion_evidence' => false,
+                ]]);
+                app(CanonicalLearningOutboxService::class)->finalizeDispatch($guidedPair->fresh(), 'skill_confirmed');
             }
         }
         $guidedIntent?->update(['status' => 'settled', 'metadata' => [
@@ -209,8 +550,26 @@ class CausalLearningConfirmationService
         ]]);
         if ($guidedAgent?->modelVersion) {
             $guidedMetadata = (array) $guidedAgent->modelVersion->metadata;
+            $priorReceipt = (array) data_get($guidedMetadata, 'learning_receipt', []);
+            $priorSettlement = (array) data_get($priorReceipt, 'settlement', []);
+            $guidedMetadata['learning_receipt'] = [
+                ...$priorReceipt,
+                'status' => 'confirmed',
+                'settlement' => [
+                    ...$priorSettlement,
+                    'status' => 'confirmed',
+                    'causal_experiment_id' => (int) $experiment->id,
+                    'confirmation_protocol' => $this->confirmationProtocol($experiment),
+                    'independent_window_count' => $confirmedWindowCount,
+                    'positive_windows' => $causalPositiveWindows,
+                    'evidence_run_ids' => collect((array) data_get($experiment->fresh()->evidence, 'outcomes', []))
+                        ->pluck('evidence_run_id')->filter()->values()->all(),
+                    'confirmed_at' => now()->utc()->toIso8601String(),
+                    'promotion_evidence' => false,
+                ],
+            ];
             $guidedMetadata['causal_learning_experiment'] = [
-                'protocol' => 'memory_guided_vs_blinded_vs_frozen_control_v1',
+                'protocol' => $this->confirmationProtocol($experiment),
                 'experiment_id' => (int) $experiment->id,
                 'status' => 'confirmed',
                 'guided_beats_blinded' => true,
@@ -224,7 +583,11 @@ class CausalLearningConfirmationService
         }
         $mentor = $this->projectConfirmedGuidedMentor(
             $guidedAgent,
-            $guided,
+            [
+                ...$guided,
+                'independent_window_count' => $confirmedWindowCount,
+                'positive_windows' => $causalPositiveWindows,
+            ],
             $required,
         );
         if ($mentor !== null) {
@@ -235,9 +598,9 @@ class CausalLearningConfirmationService
             ]]);
         }
         $policy = app(LearningPolicyRegistryService::class)->register(
-            'causal-memory:'.strtoupper($experiment->symbol).':'.strtoupper($experiment->timeframe).':'.$experiment->strategy_family,
+            ($repairExperiment ? 'causal-repair:' : 'causal-memory:').strtoupper($experiment->symbol).':'.strtoupper($experiment->timeframe).':'.$experiment->strategy_family,
             [
-                'protocol' => 'causal_memory_policy_v1',
+                'protocol' => $repairExperiment ? 'causal_repair_policy_v1' : 'causal_memory_policy_v1',
                 'gene' => $experiment->gene_key,
                 'value' => data_get($guidedIntent?->new_value, 'value'),
                 'source_lesson_id' => $experiment->source_lesson_id,
@@ -311,27 +674,177 @@ class CausalLearningConfirmationService
         );
     }
 
-    /** @return array{keys: array<int, string>, count: int, verified: bool, purge_embargo_verified: bool, positive: int} */
+    /** @return array<string, mixed> */
     private function windows(LabLearningLanePair $pair, array $result): array
     {
         $protocol = (array) data_get($result, 'forward_window_protocol', []);
-        $keys = collect([$pair->independent_window_key, data_get($protocol, 'window_key')])
-            ->merge(collect((array) data_get($protocol, 'windows', []))->map(
-                fn ($row) => data_get($row, 'window_key', data_get($row, 'key')),
-            ))->filter()->map('strval')->unique()->values();
+        $rows = collect((array) data_get($protocol, 'windows', []))
+            ->filter(fn ($row): bool => is_array($row))
+            ->map(function (array $row): array {
+                $id = (string) data_get($row, 'id', data_get($row, 'window_key', data_get($row, 'key', '')));
+
+                return [
+                    'id' => $id,
+                    'start' => data_get($row, 'start'),
+                    'end' => data_get($row, 'end'),
+                    'score' => is_numeric(data_get($row, 'score')) ? (float) data_get($row, 'score') : null,
+                    'profit_factor' => is_numeric(data_get($row, 'profit_factor')) ? (float) data_get($row, 'profit_factor') : null,
+                    'net_profit_percent' => is_numeric(data_get($row, 'net_profit_percent')) ? (float) data_get($row, 'net_profit_percent') : null,
+                    'trades' => (int) data_get($row, 'trades', 0),
+                ];
+            })->filter(fn (array $row): bool => $row['id'] !== '')->unique('id')->values();
+        $keys = $rows->pluck('id')->map('strval')->values();
         $observed = (int) data_get($protocol, 'observed_windows', 0);
+        $holding = (int) data_get($protocol, 'maximum_holding_bars', 0);
+        $powerDeclared = data_get($protocol, 'power_quorum_passed') !== null;
+        $minimumTrades = max(1, (int) data_get(
+            $protocol,
+            'minimum_trades_per_powered_window',
+            config('services.learning_lane.causal_minimum_trades_per_window', 8),
+        ));
+        $poweredWindows = $rows->filter(fn (array $row): bool => (int) $row['trades'] >= $minimumTrades)->count();
+        $minimumPowered = max(3, (int) data_get(
+            $protocol,
+            'minimum_powered_windows',
+            config('services.learning_lane.causal_minimum_powered_windows', 6),
+        ));
 
         return [
             'keys' => $keys->all(),
-            'count' => max($keys->count(), $observed),
+            'windows' => $rows->all(),
+            'count' => $keys->count(),
             'verified' => data_get($protocol, 'independence_verified') === true
-                && data_get($protocol, 'overlap_detected') !== true,
+                && data_get($protocol, 'overlap_detected') !== true
+                && $keys->count() === $observed,
             'purge_embargo_verified' => data_get($protocol, 'purge_embargo_applied') === true
                 && data_get($protocol, 'label_holding_period_purged') === true
                 && (int) data_get($protocol, 'purge_bars', 0) > 0
                 && (int) data_get($protocol, 'embargo_bars', 0) > 0,
             'positive' => max((int) data_get($protocol, 'positive_windows', 0), (int) data_get($protocol, 'confirmed_windows', 0)),
+            'minimum_trades_per_window' => $minimumTrades,
+            'powered_windows' => $poweredWindows,
+            'minimum_powered_windows' => $minimumPowered,
+            'power_contract_declared' => $powerDeclared,
+            'power_quorum_verified' => ! $powerDeclared || (
+                data_get($protocol, 'power_quorum_passed') === true
+                && $poweredWindows >= $minimumPowered
+            ),
+            'maximum_holding_bars' => $holding,
+            'execution_horizon_overlay_applied' => data_get($protocol, 'execution_horizon_overlay_applied') === true
+                && $holding > 0,
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private function compareWindows(array $treatment, array $baseline, int $required): array
+    {
+        $treatmentRows = collect((array) data_get($treatment, 'windows', []))->keyBy('id');
+        $baselineRows = collect((array) data_get($baseline, 'windows', []))->keyBy('id');
+        $treatmentKeys = $treatmentRows->keys()->map('strval')->sort()->values();
+        $baselineKeys = $baselineRows->keys()->map('strval')->sort()->values();
+        $common = $treatmentKeys->intersect($baselineKeys)->values();
+        $treatmentPower = data_get($treatment, 'power_contract_declared') === true;
+        $baselinePower = data_get($baseline, 'power_contract_declared') === true;
+        $powerContractMatched = $treatmentPower === $baselinePower;
+        $powerContract = $treatmentPower && $baselinePower;
+        $minimumTrades = max(
+            1,
+            (int) data_get($treatment, 'minimum_trades_per_window', 0),
+            (int) data_get($baseline, 'minimum_trades_per_window', 0),
+        );
+        if ($powerContract) {
+            $common = $common->filter(fn (string $key): bool =>
+                (int) data_get($treatmentRows->get($key), 'trades', 0) >= $minimumTrades
+                && (int) data_get($baselineRows->get($key), 'trades', 0) >= $minimumTrades
+            )->values();
+        }
+        $requiredCommon = $powerContract
+            ? max($required, (int) config('services.learning_lane.causal_minimum_powered_windows', 6))
+            : $required;
+        $requiredPositive = $powerContract
+            ? max(2, (int) config('services.learning_lane.causal_minimum_positive_windows', 4))
+            : 2;
+        $sameHorizon = (int) data_get($treatment, 'maximum_holding_bars', 0) > 0
+            && (int) data_get($treatment, 'maximum_holding_bars', 0)
+                === (int) data_get($baseline, 'maximum_holding_bars', -1);
+        $protocolVerified = data_get($treatment, 'independence_verified') === true
+            && data_get($baseline, 'independence_verified') === true
+            && data_get($treatment, 'purge_embargo_verified') === true
+            && data_get($baseline, 'purge_embargo_verified') === true
+            && data_get($treatment, 'execution_horizon_overlay_applied') === true
+            && data_get($baseline, 'execution_horizon_overlay_applied') === true
+            && $powerContractMatched
+            && (! $powerContract || (
+                data_get($treatment, 'power_quorum_verified') === true
+                && data_get($baseline, 'power_quorum_verified') === true
+            ))
+            && $sameHorizon
+            && $treatmentKeys->all() === $baselineKeys->all();
+        $deltas = $common->map(function (string $key) use ($treatmentRows, $baselineRows): ?array {
+            $left = $this->windowScore((array) $treatmentRows->get($key));
+            $right = $this->windowScore((array) $baselineRows->get($key));
+            if ($left === null || $right === null) return null;
+
+            return ['window_id' => $key, 'treatment' => $left, 'baseline' => $right, 'delta' => round($left - $right, 8)];
+        })->filter()->values();
+        $positive = $deltas->filter(fn (array $row): bool => (float) $row['delta'] > 0.00000001)->count();
+        $mean = $deltas->isEmpty() ? 0.0 : (float) $deltas->avg('delta');
+
+        return [
+            'protocol' => 'paired_disjoint_window_delta_v1',
+            'protocol_verified' => $protocolVerified,
+            'common_window_count' => $deltas->count(),
+            'required_common_windows' => $requiredCommon,
+            'required_positive_windows' => $requiredPositive,
+            'minimum_trades_per_window' => $powerContract ? $minimumTrades : null,
+            'power_contract_applied' => $powerContract,
+            'positive_delta_windows' => $positive,
+            'mean_delta' => round($mean, 8),
+            'window_deltas' => $deltas->all(),
+            'passed' => $protocolVerified
+                && $deltas->count() >= $requiredCommon
+                && $positive >= $requiredPositive
+                && $mean > 0.00000001,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    private function windowScore(array $window): ?float
+    {
+        if (is_numeric(data_get($window, 'score'))) return (float) data_get($window, 'score');
+        if (is_numeric(data_get($window, 'net_profit_percent'))) return (float) data_get($window, 'net_profit_percent');
+        if (is_numeric(data_get($window, 'profit_factor'))) return (float) data_get($window, 'profit_factor') - 1.0;
+
+        return null;
+    }
+
+    private function nonTargetSafe(?LabLearningLanePair $pair): bool
+    {
+        if (! $pair) return false;
+        $evidence = (array) $pair->non_target_regression;
+        $status = (string) data_get($evidence, 'status', 'not_recorded');
+
+        return data_get($evidence, 'safe') === true
+            || in_array($status, ['', 'not_recorded', 'not_applicable', 'passed', 'confirmed'], true);
+    }
+
+    private function guidedRole(AgentLearningCausalExperiment $experiment): string
+    {
+        return in_array((string) data_get($experiment->evidence, 'experiment_kind'), [
+            'causal_repair', 'causal_architecture_escape', 'causal_architecture_interaction',
+        ], true)
+            ? 'repair_guided'
+            : 'memory_guided';
+    }
+
+    private function confirmationProtocol(AgentLearningCausalExperiment $experiment): string
+    {
+        return match ((string) data_get($experiment->evidence, 'experiment_kind')) {
+            'causal_architecture_interaction' => 'architecture_interaction_guided_vs_blinded_vs_frozen_control_v1',
+            'causal_architecture_escape' => 'architecture_guided_vs_blinded_vs_frozen_control_v1',
+            'causal_repair' => 'repair_guided_vs_blinded_vs_frozen_control_v1',
+            default => 'memory_guided_vs_blinded_vs_frozen_control_v1',
+        };
     }
 
     private function utility(string $target, array $delta): float

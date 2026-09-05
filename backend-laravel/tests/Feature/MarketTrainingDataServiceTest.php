@@ -109,4 +109,31 @@ class MarketTrainingDataServiceTest extends TestCase
         $this->assertSame('2020-01-02 01:00:00', $payload[0]['time']);
         $this->assertDatabaseCount('candles', 0);
     }
+
+    public function test_bounded_agent_payload_returns_the_exact_chronological_tail(): void
+    {
+        $training = app(MarketTrainingDataService::class);
+        $rows = [];
+        for ($hour = 0; $hour < 5; $hour++) {
+            $rows[] = [
+                'time' => sprintf('2020-01-02 %02d:00:00', $hour),
+                'open' => 1550 + $hour,
+                'high' => 1552 + $hour,
+                'low' => 1549 + $hour,
+                'close' => 1551 + $hour,
+                'volume' => 1,
+            ];
+        }
+        $training->upsertCandles('foundation_10y', 'dukascopy', 'XAUUSD', 'H1', $rows);
+
+        $tail = $training->candlesForAgent(
+            'foundation_10y', 'dukascopy', 'XAUUSD', 'H1', limit: 3,
+        );
+
+        $this->assertSame([
+            '2020-01-02 02:00:00',
+            '2020-01-02 03:00:00',
+            '2020-01-02 04:00:00',
+        ], array_column($tail, 'time'));
+    }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\ReplayLaneBusyException;
 use App\Jobs\ProcessLabScreeningLearningProjection;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
@@ -21,6 +22,21 @@ class LabAgentEvaluationService
         $run ??= $this->evidence->beginRun($agent, 'full_validation', 'full', ['source' => 'direct_evaluation']);
         $agent->load('modelVersion', 'generation');
         $model = $agent->modelVersion;
+        $edgeGenesisReplay = data_get($model->metadata, 'edge_genesis.protocol') === DependencyAwareEdgeGenesisFoundryService::PROTOCOL;
+        $edgeGenesisPreflight = app(DependencyAwareEdgeGenesisFoundryService::class)->preflight($agent);
+        if (! (bool) data_get($edgeGenesisPreflight, 'allowed', true)) {
+            $agent->update(['lifecycle_status' => 'technical_quarantine', 'decision_reason' => 'Edge Genesis preflight failed: INVALID_EDGE_OBSERVABILITY.']);
+            $this->evidence->finishRun($run, 'completed', ['edge_genesis_preflight' => $edgeGenesisPreflight], [], ['technical_quarantine' => true]);
+
+            return;
+        }
+        $playbookPreflight = app(FullStackPlaybookMasteryService::class)->preflight($agent);
+        if (! (bool) data_get($playbookPreflight, 'allowed', true)) {
+            $agent->update(['lifecycle_status' => 'technical_quarantine', 'decision_reason' => 'Full Stack Playbook preflight failed: INVALID_PLAYBOOK_EXECUTION_CONTRACT.']);
+            $this->evidence->finishRun($run, 'completed', ['full_stack_playbook_preflight' => $playbookPreflight], [], ['technical_quarantine' => true]);
+
+            return;
+        }
         $isM15 = strtoupper((string) $agent->timeframe) === 'M15';
         $rawResponse = null;
         $runtimePolicy = null;
@@ -73,13 +89,15 @@ class LabAgentEvaluationService
         $cached = data_get($model->metadata, 'full_validation_batch');
         $cachedRuntimePolicy = (array) data_get($cached, 'full_replay_runtime_policy', []);
         $configuredFoundationThreshold = max(1, (int) config('services.lab_selection.full_replay_bounded_cohort_foundation_rows', 100000));
-        $configuredMaxCohortSize = max(2, (int) config('services.lab_selection.full_replay_max_cohort_size', 2));
+        $configuredMaxCohortSize = $this->fullReplayMaxCohortSize($agent);
         $cacheRuntimePolicyMatches = data_get($cachedRuntimePolicy, 'protocol') === 'full_replay_runtime_budget_v1'
             && $currentFoundationRowCount > 0
             && (int) data_get($cachedRuntimePolicy, 'foundation_row_count', -1) === $currentFoundationRowCount
             && (int) data_get($cachedRuntimePolicy, 'foundation_threshold_rows', -1) === $configuredFoundationThreshold
             && (int) data_get($cachedRuntimePolicy, 'max_cohort_size', -1) === $configuredMaxCohortSize;
-        $cacheIsSealed = (int) data_get($cached, 'generation_id') === (int) $agent->lab_generation_id
+        $cacheIsSealed = ! $edgeGenesisReplay
+            && ! $this->isCausalLearningConfirmation($agent)
+            && (int) data_get($cached, 'generation_id') === (int) $agent->lab_generation_id
             && is_array(data_get($cached, 'item'))
             && is_array(data_get($cached, 'request_manifest'))
             && hash_equals($currentCodeHash, (string) data_get($cached, 'code_hash', ''))
@@ -121,6 +139,25 @@ class LabAgentEvaluationService
             if ($cohort->isEmpty()) {
                 $cohort = collect([$agent]);
             }
+            if ($edgeGenesisReplay) {
+                // An Edge Genesis cohort is a closed causal experiment. It
+                // must never share execution/cache artifacts with an ordinary
+                // H1 generation merely because both belong to the same lab.
+                $cohort = $cohort->filter(fn (LabAgent $peer): bool =>
+                    data_get($peer->modelVersion?->metadata, 'edge_genesis.protocol') === DependencyAwareEdgeGenesisFoundryService::PROTOCOL
+                )->values();
+                if ($cohort->isEmpty()) $cohort = collect([$agent]);
+            }
+            $cartridgeConfirmation = data_get($model->metadata, 'skill_cartridge_transplant.protocol') === CanonicalSkillCartridgeService::PROTOCOL;
+            if ($cartridgeConfirmation) {
+                // Cartridge arms are a closed, research-only cohort. Mixing a
+                // normal generation seat into it would invalidate both the
+                // frozen control and the one-arm/one-result identity rule.
+                $cohort = $cohort->filter(fn (LabAgent $peer): bool =>
+                    data_get($peer->modelVersion?->metadata, 'skill_cartridge_transplant.protocol') === CanonicalSkillCartridgeService::PROTOCOL
+                )->values();
+                if ($cohort->isEmpty()) $cohort = collect([$agent]);
+            }
             // Promotion and research-only learning jobs may share a
             // generation, but they must never share a sealed cohort cache.
             // Otherwise a learning near-miss could alter the request
@@ -155,9 +192,14 @@ class LabAgentEvaluationService
                 : null;
             $foundationRowCount = (int) data_get($foundationSnapshot, 'manifest.row_count', 0);
             $boundedThreshold = max(1, (int) config('services.lab_selection.full_replay_bounded_cohort_foundation_rows', 100000));
-            $maxCohortSize = max(2, (int) config('services.lab_selection.full_replay_max_cohort_size', 2));
+            $maxCohortSize = $this->fullReplayMaxCohortSize($agent);
             $volumeEnabled = $cohort->contains(fn (LabAgent $peer): bool => $this->volumeEnabled($peer->modelVersion));
             $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
+            $edgeMtfBundle = $edgeGenesisReplay
+                ? app(MultiTimeframeSnapshotService::class)->restoreAgentOwnedConfirmationValidationBundle(
+                    (array) data_get($model->metadata, 'edge_genesis.mtf_bundle_manifest', []),
+                )
+                : null;
             if (! $portfolioMemberOnly) {
                 // A previous cohort can finish before a sibling times out. Keep
                 // its sealed item eligible for the next bounded cohort so the
@@ -185,7 +227,29 @@ class LabAgentEvaluationService
                 'max_cohort_size' => $maxCohortSize,
                 'foundation_row_count' => $foundationRowCount,
                 'foundation_threshold_rows' => $boundedThreshold,
-                'reason' => $boundedCohort ? 'FOUNDATION_REPLAY_RUNTIME_BUDGET' : 'NO_RUNTIME_CAP_REQUIRED',
+                'reason' => $boundedCohort
+                    ? ($maxCohortSize === 1
+                        ? ($this->isCausalLearningConfirmation($agent)
+                            ? 'CAUSAL_CONFIRMATION_ATOMIC_REPLAY'
+                            : 'EDGE_GENESIS_ATOMIC_REPLAY')
+                        : 'FOUNDATION_REPLAY_RUNTIME_BUDGET')
+                    : 'NO_RUNTIME_CAP_REQUIRED',
+                'hard_timeout_seconds' => $this->isCausalLearningConfirmation($agent)
+                    ? (int) config('services.lab_selection.causal_replay_hard_timeout_seconds', 720)
+                    : 3600,
+                'transport_timeout_seconds' => $this->isCausalLearningConfirmation($agent)
+                    ? (int) config('services.lab_selection.causal_replay_timeout_seconds', 780)
+                    : (int) config('services.lab_selection.full_replay_timeout_seconds', 3900),
+                'fold_budget' => $this->isCausalLearningConfirmation($agent)
+                    ? [
+                        'folds' => (int) config('services.learning_lane.causal_fold_count', 9),
+                        'max_rows_per_fold' => (int) config('services.learning_lane.causal_max_rows_per_fold', 4096),
+                        'per_fold_seconds' => 90,
+                        'audit_trace_rows' => (int) config('services.learning_lane.causal_audit_trace_rows', 512),
+                        'fail_fast' => true,
+                        'checkpoint_each_fold' => true,
+                    ]
+                    : null,
                 'promotion_evidence' => false,
             ];
             if ($boundedCohort) {
@@ -212,17 +276,31 @@ class LabAgentEvaluationService
             }
             // The paper snapshot is retained in the generation context for
             // the paper lane, but it is never sent as full-replay input.
-            $dataset = $foundationSnapshot['path'];
+            $dataset = $edgeMtfBundle !== null
+                ? (string) $edgeMtfBundle['entry_dataset_path']
+                : $foundationSnapshot['path'];
             $manifest = (array) ($foundationSnapshot['manifest'] ?? []);
             $manifest['paper'] = $datasetSnapshot['manifest'];
+            if ($edgeMtfBundle !== null) {
+                $manifest['mtf_foundation_bundle'] = (array) $edgeMtfBundle['manifest'];
+                $manifest['mtf_bundle_hash'] = (string) $edgeMtfBundle['bundle_hash'];
+                $manifest['mtf_execution_timeframe'] = DependencyAwareEdgeGenesisFoundryService::EXECUTION_TIMEFRAME;
+            }
             if ($regimeSnapshot !== null) {
                 $manifest['regime'] = $regimeSnapshot['manifest'];
             }
             $request = [
-                'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy' => 'all', 'evaluation_mode' => 'replay',
-                'strategies' => $cohort->map(fn (LabAgent $peer) => ['strategy' => $peer->modelVersion->strategy, 'base_strategy' => $this->schemas->runtimeBaseStrategy($peer->modelVersion->strategy, data_get($peer->modelVersion->metadata, 'base_strategy'), $peer->strategy_family), 'version' => $peer->modelVersion->version, 'parameters' => $peer->modelVersion->parameters ?? []])->all(),
+                'symbol' => $agent->symbol,
+                'timeframe' => $edgeGenesisReplay ? DependencyAwareEdgeGenesisFoundryService::EXECUTION_TIMEFRAME : $agent->timeframe,
+                'strategy' => 'all', 'evaluation_mode' => 'replay',
+                'strategies' => $cohort->map(fn (LabAgent $peer) => [
+                    'lab_agent_id' => (int) $peer->id,
+                    'strategy' => $peer->modelVersion->strategy,
+                    'base_strategy' => $this->schemas->runtimeBaseStrategy($peer->modelVersion->strategy, data_get($peer->modelVersion->metadata, 'base_strategy'), $peer->strategy_family),
+                    'version' => $peer->modelVersion->version,
+                    'parameters' => $peer->modelVersion->parameters ?? [],
+                ])->all(),
                 'initial_balance' => 10000, 'risk_per_trade' => 1, 'dataset_path' => $dataset,
-                'foundation_dataset_path' => $foundationSnapshot['path'],
                 'full_replay_runtime_policy' => $runtimePolicy,
                 'volume_context' => $volumeEnabled
                     ? (array) data_get($manifest, 'volume_quality', [])
@@ -253,34 +331,100 @@ class LabAgentEvaluationService
                             'single_gene' => count($diff) === 1,
                         ]];
                     })->all(),
-                    // Only the pre-registered guided/blinded causal arms may
-                    // spend the extra cold-start walk-forward budget. A zero
-                    // time stop has no bounded label horizon and therefore
-                    // remains explicitly blocked from independent evidence.
+                    // All three pre-registered causal arms receive the same
+                    // bounded research holding overlay. This is not a genome
+                    // mutation: it is a shared label-horizon policy used only
+                    // by the cold-start confirmation replay, so a legacy
+                    // time_stop=0 model cannot leak across fold boundaries.
                     'learning_confirmation_contracts' => $cohort->mapWithKeys(function (LabAgent $peer): array {
                         $receipt = (array) data_get($peer->modelVersion?->metadata, 'learning_receipt', []);
                         $role = (string) data_get($receipt, 'causal_influence', '');
-                        if (! in_array($role, ['memory_guided', 'blinded_counterfactual'], true)
+                        $cohortRole = (string) data_get($peer->modelVersion?->metadata, 'causal_learning_cohort.role', '');
+                        if (! in_array($role, ['memory_guided', 'causal_repair_guided', 'blinded_counterfactual', 'frozen_control'], true)
+                            || ! in_array($cohortRole, ['memory_guided', 'repair_guided', 'blinded', 'frozen_control'], true)
                             || data_get($receipt, 'integrity.valid') !== true) {
                             return [];
                         }
-                        $holding = max(0, (int) data_get($peer->modelVersion?->parameters, 'time_stop_candles', 0));
+                        $holding = max(1, (int) config('services.learning_lane.confirmation_maximum_holding_bars', 240));
 
                         return [$peer->modelVersion->strategy => [
                             'protocol' => 'bounded_cold_start_learning_confirmation_v1',
                             'role' => $role,
+                            'cohort_role' => $cohortRole,
                             'causal_intent_id' => data_get($receipt, 'causal_intent_id'),
                             'maximum_holding_bars' => $holding,
                             'purge_bars' => $holding,
                             'embargo_bars' => 1,
-                            'admitted' => $holding > 0,
-                            'blocker' => $holding > 0 ? null : 'UNBOUNDED_HOLDING_HORIZON',
+                            'fold_count' => (int) config('services.learning_lane.causal_fold_count', 9),
+                            'max_rows_per_fold' => (int) config('services.learning_lane.causal_max_rows_per_fold', 4096),
+                            'audit_trace_rows' => (int) config('services.learning_lane.causal_audit_trace_rows', 512),
+                            'minimum_trades_per_window' => (int) config('services.learning_lane.causal_minimum_trades_per_window', 8),
+                            'minimum_powered_windows' => (int) config('services.learning_lane.causal_minimum_powered_windows', 6),
+                            'minimum_positive_windows' => (int) config('services.learning_lane.causal_minimum_positive_windows', 4),
+                            'declared_time_stop_candles' => max(0, (int) data_get($peer->modelVersion?->parameters, 'time_stop_candles', 0)),
+                            'execution_overlay' => 'shared_confirmation_maximum_holding_horizon',
+                            'admitted' => true,
+                            'blocker' => null,
                             'promotion_evidence' => false,
                         ]];
                     })->all(),
+                    'edge_genesis_contracts' => $cohort->mapWithKeys(function (LabAgent $peer): array {
+                        $edge = (array) data_get($peer->modelVersion?->metadata, 'edge_genesis', []);
+                        if (data_get($edge, 'protocol') !== DependencyAwareEdgeGenesisFoundryService::PROTOCOL) return [];
+                        $phase = (string) data_get($edge, 'phase', 'EDGE_DISCOVERY');
+                        $attribution = data_get($peer->modelVersion?->metadata, 'edge_genesis_attribution.protocol') === DependencyAwareEdgeGenesisFoundryService::PROTOCOL;
+                        $validation = (array) data_get($edge, 'validation_contract', []);
+                        $folds = $attribution ? 9 : (int) ($validation['fold_count'] ?? ($phase !== 'EDGE_DISCOVERY' ? 9 : 2));
+
+                        return [$peer->modelVersion->strategy => [
+                            'protocol' => 'bounded_edge_genesis_replay_v1',
+                            'phase' => $phase,
+                            'arm' => data_get($edge, 'arm'),
+                            'attribution_arm' => $attribution
+                                ? data_get($peer->modelVersion?->metadata, 'edge_genesis_attribution.arm')
+                                : null,
+                            'context' => (array) data_get($edge, 'context', []),
+                            'maximum_holding_bars' => 240,
+                            'purge_bars' => 240,
+                            'embargo_bars' => 1,
+                            'fold_count' => $folds,
+                            'fold_offset' => $attribution ? 5 : (int) ($validation['offset'] ?? 0),
+                            'fold_universe_count' => $attribution ? 14 : (int) ($validation['universe_folds'] ?? $folds),
+                            'window_plan_hash' => $attribution
+                                ? data_get($edge, 'frozen_window_plan.window_plan_hash')
+                                : ($validation['window_plan_hash'] ?? null),
+                            'window_stage' => $attribution ? 'nine_fold_authority'
+                                : (string) ($validation['stage'] ?? ($phase !== 'EDGE_DISCOVERY' ? 'nine_fold_authority' : 'two_fold_discovery')),
+                            'max_rows_per_fold' => 4096,
+                            'audit_trace_rows' => 512,
+                            // Full MTF/toolbox state is intentionally allowed
+                            // more time than scalar learning mutations, while
+                            // the AI process still enforces a 20-minute total
+                            // Edge boundary and a 240-second absolute fold cap.
+                            'per_fold_budget_seconds' => 180,
+                            'minimum_trades_per_window' => 1,
+                            'admitted' => true,
+                            'risk_governor_frozen' => true,
+                            'promotion_evidence' => false,
+                        ]];
+                    })->all(),
+                    // A provisional cartridge uses its own typed five-arm
+                    // confirmation grammar. It shares the causal replay
+                    // engine, but never impersonates a learning-policy
+                    // confirmation or a promotable Edge passport.
+                    'skill_cartridge_confirmation_contracts' => $cohort->mapWithKeys(function (LabAgent $peer): array {
+                        $contract = (array) data_get($peer->modelVersion?->metadata, 'skill_cartridge_transplant.confirmation_contract', []);
+                        if (data_get($peer->modelVersion?->metadata, 'skill_cartridge_transplant.protocol') !== CanonicalSkillCartridgeService::PROTOCOL
+                            || data_get($contract, 'protocol') !== 'bounded_skill_cartridge_confirmation_v1') return [];
+
+                        return [$peer->modelVersion->strategy => $contract];
+                    })->all(),
                 ],
                 'execution' => $this->executionAssumptions($agent->symbol),
-                'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe),
+                'execution_contract' => app(ExecutionContractService::class)->for(
+                    $agent->symbol,
+                    $edgeGenesisReplay ? DependencyAwareEdgeGenesisFoundryService::EXECUTION_TIMEFRAME : $agent->timeframe,
+                ),
                 'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
                     $agent->symbol,
                     $agent->timeframe,
@@ -289,6 +433,14 @@ class LabAgentEvaluationService
                 ),
                 'emit_decision_trace' => true,
             ];
+            if (! $edgeGenesisReplay) {
+                $request['foundation_dataset_path'] = $foundationSnapshot['path'];
+            }
+            if ($edgeMtfBundle !== null) {
+                $request['mtf_dataset_paths'] = (array) $edgeMtfBundle['context_dataset_paths'];
+                $request['related_mtf_dataset_paths'] = (object) [];
+                $request['mtf_snapshot_manifest'] = (array) $edgeMtfBundle['manifest'];
+            }
             // A council seat is not only a label on the model version.  Its
             // standalone passport must be replayed inside the sealed niche
             // it owns, otherwise a trend-up child can borrow range/trend-down
@@ -318,9 +470,18 @@ class LabAgentEvaluationService
             if ($regimeSnapshot !== null) {
                 $request['regime_dataset_path'] = $regimeSnapshot['path'];
             }
-            $timeout = min(3900, max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900)));
+            $timeout = $this->isCausalLearningConfirmation($agent)
+                ? min(960, max(120, (int) config('services.lab_selection.causal_replay_timeout_seconds', 780)))
+                : min(3900, max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900)));
             $requestId = 'full-'.$agent->id.'-'.bin2hex(random_bytes(6));
-            $this->evidence->attachRequest($run, $request, ['request_id' => $requestId, 'dataset_manifest' => $manifest]);
+            $this->evidence->attachRequest($run, $request, [
+                'request_id' => $requestId,
+                'dataset_manifest' => $manifest,
+                // The Edge passport deliberately owns the immutable H1
+                // archive identity while M5/M15/H1/H4 are its temporal
+                // execution bundle. Both identities remain in the manifest.
+                'data_hash' => $edgeGenesisReplay ? (string) ($foundationSnapshot['sha256'] ?? '') : null,
+            ]);
             $this->assertAiReplayHealthy($requestId, $run);
             $response = Http::connectTimeout(15)->timeout($timeout)->withOptions([
                 // Keep the transport limit explicit for Windows/cURL too;
@@ -356,6 +517,14 @@ class LabAgentEvaluationService
                     'full_replay_runtime_policy' => $runtimePolicy,
                 ]);
                 $items->put($peer->modelVersion->strategy, $peerItem);
+                // Every causal arm is an independent singleton hypothesis.
+                // Reusing its full response for another arm would be false
+                // evidence, while retaining it in model metadata duplicates
+                // several megabytes already sealed by the artifact plane.
+                if ($this->isCausalLearningConfirmation($peer)
+                    || data_get($peer->modelVersion?->metadata, 'edge_genesis.protocol') === DependencyAwareEdgeGenesisFoundryService::PROTOCOL) {
+                    continue;
+                }
                 $peerModel = $peer->modelVersion;
                 $peerModel->update(['metadata' => array_merge($peerModel->metadata ?? [], ['full_validation_batch' => [
                     'protocol' => 'sealed_replay_cache_v2',
@@ -401,11 +570,30 @@ class LabAgentEvaluationService
         // This ordering also makes a post-replay projection failure distinct
         // from a missing replay artifact.
         if ($rawResponse !== null) {
-            $this->evidence->recordArtifact($run, 'cohort_response', (array) $rawResponse, [
-                'cohort_result_count' => is_array($rawResponse['leaderboard'] ?? null) ? count($rawResponse['leaderboard']) : 0,
-                'source' => 'full_validation_cohort',
-                'full_replay_runtime_policy' => $runtimePolicy,
-            ]);
+            $cohortResultCount = is_array($rawResponse['leaderboard'] ?? null) ? count($rawResponse['leaderboard']) : 0;
+            if ($this->isCausalLearningConfirmation($agent) && $cohortResultCount === 1) {
+                $this->evidence->recordArtifact($run, 'cohort_response_manifest', [
+                    'protocol' => 'singleton_causal_cohort_response_manifest_v1',
+                    'cohort_result_count' => 1,
+                    'strategy' => (string) data_get($item, 'strategy', $model->strategy),
+                    'raw_response_sha256' => hash('sha256', (string) json_encode(
+                        $rawResponse,
+                        JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES,
+                    )),
+                    'evaluation_response_is_authoritative' => true,
+                    'promotion_evidence' => false,
+                ], [
+                    'cohort_result_count' => 1,
+                    'source' => 'singleton_causal_full_validation',
+                    'full_replay_runtime_policy' => $runtimePolicy,
+                ]);
+            } else {
+                $this->evidence->recordArtifact($run, 'cohort_response', (array) $rawResponse, [
+                    'cohort_result_count' => $cohortResultCount,
+                    'source' => 'full_validation_cohort',
+                    'full_replay_runtime_policy' => $runtimePolicy,
+                ]);
+            }
         }
         $evidenceResponse = $item['result'] ?? [];
         $this->evidence->finishRun($run, 'completed', $evidenceResponse, [
@@ -1040,6 +1228,12 @@ class LabAgentEvaluationService
             $request['policy_context']['snapshot_transport']['regime_tail_rows'] = 2000;
         }
 
+        $requestId = 'screen-batch-'.implode('-', $ids).'-'.bin2hex(random_bytes(6));
+        // Admission happens before agent status or immutable attempt runs are
+        // opened. An occupied but healthy lane is a queue delay, not missing
+        // evidence and not a technical strategy outcome.
+        $this->assertAiReplayHealthy($requestId, null, true);
+
         LabAgent::query()->whereIn('id', $ids)->where('lifecycle_status', 'queued')
             ->update(['lifecycle_status' => 'screening']);
         foreach ($agents as $agent) {
@@ -1085,13 +1279,11 @@ class LabAgentEvaluationService
                 'dataset_manifest' => $manifest,
             ]);
         }
-        $requestId = 'screen-batch-'.implode('-', $ids).'-'.bin2hex(random_bytes(6));
         $isDifferential = $agents->contains(fn (LabAgent $agent): bool => $agent->strategy_family === 'differential_router'
             || data_get($agent->modelVersion->metadata, 'differential_router_contract') !== null);
         $configuredTimeout = (int) config('services.lab_queue.screening_batch_timeout_seconds', 1800);
         $screenTimeout = min($isDifferential ? 2400 : 1800, max(60, $configuredTimeout));
         try {
-            $this->assertAiReplayHealthy($requestId, $runs[(int) $first->id], true);
             $response = Http::connectTimeout(15)->timeout($screenTimeout)->withOptions([
                 'connect_timeout' => 15,
                 'timeout' => $screenTimeout,
@@ -1105,6 +1297,9 @@ class LabAgentEvaluationService
                 'X-Internal-Token' => (string) config('services.internal_api.token'),
                 'X-Lab-Request-Id' => $requestId,
             ])->post(rtrim(config('services.ai_service.url'), '/').'/api/backtest/run-all', $request);
+            if ($response->status() === 429) {
+                throw new ReplayLaneBusyException('AI replay lane is busy; bounded screening batch deferred.');
+            }
             if ($response->failed()) {
                 throw new RuntimeException($response->body());
             }
@@ -1112,6 +1307,22 @@ class LabAgentEvaluationService
             if (! is_array($leaderboard)) {
                 throw new RuntimeException('Empty screening batch result.');
             }
+        } catch (ReplayLaneBusyException $exception) {
+            foreach ($runs as $agentId => $run) {
+                $this->evidence->finishRun($run, 'retry_released', null, [], [
+                    'reason_code' => 'REPLAY_LANE_CONTENTION',
+                    'batch_protocol' => 'bounded_screening_batch_v1',
+                    'quality_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ]);
+                LabAgent::query()->whereKey($agentId)->where('lifecycle_status', 'screening')
+                    ->update([
+                        'lifecycle_status' => 'queued',
+                        'decision_reason' => 'AI replay lane contention; bounded screening batch released for retry. Strategy verdict remains withheld.',
+                    ]);
+            }
+
+            throw $exception;
         } catch (\Throwable $exception) {
             foreach ($runs as $agentId => $run) {
                 $this->evidence->finishRun($run, 'technical_error', null, [], [
@@ -1410,6 +1621,41 @@ class LabAgentEvaluationService
     }
 
     /**
+     * A causal arm is an atomic experiment unit. Combining two expensive
+     * arms in one killable child makes both depend on one wall-clock timeout
+     * and loses the first result when the second overruns. Candidate-level
+     * immutable caches preserve reuse without coupling their terminal fate.
+     */
+    private function fullReplayMaxCohortSize(LabAgent $agent): int
+    {
+        if ($this->isCausalLearningConfirmation($agent) || $this->isEdgeGenesisReplay($agent)) {
+            return 1;
+        }
+
+        return max(2, (int) config('services.lab_selection.full_replay_max_cohort_size', 2));
+    }
+
+    private function isCausalLearningConfirmation(LabAgent $agent): bool
+    {
+        return $agent->generation?->trigger_type === 'learning_confirmation'
+            && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
+                'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+            ], true);
+    }
+
+    /**
+     * Edge Genesis seats are immutable causal arms. Running two seats in one
+     * transport couples their terminal fate and causes every queued seat to
+     * replay a still-pending peer again because Edge results deliberately do
+     * not use the ordinary cohort cache. Keep one job equal to one arm.
+     */
+    private function isEdgeGenesisReplay(LabAgent $agent): bool
+    {
+        return data_get($agent->modelVersion?->metadata, 'edge_genesis.protocol')
+            === DependencyAwareEdgeGenesisFoundryService::PROTOCOL;
+    }
+
+    /**
      * Add only sealed peers whose full-replay cache is valid for this exact
      * generation and runtime contract. Their item is reused by the Python
      * candidate cache; they are never reopened as lifecycle work here.
@@ -1565,7 +1811,7 @@ class LabAgentEvaluationService
                     'full_active' => $fullActive,
                 ], $run->phase, $run->run_id, $run->attempt, self::class);
             }
-            throw new RuntimeException('AI replay lane is busy; strategy verdict withheld for bounded retry.');
+            throw new ReplayLaneBusyException('AI replay lane is busy; strategy verdict withheld for bounded retry.');
         }
     }
 

@@ -50,7 +50,7 @@ class LearningConsolidationService
             : null;
         $currentCanonical = $pair?->isVerifiedControlPair() === true;
         $counterfactualEligible = match ((string) ($intent?->influence_type ?? 'independent_exploration')) {
-            'memory_guided' => AgentLearningCausalExperiment::query()
+            'memory_guided', 'causal_repair_guided' => AgentLearningCausalExperiment::query()
                 ->where('guided_agent_id', $episode->lab_agent_id)
                 ->where('status', 'confirmed')
                 ->exists(),
@@ -94,7 +94,7 @@ class LearningConsolidationService
                 'old_value' => $map?->old_value,
                 'new_value' => $map?->new_value,
                 'failure_signature' => $pair?->failure_signature,
-                'counterfactual_required' => $intent?->influence_type === 'memory_guided',
+                'counterfactual_required' => in_array($intent?->influence_type, ['memory_guided', 'causal_repair_guided'], true),
                 'counterfactual_eligible' => $counterfactualEligible,
                 'promotion_evidence' => false,
             ], 'observed_at' => now(),

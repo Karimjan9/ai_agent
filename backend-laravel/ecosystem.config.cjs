@@ -21,6 +21,10 @@ const sharedEnv = {
   AI_REPLAY_CACHE_RETENTION_DAYS: process.env.AI_REPLAY_CACHE_RETENTION_DAYS || '14',
   AI_REPLAY_CACHE_MAX_BYTES: process.env.AI_REPLAY_CACHE_MAX_BYTES || '1610612736',
   AI_REPLAY_CACHE_CLEANUP_INTERVAL_SECONDS: process.env.AI_REPLAY_CACHE_CLEANUP_INTERVAL_SECONDS || '300',
+  // A paired 9+9 causal handoff takes ~12.5 minutes on the local Windows
+  // runtime. Keep a strict 15-minute child ceiling; candidate-level resume
+  // prevents completed arms from being recomputed after a timeout.
+  AI_REPLAY_CAUSAL_HARD_TIMEOUT_SECONDS: '900',
 };
 // The managed execution shell can deny the protected token file to a newly
 // spawned Python process even though Laravel already has the cached secret.
@@ -102,6 +106,13 @@ const worker = (name, queue, timeoutSeconds = 1200) => ({
   filter_env: secretPrefixes,
 });
 
+// Keep operational workers alive between jobs. On Windows, --max-jobs=1
+// makes PM2 create a new PHP console process after every task, which can
+// briefly show a cmd/conhost window even with windowsHide enabled. The normal
+// --max-time worker rotation and PM2 memory ceiling still provide a bounded
+// lifecycle without the disruptive per-job restart loop.
+const recyclingWorker = (name, queue, timeoutSeconds = 900) => worker(name, queue, timeoutSeconds);
+
 module.exports = {
   apps: [
     ...(!externalWebServer ? [{
@@ -143,12 +154,10 @@ module.exports = {
       autorestart: true,
       restart_delay: 5000,
       windowsHide: true,
-      // The scheduler is intentionally long-lived. Its callbacks can
-      // temporarily exceed 768M on Windows; recycling here creates orphaned
-      // PHP children and visible conhost flashes. The scheduler's explicit
-      // memory gate is opt-in via SCHEDULER_MEMORY_LIMIT_MB, while PM2 keeps
-      // a high emergency ceiling as the final containment boundary.
-      max_memory_restart: '2G',
+      // The scheduler rotates itself after a completed tick at its soft
+      // memory boundary. PM2 keeps a higher emergency cap for a pathological
+      // callback that has not returned yet.
+      max_memory_restart: '1280M',
       kill_timeout: 30000,
       time: true,
       env: sharedEnv,
@@ -163,6 +172,16 @@ module.exports = {
     worker('lab-screening-a', 'lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', 2400),
     worker('lab-screening-b', 'lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', 2400),
     worker('lab-learning', 'lab-learning', 900),
+    // Large historical downloads/upserts are isolated from both scheduler
+    // liveness and canonical learning settlement throughput.
+    worker('market-maintenance', 'market-maintenance', 900),
+    // The clock only enqueues. Critical learning dispatch has a private
+    // worker. General operations remain responsive while one recycled,
+    // single-concurrency research worker owns memory-heavy audit/compile work.
+    worker('scheduler-critical', 'scheduler-critical', 300),
+    recyclingWorker('scheduler-ops-a', 'scheduler-ops', 900),
+    recyclingWorker('scheduler-ops-b', 'scheduler-ops', 900),
+    recyclingWorker('scheduler-research', 'scheduler-research', 1200),
     worker('strategy-lab', 'strategy-lab', 2400),
     worker('backtests', 'backtests', 900),
   ],

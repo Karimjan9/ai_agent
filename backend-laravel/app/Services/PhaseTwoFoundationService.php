@@ -2,21 +2,22 @@
 
 namespace App\Services;
 
-use Carbon\Carbon;
 use App\Models\AgentMemory;
 use App\Models\AgentMemoryMatch;
 use App\Models\Candle;
 use App\Models\LabGeneration;
-use App\Models\KnowledgeMiningRun;
-use App\Models\MarketStateSnapshot;
+use App\Models\LighthouseVerticalLoopMonitorRun;
 use App\Models\MarketDataSyncState;
+use App\Models\MarketStateSnapshot;
 use App\Models\ModelMarketPerformance;
+use App\Models\MtfPilotMonitorRun;
 use App\Models\RealityVerificationRun;
 use App\Models\ServiceHealthCheck;
 use App\Models\SignalMarketSnapshot;
 use App\Models\SystemEvent;
 use App\Models\User;
 use App\Services\MarketData\HistoricalDataQualityService;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -228,14 +229,17 @@ class PhaseTwoFoundationService
                 'status' => fn (): array => $this->signalFoundationStatus(),
             ],
             [
-                'key' => 'mtf_pilot:XAUUSD',
-                'label' => 'MTF Pilot XAUUSD H1/M15',
+                // The monitor owns `mtf_pilot:XAUUSD`. Foundation health must
+                // not read and overwrite that same row or its metrics become
+                // recursively nested on every global health tick.
+                'key' => 'foundation:mtf_pilot:XAUUSD',
+                'label' => 'MTF Pilot Monitor Freshness XAUUSD',
                 'stale_after' => 1200,
                 'status' => fn (): array => $this->mtfPilotStatus(),
             ],
             [
-                'key' => 'lighthouse_vertical_loop:XAUUSD:H1',
-                'label' => 'Lighthouse Vertical Loop XAUUSD H1',
+                'key' => 'foundation:lighthouse_vertical_loop:XAUUSD:H1',
+                'label' => 'Lighthouse Vertical Loop Monitor Freshness XAUUSD H1',
                 'stale_after' => 900,
                 'status' => fn (): array => $this->lighthouseVerticalLoopStatus(),
             ],
@@ -327,9 +331,10 @@ class PhaseTwoFoundationService
 
     private function mtfPilotStatus(): array
     {
-        $key = 'mtf_pilot:XAUUSD';
-        $check = ServiceHealthCheck::query()->where('service_key', $key)->first();
-        if (! $check || ! $check->last_checked_at) {
+        $run = Schema::hasTable('mtf_pilot_monitor_runs')
+            ? MtfPilotMonitorRun::query()->where('symbol', 'XAUUSD')->latest('checked_at')->first()
+            : null;
+        if (! $run || ! $run->checked_at) {
             return [
                 'status' => 'warning',
                 'score' => 40,
@@ -339,9 +344,9 @@ class PhaseTwoFoundationService
             ];
         }
 
-        $age = max(0, now()->timestamp - $check->last_checked_at->timestamp);
+        $age = max(0, now()->timestamp - $run->checked_at->timestamp);
         $staleAfter = 1200;
-        $status = (string) $check->status;
+        $status = (string) $run->status;
         if ($age > $staleAfter) {
             $status = $age > $staleAfter * 3 ? 'critical' : 'warning';
         } elseif ($status === 'critical') {
@@ -352,28 +357,35 @@ class PhaseTwoFoundationService
             $status = 'warning';
         }
         $score = $status === 'ok'
-            ? min(100, (float) $check->health_score)
-            : ($status === 'warning' ? min(70, (float) $check->health_score) : min(30, (float) $check->health_score));
+            ? min(100, (float) $run->health_score)
+            : ($status === 'warning' ? min(70, (float) $run->health_score) : min(30, (float) $run->health_score));
 
         return [
             'status' => $status,
             'score' => $score,
             'message' => "MTF monitor status: {$status}; snapshot age {$age}s.",
-            'last_ok_at' => $check->last_ok_at,
+            'last_ok_at' => $status === 'ok' ? $run->checked_at : null,
             'metrics' => [
+                'monitor_run_id' => $run->id,
                 'snapshot_age_seconds' => $age,
-                'monitor_status' => $check->status,
-                'monitor_health_score' => (float) $check->health_score,
-                'monitor_metrics' => $check->metrics ?? [],
+                'monitor_status' => $run->status,
+                'monitor_health_score' => (float) $run->health_score,
+                'monitor_protocol' => data_get($run->report, 'protocol'),
+                'check_status_counts' => collect((array) data_get($run->report, 'checks', []))
+                    ->countBy(fn (array $check): string => (string) ($check['status'] ?? 'unknown'))
+                    ->all(),
             ],
         ];
     }
 
     private function lighthouseVerticalLoopStatus(): array
     {
-        $key = 'lighthouse_vertical_loop:XAUUSD:H1';
-        $check = ServiceHealthCheck::query()->where('service_key', $key)->first();
-        if (! $check || ! $check->last_checked_at) {
+        $run = Schema::hasTable('lighthouse_vertical_loop_monitor_runs')
+            ? LighthouseVerticalLoopMonitorRun::query()
+                ->where('symbol', 'XAUUSD')->where('timeframe', 'H1')
+                ->latest('checked_at')->first()
+            : null;
+        if (! $run || ! $run->checked_at) {
             return [
                 'status' => 'warning',
                 'score' => 35,
@@ -383,26 +395,30 @@ class PhaseTwoFoundationService
             ];
         }
 
-        $age = max(0, now()->timestamp - $check->last_checked_at->timestamp);
+        $age = max(0, now()->timestamp - $run->checked_at->timestamp);
         $staleAfter = 900;
-        $status = (string) $check->status;
+        $status = (string) $run->status;
         if ($age > $staleAfter) {
             $status = $age > $staleAfter * 3 ? 'critical' : 'warning';
         }
         $score = $status === 'ok'
-            ? min(100, (float) $check->health_score)
-            : ($status === 'warning' ? min(70, (float) $check->health_score) : min(30, (float) $check->health_score));
+            ? min(100, (float) $run->health_score)
+            : ($status === 'warning' ? min(70, (float) $run->health_score) : min(30, (float) $run->health_score));
 
         return [
             'status' => $status,
             'score' => $score,
             'message' => "Lighthouse vertical-loop status: {$status}; snapshot age {$age}s.",
-            'last_ok_at' => $check->last_ok_at,
+            'last_ok_at' => $status === 'ok' ? $run->checked_at : null,
             'metrics' => [
+                'monitor_run_id' => $run->id,
                 'snapshot_age_seconds' => $age,
-                'monitor_status' => $check->status,
-                'monitor_health_score' => (float) $check->health_score,
-                'monitor_metrics' => $check->metrics ?? [],
+                'monitor_status' => $run->status,
+                'monitor_health_score' => (float) $run->health_score,
+                'monitor_protocol' => data_get($run->report, 'protocol'),
+                'check_status_counts' => collect((array) data_get($run->report, 'checks', []))
+                    ->countBy(fn (array $check): string => (string) ($check['status'] ?? 'unknown'))
+                    ->all(),
                 'promotion_evidence' => false,
             ],
         ];
@@ -590,6 +606,7 @@ class PhaseTwoFoundationService
             ->mapWithKeys(function (LabGeneration $generation): array {
                 $rollingManifest = data_get($generation->trigger_context, 'canonical_dataset_snapshots.price.manifest');
                 $foundationManifest = data_get($generation->trigger_context, 'canonical_dataset_snapshots.foundation.manifest');
+
                 return [(string) $generation->id => app(HistoricalDataQualityService::class)->fullReplayCoverage(
                     (string) $generation->laboratory?->symbol,
                     (string) $generation->laboratory?->timeframe,
@@ -672,13 +689,18 @@ class PhaseTwoFoundationService
                 $age = $generation->updated_at
                     ? max(0, (int) Carbon::parse($generation->updated_at)->diffInSeconds(now()))
                     : PHP_INT_MAX;
-                if ($age < 900) return false;
+                if ($age < 900) {
+                    return false;
+                }
 
                 $queuedIds = $generation->agents->whereIn('lifecycle_status', $queuedAgentStatuses)->pluck('id');
-                if ($queuedIds->isEmpty()) return false;
+                if ($queuedIds->isEmpty()) {
+                    return false;
+                }
 
                 return ! $linkedQueueRows->contains(function (object $job) use ($queuedIds): bool {
                     $payload = (string) ($job->payload ?? '');
+
                     return $queuedIds->contains(fn (mixed $id): bool => preg_match('/labAgentId[^0-9]{1,24}'.preg_quote((string) $id, '/').'(?:[^0-9]|$)/', $payload) === 1);
                 });
             });

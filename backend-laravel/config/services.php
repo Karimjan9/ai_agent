@@ -5,8 +5,11 @@ $protectedSecret = static function (string $file): ?string {
         ? trim((string) env('INTERNAL_API_TOKEN_FILE', ''))
         : '';
     $path = $configuredPath !== '' ? $configuredPath : storage_path('app/secrets/'.$file);
-    if (! is_file($path)) return null;
+    if (! is_file($path)) {
+        return null;
+    }
     $contents = @file_get_contents($path);
+
     return is_string($contents) && trim($contents) !== '' ? trim($contents) : null;
 };
 
@@ -80,6 +83,9 @@ return [
         // restarting after every tick makes Windows flash a console window
         // even when PM2's windowsHide flag is set.
         'max_ticks_per_process' => max(0, (int) env('SCHEDULER_MAX_TICKS_PER_PROCESS', 0)),
+        // Windows callbacks run in this process. Rotate only after a complete
+        // tick so dataset/audit allocations cannot accumulate indefinitely.
+        'memory_limit_mb' => max(256, (int) env('SCHEDULER_MEMORY_LIMIT_MB', 768)),
     ],
 
     'lab_queue' => [
@@ -110,6 +116,10 @@ return [
         'screening_batch_size' => max(1, min(6, (int) env('LAB_SCREENING_BATCH_SIZE', 4))),
         'screening_batch_timeout_seconds' => max(60, min(2400, (int) env('LAB_SCREENING_BATCH_TIMEOUT_SECONDS', 1800))),
         'learning_queue' => env('LAB_LEARNING_QUEUE', 'lab-learning'),
+        // Historical provider/download work never runs inside the singleton
+        // scheduler or the learning worker. It is rebuildable maintenance,
+        // not promotion evidence, and receives its own bounded process.
+        'market_maintenance_queue' => env('MARKET_MAINTENANCE_QUEUE', 'market-maintenance'),
         // A screen may yield briefly for a sealed full replay, then it must
         // attempt the lane. This bounds fairness releases instead of burning
         // an unbounded retry stream for the whole full-replay window.
@@ -130,6 +140,11 @@ return [
         // evidence, otherwise a reserved full job can cycle forever without
         // ever reaching the evaluator.
         'stale_training_recovery_limit' => max(1, (int) env('LAB_STALE_TRAINING_RECOVERY_LIMIT', 1)),
+        // A technical incident is durable audit history, not a permanent
+        // evolution kill switch. After cooldown exactly one half-open probe
+        // may run; an immutable successful evaluator run closes the breaker.
+        'technical_breaker_cooldown_minutes' => max(1, (int) env('LAB_TECHNICAL_BREAKER_COOLDOWN_MINUTES', 30)),
+        'technical_breaker_probe_lease_minutes' => max(1, (int) env('LAB_TECHNICAL_BREAKER_PROBE_LEASE_MINUTES', 360)),
     ],
 
     'lab_evidence' => [
@@ -193,6 +208,10 @@ return [
         ],
         'allowed_missing_open_hours' => (int) env('HISTORICAL_ALLOWED_MISSING_OPEN_HOURS', 0),
         'gap_repair_limit' => (int) env('HISTORICAL_GAP_REPAIR_LIMIT', 100),
+        // A secondary feed may repair a *known* missing M1 bar only after it
+        // agrees with the primary source on the surrounding day.  This is a
+        // data-integrity guard, not an execution-quality endorsement.
+        'intraday_gap_repair_max_median_bps' => (float) env('INTRADAY_GAP_REPAIR_MAX_MEDIAN_BPS', 25),
     ],
 
     'secondary_intelligence' => [
@@ -278,7 +297,10 @@ return [
 
     'mt5' => [
         'provider' => env('MT5_PROVIDER', env('MARKET_DATA_PROVIDER', 'mt5')),
-        'symbols' => env('MT5_SYMBOLS', 'XAUUSD,EURUSD,GBPUSD'),
+        // The sovereign foundry trades one market. Other symbols may exist as
+        // explicit related research inputs, but they are not active feed or
+        // generation targets unless a deployment deliberately opts in.
+        'symbols' => env('MT5_SYMBOLS', 'XAUUSD'),
         'timeframes' => env('MT5_TIMEFRAMES', 'M15,H1'),
         'feed_stale_after_seconds' => (int) env('MT5_FEED_STALE_AFTER_SECONDS', 900),
         'feed_lost_after_seconds' => (int) env('MT5_FEED_LOST_AFTER_SECONDS', 1200),
@@ -377,159 +399,164 @@ return [
     ],
 
     'lab_selection' => [
-      // Constitutional data boundary: H1/M15 training, screening, replay and
-      // mutation stop before 2026. 2026 is paper-only evidence.
-      'training_end_exclusive' => env('LAB_TRAINING_END_EXCLUSIVE', '2026-01-01 00:00:00'),
+        // Constitutional data boundary: H1/M15 training, screening, replay and
+        // mutation stop before 2026. 2026 is paper-only evidence.
+        'training_end_exclusive' => env('LAB_TRAINING_END_EXCLUSIVE', '2026-01-01 00:00:00'),
         // A fast screen is only a hypothesis generator.  Fewer than this many
         // observed trades is too noisy even to spend a full replay on.
-      'minimum_screening_trades' => (int) env('LAB_MINIMUM_SCREENING_TRADES', 10),
-      'max_screening_jobs' => (int) env('LAB_MAX_SCREENING_JOBS', 40),
-      // The Python screening child is hard-bounded at 900 seconds. Keep a
-      // 30-second transport margin so a complete evidence response is not
-      // converted into an evaluator error by Laravel's HTTP client.
-      'screen_timeout_seconds' => (int) env('LAB_SCREEN_TIMEOUT_SECONDS', 930),
-      'differential_screen_timeout_seconds' => (int) env('LAB_DIFFERENTIAL_SCREEN_TIMEOUT_SECONDS', 900),
-      // The Python screen can return before Laravel persists the immutable
-      // trace/ledger and gate projection. Stale reservation recovery must
-      // wait through this bounded post-processing window as well.
-      'screen_replay_post_processing_grace_seconds' => (int) env('LAB_SCREEN_REPLAY_POST_PROCESSING_GRACE_SECONDS', 300),
-      // The Python child is bounded at 3600 seconds; leave a transport
-      // margin so a completed evidence response is not cut off by Laravel.
-      'full_replay_timeout_seconds' => (int) env('LAB_FULL_REPLAY_TIMEOUT_SECONDS', 3900),
-      'portfolio_replay_timeout_seconds' => (int) env('LAB_PORTFOLIO_REPLAY_TIMEOUT_SECONDS', 3900),
-      // The Python request can finish before Laravel persists the immutable
-      // response, forward-gate projection and lifecycle close. Stale replay
-      // recovery must wait through this post-processing window.
-      'full_replay_post_processing_grace_seconds' => (int) env('LAB_FULL_REPLAY_POST_PROCESSING_GRACE_SECONDS', 900),
-      // A 100k+ foundation replay is an explicit infrastructure budget
-      // decision. Keep at least two competing candidates so CSCV/PBO cannot
-      // become a meaningless singleton result; this never relaxes an
-      // evidence gate and is recorded in every replay artifact.
-      'full_replay_bounded_cohort_foundation_rows' => (int) env('LAB_FULL_REPLAY_BOUNDED_COHORT_FOUNDATION_ROWS', 100000),
-      'full_replay_max_cohort_size' => (int) env('LAB_FULL_REPLAY_MAX_COHORT_SIZE', 2),
-      // M15 has its own full pre-2026 foundation archive. It must never
-      // borrow H1 history as a price foundation; H1 is supplied separately
-      // only as the closed regime context.
-      'm15_foundation_minimum_rows' => (int) env('LAB_M15_FOUNDATION_MINIMUM_ROWS', 2000),
-      'm15_foundation_start' => env('LAB_M15_FOUNDATION_START', '2016-01-01 00:00:00'),
-      'm15_foundation_end' => env('LAB_M15_FOUNDATION_END', '2025-12-31 23:59:59'),
-      'm15_foundation_required_end' => env('LAB_M15_FOUNDATION_REQUIRED_END', '2025-12-01 00:00:00'),
-      'm15_foundation_require_full_history' => (bool) env('LAB_M15_FOUNDATION_REQUIRE_FULL_HISTORY', true),
-      'm15_rolling_start' => env('LAB_M15_ROLLING_START', '2026-01-01 00:00:00'),
-      'dataset_export_lock_wait_seconds' => (int) env('LAB_DATASET_EXPORT_LOCK_WAIT_SECONDS', 30),
-      // Full replay is operationally expensive, but a fixed finalist count
-      // must not become an evolutionary ceiling. Zero means: the selector
-      // exposes the complete eligible frontier; the dispatch command still
-      // applies the current bootstrap survivor gate before queue admission.
-      'max_full_validation_candidates' => (int) env('LAB_MAX_FULL_VALIDATION_CANDIDATES', 0),
-      // Adaptive parent ecosystem. These values change search allocation only;
-      // they never relax PF, drawdown, ruin, PBO/DSR, holdout or paper gates.
-      'adaptive_parent_enabled' => env('LAB_ADAPTIVE_PARENT_ENABLED', true),
-      'adaptive_archive_enabled' => env('LAB_ADAPTIVE_ARCHIVE_ENABLED', true),
-      'adaptive_parent_shadow' => env('LAB_ADAPTIVE_PARENT_SHADOW', false),
-      'adaptive_budget_enabled' => env('LAB_ADAPTIVE_BUDGET_ENABLED', true),
-      'adaptive_causal_seat_floor' => (int) env('LAB_ADAPTIVE_CAUSAL_SEAT_FLOOR', 8),
-      // Keep the initial parent ecosystem finite while it is still earning
-      // its first forward-valid lineage. Zero remains an explicit operator
-      // override for a deliberate frontier audit, but is not the bootstrap
-      // default: robust crossover is capped at five and architecture
-      // discovery at four contributors.
-      'parent_max_robust' => (int) env('LAB_PARENT_MAX_ROBUST', 5),
-      'parent_max_architecture' => (int) env('LAB_PARENT_MAX_ARCHITECTURE', 4),
-      'parent_max_curiosity' => (int) env('LAB_PARENT_MAX_CURIOSITY', 2),
-      'parent_max_runtime' => (int) env('LAB_PARENT_MAX_RUNTIME', 8),
-      'parent_lineage_cap' => (float) env('LAB_PARENT_LINEAGE_CAP', .50),
-      'parent_diversity_weight' => (float) env('LAB_PARENT_DIVERSITY_WEIGHT', 20),
-      // Zero means the complete exact-cell frontier. Positive values are
-      // explicit infrastructure caps and are recorded as such by the
-      // selection contract; they are not evidence or lineage rules.
-      'semantic_cell_parent_frontier' => (int) env('LAB_SEMANTIC_CELL_PARENT_FRONTIER', 0),
-      'parent_candidate_frontier' => (int) env('LAB_PARENT_CANDIDATE_FRONTIER', 0),
-      // Population size is an experiment budget, not an evolutionary law.
-      // The historical default remains 20 for comparable runs; operators can
-      // raise it without changing parent or promotion contracts.
-      'population_size' => (int) env('LAB_POPULATION_SIZE', 20),
-      'population_min_size' => (int) env('LAB_POPULATION_MIN_SIZE', 1),
-      // Zero means no application-level population ceiling; positive values
-      // are explicit infrastructure limits for a particular deployment.
-      'population_max_size' => (int) env('LAB_POPULATION_MAX_SIZE', 0),
-      'portfolio_council_max_niches' => (int) env('LAB_PORTFOLIO_COUNCIL_MAX_NICHES', 0),
-      'council_min_regime_specialists' => (int) env('LAB_COUNCIL_MIN_REGIME_SPECIALISTS', 2),
-      'council_max_members' => (int) env('LAB_COUNCIL_MAX_MEMBERS', 6),
-      'council_curriculum_enabled' => env('LAB_COUNCIL_CURRICULUM_ENABLED', true),
-      'transition_min_shadow_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_SHADOW_WINDOWS', 3),
-      'transition_min_hybrid_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_HYBRID_WINDOWS', 3),
-      'transition_min_council_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_COUNCIL_WINDOWS', 3),
-      'transition_min_anchor_ablation_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_ANCHOR_ABLATION_WINDOWS', 2),
-      'transition_baseline_tolerance' => (float) env('LAB_COUNCIL_TRANSITION_BASELINE_TOLERANCE', .03),
-      'transition_max_worst_window_regression' => (float) env('LAB_COUNCIL_TRANSITION_MAX_WORST_WINDOW_REGRESSION', .05),
-      'transition_max_router_switch_rate' => (float) env('LAB_COUNCIL_TRANSITION_MAX_ROUTER_SWITCH_RATE', .25),
-      'transition_max_anchor_dependency' => (float) env('LAB_COUNCIL_TRANSITION_MAX_ANCHOR_DEPENDENCY', .20),
-      'portfolio_council_source_limit' => (int) env('LAB_PORTFOLIO_COUNCIL_SOURCE_LIMIT', 0),
-      'forward_failure_source_limit' => (int) env('LAB_FORWARD_FAILURE_SOURCE_LIMIT', 0),
-      'evidence_complement_source_limit' => (int) env('LAB_EVIDENCE_COMPLEMENT_SOURCE_LIMIT', 0),
-      'robustness_matrix_frontier_limit' => (int) env('LAB_ROBUSTNESS_MATRIX_FRONTIER_LIMIT', 0),
-      'robustness_matrix_source_limit' => (int) env('LAB_ROBUSTNESS_MATRIX_SOURCE_LIMIT', 0),
-      'archive_failure_limit' => (int) env('LAB_ARCHIVE_FAILURE_LIMIT', 0),
-      'archive_max_per_island' => (int) env('LAB_ARCHIVE_MAX_PER_ISLAND', 0),
-      'archive_migration_limit' => (int) env('LAB_ARCHIVE_MIGRATION_LIMIT', 0),
-      'confirmed_parent_traits_limit' => (int) env('LAB_CONFIRMED_PARENT_TRAITS_LIMIT', 0),
-      'mutation_scope_source_limit' => (int) env('LAB_MUTATION_SCOPE_SOURCE_LIMIT', 0),
-      'shadow_veto_decision_limit' => (int) env('LAB_SHADOW_VETO_DECISION_LIMIT', 0),
-      'governor_lookback_generations' => (int) env('LAB_GOVERNOR_LOOKBACK_GENERATIONS', 3),
-      'governor_diversity_collapse_threshold' => (float) env('LAB_GOVERNOR_DIVERSITY_COLLAPSE_THRESHOLD', .35),
-      'governor_stagnation_generations' => (int) env('LAB_GOVERNOR_STAGNATION_GENERATIONS', 3),
-      // Risk-bounded exploration changes research allocation and mutation
-      // amplitude only. It never relaxes screening, replay, forward, paper or
-      // promotion gates.
-      'risk_bounded_exploration_enabled' => env('LAB_RISK_BOUNDED_EXPLORATION_ENABLED', true),
-      'risk_bounded_exploration_seats' => (int) env('LAB_RISK_BOUNDED_EXPLORATION_SEATS', 8),
-      'bold_mutation_step_multiplier' => (float) env('LAB_BOLD_MUTATION_STEP_MULTIPLIER', 2.0),
-      'proven_gene_step_multiplier' => (float) env('LAB_PROVEN_GENE_STEP_MULTIPLIER', 1.5),
-      'screen_pass_step_multiplier' => (float) env('LAB_SCREEN_PASS_STEP_MULTIPLIER', 1.2),
-      'uncertainty_step_multiplier' => (float) env('LAB_UNCERTAINTY_STEP_MULTIPLIER', .75),
-      // A complete, healthy frozen-control failure may open a research-only
-      // shadow cohort. This changes search allocation only; it never opens
-      // parent, paper, forward-promotion or champion permissions.
-      'shadow_research_enabled' => env('LAB_SHADOW_RESEARCH_ENABLED', true),
-      'shadow_research_max_consecutive_generations' => (int) env('LAB_SHADOW_RESEARCH_MAX_CONSECUTIVE_GENERATIONS', 3),
-      'shadow_research_max_full_replays_per_generation' => (int) env('LAB_SHADOW_RESEARCH_MAX_FULL_REPLAYS_PER_GENERATION', 2),
-      // A screen-positive cohort must produce replay evidence before another
-      // generic cohort is allowed to multiply the unresolved learning queue.
-      'learning_velocity_enabled' => env('LAB_LEARNING_VELOCITY_ENABLED', true),
-      'learning_velocity_lookback_generations' => (int) env('LAB_LEARNING_VELOCITY_LOOKBACK_GENERATIONS', 3),
-      'learning_velocity_max_unresolved_screen_generations' => (int) env('LAB_LEARNING_VELOCITY_MAX_UNRESOLVED_SCREEN_GENERATIONS', 1),
-      'learning_starvation_stale_seconds' => (int) env('LAB_LEARNING_STARVATION_STALE_SECONDS', 1800),
+        'minimum_screening_trades' => (int) env('LAB_MINIMUM_SCREENING_TRADES', 10),
+        'max_screening_jobs' => (int) env('LAB_MAX_SCREENING_JOBS', 40),
+        // The Python screening child is hard-bounded at 900 seconds. Keep a
+        // 30-second transport margin so a complete evidence response is not
+        // converted into an evaluator error by Laravel's HTTP client.
+        'screen_timeout_seconds' => (int) env('LAB_SCREEN_TIMEOUT_SECONDS', 930),
+        'differential_screen_timeout_seconds' => (int) env('LAB_DIFFERENTIAL_SCREEN_TIMEOUT_SECONDS', 900),
+        // The Python screen can return before Laravel persists the immutable
+        // trace/ledger and gate projection. Stale reservation recovery must
+        // wait through this bounded post-processing window as well.
+        'screen_replay_post_processing_grace_seconds' => (int) env('LAB_SCREEN_REPLAY_POST_PROCESSING_GRACE_SECONDS', 300),
+        // The Python child is bounded at 3600 seconds; leave a transport
+        // margin so a completed evidence response is not cut off by Laravel.
+        'full_replay_timeout_seconds' => (int) env('LAB_FULL_REPLAY_TIMEOUT_SECONDS', 3900),
+        // Causal learning confirmation runs exactly three atomic forward folds.
+        // Its AI child stops at 720s and Laravel stops waiting 60s later, so a
+        // broken fold can never occupy the learning lane for an hour.
+        'causal_replay_hard_timeout_seconds' => max(90, min(900, (int) env('LAB_CAUSAL_REPLAY_HARD_TIMEOUT_SECONDS', 720))),
+        'causal_replay_timeout_seconds' => max(120, min(960, (int) env('LAB_CAUSAL_REPLAY_TIMEOUT_SECONDS', 780))),
+        'portfolio_replay_timeout_seconds' => (int) env('LAB_PORTFOLIO_REPLAY_TIMEOUT_SECONDS', 3900),
+        // The Python request can finish before Laravel persists the immutable
+        // response, forward-gate projection and lifecycle close. Stale replay
+        // recovery must wait through this post-processing window.
+        'full_replay_post_processing_grace_seconds' => (int) env('LAB_FULL_REPLAY_POST_PROCESSING_GRACE_SECONDS', 900),
+        // A 100k+ foundation replay is an explicit infrastructure budget
+        // decision. Keep at least two competing candidates so CSCV/PBO cannot
+        // become a meaningless singleton result; this never relaxes an
+        // evidence gate and is recorded in every replay artifact.
+        'full_replay_bounded_cohort_foundation_rows' => (int) env('LAB_FULL_REPLAY_BOUNDED_COHORT_FOUNDATION_ROWS', 100000),
+        'full_replay_max_cohort_size' => (int) env('LAB_FULL_REPLAY_MAX_COHORT_SIZE', 2),
+        // M15 has its own full pre-2026 foundation archive. It must never
+        // borrow H1 history as a price foundation; H1 is supplied separately
+        // only as the closed regime context.
+        'm15_foundation_minimum_rows' => (int) env('LAB_M15_FOUNDATION_MINIMUM_ROWS', 2000),
+        'm15_foundation_start' => env('LAB_M15_FOUNDATION_START', '2016-01-01 00:00:00'),
+        'm15_foundation_end' => env('LAB_M15_FOUNDATION_END', '2025-12-31 23:59:59'),
+        'm15_foundation_required_end' => env('LAB_M15_FOUNDATION_REQUIRED_END', '2025-12-01 00:00:00'),
+        'm15_foundation_require_full_history' => (bool) env('LAB_M15_FOUNDATION_REQUIRE_FULL_HISTORY', true),
+        'm15_rolling_start' => env('LAB_M15_ROLLING_START', '2026-01-01 00:00:00'),
+        'dataset_export_lock_wait_seconds' => (int) env('LAB_DATASET_EXPORT_LOCK_WAIT_SECONDS', 30),
+        // Full replay is operationally expensive, but a fixed finalist count
+        // must not become an evolutionary ceiling. Zero means: the selector
+        // exposes the complete eligible frontier; the dispatch command still
+        // applies the current bootstrap survivor gate before queue admission.
+        'max_full_validation_candidates' => (int) env('LAB_MAX_FULL_VALIDATION_CANDIDATES', 0),
+        // Adaptive parent ecosystem. These values change search allocation only;
+        // they never relax PF, drawdown, ruin, PBO/DSR, holdout or paper gates.
+        'adaptive_parent_enabled' => env('LAB_ADAPTIVE_PARENT_ENABLED', true),
+        'adaptive_archive_enabled' => env('LAB_ADAPTIVE_ARCHIVE_ENABLED', true),
+        'adaptive_parent_shadow' => env('LAB_ADAPTIVE_PARENT_SHADOW', false),
+        'adaptive_budget_enabled' => env('LAB_ADAPTIVE_BUDGET_ENABLED', true),
+        'adaptive_causal_seat_floor' => (int) env('LAB_ADAPTIVE_CAUSAL_SEAT_FLOOR', 8),
+        // Keep the initial parent ecosystem finite while it is still earning
+        // its first forward-valid lineage. Zero remains an explicit operator
+        // override for a deliberate frontier audit, but is not the bootstrap
+        // default: robust crossover is capped at five and architecture
+        // discovery at four contributors.
+        'parent_max_robust' => (int) env('LAB_PARENT_MAX_ROBUST', 5),
+        'parent_max_architecture' => (int) env('LAB_PARENT_MAX_ARCHITECTURE', 4),
+        'parent_max_curiosity' => (int) env('LAB_PARENT_MAX_CURIOSITY', 2),
+        'parent_max_runtime' => (int) env('LAB_PARENT_MAX_RUNTIME', 8),
+        'parent_lineage_cap' => (float) env('LAB_PARENT_LINEAGE_CAP', .50),
+        'parent_diversity_weight' => (float) env('LAB_PARENT_DIVERSITY_WEIGHT', 20),
+        // Zero means the complete exact-cell frontier. Positive values are
+        // explicit infrastructure caps and are recorded as such by the
+        // selection contract; they are not evidence or lineage rules.
+        'semantic_cell_parent_frontier' => (int) env('LAB_SEMANTIC_CELL_PARENT_FRONTIER', 0),
+        'parent_candidate_frontier' => (int) env('LAB_PARENT_CANDIDATE_FRONTIER', 0),
+        // Population size is an experiment budget, not an evolutionary law.
+        // The historical default remains 20 for comparable runs; operators can
+        // raise it without changing parent or promotion contracts.
+        'population_size' => (int) env('LAB_POPULATION_SIZE', 20),
+        'population_min_size' => (int) env('LAB_POPULATION_MIN_SIZE', 1),
+        // Zero means no application-level population ceiling; positive values
+        // are explicit infrastructure limits for a particular deployment.
+        'population_max_size' => (int) env('LAB_POPULATION_MAX_SIZE', 0),
+        'portfolio_council_max_niches' => (int) env('LAB_PORTFOLIO_COUNCIL_MAX_NICHES', 0),
+        'council_min_regime_specialists' => (int) env('LAB_COUNCIL_MIN_REGIME_SPECIALISTS', 2),
+        'council_max_members' => (int) env('LAB_COUNCIL_MAX_MEMBERS', 6),
+        'council_curriculum_enabled' => env('LAB_COUNCIL_CURRICULUM_ENABLED', true),
+        'transition_min_shadow_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_SHADOW_WINDOWS', 3),
+        'transition_min_hybrid_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_HYBRID_WINDOWS', 3),
+        'transition_min_council_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_COUNCIL_WINDOWS', 3),
+        'transition_min_anchor_ablation_windows' => (int) env('LAB_COUNCIL_TRANSITION_MIN_ANCHOR_ABLATION_WINDOWS', 2),
+        'transition_baseline_tolerance' => (float) env('LAB_COUNCIL_TRANSITION_BASELINE_TOLERANCE', .03),
+        'transition_max_worst_window_regression' => (float) env('LAB_COUNCIL_TRANSITION_MAX_WORST_WINDOW_REGRESSION', .05),
+        'transition_max_router_switch_rate' => (float) env('LAB_COUNCIL_TRANSITION_MAX_ROUTER_SWITCH_RATE', .25),
+        'transition_max_anchor_dependency' => (float) env('LAB_COUNCIL_TRANSITION_MAX_ANCHOR_DEPENDENCY', .20),
+        'portfolio_council_source_limit' => (int) env('LAB_PORTFOLIO_COUNCIL_SOURCE_LIMIT', 0),
+        'forward_failure_source_limit' => (int) env('LAB_FORWARD_FAILURE_SOURCE_LIMIT', 0),
+        'evidence_complement_source_limit' => (int) env('LAB_EVIDENCE_COMPLEMENT_SOURCE_LIMIT', 0),
+        'robustness_matrix_frontier_limit' => (int) env('LAB_ROBUSTNESS_MATRIX_FRONTIER_LIMIT', 0),
+        'robustness_matrix_source_limit' => (int) env('LAB_ROBUSTNESS_MATRIX_SOURCE_LIMIT', 0),
+        'archive_failure_limit' => (int) env('LAB_ARCHIVE_FAILURE_LIMIT', 0),
+        'archive_max_per_island' => (int) env('LAB_ARCHIVE_MAX_PER_ISLAND', 0),
+        'archive_migration_limit' => (int) env('LAB_ARCHIVE_MIGRATION_LIMIT', 0),
+        'confirmed_parent_traits_limit' => (int) env('LAB_CONFIRMED_PARENT_TRAITS_LIMIT', 0),
+        'mutation_scope_source_limit' => (int) env('LAB_MUTATION_SCOPE_SOURCE_LIMIT', 0),
+        'shadow_veto_decision_limit' => (int) env('LAB_SHADOW_VETO_DECISION_LIMIT', 0),
+        'governor_lookback_generations' => (int) env('LAB_GOVERNOR_LOOKBACK_GENERATIONS', 3),
+        'governor_diversity_collapse_threshold' => (float) env('LAB_GOVERNOR_DIVERSITY_COLLAPSE_THRESHOLD', .35),
+        'governor_stagnation_generations' => (int) env('LAB_GOVERNOR_STAGNATION_GENERATIONS', 3),
+        // Risk-bounded exploration changes research allocation and mutation
+        // amplitude only. It never relaxes screening, replay, forward, paper or
+        // promotion gates.
+        'risk_bounded_exploration_enabled' => env('LAB_RISK_BOUNDED_EXPLORATION_ENABLED', true),
+        'risk_bounded_exploration_seats' => (int) env('LAB_RISK_BOUNDED_EXPLORATION_SEATS', 8),
+        'bold_mutation_step_multiplier' => (float) env('LAB_BOLD_MUTATION_STEP_MULTIPLIER', 2.0),
+        'proven_gene_step_multiplier' => (float) env('LAB_PROVEN_GENE_STEP_MULTIPLIER', 1.5),
+        'screen_pass_step_multiplier' => (float) env('LAB_SCREEN_PASS_STEP_MULTIPLIER', 1.2),
+        'uncertainty_step_multiplier' => (float) env('LAB_UNCERTAINTY_STEP_MULTIPLIER', .75),
+        // A complete, healthy frozen-control failure may open a research-only
+        // shadow cohort. This changes search allocation only; it never opens
+        // parent, paper, forward-promotion or champion permissions.
+        'shadow_research_enabled' => env('LAB_SHADOW_RESEARCH_ENABLED', true),
+        'shadow_research_max_consecutive_generations' => (int) env('LAB_SHADOW_RESEARCH_MAX_CONSECUTIVE_GENERATIONS', 3),
+        'shadow_research_max_full_replays_per_generation' => (int) env('LAB_SHADOW_RESEARCH_MAX_FULL_REPLAYS_PER_GENERATION', 2),
+        // A screen-positive cohort must produce replay evidence before another
+        // generic cohort is allowed to multiply the unresolved learning queue.
+        'learning_velocity_enabled' => env('LAB_LEARNING_VELOCITY_ENABLED', true),
+        'learning_velocity_lookback_generations' => (int) env('LAB_LEARNING_VELOCITY_LOOKBACK_GENERATIONS', 3),
+        'learning_velocity_max_unresolved_screen_generations' => (int) env('LAB_LEARNING_VELOCITY_MAX_UNRESOLVED_SCREEN_GENERATIONS', 1),
+        'learning_starvation_stale_seconds' => (int) env('LAB_LEARNING_STARVATION_STALE_SECONDS', 1800),
         'learning_starvation_min_pending_dojo' => (int) env('LAB_LEARNING_STARVATION_MIN_PENDING_DOJO', 1),
         // Three terminal zero-pass cohorts are a strategy deadlock, not a
         // learning-worker outage. Normal evolution stops; only a bounded,
         // shadow/rescue plan may be considered with operator approval.
         'zero_pass_circuit_breaker_generations' => (int) env('LAB_ZERO_PASS_CIRCUIT_BREAKER_GENERATIONS', 3),
-      // Parent-aware evolution. A parent can propose a bounded skill, but it
-      // cannot replace the child's autonomous branch or bypass evidence gates.
-      'parent_mentor_broker_enabled' => env('LAB_PARENT_MENTOR_BROKER_ENABLED', true),
-      'parent_assisted_seats' => (int) env('LAB_PARENT_ASSISTED_SEATS', 2),
-      'parent_autonomous_minimum_share' => (float) env('LAB_PARENT_AUTONOMOUS_MINIMUM_SHARE', .25),
-      'parent_trust_decay_days' => (int) env('LAB_PARENT_TRUST_DECAY_DAYS', 30),
-      'parent_trust_floor' => (float) env('LAB_PARENT_TRUST_FLOOR', .15),
-      'parent_trust_ceiling' => (float) env('LAB_PARENT_TRUST_CEILING', .85),
-      'parent_counterfactual_required' => env('LAB_PARENT_COUNTERFACTUAL_REQUIRED', true),
-      'parent_counterfactual_branches' => ['autonomous', 'mentored', 'ablated'],
-      'parent_credit_min_incremental_value' => (float) env('LAB_PARENT_CREDIT_MIN_INCREMENTAL_VALUE', .0001),
-      'evolution_credit_enabled' => env('LAB_EVOLUTION_CREDIT_ENABLED', true),
-      'evidence_quarantine_sandbox_enabled' => env('LAB_EVIDENCE_QUARANTINE_SANDBOX_ENABLED', true),
-      'council_ablation_required_before_official' => env('LAB_COUNCIL_ABLATION_REQUIRED_BEFORE_OFFICIAL', true),
-      'council_ablation_roles' => ['entry', 'risk', 'regime', 'volume_temporal'],
-      // Brave research is explicit, deterministic and sandboxed. Percentages
-      // apply to experimental seats after frozen controls are reserved.
-      'hybrid_evolution_enabled' => env('LAB_HYBRID_EVOLUTION_ENABLED', true),
-      'hybrid_directed_repair_share' => (float) env('LAB_HYBRID_DIRECTED_REPAIR_SHARE', .60),
-      'hybrid_bold_structural_share' => (float) env('LAB_HYBRID_BOLD_STRUCTURAL_SHARE', .25),
-      'hybrid_adversarial_share' => (float) env('LAB_HYBRID_ADVERSARIAL_SHARE', .15),
-      'hybrid_control_seats' => (int) env('LAB_HYBRID_CONTROL_SEATS', 2),
-      'hybrid_bold_max_changed_genes' => (int) env('LAB_HYBRID_BOLD_MAX_CHANGED_GENES', 3),
-      'hybrid_adversarial_max_changed_genes' => (int) env('LAB_HYBRID_ADVERSARIAL_MAX_CHANGED_GENES', 3),
-  ],
+        // Parent-aware evolution. A parent can propose a bounded skill, but it
+        // cannot replace the child's autonomous branch or bypass evidence gates.
+        'parent_mentor_broker_enabled' => env('LAB_PARENT_MENTOR_BROKER_ENABLED', true),
+        'parent_assisted_seats' => (int) env('LAB_PARENT_ASSISTED_SEATS', 2),
+        'parent_autonomous_minimum_share' => (float) env('LAB_PARENT_AUTONOMOUS_MINIMUM_SHARE', .25),
+        'parent_trust_decay_days' => (int) env('LAB_PARENT_TRUST_DECAY_DAYS', 30),
+        'parent_trust_floor' => (float) env('LAB_PARENT_TRUST_FLOOR', .15),
+        'parent_trust_ceiling' => (float) env('LAB_PARENT_TRUST_CEILING', .85),
+        'parent_counterfactual_required' => env('LAB_PARENT_COUNTERFACTUAL_REQUIRED', true),
+        'parent_counterfactual_branches' => ['autonomous', 'mentored', 'ablated'],
+        'parent_credit_min_incremental_value' => (float) env('LAB_PARENT_CREDIT_MIN_INCREMENTAL_VALUE', .0001),
+        'evolution_credit_enabled' => env('LAB_EVOLUTION_CREDIT_ENABLED', true),
+        'evidence_quarantine_sandbox_enabled' => env('LAB_EVIDENCE_QUARANTINE_SANDBOX_ENABLED', true),
+        'council_ablation_required_before_official' => env('LAB_COUNCIL_ABLATION_REQUIRED_BEFORE_OFFICIAL', true),
+        'council_ablation_roles' => ['entry', 'risk', 'regime', 'volume_temporal'],
+        // Brave research is explicit, deterministic and sandboxed. Percentages
+        // apply to experimental seats after frozen controls are reserved.
+        'hybrid_evolution_enabled' => env('LAB_HYBRID_EVOLUTION_ENABLED', true),
+        'hybrid_directed_repair_share' => (float) env('LAB_HYBRID_DIRECTED_REPAIR_SHARE', .60),
+        'hybrid_bold_structural_share' => (float) env('LAB_HYBRID_BOLD_STRUCTURAL_SHARE', .25),
+        'hybrid_adversarial_share' => (float) env('LAB_HYBRID_ADVERSARIAL_SHARE', .15),
+        'hybrid_control_seats' => (int) env('LAB_HYBRID_CONTROL_SEATS', 2),
+        'hybrid_bold_max_changed_genes' => (int) env('LAB_HYBRID_BOLD_MAX_CHANGED_GENES', 3),
+        'hybrid_adversarial_max_changed_genes' => (int) env('LAB_HYBRID_ADVERSARIAL_MAX_CHANGED_GENES', 3),
+    ],
 
     // Targeted failure research has its own admission budget. A changed
     // number inside the same temporal failure family is not new evidence.
@@ -615,6 +642,20 @@ return [
         'slippage_points' => (float) env('RISK_SLIPPAGE_POINTS', 2),
     ],
 
+    // Smart Discipline is a process-integrity authority, not a new alpha
+    // model. Limits are conservative containment defaults and remain
+    // configurable; the engine can veto or shrink, never increase risk.
+    'discipline' => [
+        'enabled' => env('SMART_DISCIPLINE_ENABLED', true),
+        'minimum_reward_risk' => max(0, (float) env('SMART_DISCIPLINE_MIN_REWARD_RISK', 1.0)),
+        'late_entry_max_stop_units' => max(0, (float) env('SMART_DISCIPLINE_LATE_ENTRY_MAX_STOP_UNITS', .5)),
+        'weekly_loss_limit_percent' => max(0, (float) env('SMART_DISCIPLINE_WEEKLY_LOSS_LIMIT_PERCENT', 5)),
+        'max_trades_per_session' => max(1, (int) env('SMART_DISCIPLINE_MAX_TRADES_PER_SESSION', 4)),
+        'max_trades_per_day' => max(1, (int) env('SMART_DISCIPLINE_MAX_TRADES_PER_DAY', 8)),
+        'max_consecutive_losses' => max(1, (int) env('SMART_DISCIPLINE_MAX_CONSECUTIVE_LOSSES', 4)),
+        'loss_cooldown_minutes' => max(0, (int) env('SMART_DISCIPLINE_LOSS_COOLDOWN_MINUTES', 20)),
+    ],
+
     // The learning lane is deliberately separate from promotion selection.
     // It can spend a small, bounded amount of replay capacity on a paired
     // near-miss, but it can never lower a gate or create paper evidence.
@@ -631,7 +672,15 @@ return [
         // so a legacy backlog cannot compete with live replay workers.
         'materialization_preview_limit' => max(1, (int) env('LAB_LEARNING_LANE_MATERIALIZATION_PREVIEW_LIMIT', 50)),
         'provisional_skill_ttl_days' => (int) env('LAB_LEARNING_LANE_PROVISIONAL_SKILL_TTL_DAYS', 30),
-        'independent_confirmations_required' => (int) env('LAB_LEARNING_LANE_INDEPENDENT_CONFIRMATIONS', 2),
+        'independent_confirmations_required' => max(3, (int) env('LAB_LEARNING_LANE_INDEPENDENT_CONFIRMATIONS', 3)),
+        'confirmation_maximum_holding_bars' => max(24, (int) env('LAB_LEARNING_CONFIRMATION_MAXIMUM_HOLDING_BARS', 240)),
+        'causal_fold_count' => max(6, min(12, (int) env('LAB_LEARNING_CAUSAL_FOLD_COUNT', 9))),
+        'causal_max_rows_per_fold' => max(2048, min(8192, (int) env('LAB_LEARNING_CAUSAL_MAX_ROWS_PER_FOLD', 4096))),
+        'causal_audit_trace_rows' => max(128, min(1024, (int) env('LAB_LEARNING_CAUSAL_AUDIT_TRACE_ROWS', 512))),
+        'causal_minimum_trades_per_window' => max(1, (int) env('LAB_LEARNING_CAUSAL_MIN_TRADES_PER_WINDOW', 8)),
+        'causal_minimum_powered_windows' => max(3, min(9, (int) env('LAB_LEARNING_CAUSAL_MIN_POWERED_WINDOWS', 6))),
+        'causal_minimum_positive_windows' => max(2, min(9, (int) env('LAB_LEARNING_CAUSAL_MIN_POSITIVE_WINDOWS', 4))),
+        'confirmation_max_attempts' => max(1, min(5, (int) env('LAB_LEARNING_CONFIRMATION_MAX_ATTEMPTS', 3))),
         'micro_windows_required' => (int) env('LAB_LEARNING_LANE_MICRO_WINDOWS_REQUIRED', 3),
         'micro_positive_windows_required' => (int) env('LAB_LEARNING_LANE_MICRO_POSITIVE_WINDOWS_REQUIRED', 2),
         'negative_downrank_after' => (int) env('LAB_LEARNING_LANE_NEGATIVE_DOWNRANK_AFTER', 3),
@@ -721,6 +770,22 @@ return [
 
     // Bounded learning-recovery dispatch limit reuse (shadow lane only).
     'learning_lane_recovery_limit' => (int) env('NEUROTRADER_LEARNING_RECOVERY_LIMIT', 3),
+
+    // Production admission for the autonomous Edge-to-Mastery state machine.
+    // Two scheduler observations must agree that the replay lane is idle;
+    // delayed jobs alone are not classified as a retry storm.
+    'edge_director' => [
+        'idle_stability_seconds' => max(0, (int) env('EDGE_DIRECTOR_IDLE_STABILITY_SECONDS', 10)),
+        'idle_stability_max_age_seconds' => max(30, (int) env('EDGE_DIRECTOR_IDLE_STABILITY_MAX_AGE_SECONDS', 180)),
+        'retry_storm_attempts' => max(2, (int) env('EDGE_DIRECTOR_RETRY_STORM_ATTEMPTS', 5)),
+        'failed_jobs_per_ten_minutes' => max(1, (int) env('EDGE_DIRECTOR_FAILED_JOBS_PER_TEN_MINUTES', 3)),
+        'comparable_scalar_generations' => max(3, (int) env('EDGE_DIRECTOR_COMPARABLE_SCALAR_GENERATIONS', 3)),
+        'compiled_hypothesis_budget' => max(1, min(12, (int) env('EDGE_DIRECTOR_COMPILED_HYPOTHESIS_BUDGET', 10))),
+        'compiled_hypothesis_budget_per_baseline' => max(1, min(5, (int) env('EDGE_DIRECTOR_COMPILED_HYPOTHESIS_BUDGET_PER_BASELINE', 3))),
+        'compiled_hypothesis_budget_per_axis_epoch' => max(1, min(3, (int) env('EDGE_DIRECTOR_COMPILED_HYPOTHESIS_BUDGET_PER_AXIS_EPOCH', 2))),
+        'promotion_debt_limit' => max(1, min(30, (int) env('EDGE_DIRECTOR_PROMOTION_DEBT_LIMIT', 8))),
+        'fair_interleave_cooldown_seconds' => max(5, min(300, (int) env('EDGE_DIRECTOR_FAIR_INTERLEAVE_COOLDOWN_SECONDS', 30))),
+    ],
 
     'release_seal' => [
         'required' => env('RELEASE_SEAL_REQUIRED', false),

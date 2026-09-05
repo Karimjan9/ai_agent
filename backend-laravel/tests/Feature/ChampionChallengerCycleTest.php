@@ -8,6 +8,7 @@ use App\Models\ModelVersion;
 use App\Services\EvolutionProposalApplicationService;
 use App\Services\MarketChampionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ChampionChallengerCycleTest extends TestCase
@@ -35,12 +36,14 @@ class ChampionChallengerCycleTest extends TestCase
         $first = $service->evaluate('breakout_v1', 'XAUUSD', 'H1', 75, $this->resultMetrics(70, [70, 71, 69]));
         $this->assertSame('forward_validated', $first->status);
         $service->recordPaperResult($first, ['sample_count' => 50, 'profit_factor' => 1.3, 'max_drawdown' => 8, 'net_profit_percent' => 4]);
+        $this->grantPaperAuthority($champion);
         $service->finalizeHoldout($first, ['score'=>72,'result'=>['profit_factor'=>1.4,'max_drawdown_percent'=>9,'total_trades'=>40,'monte_carlo'=>['risk_of_ruin_percent'=>4]]]);
 
         $second = $service->evaluate('breakout_v2', 'XAUUSD', 'H1', 84, $this->resultMetrics(80, [80, 79, 81]));
         $this->assertSame('forward_validated', $second->status);
         $this->assertDatabaseHas('model_market_performance', ['model_version_id' => $champion->id, 'status' => 'champion']);
         $service->recordPaperResult($second, ['sample_count' => 55, 'profit_factor' => 1.3, 'max_drawdown' => 9, 'net_profit_percent' => 5]);
+        $this->grantPaperAuthority($challenger);
         $service->finalizeHoldout($second, ['score'=>82,'result'=>['profit_factor'=>1.5,'max_drawdown_percent'=>8,'total_trades'=>50,'monte_carlo'=>['risk_of_ruin_percent'=>3]]]);
 
         $this->assertDatabaseHas('model_market_performance', [
@@ -48,6 +51,26 @@ class ChampionChallengerCycleTest extends TestCase
         ]);
         $this->assertDatabaseHas('model_market_performance', [
             'model_version_id' => $champion->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'status' => 'archived',
+        ]);
+    }
+
+    private function grantPaperAuthority(ModelVersion $model): void
+    {
+        DB::table('paper_authority_admissions')->insert([
+            'admission_key' => hash('sha256', 'champion-cycle-fixture|'.$model->id),
+            'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'status' => 'e4_evidence_ready',
+            'passport_hash' => str_repeat('a', 64),
+            'execution_hash' => str_repeat('b', 64),
+            'evidence' => json_encode([
+                'protocol' => 'paper_authority_admission_v1',
+                'fixture' => true,
+                'prospective_after_freeze' => true,
+                'promotion_evidence' => false,
+            ]),
+            'frozen_at' => now()->subMinute(),
+            'created_at' => now(), 'updated_at' => now(),
         ]);
     }
 

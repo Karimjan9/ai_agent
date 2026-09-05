@@ -59,8 +59,14 @@ class FailureDojoService
             'target' => $pair->target,
             'hybrid_lane' => $hybridLane,
         ]);
+        $contextFirewall = $this->contextFirewall($signature);
         $key = hash('sha256', json_encode([
-            self::PROTOCOL, $pair->id, data_get($signature, 'signature'), $pair->independent_window_key,
+            // Pair IDs and replay-window IDs are observations, not a causal
+            // cell identity. Evidence for the same intervention/context is
+            // aggregated below instead of creating a duplicate Dojo backlog.
+            self::PROTOCOL, $pair->symbol, $pair->timeframe, $pair->strategy_family, $pair->target,
+            data_get($signature, 'signature'), data_get($signature, 'changed_gene'),
+            data_get($signature, 'old_value'), data_get($signature, 'new_value'), $contextFirewall['identity'],
         ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         $run = LabFailureDojoRun::query()->firstOrCreate(
             ['dojo_key' => $key],
@@ -78,7 +84,8 @@ class FailureDojoService
                 // but it must never turn into actionable replay backlog. New
                 // rows therefore fail closed at creation time; legacy rows
                 // remain immutable and are classified separately by summary().
-                'status' => $verifiedControl ? 'pending' : 'diagnostic_only',
+                'status' => ! $verifiedControl ? 'diagnostic_only'
+                    : (($contextFirewall['complete'] ?? false) ? 'pending' : 'context_incomplete_research_debt'),
                 'failure_signature' => $signature,
                 'evidence' => [
                     'protocol' => self::PROTOCOL,
@@ -86,7 +93,9 @@ class FailureDojoService
                     'counterfactual_status' => 'pending',
                     'frozen_control_required' => true,
                     'control_pair_status' => $verifiedControl ? 'verified' : 'diagnostic_only',
-                    'diagnostic_reason' => $verifiedControl ? null : 'CONTROL_PAIR_INVALID',
+                    'diagnostic_reason' => ! $verifiedControl ? 'CONTROL_PAIR_INVALID'
+                        : (($contextFirewall['complete'] ?? false) ? null : 'CONTEXT_INCOMPLETE'),
+                    'context_firewall' => $contextFirewall,
                     'causal_skill_compiler' => $causalSkill,
                     'information_gain_priority' => $priority,
                     'structural_escape' => $structuralEscape,
@@ -108,6 +117,16 @@ class FailureDojoService
             ],
         );
 
+        $existingEvidence = (array) $run->evidence;
+        $observationPairs = collect((array) data_get($existingEvidence, 'observation_pair_ids', []))
+            ->push($pair->id)->filter()->unique()->sort()->values()->all();
+        $run->update(['evidence' => [...$existingEvidence,
+            'observation_pair_ids' => $observationPairs,
+            'observation_support' => count($observationPairs),
+            'context_firewall' => $contextFirewall,
+            'promotion_evidence' => false,
+        ]]);
+
         // Every failure now receives a strategic research plan, even when it
         // is still pending.  This is a ranking and lesson contract only; it
         // never dispatches a replay and never changes promotion state.
@@ -120,6 +139,66 @@ class FailureDojoService
         ]]);
 
         return $run->fresh();
+    }
+
+    /** Terminalize legacy pending rows that lack the mandatory context identity. */
+    public function reconcileContextFirewall(string $symbol, string $timeframe, bool $apply = false): array
+    {
+        if (! $this->available()) return ['available' => false, 'status' => 'unavailable'];
+        $rows = $this->scopedQuery($symbol, $timeframe)->where('status', 'pending')->get();
+        $incomplete = $rows->filter(fn (LabFailureDojoRun $run): bool => ! $this->contextFirewall((array) $run->failure_signature)['complete']);
+        if ($apply) {
+            $incomplete->each(function (LabFailureDojoRun $run): void {
+                $firewall = $this->contextFirewall((array) $run->failure_signature);
+                $run->update(['status' => 'context_incomplete_research_debt', 'evidence' => [
+                    ...((array) $run->evidence), 'context_firewall' => $firewall,
+                    'diagnostic_reason' => 'CONTEXT_INCOMPLETE', 'promotion_evidence' => false,
+                ]]);
+            });
+            Cache::forget('failure-dojo:summary:'.strtoupper($symbol).':'.strtoupper($timeframe));
+        }
+        return ['protocol' => self::PROTOCOL, 'status' => $apply ? 'reconciled' : 'would_reconcile',
+            'pending_examined' => $rows->count(), 'context_incomplete' => $incomplete->count(),
+            'promotion_evidence' => false];
+    }
+
+    /**
+     * Versioned reprojection for legacy free-form context. It never erases
+     * the former signature: the exact v1 state is retained under provenance
+     * and no replay/promotion is opened by this reconciliation.
+     */
+    public function reprojectContextContractV2(string $symbol, string $timeframe, bool $apply = false): array
+    {
+        if (! $this->available()) return ['available' => false, 'status' => 'unavailable'];
+        $rows = $this->scopedQuery($symbol, $timeframe)->get();
+        $service = app(ContextContractV2Service::class);
+        $changed = 0; $incomplete = 0;
+        foreach ($rows as $run) {
+            $signature = (array) $run->failure_signature;
+            $state = (array) data_get($signature, 'state', []);
+            $projection = $service->project($state);
+            $already = data_get($state, 'context_contract.protocol') === ContextContractV2Service::PROTOCOL
+                && data_get($state, 'context_contract.identity_hash') === data_get($projection, 'identity_hash');
+            if (data_get($projection, 'status') !== 'valid') $incomplete++;
+            if ($already) continue;
+            $changed++;
+            if (! $apply) continue;
+            $prior = (array) data_get($run->evidence, 'context_contract_reprojections', []);
+            $key = (string) data_get($projection, 'identity_hash');
+            $prior[$key] = ['protocol' => ContextContractV2Service::PROTOCOL, 'source_state' => $state,
+                'projection' => $projection, 'reprojected_at' => now()->utc()->toIso8601String(), 'promotion_evidence' => false];
+            $newState = [...$state, 'regime' => data_get($projection, 'axes.regime'),
+                'volatility' => data_get($projection, 'axes.volatility'), 'session' => data_get($projection, 'axes.session'),
+                'context_contract' => $projection];
+            $run->update(['failure_signature' => [...$signature, 'state' => $newState], 'evidence' => [
+                ...((array) $run->evidence), 'context_contract_reprojections' => $prior,
+                'promotion_evidence' => false,
+            ]]);
+        }
+        if ($apply) Cache::forget('failure-dojo:summary:'.strtoupper($symbol).':'.strtoupper($timeframe));
+
+        return ['protocol' => ContextContractV2Service::PROTOCOL, 'status' => $apply ? 'reprojected' : 'would_reproject',
+            'examined' => $rows->count(), 'changed' => $changed, 'context_incomplete' => $incomplete, 'promotion_evidence' => false];
     }
 
     public function recordAssessment(LabLearningLanePair $pair, array $assessment): ?LabFailureDojoRun
@@ -244,7 +323,7 @@ class FailureDojoService
     public function pendingFrontier(string $symbol, string $timeframe, int $limit = 20): array
     {
         if (! $this->available()) return [];
-        return LabFailureDojoRun::query()
+        $runs = LabFailureDojoRun::query()
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))
             ->where('status', 'pending')
@@ -259,9 +338,9 @@ class FailureDojoService
                 (bool) data_get($run->evidence, 'causal_skill_compiler.behavioral_delta.observable_effect', false) ? 1 : 0,
                 -((int) $run->id),
             ])
-            ->take(max(1, $limit))
-            ->values()
-            ->all();
+            ->values();
+
+        return app(FailurePortfolioSchedulerService::class)->schedule($runs, $limit);
     }
 
     private function outcomeFor(LabLearningLanePair $pair): string
@@ -285,5 +364,28 @@ class FailureDojoService
             str_contains($target, 'temporal'), str_contains($target, 'monthly') => 'repair_time_stability',
             default => 'repair_declared_gene',
         };
+    }
+
+    /** @return array<string,mixed> */
+    private function contextFirewall(array $signature): array
+    {
+        $state = (array) data_get($signature, 'state', []);
+        $contract = (array) data_get($state, 'context_contract', []);
+        if (data_get($contract, 'protocol') === ContextContractV2Service::PROTOCOL) {
+            return ['protocol' => 'failure_dojo_context_firewall_v1', 'context_contract' => $contract,
+                'complete' => data_get($contract, 'status') === 'valid',
+                'missing_axes' => (array) data_get($contract, 'invalid_axes', []),
+                'identity' => data_get($contract, 'identity_hash'),
+                'dispatch_allowed' => data_get($contract, 'status') === 'valid', 'promotion_evidence' => false];
+        }
+        $values = [
+            'regime' => data_get($state, 'regime'), 'volatility' => data_get($state, 'volatility'),
+            'session' => data_get($state, 'session'), 'volume_state' => data_get($state, 'volume_state'),
+        ];
+        $missing = collect($values)->filter(fn (mixed $value): bool => $value === null || $value === ''
+            || in_array(strtolower((string) $value), ['unknown', 'unavailable'], true))->keys()->values()->all();
+        return ['protocol' => 'failure_dojo_context_firewall_v1', 'complete' => $missing === [],
+            'missing_axes' => $missing, 'identity' => hash('sha256', json_encode($values, JSON_UNESCAPED_SLASHES)),
+            'dispatch_allowed' => $missing === [], 'promotion_evidence' => false];
     }
 }

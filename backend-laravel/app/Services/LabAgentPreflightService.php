@@ -118,6 +118,21 @@ class LabAgentPreflightService
             'direction' => data_get($group, 'direction'),
         ];
         $controlRootHandoff = data_get($inheritance, 'parent_selection') === 'control_root_seed_inheritance';
+        $causalCohort = (array) data_get($model?->metadata, 'causal_learning_cohort', []);
+        $causalParentLock = (array) data_get(
+            $model?->metadata,
+            'adaptive_parent_ecosystem.causal_counterfactual_parent_lock',
+            [],
+        );
+        $causalBaselineHandoff = in_array($agent->origin, [
+            'causal_confirm', 'causal_repair', 'causal_arch_escape', 'causal_arch_bundle',
+        ], true)
+            && data_get($causalCohort, 'protocol') === CausalLearningCohortPlannerService::PROTOCOL
+            && in_array((string) data_get($causalCohort, 'role'), ['memory_guided', 'repair_guided', 'blinded', 'frozen_control'], true)
+            && (int) data_get($causalParentLock, 'parent_model_version_id', 0) > 0
+            && (int) data_get($causalParentLock, 'parent_model_version_id', 0) === (int) $agent->parent_a_model_version_id
+            && (string) data_get($inheritance, 'parent_selection') === 'same_canonical_source_baseline_for_all_counterfactual_arms'
+            && (bool) data_get($causalParentLock, 'research_baseline_only_until_confirmation', false);
         $canonicalSpecialist = $this->controlRootInheritance->specialistDefinition($family, $expectedNiche);
         $controlRootContract = (array) data_get($model?->metadata, 'control_root_specialist_inheritance', []);
         $controlRootAudit = $agent->inheritanceAudits?->first(
@@ -207,6 +222,7 @@ class LabAgentPreflightService
                     'exact_eligible_failure_context_parent',
                     'sealed_coverage_rescue_parent',
                     'validated_frontier_fallback_from_failure_context',
+                    ...($causalBaselineHandoff ? ['same_canonical_source_baseline_for_all_counterfactual_arms'] : []),
                 ], true)) {
                 $errors[] = 'EXACT_PARENT_PROTOCOL_MISSING';
             }

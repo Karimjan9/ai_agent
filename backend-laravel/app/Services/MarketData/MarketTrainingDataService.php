@@ -265,15 +265,24 @@ class MarketTrainingDataService
         if ($to) {
             $query->where('time', '<', $to);
         }
+        $query->select(['time', 'open', 'high', 'low', 'close', 'volume']);
         if ($limit !== null && $limit > 0) {
-            $candles = $query->orderByDesc('time')->limit($limit)->get()->sortBy('time')->values();
+            // Find the bounded tail boundary with one indexed lookup, then
+            // stream it in chronological order. Hydrating and reverse-sorting
+            // 200k Eloquent models needlessly multiplied memory during MTF
+            // bundle construction even though only neutral OHLCV is needed.
+            $boundary = (clone $query)->reorder('time', 'desc')->offset($limit - 1)->limit(1)->value('time');
+            if ($boundary !== null) {
+                $query->where('time', '>=', $boundary);
+            }
+            $candles = $query->orderBy('time')->limit($limit)->toBase()->get();
         } else {
-            $candles = $query->orderBy('time')->get();
+            $candles = $query->orderBy('time')->toBase()->get();
         }
 
-        return $candles->map(static function (MarketTrainingCandle $candle): array {
+        return $candles->map(static function (object $candle): array {
             return [
-                'time' => $candle->time->copy()->utc()->format('Y-m-d H:i:s'),
+                'time' => CarbonImmutable::parse((string) $candle->time, 'UTC')->utc()->format('Y-m-d H:i:s'),
                 'open' => (float) $candle->open,
                 'high' => (float) $candle->high,
                 'low' => (float) $candle->low,

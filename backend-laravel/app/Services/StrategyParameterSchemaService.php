@@ -41,6 +41,14 @@ class StrategyParameterSchemaService
             'frozen', 'adx_hysteresis_v1', 'ema_slope_consensus_v1',
             'volatility_adaptive_v1',
         ]],
+        // A macro gene is used for the bounded interaction trial after the
+        // individual structural axes have been falsified.  The value maps to
+        // one fixed executable bundle, so the genome still has an exact
+        // one-key diff and credit belongs to the interaction, not to either
+        // component in isolation.
+        'architecture_interaction_variant' => ['string', [
+            'frozen', 'state_classifier_coherence_v1',
+        ]],
         'confidence_calibration_enabled' => ['boolean'],
         'confidence_calibration_min_samples' => ['integer', 15, 200],
         'confidence_ev_lower_bound_enabled' => ['boolean'],
@@ -108,6 +116,66 @@ class StrategyParameterSchemaService
         'liquidity_sweep_reversion' => [
             'swing_lookback' => ['integer', 10, 300], 'atr_period' => ['integer', 2, 100],
             'equal_level_atr_fraction' => ['numeric', .02, 1.0], 'zone_strength_min' => ['numeric', .05, 1.0],
+        ],
+        'liquidity_trap_mtf' => [
+            'swing_lookback' => ['integer', 10, 300], 'atr_period' => ['integer', 2, 100],
+            'equal_level_atr_fraction' => ['numeric', .02, 1.0],
+            'm5_minimum_displacement_atr' => ['numeric', .1, 3.0],
+            'm15_trap_expiry_minutes' => ['integer', 5, 180],
+            'm5_retest_expiry_minutes' => ['integer', 5, 60],
+            'entry_mode' => ['string', ['aggressive', 'balanced', 'conservative']],
+            'h4_context_max_age_bars' => ['numeric', 1.0, 6.0],
+            'h1_context_max_age_bars' => ['numeric', 1.0, 6.0],
+            'm15_context_max_age_bars' => ['numeric', 1.0, 8.0],
+        ],
+        'confirmation_entry_mtf' => [
+            'entry_model' => ['string', [
+                'trend_continuation', 'breakout_retest', 'false_break_reversal',
+                'range_sweep', 'htf_reversal',
+            ]],
+            'breakout_setup_timeframe' => ['string', ['H1', 'M15']],
+            'entry_mode' => ['string', ['aggressive', 'balanced', 'conservative']],
+            'confirmation_family_policy' => ['string', ['all_three_simultaneous', 'structure_plus_reaction', 'structure_plus_participation', 'sequential_three', 'state_adaptive_two_of_three']],
+            'trigger_topology_policy' => ['string', ['aggressive_structure_close', 'balanced_retest_reaction', 'conservative_continuation', 'session_adaptive', 'volatility_adaptive']],
+            'setup_topology_policy' => ['string', ['breakout_and_retest', 'pullback_rejection', 'liquidity_sweep_reclaim', 'range_reentry', 'compression_expansion']],
+            'swing_lookback' => ['integer', 10, 300], 'atr_period' => ['integer', 2, 100],
+            'equal_level_atr_fraction' => ['numeric', .02, 1.0],
+            'm5_minimum_displacement_atr' => ['numeric', .1, 3.0],
+            'breakout_minimum_expansion_atr' => ['numeric', .05, 3.0],
+            'm15_trap_expiry_minutes' => ['integer', 5, 180],
+            'm5_retest_expiry_minutes' => ['integer', 5, 60],
+            'conservative_expiry_minutes' => ['integer', 5, 120],
+            'location_tolerance_atr' => ['numeric', .05, 2.0],
+            'rejection_wick_ratio' => ['numeric', .1, .9],
+            'invalidation_buffer_atr' => ['numeric', 0.0, 1.0],
+            'minimum_independent_confirmations' => ['integer', 1, 3],
+            'attribution_confirmation_bypass' => ['boolean'],
+            'minimum_reward_space_r' => ['numeric', .5, 5.0],
+            'max_chase_atr' => ['numeric', .1, 5.0],
+            'h1_range_adx_max' => ['numeric', 5.0, 40.0],
+            'h4_context_max_age_bars' => ['numeric', 1.0, 6.0],
+            'h1_context_max_age_bars' => ['numeric', 1.0, 6.0],
+            'm15_context_max_age_bars' => ['numeric', 1.0, 8.0],
+        ],
+        'mtf_research_control' => [
+            'swing_lookback' => ['integer', 10, 300], 'atr_period' => ['integer', 2, 100],
+            'equal_level_atr_fraction' => ['numeric', .02, 1.0],
+            'm5_minimum_displacement_atr' => ['numeric', .1, 3.0],
+        ],
+        'mtf_research_playbook' => [
+            'research_model_id' => ['string', [
+                'ict_2022_raid_mss_fvg', 'po3_amd_session', 'london_judas_swing',
+                'turtle_soup_mtf', 'silver_bullet_window', 'smt_sweep_mss',
+                'wyckoff_spring_utad', 'elder_triple_screen_liquidity', 'orb_htf_bias',
+                'orb_vwap_reclaim', 'adaptive_timeframe_confirmation',
+            ]],
+            'swing_lookback' => ['integer', 10, 300], 'atr_period' => ['integer', 2, 100],
+            'equal_level_atr_fraction' => ['numeric', .02, 1.0],
+            'm5_minimum_displacement_atr' => ['numeric', .1, 3.0],
+            'm15_trap_expiry_minutes' => ['integer', 5, 180],
+            'm5_retest_expiry_minutes' => ['integer', 5, 60],
+            'session_start_utc' => ['integer', 0, 23], 'session_end_utc' => ['integer', 1, 24],
+            'opening_range_minutes' => ['integer', 15, 180],
         ],
         'macd_trend' => [
             'ema_trend' => ['integer', 10, 500], 'macd_fast' => ['integer', 2, 100],
@@ -187,7 +255,14 @@ class StrategyParameterSchemaService
     {
         $family = preg_replace('/^(xauusd|eurusd|gbpusd)_/', '', strtolower($strategy));
         $family = preg_replace('/_g\d+_a\d+$/', '', $family ?? strtolower($strategy));
-        return preg_replace('/_v\d+$/', '', $family) ?: $family;
+        $family = preg_replace('/_v\d+$/', '', $family) ?: $family;
+
+        return match ($family) {
+            'mtf_research_control' => 'mtf_research_control',
+            'mtf_research_playbook' => 'mtf_research_playbook',
+            'confirmation_entry_mtf' => 'confirmation_entry_mtf',
+            default => $family,
+        };
     }
 
     /**
@@ -202,16 +277,22 @@ class StrategyParameterSchemaService
         $declaredFamily = strtolower(trim((string) $family));
         $specialized = ['differential_router', 'regime_ensemble'];
 
-        if (in_array($strategyFamily, $specialized, true)) return $strategyFamily.'_v1';
-        if (in_array($declaredFamily, $specialized, true)) return $declaredFamily.'_v1';
+        if (in_array($strategyFamily, $specialized, true)) {
+            return $strategyFamily.'_v1';
+        }
+        if (in_array($declaredFamily, $specialized, true)) {
+            return $declaredFamily.'_v1';
+        }
 
         $base = trim((string) $baseStrategy);
+
         return $base !== '' ? $base : (($declaredFamily ?: $strategyFamily).'_v1');
     }
 
     public function schema(string $strategy): array
     {
         $schema = self::SCHEMAS[$this->family($strategy)] ?? [];
+
         return $schema ? [...$schema, ...self::EXECUTION_SCHEMA] : [];
     }
 
@@ -281,9 +362,43 @@ class StrategyParameterSchemaService
             'bos_retest_continuation' => ['swing_lookback' => 40, 'atr_period' => 14, 'retest_atr_fraction' => .35, 'minimum_displacement_atr' => .5],
             'choch_reversal' => ['swing_lookback' => 40, 'atr_period' => 14, 'transition_confidence_min' => .35],
             'liquidity_sweep_reversion' => ['swing_lookback' => 40, 'atr_period' => 14, 'equal_level_atr_fraction' => .15, 'zone_strength_min' => .35],
+            'liquidity_trap_mtf' => [
+                'swing_lookback' => 40, 'atr_period' => 14, 'equal_level_atr_fraction' => .15,
+                'm5_minimum_displacement_atr' => .5, 'm15_trap_expiry_minutes' => 30,
+                'm5_retest_expiry_minutes' => 20, 'entry_mode' => 'balanced',
+                'h4_context_max_age_bars' => 2.0, 'h1_context_max_age_bars' => 2.0,
+                'm15_context_max_age_bars' => 2.0,
+            ],
+            'confirmation_entry_mtf' => [
+                'entry_model' => 'trend_continuation', 'breakout_setup_timeframe' => 'H1',
+                'entry_mode' => 'balanced',
+                'confirmation_family_policy' => 'all_three_simultaneous',
+                'trigger_topology_policy' => 'balanced_retest_reaction',
+                'setup_topology_policy' => 'pullback_rejection',
+                'swing_lookback' => 40, 'atr_period' => 14, 'equal_level_atr_fraction' => .15,
+                'm5_minimum_displacement_atr' => .5, 'breakout_minimum_expansion_atr' => .35,
+                'm15_trap_expiry_minutes' => 30, 'm5_retest_expiry_minutes' => 20,
+                'conservative_expiry_minutes' => 30, 'location_tolerance_atr' => .35,
+                'rejection_wick_ratio' => .35, 'invalidation_buffer_atr' => .05,
+                'minimum_independent_confirmations' => 3, 'attribution_confirmation_bypass' => false,
+                'minimum_reward_space_r' => 1.5,
+                'max_chase_atr' => 1.25, 'h1_range_adx_max' => 20.0, 'h4_context_max_age_bars' => 2.0,
+                'h1_context_max_age_bars' => 2.0, 'm15_context_max_age_bars' => 2.0,
+            ],
+            'mtf_research_control' => [
+                'swing_lookback' => 40, 'atr_period' => 14,
+                'equal_level_atr_fraction' => .15, 'm5_minimum_displacement_atr' => .5,
+            ],
+            'mtf_research_playbook' => [
+                'swing_lookback' => 40, 'atr_period' => 14, 'equal_level_atr_fraction' => .15,
+                'm5_minimum_displacement_atr' => .5, 'm15_trap_expiry_minutes' => 30,
+                'm5_retest_expiry_minutes' => 20, 'session_start_utc' => 7,
+                'session_end_utc' => 16, 'opening_range_minutes' => 60,
+            ],
             'macd_trend' => ['ema_trend' => 100, 'macd_fast' => 12, 'macd_slow' => 26, 'macd_signal' => 9, 'rsi_period' => 14],
             default => [],
         };
+
         return $defaults ? [...$defaults, ...$this->executionDefaults()] : [];
     }
 
@@ -359,7 +474,9 @@ class StrategyParameterSchemaService
             && isset($parameters['session_start'], $parameters['session_end'])
             && (int) $parameters['session_start'] >= (int) $parameters['session_end']) {
             $parameters['session_end'] = min(24, max(1, (int) $parameters['session_start'] + 1));
-            if ((int) $parameters['session_start'] >= 23) $parameters['session_start'] = 22;
+            if ((int) $parameters['session_start'] >= 23) {
+                $parameters['session_start'] = 22;
+            }
         }
 
         return $parameters;
@@ -383,6 +500,7 @@ class StrategyParameterSchemaService
                 $clean[$key] = max($min, min($max, $value));
             }
         }
+
         return $this->validate($strategy, $clean);
     }
 
@@ -412,6 +530,7 @@ class StrategyParameterSchemaService
             'state_machine_variant' => 'none',
             'entry_topology_variant' => 'frozen',
             'regime_classifier_variant' => 'frozen',
+            'architecture_interaction_variant' => 'frozen',
             'confidence_calibration_enabled' => true,
             'confidence_calibration_min_samples' => 15,
             'confidence_ev_lower_bound_enabled' => true,

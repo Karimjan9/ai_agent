@@ -8,10 +8,21 @@ tags:
   - architecture
   - roadmap
 status: active
-updated: 2026-06-25
+updated: 2026-08-28
 ---
 
 # NeuroTrader Lab Project Context
+
+## 2026-08-30 — Evolutionary Authority Foundry
+
+Implemented `evolutionary_authority_foundry_v1` as a prospective authority
+ledger: confirmed component skill -> five-arm incubator -> descendant-value
+proof -> breeder candidate -> full-passport eligible parent -> E3 paper
+admission -> E4 evidence. It adds settlement watermark taxonomy, legacy
+control-debt firewall, counterfactual council case planning, memory-opportunity
+metrics and a non-trading Genesis Benchmark Bundle. These projections preserve
+the existing research-only and safety-pause contracts; no live-trading
+authority is enabled.
 
 > [!IMPORTANT]
 > **2026-07-12 priority override:** keyingi ishlab chiqishning asosiy fokusi AI Learning va pair-owned AI Laboratory hisoblanadi. Agentlar XAUUSD, EURUSD va GBPUSD uchun alohida population, rolling walk-forward, Monte Carlo, paper evidence, champion–challenger lifecycle hamda mutation memory orqali real avloddan-avlodga yaxshilanishini isbotlashi kerak. Knowledge Graph, AI Civilization, Theory Generation va boshqa katta modullar saqlanadi, lekin ikkinchi darajali cadence’da ishlaydi. Tezkor, amaldagi navigatsiya va gate qoidalari `docs/project-memory/ai-learning-laboratory.md` hamda `docs/project-memory/project-index.json`da.
@@ -5627,6 +5638,69 @@ Canonical 15–25'dan tashqaridagi backlog:
 - Queue jobs for long training
 - Export reports
 
+### 2026-08-27 — Smart Discipline va Process Integrity Engine joriy qilindi
+
+Status: `[IMPLEMENTED / PAPER EXECUTION]`
+
+1. Nima o‘zgardi?
+   - Foydalanuvchi bergan ikki professional trading-system/intizom tahlili to‘liq o‘qildi, mavjud NeuroTrader arxitekturasi bilan gap-analysis qilindi va CME, SEC/Library of Congress, Barber–Odean hamda implementation-intention adabiyoti bilan qayta tekshirildi.
+   - Mavjud Risk Sentinel, TradingRiskService, paper state machine va risk hysteresis’ni takrorlaydigan yangi mega-modul qurilmadi. Yetishmagan ownership — real paper entry’da account/session tarixini ko‘radigan unified process authority — `SmartDisciplineEngineService` sifatida qo‘shildi.
+   - Authority faqat `APPROVE`, `SHRINK`, `VETO` qiladi; size multiplier `1.0` dan oshmaydi va barcha yozuvlarda `promotion_evidence=false` saqlanadi.
+   - Hard gate’lar model/version identity, directional exit geometry, minimal R:R, stop-unit late chase, daily/weekly net loss, session/day trade count va temporary consecutive-loss cooldown’ni qamrab oladi. Veto sabablari canonical `NO_TRADE_*` taxonomy bilan yoziladi.
+   - Real closed paper-order metrics endi `RiskHysteresisControllerService`ga beriladi; `NORMAL/CAUTION/DEFENSE/RECOVERY` sizing haqiqiy paper execution size’iga ulanadi.
+   - Setup quality soft score va P&L-independent process adherence score ajratildi. Post-trade natijalar `GOOD_WIN`, `GOOD_LOSS`, `BAD_WIN`, `BAD_LOSS` (hamda flat variantlar)ga klassifikatsiya qilinadi.
+   - `BAD_*` paper outcome audit uchun immutable saqlanadi, lekin order evidence sifatida quarantine qilinadi va calibration/settlement learningga yuborilmaydi; tasodifiy foyda intizomsiz xulqni mukofotlamaydi.
+
+2. Qaysi fayllar qo‘shildi yoki o‘zgardi?
+   - Yangi migration/model: `backend-laravel/database/migrations/2026_08_27_060000_create_smart_discipline_decisions_table.php`, `app/Models/SmartDisciplineDecision.php`.
+   - Yangi engine/report: `app/Services/SmartDisciplineEngineService.php`, `app/Console/Commands/ReportSmartDiscipline.php`.
+   - Paper integration: `app/Services/PaperTradingExecutionService.php`.
+   - Config: `backend-laravel/config/services.php`, `.env.example` ichidagi `SMART_DISCIPLINE_*` guardrail’lari.
+   - Test: `backend-laravel/tests/Feature/SmartDisciplineEngineTest.php`.
+   - Canonical docs: `docs/architecture/smart-discipline-engine.md`, `docs/CANONICAL_INDEX.md`, `docs/ENVIRONMENT.md`, `docs/project-memory/{README,architecture,modules,operations,ai-learning-laboratory,project-index.json}`.
+
+3. DB/runtime flow qanday o‘zgardi?
+   - `smart_discipline_decisions` pre-trade va post-trade qarorlarini idempotent key bilan immutable saqlaydi.
+   - Paper flow: execution contract → Risk Sentinel → Smart Discipline assessment + TradingRiskService risk-veto priority → discipline size/veto → paper order → process review → faqat compliant settlement.
+   - Operator report: `php artisan trading:discipline-report --days=30`; symbol/timeframe filter va `--json` mavjud.
+   - Migration deploydan oldin paper monitor pauza qilinib `php artisan migrate --force` bilan qo‘llanishi kerak. Bu ish davomida real MySQL bazaga migration ataylab yuritilmadi.
+
+4. Qanday test qilindi?
+   - `php artisan test --filter=SmartDisciplineEngineTest` → 6 passed; focused discipline suite clean.
+   - Risk/paper/cognitive/instrument focused regression → 21 passed, 102 assertions.
+   - `php artisan test` → 563 passed, 3129 assertions, duration 742.28s.
+   - `php artisan migrate --pretend --force --path=database/migrations/2026_08_27_060000_create_smart_discipline_decisions_table.php` → MySQL create/FK/index SQL muvaffaqiyatli generatsiya qilindi; real bazaga yozilmadi.
+   - Laravel Pint yangi/tegishli PHP fayllarda passed.
+
+5. Muhim chegaralar
+   - Default thresholdlar optimal edge deb da’vo qilinmaydi; ular konservativ containment boshlang‘ich qiymatlari va paper evidence orqali kalibrlanishi kerak.
+   - Trade-frequency va loss-streak nazorati keyingi signalni bashorat qilmaydi. Cooldown tugagach DEFENSE size’da qayta kirish mumkin; permanent lock yo‘q.
+   - News/spread/correlation/max-open-position gate’lari takrorlanmadi; ular mavjud canonical risk owner’larida qoldi.
+   - Live trading va kill switch holati o‘zgarmadi.
+
+### 2026-08-27 — Smart Discipline trade-management parity kuchaytirildi
+
+Status: `[IMPLEMENTED / PAPER EXECUTION]`
+
+- `paper_trade_management_v1` entry paytida partial TP, partial ATR target,
+  trailing ATR va time-stop parametrlarini immutable hash bilan muhrlaydi.
+- Python paper reconciliation strategy, execution va management hash driftini
+  fail-closed tekshiradi; legacy open order yopilishi mumkin, ammo unattested
+  natija learning evidence bo'lmaydi.
+- Paper advance endi replay bilan bir xil partial TP -> weighted final P&L
+  semantikasiga ega. Har natija initial/final stop, stop widening, partial,
+  holding bars, realized R, MFE R va MAE R auditini qaytaradi.
+- Laravel frozen order hashini audit hashiga mustaqil solishtiradi.
+  `UNATTESTED_TRADE_MANAGEMENT` va `STOP_WIDENING_VIOLATION` `BAD_*`
+  klassifikatsiya hamda learning quarantine'ni ishga tushiradi.
+- `trading:discipline-report` management attestation, stop-widening va o'rtacha
+  realized/MFE/MAE R hamda top process violationlarni ko'rsatadi.
+- Canonical API/architecture/project-memory hujjatlari yangilandi; live trading
+  yoki promotion vakolati yoqilmadi.
+- Verification: Python full suite `119 passed`; focused Laravel
+  risk/cognitive/MTF/discipline suite `18 passed, 100 assertions`; final
+  Laravel full suite `579 passed, 3230 assertions` (`715.88s`).
+
 ### 2026-08-19 — Dual-Track Constitutional Intelligence qo‘shildi
 
 Status: `[IMPLEMENTED SHADOW MODE]`
@@ -5658,3 +5732,172 @@ Status: `[IMPLEMENTED LANE-SPECIFIC ORGANISM CONTRACTS]`
 - `dual_track_exchange_packets` orqali faqat versionlangan capability packetlar almashadi; status, promotion evidence va private memory lane'lar orasida avtomatik ko'chmaydi.
 - `dual_track_lane_credits` counterfactual contribution'ni lane bo'yicha hisoblaydi; `dual_track_diversity_metrics` behavioral collapse, agreement rate va useful dissent'ni kuzatadi.
 - Monitor endi exchange packet, lane credit reward va diversity guard holatini ham qaytaradi.
+
+### 2026-08-27 — Trading Confirmation & Entry System joriy qilindi
+
+Status: `[IMPLEMENTED / RESEARCH + PAPER OBSERVABILITY]`
+
+1. Foydalanuvchi bergan confirmation/entry tahlilidan asosiy operational qonun
+   ajratildi: `context -> location -> setup -> independent confirmation -> exact
+   trigger -> invalidation -> reward-space/chase/event admission -> entry|WAIT`.
+   Location, FVG/OB proxy, sweep yoki candle patternning o'zi order emas.
+2. Python'da `confirmation_entry_contract_v1` va
+   `confirmation_entry_mtf_v1` qo'shildi. Besh alohida hypothesis mavjud:
+   `trend_continuation`, `breakout_retest`, `false_break_reversal`,
+   `range_sweep`, `htf_reversal`; har biri `aggressive`, `balanced`,
+   `conservative` entry mode bilan bounded parametr schema orqali ishlaydi.
+3. Closed H4/H1/M15 context M5 qaroriga faqat candle yopilgandan keyin keladi;
+   missing/stale context fail-closed `WAIT`. Breakout wick bilan emas, close va
+   keyingi hold/retest bilan aniqlanadi. Structural invalidation, minimum target
+   space, chase distance va news/risk veto entrydan oldin tekshiriladi.
+4. Confirmation soni indikator soni emas: `price_reaction`, `market_structure`
+   va `volatility_participation` mustaqil family sifatida hisoblanadi. Raw count,
+   independent count va redundancy penalty alohida yoziladi. A+/A/B score faqat
+   diagnostika; signal/risk/promotion authority emas.
+5. Paper `/api/paper/signal` endi replay bilan bir xil
+   `prepare_signal_snapshot()` compilerini ishlatadi va entry contractni paper
+   response hamda execution previewga chiqaradi. Immutable replay cache dataset
+   manifestiga barcha MTF/related-MTF file hashlar qo'shildi.
+6. Laravel'da `ConfirmationEntryContractService` entry evidence'ni normalize
+   qiladi. `TradingCognitiveStackService`da setup va trigger endi bitta router
+   boolean emas; confirmation, trigger, invalidation, reward-space va chase
+   funnel stage'lari alohida. Legacy route explicit unattested projection bilan
+   compatibility saqlaydi.
+7. `entry_contract_funnel` trade signaliga aylanmagan yaxshi WAIT qarorlarini ham
+   saqlaydi: stage conversion, no-trade reasons, grade distribution,
+   confirmation redundancy, triggerdan keyingi R:R va chase cost kuzatiladi.
+8. Research catalogue 12 dan 17 playbookka kengaydi. Yangi besh model aynan bir
+   xil frozen M5 control, data hash va execution hashga qarshi alohida paired
+   replay qiladi; barcha natijalarda `promotion_evidence=false`, live trading va
+   kill switch holati o'zgarmagan.
+9. Canonical hujjat: `docs/architecture/trading-confirmation-entry-system.md`;
+   API va project-memory indexlari yangilandi.
+10. Verification: Python confirmation/MTF/paper/structure focused suite
+    `16 passed`; Python full suite `164 passed` (`66.52s`); Laravel
+    confirmation/schema/catalogue/cognitive/frozen-control focused suite
+    `29 passed, 160 assertions`; Laravel full suite `590 passed,
+    3307 assertions` (`1019.64s`).
+
+### 2026-08-28 — Confirmation & Entry end-to-end hardening
+
+Status: `[IMPLEMENTED / FAIL-CLOSED PAPER + REPLAY PARITY]`
+
+1. Confirmation evidence must now be causally independent. An M5 structure
+   shift no longer inherits displacement automatically, a breakout close is
+   not also counted as its own retest reaction, and the latest weak shift
+   cannot borrow an older participation event.
+2. The strategy is explicitly M5-only. M5/H4/H1/M15 streams must have valid
+   OHLC geometry and non-negative volume; HTF context must also be closed and
+   fresh. H1 owns range classification and all consumed context fields are
+   represented in the causal hash.
+3. Breakout trigger, invalidation extreme, target reference, ATR and chase
+   anchor are frozen into `confirmation_entry_contract_v1`. Replay and paper
+   fills recompute actual post-cost geometry—including both execution-cost
+   legs and round-trip commission—minimum R:R and chase distance;
+   a moved fill is rejected without rewriting the original signal.
+4. Paper requests now include H4/H1/M15 streams. The top-level entry contract
+   and fill admission must exactly attest against their sealed execution-
+   preview copies, and Laravel recomputes the contract SHA-256 before the
+   cognitive stack may execute it. Missing, malformed or tampered required
+   contracts cannot fall back to legacy route actionability.
+5. Laravel independently validates model/mode, direction, confirmation family
+   arithmetic, state consistency and projected geometry. Fill-time vetoes are
+   visible in the opportunity funnel and remain learning-safe `WAIT` evidence.
+6. Verification after hardening: Python full suite `173 passed` (`88.19s`);
+   focused Laravel confirmation/schema/cognitive/transport suite `18 passed,
+   88 assertions`; Laravel full suite `596 passed, 3329 assertions`
+   (`839.65s`). Pint passed for every touched PHP service and regression test.
+   The last transport/data-integrity edits were rechecked by their focused
+   suites. No database, promotion, kill-switch or live-trading state changed.
+   No database, promotion policy, kill switch or live-trading state changed.
+
+## 2026-08-30 Authority Foundry activation
+
+Migration `2026_08_30_120000_create_evolutionary_authority_foundry_tables` was
+applied to local `neurotrader_lab`. XAUUSD/H1 reconciliation classifies 804
+missing-control records as legacy audit debt (canonical control debt is zero).
+Stale unsettled episodes remain explicit retryable work; they are neither
+credited nor artificially erased.
+
+## 2026-08-30 Canonical Skill Cartridge Pipeline
+
+`canonical_skill_cartridge_pipeline_v1` is now the only reusable
+memory-guided intervention path. A cartridge is projected only after a
+verified paired control and canonical settlement, with a stable semantic key
+(no agent/run id), exact old/tested value, bounded refinement range, context,
+effects, contraindications, provenance, causal baseline and genetic-parent
+fields kept separately. Context mismatch returns explicit abstention; it never
+falls back to a random historical mutation.
+
+The pipeline has executable research-only cohorts: transplant trials run frozen
+baseline, exact replication, bounded local refinement, blinded autonomous and
+optional reverse arms; interaction trials run control, A, B, A+B and
+A+B-minus-filter arms. They cannot enter parent, paper or champion authority.
+The 2026-08-30 migration was applied to `neurotrader_lab`; all eligible
+historical XAUUSD/H1 canonical settlements were reprojected (`0` remaining),
+while the 83 legacy observed Skill Zoo rows remain terminal
+`retired_no_executable_intervention` rather than reusable evidence.
+
+The cartridge archive additionally seals an immutable revision for every
+observation. Each revision aggregates all exact-once settlement/response-map
+IDs and frozen data/execution hashes under its stable semantic key. Retrieval
+now abstains when regime, volatility, session, temporal-role,
+confirmation-entry or execution-contract scope is missing or mismatched; it
+cannot label a partial scope as an exact replay. Exact transplant success can
+create a research-only mentor seed; failed exact transfer records an explicit
+contraindication. Transplant dispatch uses uncertainty × information-gain ×
+transfer potential × failure cost × context relevance / compute cost with a
+round-robin niche diversity quota. On 2026-08-30, 40 pre-existing XAUUSD/H1
+cartridges received immutable revision snapshots (migration
+`2026_08_30_160000_create_skill_cartridge_revisions_table`, batch 59).
+
+## 2026-08-30 Dependency-Aware Edge Genesis Foundry
+
+`dependency_aware_edge_genesis_foundry_v1` makes the evolutionary dependency
+order executable: `EDGE_DISCOVERY -> EDGE_CONFIRMATION -> EDGE_ATTRIBUTION ->
+RISK_SHAPING -> MANAGEMENT_OPTIMIZATION -> PAPER_VALIDATION`. Risk/cooldown
+mutations are denied before an attributed edge; management/exit mutations are
+denied before risk shaping. A dead baseline is a failure/control/component
+source only, never a genetic parent; its admission response requires
+architecture genesis instead.
+
+`trading:dispatch-edge-genesis` materializes the four pre-registered XAUUSD
+packets (Trend Pullback, Liquidity Reversal, Break & Retest, Range/Session)
+with five frozen-risk arms each. It requires immutable data/execution hashes
+and explicit pre-2026 attestation. Each edge candidate must declare the
+context before replay and produce the complete decision-to-outcome ledger; a
+missing ledger is `INVALID_EDGE_OBSERVABILITY` before authority replay.
+After an edge passes the full contract,
+`trading:dispatch-edge-attribution {agent}` creates full/no-confirmation/
+alternate-tactic/alternate-temporal/minimal-control arms. This is the only
+route that advances a Genesis packet to risk shaping; all Genesis and
+attribution results stay research-only and cannot bypass parent, paper or
+champion gates. Migration `2026_08_30_140000_create_dependency_aware_edge_genesis_tables`
+is applied to `neurotrader_lab`. `trading:edge-genesis-status` exposes only
+research telemetry (edge/context/component/transplant/observability/compute
+waste) and never claims a promotion outcome.
+
+## 2026-08-30 Full-Stack Playbook Mastery Academy
+
+`full_stack_playbook_mastery_v1` closes the gap between a professional library
+and an executable, inherited capability. Every Edge Genesis seat now receives
+an immutable Full-Stack Playbook Passport: strategy thesis; primary/secondary
+tactic compatibility explanation; H1/M15/M5 roles; toolbox; closed-candle
+sequence; partial-candle/late-entry/abnormal-spread prohibitions; Central Risk
+Governor ownership; management profile; and explicit no-trade conditions.
+
+The initial four packets use five procedural arms, not generic strategy/tactic/
+risk slots: professional reference, confirmation/tactic change, temporal-role
+change, memory-blinded autonomous, and frozen control. Missing execution
+evidence remains unobserved. The mastery ledger separately records fidelity,
+setup/confirmation/entry/no-trade precision, risk adherence and exit quality,
+then separately evaluates after-cost economic edge. Two folds are technical
+preflight only, three are diagnostic, and only nine independent folds can
+reach `master_candidate`; a candidate is still research-only and requires
+downstream attribution, paper and authority gates. Models without that full
+stack mastery cannot enter the parent frontier. Migration
+`2026_08_30_150000_create_full_stack_playbook_mastery_tables` is applied to
+`neurotrader_lab` (batch 58).
+`bounded_innovation` is locked until `recordDescendantTransfer` receives an
+explicit, nine-window, after-cost-positive, risk-compliant inherited-procedure
+receipt; this is the only transition from candidate to master.

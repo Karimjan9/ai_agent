@@ -19,6 +19,7 @@ class BacktestExecutionService
     public function __construct(
         private LabDatasetExportService $datasets,
         private LabImmutableEvidenceService $evidence,
+        private MultiTimeframeSnapshotService $mtfSnapshots,
     ) {}
 
     /** @return array<string, mixed> */
@@ -31,8 +32,18 @@ class BacktestExecutionService
         }
 
         $payload['symbol'] = $symbol;
-        $payload['timeframe'] = $timeframe;
-        $payload['dataset_path'] = $this->datasetPath($symbol, $timeframe);
+        $isLiquidityTrapMtf = app(StrategyParameterSchemaService::class)->family((string) ($payload['strategy'] ?? '')) === 'liquidity_trap_mtf';
+        if ($isLiquidityTrapMtf) {
+            $bundle = $this->mtfSnapshots->forLiquidityTrapReplay($symbol);
+            $timeframe = 'M5';
+            $payload['timeframe'] = $timeframe;
+            $payload['dataset_path'] = $bundle['entry_dataset_path'];
+            $payload['mtf_dataset_paths'] = $bundle['context_dataset_paths'];
+            $payload['mtf_snapshot_manifest'] = $bundle['manifest'];
+        } else {
+            $payload['timeframe'] = $timeframe;
+            $payload['dataset_path'] = $this->datasetPath($symbol, $timeframe);
+        }
         $contract = app(ExecutionContractService::class)->for($symbol, $timeframe);
         $payload['execution'] = $contract['parameters'];
         $payload['execution_contract'] = $contract;
@@ -42,7 +53,9 @@ class BacktestExecutionService
             $payload['strategy'] ?? null,
         );
         $startedAt = now();
-        $datasetHash = $this->datasetHash($payload['dataset_path']);
+        $datasetHash = $isLiquidityTrapMtf
+            ? (string) data_get($payload, 'mtf_snapshot_manifest.bundle_hash', '')
+            : $this->datasetHash($payload['dataset_path']);
         $requestHash = (string) ($run->request_hash ?: $this->evidence->hash($payload));
 
         $run->update([
@@ -61,11 +74,9 @@ class BacktestExecutionService
         $this->evidence->attachRequest($run, $payload, [
             'request_hash' => $requestHash,
             'data_hash' => $datasetHash,
-            'dataset_manifest' => [
-                'path' => $payload['dataset_path'],
-                'sha256' => $datasetHash,
-                'protocol' => 'manual_backtest_dataset_v1',
-            ],
+            'dataset_manifest' => $isLiquidityTrapMtf
+                ? (array) $payload['mtf_snapshot_manifest']
+                : ['path' => $payload['dataset_path'], 'sha256' => $datasetHash, 'protocol' => 'manual_backtest_dataset_v1'],
         ]);
 
         try {

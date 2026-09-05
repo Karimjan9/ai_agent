@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from dateutil.easter import easter
 
@@ -27,6 +28,11 @@ from app.services.control_roots import control_root_for
 from app.services.indicators import add_indicators
 from app.services.market_regime import apply_market_regime
 from app.services.multitimeframe import annotate_regime_source, apply_signal_policy
+from app.services.multitimeframe_stack import (
+    PreparedClosedMtfContext,
+    apply_closed_mtf_context,
+    prepare_closed_mtf_context,
+)
 from app.services.monte_carlo import MonteCarloService
 from app.services.strategy_dna import StrategyDnaService
 from app.services.statistical_validation import bootstrap_profit_factor_lower_bound
@@ -60,6 +66,40 @@ class PreparedSignalSnapshot:
     # can rebuild only the declared signal gene instead of recalculating H1,
     # M15, volume and ATR features.
     feature_snapshot: PreparedFeatureSnapshot | None = None
+
+
+@dataclass(frozen=True)
+class PreparedReplayFeatureContext:
+    """Read-only context compiler shared by every fold of one replay arm."""
+
+    regime_source: pd.DataFrame | None
+    mtf_context: PreparedClosedMtfContext | None
+
+
+def prepare_replay_feature_context(
+    payload: SimpleBacktestRequest,
+) -> PreparedReplayFeatureContext:
+    """Load and compile immutable context once before bounded folds run.
+
+    This deliberately excludes the M5 execution window, signals, positions
+    and performance.  Reuse therefore changes only compute cost, never the
+    causal observation or strategy behaviour of a fold.
+    """
+    regime_source = _load_regime_source(payload)
+    mtf_streams = _load_mtf_streams(payload)
+    mtf_context = (
+        prepare_closed_mtf_context(
+            mtf_streams,
+            payload.parameters,
+            _load_related_mtf_streams(payload),
+        )
+        if mtf_streams
+        else None
+    )
+    return PreparedReplayFeatureContext(
+        regime_source=regime_source,
+        mtf_context=mtf_context,
+    )
 
 
 def core_replay_gate(result: dict[str, object]) -> dict[str, object]:
@@ -204,6 +244,7 @@ def run_simple_ema_rsi_backtest_on_dataframe(
     *,
     include_differential_pair: bool = True,
     lightweight: bool = False,
+    fast_stateful: bool | None = None,
 ) -> SimpleBacktestResponse:
     df = _prepare_simple_dataframe(payload, df)
 
@@ -212,20 +253,44 @@ def run_simple_ema_rsi_backtest_on_dataframe(
         df,
         include_differential_pair=include_differential_pair,
         lightweight=lightweight,
+        fast_stateful=fast_stateful,
     )
 
 
 def prepare_feature_snapshot(
     payload: SimpleBacktestRequest,
     df: pd.DataFrame,
+    *,
+    replay_context: PreparedReplayFeatureContext | None = None,
 ) -> PreparedFeatureSnapshot:
     """Build closed-context, volume and ATR features once per candle snapshot."""
     normalized = _prepare_simple_dataframe(payload, df)
     source = normalized.copy()
-    regime_source = _load_regime_source(payload)
+    regime_source = (
+        replay_context.regime_source
+        if replay_context is not None
+        else _load_regime_source(payload)
+    )
+    interaction_variant = str(
+        payload.parameters.get("architecture_interaction_variant", "frozen") or "frozen"
+    )
     regime_variant = str(payload.parameters.get("regime_classifier_variant", "frozen") or "frozen")
+    if interaction_variant == "state_classifier_coherence_v1":
+        regime_variant = "adx_hysteresis_v1"
     prepared = _apply_execution_regime(normalized, regime_source, regime_variant)
+    prepared.attrs["execution_timeframe"] = str(payload.timeframe).upper()
+    mtf_context = replay_context.mtf_context if replay_context is not None else None
+    mtf_streams = {} if mtf_context is not None else _load_mtf_streams(payload)
+    if mtf_context is not None or mtf_streams:
+        prepared = apply_closed_mtf_context(
+            prepared,
+            mtf_streams,
+            payload.parameters,
+            None if mtf_context is not None else _load_related_mtf_streams(payload),
+            prepared_context=mtf_context,
+        )
     prepared = add_volume_features(prepared, payload.volume_context)
+    prepared.attrs["execution_timeframe"] = str(payload.timeframe).upper()
     previous_close = prepared["close"].shift(1)
     true_range = pd.concat([
         prepared["high"] - prepared["low"],
@@ -234,7 +299,19 @@ def prepare_feature_snapshot(
     ], axis=1).max(axis=1)
     prepared["_management_atr"] = true_range.rolling(14, min_periods=1).mean()
     prepared.attrs["unexpected_gap_count"] = int(normalized.attrs.get("unexpected_gap_count", 0))
-    prepared.attrs["data_quality"] = dict(normalized.attrs.get("data_quality") or {})
+    data_quality = dict(normalized.attrs.get("data_quality") or {})
+    if "mtf_stack" in prepared.attrs:
+        data_quality["mtf_stack"] = dict(prepared.attrs["mtf_stack"])
+    if interaction_variant == "state_classifier_coherence_v1":
+        data_quality["architecture_interaction"] = {
+            "protocol": "causal_architecture_interaction_v1",
+            "variant": interaction_variant,
+            "regime_classifier_variant": regime_variant,
+            "state_machine_variant": "neutral_transition_cooldown_reentry_v1",
+            "single_macro_gene": True,
+            "promotion_evidence": False,
+        }
+    prepared.attrs["data_quality"] = data_quality
     prepared.attrs["regime_source"] = (
         "closed_h1" if regime_source is not None else "execution_timeframe"
     )
@@ -242,7 +319,7 @@ def prepare_feature_snapshot(
         source_frame=source,
         frame=prepared,
         unexpected_gap_count=int(normalized.attrs.get("unexpected_gap_count", 0)),
-        data_quality=dict(normalized.attrs.get("data_quality") or {}),
+        data_quality=data_quality,
     )
 
 
@@ -294,10 +371,11 @@ def prepare_signal_snapshot(
         prepared = _apply_portfolio_strategy(prepared, payload.portfolio_members)
     else:
         strategy_function = get_strategy(payload.strategy, payload.base_strategy)
-        prepared = strategy_function(prepared, payload.parameters)
+        strategy_parameters = _sealed_strategy_parameters(payload)
+        prepared = strategy_function(prepared, strategy_parameters)
         prepared = apply_volume_policy(
             prepared,
-            payload.parameters,
+            strategy_parameters,
             payload.base_strategy or payload.strategy,
         )
     prepared = _apply_signal_delay(prepared, payload.signal_delay_candles)
@@ -313,6 +391,23 @@ def prepare_signal_snapshot(
         data_quality=dict(features.data_quality),
         feature_snapshot=features,
     )
+
+
+def _sealed_strategy_parameters(payload: SimpleBacktestRequest) -> dict[str, object]:
+    """Authorize research-only ablations against the signed policy context."""
+    parameters = dict(payload.parameters)
+    edge_contracts = (payload.policy_context or {}).get("edge_genesis_contracts", {})
+    edge_contract = edge_contracts.get(payload.strategy, {}) if isinstance(edge_contracts, dict) else {}
+    attribution_arm = str(edge_contract.get("attribution_arm", "")) if isinstance(edge_contract, dict) else ""
+    bypass = bool(parameters.get("attribution_confirmation_bypass", False))
+    if bypass and not (
+        edge_contract.get("protocol") == "bounded_edge_genesis_replay_v1"
+        and attribution_arm == "no_confirmation"
+    ):
+        raise ValueError("ATTRIBUTION_CONFIRMATION_BYPASS_OUTSIDE_SEALED_ABLATION")
+    if attribution_arm == "no_confirmation" and not bypass:
+        raise ValueError("ATTRIBUTION_CONFIRMATION_ABLATION_NOT_ACTIVATED")
+    return parameters
 
 
 def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
@@ -348,6 +443,53 @@ def _load_regime_source(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
             frame = frame.tail(int(payload.regime_dataset_tail_rows)).reset_index(drop=True)
         return frame
     return None
+
+
+def _load_mtf_streams(payload: SimpleBacktestRequest) -> dict[str, pd.DataFrame]:
+    """Load the sealed non-entry streams used by a role-separated MTF model."""
+    streams: dict[str, pd.DataFrame] = {}
+    inline = dict(payload.mtf_streams or {})
+    for timeframe, candles in inline.items():
+        if candles:
+            streams[str(timeframe).upper()] = pd.DataFrame([
+                candle.model_dump() if hasattr(candle, "model_dump") else candle
+                for candle in candles
+            ])
+    for timeframe, path in dict(payload.mtf_dataset_paths or {}).items():
+        key = str(timeframe).upper()
+        if key in streams or not path:
+            continue
+        frame = pd.read_csv(_resolve_dataset_path(path))
+        tail = dict(payload.mtf_dataset_tail_rows or {}).get(str(timeframe))
+        if tail is None:
+            tail = dict(payload.mtf_dataset_tail_rows or {}).get(key)
+        if tail is not None:
+            frame = frame.tail(int(tail)).reset_index(drop=True)
+        streams[key] = frame
+    return streams
+
+
+def _load_related_mtf_streams(payload: SimpleBacktestRequest) -> dict[str, pd.DataFrame]:
+    """Load independently sealed related-market context; never infer it from primary candles."""
+    streams: dict[str, pd.DataFrame] = {}
+    for timeframe, candles in dict(payload.related_mtf_streams or {}).items():
+        if candles:
+            streams[str(timeframe).upper()] = pd.DataFrame([
+                candle.model_dump() if hasattr(candle, "model_dump") else candle
+                for candle in candles
+            ])
+    for timeframe, path in dict(payload.related_mtf_dataset_paths or {}).items():
+        key = str(timeframe).upper()
+        if key in streams or not path:
+            continue
+        frame = pd.read_csv(_resolve_dataset_path(path))
+        tail = dict(payload.related_mtf_dataset_tail_rows or {}).get(str(timeframe))
+        if tail is None:
+            tail = dict(payload.related_mtf_dataset_tail_rows or {}).get(key)
+        if tail is not None:
+            frame = frame.tail(int(tail)).reset_index(drop=True)
+        streams[key] = frame
+    return streams
 
 
 def _apply_execution_regime(
@@ -471,7 +613,13 @@ def _run_prepared_simple_backtest(
         )
         or "none"
     )
-    state_machine_enabled = state_machine_variant == "neutral_transition_cooldown_reentry_v1"
+    architecture_interaction_variant = str(
+        payload.parameters.get("architecture_interaction_variant", "frozen") or "frozen"
+    )
+    state_machine_enabled = (
+        state_machine_variant == "neutral_transition_cooldown_reentry_v1"
+        or architecture_interaction_variant == "state_classifier_coherence_v1"
+    )
     state_machine_state = "neutral"
     state_machine_wait_until = -1
     state_machine_transitions: Counter[str] = Counter()
@@ -484,6 +632,20 @@ def _run_prepared_simple_backtest(
     signal_decision_categories: Counter[str] = Counter()
     mtf_vetoes = 0
     mtf_contexts: Counter[str] = Counter()
+    edge_contracts = (payload.policy_context or {}).get("edge_genesis_contracts", {})
+    edge_contract = edge_contracts.get(payload.strategy, {}) if isinstance(edge_contracts, dict) else {}
+    edge_context = edge_contract.get("context", {}) if isinstance(edge_contract, dict) else {}
+    edge_context = edge_context if isinstance(edge_context, dict) else {}
+    context_declared = (
+        isinstance(edge_contract, dict)
+        and edge_contract.get("protocol") == "bounded_edge_genesis_replay_v1"
+        and bool(edge_context)
+    )
+    edge_context_required = edge_context.get("enforcement") == "required"
+    edge_context_axes = [str(axis) for axis in edge_context.get("admission_axes", []) if str(axis)]
+    edge_context_observations = 0
+    edge_context_matches = 0
+    edge_context_rejections: Counter[str] = Counter()
     entry_funnel["raw_strategy_signals"] = _count_lane_signals(df, differential_lane)
 
     def record_event(category: str, code: str, index: int, context: str = "") -> None:
@@ -675,6 +837,42 @@ def _run_prepared_simple_backtest(
             entry_funnel["flat_signal_opportunities"] += 1
             month_key = _utc_month(signal_row["time"])
             opportunities_by_month[month_key] += 1
+            context_allowed, context_rejection, context_evidence = _edge_context_admission(
+                signal_row, edge_contract, transition_event=transition_event, direction=signal,
+            )
+            if context_declared:
+                edge_context_observations += 1
+                if context_allowed:
+                    edge_context_matches += 1
+                elif edge_context_required:
+                    reason = str(context_rejection or "edge_context_outside_scope")
+                    edge_context_rejections[reason] += 1
+                    entry_funnel[f"rejected_{reason}"] += 1
+                    observed_context = json.dumps(
+                        context_evidence.get("observed", {}), sort_keys=True, separators=(",", ":"),
+                    )
+                    record_signal_decision(
+                        index, "signal_evaluation", signal, False, reason, observed_context,
+                    )
+                    record_event("veto", "edge_context", index, observed_context)
+                    shadow = _open_shadow_position(
+                        candle, signal_row, signal, execution_payload, index, reason,
+                    )
+                    if shadow is not None:
+                        settled = _advance_shadow_position(
+                            shadow, candle, row_at(index - 1), execution_payload, index,
+                        )
+                        if settled is None:
+                            shadow_positions.append(shadow)
+                        else:
+                            _record_shadow_outcome(shadow_ledger, shadow_history, settled)
+                    if emit_decision_trace:
+                        decision_trace.append(_decision_trace_event(
+                            index, candle, signal_row, "signal_evaluation", signal, False, reason,
+                            {"position_open": False, "loss_streak": loss_streak,
+                             "edge_context": context_evidence},
+                        ))
+                    continue
             context_key = _risk_context(signal_row, signal)
             context_wait = int(context_wait_until.get(context_key, -1))
             if context_wait >= 0 and index >= context_wait:
@@ -804,6 +1002,10 @@ def _run_prepared_simple_backtest(
                 "partial_closed": False,
                 "partial_fraction": float(execution_payload.parameters.get("partial_take_profit_fraction", 0) or 0),
                 "partial_exit_price": None,
+                "initial_stop_loss": stop_loss,
+                "initial_risk_distance": abs(entry_price - stop_loss),
+                "maximum_favorable_excursion": 0.0,
+                "maximum_adverse_excursion": 0.0,
             }
             if emit_decision_trace:
                 decision_trace.append(_decision_trace_event(
@@ -819,6 +1021,9 @@ def _run_prepared_simple_backtest(
 
         direction = str(position["direction"])
         position_payload = _payload_for_position(payload, position)
+        favorable_before_exit_bar = float(position.get("maximum_favorable_excursion", 0) or 0)
+        adverse_before_exit_bar = float(position.get("maximum_adverse_excursion", 0) or 0)
+        _update_position_excursions(position, candle)
         _advance_trailing_stop(position, row_at(index - 1), position_payload)
         time_stop = int(position_payload.parameters.get("time_stop_candles", 0) or 0)
         if time_stop and index - int(position["entry_index"]) >= time_stop:
@@ -938,6 +1143,37 @@ def _run_prepared_simple_backtest(
             position,
         ) if result == "LOSS" else None
 
+        initial_risk_distance = float(position.get("initial_risk_distance", 0) or 0)
+        mfe_r = (
+            float(position.get("maximum_favorable_excursion", 0) or 0) / initial_risk_distance
+            if initial_risk_distance > 0 else None
+        )
+        mae_r = (
+            float(position.get("maximum_adverse_excursion", 0) or 0) / initial_risk_distance
+            if initial_risk_distance > 0 else None
+        )
+        mfe_r_before_exit_bar = (
+            favorable_before_exit_bar / initial_risk_distance
+            if initial_risk_distance > 0 else None
+        )
+        mae_r_before_exit_bar = (
+            adverse_before_exit_bar / initial_risk_distance
+            if initial_risk_distance > 0 else None
+        )
+        initial_risk_percent = _initial_executable_risk_percent(
+            entry_price,
+            float(position.get("initial_stop_loss", position["stop_loss"])),
+            direction,
+            position_payload,
+            position_size,
+        )
+        realized_r_multiple = profit_percent / initial_risk_percent if initial_risk_percent > 0 else None
+        mfe_capture_ratio = (
+            max(0.0, min(1.0, realized_r_multiple / mfe_r))
+            if realized_r_multiple is not None and realized_r_multiple > 0 and mfe_r is not None and mfe_r > 0
+            else None
+        )
+
         trades.append(
             SimpleTrade(
                 direction=direction,
@@ -964,6 +1200,14 @@ def _run_prepared_simple_backtest(
                 reason=mistake["reason"] if mistake else None,
                 suggestion=mistake["suggestion"] if mistake else None,
                 portfolio_member=position.get("portfolio_member"),
+                initial_risk_distance=round(initial_risk_distance, 8) if initial_risk_distance > 0 else None,
+                initial_risk_percent=round(initial_risk_percent, 8) if initial_risk_percent > 0 else None,
+                mfe_r=round(mfe_r, 6) if mfe_r is not None else None,
+                mae_r=round(mae_r, 6) if mae_r is not None else None,
+                mfe_r_before_exit_bar=round(mfe_r_before_exit_bar, 6) if mfe_r_before_exit_bar is not None else None,
+                mae_r_before_exit_bar=round(mae_r_before_exit_bar, 6) if mae_r_before_exit_bar is not None else None,
+                realized_r_multiple=round(realized_r_multiple, 6) if realized_r_multiple is not None else None,
+                mfe_capture_ratio=round(mfe_capture_ratio, 6) if mfe_capture_ratio is not None else None,
             )
         )
         if emit_decision_trace:
@@ -1043,6 +1287,43 @@ def _run_prepared_simple_backtest(
     # boundaries; full validation still runs its independent strict replay.
     pf_attribution = _pf_attribution(trades, df)
     entry_funnel_report = _entry_funnel_report(entry_funnel)
+    entry_contract_funnel = _entry_contract_funnel_report(df)
+    management_evidence = _management_evidence_report(trades)
+    edge_formation_academy_diagnostic = _edge_formation_academy_diagnostic(
+        df, entry_contract_funnel, management_evidence, trades, payload,
+    )
+    edge_observability = _edge_observability_report(
+        entry_contract_funnel, management_evidence, trades,
+    )
+    realized_r = [
+        float(trade.realized_r_multiple)
+        if trade.realized_r_multiple is not None
+        else float(trade.profit_percent) / max(float(trade.risk_budget_percent or payload.risk_per_trade or 1), 0.000001)
+        for trade in trades
+    ]
+    after_cost_expectancy_r = round(float(np.mean(realized_r)), 6) if realized_r else 0.0
+    edge_context_report = {
+        "protocol": "edge_context_authority_firewall_v1",
+        "status": "enforced" if edge_context_required and edge_context_axes else (
+            "telemetry_only_control" if context_declared else "not_applicable"
+        ),
+        "enforced": bool(edge_context_required and edge_context_axes),
+        "admission_axes": edge_context_axes,
+        "observed_signals": int(edge_context_observations),
+        "matched_signals": int(edge_context_matches),
+        "rejected_signals": int(sum(edge_context_rejections.values())),
+        "rejection_reasons": dict(edge_context_rejections),
+        "outside_scope_action": "WAIT",
+        "closed_signal_state_only": True,
+        "calendar_identity_forbidden": True,
+        "promotion_evidence": False,
+    }
+    forbidden_risk_bypass = bool(
+        payload.parameters.get("martingale_enabled", False)
+        or payload.parameters.get("add_to_loser", False)
+        or payload.parameters.get("loser_pyramiding_enabled", False)
+        or float(payload.risk_per_trade or 0) > 1.0
+    )
     behavioral_signature = {} if lightweight else _behavioral_signature(df, trades)
     diagnostic_telemetry = (
         {"status": "deferred_screening_subreplay", "promotion_evidence": False}
@@ -1126,6 +1407,12 @@ def _run_prepared_simple_backtest(
         "protocol": "neutral_transition_cooldown_reentry_v1",
         "variant": state_machine_variant,
         "enabled": state_machine_enabled,
+        "architecture_interaction_variant": architecture_interaction_variant,
+        "activation_source": (
+            "architecture_interaction"
+            if architecture_interaction_variant == "state_classifier_coherence_v1"
+            else "state_machine_gene"
+        ) if state_machine_enabled else "disabled",
         "final_state": state_machine_state,
         "transition_counts": dict(state_machine_transitions),
         "event_count": len(state_machine_events),
@@ -1193,11 +1480,34 @@ def _run_prepared_simple_backtest(
         statistical_evidence=statistical_evidence,
         pf_attribution=pf_attribution,
         entry_funnel=entry_funnel_report,
+        entry_contract_funnel=entry_contract_funnel,
+        edge_observability=edge_observability,
+        confirmation_entry_observed=entry_contract_funnel.get("status") == "observed",
+        behavior_delta_observed=bool(
+            entry_contract_funnel.get("status") == "observed"
+            and int((entry_contract_funnel.get("stage_counts") or {}).get("setup", 0) or 0) > 0
+            and (
+                int((entry_contract_funnel.get("stage_counts") or {}).get("setup", 0) or 0)
+                != int((entry_contract_funnel.get("stage_counts") or {}).get("entry_ready", 0) or 0)
+            )
+        ),
+        context_declared_before_replay=context_declared,
+        context_occurrences=(
+            int(edge_context_matches)
+            if edge_context_required and edge_context_axes
+            else int((entry_contract_funnel.get("stage_counts") or {}).get("context", 0) or 0)
+        ),
+        edge_context_enforcement=edge_context_report,
+        risk_governor_compliant=bool(context_declared and not forbidden_risk_bypass),
+        forbidden_risk_bypass=forbidden_risk_bypass,
+        after_cost_expectancy_r=after_cost_expectancy_r,
+        management_evidence=management_evidence,
+        edge_formation_academy_diagnostic=edge_formation_academy_diagnostic,
         behavioral_signature=behavioral_signature,
         diagnostic_telemetry=diagnostic_telemetry,
         veto_regret=veto_regret,
         decision_blame_graph=decision_blame_graph,
-        observability_protocol_version=1,
+        observability_protocol_version=2,
         cooldown_policy=cooldown_policy,
         transition_firewall=transition_firewall if not lightweight else {"status": "deferred_screening_subreplay", "promotion_evidence": False},
         confidence_calibration=confidence_calibration,
@@ -1243,6 +1553,7 @@ def _run_prepared_simple_backtest(
     response.proof_carrying_replay = _proof_carrying_replay(response.model_dump(), trades, payload)
     if emit_decision_trace:
         response.decision_trace = decision_trace
+    if emit_decision_trace or bool(payload.emit_trade_ledger):
         response.trade_ledger = trades
 
     if (
@@ -1354,11 +1665,17 @@ def _apply_signal_delay(df: pd.DataFrame, delay: int) -> pd.DataFrame:
         if column in {"signal", "parent_signal", "target_signal", "pre_volume_signal", "selected_specialist"}
         or column.endswith("_signal") or column.endswith("_specialist")
         or column.endswith("_signal_confidence") or column in {"signal_confidence", "parent_signal_confidence", "target_signal_confidence", "pre_volume_signal_confidence"}
+        or column.startswith("entry_contract_") or column.startswith("entry_")
+        or column in {"trade_invalidation_price"}
     ]
     for column in sorted(set(signal_columns)):
         shifted = delayed[column].shift(delay)
-        if "confidence" in column:
+        if column == "signal_confidence" or column.endswith("_signal_confidence"):
             delayed[column] = pd.to_numeric(shifted, errors="coerce").fillna(0.0)
+        elif pd.api.types.is_bool_dtype(delayed[column].dtype):
+            delayed[column] = shifted.fillna(False).astype(bool)
+        elif pd.api.types.is_numeric_dtype(delayed[column].dtype):
+            delayed[column] = pd.to_numeric(shifted, errors="coerce")
         elif column.endswith("target") or column == "differential_target":
             delayed[column] = shifted.fillna(False).astype(bool)
         elif "specialist" in column:
@@ -1915,6 +2232,24 @@ def _position_size_multiple(
     return min(payload.execution.max_leverage, payload.risk_per_trade / stop_return)
 
 
+def _initial_executable_risk_percent(
+    entry_price: float,
+    initial_stop_loss: float,
+    direction: str,
+    payload: SimpleBacktestRequest,
+    position_size: float,
+) -> float:
+    """Return the actual account risk after spread, slippage and commission."""
+    stop_execution_price = _exit_price(initial_stop_loss, direction, payload)
+    if direction == "BUY":
+        stop_return = (entry_price - stop_execution_price) / max(entry_price, 0.0000001) * 100
+    else:
+        stop_return = (stop_execution_price - entry_price) / max(entry_price, 0.0000001) * 100
+    executable_risk = max(0.0, stop_return + payload.execution.commission_percent)
+
+    return executable_risk * max(0.0, position_size)
+
+
 def _risk_context(signal_row: pd.Series, direction: str) -> str:
     """Stable context key for loss containment; it contains no future data."""
     return "|".join([
@@ -1922,6 +2257,76 @@ def _risk_context(signal_row: pd.Series, direction: str) -> str:
         str(signal_row.get("volatility_regime", "normal_volatility")),
         direction, str(signal_row.get("selected_specialist", "parent")),
     ])
+
+
+def _edge_market_session(value: object) -> str:
+    """Canonical UTC session labels shared with the XAUUSD toolbox."""
+    hour = int(pd.Timestamp(value).hour)
+    if 7 <= hour < 12:
+        return "london"
+    if 12 <= hour <= 16:
+        return "london_new_york_overlap"
+    if 16 < hour <= 21:
+        return "new_york"
+    return "asian"
+
+
+def _edge_context_admission(
+    signal_row: object,
+    edge_contract: dict[str, object],
+    *,
+    transition_event: bool = False,
+    direction: str | None = None,
+) -> tuple[bool, str | None, dict[str, object]]:
+    """Apply a frozen Edge passport before entry using only closed state."""
+    context = edge_contract.get("context", {}) if isinstance(edge_contract, dict) else {}
+    context = context if isinstance(context, dict) else {}
+    axes = [str(axis) for axis in context.get("admission_axes", []) if str(axis)]
+    required = context.get("enforcement") == "required"
+    observed = {
+        "regime": "transition" if transition_event else str(signal_row.get("market_regime", "unknown")),
+        "session": _edge_market_session(signal_row.get("time")),
+        "volatility": str(signal_row.get("volatility_regime", "normal_volatility")),
+        # Direction is the already-computed current signal.  It is available
+        # before admission and therefore creates a legitimate specialist WAIT
+        # boundary without consulting the future trade outcome.
+        "direction": str(direction or signal_row.get("signal", "unknown")).upper(),
+    }
+    if not required or not axes:
+        return True, None, {"required": required, "axes": axes, "observed": observed}
+
+    declared = {
+        "regime": context.get("allowed_regimes", []),
+        "session": context.get("allowed_sessions", []),
+        "volatility": context.get("allowed_volatility", []),
+        "direction": context.get("allowed_directions", []),
+    }
+    singular = {
+        "regime": context.get("regime"),
+        "session": context.get("session"),
+        "volatility": context.get("volatility"),
+        "direction": context.get("direction"),
+    }
+    for axis in axes:
+        values = declared.get(axis, [])
+        if not isinstance(values, list):
+            values = [values] if values else []
+        values = [str(value) for value in values if str(value)]
+        if not values and singular.get(axis):
+            values = [str(singular[axis])]
+        if axis == "volatility":
+            values = ["normal_volatility" if value == "normal" else value for value in values]
+        if axis == "direction":
+            values = [value.upper() for value in values]
+        if axis not in observed or not values:
+            return False, f"edge_context_contract_missing_{axis}", {
+                "required": True, "axes": axes, "observed": observed, "allowed": declared,
+            }
+        if str(observed[axis]) not in values:
+            return False, f"edge_context_{axis}_outside_scope", {
+                "required": True, "axes": axes, "observed": observed, "allowed": declared,
+            }
+    return True, None, {"required": True, "axes": axes, "observed": observed, "allowed": declared}
 
 
 def _differential_target_regime(payload: SimpleBacktestRequest, df: pd.DataFrame | None = None) -> str:
@@ -2367,6 +2772,43 @@ def _exit_distances(market_price: float, signal_row: pd.Series, payload: SimpleB
     target_multiplier = payload.parameters.get("atr_target_multiplier")
     stop = atr * float(stop_multiplier) if atr > 0 and stop_multiplier else market_price * payload.execution.stop_loss_percent / 100
     target = atr * float(target_multiplier) if atr > 0 and target_multiplier else market_price * payload.execution.take_profit_percent / 100
+    # Liquidity Trap MTF owns invalidation at the M15 trap extreme. An M5
+    # micro-stop would contradict the declared trade idea. The buffer keeps
+    # the normal cost/ATR envelope in force while never tightening that
+    # structural invalidation from a later lower-timeframe observation.
+    invalidation = signal_row.get("trade_invalidation_price")
+    direction = str(signal_row.get("signal", "")).upper()
+    try:
+        invalidation_price = float(invalidation)
+    except (TypeError, ValueError):
+        invalidation_price = float("nan")
+    if math.isfinite(invalidation_price):
+        structural_distance = (
+            market_price - invalidation_price if direction == "BUY"
+            else invalidation_price - market_price if direction == "SELL" else 0.0
+        )
+        if structural_distance > 0:
+            stop = (
+                structural_distance
+                if str(signal_row.get("entry_contract_protocol", "")) == "confirmation_entry_contract_v1"
+                else max(stop, structural_distance)
+            )
+    # Confirmation & Entry models declare the next structural liquidity
+    # reference as the actual target owner. Using an unrelated fixed/ATR
+    # target after admitting the trade on structural R:R would make the
+    # execution contract contradict the entry contract.
+    if str(signal_row.get("entry_contract_protocol", "")) == "confirmation_entry_contract_v1":
+        target_reference = signal_row.get("entry_target_reference_price")
+        try:
+            target_price = float(target_reference)
+        except (TypeError, ValueError):
+            target_price = float("nan")
+        structural_target = (
+            target_price - market_price if direction == "BUY"
+            else market_price - target_price if direction == "SELL" else 0.0
+        )
+        if math.isfinite(target_price) and structural_target > 0:
+            target = structural_target
     return max(stop, market_price * 0.00001), max(target, market_price * 0.00001)
 
 
@@ -2735,6 +3177,9 @@ def _entry_eligibility(
             return False, "news_veto"
         if pd.notna(signal_row.get("risk_veto", False)) and bool(signal_row.get("risk_veto", False)):
             return False, "risk_veto"
+        fill_admission = _confirmation_fill_admission(row, payload, signal_row)
+        if not bool(fill_admission["allowed"]):
+            return False, str(fill_admission["reason"])
         if loss_streak_wait_active:
             return False, "loss_streak_wait"
         if weak_regime_wait_active:
@@ -2779,11 +3224,89 @@ def _entry_eligibility(
             if len(meta_prior) >= minimum and _profit_factor_for(meta_prior) < minimum_pf:
                 return False, "meta_label_veto"
         expected_target = atr * float(payload.parameters.get("atr_target_multiplier", 0) or 0)
+        if str(signal_row.get("entry_contract_protocol", "")) == "confirmation_entry_contract_v1":
+            expected_target = _exit_distances(float(row["open"]), signal_row, payload)[1]
         expected_edge = expected_target / max(float(row["open"]), 0.0000001) * 100
         round_trip_cost = (spread + execution.slippage_points * execution.point_size * 2) / max(float(row["open"]), 0.0000001) * 100 + execution.commission_percent
         if expected_target > 0 and expected_edge <= round_trip_cost:
             return False, "cost_exceeds_target"
     return True, None
+
+
+def _confirmation_fill_admission(
+    execution_row: pd.Series,
+    payload: SimpleBacktestRequest,
+    signal_row: pd.Series,
+) -> dict[str, object]:
+    """Revalidate structural geometry at the executable fill price.
+
+    The signal compiler works at candle close while replay fills at the next
+    candle open and paper execution includes spread/slippage. A gap can turn a
+    valid setup into a chased or sub-minimum-R trade, so the execution boundary
+    must fail closed without rewriting the original signal evidence.
+    """
+    if str(signal_row.get("entry_contract_protocol", "")) != "confirmation_entry_contract_v1":
+        return {"allowed": True, "status": "not_applicable", "reason": None, "promotion_evidence": False}
+    direction = str(signal_row.get("signal", "")).upper()
+    contract_direction = str(signal_row.get("entry_contract_direction", "")).upper()
+    if (
+        str(signal_row.get("entry_contract_status", "")) != "entry_ready"
+        or direction not in {"BUY", "SELL"}
+        or contract_direction != direction
+    ):
+        return {"allowed": False, "status": "blocked", "reason": "entry_contract_fill_direction", "promotion_evidence": False}
+    try:
+        market_price = float(execution_row["open"])
+        entry_price = _entry_price(market_price, direction, payload)
+        anchor = float(signal_row.get("entry_trigger_anchor_price"))
+        atr = float(signal_row.get("entry_structure_atr"))
+        stop_distance, target_distance = _exit_distances(market_price, signal_row, payload)
+    except (KeyError, TypeError, ValueError):
+        return {"allowed": False, "status": "blocked", "reason": "entry_contract_fill_geometry", "promotion_evidence": False}
+    stop_price = market_price - stop_distance if direction == "BUY" else market_price + stop_distance
+    target_price = market_price + target_distance if direction == "BUY" else market_price - target_distance
+    stop_execution_price = _exit_price(stop_price, direction, payload)
+    target_execution_price = _exit_price(target_price, direction, payload)
+    commission_distance = entry_price * float(payload.execution.commission_percent) / 100
+    # Commission is the configured round-trip charge. Add it to a stopped
+    # trade and deduct it from a target hit so admission reflects the same net
+    # economics used by the settlement ledger. Spread and both slippage legs
+    # are represented by the executable entry/exit prices above.
+    gross_risk = entry_price - stop_execution_price if direction == "BUY" else stop_execution_price - entry_price
+    gross_reward = target_execution_price - entry_price if direction == "BUY" else entry_price - target_execution_price
+    risk = gross_risk + commission_distance
+    reward = gross_reward - commission_distance
+    favorable_move = max(0.0, entry_price - anchor if direction == "BUY" else anchor - entry_price)
+    values = [
+        market_price, entry_price, anchor, atr, stop_price, target_price,
+        stop_execution_price, target_execution_price, commission_distance,
+        risk, reward,
+    ]
+    if not all(math.isfinite(value) for value in values) or atr <= 0 or risk <= 0 or reward <= 0:
+        return {"allowed": False, "status": "blocked", "reason": "entry_contract_fill_geometry", "promotion_evidence": False}
+    reward_space_r = reward / risk
+    chase_distance_atr = favorable_move / atr
+    minimum_reward = float(payload.parameters.get("minimum_reward_space_r", 1.5) or 1.5)
+    maximum_chase = float(payload.parameters.get("max_chase_atr", 1.25) or 1.25)
+    reason = None
+    if reward_space_r < minimum_reward:
+        reason = "entry_contract_fill_reward_space"
+    elif chase_distance_atr > maximum_chase:
+        reason = "entry_contract_fill_chase"
+    return {
+        "allowed": reason is None,
+        "status": "admitted" if reason is None else "blocked",
+        "reason": reason,
+        "entry_price": round(entry_price, 8),
+        "stop_price": round(stop_price, 8),
+        "target_price": round(target_price, 8),
+        "stop_execution_price": round(stop_execution_price, 8),
+        "target_execution_price": round(target_execution_price, 8),
+        "commission_distance": round(commission_distance, 8),
+        "reward_space_r": round(reward_space_r, 8),
+        "chase_distance_atr": round(chase_distance_atr, 8),
+        "promotion_evidence": False,
+    }
 
 
 def _is_liquid_entry(
@@ -3272,6 +3795,397 @@ def _entry_funnel_report(funnel: Counter[str]) -> dict[str, object]:
         "acceptance_rate_percent": round(accepted / flat * 100, 2) if flat else 0.0,
         "dominant_rejection": max(rejected, key=rejected.get) if rejected else None,
     }
+
+
+def _entry_contract_funnel_report(df: pd.DataFrame, warmup_rows: int = 200) -> dict[str, object]:
+    """Retain ordered WAIT decisions as truthful learning evidence.
+
+    Strategy predicates are deliberately reported separately.  A trigger can
+    be present on a candle that never passed setup/confirmation, so independent
+    predicate counts are not a conversion funnel and must not drive repairs.
+    """
+    required = {
+        "entry_contract_protocol", "entry_contract_status", "entry_context_valid",
+        "entry_location_valid", "entry_setup_detected", "entry_confirmation_valid",
+        "entry_trigger_valid", "entry_invalidation_valid", "entry_reward_space_valid",
+        "entry_chase_valid", "entry_event_valid",
+    }
+    if not required.issubset(df.columns):
+        return {
+            "protocol": "entry_contract_funnel_v2",
+            "status": "strategy_does_not_supply_entry_contract",
+            "promotion_evidence": False,
+        }
+
+    start = max(0, min(len(df), int(warmup_rows)))
+    scope = df.iloc[start:].copy()
+    if scope.empty:
+        scope = df.iloc[0:0].copy()
+
+    def count(column: str) -> int:
+        return int(scope[column].fillna(False).astype(bool).sum())
+
+    predicate_counts = {
+        "context": count("entry_context_valid"),
+        "location": count("entry_location_valid"),
+        "setup": count("entry_setup_detected"),
+        "confirmation": count("entry_confirmation_valid"),
+        "trigger": count("entry_trigger_valid"),
+        "invalidation": count("entry_invalidation_valid"),
+        "reward_space": count("entry_reward_space_valid"),
+        "chase": count("entry_chase_valid"),
+        "event": count("entry_event_valid"),
+    }
+
+    def truth(column: str) -> pd.Series:
+        return scope[column].fillna(False).astype(bool)
+
+    ordered_masks: dict[str, pd.Series] = {}
+    passed = pd.Series(True, index=scope.index, dtype="bool")
+    for stage, column in (
+        ("context", "entry_context_valid"),
+        ("location", "entry_location_valid"),
+        ("setup", "entry_setup_detected"),
+        ("confirmation", "entry_confirmation_valid"),
+        ("trigger", "entry_trigger_valid"),
+        ("invalidation", "entry_invalidation_valid"),
+        ("reward_space", "entry_reward_space_valid"),
+        ("chase", "entry_chase_valid"),
+        ("event", "entry_event_valid"),
+    ):
+        passed = passed & truth(column)
+        ordered_masks[stage] = passed.copy()
+
+    ordered_counts = {key: int(value.sum()) for key, value in ordered_masks.items()}
+    context = ordered_counts["context"]
+    location = ordered_counts["location"]
+    setup = ordered_counts["setup"]
+    confirmation = ordered_counts["confirmation"]
+    trigger = ordered_counts["trigger"]
+    invalidation = ordered_counts["invalidation"]
+    reward_space = ordered_counts["reward_space"]
+    chase = ordered_counts["chase"]
+    event = ordered_counts["event"]
+    ready = int(scope["entry_contract_status"].eq("entry_ready").sum())
+    statuses = {
+        str(key): int(value)
+        for key, value in scope["entry_contract_status"].fillna("unknown").value_counts().sort_index().items()
+    }
+    setup_scope = scope.loc[ordered_masks["setup"]]
+    triggered_scope = scope.loc[ordered_masks["trigger"]]
+
+    def average(frame: pd.DataFrame, column: str) -> float | None:
+        if column not in frame:
+            return None
+        values = pd.to_numeric(frame[column], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+        return round(float(values.mean()), 6) if not values.empty else None
+
+    def optional_count(column: str) -> int | None:
+        if column not in scope:
+            return None
+        return int(scope[column].fillna(False).astype(bool).sum())
+
+    aggressive = optional_count("entry_aggressive_trigger_valid")
+    balanced = optional_count("entry_balanced_trigger_valid")
+    conservative = optional_count("entry_conservative_trigger_valid")
+    if confirmation > 0 and aggressive == 0:
+        trigger_diagnosis = "setup_aligned_structure_event_absent"
+    elif confirmation > 0 and (aggressive or 0) > 0 and balanced == 0:
+        trigger_diagnosis = "structure_present_retest_reaction_absent"
+    elif trigger > 0 and ready == 0:
+        trigger_diagnosis = "trigger_present_downstream_admission_blocked"
+    elif ready > 0:
+        trigger_diagnosis = "entry_path_activated"
+    else:
+        trigger_diagnosis = "insufficient_trigger_observability"
+
+    return {
+        "protocol": "entry_contract_funnel_v2",
+        "status": "observed",
+        "count_semantics": "ordered_cumulative_pipeline",
+        "entry_contract_protocol": str(scope["entry_contract_protocol"].dropna().iloc[-1]) if not scope.empty else None,
+        "model": str(scope.get("entry_contract_model", pd.Series("unknown", index=scope.index)).iloc[-1]) if not scope.empty else None,
+        "mode": str(scope.get("entry_contract_mode", pd.Series("unknown", index=scope.index)).iloc[-1]) if not scope.empty else None,
+        "evaluated_candles": int(len(scope)),
+        "stage_counts": {
+            "context": context,
+            "location": location,
+            "setup": setup,
+            "confirmation": confirmation,
+            "trigger": trigger,
+            "invalidation": invalidation,
+            "reward_space": reward_space,
+            "chase": chase,
+            "event": event,
+            "entry_ready": ready,
+        },
+        "predicate_counts": predicate_counts,
+        "conversion": {
+            "setup_to_confirmation_percent": round(confirmation / setup * 100, 2) if setup else 0.0,
+            "confirmation_to_trigger_percent": round(trigger / confirmation * 100, 2) if confirmation else 0.0,
+            "trigger_to_entry_percent": round(ready / trigger * 100, 2) if trigger else 0.0,
+            "setup_to_entry_percent": round(ready / setup * 100, 2) if setup else 0.0,
+        },
+        "trigger_topology": {
+            "setup_aligned_confirmation_families": {
+                "price_reaction": optional_count("entry_reaction_family_valid"),
+                "market_structure": optional_count("entry_structure_family_valid"),
+                "volatility_participation": optional_count("entry_participation_family_valid"),
+            },
+            "counterfactual_mode_counts": {
+                "aggressive": aggressive,
+                "balanced": balanced,
+                "conservative": conservative,
+            },
+            "selected_mode": str(scope.get("entry_contract_mode", pd.Series("unknown", index=scope.index)).iloc[-1]) if not scope.empty else None,
+            "diagnosis": trigger_diagnosis,
+            "performance_credit": False,
+        },
+        "no_trade_reasons": {key: value for key, value in statuses.items() if key != "entry_ready"},
+        "grade_distribution": {
+            str(key): int(value)
+            for key, value in setup_scope.get("entry_grade", pd.Series(dtype="object")).fillna("SKIP").value_counts().sort_index().items()
+        },
+        "confirmation_cost": {
+            "average_independent_count": average(setup_scope, "entry_independent_confirmation_count"),
+            "average_raw_count": average(setup_scope, "entry_raw_confirmation_count"),
+            "average_redundancy_penalty": average(setup_scope, "entry_redundancy_penalty"),
+            "average_reward_space_r_after_trigger": average(triggered_scope, "entry_reward_space_r"),
+            "average_chase_distance_atr_after_trigger": average(triggered_scope, "entry_chase_distance_atr"),
+            "rule": "Confirmation is valuable only when its marginal OOS expectancy exceeds lost reward-space and missed-opportunity cost.",
+        },
+        "promotion_evidence": False,
+    }
+
+
+def _edge_observability_report(
+    funnel: dict[str, object],
+    management: dict[str, object],
+    trades: list[SimpleTrade],
+) -> dict[str, object]:
+    """Expose one complete, zero-safe decision-to-outcome receipt.
+
+    A count of zero is still an observation. The report therefore never
+    converts missing opportunities into positive evidence; it only prevents
+    Genesis settlement from confusing a truthful WAIT with absent telemetry.
+    Comparative component credit remains the responsibility of the later
+    registered attribution arms.
+    """
+    observed = funnel.get("status") == "observed"
+    counts = funnel.get("stage_counts", {}) if isinstance(funnel.get("stage_counts"), dict) else {}
+    trade_count = len(trades)
+    ledger_hash = _trade_ledger_hash(trades)
+    excursions = management.get("observed_trade_count", 0) if isinstance(management, dict) else 0
+
+    def stage(name: str) -> dict[str, object]:
+        return {"observed": observed, "count": int(counts.get(name, 0) or 0)}
+
+    return {
+        "protocol": "edge_decision_outcome_observability_v1",
+        "opportunity_detected": stage("context"),
+        "setup_location_valid": {
+            "observed": observed,
+            "location_count": int(counts.get("location", 0) or 0),
+            "setup_count": int(counts.get("setup", 0) or 0),
+        },
+        "context_bias_aligned": stage("context"),
+        "confirmation": stage("confirmation"),
+        "entry": stage("entry_ready"),
+        "execution_price": {
+            "observed": True,
+            "closed_trade_count": trade_count,
+            "trade_ledger_hash": ledger_hash,
+        },
+        "invalidation_price": stage("invalidation"),
+        "mfe_mae": {
+            "observed": isinstance(management, dict),
+            "observed_trade_count": int(excursions or 0),
+        },
+        "exit_outcome": {
+            "observed": True,
+            "closed_trade_count": trade_count,
+            "wins": sum(trade.result == "WIN" for trade in trades),
+            "losses": sum(trade.result == "LOSS" for trade in trades),
+        },
+        "promotion_evidence": False,
+    }
+
+
+def _update_position_excursions(position: dict[str, object], candle: pd.Series) -> None:
+    """Accumulate causal management-path bounds without future candles.
+
+    OHLC cannot reveal whether an exit-bar extreme occurred before or after
+    the exit. We retain the full candle extrema as an explicit upper bound and
+    prevent this telemetry from becoming direct promotion evidence.
+    """
+    entry = float(position["entry_price"])
+    direction = str(position["direction"])
+    high = float(candle["high"])
+    low = float(candle["low"])
+    if direction == "BUY":
+        favorable = max(0.0, high - entry)
+        adverse = max(0.0, entry - low)
+    else:
+        favorable = max(0.0, entry - low)
+        adverse = max(0.0, high - entry)
+    position["maximum_favorable_excursion"] = max(
+        float(position.get("maximum_favorable_excursion", 0) or 0), favorable
+    )
+    position["maximum_adverse_excursion"] = max(
+        float(position.get("maximum_adverse_excursion", 0) or 0), adverse
+    )
+
+
+def _management_evidence_report(trades: list[SimpleTrade]) -> dict[str, object]:
+    observed = [
+        trade for trade in trades
+        if trade.initial_risk_distance is not None
+        and trade.initial_risk_distance > 0
+        and trade.mfe_r is not None
+        and trade.mae_r is not None
+        and trade.realized_r_multiple is not None
+    ]
+    captures = [
+        float(trade.mfe_capture_ratio) for trade in observed
+        if trade.mfe_capture_ratio is not None
+    ]
+    minimum_trades = 8
+    minimum_winner_paths = 5
+    powered = len(observed) >= minimum_trades and len(captures) >= minimum_winner_paths
+
+    def average(values: list[float]) -> float | None:
+        return round(sum(values) / len(values), 6) if values else None
+
+    return {
+        "protocol": "replay_management_path_evidence_v1",
+        "status": "powered" if powered else ("underpowered" if observed else "missing_evidence"),
+        "observed_trades": len(observed),
+        "measured_winner_paths": len(captures),
+        "minimum_trades": minimum_trades,
+        "minimum_winner_paths": minimum_winner_paths,
+        "powered": powered,
+        "average_mfe_r": average([float(trade.mfe_r) for trade in observed if trade.mfe_r is not None]),
+        "average_mae_r": average([float(trade.mae_r) for trade in observed if trade.mae_r is not None]),
+        "average_mfe_r_before_exit_bar": average([
+            float(trade.mfe_r_before_exit_bar) for trade in observed
+            if trade.mfe_r_before_exit_bar is not None
+        ]),
+        "average_mae_r_before_exit_bar": average([
+            float(trade.mae_r_before_exit_bar) for trade in observed
+            if trade.mae_r_before_exit_bar is not None
+        ]),
+        "average_realized_r": average([
+            float(trade.realized_r_multiple) for trade in observed
+            if trade.realized_r_multiple is not None
+        ]),
+        "average_initial_risk_percent": average([
+            float(trade.initial_risk_percent) for trade in observed
+            if trade.initial_risk_percent is not None
+        ]),
+        "target_capture_ratio": average(captures),
+        # Stop quality and premature-stop rate need a same-entry, post-exit
+        # counterfactual. Missing is truthful; zero would fabricate quality.
+        "stop_efficiency": None,
+        "premature_stop_rate": None,
+        "path_precision": "dual_bound_with_conservative_pre_exit_bar_excursion",
+        "exit_bar_order_known": False,
+        "latent_harvest_admission_source": "average_mfe_r_before_exit_bar_only",
+        "promotion_evidence": False,
+    }
+
+
+def _edge_formation_academy_diagnostic(
+    df: pd.DataFrame,
+    funnel: dict[str, object],
+    management: dict[str, object],
+    trades: list[SimpleTrade],
+    payload: SimpleBacktestRequest,
+) -> dict[str, object]:
+    """Build a post-replay, executable-envelope Oracle Gap diagnostic.
+
+    Each setup may enter only at the following candle's open, uses the
+    setup-time invalidation reference, and exits with the same spread,
+    slippage and commission convention as a normal backtest.  It is therefore
+    a deliberately optimistic *upper bound*, not an executable signal.  This
+    function is called after the strategy has finished and its return value is
+    explicitly denied to runtime and promotion code.
+    """
+    counts = funnel.get("stage_counts", {}) if isinstance(funnel, dict) else {}
+    observed = [trade for trade in trades if trade.mfe_r_before_exit_bar is not None and trade.realized_r_multiple is not None]
+    upper = round(sum(max(0.0, float(t.mfe_r_before_exit_bar)) for t in observed) / len(observed), 6) if observed else None
+    realized = round(sum(float(t.realized_r_multiple) for t in observed) / len(observed), 6) if observed else None
+    loss = round(max(0.0, upper - realized), 6) if upper is not None and realized is not None else None
+    envelope = _academy_setup_oracle_envelope(df, payload)
+    return {
+        "protocol": "edge_formation_academy_diagnostic_v2",
+        "status": envelope["status"],
+        "diagnostic_only": True, "runtime_signal": False, "promotion_evidence": False,
+        "full_oracle_gap_available": envelope["status"] == "full_oracle_gap_observed",
+        "oracle_contract": envelope["contract"],
+        "entry_contract_counts": {key: int(counts.get(key, 0) or 0) for key in ("setup", "confirmation", "trigger", "entry_ready")},
+        "oracle_opportunity_edge_r": envelope["oracle_opportunity_edge_r"],
+        "entry_envelope_after_cost_r": envelope.get("entry_envelope_after_cost_r"),
+        "oracle_minimum_unavoidable_mae_r": envelope["minimum_unavoidable_mae_r"],
+        "oracle_observed_setup_events": envelope["observed_setup_events"],
+        "oracle_minimum_events": envelope["minimum_events"],
+        "observed_trade_path_upper_bound_r": upper, "realized_after_cost_r": realized, "management_capture_loss_r": loss,
+        "path_evidence_status": management.get("status") if isinstance(management, dict) else "missing_evidence",
+        "path_bound_rule": "pre-exit-bar MFE only; exit-bar ordering remains unknown",
+    }
+
+
+def _academy_setup_oracle_envelope(df: pd.DataFrame, payload: SimpleBacktestRequest) -> dict[str, object]:
+    """Evaluate a frozen-horizon, setup-known entry envelope after replay."""
+    required = {"open", "high", "low", "entry_setup_detected", "entry_contract_direction", "entry_invalidation_reference_price"}
+    contract = {
+        "entry": "next_candle_open_with_normal_execution_costs",
+        "stop": "setup_time_invalidation_reference_with_normal_execution_costs",
+        "exit": "best_future_extreme_inside_frozen_horizon_with_normal_execution_costs",
+        "horizon_bars": 24, "runtime_forbidden": True, "promotion_evidence": False,
+    }
+    if not required.issubset(df.columns):
+        return {"status": "oracle_unavailable_missing_entry_contract", "oracle_opportunity_edge_r": None,
+                "minimum_unavoidable_mae_r": None, "observed_setup_events": 0, "minimum_events": 8, "contract": contract}
+    horizon = int(payload.parameters.get("academy_oracle_horizon_bars", 24) or 24)
+    minimum = int(payload.parameters.get("academy_oracle_minimum_setup_events", 8) or 8)
+    horizon = max(1, min(240, horizon)); contract["horizon_bars"] = horizon
+    values: list[tuple[float, float, bool]] = []
+    setup = df["entry_setup_detected"].fillna(False).astype(bool)
+    for position in np.flatnonzero(setup.to_numpy()):
+        if position + horizon >= len(df):
+            continue
+        row = df.iloc[position]
+        direction = str(row.get("entry_contract_direction", "WAIT")).upper()
+        stop = pd.to_numeric(pd.Series([row.get("entry_invalidation_reference_price")]), errors="coerce").iloc[0]
+        if direction not in {"BUY", "SELL"} or not np.isfinite(stop):
+            continue
+        entry_market = float(df.iloc[position + 1]["open"])
+        entry = _entry_price(entry_market, direction, payload)
+        stop_execution = _exit_price(float(stop), direction, payload)
+        risk = (entry - stop_execution) if direction == "BUY" else (stop_execution - entry)
+        commission = entry * float(payload.execution.commission_percent) / 100
+        risk += commission
+        if not np.isfinite(risk) or risk <= 0:
+            continue
+        future = df.iloc[position + 1:position + horizon + 1]
+        best_market = float(future["high"].max()) if direction == "BUY" else float(future["low"].min())
+        worst_market = float(future["low"].min()) if direction == "BUY" else float(future["high"].max())
+        best_exit = _exit_price(best_market, direction, payload)
+        favorable = (best_exit - entry) if direction == "BUY" else (entry - best_exit)
+        adverse = (entry - worst_market) if direction == "BUY" else (worst_market - entry)
+        values.append((max(0.0, favorable - commission) / risk, max(0.0, adverse + commission) / risk,
+                       bool(row.get("entry_contract_status") == "entry_ready")))
+    if len(values) < minimum:
+        return {"status": "oracle_underpowered_setup_envelope", "oracle_opportunity_edge_r": None,
+                "minimum_unavoidable_mae_r": None, "observed_setup_events": len(values), "minimum_events": minimum, "contract": contract}
+    return {"status": "full_oracle_gap_observed",
+            "oracle_opportunity_edge_r": round(float(np.mean([value[0] for value in values])), 6),
+            "entry_envelope_after_cost_r": (
+                round(float(np.mean([value[0] for value in values if value[2]])), 6)
+                if any(value[2] for value in values) else None
+            ),
+            "minimum_unavoidable_mae_r": round(float(np.mean([value[1] for value in values])), 6),
+            "observed_setup_events": len(values), "minimum_events": minimum, "contract": contract}
 
 
 def _diagnostic_telemetry(trades: list[SimpleTrade], funnel: dict[str, object], attribution: dict[str, object]) -> dict[str, object]:

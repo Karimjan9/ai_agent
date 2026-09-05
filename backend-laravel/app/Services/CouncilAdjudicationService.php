@@ -49,6 +49,12 @@ class CouncilAdjudicationService
         ];
     }
 
+    /** @return array<string,mixed> */
+    public function counterfactualPlan(string $symbol, string $timeframe, int $limit = 100): array
+    {
+        return app(CounterfactualCouncilCourtService::class)->plan($symbol, $timeframe, $limit);
+    }
+
     /** @return array<string, mixed> */
     public function adjudicate(
         LabCouncilDisagreement $disagreement,

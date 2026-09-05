@@ -6,7 +6,11 @@ import pandas as pd
 from app.schemas import ExecutionConfig, SimpleBacktestRequest, SimpleTrade
 from app.services.backtester import (
     _differential_router_report,
+    _edge_context_admission,
+    _sealed_strategy_parameters,
     _entry_eligibility,
+    _edge_formation_academy_diagnostic,
+    _management_evidence_report,
     _proof_carrying_replay,
     _temporal_survival_assessment,
     _temporal_register_signal,
@@ -85,6 +89,96 @@ def differential_identity_strategy(frame: pd.DataFrame, _parameters: dict | None
 
 
 class BacktesterExecutionRegressionTest(unittest.TestCase):
+
+    def test_confirmation_ablation_requires_the_sealed_attribution_arm(self) -> None:
+        unauthorized = SimpleBacktestRequest(
+            symbol="XAUUSD", timeframe="M5", strategy="edge_attr",
+            base_strategy="confirmation_entry_mtf_v1",
+            parameters={"attribution_confirmation_bypass": True},
+        )
+        with self.assertRaisesRegex(ValueError, "BYPASS_OUTSIDE_SEALED_ABLATION"):
+            _sealed_strategy_parameters(unauthorized)
+
+        authorized = unauthorized.model_copy(update={"policy_context": {
+            "edge_genesis_contracts": {"edge_attr": {
+                "protocol": "bounded_edge_genesis_replay_v1",
+                "attribution_arm": "no_confirmation",
+            }},
+        }})
+        self.assertTrue(_sealed_strategy_parameters(authorized)["attribution_confirmation_bypass"])
+
+        missing_intervention = authorized.model_copy(update={
+            "parameters": {"attribution_confirmation_bypass": False},
+        })
+        with self.assertRaisesRegex(ValueError, "ABLATION_NOT_ACTIVATED"):
+            _sealed_strategy_parameters(missing_intervention)
+
+    def test_edge_context_firewall_converts_out_of_scope_signals_to_wait(self) -> None:
+        contract = {"context": {
+            "enforcement": "required",
+            "admission_axes": ["regime", "session", "volatility"],
+            "allowed_regimes": ["trend_up", "trend_down"],
+            "allowed_sessions": ["london", "london_new_york_overlap"],
+            "allowed_volatility": ["normal_volatility"],
+            "outside_scope": "WAIT",
+        }}
+        valid = pd.Series({
+            "time": "2025-06-02 10:00:00+00:00",
+            "market_regime": "trend_up", "volatility_regime": "normal_volatility",
+        })
+        allowed, reason, evidence = _edge_context_admission(valid, contract)
+        self.assertTrue(allowed)
+        self.assertIsNone(reason)
+        self.assertEqual("london", evidence["observed"]["session"])
+
+        range_signal = valid.copy()
+        range_signal["market_regime"] = "range"
+        allowed, reason, _ = _edge_context_admission(range_signal, contract)
+        self.assertFalse(allowed)
+        self.assertEqual("edge_context_regime_outside_scope", reason)
+
+        asian_signal = valid.copy()
+        asian_signal["time"] = "2025-06-02 03:00:00+00:00"
+        allowed, reason, _ = _edge_context_admission(asian_signal, contract)
+        self.assertFalse(allowed)
+        self.assertEqual("edge_context_session_outside_scope", reason)
+
+    def test_edge_context_control_is_observational_and_transition_is_closed_state(self) -> None:
+        row = pd.Series({
+            "time": "2025-06-02 10:00:00+00:00",
+            "market_regime": "trend_up", "volatility_regime": "normal_volatility",
+        })
+        control = {"context": {"enforcement": "telemetry_only_control", "admission_axes": []}}
+        self.assertTrue(_edge_context_admission(row, control)[0])
+
+        transition = {"context": {
+            "enforcement": "required", "admission_axes": ["regime"],
+            "allowed_regimes": ["transition"],
+        }}
+        self.assertTrue(_edge_context_admission(row, transition, transition_event=True)[0])
+        self.assertFalse(_edge_context_admission(row, transition, transition_event=False)[0])
+
+    def test_edge_context_direction_is_a_pre_entry_specialist_boundary(self) -> None:
+        row = pd.Series({
+            "time": "2025-06-02 10:00:00+00:00",
+            "market_regime": "trend_up", "volatility_regime": "high_volatility",
+        })
+        contract = {"context": {
+            "enforcement": "required",
+            "admission_axes": ["regime", "direction", "volatility"],
+            "allowed_regimes": ["trend_up", "trend_down"],
+            "allowed_directions": ["BUY"],
+            "allowed_volatility": ["high_volatility"],
+            "outside_scope": "WAIT",
+        }}
+        allowed, reason, evidence = _edge_context_admission(row, contract, direction="BUY")
+        self.assertTrue(allowed)
+        self.assertIsNone(reason)
+        self.assertEqual("BUY", evidence["observed"]["direction"])
+
+        allowed, reason, _ = _edge_context_admission(row, contract, direction="SELL")
+        self.assertFalse(allowed)
+        self.assertEqual("edge_context_direction_outside_scope", reason)
 
     def test_h1_regime_is_available_only_after_that_h1_candle_closes(self) -> None:
         from app.services.backtester import _apply_execution_regime
@@ -165,7 +259,81 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertEqual(trade.exit_reason, "intrabar_stop")
         self.assertEqual(trade.position_size_multiple, 2.0)
         self.assertEqual(trade.profit_percent, -1.0)
+        self.assertAlmostEqual(trade.initial_risk_distance, 0.5, places=6)
+        self.assertAlmostEqual(trade.initial_risk_percent, 1.0, places=6)
+        self.assertAlmostEqual(trade.mfe_r, 0.8, places=6)
+        self.assertAlmostEqual(trade.mae_r, 1.2, places=6)
+        self.assertEqual(trade.mfe_r_before_exit_bar, 0.0)
+        self.assertEqual(trade.mae_r_before_exit_bar, 0.0)
+        self.assertAlmostEqual(trade.realized_r_multiple, -1.0, places=6)
+        self.assertIsNone(trade.mfe_capture_ratio)
+        self.assertEqual(result.management_evidence["observed_trades"], 1)
+        self.assertFalse(result.management_evidence["powered"])
+        self.assertEqual(result.observability_protocol_version, 2)
         self.assertEqual(result.final_balance, 9900.0)
+
+    def test_management_evidence_requires_trade_and_winner_path_power(self):
+        trades = [
+            SimpleTrade(
+                direction="BUY",
+                entry_time=f"2026-01-{index + 1:02d}T00:00:00Z",
+                exit_time=f"2026-01-{index + 1:02d}T01:00:00Z",
+                entry_price=100.0,
+                exit_price=101.0,
+                result="WIN",
+                profit_percent=1.0,
+                balance=10000.0 + index,
+                initial_risk_distance=1.0,
+                initial_risk_percent=1.0,
+                mfe_r=2.0,
+                mae_r=0.5,
+                mfe_r_before_exit_bar=1.5,
+                mae_r_before_exit_bar=0.4,
+                realized_r_multiple=1.0,
+                mfe_capture_ratio=0.5,
+            )
+            for index in range(8)
+        ]
+
+        evidence = _management_evidence_report(trades)
+
+        self.assertEqual(evidence["status"], "powered")
+        self.assertEqual(evidence["observed_trades"], 8)
+        self.assertEqual(evidence["measured_winner_paths"], 8)
+        self.assertEqual(evidence["target_capture_ratio"], 0.5)
+        self.assertEqual(evidence["average_mfe_r_before_exit_bar"], 1.5)
+        self.assertEqual(evidence["latent_harvest_admission_source"], "average_mfe_r_before_exit_bar_only")
+        self.assertIsNone(evidence["premature_stop_rate"])
+        self.assertFalse(evidence["promotion_evidence"])
+
+    def test_academy_diagnostic_is_hindsight_only_and_does_not_fabricate_an_oracle(self):
+        trades = [SimpleTrade(
+            direction="BUY", entry_time="2026-01-01T00:00:00Z", exit_time="2026-01-01T01:00:00Z",
+            entry_price=100., exit_price=101., result="WIN", profit_percent=1., balance=10001.,
+            initial_risk_distance=1., initial_risk_percent=1., mfe_r=2., mae_r=.2,
+            mfe_r_before_exit_bar=1.5, mae_r_before_exit_bar=.2, realized_r_multiple=1., mfe_capture_ratio=.5,
+        )]
+        frame = pd.DataFrame({
+            "open": [100., 100., 101., 102., 103., 103., 103., 103., 103., 103.],
+            "high": [100., 101., 102., 103., 104., 104., 104., 104., 104., 104.],
+            "low": [99., 99., 100., 101., 102., 102., 102., 102., 102., 102.],
+            "entry_setup_detected": [True] + [False] * 9,
+            "entry_contract_direction": ["BUY"] * 10,
+            "entry_invalidation_reference_price": [98.] * 10,
+        })
+        payload = self.payload()
+        payload.parameters["academy_oracle_horizon_bars"] = 2
+        payload.parameters["academy_oracle_minimum_setup_events"] = 1
+        diagnostic = _edge_formation_academy_diagnostic(
+            frame,
+            {"stage_counts": {"setup": 4, "confirmation": 3, "trigger": 2, "entry_ready": 1}},
+            _management_evidence_report(trades), trades, payload,
+        )
+        self.assertTrue(diagnostic["diagnostic_only"])
+        self.assertFalse(diagnostic["runtime_signal"])
+        self.assertTrue(diagnostic["full_oracle_gap_available"])
+        self.assertEqual(diagnostic["status"], "full_oracle_gap_observed")
+        self.assertEqual(diagnostic["management_capture_loss_r"], .5)
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
     def test_post_entry_gap_fills_at_open_not_stop_price(self, _strategy):
@@ -679,6 +847,26 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertEqual(result.state_machine["variant"], "neutral_transition_cooldown_reentry_v1")
         self.assertIn(result.state_machine["final_state"], {"neutral", "transition", "cooldown", "reentry_permission"})
         self.assertEqual(result.event_ledger_hash, result.event_digest["hash"])
+
+    @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
+    def test_architecture_interaction_activates_auditable_classifier_state_coherence(self, _strategy):
+        payload = self.payload(reject_gaps=False).model_copy(update={
+            "parameters": {"architecture_interaction_variant": "state_classifier_coherence_v1"},
+        })
+
+        result = run_simple_ema_rsi_backtest_on_dataframe(payload, self.candles())
+
+        self.assertTrue(result.state_machine["enabled"])
+        self.assertEqual(result.state_machine["activation_source"], "architecture_interaction")
+        self.assertEqual(
+            result.data_quality["architecture_interaction"]["regime_classifier_variant"],
+            "adx_hysteresis_v1",
+        )
+        self.assertEqual(
+            result.data_quality["architecture_interaction"]["state_machine_variant"],
+            "neutral_transition_cooldown_reentry_v1",
+        )
+        self.assertTrue(result.data_quality["architecture_interaction"]["single_macro_gene"])
 
 
 if __name__ == "__main__":

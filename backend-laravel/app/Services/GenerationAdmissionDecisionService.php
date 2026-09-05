@@ -52,13 +52,26 @@ class GenerationAdmissionDecisionService
             || (bool) data_get($input, 'role_complete')
             || (bool) data_get($input, 'shadow_research')
             || (bool) data_get($input, 'coverage_rescue')
+            || (bool) data_get($input, 'learning_confirmation')
             || in_array($trigger, ['candidate_handoff', 'data_edge_audit', 'coverage_rescue'], true);
         $decision = self::OPEN_NORMAL_GENERATION;
         $allowed = true;
         $reasons = [];
         $safetyPaused = app(LearningProtocolSafetyService::class)->generationCreationPaused();
+        $edgeOwnership = app(CanonicalResearchLanePriorityService::class)->edgeGenesisOwnership(
+            (string) $lab->symbol,
+            (string) $lab->timeframe,
+        );
 
-        if (! $terminal) {
+        if (($edgeOwnership['owned'] ?? false) === true) {
+            // Edge Genesis is itself the current learning/evolution state
+            // machine. Opening a parallel learning-confirmation generation
+            // here lets a partial constructor consume the same replay lane
+            // and can strand an admitted Edge repair indefinitely.
+            $decision = self::WAIT_ACTIVE_WORK;
+            $allowed = false;
+            $reasons[] = 'CANONICAL_EDGE_STATE_MACHINE_OWNS_EVOLUTION_LANE';
+        } elseif (! $terminal) {
             $decision = self::WAIT_ACTIVE_WORK;
             $allowed = false;
             $reasons[] = 'LATEST_GENERATION_OR_AGENT_WORK_ACTIVE';
@@ -102,6 +115,18 @@ class GenerationAdmissionDecisionService
             $decision = self::QUARANTINE_CAPABILITY_LANE;
             $reasons[] = 'DATA_CAPABILITY_LANE_ISOLATED';
         }
+        if ((bool) data_get($input, 'learning_confirmation')
+            && $terminal
+            && ! $allowed
+            && $decision === self::DISPATCH_LEARNING) {
+            // This bounded triplet is the action requested by the velocity
+            // gate: it consumes one canonical provisional lesson through
+            // guided, memory-blinded and frozen-control replay. Blocking it
+            // because learning is waiting creates a circular admission
+            // deadlock. Active work and technical recovery remain untouched.
+            $allowed = true;
+            $reasons[] = 'CAUSAL_CONFIRMATION_SATISFIES_LEARNING_DISPATCH';
+        }
         if ($special && $terminal && ! $allowed && $decision === self::BLOCK_HARD) {
             // Operator input is not a bypass. It is an audited input to this
             // authority and can only open a bounded structural/recovery path.
@@ -118,6 +143,7 @@ class GenerationAdmissionDecisionService
             'input' => $input,
             'generation_creation_safety_paused' => $safetyPaused,
             'learning_velocity' => $velocity,
+            'edge_research_lane' => $edgeOwnership,
             'promotion_evidence' => false,
         ];
         if ($persist && Schema::hasTable('generation_admission_decisions')) {
@@ -131,7 +157,8 @@ class GenerationAdmissionDecisionService
                 'decision' => $decision,
                 'allowed' => $allowed,
                 'reason_codes' => $result['reason_codes'],
-                'context' => ['input' => $input, 'learning_velocity' => $velocity, 'promotion_evidence' => false],
+                'context' => ['input' => $input, 'learning_velocity' => $velocity,
+                    'edge_research_lane' => $edgeOwnership, 'promotion_evidence' => false],
                 'decided_at' => now(),
             ]);
             $result['decision_id'] = (int) $row->id;

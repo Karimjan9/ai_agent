@@ -6,10 +6,42 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-08-14
+updated: 2026-08-27
 ---
 
 # AI Learning Laboratory
+
+## Evolutionary Authority Foundry (2026-08-30)
+
+`evolutionary_authority_foundry_v1` is the prospective-only bridge from a
+causally confirmed component to evolutionary authority. A historical research
+arm is never a parent simply because it is useful. The ledger records:
+
+```text
+confirmed_skill -> five-arm incubator -> skill_mentor
+-> two independently improving descendants -> breeder_candidate
+-> full passport -> eligible_parent -> E3 paper candidate -> E4 champion
+```
+
+The five incubator arms are frozen control, single-gene child,
+memory-blinded child, skill ablation, and weakest-gate repair. Every final arm
+must bind the same data/execution hash, a single component delta, no
+non-target regression, and at least three independent windows. `confirmed_skill`
+is not equivalent to `eligible_parent`; the latter additionally requires two
+descendants that inherit only the confirmed component, mutate a different gene,
+improve independently, and do not repeat the inherited failure.
+
+`settlement_watermark_v1` classifies lag as `in_flight`, `awaiting_control`,
+`awaiting_full_outcomes`, `retryable_projection`, `technical_quarantine`, or
+`irrecoverable_legacy`. A generation terminal-boundary repair is blocked until
+its episode watermark coverage is terminal. The legacy firewall records missing
+controls separately and excludes irrecoverable legacy rows from current KPI;
+current canonical control debt is still fail-closed.
+
+The pre-champion comparison uses `genesis_benchmark_bundle_v1` (WAIT, minimal
+trend/range, risk-only, and negative controls). It has no trade authority. E3
+admission freezes a pre-2026 passport and confirmation/risk/management/execution
+hashes; 2026 outcomes remain prospective and cannot mutate that paper block.
 
 ## Primary objective
 
@@ -123,7 +155,8 @@ complete historical data
   -> full rolling replay + CSCV/PBO and Deflated Sharpe selection checks + untouched holdout
   -> Monte Carlo and risk gates
   -> forward-validated challenger
-  -> paper orders and outcomes
+  -> paper Risk Sentinel + account risk + Smart Discipline
+  -> paper orders and process-classified outcomes
   -> sealed holdout
   -> same-market champion replacement
   -> mutation memory informs the next generation
@@ -412,8 +445,154 @@ The Python AI service must also be available at `AI_SERVICE_URL` before a full e
 - Daily incremental health: `LabIncrementalEvaluationService.php`
 - Champion gates and mutation memory: `MarketChampionService.php`
 - Paper-order execution: `PaperTradingExecutionService.php`
+- Seven-block evidence scorecard and deficit-derived causal attribution:
+  `TradingOperatingSystemScorecardService.php`, `CausalEdgeAccountingService.php`.
+  Missing blocks remain evidence tasks; an overall grade is emitted only when
+  edge/context, selection, execution, risk, management, process and learning
+  are all measured and powered. Replay management evidence carries
+  initial-risk, MFE/MAE, realized-R and winner-capture observations; it remains
+  underpowered below eight trade paths plus five winner paths and does not
+  invent stop/premature-exit quality without a same-entry counterfactual.
+  Derived capability projections are independently versioned and can be
+  reprojected from immutable outboxes without replay; incomplete/underpowered
+  scorecards resolve to `evidence_completion`, never a component causal label.
+- Paper process-integrity authority and immutable review: `SmartDisciplineEngineService.php`, `SmartDisciplineDecision.php`, [Smart Discipline contract](../architecture/smart-discipline-engine.md). Version 2 records one policy-hashed decision receipt across external risk and discipline gates, seals final reduced size plus partial/trailing/time-stop management into the paper P&L contract, audits realized/MFE/MAE R and stop widening, requires new settled evidence for risk-state recovery, and keeps `BAD_*` or unattested outcomes outside calibration/evolution learning.
 - MTF contract and fail-closed response guard: `MultiTimeframePilotService.php`
 - Immutable MTF passport/shadow ledger: `PaperMtfLedgerService.php`, `PaperSignalPassport.php`, `PaperMtfShadowObservation.php`
 - MTF monitoring, ablation and strategy research history: `MtfPilotMonitoringService.php`, `MtfPilotMonitorRun.php`, `MtfAblationRun.php`, `MtfStrategyResearchService.php`, `MtfStrategyResearchRun.php`, `MtfStrategyResearchReportService.php`
 - Python H1/M15 routing: `ai-service-python/app/services/multitimeframe.py`
 - UI: `resources/views/ai-laboratory/show.blade.php`
+
+### Authority Foundry operational gates
+
+Use `trading:dispatch-authority-incubator` to materialize the five clean,
+research-only arms for a confirmed skill, and
+`trading:reconcile-evolutionary-authority` for settlement/debt/memory
+reconciliation. Parent selection requires the Foundry `eligible_parent` stage;
+paper routing requires an E3 frozen admission; champion promotion requires E4
+prospective evidence. These are mandatory gates, not dashboard annotations.
+
+### Canonical Skill Cartridge Pipeline (2026-08-30)
+
+`canonical_skill_cartridge_pipeline_v1` replaces agent-specific observed Skill
+Zoo records with settled, executable component interventions. Each cartridge
+has a semantic key independent of agent/run ID; it retains old/tested values,
+direction and refinement range, context, effect and secondary-effect fields,
+contraindications, provenance, and separate causal-baseline/genetic-lineage
+references. Memory-guided callers either receive an exact compatible proposal
+or an explicit abstention.
+
+Cartridge evidence is component evidence only. Frozen-baseline transplant
+cohorts use exact, refinement, blinded and reverse counterfactual arms;
+five-arm interaction cohorts measure control, A, B, A+B and A+B-minus-filter.
+Both paths are hard research-only and bypass parent, paper and champion
+authority. Historical canonical settlement reprojecting has no remaining
+eligible XAUUSD/H1 rows; 83 legacy `observed` rows were terminalized because
+they lack a settled paired executable intervention.
+
+Each cartridge revision is immutable and aggregates all exactly-once
+observation, settlement, response-map, data-hash and execution-hash
+provenance. Retrieval must match every frozen non-empty scope field (regime,
+volatility, session, temporal-role, confirmation/entry and execution
+contract); a missing or mismatched field is explicit abstention. Exact
+transplant proof may create only a research mentor seed, never parent
+authority; failed transfer writes a contraindication. The transplant dispatcher
+ranks uncertainty, information gain, transfer potential, failure recurrence,
+context relevance and compute cost while round-robining niches for diversity.
+
+### Dependency-Aware Edge Genesis Foundry (2026-08-30)
+
+The Edge Genesis Foundry enforces a dependency state machine before ordinary
+evolution may tune risk or exit behavior: discover edge, confirm it, attribute
+it, shape risk, optimize management, then enter existing paper validation.
+Dead PF-negative baselines cannot be breeders or parameter-vector sources;
+they remain frozen controls or component/negative evidence only.
+
+`trading:dispatch-edge-genesis` creates four declared contextual XAUUSD
+hypotheses with five equal-risk arms each. Data/execution hashes plus a
+pre-2026 attestation are mandatory. A generated model carries a required
+Confirmation/Entry decision ledger contract; the evaluator quarantines an arm
+with `INVALID_EDGE_OBSERVABILITY` before expensive authority replay when that
+contract is absent. `trading:dispatch-edge-attribution` creates the separate
+full, no-confirmation, alternate-tactic, alternate-temporal-binding and frozen
+minimal-control experiment after edge admission. The resulting component
+credit is research-only; parent, paper and champion safety gates remain
+unchanged.
+
+### Full-Stack Playbook Mastery Academy (2026-08-30)
+
+`FullStackPlaybookMasteryService` turns the professional library into frozen,
+executable procedure evidence rather than treating a named strategy or a prior
+as an XAUUSD edge. Each generated seat carries a passport with the strategy
+thesis, tactic compatibility rationale, temporal roles, decision modules,
+ordered closed-candle sequence, execution prohibitions, Central Risk Governor
+topology, management contract and no-trade conditions. The evaluator rejects
+an incomplete passport before replay.
+
+The Mastery Ledger records procedural fidelity separately from economic edge:
+fidelity; setup, confirmation, entry and no-trade precision; risk adherence;
+and exit-management quality are never inferred from P&L. Two-fold work is
+only a technical/semantic preflight, three folds diagnose, and nine independent
+folds with positive after-cost evidence are required for a `master_candidate`.
+High procedural mastery with low edge stays a learned-but-non-edge procedure;
+high edge with low procedure remains unreliable. Full-stack models remain
+research-only and are barred from the parent frontier until that candidate
+contract exists; no path bypasses Edge attribution or sealed paper validation.
+Only an explicit descendant-transfer receipt with nine independent,
+risk-compliant and after-cost-positive windows unlocks the final `master` /
+bounded-innovation state.
+
+### Autonomous Edge-to-Mastery Director (2026-09-01)
+
+`autonomous_edge_to_mastery_director_v2` closes the former manual trigger
+gap. It automatically derives the immutable pre-2026 dataset, MTF bundle and
+M5 execution hashes after strict runtime, queue, retry-storm, stable-idle and
+Failure Dojo admission. Cohorts are pre-registered by a composite exactly-once
+hash before any job is dispatched.
+
+One fourteen-fold universe is frozen and partitioned without overlap: two
+folds discover, three folds causally replicate, and nine folds alone may grant
+Edge authority. Fixed repair exhaustion invokes an evidence compiler that may
+change one structural axis only and must carry both an exact control and a
+negative control. Local causal evidence is authority; professional
+strategy/tactic/toolbox knowledge is a decaying proposal prior. After Edge,
+the same Director advances attribution, risk, management, cartridge,
+incubation and mastery gates. It never moves 2026 paper-only observations into
+training, breeder or parent authority.
+
+The compiler keeps a composition-level semantic axis-debt ledger. Source IDs
+and diagnosis labels are evidence, not novelty: neither may cause the same
+strategy/tactic/management axis to be replayed before other bounded axes are
+exhausted. Compiled packet keys are rooted at the original professional packet
+instead of recursively appending prior compiler suffixes, and public model
+names preserve the definition hash plus arm inside the 96-character database
+limit.
+
+When an observed setup reaches confirmation but no structural trigger exists,
+the compiler does not fall through to risk/reward tuning. After bounded event
+geometry axes, it can test the five executable professional entry models as one
+categorical structural axis with an exact control. This makes the strategy and
+toolbox libraries searchable procedures rather than passive labels.
+
+Compiled source selection follows causal depth before scalar expectancy. A
+negative but real setup→trigger→entry path is retained as a research-only
+stepping stone over a zero-trade abstainer with nominal zero expectancy. It is
+not a genetic parent; its full frozen composition becomes the control for the
+next entry-quality experiment.
+
+Raw signal or opportunity-count growth alone cannot replace an otherwise
+equivalent frozen control. Settlement v2 includes full-fold observability as
+well as canonical event, signal and funnel hashes. Each diagnosis/axis lineage
+is limited to two baseline epochs, each frozen baseline to three axes, and the
+compiled search to ten hypotheses per professional strategy/tactic island.
+Island selection is breadth-first by the smallest settled compiler count, so
+an exhausted Break/Retest season rotates to under-studied professional
+playbooks instead of blocking the laboratory or endlessly refining one
+threshold. None of these research steps can grant parent, breeder, paper or
+promotion authority by itself.
+
+The Director no longer maps compiler admission failures back to the legacy
+`REGISTERED_EDGE_PACKETS_EXHAUSTED` label. It persists the compiler result in
+the decision payload, exposes its exact `compiler_reason`, and reserves
+`EDGE_HYPOTHESIS_ISLANDS_EXHAUSTED` for genuine exhaustion of every bounded
+professional research island.

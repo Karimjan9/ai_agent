@@ -25,7 +25,7 @@ class MarketDataAuditService
             $allObservations = MarketCandleObservation::query()->where(compact('symbol', 'timeframe'))->latest('time')->take(2000)->get()->sortBy('time')->values();
             $observations = $allObservations->where('provider', $provider)->values();
         }
-        $observationGaps = $this->unexpectedGaps($observations, $timeframe);
+        $observationGaps = $this->unexpectedGaps($observations, $timeframe, $symbol);
         // Observations are an audit ledger, whereas candles are the canonical
         // market-data store. A partial earlier audit/import must not turn an
         // otherwise complete canonical candle series into a false P0 warning.
@@ -34,7 +34,7 @@ class MarketDataAuditService
             $this->backfillCanonicalObservations($provider, $symbol, $timeframe);
             $allObservations = MarketCandleObservation::query()->where(compact('symbol', 'timeframe'))->latest('time')->take(2000)->get()->sortBy('time')->values();
             $observations = $allObservations->where('provider', $provider)->values();
-            $observationGaps = $this->unexpectedGaps($observations, $timeframe);
+            $observationGaps = $this->unexpectedGaps($observations, $timeframe, $symbol);
         }
         $providerCounts = $allObservations->groupBy('provider')->map->count();
         $discrepancy = $this->closeDiscrepancyBps($allObservations);
@@ -62,7 +62,7 @@ class MarketDataAuditService
         return $metrics;
     }
 
-    private function unexpectedGaps(Collection $observations, string $timeframe): int
+    private function unexpectedGaps(Collection $observations, string $timeframe, string $symbol): int
     {
         if (! in_array(strtoupper($timeframe), ['M1', 'M5', 'M15', 'M30', 'H1'], true) || $observations->count() < 2) return 0;
         $intervalMinutes = match (strtoupper($timeframe)) {
@@ -123,7 +123,12 @@ class MarketDataAuditService
         $symbolId = Symbol::query()->where('code', $symbol)->value('id');
         if (! $symbolId) return;
         $now = now();
-        $rows = Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $timeframe)->where('provider', $provider)->latest('time')->take(1000)->get()
+        $candles = Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $timeframe);
+        $isComposite = $provider === 'xauusd_intraday_shadow_composite';
+        if (! $isComposite) {
+            $candles->where('provider', $provider);
+        }
+        $rows = $candles->latest('time')->take(1000)->get()
             ->map(fn (Candle $candle): array => [
                 'provider' => $provider, 'symbol' => $symbol, 'timeframe' => $timeframe,
                 'time' => $candle->time, 'open' => $candle->open, 'high' => $candle->high, 'low' => $candle->low,

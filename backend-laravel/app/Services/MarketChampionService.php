@@ -106,6 +106,21 @@ class MarketChampionService
             $learningLane = $agent !== null
                 && data_get($agent->modelVersion?->metadata, 'learning_lane.protocol') === LearningLaneService::PROTOCOL
                 && data_get($agent->modelVersion?->metadata, 'learning_lane.promotion_evidence', false) !== true;
+            $authorityIncubator = $agent !== null
+                && data_get($agent->modelVersion?->metadata, 'authority_incubator.protocol') === EvolutionaryAuthorityFoundryService::PROTOCOL;
+            $cartridgeTransplant = $agent !== null
+                && data_get($agent->modelVersion?->metadata, 'skill_cartridge_transplant.protocol') === CanonicalSkillCartridgeService::PROTOCOL;
+            $cartridgeInteraction = $agent !== null
+                && data_get($agent->modelVersion?->metadata, 'skill_cartridge_interaction.protocol') === CanonicalSkillCartridgeService::PROTOCOL;
+            $edgeGenesis = $agent !== null
+                && data_get($agent->modelVersion?->metadata, 'edge_genesis.protocol') === DependencyAwareEdgeGenesisFoundryService::PROTOCOL;
+            $fullStackPlaybook = $agent !== null
+                && data_get($model->metadata, 'full_stack_playbook.protocol') === FullStackPlaybookMasteryService::PROTOCOL;
+            $causalConfirmation = $agent !== null
+                && $agent->generation?->trigger_type === 'learning_confirmation'
+                && in_array((string) data_get($model->metadata, 'causal_learning_cohort.role'), [
+                    'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+                ], true);
             $shadowResearchLane = (bool) data_get($model->metadata, 'shadow_research_lane.shadow_only', false)
                 || data_get($model->metadata, 'shadow_research_lane.protocol') === ShadowResearchGovernorService::PROTOCOL;
             $shadowRequalification = $shadowResearchLane && $agent
@@ -129,6 +144,100 @@ class MarketChampionService
                     ...((array) data_get($agent->modelVersion?->metadata, 'learning_lane', [])),
                     'promotion_evidence' => false,
                 ];
+            }
+            if ($causalConfirmation) {
+                $result['causal_research_boundary'] = [
+                    'protocol' => 'causal_confirmation_research_only_v1',
+                    'ordinary_mutation_credit' => false,
+                    'ordinary_mentor_projection' => false,
+                    'paper_eligible' => false,
+                    'parent_eligible' => false,
+                    'release_condition' => 'guided_beats_blinded_and_frozen_control_on_paired_disjoint_windows',
+                    'promotion_evidence' => false,
+                ];
+
+                // A registered guided/blinded/control arm is not a champion
+                // candidate. Running transfer, elite-passport, professional
+                // exam and forward-gate projections here consumed minutes
+                // per arm and produced misleading failed-promotion artifacts
+                // that causal settlement is forbidden to use. Persist the
+                // economic observation and triplet outcome through its sole
+                // authority, then return immediately.
+                return $this->recordCausalResearchObservation(
+                    $model,
+                    $agent,
+                    $family,
+                    $symbol,
+                    $timeframe,
+                    $fitness,
+                    $forward,
+                    $sampleCount,
+                    $observedForwardWindows,
+                    $wins,
+                    $result,
+                );
+            }
+            if ($cartridgeTransplant) {
+                try {
+                    $result['skill_cartridge_transplant'] = app(CanonicalSkillCartridgeService::class)->settleTransplantOutcome(
+                        $agent->fresh(['modelVersion', 'generation.agents.modelVersion']),
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                    $result['skill_cartridge_transplant'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
+                }
+                // Transplant outcomes are component evidence only.  They are
+                // intentionally barred from the ordinary paper/champion path.
+                return $this->recordCausalResearchObservation(
+                    $model, $agent, $family, $symbol, $timeframe, $fitness, $forward, $sampleCount,
+                    $observedForwardWindows, $wins, $result,
+                );
+            }
+            if ($cartridgeInteraction) {
+                try { $result['skill_cartridge_interaction'] = app(CanonicalSkillCartridgeService::class)->settleInteractionOutcome($agent->fresh(['modelVersion', 'generation.agents.modelVersion'])); }
+                catch (\Throwable $exception) { report($exception); $result['skill_cartridge_interaction'] = ['status' => 'settlement_error', 'promotion_evidence' => false]; }
+                return $this->recordCausalResearchObservation($model, $agent, $family, $symbol, $timeframe, $fitness, $forward, $sampleCount, $observedForwardWindows, $wins, $result);
+            }
+            if ($edgeGenesis) {
+                try {
+                    $result['full_stack_playbook'] = app(FullStackPlaybookMasteryService::class)->settleOutcome(
+                        $agent->fresh(['modelVersion']), $result,
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                    $result['full_stack_playbook'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
+                }
+                try {
+                    $result['edge_genesis'] = app(DependencyAwareEdgeGenesisFoundryService::class)->settleOutcome(
+                        $agent->fresh(['modelVersion', 'generation.agents.modelVersion']), $result,
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                    $result['edge_genesis'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
+                }
+                // Architecture Genesis evaluates a whole pre-registered
+                // hypothesis. It can establish edge research, but cannot
+                // receive gene credit, paper admission or parent authority.
+                return $this->recordCausalResearchObservation(
+                    $model, $agent, $family, $symbol, $timeframe, $fitness, $forward, $sampleCount,
+                    $observedForwardWindows, $wins, $result,
+                );
+            }
+            if ($fullStackPlaybook) {
+                try {
+                    $result['full_stack_playbook'] = app(FullStackPlaybookMasteryService::class)->settleOutcome(
+                        $agent->fresh(['modelVersion']), $result,
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                    $result['full_stack_playbook'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
+                }
+                // A procedural passport is research evidence; it never skips
+                // causal attribution, sealed paper validation or authority.
+                return $this->recordCausalResearchObservation(
+                    $model, $agent, $family, $symbol, $timeframe, $fitness, $forward, $sampleCount,
+                    $observedForwardWindows, $wins, $result,
+                );
             }
             if ($shadowResearchLane) {
                 $result['shadow_research_lane'] = [
@@ -245,7 +354,7 @@ class MarketChampionService
             );
             $performance->update(['metrics' => $result]);
 
-            if ($learningLane || $shadowResearchOnly) {
+            if ($learningLane || $shadowResearchOnly || $causalConfirmation || $authorityIncubator) {
                 // Learning-lane replays are deliberately economic
                 // observations, not a hidden forward/paper shortcut.  Even a
                 // score that beats the current frontier stays a challenger
@@ -298,21 +407,23 @@ class MarketChampionService
             // The atlas and Red-Queen records are learning evidence only. They
             // do not turn a challenger into a paper candidate and therefore
             // cannot weaken the promotion protocol.
-            $this->eliteEcosystem->sync(
-                $performance->fresh(),
-                $result,
-                $this->evolutionQuality->capabilityVector($result),
-            );
-            $result['regime_reservoir'] = $this->regimeReservoir->sync($performance->fresh(), $result);
-            $performance->update(['metrics' => [...($performance->metrics ?? []), 'regime_reservoir' => $result['regime_reservoir'],
-                'veto_policy_lab' => $result['veto_policy_lab'], 'transfer_matrix' => $result['transfer_matrix']]]);
-            $this->diagnoses->diagnose($performance->fresh(), $result);
-            $this->decisionLearning->learn($performance->fresh(), $result);
+            if (! $causalConfirmation) {
+                $this->eliteEcosystem->sync(
+                    $performance->fresh(),
+                    $result,
+                    $this->evolutionQuality->capabilityVector($result),
+                );
+                $result['regime_reservoir'] = $this->regimeReservoir->sync($performance->fresh(), $result);
+                $performance->update(['metrics' => [...($performance->metrics ?? []), 'regime_reservoir' => $result['regime_reservoir'],
+                    'veto_policy_lab' => $result['veto_policy_lab'], 'transfer_matrix' => $result['transfer_matrix']]]);
+                $this->diagnoses->diagnose($performance->fresh(), $result);
+                $this->decisionLearning->learn($performance->fresh(), $result);
+            }
             // Bind the parent counterfactual before recordForward evaluates
             // the parent-benefit contract. This is still research evidence;
             // it only makes an already-observed A/B/C branch visible to the
             // gate and never grants promotion by itself.
-            if ($agent) {
+            if ($agent && ! $causalConfirmation) {
                 try {
                     $preForwardParentCredit = app(ParentAwareCreditService::class)->recordFullReplay(
                         $agent->fresh(['modelVersion']),
@@ -324,9 +435,19 @@ class MarketChampionService
                 } catch (\Throwable $exception) {
                     report($exception);
                 }
+                if ($authorityIncubator) {
+                    try {
+                        $result['authority_incubator'] = app(EvolutionaryAuthorityFoundryService::class)->settleIncubatorOutcome(
+                            $agent->fresh(['modelVersion', 'generation.agents.modelVersion']), $result,
+                        );
+                        $performance->update(['metrics' => [...((array) $performance->metrics), 'authority_incubator' => $result['authority_incubator']]]);
+                    } catch (\Throwable $exception) {
+                        report($exception);
+                    }
+                }
             }
             $forwardDecision = $this->gateDecisions->recordForward($performance->fresh(), $result);
-            $repairQuarantined = $agent && ! $learningLane
+            $repairQuarantined = $agent && ! $learningLane && ! $causalConfirmation
                 ? $this->applyRepairQuarantine($agent, $model, $performance, $forwardDecision, $result)
                 : false;
             // The gate ledger is the authoritative evaluation record; mirror
@@ -338,7 +459,13 @@ class MarketChampionService
                 // Mentor; the projection never opens a promotion gate.
                 try {
                     $mentorContract = null;
-                    if ($learningLane) {
+                    if ($causalConfirmation) {
+                        $result['skill_mentor'] = null;
+                        $result['mutation_response_map'] = [
+                            'status' => 'withheld_until_causal_triplet_settlement',
+                            'promotion_evidence' => false,
+                        ];
+                    } elseif ($learningLane) {
                         $learningProjection = app(LearningLaneService::class)->recordFullReplayObservation(
                             $agent->fresh(['modelVersion']),
                             $performance->fresh(),
@@ -380,6 +507,27 @@ class MarketChampionService
                 } catch (\Throwable $exception) {
                     report($exception);
                 }
+                try {
+                    // Causal confirmation owns a three-arm outcome, not just
+                    // the candidate-oriented learning lane. In particular the
+                    // frozen control and memory-blinded selector must persist
+                    // their own cold-start windows before any lesson can be
+                    // confirmed.
+                    if (in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
+                        'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+                    ], true)) {
+                        $result['causal_learning_confirmation'] = app(CausalLearningConfirmationService::class)
+                            ->recordEvaluationOutcome(
+                                $agent->fresh(['modelVersion']),
+                                $result,
+                                $performance->fresh(),
+                                $forwardDecision,
+                            );
+                    }
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+                if (! $causalConfirmation) {
                 try {
                     // Parent-aware credit is deliberately downstream of the
                     // immutable full-replay/forward decision. It records
@@ -434,13 +582,16 @@ class MarketChampionService
                 } catch (\Throwable $exception) {
                     report($exception);
                 }
+                }
                 $this->handoffs->record($agent->generation, $agent, 'forward_gate', $forwardDecision->decision, null, [
                     'candidate_gate_decision_id' => $forwardDecision->id,
                     'performance_id' => $performance->id,
                     'reason_codes' => $forwardDecision->reason_codes,
-                    'next_action' => $repairQuarantined
-                        ? 'repair_lineage_quarantined'
-                        : ($forwardDecision->decision === 'passed' ? 'paper_eligibility_review' : 'targeted_generation'),
+                    'next_action' => $causalConfirmation
+                        ? 'settle_causal_confirmation_triplet'
+                        : ($repairQuarantined
+                            ? 'repair_lineage_quarantined'
+                            : ($forwardDecision->decision === 'passed' ? 'paper_eligibility_review' : 'targeted_generation')),
                     'repair_quarantine' => $repairQuarantined,
                 ]);
                 try {
@@ -478,6 +629,18 @@ class MarketChampionService
                 'paper_profit_factor' => $profitFactor, 'paper_max_drawdown' => $drawdown,
                 'status' => $passed ? 'paper' : ($status === 'failed' ? 'rejected' : 'forward_validated'),
             ]);
+            $metrics['evolutionary_authority'] = app(PaperAuthorityAdmissionService::class)->recordProspectiveOutcome(
+                $performance->modelVersion,
+                $performance->symbol,
+                $performance->timeframe,
+                [
+                    'prospective_after_freeze' => (bool) data_get($metrics, 'paper_window.prospective_after_freeze', false),
+                    'parameter_hash_matches_passport' => (bool) data_get($metrics, 'paper_window.parameter_hash_matches_passport', false),
+                    'discipline_audit_passed' => (bool) data_get($metrics, 'discipline_audit.passed', false),
+                    'paper_gate_passed' => $passed,
+                ],
+            );
+            $performance->update(['metrics' => [...((array) $performance->metrics), 'paper_authority' => $metrics['evolutionary_authority']]]);
             PaperTradingEvaluation::updateOrCreate(
                 ['model_market_performance_id' => $performance->id, 'status' => $status],
                 ['sample_count' => $sampleCount, 'profit_factor' => $profitFactor, 'max_drawdown' => $drawdown,
@@ -822,6 +985,9 @@ class MarketChampionService
         if (! $this->marketReadiness->promotionReady() || ! $this->paperEvidence->ready()) {
             return;
         }
+        if (! app(PaperAuthorityAdmissionService::class)->championEligible($model, $candidate->symbol, $candidate->timeframe)) {
+            return;
+        }
         if ($candidate->evidence_status !== 'valid' || $model->evidence_status !== 'valid') {
             return;
         }
@@ -860,6 +1026,26 @@ class MarketChampionService
             'max_drawdown' => $result['max_drawdown_percent'] ?? $result['max_drawdown'] ?? null,
             'risk_of_ruin' => data_get($result, 'monte_carlo.risk_of_ruin_percent'), 'decision_reason' => $reason,
         ]);
+        $causalConfirmation = $agent->generation?->trigger_type === 'learning_confirmation'
+            && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
+                'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+            ], true);
+        if ($causalConfirmation) {
+            // The three-arm confirmation service is the sole authority for
+            // causal memory, mentor and policy credit. Keeping this result out
+            // of ordinary MutationMemory prevents one arm from self-confirming
+            // before its blinded and frozen counterfactuals have settled.
+            $agent->update([
+                'lifecycle_status' => 'rejected',
+                'decision_reason' => 'Research-only causal replay observed; this arm is rejected from champion/parent selection and only the complete triplet may settle memory.',
+            ]);
+            $result['ordinary_learning_projection'] = [
+                'status' => 'withheld_until_causal_triplet_settlement',
+                'promotion_evidence' => false,
+            ];
+
+            return;
+        }
         $observedWorstRegime = collect($result['regime_performance'] ?? [])->sortBy('profit_percent')->keys()->first();
         $regime = $observedWorstRegime ? 'market:'.$observedWorstRegime
             : (data_get($agent->modelVersion?->metadata, 'mutation_scope') ?: 'market:unknown');
@@ -1191,6 +1377,105 @@ class MarketChampionService
             'behavioral_effect' => $behavioralEffect,
             'causal_credit' => $causalCredit,
         ]]);
+    }
+
+    /**
+     * Minimal projection for the pre-registered three-arm causal lane.
+     * Immutable replay artifacts are already closed by the caller; this path
+     * writes only the research performance, trial multiplicity and atomic
+     * triplet outcome. It cannot create paper or champion authority.
+     */
+    private function recordCausalResearchObservation(
+        ModelVersion $model,
+        LabAgent $agent,
+        string $family,
+        string $symbol,
+        string $timeframe,
+        int $fitness,
+        float $forward,
+        int $sampleCount,
+        int $observedForwardWindows,
+        int $positiveForwardWindows,
+        array $result,
+    ): ModelMarketPerformance {
+        $result['causal_research_projection'] = [
+            'protocol' => 'causal_triplet_economic_projection_v1',
+            'promotion_pipeline_skipped' => true,
+            'ordinary_challenger_authority' => false,
+            'promotion_status' => 'research_only_rejected',
+            'settlement_authority' => CausalLearningConfirmationService::class,
+            'promotion_evidence' => false,
+        ];
+        $performance = ModelMarketPerformance::query()->updateOrCreate(
+            ['model_version_id' => $model->id, 'symbol' => $symbol, 'timeframe' => $timeframe],
+            [
+                'strategy_family' => $family,
+                'fitness' => $fitness,
+                'forward_score' => $forward,
+                'sample_count' => $sampleCount,
+                'rolling_windows_count' => $observedForwardWindows,
+                'rolling_forward_wins' => $positiveForwardWindows,
+                'metrics' => $result,
+                // This arm can confirm a gene for research memory, but the
+                // arm itself never enters the champion/parent frontier.
+                'status' => 'rejected',
+                'paper_status' => 'pending',
+                'champion_slot' => null,
+                'evidence_status' => 'valid',
+            ],
+        );
+        $result['trial_ledger'] = array_merge(
+            (array) ($result['trial_ledger'] ?? []),
+            app(LabTrialLedgerService::class)->record(
+                $agent,
+                $model,
+                $symbol,
+                $timeframe,
+                'full_replay',
+                $result,
+                data_get($result, 'evidence_run_id'),
+            ),
+        );
+        $agent->update([
+            'lifecycle_status' => 'rejected',
+            'train_score' => $result['train_score'] ?? null,
+            'validation_score' => $result['validation_score'] ?? null,
+            'forward_score' => $forward,
+            'rolling_wins' => $positiveForwardWindows,
+            'sample_count' => $sampleCount,
+            'profit_factor' => $result['profit_factor'] ?? null,
+            'max_drawdown' => $result['max_drawdown_percent'] ?? $result['max_drawdown'] ?? null,
+            'risk_of_ruin' => data_get($result, 'monte_carlo.risk_of_ruin_percent'),
+            'decision_reason' => 'Research-only causal replay observed; this arm is rejected from champion/parent selection and only the complete triplet may settle memory.',
+        ]);
+        $result['ordinary_learning_projection'] = [
+            'status' => 'withheld_until_causal_triplet_settlement',
+            'promotion_evidence' => false,
+        ];
+        $result['skill_mentor'] = null;
+        $result['mutation_response_map'] = [
+            'status' => 'withheld_until_causal_triplet_settlement',
+            'promotion_evidence' => false,
+        ];
+        try {
+            $result['causal_learning_confirmation'] = app(CausalLearningConfirmationService::class)
+                ->recordEvaluationOutcome(
+                    $agent->fresh(['modelVersion']),
+                    $result,
+                    $performance->fresh(),
+                    null,
+                );
+        } catch (\Throwable $exception) {
+            report($exception);
+            $result['causal_learning_confirmation'] = [
+                'status' => 'projection_error',
+                'error' => $exception->getMessage(),
+                'promotion_evidence' => false,
+            ];
+        }
+        $performance->update(['metrics' => $result]);
+
+        return $performance->fresh();
     }
 
     private function behavioralEffect(?array $parent, array $current): array

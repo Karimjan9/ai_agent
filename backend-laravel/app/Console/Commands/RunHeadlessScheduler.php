@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
@@ -25,6 +26,13 @@ class RunHeadlessScheduler extends Command
         // changes a trading gate or evidence decision.
         $leaseKey = (string) config('services.scheduler.lease_key', 'trading:headless-scheduler:v1');
         $leaseSeconds = max(30, (int) config('services.scheduler.lease_seconds', 90));
+        if (PHP_OS_FAMILY === 'Windows') {
+            // Windows runs the schedule inside this long-lived PHP process to
+            // avoid cmd.exe console flashes. Keep the lease alive across a
+            // legitimate longer callback; a dead local owner is still
+            // recovered by recoverStaleLocalLease().
+            $leaseSeconds = max(7200, $leaseSeconds);
+        }
         $heartbeatSeconds = max(5, min($leaseSeconds - 5, (int) config('services.scheduler.heartbeat_seconds', 20)));
         $duplicateWaitSeconds = max(1, (int) config('services.scheduler.duplicate_wait_seconds', 5));
         $lease = Cache::lock($leaseKey, $leaseSeconds);
@@ -60,7 +68,7 @@ class RunHeadlessScheduler extends Command
         // on Windows each PM2 recycle can briefly materialize a conhost. Set
         // a positive value only when an operator explicitly wants bounded
         // memory rotation; zero leaves lifecycle control to PM2/monitoring.
-        $memoryLimitMb = max(0, (int) env('SCHEDULER_MEMORY_LIMIT_MB', 0));
+        $memoryLimitMb = max(0, (int) config('services.scheduler.memory_limit_mb', 768));
         $memoryLimitBytes = $memoryLimitMb > 0 ? $memoryLimitMb * 1024 * 1024 : 0;
         try {
             Cache::put('system:scheduler-lease', [
@@ -99,26 +107,33 @@ class RunHeadlessScheduler extends Command
                     // one PHP lifetime; the cache key spans the PM2 restart.
                     if ($this->claimMinute($minute)) {
                         try {
-                            // Each tick gets a bounded child process. Scheduled
-                            // callbacks can hydrate large evidence ledgers;
-                            // keeping them inside this long-lived singleton
-                            // accumulated that memory forever and prevented a
-                            // heartbeat while an hourly burst was running.
-                            $process = $this->scheduleProcess();
-                            $process->start();
-                            while ($process->isRunning()) {
-                                $now = microtime(true);
-                                if (($now - $lastLeaseRefresh) >= $heartbeatSeconds) {
-                                    if (! $this->refreshLease($lease, $leaseKey, $leaseSeconds)) {
-                                        $process->stop(5);
+                            if (PHP_OS_FAMILY === 'Windows') {
+                                // Schedule::call entries in routes/console.php
+                                // invoke their Artisan commands in this same
+                                // process. That avoids Symfony Process, whose
+                                // Windows implementation creates a visible
+                                // cmd.exe/conhost for every scheduler tick.
+                                $exitCode = $this->runScheduleTickInProcess();
+                            } else {
+                                // Other platforms retain an isolated tick so
+                                // a heavy scheduled callback cannot grow the
+                                // singleton scheduler process indefinitely.
+                                $process = $this->scheduleProcess();
+                                $process->start();
+                                while ($process->isRunning()) {
+                                    $now = microtime(true);
+                                    if (($now - $lastLeaseRefresh) >= $heartbeatSeconds) {
+                                        if (! $this->refreshLease($lease, $leaseKey, $leaseSeconds)) {
+                                            $process->stop(5);
 
-                                        return self::FAILURE;
+                                            return self::FAILURE;
+                                        }
+                                        $lastLeaseRefresh = $now;
                                     }
-                                    $lastLeaseRefresh = $now;
+                                    usleep(250_000);
                                 }
-                                usleep(250_000);
+                                $exitCode = $process->getExitCode() ?? self::FAILURE;
                             }
-                            $exitCode = $process->getExitCode() ?? self::FAILURE;
                             if ($exitCode !== 0) {
                                 Log::warning('Headless scheduler tick returned a non-zero exit code.', [
                                     'minute' => $minute,
@@ -229,13 +244,13 @@ class RunHeadlessScheduler extends Command
         $process = new Process([PHP_BINARY, base_path('artisan'), 'schedule:run', '--whisper'], base_path());
         $process->setTimeout(null);
         $process->disableOutput();
-        if (PHP_OS_FAMILY === 'Windows') {
-            $process->setOptions([
-                'create_new_console' => false,
-            ]);
-        }
 
         return $process;
+    }
+
+    private function runScheduleTickInProcess(): int
+    {
+        return Artisan::call('schedule:run', ['--whisper' => true]);
     }
 
     /**
@@ -301,14 +316,16 @@ class RunHeadlessScheduler extends Command
             return is_dir('/proc/'.$pid) ? true : null;
         }
 
-        $output = [];
-        $exitCode = 1;
-        @exec('tasklist /FI "PID eq '.$pid.'" /FO CSV /NH 2>NUL', $output, $exitCode);
-        if ($exitCode !== 0) {
+        // exec() invokes cmd.exe on Windows, which causes a visible console
+        // flash from the long-running scheduler. Symfony Process starts the
+        // executable directly with bypass_shell enabled.
+        $process = new Process(['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH']);
+        $process->run();
+        if (! $process->isSuccessful()) {
             return null;
         }
 
-        foreach ($output as $line) {
+        foreach (preg_split('/\R/', $process->getOutput()) ?: [] as $line) {
             if (preg_match('/^"[^"]+","'.preg_quote((string) $pid, '/').'",/i', trim((string) $line)) === 1) {
                 return true;
             }

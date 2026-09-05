@@ -6,6 +6,7 @@ use App\Models\LabAgentInheritanceAudit;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabPopulationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ControlRootInheritanceTest extends TestCase
@@ -66,6 +67,7 @@ class ControlRootInheritanceTest extends TestCase
         );
         $this->assertNotNull($rootGeneration);
         $rootGeneration->update(['status' => 'completed']);
+        $this->grantParentAuthority($rootGeneration);
 
         $childGeneration = $service->build(
             'XAUUSD',
@@ -112,6 +114,7 @@ class ControlRootInheritanceTest extends TestCase
         $rootGeneration = $service->build('XAUUSD', 'control_root_tamper_seed', true, 'H1', [], true, false, 4);
         $this->assertNotNull($rootGeneration);
         $rootGeneration->update(['status' => 'completed']);
+        $this->grantParentAuthority($rootGeneration);
 
         $childGeneration = $service->build('XAUUSD', 'control_root_tamper_child', true, 'H1', [], true, false, 4);
         $this->assertNotNull($childGeneration);
@@ -123,5 +126,23 @@ class ControlRootInheritanceTest extends TestCase
         $inspection = app(LabAgentPreflightService::class)->inspect($child->fresh(), 'screening');
         $this->assertFalse($inspection['passed']);
         $this->assertContains('CONTROL_ROOT_INHERITANCE_INVALID', $inspection['errors']);
+    }
+
+    private function grantParentAuthority($generation): void
+    {
+        foreach ($generation->agents()->with('modelVersion')->get() as $agent) {
+            DB::table('evolutionary_authority_ledgers')->insert([
+                'authority_key' => hash('sha256', 'control-root-fixture|'.$agent->model_version_id),
+                'model_version_id' => $agent->model_version_id,
+                'lab_agent_id' => $agent->id,
+                'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+                'strategy_family' => $agent->strategy_family,
+                'authority_stage' => 'eligible_parent', 'status' => 'passed',
+                'data_hash' => str_repeat('a', 64),
+                'execution_hash' => str_repeat('b', 64),
+                'evidence' => json_encode(['protocol' => 'evolutionary_authority_foundry_v1', 'fixture' => true, 'promotion_evidence' => false]),
+                'evaluated_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
     }
 }

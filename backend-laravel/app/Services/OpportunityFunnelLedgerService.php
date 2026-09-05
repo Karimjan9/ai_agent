@@ -9,7 +9,12 @@ use Illuminate\Support\Facades\Schema;
 class OpportunityFunnelLedgerService
 {
     public const PROTOCOL = 'opportunity_funnel_ledger_v1';
-    public const STAGES = ['setup_detected', 'regime_allowed', 'htf_direction_allowed', 'location_valid', 'session_valid', 'volatility_valid', 'news_clear', 'trigger_confirmed', 'spread_and_cost_valid', 'risk_approved', 'executed'];
+    public const STAGES = [
+        'setup_detected', 'regime_allowed', 'htf_direction_allowed', 'location_valid',
+        'confirmation_valid', 'trigger_confirmed', 'invalidation_valid',
+        'reward_space_valid', 'chase_valid', 'session_valid', 'volatility_valid',
+        'news_clear', 'spread_and_cost_valid', 'risk_approved', 'executed',
+    ];
 
     /** @return array<string,mixed> */
     public function contract(array $checks = []): array

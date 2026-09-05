@@ -224,6 +224,7 @@ class LearningLaneService
         ?string $timeframe = null,
         ?string $family = null,
         int $limit = 500,
+        bool $unpairedOnly = false,
     ): int {
         if (! $this->available()) {
             return 0;
@@ -236,6 +237,14 @@ class LearningLaneService
             ->when($symbol, fn ($query) => $query->where('symbol', strtoupper($symbol)))
             ->when($timeframe, fn ($query) => $query->where('timeframe', strtoupper($timeframe)))
             ->when($family, fn ($query) => $query->where('strategy_family', $family))
+            // Autonomous ticks consume only newly projected observations.
+            // Explicit operator materialization keeps the legacy refresh
+            // path so a later frozen control may repair missing-control rows.
+            ->when($unpairedOnly, fn ($query) => $query->whereNotExists(fn ($pairs) => $pairs
+                ->selectRaw('1')
+                ->from('lab_learning_lane_pairs as p')
+                ->whereColumn('p.candidate_response_map_id', 'lab_mutation_response_maps.id')
+                ->where('p.status', '!=', 'superseded')))
             ->latest('id')
             ->limit(max(1, $limit))
             ->get();
@@ -450,30 +459,44 @@ class LearningLaneService
         }
 
         if ($refreshPairs) {
-            $this->pairUnpairedScreeningObservations($symbol, $timeframe, $family);
+            $this->pairUnpairedScreeningObservations($symbol, $timeframe, $family, 50, true);
         }
-        $dispatched = LabLearningLaneDispatch::query()
-            ->where('symbol', strtoupper($symbol))
-            ->where('timeframe', strtoupper($timeframe))
-            ->whereIn('status', ['selected', 'queued', 'running', 'completed'])
-            ->pluck('lab_agent_id')->filter()->map(fn ($id): int => (int) $id)->all();
         $pairs = LabLearningLanePair::query()
-            ->with(['candidateAgent.modelVersion', 'candidateAgent.generation'])
+            ->with(['controlResponseMap'])
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))
             ->when($family, fn ($query) => $query->where('strategy_family', $family))
             ->whereIn('status', ['screen_paired', 'provisional'])
             ->whereNotNull('candidate_agent_id')
+            ->where('pair_integrity_status', 'verified')
+            ->where('same_generation', true)
+            ->whereNotNull('control_agent_id')
+            ->whereNotNull('control_response_map_id')
+            ->whereNotNull('candidate_data_hash')
+            ->whereNotNull('control_data_hash')
+            ->whereNotNull('candidate_execution_hash')
+            ->whereNotNull('control_execution_hash')
+            ->whereColumn('candidate_data_hash', 'control_data_hash')
+            ->whereColumn('candidate_execution_hash', 'control_execution_hash')
+            ->whereHas('candidateAgent', fn ($query) => $query->whereIn('lifecycle_status', [
+                'screened', 'challenger', 'rejected', 'stagnated',
+            ]))
+            ->whereHas('controlResponseMap', fn ($query) => $query->where('status', 'control'))
+            ->whereDoesntHave('dispatches', fn ($query) => $query->whereIn('status', [
+                'selected', 'queued', 'running', 'completed',
+            ]))
+            ->whereNotExists(fn ($query) => $query
+                ->selectRaw('1')
+                ->from('lab_learning_lane_dispatches as d')
+                ->whereColumn('d.lab_agent_id', 'lab_learning_lane_pairs.candidate_agent_id')
+                ->whereIn('d.status', ['selected', 'queued', 'running', 'completed']))
             ->latest('id')
             ->get()
-            ->reject(fn (LabLearningLanePair $pair): bool => in_array((int) $pair->candidate_agent_id, $dispatched, true))
             // A verified pair with an incomplete target observation must
             // still reach the cheap micro gate. It will terminalize with an
             // auditable causal/target reason instead of living forever as a
             // silently excluded screen_paired backlog.
-            ->filter(fn (LabLearningLanePair $pair): bool => $pair->candidateAgent !== null
-                && in_array((string) $pair->candidateAgent->lifecycle_status, ['screened', 'challenger', 'rejected', 'stagnated'], true)
-                && $this->pairHasVerifiedControl($pair))
+            ->filter(fn (LabLearningLanePair $pair): bool => $this->pairHasVerifiedControl($pair))
             ->sortByDesc(fn (LabLearningLanePair $pair): array => [
                 (bool) data_get($pair->target_delta, 'improved', false) ? 1 : 0,
                 $this->targetUtility((string) $pair->target, (float) data_get($pair->target_delta, 'delta', 0)),
@@ -1115,7 +1138,7 @@ class LearningLaneService
         if ($causalCreditEligible && (bool) data_get($delta, 'improved', false)) {
             $lesson = $this->recordProvisionalSkill($pair->fresh(), 'full_replay', $result, $delta);
         }
-        if ($causalCreditEligible && in_array($cohortRole, ['memory_guided', 'blinded'], true)) {
+        if ($causalCreditEligible && in_array($cohortRole, ['memory_guided', 'repair_guided', 'blinded'], true)) {
             $causalExperiment = app(CausalLearningConfirmationService::class)->recordOutcome(
                 $agent->fresh(['modelVersion']),
                 $pair->fresh(),
@@ -1130,7 +1153,8 @@ class LearningLaneService
             $independent = $this->independentObservationCount($pair->fresh(), $result);
             $requiredIndependent = max(2, (int) config('services.learning_lane.independent_confirmations_required', 2));
             $cohortConfirmationSatisfied = $cohortRole === ''
-                || ($cohortRole === 'memory_guided' && data_get($causalExperiment, 'confirmed') === true);
+                || (in_array($cohortRole, ['memory_guided', 'repair_guided'], true)
+                    && data_get($causalExperiment, 'confirmed') === true);
             if ($independent >= $requiredIndependent
                 && $this->independentConfirmationEligible($result, $requiredIndependent)
                 && $cohortConfirmationSatisfied) {

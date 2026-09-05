@@ -83,6 +83,9 @@ class LearningRetrievalService
                 'parameter_key' => $lesson->parameter_key,
                 'provenance' => 'canonical_settled',
                 'exact_source_required' => true,
+                'retrieval_decision' => ['considered' => true, 'compatible' => true, 'accepted' => false,
+                    'reason' => 'PRE_REGISTERED_CAUSAL_SOURCE', 'expected_uplift' => null, 'uncertainty' => null,
+                    'outcome_settlement_id' => null],
                 'promotion_evidence' => false,
             ],
         ]);
@@ -169,7 +172,7 @@ class LearningRetrievalService
             if (count($groups[$bucket]) >= $bucketLimit) {
                 continue;
             }
-            $record = AgentLearningRetrieval::query()->create(['retrieval_id' => (string) Str::uuid(), 'packet_id' => $packetId, 'episode_id' => $episodeId, 'agent_learning_lesson_id' => $lesson->id, 'lab_agent_id' => $agent?->id, 'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'strategy_family' => $family, 'retrieval_state' => 'retrieved', 'match_level' => $row['match_level'], 'rank_score' => $row['score'], 'context' => $context, 'metadata' => ['parameter_key' => $lesson->parameter_key, 'provenance' => $row['provenance'], 'promotion_evidence' => false]]);
+            $record = AgentLearningRetrieval::query()->create(['retrieval_id' => (string) Str::uuid(), 'packet_id' => $packetId, 'episode_id' => $episodeId, 'agent_learning_lesson_id' => $lesson->id, 'lab_agent_id' => $agent?->id, 'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'strategy_family' => $family, 'retrieval_state' => 'retrieved', 'match_level' => $row['match_level'], 'rank_score' => $row['score'], 'context' => $context, 'metadata' => ['parameter_key' => $lesson->parameter_key, 'provenance' => $row['provenance'], 'retrieval_decision' => ['considered' => true, 'compatible' => true, 'accepted' => false, 'reason' => 'CONTEXT_COMPATIBLE', 'expected_uplift' => null, 'uncertainty' => null, 'outcome_settlement_id' => null], 'promotion_evidence' => false]]);
             $payload = ['lesson_id' => $lesson->id, 'retrieval_id' => $record->retrieval_id, 'parameter_key' => $lesson->parameter_key, 'failure_class' => $lesson->failure_class, 'match_level' => $row['match_level'], 'provenance' => $row['provenance'], 'score' => $row['score']];
             $groups[$bucket][] = $payload;
             $ids[] = $lesson->parameter_key;

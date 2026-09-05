@@ -18,6 +18,7 @@ class LabGenerationTerminalBoundaryService
         private readonly LabGenerationContextService $contexts,
         private readonly LabGenerationReportService $reports,
         private readonly LabQueueJobInspector $queueJobs,
+        private readonly SettlementWatermarkService $watermarks,
     ) {
     }
 
@@ -82,13 +83,21 @@ class LabGenerationTerminalBoundaryService
             ]);
         }
 
+        // A terminal agent projection is not enough: every learning episode
+        // must have exactly one terminal settlement (or an explicit technical
+        // / legacy disposition) before the generation can close.
+        $watermark = $this->watermarks->reconcile($generation->laboratory->symbol, $generation->laboratory->timeframe, $generation);
+        if (($watermark['generation_close_allowed'] ?? false) !== true) {
+            return $this->blocked('SETTLEMENT_WATERMARK_NOT_TERMINAL', $generation, ['settlement_watermark' => $watermark]);
+        }
+
         $screened = $agents->where('lifecycle_status', 'screened')->isNotEmpty();
         $status = $screened ? 'screened' : 'technical_quarantine';
         $fromStatus = (string) $generation->status;
         $this->contexts->updateWithAttributes($generation, [
             'status' => $status,
             'completed_at' => now(),
-        ], function (array $context) use ($fromStatus, $status): array {
+        ], function (array $context) use ($fromStatus, $status, $watermark): array {
             $context['screening_terminal_recovery'] = [
                 'protocol' => self::PROTOCOL,
                 'recovered_from_status' => $fromStatus,
@@ -97,6 +106,7 @@ class LabGenerationTerminalBoundaryService
                 'all_agents_terminal' => true,
                 'open_evidence_runs' => 0,
                 'generation_queue_total' => 0,
+                'settlement_watermark' => $watermark,
                 'quality_verdict' => 'unchanged',
                 'promotion_evidence' => false,
             ];

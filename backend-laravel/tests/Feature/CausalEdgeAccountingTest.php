@@ -57,6 +57,9 @@ class CausalEdgeAccountingTest extends TestCase
         $this->assertSame('structure_stop', $passport['invalidation_target_contract']['invalidation_model']);
         $this->assertSame('H1_liquidity_target', $passport['invalidation_target_contract']['target_model']);
         $this->assertSame('normal', $passport['news_state']);
+        $this->assertSame('typed_program_compiled', $passport['typed_program']['status']);
+        $this->assertSame('RegimeEvidence', $passport['typed_program']['nodes'][0]['provides']);
+        $this->assertSame('ExitPolicy', $passport['typed_program']['nodes'][7]['provides']);
     }
 
     public function test_news_reentry_risk_hysteresis_and_winner_only_adds_are_constrained(): void
@@ -85,6 +88,16 @@ class CausalEdgeAccountingTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         app(InvalidationTargetModelLibraryService::class)->compile('not_a_stop', 'H1_liquidity_target');
+    }
+
+    public function test_typed_program_rejects_strategy_risk_override_before_a_replay_exists(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('TYPED_PROGRAM_STRATEGY_RISK_OVERRIDE_FORBIDDEN');
+        app(CompositionAuthorityKernelService::class)->freeze([
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_id' => 'str_001_ema_adx_pullback',
+            'strategy_override_allowed' => true,
+        ]);
     }
 
     public function test_foundry_composition_cannot_trigger_without_a_location_thesis(): void

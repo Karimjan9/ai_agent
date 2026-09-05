@@ -53,6 +53,13 @@ process:start, and npm run process:save. Rotate any credential that has
 appeared in PM2 metadata. The runtime sync also refuses a rolling reload while
 the AI replay-status endpoint reports an active replay, preventing a second
 worker from inheriting a live mutex and creating a queue-release burst.
+After any PHP application-code change, run `npm run process:workers-restart`
+before dispatching new lab work. Laravel's restart signal lets an active job
+finish and makes every PM2-managed queue worker exit cleanly afterward; PM2
+then starts a fresh worker that loads the new classes. A source edit on disk
+does not update an already-running `queue:work` process. Use
+`npm run process:reload` in the next fully drained replay window to refresh the
+scheduler and the rest of the ecosystem too.
 The headless scheduler performs post-tick garbage collection and exits cleanly
 at `SCHEDULER_MEMORY_LIMIT_MB`, allowing PM2 to refresh a leaking long-lived
 PHP process without interrupting an in-flight scheduled command.
@@ -65,6 +72,77 @@ Install Node 22 (the repository has `.nvmrc` and an engine constraint), then run
 Laravel logs use the daily channel with 14-day retention. `pm2-logrotate` caps process logs at 20 MB, retains 14 compressed rotations, and must remain online. PM2 restarts the Python service, scheduler, and queue workers on failure; the ecosystem filters `OPENAI_`, `CODEX_`, and inline internal-token values from child environments. The five-minute health check and one-minute feed check send rate-limited Telegram critical alerts when Telegram is configured. Market Reality analysis is a separate Phase 2 foundation flow (`MARKET_REALITY_ENABLED=true` by default); its 7,200-second H1 freshness window should be reviewed alongside `php artisan market:health --strict`.
 
 Never run PHPUnit with the production configuration cache. The repository test configuration forces SQLite memory storage and `tests/TestCase.php` fails closed before `RefreshDatabase` if that invariant is broken.
+
+### Autonomous Edge-to-Mastery runtime
+
+`trading:advance-learning-progress XAUUSD --timeframe=H1` is the read-only
+operator probe. Add `--apply --json` only to advance one bounded checkpoint;
+the production scheduler runs that form once per minute on the
+`scheduler-critical` lane. The queued command is unique and the Director also
+owns a distributed symbol/timeframe lock, so repeated ticks cannot open
+parallel cohorts.
+
+Admission is fail-closed. Redis, queue transport, AI replay liveness and the
+headless scheduler must each report `ok`; the canonical replay queue and all
+AI replay counters must be zero in two observations at least ten seconds
+apart; Failure Dojo queries and settlement watermarks must be consistent; and
+no retry storm may be present. Delayed research by itself is observable debt,
+not a retry storm. Actionable Failure Dojo items inform hypothesis compilation
+but do not block Genesis when the Dojo itself is healthy.
+
+Initial Genesis freezes the canonical pre-2026 foundation manifest, the MTF
+bundle and M5 execution contract automatically. A cohort identity includes
+symbol, data hash, MTF bundle hash, execution hash, architecture revision,
+packet-definition hash and frozen-window-plan hash. The database unique key
+and pre-registration transaction form the exactly-once boundary before any
+agent job is dispatched.
+
+Evaluation uses one frozen fourteen-fold universe split into disjoint 2-fold
+discovery, 3-fold causal replication and 9-fold authority stages. The first
+two stages may only allocate compute; only the nine-fold stage can establish
+Edge authority. When fixed repair packets are exhausted, the evidence compiler
+opens one immutable, single-structural-axis packet with exact and negative
+controls. Professional knowledge remains proposal prior, never promotion
+evidence. All replay fitness is pre-2026; 2026 is sealed paper-only coverage.
+
+Compiled hypotheses also carry semantic axis debt. A new generation ID or a
+different failure label cannot reopen the same structural axis for the same
+strategy/tactic/management composition; another causal axis must be tested
+first. The compiler budget counts distinct semantic axes, so an old duplicate
+row remains audit evidence but cannot consume a second exploration seat.
+Debt is scoped to a frozen causal-baseline epoch: a behavior-deepening
+composition may receive at most three downstream single-axis experiments,
+while a ten-axis ceiling bounds each professional strategy/tactic island. On
+island exhaustion the compiler rotates to the least-studied terminal island;
+it does not keep polishing one Break/Retest threshold while Trend Pullback,
+Liquidity Reversal or Range/Session knowledge remains untouched. The same
+axis may receive at most two epochs for one failure diagnosis, preventing a
+behavior-changing but economically inert threshold from consuming the whole
+island budget.
+
+`REGISTERED_EDGE_PACKETS_EXHAUSTED` is not a terminal Director state in v2.
+After fixed repairs end, the Director must either return
+`EDGE_HYPOTHESIS_COMPILED`, report an active settlement, or expose the exact
+compiler admission reason as `EDGE_HYPOTHESIS_COMPILER_BLOCKED`. Only true
+professional-island exhaustion is reported as
+`EDGE_HYPOTHESIS_ISLANDS_EXHAUSTED`; operators must not treat either result as
+a scheduler/hash failure.
+
+Compiled settlement is control-relative and uses both canonical event/signal
+hashes and full-fold observability counts. A parameter that changes only
+off-audit-fold opportunities is therefore recorded as behavior-changing, but
+it earns no Edge, parent or baseline authority without deeper executable-stage
+or after-cost progress. When treatment and control are otherwise equivalent,
+the exact professional control remains the next causal baseline.
+Human-readable model names are deterministically bounded to the
+production 96-character column while the packet hash and arm remain visible,
+so identity truncation cannot roll back an otherwise valid cohort.
+
+For runtime changes use `node scripts/pm2-sync-runtime.mjs`. It refuses a
+rolling reload while a reserved worker job or active generation exists. On a
+cold boot, start Redis with `scripts/start-redis.ps1`; never delete a stranded
+payload. Requeue only the exact reservation after idle evaluator and dead-owner
+proof, then run the normal PM2 sync after the reserved count reaches zero.
 
 ## Backup and restore drill
 

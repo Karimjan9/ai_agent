@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 
 class MonitorFailureDojo extends Command
 {
-    protected $signature = 'trading:monitor-failure-dojo {symbol?} {--timeframe=H1} {--json}';
+    protected $signature = 'trading:monitor-failure-dojo {symbol?} {--timeframe=H1} {--json} {--apply-context-firewall : Quarantine pending cells with incomplete regime/session/volume context}';
 
     protected $description = 'Show focused failure-state curriculum progress without promotion side effects';
 
@@ -16,10 +16,12 @@ class MonitorFailureDojo extends Command
     {
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
         $timeframe = strtoupper((string) $this->option('timeframe'));
+        $firewall = $dojo->reconcileContextFirewall($symbol, $timeframe, (bool) $this->option('apply-context-firewall'));
         $result = [
             'protocol' => FailureDojoService::PROTOCOL,
             'scope' => [$symbol, $timeframe],
             'progress' => $dojo->summary($symbol, $timeframe),
+            'context_firewall' => $firewall,
             'learning_lane' => $learning->status($symbol, $timeframe),
             'promotion_evidence' => false,
         ];

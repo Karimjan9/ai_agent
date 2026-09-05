@@ -27,6 +27,70 @@ class LabQueueJobInspector
         return ['total' => (int) ($snapshot['total'] ?? 0), 'queues' => (array) ($snapshot['queues'] ?? [])];
     }
 
+    /**
+     * Work that can consume a replay worker now.
+     *
+     * Delayed toolbox/research jobs are intentionally reported separately:
+     * they already yield to an active evolution generation and therefore must
+     * not starve the Edge director while waiting for their next retry window.
+     * Pending and reserved work remain a strict fail-closed boundary.
+     *
+     * @return array{total: int|null, queues: array<string, int>, delayed: int}
+     */
+    public function runnableLabQueueBacklog(): array
+    {
+        $snapshot = $this->state->snapshot($this->labQueues());
+        if (($snapshot['available'] ?? true) === false) {
+            return ['total' => null, 'queues' => [], 'delayed' => 0];
+        }
+
+        $queues = [];
+        $delayed = 0;
+        foreach ($this->labQueues() as $queue) {
+            $stats = (array) data_get($snapshot, "stats.{$queue}", []);
+            $runnable = (int) data_get($stats, 'pending', 0)
+                + (int) data_get($stats, 'reserved', 0);
+            $queues[$queue] = $runnable;
+            $delayed += (int) data_get($stats, 'delayed', 0);
+        }
+
+        return ['total' => array_sum($queues), 'queues' => $queues, 'delayed' => $delayed];
+    }
+
+    /**
+     * Reserved jobs whose owning PHP worker would be killed by a PM2 reload.
+     * Pending/delayed payloads remain durable in Redis and are reported for
+     * observability, but only a reservation is an interruption hazard.
+     *
+     * @param array<int,string> $queues
+     * @return array{total:int|null,queues:array<string,int>,pending:int,delayed:int}
+     */
+    public function reservedQueueBacklog(array $queues): array
+    {
+        $queues = array_values(array_unique(array_filter(array_map('strval', $queues))));
+        $snapshot = $this->state->snapshot($queues);
+        if (($snapshot['available'] ?? true) === false) {
+            return ['total' => null, 'queues' => [], 'pending' => 0, 'delayed' => 0];
+        }
+
+        $reservedByQueue = [];
+        $pending = 0;
+        $delayed = 0;
+        foreach ($queues as $queue) {
+            $stats = (array) data_get($snapshot, "stats.{$queue}", []);
+            $reservedByQueue[$queue] = (int) data_get($stats, 'reserved', 0);
+            $pending += (int) data_get($stats, 'pending', 0);
+            $delayed += (int) data_get($stats, 'delayed', 0);
+        }
+
+        return [
+            'total' => array_sum($reservedByQueue),
+            'queues' => $reservedByQueue,
+            'pending' => $pending,
+            'delayed' => $delayed,
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function queueSnapshot(?array $queues = null): array
     {
@@ -166,5 +230,112 @@ class LabQueueJobInspector
             && DB::table('job_batches')
                 ->whereIn('name', ['Portfolio member full validation', 'Global full validation'])
                 ->whereNull('finished_at')->where('pending_jobs', '>', 0)->exists();
+    }
+
+    /**
+     * Whether an agent-owned evolution replay is ready or already reserved.
+     *
+     * Research-only toolbox jobs use this as a strict priority boundary: a
+     * pending/delayed research prior must never take the Python lane ahead of
+     * canonical screening or full validation. Delayed evolution jobs are not
+     * considered runnable yet and therefore do not starve research forever.
+     */
+    public function evolutionReplayIsWaiting(array $ignoredJobClasses = []): bool
+    {
+        // Population construction can take long enough for a scheduled
+        // research job to observe an empty queue between generation creation
+        // and screening dispatch. Treat the durable active generation as the
+        // priority intent, otherwise research can seize the single Python
+        // replay lane during that gap and delay/429 the causal cohort.
+        if (Schema::hasTable('lab_generations')
+            && DB::table('lab_generations')->whereIn('status', [
+                'draft', 'queued', 'training', 'screening',
+                'full_queued', 'full_validation',
+            ])->exists()) {
+            return true;
+        }
+
+        // Screening can become terminal just after a five-minute selector
+        // tick. Reserve the lane through that short screened -> full_queued
+        // hand-off as well. The freshness bound prevents an old, permanently
+        // ineligible screened projection from starving research forever; the
+        // ordinary funnel reconciler remains responsible for such stale rows.
+        if (Schema::hasTable('lab_generations')
+            && Schema::hasTable('lab_agents')
+            && DB::table('lab_generations')
+                ->whereIn('status', ['screened', 'completed'])
+                ->where('updated_at', '>=', now()->subHour())
+                // Reports may touch an old screened generation long after a
+                // newer cohort has become terminal. Only the laboratory's
+                // latest generation can own the screened -> full handoff;
+                // otherwise stale history starves toolbox research forever.
+                ->whereNotExists(function ($query): void {
+                    $query->selectRaw('1')
+                        ->from('lab_generations as newer_generation')
+                        ->whereColumn('newer_generation.ai_laboratory_id', 'lab_generations.ai_laboratory_id')
+                        ->whereColumn('newer_generation.generation', '>', 'lab_generations.generation');
+                })
+                ->whereExists(function ($query): void {
+                    $query->selectRaw('1')
+                        ->from('lab_agents')
+                        ->whereColumn('lab_agents.lab_generation_id', 'lab_generations.id')
+                        ->where('lab_agents.lifecycle_status', 'screened');
+                })
+                ->exists()) {
+            return true;
+        }
+
+        $queues = array_values(array_unique(array_filter([
+            (string) config('services.lab_queue.screening_queue', 'lab-screening'),
+            (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
+            ...((array) config('services.lab_queue.legacy_screening_queues', [])),
+        ])));
+        $snapshot = $this->state->snapshot($queues);
+        if (($snapshot['available'] ?? true) === false) return true;
+
+        $ignoredJobClasses = array_values(array_unique(array_filter(array_map('strval', $ignoredJobClasses))));
+        foreach ($queues as $queue) {
+            if ($ignoredJobClasses !== []) {
+                $runnable = collect((array) ($snapshot['rows'] ?? []))
+                    ->filter(fn (array $row): bool => (string) ($row['queue'] ?? '') === $queue)
+                    ->filter(fn (array $row): bool => in_array((string) ($row['redis_state'] ?? ''), ['pending', 'reserved'], true)
+                        || (($row['redis_state'] ?? null) === null && data_get($row, 'reserved_at') !== null)
+                        || (($row['redis_state'] ?? null) === null
+                            && data_get($row, 'reserved_at') === null
+                            && (data_get($row, 'available_at') === null || (int) data_get($row, 'available_at') <= now()->timestamp)))
+                    ->reject(fn (array $row): bool => $this->payloadHasAnyJobClass(
+                        (string) ($row['payload'] ?? ''),
+                        $ignoredJobClasses,
+                    ));
+                if ($runnable->isNotEmpty()) {
+                    return true;
+                }
+                continue;
+            }
+            $stats = (array) data_get($snapshot, "stats.{$queue}", []);
+            if ((int) data_get($stats, 'pending', 0) > 0
+                || (int) data_get($stats, 'reserved', 0) > 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param array<int,string> $jobClasses */
+    private function payloadHasAnyJobClass(string $payload, array $jobClasses): bool
+    {
+        $decoded = json_decode($payload, true);
+        if (! is_array($decoded)) {
+            return false;
+        }
+        $displayName = ltrim((string) ($decoded['displayName'] ?? ''), '\\');
+        $commandName = ltrim((string) data_get($decoded, 'data.commandName', ''), '\\');
+
+        return collect($jobClasses)->contains(function (string $class) use ($displayName, $commandName): bool {
+            $class = ltrim($class, '\\');
+
+            return $displayName === $class || $commandName === $class;
+        });
     }
 }

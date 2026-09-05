@@ -123,3 +123,8 @@ Oxirida:
 - Yangi runtime sog‘lom: HA / YO‘Q
 - Migration/fix kerak: HA / YO‘Q
 - Action taken: PROCESS HANDOFF ONLY
+
+
+
+ALTER USER 'client_demo_user'@'localhost'
+IDENTIFIED BY 'client_parol';

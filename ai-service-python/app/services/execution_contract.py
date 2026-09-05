@@ -11,6 +11,7 @@ from app.schemas import SimpleBacktestRequest
 
 
 PROTOCOL = "canonical_market_execution_v1"
+MANAGEMENT_PROTOCOL = "paper_trade_management_v1"
 
 
 def _canonical_json(value: Any) -> str:
@@ -95,6 +96,63 @@ def execution_contract_metadata(payload: SimpleBacktestRequest) -> dict[str, Any
         "promotion_evidence": sealed and contract_matched,
         "rule": "Every production lane must pass the same versioned parameter map; local defaults are diagnostic only.",
     }
+
+
+def management_contract_metadata(payload: SimpleBacktestRequest) -> dict[str, Any]:
+    """Seal the strategy-owned management genes used after paper entry.
+
+    The canonical execution hash owns costs and fill assumptions. This second
+    hash owns only post-entry behavior so partials, trailing and time stops
+    cannot drift between replay and a later paper reconciliation request.
+    """
+    parameters = payload.parameters or {}
+    management_parameters = {
+        "partial_take_profit_fraction": float(parameters.get("partial_take_profit_fraction", 0) or 0),
+        "partial_target_atr_multiplier": float(parameters.get("partial_target_atr_multiplier", 1.0) or 1.0),
+        "trailing_atr_multiplier": float(parameters.get("trailing_atr_multiplier", 0) or 0),
+        "time_stop_candles": int(parameters.get("time_stop_candles", 0) or 0),
+    }
+    management_hash = hashlib.sha256(_canonical_json(management_parameters).encode()).hexdigest()
+    return {
+        "protocol": MANAGEMENT_PROTOCOL,
+        "version": MANAGEMENT_PROTOCOL,
+        "parameters": management_parameters,
+        "management_hash": management_hash,
+        "guards": {
+            "stop_widening": "forbidden",
+            "loser_add": "forbidden",
+            "manual_exit_override": "forbidden",
+            "risk_increase_after_entry": "forbidden",
+        },
+        "promotion_evidence": False,
+    }
+
+
+def verify_management_contract(
+    payload: SimpleBacktestRequest,
+    paper_contract: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Return the canonical contract and whether the paper order attested it.
+
+    Legacy open orders may finish for operational continuity, but they are
+    explicitly unattested. A present-but-different contract fails closed.
+    """
+    expected = management_contract_metadata(payload)
+    received = paper_contract.get("management_contract")
+    if not isinstance(received, dict):
+        return expected, False
+    received_parameters = received.get("parameters")
+    valid = (
+        received.get("protocol") == MANAGEMENT_PROTOCOL
+        and received.get("version") == MANAGEMENT_PROTOCOL
+        and received.get("management_hash") == expected["management_hash"]
+        and isinstance(received_parameters, dict)
+        and _semantic_contract_value(received_parameters)
+        == _semantic_contract_value(expected["parameters"])
+    )
+    if not valid:
+        raise ValueError("Paper management contract drifted after entry.")
+    return expected, True
 
 
 def enforce_policy_boundary(payload: SimpleBacktestRequest) -> dict[str, Any]:

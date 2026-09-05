@@ -64,8 +64,11 @@ class StrategyCurriculumService
 
     public function proposeInnovation(StrategyCurriculumContract $curriculum, array $instrumentKeys, array $behaviorContract): StrategyInnovationTrial
     {
-        if ($curriculum->innovation_budget < 1 || $curriculum->training_stage !== 'validated_specialist') {
-            throw new InvalidArgumentException('Bounded innovation faqat validated specialist uchun ochiladi.');
+        $fullStackMaster = $curriculum->model_version_id
+            ? StrategyMasterPassport::query()->where('model_version_id', $curriculum->model_version_id)->where('mastery_stage', 'master')->where('status', 'validated')->exists()
+            : false;
+        if ($curriculum->innovation_budget < 1 || ! $fullStackMaster) {
+            throw new InvalidArgumentException('Bounded innovation faqat descendant-transfer bilan tasdiqlangan Full Stack master uchun ochiladi.');
         }
         if (array_diff($instrumentKeys, (array) $curriculum->allowed_instruments) || array_intersect($instrumentKeys, (array) $curriculum->forbidden_instruments)) {
             throw new InvalidArgumentException('Innovation curriculum instrument envelope-dan chiqdi.');

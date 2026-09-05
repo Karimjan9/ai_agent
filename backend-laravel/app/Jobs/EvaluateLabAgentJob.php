@@ -8,9 +8,11 @@ use App\Jobs\Middleware\PreferFullValidationQueue;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use App\Models\LabGeneration;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
 use App\Services\CandidateHandoffService;
+use App\Services\CausalLearningCohortService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabGenerationContextService;
@@ -113,7 +115,17 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         // Full replay can legitimately spend close to one hour in the
         // separate foundation lane. Keep the queue watchdog longer than the
         // 3600s Python child deadline and Laravel's 3900s transport budget.
-        $this->timeout = $mode === 'screen' ? 1200 : 4200;
+        $causalConfirmation = $mode !== 'screen'
+            && $scope
+            && (string) LabGeneration::query()->whereKey($scope->lab_generation_id)->value('trigger_type') === 'learning_confirmation';
+        $this->timeout = $mode === 'screen'
+            ? 1200
+            : ($causalConfirmation
+                // Includes snapshot validation plus the bounded AI child and
+                // a projection margin. A causal research job can therefore
+                // never occupy the worker for the legacy 70-minute budget.
+                ? max(900, min(1500, (int) config('services.lab_selection.causal_replay_timeout_seconds', 780) + 300))
+                : 4200);
         // Screening is serialized through one AI lane per process. A 20
         // minute deadline can starve the tail of a 20-agent generation while
         // the first candidates are being replayed, turning queue fairness
@@ -271,9 +283,9 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         }
         // Defensive admission for every full-job producer, including
         // recovery/portfolio commands that do not pass through the global
-        // selector. Promotion jobs still require screen pass; the explicit
-        // research-only learning lane may replay a paired near-miss, but its
-        // immutable screening evidence must still be complete.
+        // selector. Promotion jobs still require screen pass. Explicit
+        // learning and causal-counterfactual lanes may replay near-misses,
+        // but only through their complete immutable evidence contracts.
         if ($this->mode === 'full') {
             $admission = $this->fullValidationAdmission($agent, $evidence);
             if (! $admission['allowed']) {
@@ -489,6 +501,21 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         }
         try {
             $this->mode === 'screen' ? $service->screen($agent, $run) : $service->evaluate($agent, $run);
+            // Half-open recovery is earned only by a real evaluator response
+            // whose immutable run was completely sealed. A skipped,
+            // retry-released, or technical-error run cannot reopen evolution.
+            if ((string) $run->fresh()->status === 'completed') {
+                app(\App\Services\LearningTechnicalCircuitBreakerService::class)->recordSuccess(
+                    (string) $agent->symbol,
+                    (string) $agent->timeframe,
+                    [
+                        'agent_id' => (int) $agent->id,
+                        'generation_id' => (int) $agent->lab_generation_id,
+                        'mode' => $this->mode,
+                        'evidence_run_id' => (string) $run->run_id,
+                    ],
+                );
+            }
         } catch (Throwable $error) {
             // A direct portfolio command and a queued full replay share one
             // serialized AI lane. Contention is transient operational state,
@@ -718,15 +745,23 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     private function fullValidationAdmission(LabAgent $agent, LabImmutableEvidenceService $evidence): array
     {
         $agent->loadMissing('modelVersion');
+        $directResearch = app(\App\Services\DirectResearchReplayAdmissionService::class)->inspect($agent);
+        if ($directResearch['applicable']) {
+            return ['allowed' => $directResearch['allowed'], 'reason_codes' => $directResearch['reason_codes']];
+        }
         $learningLane = app(LearningLaneService::class)->isLearningAgent($agent);
+        $causalAdmission = app(CausalLearningCohortService::class)->fullReplayAdmission($agent, $evidence);
         $reasons = [];
         $decision = CandidateGateDecision::query()
             ->where('lab_agent_id', $agent->id)
             ->where('stage', 'screening')
             ->latest('evaluated_at')
             ->first();
-        if (! $learningLane && (! $decision || $decision->decision !== 'passed')) {
+        if (! $learningLane && ! $causalAdmission['applicable'] && (! $decision || $decision->decision !== 'passed')) {
             $reasons[] = 'SCREENING_NOT_PASSED';
+        }
+        if ($causalAdmission['applicable'] && ! $causalAdmission['allowed']) {
+            $reasons = [...$reasons, ...$causalAdmission['reason_codes']];
         }
         if ($learningLane) {
             $pairStatus = (string) data_get($agent->modelVersion?->metadata, 'learning_lane.pair_status', '');

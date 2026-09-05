@@ -62,6 +62,9 @@ class CapabilityOrganismServiceTest extends TestCase
 
         $this->assertSame(24.0, $score['progress_score']);
         $this->assertSame(1, $score['metrics']['confirmed_skills']);
+        $this->assertSame('capability_progress_os_incomplete', data_get($score, 'metrics.real_progress.status'));
+        $this->assertFalse(data_get($score, 'metrics.real_progress.verified'));
+        $this->assertSame('no_canonical_scorecard', data_get($score, 'metrics.trading_operating_system.status'));
         $this->assertArrayHasKey('learning_starvation', $score['metrics']['events']);
     }
 }

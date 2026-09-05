@@ -44,12 +44,14 @@ class PaperTradingExecutionService
         private InstrumentSettlementProjectionService $instrumentSettlements,
         private InstrumentInvocationLedgerService $instrumentInvocations,
         private ExecutionRiskSentinelService $riskSentinel,
+        private SmartDisciplineEngineService $discipline,
         private ExecutionTacticSettlementService $tacticSettlements,
         private RegimeCapabilityRouter $capabilityRouter,
         private CausalAttributionService $causalAttributions,
         private ProgressScoreboardService $progressScoreboard,
         private MarketStateEstimatorService $marketStateEstimator,
         private CapabilityCellOrchestrator $capabilityCells,
+        private PaperAuthorityAdmissionService $authorityAdmissions,
     ) {}
 
     public function run(): array
@@ -105,6 +107,21 @@ class PaperTradingExecutionService
 
     private function paperTrackAllowed(ModelMarketPerformance $candidate): bool
     {
+        $model = $candidate->modelVersion;
+        if (! $model) return false;
+        $admission = $this->authorityAdmissions->admit($model, $candidate->symbol, $candidate->timeframe, [
+            'passport_hash' => data_get($model->metadata, 'elite_agent_passport.passport_hash', data_get($candidate->metrics, 'elite_agent_passport.passport_hash')),
+            'execution_hash' => data_get($candidate->metrics, 'execution_contract.execution_hash'),
+            'confirmation_entry_hash' => data_get($model->metadata, 'confirmation_entry.contract_hash', data_get($candidate->metrics, 'confirmation_entry.contract_hash')),
+            'risk_governor_hash' => data_get($model->metadata, 'risk_governor.hash', data_get($candidate->metrics, 'risk_governor.hash')),
+            'trade_management_hash' => data_get($model->metadata, 'trade_management.hash', data_get($candidate->metrics, 'trade_management.hash')),
+            // The frozen-paper window is the canonical temporal proof. A
+            // missing proof blocks admission rather than treating wall clock
+            // year as evidence.
+            'training_pre_2026' => data_get($candidate->metrics, 'training_boundary.used_for_training') === false
+                && data_get($candidate->metrics, 'gold_holdout.used_for_training') === false,
+        ]);
+        if (($admission['status'] ?? null) !== 'e3_paper_candidate') return false;
         if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
             if (! filled($candidate->symbol) || ! filled($candidate->timeframe)) {
                 return false;
@@ -210,6 +227,11 @@ class PaperTradingExecutionService
                 'promotion_evidence' => false,
             ],
         ]);
+        $entryTransport = $this->confirmationEntryTransport($model, $signal);
+        if ($entryTransport['required'] && ! $entryTransport['attested']) {
+            $signal['signal'] = 'WAIT';
+            $signal['entry_contract_transport_reason'] = 'ENTRY_CONTRACT_ATTESTATION_FAILED';
+        }
         $rawConfidence = max(0, min(1, (float) ($signal['confidence'] ?? 0)));
         $calibrated = $this->calibration->calibrate($candidate, (string) ($signal['market_regime'] ?? 'unknown'), $rawConfidence);
         $news = $this->calendar->veto($candidate->symbol);
@@ -315,6 +337,12 @@ class PaperTradingExecutionService
                 'news_risk' => (bool) $news['active'],
                 'risk_of_ruin_percent' => (float) data_get($candidate->metrics, 'risk_of_ruin_percent', 0),
                 'drawdown_percent' => (float) data_get($candidate->metrics, 'drawdown_percent', 0),
+                'entry_contract' => $entryTransport['contract'],
+                'entry_contract_required' => $entryTransport['required'],
+                'entry_contract_attested' => $entryTransport['attested'],
+                'entry_fill_admission' => $entryTransport['fill_admission'],
+                'opportunity_key' => implode('|', ['paper-entry', $candidate->id, $signal['signal_time'] ?? 'latest']),
+                'available_at' => $signal['signal_time'] ?? now(),
             ], [
                 'strategy_id' => (string) ($model->strategy ?? ''),
                 'mastery_stage' => (string) data_get($model->metadata, 'strategy_mastery.stage', 'apprentice'),
@@ -343,6 +371,7 @@ class PaperTradingExecutionService
             isset($signal['meta_reason']) => 'BLOCKED_BY_META_AGENT',
             $news['active'] => 'BLOCKED_BY_CALENDAR',
             isset($signal['allocator_reason']) => 'BLOCKED_BY_ALLOCATOR',
+            isset($signal['entry_contract_transport_reason']) => 'BLOCKED_BY_ENTRY_CONTRACT',
             isset($signal['cognitive_stack_reason']) => 'BLOCKED_BY_COGNITIVE_STACK',
             isset($signal['capability_router_reason']) => 'BLOCKED_BY_CAPABILITY_ROUTER',
             ($signal['signal'] ?? 'WAIT') === 'WAIT' => 'NO_SIGNAL_OPPORTUNITY',
@@ -496,22 +525,44 @@ class PaperTradingExecutionService
         ]);
         $sentinelPlan = $this->riskSentinel->assess($candidate, $executionSignal, $contract);
         $this->riskSentinel->record($signal, $candidate, $sentinelPlan);
+        $executionSignal['risk_sentinel'] = $sentinelPlan;
+        $risk = $sentinelPlan['approved']
+            ? $this->risk->canOpen($candidate, $executionSignal)
+            : null;
+        $authorityResults = ['risk_sentinel' => $sentinelPlan];
+        if ($risk !== null) {
+            $authorityResults['account_risk'] = $risk;
+        }
+        $disciplinePlan = $this->discipline->assessEntry(
+            $candidate,
+            $signal,
+            $executionSignal,
+            $contract,
+            $entryCandle->time,
+            $authorityResults,
+        );
+        $baseUnits = (float) config('services.paper.units', 1);
+
         if (! $sentinelPlan['approved']) {
             $blockedOrder = PaperOrder::create([
                 'model_market_performance_id' => $candidate->id, 'paper_signal_id' => $signal->id, 'broker' => 'risk_sentinel',
                 'symbol' => $candidate->symbol, 'timeframe' => $candidate->timeframe, 'direction' => $signal->decision, 'units' => 0,
                 'entry_price' => $entry, 'stop_loss' => $executionSignal['stop_loss'], 'take_profit' => $executionSignal['take_profit'],
-                'status' => 'blocked', 'opened_at' => $entryCandle->time, 'signal_context' => ['signal' => $executionSignal, 'risk_sentinel' => $sentinelPlan],
+                'status' => 'blocked', 'opened_at' => $entryCandle->time,
+                'signal_context' => ['signal' => $executionSignal, 'risk_sentinel' => $sentinelPlan, 'smart_discipline' => $disciplinePlan],
             ]);
-            $this->executionState->record($candidate, 'rejected', $signal, $blockedOrder, ['provider' => 'risk_sentinel', 'requested_price' => $entry, 'reason' => $sentinelPlan['reason_code']]);
-            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_RISK_SENTINEL', ['paper_signal_id' => $signal->id, 'reason' => $sentinelPlan['reason_code']]);
+            $this->executionState->record($candidate, 'rejected', $signal, $blockedOrder, [
+                'provider' => 'risk_sentinel', 'requested_price' => $entry, 'reason' => $sentinelPlan['reason_code'],
+                'payload' => ['smart_discipline' => $disciplinePlan],
+            ]);
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_RISK_SENTINEL', [
+                'paper_signal_id' => $signal->id,
+                'reason' => $sentinelPlan['reason_code'],
+                'discipline_reason_codes' => $disciplinePlan['reason_codes'],
+            ]);
 
             return 0;
         }
-        $executionSignal['risk_sentinel'] = $sentinelPlan;
-        $risk = $this->risk->canOpen($candidate, $executionSignal);
-        $baseUnits = (float) config('services.paper.units', 1);
-        $sizeMultiple = min((float) $contract['position_size_multiple'], (float) $sentinelPlan['position_size_multiple']);
 
         if (! $risk['allowed']) {
             $blockedOrder = PaperOrder::create([
@@ -527,9 +578,14 @@ class PaperTradingExecutionService
                 'take_profit' => $executionSignal['take_profit'],
                 'status' => 'blocked',
                 'opened_at' => $entryCandle->time,
-                'signal_context' => ['signal' => $executionSignal, 'risk' => $risk],
+                'signal_context' => ['signal' => $executionSignal, 'risk' => $risk, 'smart_discipline' => $disciplinePlan],
             ]);
-            $this->executionState->record($candidate, 'rejected', $signal, $blockedOrder, ['provider' => 'risk_gate', 'requested_price' => $entry, 'reason' => $risk['reason'] ?? 'RISK_VETO']);
+            $this->executionState->record($candidate, 'rejected', $signal, $blockedOrder, [
+                'provider' => 'risk_gate',
+                'requested_price' => $entry,
+                'reason' => $risk['reason'] ?? 'RISK_VETO',
+                'payload' => ['smart_discipline' => $disciplinePlan],
+            ]);
             $this->foundation->recordEvent([
                 'event_type' => 'paper_signal_blocked',
                 'agent' => $candidate->modelVersion->strategy,
@@ -539,10 +595,52 @@ class PaperTradingExecutionService
                 'summary' => "Paper signal blocked: {$risk['reason']}",
                 'payload' => ['paper_signal_id' => $signal->id, 'risk' => $risk],
             ]);
-            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_RISK', ['paper_signal_id' => $signal->id, 'risk_reason' => $risk['reason'] ?? null]);
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_RISK', [
+                'paper_signal_id' => $signal->id,
+                'risk_reason' => $risk['reason'] ?? null,
+                'discipline_reason_codes' => $disciplinePlan['reason_codes'],
+            ]);
 
             return 0;
         }
+
+        if (! $disciplinePlan['approved']) {
+            $blockedOrder = PaperOrder::create([
+                'model_market_performance_id' => $candidate->id,
+                'paper_signal_id' => $signal->id,
+                'broker' => 'discipline_gate',
+                'symbol' => $candidate->symbol,
+                'timeframe' => $candidate->timeframe,
+                'direction' => $signal->decision,
+                'units' => 0,
+                'entry_price' => $entry,
+                'stop_loss' => $executionSignal['stop_loss'],
+                'take_profit' => $executionSignal['take_profit'],
+                'status' => 'blocked',
+                'opened_at' => $entryCandle->time,
+                'signal_context' => ['signal' => $executionSignal, 'risk' => $risk, 'risk_sentinel' => $sentinelPlan, 'smart_discipline' => $disciplinePlan],
+            ]);
+            $this->executionState->record($candidate, 'rejected', $signal, $blockedOrder, [
+                'provider' => 'discipline_gate',
+                'requested_price' => $entry,
+                'reason' => implode('|', (array) $disciplinePlan['reason_codes']),
+                'payload' => ['smart_discipline' => $disciplinePlan],
+            ]);
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_DISCIPLINE', [
+                'paper_signal_id' => $signal->id,
+                'reason_codes' => $disciplinePlan['reason_codes'],
+                'discipline_state' => $disciplinePlan['state'],
+            ]);
+
+            return 0;
+        }
+
+        $authorization = $this->discipline->authorizeExecutionContract($contract, $sentinelPlan, $disciplinePlan);
+        $authorizedContract = $authorization['contract'];
+        $sizeMultiple = (float) $authorization['position_size_multiple'];
+        $disciplinePlan['final_position_size_multiple'] = $sizeMultiple;
+        $disciplinePlan['execution_authorization'] = $authorization['authorization'];
+        $executionSignal['execution_contract'] = $authorizedContract;
 
         $broker = 'simulated';
         $units = $baseUnits * $sizeMultiple;
@@ -561,8 +659,8 @@ class PaperTradingExecutionService
             'take_profit' => $executionSignal['take_profit'],
             'status' => 'open',
             'opened_at' => $entryCandle->time,
-            'signal_context' => ['signal' => $executionSignal, 'risk' => $risk, 'risk_sentinel' => $sentinelPlan, 'position_size_multiple' => $sizeMultiple, 'execution_contract' => $contract],
-            'broker_payload' => ['execution_contract' => $contract],
+            'signal_context' => ['signal' => $executionSignal, 'risk' => $risk, 'risk_sentinel' => $sentinelPlan, 'smart_discipline' => $disciplinePlan, 'position_size_multiple' => $sizeMultiple, 'execution_contract' => $authorizedContract],
+            'broker_payload' => ['execution_contract' => $authorizedContract, 'risk_authorization' => $authorization['authorization']],
         ]);
         $this->executionState->record($candidate, 'order_submitted', $signal, $order, ['provider' => $broker, 'requested_price' => $entry, 'requested_units' => $units]);
         $order->fills()->create([
@@ -572,7 +670,7 @@ class PaperTradingExecutionService
             'filled_at' => $entryCandle->time,
             'payload' => null,
         ]);
-        $this->executionState->transition($candidate, 'open', $signal, $order, 'confirm', ['risk_sentinel' => $sentinelPlan]);
+        $this->executionState->transition($candidate, 'open', $signal, $order, 'confirm', ['risk_sentinel' => $sentinelPlan, 'smart_discipline' => $disciplinePlan]);
         $this->executionState->record($candidate, 'filled', $signal, $order, ['provider' => $broker, 'requested_price' => $entry, 'filled_price' => $entry, 'requested_units' => $units, 'filled_units' => $units]);
         $candidate->update(['status' => 'paper', 'paper_status' => 'running']);
 
@@ -649,11 +747,12 @@ class PaperTradingExecutionService
         $orders = PaperOrder::where('model_market_performance_id', $candidate->id)
             ->where('evidence_status', 'valid')->where('status', 'open')->get();
         foreach ($orders as $order) {
+            $learningEligible = true;
             $result = $this->simulatedExit($order);
             if (! $result) {
                 continue;
             }
-            [$price, $profit, $exitReason] = $result;
+            [$price, $profit, $exitReason, $managementAudit] = $result;
 
             $order->update(['exit_price' => $price, 'profit_percent' => $profit, 'status' => 'closed', 'closed_at' => now()]);
             $order->fills()->create([
@@ -661,25 +760,34 @@ class PaperTradingExecutionService
                 'price' => $price,
                 'cost_percent' => $this->risk->estimatedRoundTripCostPercent($order->symbol, (float) $order->entry_price) / 2,
                 'filled_at' => now(),
-                'payload' => ['exit_reason' => $exitReason],
+                'payload' => ['exit_reason' => $exitReason, 'management_audit' => $managementAudit],
             ]);
             $this->executionState->record($candidate, 'closed', $order->paperSignal, $order, ['provider' => $order->broker, 'filled_price' => $price, 'filled_units' => $order->units, 'reason' => $exitReason]);
-            $this->executionState->transition($candidate, in_array($exitReason, ['stop_loss', 'invalidated'], true) ? 'abort' : 'manage', $order->paperSignal, $order, 'open', ['exit_reason' => $exitReason]);
-            $this->executionState->transition($candidate, 'review', $order->paperSignal, $order, in_array($exitReason, ['stop_loss', 'invalidated'], true) ? 'abort' : 'manage');
+            $exitStage = $exitReason === 'invalidated' || str_contains($exitReason, 'stop') ? 'abort' : 'manage';
+            $this->executionState->transition($candidate, $exitStage, $order->paperSignal, $order, 'open', ['exit_reason' => $exitReason, 'management_audit' => $managementAudit]);
+            $this->executionState->transition($candidate, 'review', $order->paperSignal, $order, $exitStage);
             if ($order->paper_signal_id) {
                 $audit = $this->selfAudit($candidate, $order, $exitReason, $profit);
+                $processIntegrity = $this->discipline->reviewOutcome($candidate, $order, $profit, $exitReason, null, $managementAudit);
+                $learningEligible = (bool) $processIntegrity['learning_eligible'];
                 $outcome = PaperSignalOutcome::firstOrCreate(['paper_signal_id' => $order->paper_signal_id], [
                     'paper_order_id' => $order->id,
                     'outcome' => $profit > 0 ? 'win' : ($profit < 0 ? 'loss' : 'flat'),
                     'exit_price' => $price,
                     'profit_percent' => $profit,
                     'exit_reason' => $exitReason,
-                    'payload' => ['broker' => $order->broker, 'closed_at' => now()->toIso8601String(), 'self_audit' => $audit],
+                    'payload' => [
+                        'broker' => $order->broker,
+                        'closed_at' => now()->toIso8601String(),
+                        'self_audit' => $audit,
+                        'management_audit' => $managementAudit,
+                        'process_integrity' => $processIntegrity,
+                    ],
                 ]);
-                if ($outcome->wasRecentlyCreated && $order->paperSignal) {
+                if ($outcome->wasRecentlyCreated && $order->paperSignal && $learningEligible) {
                     $this->calibration->learn($candidate, $order->paperSignal);
                 }
-                if ($order->paperSignal) {
+                if ($order->paperSignal && $learningEligible) {
                     $this->dualTrackOutcomes->settlePaperOutcome($candidate, $order, $outcome);
                     $this->instrumentSettlements->settle($order, $outcome);
                     $this->instrumentInvocations->settle($order, $outcome);
@@ -687,8 +795,26 @@ class PaperTradingExecutionService
                     $this->causalAttributions->attribute($order, $outcome);
                     $this->progressScoreboard->measure($order->symbol, $order->timeframe);
                 }
+                if (! $learningEligible) {
+                    $order->update([
+                        'evidence_status' => 'invalid',
+                        'invalidated_at' => now(),
+                        'invalidation_reason' => 'smart_discipline_process_violation',
+                    ]);
+                    $this->foundation->recordEvent([
+                        'event_type' => 'paper_process_integrity_violation',
+                        'agent' => $candidate->modelVersion->strategy,
+                        'symbol' => $candidate->symbol,
+                        'timeframe' => $candidate->timeframe,
+                        'severity' => 'warning',
+                        'summary' => "Paper outcome quarantined: {$processIntegrity['classification']}",
+                        'payload' => ['paper_order_id' => $order->id, 'process_integrity' => $processIntegrity],
+                    ]);
+                }
             }
-            $this->recordClosedOrderMemory($candidate, $order->fresh());
+            if ($learningEligible) {
+                $this->recordClosedOrderMemory($candidate, $order->fresh());
+            }
             $closed++;
         }
 
@@ -714,7 +840,12 @@ class PaperTradingExecutionService
         }
         $result = $response->json();
 
-        return [(float) $result['exit_price'], (float) $result['profit_percent'], (string) $result['exit_reason']];
+        return [
+            (float) $result['exit_price'],
+            (float) $result['profit_percent'],
+            (string) $result['exit_reason'],
+            (array) ($result['management_audit'] ?? []),
+        ];
     }
 
     private function score(ModelMarketPerformance $candidate): void
@@ -812,6 +943,71 @@ class PaperTradingExecutionService
         return $value;
     }
 
+    /** @return array{contract:array<string,mixed>,fill_admission:array<string,mixed>,required:bool,attested:bool} */
+    private function confirmationEntryTransport(?object $model, array $signal): array
+    {
+        $contract = (array) ($signal['entry_contract'] ?? []);
+        $sealed = (array) data_get($signal, 'execution_contract_preview.entry_contract', []);
+        $fillAdmission = (array) ($signal['entry_fill_admission'] ?? []);
+        $sealedFillAdmission = (array) data_get($signal, 'execution_contract_preview.entry_fill_admission', []);
+        $strategy = strtolower((string) ($model?->strategy ?? ''));
+        $required = str_contains($strategy, 'confirmation_entry_mtf')
+            || ($contract['protocol'] ?? null) === ConfirmationEntryContractService::PROTOCOL;
+        if (! $required && $fillAdmission === []) {
+            $fillAdmission = [
+                'allowed' => true,
+                'status' => 'not_applicable',
+                'reason' => null,
+                'promotion_evidence' => false,
+            ];
+        }
+        $attested = ! $required || (
+            ($contract['protocol'] ?? null) === ConfirmationEntryContractService::PROTOCOL
+            && ($sealed['protocol'] ?? null) === ConfirmationEntryContractService::PROTOCOL
+            && $this->canonicalize($contract) === $this->canonicalize($sealed)
+            && $this->confirmationEntryHashValid($contract)
+            && $this->confirmationEntryHashValid($sealed)
+            && $fillAdmission !== []
+            && $this->canonicalize($fillAdmission) === $this->canonicalize($sealedFillAdmission)
+        );
+
+        return [
+            'contract' => $contract,
+            'fill_admission' => $fillAdmission,
+            'required' => $required,
+            'attested' => $attested,
+        ];
+    }
+
+    private function confirmationEntryHashValid(array $contract): bool
+    {
+        $supplied = strtolower((string) ($contract['contract_hash'] ?? ''));
+        if (! preg_match('/^[a-f0-9]{64}$/', $supplied)) {
+            return false;
+        }
+        unset($contract['contract_hash']);
+        $encoded = json_encode($this->canonicalize($contract), JSON_UNESCAPED_SLASHES);
+        if (! is_string($encoded)) {
+            return false;
+        }
+
+        return hash_equals($supplied, hash('sha256', $encoded));
+    }
+
+    /** @return array<string, array<int, array<string, mixed>>> */
+    private function confirmationEntryMtfStreams(?object $model, string $symbol): array
+    {
+        if (! str_contains(strtolower((string) ($model?->strategy ?? '')), 'confirmation_entry_mtf')) {
+            return [];
+        }
+
+        return [
+            'H4' => $this->candles->candlesForBacktest($symbol, 'H4', 500),
+            'H1' => $this->candles->candlesForBacktest($symbol, 'H1', 500),
+            'M15' => $this->candles->candlesForBacktest($symbol, 'M15', 1000),
+        ];
+    }
+
     private function aiRequest(ModelMarketPerformance $candidate, array $rows): array
     {
         $model = $candidate->modelVersion;
@@ -825,6 +1021,7 @@ class PaperTradingExecutionService
             'strategy' => $isPortfolio ? 'portfolio_v1' : $model->strategy,
             'base_strategy' => $isPortfolio ? 'portfolio' : $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $candidate->strategy_family),
             'parameters' => $isPortfolio ? (array) data_get($runtime, 'parameters', []) : ($model->parameters ?? []), 'candles' => $rows,
+            'mtf_streams' => $this->confirmationEntryMtfStreams($model, $candidate->symbol),
             // M15 is the entry stream only. Keep live/paper behavior aligned
             // with screening and full replay by supplying the latest H1
             // candles; Python exposes only the last CLOSED H1 state to each

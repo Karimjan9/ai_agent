@@ -361,16 +361,16 @@ class FailureRepairAnchorTest extends TestCase
         ], 5);
 
         $expectedGenes = [
-            'max_loss_streak_before_wait',
-            'loss_cooldown_candles',
-            'loss_streak_wait_candles',
-            'weak_regime_wait_candles',
+            'entry_topology_variant',
+            'state_machine_variant',
+            'regime_classifier_variant',
+            'architecture_interaction_variant',
         ];
         $this->assertSame($expectedGenes, array_map(
             fn (array $seat): mixed => data_get($seat, 'niche.declared_gene'),
             array_slice($plan, 0, 4),
         ));
-        $this->assertSame(['decrease', 'decrease', 'increase', 'increase'], array_map(
+        $this->assertSame(['increase', 'increase', 'increase', 'increase'], array_map(
             fn (array $seat): mixed => data_get($seat, 'niche.repair_direction'),
             array_slice($plan, 0, 4),
         ));

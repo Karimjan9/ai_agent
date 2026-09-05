@@ -20,7 +20,7 @@ from app.routers.backtests import router as backtests_router
 from app.routers.holdouts import router as holdouts_router
 from app.schemas import Candle, SimpleBacktestRequest, SimpleBacktestResponse
 from app.services.backtester import (
-    _advance_trailing_stop, _apply_execution_regime, _apply_portfolio_strategy, _apply_signal_delay, _entry_price, _exit_distances, _exit_price, _intrabar_exit, _load_regime_source,
+    _advance_trailing_stop, _apply_execution_regime, _apply_portfolio_strategy, _apply_signal_delay, _confirmation_fill_admission, _entry_price, _exit_distances, _exit_price, _intrabar_exit, _load_regime_source, _take_partial_profit,
     _load_simple_candles, _position_size_multiple, _resolve_dataset_path, _volatility_risk_multiplier, _volume_risk_multiplier,
     PreparedFeatureSnapshot, PreparedSignalSnapshot, _run_prepared_simple_backtest,
     core_replay_gate,
@@ -30,7 +30,7 @@ from app.services.backtester import (
 from app.services.parameter_schema import validate_strategy_parameters
 from app.services.walk_forward import WalkForwardService
 from app.services.market_adaptive_replay import MarketAdaptiveReplayService
-from app.services.execution_contract import enforce_policy_boundary, execution_contract_metadata
+from app.services.execution_contract import enforce_policy_boundary, execution_contract_metadata, management_contract_metadata, verify_management_contract
 from app.services.multitimeframe import apply_signal_policy, counterfactuals
 from app.services.statistical_validation import (
     deflated_sharpe_ratio,
@@ -294,7 +294,9 @@ async def require_internal_token(request: Request, call_next):
         supplied = request.headers.get("x-internal-token", "")
         if not hmac.compare_digest(token, supplied):
             return JSONResponse(status_code=401, content={"detail": "Invalid internal API token."})
-    is_replay = request.url.path in {"/api/backtest/run-all", "/api/portfolio/backtest"}
+    is_replay = request.url.path in {
+        "/api/backtest/run", "/api/backtest/run-all", "/api/portfolio/backtest"
+    }
     if is_replay:
         global _active_replay_count, _last_replay_started_at
         with _replay_state_lock:
@@ -388,7 +390,11 @@ def run_simple_backtest_api(payload: SimpleBacktestRequest) -> SimpleBacktestRes
                 payload.strategy, payload.parameters, payload.base_strategy
             )
         })
-        return run_simple_ema_rsi_backtest(payload)
+        # Simple/toolbox replays used to execute inside the FastAPI process.
+        # A slow MTF model could therefore ignore the client timeout, stay
+        # invisible to replay-status and monopolize the service. Give it the
+        # same killable child boundary as every other heavy replay lane.
+        return SimpleBacktestResponse.model_validate(_run_bounded_replay("simple", payload))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -561,6 +567,19 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 "dataset_tail_rows": candidate_payload.dataset_tail_rows,
                 "regime_dataset_path": candidate_payload.regime_dataset_path,
                 "regime_dataset_tail_rows": candidate_payload.regime_dataset_tail_rows,
+                "mtf_dataset_paths": candidate_payload.mtf_dataset_paths,
+                "mtf_dataset_tail_rows": candidate_payload.mtf_dataset_tail_rows,
+                "related_mtf_dataset_paths": candidate_payload.related_mtf_dataset_paths,
+                "related_mtf_dataset_tail_rows": candidate_payload.related_mtf_dataset_tail_rows,
+                "mtf_snapshot_manifest": candidate_payload.mtf_snapshot_manifest,
+                "mtf_streams": {
+                    key: [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in value]
+                    for key, value in candidate_payload.mtf_streams.items()
+                },
+                "related_mtf_streams": {
+                    key: [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in value]
+                    for key, value in candidate_payload.related_mtf_streams.items()
+                },
                 "volume_context": candidate_payload.volume_context,
                 "from_date": str(candidate_payload.from_date) if candidate_payload.from_date else None,
                 "to_date": str(candidate_payload.to_date) if candidate_payload.to_date else None,
@@ -854,16 +873,41 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "result": ablation_result,
                 }
             elif payload.evaluation_mode == "replay":
-                analysis = MarketAdaptiveReplayService().run(
-                    strategy_payload, source_df, calculate_strategy_score, foundation_df
-                )
                 confirmation_contracts = (payload.policy_context or {}).get(
                     "learning_confirmation_contracts", {}
                 )
-                confirmation_contract = (
+                learning_confirmation_contract = (
                     confirmation_contracts.get(strategy_name, {})
                     if isinstance(confirmation_contracts, dict)
                     else {}
+                )
+                edge_contracts = (payload.policy_context or {}).get("edge_genesis_contracts", {})
+                edge_contract = (
+                    edge_contracts.get(strategy_name, {})
+                    if isinstance(edge_contracts, dict)
+                    else {}
+                )
+                is_edge_genesis = (
+                    isinstance(edge_contract, dict)
+                    and edge_contract.get("protocol") == "bounded_edge_genesis_replay_v1"
+                )
+                cartridge_contracts = (payload.policy_context or {}).get(
+                    "skill_cartridge_confirmation_contracts", {}
+                )
+                cartridge_contract = (
+                    cartridge_contracts.get(strategy_name, {})
+                    if isinstance(cartridge_contracts, dict)
+                    else {}
+                )
+                is_cartridge_confirmation = (
+                    isinstance(cartridge_contract, dict)
+                    and cartridge_contract.get("protocol")
+                    == "bounded_skill_cartridge_confirmation_v1"
+                )
+                confirmation_contract = (
+                    edge_contract if is_edge_genesis else (
+                        cartridge_contract if is_cartridge_confirmation else learning_confirmation_contract
+                    )
                 )
                 if isinstance(confirmation_contract, dict) and confirmation_contract:
                     confirmation_evidence = {
@@ -872,10 +916,60 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                         "promotion_evidence": False,
                     }
                     if confirmation_contract.get("admitted") is True:
-                        cold_start = walk_forward.run(
-                            strategy_payload, source_df, calculate_strategy_score
+                        maximum_holding = max(
+                            1, int(confirmation_contract.get("maximum_holding_bars", 1) or 1)
                         )
-                        cold_result = cold_start.get("result", {})
+                        analysis = walk_forward.run_causal_confirmation(
+                            strategy_payload,
+                            source_df,
+                            calculate_strategy_score,
+                            maximum_holding_bars=maximum_holding,
+                            purge_bars=max(
+                                maximum_holding,
+                                int(confirmation_contract.get("purge_bars", maximum_holding) or maximum_holding),
+                            ),
+                            embargo_bars=max(
+                                1, int(confirmation_contract.get("embargo_bars", 1) or 1)
+                            ),
+                            total_budget_seconds=_bounded_replay_seconds(payload, "run_all"),
+                            per_fold_budget_seconds=min(
+                                _bounded_contract_int(
+                                    confirmation_contract,
+                                    "per_fold_budget_seconds",
+                                    "AI_REPLAY_CAUSAL_PER_FOLD_SECONDS",
+                                    180 if is_edge_genesis else 90,
+                                    45,
+                                    240,
+                                ),
+                                _bounded_replay_seconds(payload, "run_all"),
+                            ),
+                            fold_count=_bounded_contract_int(
+                                confirmation_contract,
+                                "fold_count",
+                                "AI_REPLAY_CAUSAL_FOLD_COUNT",
+                                2 if is_edge_genesis else (3 if is_cartridge_confirmation else 9),
+                                2 if is_edge_genesis else (2 if is_cartridge_confirmation else 6),
+                                9 if is_edge_genesis else (9 if is_cartridge_confirmation else 12),
+                            ),
+                            fold_offset=_bounded_contract_int(
+                                confirmation_contract, "fold_offset", "AI_REPLAY_CAUSAL_FOLD_OFFSET", 0, 0, 24,
+                            ),
+                            fold_universe_count=_bounded_contract_int(
+                                confirmation_contract, "fold_universe_count", "AI_REPLAY_CAUSAL_FOLD_UNIVERSE", 14 if is_edge_genesis else 9, 2, 32,
+                            ),
+                            max_rows_per_fold=_bounded_contract_int(confirmation_contract, "max_rows_per_fold", "AI_REPLAY_CAUSAL_MAX_ROWS_PER_FOLD", 4096, 2048, 8192),
+                            audit_trace_rows=_bounded_contract_int(confirmation_contract, "audit_trace_rows", "AI_REPLAY_CAUSAL_AUDIT_TRACE_ROWS", 512, 128, 1024),
+                            minimum_trades_per_window=_bounded_contract_int(confirmation_contract, "minimum_trades_per_window", "AI_REPLAY_CAUSAL_MIN_TRADES_PER_WINDOW", 8, 1, 100),
+                            progress_callback=lambda stage, details: _write_replay_checkpoint(
+                                str(checkpoint_key),
+                                stage,
+                                resume_manifest,
+                                candidate=candidate_label,
+                                mode=payload.evaluation_mode,
+                                **details,
+                            ),
+                        )
+                        cold_result = analysis.get("result", {})
                         if isinstance(cold_result, dict):
                             analysis_result = analysis.get("result", {})
                             if isinstance(analysis_result, dict):
@@ -888,13 +982,25 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                                     ).get("forward_window_protocol", {}),
                                     "promotion_evidence": False,
                                 }
-                                analysis_result["learning_confirmation"] = confirmation_evidence
+                                if is_edge_genesis:
+                                    analysis_result["edge_genesis_replay"] = confirmation_evidence
+                                elif is_cartridge_confirmation:
+                                    analysis_result["skill_cartridge_confirmation"] = confirmation_evidence
+                                else:
+                                    analysis_result["learning_confirmation"] = confirmation_evidence
                                 analysis["result"] = analysis_result
                     else:
+                        analysis = MarketAdaptiveReplayService().run(
+                            strategy_payload, source_df, calculate_strategy_score, foundation_df
+                        )
                         analysis_result = analysis.get("result", {})
                         if isinstance(analysis_result, dict):
                             analysis_result["learning_confirmation"] = confirmation_evidence
                             analysis["result"] = analysis_result
+                else:
+                    analysis = MarketAdaptiveReplayService().run(
+                        strategy_payload, source_df, calculate_strategy_score, foundation_df
+                    )
             else:
                 analysis = walk_forward.run(strategy_payload, source_df, calculate_strategy_score)
             _write_replay_checkpoint(
@@ -1084,11 +1190,62 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
         for value in [payload.strategy, payload.base_strategy, payload.version]
     ) or any("differential" in str(member.strategy).lower() for member in payload.strategies)
 
-    if operation == "portfolio":
+    confirmation_contracts = (payload.policy_context or {}).get("learning_confirmation_contracts", {})
+    causal_confirmation = (
+        payload.evaluation_mode == "replay"
+        and isinstance(confirmation_contracts, dict)
+        and any(
+            isinstance(contract, dict)
+            and contract.get("protocol") == "bounded_cold_start_learning_confirmation_v1"
+            and contract.get("admitted") is True
+            for contract in confirmation_contracts.values()
+        )
+    )
+    edge_contracts = (payload.policy_context or {}).get("edge_genesis_contracts", {})
+    edge_genesis_replay = (
+        payload.evaluation_mode == "replay"
+        and isinstance(edge_contracts, dict)
+        and any(
+            isinstance(contract, dict)
+            and contract.get("protocol") == "bounded_edge_genesis_replay_v1"
+            and contract.get("admitted") is True
+            for contract in edge_contracts.values()
+        )
+    )
+    cartridge_contracts = (payload.policy_context or {}).get("skill_cartridge_confirmation_contracts", {})
+    cartridge_confirmation = (
+        payload.evaluation_mode == "replay"
+        and isinstance(cartridge_contracts, dict)
+        and any(
+            isinstance(contract, dict)
+            and contract.get("protocol") == "bounded_skill_cartridge_confirmation_v1"
+            and contract.get("admitted") is True
+            for contract in cartridge_contracts.values()
+        )
+    )
+
+    if operation == "simple":
+        # Catalogue discovery is deliberately smaller than full validation.
+        # Its input is already row-bounded and any positive prior must later
+        # earn agent-owned chronological confirmation.
+        env_name, default, ceiling = "AI_REPLAY_SIMPLE_HARD_TIMEOUT_SECONDS", 300, 360
+    elif operation == "portfolio":
         # Keep the evaluator bounded, but give a legitimate sealed council
         # replay enough room for its long foundation lane on Windows. The
         # Laravel transport remains longer than this child deadline.
         env_name, default, ceiling = "AI_REPLAY_PORTFOLIO_HARD_TIMEOUT_SECONDS", 3600, 3600
+    elif edge_genesis_replay:
+        # Edge discovery/authority executes a complete MTF organism. It is
+        # heavier than a scalar causal triplet but must still fail well below
+        # the historical one-hour replay. Twenty minutes is the default hard
+        # boundary; 25 minutes is the absolute operator-configurable ceiling.
+        env_name, default, ceiling = "AI_REPLAY_EDGE_HARD_TIMEOUT_SECONDS", 1200, 1500
+    elif causal_confirmation or cartridge_confirmation:
+        # Confirmation is an atomic three-forward-fold research experiment,
+        # not a promotion replay. A one-hour budget hides a stalled fold and
+        # blocks settlement for every peer. Keep a strict 12-minute default
+        # and a 15-minute absolute ceiling; Laravel retains a transport margin.
+        env_name, default, ceiling = "AI_REPLAY_CAUSAL_HARD_TIMEOUT_SECONDS", 720, 900
     elif payload.evaluation_mode == "incremental" and len(payload.strategies) > 1:
         # A bounded cohort shares feature construction but still walks each
         # candidate's independent state machine. Give the one child process a
@@ -1119,6 +1276,30 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
     except ValueError:
         configured = default
     return max(30, min(configured, ceiling))
+
+
+def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        configured = int(os.getenv(name, str(default)))
+    except ValueError:
+        configured = default
+    return max(minimum, min(configured, maximum))
+
+
+def _bounded_contract_int(
+    contract: dict[str, object],
+    key: str,
+    env_name: str,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    fallback = _bounded_env_int(env_name, default, minimum, maximum)
+    try:
+        configured = int(contract.get(key, fallback) or fallback)
+    except (TypeError, ValueError):
+        configured = fallback
+    return max(minimum, min(configured, maximum))
 
 
 def _read_replay_capture(stream) -> str:
@@ -1426,6 +1607,14 @@ def _dataset_dependency_manifest(payload: SimpleBacktestRequest) -> dict[str, ob
         # identity or a changed training archive could reuse old evidence.
         ("foundation_dataset", payload.foundation_dataset_path),
     ]
+    paths.extend(
+        (f"mtf_{str(timeframe).upper()}", path)
+        for timeframe, path in sorted(dict(payload.mtf_dataset_paths or {}).items())
+    )
+    paths.extend(
+        (f"related_mtf_{str(timeframe).upper()}", path)
+        for timeframe, path in sorted(dict(payload.related_mtf_dataset_paths or {}).items())
+    )
     resolved: list[tuple[str, str, Path, Path]] = []
     for key, raw_path in paths:
         if not raw_path:
@@ -1741,6 +1930,10 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             "regime_dataset_path": payload.regime_dataset_path,
             "strategy": payload.strategy,
             "base_strategy": payload.base_strategy,
+            "parameters": payload.parameters,
+            "mtf_snapshot_manifest": payload.mtf_snapshot_manifest,
+            "mtf_dataset_paths": payload.mtf_dataset_paths,
+            "related_mtf_dataset_paths": payload.related_mtf_dataset_paths,
         }, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
         execution_config_hash = hashlib.sha256(json.dumps(payload.execution.model_dump(), sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
         dependency_manifest = _dataset_dependency_manifest(payload)
@@ -1756,21 +1949,11 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
         }
         snapshot_hash = hashlib.sha256(json.dumps(manifest_body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         snapshot_manifest = {**manifest_body, "snapshot_hash": snapshot_hash, "status": "sealed"}
-        df = _apply_execution_regime(df, _load_regime_source(payload))
-        df = add_volume_features(df, payload.volume_context)
-        previous_close = df["close"].shift(1)
-        df["_management_atr"] = pd.concat([
-            df["high"] - df["low"], (df["high"] - previous_close).abs(), (df["low"] - previous_close).abs(),
-        ], axis=1).max(axis=1).rolling(14, min_periods=1).mean()
-        prepared = (
-            _apply_portfolio_strategy(df, payload.portfolio_members)
-            if payload.portfolio_members
-            else apply_volume_policy(
-                get_strategy(payload.strategy, payload.base_strategy)(df, payload.parameters),
-                payload.parameters,
-                payload.base_strategy or payload.strategy,
-            )
-        )
+        # Paper and replay now use the same feature/signal compiler. This is
+        # especially important for role-separated MTF strategies: the paper
+        # endpoint must merge only closed H4/H1/M15 candles and must fail
+        # closed exactly as the backtester does when a stream is missing.
+        prepared = prepare_signal_snapshot(payload, df).frame
         row = prepared.iloc[-1]
         signal = str(row.get("signal", "WAIT"))
         raw_agent_signal = signal
@@ -1797,8 +1980,24 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             )
         else:
             meta["position_size_multiplier"] = 0.0
+        fill_row = row.copy()
+        fill_row["signal"] = str(meta.get("decision", "WAIT"))
+        fill_admission = _confirmation_fill_admission(
+            pd.Series({"open": price}), payload, fill_row,
+        )
+        if meta.get("decision") in {"BUY", "SELL"} and not bool(fill_admission["allowed"]):
+            meta = {
+                **meta,
+                "decision": "WAIT",
+                "reason": str(fill_admission.get("reason") or "entry_contract_fill_veto"),
+                "position_size_multiplier": 0.0,
+                "entry_fill_veto": True,
+            }
         final_signal = str(meta.get("decision", "WAIT"))
-        official_contract = _execution_contract(payload, row, final_signal, price, meta, mtf)
+        official_contract = _execution_contract(
+            payload, row, final_signal, price, meta, mtf,
+            entry_fill_admission=fill_admission,
+        )
         shadow_contract = _execution_contract(
             payload,
             row,
@@ -1839,6 +2038,8 @@ def paper_signal(payload: SimpleBacktestRequest) -> dict[str, object]:
             "spread_atr_ratio": round(spread_atr_ratio, 8),
             "transition": {"active": bool(meta.get("transition", False))},
             "confidence": float(row.get("signal_confidence", 1.0) or 0),
+            "entry_contract": _entry_contract_projection(row),
+            "entry_fill_admission": fill_admission,
             "volume_quality": dict(prepared.attrs.get("volume_quality") or {}),
             "volume_context": {
                 "feature_available": bool(row.get("volume_feature_available", False)),
@@ -2080,6 +2281,14 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
     try:
         payload = SimpleBacktestRequest.model_validate(body.get("request", {}))
         contract = dict(body["contract"])
+        execution_metadata = execution_contract_metadata(payload)
+        execution_attested = bool(contract.get("execution_hash")) and contract.get("execution_hash") == execution_metadata["execution_hash"]
+        if contract.get("execution_hash") and not execution_attested:
+            raise ValueError("Paper execution contract drifted after entry.")
+        strategy_attested = bool(contract.get("strategy_hash")) and contract.get("strategy_hash") == _strategy_contract_hash(payload)
+        if contract.get("strategy_hash") and not strategy_attested:
+            raise ValueError("Paper strategy parameters drifted after entry.")
+        management_contract, management_attested = verify_management_contract(payload, contract)
         entry_time = _utc_timestamp(str(body["entry_time"]))
         df = _load_simple_candles(payload).copy()
         df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
@@ -2096,30 +2305,60 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
         if matches.empty:
             raise ValueError("Paper entry candle is absent from execution dataset.")
         entry_index = int(matches.index[0])
+        initial_stop = float(contract["stop_loss"])
+        entry_price = float(contract["entry_price"])
         position = {
-            "direction": str(contract["decision"]), "entry_price": float(contract["entry_price"]),
-            "stop_loss": float(contract["stop_loss"]), "take_profit": float(contract["take_profit"]),
+            "direction": str(contract["decision"]), "entry_price": entry_price,
+            "market_entry_price": float(contract.get("market_entry_price", entry_price)),
+            "stop_loss": initial_stop, "take_profit": float(contract["take_profit"]),
             "position_size_multiple": float(contract["position_size_multiple"]), "entry_time": entry_time,
             "entry_index": entry_index, "partial_closed": False,
-            "partial_fraction": float(payload.parameters.get("partial_take_profit_fraction", 0) or 0), "partial_exit_price": None,
+            "partial_fraction": float(management_contract["parameters"]["partial_take_profit_fraction"]), "partial_exit_price": None,
         }
+        maximum_favorable_excursion = 0.0
+        maximum_adverse_excursion = 0.0
         for index in range(entry_index, len(df)):
             candle = df.iloc[index]
+            if position["direction"] == "BUY":
+                maximum_favorable_excursion = max(maximum_favorable_excursion, float(candle["high"]) - entry_price)
+                maximum_adverse_excursion = max(maximum_adverse_excursion, entry_price - float(candle["low"]))
+            else:
+                maximum_favorable_excursion = max(maximum_favorable_excursion, entry_price - float(candle["low"]))
+                maximum_adverse_excursion = max(maximum_adverse_excursion, float(candle["high"]) - entry_price)
             _advance_trailing_stop(position, df.iloc[max(0, index - 1)], payload)
-            time_stop = int(contract.get("time_stop_candles", 0) or 0)
+            time_stop = int(management_contract["parameters"]["time_stop_candles"])
             if time_stop and index - entry_index >= time_stop:
                 exit_price, reason = _exit_price(float(candle["open"]), str(position["direction"]), payload), "time_stop"
             else:
                 exit_price, reason = _intrabar_exit(str(position["direction"]), position, candle, payload)
+            if reason is None and _take_partial_profit(position, candle, payload):
+                continue
             if reason is None or exit_price is None:
                 continue
             entry = float(position["entry_price"])
             gross = ((float(exit_price) - entry) / entry * 100) if position["direction"] == "BUY" else ((entry - float(exit_price)) / entry * 100)
+            partial_fraction = float(position.get("partial_fraction", 0) or 0) if bool(position.get("partial_closed")) else 0.0
+            partial_exit = position.get("partial_exit_price")
+            if partial_fraction and partial_exit is not None:
+                partial_return = ((float(partial_exit) - entry) / entry * 100) if position["direction"] == "BUY" else ((entry - float(partial_exit)) / entry * 100)
+                gross = gross * (1 - partial_fraction) + partial_return * partial_fraction
+                reason = f"partial_target+{reason}"
             holding_days = max((_utc_timestamp(candle["time"]) - entry_time).total_seconds() / 86400, 0)
             profit = gross * float(position["position_size_multiple"]) - (payload.execution.commission_percent + payload.execution.swap_per_day_percent * holding_days) * float(position["position_size_multiple"])
+            management_audit = _paper_management_audit(
+                position, initial_stop, maximum_favorable_excursion, maximum_adverse_excursion,
+                index - entry_index + 1, profit, reason, management_contract,
+                management_attested, execution_attested, strategy_attested,
+            )
             return {"closed": True, "exit_price": round(float(exit_price), 8), "profit_percent": round(profit, 5), "exit_reason": reason,
-                "stop_loss": round(float(position["stop_loss"]), 8), "contract_version": contract.get("contract_version")}
-        return {"closed": False, "stop_loss": round(float(position["stop_loss"]), 8), "contract_version": contract.get("contract_version")}
+                "stop_loss": round(float(position["stop_loss"]), 8), "contract_version": contract.get("contract_version"),
+                "management_audit": management_audit}
+        return {"closed": False, "stop_loss": round(float(position["stop_loss"]), 8), "contract_version": contract.get("contract_version"),
+            "management_audit": _paper_management_audit(
+                position, initial_stop, maximum_favorable_excursion, maximum_adverse_excursion,
+                max(0, len(df) - entry_index), None, None, management_contract,
+                management_attested, execution_attested, strategy_attested,
+            )}
     except (KeyError, TypeError, ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -3088,9 +3327,16 @@ def _execution_contract(
     market_price: float,
     meta: dict[str, object],
     mtf: dict[str, object] | None = None,
+    entry_fill_admission: dict[str, object] | None = None,
 ) -> dict[str, object]:
     execution_metadata = execution_contract_metadata(payload)
     mtf = mtf or {"protocol": "xauusd_h1_m15_mtf_v1", "context": {"status": "not_applicable"}, "risk_multiplier": 1.0}
+    if entry_fill_admission is None:
+        fill_row = row.copy()
+        fill_row["signal"] = signal
+        entry_fill_admission = _confirmation_fill_admission(
+            pd.Series({"open": market_price}), payload, fill_row,
+        )
     if meta.get("decision") not in {"BUY", "SELL"}:
         return {
             "decision": "WAIT",
@@ -3098,33 +3344,94 @@ def _execution_contract(
             "contract_version": "reality_parity_execution_v1",
             "execution_contract": execution_metadata,
             "tactical_contract": _tactical_contract(payload),
+            "entry_contract": _entry_contract_projection(row),
+            "entry_fill_admission": entry_fill_admission,
             "execution_hash": execution_metadata["execution_hash"],
             "mtf_pilot": mtf,
         }
     direction = str(meta["decision"])
     entry = _entry_price(market_price, direction, payload)
     stop_distance, target_distance = _exit_distances(market_price, row, payload)
-    stop = entry - stop_distance if direction == "BUY" else entry + stop_distance
-    target = entry + target_distance if direction == "BUY" else entry - target_distance
+    if str(row.get("entry_contract_protocol", "")) == "confirmation_entry_contract_v1":
+        # Structural prices are market references; applying the entry spread a
+        # second time would shift the declared invalidation/target and break
+        # replay/paper geometry parity.
+        stop = market_price - stop_distance if direction == "BUY" else market_price + stop_distance
+        target = market_price + target_distance if direction == "BUY" else market_price - target_distance
+    else:
+        stop = entry - stop_distance if direction == "BUY" else entry + stop_distance
+        target = entry + target_distance if direction == "BUY" else entry - target_distance
     size = _position_size_multiple(entry, stop, direction, payload) * _volatility_risk_multiplier(row, payload) * _volume_risk_multiplier(row) * float(meta["position_size_multiplier"])
     data_hash = hashlib.sha256(json.dumps([[str(value) for value in item] for item in row[["time", "open", "high", "low", "close"]].to_frame().T.values], separators=(",", ":")).encode()).hexdigest()
-    strategy_hash = hashlib.sha256(json.dumps({
-        "strategy": payload.strategy,
-        "base_strategy": payload.base_strategy,
-        "parameters": payload.parameters,
-        "portfolio_members": [member.model_dump() if hasattr(member, "model_dump") else member for member in payload.portfolio_members],
-    }, sort_keys=True, default=str).encode()).hexdigest()
+    strategy_hash = _strategy_contract_hash(payload)
     execution_hash = execution_metadata["execution_hash"]
     code_version = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     return {
-        "decision": direction, "entry_price": round(entry, 8), "stop_loss": round(stop, 8), "take_profit": round(target, 8),
+        "decision": direction, "market_entry_price": round(market_price, 8), "entry_price": round(entry, 8), "stop_loss": round(stop, 8), "take_profit": round(target, 8),
         "position_size_multiple": round(size, 6), "trailing_atr_multiplier": float(payload.parameters.get("trailing_atr_multiplier", 0) or 0),
         "time_stop_candles": int(payload.parameters.get("time_stop_candles", 0) or 0), "management_atr": float(row.get("_management_atr", 0) or 0),
         "meta_agent": meta, "contract_version": "reality_parity_execution_v1",
         "data_hash": data_hash, "strategy_hash": strategy_hash, "execution_hash": execution_hash, "code_version": code_version,
         "execution_contract": execution_metadata,
+        "management_contract": management_contract_metadata(payload),
         "tactical_contract": _tactical_contract(payload),
+        "entry_contract": _entry_contract_projection(row),
+        "entry_fill_admission": entry_fill_admission,
         "mtf_pilot": mtf,
+    }
+
+
+def _strategy_contract_hash(payload: SimpleBacktestRequest) -> str:
+    return hashlib.sha256(json.dumps({
+        "strategy": payload.strategy,
+        "base_strategy": payload.base_strategy,
+        "parameters": payload.parameters,
+        "portfolio_members": [member.model_dump() if hasattr(member, "model_dump") else member for member in payload.portfolio_members],
+    }, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _paper_management_audit(
+    position: dict[str, object],
+    initial_stop: float,
+    maximum_favorable_excursion: float,
+    maximum_adverse_excursion: float,
+    holding_bars: int,
+    profit_percent: float | None,
+    exit_reason: str | None,
+    management_contract: dict[str, object],
+    management_attested: bool,
+    execution_attested: bool,
+    strategy_attested: bool,
+) -> dict[str, object]:
+    entry = float(position["entry_price"])
+    final_stop = float(position["stop_loss"])
+    initial_risk = abs(entry - initial_stop)
+    direction = str(position["direction"])
+    stop_widened = final_stop < initial_stop if direction == "BUY" else final_stop > initial_stop
+    position_size = max(0.0, float(position["position_size_multiple"]))
+    risk_budget_percent = initial_risk / max(entry, 0.0000001) * 100 * position_size
+    realized_r = None if profit_percent is None or risk_budget_percent <= 0 else float(profit_percent) / risk_budget_percent
+    return {
+        "protocol": "paper_management_audit_v1",
+        "management_hash": management_contract.get("management_hash"),
+        "management_attested": management_attested,
+        "execution_attested": execution_attested,
+        "strategy_attested": strategy_attested,
+        "contract_followed": management_attested and execution_attested and strategy_attested and not stop_widened,
+        "initial_stop_loss": round(initial_stop, 8),
+        "final_stop_loss": round(final_stop, 8),
+        "stop_widened": stop_widened,
+        "trailing_stop_advanced": final_stop != initial_stop and not stop_widened,
+        "partial_closed": bool(position.get("partial_closed")),
+        "partial_fraction": float(position.get("partial_fraction", 0) or 0),
+        "partial_exit_price": position.get("partial_exit_price"),
+        "holding_bars": holding_bars,
+        "mfe_r": round(maximum_favorable_excursion / initial_risk, 6) if initial_risk > 0 else None,
+        "mae_r": round(maximum_adverse_excursion / initial_risk, 6) if initial_risk > 0 else None,
+        "realized_r_multiple": round(realized_r, 6) if realized_r is not None else None,
+        "exit_reason": exit_reason,
+        "guards": management_contract.get("guards", {}),
+        "promotion_evidence": False,
     }
 
 
@@ -3133,7 +3440,12 @@ def _tactical_contract(payload: SimpleBacktestRequest) -> dict[str, object]:
     parameters = payload.parameters or {}
     return {
         "protocol": "execution_tactic_contract_v1",
-        "entry": str(parameters.get("entry_topology_variant", payload.base_strategy or payload.strategy)),
+        "entry": {
+            "topology": str(parameters.get("entry_topology_variant", payload.base_strategy or payload.strategy)),
+            "model": str(parameters.get("entry_model", payload.base_strategy or payload.strategy)),
+            "mode": str(parameters.get("entry_mode", "strategy_default")),
+            "rule": "setup != confirmation != trigger; entry occurs only after the declared trigger and admission gates",
+        },
         "exit": {
             "stop": "atr" if float(parameters.get("atr_stop_multiplier", 0) or 0) > 0 else "fixed_percent",
             "target": "atr" if float(parameters.get("atr_target_multiplier", 0) or 0) > 0 else "fixed_percent",
@@ -3144,6 +3456,95 @@ def _tactical_contract(payload: SimpleBacktestRequest) -> dict[str, object]:
         "sizing": "volatility_scaled_fractional",
         "risk": {"martingale": "forbidden", "full_kelly": "forbidden", "live_geometric_compounding": "forbidden"},
         "promotion_evidence": False,
+    }
+
+
+def _entry_contract_projection(row: pd.Series) -> dict[str, object]:
+    """Project row-level entry evidence into a JSON-safe paper audit."""
+    protocol = str(row.get("entry_contract_protocol", ""))
+    if not protocol:
+        return {
+            "protocol": "entry_contract_unavailable_v1",
+            "status": "not_supplied_by_strategy",
+            "promotion_evidence": False,
+        }
+
+    def boolean(name: str) -> bool:
+        value = row.get(name, False)
+        return bool(value) if pd.notna(value) else False
+
+    def number(name: str) -> float | int | None:
+        value = row.get(name)
+        if value is None or not pd.notna(value):
+            return None
+        numeric = float(value)
+        if not math.isfinite(numeric):
+            return None
+        return int(numeric) if numeric.is_integer() else round(numeric, 8)
+
+    def timestamp(name: str) -> str | None:
+        value = row.get(name)
+        if value is None or not pd.notna(value):
+            return None
+        parsed = pd.to_datetime(value, utc=True, errors="coerce")
+        return parsed.isoformat() if pd.notna(parsed) else None
+
+    body = {
+        "protocol": protocol,
+        "model": str(row.get("entry_contract_model", "unknown")),
+        "mode": str(row.get("entry_contract_mode", "unknown")),
+        "temporal_roles": {
+            "bias": "H1",
+            "setup": str(row.get("entry_breakout_setup_timeframe", "H1")),
+            "trigger": "M5",
+            "execution": "M5",
+        },
+        "direction": str(row.get("entry_contract_direction", "WAIT")),
+        "stage": str(row.get("entry_contract_stage", "unknown")),
+        "status": str(row.get("entry_contract_status", "unknown")),
+        "order_type": str(row.get("entry_order_type", "none")),
+        "checks": {
+            "context": boolean("entry_context_valid"),
+            "location": boolean("entry_location_valid"),
+            "setup": boolean("entry_setup_detected"),
+            "confirmation": boolean("entry_confirmation_valid"),
+            "trigger": boolean("entry_trigger_valid"),
+            "invalidation": boolean("entry_invalidation_valid"),
+            "reward_space": boolean("entry_reward_space_valid"),
+            "chase": boolean("entry_chase_valid"),
+            "event": boolean("entry_event_valid"),
+        },
+        "confirmation": {
+            "families": [value for value in str(row.get("entry_confirmation_families", "")).split("|") if value],
+            "independent_count": number("entry_independent_confirmation_count") or 0,
+            "raw_count": number("entry_raw_confirmation_count") or 0,
+            "redundancy_penalty": number("entry_redundancy_penalty") or 0,
+        },
+        "reference_price": number("entry_reference_price") or number("close"),
+        "invalidation_price": number("entry_invalidation_reference_price"),
+        "target_reference_price": number("entry_target_reference_price"),
+        "trigger_anchor_price": number("entry_trigger_anchor_price"),
+        "structure_atr": number("entry_structure_atr"),
+        "reward_space_r": number("entry_reward_space_r"),
+        "chase_distance_atr": number("entry_chase_distance_atr"),
+        "score": number("entry_score") or 0,
+        "grade": str(row.get("entry_grade", "SKIP")),
+        "causal_context": {
+            "stack_status": str(row.get("mtf_stack_status", "unknown")),
+            "stack_reason": str(row.get("mtf_stack_reason", "unknown")),
+            "stack_hash": str(row.get("mtf_stack_context_hash", "")),
+            "decision_at": timestamp("decision_at"),
+            "h4_available_at": timestamp("h4_available_at"),
+            "h1_available_at": timestamp("h1_available_at"),
+            "m15_available_at": timestamp("m15_available_at"),
+        },
+        "promotion_evidence": False,
+    }
+    return {
+        **body,
+        "contract_hash": hashlib.sha256(
+            json.dumps(body, sort_keys=True, default=str, separators=(",", ":")).encode()
+        ).hexdigest(),
     }
 
 

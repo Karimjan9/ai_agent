@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 class ContextualLearningMemoryService
 {
     /** @return array<int,array<string,mixed>> */
-    public function retrieve(string $symbol, string $timeframe, array $context = [], array $statuses = ['confirmed', 'replicated', 'provisional']): array
+    public function retrieve(string $symbol, string $timeframe, array $context = [], array $statuses = ['confirmed']): array
     {
         if (! Schema::hasTable('evolution_learning_receipts')) return [];
         return EvolutionLearningReceipt::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))

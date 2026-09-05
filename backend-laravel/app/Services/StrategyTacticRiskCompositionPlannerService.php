@@ -22,6 +22,41 @@ class StrategyTacticRiskCompositionPlannerService
     ) {}
 
     /**
+     * Freeze the composition used by a bounded causal confirmation cohort.
+     *
+     * Historical learning pairs predate composition passports.  Requiring a
+     * twenty-seat portfolio merely to re-test one already settled gene would
+     * strand that memory forever, so the confirmation lane freezes the
+     * canonical family fallback and records the source baseline separately.
+     * This passport is research-only and grants no parent/promotion authority.
+     *
+     * @return array<string, mixed>
+     */
+    public function freezeConfirmationBaseline(
+        string $family,
+        string $timeframe,
+        string $dataHash = '',
+        string $executionHash = '',
+    ): array {
+        $strategyId = $this->fallbackStrategyId($family);
+        $tacticId = $this->fallbackTacticId($family);
+
+        return $this->authority->freeze([
+            'symbol' => 'XAUUSD',
+            'timeframe' => strtoupper($timeframe),
+            'strategy_id' => $strategyId,
+            'tactic_id' => $tacticId,
+            'risk_id' => 'atr_risk_envelope',
+            'management_id' => $this->managementProfileFor($tacticId),
+            'prior_ids' => [],
+            'local_evidence_count' => 1,
+            'market_state' => ['source' => 'canonical_learning_pair'],
+            'data_hash' => $dataHash,
+            'execution_hash' => $executionHash,
+        ]);
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $plan
      * @return array{plan: array<int, array<string, mixed>>, contract: array<string, mixed>}
      */

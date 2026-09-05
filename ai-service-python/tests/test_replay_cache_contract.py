@@ -51,6 +51,51 @@ class ReplayCacheContractTest(unittest.TestCase):
         with patch.dict("os.environ", {"AI_REPLAY_SCREEN_HARD_TIMEOUT_SECONDS": "450"}, clear=False):
             self.assertEqual(450, _bounded_replay_seconds(payload, "run_all"))
 
+    def test_causal_confirmation_has_a_separate_sub_hour_hard_ceiling(self):
+        payload = SimpleBacktestRequest(
+            evaluation_mode="replay",
+            policy_context={
+                "learning_confirmation_contracts": {
+                    "guided": {
+                        "protocol": "bounded_cold_start_learning_confirmation_v1",
+                        "admitted": True,
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(720, _bounded_replay_seconds(payload, "run_all"))
+        with patch.dict("os.environ", {"AI_REPLAY_CAUSAL_HARD_TIMEOUT_SECONDS": "5000"}, clear=False):
+            self.assertEqual(900, _bounded_replay_seconds(payload, "run_all"))
+        with patch.dict("os.environ", {"AI_REPLAY_CAUSAL_HARD_TIMEOUT_SECONDS": "360"}, clear=False):
+            self.assertEqual(360, _bounded_replay_seconds(payload, "run_all"))
+
+    def test_skill_cartridge_confirmation_uses_the_same_bounded_research_lane(self):
+        payload = SimpleBacktestRequest(
+            evaluation_mode="replay",
+            policy_context={
+                "skill_cartridge_confirmation_contracts": {
+                    "categorical-arm": {
+                        "protocol": "bounded_skill_cartridge_confirmation_v1",
+                        "admitted": True,
+                        "fold_count": 3,
+                        "fold_offset": 3,
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(720, _bounded_replay_seconds(payload, "run_all"))
+
+    def test_simple_toolbox_replay_has_a_five_minute_default_and_six_minute_ceiling(self):
+        payload = SimpleBacktestRequest(evaluation_mode="replay")
+
+        self.assertEqual(300, _bounded_replay_seconds(payload, "simple"))
+        with patch.dict("os.environ", {"AI_REPLAY_SIMPLE_HARD_TIMEOUT_SECONDS": "999"}, clear=False):
+            self.assertEqual(360, _bounded_replay_seconds(payload, "simple"))
+        with patch.dict("os.environ", {"AI_REPLAY_SIMPLE_HARD_TIMEOUT_SECONDS": "180"}, clear=False):
+            self.assertEqual(180, _bounded_replay_seconds(payload, "simple"))
+
     def test_candidate_cache_identity_is_independent_of_sibling_contracts(self):
         cohort = SimpleBacktestRequest(
             strategy="all",

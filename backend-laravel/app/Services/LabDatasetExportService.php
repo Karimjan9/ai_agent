@@ -8,11 +8,26 @@ use App\Models\Symbol;
 use App\Services\MarketData\HistoricalDataQualityService;
 use App\Services\MarketData\MarketVolumeService;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
 class LabDatasetExportService
 {
+    private const FOUNDATION_VALIDATION_CACHE_PROTOCOL = 'foundation_validation_receipt_v1';
+
+    /**
+     * Process-local validation memo for immutable foundation archives.
+     *
+     * The CSV SHA and manifest SHA remain part of the key, so a changed byte
+     * always forces full OHLC/continuity validation. This only removes three
+     * repeated 123k-row scans when an atomic causal triplet is drained by the
+     * same long-lived queue worker.
+     *
+     * @var array<string, array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string}>
+     */
+    private static array $validatedFoundationSnapshots = [];
+
     public function __construct(
         private HistoricalDataQualityService $quality,
         private MarketVolumeService $volumes,
@@ -1271,11 +1286,22 @@ class LabDatasetExportService
         if (! is_string($actualHash) || ! hash_equals((string) $manifest['sha256'], $actualHash)) {
             return null;
         }
-
-        $quality = $this->foundationOhlcQuality($path);
-        if (! $quality['valid'] || $quality['rows'] !== (int) data_get($manifest, 'row_count', 0)) {
-            return null;
+        $manifestHash = hash_file('sha256', $manifestPath);
+        $cacheKey = is_string($manifestHash)
+            ? hash('sha256', implode('|', [
+                self::FOUNDATION_VALIDATION_CACHE_PROTOCOL,
+                str_replace('\\', '/', (string) realpath($path)),
+                $actualHash,
+                $manifestHash,
+                $timeframe,
+                (string) $minimumRows,
+                $this->trainingCutoff()->toIso8601String(),
+            ]))
+            : null;
+        if ($cacheKey !== null && isset(self::$validatedFoundationSnapshots[$cacheKey])) {
+            return self::$validatedFoundationSnapshots[$cacheKey];
         }
+
         $continuity = data_get($manifest, 'continuity');
         if (! is_array($continuity)
             || data_get($continuity, 'protocol') !== HistoricalDataQualityService::FOUNDATION_CONTINUITY_PROTOCOL
@@ -1297,12 +1323,58 @@ class LabDatasetExportService
             return null;
         }
 
-        return [
+        $validated = [
             'path' => $path,
             'manifest' => $manifest,
             'sha256' => (string) $manifest['sha256'],
             'protocol' => 'foundation_training_archive_v1',
         ];
+
+        // A persistent receipt removes the expensive row-by-row OHLC scan
+        // after a queue worker restart. The receipt cannot hide changed data:
+        // both files are re-hashed above and their hashes are part of the key.
+        if ($cacheKey !== null && is_string($manifestHash)) {
+            try {
+                $receipt = Cache::get("lab:foundation-validation:{$cacheKey}");
+                if (is_array($receipt)
+                    && data_get($receipt, 'protocol') === self::FOUNDATION_VALIDATION_CACHE_PROTOCOL
+                    && hash_equals($actualHash, (string) data_get($receipt, 'snapshot_sha256', ''))
+                    && hash_equals($manifestHash, (string) data_get($receipt, 'manifest_sha256', ''))
+                    && (int) data_get($receipt, 'row_count', -1) === (int) data_get($manifest, 'row_count', 0)) {
+                    self::$validatedFoundationSnapshots[$cacheKey] = $validated;
+
+                    return $validated;
+                }
+            } catch (\Throwable) {
+                // Cache availability is never evidence authority. Fall through
+                // to the canonical byte-level validation when Redis is down.
+            }
+        }
+
+        $quality = $this->foundationOhlcQuality($path);
+        if (! $quality['valid'] || $quality['rows'] !== (int) data_get($manifest, 'row_count', 0)) {
+            return null;
+        }
+
+        if ($cacheKey !== null) {
+            self::$validatedFoundationSnapshots[$cacheKey] = $validated;
+            if (is_string($manifestHash)) {
+                try {
+                    Cache::put("lab:foundation-validation:{$cacheKey}", [
+                        'protocol' => self::FOUNDATION_VALIDATION_CACHE_PROTOCOL,
+                        'snapshot_sha256' => $actualHash,
+                        'manifest_sha256' => $manifestHash,
+                        'row_count' => (int) data_get($manifest, 'row_count', 0),
+                        'validated_at' => now('UTC')->toIso8601String(),
+                    ], now()->addDays(30));
+                } catch (\Throwable) {
+                    // A valid archive remains usable even if the acceleration
+                    // receipt cannot be persisted.
+                }
+            }
+        }
+
+        return $validated;
     }
 
     /** @return array{path: string, manifest: array<string, mixed>}|null */

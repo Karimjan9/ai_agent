@@ -2,14 +2,14 @@
 
 namespace App\Services;
 
+use App\Models\AgentLearningLesson;
+use App\Models\AgentLearningSettlement;
 use App\Models\CanonicalLearningOutbox;
 use App\Models\CapabilityCausalAttribution;
 use App\Models\LabAgent;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
-use App\Models\AgentLearningLesson;
-use App\Models\AgentLearningSettlement;
 use App\Models\LearningRecoveryEvent;
 use Illuminate\Support\Facades\Schema;
 
@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\Schema;
 class CanonicalLearningOutboxService
 {
     public const PROTOCOL = 'learning_truth_protocol_v1';
+
+    public const CAPABILITY_PROJECTION_PROTOCOL = 'capability_causal_attribution_v6_process_outcome_audit';
 
     /** @return array<string,mixed> */
     public function record(LabAgent $agent, LabLearningLanePair $pair, array $result, bool $causalCreditEligible, array $delta): array
@@ -46,6 +48,15 @@ class CanonicalLearningOutboxService
                 'result' => $result, 'promotion_evidence' => false,
             ],
         ]);
+        if ((string) $row->status === 'completed') {
+            // A duplicate causal callback must be a true no-op on authority
+            // state. The old order reopened an already settled pair as
+            // `canonical_pending` immediately before process() returned its
+            // duplicate result.
+            $this->markCanonicalSettled($pair, $row);
+
+            return ['status' => 'completed', 'outbox_id' => $row->id, 'promotion_evidence' => false];
+        }
         $pair->update(['status' => 'canonical_pending', 'metadata' => [...((array) $pair->metadata), 'canonical_outbox_id' => $row->id, 'promotion_evidence' => false]]);
 
         return $this->process($row);
@@ -77,7 +88,9 @@ class CanonicalLearningOutboxService
                 'data_manifest_hash' => $row->data_hash, 'execution_hash' => $row->execution_hash,
                 'parameter_hash' => $map?->response_key,
             ]);
-            if (! is_object($episode)) throw new \RuntimeException('CANONICAL_EPISODE_UNAVAILABLE');
+            if (! is_object($episode)) {
+                throw new \RuntimeException('CANONICAL_EPISODE_UNAVAILABLE');
+            }
             $trades = $this->tradeCount($result);
             $insufficient = $trades === 0 || $this->hasMissingRewardCoverage($result);
             $settled = $kernel->settleOutcome($episode, [
@@ -87,19 +100,24 @@ class CanonicalLearningOutboxService
                 'parameter_key' => $map?->parameter_key, 'independent_window_key' => $pair->independent_window_key,
                 'control_present' => true,
                 'evidence_state' => $insufficient ? 'insufficient_evidence' : ((bool) data_get($payload, 'causal_credit_eligible') && (bool) data_get($payload, 'delta.improved') ? 'positive' : 'negative'),
-                'metrics' => $result,
+                'metrics' => app(CausalEdgeAccountingService::class)->project($result),
             ]);
-            if (! is_object(data_get($settled, 'settlement'))) throw new \RuntimeException('CANONICAL_SETTLEMENT_UNAVAILABLE');
+            if (! is_object(data_get($settled, 'settlement'))) {
+                throw new \RuntimeException('CANONICAL_SETTLEMENT_UNAVAILABLE');
+            }
             /** @var AgentLearningSettlement $settlement */
             $settlement = $settled['settlement'];
             $kernel->consolidate($settlement);
             $settlementGate = app(LearningEvidenceGate::class)->allow($pair, $row->evidence_run_id, 'canonical_settled');
-            if (! $settlementGate['allowed']) throw new \RuntimeException(implode(',', $settlementGate['reasons']));
+            if (! $settlementGate['allowed']) {
+                throw new \RuntimeException(implode(',', $settlementGate['reasons']));
+            }
             $this->projectCapability($pair, $result, $insufficient, $trades, $map, $settlement);
+            $cartridge = app(CanonicalSkillCartridgeService::class)->project($pair->fresh(['candidateAgent.modelVersion', 'candidateResponseMap', 'controlResponseMap']), $result, $map, $settlement);
             $row->update(['status' => 'completed', 'attempts' => (int) $row->attempts + 1, 'last_error' => null, 'processed_at' => now()]);
             $this->markCanonicalSettled($pair, $row);
 
-            return ['status' => 'completed', 'outbox_id' => $row->id, 'settlement_id' => $settled['settlement']->id, 'promotion_evidence' => false];
+            return ['status' => 'completed', 'outbox_id' => $row->id, 'settlement_id' => $settled['settlement']->id, 'skill_cartridge' => $cartridge, 'promotion_evidence' => false];
         } catch (\Throwable $exception) {
             return $this->fail($pair, $row, 'CANONICAL_SETTLEMENT_FAILED', $exception);
         }
@@ -135,8 +153,42 @@ class CanonicalLearningOutboxService
         $insufficient = $trades === 0 || $this->hasMissingRewardCoverage($result);
         app(LearningConsolidationService::class)->consolidate($settlement);
         $this->projectCapability($pair, $result, $insufficient, $trades, $pair->candidateResponseMap, $settlement);
+        $cartridge = app(CanonicalSkillCartridgeService::class)->project($pair->fresh(['candidateAgent.modelVersion', 'candidateResponseMap', 'controlResponseMap']), $result, $pair->candidateResponseMap, $settlement);
+        if ($cartridge === null) {
+            // A valid settlement without one reproducible intervention is
+            // useful as canonical learning truth, but it is not a cartridge.
+            // Mark this derived state explicitly so reconciliation does not
+            // create an endless retry loop or a ghost reusable skill.
+            $pair->update(['metadata' => [...((array) $pair->metadata), 'canonical_skill_cartridge_projection' => [
+                'protocol' => CanonicalSkillCartridgeService::PROTOCOL,
+                'status' => 'terminal_no_executable_intervention',
+                'reason' => 'MISSING_SINGLE_GENE_SETTLED_RESPONSE_MAP_OR_REPRODUCIBLE_INTERVENTION',
+                'promotion_evidence' => false,
+            ]]]);
+        }
 
-        return ['status' => 'reprojected', 'outbox_id' => $row->id, 'settlement_id' => $settlement->id, 'promotion_evidence' => false];
+        return ['status' => 'reprojected', 'outbox_id' => $row->id, 'settlement_id' => $settlement->id,
+            'skill_cartridge' => $cartridge, 'promotion_evidence' => false];
+    }
+
+    /** A derived projection may evolve; the immutable outbox payload may not. */
+    public function requiresReprojection(CanonicalLearningOutbox $row): bool
+    {
+        if ((string) $row->status !== 'completed' || ! $row->pair_id) {
+            return false;
+        }
+        $result = (array) data_get($row->payload, 'result', []);
+        $attribution = CapabilityCausalAttribution::query()
+            ->where('attribution_key', $this->attributionKey((int) $row->pair_id, $result))
+            ->first();
+
+        return ! $attribution
+            || ! app(CanonicalSkillCartridgeService::class)->projectionResolvedForPair((int) $row->pair_id)
+            || data_get($attribution->evidence, 'projection_protocol') !== self::CAPABILITY_PROJECTION_PROTOCOL
+            || data_get($attribution->evidence, 'trading_operating_system_scorecard.protocol') !== TradingOperatingSystemScorecardService::PROTOCOL
+            || data_get($attribution->evidence, 'confirmation_entry_capability_evidence.protocol') !== ConfirmationEntryCapabilityEvidenceService::PROTOCOL
+            || data_get($attribution->evidence, 'evolving_trader_fitness.protocol') !== EvolvingTraderFitnessService::PROTOCOL
+            || data_get($attribution->evidence, 'process_outcome_audit.protocol') !== ProcessOutcomeAuditService::PROTOCOL;
     }
 
     private function projectCapability(
@@ -146,20 +198,50 @@ class CanonicalLearningOutboxService
         int $trades,
         ?LabMutationResponseMap $map,
         AgentLearningSettlement $settlement,
-    ): void
-    {
-        if (! Schema::hasTable('capability_causal_attributions')) return;
-        $state = app(MarketStateEstimatorService::class)->estimate($pair->symbol, $pair->timeframe);
-        $state['regime'] = $state['state'];
-        $state['session'] = data_get($pair->failure_signature, 'state.session', 'unknown');
-        $state['posterior'] = [$state['state'] => $state['regime_probability']];
+    ): void {
+        if (! Schema::hasTable('capability_causal_attributions')) {
+            return;
+        }
+        $edgeAccounting = app(CausalEdgeAccountingService::class)->project($result);
+        // A settlement must be scoped to the preregistered replay context,
+        // never to whatever market state happens to be live when an outbox is
+        // projected or retried. Multi-fold evidence without a declared
+        // regime is explicitly cross-regime.
+        $scope = $this->causalScope($pair);
+        $regime = (string) ($scope['regime'] ?? 'cross_regime');
+        $state = [
+            'state' => $regime,
+            'regime' => $regime,
+            'session' => (string) ($scope['session'] ?? 'cross_session'),
+            'volatility' => $scope['volatility'] ?? null,
+            'regime_probability' => isset($scope['regime']) ? 1.0 : 0.0,
+            'posterior' => isset($scope['regime']) ? [$regime => 1.0] : [],
+        ];
         $cell = app(CapabilityCellService::class)->resolve($pair->symbol, $pair->timeframe, $state, ['strategy_id' => $pair->strategy_family]);
-        $attributionKey = 'learning-settlement:'.$pair->id.':'.(string) data_get($result, 'evidence_run_id', 'none');
+        $attributionKey = $this->attributionKey($pair->id, $result);
+        $scorecard = (array) data_get($edgeAccounting, 'trading_operating_system_scorecard', []);
+        $confirmationEntry = (array) data_get($edgeAccounting, 'confirmation_entry_capability_evidence', []);
+        $traderFitness = (array) data_get($edgeAccounting, 'evolving_trader_fitness', []);
+        $processOutcome = (array) data_get($edgeAccounting, 'process_outcome_audit', []);
+        $processRegression = (bool) data_get($processOutcome, 'learning_contract.process_repair_required', false);
+        $causalAttribution = app(TradingOperatingSystemScorecardService::class)->causalAttribution($scorecard, $insufficient);
         CapabilityCausalAttribution::updateOrCreate(['attribution_key' => $attributionKey], [
             'symbol' => $pair->symbol, 'timeframe' => $pair->timeframe,
-            'primary_cause' => $insufficient ? 'execution_admission_starvation' : 'strategy',
-            'contributions' => ['strategy' => $insufficient ? 0.0 : .25, 'tactic' => $insufficient ? 0.0 : .20, 'execution' => $insufficient ? 1.0 : .20, 'risk' => $insufficient ? 0.0 : .20, 'market_luck' => $insufficient ? 0.0 : .15],
-            'evidence' => ['pair_id' => $pair->id, 'capability_cell_id' => $cell['cell']->id, 'trade_count' => $trades, 'insufficient_evidence' => $insufficient, 'promotion_evidence' => false],
+            'primary_cause' => $causalAttribution['primary_cause'],
+            'contributions' => $causalAttribution['contributions'],
+            'evidence' => [
+                'projection_protocol' => self::CAPABILITY_PROJECTION_PROTOCOL,
+                'pair_id' => $pair->id,
+                'capability_cell_id' => $cell['cell']->id,
+                'trade_count' => $trades,
+                'insufficient_evidence' => $insufficient,
+                'evidence_gaps' => $causalAttribution['evidence_gaps'],
+                'trading_operating_system_scorecard' => $scorecard,
+                'confirmation_entry_capability_evidence' => $confirmationEntry,
+                'evolving_trader_fitness' => $traderFitness,
+                'process_outcome_audit' => $processOutcome,
+                'promotion_evidence' => false,
+            ],
             'attributed_at' => now(),
         ]);
         if ($trades === 0) {
@@ -178,7 +260,9 @@ class CanonicalLearningOutboxService
                 'exact_control' => ['paired_isolated' => true, 'status' => 'available', 'data_hash' => $pair->candidate_data_hash, 'execution_hash' => $pair->candidate_execution_hash],
                 'data_hash' => $pair->candidate_data_hash, 'execution_hash' => $pair->candidate_execution_hash,
                 'independent_windows' => ['observed_windows' => $windows, 'positive_windows' => $improved && $windows > 0 ? 1 : 0],
-                'independent_confirmation' => false, 'non_target_regression' => (bool) data_get($pair->non_target_regression, 'failed', false),
+                'independent_confirmation' => false,
+                'non_target_regression' => $this->nonTargetRegressionFailed($pair) || $processRegression,
+                'process_outcome_audit' => $processOutcome,
                 'regime' => $state['state'], 'state_posterior' => $state['posterior'], 'promotion_evidence' => false,
             ]);
             app(LearningCompilerService::class)->compileCanonical([
@@ -188,9 +272,16 @@ class CanonicalLearningOutboxService
                 'symbol' => $pair->symbol, 'timeframe' => $pair->timeframe, 'parameter_key' => $map?->parameter_key,
                 'old_value' => $map?->old_value, 'new_value' => $map?->new_value, 'direction' => $map?->direction,
                 'causal_uplift_r' => (float) data_get($pair->target_delta, 'delta', 0),
-                'scope' => ['strategy_family' => $pair->strategy_family, 'regime' => $state['state'], 'session' => data_get($pair->failure_signature, 'state.session'), 'volatility' => data_get($pair->failure_signature, 'state.volatility')],
+                'scope' => $scope,
                 'source_experiments' => ['pair-'.$pair->id], 'support' => $trades, 'independent_windows' => $windows,
-                'positive_windows' => $improved ? min($windows, 2) : 0, 'non_target_regression' => (bool) data_get($pair->non_target_regression, 'failed', false),
+                'positive_windows' => $improved ? min($windows, max(0, (int) data_get($pair->target_delta, 'positive_windows', 0))) : 0,
+                'non_target_regression' => $this->nonTargetRegressionFailed($pair) || $processRegression,
+                'causal_edge_accounting' => data_get($edgeAccounting, 'causal_edge_accounting'),
+                'component_credit' => collect($edgeAccounting)->only(array_keys(LearningRewardService::WEIGHTS))->all(),
+                'trading_operating_system_scorecard' => $scorecard,
+                'confirmation_entry_capability_evidence' => $confirmationEntry,
+                'evolving_trader_fitness' => $traderFitness,
+                'process_outcome_audit' => $processOutcome,
                 'canonical_authority' => [
                     'pair_verified' => $pair->isVerifiedControlPair(),
                     'settlement_source_type' => $settlement->source_type,
@@ -200,6 +291,11 @@ class CanonicalLearningOutboxService
             ]);
         }
         app(ProgressScoreboardService::class)->measure($pair->symbol, $pair->timeframe);
+    }
+
+    private function attributionKey(int $pairId, array $result): string
+    {
+        return 'learning-settlement:'.$pairId.':'.(string) data_get($result, 'evidence_run_id', 'none');
     }
 
     private function markCanonicalSettled(LabLearningLanePair $pair, CanonicalLearningOutbox $row): void
@@ -221,7 +317,9 @@ class CanonicalLearningOutboxService
         if (! $lesson) {
             $gate = [...$gate, 'allowed' => false, 'reasons' => [...$gate['reasons'], 'LESSON_ARTIFACT_MISSING']];
         }
-        if (! $gate['allowed']) return $this->fail($pair, null, implode(',', $gate['reasons']));
+        if (! $gate['allowed']) {
+            return $this->fail($pair, null, implode(',', $gate['reasons']));
+        }
         LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->whereIn('status', ['selected', 'queued', 'running', 'canonical_settled'])->update([
             'status' => 'completed', 'stage' => 'full_replay', 'completed_at' => now(),
         ]);
@@ -239,6 +337,7 @@ class CanonicalLearningOutboxService
                 ]);
             }
         }
+
         return ['status' => $lessonState, 'promotion_evidence' => false];
     }
 
@@ -251,8 +350,11 @@ class CanonicalLearningOutboxService
             $quarantined = app(LearningTechnicalCircuitBreakerService::class)->record($pair->symbol, $pair->timeframe, $message, ['pair_id' => $pair->id, 'outbox_id' => $row?->id]);
             $pair->update(['status' => 'canonical_failed', 'metadata' => [...((array) $pair->metadata), 'canonical_failure' => $reason, 'promotion_evidence' => false]]);
             LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->whereIn('status', ['selected', 'queued', 'running'])->update(['status' => 'canonical_failed', 'completed_at' => null]);
-            if (Schema::hasTable('learning_recovery_events')) LearningRecoveryEvent::updateOrCreate(['event_key' => 'canonical:'.$pair->id.':'.($row?->evidence_run_id ?: 'none')], ['source_type' => self::class, 'source_key' => (string) $pair->id, 'symbol' => $pair->symbol, 'timeframe' => $pair->timeframe, 'status' => $quarantined ? 'technical_quarantine' : 'retry_ready', 'action' => $quarantined ? 'open_technical_repair_lane' : 'retry_canonical_settlement', 'reason' => $reason, 'metadata' => ['outbox_id' => $row?->id, 'error' => $message, 'promotion_evidence' => false]]);
+            if (Schema::hasTable('learning_recovery_events')) {
+                LearningRecoveryEvent::updateOrCreate(['event_key' => 'canonical:'.$pair->id.':'.($row?->evidence_run_id ?: 'none')], ['source_type' => self::class, 'source_key' => (string) $pair->id, 'symbol' => $pair->symbol, 'timeframe' => $pair->timeframe, 'status' => $quarantined ? 'technical_quarantine' : 'retry_ready', 'action' => $quarantined ? 'open_technical_repair_lane' : 'retry_canonical_settlement', 'reason' => $reason, 'metadata' => ['outbox_id' => $row?->id, 'error' => $message, 'promotion_evidence' => false]]);
+            }
         }
+
         return ['status' => 'canonical_failed', 'reason' => $reason, 'outbox_id' => $row?->id, 'promotion_evidence' => false];
     }
 
@@ -262,18 +364,83 @@ class CanonicalLearningOutboxService
         LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->whereIn('status', ['selected', 'queued', 'running', 'retry_ready'])->update(['status' => 'diagnostic_only', 'completed_at' => null]);
     }
 
-    private function available(): bool { return Schema::hasTable('canonical_learning_outbox') && Schema::hasTable('agent_learning_episodes') && Schema::hasTable('agent_learning_settlements'); }
-    private function tradeCount(array $result): int { return max(0, (int) data_get($result, 'total_trades', data_get($result, 'metrics.total_trades', data_get($result, 'entry_funnel.executed_trades', 0)))); }
-    private function hasMissingRewardCoverage(array $result): bool { return $this->tradeCount($result) === 0 || (bool) data_get($result, 'coverage_failure', false); }
+    private function available(): bool
+    {
+        return Schema::hasTable('canonical_learning_outbox') && Schema::hasTable('agent_learning_episodes') && Schema::hasTable('agent_learning_settlements');
+    }
+
+    private function tradeCount(array $result): int
+    {
+        return max(0, (int) data_get($result, 'total_trades', data_get($result, 'metrics.total_trades', data_get($result, 'entry_funnel.executed_trades', 0))));
+    }
+
+    private function hasMissingRewardCoverage(array $result): bool
+    {
+        return $this->tradeCount($result) === 0 || (bool) data_get($result, 'coverage_failure', false);
+    }
+
     private function independentWindows(LabLearningLanePair $pair): int
     {
-        return LabLearningLanePair::query()
-            ->where('candidate_agent_id', $pair->candidate_agent_id)
-            ->where('pair_integrity_status', 'verified')
-            ->whereNotNull('independent_window_key')
-            ->whereIn('status', ['canonical_episode_settled', 'lesson_compiled', 'skill_confirmed'])
-            ->distinct('independent_window_key')
-            ->count('independent_window_key');
+        if (! $pair->isVerifiedControlPair()
+            || ! filled($pair->candidate_evidence_run_id)
+            || ! filled($pair->control_evidence_run_id)
+            || ! hash_equals((string) $pair->candidate_data_hash, (string) $pair->control_data_hash)
+            || ! hash_equals((string) $pair->candidate_execution_hash, (string) $pair->control_execution_hash)) {
+            return 0;
+        }
+        $candidate = (array) $pair->candidate_metrics;
+        $control = (array) $pair->control_metrics;
+        $candidateWindows = collect((array) data_get($candidate, 'windows', []))->pluck('id')->filter()->unique()->count();
+        $controlWindows = collect((array) data_get($control, 'windows', []))->pluck('id')->filter()->unique()->count();
+        $declaredCandidate = (int) data_get($candidate, 'independent_window_count', 0);
+        $declaredControl = (int) data_get($control, 'independent_window_count', 0);
+
+        return min($candidateWindows, $controlWindows, $declaredCandidate, $declaredControl);
+    }
+
+    private function nonTargetRegressionFailed(LabLearningLanePair $pair): bool
+    {
+        $evidence = (array) $pair->non_target_regression;
+        if (data_get($evidence, 'failed') === true || data_get($evidence, 'safe') === false) {
+            return true;
+        }
+
+        return in_array((string) data_get($evidence, 'status', ''), ['failed', 'unsafe', 'regressed'], true);
+    }
+
+    /** @return array<string,string> */
+    private function causalScope(LabLearningLanePair $pair): array
+    {
+        $state = (array) data_get($pair->failure_signature, 'state', []);
+        $scope = ['strategy_family' => (string) $pair->strategy_family];
+        $typed = [
+            'regime' => data_get($state, 'regime'),
+            'volatility' => data_get($state, 'volatility'),
+            'session' => data_get($state, 'session'),
+        ];
+
+        // Repair legacy signatures in projection without rewriting their
+        // immutable diagnostic payload.
+        foreach ($typed as $axis => $raw) {
+            if (! is_scalar($raw)) {
+                continue;
+            }
+            $value = trim((string) $raw);
+            if ($value === '' || in_array(strtolower($value), ['-', 'unknown', 'none', 'null'], true)) {
+                continue;
+            }
+            if (str_starts_with(strtolower($value), 'market:')) {
+                $scope['regime'] = substr($value, 7);
+            } elseif (str_starts_with(strtolower($value), 'volatility:')) {
+                $scope['volatility'] = substr($value, 11);
+            } elseif (str_starts_with(strtolower($value), 'session:')) {
+                $scope['session'] = substr($value, 8);
+            } else {
+                $scope[$axis] = $value;
+            }
+        }
+
+        return array_filter($scope, fn (mixed $value): bool => $value !== null && $value !== '');
     }
 
     private function lessonIsIndependentlyConfirmed(AgentLearningLesson $lesson): bool
@@ -285,6 +452,8 @@ class CanonicalLearningOutboxService
             && (int) $lesson->independent_window_count >= $required
             && in_array($protocol, [
                 'memory_guided_vs_blinded_vs_frozen_control_v1',
+                'repair_guided_vs_blinded_vs_frozen_control_v1',
+                'architecture_guided_vs_blinded_vs_frozen_control_v1',
                 'learning_lane_independent_skill_v1',
             ], true);
     }

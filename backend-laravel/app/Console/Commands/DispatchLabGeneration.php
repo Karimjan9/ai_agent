@@ -7,6 +7,7 @@ use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Services\CandidateHandoffService;
+use App\Services\FrozenControlScreeningAdmissionService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabGenerationContextService;
@@ -28,7 +29,7 @@ use Illuminate\Support\Facades\Schema;
 
 class DispatchLabGeneration extends Command
 {
-    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1} {--force-generation} {--controlled-rescue : Dispatch an already-approved XAUUSD H1 controlled rescue only} {--shadow-research : Dispatch only an already-approved shadow-research generation} {--audited-data-edge : Dispatch only an explicitly audited data-edge generation while normal creation remains paused} {--resume-draft-agents : Continue stranded draft agents after a complete constructor has already opened the generation}';
+    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1} {--force-generation} {--controlled-rescue : Dispatch an already-approved XAUUSD H1 controlled rescue only} {--shadow-research : Dispatch only an already-approved shadow-research generation} {--audited-data-edge : Dispatch only an explicitly audited data-edge generation while normal creation remains paused} {--learning-confirmation : Build/dispatch one bounded guided-vs-blinded-vs-frozen-control confirmation triplet} {--resume-draft-agents : Continue stranded draft agents after a complete constructor has already opened the generation}';
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
@@ -38,7 +39,15 @@ class DispatchLabGeneration extends Command
         $controlledRescue = (bool) $this->option('controlled-rescue');
         $shadowResearch = (bool) $this->option('shadow-research');
         $auditedDataEdge = (bool) $this->option('audited-data-edge');
+        $learningConfirmation = (bool) $this->option('learning-confirmation');
         $resumeDraftAgents = (bool) $this->option('resume-draft-agents');
+        if ($learningConfirmation
+            && (strtoupper((string) ($this->argument('symbol') ?: '')) !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+                || strtoupper((string) $this->option('timeframe')) !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
+            $this->error('Learning confirmation faqat XAUUSD H1 lighthouse uchun ruxsat etiladi.');
+
+            return self::FAILURE;
+        }
         if ($shadowResearch
             && (strtoupper((string) ($this->argument('symbol') ?: '')) !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
                 || strtoupper((string) $this->option('timeframe')) !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
@@ -69,6 +78,7 @@ class DispatchLabGeneration extends Command
             && ! $controlledRescue
             && ! $shadowResearch
             && ! $auditedDataEdge
+            && ! $learningConfirmation
             && ! $resumeDraftAgents) {
             $this->info('Learning protocol paused: normal screening dispatch deferred; existing recovery jobs remain untouched.');
 
@@ -104,17 +114,26 @@ class DispatchLabGeneration extends Command
             // the owner of this laboratory stream.
             $existingLab = AiLaboratory::where('symbol', $symbol)->where('timeframe', $timeframe)->firstOrFail();
             $existingGeneration = $existingLab->generations()->latest('generation')->first();
+            $resumeLearningConfirmationDraft = $learningConfirmation
+                && $existingGeneration
+                && (string) $existingGeneration->status === 'draft'
+                && (string) $existingGeneration->trigger_type === 'learning_confirmation';
+            if ($resumeLearningConfirmationDraft) {
+                $technicalBreaker->adoptHalfOpenProbe($symbol, $timeframe);
+            }
             if (! $resumeDraftAgents
                 && $existingGeneration
                 && in_array((string) $existingGeneration->status, ['queued', 'training', 'screening', 'full_queued', 'full_validation'], true)) {
                 $this->info("{$symbol}: generation is already dispatched or evaluated.");
                 continue;
             }
-            if ($technicalBreaker->blocked($symbol, $timeframe) && ! $resumeDraftAgents) {
+            if ($technicalBreaker->blocked($symbol, $timeframe)
+                && ! $resumeDraftAgents
+                && ! $resumeLearningConfirmationDraft) {
                 $this->warn("{$symbol} {$timeframe}: repeated technical failure circuit breaker active; new generation blocked pending technical repair.");
                 continue;
             }
-            if (! $resumeDraftAgents && ! $controlledRescue && ! $shadowResearch && ! $auditedDataEdge) {
+            if (! $resumeDraftAgents && ! $controlledRescue && ! $shadowResearch && ! $auditedDataEdge && ! $learningConfirmation) {
                 $generationGate = $evidenceGate->allowsNextGeneration($symbol, $timeframe);
                 if (! $generationGate['allowed']) {
                     $this->warn("{$symbol} {$timeframe}: new generation blocked by Learning Evidence Gate ({$generationGate['reason']}).");
@@ -155,6 +174,13 @@ class DispatchLabGeneration extends Command
 
                 continue;
             }
+            if ($learningConfirmation && $generation
+                && in_array((string) $generation->status, LabPopulationService::ACTIVE_GENERATION_STATUSES, true)
+                && (string) $generation->trigger_type !== 'learning_confirmation') {
+                $this->info("{$symbol} {$timeframe}: boshqa active generation mavjud; learning confirmation dispatch deferred.");
+
+                continue;
+            }
             $activeGeneration = $lab->generations()
                 ->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)
                 ->latest('generation')
@@ -185,18 +211,26 @@ class DispatchLabGeneration extends Command
                 'full_queued', 'full_validation',
             ];
             $shouldBuildGeneration = ! $generation
+                || ($learningConfirmation && ! in_array((string) $generation->status, $activeStatuses, true))
                 || ($this->option('force-generation')
                     && ! in_array((string) $generation->status, $activeStatuses, true));
             if ($shouldBuildGeneration) {
-                $generation = $shadowResearch
+                $generation = $learningConfirmation
+                    ? $populations->build($symbol, 'learning_confirmation', false, $timeframe, [], false, false, 3)
+                    : ($shadowResearch
                     ? $populations->build($symbol, 'shadow_research', false, $timeframe, [], false, false, (int) config('services.lab_selection.population_size', 20))
                     : ($auditedDataEdge
                         ? $populations->build($symbol, 'data_edge_audit', true, $timeframe)
-                        : $populations->build($symbol, 'new_data', (bool) $this->option('force-generation'), $timeframe));
+                        : $populations->build($symbol, 'new_data', (bool) $this->option('force-generation'), $timeframe)));
             }
 
             if (! $generation) {
-                $this->warn("{$symbol}: new learning evidence is not available.");
+                $outcome = $populations->lastBuildOutcome();
+                $reason = (string) data_get($outcome, 'reason_code', 'POPULATION_BUILD_UNAVAILABLE');
+                $this->warn("{$symbol}: generation build deferred [{$reason}].");
+                if ($learningConfirmation) {
+                    $technicalBreaker->releaseAcquiredProbe($symbol, $timeframe, $reason);
+                }
 
                 continue;
             }
@@ -216,6 +250,11 @@ class DispatchLabGeneration extends Command
 
                 continue;
             }
+            if ($learningConfirmation && (string) $generation->trigger_type !== 'learning_confirmation') {
+                $this->error("{$symbol}: learning-confirmation flag boshqa generationni dispatch qilmaydi.");
+
+                continue;
+            }
             if ($controlledRescue
                 && data_get($generation->trigger_context, 'controlled_rescue_admission.protocol')
                     !== LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL) {
@@ -223,7 +262,7 @@ class DispatchLabGeneration extends Command
 
                 continue;
             }
-            if (! $controlledRescue && ! $shadowResearch && ! $auditedDataEdge && ! $resumeExistingGeneration) {
+            if (! $controlledRescue && ! $shadowResearch && ! $auditedDataEdge && ! $learningConfirmation && ! $resumeExistingGeneration) {
                 $normalAdmission = $this->normalCausalAdmission($generation);
                 if (! (bool) data_get($normalAdmission, 'allowed', true)) {
                     $this->warn(sprintf(
@@ -423,6 +462,18 @@ class DispatchLabGeneration extends Command
             if ($agentIds->isEmpty()) {
                 if ($draftIntegrityQuarantines !== []) {
                     $generation->update(['status' => 'technical_quarantine', 'completed_at' => now()]);
+                    if ($learningConfirmation) {
+                        $reasons = collect($draftIntegrityQuarantines)
+                            ->flatMap(fn (array $row): array => (array) ($row['violations'] ?? []))
+                            ->map('strval')->unique()->values()->all();
+                        app(\App\Services\CausalLearningCohortService::class)
+                            ->invalidateGeneration($generation->fresh(), $reasons);
+                        $technicalBreaker->releaseAcquiredProbe(
+                            $symbol,
+                            $timeframe,
+                            'LEARNING_CONFIRMATION_PREFLIGHT_REJECTED',
+                        );
+                    }
                     $this->warn("{$symbol}: all recoverable children failed identity integrity; generation quarantined without screening evidence.");
 
                     continue;
@@ -494,11 +545,24 @@ class DispatchLabGeneration extends Command
                         || data_get($metadata, 'portfolio_council_lane.specialist_role') === 'volume_m15_specialist'
                         || data_get($metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1';
                 });
-            $batchSize = $heavyScreeningBatch
-                ? min($configuredBatchSize, 2)
-                : $configuredBatchSize;
+            // A causal triplet must run its two counterfactuals concurrently
+            // after the frozen control exists. Their stateful replay dominates
+            // the few seconds saved by sharing feature construction; putting
+            // both arms in one HTTP batch serialises them and roughly doubles
+            // wall-clock learning latency. Single-agent jobs alternate the two
+            // mutex slots: the control owns slot 0 first, while both candidates
+            // later use slot 1/0 and keep independent immutable runs.
+            $batchSize = $learningConfirmation
+                ? 1
+                : ($heavyScreeningBatch
+                    ? min($configuredBatchSize, 2)
+                    : $configuredBatchSize);
             $orderedIds = $agentIds->map(fn ($id): int => (int) $id)->all();
-            $controlIds = $draftAgents
+            // Recovery may contribute already-queued stranded agents while
+            // draftAgents is empty. Classify controls from the complete set
+            // being dispatched so a resumed causal cohort cannot put its
+            // control and candidates back into one self-waiting batch.
+            $controlIds = $dispatchAgents
                 ->filter(fn (LabAgent $agent): bool => $this->isFrozenRepairControl($agent))
                 ->pluck('id')->map(fn ($id): int => (int) $id)->all();
             $remainingIds = array_values(array_diff($orderedIds, $controlIds));
@@ -697,7 +761,10 @@ class DispatchLabGeneration extends Command
             data_get($metadata, 'repair_anchor_sibling.kind', ''),
         );
 
-        return (bool) data_get($metadata, 'repair_anchor.control_only', false)
+        $canonicalControl = app(FrozenControlScreeningAdmissionService::class)->isControl($agent);
+
+        return $canonicalControl
+            || (bool) data_get($metadata, 'repair_anchor.control_only', false)
             || in_array($siblingKind, ['frozen_control', 'control'], true);
     }
 

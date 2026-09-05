@@ -74,6 +74,14 @@ class GenerationConstructionAdmissionService
         if ($lineageAllowed !== true) {
             $reasons[] = 'LINEAGE_CONTINUATION_NOT_ADMITTED';
         }
+        $selectorProtocol = (string) data_get(
+            $context,
+            'adaptive_evolution_policy.causal_learning_counterfactual_cohort.blinded_selector.protocol',
+            '',
+        );
+        if ($selectorProtocol !== '' && $selectorProtocol !== CausalBlindedMutationSelectorService::PROTOCOL) {
+            $reasons[] = 'CAUSAL_SELECTOR_PROTOCOL_SUPERSEDED';
+        }
 
         return [
             'protocol' => 'generation_construction_admission_v1',
@@ -86,6 +94,8 @@ class GenerationConstructionAdmissionService
             'completed_slots' => $completedSlots->all(),
             'constructor_abort_keys' => $abortKeys,
             'lineage_allowed' => $lineageAllowed === true,
+            'causal_selector_protocol' => $selectorProtocol !== '' ? $selectorProtocol : null,
+            'required_causal_selector_protocol' => CausalBlindedMutationSelectorService::PROTOCOL,
             'promotion_evidence' => false,
         ];
     }

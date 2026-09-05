@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\AgentMemory;
 use App\Models\AgentMemoryMatch;
+use App\Models\LighthouseVerticalLoopMonitorRun;
 use App\Models\MarketDataSyncState;
 use App\Models\MarketSpecies;
 use App\Models\MarketStateSnapshot;
+use App\Models\MtfPilotMonitorRun;
 use App\Models\ServiceHealthCheck;
 use App\Models\SignalMarketSnapshot;
 use App\Models\SystemEvent;
@@ -203,5 +205,45 @@ class PhaseTwoFoundationTest extends TestCase
 
         $this->assertSame('critical', $check->status);
         $this->assertStringContainsString('candle age', $check->message);
+    }
+
+    public function test_global_health_projects_monitor_runs_without_recursively_nesting_owned_health_rows(): void
+    {
+        MtfPilotMonitorRun::create([
+            'pilot_id' => 'xauusd_h1_m15_v1', 'symbol' => 'XAUUSD',
+            'status' => 'warning', 'health_score' => 60, 'lookback_hours' => 24,
+            'report' => [
+                'protocol' => 'mtf_pilot_monitor_v1',
+                'checks' => [
+                    ['status' => 'ok'], ['status' => 'warning'],
+                ],
+                'promotion_evidence' => false,
+            ],
+            'checked_at' => now(),
+        ]);
+        LighthouseVerticalLoopMonitorRun::create([
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'stage' => 'learning',
+            'status' => 'warning', 'health_score' => 55,
+            'report' => [
+                'protocol' => 'lighthouse_vertical_loop_monitor_v1',
+                'checks' => [['status' => 'attention']],
+                'promotion_evidence' => false,
+            ],
+            'checked_at' => now(),
+        ]);
+
+        $service = app(PhaseTwoFoundationService::class);
+        $service->runHealthCheck();
+        $checks = $service->runHealthCheck();
+        $mtf = $checks->firstWhere('service_key', 'foundation:mtf_pilot:XAUUSD');
+        $lighthouse = $checks->firstWhere('service_key', 'foundation:lighthouse_vertical_loop:XAUUSD:H1');
+
+        $this->assertSame('mtf_pilot_monitor_v1', data_get($mtf->metrics, 'monitor_protocol'));
+        $this->assertSame(1, data_get($mtf->metrics, 'check_status_counts.ok'));
+        $this->assertSame('lighthouse_vertical_loop_monitor_v1', data_get($lighthouse->metrics, 'monitor_protocol'));
+        $this->assertArrayNotHasKey('monitor_metrics', $mtf->metrics);
+        $this->assertArrayNotHasKey('monitor_metrics', $lighthouse->metrics);
+        $this->assertDatabaseMissing('service_health_checks', ['service_key' => 'mtf_pilot:XAUUSD']);
+        $this->assertDatabaseMissing('service_health_checks', ['service_key' => 'lighthouse_vertical_loop:XAUUSD:H1']);
     }
 }

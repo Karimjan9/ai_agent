@@ -13,6 +13,7 @@ use App\Services\EvolutionArchiveService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class AdaptiveParentEcosystemTest extends TestCase
@@ -385,6 +386,19 @@ class AdaptiveParentEcosystemTest extends TestCase
                 ]],
                 'behavioral_diversity' => ['status' => 'distinct'],
             ],
+        ]);
+        // Parent selection now requires prospective Foundry authority in
+        // addition to a challenger performance. This fixture explicitly
+        // represents a model that already completed that separate ladder;
+        // tests without makePerformance remain research-only as intended.
+        DB::table('evolutionary_authority_ledgers')->insert([
+            'authority_key' => hash('sha256', 'adaptive-parent-test|'.$model->id),
+            'model_version_id' => $model->id, 'lab_agent_id' => null,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'authority_stage' => 'eligible_parent', 'status' => 'passed',
+            'data_hash' => str_repeat('a', 64), 'execution_hash' => str_repeat('b', 64),
+            'evidence' => json_encode(['protocol' => 'evolutionary_authority_foundry_v1', 'fixture' => true, 'promotion_evidence' => false]),
+            'evaluated_at' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
     }
 }

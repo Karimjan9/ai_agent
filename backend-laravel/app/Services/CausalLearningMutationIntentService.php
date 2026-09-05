@@ -75,6 +75,7 @@ class CausalLearningMutationIntentService
         $influence = match (true) {
             $cohortRole === 'blinded' => 'blinded_counterfactual',
             $cohortRole === 'frozen_control' => 'frozen_control',
+            $cohortRole === 'repair_guided' => 'causal_repair_guided',
             $causalLessonIds->isNotEmpty() => 'memory_guided',
             default => 'independent_exploration',
         };
@@ -123,6 +124,31 @@ class CausalLearningMutationIntentService
         if (! Schema::hasTable('agent_learning_mutation_intents')) {
             return ['status' => 'unavailable', 'protocol' => self::PROTOCOL, 'promotion_evidence' => false];
         }
+        $influence = (string) data_get($plan, 'influence_type', 'independent_exploration');
+        if (str_contains($influence, 'memory')) {
+            $cartridge = (array) data_get($plan, 'skill_cartridge', []);
+            if ($cartridge === []) {
+                $cartridge = app(CanonicalSkillCartridgeService::class)->retrieve(
+                    (string) data_get($plan, 'symbol'), (string) data_get($plan, 'timeframe'), (string) data_get($plan, 'strategy_family'),
+                    (array) data_get($plan, 'context', data_get($plan, 'scope', [])), [(string) data_get($plan, 'selected_gene')],
+                );
+            }
+            if (data_get($cartridge, 'status') !== 'compatible_cartridge_found') {
+                return ['status' => 'blocked', 'reason' => 'MEMORY_GUIDED_CARTRIDGE_ABSTAINED', 'cartridge' => $cartridge, 'promotion_evidence' => false];
+            }
+            // Older callers stored the scalar directly while the canonical
+            // planner stores it under `value`.  Both representations express
+            // the same immutable intervention, so normalize before enforcing
+            // exact replay rather than silently rejecting a valid cartridge.
+            $plannedOld = data_get($plan, 'old_value.value', data_get($plan, 'old_value'));
+            $plannedNew = data_get($plan, 'new_value.value', data_get($plan, 'new_value'));
+            if (data_get($plan, 'selected_gene') !== data_get($cartridge, 'gene')
+                || json_encode($plannedOld) !== json_encode(data_get($cartridge, 'old_value'))
+                || json_encode($plannedNew) !== json_encode(data_get($cartridge, 'proposed_value'))) {
+                return ['status' => 'blocked', 'reason' => 'EXACT_CARTRIDGE_REPLICATION_MISMATCH', 'cartridge' => $cartridge, 'promotion_evidence' => false];
+            }
+            $plan['skill_cartridge'] = $cartridge;
+        }
         $sealedAt = now();
         $retrievedAt = data_get($plan, 'retrieved_at');
         if ($retrievedAt && Carbon::parse($retrievedAt)->greaterThanOrEqualTo($sealedAt)) {
@@ -158,6 +184,7 @@ class CausalLearningMutationIntentService
                     'protocol' => self::PROTOCOL,
                     'cohort_role' => data_get($plan, 'cohort_role'),
                     'causal_order' => data_get($plan, 'causal_order'),
+                    'skill_cartridge' => data_get($plan, 'skill_cartridge'),
                     'post_hoc_upgrade_forbidden' => true,
                     'promotion_evidence' => false,
                 ],

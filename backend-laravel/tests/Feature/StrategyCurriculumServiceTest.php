@@ -11,7 +11,7 @@ class StrategyCurriculumServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_strategy_agents_receive_a_bounded_mastery_contract_and_only_validated_specialists_can_innovate(): void
+    public function test_strategy_agents_receive_a_bounded_mastery_contract_and_only_full_stack_masters_can_innovate(): void
     {
         $model = ModelVersion::create([
             'name' => 'fib-structure', 'strategy' => 'fibonacci_structure_pullback_v1', 'version' => 'v1',
@@ -33,6 +33,7 @@ class StrategyCurriculumServiceTest extends TestCase
         ]);
         $this->assertSame('validated', $passport->status);
 
+        $passport->update(['mastery_stage' => 'master']);
         $contract->update(['training_stage' => 'validated_specialist', 'innovation_budget' => 1]);
         $trial = $service->proposeInnovation($contract->fresh(), ['dynamic_fibonacci_zone', 'liquidity_sweep'], ['trade_set_changed' => true]);
         $this->assertSame('innovation_trial', $trial->status);

@@ -1,0 +1,726 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\MarketTrainingArchive;
+use App\Services\MarketData\MarketTrainingDataService;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\File;
+use RuntimeException;
+
+/**
+ * Freezes the complete H4/H1/M15/M5 research input as one immutable bundle.
+ *
+ * M5 is the execution stream. H4 is deterministically aggregated from the
+ * same frozen H1 source, because the current provider does not publish an H4
+ * stream. Every resulting row remains an OHLCV observation, not order-book
+ * evidence.
+ */
+class MultiTimeframeSnapshotService
+{
+    public const PROTOCOL = 'closed_h4_h1_m15_m5_snapshot_v1';
+
+    public const RESEARCH_MAX_M5_ROWS = 10000;
+
+    /** Scout first; spend more history only on a promising underpowered prior. */
+    public const RESEARCH_EVIDENCE_BUDGETS = [10000, 20000, 40000];
+
+    /** Two-year sealed holdout plus nine sampled folds, still below full history. */
+    public const AGENT_VALIDATION_MAX_M5_ROWS = 200000;
+
+    /** Expand temporal breadth once; never relax the strategy to manufacture activity. */
+    public const AGENT_VALIDATION_EVIDENCE_BUDGETS = [200000, 350000];
+
+    public const AGENT_VALIDATION_MIN_M5_ROWS = 10000;
+
+    private const DURATIONS = ['M5' => 5, 'M15' => 15, 'H1' => 60, 'H4' => 240, 'D1' => 1440];
+
+    public function __construct(
+        private LabDatasetExportService $datasets,
+        private MarketTrainingDataService $training,
+    ) {}
+
+    /**
+     * Cheap admission check for the model-owned MTF lane.
+     *
+     * The live Candle table starts M5 in 2026 and therefore has no training
+     * rows.  This lane is intentionally tied to the isolated pre-2026
+     * training store.  Checking it before queue dispatch prevents an empty
+     * live export from entering a fail/retry CPU loop.
+     *
+     * @return array<string,mixed>
+     */
+    public function agentValidationReadiness(
+        string $symbol,
+        int $maxM5Rows = self::AGENT_VALIDATION_MAX_M5_ROWS,
+    ): array {
+        $symbol = strtoupper(str_replace(['/', '_', '-'], '', trim($symbol)));
+        if ($symbol !== 'XAUUSD') {
+            return ['ready' => false, 'reason' => 'SYMBOL_NOT_SUPPORTED'];
+        }
+        if (! in_array($maxM5Rows, self::AGENT_VALIDATION_EVIDENCE_BUDGETS, true)) {
+            return ['ready' => false, 'reason' => 'UNSEALED_EVIDENCE_BUDGET'];
+        }
+
+        $requirements = [
+            ['dataset' => 'foundation_intraday_10y', 'timeframe' => 'M5', 'minimum' => self::AGENT_VALIDATION_MIN_M5_ROWS],
+            ['dataset' => MarketTrainingDataService::DEFAULT_DATASET, 'timeframe' => 'M15', 'minimum' => 1000],
+            ['dataset' => MarketTrainingDataService::DEFAULT_DATASET, 'timeframe' => 'H1', 'minimum' => 500],
+        ];
+        $streams = [];
+        foreach ($requirements as $requirement) {
+            $archive = MarketTrainingArchive::query()
+                ->where('dataset_key', $requirement['dataset'])
+                ->where('provider', MarketTrainingDataService::DEFAULT_PROVIDER)
+                ->where('symbol', $symbol)
+                ->where('timeframe', $requirement['timeframe'])
+                ->first();
+            $rows = (int) ($archive?->row_count ?? 0);
+            $streams[$requirement['timeframe']] = [
+                'dataset_key' => $requirement['dataset'],
+                'row_count' => $rows,
+                'status' => $archive?->status,
+                'first_candle_at' => $archive?->first_candle_at?->utc()->toIso8601String(),
+                'last_candle_at' => $archive?->last_candle_at?->utc()->toIso8601String(),
+                'minimum_rows' => $requirement['minimum'],
+            ];
+            if ($rows < $requirement['minimum'] || ! $archive?->last_candle_at) {
+                return [
+                    'ready' => false,
+                    'reason' => 'FOUNDATION_STREAM_UNDERPOWERED',
+                    'blocked_timeframe' => $requirement['timeframe'],
+                    'streams' => $streams,
+                ];
+            }
+        }
+
+        $m5Last = CarbonImmutable::parse((string) data_get($streams, 'M5.last_candle_at'), 'UTC');
+        foreach (['M15', 'H1'] as $timeframe) {
+            if (CarbonImmutable::parse((string) data_get($streams, "{$timeframe}.last_candle_at"), 'UTC')
+                ->lessThan($m5Last)) {
+                return [
+                    'ready' => false,
+                    'reason' => 'CONTEXT_DOES_NOT_COVER_ENTRY_CUTOFF',
+                    'blocked_timeframe' => $timeframe,
+                    'streams' => $streams,
+                ];
+            }
+        }
+
+        return [
+            'ready' => true,
+            'reason' => 'SEALED_FOUNDATION_READY',
+            'streams' => $streams,
+            'entry_cutoff' => $m5Last->toIso8601String(),
+            'requested_m5_rows' => $maxM5Rows,
+            'bounded_m5_rows' => min((int) data_get($streams, 'M5.row_count'), $maxM5Rows),
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /**
+     * Freeze a bounded, content-addressed pre-2026 bundle for nine-fold
+     * model-owned confirmation.  No rolling/paper CSV is exported here.
+     *
+     * @return array<string,mixed>
+     */
+    public function forAgentOwnedConfirmationValidation(
+        string $symbol,
+        int $maxM5Rows = self::AGENT_VALIDATION_MAX_M5_ROWS,
+    ): array {
+        $readiness = $this->agentValidationReadiness($symbol, $maxM5Rows);
+        if (! (bool) ($readiness['ready'] ?? false)) {
+            throw new RuntimeException('MTF agent validation foundation is not ready: '.(string) ($readiness['reason'] ?? 'UNKNOWN'));
+        }
+        $symbol = 'XAUUSD';
+        $provider = MarketTrainingDataService::DEFAULT_PROVIDER;
+        $m5Dataset = 'foundation_intraday_10y';
+        $contextDataset = MarketTrainingDataService::DEFAULT_DATASET;
+        $entryCutoff = CarbonImmutable::parse((string) $readiness['entry_cutoff'], 'UTC');
+        $exclusiveCutoff = $entryCutoff->addMinutes(self::DURATIONS['M5']);
+        $m5Rows = $this->training->candlesForAgent(
+            $m5Dataset,
+            $provider,
+            $symbol,
+            'M5',
+            null,
+            $exclusiveCutoff,
+            $maxM5Rows,
+        );
+        if (count($m5Rows) < self::AGENT_VALIDATION_MIN_M5_ROWS) {
+            throw new RuntimeException('MTF agent validation M5 foundation became underpowered during freeze.');
+        }
+
+        // Give every first entry fold ample closed higher-timeframe warm-up;
+        // no context row after the frozen M5 cutoff can enter the bundle.
+        $contextFrom = CarbonImmutable::parse((string) $m5Rows[0]['time'], 'UTC')->subDays(90);
+        $streams = ['M5' => $m5Rows];
+        foreach (['M15', 'H1'] as $timeframe) {
+            $rows = $this->training->candlesForAgent(
+                $contextDataset,
+                $provider,
+                $symbol,
+                $timeframe,
+                $contextFrom,
+                $exclusiveCutoff,
+            );
+            $streams[$timeframe] = $this->closedRows($rows, $timeframe, $exclusiveCutoff);
+        }
+        $streams['H4'] = $this->aggregateH4($streams['H1']);
+        foreach (['M5' => self::AGENT_VALIDATION_MIN_M5_ROWS, 'M15' => 1000, 'H1' => 500, 'H4' => 100] as $timeframe => $minimum) {
+            if (count($streams[$timeframe]) < $minimum) {
+                throw new RuntimeException("MTF agent validation {$timeframe} snapshot candle yetarli emas: ".count($streams[$timeframe]));
+            }
+        }
+
+        $sourceHashes = [];
+        foreach ($streams as $timeframe => $rows) {
+            $sourceHashes[$timeframe] = $this->rowContentHash($rows);
+        }
+        $identity = [
+            'protocol' => self::PROTOCOL,
+            'validation_bundle_protocol' => 'agent_owned_mtf_foundation_bundle_v1',
+            'data_role' => 'pre_2026_foundation_training_only',
+            'symbol' => $symbol,
+            'provider' => $provider,
+            'datasets' => ['M5' => $m5Dataset, 'M15' => $contextDataset, 'H1' => $contextDataset, 'H4' => 'derived_from_H1'],
+            'entry_rows' => count($streams['M5']),
+            'entry_first_candle_at' => $streams['M5'][0]['time'],
+            'entry_last_candle_at' => $streams['M5'][array_key_last($streams['M5'])]['time'],
+            'closed_cutoff' => $exclusiveCutoff->toIso8601String(),
+            'context_warmup_days' => 90,
+            'stream_content_sha256' => $sourceHashes,
+            'aggregation' => ['H4' => 'four_complete_UTC_H1_candles'],
+            'bounded_cost_contract' => [
+                'maximum_m5_rows' => $maxM5Rows,
+                'requested_m5_rows' => $maxM5Rows,
+                'available_m5_rows_at_freeze' => (int) data_get($readiness, 'streams.M5.row_count'),
+                'full_live_export_forbidden' => true,
+                'nine_fold_max_rows_per_fold' => 4096,
+            ],
+            'post_selection_historical_evidence' => true,
+            'runtime_trade_authority' => false,
+            'parent_authority' => false,
+            'promotion_evidence' => false,
+        ];
+        $bundleHash = hash('sha256', json_encode($identity, JSON_UNESCAPED_SLASHES));
+        $directory = storage_path('app/lab-datasets/mtf/'.$bundleHash);
+        $manifestPath = $directory.'/manifest.json';
+        if (is_file($manifestPath)) {
+            $manifest = (array) json_decode((string) File::get($manifestPath), true);
+            if ((string) ($manifest['bundle_hash'] ?? '') === $bundleHash && $this->validBundle($manifest)) {
+                return $this->result($manifest, $directory);
+            }
+            throw new RuntimeException("MTF agent validation bundle integrity mismatch: {$directory}");
+        }
+
+        File::ensureDirectoryExists($directory);
+        $streamManifest = [];
+        foreach ($streams as $timeframe => $rows) {
+            $path = $directory.'/'.strtolower($timeframe).'.csv';
+            $this->writeCsv($path, $rows);
+            $streamManifest[$timeframe] = $this->streamManifest($path, $rows, $timeframe);
+        }
+        $manifest = [
+            ...$identity,
+            'bundle_hash' => $bundleHash,
+            'streams' => $streamManifest,
+            'generated_at' => now()->utc()->toIso8601String(),
+            'rule' => 'M5 entries may read only M15/H1/H4 candles closed by the M5 decision; the bundle is historical research, never promotion evidence.',
+        ];
+        File::put($manifestPath, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+
+        return $this->result($manifest, $directory);
+    }
+
+    /** @return array<string,mixed> */
+    public function forLiquidityTrapReplay(string $symbol): array
+    {
+        $symbol = strtoupper(str_replace(['/', '_', '-'], '', trim($symbol)));
+        if ($symbol === '') {
+            throw new RuntimeException('MTF snapshot uchun symbol topilmadi.');
+        }
+
+        $sources = [];
+        foreach (['M5', 'M15', 'H1'] as $timeframe) {
+            $path = $this->datasets->export($symbol, $timeframe);
+            $sources[$timeframe] = [
+                'path' => $path,
+                'sha256' => hash_file('sha256', $path),
+                'rows' => $this->datasets->rowsFromSnapshot($path),
+            ];
+        }
+        $cutoff = $this->commonClosedCutoff($sources);
+        $streams = [];
+        foreach ($sources as $timeframe => $source) {
+            $streams[$timeframe] = $this->closedRows((array) $source['rows'], $timeframe, $cutoff);
+        }
+        $streams['H4'] = $this->aggregateH4($streams['H1']);
+        foreach (['M5' => 100, 'M15' => 40, 'H1' => 40, 'H4' => 10] as $timeframe => $minimum) {
+            if (count($streams[$timeframe]) < $minimum) {
+                throw new RuntimeException("MTF {$timeframe} snapshot candle yetarli emas: ".count($streams[$timeframe]));
+            }
+        }
+
+        $identity = [
+            'protocol' => self::PROTOCOL,
+            'symbol' => $symbol,
+            'closed_cutoff' => $cutoff->toIso8601String(),
+            'source_sha256' => array_map(fn (array $item): ?string => $item['sha256'], $sources),
+            'aggregation' => ['H4' => 'four_complete_UTC_H1_candles'],
+        ];
+        $bundleHash = hash('sha256', json_encode($identity, JSON_UNESCAPED_SLASHES));
+        $directory = storage_path('app/lab-datasets/mtf/'.$bundleHash);
+        $manifestPath = $directory.'/manifest.json';
+        if (is_file($manifestPath)) {
+            $manifest = (array) json_decode((string) File::get($manifestPath), true);
+            if ((string) ($manifest['bundle_hash'] ?? '') === $bundleHash && $this->validBundle($manifest)) {
+                return $this->result($manifest, $directory);
+            }
+            throw new RuntimeException("MTF immutable bundle integrity mismatch: {$directory}");
+        }
+
+        File::ensureDirectoryExists($directory);
+        $streamManifest = [];
+        foreach ($streams as $timeframe => $rows) {
+            $path = $directory.'/'.strtolower($timeframe).'.csv';
+            $this->writeCsv($path, $rows);
+            $streamManifest[$timeframe] = [
+                'path' => $path,
+                'sha256' => hash_file('sha256', $path),
+                'row_count' => count($rows),
+                'first_candle_at' => $rows[0]['time'],
+                'last_candle_at' => $rows[array_key_last($rows)]['time'],
+                'available_after_seconds' => self::DURATIONS[$timeframe] * 60,
+            ];
+        }
+        $manifest = [
+            ...$identity,
+            'bundle_hash' => $bundleHash,
+            'streams' => $streamManifest,
+            'generated_at' => now()->utc()->toIso8601String(),
+            'rule' => 'M5 execution may merge only H4/H1/M15 rows whose open time plus timeframe duration is at or before the M5 decision time.',
+            'promotion_evidence' => false,
+        ];
+        File::put($manifestPath, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+
+        return $this->result($manifest, $directory);
+    }
+
+    /**
+     * Freeze the complete input bundle for one catalogue playbook.
+     *
+     * Calendar/session requirements are deterministic functions of the UTC
+     * candle timestamps and therefore add no mutable external stream. D1 and
+     * H4 are derived only from the same sealed H1 source. A cross-market SMT
+     * run requires an explicit related symbol; it is never synthesized from
+     * the primary market.
+     *
+     * @param  array<int,string>  $requirements
+     * @return array<string,mixed>
+     */
+    public function forResearchPlaybookReplay(
+        string $symbol,
+        array $requirements = [],
+        ?string $relatedSymbol = null,
+        int $maxM5Rows = self::RESEARCH_MAX_M5_ROWS,
+    ): array {
+        $symbol = strtoupper(str_replace(['/', '_', '-'], '', trim($symbol)));
+        if ($symbol === '') {
+            throw new RuntimeException('MTF research snapshot uchun symbol topilmadi.');
+        }
+        $requirements = array_values(array_unique(array_map('strtoupper', $requirements)));
+        $needsD1 = in_array('D1', $requirements, true);
+        $needsRelated = in_array('RELATED_MARKET', $requirements, true);
+        if ($needsRelated && trim((string) $relatedSymbol) === '') {
+            throw new RuntimeException('SMT research uchun related symbol majburiy.');
+        }
+        if (! in_array($maxM5Rows, self::RESEARCH_EVIDENCE_BUDGETS, true)) {
+            throw new RuntimeException('MTF research evidence budget is not a sealed tier.');
+        }
+
+        $sources = [];
+        foreach (['M5', 'M15', 'H1'] as $timeframe) {
+            // Canonical M5 currently begins in 2026, which is explicitly a
+            // paper-only period. The catalogue may observe this data only as
+            // a frozen scheduling prior; it cannot create agent-owned or
+            // promotion evidence. A training export would be an empty M5
+            // stream and make every newly built toolbox model unusable.
+            $path = $this->datasets->exportPaper($symbol, $timeframe);
+            $sources[$timeframe] = [
+                'path' => $path,
+                'sha256' => hash_file('sha256', $path),
+                'rows' => $this->datasets->rowsFromSnapshot($path),
+            ];
+        }
+        $cutoff = $this->commonClosedCutoff($sources);
+        $streams = [];
+        foreach ($sources as $timeframe => $source) {
+            $streams[$timeframe] = $this->closedRows((array) $source['rows'], $timeframe, $cutoff);
+        }
+        // Bound discovery cost as the paper stream grows. Any promising
+        // prior must still earn independent chronological evidence through a
+        // separate agent-owned trial, so this catalogue pass does not need
+        // an ever-growing full-history replay.
+        if (count($streams['M5']) > $maxM5Rows) {
+            $streams['M5'] = array_slice($streams['M5'], -$maxM5Rows);
+        }
+        $streams['H4'] = $this->aggregateH4($streams['H1']);
+        if ($needsD1) {
+            $streams['D1'] = $this->aggregateD1($streams['H1']);
+        }
+
+        foreach (['M5' => 100, 'M15' => 40, 'H1' => 40, 'H4' => 10, 'D1' => 10] as $timeframe => $minimum) {
+            if (! array_key_exists($timeframe, $streams)) {
+                continue;
+            }
+            if (count($streams[$timeframe]) < $minimum) {
+                throw new RuntimeException("MTF {$timeframe} snapshot candle yetarli emas: ".count($streams[$timeframe]));
+            }
+        }
+
+        $related = null;
+        if ($needsRelated) {
+            $relatedCode = strtoupper(str_replace(['/', '_', '-'], '', trim((string) $relatedSymbol)));
+            $relatedPath = $this->datasets->exportPaper($relatedCode, 'M15');
+            $relatedRows = $this->closedRows($this->datasets->rowsFromSnapshot($relatedPath), 'M15', $cutoff);
+            if (count($relatedRows) < 40) {
+                throw new RuntimeException('Related M15 snapshot candle yetarli emas: '.count($relatedRows));
+            }
+            $related = [
+                'symbol' => $relatedCode,
+                'source_sha256' => hash_file('sha256', $relatedPath),
+                'rows' => $relatedRows,
+            ];
+        }
+
+        $identity = [
+            'protocol' => self::PROTOCOL,
+            'research_protocol' => 'mtf_playbook_frozen_control_v2_multifidelity',
+            'data_role' => 'paper_shadow_prior_only',
+            'agent_owned_evidence' => false,
+            'promotion_evidence' => false,
+            'symbol' => $symbol,
+            'requirements' => $requirements,
+            'evidence_budget_protocol' => 'mtf_evidence_budget_ladder_v1',
+            'bounded_entry_rows' => $maxM5Rows,
+            'entry_first_candle_at' => data_get($streams, 'M5.0.time'),
+            'closed_cutoff' => $cutoff->toIso8601String(),
+            'source_sha256' => array_map(fn (array $item): ?string => $item['sha256'], $sources),
+            'related_source' => $related ? ['symbol' => $related['symbol'], 'sha256' => $related['source_sha256']] : null,
+            'aggregation' => [
+                'H4' => 'four_complete_UTC_H1_candles',
+                'D1' => $needsD1 ? 'twenty_four_complete_UTC_H1_candles' : null,
+            ],
+        ];
+        $bundleHash = hash('sha256', json_encode($identity, JSON_UNESCAPED_SLASHES));
+        $directory = storage_path('app/lab-datasets/mtf/'.$bundleHash);
+        $manifestPath = $directory.'/manifest.json';
+        if (is_file($manifestPath)) {
+            $manifest = (array) json_decode((string) File::get($manifestPath), true);
+            if ((string) ($manifest['bundle_hash'] ?? '') === $bundleHash && $this->validBundle($manifest)) {
+                return $this->researchResult($manifest, $directory);
+            }
+            throw new RuntimeException("MTF immutable bundle integrity mismatch: {$directory}");
+        }
+
+        File::ensureDirectoryExists($directory);
+        $streamManifest = [];
+        foreach ($streams as $timeframe => $rows) {
+            $path = $directory.'/'.strtolower($timeframe).'.csv';
+            $this->writeCsv($path, $rows);
+            $streamManifest[$timeframe] = $this->streamManifest($path, $rows, $timeframe);
+        }
+        if ($related) {
+            $path = $directory.'/related_m15.csv';
+            $this->writeCsv($path, $related['rows']);
+            $streamManifest['RELATED_M15'] = [
+                ...$this->streamManifest($path, $related['rows'], 'M15'),
+                'symbol' => $related['symbol'],
+                'source_sha256' => $related['source_sha256'],
+            ];
+        }
+        $manifest = [
+            ...$identity,
+            'bundle_hash' => $bundleHash,
+            'streams' => $streamManifest,
+            'generated_at' => now()->utc()->toIso8601String(),
+            'rule' => 'M5 execution may merge only H4/H1/M15/D1 rows whose open time plus timeframe duration is at or before the M5 candle-close decision time.',
+            'promotion_evidence' => false,
+        ];
+        File::put($manifestPath, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+
+        return $this->researchResult($manifest, $directory);
+    }
+
+    /**
+     * Reopen a content-addressed research bundle without exporting fresh
+     * candles. Causal repair must use the source trial's exact bytes.
+     *
+     * @param  array<string,mixed>  $manifest
+     * @return array<string,mixed>
+     */
+    public function restoreResearchPlaybookBundle(array $manifest): array
+    {
+        $bundleHash = strtolower(trim((string) ($manifest['bundle_hash'] ?? '')));
+        if (! preg_match('/^[a-f0-9]{64}$/', $bundleHash)) {
+            throw new RuntimeException('MTF source bundle hash is missing or invalid.');
+        }
+        $directory = storage_path('app/lab-datasets/mtf/'.$bundleHash);
+        $expectedDirectory = realpath($directory);
+        if ($expectedDirectory === false || ! is_file($directory.'/manifest.json')) {
+            throw new RuntimeException("MTF source bundle is unavailable: {$bundleHash}");
+        }
+        $diskManifest = (array) json_decode((string) File::get($directory.'/manifest.json'), true);
+        if ((string) ($diskManifest['bundle_hash'] ?? '') !== $bundleHash) {
+            throw new RuntimeException("MTF source manifest identity mismatch: {$bundleHash}");
+        }
+        foreach ((array) ($diskManifest['streams'] ?? []) as $stream) {
+            $path = realpath((string) data_get($stream, 'path', ''));
+            if ($path === false || ! str_starts_with($path, $expectedDirectory.DIRECTORY_SEPARATOR)) {
+                throw new RuntimeException("MTF source bundle path escaped its immutable directory: {$bundleHash}");
+            }
+        }
+        if (! $this->validBundle($diskManifest)) {
+            throw new RuntimeException("MTF source bundle integrity mismatch: {$bundleHash}");
+        }
+
+        return $this->researchResult($diskManifest, $directory);
+    }
+
+    /**
+     * Reopen the exact sealed model-validation bytes on a retry.
+     *
+     * The foundation archive can continue growing while a replay is in
+     * progress. A retry must not silently move its cutoff or reread hundreds
+     * of thousands of rows; it resumes the original content-addressed bundle.
+     *
+     * @param  array<string,mixed>  $manifest
+     * @return array<string,mixed>
+     */
+    public function restoreAgentOwnedConfirmationValidationBundle(array $manifest): array
+    {
+        if ((string) data_get($manifest, 'validation_bundle_protocol') !== 'agent_owned_mtf_foundation_bundle_v1'
+            || (string) data_get($manifest, 'data_role') !== 'pre_2026_foundation_training_only'
+            || (bool) data_get($manifest, 'promotion_evidence', true)) {
+            throw new RuntimeException('MTF agent validation resume manifest has an invalid evidence boundary.');
+        }
+        $budget = (int) data_get($manifest, 'bounded_cost_contract.requested_m5_rows', 0);
+        if (! in_array($budget, self::AGENT_VALIDATION_EVIDENCE_BUDGETS, true)) {
+            throw new RuntimeException('MTF agent validation resume manifest has an unsealed evidence budget.');
+        }
+        $bundleHash = strtolower(trim((string) ($manifest['bundle_hash'] ?? '')));
+        if (! preg_match('/^[a-f0-9]{64}$/', $bundleHash)) {
+            throw new RuntimeException('MTF agent validation resume bundle hash is missing or invalid.');
+        }
+        $directory = storage_path('app/lab-datasets/mtf/'.$bundleHash);
+        $expectedDirectory = realpath($directory);
+        if ($expectedDirectory === false || ! is_file($directory.'/manifest.json')) {
+            throw new RuntimeException("MTF agent validation resume bundle is unavailable: {$bundleHash}");
+        }
+        $diskManifest = (array) json_decode((string) File::get($directory.'/manifest.json'), true);
+        if ((string) ($diskManifest['bundle_hash'] ?? '') !== $bundleHash
+            || (string) data_get($diskManifest, 'validation_bundle_protocol') !== 'agent_owned_mtf_foundation_bundle_v1') {
+            throw new RuntimeException("MTF agent validation resume identity mismatch: {$bundleHash}");
+        }
+        foreach ((array) ($diskManifest['streams'] ?? []) as $stream) {
+            $path = realpath((string) data_get($stream, 'path', ''));
+            if ($path === false || ! str_starts_with($path, $expectedDirectory.DIRECTORY_SEPARATOR)) {
+                throw new RuntimeException("MTF agent validation resume path escaped its immutable directory: {$bundleHash}");
+            }
+        }
+        if (! $this->validBundle($diskManifest)) {
+            throw new RuntimeException("MTF agent validation resume integrity mismatch: {$bundleHash}");
+        }
+
+        return [...$this->result($diskManifest, $directory), 'restored_from_sealed_retry' => true];
+    }
+
+    /** @param array<string,mixed> $manifest @return array<string,mixed> */
+    private function result(array $manifest, string $directory): array
+    {
+        return [
+            'protocol' => self::PROTOCOL,
+            'bundle_hash' => $manifest['bundle_hash'],
+            'manifest' => $manifest,
+            'manifest_path' => $directory.'/manifest.json',
+            'entry_dataset_path' => data_get($manifest, 'streams.M5.path'),
+            'context_dataset_paths' => [
+                'H4' => data_get($manifest, 'streams.H4.path'),
+                'H1' => data_get($manifest, 'streams.H1.path'),
+                'M15' => data_get($manifest, 'streams.M15.path'),
+            ],
+        ];
+    }
+
+    /** @param array<string,mixed> $manifest @return array<string,mixed> */
+    private function researchResult(array $manifest, string $directory): array
+    {
+        $contexts = [];
+        foreach (['H4', 'H1', 'M15', 'D1'] as $timeframe) {
+            $path = (string) data_get($manifest, "streams.{$timeframe}.path", '');
+            if ($path !== '') {
+                $contexts[$timeframe] = $path;
+            }
+        }
+        $related = (string) data_get($manifest, 'streams.RELATED_M15.path', '');
+
+        return [
+            'protocol' => self::PROTOCOL,
+            'bundle_hash' => $manifest['bundle_hash'],
+            'manifest' => $manifest,
+            'manifest_path' => $directory.'/manifest.json',
+            'entry_dataset_path' => data_get($manifest, 'streams.M5.path'),
+            'context_dataset_paths' => $contexts,
+            'related_context_dataset_paths' => $related !== '' ? ['M15' => $related] : [],
+        ];
+    }
+
+    /** @param array<string,array<string,mixed>> $sources */
+    private function commonClosedCutoff(array $sources): CarbonImmutable
+    {
+        $closed = [];
+        foreach ($sources as $timeframe => $source) {
+            $rows = (array) ($source['rows'] ?? []);
+            $last = $rows[array_key_last($rows)] ?? null;
+            if (! is_array($last) || ! filled($last['time'] ?? null)) {
+                throw new RuntimeException("MTF {$timeframe} source bo'sh.");
+            }
+            $closed[] = CarbonImmutable::parse((string) $last['time'], 'UTC')->addMinutes(self::DURATIONS[$timeframe]);
+        }
+
+        return collect($closed)->min();
+    }
+
+    /** @param array<int,array<string,mixed>> $rows @return array<int,array<string,mixed>> */
+    private function closedRows(array $rows, string $timeframe, CarbonImmutable $cutoff): array
+    {
+        return array_values(array_filter($rows, static function (array $row) use ($timeframe, $cutoff): bool {
+            try {
+                return CarbonImmutable::parse((string) ($row['time'] ?? ''), 'UTC')
+                    ->addMinutes(self::DURATIONS[$timeframe])
+                    ->lessThanOrEqualTo($cutoff);
+            } catch (\Throwable) {
+                return false;
+            }
+        }));
+    }
+
+    /** @param array<int,array<string,mixed>> $h1Rows @return array<int,array<string,mixed>> */
+    private function aggregateH4(array $h1Rows): array
+    {
+        return $this->aggregateH1($h1Rows, 4, 'H4');
+    }
+
+    /** @param array<int,array<string,mixed>> $h1Rows @return array<int,array<string,mixed>> */
+    private function aggregateD1(array $h1Rows): array
+    {
+        return $this->aggregateH1($h1Rows, 24, 'D1');
+    }
+
+    /** @param array<int,array<string,mixed>> $h1Rows @return array<int,array<string,mixed>> */
+    private function aggregateH1(array $h1Rows, int $hours, string $timeframe): array
+    {
+        $groups = [];
+        foreach ($h1Rows as $row) {
+            $time = CarbonImmutable::parse((string) $row['time'], 'UTC')->startOfHour();
+            $bucket = $hours === 24
+                ? $time->startOfDay()
+                : $time->subHours($time->hour % $hours);
+            $groups[$bucket->toIso8601String()][] = [...$row, '_time' => $time];
+        }
+        $result = [];
+        foreach ($groups as $bucket => $rows) {
+            usort($rows, fn (array $a, array $b): int => $a['_time'] <=> $b['_time']);
+            if (count($rows) !== $hours) {
+                continue;
+            }
+            $first = $rows[0]['_time'];
+            $complete = collect($rows)->every(fn (array $row, int $index): bool => $row['_time']->equalTo($first->addHours($index)));
+            if (! $complete) {
+                continue;
+            }
+            $result[] = [
+                'time' => CarbonImmutable::parse($bucket, 'UTC')->format('Y-m-d H:i:s'),
+                'open' => (float) $rows[0]['open'],
+                'high' => max(array_map(fn (array $row): float => (float) $row['high'], $rows)),
+                'low' => min(array_map(fn (array $row): float => (float) $row['low'], $rows)),
+                'close' => (float) $rows[$hours - 1]['close'],
+                'volume' => array_sum(array_map(fn (array $row): float => (float) ($row['volume'] ?? 0), $rows)),
+            ];
+        }
+
+        return $result;
+    }
+
+    /** @param array<int,array<string,mixed>> $rows @return array<string,mixed> */
+    private function streamManifest(string $path, array $rows, string $timeframe): array
+    {
+        return [
+            'path' => $path,
+            'sha256' => hash_file('sha256', $path),
+            'row_count' => count($rows),
+            'first_candle_at' => $rows[0]['time'],
+            'last_candle_at' => $rows[array_key_last($rows)]['time'],
+            'available_after_seconds' => self::DURATIONS[$timeframe] * 60,
+        ];
+    }
+
+    /** @param array<int,array<string,mixed>> $rows */
+    private function rowContentHash(array $rows): string
+    {
+        $context = hash_init('sha256');
+        foreach ($rows as $row) {
+            hash_update($context, implode('|', [
+                (string) ($row['time'] ?? ''),
+                sprintf('%.10F', (float) ($row['open'] ?? 0)),
+                sprintf('%.10F', (float) ($row['high'] ?? 0)),
+                sprintf('%.10F', (float) ($row['low'] ?? 0)),
+                sprintf('%.10F', (float) ($row['close'] ?? 0)),
+                sprintf('%.10F', (float) ($row['volume'] ?? 0)),
+            ])."\n");
+        }
+
+        return hash_final($context);
+    }
+
+    /** @param array<int,array<string,mixed>> $rows */
+    private function writeCsv(string $path, array $rows): void
+    {
+        $temporary = tempnam(dirname($path), '.mtf_');
+        if ($temporary === false) {
+            throw new RuntimeException("MTF temporary snapshot yaratilmadi: {$path}");
+        }
+        try {
+            $handle = fopen($temporary, 'wb');
+            if ($handle === false) {
+                throw new RuntimeException("MTF temporary snapshot ochilmadi: {$path}");
+            }
+            fputcsv($handle, ['time', 'open', 'high', 'low', 'close', 'volume']);
+            foreach ($rows as $row) {
+                fputcsv($handle, [$row['time'], $row['open'], $row['high'], $row['low'], $row['close'], $row['volume'] ?? 0]);
+            }
+            fclose($handle);
+            if (! copy($temporary, $path)) {
+                throw new RuntimeException("MTF snapshot publish qilinmadi: {$path}");
+            }
+        } finally {
+            File::delete($temporary);
+        }
+    }
+
+    /** @param array<string,mixed> $manifest */
+    private function validBundle(array $manifest): bool
+    {
+        foreach ((array) ($manifest['streams'] ?? []) as $stream) {
+            $path = (string) data_get($stream, 'path', '');
+            $expected = (string) data_get($stream, 'sha256', '');
+            $actual = $path !== '' && is_file($path) ? hash_file('sha256', $path) : false;
+            if (! is_string($actual) || $expected === '' || ! hash_equals($expected, $actual)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AgentLearningLesson;
+use App\Models\EvolutionLearningReceipt;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabEvolutionArchiveEntry;
@@ -11,6 +12,7 @@ use App\Models\LabMutationResponseMap;
 use App\Models\ModelVersion;
 use App\Models\MutationMemory;
 use App\Services\DescendantTraitCreditService;
+use App\Services\EvolutionGovernorService;
 use App\Services\EvolutionVelocityService;
 use App\Services\FailureCurriculumService;
 use App\Services\LearningReceiptService;
@@ -101,13 +103,37 @@ class LearningFirstArchitectureTest extends TestCase
         LabEvolutionArchiveEntry::create(['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'island_key' => 'behavior:test', 'archive_type' => 'behavioral_map_elites', 'model_version_id' => $agent->model_version_id, 'lab_agent_id' => $agent->id, 'lab_generation_id' => $generation->id, 'rank' => 1, 'novelty_score' => 1, 'behavior_signature' => 'behavior-test', 'fitness_snapshot' => [], 'metadata' => [], 'status' => 'active']);
         LabMutationResponseMap::create(['response_key' => 'velocity-response', 'stage' => 'full_replay', 'status' => 'confirmed', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'target' => 'profit_factor', 'parameter_key' => 'entry_threshold', 'direction' => 'increase', 'sibling_kind' => 'candidate', 'lab_agent_id' => $agent->id, 'model_version_id' => $agent->model_version_id, 'evidence_run_id' => 'velocity-proof']);
         AgentLearningLesson::create(['lesson_id' => 'velocity-lesson', 'lesson_hash' => 'velocity-lesson-hash', 'lab_agent_id' => $agent->id, 'model_version_id' => $agent->model_version_id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'lesson_type' => 'mutation', 'status' => 'confirmed', 'failure_class' => 'profit_factor', 'parameter_key' => 'entry_threshold', 'outcome' => 'beneficial', 'observed_at' => now()]);
+        EvolutionLearningReceipt::create([
+            'receipt_key' => hash('sha256', 'velocity-receipt'), 'claim_key' => hash('sha256', 'velocity-claim'),
+            'lab_agent_id' => $agent->id, 'lab_generation_id' => $generation->id,
+            'source_type' => 'canonical_test', 'source_key' => 'velocity-canonical-source',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'component' => 'strategy_parameter',
+            'action' => 'prefer', 'status' => 'confirmed', 'claim' => 'entry threshold canonical claim',
+            'causal_uplift_r' => .1, 'confidence' => .9, 'support' => 3, 'scope' => ['strategy_family' => 'hybrid'],
+            'source_experiments' => ['velocity-causal'], 'evidence' => ['canonical' => true],
+            'expires_at' => now()->addDays(30), 'compiled_at' => now(),
+        ]);
 
         $velocity = app(EvolutionVelocityService::class)->snapshot($generation->laboratory);
 
         $this->assertSame('available', $velocity['status']);
         $this->assertSame(1, $velocity['archive_coverage_growth']['new_behavioral_cells']);
-        $this->assertSame(2, $velocity['north_star']['validated_new_knowledge_artifacts']);
+        $this->assertSame(1, $velocity['north_star']['validated_new_knowledge_artifacts']);
+        $this->assertSame(1, $velocity['knowledge_authority']['confirmed_receipt_claims']);
+        $this->assertSame(1, $velocity['knowledge_authority']['legacy_or_projection_lessons_excluded']);
         $this->assertFalse($velocity['promotion_evidence']);
+    }
+
+    public function test_governor_excludes_legacy_confirmed_lesson_labels_from_skill_authority(): void
+    {
+        [$agent, $generation] = $this->agent();
+        AgentLearningLesson::create(['lesson_id' => 'legacy-governor-label', 'lesson_hash' => 'legacy-governor-label-hash', 'lab_agent_id' => $agent->id, 'model_version_id' => $agent->model_version_id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'lesson_type' => 'mutation', 'status' => 'confirmed', 'failure_class' => 'profit_factor', 'parameter_key' => 'entry_threshold', 'outcome' => 'beneficial', 'observed_at' => now()]);
+
+        $snapshot = app(EvolutionGovernorService::class)->generationSnapshot($generation->laboratory);
+
+        $this->assertSame(0, $snapshot['learning_telemetry']['confirmed_skill_count']);
+        $this->assertTrue($snapshot['learning_telemetry']['legacy_labels_excluded']);
+        $this->assertSame(1, $snapshot['learning_telemetry']['excluded_lesson_projection_count']);
     }
 
     /** @return array{0: LabAgent, 1: LabGeneration} */

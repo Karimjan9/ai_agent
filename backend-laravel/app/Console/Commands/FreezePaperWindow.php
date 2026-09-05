@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Services\MarketData\FrozenPaperWindowService;
-use App\Services\MarketData\MarketTrainingDataService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 
@@ -14,9 +13,9 @@ class FreezePaperWindow extends Command
         {--timeframe=H1}
         {--dataset=foundation_10y}
         {--provider=dukascopy}
-        {--months=6}
-        {--window=rolling_6m_v1 : Immutable policy key; e.g. paper_2026}
-        {--from= : UTC inclusive paper start; overrides --months}
+        {--months=12 : Deprecated display value; 2026 is always reserved in full}
+        {--window=paper_2026 : Immutable 2026 paper-only policy key}
+        {--from= : Must be 2026-01-01 UTC when supplied}
         {--as-of= : UTC boundary; defaults to the current closed boundary}';
 
     protected $description = 'Create a one-time immutable paper window and lock the training cutoff';

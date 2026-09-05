@@ -107,14 +107,33 @@ class FailureSignatureCompilerService
             'state_cluster_contract.cluster',
             data_get($metadata, 'portfolio_council_lane.state_cluster', []),
         );
+        $mutationScope = $this->mutationScope($metadata);
 
-        return [
+        $rawState = [
             'cluster_id' => data_get($cluster, 'cluster_id', data_get($evidence, 'state_cluster_id')),
-            'regime' => data_get($cluster, 'regime', data_get($metadata, 'portfolio_council_lane.regime', data_get($evidence, 'regime'))),
-            'volatility' => data_get($cluster, 'volatility', data_get($metadata, 'portfolio_council_lane.volatility', data_get($evidence, 'volatility'))),
+            'regime' => $this->contextValue(
+                data_get($cluster, 'regime'),
+                data_get($metadata, 'portfolio_council_lane.regime'),
+                data_get($evidence, 'regime'),
+                $mutationScope['regime'],
+            ),
+            'volatility' => $this->contextValue(
+                data_get($cluster, 'volatility'),
+                data_get($metadata, 'portfolio_council_lane.volatility'),
+                data_get($evidence, 'volatility'),
+                $mutationScope['volatility'],
+            ),
             'transition_state' => data_get($cluster, 'transition_state', data_get($evidence, 'transition_state', 'unknown')),
             'spread_liquidity_state' => data_get($cluster, 'spread_liquidity_state', data_get($evidence, 'spread_liquidity_state', 'unknown')),
-            'session' => data_get($cluster, 'session', data_get($evidence, 'session', data_get($metadata, 'mutation_scope'))),
+            // `mutation_scope` is a typed axis (`market:*`,
+            // `volatility:*`, or `session:*`). Treating every scalar scope as
+            // a session poisoned contextual retrieval (for example,
+            // volatility:high_volatility became a session name).
+            'session' => $this->contextValue(
+                data_get($cluster, 'session'),
+                data_get($evidence, 'session'),
+                $mutationScope['session'],
+            ),
             // Volume is a contextual observation, never a direct promotion
             // feature. Keeping it in the fingerprint lets the same gene learn
             // differently in liquid/thin or fresh/stale conditions.
@@ -122,6 +141,48 @@ class FailureSignatureCompilerService
             'volume_quality' => data_get($cluster, 'volume_quality', data_get($evidence, 'volume_quality', data_get($metadata, 'volume_context.quality'))),
             'volume_available' => data_get($cluster, 'volume_available', data_get($evidence, 'volume_available', data_get($metadata, 'volume_context.available'))),
         ];
+        $contract = app(ContextContractV2Service::class)->project($rawState);
+
+        return [...$rawState,
+            // Keep only canonical axes on the retrieval surface while the
+            // raw v1 values stay immutable inside the versioned projection.
+            'regime' => data_get($contract, 'axes.regime'),
+            'volatility' => data_get($contract, 'axes.volatility'),
+            'session' => data_get($contract, 'axes.session'),
+            'context_contract' => $contract,
+        ];
+    }
+
+    /** @return array{regime:?string,volatility:?string,session:?string} */
+    private function mutationScope(array $metadata): array
+    {
+        $scope = data_get($metadata, 'mutation_scope');
+        if (is_array($scope)) {
+            return [
+                'regime' => $this->contextValue(data_get($scope, 'market_regime'), data_get($scope, 'regime')),
+                'volatility' => $this->contextValue(data_get($scope, 'volatility'), data_get($scope, 'volatility_regime')),
+                'session' => $this->contextValue(data_get($scope, 'session')),
+            ];
+        }
+
+        $value = strtolower(trim((string) $scope));
+        return [
+            'regime' => str_starts_with($value, 'market:') ? $this->contextValue(substr($value, 7)) : null,
+            'volatility' => str_starts_with($value, 'volatility:') ? $this->contextValue(substr($value, 11)) : null,
+            'session' => str_starts_with($value, 'session:') ? $this->contextValue(substr($value, 8)) : null,
+        ];
+    }
+
+    private function contextValue(mixed ...$values): ?string
+    {
+        foreach ($values as $value) {
+            if (! is_scalar($value)) continue;
+            $normalized = trim((string) $value);
+            if ($normalized === '' || in_array(strtolower($normalized), ['-', 'unknown', 'none', 'null'], true)) continue;
+            return $normalized;
+        }
+
+        return null;
     }
 
     private function role(array $metadata): ?string

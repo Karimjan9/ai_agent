@@ -121,6 +121,15 @@ class SkillMentorService
             $performance,
             $mentor,
         );
+        // The historical Skill Mentor projection remains descriptive. The
+        // Foundry ledger is the stricter prospective authority path and
+        // requires incubator plus descendant proof before it can be used by
+        // a new parent/paper admission.
+        $mentor['evolutionary_authority'] = app(EvolutionaryAuthorityFoundryService::class)->refreshAuthority(
+            $agent->modelVersion->fresh(),
+            $agent->fresh(),
+            ['passed' => $fullParent, 'elite_passport' => data_get($result, 'elite_agent_passport.status')],
+        );
 
         return $mentor;
     }
@@ -175,7 +184,7 @@ class SkillMentorService
         if (in_array($role, ['blinded', 'frozen_control'], true)) {
             return false;
         }
-        if ($role === 'memory_guided') {
+        if (in_array($role, ['memory_guided', 'repair_guided'], true)) {
             return data_get($metadata, 'causal_learning_experiment.status') === 'confirmed';
         }
 

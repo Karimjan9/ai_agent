@@ -4,7 +4,7 @@ aliases:
 tags:
   - modules
   - navigation
-updated: 2026-08-10
+updated: 2026-08-28
 ---
 
 # Module Map
@@ -26,7 +26,9 @@ updated: 2026-08-10
 | Intelligence dashboards | Knowledge, future, meta, civilization, laws, causal, theory, reality | Corresponding controller and service names in `app/Http/Controllers/` and `app/Services/` |
 | Agent/system health | Health checks, recovery/logging, profiles and market health | `AgentHealthController.php`, `MarketHealthService.php`, `SystemLogService.php` |
 | Runtime monitoring | Scheduler heartbeat, strict health exit codes, canonical-provider-only feed checks and Market Reality freshness | `RunHeadlessScheduler.php`, `PhaseTwoFoundationService.php`, `RunSystemHealthCheck.php`, `CheckMarketHealth.php` |
-| Paper trading foundation | Signal requests and paper order/fill/evaluation state | `PaperTradingExecutionService.php`, `MonitorPaperTrading.php` |
+| Paper trading foundation | Signal requests, paper order/fill/evaluation state and process-compliant settlement | `PaperTradingExecutionService.php`, `MonitorPaperTrading.php` |
+| Smart Discipline / process integrity | Unified external-risk/discipline `NO_TRADE` receipt, policy-hashed hard gates, evidence-aware risk hysteresis, P&L-bound final sizing, immutable partial/trailing/time-stop management contract, R/MFE/MAE audit, Good/Bad Win/Loss classification and learning quarantine | `SmartDisciplineEngineService.php`, `SmartDisciplineDecision.php`, `ReportSmartDiscipline.php`, Python `execution_contract.py`, [architecture note](../architecture/smart-discipline-engine.md) |
+| Confirmation & Entry System | Separates context, location, setup, independent confirmation, exact trigger, invalidation and admission; enforces M5-only closed-stream causality, paper transport attestation and fill-time R:R/chase geometry; executes five hypotheses and retains WAIT opportunities | Python `confirmation_entry.py`, `multitimeframe_stack.py`, `backtester.py`, Laravel `ConfirmationEntryContractService.php`, `PaperTradingExecutionService.php`, `MtfPlaybookFrozenControlService.php`, [architecture note](../architecture/trading-confirmation-entry-system.md) |
 
 ## Naming rule
 

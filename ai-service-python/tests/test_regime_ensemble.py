@@ -75,6 +75,26 @@ class RegimeEnsembleTest(unittest.TestCase):
         self.assertEqual("SELL", control.iloc[-1]["signal"])
         self.assertEqual("BUY", candidate.iloc[-1]["signal"])
 
+    def test_hybrid_forwards_range_signal_topology_to_its_range_specialist(self):
+        closes = [100.0 + (index % 2) * .1 for index in range(24)] + [110.0]
+        frame = pd.DataFrame({
+            "time": pd.date_range("2025-01-01", periods=len(closes), freq="h"),
+            "open": closes, "high": [value + .2 for value in closes],
+            "low": [value - .2 for value in closes], "close": closes,
+            "adx": [10.0] * len(closes),
+            "market_regime": ["range"] * len(closes),
+            "volatility_regime": ["low_volatility"] * len(closes),
+            "atr_regime": [1.0] * len(closes),
+        })
+
+        control = apply_hybrid_strategy(frame, {"range_signal_mode": "reentry"})
+        candidate = apply_hybrid_strategy(frame, {"range_signal_mode": "inverse_extreme"})
+
+        self.assertEqual("SELL", control.iloc[-1]["signal"])
+        self.assertEqual("BUY", candidate.iloc[-1]["signal"])
+        self.assertEqual("range", control.iloc[-1]["selected_specialist"])
+        self.assertEqual("range", candidate.iloc[-1]["selected_specialist"])
+
     def test_portfolio_evidence_preserves_member_context_and_month_intersection(self):
         request = SimpleBacktestRequest(
             symbol="XAUUSD",

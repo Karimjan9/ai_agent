@@ -68,13 +68,14 @@ class RecoverLabEvaluationErrors extends Command
         if ($autonomous) {
             $lighthouse = $symbol === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
                 && $timeframe === LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME;
+            $boundedAutonomousMode = (int) $afterTimeoutBudgetRepair + (int) $afterRetryBudgetRepair === 1;
             if (! $apply
                 || ! (bool) config('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', false)
                 || ! $lighthouse
-                || ! $afterTimeoutBudgetRepair
+                || ! $boundedAutonomousMode
                 || $fullRecovery
                 || $generationNumber === null) {
-                $this->error('Autonomous technical recovery requires --apply, XAUUSD H1, --generation, screen mode, and --after-timeout-budget-repair under the enabled lighthouse policy.');
+                $this->error('Autonomous technical recovery requires --apply, XAUUSD H1, --generation, screen mode, and exactly one bounded timeout/retry-budget repair under the enabled lighthouse policy.');
 
                 return self::FAILURE;
             }
@@ -195,6 +196,7 @@ class RecoverLabEvaluationErrors extends Command
                 if ($afterCodeRepair) {
                     $reason = strtolower((string) $agent->decision_reason);
                     $architecturePreflightFailure = $this->isArchitecturePreflightRepairable($agent);
+                    $controlProjectionRace = $this->isFrozenControlProjectionRaceRepairable($agent);
                     // Keep the repair-specific budget independent from the
                     // generic evaluator recovery counter.  A prior bounded
                     // replay may already have consumed evaluator_recovery_
@@ -222,6 +224,7 @@ class RecoverLabEvaluationErrors extends Command
 
                     return $codeRepairAttempts < 1
                         && ($architecturePreflightFailure
+                            || $controlProjectionRace
                             || (str_contains($reason, 'strategy verdict withheld')
                                 && (str_contains($reason, 'undefined variable')
                             || str_contains($reason, 'undefined method')
@@ -295,10 +298,7 @@ class RecoverLabEvaluationErrors extends Command
                         && str_contains(strtolower((string) $agent->decision_reason), 'strategy verdict withheld');
                 }
                 if ($afterRetryBudgetRepair) {
-                    $reason = strtolower((string) $agent->decision_reason);
-
-                    return str_contains($reason, 'attempted too many times')
-                        && str_contains($reason, 'strategy verdict withheld');
+                    return $this->isRetryBudgetFailure($agent);
                 }
                 if ($afterDatasetContractRepair) {
                     $reason = strtolower((string) $agent->decision_reason);
@@ -416,7 +416,8 @@ class RecoverLabEvaluationErrors extends Command
         } else {
             $autonomousScope = [
                 'protocol' => 'autonomous_technical_recovery_v1',
-                'policy' => 'lighthouse_one_shot_timeout_only',
+                'policy' => 'lighthouse_one_shot_bounded_technical_v2',
+                'repair_mode' => $afterRetryBudgetRepair ? 'retry_budget' : 'timeout_budget',
                 'symbol' => $symbol,
                 'timeframe' => $timeframe,
                 'generation' => $generationNumber,
@@ -466,16 +467,17 @@ class RecoverLabEvaluationErrors extends Command
                 if ($afterTimeoutBudgetRepair) {
                     data_set($metadata, 'timeout_budget_repair_recovery_attempts', (int) data_get($metadata, 'timeout_budget_repair_recovery_attempts', 0) + 1);
                     data_set($metadata, 'last_timeout_budget_repair_recovery_at', now()->utc()->toIso8601String());
-                    if ($autonomous) {
-                        data_set($metadata, 'autonomous_technical_recovery.protocol', 'autonomous_technical_recovery_v1');
-                        data_set($metadata, 'autonomous_technical_recovery.attempts', (int) data_get($metadata, 'autonomous_technical_recovery.attempts', 0) + 1);
-                        data_set($metadata, 'autonomous_technical_recovery.last_at', now()->utc()->toIso8601String());
-                        data_set($metadata, 'autonomous_technical_recovery.promotion_evidence', false);
-                    }
                 }
                 if ($afterRetryBudgetRepair) {
                     data_set($metadata, 'retry_budget_repair_recovery_attempts', (int) data_get($metadata, 'retry_budget_repair_recovery_attempts', 0) + 1);
                     data_set($metadata, 'last_retry_budget_repair_recovery_at', now()->utc()->toIso8601String());
+                }
+                if ($autonomous) {
+                    data_set($metadata, 'autonomous_technical_recovery.protocol', 'autonomous_technical_recovery_v1');
+                    data_set($metadata, 'autonomous_technical_recovery.repair_mode', $afterRetryBudgetRepair ? 'retry_budget' : 'timeout_budget');
+                    data_set($metadata, 'autonomous_technical_recovery.attempts', (int) data_get($metadata, 'autonomous_technical_recovery.attempts', 0) + 1);
+                    data_set($metadata, 'autonomous_technical_recovery.last_at', now()->utc()->toIso8601String());
+                    data_set($metadata, 'autonomous_technical_recovery.promotion_evidence', false);
                 }
                 if ($afterDatasetContractRepair) {
                     data_set($metadata, 'dataset_contract_recovery_attempts', (int) data_get($metadata, 'dataset_contract_recovery_attempts', 0) + 1);
@@ -559,6 +561,15 @@ class RecoverLabEvaluationErrors extends Command
         return self::SUCCESS;
     }
 
+    private function isRetryBudgetFailure(LabAgent $agent): bool
+    {
+        $reason = strtolower((string) $agent->decision_reason);
+
+        return str_contains($reason, 'strategy verdict withheld')
+            && (str_contains($reason, 'attempted too many times')
+                || str_contains($reason, 'bounded screening batch exhausted operational retries'));
+    }
+
     private function hasQueuedJob(LabAgent $agent, string $mode): bool
     {
         $queue = $mode === 'full'
@@ -614,6 +625,29 @@ class RecoverLabEvaluationErrors extends Command
         return $errors === ['ONE_GENE_INVARIANT_FAILED']
             && (bool) data_get($agent->modelVersion?->metadata, 'mutation_constructor_invariant.architecture_changed', false)
             && (string) data_get($agent->modelVersion?->metadata, 'mutation_constructor_invariant.architecture_variant', '') !== '';
+    }
+
+    /**
+     * Select only the causal candidate quarantine produced by the old
+     * completed-run/missing-projection race. This never makes strategy
+     * evidence recoverable and cannot reopen unrelated quarantines.
+     */
+    private function isFrozenControlProjectionRaceRepairable(LabAgent $agent): bool
+    {
+        if ((string) $agent->lifecycle_status !== 'technical_quarantine'
+            || (string) $agent->generation?->trigger_type !== 'learning_confirmation') {
+            return false;
+        }
+
+        $role = (string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role');
+        if (! in_array($role, ['memory_guided', 'repair_guided', 'blinded'], true)) {
+            return false;
+        }
+
+        $reason = strtolower((string) $agent->decision_reason);
+
+        return str_contains($reason, 'frozen control admission failed before screening')
+            && str_contains($reason, 'frozen_control_evidence_invalid');
     }
 
     /** @return array{total: int, queues: array<string, int>} */

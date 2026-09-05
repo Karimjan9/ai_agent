@@ -12,7 +12,7 @@ bo‘yicha guruhlaydi. Secret qiymatlar hech qachon hujjatga yozilmaydi.
 | Laboratory | `LAB_*` | Population, queue fairness, parent/adaptive evolution va evidence gate’lar |
 | Market data | `MARKET_DATA_*`, `TWELVE_*`, `DUKASCOPY_*`, `MT5_*` | Provider, continuity, import va feed freshness |
 | MTF / paper | `MTF_*`, `PAPER_*`, `PROMOTION_*` | H1/M15 pilot, paper observation va promotion guards |
-| Risk / execution | `RISK_*`, `EXECUTION_*`, `LIVE_*` | Cost model, position limits va hard live-trading stop |
+| Risk / execution | `RISK_*`, `EXECUTION_*`, `SMART_DISCIPLINE_*`, `LIVE_*` | Cost model, position limits, paper process-integrity va hard live-trading stop |
 | External intelligence | `ECONOMIC_*`, `FMP_*`, `ALPHA_VANTAGE_*`, `CURRENTS_*`, `COT_*` | Optional calendar/news/COT data |
 | Notifications | `TELEGRAM_*`, `MAIL_*`, `BROADCAST_*` | Alert va local delivery |
 
@@ -27,6 +27,7 @@ Normal profil: `CACHE_STORE=redis`, `QUEUE_CONNECTION=redis`,
 
 - `LIVE_TRADING_ENABLED`, `LIVE_TRADING_HARD_STOP`, `LIVE_KILL_SWITCH_ENGAGED` faqat tasdiqlangan production change orqali o‘zgaradi.
 - `LAB_*` gate/budgetlarini feature kodi va evidence contractidan alohida o‘zgartirmang.
+- `SMART_DISCIPLINE_*` qiymatlari paper containment guardrail’lari: ular alpha yoki promotion threshold emas. O‘zgartirishdan oldin `trading:discipline-report`dagi veto/adherence/outcome quadrantlarini solishtiring.
 - Provider API keylari bo‘sh qolsa, tegishli provider “not configured” deb qayd qilinishi kerak; success deb qabul qilinmaydi.
 - Yangi env kaliti qo‘shilsa, `.env.example`ga guruhli comment va shu reference jadvaliga kiriting.
 - `DATABASE_BACKUP_VERIFY_HASH_ON_HEALTH=false` normal holatda manifest va byte-size’ni tekshiradi; katta backupni har bir health poll’da qayta hash qilish uchun vaqtincha `true` qiling.

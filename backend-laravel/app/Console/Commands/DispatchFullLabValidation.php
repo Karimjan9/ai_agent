@@ -8,6 +8,7 @@ use App\Models\CandidateGateDecision;
 use App\Models\LabEvaluationRun;
 use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
+use App\Services\CausalLearningCohortService;
 use App\Services\GateContractService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabCandidateSelectionService;
@@ -29,7 +30,7 @@ class DispatchFullLabValidation extends Command
 
     protected $description = 'Select the strongest screened agents from every pair and serialize full walk-forward validation';
 
-    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, HistoricalDataQualityService $quality, LabCandidateSelectionService $selection, CandidateGateDecisionService $decisions, SystemLogService $logs, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LabImmutableEvidenceService $evidence, GateContractService $gateContracts, LabGenerationTerminalBoundaryService $terminalBoundaries): int
+    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, HistoricalDataQualityService $quality, LabCandidateSelectionService $selection, CandidateGateDecisionService $decisions, SystemLogService $logs, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LabImmutableEvidenceService $evidence, GateContractService $gateContracts, LabGenerationTerminalBoundaryService $terminalBoundaries, CausalLearningCohortService $causalCohorts): int
     {
         $contractHealth = $gateContracts->health();
         if (! ($contractHealth['healthy'] ?? false)) {
@@ -76,6 +77,26 @@ class DispatchFullLabValidation extends Command
             if ($roleCandidate && $this->roleCompleteReplayReady($roleCandidate)) {
                 $generation = $roleCandidate;
                 $roleFirstReplay = true;
+            }
+            if (! $generation) {
+                $generation = $lab?->generations()
+                    ->with('agents.modelVersion')
+                    ->where('trigger_type', 'learning_confirmation')
+                    ->whereIn('status', ['screened', 'completed'])
+                    ->latest('generation')
+                    ->limit(3)
+                    ->get()
+                    ->first(fn ($candidate): bool => $candidate->agents->contains(function ($agent): bool {
+                        if (! in_array(data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), ['memory_guided', 'repair_guided'], true)) {
+                            return false;
+                        }
+
+                        return ! LabEvaluationRun::query()
+                            ->where('lab_agent_id', $agent->id)
+                            ->where('phase', 'full_validation')
+                            ->where('status', 'completed')
+                            ->exists();
+                    }));
             }
             // Non-council generations retain the ordinary newest eligible
             // frontier behavior.
@@ -148,23 +169,57 @@ class DispatchFullLabValidation extends Command
             // Selection completes before any heavy export. It is immutable
             // evidence for why a candidate received scarce replay capacity.
             $generation = $generation->fresh(['agents.modelVersion']);
-            $screened = $generation->agents->where('lifecycle_status', 'screened')->values();
+            $learningConfirmation = (string) $generation->trigger_type === 'learning_confirmation'
+                && (string) data_get($generation->trigger_context, 'adaptive_evolution_policy.causal_learning_counterfactual_cohort.status') === 'materialized';
+            $screened = $learningConfirmation
+                ? $generation->agents->filter(fn ($agent): bool => in_array(
+                    (string) $agent->lifecycle_status,
+                    ['screened', 'rejected', 'stagnated', 'challenger'],
+                    true,
+                ) && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
+                    'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+                ], true))->values()
+                : $generation->agents->where('lifecycle_status', 'screened')->values();
             $screened = $this->enforceGenerationDatasetConsistency($generation, $screened);
             if ($timeframe === 'M15') {
                 $screened = $this->rescreenStaleM15RegimeEvidence($generation, $screened, $handoffs, $evidence);
+            }
+            if ($learningConfirmation) {
+                $admissionReasons = $screened->flatMap(function ($agent) use ($causalCohorts, $evidence): array {
+                    $admission = $causalCohorts->fullReplayAdmission($agent, $evidence);
+
+                    return (array) ($admission['reason_codes'] ?? []);
+                })->map('strval')->unique()->values()->all();
+                $contractReasons = array_values(array_filter(
+                    $admissionReasons,
+                    fn (string $reason): bool => ! in_array($reason, [
+                        'CAUSAL_COHORT_SCREENING_EVIDENCE_INCOMPLETE',
+                        'CAUSAL_COHORT_SCREENING_BEHAVIOR_EVIDENCE_INCOMPLETE',
+                    ], true),
+                ));
+                if ($contractReasons !== []) {
+                    $causalCohorts->invalidateGeneration($generation->fresh(), $contractReasons);
+                    app(LabGenerationReportService::class)->record(
+                        $generation->fresh(),
+                        'causal_full_replay_admission_quarantine',
+                    );
+                    $this->warn("{$symbol}: causal triplet full-replay contract invalid; generation quarantined without expensive replay (".implode(',', $contractReasons).').');
+
+                    continue;
+                }
             }
             // Full validation is opened by exactly one evidence-complete
             // screening survivor. A contextual near-miss may still inform the
             // targeted-mutation curriculum, but it must not consume the full
             // replay lane. This check is deliberately against the immutable
             // run/artifact plane, not only the mutable agent projection.
-            $screened = $screened->filter(function ($agent) use ($evidence): bool {
+            $screened = $screened->filter(function ($agent) use ($evidence, $learningConfirmation, $causalCohorts): bool {
                 $decision = CandidateGateDecision::query()
                     ->where('lab_agent_id', $agent->id)
                     ->where('stage', 'screening')
                     ->latest('evaluated_at')
                     ->first();
-                if (! $decision || $decision->decision !== 'passed') {
+                if (! $decision || (! $learningConfirmation && $decision->decision !== 'passed')) {
                     return false;
                 }
 
@@ -178,16 +233,41 @@ class DispatchFullLabValidation extends Command
                     return false;
                 }
 
+                if ($learningConfirmation && ! $causalCohorts->fullReplayAdmission($agent, $evidence)['allowed']) {
+                    return false;
+                }
+
                 return $evidence->learningEligibility($run)['complete'] === true;
             })->values();
-            $laneSelection = $selection->selectValidationLanes($screened);
+            if ($learningConfirmation) {
+                $byRole = $screened->keyBy(fn ($agent): string => (string) data_get(
+                    $agent->modelVersion?->metadata,
+                    'causal_learning_cohort.role',
+                ));
+                $guidedRole = $byRole->has('repair_guided') ? 'repair_guided' : 'memory_guided';
+                $requiredRoles = [$guidedRole, 'blinded', 'frozen_control'];
+                $complete = collect($requiredRoles)->every(fn (string $role): bool => $byRole->has($role));
+                $confirmationAgents = $complete
+                    ? collect($requiredRoles)->map(fn (string $role) => $byRole->get($role))->values()
+                    : collect();
+                $laneSelection = [
+                    'agents' => $confirmationAgents,
+                    'lanes' => $confirmationAgents->mapWithKeys(fn ($agent): array => [
+                        $agent->id => 'causal_learning_'.(string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'),
+                    ])->all(),
+                ];
+            } else {
+                $laneSelection = $selection->selectValidationLanes($screened);
+            }
             // Normal generations use the one-candidate bootstrap funnel. A
             // role-complete generation is the explicit exception: its four
             // complementary roles are the experiment, and each still enters
             // the same serialized full-replay queue and unchanged passport.
             $shadowResearch = data_get($generation->trigger_context, 'shadow_research_lane.protocol') === \App\Services\ShadowResearchGovernorService::PROTOCOL
                 && (bool) data_get($generation->trigger_context, 'shadow_research_lane.shadow_only', false);
-            if (! (bool) data_get($generation->trigger_context, 'role_complete_council', false) && ! $shadowResearch) {
+            if (! $learningConfirmation
+                && ! (bool) data_get($generation->trigger_context, 'role_complete_council', false)
+                && ! $shadowResearch) {
                 $laneSelection['agents'] = $laneSelection['agents']->take(1)->values();
             }
             $laneSelection['lanes'] = collect($laneSelection['lanes'] ?? [])

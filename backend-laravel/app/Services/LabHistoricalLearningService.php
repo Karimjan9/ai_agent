@@ -3,17 +3,17 @@
 namespace App\Services;
 
 use App\Models\LabAgent;
-use App\Models\LabCandleDecisionEvent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGateDecisionEvent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningConsumptionEvent;
 use App\Models\LabLearningInsight;
 use App\Models\LabMutationCreditEvent;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Converts the immutable evidence plane into bounded evolution advice.
@@ -53,6 +53,7 @@ class LabHistoricalLearningService
     ];
 
     private array $mutationPriorCache = [];
+
     /** @var array<string, array{summary: array, aggregates: array}> */
     private array $candleEvidenceCache = [];
 
@@ -60,8 +61,34 @@ class LabHistoricalLearningService
     {
         $symbol = strtoupper($symbol);
         $timeframe = strtoupper($timeframe);
+        $lock = Cache::lock('lab-history-refresh:'.$symbol.':'.$timeframe, 900);
+        if (! $lock->get()) {
+            return $this->currentInsights($symbol, $timeframe);
+        }
+
+        try {
+            return $this->refreshForLabLocked($symbol, $timeframe);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** @return array<int,LabLearningInsight> */
+    private function refreshForLabLocked(string $symbol, string $timeframe): array
+    {
         $families = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->distinct()->pluck('strategy_family')->filter()->values();
+        if ($families->isEmpty()) return [];
+
+        $revision = $this->sourceRevision($symbol, $timeframe);
+        $revisionKey = 'lab-history:source-revision:v2:'.hash('sha256', $symbol.'|'.$timeframe);
+        // A scheduler tick with no new immutable source evidence should not
+        // hydrate hundreds of megabytes of historical replay metrics again.
+        // This is only an execution watermark: canonical insight authority
+        // remains in SQL and every source revision still recompiles it.
+        if (! app()->environment('testing') && hash_equals((string) Cache::get($revisionKey, ''), $revision)) {
+            return $this->currentInsights($symbol, $timeframe);
+        }
         // Candle decision evidence is immutable and shared by every family in
         // one lab refresh. Aggregate the 1M+ row event plane once, then split
         // the compact result by strategy family. Re-running the same grouped
@@ -71,8 +98,11 @@ class LabHistoricalLearningService
         $candleEvidence = $families->isEmpty() ? ['summary' => [], 'aggregates' => []]
             : $this->candleEvidenceForLab($symbol, $timeframe);
 
-        return $families->map(fn (string $family): ?LabLearningInsight => $this->refreshFamily($symbol, $timeframe, $family, $candleEvidence))
+        $insights = $families->map(fn (string $family): ?LabLearningInsight => $this->refreshFamily($symbol, $timeframe, $family, $candleEvidence))
             ->filter()->values()->all();
+        if (! app()->environment('testing')) Cache::forever($revisionKey, $revision);
+
+        return $insights;
     }
 
     public function latestForFamily(string $symbol, string $timeframe, string $family): ?LabLearningInsight
@@ -89,7 +119,9 @@ class LabHistoricalLearningService
         $count = 0;
         foreach ($plan as $index => $spec) {
             $family = (string) ($spec['family'] ?? '');
-            if ($family === '') continue;
+            if ($family === '') {
+                continue;
+            }
             $insight = $this->latestForFamily(
                 (string) $generation->laboratory?->symbol,
                 (string) $generation->laboratory?->timeframe,
@@ -125,6 +157,7 @@ class LabHistoricalLearningService
             ]);
             $count++;
         }
+
         return $count;
     }
 
@@ -137,7 +170,9 @@ class LabHistoricalLearningService
         $agents = LabAgent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
             ->where('strategy_family', $family)->get(['id']);
         $baseCacheKey = implode('|', [strtoupper($symbol), strtoupper($timeframe), $family, $scope ?: 'global']);
-        if ($agents->isEmpty()) return $this->mutationPriorCache[$baseCacheKey.'|credits:0'] = null;
+        if ($agents->isEmpty()) {
+            return $this->mutationPriorCache[$baseCacheKey.'|credits:0'] = null;
+        }
         $agentIds = $agents->pluck('id')->all();
         // The same service instance can plan a generation before a later
         // exact replay writes a new mutation-credit event. A plain symbol /
@@ -146,38 +181,52 @@ class LabHistoricalLearningService
         // cache identity to the append-only credit revision instead.
         $creditRevision = (int) (LabMutationCreditEvent::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0);
         $cacheKey = $baseCacheKey.'|credits:'.$creditRevision;
-        if (array_key_exists($cacheKey, $this->mutationPriorCache)) return $this->mutationPriorCache[$cacheKey];
+        if (array_key_exists($cacheKey, $this->mutationPriorCache)) {
+            return $this->mutationPriorCache[$cacheKey];
+        }
         $credits = LabMutationCreditEvent::query()
-            ->with(['mutationMemory', 'agent.modelVersion'])
+            ->with([
+                'mutationMemory',
+                'agent:id,model_version_id',
+                'agent.modelVersion:id,metadata',
+            ])
             ->whereIn('lab_agent_id', $agentIds)->get();
         $runIds = $credits->flatMap(fn (LabMutationCreditEvent $event): array => (array) $event->evidence_run_ids)->filter()->unique()->values();
         $exactRuns = LabEvaluationRun::query()
             ->whereIn('run_id', $runIds->all())
             ->where('status', 'completed')
-            ->whereIn('phase', ['full_validation', 'paper', 'holdout'])
+            // Paper/holdout are sealed evaluation authority, never mutation
+            // training. Only pre-2026 full-validation evidence may create a
+            // reusable direction prior for a future generation.
+            ->where('phase', 'full_validation')
             ->whereJsonDoesntContain('metadata->historical', true)
             ->get()
             ->filter(fn (LabEvaluationRun $run): bool => app(LabImmutableEvidenceService::class)->learningEligibility($run)['complete'])
             ->pluck('run_id')->all();
-        if ($exactRuns === []) return $this->mutationPriorCache[$cacheKey] = null;
-        $rows = $credits->filter(fn (LabMutationCreditEvent $event): bool =>
-            $this->confirmedCreditMatches($event, $exactRuns, $scope));
+        if ($exactRuns === []) {
+            return $this->mutationPriorCache[$cacheKey] = null;
+        }
+        $rows = $credits->filter(fn (LabMutationCreditEvent $event): bool => $this->confirmedCreditMatches($event, $exactRuns, $scope));
         $winner = null;
         $winnerUnits = collect();
         foreach ($rows->groupBy(fn (LabMutationCreditEvent $event): string => $event->parameter_key.'|'.$event->outcome) as $items) {
             $units = $this->independentCreditUnits($items, $exactRuns);
-            if ($units->count() < 2) continue;
-            $candidate = $items->sortByDesc(fn (LabMutationCreditEvent $event): float =>
-                (float) ($event->mutationMemory?->confidence ?? 0))->first();
+            if ($units->count() < 2) {
+                continue;
+            }
+            $candidate = $items->sortByDesc(fn (LabMutationCreditEvent $event): float => (float) ($event->mutationMemory?->confidence ?? 0))->first();
             if (! $winner || (float) ($candidate->mutationMemory?->confidence ?? 0) > (float) ($winner->mutationMemory?->confidence ?? 0)) {
                 $winner = $candidate;
                 $winnerUnits = $units;
             }
         }
-        if (! $winner) return $this->mutationPriorCache[$cacheKey] = null;
+        if (! $winner) {
+            return $this->mutationPriorCache[$cacheKey] = null;
+        }
         $old = data_get($winner->payload, 'old_value.value', data_get($winner->mutationMemory?->old_value, 'value'));
         $new = data_get($winner->payload, 'new_value.value', data_get($winner->mutationMemory?->new_value, 'value'));
         $direction = is_numeric($old) && is_numeric($new) ? ((float) $new >= (float) $old ? 1 : -1) : null;
+
         return $this->mutationPriorCache[$cacheKey] = [
             'parameter_key' => $winner->parameter_key,
             'outcome' => $winner->outcome,
@@ -218,7 +267,9 @@ class LabHistoricalLearningService
             if ($primaryRunId === '' || ! $runIds->contains($primaryRunId)) {
                 $primaryRunId = (string) ($runIds->first() ?? '');
             }
-            if ($primaryRunId === '') return collect();
+            if ($primaryRunId === '') {
+                return collect();
+            }
             $temporalWindow = (string) ($event->temporal_window_key ?? data_get($event->payload, 'temporal_window_key', ''));
             if ($temporalWindow === '' || $temporalWindow === 'missing' || str_starts_with($temporalWindow, 'legacy:')) {
                 return collect();
@@ -250,13 +301,26 @@ class LabHistoricalLearningService
     {
         $agents = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->where('strategy_family', $family)->get(['id', 'lab_generation_id']);
-        if ($agents->isEmpty()) return null;
+        if ($agents->isEmpty()) {
+            return null;
+        }
         $agentIds = $agents->pluck('id')->all();
-        $runs = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)->get();
+        // Full replay `metrics` contains the immutable decision/trade trace
+        // projection and is hundreds of MB in production. Historical target
+        // compilation only needs evidence identity and eligibility manifests;
+        // selecting metrics here multiplied memory/CPU by strategy family.
+        $runs = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)->get([
+            'id', 'run_id', 'lab_generation_id', 'lab_agent_id', 'model_version_id',
+            'phase', 'status', 'request_hash', 'response_hash', 'data_hash',
+            'request_meta', 'response_meta', 'metadata', 'created_at', 'updated_at',
+        ]);
         $legacyRunIds = $runs->where('status', 'legacy_snapshot')->pluck('run_id')->filter()->all();
         $gateEvents = LabGateDecisionEvent::query()->whereIn('lab_agent_id', $agentIds)
             ->whereIn('stage', ['screening', 'full_validation', 'statistical_forward_gate', 'paper_admission'])
-            ->latest('recorded_at')->get()
+            ->latest('recorded_at')->get([
+                'id', 'lab_generation_id', 'lab_agent_id', 'run_id', 'stage',
+                'decision', 'revision', 'reason_codes', 'metrics', 'payload', 'recorded_at',
+            ])
             // Backfilled snapshots are an audit bridge only. They may remain
             // visible in the evidence ledger, but they must not contribute a
             // learning target or mutation direction.
@@ -273,27 +337,32 @@ class LabHistoricalLearningService
             $sourceEventIds[] = $event->id;
             foreach (array_unique((array) $event->reason_codes) as $reason) {
                 $reason = strtoupper((string) $reason);
-                if (! preg_match('/^(FAILED_|INSUFFICIENT_|DOMINATED_|OVERFIT|REJECTED)/', $reason)) continue;
+                if (! preg_match('/^(FAILED_|INSUFFICIENT_|DOMINATED_|OVERFIT|REJECTED)/', $reason)) {
+                    continue;
+                }
                 $reasonCounts[$reason] = ($reasonCounts[$reason] ?? 0) + 1;
                 // Older forward events used FAILED_REGIME_COVERAGE for a
                 // seasonal monthly failure. Prefer the immutable metric
                 // payload when available so legacy evidence still routes to
                 // the monthly lane without rewriting that evidence.
                 $target = $this->targetForFailure($reason, (array) $event->metrics);
-                if ($target) $targetScores[$target] = ($targetScores[$target] ?? 0) + 3;
+                if ($target) {
+                    $targetScores[$target] = ($targetScores[$target] ?? 0) + 3;
+                }
             }
         }
         arsort($reasonCounts);
 
-        $exactRuns = $runs->filter(fn (LabEvaluationRun $run): bool =>
-            $run->status === 'completed'
-            && in_array((string) $run->phase, ['full_validation', 'paper', 'holdout'], true)
+        $exactRuns = $runs->filter(fn (LabEvaluationRun $run): bool => $run->status === 'completed'
+            && (string) $run->phase === 'full_validation'
             && ! (bool) data_get($run->metadata, 'historical', false)
             && app(LabImmutableEvidenceService::class)->learningEligibility($run)['complete']);
         $legacyRuns = $runs->where('status', 'legacy_snapshot');
         $exactRunIds = $exactRuns->pluck('run_id')->values()->all();
 
-        if ($candleEvidence === []) $candleEvidence = $this->candleEvidenceForAgents($agentIds, $family);
+        if ($candleEvidence === []) {
+            $candleEvidence = $this->candleEvidenceForAgents($agentIds, $family);
+        }
         $candleSummary = (object) ($candleEvidence['summary'][$family] ?? [
             'total' => 0, 'accepted' => 0, 'rejected' => 0,
         ]);
@@ -301,7 +370,9 @@ class LabHistoricalLearningService
 
         foreach ($candleAggregates as $row) {
             $target = $this->targetForRejection((string) $row['rejection_code']);
-            if ($target) $targetScores[$target] = ($targetScores[$target] ?? 0) + min(30, (int) $row['occurrences']);
+            if ($target) {
+                $targetScores[$target] = ($targetScores[$target] ?? 0) + min(30, (int) $row['occurrences']);
+            }
         }
         arsort($targetScores);
         $primaryTarget = array_key_first($targetScores);
@@ -309,10 +380,13 @@ class LabHistoricalLearningService
         $recommendedKeys = self::TARGET_KEYS[$primaryTarget] ?? [];
 
         $credits = LabMutationCreditEvent::query()
-            ->with(['mutationMemory', 'agent.modelVersion'])
+            ->with([
+                'mutationMemory',
+                'agent:id,model_version_id',
+                'agent.modelVersion:id,metadata',
+            ])
             ->whereIn('lab_agent_id', $agentIds)->get();
-        $confirmedCredits = $credits->filter(fn (LabMutationCreditEvent $event): bool =>
-            $this->confirmedCreditMatches($event, $exactRunIds));
+        $confirmedCredits = $credits->filter(fn (LabMutationCreditEvent $event): bool => $this->confirmedCreditMatches($event, $exactRunIds));
         $confirmedUnits = $this->independentCreditUnits($confirmedCredits, $exactRunIds);
         $blocked = $confirmedUnits->map(fn (array $unit): LabMutationCreditEvent => $unit['event'])
             ->filter(fn (LabMutationCreditEvent $event): bool => $event->outcome === 'harmful' && (float) $event->forward_delta < 0)
@@ -321,9 +395,9 @@ class LabHistoricalLearningService
                 $confirmations = $confirmedUnits->filter(fn (array $unit): bool => in_array($unit['event_id'], $eventIds, true))->count();
 
                 return [
-                'parameter_key' => $items->first()->parameter_key,
-                'confirmations' => $confirmations,
-                'reason' => 'independently_confirmed_harmful',
+                    'parameter_key' => $items->first()->parameter_key,
+                    'confirmations' => $confirmations,
+                    'reason' => 'independently_confirmed_harmful',
                 ];
             })->values()->all();
         $causalPriorAllowed = $exactRuns->count() >= 2 && $confirmedUnits->count() >= 2;
@@ -369,24 +443,26 @@ class LabHistoricalLearningService
             'failure_signature' => $failureSignature, 'metrics' => $metrics, 'recommended' => $recommended,
         ]);
         $existing = LabLearningInsight::query()->where('source_hash', $sourceHash)->first();
-        if ($existing) return $existing;
+        if ($existing) {
+            return $existing;
+        }
 
         try {
             return LabLearningInsight::create([
-            'insight_id' => (string) Str::uuid(), 'symbol' => $symbol, 'timeframe' => $timeframe,
-            'strategy_family' => $family, 'scope_key' => $scopeKey, 'insight_type' => 'failure_profile',
-            'evidence_quality' => $evidenceQuality, 'causal_prior_allowed' => $causalPriorAllowed,
-            'confidence' => $confidence, 'source_hash' => $sourceHash,
-            'source_generation_ids' => $sourceGenerationIds,
-            'source_agent_ids' => array_slice($agentIds, 0, 500),
-            'source_run_ids' => array_slice($sourceRunIds, 0, 500),
-            'source_event_ids' => array_slice($sourceEventIds, 0, 500),
-            'failure_signature' => $failureSignature, 'metrics' => $metrics,
-            'recommended_mutations' => $recommended, 'blocked_mutations' => $blocked,
-            'conclusion' => $primaryTarget
-                ? "{$family}: {$primaryTarget} is the dominant historical failure target; preserve all other lanes and test only the diagnosed envelope."
-                : "{$family}: no stable failure target is available; keep this family exploratory and do not infer causal mutation credit.",
-            'generated_at' => now(),
+                'insight_id' => (string) Str::uuid(), 'symbol' => $symbol, 'timeframe' => $timeframe,
+                'strategy_family' => $family, 'scope_key' => $scopeKey, 'insight_type' => 'failure_profile',
+                'evidence_quality' => $evidenceQuality, 'causal_prior_allowed' => $causalPriorAllowed,
+                'confidence' => $confidence, 'source_hash' => $sourceHash,
+                'source_generation_ids' => $sourceGenerationIds,
+                'source_agent_ids' => array_slice($agentIds, 0, 500),
+                'source_run_ids' => array_slice($sourceRunIds, 0, 500),
+                'source_event_ids' => array_slice($sourceEventIds, 0, 500),
+                'failure_signature' => $failureSignature, 'metrics' => $metrics,
+                'recommended_mutations' => $recommended, 'blocked_mutations' => $blocked,
+                'conclusion' => $primaryTarget
+                    ? "{$family}: {$primaryTarget} is the dominant historical failure target; preserve all other lanes and test only the diagnosed envelope."
+                    : "{$family}: no stable failure target is available; keep this family exploratory and do not infer causal mutation credit.",
+                'generated_at' => now(),
             ]);
         } catch (QueryException $exception) {
             // Two scheduler paths may observe the same immutable source hash
@@ -399,16 +475,82 @@ class LabHistoricalLearningService
         }
     }
 
-    /** Aggregate the immutable candle event plane once per lab refresh. */
+    /**
+     * Aggregate the immutable candle event plane once per lab refresh.
+     *
+     * New projections already write compact rollups. Historical full-row
+     * runs are immutable, so cache that legacy base by its latest remaining
+     * event id and merge the small live rollup plane on every refresh. This
+     * avoids rescanning ~2M frozen rows every five minutes without treating
+     * a derived cache as canonical evidence.
+     */
     private function candleEvidenceForLab(string $symbol, string $timeframe): array
     {
         $cacheKey = strtoupper($symbol).'|'.strtoupper($timeframe);
-        if (isset($this->candleEvidenceCache[$cacheKey])) return $this->candleEvidenceCache[$cacheKey];
+        if (isset($this->candleEvidenceCache[$cacheKey])) {
+            return $this->candleEvidenceCache[$cacheKey];
+        }
 
-        $base = DB::table('lab_candle_decision_events as e')
+        $agents = fn ($query) => $query
             ->join('lab_agents as a', 'a.id', '=', 'e.lab_agent_id')
             ->where('a.symbol', strtoupper($symbol))
             ->where('a.timeframe', strtoupper($timeframe));
+        $legacyBase = $agents(DB::table('lab_candle_decision_events as e'))
+            ->whereNotExists(fn ($query) => $query
+                ->selectRaw('1')
+                ->from('lab_candle_decision_rollups as r')
+                ->whereColumn('r.run_id', 'e.run_id'));
+        $latestLegacyEventId = (int) ((clone $legacyBase)->max('e.id') ?? 0);
+        $legacyCacheKey = 'lab-history:legacy-candle-evidence:v1:'.hash('sha256', $cacheKey);
+        $cachedLegacy = Cache::get($legacyCacheKey);
+        if (! is_array($cachedLegacy)
+            || data_get($cachedLegacy, 'protocol') !== 'immutable_legacy_candle_aggregate_v1'
+            || (int) data_get($cachedLegacy, 'latest_event_id', -1) !== $latestLegacyEventId) {
+            $cachedLegacy = [
+                'protocol' => 'immutable_legacy_candle_aggregate_v1',
+                'latest_event_id' => $latestLegacyEventId,
+                'evidence' => $this->aggregateRawCandleEvidence($legacyBase),
+                'promotion_evidence' => false,
+            ];
+            Cache::forever($legacyCacheKey, $cachedLegacy);
+        }
+
+        $rollupBase = DB::table('lab_candle_decision_rollups as r')
+            ->join('lab_agents as a', 'a.id', '=', 'r.lab_agent_id')
+            ->where('a.symbol', strtoupper($symbol))
+            ->where('a.timeframe', strtoupper($timeframe));
+        $rollupSummary = (clone $rollupBase)
+            ->select('a.strategy_family')
+            ->selectRaw('SUM(r.event_count) as total, SUM(r.accepted_count) as accepted, SUM(CASE WHEN r.accepted = 0 THEN r.event_count ELSE 0 END) as rejected')
+            ->groupBy('a.strategy_family')
+            ->get()
+            ->mapWithKeys(fn ($row): array => [(string) $row->strategy_family => [
+                'total' => (int) $row->total,
+                'accepted' => (int) $row->accepted,
+                'rejected' => (int) $row->rejected,
+            ]])->all();
+        $rollupAggregates = (clone $rollupBase)
+            ->whereNotNull('r.rejection_code')
+            ->select('a.strategy_family', 'r.rejection_code', 'r.market_regime', 'r.volatility_regime')
+            ->selectRaw('SUM(r.event_count) as occurrences')
+            ->groupBy('a.strategy_family', 'r.rejection_code', 'r.market_regime', 'r.volatility_regime')
+            ->get()
+            ->groupBy('strategy_family')
+            ->map(fn ($rows): array => $rows->map(fn ($row): array => [
+                'rejection_code' => $row->rejection_code,
+                'market_regime' => $row->market_regime,
+                'volatility_regime' => $row->volatility_regime,
+                'occurrences' => (int) $row->occurrences,
+            ])->values()->all())->all();
+
+        return $this->candleEvidenceCache[$cacheKey] = $this->mergeCandleEvidence(
+            (array) data_get($cachedLegacy, 'evidence', []),
+            ['summary' => $rollupSummary, 'aggregates' => $rollupAggregates],
+        );
+    }
+
+    private function aggregateRawCandleEvidence($base): array
+    {
         $summary = (clone $base)
             ->select('a.strategy_family')
             ->selectRaw('COUNT(*) as total, SUM(CASE WHEN e.accepted = 1 THEN 1 ELSE 0 END) as accepted, SUM(CASE WHEN e.accepted = 0 THEN 1 ELSE 0 END) as rejected')
@@ -426,14 +568,83 @@ class LabHistoricalLearningService
             ->groupBy('a.strategy_family', 'e.rejection_code', 'e.market_regime', 'e.volatility_regime')
             ->get()
             ->groupBy('strategy_family')
-            ->map(fn ($rows): array => $rows->sortByDesc('occurrences')->take(64)->map(fn ($row): array => [
+            ->map(fn ($rows): array => $rows->map(fn ($row): array => [
                 'rejection_code' => $row->rejection_code,
                 'market_regime' => $row->market_regime,
                 'volatility_regime' => $row->volatility_regime,
                 'occurrences' => (int) $row->occurrences,
             ])->values()->all())->all();
 
-        return $this->candleEvidenceCache[$cacheKey] = ['summary' => $summary, 'aggregates' => $aggregates];
+        return ['summary' => $summary, 'aggregates' => $aggregates];
+    }
+
+    private function mergeCandleEvidence(array $legacy, array $rollups): array
+    {
+        $summary = [];
+        foreach ([(array) ($legacy['summary'] ?? []), (array) ($rollups['summary'] ?? [])] as $source) {
+            foreach ($source as $family => $row) {
+                $summary[$family] ??= ['total' => 0, 'accepted' => 0, 'rejected' => 0];
+                foreach (['total', 'accepted', 'rejected'] as $metric) {
+                    $summary[$family][$metric] += (int) ($row[$metric] ?? 0);
+                }
+            }
+        }
+
+        $aggregates = [];
+        foreach ([(array) ($legacy['aggregates'] ?? []), (array) ($rollups['aggregates'] ?? [])] as $source) {
+            foreach ($source as $family => $rows) {
+                foreach ((array) $rows as $row) {
+                    $identity = implode('|', [
+                        (string) ($row['rejection_code'] ?? ''),
+                        (string) ($row['market_regime'] ?? ''),
+                        (string) ($row['volatility_regime'] ?? ''),
+                    ]);
+                    $aggregates[$family][$identity] ??= [
+                        'rejection_code' => $row['rejection_code'] ?? null,
+                        'market_regime' => $row['market_regime'] ?? null,
+                        'volatility_regime' => $row['volatility_regime'] ?? null,
+                        'occurrences' => 0,
+                    ];
+                    $aggregates[$family][$identity]['occurrences'] += (int) ($row['occurrences'] ?? 0);
+                }
+            }
+        }
+        $aggregates = collect($aggregates)->map(fn (array $rows): array => collect($rows)
+            ->sortByDesc('occurrences')->take(64)->values()->all())->all();
+
+        return ['summary' => $summary, 'aggregates' => $aggregates];
+    }
+
+    /** @return array<int,LabLearningInsight> */
+    private function currentInsights(string $symbol, string $timeframe): array
+    {
+        return LabLearningInsight::query()
+            ->where('symbol', $symbol)
+            ->where('timeframe', $timeframe)
+            ->latest('generated_at')
+            ->get()
+            ->unique('strategy_family')
+            ->values()
+            ->all();
+    }
+
+    private function sourceRevision(string $symbol, string $timeframe): string
+    {
+        $agents = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe);
+        $agentIds = (clone $agents)->pluck('id');
+        if ($agentIds->isEmpty()) return hash('sha256', $symbol.'|'.$timeframe.'|empty');
+
+        $revision = [
+            'agent_max' => (int) $agentIds->max(),
+            'agent_count' => $agentIds->count(),
+            'run_max' => (int) (LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
+            'gate_max' => (int) (LabGateDecisionEvent::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
+            'credit_max' => (int) (LabMutationCreditEvent::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
+            'candle_max' => (int) (DB::table('lab_candle_decision_events')->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
+            'rollup_max' => (int) (DB::table('lab_candle_decision_rollups')->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
+        ];
+
+        return hash('sha256', json_encode($revision, JSON_UNESCAPED_SLASHES));
     }
 
     /** Fallback for a direct family refresh outside refreshForLab(). */

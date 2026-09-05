@@ -20,6 +20,32 @@ class ParameterSchemaTest(unittest.TestCase):
         values = validate_strategy_parameters("breakout_v2", {"avoid_high_volatility": True, "atr_stop_multiplier": 1.5})
         self.assertTrue(values["avoid_high_volatility"])
 
+    def test_breakout_setup_timeframe_is_a_bounded_temporal_role_gene(self):
+        values = validate_strategy_parameters(
+            "confirmation_entry_mtf_v1",
+            {"entry_model": "breakout_retest", "breakout_setup_timeframe": "M15"},
+        )
+        self.assertEqual(values["breakout_setup_timeframe"], "M15")
+
+        with self.assertRaises(ValueError):
+            validate_strategy_parameters(
+                "confirmation_entry_mtf_v1",
+                {"breakout_setup_timeframe": "M1"},
+            )
+
+    def test_causal_topology_genomes_are_runtime_validated(self):
+        values = validate_strategy_parameters(
+            "confirmation_entry_mtf_v1",
+            {
+                "confirmation_family_policy": "structure_plus_reaction",
+                "trigger_topology_policy": "volatility_adaptive",
+                "setup_topology_policy": "liquidity_sweep_reclaim",
+            },
+        )
+        self.assertEqual("structure_plus_reaction", values["confirmation_family_policy"])
+        self.assertEqual("volatility_adaptive", values["trigger_topology_policy"])
+        self.assertEqual("liquidity_sweep_reclaim", values["setup_topology_policy"])
+
     def test_unknown_evolution_parameter_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "noma'lum parametr"):
             validate_strategy_parameters("breakout_v2", {"invented_parameter": True})
@@ -100,6 +126,20 @@ class ParameterSchemaTest(unittest.TestCase):
         self.assertGreater(int((frozen["signal"] == "BUY").sum()), 0)
         self.assertEqual(int((consensus["signal"] == "BUY").sum()), 0)
         self.assertLess(int((transition["signal"] == "BUY").sum()), int((frozen["signal"] == "BUY").sum()))
+
+    def test_architecture_interaction_is_a_bounded_shared_macro_gene(self):
+        values = validate_strategy_parameters(
+            "hybrid_v8",
+            {"architecture_interaction_variant": "state_classifier_coherence_v1"},
+        )
+
+        self.assertEqual(values["architecture_interaction_variant"], "state_classifier_coherence_v1")
+
+        with self.assertRaises(ValueError):
+            validate_strategy_parameters(
+                "hybrid_v8",
+                {"architecture_interaction_variant": "unbounded_bundle"},
+            )
 
 
 if __name__ == "__main__":

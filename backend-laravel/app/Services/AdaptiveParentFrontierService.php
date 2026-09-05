@@ -487,6 +487,10 @@ class AdaptiveParentFrontierService
             (bool) data_get($model->metadata, 'shadow_research_lane.shadow_only', false)
             || data_get($model->metadata, 'shadow_research_lane.protocol') === ShadowResearchGovernorService::PROTOCOL
         ) && data_get($model->metadata, 'shadow_research_lane.requalified', false) !== true;
+        $edgeGenesisLineageBlocked = data_get($model->metadata, 'edge_genesis.protocol') === DependencyAwareEdgeGenesisFoundryService::PROTOCOL
+            && data_get($model->metadata, 'edge_genesis.phase') !== 'PAPER_VALIDATION';
+        $fullStackAdmission = app(FullStackPlaybookMasteryService::class)->parentAdmission($model);
+        $fullStackLineageBlocked = ! (bool) data_get($fullStackAdmission, 'allowed', true);
         $metrics = (array) ($performance?->metrics ?? []);
         $bootstrap = (array) data_get($metrics, 'statistical_evidence.edge_quality.bootstrap_pf', []);
         $edge = (array) data_get($metrics, 'statistical_evidence.edge_quality', []);
@@ -494,7 +498,7 @@ class AdaptiveParentFrontierService
             || (float) data_get($bootstrap, 'pf_5_percentile_lower_bound', 0) >= 1.1;
         $regimePasses = ! (bool) data_get($edge, 'worst_regime_sampled', false)
             || (float) data_get($edge, 'worst_regime_pf', 0) >= 1.0;
-        $parentEligible = ! $shadowOnly && $performance !== null
+        $parentEligible = ! $shadowOnly && ! $edgeGenesisLineageBlocked && ! $fullStackLineageBlocked && $performance !== null
             && $performance->evidence_status === 'valid'
             && $model->evidence_status === 'valid'
             && in_array((string) $performance->status, ['champion', 'challenger', 'forward_validated', 'paper'], true)
@@ -517,7 +521,11 @@ class AdaptiveParentFrontierService
         $evolutionStage = (string) data_get($model->metadata, 'evolution_stage.stage', '');
         $mentorOnly = in_array($evolutionStage, ['screen_validated_seed', 'skill_mentor', 'screen_validated_control', 'repair_anchor', 'repair_anchor_control'], true)
             || data_get($model->metadata, 'skill_mentor.status') === 'confirmed';
-        $passportParentEligible = ($parentEligible || $rootSeed) && ! $mentorOnly;
+        $authority = app(EvolutionaryAuthorityFoundryService::class)->authorityFor($model);
+        $authorityEligible = data_get($authority, 'stage') === 'eligible_parent';
+        // A legacy performance passport describes quality, not reproductive
+        // authority. The Foundry is mandatory for new parent selection.
+        $passportParentEligible = ($parentEligible || $rootSeed) && ! $mentorOnly && ! $fullStackLineageBlocked && $authorityEligible;
 
         // Challenger status is a lifecycle label, not independent forward
         // evidence. Persist explicit rejection codes with every candidate
@@ -525,6 +533,8 @@ class AdaptiveParentFrontierService
         // legal parent merely because its status string looks advanced.
         $selectionReasons = [];
         if ($shadowOnly) $selectionReasons[] = 'rejected_shadow_only';
+        if ($edgeGenesisLineageBlocked) $selectionReasons[] = 'rejected_edge_genesis_dependency_order';
+        if ($fullStackLineageBlocked) $selectionReasons[] = 'rejected_full_stack_mastery_required';
         if ($mentorOnly) $selectionReasons[] = 'rejected_mentor_only';
         if ($performance !== null && (float) data_get($metrics, 'profit_factor', 0) < 1.3) {
             $selectionReasons[] = 'rejected_low_pf';
@@ -550,6 +560,7 @@ class AdaptiveParentFrontierService
             $selectionReasons[] = 'rejected_pending_paired_replay';
         }
         if ($mentorOnly && $selectionReasons === []) $selectionReasons[] = 'rejected_mentor_only';
+        if (! $authorityEligible) $selectionReasons[] = 'rejected_evolutionary_authority';
         if (! $passportParentEligible && $selectionReasons === []) $selectionReasons[] = 'rejected_parent_passport';
         if ($passportParentEligible) $selectionReasons = ['eligible'];
 
@@ -574,6 +585,7 @@ class AdaptiveParentFrontierService
                     ? 'shadow_research_only_until_control_requalification'
                     : ($mentorOnly ? 'skill_tier_not_full_parent' : ($performance === null ? 'no_independent_evidence' : 'parent_passport_incomplete'))),
             'evidence_confidence' => round($confidence, 4),
+            'evolutionary_authority' => $authority,
         ];
     }
 

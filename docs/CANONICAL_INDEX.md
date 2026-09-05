@@ -18,6 +18,8 @@ yozuvlar uchrasa, quyidagi ustuvorlik tartibi qo‘llanadi.
 | AI Laboratory va evolution | `docs/project-memory/ai-learning-laboratory.md` | Laravel evidence/gate; Python deterministic replay |
 | Adaptive evolution | `docs/project-memory/adaptive-evolution.md` | Laboratoriya population va mutation siyosati |
 | Market data | `docs/project-memory/market-data-continuity.md` | Provider, continuity va immutable data evidence |
+| Smart Discipline / process integrity | `docs/architecture/smart-discipline-engine.md` | Paper entry veto/shrink, immutable process review va learning quarantine |
+| Confirmation & Entry System | `docs/architecture/trading-confirmation-entry-system.md` | Closed H4/H1/M15/M5 setup-confirmation-trigger separation, entry admission and WAIT evidence |
 | Operatsiya | `docs/project-memory/operations.md`, `docs/operations/`, `docs/operations/backup.md`, `docs/operations/lab-bottleneck-recovery.md` | Scheduler, queue, G: backup, Redis va laboratory recovery |
 | Modul xaritasi | `docs/project-memory/modules.md` | Domain ownership va service catalog |
 | Environment | `docs/ENVIRONMENT.md` | `.env.example` parametrlarining ma’nosi |

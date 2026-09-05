@@ -144,6 +144,15 @@ class LearningMemoryService
     ): ?array {
         if (! $this->available() || $candidateGenes === []) return null;
 
+        // A memory-guided action must be an executable, context-bound
+        // intervention. If the canonical cartridge abstains, callers receive
+        // no random memory direction and can explicitly use a blinded lane.
+        if ($context !== null && Schema::hasTable('skill_cartridge_observations')) {
+            $cartridge = app(CanonicalSkillCartridgeService::class)->retrieve($symbol, $timeframe, (string) $family, $context, $candidateGenes);
+            if (($cartridge['status'] ?? null) === 'compatible_cartridge_found') return ['parameter_key' => $cartridge['gene'], 'score' => 1.0, 'status' => 'cartridge_exact_replication', 'memory_id' => null, 'skill_cartridge' => $cartridge];
+            return ['parameter_key' => null, 'score' => 0.0, 'status' => 'memory_abstained', 'memory_id' => null, 'reason' => $cartridge['reason'] ?? 'NO_COMPATIBLE_CARTRIDGE'];
+        }
+
         $rows = LabLearningMemory::query()
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))

@@ -25,6 +25,7 @@ class CompositionAuthorityKernelService
         private HorizonControllerService $horizons,
         private InvalidationTargetModelLibraryService $invalidationTargets,
         private SessionNewsStateMachineService $sessionNews,
+        private ProfessionalTradingProgramCompilerService $typedPrograms,
     ) {}
 
     /** @return array<string, mixed> */
@@ -64,6 +65,7 @@ class CompositionAuthorityKernelService
         $riskHysteresis = $this->riskHysteresis->transition((string) ($proposal['risk_state'] ?? 'NORMAL'), (array) ($proposal['risk_metrics'] ?? []));
         $invalidationTarget = $this->invalidationTargets->compile((string) ($proposal['invalidation_model'] ?? 'structure_stop'), (string) ($proposal['target_model'] ?? 'H1_liquidity_target'), (array) data_get($temporalAuthority, 'owners', []));
         $sessionNews = $this->sessionNews->compile((array) ($proposal['session_news_context'] ?? []));
+        $typedProgram = $this->typedPrograms->compile($proposal, $components, $temporal, $invalidationTarget, $management);
         $learningDirective = (array) ($proposal['learning_directive'] ?? []);
         $payload = $this->canonicalize([
             'protocol' => self::PROTOCOL, 'symbol' => $symbol, 'timeframe' => strtoupper((string) ($proposal['timeframe'] ?? 'H1')),
@@ -101,6 +103,7 @@ class CompositionAuthorityKernelService
             'session_handoff_state' => $sessionNews['session_handoff_state'],
             'news_state' => $sessionNews['news_state'],
             'session_news_contract' => $sessionNews,
+            'typed_program' => $typedProgram,
             'filter_funnel_version' => OpportunityFunnelLedgerService::PROTOCOL,
             'volume_provenance' => $volume,
             'risk_hysteresis' => $riskHysteresis,
@@ -137,12 +140,19 @@ class CompositionAuthorityKernelService
             throw new \InvalidArgumentException('A frozen composition passport is required.');
         }
         $role = (string) ($experiment['role'] ?? '');
-        if (! in_array($role, ['memory_guided', 'blinded', 'frozen_control'], true)) {
+        if (! in_array($role, ['memory_guided', 'repair_guided', 'blinded', 'frozen_control'], true)) {
             return $passport;
         }
-        if ($role !== 'frozen_control'
+        if (in_array($role, ['memory_guided', 'repair_guided'], true)
             && (! filled($experiment['gene'] ?? null) || ! array_key_exists('value', $experiment))) {
-            throw new \InvalidArgumentException('A causal learning arm requires an exact gene and value.');
+            throw new \InvalidArgumentException('A memory-guided causal arm requires an exact gene and value.');
+        }
+        $blindedSelector = (array) ($experiment['blinded_selector'] ?? []);
+        if ($role === 'blinded'
+            && (data_get($blindedSelector, 'protocol') !== CausalBlindedMutationSelectorService::PROTOCOL
+                || ! filled(data_get($blindedSelector, 'gene'))
+                || ! array_key_exists('value', $blindedSelector))) {
+            throw new \InvalidArgumentException('A blinded causal arm requires a pre-registered exact single-gene selector.');
         }
         $bound = [
             ...$passport,
@@ -151,8 +161,15 @@ class CompositionAuthorityKernelService
                 'experiment_key' => $experiment['experiment_key'] ?? null,
                 'role' => $role,
                 'source_lesson_id' => $experiment['source_lesson_id'] ?? null,
-                'gene' => $role === 'frozen_control' ? null : ($experiment['gene'] ?? null),
-                'value' => $role === 'frozen_control' ? null : ($experiment['value'] ?? null),
+                'gene' => in_array($role, ['memory_guided', 'repair_guided'], true)
+                    ? ($experiment['gene'] ?? null)
+                    : ($role === 'blinded' ? data_get($blindedSelector, 'gene') : null),
+                'value' => in_array($role, ['memory_guided', 'repair_guided'], true)
+                    ? ($experiment['value'] ?? null)
+                    : ($role === 'blinded' ? data_get($blindedSelector, 'value') : null),
+                'selector_policy' => $role === 'blinded' ? 'cold_start_memory_blinded_selector' : null,
+                'selector_protocol' => $role === 'blinded' ? data_get($blindedSelector, 'protocol') : null,
+                'selector_hash' => $role === 'blinded' ? data_get($blindedSelector, 'selection_hash') : null,
                 'same_parent_required' => true,
                 'same_dataset_required' => true,
                 'same_execution_contract_required' => true,
@@ -161,6 +178,33 @@ class CompositionAuthorityKernelService
         ];
         unset($bound['composition_id']);
         $bound['composition_id'] = 'xau-comp-'.substr(hash('sha256', json_encode($this->canonicalize($bound), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)), 0, 24);
+
+        return $bound;
+    }
+
+    /** @return array<string,mixed> */
+    public function bindLearningDirective(array $passport, array $directive): array
+    {
+        if ((string) data_get($passport, 'protocol') !== self::PROTOCOL) {
+            throw new \InvalidArgumentException('A frozen composition passport is required.');
+        }
+        $bound = [
+            ...$passport,
+            'learning_directive' => $directive,
+            'learning_receipt_ids' => array_values(array_filter(
+                (array) ($directive['consumed_receipt_ids'] ?? []),
+                fn ($id): bool => is_numeric($id) && (int) $id > 0,
+            )),
+            'consumed_learning_receipt_ids' => array_values(array_filter(
+                (array) ($directive['consumed_receipt_ids'] ?? []),
+                fn ($id): bool => is_numeric($id) && (int) $id > 0,
+            )),
+        ];
+        unset($bound['composition_id']);
+        $bound['composition_id'] = 'xau-comp-'.substr(hash('sha256', json_encode(
+            $this->canonicalize($bound),
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION,
+        )), 0, 24);
 
         return $bound;
     }

@@ -60,7 +60,7 @@ class TwelveDataMarketDataProvider implements MarketDataProviderInterface
     private function interval(string $timeframe): string
     {
         return match (strtoupper($timeframe)) {
-            'M15' => '15min', 'H1' => '1h',
+            'M1' => '1min', 'M5' => '5min', 'M15' => '15min', 'M30' => '30min', 'H1' => '1h',
             default => throw new RuntimeException("Twelve Data timeframe qo'llab-quvvatlanmaydi: {$timeframe}"),
         };
     }
