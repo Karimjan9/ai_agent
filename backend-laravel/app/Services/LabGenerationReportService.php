@@ -194,6 +194,14 @@ class LabGenerationReportService
             ->groupBy('lab_agent_id')
             ->map(fn ($runs) => $runs->last())
             ->values();
+        $terminalEvaluationStatuses = ['completed', 'technical_error', 'skipped', 'legacy_snapshot'];
+        $terminalEvaluationCoverage = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->whereIn('status', $terminalEvaluationStatuses)
+            ->distinct('lab_agent_id')
+            ->count('lab_agent_id') >= $agents->count();
+        $evidenceContract = app(LabGenerationEvidenceContractService::class)->for($generation);
+        $screeningEvidenceRequired = (bool) $evidenceContract['screening_evidence_required'];
         $screenTerminalStatuses = ['completed', 'technical_error', 'skipped', 'legacy_snapshot'];
         $technicalCompletionRate = $agents->count() > 0
             ? round($currentScreenRuns->whereIn('status', $screenTerminalStatuses)->count() / $agents->count() * 100, 2)
@@ -211,12 +219,15 @@ class LabGenerationReportService
         $allAgentsTerminal = $agents->isNotEmpty()
             && $agents->whereIn('lifecycle_status', $activeAgentStatuses)->isEmpty();
         $screenEvidenceCoverage = $currentScreenRuns->count() >= $agents->count();
+        $requiredEvidenceCoverage = $screeningEvidenceRequired
+            ? $screenEvidenceCoverage
+            : $terminalEvaluationCoverage;
         $batchTerminality = app(LabBatchTerminalityService::class)->reconcile($generation, true);
         $batchFinalityAllowed = (bool) data_get($batchTerminality, 'finality.allowed', false);
         $technicalQuarantine = (string) $generation->status === 'technical_quarantine';
         $evidenceInProgress = ! $technicalQuarantine
             && (! $allAgentsTerminal || $activeRunCount > 0 || $queueNotEmpty
-                || ! $screenEvidenceCoverage || ! $batchFinalityAllowed);
+                || ! $requiredEvidenceCoverage || ! $batchFinalityAllowed);
         $qualityFailedScreeningAgents = $screenDecisions
             ->where('decision', 'failed')
             ->pluck('lab_agent_id')->filter()->unique()->count();
@@ -224,18 +235,21 @@ class LabGenerationReportService
             ? round($screenPassed / $screenDecisions->count() * 100, 2)
             : 0;
         $pipelineFailure = ! $evidenceInProgress
-            && ($technicalErrors !== [] || $technicalRunCount > 0 || $screenDecisions->count() === 0);
+            && ($technicalErrors !== [] || $technicalRunCount > 0
+                || ($screeningEvidenceRequired && $screenDecisions->count() === 0));
         $screeningFailureClassification = $technicalQuarantine
             ? 'technical_quarantine'
             : ($evidenceInProgress
             ? 'EVIDENCE_IN_PROGRESS'
+            : (! $screeningEvidenceRequired
+                ? 'direct_research_terminal'
             : ($screenPassed > 0
             ? 'agent_quality_signal_available'
             : ($screenDecisions->count() === 0
                 ? 'pipeline_not_working'
                 : ($pipelineFailure
                     ? 'pipeline_and_agent_quality_are_separate'
-                    : 'agents_failed_screening_gate'))));
+                    : 'agents_failed_screening_gate')))));
         $evolutionSafe = $technicalErrors === []
             && $technicalRunCount === 0
             && $screeningPassRate > 0
@@ -384,20 +398,25 @@ class LabGenerationReportService
                 'evidence_complete_screening_agents' => $screenDecisions->count(),
                 'evidence_in_progress' => $evidenceInProgress,
                 'screen_evidence_coverage' => $screenEvidenceCoverage,
+                'terminal_evaluation_coverage' => $terminalEvaluationCoverage,
+                'required_evidence_coverage' => $requiredEvidenceCoverage,
             ],
             'evidence_state' => [
                 'status' => $technicalQuarantine
                     ? 'TECHNICAL_QUARANTINE'
                     : ($evidenceInProgress ? 'EVIDENCE_IN_PROGRESS' : 'FINAL'),
                 'technical_quarantine' => $technicalQuarantine,
+                'evidence_contract' => $evidenceContract,
                 'all_agents_terminal' => $allAgentsTerminal,
                 'screen_evidence_coverage' => $screenEvidenceCoverage,
+                'terminal_evaluation_coverage' => $terminalEvaluationCoverage,
+                'required_evidence_coverage' => $requiredEvidenceCoverage,
                 'active_run_count' => $activeRunCount,
                 'queue_total' => $queueBacklog['total'] ?? null,
                 'queue_empty' => ! $queueNotEmpty,
                 'batch_terminality' => $batchTerminality,
                 'final_report_allowed' => ! $technicalQuarantine && ! $evidenceInProgress,
-                'rule' => 'Final report is valid only after every agent, Redis queue/reserved jobs, worker runs and DB job batch projections are terminal.',
+                'rule' => 'Final report is valid only after the generation-specific evidence contract, every agent, Redis queue/reserved jobs, worker runs and DB job batch projections are terminal.',
             ],
             'mutation_targets' => $targets,
             'population_group_checkpoints' => $populationGroupCheckpoints,
@@ -459,7 +478,7 @@ class LabGenerationReportService
             ],
             'next_action' => $technicalQuarantine
                 ? 'TECHNICAL_QUARANTINE'
-                : $this->nextAction($generation, $technicalErrors, $screenPassed, $screenDecisions->count(), $selected, $forwardValidated, $targetedAttempts, $pipelineFailure, $evidenceInProgress),
+                : $this->nextAction($generation, $technicalErrors, $screenPassed, $screenDecisions->count(), $selected, $forwardValidated, $targetedAttempts, $pipelineFailure, $evidenceInProgress, $screeningEvidenceRequired),
             'report_state' => $technicalQuarantine
                 ? 'TECHNICAL_QUARANTINE'
                 : ($evidenceInProgress ? 'EVIDENCE_IN_PROGRESS' : 'FINAL'),
@@ -729,6 +748,16 @@ class LabGenerationReportService
         $allAgentsTerminal = $agents->isNotEmpty()
             && $agents->whereIn('lifecycle_status', $activeAgentStatuses)->isEmpty();
         $screenEvidenceCoverage = $screenRuns->count() >= $agents->count();
+        $terminalEvaluationStatuses = ['completed', 'technical_error', 'skipped', 'legacy_snapshot'];
+        $terminalEvaluationCoverage = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->whereIn('status', $terminalEvaluationStatuses)
+            ->distinct('lab_agent_id')
+            ->count('lab_agent_id') >= $agents->count();
+        $evidenceContract = app(LabGenerationEvidenceContractService::class)->for($generation);
+        $requiredEvidenceCoverage = (bool) $evidenceContract['screening_evidence_required']
+            ? $screenEvidenceCoverage
+            : $terminalEvaluationCoverage;
         $queue = app(LabQueueJobInspector::class)->generationQueueBacklog($agentIds);
         $queueTotal = $queue['total'] ?? null;
         $generationInProgress = in_array((string) $generation->status, LabPopulationService::ACTIVE_GENERATION_STATUSES, true);
@@ -737,7 +766,7 @@ class LabGenerationReportService
         $technicalQuarantine = (string) $generation->status === 'technical_quarantine';
         $expectedInProgress = ! $technicalQuarantine && ($generationInProgress
             || ! $allAgentsTerminal
-            || ! $screenEvidenceCoverage
+            || ! $requiredEvidenceCoverage
             || $activeRunCount > 0
             || $queueTotal === null
             || (int) $queueTotal > 0
@@ -752,6 +781,8 @@ class LabGenerationReportService
         return (string) data_get($report, 'report_state', '') !== $expectedState
             || (bool) data_get($storedState, 'all_agents_terminal', false) !== $allAgentsTerminal
             || (bool) data_get($storedState, 'screen_evidence_coverage', false) !== $screenEvidenceCoverage
+            || (bool) data_get($storedState, 'terminal_evaluation_coverage', false) !== $terminalEvaluationCoverage
+            || (bool) data_get($storedState, 'required_evidence_coverage', false) !== $requiredEvidenceCoverage
             || (int) data_get($storedState, 'active_run_count', -1) !== $activeRunCount
             || $storedQueueTotal !== $queueTotal
             || (bool) data_get($storedState, 'queue_empty', false) !== ($queueTotal === 0)
@@ -827,11 +858,12 @@ class LabGenerationReportService
         return is_numeric($value) ? (float) $value : $fallback;
     }
 
-    private function nextAction(LabGeneration $generation, array $technicalErrors, int $screenPassed, int $screenDecisions, int $selected, int $forwardValidated, int $targetedAttempts, bool $pipelineFailure = false, bool $evidenceInProgress = false): string
+    private function nextAction(LabGeneration $generation, array $technicalErrors, int $screenPassed, int $screenDecisions, int $selected, int $forwardValidated, int $targetedAttempts, bool $pipelineFailure = false, bool $evidenceInProgress = false, bool $screeningEvidenceRequired = true): string
     {
         if ($evidenceInProgress) return 'EVIDENCE_IN_PROGRESS';
         if ($pipelineFailure || $technicalErrors !== []) return 'recover_evidence_pipeline_before_quality_interpretation';
         if ($forwardValidated > 0) return 'paper_admission_handshake';
+        if (! $screeningEvidenceRequired && $generation->status === 'completed') return 'settle_direct_research_outcome';
         if ($generation->status === 'screened' && $selected === 0) {
             return $targetedAttempts >= 2 ? 'data_edge_audit_required' : 'targeted_rescue_for_dominant_gate_failure';
         }

@@ -62,6 +62,13 @@ class LabBatchTerminalityService
             ->where('phase', 'screening')
             ->distinct('lab_agent_id')
             ->count('lab_agent_id');
+        $terminalEvaluationStatuses = ['completed', 'technical_error', 'skipped', 'legacy_snapshot'];
+        $terminalEvaluationRunCount = LabEvaluationRun::query()
+            ->where('lab_generation_id', $generation->id)
+            ->whereIn('status', $terminalEvaluationStatuses)
+            ->distinct('lab_agent_id')
+            ->count('lab_agent_id');
+        $evidenceContract = app(LabGenerationEvidenceContractService::class)->for($generation);
         $activeAgentStatuses = ['draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation'];
         // Lifecycle terminality and evidence coverage are separate facts. A
         // technically quarantined child may have no screen run at all; it is
@@ -70,6 +77,10 @@ class LabBatchTerminalityService
         $allAgentsTerminal = $generation->agents->isNotEmpty()
             && $generation->agents->whereIn('lifecycle_status', $activeAgentStatuses)->isEmpty();
         $screenEvidenceCoverage = $screenRunCount >= count($agentIds);
+        $terminalEvaluationCoverage = $terminalEvaluationRunCount >= count($agentIds);
+        $requiredEvidenceCoverage = (bool) $evidenceContract['screening_evidence_required']
+            ? $screenEvidenceCoverage
+            : $terminalEvaluationCoverage;
 
         $reconciled = [];
         if ($apply && $queueTerminal && $activeRunCount === 0 && $allAgentsTerminal && $batchRows->isNotEmpty()) {
@@ -103,7 +114,7 @@ class LabBatchTerminalityService
         $dbUnfinished = $batchRows->filter(fn ($batch): bool => $batch->finished_at === null && $batch->cancelled_at === null)->count();
         $dbTerminal = $dbUnfinished === 0;
         $allowed = $queueTerminal && $activeRunCount === 0 && $allAgentsTerminal
-            && $screenEvidenceCoverage && $dbTerminal;
+            && $requiredEvidenceCoverage && $dbTerminal;
 
         return [
             'protocol' => self::PROTOCOL,
@@ -116,8 +127,12 @@ class LabBatchTerminalityService
             'redis_reserved_or_pending_rows' => $queueRows->count(),
             'redis_terminal' => $queueTerminal,
             'active_run_count' => $activeRunCount,
+            'evidence_contract' => $evidenceContract,
             'screen_run_count' => $screenRunCount,
             'screen_evidence_coverage' => $screenEvidenceCoverage,
+            'terminal_evaluation_run_count' => $terminalEvaluationRunCount,
+            'terminal_evaluation_coverage' => $terminalEvaluationCoverage,
+            'required_evidence_coverage' => $requiredEvidenceCoverage,
             'all_agents_terminal' => $allAgentsTerminal,
             'db_pending_batches' => $dbPending,
             'db_unfinished_batches' => $dbUnfinished,
@@ -129,8 +144,8 @@ class LabBatchTerminalityService
                 'db_batch_terminal' => $dbTerminal,
                 'worker_runs_terminal' => $activeRunCount === 0,
                 'agents_terminal' => $allAgentsTerminal,
-                'screen_evidence_coverage' => $screenEvidenceCoverage,
-                'rule' => 'Evidence is FINAL only when Redis pending/reserved/delayed rows, active runs and DB batch projections are all terminal.',
+                'required_evidence_coverage' => $requiredEvidenceCoverage,
+                'rule' => 'Evidence is FINAL only when the generation-specific immutable evidence contract, Redis pending/reserved/delayed rows, active runs and DB batch projections are all terminal.',
             ],
             'promotion_evidence' => false,
         ];

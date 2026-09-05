@@ -22,6 +22,7 @@
 /public/storage
 /storage/*.key
 /storage/pail
+/storage/framework/redis/*.rdb
 /vendor
 Homestead.json
 Homestead.yaml
