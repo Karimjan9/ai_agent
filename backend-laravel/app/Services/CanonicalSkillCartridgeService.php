@@ -268,7 +268,10 @@ class CanonicalSkillCartridgeService
                 // label is therefore an evidence requirement, not cosmetics:
                 // five equal labels silently collapse five causal arms.
                 $runtimeLabel = 'cartridge_'.$cartridge->id.'_g'.$generation->generation.'_a'.($index + 1);
-                $child = \App\Models\ModelVersion::create(['name' => $baseline->name.' cartridge '.$mode, 'strategy' => $runtimeLabel,
+                // ModelVersion names are globally unique. The same frozen
+                // baseline may be retried after a repaired constructor, so
+                // generation must be part of the human-readable identity too.
+                $child = \App\Models\ModelVersion::create(['name' => $baseline->name.' cartridge '.$mode.' g'.$generation->generation, 'strategy' => $runtimeLabel,
                     'version' => $baseline->version.'-cartridge-'.$generation->generation.'-'.$mode, 'generation' => $generation->generation, 'status' => 'testing',
                     'description' => 'Canonical cartridge transplant; research-only.', 'change_log' => 'skill cartridge '.$mode,
                     'parameters' => $parameters, 'metadata' => $metadata, 'evidence_status' => 'valid']);
