@@ -60,6 +60,27 @@ class CanonicalSkillCartridgeScopeTest extends TestCase
         $this->assertDatabaseHas('skill_cartridge_transplant_trials', ['lab_skill_zoo_entry_id' => $entry->id, 'mode' => 'independent_exact_replication']);
     }
 
+    public function test_retry_attempt_has_a_distinct_immutable_trial_identity(): void
+    {
+        $entry = LabSkillZooEntry::create([
+            'skill_key' => 'retry-identity', 'cartridge_key' => hash('sha256', 'retry-identity'), 'revision' => 1,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'module_key' => 'stress_cost', 'niche_key' => 'trend_up',
+            'gene_key' => 'atr_stop_multiplier', 'quality_score' => .1, 'confidence' => .6, 'status' => 'provisional',
+            'component_status' => 'paired_observed', 'organism_viability' => 'not_viable',
+            'evidence' => ['protocol' => CanonicalSkillCartridgeService::PROTOCOL,
+                'intervention' => ['old_value' => 1.5, 'tested_value' => 1.25]],
+        ]);
+        $baseline = ModelVersion::create(['name' => 'retry-identity-baseline', 'status' => 'testing']);
+        $service = app(CanonicalSkillCartridgeService::class);
+
+        $service->planTransplant($entry, $baseline->id, ['regime' => 'trend_up'], true);
+        $service->planTransplant($entry, $baseline->id, [
+            'regime' => 'trend_up', 'transplant_retry_attempt' => 1, 'retry_of_generation_id' => 181,
+        ], true);
+
+        $this->assertDatabaseCount('skill_cartridge_transplant_trials', 10);
+    }
+
     public function test_existing_two_positive_provisional_cartridge_gets_an_exactly_once_next_action(): void
     {
         $entry = LabSkillZooEntry::create([
