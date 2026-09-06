@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Schema;
 class EdgeHypothesisCompilerService
 {
     public const PROTOCOL = 'edge_hypothesis_compiler_v1';
+    public const TOPOLOGY_PIVOT_POLICY = 'edge_topology_pivot_v1';
 
     public function __construct(
         private EdgeCohortIdentityService $identity,
@@ -45,7 +46,7 @@ class EdgeHypothesisCompilerService
 
         $budget = max(1, (int) config('services.edge_director.compiled_hypothesis_budget', 10));
         $registeredAll = DB::table('edge_hypothesis_packets')->where('symbol', $symbol)
-            ->where('timeframe', $timeframe)->get(['definition']);
+            ->where('timeframe', $timeframe)->get(['definition', 'status']);
         $islands = (clone $scope)->get()->groupBy(function ($passport): string {
             $packet = $this->packetFromPassport($passport);
             return $this->rootPacketIdentity($packet)['key'];
@@ -144,10 +145,21 @@ class EdgeHypothesisCompilerService
                 (string) ($definition['diagnosis'] ?? ''), (string) ($definition['structural_axis'] ?? ''),
                 $baselineEpochHash);
         })->filter()->unique()->count();
-        if ($usedInBaseline >= $baselineBudget) return $this->blocked('COMPILED_BASELINE_EPOCH_BUDGET_EXHAUSTED', [
-            'baseline_epoch_hash' => $baselineEpochHash, 'budget' => $baselineBudget,
-            'used' => $usedInBaseline, 'global_budget' => $budget, 'global_used' => $used,
-        ]);
+        $topologyPivot = null;
+        $sourceParameters = (array) $sourceModel->parameters;
+        if ($usedInBaseline >= $baselineBudget) {
+            // The normal three-axis budget remains immutable.  A single,
+            // separately versioned pivot is allowed only after every normal
+            // question ended terminally without an edge.  It is policy-only,
+            // semantically new, and cannot be used to repeat a scalar axis.
+            $topologyPivot = $this->topologyPivotAdmission($registered, $baselineEpochHash, $sourceParameters);
+            if ($topologyPivot === null) return $this->blocked('COMPILED_BASELINE_EPOCH_BUDGET_EXHAUSTED', [
+                'baseline_epoch_hash' => $baselineEpochHash, 'budget' => $baselineBudget,
+                'used' => $usedInBaseline, 'global_budget' => $budget, 'global_used' => $used,
+                'topology_pivot' => 'not_admitted',
+            ]);
+            $blueprints = [$topologyPivot];
+        }
         $axisEpochUse = $registered->map(function ($row): ?string {
             $definition = is_string($row->definition) ? json_decode($row->definition, true) : $row->definition;
             if (! is_array($definition)) return null;
@@ -168,7 +180,9 @@ class EdgeHypothesisCompilerService
             $semanticAxisKey = $this->semanticAxisKey($sourcePacket, (string) $diagnosis['code'],
                 (string) $blueprint['axis'], $baselineEpochHash);
             if ($usedSemanticAxes->has($semanticAxisKey)) continue;
-            $definition = $this->definition($sourcePacket, $sourceModel, $sourceGenerationId, $diagnosis, $blueprint);
+            $definition = $this->definition($sourcePacket, $sourceModel, $sourceGenerationId, $diagnosis, $blueprint,
+                $topologyPivot === null ? [] : ['policy_revision' => self::TOPOLOGY_PIVOT_POLICY,
+                    'reason' => 'normal_baseline_axis_budget_terminal_no_edge', 'one_time_only' => true]);
             $hash = $this->identity->hash($definition);
             if (! DB::table('edge_hypothesis_packets')->where('packet_definition_hash', $hash)->exists()) {
                 $selected = [...$blueprint, 'definition' => $definition, 'packet_definition_hash' => $hash,
@@ -220,6 +234,10 @@ class EdgeHypothesisCompilerService
                 'compiled_count_before' => $sourceIsland['compiled_count'],
                 'budget' => $budget,
                 'selection' => 'least_compiled_professional_island_first',
+            ],
+            'topology_pivot' => $topologyPivot === null ? null : [
+                'policy_revision' => self::TOPOLOGY_PIVOT_POLICY,
+                'axis' => $topologyPivot['axis'], 'normal_baseline_budget_preserved' => true,
             ],
             'diagnosis' => $diagnosis,
             'structural_axis' => $selected['axis'],
@@ -528,7 +546,7 @@ class EdgeHypothesisCompilerService
     }
 
     /** @return array<string,mixed> */
-    private function definition(array $packet, ModelVersion $source, int $sourceGenerationId, array $diagnosis, array $blueprint): array
+    private function definition(array $packet, ModelVersion $source, int $sourceGenerationId, array $diagnosis, array $blueprint, array $topologyPivot = []): array
     {
         return [
             'protocol' => self::PROTOCOL,
@@ -551,8 +569,34 @@ class EdgeHypothesisCompilerService
             'exact_control_required' => true,
             'negative_control_required' => true,
             'risk_governor_frozen' => true,
+            'topology_pivot' => $topologyPivot,
             'promotion_evidence' => false,
         ];
+    }
+
+    /** @return array<string,mixed>|null */
+    private function topologyPivotAdmission(Collection $registered, string $baselineEpochHash, array $parameters): ?array
+    {
+        $baselineRows = $registered->filter(function ($row) use ($baselineEpochHash): bool {
+            $definition = is_string($row->definition ?? null) ? json_decode($row->definition, true) : ($row->definition ?? []);
+            return is_array($definition) && (string) ($definition['source_parameter_hash'] ?? '') === $baselineEpochHash;
+        });
+        $terminalNoEdge = ['settled_no_behavior_change', 'settled_behavior_changed_no_edge'];
+        if ($baselineRows->isEmpty() || $baselineRows->contains(fn ($row): bool => ! in_array((string) ($row->status ?? ''), $terminalNoEdge, true))) return null;
+        if ($baselineRows->contains(function ($row): bool {
+            $definition = is_string($row->definition ?? null) ? json_decode($row->definition, true) : ($row->definition ?? []);
+            return (string) data_get($definition, 'topology_pivot.policy_revision') === self::TOPOLOGY_PIVOT_POLICY;
+        })) return null;
+        $usedAxes = $baselineRows->map(function ($row): ?string {
+            $definition = is_string($row->definition ?? null) ? json_decode($row->definition, true) : ($row->definition ?? []);
+            return is_array($definition) ? (string) ($definition['structural_axis'] ?? '') : null;
+        })->filter()->flip();
+        foreach (['setup_topology_policy', 'confirmation_family_policy', 'trigger_topology_policy', 'entry_model'] as $axis) {
+            if ($usedAxes->has($axis)) continue;
+            if (!(bool) data_get($this->stageMastery->owner($axis), 'declared', false)) continue;
+            return ['axis' => $axis, 'arm_values' => $this->armValues($axis, $parameters[$axis] ?? null)];
+        }
+        return null;
     }
 
     /** @return array{key:string,label:string} */

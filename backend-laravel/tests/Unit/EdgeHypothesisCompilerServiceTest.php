@@ -188,4 +188,36 @@ class EdgeHypothesisCompilerServiceTest extends TestCase
         $this->assertCount(1, $breakRows);
         $this->assertStringContainsString('break_retest', $breakRows->first()->definition);
     }
+
+    public function test_terminal_no_edge_baseline_gets_exactly_one_policy_only_topology_pivot(): void
+    {
+        $compiler = app(EdgeHypothesisCompilerService::class);
+        $admission = new ReflectionMethod($compiler, 'topologyPivotAdmission');
+        $admission->setAccessible(true);
+        $row = static fn (string $axis, string $status, array $pivot = []): object => (object) [
+            'status' => $status,
+            'definition' => json_encode([
+                'source_parameter_hash' => 'baseline-a',
+                'structural_axis' => $axis,
+                'topology_pivot' => $pivot,
+            ]),
+        ];
+        $rows = new Collection([
+            $row('m5_retest_expiry_minutes', 'settled_no_behavior_change'),
+            $row('swing_lookback', 'settled_behavior_changed_no_edge'),
+            $row('rejection_wick_ratio', 'settled_no_behavior_change'),
+        ]);
+
+        $pivot = $admission->invoke($compiler, $rows, 'baseline-a', [
+            'setup_topology_policy' => 'pullback_rejection',
+        ]);
+
+        $this->assertSame('setup_topology_policy', $pivot['axis']);
+        $this->assertCount(5, $pivot['arm_values']);
+        $this->assertNull($admission->invoke($compiler, new Collection([
+            ...$rows->all(), $row('setup_topology_policy', 'settled_no_behavior_change', [
+                'policy_revision' => EdgeHypothesisCompilerService::TOPOLOGY_PIVOT_POLICY,
+            ]),
+        ]), 'baseline-a', ['setup_topology_policy' => 'pullback_rejection']));
+    }
 }
