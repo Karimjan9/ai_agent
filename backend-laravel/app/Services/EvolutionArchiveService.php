@@ -7,6 +7,7 @@ use App\Models\LabEvolutionArchiveEntry;
 use App\Models\LabEvolutionIsland;
 use App\Models\LabGeneration;
 use App\Models\LabParentSelectionDecision;
+use Illuminate\Database\UniqueConstraintViolationException;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use Illuminate\Support\Collection;
@@ -528,13 +529,12 @@ class EvolutionArchiveService
                 ->where('archive_type', '!=', 'failure')
                 ->whereIn('status', ['active', 'retained'])
                 ->update(['status' => 'retired']);
-            LabEvolutionArchiveEntry::updateOrCreate(
-                [
-                    'archive_type' => 'failure',
-                    'island_key' => $islandKey,
-                    'model_version_id' => $agent->model_version_id,
-                ],
-                [
+            $identity = [
+                'archive_type' => 'failure',
+                'island_key' => $islandKey,
+                'model_version_id' => $agent->model_version_id,
+            ];
+            $values = [
                     'symbol' => strtoupper($symbol),
                     'timeframe' => strtoupper($timeframe),
                     'strategy_family' => $family,
@@ -559,8 +559,15 @@ class EvolutionArchiveService
                         'promotion_evidence' => false,
                     ],
                     'status' => 'retained',
-                ],
-            );
+                ];
+            try {
+                LabEvolutionArchiveEntry::updateOrCreate($identity, $values);
+            } catch (UniqueConstraintViolationException) {
+                // Several lifecycle projections may classify the same failed
+                // agent concurrently. The unique row is the intended shared
+                // fact, so converge on it rather than aborting construction.
+                LabEvolutionArchiveEntry::query()->where($identity)->update($values);
+            }
         }
     }
 

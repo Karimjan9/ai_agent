@@ -31,10 +31,13 @@ class QualityEvolutionSynthesisService
             return null;
         }
 
-        $alreadySynthesized = $lab->generations()->where('trigger_type', 'quality_evolution_synthesis')->get()
-            ->contains(fn (LabGeneration $generation): bool => (int) data_get($generation->trigger_context, 'quality_evolution_synthesis.source_generation_id') === (int) $source->id);
-
-        return $alreadySynthesized ? null : $source;
+        $attempts = $lab->generations()->where('trigger_type', 'quality_evolution_synthesis')->get()
+            ->filter(fn (LabGeneration $generation): bool => (int) data_get($generation->trigger_context, 'quality_evolution_synthesis.source_generation_id') === (int) $source->id)
+            ->values();
+        $hasUsableAttempt = $attempts->contains(fn (LabGeneration $generation): bool => (string) $generation->status !== 'technical_quarantine');
+        // One construction-only retry is enough to recover a repaired
+        // invariant without turning a genuine quality failure into a loop.
+        return $hasUsableAttempt || $attempts->count() >= 2 ? null : $source;
     }
 
     /** @return array<string,mixed> */
@@ -53,7 +56,10 @@ class QualityEvolutionSynthesisService
         // population builder, but remains a bounded research generation. Its
         // twenty seats use the existing parent/mentor, risk, tactic and
         // autonomous exploration contracts rather than copying a failed arm.
-        $generation = $this->populations->build($lab->symbol, 'quality_evolution_synthesis', false, $lab->timeframe, [], false, false, 20);
+        // Null deliberately selects the normal configured twenty-seat plan.
+        // Passing 20 selects the bounded-root recovery branch, which is a
+        // different four-seat diagnostic contract.
+        $generation = $this->populations->build($lab->symbol, 'quality_evolution_synthesis', false, $lab->timeframe, [], false, false, null);
         if (! $generation) {
             return ['status' => 'blocked', 'reason' => data_get($this->populations->lastBuildOutcome(), 'reason_code', 'QUALITY_SYNTHESIS_BUILD_BLOCKED'),
                 'build_outcome' => $this->populations->lastBuildOutcome(), 'promotion_evidence' => false];
@@ -71,6 +77,7 @@ class QualityEvolutionSynthesisService
             'source_generation' => $source->generation,
             'source_trigger_type' => $source->trigger_type,
             'population_contract' => 20,
+            'retry_attempt' => $this->qualityAttemptNumber($lab, $source),
             'quality_first' => true,
             'toolbox' => ['parent_mentor', 'strategy_tactic', 'risk_management', 'hybrid_evolution', 'autonomous_curiosity', 'adversarial_falsification'],
             'source_outcome_is_not_parent_or_promotion_evidence' => true,
@@ -90,5 +97,12 @@ class QualityEvolutionSynthesisService
         $trials = DB::table('skill_cartridge_transplant_trials')->whereIn('child_model_version_id', $agents->pluck('model_version_id'))->get(['status']);
         return $trials->count() === $agents->count()
             && ! $trials->contains(fn ($trial): bool => in_array((string) $trial->status, ['planned', 'queued', 'running'], true));
+    }
+
+    private function qualityAttemptNumber(AiLaboratory $lab, LabGeneration $source): int
+    {
+        return $lab->generations()->where('trigger_type', 'quality_evolution_synthesis')->get()
+            ->filter(fn (LabGeneration $generation): bool => (int) data_get($generation->trigger_context, 'quality_evolution_synthesis.source_generation_id') === (int) $source->id)
+            ->count() + 1;
     }
 }
