@@ -551,10 +551,12 @@ class LabPopulationService
             && is_array(data_get($auditGeneration->trigger_context, 'data_edge_audit'));
         $operatorSuccessor = $trigger === 'operator_successor';
         $learningConfirmation = $trigger === 'learning_confirmation';
+        $qualityEvolutionSynthesis = $trigger === 'quality_evolution_synthesis';
         if ($this->protocolSafety->generationCreationPaused()
             && ! $controlledRescue
             && ! $operatorSuccessor
             && ! $learningConfirmation
+            && ! $qualityEvolutionSynthesis
             && $trigger !== 'shadow_research'
             && ! $auditedDataEdge) {
             return $this->blocked('LEARNING_GATE_PAUSED', false);
@@ -656,7 +658,7 @@ class LabPopulationService
         $generationAdmission = app(GenerationAdmissionDecisionService::class)->decide($lab, $latest, [
             'trigger' => $trigger,
             'controlled_rescue' => $controlledRescue,
-            'operator_approved_successor' => $operatorSuccessor,
+            'operator_approved_successor' => $operatorSuccessor || $qualityEvolutionSynthesis,
             'learning_confirmation' => $learningConfirmation,
             'role_complete' => $roleComplete,
             'shadow_research' => $shadowResearch,
@@ -752,7 +754,7 @@ class LabPopulationService
         $structuralEscapeAdmission = (string) data_get($generationAdmission, 'decision')
             === GenerationAdmissionDecisionService::OPEN_STRUCTURAL_ESCAPE;
         if ($latest && $newCandles < $minimumFreshCandles && ! $force && ! $structuralEscapeAdmission
-            && ! in_array($trigger, ['degradation', 'candidate_handoff', 'data_edge_audit', 'shadow_research', 'learning_confirmation'], true)) {
+            && ! in_array($trigger, ['degradation', 'candidate_handoff', 'data_edge_audit', 'shadow_research', 'learning_confirmation', 'quality_evolution_synthesis'], true)) {
             return $this->blocked('INSUFFICIENT_FRESH_CANDLES', true, ['new_candles' => $newCandles, 'minimum_fresh_candles' => $minimumFreshCandles]);
         }
 
@@ -765,7 +767,7 @@ class LabPopulationService
             static fn (mixed $target): string => (string) $target,
             (array) data_get($targetedFailureProfile, 'targets', []),
         ))));
-        $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets, $controlledRescue, $operatorSuccessor, $learningConfirmation, $confirmationLesson, $causalRepairFrontier, $learningVelocity, $generationAdmission, $shadowResearch, $shadowResearchPosture, $rescueAdmission, $independentEvidenceAdmission, $targetedRescueBlocked): ?array {
+        $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets, $controlledRescue, $operatorSuccessor, $learningConfirmation, $qualityEvolutionSynthesis, $confirmationLesson, $causalRepairFrontier, $learningVelocity, $generationAdmission, $shadowResearch, $shadowResearchPosture, $rescueAdmission, $independentEvidenceAdmission, $targetedRescueBlocked): ?array {
             // Scheduler and manual/operator requests may arrive together. Lock
             // the laboratory row before assigning the next generation number;
             // otherwise two workers can build the same G and one can leave a
@@ -794,7 +796,7 @@ class LabPopulationService
             $lockedGenerationAdmission = app(GenerationAdmissionDecisionService::class)->decide($lockedLab, $latestInTransaction, [
                 'trigger' => $trigger,
                 'controlled_rescue' => $controlledRescue,
-                'operator_approved_successor' => $operatorSuccessor,
+                'operator_approved_successor' => $operatorSuccessor || $qualityEvolutionSynthesis,
                 'learning_confirmation' => $learningConfirmation,
                 'role_complete' => $roleComplete,
                 'shadow_research' => $shadowResearch,

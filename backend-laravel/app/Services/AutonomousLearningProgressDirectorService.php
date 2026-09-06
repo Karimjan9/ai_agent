@@ -29,6 +29,7 @@ class AutonomousLearningProgressDirectorService
         private DependencyAwareEdgeGenesisFoundryService $edge,
         private CanonicalSkillCartridgeService $cartridges,
         private EvolutionaryAuthorityFoundryService $authority,
+        private QualityEvolutionSynthesisService $qualityEvolution,
         private SettlementWatermarkService $watermarks,
         private LegacyControlDebtFirewallService $legacyDebt,
         private EdgeHypothesisCompilerService $hypotheses,
@@ -142,6 +143,18 @@ class AutonomousLearningProgressDirectorService
                     ? $this->cartridges->materializeTransplant($provisional, $baselineModelId, ['confirmation_lane' => 'two_positive_independent_five_arm'], true)
                     : ['status' => 'blocked', 'reason' => 'CAUSAL_BASELINE_MODEL_MISSING', 'promotion_evidence' => false]);
             return $this->result('PROVISIONAL_SKILL_CARTRIDGE_CONFIRMATION', $result, $reconciliation, $apply);
+        }
+
+        // A five-arm cartridge cohort proves or rejects one frozen claim. It
+        // must not become the whole evolution program: after terminal causal
+        // evidence, open exactly one quality-first twenty-seat synthesis
+        // generation that can use the complete research toolbox.
+        $qualitySource = $this->qualityEvolution->nextSource($symbol, $timeframe);
+        if ($qualitySource) {
+            $result = ! $apply
+                ? ['status' => 'would_queue', 'source_generation_id' => $qualitySource->id, 'population_size' => 20, 'quality_first' => true]
+                : $this->qualityEvolution->materialize($qualitySource);
+            return $this->result('QUALITY_EVOLUTION_SYNTHESIS', $result, $reconciliation, $apply);
         }
 
         $passports = DB::table('edge_genesis_passports')->where('symbol', $symbol)->where('timeframe', $timeframe);
