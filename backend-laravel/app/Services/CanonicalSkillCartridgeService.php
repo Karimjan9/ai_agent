@@ -224,6 +224,12 @@ class CanonicalSkillCartridgeService
         // regime/topology knowledge in perpetual provisional status.
         $modes = $this->transplantModes($old, $tested, $includeReverse);
         $retry = $this->reconcileRepairableTechnicalPreflightCohort($cartridge, $baseline->id);
+        // A model insert can still fail after the prior cohort has been
+        // terminalized. On the next invocation there is no longer an active
+        // row to reconcile, but retry identity must remain distinct.
+        if (! isset($retry['context'])) {
+            $retry = $this->pendingRepairableRetryContext($cartridge, $baseline->id) ?? $retry;
+        }
         if (data_get($retry, 'blocked', false)) {
             return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => data_get($retry, 'reason'), 'promotion_evidence' => false];
         }
@@ -631,6 +637,28 @@ class CanonicalSkillCartridgeService
                 return (int) data_get(is_array($context) ? $context : [], 'transplant_retry_attempt', 0);
             })->max() ?? 0;
         return $attempts < 1;
+    }
+
+    /** @return array{context:array<string,mixed>}|null */
+    private function pendingRepairableRetryContext(LabSkillZooEntry $cartridge, int $baselineModelId): ?array
+    {
+        $rows = DB::table('skill_cartridge_transplant_trials')->where('lab_skill_zoo_entry_id', $cartridge->id)
+            ->where('baseline_model_version_id', $baselineModelId)->where('status', 'technical_preflight_repaired')->get();
+        if ($rows->isEmpty()) return null;
+        $attempts = $rows->map(function ($row): int {
+            $context = json_decode((string) $row->context, true);
+            return (int) data_get(is_array($context) ? $context : [], 'transplant_retry_attempt', 0);
+        })->max() ?? 0;
+        if ($attempts >= 1) return null;
+        $closures = $rows->map(function ($row): array {
+            $evidence = json_decode((string) $row->evidence, true);
+            return is_array($evidence) ? (array) data_get($evidence, 'technical_preflight_closure', []) : [];
+        });
+        $generationIds = $closures->pluck('generation_id')->filter()->unique()->values();
+        $errors = $closures->flatMap(fn (array $closure): array => (array) data_get($closure, 'error_codes', []))->filter('is_string')->unique()->values()->all();
+        if ($generationIds->count() !== 1 || $errors === [] || array_diff($errors, self::REPAIRABLE_TRANSPLANT_PREFLIGHT_ERRORS) !== []) return null;
+        return ['context' => ['transplant_retry_attempt' => 1, 'retry_of_generation_id' => (int) $generationIds->first(),
+            'retry_reason' => 'REPAIRED_CANONICAL_TRANSPLANT_PREFLIGHT_CONTRACT']];
     }
     private function interactionKey(LabSkillZooEntry $a, LabSkillZooEntry $b): string { return hash('sha256', implode('|', [self::PROTOCOL, min($a->id, $b->id), max($a->id, $b->id), $a->symbol, $a->timeframe])); }
     /** @return array<int,string> */
