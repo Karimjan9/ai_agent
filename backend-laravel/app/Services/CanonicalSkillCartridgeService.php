@@ -594,6 +594,41 @@ class CanonicalSkillCartridgeService
         return ['context' => ['transplant_retry_attempt' => $previousAttempts + 1, 'retry_of_generation_id' => $generationId,
             'retry_reason' => 'REPAIRED_CANONICAL_TRANSPLANT_PREFLIGHT_CONTRACT']];
     }
+
+    /**
+     * Read-only admission preview used by the director. A queued trial is
+     * normally active work; this narrow exception is only for the terminal
+     * repair case that materializeTransplant will reconcile atomically.
+     */
+    public function canRetryRepairableTechnicalPreflightCohort(LabSkillZooEntry $cartridge, int $baselineModelId): bool
+    {
+        $active = DB::table('skill_cartridge_transplant_trials')
+            ->where('lab_skill_zoo_entry_id', $cartridge->id)->where('baseline_model_version_id', $baselineModelId)
+            ->whereIn('status', ['queued', 'running', 'settled_control'])->get();
+        if ($active->isEmpty()) return false;
+        $childIds = $active->pluck('child_model_version_id')->filter()->map(fn ($id): int => (int) $id)->values();
+        if ($childIds->count() !== $active->count()) return false;
+        $agents = LabAgent::query()->with(['generation', 'modelVersion'])->whereIn('model_version_id', $childIds)->get()->keyBy('model_version_id');
+        if ($agents->count() !== $childIds->count() || $agents->pluck('lab_generation_id')->unique()->count() !== 1) return false;
+        foreach ($childIds as $childId) {
+            /** @var LabAgent|null $agent */
+            $agent = $agents->get($childId);
+            if (! $agent || $agent->origin !== 'skill_cartridge_transplant' || $agent->lifecycle_status !== 'technical_quarantine'
+                || $agent->generation?->status !== 'technical_quarantine') return false;
+            $errors = array_values(array_filter((array) data_get($agent->modelVersion?->metadata, 'preflight_quarantine.errors', []), 'is_string'));
+            if ($errors === []) {
+                $message = (string) LabEvaluationRun::query()->where('lab_agent_id', $agent->id)->latest('id')->value('error_message');
+                $errors = array_values(array_filter(self::REPAIRABLE_TRANSPLANT_PREFLIGHT_ERRORS, fn (string $code): bool => str_contains($message, $code)));
+            }
+            if ($errors === [] || array_diff($errors, self::REPAIRABLE_TRANSPLANT_PREFLIGHT_ERRORS) !== []) return false;
+        }
+        $attempts = DB::table('skill_cartridge_transplant_trials')->where('lab_skill_zoo_entry_id', $cartridge->id)
+            ->where('baseline_model_version_id', $baselineModelId)->get()->map(function ($row): int {
+                $context = json_decode((string) $row->context, true);
+                return (int) data_get(is_array($context) ? $context : [], 'transplant_retry_attempt', 0);
+            })->max() ?? 0;
+        return $attempts < 1;
+    }
     private function interactionKey(LabSkillZooEntry $a, LabSkillZooEntry $b): string { return hash('sha256', implode('|', [self::PROTOCOL, min($a->id, $b->id), max($a->id, $b->id), $a->symbol, $a->timeframe])); }
     /** @return array<int,string> */
     private function transplantModes(mixed $old, mixed $tested, bool $includeNegative): array

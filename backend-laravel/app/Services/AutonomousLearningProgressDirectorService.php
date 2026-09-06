@@ -337,7 +337,10 @@ class AutonomousLearningProgressDirectorService
         return LabSkillZooEntry::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->where('status', 'provisional')->orderByDesc('confidence')->orderByDesc('quality_score')->get()
             ->first(function (LabSkillZooEntry $entry): bool {
-                if ($this->hasTransplant($entry)) return false;
+                if ($this->hasTransplant($entry)) {
+                    $baselineModelId = (int) LabAgent::query()->find($entry->causal_baseline_agent_id)?->model_version_id;
+                    if ($baselineModelId <= 0 || ! $this->cartridges->canRetryRepairableTechnicalPreflightCohort($entry, $baselineModelId)) return false;
+                }
                 $observations = DB::table('skill_cartridge_observations')->where('lab_skill_zoo_entry_id', $entry->id);
                 $positive = (clone $observations)->where('outcome', 'positive')->count();
                 $negative = (clone $observations)->where('outcome', 'negative')->count();
