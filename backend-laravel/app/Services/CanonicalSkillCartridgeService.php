@@ -205,6 +205,11 @@ class CanonicalSkillCartridgeService
         $dataHash = (string) data_get($cartridge->evidence, 'provenance.data_hashes.0');
         $executionHash = (string) data_get($cartridge->evidence, 'provenance.execution_hashes.0');
         if ($dataHash === '' || $executionHash === '') return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'CARTRIDGE_FROZEN_HASHES_MISSING', 'promotion_evidence' => false];
+        $canonicalDatasetSnapshots = (array) data_get($baselineAgent->generation?->trigger_context, 'canonical_dataset_snapshots', []);
+        if (! is_array(data_get($canonicalDatasetSnapshots, 'price.manifest'))
+            || ! is_array(data_get($canonicalDatasetSnapshots, 'foundation.manifest'))) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'CARTRIDGE_BASELINE_DATASET_SNAPSHOTS_MISSING', 'promotion_evidence' => false];
+        }
         // Every near-confirmable cartridge, including categorical, boolean
         // and structural interventions, gets the same falsifiable five-arm
         // cohort.  Numeric-only local refinement is deliberately *not* a
@@ -218,22 +223,29 @@ class CanonicalSkillCartridgeService
         $blindGene = collect($base)->keys()->first(fn ($key): bool => $key !== $gene && (is_numeric($base[$key]) || is_bool($base[$key])));
         if (! $blindGene) return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'BLINDED_AUTONOMOUS_ARM_NOT_SAFE_TO_MATERIALIZE', 'promotion_evidence' => false];
 
-        $created = DB::transaction(function () use ($cartridge, $baseline, $baselineAgent, $context, $gene, $old, $tested, $dataHash, $executionHash, $modes, $base, $blindGene): array {
+        $created = DB::transaction(function () use ($cartridge, $baseline, $baselineAgent, $context, $gene, $old, $tested, $dataHash, $executionHash, $modes, $base, $blindGene, $canonicalDatasetSnapshots): array {
             $lab = $baselineAgent->generation->laboratory;
             $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => ((int) $lab->generations()->max('generation')) + 1,
                 'trigger_type' => 'skill_cartridge_transplant', 'trigger_context' => ['protocol' => self::PROTOCOL, 'cartridge_id' => $cartridge->id,
                     'cartridge_key' => $cartridge->cartridge_key, 'causal_baseline_model_version_id' => $baseline->id,
-                    'genetic_parent_model_version_id' => null, 'data_hash' => $dataHash, 'execution_hash' => $executionHash, 'research_only' => true, 'promotion_evidence' => false],
+                    'genetic_parent_model_version_id' => null, 'data_hash' => $dataHash, 'execution_hash' => $executionHash,
+                    'canonical_dataset_snapshots' => $canonicalDatasetSnapshots,
+                    'research_only' => true, 'promotion_evidence' => false],
                 'data_fingerprint' => $dataHash, 'population_size' => count($modes), 'status' => 'queued', 'started_at' => now()]);
             $agents = [];
             foreach ($modes as $index => $mode) {
                 $parameters = $this->transplantParameters($mode, $base, $gene, $old, $tested, (string) $blindGene, $cartridge->strategy_family);
                 if ($parameters === null) throw new \RuntimeException('SKILL_CARTRIDGE_ARM_CANNOT_MATERIALIZE: '.$mode);
+                $parameterDiff = $this->parameterDiff($base, $parameters);
                 $confirmation = $this->confirmationContract($mode, $dataHash, $executionHash);
                 $metadata = [...((array) $baseline->metadata), 'skill_cartridge_transplant' => ['protocol' => self::PROTOCOL, 'mode' => $mode,
                     'cartridge_id' => $cartridge->id, 'cartridge_key' => $cartridge->cartridge_key, 'causal_baseline_model_version_id' => $baseline->id,
                     'genetic_parent_model_version_id' => null, 'context' => $context, 'data_hash' => $dataHash, 'execution_hash' => $executionHash,
                     'confirmation_contract' => $confirmation, 'research_only' => true, 'promotion_evidence' => false],
+                    'mutation_constructor_invariant' => [
+                        ...((array) data_get($baseline->metadata, 'mutation_constructor_invariant', [])),
+                        'parameter_diff_count' => count($parameterDiff),
+                    ],
                     'base_strategy' => data_get($baseline->metadata, 'base_strategy', $baseline->strategy)];
                 // run-all keys its result map by strategy.  A distinct public
                 // label is therefore an evidence requirement, not cosmetics:
@@ -249,7 +261,7 @@ class CanonicalSkillCartridgeService
                     // transplant from contaminating ParentFoundry lineage.
                     'parent_a_model_version_id' => null, 'symbol' => $cartridge->symbol, 'timeframe' => $cartridge->timeframe,
                     'strategy_family' => $cartridge->strategy_family, 'origin' => 'skill_cartridge_transplant', 'lifecycle_status' => 'full_queued',
-                    'parameter_diff' => $this->parameterDiff($base, $parameters), 'decision_reason' => 'Frozen-baseline canonical cartridge '.$mode.'; research-only.']);
+                    'parameter_diff' => $parameterDiff, 'decision_reason' => 'Frozen-baseline canonical cartridge '.$mode.'; research-only.']);
                 DB::table('skill_cartridge_transplant_trials')->updateOrInsert(['trial_key' => $this->trialKey($cartridge, $baseline->id, $mode, $context)], [
                     'lab_skill_zoo_entry_id' => $cartridge->id, 'baseline_model_version_id' => $baseline->id, 'child_model_version_id' => $child->id,
                     'symbol' => $cartridge->symbol, 'timeframe' => $cartridge->timeframe, 'mode' => $mode, 'status' => 'queued', 'context' => json_encode($context),
