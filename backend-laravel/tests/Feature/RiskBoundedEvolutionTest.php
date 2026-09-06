@@ -216,6 +216,43 @@ class RiskBoundedEvolutionTest extends TestCase
         $this->assertSame('healthy', $result['status']);
     }
 
+    public function test_closed_constructor_abort_is_excluded_without_an_integrity_repair_projection(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Constructor abort exclusion test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'quality_evolution_synthesis',
+            'population_size' => 3, 'status' => 'technical_quarantine',
+            'trigger_context' => [
+                'constructor_contract_abort' => [
+                    'reason_code' => 'INCOMPLETE_GENERATION_POPULATION',
+                    'planned_slots' => 20, 'created_agents' => 3,
+                ],
+            ],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'constructor-abort-exclusion-test', 'strategy' => 'constructor-abort-exclusion-test', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => [], 'evidence_status' => 'stale_quarantine',
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'quality_evolution_synthesis', 'lifecycle_status' => 'technical_quarantine',
+            'parameter_diff' => ['entry_topology_variant' => ['old' => 'frozen', 'new' => 'regime_consensus_v1']],
+            'decision_reason' => 'Generation construction incomplete; candidate quarantined before replay and strategy verdict withheld.',
+        ]);
+
+        $result = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame(0, $result['technical_recovery_agents']);
+        $this->assertSame('healthy', $result['status']);
+    }
+
     public function test_shadow_council_is_explicitly_research_only(): void
     {
         $contract = app(MtfShadowCouncilSandboxService::class)->contract([

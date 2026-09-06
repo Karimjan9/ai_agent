@@ -369,7 +369,12 @@ class LearningVelocityGateService
         $constructorAbort = data_get($agent->generation?->trigger_context, 'constructor_contract_abort.reason_code')
             ?? data_get($agent->generation?->trigger_context, 'shadow_research_constructor_abort.reason_code')
             ?? data_get($agent->generation?->trigger_context, 'controlled_rescue_constructor_abort.reason_code');
-        if ($contractDrift !== [] && $constructorAbort !== null) {
+        $constructorQuarantine = strtolower((string) $agent->decision_reason);
+        if ($constructorAbort !== null && (
+            $contractDrift !== []
+            || (str_contains($constructorQuarantine, 'generation construction incomplete')
+                && str_contains($constructorQuarantine, 'strategy verdict withheld'))
+        )) {
             return false;
         }
 
