@@ -637,6 +637,7 @@ class LabAgentEvaluationService
                 'metadata' => $this->mergeRefreshedModelMetadata($model, ['last_result' => $result]),
             ]);
             $this->shadowVetoLedger->record($agent, $result, 'full_replay');
+            app(AgentCompetencyTensorService::class)->project($agent->fresh(['modelVersion']), $result, (string) $run->run_id);
             // Preserve the sealed niche contract on the full-replay result.
             // It is used only by the separate portfolio-member gate; it must
             // never be interpreted as standalone forward evidence.
