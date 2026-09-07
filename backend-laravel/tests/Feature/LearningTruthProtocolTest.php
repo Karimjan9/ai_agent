@@ -76,6 +76,10 @@ class LearningTruthProtocolTest extends TestCase
         $this->assertEquals(1.0, $cartridge['old_value']);
         $this->assertEquals(1.1, $cartridge['proposed_value']);
         $this->assertDatabaseCount('skill_cartridge_revisions', 1);
+        $this->assertDatabaseHas('research_experiment_receipts', [
+            'canonical_learning_outbox_id' => CanonicalLearningOutbox::firstOrFail()->id,
+            'classification' => 'POSITIVE_CANDIDATE',
+        ]);
         $this->assertSame('memory_abstained', app(CanonicalSkillCartridgeService::class)->retrieve(
             'XAUUSD', 'H1', 'hybrid', ['regime' => 'trend', 'volatility' => 'unknown', 'session' => 'unknown'], ['minimum_confidence'],
         )['status']);
@@ -195,7 +199,9 @@ class LearningTruthProtocolTest extends TestCase
         $agent->modelVersion->update(['metadata' => ['mutation_scope' => 'volatility:high_volatility']]);
         $signature = app(FailureSignatureCompilerService::class)->compile($agent->fresh('modelVersion'));
 
-        $this->assertSame('high_volatility', data_get($signature, 'state.volatility'));
+        // The raw typed value remains in context_contract.raw_v1_axes, while
+        // retrieval receives the bounded canonical volatility axis.
+        $this->assertSame('high', data_get($signature, 'state.volatility'));
         $this->assertNull(data_get($signature, 'state.session'));
 
         // Legacy rows remain immutable, so projection also repairs the old
@@ -210,6 +216,8 @@ class LearningTruthProtocolTest extends TestCase
         ], true, ['improved' => true]);
 
         $scope = (array) EvolutionLearningReceipt::query()->where('lab_agent_id', $agent->id)->firstOrFail()->scope;
+        // The evolution receipt keeps its historical scoped label; the
+        // ContextContract projection above supplies canonical retrieval axes.
         $this->assertSame('high_volatility', $scope['volatility']);
         $this->assertArrayNotHasKey('session', $scope);
         $this->assertArrayNotHasKey('regime', $scope);

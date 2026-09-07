@@ -116,8 +116,16 @@ class CanonicalLearningOutboxService
             $cartridge = app(CanonicalSkillCartridgeService::class)->project($pair->fresh(['candidateAgent.modelVersion', 'candidateResponseMap', 'controlResponseMap']), $result, $map, $settlement);
             $row->update(['status' => 'completed', 'attempts' => (int) $row->attempts + 1, 'last_error' => null, 'processed_at' => now()]);
             $this->markCanonicalSettled($pair, $row);
+            // This is a derived receipt from the canonical settlement, not a
+            // second learning pipeline. Its idempotency key contains the
+            // immutable outbox/evidence identity, so a duplicate callback
+            // cannot create another work item or authority transition.
+            $conversion = app(ResearchExperimentConversionKernelService::class)->recordCanonicalSettlement(
+                $pair, $row->fresh(), $settlement, $map, $result, $insufficient, $cartridge,
+            );
 
-            return ['status' => 'completed', 'outbox_id' => $row->id, 'settlement_id' => $settled['settlement']->id, 'skill_cartridge' => $cartridge, 'promotion_evidence' => false];
+            return ['status' => 'completed', 'outbox_id' => $row->id, 'settlement_id' => $settled['settlement']->id,
+                'skill_cartridge' => $cartridge, 'conversion_receipt' => $conversion, 'promotion_evidence' => false];
         } catch (\Throwable $exception) {
             return $this->fail($pair, $row, 'CANONICAL_SETTLEMENT_FAILED', $exception);
         }
