@@ -63,7 +63,12 @@ def deflated_sharpe_ratio(returns: list[float], trial_sharpes: list[float]) -> d
     expected_max = _expected_max_sharpe(usable_trials)
     skewness = _skewness(returns)
     excess_kurtosis = _excess_kurtosis(returns)
-    denominator_squared = 1 - skewness * observed + (excess_kurtosis / 4) * observed * observed
+    # Bailey--Lopez de Prado Eq. 2 is expressed with raw kurtosis K:
+    # 1 - skew * SR + ((K - 1) / 4) * SR^2.  This helper returns
+    # excess kurtosis (K - 3), so its equivalent coefficient is
+    # (excess + 2) / 4.  Keep the public excess field for diagnostics,
+    # but never feed it into the raw-kurtosis formula unadjusted.
+    denominator_squared = 1 - skewness * observed + ((excess_kurtosis + 2) / 4) * observed * observed
     if denominator_squared <= 0:
         return {
             "status": "invalid_moments",
@@ -86,6 +91,8 @@ def deflated_sharpe_ratio(returns: list[float], trial_sharpes: list[float]) -> d
         "number_of_trials": len(usable_trials),
         "skewness": round(skewness, 6),
         "excess_kurtosis": round(excess_kurtosis, 6),
+        "raw_kurtosis": round(excess_kurtosis + 3, 6),
+        "formula_version": "bailey_lopez_de_prado_dsr_eq2_raw_kurtosis_v1",
     }
 
 

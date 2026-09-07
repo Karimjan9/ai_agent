@@ -1,4 +1,5 @@
 import unittest
+import random
 
 from app.services.statistical_validation import (
     cscv_probability_of_backtest_overfitting,
@@ -46,6 +47,18 @@ class StatisticalValidationTest(unittest.TestCase):
         self.assertEqual(4, result["number_of_trials"])
         self.assertGreaterEqual(result["deflated_sharpe_probability"], 0)
         self.assertLessEqual(result["deflated_sharpe_probability"], 1)
+
+    def test_deflated_sharpe_uses_raw_kurtosis_equivalent_denominator(self):
+        rng = random.Random(17)
+        returns = [rng.gauss(0, 1) + 0.55 for _ in range(60)]
+        result = deflated_sharpe_ratio(returns, [-0.1, 0.0, 0.1, 0.2])
+
+        self.assertEqual("assessed", result["status"])
+        self.assertEqual("bailey_lopez_de_prado_dsr_eq2_raw_kurtosis_v1", result["formula_version"])
+        self.assertIn("raw_kurtosis", result)
+        # Regression fixture: the former excess/4 implementation reports a
+        # materially different near-boundary probability for this seed.
+        self.assertAlmostEqual(0.946156, result["deflated_sharpe_probability"], places=6)
 
 
 if __name__ == "__main__":

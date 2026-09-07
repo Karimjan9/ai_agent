@@ -302,10 +302,10 @@ class DependencyAwareEdgeGenesisFoundryService
                     'phase_changed_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
                 foreach ($arms as $armIndex => $arm) {
                     $armContext = $this->contextForArm($packet, $arm, $architectureRevision);
-                    $runtime = $this->runtimeForArm($packet, $arm, $architectureRevision,
-                        $architectureRevision === self::EVIDENCE_COMPILED_REVISION
-                            ? (array) data_get($repairContract, 'source_parameters', [])
-                            : (array) data_get($repairContract, 'source_parameters.'.$packet['key'], []));
+                    $sourceParameters = $architectureRevision === self::EVIDENCE_COMPILED_REVISION
+                        ? (array) data_get($repairContract, 'source_parameters', [])
+                        : (array) data_get($repairContract, 'source_parameters.'.$packet['key'], []);
+                    $runtime = $this->runtimeForArm($packet, $arm, $architectureRevision, $sourceParameters);
                     $parameters = $runtime['parameters']; $passport = $this->composition->freeze(['symbol' => 'XAUUSD', 'timeframe' => $lab->timeframe,
                         'strategy_id' => $packet['strategy_id'], 'tactic_id' => $this->tacticForArm($packet['tactic_id'], $arm), 'risk_id' => 'atr_risk_envelope',
                         'management_id' => $packet['management_id'], 'market_state' => $armContext, 'data_contract' => $this->temporalContractForArm($arm), 'data_hash' => $dataHash, 'execution_hash' => $executionHash]);
@@ -320,7 +320,12 @@ class DependencyAwareEdgeGenesisFoundryService
                         'causal_baseline_model_version_id' => $sourceModelId > 0 ? $sourceModelId : null,
                         'mtf_bundle_hash' => $mtfBundleHash, 'mtf_bundle_manifest' => $mtfManifest,
                         'context' => $armContext, 'execution_timeframe' => self::EXECUTION_TIMEFRAME,
-                        'runtime_strategy' => $runtime['base_strategy'], 'risk_governor_frozen' => true, 'pre_2026_only' => true, 'research_only' => true, 'promotion_evidence' => false],
+                        'runtime_strategy' => $runtime['base_strategy'], 'risk_governor_frozen' => true, 'pre_2026_only' => true, 'research_only' => true,
+                        'intervention_attestation' => ['protocol' => 'edge_genesis_intervention_attestation_v1',
+                            'control_identity' => $arm === 'compiled_control', 'source_parameter_hash' => $this->parameterHash($sourceParameters),
+                            'consumed_parameter_hash' => $this->parameterHash($parameters), 'actual_parameter_diff' => $this->diff($sourceParameters, $parameters),
+                            'genetic_parent_model_version_id' => null, 'causal_baseline_model_version_id' => $sourceModelId > 0 ? $sourceModelId : null,
+                            'promotion_evidence' => false], 'promotion_evidence' => false],
                         'edge_observability_contract' => ['protocol' => self::PROTOCOL, 'required_fields' => ['opportunity_detected', 'setup_location_valid', 'context_bias_aligned', 'confirmation', 'entry', 'execution_price', 'invalidation_price', 'mfe_mae', 'exit_outcome'], 'must_exist_before_nine_fold' => true],
                         'lab_symbol' => strtoupper($lab->symbol), 'lab_timeframe' => strtoupper($lab->timeframe),
                         'semantic_group' => $this->edgeSemanticGroup($lab->symbol, $lab->timeframe, $runtime['family'], $packet),
@@ -339,7 +344,8 @@ class DependencyAwareEdgeGenesisFoundryService
                         'parameters' => $parameters, 'metadata' => $metadata, 'evidence_status' => 'valid']);
                     $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id, 'parent_a_model_version_id' => null,
                         'symbol' => $lab->symbol, 'timeframe' => $lab->timeframe, 'strategy_family' => $runtime['family'], 'origin' => 'edge_genesis',
-                        'lifecycle_status' => 'full_queued', 'parameter_diff' => [], 'decision_reason' => 'Pre-registered Edge Genesis arm; frozen risk governor.']);
+                        'lifecycle_status' => 'full_queued', 'parameter_diff' => $this->diff($sourceParameters, $parameters),
+                        'decision_reason' => 'Pre-registered Edge Genesis arm; frozen risk governor; genetic parent withheld.']);
                     DB::table('edge_genesis_trials')->insert(['trial_key' => hash('sha256', $key.'|'.$arm), 'edge_genesis_passport_id' => $passportId,
                         'lab_agent_id' => $agent->id, 'model_version_id' => $model->id, 'packet_key' => $packet['key'], 'emitter' => $packet['emitter'],
                         'arm' => $arm, 'stage' => 'two_fold_discovery', 'status' => 'queued', 'evidence' => json_encode(['protocol' => self::PROTOCOL,
