@@ -650,6 +650,11 @@ class LabAgentEvaluationService
             if ((int) $performance->model_version_id !== (int) $model->getKey()) {
                 throw new RuntimeException('Full replay evidence attribution mismatch.');
             }
+            // Academy cohorts use this existing evaluator, but their
+            // multi-arm conclusion belongs to the Academy trial contract.
+            // The adapter waits for every immutable arm result and cannot
+            // promote a model; it only records a research settlement.
+            app(AcademyExperimentMaterializerService::class)->settleOutcome($agent->fresh(['modelVersion', 'generation.agents.modelVersion']));
             // Knowledge-card writes are a learning projection.  A storage
             // fault must remain observable but must never erase or downgrade
             // the immutable replay/gate evidence that just completed.

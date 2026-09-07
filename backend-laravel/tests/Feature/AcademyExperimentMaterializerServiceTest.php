@@ -6,10 +6,12 @@ use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
+use App\Models\ModelMarketPerformance;
 use App\Services\AcademyExperimentMaterializerService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\XauusdEdgeFormationAcademyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class AcademyExperimentMaterializerServiceTest extends TestCase
@@ -36,5 +38,25 @@ class AcademyExperimentMaterializerServiceTest extends TestCase
 
         $this->assertSame('would_queue',$result['status']);
         $this->assertCount(5,$result['compiled_contract']['arms']);
+    }
+
+    public function test_full_cohort_settles_only_after_every_arm_has_matching_evidence(): void
+    {
+        Queue::fake();
+        $this->test_it_only_admits_a_compiled_pre2026_academy_cohort();
+        $trialId = (int) \DB::table('edge_academy_trials')->where('trial_key','academy-materializer-trial')->value('id');
+        $baseline = ModelVersion::query()->where('name','academy baseline')->firstOrFail();
+        $service = app(AcademyExperimentMaterializerService::class);
+        $queued = $service->materialize($trialId,$baseline->id,['pre_2026_only'=>true,'data_hash'=>str_repeat('a',64),'execution_hash'=>str_repeat('b',64),'canonical_dataset_snapshots'=>[]],true);
+        $agents = LabAgent::query()->where('lab_generation_id',$queued['generation_id'])->with('modelVersion')->get();
+        foreach ($agents as $agent) ModelMarketPerformance::create(['model_version_id'=>$agent->model_version_id,'symbol'=>'XAUUSD','timeframe'=>'H1','strategy_family'=>'confirmation_entry_mtf','metrics'=>[
+            'data_hash'=>str_repeat('a',64),'execution_hash'=>str_repeat('b',64),'total_trades'=>2,'net_r'=>.1,
+            'entry_contract_funnel'=>['stage_counts'=>['setup'=>5,'trigger'=>3]],
+        ]]);
+
+        $settled = $service->settleOutcome($agents->first());
+
+        $this->assertSame('settled_powered',$settled['status']);
+        $this->assertDatabaseHas('edge_academy_trials',['id'=>$trialId,'status'=>'settled_powered']);
     }
 }

@@ -51,7 +51,7 @@ class AcademyExperimentMaterializerService
                         'data_hash' => $identity['data_hash'], 'execution_hash' => $identity['execution_hash'],
                         'causal_baseline_model_version_id' => $baseline->id, 'genetic_parent_model_version_id' => null,
                         'research_only' => true, 'promotion_evidence' => false]];
-                $model = ModelVersion::create(['name' => 'Academy trial '.$trial->id.' '.$arm['role'].' g'.$generation->generation,
+                $model = ModelVersion::create(['name' => 'Academy trial '.$trial->id.' '.$arm['role'].' a'.($index + 1).' g'.$generation->generation,
                     'strategy' => $label, 'version' => 'academy-'.$trial->id.'-'.$generation->generation.'-'.($index + 1), 'generation' => $generation->generation,
                     'status' => 'testing', 'description' => 'Compiled Academy experiment; research-only.', 'change_log' => 'academy '.$arm['role'],
                     'parameters' => $arm['runtime_parameters'], 'metadata' => $metadata, 'evidence_status' => 'valid']);
@@ -66,6 +66,46 @@ class AcademyExperimentMaterializerService
         });
         foreach ($created['agents'] as $agent) EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
         return ['protocol' => self::PROTOCOL, 'status' => 'queued', 'generation_id' => $created['generation']->id, 'agent_ids' => collect($created['agents'])->pluck('id')->all(), 'promotion_evidence' => false];
+    }
+
+    /** Settle only after every explicit arm has immutable replay evidence. */
+    public function settleOutcome(LabAgent $agent): array
+    {
+        $agent->loadMissing('modelVersion', 'generation.agents.modelVersion');
+        $contract = (array) data_get($agent->modelVersion?->metadata, 'academy_experiment', []);
+        if (($contract['protocol'] ?? null) !== self::PROTOCOL) return ['status' => 'not_academy_experiment', 'promotion_evidence' => false];
+        $trial = DB::table('edge_academy_trials')->find((int) ($contract['academy_trial_id'] ?? 0));
+        if (! $trial) return $this->blocked('ACADEMY_TRIAL_MISSING_AT_SETTLEMENT');
+        if ($trial->settled_at !== null) return ['protocol' => self::PROTOCOL, 'status' => (string) $trial->status, 'promotion_evidence' => false];
+        $rows = collect($agent->generation?->agents ?? [])->filter(fn (LabAgent $row): bool => data_get($row->modelVersion?->metadata, 'academy_experiment.academy_trial_id') === (int) $trial->id);
+        if ($rows->isEmpty()) return $this->blocked('ACADEMY_COHORT_MEMBERS_MISSING');
+        $observations = $rows->map(function (LabAgent $row): ?array {
+            $metrics = $row->modelVersion?->marketPerformances()->where('symbol', $row->symbol)->where('timeframe', $row->timeframe)->latest('id')->value('metrics');
+            if (is_string($metrics)) $metrics = json_decode($metrics, true);
+            if (! is_array($metrics)) return null;
+            return ['role' => data_get($row->modelVersion?->metadata, 'academy_experiment.arm_role'), 'metrics' => $metrics];
+        });
+        if ($observations->contains(null)) return ['protocol' => self::PROTOCOL, 'status' => 'awaiting_all_arm_evidence', 'promotion_evidence' => false];
+        $expectedData = (string) ($contract['data_hash'] ?? ''); $expectedExecution = (string) ($contract['execution_hash'] ?? '');
+        foreach ($observations as $observation) {
+            $metrics = $observation['metrics'];
+            $data = (string) data_get($metrics, 'data_manifest.sha256', data_get($metrics, 'data_hash', ''));
+            $execution = (string) data_get($metrics, 'execution_contract.execution_hash', data_get($metrics, 'execution_hash', ''));
+            if ($data === '' || $execution === '' || ! hash_equals($expectedData, $data) || ! hash_equals($expectedExecution, $execution)) {
+                DB::table('edge_academy_trials')->where('id', $trial->id)->update(['status' => 'technical_quarantine',
+                    'outcome' => json_encode(['protocol'=>self::PROTOCOL,'reason'=>'ACADEMY_ARM_HASH_MISMATCH','promotion_evidence'=>false]), 'settled_at'=>now(),'updated_at'=>now()]);
+                return $this->blocked('ACADEMY_ARM_HASH_MISMATCH');
+            }
+        }
+        $metrics = $observations->pluck('metrics');
+        $counts = ['setup'=>(int) $metrics->sum(fn ($m) => data_get($m, 'entry_contract_funnel.stage_counts.setup', 0)),
+            'trigger'=>(int) $metrics->sum(fn ($m) => data_get($m, 'entry_contract_funnel.stage_counts.trigger', 0)),
+            'closed_trade'=>(int) $metrics->sum(fn ($m) => data_get($m, 'total_trades', 0)),
+            'false_entry_rate'=>(float) ($metrics->avg(fn ($m) => data_get($m, 'false_entry_rate', 0)) ?? 0),
+            'opportunity_flood_ratio'=>(float) ($metrics->avg(fn ($m) => data_get($m, 'opportunity_flood_ratio', 0)) ?? 0)];
+        $outcome = ['after_cost_expectancy_r'=>(float) ($metrics->avg(fn ($m) => data_get($m, 'after_cost_expectancy_r', data_get($m, 'net_r', 0))) ?? 0),
+            'arm_count'=>$observations->count(), 'control_present'=>$observations->contains(fn ($r) => $r['role'] === 'frozen_control')];
+        return app(XauusdEdgeFormationAcademyService::class)->settleTrial((int) $trial->id, $counts, $outcome);
     }
 
     private function axisFromArms(string $arms): ?string { $first = (json_decode($arms, true) ?: [])[0] ?? []; return $first['changed_axis'] ?? null; }
