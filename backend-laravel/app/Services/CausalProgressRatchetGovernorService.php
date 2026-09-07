@@ -165,7 +165,10 @@ class CausalProgressRatchetGovernorService
             ->where('deepest_stage', 'positive_after_cost_edge')->where('status', 'active')->count() : 0;
         $mentors = Schema::hasTable('lab_skill_zoo_entries') ? DB::table('lab_skill_zoo_entries')->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->where('component_status', 'mentor_seed')->whereNotIn('organism_viability', ['descendant_proven', 'eligible_parent'])->count() : 0;
-        $parts = ['unsettled_terminal_trials' => (int) ($base['settlement_lag'] ?? 0), 'settlement_lag' => (int) ($base['settlement_lag'] ?? 0),
+        // settlement_lag is one actionable class of work.  Exposing it twice
+        // under two names made the governor manufacture debt and could starve
+        // discovery after an otherwise ordinary settlement backlog.
+        $parts = ['unsettled_terminal_trials' => (int) ($base['settlement_lag'] ?? 0),
             'near_confirmable_cartridges' => (int) ($base['near_confirmable_cartridges'] ?? 0), 'unique_actionable_dojo_cells' => (int) ($base['unresolved_unique_dojo_cells'] ?? 0),
             'behavior_changed_unattributed_packets' => $unattributed, 'mentor_waiting_for_descendants' => $mentors,
             'pending_scaffold_ablations' => $ablationDebt, 'positive_after_cost_edges' => $positiveEdges];

@@ -67,18 +67,6 @@ class AutonomousLearningProgressDirectorService
             return $this->blocked((string) data_get($admission, 'blockers.0', 'EDGE_DIRECTOR_ADMISSION_FAILED'),
                 ['admission' => $admission]);
         }
-        $activeAgents = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
-            ->whereIn('lifecycle_status', ['draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation'])
-            // A constructor may preserve partial draft agents inside a
-            // terminal technical-quarantine generation for audit. They have
-            // no queue/replay authority and must not deadlock the canonical
-            // Edge lane forever merely because their local status says draft.
-            ->whereHas('generation', fn ($query) => $query->whereIn('status', [
-                'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation',
-            ]))
-            ->count();
-        if ($activeAgents > 0) return $this->blocked('ACTIVE_AGENT_WORK_EXISTS', ['active_agents' => $activeAgents]);
-
         // This is the central constitutional decision, not a side-channel
         // dashboard. It may stop new exploration, but never blocks exact
         // settlement/replication/attribution work already earned by evidence.
@@ -105,6 +93,22 @@ class AutonomousLearningProgressDirectorService
             ] : ['status' => 'dry_run_not_mutated']),
             'causal_progress_governor' => $governor,
         ];
+
+        // Settlement and derived-projection reconciliation do not consume a
+        // new replay seat.  They must therefore run even while agents are
+        // active; only new materialization is held behind this check.
+        $activeAgents = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
+            ->whereIn('lifecycle_status', ['draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation'])
+            ->whereHas('generation', fn ($query) => $query->whereIn('status', [
+                'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation',
+            ]))
+            ->count();
+        if ($activeAgents > 0) {
+            return $this->blocked('ACTIVE_AGENT_WORK_EXISTS', [
+                'active_agents' => $activeAgents,
+                'reconciliation' => $reconciliation,
+            ]);
+        }
 
         $pendingEdge = $this->edge->resumePendingTrials($symbol, $timeframe, $apply);
         if (in_array(($pendingEdge['status'] ?? null), ['queued', 'would_queue'], true)) {

@@ -45,8 +45,27 @@ class XauusdEdgeFormationAcademyServiceTest extends TestCase
         $this->assertSame('planned', $confirmation['status']);
         $this->assertCount(5, $confirmation['arms']);
         $this->assertSame('confirmation_family_policy', $confirmation['axis']);
+        $this->assertSame('frozen_control', $confirmation['arms'][0]['role']);
+        $this->assertSame('blinded_control', $confirmation['arms'][4]['role']);
         $this->assertSame('blocked', $trigger['status']);
         $this->assertSame('CURRICULUM_FORBIDS_MUTATION_AXIS', $trigger['reason']);
+    }
+
+    public function test_replanning_a_settled_trial_preserves_its_immutable_terminal_state(): void
+    {
+        $service = app(XauusdEdgeFormationAcademyService::class);
+        $passport = $this->passport('confirmation_specialist');
+        $planned = $service->planConfirmationMarginalValue($passport['passport_id']);
+        $trialId = (int) \DB::table('edge_academy_trials')->where('trial_type', $planned['trial_type'])->value('id');
+        $service->settleTrial($trialId, ['setup' => 20, 'trigger' => 12, 'closed_trade' => 8], [
+            'avoided_loss_r' => .3, 'missed_opportunity_r' => .1, 'late_entry_cost_r' => .1,
+        ]);
+
+        $replanned = $service->planConfirmationMarginalValue($passport['passport_id']);
+
+        $this->assertSame('settled_powered', $replanned['status']);
+        $this->assertTrue($replanned['terminal']);
+        $this->assertSame('settled_powered', \DB::table('edge_academy_trials')->find($trialId)->status);
     }
 
     public function test_beam_archive_retains_three_per_stage_and_density_has_distinct_no_power_outcomes(): void

@@ -128,8 +128,11 @@ class XauusdEdgeFormationAcademyService
     public function planConfirmationMarginalValue(int $passportId): array
     {
         return $this->plan($passportId, 'confirmation_marginal_value', 'confirmation_family_policy', [
-            'structure_plus_reaction', 'structure_plus_participation', 'reaction_plus_participation',
-            'all_three_simultaneous', 'confirmation_blinded_control',
+            ['role' => 'frozen_control', 'value' => 'structure_plus_reaction'],
+            ['role' => 'candidate', 'value' => 'structure_plus_participation'],
+            ['role' => 'candidate', 'value' => 'reaction_plus_participation'],
+            ['role' => 'candidate', 'value' => 'all_three_simultaneous'],
+            ['role' => 'blinded_control', 'value' => 'confirmation_blinded_control'],
         ], ['minimum_setup_events' => 20, 'minimum_trigger_events' => 12, 'minimum_closed_trades' => 8, 'max_false_entry_rate' => .45, 'max_opportunity_flood_ratio' => 1.5]);
     }
 
@@ -137,8 +140,11 @@ class XauusdEdgeFormationAcademyService
     public function planTriggerTopologyTournament(int $passportId): array
     {
         return $this->plan($passportId, 'trigger_topology_tournament', 'trigger_topology_policy', [
-            'frozen_current', 'aggressive_structure_close', 'balanced_retest_reaction',
-            'conservative_continuation', 'state_adaptive',
+            ['role' => 'frozen_control', 'value' => 'frozen_current'],
+            ['role' => 'candidate', 'value' => 'aggressive_structure_close'],
+            ['role' => 'candidate', 'value' => 'balanced_retest_reaction'],
+            ['role' => 'candidate', 'value' => 'conservative_continuation'],
+            ['role' => 'blinded_control', 'value' => 'state_adaptive'],
         ], ['minimum_setup_events' => 20, 'minimum_trigger_events' => 12, 'minimum_closed_trades' => 8, 'max_false_entry_rate' => .45, 'max_opportunity_flood_ratio' => 1.5]);
     }
 
@@ -171,7 +177,9 @@ class XauusdEdgeFormationAcademyService
             return $this->blocked('REGIME_SPECIALIST_CONTEXT_CONTRACT_REQUIRED');
         }
         return $this->plan($passportId, 'regime_specialist_academy', 'context', [
-            'exact_context_replication', 'same_regime_alternate_session', 'context_blinded_control',
+            ['role' => 'frozen_control', 'value' => 'exact_context_replication'],
+            ['role' => 'candidate', 'value' => 'same_regime_alternate_session'],
+            ['role' => 'blinded_control', 'value' => 'context_blinded_control'],
         ], ['minimum_setup_events' => 20, 'minimum_trigger_events' => 12, 'minimum_closed_trades' => 8, 'max_false_entry_rate' => .45]);
     }
 
@@ -268,10 +276,43 @@ class XauusdEdgeFormationAcademyService
         $curriculum = json_decode((string) $passport->curriculum, true) ?: [];
         if (! in_array($axis, (array) ($curriculum['permitted_axes'] ?? []), true)) return $this->blocked('CURRICULUM_FORBIDS_MUTATION_AXIS', ['permitted_axes' => $curriculum['permitted_axes'] ?? []]);
         $frozen = json_decode((string) $passport->frozen_upstream_contract, true) ?: [];
-        $arms = array_map(fn (string $value, int $index): array => ['name' => $value, 'role' => $index === 0 ? 'frozen_control' : ($index === count($values) - 1 ? 'blinded_control' : 'candidate'), 'changed_axis' => $axis, 'value' => $value, 'frozen_contract_hash' => $this->hash($frozen)], $values, array_keys($values));
-        $key = $this->hash([self::PROTOCOL, $passportId, $type, $axis, $values, $frozen]);
-        DB::table('edge_academy_trials')->updateOrInsert(['trial_key' => $key], ['edge_academy_passport_id' => $passportId, 'trial_type' => $type, 'status' => 'planned', 'frozen_contract' => json_encode($frozen), 'arms' => json_encode($arms), 'density_contract' => json_encode($density), 'updated_at' => now(), 'created_at' => now()]);
+        $arms = $this->explicitArms($values, $axis, $frozen);
+        if ($arms === []) return $this->blocked('EXPLICIT_ACADEMY_ARM_ROLES_REQUIRED');
+        $key = $this->hash([self::PROTOCOL, $passportId, $type, $axis, $arms, $frozen]);
+        $existing = DB::table('edge_academy_trials')->where('trial_key', $key)->first();
+        if ($existing && $existing->settled_at !== null) {
+            // Evidence is immutable.  Replanning returns the original plan
+            // but never turns a settled trial back into planned work.
+            return ['protocol' => self::PROTOCOL, 'status' => (string) $existing->status,
+                'trial_type' => $type, 'axis' => $axis,
+                'arms' => json_decode((string) $existing->arms, true) ?: [],
+                'event_density_contract' => json_decode((string) $existing->density_contract, true) ?: [],
+                'terminal' => true, 'promotion_evidence' => false];
+        }
+        if (! $existing) {
+            DB::table('edge_academy_trials')->insert([
+                'trial_key' => $key, 'edge_academy_passport_id' => $passportId, 'trial_type' => $type,
+                'status' => 'planned', 'frozen_contract' => json_encode($frozen), 'arms' => json_encode($arms),
+                'density_contract' => json_encode($density), 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
         return ['protocol' => self::PROTOCOL, 'status' => 'planned', 'trial_type' => $type, 'axis' => $axis, 'arms' => $arms, 'event_density_contract' => $density, 'promotion_evidence' => false];
+    }
+
+    /** Planner semantics are explicit, never inferred from arm array order. */
+    private function explicitArms(array $definitions, string $axis, array $frozen): array
+    {
+        $roles = ['frozen_control', 'candidate', 'blinded_control', 'ablation', 'counterfactual'];
+        $arms = [];
+        foreach ($definitions as $definition) {
+            $definition = is_array($definition) ? $definition : ['role' => 'candidate', 'value' => $definition];
+            $role = (string) ($definition['role'] ?? '');
+            $value = $definition['value'] ?? null;
+            if (! in_array($role, $roles, true) || ! is_string($value) || $value === '') return [];
+            $arms[] = ['name' => $value, 'role' => $role, 'changed_axis' => $axis,
+                'value' => $value, 'frozen_contract_hash' => $this->hash($frozen)];
+        }
+        return $arms;
     }
 
     private function curriculum(string $stage, array $frozen): array
