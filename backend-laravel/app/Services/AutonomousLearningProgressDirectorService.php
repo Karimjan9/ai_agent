@@ -78,6 +78,7 @@ class AutonomousLearningProgressDirectorService
             'edge_generation_coverage' => $this->edge->reconcileRepairGenerationCoverage($symbol, $timeframe, $apply),
             'edge_execution_timeframe' => $this->edge->reconcileExecutionTimeframeMetadata($symbol, $timeframe, $apply),
             'edge_discovery_verdicts' => $this->edge->reconcileDiscoveryOutcomes($symbol, $timeframe, $apply),
+            'edge_terminal_passport_projection' => $this->edge->reconcileTerminalPassportStates($symbol, $timeframe, $apply),
             'edge_authority_selection_evidence' => $this->edge->reconcileAuthoritySelectionEvidence($symbol, $timeframe, $apply),
             'edge_nine_fold_differential_authority' => $this->edge->reconcileNineFoldContextAuthority($symbol, $timeframe, $apply),
             'context_authority_effects' => $this->edge->reconcileContextAuthorityEffects($symbol, $timeframe, $apply),

@@ -137,4 +137,19 @@ class CausalProgressRatchetGovernorServiceTest extends TestCase
         $this->assertSame('scaffold_authority_revoked', $result['status']);
         $this->assertDatabaseHas('causal_progress_ratchets', ['composition_key' => 'scaffold-ablation', 'authority' => 'revoked']);
     }
+
+    public function test_governor_command_is_read_only_unless_a_write_option_is_explicit(): void
+    {
+        $this->artisan('trading:causal-progress-governor XAUUSD --timeframe=H1 --json')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseCount('causal_governor_allocations', 0);
+        $this->assertDatabaseCount('causal_governor_debt_ledgers', 0);
+
+        $this->artisan('trading:causal-progress-governor XAUUSD --timeframe=H1 --persist-telemetry --json')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseCount('causal_governor_allocations', 1);
+        $this->assertDatabaseCount('causal_governor_debt_ledgers', 1);
+    }
 }

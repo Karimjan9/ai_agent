@@ -412,6 +412,28 @@ $scheduleArtisan('trading:advance-learning-progress', [
     // cohort hash and distributed lock keep materialization exactly once.
     ->everyMinute()
     ->withoutOverlapping();
+// Academy arms settle through their immutable replay metrics. This runs on a
+// separate, no-new-replay lane so active evaluations cannot postpone a
+// terminal receipt or its durable next-work decision.
+$scheduleArtisan('trading:reconcile-academy-experiments', [
+    'symbol' => 'XAUUSD',
+    '--timeframe' => 'H1',
+    '--apply' => true,
+    '--json' => true,
+])
+    ->everyMinute()
+    ->withoutOverlapping();
+// Edge Genesis uses a distinct evidence ledger from Academy. Once all its
+// existing arms are terminal, close it through the same immutable receipt
+// contract; this projection never queues another replay or grants authority.
+$scheduleArtisan('trading:reconcile-edge-experiment-receipts', [
+    'symbol' => 'XAUUSD',
+    '--timeframe' => 'H1',
+    '--apply' => true,
+    '--json' => true,
+])
+    ->everyMinute()
+    ->withoutOverlapping();
 $scheduleArtisan('trading:validate-elite-portfolios')
     // Individual forward validation remains the first gate. This replay is
     // idle until at least two strict members exist, then certifies the

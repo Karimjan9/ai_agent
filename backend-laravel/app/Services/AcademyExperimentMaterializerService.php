@@ -7,13 +7,17 @@ use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /** Materializes an Academy contract through the existing full-replay lane. */
 class AcademyExperimentMaterializerService
 {
     public const PROTOCOL = 'academy_foundry_materializer_v1';
 
-    public function __construct(private AcademyExperimentContractCompilerService $compiler) {}
+    public function __construct(
+        private AcademyExperimentContractCompilerService $compiler,
+        private ResearchExperimentConversionKernelService $conversion,
+    ) {}
 
     public function materialize(int $trialId, int $baselineModelVersionId, array $identity, bool $apply = false): array
     {
@@ -30,16 +34,20 @@ class AcademyExperimentMaterializerService
             'arms' => json_decode((string) $trial->arms, true) ?: [],
         ], (array) $baseline->parameters, ['symbol' => strtoupper($passport->symbol), 'laboratory_timeframe' => strtoupper($passport->timeframe), 'execution_timeframe' => 'M5']);
         if (($compiled['status'] ?? null) !== 'compiled') return [...$compiled, 'status' => 'blocked'];
+        $researchContract = $this->researchContract($trial, $passport, $baseline, $identity, $compiled);
         if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => 'would_queue', 'trial_id' => $trialId,
-            'baseline_model_version_id' => $baseline->id, 'seats' => count($compiled['arms']), 'compiled_contract' => $compiled, 'promotion_evidence' => false];
+            'baseline_model_version_id' => $baseline->id, 'seats' => count($compiled['arms']),
+            'compiled_contract' => $compiled, 'research_experiment_contract' => $researchContract, 'promotion_evidence' => false];
 
-        $created = DB::transaction(function () use ($trial, $passport, $baseline, $baselineAgent, $identity, $compiled): array {
+        $academyContext = (array) data_get(json_decode((string) $trial->frozen_contract, true) ?: [], 'context', []);
+        $created = DB::transaction(function () use ($trial, $passport, $baseline, $baselineAgent, $identity, $compiled, $researchContract, $academyContext): array {
             $lab = $baselineAgent->generation->laboratory;
             $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => ((int) $lab->generations()->max('generation')) + 1,
                 'trigger_type' => 'academy_experiment', 'trigger_context' => ['protocol' => self::PROTOCOL, 'academy_trial_id' => $trial->id,
                     'baseline_model_version_id' => $baseline->id, 'genetic_parent_model_version_id' => null,
                     'data_hash' => $identity['data_hash'], 'execution_hash' => $identity['execution_hash'],
                     'canonical_dataset_snapshots' => $identity['canonical_dataset_snapshots'], 'compiled_contract' => $compiled,
+                    'research_experiment_contract' => $researchContract,
                     'pre_2026_only' => true, 'research_only' => true, 'promotion_evidence' => false],
                 'data_fingerprint' => $identity['data_hash'], 'population_size' => count($compiled['arms']), 'status' => 'queued', 'started_at' => now()]);
             $agents = [];
@@ -48,6 +56,8 @@ class AcademyExperimentMaterializerService
                 $metadata = [...((array) $baseline->metadata), 'base_strategy' => 'confirmation_entry_mtf_v1',
                     'academy_experiment' => ['protocol' => self::PROTOCOL, 'academy_trial_id' => $trial->id, 'arm_role' => $arm['role'],
                         'planner_value' => $arm['planner_value'], 'runtime_value' => $arm['runtime_value'], 'contract_hash' => hash('sha256', json_encode($compiled)),
+                        'research_experiment_contract' => $researchContract,
+                        'context' => $academyContext,
                         'data_hash' => $identity['data_hash'], 'execution_hash' => $identity['execution_hash'],
                         'causal_baseline_model_version_id' => $baseline->id, 'genetic_parent_model_version_id' => null,
                         'research_only' => true, 'promotion_evidence' => false]];
@@ -83,7 +93,8 @@ class AcademyExperimentMaterializerService
             $metrics = $row->modelVersion?->marketPerformances()->where('symbol', $row->symbol)->where('timeframe', $row->timeframe)->latest('id')->value('metrics');
             if (is_string($metrics)) $metrics = json_decode($metrics, true);
             if (! is_array($metrics)) return null;
-            return ['role' => data_get($row->modelVersion?->metadata, 'academy_experiment.arm_role'), 'metrics' => $metrics];
+            return ['agent_id' => $row->id, 'model_version_id' => $row->model_version_id,
+                'role' => data_get($row->modelVersion?->metadata, 'academy_experiment.arm_role'), 'metrics' => $metrics];
         });
         if ($observations->contains(null)) return ['protocol' => self::PROTOCOL, 'status' => 'awaiting_all_arm_evidence', 'promotion_evidence' => false];
         $expectedData = (string) ($contract['data_hash'] ?? ''); $expectedExecution = (string) ($contract['execution_hash'] ?? '');
@@ -92,23 +103,147 @@ class AcademyExperimentMaterializerService
             $data = (string) data_get($metrics, 'data_manifest.sha256', data_get($metrics, 'data_hash', ''));
             $execution = (string) data_get($metrics, 'execution_contract.execution_hash', data_get($metrics, 'execution_hash', ''));
             if ($data === '' || $execution === '' || ! hash_equals($expectedData, $data) || ! hash_equals($expectedExecution, $execution)) {
-                DB::table('edge_academy_trials')->where('id', $trial->id)->update(['status' => 'technical_quarantine',
-                    'outcome' => json_encode(['protocol'=>self::PROTOCOL,'reason'=>'ACADEMY_ARM_HASH_MISMATCH','promotion_evidence'=>false]), 'settled_at'=>now(),'updated_at'=>now()]);
-                return $this->blocked('ACADEMY_ARM_HASH_MISMATCH');
+                return $this->settleTechnicalQuarantine($trial, $contract, $observations, 'ACADEMY_ARM_HASH_MISMATCH');
             }
         }
         $metrics = $observations->pluck('metrics');
-        $counts = ['setup'=>(int) $metrics->sum(fn ($m) => data_get($m, 'entry_contract_funnel.stage_counts.setup', 0)),
-            'trigger'=>(int) $metrics->sum(fn ($m) => data_get($m, 'entry_contract_funnel.stage_counts.trigger', 0)),
-            'closed_trade'=>(int) $metrics->sum(fn ($m) => data_get($m, 'total_trades', 0)),
-            'false_entry_rate'=>(float) ($metrics->avg(fn ($m) => data_get($m, 'false_entry_rate', 0)) ?? 0),
-            'opportunity_flood_ratio'=>(float) ($metrics->avg(fn ($m) => data_get($m, 'opportunity_flood_ratio', 0)) ?? 0)];
-        $outcome = ['after_cost_expectancy_r'=>(float) ($metrics->avg(fn ($m) => data_get($m, 'after_cost_expectancy_r', data_get($m, 'net_r', 0))) ?? 0),
-            'arm_count'=>$observations->count(), 'control_present'=>$observations->contains(fn ($r) => $r['role'] === 'frozen_control')];
-        return app(XauusdEdgeFormationAcademyService::class)->settleTrial((int) $trial->id, $counts, $outcome);
+        $perArm = $observations->map(fn (array $observation): array => [
+            'agent_id' => $observation['agent_id'], 'model_version_id' => $observation['model_version_id'], 'role' => $observation['role'],
+            'setup' => (int) data_get($observation['metrics'], 'entry_contract_funnel.stage_counts.setup', 0),
+            'trigger' => (int) data_get($observation['metrics'], 'entry_contract_funnel.stage_counts.trigger', 0),
+            'closed_trade' => (int) data_get($observation['metrics'], 'total_trades', 0),
+            'false_entry_rate' => (float) data_get($observation['metrics'], 'false_entry_rate', 0),
+            'opportunity_flood_ratio' => (float) data_get($observation['metrics'], 'opportunity_flood_ratio', 0),
+            'after_cost_expectancy_r' => (float) data_get($observation['metrics'], 'after_cost_expectancy_r', data_get($observation['metrics'], 'net_r', 0)),
+            'metrics_hash' => $this->hash($observation['metrics']),
+        ]);
+        // Power is an arm-level property. Summing five arms would let four
+        // underpowered candidates masquerade as one adequately tested arm.
+        $counts = ['setup' => (int) $perArm->min('setup'), 'trigger' => (int) $perArm->min('trigger'),
+            'closed_trade' => (int) $perArm->min('closed_trade'), 'false_entry_rate' => (float) $perArm->max('false_entry_rate'),
+            'opportunity_flood_ratio' => (float) $perArm->max('opportunity_flood_ratio'), 'per_arm' => $perArm->all()];
+        $control = $perArm->where('role', 'frozen_control');
+        $candidates = $perArm->where('role', 'candidate');
+        $controlExpectation = $control->isEmpty() ? null : (float) $control->avg('after_cost_expectancy_r');
+        $candidateExpectation = $candidates->isEmpty() ? null : (float) $candidates->avg('after_cost_expectancy_r');
+        $outcome = ['after_cost_expectancy_r' => (float) ($metrics->avg(fn ($m) => data_get($m, 'after_cost_expectancy_r', data_get($m, 'net_r', 0))) ?? 0),
+            'control_after_cost_expectancy_r' => $controlExpectation, 'candidate_after_cost_expectancy_r' => $candidateExpectation,
+            'treatment_effect_after_cost_r' => $controlExpectation === null || $candidateExpectation === null ? null : $candidateExpectation - $controlExpectation,
+            'arm_count' => $observations->count(), 'control_present' => ! $control->isEmpty(), 'arm_evidence' => $perArm->all()];
+
+        return DB::transaction(function () use ($trial, $contract, $observations, $counts, $outcome): array {
+            $locked = DB::table('edge_academy_trials')->lockForUpdate()->find($trial->id);
+            if (! $locked) throw new RuntimeException('ACADEMY_TRIAL_MISSING_AT_SETTLEMENT');
+            if ($locked->settled_at !== null) return ['protocol' => self::PROTOCOL, 'status' => (string) $locked->status, 'promotion_evidence' => false];
+            $settlement = app(XauusdEdgeFormationAcademyService::class)->settleTrial((int) $locked->id, $counts, $outcome);
+            $classification = $this->classification($settlement, $outcome, $counts);
+            $receipt = $this->recordReceipt($contract, $locked, $observations, $settlement, $classification, $outcome, $counts);
+            return [...$settlement, 'classification' => $classification, 'conversion_receipt' => $receipt, 'promotion_evidence' => false];
+        });
+    }
+
+    /** Build the immutable contract before the generation id or attempt exists. */
+    private function researchContract(object $trial, object $passport, ModelVersion $baseline, array $identity, array $compiled): array
+    {
+        $frozen = (array) (json_decode((string) $trial->frozen_contract, true) ?: []);
+        $density = (array) (json_decode((string) $trial->density_contract, true) ?: []);
+        $baselineEpoch = (string) ($identity['baseline_epoch_hash'] ?? $this->hash([
+            'parameters' => (array) $baseline->parameters, 'metadata' => (array) $baseline->metadata, 'frozen_contract' => $frozen,
+        ]));
+        $dataAndMtf = (string) ($identity['data_and_mtf_hash'] ?? $this->hash([
+            'data_hash' => $identity['data_hash'], 'canonical_dataset_snapshots' => $identity['canonical_dataset_snapshots'],
+        ]));
+        $runtime = (string) ($identity['runtime_and_contract_hash'] ?? $this->hash([
+            'execution_hash' => $identity['execution_hash'], 'compiler_protocol' => $compiled['protocol'] ?? null,
+            'compiled_arms' => collect($compiled['arms'] ?? [])->map(fn (array $arm): array => [
+                'role' => $arm['role'] ?? null, 'parameter_hash' => $arm['parameter_hash'] ?? null,
+            ])->all(),
+        ]));
+        $intervention = (string) ($identity['intervention_hash'] ?? $this->hash([
+            'axis' => $compiled['axis'] ?? null, 'arms' => collect($compiled['arms'] ?? [])->map(fn (array $arm): array => [
+                'role' => $arm['role'] ?? null, 'runtime_value' => $arm['runtime_value'] ?? null,
+                'parameter_hash' => $arm['parameter_hash'] ?? null,
+            ])->all(),
+        ]));
+        $windowPlan = (string) ($identity['window_plan_hash'] ?? $this->hash([
+            'temporal_binding_hash' => $passport->temporal_binding_hash, 'density_contract' => $density,
+            'window_plan' => (array) ($identity['window_plan'] ?? []),
+        ]));
+
+        return [
+            'contract_version' => ResearchExperimentConversionKernelService::CONTRACT_VERSION,
+            'source' => ['type' => 'edge_academy_trial', 'id' => (int) $trial->id],
+            'scope' => ['symbol' => strtoupper((string) $passport->symbol), 'laboratory_timeframe' => strtoupper((string) $passport->timeframe), 'execution_timeframe' => 'M5'],
+            'claim' => ['target_stage' => (string) ($compiled['axis'] ?? 'academy_stage'),
+                'hypothesis' => (string) $trial->trial_type, 'minimum_meaningful_effect' => $density],
+            'identity' => ['baseline_epoch_hash' => $baselineEpoch, 'data_and_mtf_hash' => $dataAndMtf,
+                'runtime_and_contract_hash' => $runtime, 'intervention_hash' => $intervention, 'window_plan_hash' => $windowPlan,
+                'evaluator_version' => (string) ($identity['evaluator_version'] ?? 'academy_full_replay_statistical_v1')],
+            'arms' => collect($compiled['arms'] ?? [])->map(fn (array $arm): array => [
+                'role' => $arm['role'] ?? null, 'runtime_value' => $arm['runtime_value'] ?? null,
+                'parameter_hash' => $arm['parameter_hash'] ?? null,
+            ])->all(),
+            'revisions' => ['subject' => max(1, (int) ($identity['subject_revision'] ?? 1)),
+                'evidence' => max(1, (int) ($identity['evidence_revision'] ?? 1))],
+        ];
+    }
+
+    private function settleTechnicalQuarantine(object $trial, array $armContract, iterable $observations, string $reason): array
+    {
+        return DB::transaction(function () use ($trial, $armContract, $observations, $reason): array {
+            $locked = DB::table('edge_academy_trials')->lockForUpdate()->find($trial->id);
+            if (! $locked) throw new RuntimeException('ACADEMY_TRIAL_MISSING_AT_SETTLEMENT');
+            if ($locked->settled_at !== null) return ['protocol' => self::PROTOCOL, 'status' => (string) $locked->status, 'promotion_evidence' => false];
+            $settlement = ['protocol' => self::PROTOCOL, 'status' => 'technical_quarantine', 'reason' => $reason, 'promotion_evidence' => false];
+            DB::table('edge_academy_trials')->where('id', $locked->id)->update(['status' => 'technical_quarantine',
+                'outcome' => json_encode($settlement), 'settled_at' => now(), 'updated_at' => now()]);
+            $receipt = $this->recordReceipt($armContract, $locked, $observations, $settlement, 'TECHNICAL_QUARANTINE', [], []);
+            return [...$settlement, 'classification' => 'TECHNICAL_QUARANTINE', 'conversion_receipt' => $receipt];
+        });
+    }
+
+    private function classification(array $settlement, array $outcome, array $counts): string
+    {
+        $density = (string) data_get($settlement, 'density.status');
+        if ($density === 'powered_for_economic_settlement') {
+            $effect = $outcome['treatment_effect_after_cost_r'] ?? null;
+            return ! is_numeric($effect) ? 'INCONCLUSIVE' : ((float) $effect > 0 ? 'POSITIVE_CANDIDATE' : ((float) $effect < 0 ? 'HARMFUL' : 'INCONCLUSIVE'));
+        }
+        if ($density === 'topology_failure_insufficient_events') {
+            return (int) ($counts['setup'] ?? 0) === 0 || (int) ($counts['trigger'] ?? 0) === 0 ? 'UNREACHABLE' : 'UNDERPOWERED';
+        }
+        return 'UNDERPOWERED';
+    }
+
+    /** Every terminal cohort either opens durable work or has a receipt-backed reason. */
+    private function recordReceipt(array $armContract, object $trial, iterable $observations, array $settlement, string $classification, array $outcome, array $counts): array
+    {
+        $contract = (array) ($armContract['research_experiment_contract'] ?? []);
+        if ($contract === []) throw new RuntimeException('ACADEMY_RESEARCH_CONTRACT_MISSING_AT_SETTLEMENT');
+        $work = match ($classification) {
+            'POSITIVE_CANDIDATE' => ['type' => 'academy_independent_replication', 'priority' => 8],
+            'HARMFUL' => ['type' => 'academy_harmful_intervention_repair', 'priority' => 8],
+            'UNREACHABLE' => ['type' => 'academy_upstream_repair', 'priority' => 9],
+            'UNDERPOWERED' => ['type' => 'academy_power_extension', 'priority' => 7],
+            'TECHNICAL_QUARANTINE' => ['type' => 'academy_technical_quarantine', 'priority' => 9],
+            default => ['type' => 'academy_adversarial_ablation', 'priority' => 6],
+        };
+        $references = collect($observations)->map(fn (array $observation): array => [
+            'agent_id' => $observation['agent_id'] ?? null, 'model_version_id' => $observation['model_version_id'] ?? null,
+            'role' => $observation['role'] ?? null, 'metrics_hash' => isset($observation['metrics']) ? $this->hash($observation['metrics']) : null,
+        ])->values()->all();
+        $result = $this->conversion->record($contract, [
+            'academy_trial_id' => (int) $trial->id, 'academy_settlement' => $settlement,
+            'immutable_arm_evidence' => $references, 'outcome' => $outcome, 'counts' => $counts,
+            'promotion_evidence' => false,
+        ], $classification, [...$work, 'identity' => 'academy-trial:'.$trial->id], []);
+        if (($result['status'] ?? null) !== 'recorded') throw new RuntimeException('ACADEMY_CONVERSION_RECEIPT_FAILED:'.($result['reason'] ?? 'UNKNOWN'));
+        return $result;
     }
 
     private function axisFromArms(string $arms): ?string { $first = (json_decode($arms, true) ?: [])[0] ?? []; return $first['changed_axis'] ?? null; }
     private function diff(array $old, array $new): array { $out=[]; foreach (array_unique([...array_keys($old), ...array_keys($new)]) as $key) if (($old[$key]??null) !== ($new[$key]??null)) $out[$key]=['old'=>$old[$key]??null,'new'=>$new[$key]??null]; return $out; }
+    private function hash(mixed $value): string { return hash('sha256', json_encode($this->canonicalize($value), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)); }
+    private function canonicalize(mixed $value): mixed { if (! is_array($value)) return $value; if (! array_is_list($value)) ksort($value); foreach ($value as $key => $item) $value[$key] = $this->canonicalize($item); return $value; }
     private function blocked(string $reason): array { return ['protocol'=>self::PROTOCOL,'status'=>'blocked','reason'=>$reason,'promotion_evidence'=>false]; }
 }

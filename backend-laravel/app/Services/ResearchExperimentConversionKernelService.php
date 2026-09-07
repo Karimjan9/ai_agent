@@ -50,6 +50,11 @@ class ResearchExperimentConversionKernelService
                 'payload' => ['protocol' => self::PROTOCOL, 'contract' => $contract, 'evidence' => $evidence, 'promotion_evidence' => false],
                 'terminal_reason' => $terminalReason === [] ? null : ['protocol' => self::PROTOCOL, ...$terminalReason, 'promotion_evidence' => false],
             ]);
+            // One receipt produces one evidence-bounded memory projection.
+            // A duplicate delivery leaves both the receipt and memory intact.
+            if ($receipt->wasRecentlyCreated) {
+                app(ResearchKnowledgePortfolioService::class)->recordReceipt($receipt);
+            }
             $work = null;
             if ($nextWork !== []) {
                 $type = (string) ($nextWork['type'] ?? '');

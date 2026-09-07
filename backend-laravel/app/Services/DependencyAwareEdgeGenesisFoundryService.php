@@ -745,6 +745,45 @@ class DependencyAwareEdgeGenesisFoundryService
             'verdicts' => $verdicts, 'replays_repeated' => 0, 'promotion_evidence' => false];
     }
 
+    /**
+     * Close only a stale passport projection after every immutable packet arm
+     * is already terminal. It cannot reopen a trial, change its evidence, or
+     * dispatch a replay. This repairs legacy cohorts that were settled arm by
+     * arm before the aggregate passport close was introduced.
+     *
+     * @return array<string,mixed>
+     */
+    public function reconcileTerminalPassportStates(string $symbol, string $timeframe, bool $apply = false): array
+    {
+        $terminal = ['invalid_edge_observability', 'invalid_hash_mismatch', 'invalid_window_partition',
+            'control_settled', 'replication_control_settled', 'replication_observed', 'authority_observed',
+            'edge_replication_passed', 'edge_not_found', 'edge_not_confirmed', 'non_controlling_axis',
+            'technical_quarantine', 'quarantined'];
+        $passports = DB::table('edge_genesis_passports')->where('symbol', strtoupper($symbol))
+            ->where('timeframe', strtoupper($timeframe))->whereIn('status', ['queued', 'running'])->orderBy('id')->get();
+        $ready = $passports->filter(function ($passport) use ($terminal): bool {
+            $trials = DB::table('edge_genesis_trials')->where('edge_genesis_passport_id', $passport->id)
+                ->where('packet_key', 'not like', '%:attribution')->get(['status', 'stage']);
+            return $trials->isNotEmpty()
+                && $trials->every(fn ($trial): bool => in_array((string) $trial->status, $terminal, true))
+                && ! $trials->contains(fn ($trial): bool => (string) $trial->status === 'edge_progressing');
+        })->values();
+        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => $ready->isEmpty() ? 'none' : 'would_reconcile',
+            'passport_ids' => $ready->pluck('id')->map(fn ($id): int => (int) $id)->all(), 'replays_repeated' => 0,
+            'promotion_evidence' => false];
+
+        foreach ($ready as $passport) {
+            $hasAuthorityStage = DB::table('edge_genesis_trials')->where('edge_genesis_passport_id', $passport->id)
+                ->whereIn('stage', ['three_fold_confirmation', 'nine_fold_authority'])->exists();
+            DB::table('edge_genesis_passports')->where('id', $passport->id)->whereIn('status', ['queued', 'running'])->update([
+                'status' => $hasAuthorityStage ? 'edge_not_confirmed' : 'edge_not_found',
+                'phase_changed_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+        return ['protocol' => self::PROTOCOL, 'status' => 'reconciled', 'passports' => $ready->count(),
+            'replays_repeated' => 0, 'promotion_evidence' => false];
+    }
+
     /** Backfill Academy projections from immutable historical Edge evidence; never reruns a replay or changes its verdict. */
     public function reconcileAcademyProjections(string $symbol, string $timeframe, bool $apply = false): array
     {
@@ -2257,7 +2296,12 @@ class DependencyAwareEdgeGenesisFoundryService
         $passports = (clone $scope)->where('lab_generation_id', $generationId)->get();
         $trials = DB::table('edge_genesis_trials')->whereIn('edge_genesis_passport_id', $passports->pluck('id'))->get();
         $sourceGeneration = LabGeneration::query()->find($generationId);
-        $sourceRevision = (string) data_get($sourceGeneration?->trigger_context, 'architecture_revision', self::INITIAL_REVISION);
+        // Some immutable legacy compiled cohorts predate the explicit
+        // `architecture_revision` trigger context. Their exact five-arm
+        // contract is sufficient to classify them as a compiled packet; do
+        // not misread that cohort as an incomplete four-packet initial wave.
+        $declaredSourceRevision = (string) data_get($sourceGeneration?->trigger_context, 'architecture_revision', '');
+        $sourceRevision = $declaredSourceRevision !== '' ? $declaredSourceRevision : $this->inferLegacySourceRevision($trials);
         $repairRevision = match ($sourceRevision) {
             self::INITIAL_REVISION => self::CONFIRMATION_REPAIR_REVISION,
             self::CONFIRMATION_REPAIR_REVISION => self::TRIGGER_REPAIR_REVISION,
@@ -2277,7 +2321,7 @@ class DependencyAwareEdgeGenesisFoundryService
         // (for example conservative pre-exit excursion harvesting).  Risk
         // authority stays locked because the status is still a failure.
         $terminal = ['edge_not_found', 'edge_not_confirmed', 'control_settled'];
-        $expectedPackets = in_array($sourceRevision, [self::LATENT_HARVEST_REVISION, self::CONTEXT_ROUTER_REPAIR_REVISION, self::REGIME_ENTRY_SYNTHESIS_REVISION, self::FAILURE_CELL_FACTORIAL_REVISION, self::SPECIALIST_DENSIFICATION_REVISION, self::TEMPORAL_BREAKOUT_BINDING_REVISION, self::M15_SETUP_QUALITY_REVISION], true)
+        $expectedPackets = in_array($sourceRevision, [self::LATENT_HARVEST_REVISION, self::CONTEXT_ROUTER_REPAIR_REVISION, self::REGIME_ENTRY_SYNTHESIS_REVISION, self::FAILURE_CELL_FACTORIAL_REVISION, self::SPECIALIST_DENSIFICATION_REVISION, self::TEMPORAL_BREAKOUT_BINDING_REVISION, self::M15_SETUP_QUALITY_REVISION, self::EVIDENCE_COMPILED_REVISION], true)
             ? 1 : count($this->packets());
         $expectedTrials = $expectedPackets * count($this->armsForRevision($sourceRevision));
         if ($passports->count() !== $expectedPackets || $trials->count() !== $expectedTrials
@@ -2365,6 +2409,16 @@ class DependencyAwareEdgeGenesisFoundryService
             'changed_axis' => 'minimum_independent_confirmations:3->1',
             'risk_governor_frozen' => true, 'two_fold_discovery_required' => true, 'nine_fold_authority_unchanged' => true,
             'materialization_contract' => $identity['materialization_contract']];
+    }
+
+    /** Infer only the unambiguous legacy compiled five-arm contract. */
+    private function inferLegacySourceRevision($trials): string
+    {
+        $observed = collect($trials)->pluck('arm')->filter()->map(fn ($arm): string => (string) $arm)->unique()->sort()->values()->all();
+        $compiled = self::COMPILED_HYPOTHESIS_ARMS;
+        sort($compiled);
+
+        return $observed === $compiled ? self::EVIDENCE_COMPILED_REVISION : self::INITIAL_REVISION;
     }
 
     /** The second repair inherits proven confirmation and isolates trigger topology. */

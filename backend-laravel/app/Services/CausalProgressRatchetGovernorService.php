@@ -300,6 +300,7 @@ class CausalProgressRatchetGovernorService
         $allocation = $this->allocate($symbol, $timeframe, $apply);
         $actions = [
             'edge_terminal_settlement' => ['eligible' => true, 'result' => app(DependencyAwareEdgeGenesisFoundryService::class)->reconcileDiscoveryOutcomes($symbol, $timeframe, $apply)],
+            'edge_terminal_passport_projection' => ['eligible' => true, 'result' => app(DependencyAwareEdgeGenesisFoundryService::class)->reconcileTerminalPassportStates($symbol, $timeframe, $apply)],
             'compiled_axis_settlement' => ['eligible' => true, 'result' => app(DependencyAwareEdgeGenesisFoundryService::class)->reconcileCompiledHypothesisSettlements($symbol, $timeframe, $apply)],
             'context_contract_v2_reprojection' => ['eligible' => true, 'result' => app(FailureDojoService::class)->reprojectContextContractV2($symbol, $timeframe, $apply)],
             'dojo_context_firewall' => ['eligible' => true, 'result' => app(FailureDojoService::class)->reconcileContextFirewall($symbol, $timeframe, $apply)],

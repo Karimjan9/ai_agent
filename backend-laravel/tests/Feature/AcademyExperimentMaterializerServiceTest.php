@@ -8,6 +8,7 @@ use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use App\Models\ModelMarketPerformance;
 use App\Services\AcademyExperimentMaterializerService;
+use App\Services\AcademyExperimentSettlementReconcilerService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\XauusdEdgeFormationAcademyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,18 +46,77 @@ class AcademyExperimentMaterializerServiceTest extends TestCase
         Queue::fake();
         $this->test_it_only_admits_a_compiled_pre2026_academy_cohort();
         $trialId = (int) \DB::table('edge_academy_trials')->where('trial_key','academy-materializer-trial')->value('id');
+        \DB::table('edge_academy_trials')->where('id', $trialId)->update(['density_contract'=>json_encode([
+            'minimum_setup_events'=>20, 'minimum_trigger_events'=>12, 'minimum_closed_trades'=>8,
+        ])]);
         $baseline = ModelVersion::query()->where('name','academy baseline')->firstOrFail();
         $service = app(AcademyExperimentMaterializerService::class);
         $queued = $service->materialize($trialId,$baseline->id,['pre_2026_only'=>true,'data_hash'=>str_repeat('a',64),'execution_hash'=>str_repeat('b',64),'canonical_dataset_snapshots'=>[]],true);
         $agents = LabAgent::query()->where('lab_generation_id',$queued['generation_id'])->with('modelVersion')->get();
         foreach ($agents as $agent) ModelMarketPerformance::create(['model_version_id'=>$agent->model_version_id,'symbol'=>'XAUUSD','timeframe'=>'H1','strategy_family'=>'confirmation_entry_mtf','metrics'=>[
-            'data_hash'=>str_repeat('a',64),'execution_hash'=>str_repeat('b',64),'total_trades'=>2,'net_r'=>.1,
-            'entry_contract_funnel'=>['stage_counts'=>['setup'=>5,'trigger'=>3]],
+            'data_hash'=>str_repeat('a',64),'execution_hash'=>str_repeat('b',64),'total_trades'=>8,
+            'net_r'=>data_get($agent->modelVersion->metadata, 'academy_experiment.arm_role') === 'candidate' ? .2 : .1,
+            'entry_contract_funnel'=>['stage_counts'=>['setup'=>20,'trigger'=>12]],
         ]]);
 
-        $settled = $service->settleOutcome($agents->first());
+        $reconciliation = app(AcademyExperimentSettlementReconcilerService::class)->reconcile('XAUUSD', 'H1', true);
+        $this->assertSame('reconciled', $reconciliation['status']);
+        $this->assertSame(1, $reconciliation['settled_count']);
+        $settled = $reconciliation['outcomes'][0]['result'];
 
         $this->assertSame('settled_powered',$settled['status']);
+        $this->assertSame('POSITIVE_CANDIDATE', $settled['classification']);
+        $this->assertNotNull(data_get($settled, 'conversion_receipt.work_id'));
         $this->assertDatabaseHas('edge_academy_trials',['id'=>$trialId,'status'=>'settled_powered']);
+        $this->assertDatabaseHas('research_experiment_receipts', ['source_type'=>'edge_academy_trial','source_id'=>$trialId,'classification'=>'POSITIVE_CANDIDATE']);
+        $this->assertDatabaseHas('research_experiment_work_items', ['work_type'=>'academy_independent_replication','status'=>'ready']);
+    }
+
+    public function test_cohort_power_cannot_be_created_by_summing_underpowered_arms(): void
+    {
+        Queue::fake();
+        $this->test_it_only_admits_a_compiled_pre2026_academy_cohort();
+        $trialId = (int) \DB::table('edge_academy_trials')->where('trial_key','academy-materializer-trial')->value('id');
+        \DB::table('edge_academy_trials')->where('id', $trialId)->update(['density_contract'=>json_encode([
+            'minimum_setup_events'=>20, 'minimum_trigger_events'=>12, 'minimum_closed_trades'=>8,
+        ])]);
+        $baseline = ModelVersion::query()->where('name','academy baseline')->firstOrFail();
+        $queued = app(AcademyExperimentMaterializerService::class)->materialize($trialId, $baseline->id, [
+            'pre_2026_only'=>true, 'data_hash'=>str_repeat('a',64), 'execution_hash'=>str_repeat('b',64), 'canonical_dataset_snapshots'=>[],
+        ], true);
+        $agents = LabAgent::query()->where('lab_generation_id',$queued['generation_id'])->with('modelVersion')->get();
+        foreach ($agents->values() as $index => $agent) ModelMarketPerformance::create(['model_version_id'=>$agent->model_version_id,'symbol'=>'XAUUSD','timeframe'=>'H1','strategy_family'=>'confirmation_entry_mtf','metrics'=>[
+            'data_hash'=>str_repeat('a',64), 'execution_hash'=>str_repeat('b',64), 'total_trades'=>8, 'net_r'=>.1,
+            'entry_contract_funnel'=>['stage_counts'=>['setup'=>$index === 0 ? 19 : 20,'trigger'=>12]],
+        ]]);
+
+        $settled = app(AcademyExperimentMaterializerService::class)->settleOutcome($agents->first());
+
+        $this->assertSame('settled_without_economic_claim', $settled['status']);
+        $this->assertSame('UNDERPOWERED', $settled['classification']);
+        $this->assertDatabaseHas('research_experiment_receipts', ['source_id'=>$trialId,'classification'=>'UNDERPOWERED']);
+        $this->assertDatabaseHas('research_experiment_work_items', ['work_type'=>'academy_power_extension','status'=>'ready']);
+    }
+
+    public function test_hash_mismatch_is_quarantined_with_a_receipt_and_repair_work(): void
+    {
+        Queue::fake();
+        $this->test_it_only_admits_a_compiled_pre2026_academy_cohort();
+        $trialId = (int) \DB::table('edge_academy_trials')->where('trial_key','academy-materializer-trial')->value('id');
+        $baseline = ModelVersion::query()->where('name','academy baseline')->firstOrFail();
+        $queued = app(AcademyExperimentMaterializerService::class)->materialize($trialId, $baseline->id, [
+            'pre_2026_only'=>true, 'data_hash'=>str_repeat('a',64), 'execution_hash'=>str_repeat('b',64), 'canonical_dataset_snapshots'=>[],
+        ], true);
+        $agents = LabAgent::query()->where('lab_generation_id',$queued['generation_id'])->with('modelVersion')->get();
+        foreach ($agents as $agent) ModelMarketPerformance::create(['model_version_id'=>$agent->model_version_id,'symbol'=>'XAUUSD','timeframe'=>'H1','strategy_family'=>'confirmation_entry_mtf','metrics'=>[
+            'data_hash'=>str_repeat('c',64), 'execution_hash'=>str_repeat('b',64), 'total_trades'=>8,
+        ]]);
+
+        $settled = app(AcademyExperimentMaterializerService::class)->settleOutcome($agents->first());
+
+        $this->assertSame('technical_quarantine', $settled['status']);
+        $this->assertSame('TECHNICAL_QUARANTINE', $settled['classification']);
+        $this->assertDatabaseHas('research_experiment_receipts', ['source_id'=>$trialId,'classification'=>'TECHNICAL_QUARANTINE']);
+        $this->assertDatabaseHas('research_experiment_work_items', ['work_type'=>'academy_technical_quarantine','status'=>'ready']);
     }
 }
