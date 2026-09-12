@@ -123,7 +123,7 @@ class RecoverLabEvaluationErrors extends Command
         }
 
         $agents = LabAgent::query()->with(['modelVersion', 'generation'])
-            ->whereIn('lifecycle_status', $afterCodeRepair || $afterTimeoutBudgetRepair || $afterDatasetContractRepair
+            ->whereIn('lifecycle_status', $afterCodeRepair || $afterTimeoutBudgetRepair || $afterRetryBudgetRepair || $afterDatasetContractRepair
                 ? ['evaluation_error', 'technical_quarantine']
                 : ['evaluation_error'])
             ->where('timeframe', $timeframe)
@@ -564,10 +564,10 @@ class RecoverLabEvaluationErrors extends Command
     private function isRetryBudgetFailure(LabAgent $agent): bool
     {
         $reason = strtolower((string) $agent->decision_reason);
+        $classification = app(TechnicalFailureClassifierService::class)->forAgent($agent);
 
         return str_contains($reason, 'strategy verdict withheld')
-            && (str_contains($reason, 'attempted too many times')
-                || str_contains($reason, 'bounded screening batch exhausted operational retries'));
+            && (string) data_get($classification, 'reason_code') === 'REPLAY_RETRY_BUDGET_EXHAUSTED';
     }
 
     private function hasQueuedJob(LabAgent $agent, string $mode): bool
@@ -589,7 +589,9 @@ class RecoverLabEvaluationErrors extends Command
 
     private function isArchitecturePreflightRepairable(LabAgent $agent): bool
     {
-        if ($agent->lifecycle_status !== 'technical_quarantine') return false;
+        if ($agent->lifecycle_status !== 'technical_quarantine') {
+            return false;
+        }
 
         $errors = array_values(array_unique((array) data_get(
             $agent->modelVersion?->metadata,

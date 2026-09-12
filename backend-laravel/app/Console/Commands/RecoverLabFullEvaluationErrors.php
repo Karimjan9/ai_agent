@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\ModelMarketPerformance;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabQueueJobInspector;
@@ -25,6 +26,7 @@ class RecoverLabFullEvaluationErrors extends Command
         {--generation= : Restrict recovery to one laboratory generation}
         {--limit=4}
         {--agent= : Restrict recovery to one lab agent ID}
+        {--after-service-repair : Retry expired or transport-failed jobs after Redis and the authenticated AI service are healthy}
         {--after-code-repair : Retry bounded full-replay errors after the evaluator or dataset pipeline was repaired}
         {--after-proof-repair : Re-run only named candidates quarantined by the old proof verifier}
         {--apply : Dispatch the bounded recovery after operator approval and queue drain}
@@ -56,9 +58,16 @@ class RecoverLabFullEvaluationErrors extends Command
         $generationNumber = $this->option('generation') !== null ? (int) $this->option('generation') : null;
         $limit = max(1, min(8, (int) $this->option('limit')));
         $agentId = $this->option('agent') !== null ? (int) $this->option('agent') : null;
+        $afterServiceRepair = (bool) $this->option('after-service-repair');
         $afterCodeRepair = (bool) $this->option('after-code-repair');
         $afterProofRepair = (bool) $this->option('after-proof-repair');
         $apply = (bool) $this->option('apply');
+
+        if ((int) $afterServiceRepair + (int) $afterCodeRepair + (int) $afterProofRepair > 1) {
+            $this->error('Choose only one bounded full-replay repair mode.');
+
+            return self::FAILURE;
+        }
 
         $queueBacklog = $queue->labQueueBacklog();
         if ($apply && ($queueBacklog['total'] === null || $queueBacklog['total'] > 0)) {
@@ -98,15 +107,24 @@ class RecoverLabFullEvaluationErrors extends Command
             ->when($agentId, fn ($query) => $query->where('id', $agentId))
             ->where('timeframe', $timeframe)
             ->when($symbol, fn ($query) => $query->where('symbol', $symbol))
-            ->whereHas('generation', function ($query) use ($generationNumber): void {
-                $query->whereIn('status', ['full_validation', 'completed', 'screened', 'technical_quarantine']);
+            ->whereHas('generation', function ($query) use ($generationNumber, $afterServiceRepair): void {
+                $statuses = ['full_validation', 'completed', 'screened', 'technical_quarantine'];
+                // A Redis outage can preserve a full-replay job past its
+                // serialized retryUntil boundary while the newly-created
+                // research generation is still queued.  That is transport
+                // evidence, not a reason to strand the cohort forever.
+                if ($afterServiceRepair) {
+                    $statuses[] = 'queued';
+                }
+                $query->whereIn('status', $statuses);
                 if ($generationNumber !== null) {
                     $query->where('generation', $generationNumber);
                 }
             })
-            ->when(! $afterCodeRepair, fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)))
+            ->when(! $afterCodeRepair && ! $afterServiceRepair, fn ($query) => $query->where('updated_at', '<=', now()->subMinutes(5)))
             ->orderBy('id')->limit($limit * 3)->get()
             ->filter(fn (LabAgent $agent): bool => (($agent->lifecycle_status === 'evaluation_error' && $this->isFullQueueError((string) $agent->decision_reason))
+                    || ($afterServiceRepair && $this->isRepairableServiceFailure($agent))
                     || ($afterCodeRepair && $this->isRepairableTechnicalQuarantine($agent))
                     || ($afterCodeRepair && $this->isStaleTrainingWithoutEvidence($agent))
                     || ($afterProofRepair && $this->hasLegacyProofMismatch($agent)))
@@ -145,6 +163,7 @@ class RecoverLabFullEvaluationErrors extends Command
                 'timeframe' => $timeframe,
                 'generation' => $generationNumber,
                 'agent' => $agentId,
+                'after_service_repair' => $afterServiceRepair,
                 'agent_ids' => $agents->pluck('id')->values()->all(),
             ]);
         } catch (RuntimeException $exception) {
@@ -195,7 +214,7 @@ class RecoverLabFullEvaluationErrors extends Command
             return self::SUCCESS;
         }
 
-        DB::transaction(function () use ($agents, $afterCodeRepair, $afterProofRepair): void {
+        DB::transaction(function () use ($agents, $afterCodeRepair, $afterProofRepair, $afterServiceRepair): void {
             foreach ($agents as $agent) {
                 $metadata = (array) ($agent->modelVersion?->metadata ?? []);
                 if ($afterProofRepair) {
@@ -242,7 +261,9 @@ class RecoverLabFullEvaluationErrors extends Command
                     'lifecycle_status' => 'full_queued',
                     'decision_reason' => $afterProofRepair
                         ? 'Post-proof-verifier repair full replay; historical mismatch preserved and strategy verdict remains withheld until a fresh canonical replay.'
-                        : 'Post-code-repair full evaluator recovery; strategy verdict remains withheld until clean replay.',
+                        : ($afterServiceRepair
+                            ? 'Post-service-repair full evaluator recovery; expired queue evidence preserved and strategy verdict remains withheld until clean replay.'
+                            : 'Post-code-repair full evaluator recovery; strategy verdict remains withheld until clean replay.'),
                 ]);
                 $agent->generation()->update(['status' => 'full_validation', 'completed_at' => null]);
             }
@@ -311,6 +332,32 @@ class RecoverLabFullEvaluationErrors extends Command
             // the append-only preflight ledger proves that exact history.
             || ($this->hasPreviousCoverageQuarantine($agent)
                 && str_contains($reason, 'control_root_seed_protocol_invalid'));
+    }
+
+    private function isRepairableServiceFailure(LabAgent $agent): bool
+    {
+        if (! in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine', 'training'], true)) {
+            return false;
+        }
+        if (ModelMarketPerformance::query()->where('model_version_id', $agent->model_version_id)
+            ->where('symbol', $agent->symbol)->where('timeframe', $agent->timeframe)->exists()) {
+            return false;
+        }
+
+        $reason = strtolower((string) $agent->decision_reason);
+        $runError = strtolower((string) LabEvaluationRun::query()
+            ->where('lab_agent_id', $agent->id)
+            ->where('phase', 'full_validation')
+            ->where('status', 'technical_error')
+            ->latest('id')
+            ->value('error_message'));
+        $failure = $reason."\n".$runError;
+
+        return str_contains($failure, 'attempted too many times')
+            || str_contains($failure, 'maxattemptsexceededexception')
+            || str_contains($failure, 'failed to connect')
+            || str_contains($failure, 'curl error')
+            || str_contains($failure, 'operation timed out');
     }
 
     private function restoreOperationalQuarantine(LabAgent $agent, array &$metadata): bool

@@ -64,6 +64,9 @@ class TechnicalFailureClassifierService
         }
 
         $reasonCode = match (true) {
+            str_contains($normalized, 'maxattemptsexceededexception'),
+            str_contains($normalized, 'attempted too many times'),
+            str_contains($normalized, 'bounded screening batch exhausted operational retries') => 'REPLAY_RETRY_BUDGET_EXHAUSTED',
             str_contains($normalized, 'bounded ai replay exceeded'),
             str_contains($normalized, 'curl error 28'),
             str_contains($normalized, 'operation timed out'),

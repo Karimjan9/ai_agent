@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\LabAgent;
 use App\Models\LabFailureRepairAnchor;
+use App\Models\ModelVersion;
 
 /**
  * Turns a broad gate reason into a state-aware, one-gene learning signature.
@@ -15,12 +16,14 @@ use App\Models\LabFailureRepairAnchor;
  */
 class FailureSignatureCompilerService
 {
-    public const PROTOCOL = 'failure_signature_compiler_v1';
+    public const PROTOCOL = 'failure_signature_compiler_v2';
 
     /** @return array<string, mixed> */
     public function fromAnchor(LabFailureRepairAnchor $anchor): array
     {
         $existing = (array) data_get($anchor->evidence, 'failure_signature', []);
+        $state = (array) data_get($existing, 'state', []);
+        $context = app(ContextContractV2Service::class)->project($state);
         $payload = [
             'protocol' => self::PROTOCOL,
             'symbol' => strtoupper((string) $anchor->symbol),
@@ -36,14 +39,22 @@ class FailureSignatureCompilerService
             'changed_gene' => count((array) $anchor->parameter_diff) === 1
                 ? (string) array_key_first((array) $anchor->parameter_diff) : data_get($existing, 'changed_gene'),
             'mutation_direction' => data_get($existing, 'mutation_direction'),
-            'state' => (array) data_get($existing, 'state', []),
+            'state' => [...$state, 'context_contract' => $context],
+            'canonical_context_hash' => data_get($context, 'identity_hash'),
+            'causal_baseline' => [
+                'model_version_id' => (int) $anchor->source_model_version_id ?: null,
+                'parameter_hash' => (string) $anchor->parameter_fingerprint,
+            ],
             'evolution_mode' => 'strategy_failure',
             'promotion_evidence' => false,
         ];
 
+        $signature = hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+
         return [
             ...$payload,
-            'signature' => hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)),
+            'signature' => $signature,
+            'repeat_failure_fingerprint' => $signature,
         ];
     }
 
@@ -54,7 +65,7 @@ class FailureSignatureCompilerService
         array $evidence = [],
         ?string $reason = null,
     ): array {
-        $agent->loadMissing('modelVersion');
+        $agent->loadMissing('modelVersion', 'parentA');
         $metadata = (array) ($agent->modelVersion?->metadata ?? []);
         $diff = (array) ($agent->parameter_diff ?? []);
         $gene = count($diff) === 1 ? (string) array_key_first($diff) : (string) data_get(
@@ -69,6 +80,7 @@ class FailureSignatureCompilerService
         $failureTarget = $this->normalize($target ?: data_get($metadata, 'generation_target', 'unknown'));
         $failureReason = strtoupper(trim((string) ($reason ?: data_get($evidence, 'failure_reason', 'UNKNOWN_FAILURE'))));
         $direction = $this->direction($old, $new);
+        $baseline = $this->baselineIdentity($agent, $metadata);
         $payload = [
             'protocol' => self::PROTOCOL,
             'symbol' => strtoupper((string) $agent->symbol),
@@ -82,13 +94,18 @@ class FailureSignatureCompilerService
             'changed_gene' => $gene !== '' ? $gene : null,
             'mutation_direction' => $direction,
             'state' => $state,
+            'canonical_context_hash' => data_get($state, 'context_contract.identity_hash'),
+            'causal_baseline' => $baseline,
             'evolution_mode' => 'strategy_failure',
             'promotion_evidence' => false,
         ];
 
+        $signature = hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+
         return [
             ...$payload,
-            'signature' => hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)),
+            'signature' => $signature,
+            'repeat_failure_fingerprint' => $signature,
             'old_value' => $old,
             'new_value' => $new,
             'secondary_diagnostics' => array_values(array_unique(array_filter([
@@ -166,6 +183,7 @@ class FailureSignatureCompilerService
         }
 
         $value = strtolower(trim((string) $scope));
+
         return [
             'regime' => str_starts_with($value, 'market:') ? $this->contextValue(substr($value, 7)) : null,
             'volatility' => str_starts_with($value, 'volatility:') ? $this->contextValue(substr($value, 11)) : null,
@@ -176,9 +194,14 @@ class FailureSignatureCompilerService
     private function contextValue(mixed ...$values): ?string
     {
         foreach ($values as $value) {
-            if (! is_scalar($value)) continue;
+            if (! is_scalar($value)) {
+                continue;
+            }
             $normalized = trim((string) $value);
-            if ($normalized === '' || in_array(strtolower($normalized), ['-', 'unknown', 'none', 'null'], true)) continue;
+            if ($normalized === '' || in_array(strtolower($normalized), ['-', 'unknown', 'none', 'null'], true)) {
+                continue;
+            }
+
             return $normalized;
         }
 
@@ -206,8 +229,57 @@ class FailureSignatureCompilerService
         if (is_numeric($old) && is_numeric($new)) {
             return (float) $new > (float) $old ? 'increase' : ((float) $new < (float) $old ? 'decrease' : 'unchanged');
         }
-        if (is_bool($old) || is_bool($new)) return (bool) $new ? 'enable' : 'disable';
+        if (is_bool($old) || is_bool($new)) {
+            return (bool) $new ? 'enable' : 'disable';
+        }
 
         return $old === $new ? 'unchanged' : 'alternate';
+    }
+
+    /** @return array{model_version_id:?int,parameter_hash:?string} */
+    private function baselineIdentity(LabAgent $agent, array $metadata): array
+    {
+        $modelId = (int) data_get(
+            $metadata,
+            'causal_baseline_model_version_id',
+            data_get(
+                $metadata,
+                'causal_learning_cohort.baseline_model_version_id',
+                data_get(
+                    $metadata,
+                    'control_pair_contract.causal_baseline_model_version_id',
+                    data_get($metadata, 'repair_anchor.source_model_version_id', $agent->parent_a_model_version_id),
+                ),
+            ),
+        );
+        $model = $modelId > 0
+            ? (($agent->parentA && (int) $agent->parentA->id === $modelId)
+                ? $agent->parentA
+                : ModelVersion::query()->find($modelId))
+            : null;
+        if (! $model) {
+            return ['model_version_id' => null, 'parameter_hash' => null];
+        }
+
+        return [
+            'model_version_id' => (int) $model->id,
+            'parameter_hash' => $this->parameterHash((array) $model->parameters),
+        ];
+    }
+
+    private function parameterHash(array $parameters): string
+    {
+        $sort = function (array $values) use (&$sort): array {
+            ksort($values);
+            foreach ($values as $key => $value) {
+                if (is_array($value)) {
+                    $values[$key] = $sort($value);
+                }
+            }
+
+            return $values;
+        };
+
+        return hash('sha256', json_encode($sort($parameters), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
     }
 }

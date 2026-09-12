@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Services\LearningVelocityGateService;
 use App\Console\Commands\Concerns\OperationalCommand;
+use App\Services\LearningVelocityGateService;
 
 /** Read-only monitor for research backpressure and evidence throughput. */
 class MonitorLearningVelocity extends OperationalCommand
@@ -14,8 +14,10 @@ class MonitorLearningVelocity extends OperationalCommand
 
     public function handle(LearningVelocityGateService $velocity): int
     {
-        $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
-        $timeframe = strtoupper((string) $this->option('timeframe'));
+        [$symbol, $timeframe] = $this->canonicalLaboratoryScope(
+            (string) ($this->argument('symbol') ?: 'XAUUSD'),
+            (string) $this->option('timeframe'),
+        );
         $payload = $this->option('full')
             ? $velocity->inspect($symbol, $timeframe)
             : $velocity->summary($symbol, $timeframe);

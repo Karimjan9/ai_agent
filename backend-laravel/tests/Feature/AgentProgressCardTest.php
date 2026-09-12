@@ -16,7 +16,10 @@ class AgentProgressCardTest extends TestCase
     public function test_agent_moves_through_bounded_progress_stages_and_keeps_failure_context(): void
     {
         $generation = app(LabPopulationService::class)->build('XAUUSD', 'progress_card_test', true);
-        $agent = $generation->agents->first();
+        $agent = $generation->agents->first(
+            fn ($candidate): bool => count((array) $candidate->parameter_diff) === 1,
+        );
+        $this->assertNotNull($agent, 'The progress card scenario requires a paired one-gene candidate, not its frozen control.');
         $agent->update(['lifecycle_status' => 'screened']);
 
         $decision = CandidateGateDecision::create([

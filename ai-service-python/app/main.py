@@ -47,6 +47,7 @@ from app.services.fitness import (
     calculate_final_walk_forward_score,
     calculate_strategy_score,
 )
+from app.services.instrument_research import build_instrument_research_trace
 
 app = FastAPI(
     title="NeuroTrader Lab AI Service",
@@ -625,6 +626,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 "base_strategy": config.get("base_strategy"),
                 "version": config.get("version"),
                 "parameters": parameters,
+                "instrument_research_assignment": dict(config.get("instrument_research_assignment") or {}),
                 "policy_context": candidate_policy,
                 "strategies": [],
             })
@@ -1018,6 +1020,12 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 mode=payload.evaluation_mode,
             )
             result_data = analysis["result"]
+            result_data["instrument_research_trace"] = build_instrument_research_trace(
+                strategy_payload.instrument_research_assignment,
+                parameters,
+                result_data,
+                dict(config.get("parameters") or {}),
+            )
             # Fitness is a ranking aid, not a promotion decision. Expose the
             # evidence components so Laravel can explain why a candidate was
             # preferred without collapsing everything into raw profit.

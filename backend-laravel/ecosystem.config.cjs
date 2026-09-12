@@ -146,23 +146,6 @@ module.exports = {
       env: aiEnv,
       filter_env: secretPrefixes,
     },
-    {
-      name: 'neurotrader-scheduler',
-      script: 'artisan',
-      interpreter: php,
-      args: 'schedule:headless-work',
-      autorestart: true,
-      restart_delay: 5000,
-      windowsHide: true,
-      // The scheduler rotates itself after a completed tick at its soft
-      // memory boundary. PM2 keeps a higher emergency cap for a pathological
-      // callback that has not returned yet.
-      max_memory_restart: '1280M',
-      kill_timeout: 30000,
-      time: true,
-      env: sharedEnv,
-      filter_env: secretPrefixes,
-    },
     // Full validation remains one priority coordinator. Screening has two
     // bounded workers over the separate Python screening semaphore; the
     // immutable snapshot and per-agent state stay shared/independent as
@@ -181,8 +164,35 @@ module.exports = {
     worker('scheduler-critical', 'scheduler-critical', 300),
     recyclingWorker('scheduler-ops-a', 'scheduler-ops', 900),
     recyclingWorker('scheduler-ops-b', 'scheduler-ops', 900),
-    recyclingWorker('scheduler-research', 'scheduler-research', 1200),
+    // Every full-population entry point shares this one serial lane plus the
+    // canonical constructor mutex. General research can no longer starve the
+    // five-minute lifecycle cadence behind a long FIFO compiler backlog.
+    recyclingWorker('scheduler-constructor', 'scheduler-constructor', 2700),
+    // Long research compilers retain the same process lease; individual jobs
+    // remain bounded to 900 seconds unless their command declares otherwise.
+    recyclingWorker('scheduler-research', 'scheduler-research', 2700),
     worker('strategy-lab', 'strategy-lab', 2400),
     worker('backtests', 'backtests', 900),
+    // Keep cadence last. The runtime synchronizer stops this process before
+    // reloading workers, and PM2 then starts it only after every consumer has
+    // accepted the new code/config. This prevents deploy-time reservations
+    // from being killed later in the same rolling sync.
+    {
+      name: 'neurotrader-scheduler',
+      script: 'artisan',
+      interpreter: php,
+      args: 'schedule:headless-work',
+      autorestart: true,
+      restart_delay: 5000,
+      windowsHide: true,
+      // The scheduler rotates itself after a completed tick at its soft
+      // memory boundary. PM2 keeps a higher emergency cap for a pathological
+      // callback that has not returned yet.
+      max_memory_restart: '1280M',
+      kill_timeout: 30000,
+      time: true,
+      env: sharedEnv,
+      filter_env: secretPrefixes,
+    },
   ],
 };

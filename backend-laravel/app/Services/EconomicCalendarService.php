@@ -4,13 +4,34 @@ namespace App\Services;
 
 use App\Models\EconomicEvent;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class EconomicCalendarService
 {
+    public function __construct(private OfficialUsdCalendarBackfillService $officialUsdCalendar) {}
+
     public function sync(?string $requestedProvider = null, ?Carbon $from = null, ?Carbon $to = null): array
     {
         $provider = $requestedProvider ?: (string) config('services.economic_calendar.provider', 'financial_modeling_prep');
+        if ($provider === 'official_bls') {
+            if (! $this->providerEnabled($provider)) {
+                return ['status' => 'not_configured', 'synced' => 0];
+            }
+            $year = (int) ($from?->year ?? $to?->year ?? now('UTC')->year);
+            if ($from && $to && $from->year !== $to->year) {
+                return ['status' => 'failed', 'synced' => 0, 'reason' => 'Official BLS calendar sync requires a single-year range.'];
+            }
+            $result = $this->officialUsdCalendar->backfill($from, $to, $year);
+
+            return [
+                'status' => $result['status'] === 'completed' ? 'ok' : 'failed',
+                'synced' => (int) ($result['inserted'] ?? 0) + (int) ($result['updated'] ?? 0),
+                'provider' => $provider,
+                'source' => $result['source'] ?? null,
+                'reason' => $result['status'] === 'completed' ? null : 'Official BLS calendar is unavailable for the requested year.',
+            ];
+        }
         $apiKeys = $this->apiKeys($provider);
         if (! $this->providerEnabled($provider) || $apiKeys === []) {
             return ['status' => 'not_configured', 'synced' => 0];
@@ -24,6 +45,7 @@ class EconomicCalendarService
             } catch (\Throwable $exception) {
                 $reason = preg_replace('/([?&](?:apiKey|apikey|key|token|access_token)=)[^&]+/i', '$1[REDACTED]', $exception->getMessage()) ?: get_class($exception);
                 $failure = 'Economic calendar provider unavailable: '.$reason;
+
                 continue;
             }
             if ($candidate->successful()) {
@@ -36,7 +58,10 @@ class EconomicCalendarService
             }
         }
         if (! $response) {
-            return ['status' => 'failed', 'synced' => 0, 'reason' => $failure ?? 'Economic calendar provider returned no response.'];
+            $result = ['status' => 'failed', 'synced' => 0, 'reason' => $failure ?? 'Economic calendar provider returned no response.'];
+            $this->rememberProviderSync($provider, $result);
+
+            return $result;
         }
 
         $synced = 0;
@@ -49,11 +74,13 @@ class EconomicCalendarService
             if ($provider === 'alpha_vantage_news') {
                 $this->storeAlphaVantageHeadline($row, $provider);
                 $synced++;
+
                 continue;
             }
             if ($provider === 'currents_api_news') {
                 $this->storeCurrentsHeadline($row, $provider);
                 $synced++;
+
                 continue;
             }
             $at = data_get($row, 'Date') ?? data_get($row, 'date') ?? data_get($row, 'scheduled_at');
@@ -65,7 +92,9 @@ class EconomicCalendarService
             // allowing actual/estimate values to be updated in place.
             $id = data_get($row, 'CalendarId') ?? data_get($row, 'id')
                 ?? sha1(implode('|', [$at, $title, $country, $currency]));
-            if (! $at || ! $id) continue;
+            if (! $at || ! $id) {
+                continue;
+            }
             EconomicEvent::updateOrCreate([
                 'source' => $provider,
                 'external_id' => (string) $id,
@@ -82,13 +111,17 @@ class EconomicCalendarService
             ]);
             $synced++;
         }
-        return ['status' => 'ok', 'synced' => $synced];
+        $result = ['status' => 'ok', 'synced' => $synced];
+        $this->rememberProviderSync($provider, $result);
+
+        return $result;
     }
 
     public function veto(string $symbol, ?Carbon $at = null): array
     {
         $provider = (string) config('services.economic_calendar.provider', 'financial_modeling_prep');
-        $calendarEnabled = $this->providerEnabled($provider) && $this->apiKeys($provider) !== [];
+        $officialProvider = $provider === 'official_bls';
+        $calendarEnabled = $this->providerEnabled($provider) && ($officialProvider || $this->apiKeys($provider) !== []);
         $headlineSources = collect(['alpha_vantage_news', 'currents_api_news'])
             ->filter(fn (string $source) => $this->providerEnabled($source) && $this->apiKeys($source) !== [])
             ->values();
@@ -99,6 +132,14 @@ class EconomicCalendarService
         $currencies = str_starts_with(strtoupper($symbol), 'XAU') ? ['USD'] : [substr(strtoupper($symbol), 0, 3), 'USD'];
         $event = null;
         if ($calendarEnabled && ! in_array($provider, ['alpha_vantage_news', 'currents_api_news'], true)) {
+            if ($officialProvider && ! EconomicEvent::query()->where('source', 'official_bls')->whereBetween('scheduled_at', [
+                $at->copy()->startOfYear(), $at->copy()->endOfYear(),
+            ])->exists()) {
+                return ['active' => true, 'status' => 'provider_unavailable', 'reason' => 'Official calendar coverage is unavailable for the current year.'];
+            }
+            if (! $officialProvider && ! $this->externalProviderIsFresh($provider, $at)) {
+                return ['active' => true, 'status' => 'provider_unavailable', 'reason' => 'Configured economic calendar provider has no fresh successful synchronization.'];
+            }
             $event = EconomicEvent::query()->where('source', $provider)->whereIn('currency', $currencies)
                 ->where('impact', 'high')->whereBetween('scheduled_at', [
                     $at->copy()->subMinutes((int) config('services.economic_calendar.pre_event_minutes', 30)),
@@ -111,6 +152,7 @@ class EconomicCalendarService
                 ->where('impact', 'high')->whereBetween('scheduled_at', [$at->copy()->subMinutes($window), $at])
                 ->latest('scheduled_at')->first();
         }
+
         return $event
             ? ['active' => true, 'status' => 'veto', 'event' => ['id' => $event->id, 'title' => $event->title, 'currency' => $event->currency, 'scheduled_at' => $event->scheduled_at->toIso8601String()]]
             : ['active' => false, 'status' => 'clear'];
@@ -119,13 +161,21 @@ class EconomicCalendarService
     private function impact(mixed $value): string
     {
         $value = strtolower((string) $value);
+
         return str_contains($value, 'high') || $value === '3' ? 'high' : (str_contains($value, 'medium') || $value === '2' ? 'medium' : 'low');
     }
+
     private function currencyFromCountry(string $country): ?string
     {
-        return match (strtolower($country)) { 'united states' => 'USD', 'united kingdom' => 'GBP', 'euro area', 'european union' => 'EUR', default => null };
+        return match (strtolower($country)) {
+            'united states' => 'USD', 'united kingdom' => 'GBP', 'euro area', 'european union' => 'EUR', default => null
+        };
     }
-    private function string(mixed $value): ?string { return $value === null ? null : (string) $value; }
+
+    private function string(mixed $value): ?string
+    {
+        return $value === null ? null : (string) $value;
+    }
 
     /** @return list<string> */
     private function apiKeys(string $provider): array
@@ -177,7 +227,9 @@ class EconomicCalendarService
         $macro = preg_match('/fomc|federal reserve|interest rate|central bank|cpi|inflation|nonfarm|payroll|nfp|gdp|unemployment|ecb|bank of england|boe/', $text) === 1;
         $currency = $this->headlineCurrency($text);
         $published = data_get($row, 'time_published');
-        if (! $published) return;
+        if (! $published) {
+            return;
+        }
         $at = Carbon::createFromFormat('Ymd\\THis', (string) $published, 'UTC');
         $id = sha1((string) (data_get($row, 'url') ?: $published.'|'.$title));
         EconomicEvent::updateOrCreate(['source' => $provider, 'external_id' => $id], [
@@ -196,7 +248,9 @@ class EconomicCalendarService
         $macro = preg_match('/fomc|federal reserve|interest rate|central bank|cpi|inflation|nonfarm|payroll|nfp|gdp|unemployment|ecb|bank of england|boe/', $text) === 1;
         $currency = $this->headlineCurrency($text);
         $published = data_get($row, 'published') ?? data_get($row, 'published_at');
-        if (! $published) return;
+        if (! $published) {
+            return;
+        }
         $at = Carbon::parse((string) $published)->utc();
         $id = (string) (data_get($row, 'id') ?: sha1((string) (data_get($row, 'url') ?: $published.'|'.$title)));
         EconomicEvent::updateOrCreate(['source' => $provider, 'external_id' => $id], [
@@ -209,9 +263,16 @@ class EconomicCalendarService
 
     private function headlineCurrency(string $text): ?string
     {
-        if (preg_match('/\beur\b|euro|ecb|european central bank/', $text)) return 'EUR';
-        if (preg_match('/\bgbp\b|sterling|bank of england|\bboe\b|united kingdom/', $text)) return 'GBP';
-        if (preg_match('/\busd\b|dollar|federal reserve|fomc|nonfarm|payroll|\bnfp\b|united states/', $text)) return 'USD';
+        if (preg_match('/\beur\b|euro|ecb|european central bank/', $text)) {
+            return 'EUR';
+        }
+        if (preg_match('/\bgbp\b|sterling|bank of england|\bboe\b|united kingdom/', $text)) {
+            return 'GBP';
+        }
+        if (preg_match('/\busd\b|dollar|federal reserve|fomc|nonfarm|payroll|\bnfp\b|united states/', $text)) {
+            return 'USD';
+        }
+
         return null;
     }
 
@@ -223,6 +284,38 @@ class EconomicCalendarService
     private function boundedTitle(mixed $value): string
     {
         $title = trim((string) $value);
+
         return function_exists('mb_substr') ? mb_substr($title, 0, 255) : substr($title, 0, 255);
+    }
+
+    /** @param array{status:string,synced:int,reason?:string} $result */
+    private function rememberProviderSync(string $provider, array $result): void
+    {
+        Cache::forever($this->providerSyncKey($provider), [
+            'status' => $result['status'],
+            'synced' => $result['synced'],
+            'reason' => $result['reason'] ?? null,
+            'checked_at' => now('UTC')->toIso8601String(),
+        ]);
+    }
+
+    private function externalProviderIsFresh(string $provider, Carbon $at): bool
+    {
+        $state = Cache::get($this->providerSyncKey($provider));
+        if (! is_array($state) || ($state['status'] ?? null) !== 'ok' || empty($state['checked_at'])) {
+            return false;
+        }
+        try {
+            $checkedAt = Carbon::parse((string) $state['checked_at'])->utc();
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $checkedAt->gte($at->copy()->subMinutes((int) config('services.economic_calendar.max_staleness_minutes', 420)));
+    }
+
+    private function providerSyncKey(string $provider): string
+    {
+        return 'economic-calendar:provider-sync:'.$provider;
     }
 }

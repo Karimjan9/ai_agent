@@ -6,10 +6,92 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-08-27
+updated: 2026-09-11
 ---
 
 # AI Learning Laboratory
+
+## Target-aligned autonomous learning lane (2026-09-09)
+
+The active confirmation evidence version is
+`target_aligned_causal_confirmation_v2`. Completed pre-v2 generic-window
+attempts remain immutable audit history but do not consume the v2 retry
+budget. One guided/blinded/frozen-control triplet is reserved inside a normal
+20-seat XAUUSD organism population. The other 17 seats are no longer an
+unpaired mutation fan-out: they become eight exact candidate/control pairs
+plus one explicit uncertainty-abstain seat. Full replay admits only evidence
+whose declared causal protocol is verified.
+
+Learning monitors count `real_progress` only when a beneficial skill is linked
+to a v2 confirmed experiment, absolute viability, and an explicit non-target
+pass. Harmful lessons, drift confirmations, settlement volume, and legacy
+status labels are reported separately and cannot manufacture progress.
+
+## Causal Compounding Kernel v2 (2026-09-11)
+
+`causal_compounding_kernel_v2` is the single population envelope for causal
+confirmation, Academy, cartridge transfer/interaction, Edge attribution and
+Parent Foundry proof. Specialized work owns only its three or five required
+proof seats; the constructor fills the remaining budget with exact paired
+discovery and, for an odd remainder, one non-promotable uncertainty-abstain
+seat. Every resulting generation remains exactly 20 agents.
+
+A normal cold-start generation is ten one-candidate/one-control pairs under
+`exact_frozen_control_pair_v2`. Candidate and control share generation,
+organism, family, dataset hash, execution hash, full untouched parameter
+vector and genetic source IDs. The candidate contains exactly one declared
+intervention. Its control is persisted first and is recorded as a non-genetic
+`causal_baseline_model_version_id`. Matching hashes without this exact
+parameter baseline are legacy diagnostic evidence, not a verified pair.
+
+The knowledge boundary has two explicit authority blocks. Research Inbox
+contains legacy/provisional/negative/uncertain lessons, failed mutations,
+instrument hypotheses and family priors; it may propose bounded experiments
+only. Proven Skill Registry contains causally confirmed, organism-viable
+skills; only this block may guide inheritance. Mutation construction is
+retrieve-before-mutate: canonical context is built first, one compatible
+proven skill is selected or the system abstains, and the exact intent is
+sealed before the agent is persisted. Family priors never directly grant
+inheritance or parent authority.
+
+### Current-cohort MTF and instrument bridge (2026-09-11)
+
+The autonomous MTF research clock now resolves candidates only from the
+canonical XAUUSD H1 storage lineage while preserving H1 context, M15 decision
+and M5 execution as roles inside one organism. Its cohort identity hashes the
+complete ordered H1 and M15 historical OHLCV payloads. A repaired candle in
+the middle of either dataset therefore creates a new cohort; the latest old
+ablation can no longer be reported as the current cohort. Every 30 minutes,
+and only while `ai:start` admission is enabled, the dispatcher admits at most
+one step: first an exact frozen control, then no more than four unresolved
+high-economic-information hypotheses. Live H1/M15 freshness is an operational
+admission gate and is not mixed into the immutable pre-2026 evidence hash.
+
+Instrument learning is connected through an exact-pair fail-closed boundary.
+A one-gene candidate without an already persisted same-generation control is
+blocked before Python replay. A valid runtime attestation opens the invocation
+ledger; a verified control settlement writes individual evidence only for the
+changed causal instrument, marks supporting instruments as consumed without
+credit, and writes a separate posterior for the exact observed bundle. The
+bundle posterior means only "this composition had value in this context".
+Interaction or synergy remains false until a controlled control/A/B/AB
+factorial experiment identifies it.
+
+Positive reuse is deliberately conjunctive: the context-compatible isolated
+instrument posterior and its exact contextual bundle posterior must agree.
+Either isolated harm or bundle harm can veto reuse. Session, regime,
+volatility, spread/liquidity and transition cells remain local, so a London
+result cannot silently become an Asia or global prior. The evidence-derived
+acceptance projection exposes the first missing stage in
+`hypothesis -> controlled experiment -> positive economic signal -> confirmed
+instrument -> confirmed contextual bundle -> strong parent -> rewarded
+evolution`; a later parent row can never hide an earlier missing stage.
+
+Engineering verification on 2026-09-11 passed the complete Laravel suite
+(846 tests, 5,421 assertions) and complete Python suite (192 tests). This proves
+the fail-closed wiring and regression contract, not the existence of a
+profitable edge. The production evidence projection currently stops first at
+`confirmed_instrument`; bounded research must earn that state.
 
 ## Evolutionary Authority Foundry (2026-08-30)
 
@@ -31,6 +113,16 @@ is not equivalent to `eligible_parent`; the latter additionally requires two
 descendants that inherit only the confirmed component, mutate a different gene,
 improve independently, and do not repeat the inherited failure.
 
+Causal confirmation is target-aligned and fail-closed. A guided arm must beat
+both frozen control and memory-blinded control on the preregistered economic
+windows and on the declared target measurement. Composite targets use Pareto
+checks (for example drawdown plus ruin, or worst volatility PF plus worst
+session PF). The paired full replay also compares explicit non-target
+invariants: edge, realized cost burden, drawdown, ruin, temporal, regime,
+volatility, session, calibration, and abstention. A missing required invariant
+is `incomplete`, never safe-by-default, and cannot create bandit reward,
+cartridge authority, a research ratchet, or promotion evidence.
+
 `settlement_watermark_v1` classifies lag as `in_flight`, `awaiting_control`,
 `awaiting_full_outcomes`, `retryable_projection`, `technical_quarantine`, or
 `irrecoverable_legacy`. A generation terminal-boundary repair is blocked until
@@ -49,25 +141,53 @@ Prove that agents improve safely across generations before expanding the concept
 
 ## XAUUSD Multi-Timeframe Pilot
 
-XAUUSD is the only official multi-timeframe pilot. H1 and M15 are separate
-populations and separate genetic lineages:
+XAUUSD is the only official multi-timeframe pilot and owns one production
+population/lineage. H4, H1, M15 and M5 remain causally separated roles inside
+the same frozen organism contract; legacy M15 shadow-lab rows do not own a
+second production generation stream:
 
 ```text
-closed H1 candle
-  -> H1 regime + direction + volatility context
-  -> closed M15 candle
-  -> M15 entry/timing specialist
+closed H4 candle -> macro bias
+  -> closed H1 candle -> regime + direction + location
+  -> closed M15 candle -> setup + confirmation
+  -> closed M5 candle -> entry trigger + invalidation
   -> risk sentinel veto or WAIT
-  -> next M15 open execution
+  -> next M5 open execution
 ```
 
-The canonical contract is `xauusd_h1_m15_mtf_v1`. H1 is never an M15 parent,
-and an open H1 candle is never available to an earlier M15 decision. Missing,
+The legacy research sub-contract is `xauusd_h1_m15_mtf_v1`; it is not a second
+population or the production execution identity. Timeframe observations are
+never genetic parents, and an open H1 candle is never available to an earlier M15 decision. Missing,
 stale, uncertain, transition, or direction-conflicting H1 context resolves to
 `WAIT`; range and high-volatility context may only reduce risk. The contract is
 present in screening, full replay, incremental health checks, paper signal,
 execution-contract and paper outcome requests, so a paper result cannot be
 stronger than its replay evidence.
+
+Normal lifecycle generations and bounded no-candidate handoffs share the same
+20-seat XAUUSD lineage. Every XAUUSD population-capable command is serialized
+on the dedicated `scheduler-constructor` lane, so a general research backlog cannot
+starve lifecycle progress and a fresh partial draft cannot be resumed by a
+second scheduler tick. The five-arm Edge foundry may reconcile existing
+evidence but is disabled as an autonomous production-generation authority by
+default.
+
+The constructor itself also owns one canonical symbol/timeframe lease, so
+lifecycle, targeted-handoff, manual, and interrupted-construction entry points
+cannot overlap even when their command-level mutexes differ. Only the newest
+waiting handoff of an active lighthouse laboratory may request construction;
+handoffs retained by the inactive XAUUSD M15 archive are historical evidence
+and are terminalized as superseded. When the rescue circuit assigns 0% to
+targeted repair, risk/management requests are deferred and their seats are
+reallocated to Edge-prerequisite signal/context experiments instead of silently
+shrinking the mandatory population.
+
+If every bounded prerequisite has already failed for the same dependency-gated
+seat, continuation persists an explicit frozen diagnostic control with
+`promotion_evidence=false`. A repeated continuation goes directly to that
+control instead of rerunning the same expensive forbidden mutation. Completed
+immutable intraday archives likewise retain their checkpoint and skip repeated
+full-range coverage scans on later scheduler ticks.
 
 Every official XAUUSD M15 paper signal receives one immutable passport with
 `h1_context_hash`, `h1_closed_at`, `m15_decision_at`, `m15_strategy`,
@@ -409,8 +529,8 @@ Full validation submits the selected cohort from one generation in a single AI-s
 
 - Hourly: candle import.
 - Hourly: `trading:lab-incremental` checks existing champions on recent candles and records degradation.
-- After 24 new closed H1 candles or 96 new closed M15 candles, market drift, or three consecutive degraded checks: `trading:lab-generation` creates at most one pending generation per laboratory. H1 remains the baseline/regime lane; M15 has its own price/volume foundation and uses only the last closed H1 regime as context. Both paths wait for the previous generation to finish rather than overlapping populations.
-- Every five minutes: `trading:dispatch-lab` screens draft agents in the shared FIFO screening lane; `trading:dispatch-full-validation --timeframe=H1` and `--timeframe=M15` select only screened candidates for the sealed full replay/council gates.
+- After the configured closed-candle/drift/degradation threshold, `trading:lab-generation` creates at most one pending generation for the XAUUSD symbol. H4 macro bias, H1 regime/location, M15 setup/confirmation, and M5 entry/execution are causally separated roles inside that population; no second XAUUSD timeframe population may overlap it.
+- Every five minutes: `trading:dispatch-lab` screens draft agents in the shared FIFO lane; full validation selects only screened candidates from the same unified XAUUSD generation. The H1 option retained by older commands is a storage compatibility key, not a separate timeframe population.
 - Every five minutes: `trading:paper-monitor` opens/reconciles simulated or configured practice-broker paper orders.
 - Every fifteen minutes: `trading:reconcile-mtf-shadow` settles executable shadows, then `trading:monitor-mtf-pilot` records closed-H1 alignment, M15 freshness, veto/WAIT behavior, passport integrity, paper lifecycle, and ablation-control health.
 - Hourly: `trading:mtf-shadow-candidates --limit=3` refreshes the top rejected near-miss shadow twin; observations remain research-only.
@@ -591,8 +711,94 @@ playbooks instead of blocking the laboratory or endlessly refining one
 threshold. None of these research steps can grant parent, breeder, paper or
 promotion authority by itself.
 
+### Two-block instrument learning bridge (2026-09-08)
+
+Instrument knowledge is now exposed as two explicitly different blocks. Block
+1 is the candidate inventory: human-curated trading instruments and playbooks,
+system-discovered executable runtime primitives, strategy/tactic/risk/trade-
+management libraries, professional MTF research playbooks, prior blueprints,
+and gated typed-DSL inventions. A candidate entry is not evidence.
+
+Before laboratory screening or full replay, each agent receives a deterministic
+`lab_instrument_research_assignment_v2` bound to its exact parameter hash. The
+Python runtime independently verifies the assignment hash and exact parameter
+bindings and emits `lab_instrument_runtime_trace_v1`. Only that attestation can
+open a research invocation ledger row; paper/live execution authority remains
+false.
+
+Block 2 contains verified value only. An invocation may settle as helped,
+harmed, or neutral only when the existing learning lane supplies an exact
+same-generation frozen control with matching data and execution hashes. The
+settlement is idempotent and updates an instrument posterior. Mature confirmed
+posteriors may rank legal later mutation genes, while forbidden posteriors join
+the harmful-gene firewall. Blinded and causal-control arms are isolated from
+this global feedback. The invariant is: catalogue is not invocation,
+invocation is not causal value, and causal value is not promotion.
+
+The lightweight controller reports this scope as `XAUUSD/MTF`. Its H4 macro,
+H1 regime/location, M15 decision and M5 execution roles belong to one lineage;
+the persisted `H1` value is exposed separately as
+`laboratory_storage_timeframe` and is never a second organism. Instrument
+invention readiness is evidence-derived: an isolated passed transplant arm is
+not called a successful transfer. Typed-DSL synthesis remains visibly gated
+until a confirmed cartridge also passes its strict exact-transfer contract;
+the candidate/runtime bridge above remains active independently of that later
+invention gate.
+
+When a final generation report has 100% technical completion, zero pipeline
+failures, and no screening survivor, the lifecycle now records an idempotent
+`data_edge_audit_v1` directly from the report's observed gate failures. The
+audit is research-only: it cannot invent a pass or relax a gate. Its only
+authority is to make the next canonical 20-seat XAUUSD population a fresh
+`data_edge_audit` root portfolio. This routing is enforced inside the central
+population service as well as the lifecycle caller, so an older `new_data` or
+`candidate_handoff` scheduler entry cannot consume the audited successor as a
+shadow generation. This removes the former need for a supervising model to
+manually run the audit command between generations.
+
 The Director no longer maps compiler admission failures back to the legacy
 `REGISTERED_EDGE_PACKETS_EXHAUSTED` label. It persists the compiler result in
 the decision payload, exposes its exact `compiler_reason`, and reserves
 `EDGE_HYPOTHESIS_ISLANDS_EXHAUSTED` for genuine exhaustion of every bounded
 professional research island.
+
+### Autonomous constructor and causal-learning ownership (2026-09-09)
+
+An immutable generation plan that has already passed admission owns the
+constructor lane until every planned seat exists. This ownership applies while
+the mutable generation projection is either `draft` or
+`technical_quarantine`, and is evaluated before a new causal lesson or
+successor can request generation authority. The exception can only resume the
+existing plan; it cannot create a generation or bypass a safety/admission
+gate. Older incomplete generations never outrank a newer lineage head.
+
+A missing causal selector or repair anchor no longer shrinks a canonical
+20-seat population forever. After bounded construction retry, the unavailable
+seat becomes an exact frozen dependency-control seat with promotion authority
+disabled and its original source identifiers retained only for audit. It does
+not claim that the unavailable causal experiment ran, cannot earn mutation or
+performance credit, and cannot confirm a lesson. This preserves transport and
+data-health coverage without manufacturing learning evidence.
+
+Historical novelty checks stream compact parameter fingerprints instead of
+hydrating hundreds of megabytes of model metadata. Parent evidence is loaded
+once per family/evidence frontier during a constructor run. Scheduled
+constructor commands are serialized on `scheduler-constructor`, and production
+Artisan work runs in a shell-free child process with an operating-system-level
+timeout; this supplies a real bound on Windows where an in-process `pcntl`
+alarm is unavailable.
+
+On Windows each scheduled Artisan child also starts in its own process group.
+PM2 workers have independent bounded lifetimes; without this isolation, one
+unrelated worker recycle broadcast `CTRL_C_EVENT` to children owned by other
+queue lanes and interrupted an active constructor. Full-validation dispatch is
+likewise a heavy snapshot/export coordinator, so it shares the single
+`scheduler-constructor` lane and its 2400-second budget instead of the
+180-second critical lane. This serializes it with population construction and
+prevents both the former 150-second child timeout and cross-lane snapshot races.
+
+The autonomous monitor derives planned population from the immutable
+`generation_plan`, never from the mutable `population_size` projection. A
+lightweight or strong controller therefore has the same narrow authority:
+start, stop and observe. Scheduler-owned lifecycle code alone performs
+generation construction, recovery, learning dispatch and validation.

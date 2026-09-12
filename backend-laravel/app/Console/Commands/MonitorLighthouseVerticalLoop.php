@@ -14,7 +14,7 @@ class MonitorLighthouseVerticalLoop extends Command
         {--strict : Return failure when the readiness contract is blocked}
         {--json : Print the complete readiness report as JSON}';
 
-    protected $description = 'Monitor the XAUUSD H1 candidate-to-reality vertical loop without changing strategy evidence';
+    protected $description = 'Monitor the unified XAUUSD MTF candidate-to-reality loop without changing strategy evidence';
 
     public function handle(LighthouseVerticalLoopMonitoringService $monitor): int
     {

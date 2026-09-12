@@ -6,6 +6,7 @@ use App\Models\AgentLearningCausalExperiment;
 use App\Models\AgentLearningLesson;
 use App\Models\AgentLearningMutationIntent;
 use App\Models\AgentLearningPolicy;
+use App\Models\AgentLearningSettlement;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabLearningLanePair;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\Schema;
 /** Confirms memory only when it beats both blinded mutation and frozen control. */
 class CausalLearningConfirmationService
 {
+    public const EVIDENCE_PROTOCOL = 'target_aligned_causal_confirmation_v2';
+
     /** @return array<string, mixed> */
     public function recordEvaluationOutcome(
         LabAgent $agent,
@@ -114,6 +117,7 @@ class CausalLearningConfirmationService
             $candidate = (array) data_get($outcomes, $role, []);
             if ($candidate === [] || ! filled(data_get($candidate, 'evidence_run_id'))) {
                 $pending[] = $role;
+
                 continue;
             }
             $pair = LabLearningLanePair::query()->with('controlResponseMap')
@@ -124,6 +128,7 @@ class CausalLearningConfirmationService
             $performance = ModelMarketPerformance::query()->find((int) data_get($candidate, 'performance_id'));
             if (! $pair || ! $agent || ! $performance) {
                 $pending[] = $role;
+
                 continue;
             }
             $candidateRunId = (string) data_get($candidate, 'evidence_run_id');
@@ -144,6 +149,7 @@ class CausalLearningConfirmationService
                     'control_run_status' => $controlRun?->status,
                     'promotion_evidence' => false,
                 ];
+
                 continue;
             }
             $comparison = $this->compareWindows($candidate, $control, 3);
@@ -173,12 +179,18 @@ class CausalLearningConfirmationService
                 $candidateRunId, $controlRunId, (int) $experiment->id,
             ]));
             $bindingHistory[$bindingKey] = $binding;
+            $nonTargetRegression = $this->compareNonTargetInvariants(
+                $candidate,
+                $control,
+                (string) $pair->target,
+            );
             $pair->update([
                 'candidate_evidence_run_id' => $candidateRunId,
                 'control_evidence_run_id' => $controlRunId,
                 'candidate_metrics' => $this->outcomeMetrics($candidate),
                 'control_metrics' => $this->outcomeMetrics($control),
                 'target_delta' => $delta,
+                'non_target_regression' => $nonTargetRegression,
                 'status' => 'causal_full_paired',
                 'metadata' => [
                     ...$metadata,
@@ -233,6 +245,8 @@ class CausalLearningConfirmationService
             'minimum_powered_windows' => (int) data_get($outcome, 'minimum_powered_windows', 0),
             'minimum_trades_per_window' => (int) data_get($outcome, 'minimum_trades_per_window', 0),
             'windows' => (array) data_get($outcome, 'windows', []),
+            'target_measurement' => (array) data_get($outcome, 'target_measurement', []),
+            'invariant_vector' => (array) data_get($outcome, 'invariant_vector', []),
             'promotion_evidence' => false,
         ];
     }
@@ -275,6 +289,9 @@ class CausalLearningConfirmationService
             default => 'frozen_control',
         };
         $windows = $this->windows($pair, $result);
+        $measurementResult = $performance
+            ? array_replace_recursive((array) $performance->metrics, $result)
+            : $result;
         $evidence = (array) $experiment->evidence;
         $evidence['outcomes'][$role] = [
             'agent_id' => (int) $agent->id,
@@ -295,6 +312,8 @@ class CausalLearningConfirmationService
             'power_contract_declared' => $windows['power_contract_declared'],
             'power_quorum_verified' => $windows['power_quorum_verified'],
             'windows' => $windows['windows'],
+            'target_measurement' => $this->targetMeasurement((string) $pair->target, $measurementResult),
+            'invariant_vector' => $this->invariantVector($measurementResult),
             'maximum_holding_bars' => $windows['maximum_holding_bars'],
             'execution_horizon_overlay_applied' => $windows['execution_horizon_overlay_applied'],
             'evidence_run_id' => data_get($result, 'evidence_run_id'),
@@ -340,8 +359,24 @@ class CausalLearningConfirmationService
                     'intval',
                     (array) data_get($guidedReceipt, 'causally_applied_lesson_ids', []),
                 ), true));
-        $componentEffect = $this->compareWindows($guided, $control, $required);
-        $selectorEffect = $this->compareWindows($guided, $blinded, $required);
+        $componentWindowEffect = $this->compareWindows($guided, $control, $required);
+        $selectorWindowEffect = $this->compareWindows($guided, $blinded, $required);
+        $componentTargetEffect = $this->compareTargetMeasurements($guided, $control);
+        $selectorTargetEffect = $this->compareTargetMeasurements($guided, $blinded);
+        $componentEffect = [
+            ...$componentWindowEffect,
+            'economic_window_effect' => $componentWindowEffect,
+            'target_effect' => $componentTargetEffect,
+            'passed' => data_get($componentWindowEffect, 'passed') === true
+                && data_get($componentTargetEffect, 'passed') === true,
+        ];
+        $selectorEffect = [
+            ...$selectorWindowEffect,
+            'economic_window_effect' => $selectorWindowEffect,
+            'target_effect' => $selectorTargetEffect,
+            'passed' => data_get($selectorWindowEffect, 'passed') === true
+                && data_get($selectorTargetEffect, 'passed') === true,
+        ];
         $guidedBeatsControl = (bool) data_get($componentEffect, 'passed', false);
         $guidedBeatsBlinded = (bool) data_get($selectorEffect, 'passed', false);
         $confirmedWindowCount = (int) data_get($componentEffect, 'common_window_count', 0);
@@ -349,7 +384,7 @@ class CausalLearningConfirmationService
         $guidedPairId = (int) data_get($guided, 'pair_id', 0);
         $guidedPair = $guidedPairId > 0 ? LabLearningLanePair::query()->find($guidedPairId) : null;
         $canonicalSettlement = $guidedPair
-            ? \App\Models\AgentLearningSettlement::query()
+            ? AgentLearningSettlement::query()
                 ->where('source_type', LabLearningLanePair::class)
                 ->where('source_id', $guidedPair->id)
                 ->where('evidence_state', 'positive')
@@ -358,7 +393,7 @@ class CausalLearningConfirmationService
                 ->first()
             : null;
         $latestCanonicalSettlement = $guidedPair
-            ? \App\Models\AgentLearningSettlement::query()
+            ? AgentLearningSettlement::query()
                 ->where('source_type', LabLearningLanePair::class)
                 ->where('source_id', $guidedPair->id)
                 ->latest('id')
@@ -408,6 +443,12 @@ class CausalLearningConfirmationService
         if (! $guidedBeatsBlinded) {
             $reasons[] = 'GUIDED_DID_NOT_BEAT_BLINDED';
         }
+        if (data_get($componentTargetEffect, 'passed') !== true) {
+            $reasons[] = 'GUIDED_DECLARED_TARGET_DID_NOT_BEAT_CONTROL';
+        }
+        if (data_get($selectorTargetEffect, 'passed') !== true) {
+            $reasons[] = 'GUIDED_DECLARED_TARGET_DID_NOT_BEAT_BLINDED';
+        }
         if (! (bool) data_get($componentEffect, 'protocol_verified', false)
             || ! (bool) data_get($selectorEffect, 'protocol_verified', false)
             || (int) data_get($componentEffect, 'common_window_count', 0) < (int) data_get($componentEffect, 'required_common_windows', $required)
@@ -424,12 +465,22 @@ class CausalLearningConfirmationService
             $architectureDepth = (int) data_get($experiment->evidence, 'architecture_lineage.depth', 0);
             $scalarBudgetExhausted = $repairExperiment && ! $architectureExperiment && $repairDepth >= 3;
             $architectureBudgetExhausted = ! $interactionExperiment && $architectureExperiment && $architectureDepth >= 3;
+            $researchRatchet = $this->researchRatchetDecision(
+                $experiment,
+                $guidedPair,
+                $guidedAgent,
+                $latestCanonicalSettlement,
+                $componentEffect,
+                $selectorEffect,
+                $reasons,
+            );
             $experiment->update([
                 'status' => 'provisional',
                 'independent_window_count' => $confirmedWindowCount,
                 'guided_beats_blinded' => $guidedBeatsBlinded,
                 'guided_beats_control' => $guidedBeatsControl,
                 'evidence' => [...((array) $experiment->evidence),
+                    'confirmation_evidence_protocol' => self::EVIDENCE_PROTOCOL,
                     'component_effect' => $componentEffect,
                     'selector_effect' => $selectorEffect,
                     'confirmation_blockers' => $reasons,
@@ -451,6 +502,16 @@ class CausalLearningConfirmationService
                                 ? ($architectureBudgetExhausted ? 'architecture_portfolio_required' : 'architecture_escape_retry_required')
                                 : ($scalarBudgetExhausted ? 'architecture_escape_required' : 'bounded_repair_required'))),
                         'preserve_as_observation_only' => (bool) data_get($componentEffect, 'passed', false),
+                        // A causally positive but still absolutely losing
+                        // model is never a production parent. When all
+                        // counterfactual and non-target checks pass, however,
+                        // it may become the frozen baseline of the next
+                        // research-only repair. This is the missing
+                        // compounding step: the next experiment measures one
+                        // additional gene on top of an already replicated
+                        // beneficial component instead of resetting to the
+                        // original losing control.
+                        'research_ratchet' => $researchRatchet,
                         'inherit_gene' => false,
                         'target' => (string) ($latestCanonicalSettlement?->failure_class ?: 'evidence_completion'),
                         'next_experiment' => $interactionExperiment
@@ -482,6 +543,7 @@ class CausalLearningConfirmationService
             'guided_beats_control' => true,
             'confirmed_at' => now(),
             'evidence' => [...((array) $experiment->evidence),
+                'confirmation_evidence_protocol' => self::EVIDENCE_PROTOCOL,
                 'confirmation_protocol' => $this->confirmationProtocol($experiment),
                 'component_effect' => $componentEffect,
                 'selector_effect' => $selectorEffect,
@@ -633,6 +695,96 @@ class CausalLearningConfirmationService
         ];
     }
 
+    /** @return array<string,mixed> */
+    private function researchRatchetDecision(
+        AgentLearningCausalExperiment $experiment,
+        ?LabLearningLanePair $guidedPair,
+        ?LabAgent $guidedAgent,
+        ?AgentLearningSettlement $latestSettlement,
+        array $componentEffect,
+        array $selectorEffect,
+        array $confirmationReasons,
+    ): array {
+        $nonTarget = (array) ($guidedPair?->non_target_regression ?? []);
+        $nonTargetStatus = (string) data_get($nonTarget, 'status', 'not_recorded');
+        $explicitNonTargetPass = data_get($nonTarget, 'safe') === true
+            && in_array($nonTargetStatus, ['passed', 'confirmed'], true);
+        $otherBlockers = array_values(array_diff(
+            array_values(array_unique(array_map('strval', $confirmationReasons))),
+            ['GUIDED_ABSOLUTE_VIABILITY_FAILED'],
+        ));
+        $reasonCodes = [];
+        if (! $guidedPair || ! $guidedPair->isVerifiedControlPair()) {
+            $reasonCodes[] = 'VERIFIED_GUIDED_PAIR_REQUIRED';
+        }
+        if (! $guidedAgent || ! $guidedAgent->modelVersion) {
+            $reasonCodes[] = 'GUIDED_RESEARCH_BASELINE_MISSING';
+        }
+        if (! $latestSettlement || ! $latestSettlement->hard_failure
+            || (string) $latestSettlement->evidence_state !== 'negative') {
+            $reasonCodes[] = 'ABSOLUTE_FAILURE_SETTLEMENT_REQUIRED';
+        }
+        if (data_get($componentEffect, 'passed') !== true) {
+            $reasonCodes[] = 'COMPONENT_EFFECT_NOT_REPLICATED';
+        }
+        if (data_get($selectorEffect, 'passed') !== true) {
+            $reasonCodes[] = 'SELECTOR_EFFECT_NOT_REPLICATED';
+        }
+        if (! $explicitNonTargetPass) {
+            $reasonCodes[] = 'NON_TARGET_EVIDENCE_NOT_EXPLICITLY_PASSED';
+        }
+        if ($otherBlockers !== []) {
+            $reasonCodes = [...$reasonCodes, ...$otherBlockers];
+        }
+        $allowed = $reasonCodes === [];
+        $previous = (array) data_get($experiment->evidence, 'research_ratchet.retained_steps', []);
+        $candidateStep = [
+            'experiment_id' => (int) $experiment->id,
+            'pair_id' => (int) ($guidedPair?->id ?? 0),
+            'agent_id' => (int) ($guidedAgent?->id ?? 0),
+            'model_version_id' => (int) ($guidedAgent?->model_version_id ?? 0),
+            'gene' => (string) $experiment->gene_key,
+            'component_mean_delta' => (float) data_get($componentEffect, 'mean_delta', 0),
+            'component_positive_windows' => (int) data_get($componentEffect, 'positive_delta_windows', 0),
+            'selector_mean_delta' => (float) data_get($selectorEffect, 'mean_delta', 0),
+            'selector_positive_windows' => (int) data_get($selectorEffect, 'positive_delta_windows', 0),
+            'absolute_failure_class' => $latestSettlement?->failure_class,
+            'absolute_settlement_id' => $latestSettlement?->id,
+            'promotion_evidence' => false,
+        ];
+
+        return [
+            'protocol' => 'causal_research_ratchet_v1',
+            'status' => $allowed ? 'eligible_research_baseline' : 'blocked',
+            'allowed' => $allowed,
+            'reason_codes' => array_values(array_unique($reasonCodes)),
+            'baseline_policy' => $allowed
+                ? 'retain_causal_component_for_next_research_only_step'
+                : 'reset_to_original_frozen_control',
+            'candidate_step' => $candidateStep,
+            'retained_steps' => $allowed ? [...$previous, $candidateStep] : $previous,
+            'root_source_pair_id' => (int) data_get(
+                $experiment->evidence,
+                'root_source_pair_id',
+                data_get($experiment->evidence, 'source_pair_id', 0),
+            ),
+            'root_control_agent_id' => (int) data_get(
+                $experiment->evidence,
+                'research_ratchet.root_control_agent_id',
+                data_get($experiment->evidence, 'source_control_agent_id', 0),
+            ),
+            'root_baseline_model_version_id' => (int) data_get(
+                $experiment->evidence,
+                'research_ratchet.root_baseline_model_version_id',
+                data_get($experiment->evidence, 'baseline_model_version_id', 0),
+            ),
+            'research_baseline_agent_id' => $allowed ? (int) $guidedAgent->id : null,
+            'research_baseline_model_version_id' => $allowed ? (int) $guidedAgent->model_version_id : null,
+            'production_parent_allowed' => false,
+            'promotion_evidence' => false,
+        ];
+    }
+
     /** @return array<string, mixed>|null */
     private function projectConfirmedGuidedMentor(?LabAgent $agent, array $guided, int $required): ?array
     {
@@ -753,8 +905,7 @@ class CausalLearningConfirmationService
             (int) data_get($baseline, 'minimum_trades_per_window', 0),
         );
         if ($powerContract) {
-            $common = $common->filter(fn (string $key): bool =>
-                (int) data_get($treatmentRows->get($key), 'trades', 0) >= $minimumTrades
+            $common = $common->filter(fn (string $key): bool => (int) data_get($treatmentRows->get($key), 'trades', 0) >= $minimumTrades
                 && (int) data_get($baselineRows->get($key), 'trades', 0) >= $minimumTrades
             )->values();
         }
@@ -783,7 +934,9 @@ class CausalLearningConfirmationService
         $deltas = $common->map(function (string $key) use ($treatmentRows, $baselineRows): ?array {
             $left = $this->windowScore((array) $treatmentRows->get($key));
             $right = $this->windowScore((array) $baselineRows->get($key));
-            if ($left === null || $right === null) return null;
+            if ($left === null || $right === null) {
+                return null;
+            }
 
             return ['window_id' => $key, 'treatment' => $left, 'baseline' => $right, 'delta' => round($left - $right, 8)];
         })->filter()->values();
@@ -809,23 +962,472 @@ class CausalLearningConfirmationService
         ];
     }
 
+    /** @return array<string,mixed> */
+    private function targetMeasurement(string $target, array $result): array
+    {
+        $target = strtolower(trim($target));
+        if (in_array($target, ['drawdown_risk', 'risk_exit'], true)) {
+            return $this->compositeTargetMeasurement($target, [
+                'drawdown' => $this->metricMeasurement(
+                    $result,
+                    'drawdown',
+                    'lower',
+                    ['max_drawdown_percent', 'max_drawdown'],
+                ),
+                'risk_of_ruin' => $this->metricMeasurement(
+                    $result,
+                    'risk_of_ruin',
+                    'lower',
+                    ['monte_carlo.risk_of_ruin_percent', 'risk_of_ruin_percent'],
+                ),
+            ]);
+        }
+        if ($target === 'volatility_session_stability') {
+            return $this->compositeTargetMeasurement($target, [
+                'worst_volatility_pf' => [
+                    'metric' => 'worst_volatility_pf',
+                    'direction' => 'higher',
+                    'value' => $this->minimumGroupedNumber($result, 'pf_attribution.by_volatility'),
+                    'source' => 'pf_attribution.by_volatility.*.net_pf',
+                ],
+                'worst_session_pf' => [
+                    'metric' => 'worst_session_pf',
+                    'direction' => 'higher',
+                    'value' => $this->minimumGroupedNumber($result, 'pf_attribution.by_session'),
+                    'source' => 'pf_attribution.by_session.*.net_pf',
+                ],
+            ]);
+        }
+        if ($target === 'exit_topology') {
+            return $this->compositeTargetMeasurement($target, [
+                'profit_factor' => $this->metricMeasurement(
+                    $result,
+                    'profit_factor',
+                    'higher',
+                    ['pf_attribution.summary.net_pf', 'profit_factor'],
+                ),
+                'drawdown' => $this->metricMeasurement(
+                    $result,
+                    'drawdown',
+                    'lower',
+                    ['max_drawdown_percent', 'max_drawdown'],
+                ),
+            ]);
+        }
+        if ($target === 'transition_firewall') {
+            return $this->compositeTargetMeasurement($target, [
+                'temporal_survival' => $this->metricMeasurement(
+                    $result,
+                    'temporal_survival',
+                    'higher',
+                    ['temporal_survival.temporal_survival_score'],
+                ),
+                'regime_coverage' => $this->metricMeasurement(
+                    $result,
+                    'regime_coverage',
+                    'higher',
+                    ['statistical_evidence.edge_quality.worst_regime_pf'],
+                ),
+            ]);
+        }
+        if ($target === 'portfolio_router') {
+            return $this->compositeTargetMeasurement($target, [
+                'calibration' => $this->metricMeasurement(
+                    $result,
+                    'calibration',
+                    'higher',
+                    [
+                        'statistical_evidence.edge_quality.confidence_calibration.calibration_score',
+                        'statistical_evidence.edge_quality.confidence_calibration.score',
+                    ],
+                    true,
+                ),
+                'abstention_quality' => $this->metricMeasurement(
+                    $result,
+                    'abstention_quality',
+                    'higher',
+                    ['opportunity_recall.abstention_precision'],
+                ),
+            ]);
+        }
+        if ($target === 'stress_cost') {
+            $stress = $this->metricMeasurement(
+                $result,
+                'stress_cost_pf',
+                'higher',
+                ['pf_attribution.stress_cost.profit_factor', 'screening_survival.stress_cost_pf'],
+            );
+            if (is_numeric($stress['value'])) {
+                return $this->singleTargetMeasurement($target, $stress);
+            }
+
+            return $this->singleTargetMeasurement($target, $this->metricMeasurement(
+                $result,
+                'realized_cost_burden_percent',
+                'lower',
+                ['pf_attribution.summary.cost_to_gross_profit_percent'],
+            ));
+        }
+        [$metric, $direction, $paths] = match ($target) {
+            'profit_factor', 'architecture' => ['profit_factor', 'higher', [
+                'pf_attribution.summary.net_pf', 'profit_factor',
+            ]],
+            'temporal_stability', 'monthly_survival', 'robustness' => ['temporal_stability', 'higher', [
+                'statistical_evidence.edge_quality.worst_fold_profit_factor',
+                'screening_survival.worst_temporal_chunk_pf', 'screening_survival.worst_window_pf',
+            ]],
+            'regime_coverage', 'rolling_regime' => ['regime_coverage', 'higher', [
+                'statistical_evidence.edge_quality.worst_regime_pf', 'screening_survival.worst_regime_pf',
+            ]],
+            'drawdown', 'max_drawdown' => ['drawdown', 'lower', [
+                'max_drawdown_percent', 'max_drawdown',
+            ]],
+            'risk' => ['risk_of_ruin', 'lower', [
+                'monte_carlo.risk_of_ruin_percent', 'risk_of_ruin_percent',
+            ]],
+            'trade_frequency' => ['trade_frequency', 'higher', ['total_trades', 'entry_funnel.accepted_entries']],
+            'opportunity_recall' => ['opportunity_recall', 'higher', [
+                'opportunity_recall.opportunity_recall', 'opportunity_metrics.recall',
+            ]],
+            'unknown_state_curiosity' => ['opportunity_recall', 'higher', [
+                'opportunity_recall.opportunity_recall', 'opportunity_metrics.recall',
+            ]],
+            default => ['unknown', 'higher', []],
+        };
+
+        return $this->singleTargetMeasurement(
+            $target,
+            $this->metricMeasurement($result, $metric, $direction, $paths),
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function compareTargetMeasurements(array $candidate, array $baseline): array
+    {
+        $candidateMeasurement = (array) data_get($candidate, 'target_measurement', []);
+        $baselineMeasurement = (array) data_get($baseline, 'target_measurement', []);
+        $candidateComponents = (array) data_get($candidateMeasurement, 'components', []);
+        $baselineComponents = (array) data_get($baselineMeasurement, 'components', []);
+        if ($candidateComponents !== [] || $baselineComponents !== []) {
+            $keysMatch = array_keys($candidateComponents) === array_keys($baselineComponents);
+            $effects = [];
+            $missing = [];
+            $regressed = [];
+            $improved = [];
+            foreach (array_keys($candidateComponents) as $metric) {
+                $left = (array) ($candidateComponents[$metric] ?? []);
+                $right = (array) ($baselineComponents[$metric] ?? []);
+                $leftValue = $left['value'] ?? null;
+                $rightValue = $right['value'] ?? null;
+                $sameContract = ($left['metric'] ?? null) === ($right['metric'] ?? null)
+                    && ($left['direction'] ?? null) === ($right['direction'] ?? null);
+                if (! $sameContract || ! is_numeric($leftValue) || ! is_numeric($rightValue)) {
+                    $missing[] = (string) $metric;
+
+                    continue;
+                }
+                $rawDelta = (float) $leftValue - (float) $rightValue;
+                $orientedDelta = ($left['direction'] ?? null) === 'lower' ? -$rawDelta : $rawDelta;
+                if ($orientedDelta < -0.00000001) {
+                    $regressed[] = (string) $metric;
+                } elseif ($orientedDelta > 0.00000001) {
+                    $improved[] = (string) $metric;
+                }
+                $effects[$metric] = [
+                    'candidate_value' => (float) $leftValue,
+                    'baseline_value' => (float) $rightValue,
+                    'raw_delta' => round($rawDelta, 8),
+                    'oriented_delta' => round($orientedDelta, 8),
+                    'direction' => (string) ($left['direction'] ?? ''),
+                ];
+            }
+            $passed = $keysMatch && $missing === [] && $regressed === [] && $improved !== [];
+
+            return [
+                'protocol' => 'declared_composite_target_effect_v1',
+                'status' => $passed ? 'improved' : ($missing !== [] || ! $keysMatch ? 'incomplete' : 'not_improved'),
+                'target' => data_get($candidateMeasurement, 'target'),
+                'effects' => $effects,
+                'improved_metrics' => $improved,
+                'regressed_metrics' => $regressed,
+                'missing_or_mismatched_metrics' => $missing,
+                'component_keys_match' => $keysMatch,
+                'passed' => $passed,
+                'promotion_evidence' => false,
+            ];
+        }
+        $candidateValue = data_get($candidateMeasurement, 'value');
+        $baselineValue = data_get($baselineMeasurement, 'value');
+        $sameMetric = filled(data_get($candidateMeasurement, 'metric'))
+            && data_get($candidateMeasurement, 'metric') === data_get($baselineMeasurement, 'metric')
+            && data_get($candidateMeasurement, 'direction') === data_get($baselineMeasurement, 'direction');
+        if (! $sameMetric || ! is_numeric($candidateValue) || ! is_numeric($baselineValue)) {
+            return [
+                'protocol' => 'declared_target_effect_v1',
+                'status' => 'incomplete',
+                'passed' => false,
+                'reason_code' => 'DECLARED_TARGET_MEASUREMENT_MISSING_OR_MISMATCHED',
+                'candidate' => $candidateMeasurement,
+                'baseline' => $baselineMeasurement,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $rawDelta = (float) $candidateValue - (float) $baselineValue;
+        $orientedDelta = data_get($candidateMeasurement, 'direction') === 'lower'
+            ? -$rawDelta
+            : $rawDelta;
+
+        return [
+            'protocol' => 'declared_target_effect_v1',
+            'status' => $orientedDelta > 0.00000001 ? 'improved' : 'not_improved',
+            'metric' => (string) data_get($candidateMeasurement, 'metric'),
+            'direction' => (string) data_get($candidateMeasurement, 'direction'),
+            'candidate_value' => (float) $candidateValue,
+            'baseline_value' => (float) $baselineValue,
+            'raw_delta' => round($rawDelta, 8),
+            'oriented_delta' => round($orientedDelta, 8),
+            'passed' => $orientedDelta > 0.00000001,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function invariantVector(array $result): array
+    {
+        $calibration = $this->firstNumber($result, [
+            'statistical_evidence.edge_quality.confidence_calibration.calibration_score',
+            'confidence_calibration.calibration_score',
+        ]);
+        if ($calibration !== null && $calibration > 1) {
+            $calibration /= 100;
+        }
+
+        return [
+            'protocol' => 'causal_invariant_vector_v1',
+            'edge_quality' => $this->firstNumber($result, ['pf_attribution.summary.net_pf', 'profit_factor']),
+            'stress_cost' => $this->firstNumber($result, [
+                'pf_attribution.stress_cost.profit_factor', 'screening_survival.stress_cost_pf',
+            ]),
+            'cost_efficiency' => $this->firstNumber($result, [
+                'pf_attribution.summary.cost_to_gross_profit_percent',
+            ]),
+            'drawdown' => $this->firstNumber($result, ['max_drawdown_percent', 'max_drawdown']),
+            'risk_of_ruin' => $this->firstNumber($result, ['monte_carlo.risk_of_ruin_percent', 'risk_of_ruin_percent']),
+            'temporal_stability' => $this->firstNumber($result, [
+                'statistical_evidence.edge_quality.worst_fold_profit_factor',
+                'screening_survival.worst_temporal_chunk_pf', 'screening_survival.worst_window_pf',
+            ]),
+            'regime_coverage' => $this->firstNumber($result, [
+                'statistical_evidence.edge_quality.worst_regime_pf', 'screening_survival.worst_regime_pf',
+            ]),
+            'volatility_stability' => $this->minimumGroupedNumber($result, 'pf_attribution.by_volatility'),
+            'session_stability' => $this->minimumGroupedNumber($result, 'pf_attribution.by_session'),
+            'calibration' => $calibration,
+            'abstention_quality' => $this->firstNumber($result, ['opportunity_recall.abstention_precision']),
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function compareNonTargetInvariants(array $candidate, array $baseline, string $target): array
+    {
+        $candidateVector = (array) data_get($candidate, 'invariant_vector', []);
+        $baselineVector = (array) data_get($baseline, 'invariant_vector', []);
+        $excluded = match (strtolower(trim($target))) {
+            'profit_factor', 'architecture' => ['edge_quality'],
+            'stress_cost' => ['stress_cost', 'cost_efficiency'],
+            'volatility_session_stability' => ['volatility_stability', 'session_stability'],
+            'exit_topology' => ['edge_quality', 'drawdown'],
+            'risk_exit', 'drawdown_risk' => ['drawdown', 'risk_of_ruin'],
+            'transition_firewall' => ['temporal_stability', 'regime_coverage'],
+            'portfolio_router' => ['calibration', 'abstention_quality'],
+            'temporal_stability', 'monthly_survival', 'robustness' => ['temporal_stability'],
+            'regime_coverage', 'rolling_regime' => ['regime_coverage'],
+            'drawdown', 'max_drawdown' => ['drawdown'],
+            'risk' => ['risk_of_ruin'],
+            default => [],
+        };
+        $definitions = [
+            'edge_quality' => ['direction' => 'higher', 'tolerance' => .02, 'required' => true],
+            'stress_cost' => ['direction' => 'higher', 'tolerance' => .02, 'required' => false],
+            'cost_efficiency' => ['direction' => 'lower', 'tolerance' => 1.0, 'required' => true],
+            'drawdown' => ['direction' => 'lower', 'tolerance' => 1.0, 'required' => true],
+            'risk_of_ruin' => ['direction' => 'lower', 'tolerance' => 1.0, 'required' => true],
+            'temporal_stability' => ['direction' => 'higher', 'tolerance' => .02, 'required' => true],
+            'regime_coverage' => ['direction' => 'higher', 'tolerance' => .02, 'required' => true],
+            'volatility_stability' => ['direction' => 'higher', 'tolerance' => .02, 'required' => true],
+            'session_stability' => ['direction' => 'higher', 'tolerance' => .02, 'required' => true],
+            'calibration' => ['direction' => 'higher', 'tolerance' => .03, 'required' => true],
+            'abstention_quality' => ['direction' => 'higher', 'tolerance' => .03, 'required' => true],
+        ];
+        $comparisons = [];
+        $missingRequired = [];
+        $regressed = [];
+        foreach ($definitions as $metric => $definition) {
+            if (in_array($metric, $excluded, true)) {
+                continue;
+            }
+            $candidateValue = $candidateVector[$metric] ?? null;
+            $baselineValue = $baselineVector[$metric] ?? null;
+            if (! is_numeric($candidateValue) || ! is_numeric($baselineValue)) {
+                if ($definition['required']) {
+                    $missingRequired[] = $metric;
+                }
+
+                continue;
+            }
+            $delta = (float) $candidateValue - (float) $baselineValue;
+            $failed = $definition['direction'] === 'lower'
+                ? $delta > (float) $definition['tolerance']
+                : $delta < -(float) $definition['tolerance'];
+            if ($failed) {
+                $regressed[] = $metric;
+            }
+            $comparisons[$metric] = [
+                'candidate' => (float) $candidateValue,
+                'baseline' => (float) $baselineValue,
+                'delta' => round($delta, 8),
+                'direction' => $definition['direction'],
+                'tolerance' => $definition['tolerance'],
+                'passed' => ! $failed,
+            ];
+        }
+        $status = $missingRequired !== []
+            ? 'incomplete'
+            : ($regressed !== [] ? 'failed' : 'passed');
+
+        return [
+            'protocol' => 'causal_non_target_invariants_v1',
+            'status' => $status,
+            'safe' => $status === 'passed',
+            'target' => strtolower(trim($target)),
+            'excluded_target_metrics' => $excluded,
+            'comparisons' => $comparisons,
+            'missing_required_metrics' => $missingRequired,
+            'regressed_metrics' => $regressed,
+            'source' => 'paired_full_replay_invariant_vectors',
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @param list<string> $paths */
+    private function firstNumber(array $values, array $paths): ?float
+    {
+        foreach ($paths as $path) {
+            $value = data_get($values, $path);
+            if (is_numeric($value)) {
+                return (float) $value;
+            }
+        }
+
+        return null;
+    }
+
+    /** @return array{metric:string,direction:string,value:?float,source:?string} */
+    private function metricMeasurement(
+        array $result,
+        string $metric,
+        string $direction,
+        array $paths,
+        bool $normalizePercent = false,
+    ): array {
+        $observed = $this->firstNumberWithPath($result, $paths);
+        $value = $observed['value'] ?? null;
+        if ($normalizePercent && $value !== null && $value > 1) {
+            $value /= 100;
+        }
+
+        return [
+            'metric' => $metric,
+            'direction' => $direction,
+            'value' => $value,
+            'source' => $observed['path'] ?? null,
+        ];
+    }
+
+    /** @param array{metric:string,direction:string,value:?float,source:?string} $measurement */
+    private function singleTargetMeasurement(string $target, array $measurement): array
+    {
+        return [
+            'protocol' => 'declared_target_measurement_v2',
+            'target' => $target,
+            ...$measurement,
+            'status' => is_numeric($measurement['value'] ?? null) ? 'observed' : 'missing',
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @param array<string,array{metric:string,direction:string,value:?float,source:?string}> $components */
+    private function compositeTargetMeasurement(string $target, array $components): array
+    {
+        $missing = collect($components)
+            ->filter(fn (array $component): bool => ! is_numeric($component['value'] ?? null))
+            ->keys()->values()->all();
+
+        return [
+            'protocol' => 'declared_composite_target_measurement_v1',
+            'target' => $target,
+            'components' => $components,
+            'missing_components' => $missing,
+            'status' => $missing === [] ? 'observed' : 'missing',
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array{value:float,path:string}|null */
+    private function firstNumberWithPath(array $values, array $paths): ?array
+    {
+        foreach ($paths as $path) {
+            $value = data_get($values, $path);
+            if (is_numeric($value)) {
+                return ['value' => (float) $value, 'path' => (string) $path];
+            }
+        }
+
+        return null;
+    }
+
+    private function minimumGroupedNumber(
+        array $result,
+        string $groupPath,
+        string $metric = 'net_pf',
+        int $minimumTrades = 8,
+    ): ?float {
+        $values = collect((array) data_get($result, $groupPath, []))
+            ->filter(fn ($row): bool => is_array($row)
+                && (int) data_get($row, 'trades', 0) >= $minimumTrades
+                && is_numeric(data_get($row, $metric)))
+            ->map(fn (array $row): float => (float) data_get($row, $metric));
+
+        return $values->isEmpty() ? null : (float) $values->min();
+    }
+
     private function windowScore(array $window): ?float
     {
-        if (is_numeric(data_get($window, 'score'))) return (float) data_get($window, 'score');
-        if (is_numeric(data_get($window, 'net_profit_percent'))) return (float) data_get($window, 'net_profit_percent');
-        if (is_numeric(data_get($window, 'profit_factor'))) return (float) data_get($window, 'profit_factor') - 1.0;
+        if (is_numeric(data_get($window, 'score'))) {
+            return (float) data_get($window, 'score');
+        }
+        if (is_numeric(data_get($window, 'net_profit_percent'))) {
+            return (float) data_get($window, 'net_profit_percent');
+        }
+        if (is_numeric(data_get($window, 'profit_factor'))) {
+            return (float) data_get($window, 'profit_factor') - 1.0;
+        }
 
         return null;
     }
 
     private function nonTargetSafe(?LabLearningLanePair $pair): bool
     {
-        if (! $pair) return false;
+        if (! $pair) {
+            return false;
+        }
         $evidence = (array) $pair->non_target_regression;
         $status = (string) data_get($evidence, 'status', 'not_recorded');
 
         return data_get($evidence, 'safe') === true
-            || in_array($status, ['', 'not_recorded', 'not_applicable', 'passed', 'confirmed'], true);
+            && in_array($status, ['passed', 'confirmed'], true);
     }
 
     private function guidedRole(AgentLearningCausalExperiment $experiment): string

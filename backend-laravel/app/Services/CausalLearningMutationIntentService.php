@@ -27,6 +27,66 @@ class CausalLearningMutationIntentService
 {
     public const PROTOCOL = 'causal_learning_mutation_intent_v1';
 
+    /**
+     * Build the mutation from retrieved memory, before any random/bandit
+     * selector runs. Only an exact-context, canonical positive lesson with an
+     * executable cartridge may produce a change. Everything else abstains.
+     *
+     * @param  array<string,mixed>  $packet
+     * @param  array<string,mixed>  $base
+     * @param  array<string,array<int,mixed>>  $schema
+     * @param  list<string>  $legalGenes
+     * @return array<string,mixed>
+     */
+    public function selectIntervention(array $packet, array $base, array $schema, array $legalGenes): array
+    {
+        $records = collect((array) data_get($packet, 'positive_lessons', []))
+            ->filter(fn ($row): bool => is_array($row)
+                && (string) data_get($row, 'provenance') === 'canonical_settled'
+                && in_array((string) data_get($row, 'match_level'), ['exact_context', 'pre_registered_causal_source'], true))
+            ->sortByDesc(fn (array $row): float => (float) data_get($row, 'score', 0));
+
+        foreach ($records as $record) {
+            $lesson = AgentLearningLesson::query()->find((int) data_get($record, 'lesson_id', 0));
+            if (! $lesson || ! $this->canonicalPositive($lesson)) {
+                continue;
+            }
+            $cartridge = app(CanonicalSkillCartridgeService::class)->retrieveForLesson($lesson);
+            $gene = (string) data_get($cartridge, 'gene');
+            if (data_get($cartridge, 'status') !== 'compatible_cartridge_found'
+                || $gene === '' || ! in_array($gene, $legalGenes, true)
+                || ! array_key_exists($gene, $base) || ! isset($schema[$gene])) {
+                continue;
+            }
+            $old = data_get($cartridge, 'old_value');
+            $new = data_get($cartridge, 'proposed_value');
+            if (! $this->same($base[$gene], $old) || $this->same($old, $new)
+                || ! $this->validSchemaValue((array) $schema[$gene], $new)) {
+                continue;
+            }
+            $parameters = $base;
+            $parameters[$gene] = $new;
+
+            return [
+                'status' => 'selected',
+                'parameters' => $parameters,
+                'gene' => $gene,
+                'source_lesson_id' => (int) $lesson->id,
+                'source_retrieval_id' => data_get($record, 'retrieval_id'),
+                'skill_cartridge' => $cartridge,
+                'selection_order' => 'retrieve_then_build_exact_mutation',
+                'promotion_evidence' => false,
+            ];
+        }
+
+        return [
+            'status' => 'memory_abstained',
+            'reason' => 'NO_EXACT_CONTEXT_CANONICAL_EXECUTABLE_INTERVENTION',
+            'selection_order' => 'retrieve_then_build_exact_mutation',
+            'promotion_evidence' => false,
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function plan(
         LabGeneration $generation,
@@ -37,6 +97,7 @@ class CausalLearningMutationIntentService
         array $parameters,
         array $parameterDiff,
         ?string $cohortRole = null,
+        ?array $skillCartridge = null,
     ): array {
         $changedGenes = array_values(array_map('strval', array_keys($parameterDiff)));
         $selectedGene = count($changedGenes) === 1 ? $changedGenes[0] : null;
@@ -55,7 +116,9 @@ class CausalLearningMutationIntentService
         $causalRetrievalIds = collect();
         foreach ($selectedRecords as $record) {
             $lesson = $lessons->get((int) data_get($record, 'lesson_id'));
-            if (! $lesson || (string) data_get($record, 'provenance') !== 'canonical_settled') {
+            if (! $lesson
+                || (string) data_get($record, 'provenance') !== 'canonical_settled'
+                || ! in_array((string) data_get($record, 'match_level'), ['exact_context', 'pre_registered_causal_source'], true)) {
                 continue;
             }
             if (! $this->canonicalPositive($lesson) || ! $this->matchesMutation($lesson, $parameterDiff)) {
@@ -64,6 +127,15 @@ class CausalLearningMutationIntentService
             $causalLessonIds->push((int) $lesson->id);
             if (filled(data_get($record, 'retrieval_id'))) {
                 $causalRetrievalIds->push((string) data_get($record, 'retrieval_id'));
+            }
+        }
+        if ($skillCartridge === null && $causalLessonIds->isNotEmpty()) {
+            $source = $lessons->get((int) $causalLessonIds->first());
+            if ($source instanceof AgentLearningLesson) {
+                $resolved = app(CanonicalSkillCartridgeService::class)->retrieveForLesson($source);
+                if (data_get($resolved, 'status') === 'compatible_cartridge_found') {
+                    $skillCartridge = $resolved;
+                }
             }
         }
         $packetId = filled(data_get($packet, 'packet_id')) ? (string) data_get($packet, 'packet_id') : null;
@@ -110,6 +182,7 @@ class CausalLearningMutationIntentService
             'mutation_hash' => $mutationHash,
             'retrieved_at' => $retrievedAt ? Carbon::parse($retrievedAt) : null,
             'cohort_role' => $cohortRole,
+            'skill_cartridge' => $skillCartridge,
             'causal_order' => [
                 'retrieval_sequence' => 1,
                 'mutation_seal_sequence' => 2,
@@ -325,6 +398,22 @@ class CausalLearningMutationIntentService
 
         return json_encode($left, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)
             === json_encode($right, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES);
+    }
+
+    /** @param array<int,mixed> $definition */
+    private function validSchemaValue(array $definition, mixed $value): bool
+    {
+        [$type, $minimum, $maximum] = array_pad($definition, 3, null);
+
+        return match ((string) $type) {
+            'boolean' => is_bool($value),
+            'integer' => is_int($value) && is_numeric($minimum) && is_numeric($maximum)
+                && $value >= (int) $minimum && $value <= (int) $maximum,
+            'numeric', 'number', 'float' => is_numeric($value) && is_numeric($minimum) && is_numeric($maximum)
+                && (float) $value >= (float) $minimum && (float) $value <= (float) $maximum,
+            'string' => is_string($value) && (is_array($minimum) ? in_array($value, $minimum, true) : true),
+            default => false,
+        };
     }
 
     private function hash(array $payload): string

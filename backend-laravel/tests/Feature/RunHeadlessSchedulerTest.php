@@ -6,6 +6,7 @@ use App\Console\Commands\RunHeadlessScheduler;
 use App\Services\RuntimeMonitoringService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -48,6 +49,7 @@ class RunHeadlessSchedulerTest extends TestCase
 
     public function test_scheduler_can_recover_a_stale_lease_from_a_dead_process_on_the_same_host(): void
     {
+        Log::spy();
         $leaseKey = 'test:headless-scheduler:stale-owner';
         $owner = Cache::lock($leaseKey, 900);
         $this->assertTrue($owner->get());
@@ -65,6 +67,12 @@ class RunHeadlessSchedulerTest extends TestCase
 
             $this->assertTrue($method->invoke(app(RunHeadlessScheduler::class), $contender, $leaseKey, 30));
             $this->assertTrue($contender->get());
+            Log::shouldHaveReceived('warning')->once()->withArgs(
+                fn (string $message, array $context): bool => $message === 'Recovered a stale headless scheduler lease from a dead local process.'
+                    && $context['lease_key'] === $leaseKey
+                    && $context['stale_pid'] === 99999999,
+            );
+            Log::shouldNotHaveReceived('critical');
             $contender->release();
         } finally {
             $owner->forceRelease();

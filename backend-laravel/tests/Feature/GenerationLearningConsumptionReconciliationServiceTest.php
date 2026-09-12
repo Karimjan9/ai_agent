@@ -33,9 +33,11 @@ class GenerationLearningConsumptionReconciliationServiceTest extends TestCase
             'ai_laboratory_id' => $lab->id, 'generation' => 2, 'trigger_type' => 'operator_successor',
             'population_size' => 2, 'status' => 'queued', 'trigger_context' => [],
         ]);
-        $parameters = app(StrategyParameterSchemaService::class)->defaults('differential_router');
-        $candidateModel = $this->model('canonical-retrieval-candidate', $parameters);
-        $controlModel = $this->model('canonical-retrieval-control', $parameters);
+        $controlParameters = app(StrategyParameterSchemaService::class)->defaults('differential_router');
+        $candidateParameters = $controlParameters;
+        $candidateParameters['state_machine_variant'] = 'neutral_transition_cooldown_reentry_v1';
+        $candidateModel = $this->model('canonical-retrieval-candidate', $candidateParameters);
+        $controlModel = $this->model('canonical-retrieval-control', $controlParameters);
         $candidate = $this->agent($generation, $candidateModel, [
             'state_machine_variant' => ['old' => 'none', 'new' => 'neutral_transition_cooldown_reentry_v1'],
         ]);

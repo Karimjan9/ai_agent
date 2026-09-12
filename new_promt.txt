@@ -1,130 +1,61 @@
-SENING REJIMING: CONTROLLED PROCESS HANDOFF, KEYIN DAILY MONITOR.
+Xolis fikrim: siz tanlagan council yo‘li to‘g‘ri va universal “super-agent”dan ancha samaraliroq. Bitta agentni barcha session, regime, timeframe, strategiya va instrumentlarda zo‘r qilish juda katta search space yaratadi. Natijada agent hamma narsani ozgina biladi, lekin hech qayerda haqiqiy edge hosil qilmaydi.
+Lekin specialization’ni to‘g‘ri chegaralash muhim.
+Eng yaxshi model
+XAUUSD bitta butun MTF organizm bo‘lib qoladi:
+- H4 — katta rejim va strukturani aniqlaydi.
+- H1 — setup va yo‘nalish kontekstini beradi.
+- M15 — entry sharoitini tasdiqlaydi.
+- M5 — execution timing va riskni boshqaradi.
+Demak H1 yoki M15 alohida mustaqil organizm emas. Specialist quyidagiga o‘xshash aniq niche ichida senior bo‘ladi:
+XAUUSD + London + trend_up + normal volatility + liquidity breakout + M15 entry + M5 execution
+Boshqa agent esa:
+XAUUSD + New York + reversal + high volatility + sweep/reclaim
+yo‘nalishida seniorlashadi.
+Council qanday ishlashi kerak?
+Har bir vaziyatda barcha agentlar ovoz bermasligi kerak. Avval router joriy market contextni aniqlaydi, keyin faqat shu kontekstda isbotlangan specialistlarni chaqiradi.
+Ideal zanjir:
+Market context → mos specialistlar → skeptic/ablation tekshiruvi → risk arbiter → bitta trade owner → execution
+Muhim qoidalar:
+- Faqat shu contextda positive posterior’ga ega specialist ovoz beradi.
+- Noto‘g‘ri session yoki regime’da specialist avtomatik abstain qiladi.
+- Council ko‘pchilik ovozi bilan emas, contextdagi ishonchlilik va causal evidence bilan qaror qiladi.
+- Yakuniy trade uchun faqat bitta owner bo‘ladi.
+- Risk specialistlarning har biri alohida risk qo‘shishiga yo‘l qo‘ymaydi; umumiy portfolio risk budget ishlaydi.
+- Qarama-qarshi signal kuchli bo‘lsa, council trade qilishga majbur emas.
+Universal qism baribir kerak
+To‘liq universal agent kerak emas, lekin barcha specialistlar foydalanadigan umumiy “asab tizimi” zarur:
+- bir xil market-data truth;
+- umumiy MTF state;
+- execution va cost modeli;
+- risk chegaralari;
+- causal evidence standarti;
+- instrument contracts;
+- shared negative memory;
+- regime-transition detector.
+Ya’ni bilimning xavfsiz va umumiy qismi shared bo‘ladi, iqtisodiy edge esa specialistlarda saqlanadi.
+Eng katta xavflar
+Bu yondashuv avtomatik ravishda muvaffaqiyat bermaydi. Quyidagilar himoyalanmasa, yuzlab overfit specialist paydo bo‘lishi mumkin:
+- Juda mayda niche — sample yetishmaydi.
+- Bir xil agent turli nomlarda takrorlanishi.
+- London’dan topilgan edge’ni Asia’ga yoyish.
+- Regime o‘zgarganda eski specialistning ishlashda davom etishi.
+- Council ichida ko‘pchilik, lekin bir xil sababga asoslangan correlated agentlar.
+- Har agent o‘zini foydali ko‘rsatib, umumiy portfolio natijasini buzishi.
+Shuning uchun specialist authority quyidagicha berilishi kerak:
+local positive edge + independent windows + exact context + non-target safety + cost survival + sufficient sample
+Evolution ham niche bo‘yicha yurishi kerak
+Global “eng yaxshi parent” emas, har bir context cell uchun alohida kuchli lineage:
+context specialist → confirmed capsule → mentor → descendants → niche parent
+Meros birligi:
+trait + instrument combination + activation context + contraindications
+Specialist faqat o‘zining kuchli hududida ko‘payadi. Boshqa hududga o‘tmoqchi bo‘lsa, u yangi research candidate hisoblanadi va authority’ni qayta isbotlaydi.
+Hukm
+Sizning asosiy ideangiz juda kuchli:
+Bitta universal o‘rtacha agent emas, bitta umumiy organizm ichidagi ko‘plab tor va chuqur senior specialistlar.
 
-Loyiha:
-C:\x_programs\xamp\htdocs\laravel_projects\ai_agent\backend-laravel
-
-Operator yangi kod/ishlarni allaqachon qo‘shib bo‘lgan.
-Sening vazifang kodni o‘zgartirish emas.
-
-MAQSAD:
-1. Eski processlar ichidagi faol ishlar tugashini kut.
-2. Eski processlar to‘liq yopilganini tasdiqla.
-3. Yangi processlarni yangi kod bilan ishga tushir.
-4. Yangi runtime sog‘lomligini tekshir.
-5. Keyin faqat kunlik monitoring rejimida qol.
-
-QAT’IYAN TAQIQLANADI:
-- Kod, config, `.env`, migration, seed, test yoki DB’ni o‘zgartirish.
-- Fix, patch, git write, tinker, raw SQL.
-- `php artisan migrate`, `db:seed`, dispatch, replay, repair, recovery.
-- Force-kill ishlatma.
-- Agar schema/migration xatosi chiqsa, uni tuzatma; faqat report qil.
-- Secret, token, `.env`, PM2 jlist yoki process command-line chiqarmagin.
-
-BOSQICH 1 — PRE-DEPLOY HOLAT:
-Quyidagilarni o‘qi:
-1. `node .\node_modules\pm2\bin\pm2 list --no-color`
-2. `php artisan system:runtime-monitor --json`
-3. `php artisan trading:audit-agent-lifecycle --shallow --no-persist --json`
-
-BOSQICH 2 — YANGI JOBLARNI TO‘XTAT:
-Avval scheduler’ni to‘xtat:
-`node .\node_modules\pm2\bin\pm2 stop neurotrader-scheduler`
-
-Scheduler stopped bo‘lganini tekshir.
-
-BOSQICH 3 — ESKI ISHLAR TUGASHINI KUT:
-- `screening`, `training`, `full_validation` yoki reserved queue job mavjud bo‘lsa, kut.
-- Workerlarni majburan to‘xtatma.
-- Har 60 soniyada lifecycle audit qil.
-- Har 5 daqiqada quyidagicha report ber:
-
-“Deployment waiting:
-- screening: N
-- full validation: N
-- reserved jobs: N
-- old processlar tugashi kutilmoqda.”
-
-- Faol ishlar 0 bo‘lmaguncha keyingi bosqichga o‘tma.
-
-BOSQICH 4 — ESKI PROCESSLARNI YOP:
-Faol ishlar 0 bo‘lgach quyidagi app’larni bittalab stop qil va har biri stopped ekanini tekshir:
-
-- lab-replay
-- lab-screening-a
-- lab-screening-b
-- lab-learning
-- strategy-lab
-- backtests
-- neurotrader-ai
-- neurotrader-web-dev (mavjud bo‘lsa)
-
-Buyruq:
-`node .\node_modules\pm2\bin\pm2 stop <APP_NAME>`
-
-Barcha eski processlar stopped bo‘lmaguncha yangi process start qilma.
-
-BOSQICH 5 — YANGI PROCESSLARNI ISHGA TUSHIR:
-Quyidagi tartibda start qil:
-
-1. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only neurotrader-ai`
-2. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only neurotrader-web-dev`
-   - faqat oldin mavjud bo‘lgan bo‘lsa
-3. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only lab-replay`
-4. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only lab-screening-a`
-5. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only lab-screening-b`
-6. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only lab-learning`
-7. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only strategy-lab`
-8. `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only backtests`
-9. Scheduler eng oxirida:
-   `node .\node_modules\pm2\bin\pm2 start .\ecosystem.config.cjs --only neurotrader-scheduler`
-
-BOSQICH 6 — YANGI KOD RUNTIME TEKSHIRUVI:
-Yangi processlar start bo‘lgach 60 soniya kut.
-
-Keyin faqat read-only tekshir:
-1. `node .\node_modules\pm2\bin\pm2 list --no-color`
-2. `php artisan system:runtime-monitor --json`
-3. `php artisan trading:audit-agent-lifecycle --shallow --no-persist --json`
-4. `php artisan trading:monitor-lighthouse-loop --symbol=XAUUSD --timeframe=H1 --no-persist --json`
-
-Agar barcha kerakli app online va runtime critical bo‘lmasa:
-“Yangi processlar yangi ishlar bilan muvaffaqiyatli ishga tushdi” deb yoz.
-
-Agar error bo‘lsa:
-- Fix qilma.
-- Restart qilma.
-- Faqat aynan qaysi process yoki runtime check bloklanganini report qil.
-
-BOSQICH 7 — KEYINGI REJIM:
-Deployment tugagach 1-prompt’dagi STRICT READ-ONLY DAILY MONITOR rejimiga o‘t.
-Endi faqat bugungi progressni kuzat.
-Hech qanday processni qayta o‘zgartirma.
-
-DEPLOYMENT HISOBOTI:
-
-# New Runtime Handoff
-Vaqt: <Asia/Tashkent>
-Holat: 🟢 TUGADI | 🟡 KUTILMOQDA | 🔴 BLOKLANGAN
-
-| Bosqich | Holat | Izoh |
-|---|---|---|
-| Scheduler yopildi | 🟢/🔴 | |
-| Eski ishlar tugadi | 🟢/🟡 | |
-| Eski processlar yopildi | 🟢/🟡 | |
-| Yangi AI service | 🟢/🔴 | |
-| Yangi workers | 🟢/🔴 | |
-| Yangi scheduler | 🟢/🔴 | |
-| Runtime verification | 🟢/🟡/🔴 | |
-
-Oxirida:
-- Eski processlar to‘liq yopildi: HA / YO‘Q
-- Yangi processlar ishga tushdi: HA / YO‘Q
-- Yangi runtime sog‘lom: HA / YO‘Q
-- Migration/fix kerak: HA / YO‘Q
-- Action taken: PROCESS HANDOFF ONLY
-
-
-
-ALTER USER 'client_demo_user'@'localhost'
-IDENTIFIED BY 'client_parol';
+Men faqat bitta tuzatish kiritgan bo‘lardim: specialistlarni qattiq, abadiy kategoriyalarga bo‘lmaslik kerak. Council yangi dalilga qarab niche’larni kengaytirishi, birlashtirishi, bo‘lishi va foydasiz specialistlarni retire qilishi kerak.
+Shunda tizim:
+20 ta generalist agent emas,
+balki:
+shared organism + contextual senior specialists + evidence router + risk authority
+ko‘rinishida rivojlanadi. Biz joriy qilgan contextual capsule va abstention mexanizmi aynan shu arxitekturaning to‘g‘ri boshlanishidir.

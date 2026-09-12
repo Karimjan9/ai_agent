@@ -13,7 +13,7 @@ namespace App\Services;
  */
 class CausalBlindedMutationSelectorService
 {
-    public const PROTOCOL = 'causal_blinded_single_gene_selector_v5';
+    public const PROTOCOL = 'causal_blinded_single_gene_selector_v6';
 
     public const SEMANTIC_PROTOCOL = 'executable_parameter_semantic_distinctness_v1';
 
@@ -87,16 +87,24 @@ class CausalBlindedMutationSelectorService
         ));
         $fallback = array_values(array_filter(
             array_keys($schema),
-            fn (string $gene): bool => $geneAllowed($gene) && array_key_exists($gene, $baseline),
+            fn (string $gene): bool => $geneAllowed($gene)
+                && array_key_exists($gene, $baseline)
+                && ! in_array($gene, $preferred, true),
         ));
-        $keys = array_values(array_unique([...$preferred, ...$fallback]));
-        if ($keys === []) {
+        if ($preferred === [] && $fallback === []) {
             return null;
         }
 
         $seedHash = hash('sha256', self::PROTOCOL.'|'.$experimentSeed.'|'.$family.'|'.$target);
-        $offset = (int) (hexdec(substr($seedHash, 0, 8)) % count($keys));
-        $keys = [...array_slice($keys, $offset), ...array_slice($keys, 0, $offset)];
+        // Randomisation is bounded inside each priority tier. Rotating the
+        // merged list allowed a hash offset to jump directly into the generic
+        // fallback pool, so a regime-coverage experiment could spend its blind
+        // arm on an unrelated trade-management gene without testing any of the
+        // pre-registered target genes. Exhaust the target-specific tier first;
+        // only then may the selector fall back to another executable gene.
+        $preferred = $this->rotate($preferred, substr($seedHash, 0, 8));
+        $fallback = $this->rotate($fallback, substr($seedHash, 8, 8));
+        $keys = [...$preferred, ...$fallback];
         $activations = app(CausalParameterActivationService::class);
         $manifestHash = $activations->hash($activationManifest);
         $skipped = [];
@@ -115,6 +123,7 @@ class CausalBlindedMutationSelectorService
                         'status' => 'semantic_alias',
                         'reason' => 'runtime_maps_both_values_to_the_same_executable_branch',
                     ];
+
                     continue;
                 }
                 if ($gene === $guidedGene && ! $this->different($value, $guidedValue)) {
@@ -123,6 +132,7 @@ class CausalBlindedMutationSelectorService
                 $activation = $activations->status($gene, $old, $value, $activationManifest, $baseline);
                 if ((string) $activation['status'] === 'unsupported') {
                     $skipped[] = $activation;
+
                     continue;
                 }
 
@@ -145,6 +155,8 @@ class CausalBlindedMutationSelectorService
                     'selection_hash' => $selectionHash,
                     'memory_inputs' => 0,
                     'feasibility_inputs' => $manifestHash === null ? 0 : 1,
+                    'selection_tier' => in_array($gene, $preferred, true) ? 'target_preferred' : 'schema_fallback',
+                    'target_preferred_gene_count' => count($preferred),
                     'feasibility_screen' => [
                         'protocol' => CausalParameterActivationService::MASK_PROTOCOL,
                         'status' => (string) $activation['status'],
@@ -162,6 +174,18 @@ class CausalBlindedMutationSelectorService
         }
 
         return null;
+    }
+
+    /** @param array<int, string> $keys @return array<int, string> */
+    private function rotate(array $keys, string $hashSegment): array
+    {
+        if (count($keys) < 2) {
+            return $keys;
+        }
+
+        $offset = (int) (hexdec($hashSegment) % count($keys));
+
+        return [...array_slice($keys, $offset), ...array_slice($keys, 0, $offset)];
     }
 
     /** @return array<int, mixed> */

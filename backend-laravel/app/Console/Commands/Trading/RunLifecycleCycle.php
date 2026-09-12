@@ -9,13 +9,14 @@ use Symfony\Component\Console\Input\InputOption;
 class RunLifecycleCycle extends Command
 {
     protected $name = 'trading:run-lifecycle-cycle';
-    protected $description = 'Run one safe, idempotent, resumable NeuroTrader agent lifecycle cycle for a symbol/timeframe.';
+
+    protected $description = 'Run one safe, idempotent lifecycle cycle for the governed XAUUSD multi-timeframe organism.';
 
     protected function getOptions(): array
     {
         return [
             ['symbol', null, InputOption::VALUE_OPTIONAL, 'Trading symbol, e.g. XAUUSD', null],
-            ['timeframe', null, InputOption::VALUE_OPTIONAL, 'Timeframe, e.g. H1', 'H1'],
+            ['timeframe', null, InputOption::VALUE_OPTIONAL, 'Internal laboratory storage key; XAUUSD is always routed to its organism anchor', null],
             ['cycle-id', null, InputOption::VALUE_OPTIONAL, 'Explicit cycle ID for resumption', null],
             ['start-cycle', null, InputOption::VALUE_NONE, 'Explicitly start one successor cycle despite a learning pause; promotion gates remain active'],
             ['json', null, InputOption::VALUE_NONE, 'Output machine-readable JSON'],
@@ -25,11 +26,12 @@ class RunLifecycleCycle extends Command
     public function handle(LabLifecycleOrchestrator $orchestrator): int
     {
         $symbol = $this->option('symbol') ?? config('services.lighthouse.symbol', 'XAUUSD');
-        $timeframe = (string) $this->option('timeframe');
+        $timeframe = (string) ($this->option('timeframe') ?: config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'));
         $cycleId = $this->option('cycle-id') ? (string) $this->option('cycle-id') : null;
 
         if (! (bool) config('services.lifecycle_orchestrator.enabled', true)) {
             $this->warn('Lifecycle orchestrator is disabled (NEUROTRADER_LIFECYCLE_ENABLED=false).');
+
             return 1;
         }
 
@@ -37,13 +39,22 @@ class RunLifecycleCycle extends Command
 
         if ($this->option('json')) {
             $this->line(json_encode($result, JSON_UNESCAPED_SLASHES));
+
             return (int) ($result['status'] === 'blocked' ? 1 : 0);
         }
 
-        $this->info(sprintf('[%s] %s:%s → status=%s stage=%s',
+        $resultSymbol = strtoupper((string) $result['symbol']);
+        $scope = $resultSymbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
+            ? sprintf(
+                '%s organism (storage=%s, execution=%s)',
+                $resultSymbol,
+                $result['timeframe'],
+                strtoupper((string) config('services.xauusd_organism.execution_timeframe', 'M5')),
+            )
+            : $resultSymbol.':'.$result['timeframe'];
+        $this->info(sprintf('[%s] %s -> status=%s stage=%s',
             $result['cycle_id'] ?? 'cycle',
-            strtoupper($result['symbol']),
-            $result['timeframe'],
+            $scope,
             $result['status'],
             $result['stage'] ?? '-',
         ));

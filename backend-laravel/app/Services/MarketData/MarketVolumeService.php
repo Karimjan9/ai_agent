@@ -20,8 +20,11 @@ use RuntimeException;
 class MarketVolumeService
 {
     public const PROTOCOL = 'canonical_volume_source_v1';
+
     public const SOURCE_CONTRACT = 'dukascopy_jetta_bid_tick_volume_millions_v1';
+
     public const SEMANTIC = 'tick_volume';
+
     public const UNIT = 'millions';
 
     public function __construct(private DukascopyMarketDataProvider $dukascopy) {}
@@ -55,11 +58,11 @@ class MarketVolumeService
     /**
      * Return the single volume provenance object used by the MTF laboratory.
      *
-     * The execution frame is M15, so Python uses the M15 normalization bucket
-     * while the H1 quality result is retained as part of the immutable data
-     * contract.  A caller may still run a no-volume control when this object
-     * is unavailable, but a volume-dependent hypothesis must require both
-     * source checks to pass before it is replayed.
+     * M15 owns setup/confirmation volume and M5 owns final execution. Python
+     * therefore consumes this M15 normalization as contextual evidence while
+     * the H1 regime quality stays in the same immutable organism contract. A
+     * caller may still run a no-volume control when this object is unavailable,
+     * but a volume-dependent hypothesis must require both source checks.
      *
      * @return array<string, mixed>
      */
@@ -129,7 +132,9 @@ class MarketVolumeService
             if ($chunkEnd->lessThanOrEqualTo($cursor)) {
                 $chunkEnd = $timeframe === 'M15' ? $cursor->addDay() : $cursor->addMonth();
             }
-            if ($chunkEnd->greaterThan($to)) $chunkEnd = $to;
+            if ($chunkEnd->greaterThan($to)) {
+                $chunkEnd = $to;
+            }
             $rows = $this->dukascopy->fetchCandles(
                 symbol: $symbol,
                 providerSymbol: strtolower($symbol),
@@ -226,8 +231,12 @@ class MarketVolumeService
         $timeframe = strtoupper($timeframe);
         $priceQuery = Candle::query()->whereHas('symbol', fn ($query) => $query->where('code', $symbol))
             ->where('timeframe', $timeframe);
-        if ($from) $priceQuery->where('time', '>=', CarbonImmutable::instance($from)->utc());
-        if ($to) $priceQuery->where('time', '<', CarbonImmutable::instance($to)->utc());
+        if ($from) {
+            $priceQuery->where('time', '>=', CarbonImmutable::instance($from)->utc());
+        }
+        if ($to) {
+            $priceQuery->where('time', '<', CarbonImmutable::instance($to)->utc());
+        }
         $priceRows = $priceQuery->orderBy('time')->get(['time']);
         $priceRowCount = $priceRows->count();
         $first = $priceRows->first()?->time;
@@ -242,17 +251,25 @@ class MarketVolumeService
             ->where('source_contract', self::SOURCE_CONTRACT)
             ->where('symbol', $symbol)
             ->where('timeframe', $timeframe);
-        if ($from) $volumeQuery->where('time', '>=', CarbonImmutable::instance($from)->utc());
-        if ($to) $volumeQuery->where('time', '<', CarbonImmutable::instance($to)->utc());
+        if ($from) {
+            $volumeQuery->where('time', '>=', CarbonImmutable::instance($from)->utc());
+        }
+        if ($to) {
+            $volumeQuery->where('time', '<', CarbonImmutable::instance($to)->utc());
+        }
         $volumeRows = $volumeQuery->orderBy('time')->get(['time', 'raw_volume', 'status']);
         $byTime = $volumeRows->keyBy(fn (MarketVolumeObservation $row): string => $this->timeKey($row->time));
         $matched = 0;
         $usable = 0;
         foreach ($eligiblePriceRows as $price) {
             $volume = $byTime->get($this->timeKey($price->time));
-            if (! $volume) continue;
+            if (! $volume) {
+                continue;
+            }
             $matched++;
-            if ((float) $volume->raw_volume > 0 && $volume->status === 'usable') $usable++;
+            if ((float) $volume->raw_volume > 0 && $volume->status === 'usable') {
+                $usable++;
+            }
         }
         $coverage = $expected > 0 ? $matched / $expected : 0.0;
         $usableRatio = $expected > 0 ? $usable / $expected : 0.0;
@@ -268,14 +285,30 @@ class MarketVolumeService
         $minCoverage = (float) config('services.market_volume.minimum_coverage', .95);
         $minUsable = (float) config('services.market_volume.minimum_usable_ratio', .95);
         $reasons = [];
-        if ($expected === 0) $reasons[] = 'NO_PRICE_ROWS';
-        if ($coverage < $minCoverage) $reasons[] = 'VOLUME_COVERAGE_BELOW_THRESHOLD';
-        if ($usableRatio < $minUsable) $reasons[] = 'VOLUME_ZERO_OR_UNAVAILABLE_RATIO_ABOVE_THRESHOLD';
-        if ($expected > 0 && ! $lastVolume) $reasons[] = 'VOLUME_LATEST_OBSERVATION_MISSING';
-        if ($lagSeconds !== null && $lagSeconds < 0) $reasons[] = 'VOLUME_FUTURE_OBSERVATION';
-        if ($lagSeconds !== null && $lagSeconds > ($maxLagHours * 3600)) $reasons[] = 'VOLUME_STALE_LAG';
-        if (strtolower((string) config('services.market_volume.provider', 'dukascopy')) !== 'dukascopy') $reasons[] = 'VOLUME_SOURCE_CONTRACT_MISMATCH';
-        if (strtolower((string) config('services.market_volume.transport', 'jetta')) !== 'jetta') $reasons[] = 'VOLUME_TRANSPORT_CONTRACT_MISMATCH';
+        if ($expected === 0) {
+            $reasons[] = 'NO_PRICE_ROWS';
+        }
+        if ($coverage < $minCoverage) {
+            $reasons[] = 'VOLUME_COVERAGE_BELOW_THRESHOLD';
+        }
+        if ($usableRatio < $minUsable) {
+            $reasons[] = 'VOLUME_ZERO_OR_UNAVAILABLE_RATIO_ABOVE_THRESHOLD';
+        }
+        if ($expected > 0 && ! $lastVolume) {
+            $reasons[] = 'VOLUME_LATEST_OBSERVATION_MISSING';
+        }
+        if ($lagSeconds !== null && $lagSeconds < 0) {
+            $reasons[] = 'VOLUME_FUTURE_OBSERVATION';
+        }
+        if ($lagSeconds !== null && $lagSeconds > ($maxLagHours * 3600)) {
+            $reasons[] = 'VOLUME_STALE_LAG';
+        }
+        if (strtolower((string) config('services.market_volume.provider', 'dukascopy')) !== 'dukascopy') {
+            $reasons[] = 'VOLUME_SOURCE_CONTRACT_MISMATCH';
+        }
+        if (strtolower((string) config('services.market_volume.transport', 'jetta')) !== 'jetta') {
+            $reasons[] = 'VOLUME_TRANSPORT_CONTRACT_MISMATCH';
+        }
 
         $raw = $volumeRows->pluck('raw_volume')->map(fn ($value): float => (float) $value)->filter(fn (float $value): bool => $value > 0);
 
@@ -347,6 +380,7 @@ class MarketVolumeService
     {
         $symbolId = Symbol::query()->where('code', $symbol)->value('id');
         $value = $symbolId ? Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $timeframe)->min('time') : null;
+
         return $value ? CarbonImmutable::parse($value, 'UTC') : null;
     }
 
@@ -354,7 +388,9 @@ class MarketVolumeService
     {
         $symbolId = Symbol::query()->where('code', $symbol)->value('id');
         $value = $symbolId ? Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $timeframe)->max('time') : null;
-        if (! $value) return null;
+        if (! $value) {
+            return null;
+        }
         $end = CarbonImmutable::parse($value, 'UTC');
 
         return strtoupper($timeframe) === 'M15' ? $end->addMinutes(15) : $end->addHour();
@@ -395,16 +431,26 @@ class MarketVolumeService
         // Sunday at 21:00 and closes Friday at 21:00. XAU opens Sunday at
         // 23:00, closes Friday at 22:00, and has a daily 22:00 maintenance
         // hour. M15 keeps the minute boundary exact.
-        if ($candle->dayOfWeek === CarbonImmutable::SATURDAY) return false;
+        if ($candle->dayOfWeek === CarbonImmutable::SATURDAY) {
+            return false;
+        }
         if ($symbol === 'XAUUSD') {
-            if ($candle->dayOfWeek === CarbonImmutable::SUNDAY) return $candle->hour >= 23;
-            if ($candle->dayOfWeek === CarbonImmutable::FRIDAY && $candle->hour >= 22) return false;
+            if ($candle->dayOfWeek === CarbonImmutable::SUNDAY) {
+                return $candle->hour >= 23;
+            }
+            if ($candle->dayOfWeek === CarbonImmutable::FRIDAY && $candle->hour >= 22) {
+                return false;
+            }
 
             return $candle->hour !== 22;
         }
 
-        if ($candle->dayOfWeek === CarbonImmutable::SUNDAY) return $candle->hour >= 21;
-        if ($candle->dayOfWeek === CarbonImmutable::FRIDAY && $candle->hour >= 21) return false;
+        if ($candle->dayOfWeek === CarbonImmutable::SUNDAY) {
+            return $candle->hour >= 21;
+        }
+        if ($candle->dayOfWeek === CarbonImmutable::FRIDAY && $candle->hour >= 21) {
+            return false;
+        }
 
         return in_array(strtoupper($timeframe), ['H1', 'M15'], true);
     }

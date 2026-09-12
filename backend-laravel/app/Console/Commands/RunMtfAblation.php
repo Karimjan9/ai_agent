@@ -2,13 +2,11 @@
 
 namespace App\Console\Commands;
 
-use App\Models\ModelMarketPerformance;
 use App\Models\MtfAblationRun;
-use App\Services\ExecutionContractService;
-use App\Services\MarketData\CandlePayloadService;
-use App\Services\MarketData\MarketVolumeService;
-use App\Services\MultiTimeframePilotService;
+use App\Services\AutonomousModeService;
+use App\Services\MtfResearchCohortService;
 use App\Services\MtfResearchSnapshotService;
+use App\Services\MultiTimeframePilotService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
@@ -23,58 +21,35 @@ class RunMtfAblation extends Command
     protected $description = 'Run the four controlled XAUUSD H1/M15 ablation lanes without promotion side effects';
 
     public function handle(
-        CandlePayloadService $candles,
+        MtfResearchCohortService $cohorts,
         MultiTimeframePilotService $pilot,
         StrategyParameterSchemaService $schemas,
-        MarketVolumeService $volumes,
         MtfResearchSnapshotService $snapshots,
+        AutonomousModeService $autonomy,
     ): int {
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', (string) $this->option('symbol')));
-        $candidateQuery = ModelMarketPerformance::with('modelVersion')
-            ->where('symbol', $symbol)
-            ->where('timeframe', 'M15')
-            ->where('evidence_status', 'valid')
-            ->whereHas('modelVersion', fn ($query) => $query->where('evidence_status', 'valid'))
-            // Ablation is research-only, so a valid rejected near-miss is
-            // still a legitimate frozen control when no forward candidate
-            // exists yet. It can never enter paper or promotion from here.
-            ->whereIn('status', ['forward_validated', 'paper', 'rejected'])
-            ->latest('id');
-        if (filled($this->option('candidate'))) {
-            $candidateQuery->whereKey((int) $this->option('candidate'));
+        if (! $autonomy->enabled($symbol, 'H1')) {
+            $this->info('MTF ablation deferred: autonomous mode is stopped; monitoring remains available.');
+
+            return self::SUCCESS;
         }
-        $candidate = $candidateQuery->first();
-        if (! $candidate || ! $candidate->modelVersion) {
-            $this->error("{$symbol} M15 uchun valid research candidate topilmadi; ablation promotion gate emas.");
+        $cohort = $cohorts->current(
+            $symbol,
+            filled($this->option('candidate')) ? (int) $this->option('candidate') : null,
+        );
+        if (($cohort['status'] ?? null) !== 'ready') {
+            $this->error('MTF cohort unavailable: '.(string) ($cohort['reason_code'] ?? 'UNKNOWN'));
+
             return self::FAILURE;
         }
-
-        // Keep the no-volume lane on the same canonical price+volume
-        // snapshot. Its volume_lane is explicit none, so volume can never
-        // alter the frozen control while the data contract stays paired.
-        $m15 = $candles->candlesForTraining($symbol, 'M15', limit: 5000, includeVolume: true);
-        $h1 = $candles->candlesForTraining($symbol, 'H1', limit: 2000, includeVolume: true);
-        if (count($m15) < 200 || count($h1) < 200) {
-            $this->error('Ablation uchun mustaqil M15 va H1 candle stream yetarli emas.');
-            return self::FAILURE;
-        }
-
+        $candidate = $cohort['candidate'];
+        $m15 = (array) $cohort['m15_candles'];
+        $h1 = (array) $cohort['h1_candles'];
         $model = $candidate->modelVersion;
-        $execution = app(ExecutionContractService::class)->for($symbol, 'M15');
-        $volumeContext = $volumes->mtfContext($symbol);
-        $latestH1 = $h1[array_key_last($h1)] ?? [];
-        $latestM15 = $m15[array_key_last($m15)] ?? [];
-        $dataHash = $pilot->hash([
-            'symbol' => $symbol,
-            'h1_count' => count($h1),
-            'm15_count' => count($m15),
-            'h1_first' => data_get($h1[0] ?? [], 'time'),
-            'h1_last' => data_get($latestH1, 'time'),
-            'm15_first' => data_get($m15[0] ?? [], 'time'),
-            'm15_last' => data_get($latestM15, 'time'),
-            'volume_context_hash' => $pilot->hash($volumeContext),
-        ]);
-        $executionHash = (string) data_get($execution, 'execution_hash', '');
+        $execution = (array) $cohort['execution'];
+        $volumeContext = (array) $cohort['volume_context'];
+        $dataHash = (string) $cohort['data_hash'];
+        $executionHash = (string) $cohort['execution_hash'];
         $payload = [
             'symbol' => $symbol,
             'timeframe' => 'M15',
@@ -106,6 +81,7 @@ class RunMtfAblation extends Command
             ]);
         if ($response->failed()) {
             $this->error('MTF ablation AI service xatosi: '.substr((string) $response->body(), 0, 1000));
+
             return self::FAILURE;
         }
 
@@ -148,6 +124,7 @@ class RunMtfAblation extends Command
         $result['execution_hash'] = $executionHash;
         if ($this->option('json')) {
             $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
             return self::SUCCESS;
         }
 

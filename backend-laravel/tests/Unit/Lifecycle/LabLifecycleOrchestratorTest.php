@@ -2,11 +2,14 @@
 
 namespace Tests\Unit\Lifecycle;
 
+use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\ModelVersion;
+use App\Services\GenerationAdmissionDecisionService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabLifecycleErrorLogger;
@@ -16,17 +19,19 @@ use App\Services\LabQueueJobInspector;
 use App\Services\LabQueueStateService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\LearningVelocityGateService;
-use App\Services\SystemLogService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Mockery as m;
 use Tests\TestCase;
 
 class LabLifecycleOrchestratorTest extends TestCase
 {
-    use \Illuminate\Foundation\Testing\RefreshDatabase;
+    use RefreshDatabase;
 
     protected function setUp(): void
     {
@@ -45,17 +50,24 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->cleanLogDir();
     }
 
-    public function test_healthy_empty_state_creates_exactly_one_valid_generation(): void
+    public function test_xauusd_timeframe_alias_routes_to_one_organism_and_creates_exactly_one_generation(): void
     {
         $this->seedLaboratory();
         $this->bindPopulation($paused = false);
 
         $orchestrator = app(LabLifecycleOrchestrator::class);
-        $result = $orchestrator->run('XAUUSD', 'H1', 'tc-001');
+        $result = $orchestrator->run('XAUUSD', 'M15', 'tc-001');
 
         $this->assertSame('completed', $result['status']);
+        $this->assertSame('H1', $result['timeframe']);
         $this->assertGreaterThanOrEqual(1, $result['data']['generation_id'] ?? 0);
         $this->assertCount(1, LabGeneration::all());
+
+        $status = $orchestrator->status('XAUUSD', 'M5');
+        $this->assertSame('XAUUSD', data_get($status, 'organism.scope'));
+        $this->assertSame('symbol', data_get($status, 'organism.population_scope'));
+        $this->assertSame('H1', data_get($status, 'organism.laboratory_storage_timeframe'));
+        $this->assertSame('M5', data_get($status, 'organism.execution_timeframe'));
     }
 
     public function test_repeated_cycle_does_not_duplicate_anything(): void
@@ -70,6 +82,162 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->assertSame('completed', $first['status']);
         $this->assertSame('completed', $second['status']);
         $this->assertCount(1, LabGeneration::all());
+    }
+
+    public function test_audited_terminal_generation_routes_the_successor_to_the_data_edge_root_portfolio(): void
+    {
+        $lab = $this->seedLaboratory();
+        LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 210,
+            'status' => 'screened',
+            'population_size' => 20,
+            'data_fingerprint' => 'audited-terminal-generation',
+            'trigger_type' => 'new_data',
+            'trigger_context' => [
+                'data_edge_audit' => ['protocol' => 'data_edge_audit_v1'],
+                'latest_generation_report' => ['next_action' => 'data_edge_audit_completed'],
+            ],
+        ]);
+        $this->bindPopulation(paused: false, expectedTrigger: 'data_edge_audit');
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-data-edge-successor');
+
+        $this->assertSame('completed', $result['status'], json_encode($result, JSON_PRETTY_PRINT));
+        $this->assertSame('data_edge_audit', LabGeneration::query()->latest('generation')->value('trigger_type'));
+        $this->assertCount(2, LabGeneration::all());
+    }
+
+    public function test_fresh_incomplete_draft_is_not_concurrently_resumed_by_a_scheduler_tick(): void
+    {
+        $lab = $this->seedLaboratory();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 204,
+            'status' => 'draft',
+            'population_size' => 20,
+            'data_fingerprint' => 'live-constructor',
+            'trigger_type' => 'operator_successor',
+            'trigger_context' => [
+                'generation_plan' => array_fill(0, 20, ['family' => 'hybrid']),
+            ],
+        ]);
+        $this->bindPopulation(paused: false, expectBuild: false);
+        app(LabPopulationService::class)->shouldReceive('continueInterruptedConstruction')->never();
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'M15', 'tc-live-constructor');
+
+        $this->assertSame('paused', $result['status']);
+        $this->assertSame('H1', $result['timeframe']);
+        $this->assertSame('GENERATION_CONSTRUCTION_ACTIVE', data_get($result, 'data.generation_outcome.reason_code'));
+        $this->assertSame($generation->id, data_get($result, 'data.generation_outcome.generation_id'));
+        $this->assertCount(1, LabGeneration::all());
+    }
+
+    public function test_fresh_incomplete_draft_without_a_constructor_lease_is_resumed(): void
+    {
+        $lab = $this->seedLaboratory();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 205,
+            'status' => 'draft',
+            'population_size' => 20,
+            'data_fingerprint' => 'orphan-constructor',
+            'trigger_type' => 'candidate_handoff',
+            'trigger_context' => [
+                'generation_plan' => array_fill(0, 20, ['family' => 'hybrid']),
+            ],
+        ]);
+        $this->bindPopulation(paused: false, expectBuild: false);
+        $population = app(LabPopulationService::class);
+        $population->shouldReceive('constructorIsActive')->once()->andReturnFalse();
+        $population->shouldReceive('continueInterruptedConstruction')->once()->with($generation->id, 4)->andReturn([
+            'status' => 'partial',
+            'generation' => $generation,
+            'created_slots' => [1, 2, 3, 4],
+            'completed_slots' => [1, 2, 3, 4],
+            'failures' => [],
+        ]);
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-orphan-constructor');
+
+        $this->assertSame('paused', $result['status']);
+        $this->assertSame('GENERATION_CONSTRUCTION_IN_PROGRESS', data_get($result, 'data.generation_outcome.reason_code'));
+    }
+
+    public function test_incomplete_quarantined_plan_owns_constructor_before_new_learning_admission(): void
+    {
+        $lab = $this->seedLaboratory();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 213,
+            'status' => 'technical_quarantine',
+            // The mutable projection can reflect only constructed seats. The
+            // immutable plan remains the source of truth for the 20-seat cohort.
+            'population_size' => 16,
+            'data_fingerprint' => 'incomplete-causal-constructor',
+            'trigger_type' => 'candidate_handoff',
+            'trigger_context' => [
+                'generation_plan' => array_fill(0, 20, ['family' => 'hybrid']),
+            ],
+        ]);
+        $this->bindPopulation(paused: false, expectBuild: false);
+        $population = app(LabPopulationService::class);
+        $population->shouldReceive('continueInterruptedConstruction')->once()->with($generation->id, 4)->andReturn([
+            'status' => 'partial',
+            'generation' => $generation,
+            'created_slots' => [17, 18, 19],
+            'completed_slots' => [17, 18, 19],
+            'failures' => [['slot' => 20, 'reason' => 'bounded_retry_pending']],
+        ]);
+
+        $admission = m::mock(GenerationAdmissionDecisionService::class);
+        $admission->shouldReceive('decide')->never();
+        app()->instance(GenerationAdmissionDecisionService::class, $admission);
+        app()->forgetInstance(LabLifecycleOrchestrator::class);
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-incomplete-before-learning');
+
+        $this->assertSame('paused', $result['status']);
+        $this->assertSame('GENERATION_CONSTRUCTION_IN_PROGRESS', data_get($result, 'data.generation_outcome.reason_code'));
+        $this->assertSame($generation->id, data_get($result, 'data.generation_outcome.generation_id'));
+        $this->assertCount(1, LabGeneration::all());
+    }
+
+    public function test_older_incomplete_quarantine_cannot_hide_the_newer_active_generation(): void
+    {
+        $lab = $this->seedLaboratory();
+        $older = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 205,
+            'status' => 'technical_quarantine',
+            'population_size' => 10,
+            'data_fingerprint' => 'superseded-partial-constructor',
+            'trigger_type' => 'candidate_handoff',
+            'trigger_context' => [
+                'generation_plan' => array_fill(0, 20, ['family' => 'hybrid']),
+            ],
+        ]);
+        $active = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 206,
+            'status' => 'queued',
+            'population_size' => 20,
+            'data_fingerprint' => 'active-successor',
+            'trigger_type' => 'candidate_handoff',
+            // A legacy empty plan is dispatchable and keeps this fixture
+            // focused on lineage-head selection rather than construction.
+            'trigger_context' => [],
+        ]);
+        $this->bindPopulation(paused: false, expectBuild: false);
+        app(LabPopulationService::class)->shouldReceive('continueInterruptedConstruction')->never();
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-newer-active-wins');
+
+        $this->assertSame('completed', $result['status']);
+        $this->assertSame($active->id, data_get($result, 'data.generation_id'));
+        $this->assertSame('technical_quarantine', $older->fresh()->status);
+        $this->assertCount(2, LabGeneration::all());
     }
 
     public function test_strategy_deadlock_blocks_normal_generation_and_uses_recovery_path(): void
@@ -129,6 +297,45 @@ class LabLifecycleOrchestratorTest extends TestCase
 
         $this->assertSame(LabLifecycleOrchestrator::PHASE_LEARNING_RECOVERY, $result['stage']);
         $this->assertNotSame('daily_recovery_budget_exhausted', data_get($result, 'data.paused_reason'));
+    }
+
+    public function test_target_aligned_lesson_opens_causal_generation_instead_of_empty_dojo_recovery(): void
+    {
+        $lab = $this->seedLaboratory();
+        LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 214,
+            'status' => 'technical_quarantine',
+            'population_size' => 20,
+            'data_fingerprint' => 'superseded-causal-constructor',
+            'trigger_type' => 'learning_confirmation',
+            'trigger_context' => [],
+        ]);
+        $this->bindPopulation(paused: false, expectedTrigger: 'learning_confirmation');
+
+        $admission = m::mock(GenerationAdmissionDecisionService::class);
+        $admission->shouldReceive('decide')->once()->andReturn([
+            'decision' => GenerationAdmissionDecisionService::DISPATCH_LEARNING,
+            'allowed' => false,
+            'reason_codes' => ['TARGET_ALIGNED_CAUSAL_LESSON_HAS_GENERATION_PRIORITY'],
+            'causal_confirmation_priority' => [
+                'lesson_id' => 2387,
+                'target' => 'regime_coverage',
+                'gene_key' => 'trend_down_roc_threshold',
+                'promotion_evidence' => false,
+            ],
+            'learning_velocity' => [
+                'learning_starvation' => ['actionable_pending_dojo' => 0],
+            ],
+        ]);
+        app()->instance(GenerationAdmissionDecisionService::class, $admission);
+        app()->forgetInstance(LabLifecycleOrchestrator::class);
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-causal-generation-routing');
+
+        $this->assertSame('completed', $result['status'], json_encode($result, JSON_PRETTY_PRINT));
+        $this->assertSame('learning_confirmation', LabGeneration::query()->latest('generation')->value('trigger_type'));
+        $this->assertSame(LabLifecycleOrchestrator::PHASE_FORWARD, $result['stage']);
     }
 
     public function test_typed_transport_timeout_uses_separate_bounded_technical_recovery(): void
@@ -227,6 +434,112 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->assertCount(0, LabGeneration::all());
     }
 
+    public function test_durably_contained_failed_evaluation_does_not_deadlock_its_own_recovery(): void
+    {
+        config(['services.lifecycle_orchestrator.max_failed_jobs' => 1]);
+        $lab = $this->seedLaboratory();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 212,
+            'status' => 'screening',
+            'population_size' => 20,
+            'trigger_type' => 'shadow_research',
+            'trigger_context' => [],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'contained-failed-evaluation',
+            'strategy' => 'hybrid',
+            'version' => 'v212',
+            'generation' => 212,
+            'status' => 'testing',
+            'parameters' => [],
+            'metadata' => [],
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id,
+            'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'origin' => 'test',
+            'lifecycle_status' => 'evaluation_error',
+            'parameter_diff' => [],
+            'decision_reason' => 'Screen queue technical error; strategy verdict withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'contained-failed-evaluation-run',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $model->id,
+            'phase' => 'screening',
+            'mode' => 'screen',
+            'status' => 'technical_error',
+            'error_class' => 'Illuminate\\Queue\\MaxAttemptsExceededException',
+            'error_message' => 'EvaluateLabAgentJob has been attempted too many times.',
+            'started_at' => now()->subMinute(),
+            'finished_at' => now(),
+        ]);
+        $command = 'O:28:"App\\Jobs\\EvaluateLabAgentJob":1:{s:10:"labAgentId";i:'.$agent->id.';}';
+        DB::table('failed_jobs')->insert([
+            'uuid' => (string) Str::uuid(),
+            'connection' => 'redis',
+            'queue' => 'lab-screening',
+            'payload' => json_encode([
+                'displayName' => EvaluateLabAgentJob::class,
+                'data' => ['command' => $command],
+            ], JSON_THROW_ON_ERROR),
+            'exception' => 'bounded failure fixture',
+            'failed_at' => now(),
+        ]);
+
+        $method = new \ReflectionMethod(LabLifecycleOrchestrator::class, 'queueRisk');
+        $method->setAccessible(true);
+        $snapshot = ['rows' => [], 'stats' => []];
+
+        $this->assertNull($method->invoke(
+            app(LabLifecycleOrchestrator::class),
+            $snapshot,
+            'XAUUSD',
+            'H1',
+        ));
+
+        $agent->update(['lifecycle_status' => 'screened']);
+        LabEvaluationRun::create([
+            'run_id' => 'contained-failed-evaluation-recovery-run',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $model->id,
+            'phase' => 'screening',
+            'mode' => 'screen',
+            'status' => 'completed',
+            'started_at' => now()->addSecond(),
+            'finished_at' => now()->addSeconds(2),
+        ]);
+
+        $this->assertNull($method->invoke(
+            app(LabLifecycleOrchestrator::class),
+            $snapshot,
+            'XAUUSD',
+            'H1',
+        ), 'A later completed immutable run must supersede the retained failed queue row.');
+
+        DB::table('failed_jobs')->insert([
+            'uuid' => (string) Str::uuid(),
+            'connection' => 'redis',
+            'queue' => 'lab-screening',
+            'payload' => json_encode(['displayName' => 'UnknownCanonicalJob'], JSON_THROW_ON_ERROR),
+            'exception' => 'uncontained failure fixture',
+            'failed_at' => now(),
+        ]);
+
+        $this->assertSame('queue_failed_jobs', $method->invoke(
+            app(LabLifecycleOrchestrator::class),
+            $snapshot,
+            'XAUUSD',
+            'H1',
+        ));
+    }
+
     public function test_failed_build_writes_an_error_jsonl_entry(): void
     {
         $this->seedLaboratory();
@@ -255,7 +568,7 @@ class LabLifecycleOrchestratorTest extends TestCase
 
     public function test_error_logs_never_include_secrets(): void
     {
-        $logger = new LabLifecycleErrorLogger();
+        $logger = new LabLifecycleErrorLogger;
         $logger->record('tc-007', 'XAUUSD', 'H1', 'generation',
             new \RuntimeException('Auth failed ?token=SUPERSECRET123&apiKey=sk-live-abc'));
 
@@ -278,7 +591,7 @@ class LabLifecycleOrchestratorTest extends TestCase
         ]);
     }
 
-    private function bindPopulation(bool $paused = false, int $pendingDojo = 0, bool $throwOnBuild = false, bool $expectBuild = true, ?string $velocityStatus = null, string $technicalRepairMode = 'timeout_budget'): void
+    private function bindPopulation(bool $paused = false, int $pendingDojo = 0, bool $throwOnBuild = false, bool $expectBuild = true, ?string $velocityStatus = null, string $technicalRepairMode = 'timeout_budget', string $expectedTrigger = 'new_data'): void
     {
         $safety = m::mock(LearningProtocolSafetyService::class);
         $safety->shouldReceive('generationCreationPaused')->andReturn($paused);
@@ -300,6 +613,11 @@ class LabLifecycleOrchestratorTest extends TestCase
             'learning_starvation' => ['starved' => false, 'actionable_pending_dojo' => 0, 'active_dispatches' => 0],
             'health_layers' => ['strategy_deadlock' => ['active' => false]],
         ]);
+        $velocity->shouldReceive('summary')->zeroOrMoreTimes()->andReturn([
+            'allowed' => ! $paused,
+            'status' => $paused ? $velocityStatus : 'healthy',
+            'learning_starvation' => ['actionable_pending_dojo' => $pendingDojo],
+        ]);
 
         $queue = m::mock(LabQueueStateService::class);
         $queue->shouldReceive('snapshot')->andReturn([
@@ -312,19 +630,27 @@ class LabLifecycleOrchestratorTest extends TestCase
         $queueJobs->shouldReceive('hasAgentJob')->andReturn(false);
 
         $population = m::mock(LabPopulationService::class);
+        $population->shouldReceive('constructorIsActive')->zeroOrMoreTimes()->andReturnTrue()->byDefault();
+        $population->shouldReceive('lastBuildOutcome')->zeroOrMoreTimes()->andReturn([
+            'status' => 'created',
+            'reason_code' => 'GENERATION_CREATED',
+            'retryable' => false,
+        ]);
         if ($throwOnBuild) {
             $population->shouldReceive('build')->andThrow(new \RuntimeException('Simulated build failure', 500));
         } elseif (! $paused && $expectBuild) {
             $laboratoryId = (int) AiLaboratory::where('symbol', 'XAUUSD')->value('id');
             $population->shouldReceive('build')
                 ->zeroOrMoreTimes()
-                ->with('XAUUSD', 'new_data', false, 'H1')
-                ->andReturn(LabGeneration::create([
-                    'ai_laboratory_id' => $laboratoryId,
-                    'generation' => 9999, 'status' => 'draft',
-                    'population_size' => 20, 'data_fingerprint' => 'test',
-                    'trigger_type' => 'new_data', 'trigger_context' => [],
-                ]));
+                ->with('XAUUSD', $expectedTrigger, false, 'H1')
+                ->andReturnUsing(function () use ($laboratoryId, $expectedTrigger): LabGeneration {
+                    return LabGeneration::create([
+                        'ai_laboratory_id' => $laboratoryId,
+                        'generation' => 9999, 'status' => 'draft',
+                        'population_size' => 20, 'data_fingerprint' => 'test',
+                        'trigger_type' => $expectedTrigger, 'trigger_context' => [],
+                    ]);
+                });
         } elseif (! $expectBuild) {
             $population->shouldReceive('build')->never();
         }
@@ -401,11 +727,17 @@ class LabLifecycleOrchestratorTest extends TestCase
     }
 
     private function errorLogExists(): bool
-    {        $dir = storage_path('logs/neurotrader/lifecycle-errors');
-        if (! is_dir($dir)) return false;
-        foreach (File::allFiles($dir) as $f) {
-            if (filesize($f->getRealPath()) > 0) return true;
+    {
+        $dir = storage_path('logs/neurotrader/lifecycle-errors');
+        if (! is_dir($dir)) {
+            return false;
         }
+        foreach (File::allFiles($dir) as $f) {
+            if (filesize($f->getRealPath()) > 0) {
+                return true;
+            }
+        }
+
         return false;
     }
 

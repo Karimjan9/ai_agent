@@ -14,6 +14,7 @@ use App\Models\ModelVersion;
 use App\Services\LearningKernelService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\LearningVelocityGateService;
+use App\Services\StrategyParameterSchemaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -37,9 +38,18 @@ class LearningProtocolSafetyServiceTest extends TestCase
             ]);
         }
 
-        $candidateModel = $this->model('repair-candidate');
-        $controlModel = $this->model('repair-control');
-        $candidate = $this->agent($generation, $candidateModel);
+        $controlParameters = app(StrategyParameterSchemaService::class)
+            ->defaults('differential_router');
+        $candidateParameters = $controlParameters;
+        $candidateParameters['state_machine_variant'] = 'neutral_transition_cooldown_reentry_v1';
+        $candidateModel = $this->model('repair-candidate', $candidateParameters);
+        $controlModel = $this->model('repair-control', $controlParameters);
+        $candidate = $this->agent($generation, $candidateModel, [
+            'state_machine_variant' => [
+                'old' => 'none',
+                'new' => 'neutral_transition_cooldown_reentry_v1',
+            ],
+        ]);
         $control = $this->agent($generation, $controlModel);
         $dataHash = str_repeat('d', 64);
         $executionHash = str_repeat('e', 64);
@@ -124,20 +134,20 @@ class LearningProtocolSafetyServiceTest extends TestCase
         $this->assertSame('canonical_settled', $packet['positive_lessons'][0]['provenance']);
     }
 
-    private function model(string $name): ModelVersion
+    private function model(string $name, array $parameters): ModelVersion
     {
         return ModelVersion::create([
             'name' => $name, 'strategy' => $name, 'version' => 'v1',
-            'generation' => 4, 'status' => 'testing', 'parameters' => [], 'metadata' => [],
+            'generation' => 4, 'status' => 'testing', 'parameters' => $parameters, 'metadata' => [],
         ]);
     }
 
-    private function agent(LabGeneration $generation, ModelVersion $model): LabAgent
+    private function agent(LabGeneration $generation, ModelVersion $model, array $diff = []): LabAgent
     {
         return LabAgent::create([
             'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
             'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
-            'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => [],
+            'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => $diff,
         ]);
     }
 }

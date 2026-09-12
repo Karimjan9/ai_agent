@@ -49,6 +49,11 @@ class DispatchCooldownCausalRescue extends Command
 
             return self::SUCCESS;
         }
+        if (strtoupper((string) $lab->symbol) === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
+            $this->info('Standalone cooldown generation disabled: XAUUSD repair is allocated inside the unified 20-seat lifecycle population.');
+
+            return self::SUCCESS;
+        }
         $sourceGroup = $semanticGroups->fromModel($model, $source->strategy_family);
         $sourceNiche = [
             'role' => data_get($sourceGroup, 'role'),

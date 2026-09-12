@@ -3,30 +3,40 @@
 namespace App\Console\Commands;
 
 use App\Models\CandidateHandoffEvent;
+use App\Services\AutonomousModeService;
 use App\Services\CandidateHandoffService;
-use App\Services\LearningProtocolSafetyService;
+use App\Services\FailureRepairAnchorService;
 use App\Services\LabPopulationService;
 use App\Services\LabQueueJobInspector;
+use App\Services\LearningProtocolSafetyService;
 use App\Services\TargetedRescueProfileService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class ProcessTargetedGenerationRequests extends Command
 {
     protected $signature = 'trading:process-targeted-generations';
+
     protected $description = 'Create one bounded targeted generation for each no-eligible-candidate handoff request';
 
     public function handle(LabPopulationService $populations, CandidateHandoffService $handoffs, TargetedRescueProfileService $profiles): int
     {
+        if (! app(AutonomousModeService::class)->enabled('XAUUSD', 'H1')) {
+            $this->info('Targeted generation builder deferred: autonomous mode is stopped; monitoring only.');
+
+            return self::SUCCESS;
+        }
         // Scheduler-level withoutOverlapping() does not protect a manual
         // invocation from racing the scheduler.  Both paths can otherwise
         // consume the same immutable handoff and create duplicate targeted
         // populations (G93/G94), wasting the bounded mutation budget.
-        $lock = Cache::lock('trading:targeted-generation-builder:v1', 300);
+        // The same 20-seat causal/history compiler used by normal generations
+        // can legitimately run for tens of minutes. Keep manual and scheduled
+        // invocations mutually exclusive for the full constructor budget.
+        $lock = Cache::lock('trading:targeted-generation-builder:v1', 3000);
         if (! $lock->get()) {
             $this->info('Targeted generation builder already active; this invocation is safely deferred.');
+
             return self::SUCCESS;
         }
 
@@ -39,6 +49,7 @@ class ProcessTargetedGenerationRequests extends Command
             // event and prevents another partial draft from being produced.
             if (app(LearningProtocolSafetyService::class)->generationCreationPaused()) {
                 $this->info('Targeted generation builder deferred: learning protocol is paused; controlled rescue admission is required.');
+
                 return self::SUCCESS;
             }
 
@@ -58,11 +69,47 @@ class ProcessTargetedGenerationRequests extends Command
             // claim the next targeted budget before the current G3/G4 edge
             // curriculum is even considered.
             ->orderByDesc('recorded_at')->orderByDesc('id')->get();
+        // An archived/shadow laboratory may retain immutable handoffs, but it
+        // has no authority to open a new population. This matters for XAUUSD:
+        // its former M15 lab is now evidence-only and all live evolution is
+        // owned by the single H1-storage lighthouse organism.
         foreach ($requests as $request) {
-            $source = $request->generation; $lab = $source?->laboratory;
-            if (! $source || ! $lab) continue;
+            $source = $request->generation;
+            $lab = $source?->laboratory;
+            if (! $source || ! $lab || ($lab->is_active && (string) $lab->lifecycle_mode === 'lighthouse')) {
+                continue;
+            }
+            $handoffs->record(
+                $source,
+                null,
+                'waiting_for_targeted_generation',
+                'superseded',
+                'SOURCE_LAB_ARCHIVED',
+                [
+                    ...((array) $request->payload),
+                    'superseded_at' => now()->utc()->toIso8601String(),
+                    'next_action' => 'retain_as_historical_evidence_only',
+                    'promotion_evidence' => false,
+                ],
+            );
+        }
+        // Process only the newest live request per laboratory. Falling through
+        // to an older request after the newest one is denied can bypass the
+        // current rescue circuit breaker and spend compute on stale evidence.
+        $requests = $requests
+            ->filter(fn (CandidateHandoffEvent $request): bool => $request->generation?->laboratory?->is_active === true
+                && (string) $request->generation?->laboratory?->lifecycle_mode === 'lighthouse')
+            ->unique(fn (CandidateHandoffEvent $request): int => (int) $request->generation->ai_laboratory_id)
+            ->values();
+        foreach ($requests as $request) {
+            $source = $request->generation;
+            $lab = $source?->laboratory;
+            if (! $source || ! $lab) {
+                continue;
+            }
             if ($this->screeningBacklogIsHigh()) {
                 $this->warn("{$lab->symbol}: lab queue backlog is high; targeted generation creation deferred.");
+
                 continue;
             }
             $latest = $lab->generations()->latest('generation')->first();
@@ -72,12 +119,16 @@ class ProcessTargetedGenerationRequests extends Command
                 && data_get($latest->trigger_context, 'generation_protocol') !== LabPopulationService::GENERATION_PROTOCOL;
             if ($latest && $latest->id !== $source->id
                 && ! $latestIsAbandonedStaleProtocol
-                && in_array($latest->status, LabPopulationService::ACTIVE_GENERATION_STATUSES, true)) {
+                && (in_array($latest->status, LabPopulationService::ACTIVE_GENERATION_STATUSES, true)
+                    || LabPopulationService::constructionIncomplete($latest))) {
                 // A newer active generation still owns the laboratory stream.
+                // Incomplete technical_quarantine is the dispatch-safe state
+                // between constructor chunks and owns the stream as well.
                 // Keep the original failure profile waiting instead of
                 // marking it consumed; it can seed the next legal targeted
                 // cohort after the active frontier reaches a terminal state.
                 $this->info("{$lab->symbol}: active G{$latest->generation} owns the lab; targeted handoff remains waiting.");
+
                 continue;
             }
             $baseline = $lab->generations()->where('trigger_type', '!=', 'candidate_handoff')->max('generation');
@@ -110,6 +161,7 @@ class ProcessTargetedGenerationRequests extends Command
                     ]);
                     $this->warn("{$lab->symbol}: targeted generation budget exhausted; data/edge audit required before further mutation.");
                 }
+
                 continue;
             }
             // Rebuild the profile from current immutable evidence instead of
@@ -137,15 +189,20 @@ class ProcessTargetedGenerationRequests extends Command
                         ? 'Four one-gene siblings plus one freshly replayed frozen control are created from the nearest failure margin; no old screened candidate was force-replayed.'
                         : 'Five four-seat one-gene rescue groups are created from the immutable failure profile; no old screened candidate was force-replayed.']);
                 $this->info("{$lab->symbol}: targeted G{$created->generation} created.");
-            } else $this->warn("{$lab->symbol}: targeted generation remains waiting for market-data readiness.");
+            } else {
+                $this->warn("{$lab->symbol}: targeted generation remains waiting for market-data readiness.");
+            }
         }
+
         return self::SUCCESS;
     }
 
     private function screeningBacklogIsHigh(): bool
     {
         $snapshot = app(LabQueueJobInspector::class)->queueSnapshot();
-        if (($snapshot['available'] ?? true) === false) return true;
+        if (($snapshot['available'] ?? true) === false) {
+            return true;
+        }
         $pending = (int) ($snapshot['total'] ?? 0);
 
         return $pending >= max(1, (int) config('services.lab_selection.max_screening_jobs', 40));
@@ -159,7 +216,9 @@ class ProcessTargetedGenerationRequests extends Command
         $targetCounts = [];
         foreach ((array) data_get($profile, 'targets', []) as $reason => $row) {
             $target = is_array($row) ? (string) data_get($row, 'target', '') : (string) $row;
-            if (! in_array($target, $canonical, true)) continue;
+            if (! in_array($target, $canonical, true)) {
+                continue;
+            }
             $targetCounts[$target] = ($targetCounts[$target] ?? 0) + max(1, (int) (is_array($row) ? data_get($row, 'count', 1) : 1));
         }
         $targets = collect($canonical)
@@ -193,7 +252,7 @@ class ProcessTargetedGenerationRequests extends Command
             'repair_anchors' => collect((array) data_get($profile, 'repair_anchors', []))
                 ->filter(fn (mixed $anchor): bool => is_array($anchor) && filled(data_get($anchor, 'id')))
                 ->values()->all(),
-            'repair_anchor_protocol' => (string) data_get($profile, 'repair_anchor_protocol', \App\Services\FailureRepairAnchorService::PROTOCOL),
+            'repair_anchor_protocol' => (string) data_get($profile, 'repair_anchor_protocol', FailureRepairAnchorService::PROTOCOL),
             'observed_profile' => $profile,
             'promotion_evidence' => false,
             'rule' => 'Five four-seat groups: PF/stress, temporal/calendar, regime specialist, non-target regression and architecture/control. Full/forward/paper gates remain unchanged.',

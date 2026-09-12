@@ -56,6 +56,11 @@ class DispatchVolumeResearch extends Command
 
             return self::SUCCESS;
         }
+        if (strtoupper((string) $source->symbol) === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
+            $this->info('Standalone volume generation disabled: XAUUSD research is allocated inside the unified 20-seat lifecycle population.');
+
+            return self::SUCCESS;
+        }
         if (! in_array($source->lifecycle_status, ['screened', 'challenger', 'stagnated', 'rejected'], true)) {
             $this->error('Source standalone screen/challenger candidate bo‘lishi kerak.');
 

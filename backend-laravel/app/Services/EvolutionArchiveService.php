@@ -7,9 +7,9 @@ use App\Models\LabEvolutionArchiveEntry;
 use App\Models\LabEvolutionIsland;
 use App\Models\LabGeneration;
 use App\Models\LabParentSelectionDecision;
-use Illuminate\Database\UniqueConstraintViolationException;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 
 /**
@@ -506,6 +506,20 @@ class EvolutionArchiveService
             ->whereIn('lifecycle_status', [
                 'rejected', 'failed', 'overfit', 'archived', 'stagnated', 'technical_quarantine', 'abandoned',
             ])
+            // Failure memory is append-once per model/scope. The previous
+            // implementation reloaded and updateOrCreated every historical
+            // failure for every new candidate, turning a 2k-agent archive
+            // into tens of minutes of repeated writes per seat. Existing
+            // failure rows already prove the safety fact and need no refresh.
+            ->whereNotExists(function ($query) use ($symbol, $timeframe, $family): void {
+                $query->selectRaw('1')
+                    ->from('lab_evolution_archive_entries as failure_archive')
+                    ->whereColumn('failure_archive.model_version_id', 'lab_agents.model_version_id')
+                    ->where('failure_archive.symbol', strtoupper($symbol))
+                    ->where('failure_archive.timeframe', strtoupper($timeframe))
+                    ->where('failure_archive.strategy_family', $family)
+                    ->where('failure_archive.archive_type', 'failure');
+            })
             ->latest('id');
         // Failure evidence is a safety memory: a failed lineage must not
         // remain active in a convergence/diversity archive merely because it
@@ -520,46 +534,57 @@ class EvolutionArchiveService
             if (! $agent->modelVersion) {
                 continue;
             }
+            // A failed model belongs to its own immutable semantic cell, not
+            // to whichever new candidate happened to trigger maintenance.
+            // The old current-island projection duplicated one failure across
+            // unrelated islands and inflated the archive on every generation.
+            $failureIslandKey = (string) data_get(
+                $this->semanticGroups->fromModel($agent->modelVersion, $family),
+                'key',
+                $islandKey,
+            );
             // Once a lineage has a durable failure outcome, any earlier
             // convergence/diversity/young projection is retired so the same
             // model cannot sneak back through a non-failure archive type.
             LabEvolutionArchiveEntry::query()
-                ->where('island_key', $islandKey)
+                ->where('symbol', strtoupper($symbol))
+                ->where('timeframe', strtoupper($timeframe))
+                ->where('strategy_family', $family)
                 ->where('model_version_id', $agent->model_version_id)
                 ->where('archive_type', '!=', 'failure')
                 ->whereIn('status', ['active', 'retained'])
                 ->update(['status' => 'retired']);
             $identity = [
                 'archive_type' => 'failure',
-                'island_key' => $islandKey,
+                'island_key' => $failureIslandKey,
                 'model_version_id' => $agent->model_version_id,
             ];
             $values = [
-                    'symbol' => strtoupper($symbol),
-                    'timeframe' => strtoupper($timeframe),
-                    'strategy_family' => $family,
-                    'lab_agent_id' => $agent->id,
-                    'lab_generation_id' => $agent->lab_generation_id,
-                    'rank' => 0,
-                    'novelty_score' => 0,
-                    'behavior_signature' => $this->behaviorSignature($agent->modelVersion, null),
-                    'fitness_snapshot' => [
-                        'train_score' => $agent->train_score,
-                        'validation_score' => $agent->validation_score,
-                        'forward_score' => $agent->forward_score,
-                        'profit_factor' => $agent->profit_factor,
-                        'max_drawdown' => $agent->max_drawdown,
-                        'risk_of_ruin' => $agent->risk_of_ruin,
-                    ],
-                    'metadata' => [
-                        'protocol' => self::PROTOCOL,
-                        'failure_status' => $agent->lifecycle_status,
-                        'decision_reason' => $agent->decision_reason,
-                        'failure_evidence_only' => true,
-                        'promotion_evidence' => false,
-                    ],
-                    'status' => 'retained',
-                ];
+                'symbol' => strtoupper($symbol),
+                'timeframe' => strtoupper($timeframe),
+                'strategy_family' => $family,
+                'lab_agent_id' => $agent->id,
+                'lab_generation_id' => $agent->lab_generation_id,
+                'rank' => 0,
+                'novelty_score' => 0,
+                'behavior_signature' => $this->behaviorSignature($agent->modelVersion, null),
+                'fitness_snapshot' => [
+                    'train_score' => $agent->train_score,
+                    'validation_score' => $agent->validation_score,
+                    'forward_score' => $agent->forward_score,
+                    'profit_factor' => $agent->profit_factor,
+                    'max_drawdown' => $agent->max_drawdown,
+                    'risk_of_ruin' => $agent->risk_of_ruin,
+                ],
+                'metadata' => [
+                    'protocol' => self::PROTOCOL,
+                    'failure_status' => $agent->lifecycle_status,
+                    'decision_reason' => $agent->decision_reason,
+                    'failure_evidence_only' => true,
+                    'promotion_evidence' => false,
+                ],
+                'status' => 'retained',
+            ];
             try {
                 LabEvolutionArchiveEntry::updateOrCreate($identity, $values);
             } catch (UniqueConstraintViolationException) {

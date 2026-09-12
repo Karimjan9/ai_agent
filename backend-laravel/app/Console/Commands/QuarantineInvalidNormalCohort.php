@@ -2,12 +2,13 @@
 
 namespace App\Console\Commands;
 
-use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Services\LabGenerationContextService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabQueueJobInspector;
 use App\Services\OperatorApprovalService;
+use App\Services\ResearchAllocationPolicyService;
 use Illuminate\Console\Command;
 use RuntimeException;
 
@@ -40,6 +41,7 @@ class QuarantineInvalidNormalCohort extends Command
         $generationNumber = (int) $this->option('generation');
         if ($generationNumber <= 0) {
             $this->error('--generation exact qiymat bilan majburiy.');
+
             return self::FAILURE;
         }
 
@@ -52,6 +54,7 @@ class QuarantineInvalidNormalCohort extends Command
             ->first();
         if (! $generation) {
             $this->error("{$symbol} {$timeframe} G{$generationNumber} topilmadi.");
+
             return self::FAILURE;
         }
 
@@ -60,7 +63,7 @@ class QuarantineInvalidNormalCohort extends Command
         $queueState = $queue->generationQueueBacklog($agentIds);
         $activeStatuses = ['queued', 'screening', 'full_queued', 'full_validation', 'training'];
         $activeAgents = $generation->agents()->whereIn('lifecycle_status', $activeStatuses)->count();
-        $activeRuns = \App\Models\LabEvaluationRun::query()
+        $activeRuns = LabEvaluationRun::query()
             ->where('lab_generation_id', $generation->id)
             ->whereIn('status', ['queued', 'started', 'running', 'processing'])
             ->count();
@@ -81,21 +84,25 @@ class QuarantineInvalidNormalCohort extends Command
         if ($contract['issues'] === []) {
             $this->error('Normal causal contract invalid emas; quarantine qilinmadi.');
             $this->line(json_encode($result, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+
             return self::FAILURE;
         }
         if (($queueState['available'] ?? true) === false || $queueState['total'] === null) {
             $this->error('Queue state unknown; fail-closed.');
+
             return self::FAILURE;
         }
         if ((int) $queueState['total'] > 0 || $activeAgents > 0 || $activeRuns > 0) {
             $this->error('Active agent/run/queue bor; avval lifecycle recovery tugashi kerak.');
             $this->line(json_encode($result, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+
             return self::FAILURE;
         }
 
         if (! (bool) $this->option('apply')) {
             $result['status'] = 'would_quarantine';
             $this->line(json_encode($result, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+
             return self::SUCCESS;
         }
 
@@ -108,12 +115,15 @@ class QuarantineInvalidNormalCohort extends Command
             ]);
         } catch (RuntimeException $exception) {
             $this->error($exception->getMessage());
+
             return self::FAILURE;
         }
 
         $quarantined = 0;
         foreach ($generation->fresh(['agents.modelVersion'])->agents as $agent) {
-            if ((string) $agent->lifecycle_status === 'technical_quarantine') continue;
+            if ((string) $agent->lifecycle_status === 'technical_quarantine') {
+                continue;
+            }
             $fromStatus = (string) $agent->lifecycle_status;
             $agent->update([
                 'lifecycle_status' => 'technical_quarantine',
@@ -144,12 +154,14 @@ class QuarantineInvalidNormalCohort extends Command
                 'quality_verdict' => 'withheld',
                 'promotion_evidence' => false,
             ]);
+
             return $context;
         });
 
         $result['status'] = 'applied';
         $result['quarantined_agents'] = $quarantined;
         $this->line(json_encode($result, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+
         return self::SUCCESS;
     }
 
@@ -158,18 +170,32 @@ class QuarantineInvalidNormalCohort extends Command
     {
         $context = (array) ($generation->trigger_context ?? []);
         $mode = (string) data_get($context, 'research_allocation_budget.mode', data_get($context, 'control_pairing_contract.mode', ''));
-        if ($mode !== 'normal_research') return ['issues' => [], 'metrics' => []];
+        if ($mode !== 'normal_research') {
+            return ['issues' => [], 'metrics' => []];
+        }
 
         $pairing = (array) data_get($context, 'control_pairing_contract', []);
         $structural = (array) data_get($context, 'structural_research_contract', []);
         $issues = [];
-        if ((string) data_get($pairing, 'protocol', '') !== 'frozen_control_pair_v1') $issues[] = 'NORMAL_CONTROL_PAIR_PROTOCOL_MISSING';
-        if (! (bool) data_get($pairing, 'allowed', false)) $issues[] = 'NORMAL_CONTROL_CANDIDATE_PAIR_INCOMPLETE';
-        if ((array) data_get($pairing, 'missing_execution_lanes', []) !== []) $issues[] = 'NORMAL_CONTROL_LANE_MISSING';
-        if ((array) data_get($pairing, 'missing_candidate_pairs', []) !== []) $issues[] = 'NORMAL_CANDIDATE_PAIR_MISSING';
+        if ((string) data_get($pairing, 'protocol', '') !== ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL) {
+            $issues[] = 'NORMAL_CONTROL_PAIR_PROTOCOL_MISSING';
+        }
+        if (! (bool) data_get($pairing, 'allowed', false)) {
+            $issues[] = 'NORMAL_CONTROL_CANDIDATE_PAIR_INCOMPLETE';
+        }
+        if ((array) data_get($pairing, 'missing_execution_lanes', []) !== []) {
+            $issues[] = 'NORMAL_CONTROL_LANE_MISSING';
+        }
+        if ((array) data_get($pairing, 'missing_candidate_pairs', []) !== []) {
+            $issues[] = 'NORMAL_CANDIDATE_PAIR_MISSING';
+        }
         $structuralExpected = (bool) data_get($context, 'normal_structural_research_expected', true);
-        if ($structuralExpected && (string) data_get($structural, 'protocol', '') !== 'normal_structural_research_v1') $issues[] = 'NORMAL_STRUCTURAL_CONTRACT_MISSING';
-        if ($structuralExpected && (int) data_get($structural, 'structural_candidate_count', 0) < 1) $issues[] = 'NORMAL_STRUCTURAL_CANDIDATE_MISSING';
+        if ($structuralExpected && (string) data_get($structural, 'protocol', '') !== 'normal_structural_research_v1') {
+            $issues[] = 'NORMAL_STRUCTURAL_CONTRACT_MISSING';
+        }
+        if ($structuralExpected && (int) data_get($structural, 'structural_candidate_count', 0) < 1) {
+            $issues[] = 'NORMAL_STRUCTURAL_CANDIDATE_MISSING';
+        }
 
         return [
             'issues' => array_values(array_unique($issues)),

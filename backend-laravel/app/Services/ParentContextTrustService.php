@@ -70,7 +70,9 @@ class ParentContextTrustService
             'skill_key' => $skillKey,
             'promotion_evidence' => false,
         ];
-        if (! $this->available()) return $default;
+        if (! $this->available()) {
+            return $default;
+        }
 
         $row = LabParentContextScore::query()
             ->where('symbol', strtoupper($symbol))
@@ -80,9 +82,12 @@ class ParentContextTrustService
             ->where('skill_key', $skillKey)
             ->where('context_key', $normalized['context_key'])
             ->first();
-        if (! $row) return $default;
+        if (! $row) {
+            return $default;
+        }
 
         $decayed = $this->decayedTrust((float) $row->trust_score, $row->last_evidence_at?->diffInDays(now()));
+
         return [
             'protocol' => self::PROTOCOL,
             'status' => $row->status,
@@ -133,6 +138,31 @@ class ParentContextTrustService
             'skill_key' => $skillKey,
             'context_key' => $normalized['context_key'],
         ]);
+        $evidenceFingerprint = hash('sha256', json_encode([
+            self::PROTOCOL,
+            $parent->id,
+            strtoupper($symbol),
+            strtoupper($timeframe),
+            $family,
+            $skillKey,
+            $normalized['context_key'],
+            $outcome,
+            $incrementalValue,
+            data_get($evidence, 'evidence_run_id'),
+            data_get($evidence, 'counterfactual_status'),
+        ], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES));
+        $seenEvidence = array_values(array_unique(array_map(
+            'strval',
+            (array) data_get($row->metadata, 'evidence_fingerprints', []),
+        )));
+        if ($row->exists && in_array($evidenceFingerprint, $seenEvidence, true)) {
+            return [
+                ...$this->score($parent, $symbol, $timeframe, $family, $skillKey, $context),
+                'outcome' => $outcome,
+                'duplicate_evidence_ignored' => true,
+                'promotion_evidence' => false,
+            ];
+        }
         $observations = (int) $row->success_count + (int) $row->failure_count + (int) $row->uncertainty_count;
         $row->symbol = strtoupper($symbol);
         $row->timeframe = strtoupper($timeframe);
@@ -142,9 +172,15 @@ class ParentContextTrustService
         $row->session_utc_hour = $normalized['session_utc_hour'];
         $row->volume_state = $normalized['volume_state'];
         $row->cost_stress = $normalized['cost_stress'];
-        if ($outcome === 'positive') $row->success_count = (int) $row->success_count + 1;
-        if ($outcome === 'negative') $row->failure_count = (int) $row->failure_count + 1;
-        if ($outcome === 'uncertainty') $row->uncertainty_count = (int) $row->uncertainty_count + 1;
+        if ($outcome === 'positive') {
+            $row->success_count = (int) $row->success_count + 1;
+        }
+        if ($outcome === 'negative') {
+            $row->failure_count = (int) $row->failure_count + 1;
+        }
+        if ($outcome === 'uncertainty') {
+            $row->uncertainty_count = (int) $row->uncertainty_count + 1;
+        }
         $row->incremental_value = $observations === 0
             ? $incrementalValue
             : (((float) $row->incremental_value * $observations) + $incrementalValue) / ($observations + 1);
@@ -157,6 +193,7 @@ class ParentContextTrustService
         $row->last_evidence_at = now()->utc();
         $row->metadata = [
             ...((array) $row->metadata),
+            'evidence_fingerprints' => array_slice([...$seenEvidence, $evidenceFingerprint], -200),
             'last_outcome' => $outcome,
             'last_incremental_value' => $incrementalValue,
             'last_evidence' => $evidence,
@@ -192,15 +229,19 @@ class ParentContextTrustService
     public function contextKey(array $identity): string
     {
         ksort($identity);
+
         return hash('sha256', json_encode($identity, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES));
     }
 
     private function decayedTrust(float $trust, ?int $ageDays): float
     {
-        if ($ageDays === null || $ageDays <= 0) return $this->clamp($trust);
+        if ($ageDays === null || $ageDays <= 0) {
+            return $this->clamp($trust);
+        }
         $decayDays = max(1, (int) config('services.lab_selection.parent_trust_decay_days', 30));
         $decay = pow(.95, $ageDays / $decayDays);
         $towardPrior = .50 + (($trust - .50) * $decay);
+
         return $this->clamp($towardPrior);
     }
 
@@ -208,13 +249,19 @@ class ParentContextTrustService
     {
         $observations = max(1, $success + $failure + $uncertainty);
         $signal = ($success - $failure) / $observations;
+
         return $this->clamp(.50 + (.35 * $signal));
     }
 
     private function statusFor(float $trust, int $success, int $failure): string
     {
-        if ($success >= 2 && $trust >= .60) return 'context_confirmed';
-        if ($failure >= 2 && $trust <= .35) return 'context_downranked';
+        if ($success >= 2 && $trust >= .60) {
+            return 'context_confirmed';
+        }
+        if ($failure >= 2 && $trust <= .35) {
+            return 'context_downranked';
+        }
+
         return 'probation';
     }
 
@@ -228,13 +275,17 @@ class ParentContextTrustService
 
     private function ageBucket(?float $days): string
     {
-        if ($days === null) return 'unknown';
+        if ($days === null) {
+            return 'unknown';
+        }
+
         return $days <= 7 ? 'fresh' : ($days <= 30 ? 'aged_30d' : ($days <= 90 ? 'aged_90d' : 'stale'));
     }
 
     private function nullableString(mixed $value): ?string
     {
         $value = trim((string) ($value ?? ''));
+
         return $value === '' ? null : $value;
     }
 }

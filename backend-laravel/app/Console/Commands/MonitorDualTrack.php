@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Services\DualTrackMonitorService;
 use App\Console\Commands\Concerns\OperationalCommand;
+use App\Services\DualTrackMonitorService;
 
 class MonitorDualTrack extends OperationalCommand
 {
@@ -17,18 +17,24 @@ class MonitorDualTrack extends OperationalCommand
 
     public function handle(DualTrackMonitorService $monitor): int
     {
+        [$symbol, $timeframe] = $this->canonicalLaboratoryScope(
+            (string) ($this->argument('symbol') ?: 'XAUUSD'),
+            (string) $this->option('timeframe'),
+        );
         $result = $monitor->report(
-            strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD')),
-            strtoupper((string) $this->option('timeframe')),
+            $symbol,
+            $timeframe,
             (int) $this->option('limit'),
         );
 
         if ($this->option('json')) {
             $this->writeJson($result, pretty: true);
+
             return self::SUCCESS;
         }
 
         $this->writeMetrics($result);
+
         return self::SUCCESS;
     }
 }

@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Services\ChampionCouncilMonitorService;
 use App\Console\Commands\Concerns\OperationalCommand;
+use App\Services\ChampionCouncilMonitorService;
 
 class MonitorChampionCouncil extends OperationalCommand
 {
@@ -16,15 +16,21 @@ class MonitorChampionCouncil extends OperationalCommand
 
     public function handle(ChampionCouncilMonitorService $monitor): int
     {
+        [$symbol, $timeframe] = $this->canonicalLaboratoryScope(
+            (string) ($this->argument('symbol') ?: 'XAUUSD'),
+            (string) $this->option('timeframe'),
+        );
         $result = $monitor->report(
-            strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD')),
-            strtoupper((string) $this->option('timeframe')),
+            $symbol,
+            $timeframe,
         );
         if ($this->option('json')) {
             $this->writeJson($result, pretty: true);
+
             return self::SUCCESS;
         }
         $this->writeMetrics($result);
+
         return self::SUCCESS;
     }
 }

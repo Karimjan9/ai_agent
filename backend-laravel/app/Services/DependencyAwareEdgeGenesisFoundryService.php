@@ -7,6 +7,7 @@ use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -17,35 +18,63 @@ use Illuminate\Support\Facades\Schema;
 class DependencyAwareEdgeGenesisFoundryService
 {
     public const PROTOCOL = 'dependency_aware_edge_genesis_foundry_v1';
+
     public const DISCOVERY_VERDICT_REVISION = 'context_specialist_power_v4';
+
     public const INITIAL_REVISION = 'professional_foundation_v1';
+
     public const CONFIRMATION_REPAIR_REVISION = 'confirmation_breadth_repair_v1';
+
     public const TRIGGER_REPAIR_REVISION = 'entry_trigger_topology_repair_v1';
+
     public const LATENT_HARVEST_REVISION = 'latent_excursion_edge_harvest_v1';
+
     public const CONTEXT_ROUTER_REPAIR_REVISION = 'context_authority_firewall_repair_v1';
+
     public const REGIME_ENTRY_SYNTHESIS_REVISION = 'regime_conditioned_entry_edge_synthesis_v1';
+
     public const FAILURE_CELL_FACTORIAL_REVISION = 'failure_cell_factorial_router_v1';
+
     public const SPECIALIST_DENSIFICATION_REVISION = 'professional_specialist_coverage_densification_v1';
+
     public const TEMPORAL_BREAKOUT_BINDING_REVISION = 'temporal_breakout_role_binding_v1';
+
     public const M15_SETUP_QUALITY_REVISION = 'm15_setup_confirmation_quality_repair_v1';
+
     public const EVIDENCE_COMPILED_REVISION = 'evidence_compiled_edge_hypothesis_v1';
+
     public const EXECUTION_TIMEFRAME = 'M5';
+
     public const PHASES = ['EDGE_DISCOVERY', 'EDGE_CONFIRMATION', 'EDGE_ATTRIBUTION', 'RISK_SHAPING', 'MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION'];
+
     public const RISK_GENES = ['loss_cooldown_candles', 'high_volatility_risk_multiplier', 'trend_down_risk_multiplier', 'trend_up_risk_multiplier', 'risk_per_trade', 'position_size', 'lot_size', 'atr_stop_multiplier'];
+
     public const MANAGEMENT_GENES = ['atr_target_multiplier', 'trailing_atr_multiplier', 'time_stop_candles', 'partial_take_profit_fraction', 'partial_target_atr_multiplier', 'exit_topology_variant'];
+
     public const EMITTER_BUDGETS = ['prior_seed' => .25, 'local_recombination' => .20, 'temporal_binder' => .15, 'confirmation_entry' => .15, 'stepping_stone_transplant' => .10, 'novelty' => .10, 'adversarial' => .05, 'risk_mutation' => 0.0];
+
     // The first mastery cohort always learns a whole professional procedure.
     // These are causal arms, not generic strategy/risk slot permutations.
     public const GENESIS_ARMS = ['professional_reference', 'confirmation_floor_one', 'temporal_role_change', 'memory_blinded_autonomous', 'frozen_control'];
+
     public const TRIGGER_REPAIR_ARMS = ['confirmation_floor_control', 'internal_structure_trigger', 'aggressive_trigger', 'extended_retest_trigger', 'frozen_control'];
+
     public const LATENT_HARVEST_ARMS = ['latent_edge_control', 'partial_harvest', 'trailing_harvest', 'time_stop_harvest', 'target_harvest'];
+
     public const CONTEXT_ROUTER_REPAIR_ARMS = ['unfiltered_context_control', 'regime_compatibility_gate', 'session_liquidity_gate', 'regime_session_gate', 'strict_context_gate'];
+
     public const REGIME_ENTRY_SYNTHESIS_ARMS = ['regime_entry_control', 'retest_entry_gate', 'independent_confirmation_gate', 'reward_space_gate', 'chase_quality_gate'];
+
     public const FAILURE_CELL_FACTORIAL_ARMS = ['failure_cell_control', 'buy_direction_gate', 'high_volatility_gate', 'buy_high_volatility_interaction', 'sell_direction_negative_control'];
+
     public const SPECIALIST_DENSIFICATION_ARMS = ['specialist_interaction_control', 'trend_continuation_topology', 'false_break_reversal_topology', 'extended_retest_window', 'lower_displacement_gate'];
+
     public const TEMPORAL_BREAKOUT_BINDING_ARMS = ['h1_breakout_control', 'm15_setup_breakout', 'short_structure_horizon', 'long_structure_horizon', 'balanced_retest_confirmation'];
+
     public const M15_SETUP_QUALITY_ARMS = ['m15_aggressive_control', 'm15_balanced_confirmation', 'm15_conservative_confirmation', 'm15_two_family_confirmation', 'm15_three_family_confirmation'];
+
     public const COMPILED_HYPOTHESIS_ARMS = ['compiled_control', 'compiled_primary', 'compiled_refinement', 'compiled_counterfactual', 'compiled_negative_control'];
+
     public const TRAVELING_CONTROL_ARMS = ['frozen_control', 'latent_edge_control', 'unfiltered_context_control', 'regime_entry_control', 'failure_cell_control',
         'specialist_interaction_control', 'h1_breakout_control', 'm15_aggressive_control', 'compiled_control'];
 
@@ -59,6 +88,7 @@ class DependencyAwareEdgeGenesisFoundryService
         private CausalStageMasteryDirectorService $stageMastery,
         private CausalProgressRatchetGovernorService $ratchetGovernor,
         private XauusdEdgeFormationAcademyService $academy,
+        private CausalCompoundingKernelService $compoundingKernel,
     ) {}
 
     /** A mutation admission is a hard dependency gate, never a promotion claim. */
@@ -75,16 +105,24 @@ class DependencyAwareEdgeGenesisFoundryService
         $phase = $declaredPhase !== ''
             ? $declaredPhase
             : ($eligibleParent ? 'MANAGEMENT_OPTIMIZATION' : 'EDGE_DISCOVERY');
-        if (! in_array($phase, self::PHASES, true)) $phase = 'EDGE_DISCOVERY';
+        if (! in_array($phase, self::PHASES, true)) {
+            $phase = 'EDGE_DISCOVERY';
+        }
         $riskGene = in_array($gene, self::RISK_GENES, true) || str_contains(strtolower($gene), 'risk_') || str_contains(strtolower($gene), 'cooldown');
         $managementGene = in_array($gene, self::MANAGEMENT_GENES, true) || str_contains(strtolower($gene), 'trailing') || str_contains(strtolower($gene), 'take_profit');
         $ratchetMatrix = $this->ratchetGovernor->mutationAuthority(
             (string) data_get($baseline?->metadata, 'causal_progress_ratchet.deepest_stage', 'none'), $evidence,
         );
         $edgeViable = $eligibleParent || $this->edgeViable($evidence) || in_array($phase, ['RISK_SHAPING', 'MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION'], true);
-        if (! $edgeViable && $riskGene) return $this->blocked('RISK_MUTATION_BEFORE_EDGE_CONFIRMATION', $phase, true);
-        if ($riskGene && ! in_array($phase, ['RISK_SHAPING', 'MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION'], true)) return $this->blocked('RISK_MUTATION_LOCKED_UNTIL_EDGE_ATTRIBUTED', $phase, true);
-        if ($managementGene && ! in_array($phase, ['MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION'], true)) return $this->blocked('MANAGEMENT_MUTATION_LOCKED_UNTIL_RISK_SHAPING', $phase, false);
+        if (! $edgeViable && $riskGene) {
+            return $this->blocked('RISK_MUTATION_BEFORE_EDGE_CONFIRMATION', $phase, true);
+        }
+        if ($riskGene && ! in_array($phase, ['RISK_SHAPING', 'MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION'], true)) {
+            return $this->blocked('RISK_MUTATION_LOCKED_UNTIL_EDGE_ATTRIBUTED', $phase, true);
+        }
+        if ($managementGene && ! in_array($phase, ['MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION'], true)) {
+            return $this->blocked('MANAGEMENT_MUTATION_LOCKED_UNTIL_RISK_SHAPING', $phase, false);
+        }
         // A model can reach RISK_SHAPING only through the preceding Edge
         // attribution state machine. Treat that sealed phase as the durable
         // authority when an older row predates the ratchet projection; do
@@ -96,6 +134,7 @@ class DependencyAwareEdgeGenesisFoundryService
         if ($managementGene && ! ($ratchetMatrix['management_allowed'] ?? false) && ! $eligibleParent) {
             return $this->blocked('MANAGEMENT_MUTATION_REQUIRES_MFE_CAPTURE_GAP', $phase, false);
         }
+
         return ['protocol' => self::PROTOCOL, 'allowed' => true, 'phase' => $phase, 'risk_gene' => $riskGene, 'management_gene' => $managementGene, 'promotion_evidence' => false];
     }
 
@@ -103,6 +142,7 @@ class DependencyAwareEdgeGenesisFoundryService
     public function baselineAdmission(?ModelVersion $baseline, array $metrics = []): array
     {
         $viable = $this->edgeViable($metrics);
+
         return ['protocol' => self::PROTOCOL, 'baseline_edge_viable' => $viable, 'risk_mutation_authorized' => $viable,
             'genetic_parent_authorized' => $viable, 'architecture_genesis_required' => ! $viable,
             'permitted_roles' => $viable ? ['frozen_control', 'edge_comparator'] : ['failure_artifact', 'frozen_causal_control', 'stepping_stone_source', 'negative_control'],
@@ -119,9 +159,10 @@ class DependencyAwareEdgeGenesisFoundryService
         string $architectureRevision = self::INITIAL_REVISION,
         array $canonicalDatasetSnapshots = [],
         array $compiledContract = [],
-    ): array
-    {
-        if (! $this->available()) return ['status' => 'unavailable', 'promotion_evidence' => false];
+    ): array {
+        if (! $this->available()) {
+            return ['status' => 'unavailable', 'promotion_evidence' => false];
+        }
         if (! in_array($architectureRevision, [self::INITIAL_REVISION, self::CONFIRMATION_REPAIR_REVISION, self::TRIGGER_REPAIR_REVISION, self::LATENT_HARVEST_REVISION, self::CONTEXT_ROUTER_REPAIR_REVISION, self::REGIME_ENTRY_SYNTHESIS_REVISION, self::FAILURE_CELL_FACTORIAL_REVISION, self::SPECIALIST_DENSIFICATION_REVISION, self::TEMPORAL_BREAKOUT_BINDING_REVISION, self::M15_SETUP_QUALITY_REVISION, self::EVIDENCE_COMPILED_REVISION], true)) {
             return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'UNKNOWN_EDGE_ARCHITECTURE_REVISION', 'promotion_evidence' => false];
         }
@@ -188,7 +229,9 @@ class DependencyAwareEdgeGenesisFoundryService
         }
         $existing = DB::table('edge_genesis_passports')->where('symbol', strtoupper($lab->symbol))->where('timeframe', strtoupper($lab->timeframe))
             ->whereIn('status', ['queued', 'running'])->exists();
-        if ($existing) return ['protocol' => self::PROTOCOL, 'status' => 'already_materialized', 'promotion_evidence' => false];
+        if ($existing) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'already_materialized', 'promotion_evidence' => false];
+        }
         $governorAdmission = $this->ratchetGovernor->admitExpensivePacket([
             'structural_axis' => (string) data_get($repairContract, 'structural_axis', ''),
             'decisive_outcome_probability' => .5, 'causal_depth_gain' => 1,
@@ -196,21 +239,27 @@ class DependencyAwareEdgeGenesisFoundryService
             'novelty' => $architectureRevision === self::INITIAL_REVISION ? .5 : .4,
             'compute_cost' => $architectureRevision === self::EVIDENCE_COMPILED_REVISION ? 5 : count($this->packets()),
         ], $lab->symbol, $lab->timeframe);
-        if (! ($governorAdmission['allowed'] ?? false)) return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
-            'reason' => $governorAdmission['reason'], 'governor' => $governorAdmission, 'promotion_evidence' => false];
+        if (! ($governorAdmission['allowed'] ?? false)) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
+                'reason' => $governorAdmission['reason'], 'governor' => $governorAdmission, 'promotion_evidence' => false];
+        }
         $packetKeys = (array) ($repairContract['packet_keys'] ?? []);
         $packets = $architectureRevision === self::EVIDENCE_COMPILED_REVISION
             ? [(array) ($repairContract['packet'] ?? [])]
             : ($packetKeys === [] ? $this->packets() : array_values(array_filter(
                 $this->packets(), fn (array $packet): bool => in_array($packet['key'], $packetKeys, true),
             )));
-        if ($packets === []) return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
-            'reason' => 'REPAIR_PACKET_CONTRACT_EMPTY', 'promotion_evidence' => false];
+        if ($packets === []) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
+                'reason' => 'REPAIR_PACKET_CONTRACT_EMPTY', 'promotion_evidence' => false];
+        }
         $arms = $architectureRevision === self::EVIDENCE_COMPILED_REVISION
             ? array_values((array) ($repairContract['arms'] ?? []))
             : $this->armsForRevision($architectureRevision);
-        if ($arms !== $this->armsForRevision($architectureRevision)) return ['protocol' => self::PROTOCOL,
-            'status' => 'blocked', 'reason' => 'COMPILED_HYPOTHESIS_ARM_CONTRACT_INVALID', 'promotion_evidence' => false];
+        if ($arms !== $this->armsForRevision($architectureRevision)) {
+            return ['protocol' => self::PROTOCOL,
+                'status' => 'blocked', 'reason' => 'COMPILED_HYPOTHESIS_ARM_CONTRACT_INVALID', 'promotion_evidence' => false];
+        }
         $windowPlan = $this->cohortIdentity->windowPlan($dataHash, $mtfBundleHash);
         $compilerDefinition = $architectureRevision === self::EVIDENCE_COMPILED_REVISION
             ? (array) ($repairContract['definition'] ?? []) : [];
@@ -224,8 +273,11 @@ class DependencyAwareEdgeGenesisFoundryService
         }
         $cohortKey = $this->cohortIdentity->cohortKey(strtoupper($lab->symbol), $dataHash, $mtfBundleHash,
             $executionHash, $architectureRevision, $packetDefinitionHash, (string) $windowPlan['window_plan_hash']);
-        $generation = null; $agents = []; $cohortCreated = false;
-        DB::transaction(function () use ($lab, $dataHash, $executionHash, $canonicalExecution, $mtfManifest, $mtfBundleHash, $packets, $arms, $repairContract, $architectureRevision, $canonicalDatasetSnapshots, $windowPlan, $packetDefinitionHash, $cohortKey, &$generation, &$agents, &$cohortCreated): void {
+        $generation = null;
+        $agents = [];
+        $kernel = null;
+        $cohortCreated = false;
+        DB::transaction(function () use ($lab, $dataHash, $executionHash, $canonicalExecution, $mtfManifest, $mtfBundleHash, $packets, $arms, $repairContract, $architectureRevision, $canonicalDatasetSnapshots, $windowPlan, $packetDefinitionHash, $cohortKey, &$generation, &$agents, &$kernel, &$cohortCreated): void {
             $hypothesisId = null;
             if ($architectureRevision === self::EVIDENCE_COMPILED_REVISION) {
                 DB::table('edge_hypothesis_packets')->insertOrIgnore([
@@ -259,7 +311,9 @@ class DependencyAwareEdgeGenesisFoundryService
                     'window_plan' => $windowPlan, 'promotion_evidence' => false], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
                 'created_at' => now(), 'updated_at' => now(),
             ]) === 1;
-            if (! $cohortCreated) return;
+            if (! $cohortCreated) {
+                return;
+            }
             $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => ((int) $lab->generations()->max('generation')) + 1,
                 'trigger_type' => 'edge_genesis', 'trigger_context' => ['protocol' => self::PROTOCOL, 'phase' => 'EDGE_DISCOVERY', 'data_hash' => $dataHash,
                     'execution_hash' => $executionHash, 'mtf_bundle_hash' => $mtfBundleHash, 'mtf_bundle_manifest' => $mtfManifest,
@@ -268,7 +322,7 @@ class DependencyAwareEdgeGenesisFoundryService
                     ...($repairContract !== [] ? ['causal_repair_contract' => $this->withoutLargeRepairPayload($repairContract)] : []),
                     ...($canonicalDatasetSnapshots !== [] ? ['canonical_dataset_snapshots' => $canonicalDatasetSnapshots] : []),
                     'risk_mutation_budget' => 0, 'pre_2026_only' => true, 'research_only' => true, 'promotion_evidence' => false],
-                'data_fingerprint' => $dataHash, 'population_size' => count($packets) * count($arms), 'status' => 'queued', 'started_at' => now()]);
+                'data_fingerprint' => $dataHash, 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE, 'status' => 'queued', 'started_at' => now()]);
             DB::table('edge_genesis_cohorts')->where('cohort_key', $cohortKey)->update([
                 'lab_generation_id' => $generation->id, 'status' => 'queued', 'updated_at' => now(),
             ]);
@@ -287,6 +341,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 $generation->update(['trigger_context' => $context]);
             }
             foreach ($packets as $packetIndex => $packet) {
+                $packetAgents = [];
                 $key = hash('sha256', implode('|', [self::PROTOCOL, $architectureRevision, $generation->id, $packet['key'], $dataHash, $executionHash]));
                 $sourceModelId = $architectureRevision === self::EVIDENCE_COMPILED_REVISION
                     ? (int) data_get($repairContract, 'source_model_version_id', 0)
@@ -295,8 +350,8 @@ class DependencyAwareEdgeGenesisFoundryService
                     'baseline_model_version_id' => $sourceModelId > 0 ? $sourceModelId : null, 'symbol' => strtoupper($lab->symbol), 'timeframe' => strtoupper($lab->timeframe), 'strategy_family' => 'hybrid',
                     'phase' => 'EDGE_DISCOVERY', 'status' => 'queued', 'data_hash' => $dataHash, 'execution_hash' => $executionHash,
                     'context' => json_encode($packet['context']), 'evidence' => json_encode(['protocol' => self::PROTOCOL, 'packet' => $packet,
-                    'architecture_revision' => $architectureRevision, 'cohort_key' => $cohortKey,
-                    'packet_definition_hash' => $packetDefinitionHash, 'frozen_window_plan' => $windowPlan,
+                        'architecture_revision' => $architectureRevision, 'cohort_key' => $cohortKey,
+                        'packet_definition_hash' => $packetDefinitionHash, 'frozen_window_plan' => $windowPlan,
                         'mtf_bundle_hash' => $mtfBundleHash, 'context_declared_before_replay' => true, 'risk_governor_frozen' => true,
                         'gene_credit_withheld_until_attribution' => true, 'promotion_evidence' => false]),
                     'phase_changed_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
@@ -306,7 +361,8 @@ class DependencyAwareEdgeGenesisFoundryService
                         ? (array) data_get($repairContract, 'source_parameters', [])
                         : (array) data_get($repairContract, 'source_parameters.'.$packet['key'], []);
                     $runtime = $this->runtimeForArm($packet, $arm, $architectureRevision, $sourceParameters);
-                    $parameters = $runtime['parameters']; $passport = $this->composition->freeze(['symbol' => 'XAUUSD', 'timeframe' => $lab->timeframe,
+                    $parameters = $runtime['parameters'];
+                    $passport = $this->composition->freeze(['symbol' => 'XAUUSD', 'timeframe' => $lab->timeframe,
                         'strategy_id' => $packet['strategy_id'], 'tactic_id' => $this->tacticForArm($packet['tactic_id'], $arm), 'risk_id' => 'atr_risk_envelope',
                         'management_id' => $packet['management_id'], 'market_state' => $armContext, 'data_contract' => $this->temporalContractForArm($arm), 'data_hash' => $dataHash, 'execution_hash' => $executionHash]);
                     $metadata = ['edge_genesis' => ['protocol' => self::PROTOCOL, 'genesis_key' => $key, 'packet_key' => $packet['key'], 'arm' => $arm,
@@ -327,6 +383,8 @@ class DependencyAwareEdgeGenesisFoundryService
                             'genetic_parent_model_version_id' => null, 'causal_baseline_model_version_id' => $sourceModelId > 0 ? $sourceModelId : null,
                             'promotion_evidence' => false], 'promotion_evidence' => false],
                         'edge_observability_contract' => ['protocol' => self::PROTOCOL, 'required_fields' => ['opportunity_detected', 'setup_location_valid', 'context_bias_aligned', 'confirmation', 'entry', 'execution_price', 'invalidation_price', 'mfe_mae', 'exit_outcome'], 'must_exist_before_nine_fold' => true],
+                        'causal_baseline_model_version_id' => $sourceModelId > 0 ? $sourceModelId : null,
+                        'genetic_parent_model_version_id' => null,
                         'lab_symbol' => strtoupper($lab->symbol), 'lab_timeframe' => strtoupper($lab->timeframe),
                         'semantic_group' => $this->edgeSemanticGroup($lab->symbol, $lab->timeframe, $runtime['family'], $packet),
                         'execution_contract' => $canonicalExecution,
@@ -356,18 +414,70 @@ class DependencyAwareEdgeGenesisFoundryService
                     $this->mastery->enroll($agent, $passport, ['packet_key' => $packet['key'], 'arm' => $arm, 'data_hash' => $dataHash,
                         'execution_hash' => $executionHash, 'edge_genesis_passport_id' => $passportId]);
                     $agents[] = $agent;
+                    $packetAgents[] = $agent;
+                }
+                // A root packet has no genetic parent, but it still needs a
+                // real scientific baseline. Bind every arm to the packet's
+                // frozen control after all five immutable identities exist.
+                if ($sourceModelId <= 0) {
+                    $packetControl = collect($packetAgents)->first(fn (LabAgent $candidate): bool => in_array((string) data_get($candidate->modelVersion?->metadata, 'edge_genesis.arm'), self::TRAVELING_CONTROL_ARMS, true)
+                    );
+                    if (! $packetControl instanceof LabAgent) {
+                        throw new \RuntimeException('EDGE_ROOT_FROZEN_CAUSAL_CONTROL_MISSING');
+                    }
+                    DB::table('edge_genesis_passports')->where('id', $passportId)->update([
+                        'baseline_model_version_id' => $packetControl->model_version_id,
+                        'updated_at' => now(),
+                    ]);
+                    foreach ($packetAgents as $packetAgent) {
+                        $packetMetadata = (array) $packetAgent->modelVersion->metadata;
+                        $packetMetadata['causal_baseline_model_version_id'] = (int) $packetControl->model_version_id;
+                        $packetMetadata['genetic_parent_model_version_id'] = null;
+                        data_set($packetMetadata, 'edge_genesis.causal_baseline_model_version_id', (int) $packetControl->model_version_id);
+                        data_set($packetMetadata, 'edge_genesis.intervention_attestation.causal_baseline_model_version_id', (int) $packetControl->model_version_id);
+                        $packetAgent->modelVersion->update(['metadata' => $packetMetadata]);
+                    }
                 }
                 $this->recordComputeLedger($passportId, $lab->symbol, $lab->timeframe, 'EDGE_DISCOVERY');
             }
+            if (count($agents) < CausalCompoundingKernelService::POPULATION_SIZE) {
+                $kernelBaselineAgent = collect($agents)->first(fn (LabAgent $candidate): bool => in_array((string) data_get($candidate->modelVersion?->metadata, 'edge_genesis.arm'), self::TRAVELING_CONTROL_ARMS, true)
+                ) ?? collect($agents)->first();
+                if (! $kernelBaselineAgent instanceof LabAgent || ! $kernelBaselineAgent->modelVersion) {
+                    throw new \RuntimeException('EDGE_COMPOUNDING_BASELINE_CONTROL_MISSING');
+                }
+                $protectedGenes = collect($agents)->flatMap(
+                    fn (LabAgent $candidate): array => array_keys((array) $candidate->parameter_diff),
+                )->unique()->values()->all();
+                $kernel = $this->compoundingKernel->complete(
+                    $generation,
+                    $kernelBaselineAgent->modelVersion,
+                    $kernelBaselineAgent,
+                    $dataHash,
+                    $executionHash,
+                    'edge_quality',
+                    $protectedGenes,
+                );
+            }
         });
-        if (! $cohortCreated) return ['protocol' => self::PROTOCOL, 'status' => 'already_materialized',
-            'reason' => 'EXACT_COHORT_IDENTITY_ALREADY_REGISTERED', 'cohort_key' => $cohortKey,
-            'packet_definition_hash' => $packetDefinitionHash, 'promotion_evidence' => false];
-        foreach ($agents as $agent) EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
+        if (! $cohortCreated) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'already_materialized',
+                'reason' => 'EXACT_COHORT_IDENTITY_ALREADY_REGISTERED', 'cohort_key' => $cohortKey,
+                'packet_definition_hash' => $packetDefinitionHash, 'promotion_evidence' => false];
+        }
+        foreach ($agents as $agent) {
+            EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
+        }
+        foreach ((array) data_get($kernel, 'dispatches', []) as $dispatch) {
+            EvaluateLabAgentJob::dispatch($dispatch['agent']->id, $dispatch['agent']->symbol, $dispatch['mode']);
+        }
+
         return ['protocol' => self::PROTOCOL, 'status' => 'queued', 'generation_id' => $generation?->id,
             'architecture_revision' => $architectureRevision, 'cohort_key' => $cohortKey,
             'packet_definition_hash' => $packetDefinitionHash, 'frozen_window_plan_hash' => $windowPlan['window_plan_hash'],
-            'seats' => count($agents), 'promotion_evidence' => false];
+            'seats' => CausalCompoundingKernelService::POPULATION_SIZE,
+            'primary_proof_seats' => count($agents),
+            'compounding_kernel' => data_get($kernel, 'contract'), 'promotion_evidence' => false];
     }
 
     private function boundedModelName(int $generation, string $label, string $arm, string $definitionHash): string
@@ -375,6 +485,7 @@ class DependencyAwareEdgeGenesisFoundryService
         $prefix = 'Edge G'.$generation.' ';
         $suffix = ' '.substr($definitionHash, 0, 8).' '.$arm;
         $available = max(0, 96 - mb_strlen($prefix) - mb_strlen($suffix));
+
         return $prefix.mb_substr($label, 0, $available).$suffix;
     }
 
@@ -389,10 +500,16 @@ class DependencyAwareEdgeGenesisFoundryService
         $assessment = $this->architectureRepairAssessment($lab->symbol, $lab->timeframe);
         $public = $this->withoutMaterializationContract($assessment);
         if (! ($assessment['admitted'] ?? false)
-            || ($assessment['repair_revision'] ?? null) !== self::CONFIRMATION_REPAIR_REVISION) return $public;
-        if (! $apply) return [...$public, 'status' => 'would_queue', 'seats' => count($this->packets()) * count(self::GENESIS_ARMS)];
+            || ($assessment['repair_revision'] ?? null) !== self::CONFIRMATION_REPAIR_REVISION) {
+            return $public;
+        }
+        if (! $apply) {
+            return [...$public, 'status' => 'would_queue', 'seats' => CausalCompoundingKernelService::POPULATION_SIZE,
+                'primary_proof_seats' => count($this->packets()) * count(self::GENESIS_ARMS)];
+        }
 
         $contract = (array) ($assessment['materialization_contract'] ?? []);
+
         return $this->materialize(
             $lab,
             (string) ($contract['data_hash'] ?? ''),
@@ -409,7 +526,9 @@ class DependencyAwareEdgeGenesisFoundryService
     {
         $assessment = $this->architectureRepairAssessment($lab->symbol, $lab->timeframe);
         $public = $this->withoutMaterializationContract($assessment);
-        if (! ($assessment['admitted'] ?? false)) return $public;
+        if (! ($assessment['admitted'] ?? false)) {
+            return $public;
+        }
 
         $revision = (string) ($assessment['repair_revision'] ?? '');
         if (! in_array($revision, [self::CONFIRMATION_REPAIR_REVISION, self::TRIGGER_REPAIR_REVISION, self::LATENT_HARVEST_REVISION, self::CONTEXT_ROUTER_REPAIR_REVISION, self::REGIME_ENTRY_SYNTHESIS_REVISION, self::FAILURE_CELL_FACTORIAL_REVISION, self::SPECIALIST_DENSIFICATION_REVISION, self::TEMPORAL_BREAKOUT_BINDING_REVISION, self::M15_SETUP_QUALITY_REVISION], true)) {
@@ -417,11 +536,13 @@ class DependencyAwareEdgeGenesisFoundryService
         }
         if (! $apply) {
             return [...$public, 'status' => 'would_queue',
-                'seats' => ((string) ($assessment['selected_packet'] ?? '') !== '' ? 1 : count($this->packets()))
+                'seats' => CausalCompoundingKernelService::POPULATION_SIZE,
+                'primary_proof_seats' => ((string) ($assessment['selected_packet'] ?? '') !== '' ? 1 : count($this->packets()))
                     * count($this->armsForRevision($revision))];
         }
 
         $contract = (array) ($assessment['materialization_contract'] ?? []);
+
         return $this->materialize(
             $lab,
             (string) ($contract['data_hash'] ?? ''),
@@ -451,14 +572,19 @@ class DependencyAwareEdgeGenesisFoundryService
             ...$hypothesis, 'causal_depth_gain' => 1, 'transfer_potential' => .5,
             'novelty' => .5, 'compute_cost' => max(1, count((array) ($hypothesis['arms'] ?? []))),
         ], $lab->symbol, $lab->timeframe);
-        if (! ($governorAdmission['allowed'] ?? false)) return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
-            'reason' => $governorAdmission['reason'], 'governor' => $governorAdmission, 'promotion_evidence' => false];
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => 'would_queue',
-            'seats' => count((array) ($hypothesis['arms'] ?? [])),
-            'hypothesis_key' => $hypothesis['hypothesis_key'] ?? null,
-            'packet_definition_hash' => $hypothesis['packet_definition_hash'] ?? null,
-            'governor' => $governorAdmission,
-            'promotion_evidence' => false];
+        if (! ($governorAdmission['allowed'] ?? false)) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
+                'reason' => $governorAdmission['reason'], 'governor' => $governorAdmission, 'promotion_evidence' => false];
+        }
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'would_queue',
+                'seats' => CausalCompoundingKernelService::POPULATION_SIZE,
+                'primary_proof_seats' => count((array) ($hypothesis['arms'] ?? [])),
+                'hypothesis_key' => $hypothesis['hypothesis_key'] ?? null,
+                'packet_definition_hash' => $hypothesis['packet_definition_hash'] ?? null,
+                'governor' => $governorAdmission,
+                'promotion_evidence' => false];
+        }
 
         return $this->materialize(
             $lab,
@@ -479,9 +605,13 @@ class DependencyAwareEdgeGenesisFoundryService
             return $this->settleAttributionOutcome($agent);
         }
         $contract = (array) data_get($agent->modelVersion?->metadata, 'edge_genesis', []);
-        if (data_get($contract, 'protocol') !== self::PROTOCOL) return ['status' => 'not_edge_genesis', 'promotion_evidence' => false];
+        if (data_get($contract, 'protocol') !== self::PROTOCOL) {
+            return ['status' => 'not_edge_genesis', 'promotion_evidence' => false];
+        }
         $passport = DB::table('edge_genesis_passports')->where('genesis_key', data_get($contract, 'genesis_key'))->first();
-        if (! $passport) return ['status' => 'blocked', 'reason' => 'EDGE_GENESIS_PASSPORT_MISSING', 'promotion_evidence' => false];
+        if (! $passport) {
+            return ['status' => 'blocked', 'reason' => 'EDGE_GENESIS_PASSPORT_MISSING', 'promotion_evidence' => false];
+        }
         $trial = DB::table('edge_genesis_trials')->where('lab_agent_id', $agent->id)->first();
         $stage = (string) ($trial->stage ?? 'two_fold_discovery');
         $replicationReplay = $stage === 'three_fold_confirmation';
@@ -494,11 +624,13 @@ class DependencyAwareEdgeGenesisFoundryService
             ->whereIn('arm', self::TRAVELING_CONTROL_ARMS)
             ->where('stage', 'nine_fold_authority')->exists();
         $controlRole = $frozenControl || $travelingControl;
-        $data = (string) data_get($result, 'data_manifest.sha256', data_get($result, 'data_hash')); $execution = (string) data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash'));
+        $data = (string) data_get($result, 'data_manifest.sha256', data_get($result, 'data_hash'));
+        $execution = (string) data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash'));
         $expectedMtfBundle = (string) data_get($contract, 'mtf_bundle_hash', '');
         $observedMtfBundle = (string) data_get($result, 'data_manifest.mtf_bundle_hash', data_get($result, 'mtf_snapshot_manifest.bundle_hash', ''));
         $mtfBundleMatch = $expectedMtfBundle !== '' && $observedMtfBundle !== '' && hash_equals($expectedMtfBundle, $observedMtfBundle);
-        $observable = $this->observability($result); $hashesMatch = hash_equals((string) $passport->data_hash, $data)
+        $observable = $this->observability($result);
+        $hashesMatch = hash_equals((string) $passport->data_hash, $data)
             && hash_equals((string) $passport->execution_hash, $execution) && $mtfBundleMatch;
         $contextEnforcementRequired = data_get($contract, 'context.enforcement') === 'required';
         $discovery = $this->discoveryAdmission(
@@ -667,7 +799,8 @@ class DependencyAwareEdgeGenesisFoundryService
             'stage' => $stage,
             'evidence' => json_encode($settlementEvidence, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
             'settled_at' => now(), 'updated_at' => now()]);
-        $current = (string) $passport->phase; if ($hashesMatch && $observable && array_search($next, self::PHASES, true) > array_search($current, self::PHASES, true)) {
+        $current = (string) $passport->phase;
+        if ($hashesMatch && $observable && array_search($next, self::PHASES, true) > array_search($current, self::PHASES, true)) {
             DB::table('edge_genesis_passports')->where('id', $passport->id)->update(['phase' => $next, 'status' => 'running', 'phase_changed_at' => now(), 'updated_at' => now()]);
             ModelVersion::query()->where('id', $agent->model_version_id)->update(['metadata' => [...((array) $agent->modelVersion->metadata), 'edge_genesis' => [...$contract, 'phase' => $next]]]);
         }
@@ -700,6 +833,7 @@ class DependencyAwareEdgeGenesisFoundryService
             $status = (string) ($freshTrial->status ?? $status);
             $next = (string) ($freshPassport->phase ?? $next);
         }
+
         return ['protocol' => self::PROTOCOL, 'status' => $status, 'phase' => $next,
             'discovery_admission' => $discovery, 'edge_admission' => $admission, 'academy_passport' => $academyPassport,
             'academy_oracle' => $academyOracle, 'academy_next_experiment' => $academyNext, 'promotion_evidence' => false];
@@ -726,21 +860,29 @@ class DependencyAwareEdgeGenesisFoundryService
             // packet whose causal budget was already closed.
             if (data_get($evidence, 'authority_selection.decision') !== null
                 || data_get($evidence, 'causal_context_effect.effect_hash') !== null
-                || data_get($evidence, 'discovery_verdict_revision') === self::DISCOVERY_VERDICT_REVISION) return false;
+                || data_get($evidence, 'discovery_verdict_revision') === self::DISCOVERY_VERDICT_REVISION) {
+                return false;
+            }
             $agent = LabAgent::query()->find($row->lab_agent_id);
+
             return $agent?->modelVersion?->marketPerformances()->latest('id')->exists() === true;
         })->values();
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => $reconcilable->isEmpty() ? 'none' : 'would_reconcile',
-            'trials' => $reconcilable->count(), 'replays_repeated' => 0, 'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => $reconcilable->isEmpty() ? 'none' : 'would_reconcile',
+                'trials' => $reconcilable->count(), 'replays_repeated' => 0, 'promotion_evidence' => false];
+        }
 
         $verdicts = [];
         foreach ($reconcilable as $row) {
             $agent = LabAgent::query()->with('modelVersion')->find($row->lab_agent_id);
             $result = $agent?->modelVersion?->marketPerformances()->latest('id')->value('metrics');
-            if (! $agent || ! is_array($result)) continue;
+            if (! $agent || ! is_array($result)) {
+                continue;
+            }
             $verdict = $this->settleOutcome($agent, $result);
             $verdicts[(string) ($verdict['status'] ?? 'unknown')] = ($verdicts[(string) ($verdict['status'] ?? 'unknown')] ?? 0) + 1;
         }
+
         return ['protocol' => self::PROTOCOL, 'status' => 'reconciled', 'trials' => array_sum($verdicts),
             'verdicts' => $verdicts, 'replays_repeated' => 0, 'promotion_evidence' => false];
     }
@@ -764,13 +906,16 @@ class DependencyAwareEdgeGenesisFoundryService
         $ready = $passports->filter(function ($passport) use ($terminal): bool {
             $trials = DB::table('edge_genesis_trials')->where('edge_genesis_passport_id', $passport->id)
                 ->where('packet_key', 'not like', '%:attribution')->get(['status', 'stage']);
+
             return $trials->isNotEmpty()
                 && $trials->every(fn ($trial): bool => in_array((string) $trial->status, $terminal, true))
                 && ! $trials->contains(fn ($trial): bool => (string) $trial->status === 'edge_progressing');
         })->values();
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => $ready->isEmpty() ? 'none' : 'would_reconcile',
-            'passport_ids' => $ready->pluck('id')->map(fn ($id): int => (int) $id)->all(), 'replays_repeated' => 0,
-            'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => $ready->isEmpty() ? 'none' : 'would_reconcile',
+                'passport_ids' => $ready->pluck('id')->map(fn ($id): int => (int) $id)->all(), 'replays_repeated' => 0,
+                'promotion_evidence' => false];
+        }
 
         foreach ($ready as $passport) {
             $hasAuthorityStage = DB::table('edge_genesis_trials')->where('edge_genesis_passport_id', $passport->id)
@@ -780,6 +925,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 'phase_changed_at' => now(), 'updated_at' => now(),
             ]);
         }
+
         return ['protocol' => self::PROTOCOL, 'status' => 'reconciled', 'passports' => $ready->count(),
             'replays_repeated' => 0, 'promotion_evidence' => false];
     }
@@ -790,12 +936,21 @@ class DependencyAwareEdgeGenesisFoundryService
         $rows = DB::table('edge_genesis_trials as t')->join('edge_genesis_passports as p', 'p.id', '=', 't.edge_genesis_passport_id')
             ->where('p.symbol', strtoupper($symbol))->where('p.timeframe', strtoupper($timeframe))
             ->whereNotNull('t.lab_agent_id')->select(['t.id as trial_id', 't.lab_agent_id', 't.stage', 't.arm', 't.evidence', 'p.id as passport_id', 'p.genesis_key', 'p.data_hash', 'p.execution_hash', 'p.evidence as passport_evidence'])->get();
-        $projected = 0; $skipped = [];
+        $projected = 0;
+        $skipped = [];
         foreach ($rows as $row) {
             $agent = LabAgent::query()->with('modelVersion')->find((int) $row->lab_agent_id);
             $metrics = $this->latestValidMetrics($agent?->modelVersion, strtoupper($symbol), strtoupper($timeframe));
-            if (! $agent || $metrics === []) { $skipped[] = ['trial_id' => $row->trial_id, 'reason' => 'IMMUTABLE_REPLAY_METRICS_MISSING']; continue; }
-            if (! $apply) { $projected++; continue; }
+            if (! $agent || $metrics === []) {
+                $skipped[] = ['trial_id' => $row->trial_id, 'reason' => 'IMMUTABLE_REPLAY_METRICS_MISSING'];
+
+                continue;
+            }
+            if (! $apply) {
+                $projected++;
+
+                continue;
+            }
             $trialEvidence = (array) json_decode((string) $row->evidence, true);
             $passportEvidence = (array) json_decode((string) $row->passport_evidence, true);
             $contract = (array) data_get($agent->modelVersion?->metadata, 'edge_genesis', []);
@@ -822,6 +977,7 @@ class DependencyAwareEdgeGenesisFoundryService
             ]);
             $projected++;
         }
+
         return ['protocol' => self::PROTOCOL, 'status' => $apply ? 'reconciled' : 'would_reconcile', 'eligible_trials' => $rows->count(),
             'projected' => $projected, 'skipped' => $skipped, 'replay_dispatched' => false, 'trial_verdicts_changed' => false, 'promotion_evidence' => false];
     }
@@ -845,6 +1001,7 @@ class DependencyAwareEdgeGenesisFoundryService
             $admitted = (bool) data_get($evidence, 'authority_selection.nine_fold_replay_admitted', false);
             if ($decision === 'discovery_dominated' && $admitted) {
                 data_set($evidence, 'authority_selection.nine_fold_replay_admitted', false);
+
                 return ['id' => (int) $row->id, 'evidence' => $evidence, 'repair' => 'dominated_budget_flag'];
             }
             // Earlier confirmation materialization updated the control's
@@ -856,8 +1013,7 @@ class DependencyAwareEdgeGenesisFoundryService
             if ($decision === 'discovery_dominated'
                 && data_get($evidence, 'authority_selection.reason') === 'PAIRED_DISCOVERY_WINDOW_IDENTITY_MISMATCH'
                 && (bool) data_get($evidence, 'discovery_admission.passed', false)) {
-                $control = $rows->first(fn ($candidate): bool =>
-                    (int) $candidate->edge_genesis_passport_id === (int) $row->edge_genesis_passport_id
+                $control = $rows->first(fn ($candidate): bool => (int) $candidate->edge_genesis_passport_id === (int) $row->edge_genesis_passport_id
                     && in_array((string) $candidate->arm, $travelingControlArms, true));
                 $controlMetrics = $control ? $this->discoveryMetricsForModel((int) $control->model_version_id) : null;
                 $candidateMetrics = $this->discoveryMetricsForModel((int) $row->model_version_id);
@@ -886,20 +1042,28 @@ class DependencyAwareEdgeGenesisFoundryService
                         'recovered_from_immutable_discovery_run' => true,
                         'promotion_evidence' => false,
                     ];
+
                     return ['id' => (int) $row->id, 'evidence' => $evidence,
                         'status' => 'edge_progressing', 'repair' => 'immutable_discovery_control_recovery'];
                 }
             }
             if (! in_array((string) $row->arm, $travelingControlArms, true)
-                || (string) $row->stage !== 'nine_fold_authority') return null;
+                || (string) $row->stage !== 'nine_fold_authority') {
+                return null;
+            }
             $pairedTreatmentExists = $rows->contains(function ($candidate) use ($row): bool {
                 if ((int) $candidate->edge_genesis_passport_id !== (int) $row->edge_genesis_passport_id
                     || (int) $candidate->id === (int) $row->id
-                    || (string) $candidate->stage !== 'nine_fold_authority') return false;
+                    || (string) $candidate->stage !== 'nine_fold_authority') {
+                    return false;
+                }
                 $candidateEvidence = (array) json_decode((string) $candidate->evidence, true);
+
                 return data_get($candidateEvidence, 'authority_selection.decision') === 'discovery_outperformed_control';
             });
-            if (! $pairedTreatmentExists || ($decision === 'exact_control_replayed_for_paired_authority' && $admitted)) return null;
+            if (! $pairedTreatmentExists || ($decision === 'exact_control_replayed_for_paired_authority' && $admitted)) {
+                return null;
+            }
             $evidence['authority_selection'] = [
                 'protocol' => 'paired_discovery_authority_budget_v1',
                 'decision' => 'exact_control_replayed_for_paired_authority',
@@ -908,11 +1072,14 @@ class DependencyAwareEdgeGenesisFoundryService
                 'nine_fold_replay_admitted' => true,
                 'promotion_evidence' => false,
             ];
+
             return ['id' => (int) $row->id, 'evidence' => $evidence, 'repair' => 'traveling_control_budget_flag'];
         })->filter()->values();
-        if (! $apply) return ['protocol' => self::PROTOCOL,
-            'status' => $repairs->isEmpty() ? 'none' : 'would_reconcile',
-            'trials' => $repairs->count(), 'replays_repeated' => 0, 'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL,
+                'status' => $repairs->isEmpty() ? 'none' : 'would_reconcile',
+                'trials' => $repairs->count(), 'replays_repeated' => 0, 'promotion_evidence' => false];
+        }
         foreach ($repairs as $repair) {
             DB::table('edge_genesis_trials')->where('id', $repair['id'])->update(array_filter([
                 'evidence' => json_encode($repair['evidence'], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
@@ -920,6 +1087,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 'updated_at' => now(),
             ], fn ($value): bool => $value !== null));
         }
+
         return ['protocol' => self::PROTOCOL, 'status' => 'reconciled',
             'trials' => $repairs->count(), 'repairs' => $repairs->countBy('repair')->all(),
             'replays_repeated' => 0, 'promotion_evidence' => false];
@@ -942,24 +1110,32 @@ class DependencyAwareEdgeGenesisFoundryService
                 ->where('stage', 'three_fold_confirmation')->where('packet_key', 'not like', '%:attribution')->get();
             $control = $trials->first(fn ($trial): bool => in_array((string) $trial->arm, self::TRAVELING_CONTROL_ARMS, true));
             $treatments = $trials->reject(fn ($trial): bool => in_array((string) $trial->arm, self::TRAVELING_CONTROL_ARMS, true))->values();
-            if (! $control || $treatments->isEmpty()) continue;
+            if (! $control || $treatments->isEmpty()) {
+                continue;
+            }
             if ($trials->contains(fn ($trial): bool => in_array((string) $trial->status, ['queued', 'running'], true))) {
                 $awaiting++;
+
                 continue;
             }
             $undecided = $treatments->filter(function ($trial): bool {
                 $evidence = (array) json_decode((string) ($trial->evidence ?? '{}'), true);
+
                 return data_get($evidence, 'three_fold_causal_replication.protocol') !== 'three_fold_differential_replication_v1';
             });
-            if ($undecided->isEmpty()) continue;
+            if ($undecided->isEmpty()) {
+                continue;
+            }
             $metrics = $trials->mapWithKeys(function ($trial): array {
                 $row = DB::table('model_market_performance')->where('model_version_id', $trial->model_version_id)
                     ->where('evidence_status', 'valid')->where('rolling_windows_count', 3)->latest('id')->first(['metrics']);
                 $value = $row ? (is_string($row->metrics) ? json_decode($row->metrics, true) : $row->metrics) : null;
+
                 return [(int) $trial->id => is_array($value) ? $value : null];
             });
             if ($metrics->contains(fn ($value): bool => ! is_array($value))) {
                 $awaiting++;
+
                 continue;
             }
             $controlMetrics = (array) $metrics->get((int) $control->id);
@@ -984,15 +1160,18 @@ class DependencyAwareEdgeGenesisFoundryService
                     && (int) data_get($result, 'forward_window_protocol.powered_windows', 0) >= 2
                     && (int) data_get($controlMetrics, 'forward_window_protocol.powered_windows', 0) >= 2
                     && (int) $paired['comparable_windows'] === 3 && (int) $paired['positive_windows'] >= 2;
+
                 return ['trial' => $trial, 'replicated' => $replicated, 'delta' => $delta,
                     'same_windows' => $sameWindows, 'partitions_valid' => $partitionsValid,
                     'context_valid' => $contextValid, 'paired' => $paired];
             })->values();
             $ready->push(['passport' => $passport, 'control' => $control, 'decisions' => $decisions]);
         }
-        if (! $apply) return ['protocol' => 'three_fold_differential_replication_v1',
-            'status' => $ready->isEmpty() ? ($awaiting > 0 ? 'awaiting_complete_cohort' : 'none') : 'would_reconcile',
-            'passports' => $ready->count(), 'awaiting' => $awaiting, 'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => 'three_fold_differential_replication_v1',
+                'status' => $ready->isEmpty() ? ($awaiting > 0 ? 'awaiting_complete_cohort' : 'none') : 'would_reconcile',
+                'passports' => $ready->count(), 'awaiting' => $awaiting, 'promotion_evidence' => false];
+        }
 
         $passed = 0;
         foreach ($ready as $cohort) {
@@ -1017,7 +1196,9 @@ class DependencyAwareEdgeGenesisFoundryService
                         'evidence' => json_encode($evidence, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
                         'updated_at' => now(),
                     ]);
-                    if ($decision['replicated']) $passed++;
+                    if ($decision['replicated']) {
+                        $passed++;
+                    }
                 }
                 $hasPassed = $cohort['decisions']->contains(fn (array $decision): bool => $decision['replicated']);
                 DB::table('edge_genesis_passports')->where('id', $cohort['passport']->id)->update([
@@ -1027,6 +1208,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 ]);
             });
         }
+
         return ['protocol' => 'three_fold_differential_replication_v1', 'status' => 'reconciled',
             'passports' => $ready->count(), 'passed_treatments' => $passed, 'awaiting' => $awaiting,
             'promotion_evidence' => false];
@@ -1042,16 +1224,20 @@ class DependencyAwareEdgeGenesisFoundryService
         $travelingControlArms = self::TRAVELING_CONTROL_ARMS;
         $passports = DB::table('edge_genesis_passports')->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))->get();
-        $ready = collect(); $awaiting = 0;
+        $ready = collect();
+        $awaiting = 0;
         foreach ($passports as $passport) {
             $passportEvidence = (array) json_decode((string) ($passport->evidence ?? '{}'), true);
             $trials = DB::table('edge_genesis_trials')->where('edge_genesis_passport_id', $passport->id)
                 ->where('stage', 'nine_fold_authority')->where('packet_key', 'not like', '%:attribution')->get();
             $control = $trials->first(fn ($trial): bool => in_array((string) $trial->arm, $travelingControlArms, true));
             $treatments = $trials->reject(fn ($trial): bool => in_array((string) $trial->arm, $travelingControlArms, true))->values();
-            if (! $control || $treatments->isEmpty()) continue;
+            if (! $control || $treatments->isEmpty()) {
+                continue;
+            }
             $unsettledDecisionExists = $treatments->contains(function ($trial): bool {
                 $evidence = (array) json_decode((string) ($trial->evidence ?? '{}'), true);
+
                 return data_get($evidence, 'nine_fold_causal_authority.protocol') !== 'nine_fold_differential_authority_v1';
             });
             // A passport decision covers the treatments observed at that
@@ -1059,19 +1245,24 @@ class DependencyAwareEdgeGenesisFoundryService
             // the derived comparison when a new immutable nine-fold result
             // lacks a decision; no old replay is repeated.
             if (data_get($passportEvidence, 'nine_fold_causal_authority.protocol') === 'nine_fold_differential_authority_v1'
-                && ! $unsettledDecisionExists) continue;
+                && ! $unsettledDecisionExists) {
+                continue;
+            }
             if ($trials->contains(fn ($trial): bool => in_array((string) $trial->status, ['queued', 'running'], true))) {
                 $awaiting++;
+
                 continue;
             }
             $metrics = $trials->mapWithKeys(function ($trial): array {
                 $row = DB::table('model_market_performance')->where('model_version_id', $trial->model_version_id)
                     ->where('evidence_status', 'valid')->where('rolling_windows_count', '>=', 9)->latest('id')->first(['metrics']);
                 $value = $row ? (is_string($row->metrics) ? json_decode($row->metrics, true) : $row->metrics) : null;
+
                 return [(int) $trial->id => is_array($value) ? $value : null];
             });
             if ($metrics->contains(fn ($value): bool => ! is_array($value))) {
                 $awaiting++;
+
                 continue;
             }
             $controlMetrics = (array) $metrics->get((int) $control->id);
@@ -1094,6 +1285,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 $absoluteEdge = $this->edgeAdmissionPassed($result, $contextRequired);
                 $causal = $sameIdentity && $absoluteEdge && $delta > 0
                     && (int) $paired['comparable_windows'] >= 9 && (int) $paired['positive_windows'] >= 5;
+
                 return ['trial' => $trial, 'model' => $model, 'metrics' => $result,
                     'same_identity' => $sameIdentity, 'absolute_edge' => $absoluteEdge,
                     'expectancy_delta_r' => $delta, 'paired_window_effect' => $paired,
@@ -1102,23 +1294,29 @@ class DependencyAwareEdgeGenesisFoundryService
             })->values();
             $winner = $decisions->where('causal', true)->sort(function (array $a, array $b): int {
                 $delta = $b['expectancy_delta_r'] <=> $a['expectancy_delta_r'];
-                if ($delta !== 0) return $delta;
+                if ($delta !== 0) {
+                    return $delta;
+                }
                 $complexity = $a['context_complexity'] <=> $b['context_complexity'];
+
                 return $complexity !== 0 ? $complexity : ((int) $a['trial']->id <=> (int) $b['trial']->id);
             })->first();
             $ready->push(['passport' => $passport, 'passport_evidence' => $passportEvidence,
                 'control' => $control, 'control_metrics' => $controlMetrics,
                 'decisions' => $decisions, 'winner_trial_id' => (int) data_get($winner, 'trial.id', 0)]);
         }
-        if (! $apply) return ['protocol' => 'nine_fold_differential_authority_v1',
-            'status' => $ready->isEmpty() ? ($awaiting > 0 ? 'awaiting_complete_cohort' : 'none') : 'would_reconcile',
-            'passports' => $ready->count(), 'awaiting' => $awaiting,
-            'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => 'nine_fold_differential_authority_v1',
+                'status' => $ready->isEmpty() ? ($awaiting > 0 ? 'awaiting_complete_cohort' : 'none') : 'would_reconcile',
+                'passports' => $ready->count(), 'awaiting' => $awaiting,
+                'promotion_evidence' => false];
+        }
 
         $winners = 0;
         foreach ($ready as $cohort) {
             DB::transaction(function () use ($cohort, &$winners): void {
-                $passport = $cohort['passport']; $winnerTrialId = (int) $cohort['winner_trial_id'];
+                $passport = $cohort['passport'];
+                $winnerTrialId = (int) $cohort['winner_trial_id'];
                 $controlEvidence = (array) json_decode((string) $cohort['control']->evidence, true);
                 $controlEvidence['nine_fold_causal_authority'] = [
                     'protocol' => 'nine_fold_differential_authority_v1', 'role' => 'exact_control',
@@ -1130,7 +1328,8 @@ class DependencyAwareEdgeGenesisFoundryService
                     'updated_at' => now(),
                 ]);
                 foreach ($cohort['decisions'] as $decision) {
-                    $trial = $decision['trial']; $selected = (int) $trial->id === $winnerTrialId;
+                    $trial = $decision['trial'];
+                    $selected = (int) $trial->id === $winnerTrialId;
                     $evidence = (array) json_decode((string) $trial->evidence, true);
                     $evidence['nine_fold_causal_authority'] = [
                         'protocol' => 'nine_fold_differential_authority_v1',
@@ -1172,9 +1371,12 @@ class DependencyAwareEdgeGenesisFoundryService
                     'evidence' => json_encode($passportEvidence, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
                     'phase_changed_at' => now(), 'updated_at' => now(),
                 ]);
-                if ($winnerTrialId) $winners++;
+                if ($winnerTrialId) {
+                    $winners++;
+                }
             });
         }
+
         return ['protocol' => 'nine_fold_differential_authority_v1', 'status' => 'reconciled',
             'passports' => $ready->count(), 'winners' => $winners, 'awaiting' => $awaiting,
             'promotion_evidence' => false];
@@ -1188,8 +1390,10 @@ class DependencyAwareEdgeGenesisFoundryService
             ->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'edge_genesis.protocol') === self::PROTOCOL
                 && strtoupper((string) data_get($agent->modelVersion?->metadata, 'execution_contract.timeframe', '')) !== self::EXECUTION_TIMEFRAME)
             ->values();
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => $agents->isEmpty() ? 'none' : 'would_reconcile',
-            'models' => $agents->count(), 'parameters_unchanged' => true, 'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => $agents->isEmpty() ? 'none' : 'would_reconcile',
+                'models' => $agents->count(), 'parameters_unchanged' => true, 'promotion_evidence' => false];
+        }
 
         $updated = 0;
         foreach ($agents as $agent) {
@@ -1198,7 +1402,9 @@ class DependencyAwareEdgeGenesisFoundryService
             $expected = $this->executionContracts->for($agent->symbol, self::EXECUTION_TIMEFRAME);
             $passport = DB::table('edge_genesis_passports')->where('genesis_key', data_get($metadata, 'edge_genesis.genesis_key'))->first();
             if (! $passport || ! hash_equals((string) $passport->execution_hash, (string) $expected['execution_hash'])
-                || $this->executionContracts->hashParameters((array) data_get($observed, 'parameters', [])) !== $expected['execution_hash']) continue;
+                || $this->executionContracts->hashParameters((array) data_get($observed, 'parameters', [])) !== $expected['execution_hash']) {
+                continue;
+            }
             data_set($metadata, 'execution_contract', $expected);
             data_set($metadata, 'edge_execution_timeframe_alignment', [
                 'protocol' => 'edge_execution_timeframe_alignment_v1', 'from' => data_get($observed, 'timeframe'),
@@ -1208,6 +1414,7 @@ class DependencyAwareEdgeGenesisFoundryService
             $agent->modelVersion->update(['metadata' => $metadata]);
             $updated++;
         }
+
         return ['protocol' => self::PROTOCOL, 'status' => 'reconciled', 'models' => $updated,
             'parameters_unchanged' => true, 'promotion_evidence' => false];
     }
@@ -1236,20 +1443,27 @@ class DependencyAwareEdgeGenesisFoundryService
         $ready = [];
         foreach ($packets as $packet) {
             $packetEvidence = is_string($packet->evidence) ? json_decode($packet->evidence, true) : $packet->evidence;
-            if (data_get($packetEvidence, 'axis_settlement.protocol') === 'compiled_axis_settlement_v2') continue;
+            if (data_get($packetEvidence, 'axis_settlement.protocol') === 'compiled_axis_settlement_v2') {
+                continue;
+            }
             $passportIds = DB::table('edge_genesis_passports')->where('lab_generation_id', $packet->lab_generation_id)->pluck('id');
             $trials = DB::table('edge_genesis_trials')->whereIn('edge_genesis_passport_id', $passportIds)->get();
             $terminalNoEdge = ['edge_not_found', 'edge_not_confirmed', 'control_settled', 'replication_control_settled'];
             if ($trials->count() !== count(self::COMPILED_HYPOTHESIS_ARMS)
-                || $trials->contains(fn ($trial): bool => ! in_array((string) $trial->status, $terminalNoEdge, true))) continue;
+                || $trials->contains(fn ($trial): bool => ! in_array((string) $trial->status, $terminalNoEdge, true))) {
+                continue;
+            }
             $observations = $trials->map(fn ($trial) => $this->compiledAxisObservation($trial,
                 (string) $packet->structural_axis))->filter()->values();
             $control = $observations->firstWhere('arm', 'compiled_control');
-            if (! is_array($control) || $observations->count() !== count(self::COMPILED_HYPOTHESIS_ARMS)) continue;
+            if (! is_array($control) || $observations->count() !== count(self::COMPILED_HYPOTHESIS_ARMS)) {
+                continue;
+            }
             $effects = $observations->where('arm', '!=', 'compiled_control')->map(function (array $candidate) use ($control): array {
                 $parameterChanged = $this->cohortIdentity->hash(['value' => $candidate['value']])
                     !== $this->cohortIdentity->hash(['value' => $control['value']]);
                 $behaviorChanged = $parameterChanged && $this->axisBehaviorChanged($control, $candidate);
+
                 return [
                     'arm' => $candidate['arm'], 'tested_value' => $candidate['value'],
                     'parameter_changed' => $parameterChanged, 'behavior_changed' => $behaviorChanged,
@@ -1280,9 +1494,11 @@ class DependencyAwareEdgeGenesisFoundryService
                 ],
             ];
         }
-        if (! $apply) return ['protocol' => 'compiled_axis_settlement_v2',
-            'status' => $ready === [] ? 'none' : 'would_settle', 'settled' => count($ready),
-            'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => 'compiled_axis_settlement_v2',
+                'status' => $ready === [] ? 'none' : 'would_settle', 'settled' => count($ready),
+                'promotion_evidence' => false];
+        }
 
         foreach ($ready as $item) {
             $packet = $item['packet'];
@@ -1292,16 +1508,17 @@ class DependencyAwareEdgeGenesisFoundryService
                 DB::table('edge_hypothesis_packets')->where('id', $packet->id)
                     ->whereIn('status', ['registered', 'materialized', 'settled_no_behavior_change',
                         'settled_behavior_changed_no_edge'])->update([
-                        'status' => $item['status'],
-                        'evidence' => json_encode([...((array) $evidence), 'axis_settlement' => $settlement],
-                            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
-                        'updated_at' => now(),
-                    ]);
+                            'status' => $item['status'],
+                            'evidence' => json_encode([...((array) $evidence), 'axis_settlement' => $settlement],
+                                JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
+                            'updated_at' => now(),
+                        ]);
                 DB::table('edge_genesis_cohorts')->where('id', $packet->cohort_id)->update([
                     'status' => $item['status'], 'updated_at' => now(),
                 ]);
             });
         }
+
         return ['protocol' => 'compiled_axis_settlement_v2', 'status' => 'settled',
             'settled' => count($ready), 'statuses' => collect($ready)->countBy('status')->all(),
             'promotion_evidence' => false];
@@ -1312,7 +1529,9 @@ class DependencyAwareEdgeGenesisFoundryService
     {
         $model = ModelVersion::query()->find((int) $trial->model_version_id);
         $performance = $model?->marketPerformances()->where('evidence_status', 'valid')->latest('id')->first();
-        if (! $model || ! $performance || ! is_array($performance->metrics)) return null;
+        if (! $model || ! $performance || ! is_array($performance->metrics)) {
+            return null;
+        }
         $metrics = $performance->metrics;
         $funnel = [
             'stage_counts' => (array) data_get($metrics, 'entry_contract_funnel.stage_counts', []),
@@ -1331,6 +1550,7 @@ class DependencyAwareEdgeGenesisFoundryService
             'wins' => (int) data_get($metrics, 'edge_observability.exit_outcome.wins', 0),
             'losses' => (int) data_get($metrics, 'edge_observability.exit_outcome.losses', 0),
         ];
+
         return [
             'arm' => (string) $trial->arm,
             'value' => data_get($model->parameters, $axis),
@@ -1349,8 +1569,11 @@ class DependencyAwareEdgeGenesisFoundryService
     {
         foreach (['event_hash', 'signal_hash', 'funnel_hash', 'observability_hash'] as $key) {
             if (($control[$key] ?? '') !== '' && ($candidate[$key] ?? '') !== ''
-                && $control[$key] !== $candidate[$key]) return true;
+                && $control[$key] !== $candidate[$key]) {
+                return true;
+            }
         }
+
         return false;
     }
 
@@ -1370,7 +1593,9 @@ class DependencyAwareEdgeGenesisFoundryService
             && data_get($manifest, 'validation_bundle_protocol') === 'agent_owned_mtf_foundation_bundle_v1'
             && data_get($manifest, 'data_role') === 'pre_2026_foundation_training_only'
             && data_get($manifest, 'promotion_evidence') === false;
-        if (! $valid) return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'FROZEN_MTF_COHORT_CONTRACT_INVALID', 'promotion_evidence' => false];
+        if (! $valid) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'FROZEN_MTF_COHORT_CONTRACT_INVALID', 'promotion_evidence' => false];
+        }
         $agents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $generationId)->where('origin', 'edge_genesis')->get();
         $passports = DB::table('edge_genesis_passports')->where('lab_generation_id', $generationId)->get();
         $authorityReplayStarted = DB::table('edge_genesis_trials')->whereIn('edge_genesis_passport_id', $passports->pluck('id'))
@@ -1383,9 +1608,13 @@ class DependencyAwareEdgeGenesisFoundryService
             return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'ACTIVE_EDGE_REPLAY_MUST_SETTLE_BEFORE_REBIND', 'promotion_evidence' => false];
         }
         $alreadyBound = $agents->every(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'edge_genesis.mtf_bundle_hash') === $bundleHash);
-        if ($alreadyBound) return ['protocol' => self::PROTOCOL, 'status' => 'already_bound', 'models' => $agents->count(), 'promotion_evidence' => false];
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => 'would_rebind', 'models' => $agents->count(),
-            'bundle_hash' => $bundleHash, 'promotion_evidence' => false];
+        if ($alreadyBound) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'already_bound', 'models' => $agents->count(), 'promotion_evidence' => false];
+        }
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'would_rebind', 'models' => $agents->count(),
+                'bundle_hash' => $bundleHash, 'promotion_evidence' => false];
+        }
 
         $dispatch = [];
         DB::transaction(function () use ($generation, $agents, $passports, $manifest, $bundleHash, &$dispatch): void {
@@ -1403,9 +1632,13 @@ class DependencyAwareEdgeGenesisFoundryService
                 ]);
                 $agent->modelVersion?->update(['metadata' => $metadata]);
                 $performance = $agent->modelVersion?->marketPerformances()->latest('id')->first();
-                if ($performance) $performance->update(['evidence_status' => 'stale_quarantine', 'invalidated_at' => now(),
-                    'invalidation_reason' => 'EDGE_MTF_BUNDLE_NOT_FROZEN_AT_COHORT_REGISTRATION']);
-                if ($fromStatus !== 'full_queued') $dispatch[] = $agent->id;
+                if ($performance) {
+                    $performance->update(['evidence_status' => 'stale_quarantine', 'invalidated_at' => now(),
+                        'invalidation_reason' => 'EDGE_MTF_BUNDLE_NOT_FROZEN_AT_COHORT_REGISTRATION']);
+                }
+                if ($fromStatus !== 'full_queued') {
+                    $dispatch[] = $agent->id;
+                }
                 $agent->update(['lifecycle_status' => 'full_queued', 'decision_reason' => 'Edge discovery rebound to one cohort-frozen MTF bundle; prior per-agent bundle result has no authority.']);
                 app(LabImmutableEvidenceService::class)->recordLifecycle($agent->fresh(), 'edge_genesis_mtf_cohort_rebound', [
                     'protocol' => 'edge_genesis_single_bundle_rebind_v1', 'frozen_bundle_hash' => $bundleHash,
@@ -1431,7 +1664,10 @@ class DependencyAwareEdgeGenesisFoundryService
                 'mtf_cohort_rebind' => ['protocol' => 'edge_genesis_single_bundle_rebind_v1', 'prior_result_authority' => false]],
                 'status' => 'queued', 'completed_at' => null]);
         });
-        foreach (LabAgent::query()->whereIn('id', $dispatch)->get() as $agent) EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
+        foreach (LabAgent::query()->whereIn('id', $dispatch)->get() as $agent) {
+            EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
+        }
+
         return ['protocol' => self::PROTOCOL, 'status' => 'rebound', 'models' => $agents->count(), 'jobs_dispatched' => count($dispatch),
             'existing_queued_jobs_reused' => $agents->count() - count($dispatch), 'bundle_hash' => $bundleHash, 'promotion_evidence' => false];
     }
@@ -1450,36 +1686,51 @@ class DependencyAwareEdgeGenesisFoundryService
         // selector before its replay exists falsely classified every fresh
         // treatment as dominated and resumed controls only.
         $agentIds = $pending->pluck('agent_id')->map(fn ($id): int => (int) $id)->all();
-        if ($agentIds === []) return ['protocol' => self::PROTOCOL, 'status' => 'none', 'seats' => 0, 'promotion_evidence' => false];
+        if ($agentIds === []) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'none', 'seats' => 0, 'promotion_evidence' => false];
+        }
         $agents = LabAgent::query()->whereIn('id', $agentIds)->with('modelVersion')->get();
         $agents = $agents->filter(fn (LabAgent $agent): bool => $agent->lifecycle_status === 'screened'
             || $this->repairableAdmissionQuarantine($agent)
             || $this->repairableEdgeRuntimeFailure($agent))->values();
-        if ($agents->isEmpty()) return ['protocol' => self::PROTOCOL, 'status' => 'none', 'seats' => 0, 'promotion_evidence' => false];
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => 'would_queue', 'seats' => $agents->count(), 'promotion_evidence' => false];
+        if ($agents->isEmpty()) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'none', 'seats' => 0, 'promotion_evidence' => false];
+        }
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'would_queue', 'seats' => $agents->count(), 'promotion_evidence' => false];
+        }
         foreach ($agents as $agent) {
             $fromStatus = (string) $agent->lifecycle_status;
             $runtimeReason = $this->edgeRuntimeFailureReason($agent);
             $runtimeRecovery = $runtimeReason !== null;
-            if ($fromStatus === 'technical_quarantine' && ! $runtimeRecovery) $this->repairAdmissionMetadata($agent);
+            $numericControlRepair = $this->isCompiledControlNumericRepresentationQuarantine($agent);
+            if ($fromStatus === 'technical_quarantine' && ! $runtimeRecovery) {
+                $this->repairAdmissionMetadata($agent);
+                $agent->refresh()->load('modelVersion');
+            }
             $agent->update(['lifecycle_status' => 'full_queued', 'decision_reason' => $runtimeRecovery
                 ? 'Direct research replay restored after an exact bounded-runtime infrastructure repair; prior partial output has no authority.'
-                : 'Direct research replay restored after immutable Foundry admission repair.']);
+                : ($numericControlRepair
+                    ? 'Direct research replay restored after numeric control identity normalization; strategy parameters remain unchanged.'
+                    : 'Direct research replay restored after immutable Foundry admission repair.')]);
             app(LabImmutableEvidenceService::class)->recordLifecycle($agent->fresh(), $runtimeRecovery
                 ? 'edge_genesis_runtime_recovered' : 'edge_genesis_admission_recovered', [
-                'protocol' => $runtimeRecovery ? 'edge_genesis_bounded_runtime_recovery_v1' : 'edge_genesis_admission_metadata_recovery_v1',
-                'reason_code' => $runtimeRecovery ? $runtimeReason : 'EDGE_CANONICAL_METADATA_MAPPED',
-                'parameters_unchanged' => true,
-                'passport_hashes_unchanged' => true,
-                'prior_partial_result_authority' => false,
-                'quality_verdict' => 'withheld',
-                'promotion_evidence' => false,
-            ], 'preflight', null, null, self::class, null, $fromStatus, 'full_queued');
+                    'protocol' => $runtimeRecovery ? 'edge_genesis_bounded_runtime_recovery_v1'
+                        : ($numericControlRepair ? 'edge_genesis_numeric_control_identity_recovery_v1' : 'edge_genesis_admission_metadata_recovery_v1'),
+                    'reason_code' => $runtimeRecovery ? $runtimeReason
+                        : ($numericControlRepair ? 'EDGE_COMPILED_CONTROL_NUMERIC_REPRESENTATION_NORMALIZED' : 'EDGE_CANONICAL_METADATA_MAPPED'),
+                    'parameters_unchanged' => true,
+                    'passport_hashes_unchanged' => true,
+                    'prior_partial_result_authority' => false,
+                    'quality_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ], 'preflight', null, null, self::class, null, $fromStatus, 'full_queued');
             EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
         }
         LabGeneration::query()->whereIn('id', $agents->pluck('lab_generation_id')->unique())->update([
             'status' => 'queued', 'completed_at' => null, 'updated_at' => now(),
         ]);
+
         return ['protocol' => self::PROTOCOL, 'status' => 'queued', 'seats' => $agents->count(), 'promotion_evidence' => false];
     }
 
@@ -1500,11 +1751,14 @@ class DependencyAwareEdgeGenesisFoundryService
                 'a.id as agent_id', 'a.model_version_id'])->get()
             ->filter(function ($trial): bool {
                 $agent = LabAgent::query()->with('modelVersion')->find((int) $trial->agent_id);
+
                 return data_get($agent?->modelVersion?->metadata, 'edge_genesis.frozen_window_plan.protocol')
                     === EdgeCohortIdentityService::WINDOW_PROTOCOL;
             })->values();
-        if ($progressing->isEmpty()) return ['protocol' => self::PROTOCOL, 'status' => 'none',
-            'seats' => 0, 'folds' => 0, 'ratchet_reconciliation' => $ratchetReconciliation, 'promotion_evidence' => false];
+        if ($progressing->isEmpty()) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'none',
+                'seats' => 0, 'folds' => 0, 'ratchet_reconciliation' => $ratchetReconciliation, 'promotion_evidence' => false];
+        }
 
         $controls = DB::table('edge_genesis_trials as t')->join('lab_agents as a', 'a.id', '=', 't.lab_agent_id')
             ->whereIn('t.edge_genesis_passport_id', $progressing->pluck('passport_id')->unique())
@@ -1514,12 +1768,19 @@ class DependencyAwareEdgeGenesisFoundryService
             ->select(['t.id as trial_id', 't.edge_genesis_passport_id as passport_id', 't.arm', 't.stage',
                 'a.id as agent_id', 'a.model_version_id'])->get();
         $selection = $this->contextAuthoritySelection($progressing->concat($controls)->unique('trial_id')->values());
-        if ($apply && $selection['dominated']->isNotEmpty()) $this->retireDominatedContextTrials($selection['dominated']);
-        if ($apply && $selection['approved']->isNotEmpty()) $this->recordApprovedContextTrials($selection['approved']);
+        if ($apply && $selection['dominated']->isNotEmpty()) {
+            $this->retireDominatedContextTrials($selection['dominated']);
+        }
+        if ($apply && $selection['approved']->isNotEmpty()) {
+            $this->recordApprovedContextTrials($selection['approved']);
+        }
         $treatments = $selection['selected']->whereNotIn('arm', self::TRAVELING_CONTROL_ARMS)->values();
         if ($treatments->isEmpty()) {
             $orphanControls = $selection['selected']->whereIn('arm', self::TRAVELING_CONTROL_ARMS)->values();
-            if ($apply && $orphanControls->isNotEmpty()) $this->settleDiscoveryControlsWithoutTreatment($orphanControls);
+            if ($apply && $orphanControls->isNotEmpty()) {
+                $this->settleDiscoveryControlsWithoutTreatment($orphanControls);
+            }
+
             return ['protocol' => self::PROTOCOL,
                 'status' => $orphanControls->isEmpty() ? 'none' : ($apply ? 'controls_settled' : 'would_settle_controls'),
                 'seats' => 0, 'folds' => 0, 'controls' => $orphanControls->count(),
@@ -1528,21 +1789,27 @@ class DependencyAwareEdgeGenesisFoundryService
         }
         $traveling = $controls->whereIn('passport_id', $treatments->pluck('passport_id')->unique())->values();
         $trials = $treatments->concat($traveling)->unique('trial_id')->values();
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => 'would_queue',
-            'seats' => $trials->count(), 'folds' => 3,
-            'discovery_approved' => $selection['approved']->count(),
-            'discovery_dominated' => $selection['dominated']->count(), 'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'would_queue',
+                'seats' => $trials->count(), 'folds' => 3,
+                'discovery_approved' => $selection['approved']->count(),
+                'discovery_dominated' => $selection['dominated']->count(), 'promotion_evidence' => false];
+        }
 
         DB::transaction(function () use ($trials): void {
             foreach ($trials as $trial) {
                 $row = DB::table('edge_genesis_trials')->where('id', $trial->trial_id)->lockForUpdate()->first();
-                if (! $row || (string) $row->stage !== 'two_fold_discovery') continue;
+                if (! $row || (string) $row->stage !== 'two_fold_discovery') {
+                    continue;
+                }
                 $agent = LabAgent::query()->with('modelVersion')->lockForUpdate()->findOrFail($trial->agent_id);
                 $metadata = (array) $agent->modelVersion?->metadata;
                 $plan = (array) data_get($metadata, 'edge_genesis.frozen_window_plan', []);
                 $stage = (array) data_get($plan, 'stages.three_fold_confirmation', []);
                 if (($plan['protocol'] ?? null) !== EdgeCohortIdentityService::WINDOW_PROTOCOL
-                    || (int) ($stage['fold_count'] ?? 0) !== 3 || (int) ($stage['offset'] ?? -1) !== 2) continue;
+                    || (int) ($stage['fold_count'] ?? 0) !== 3 || (int) ($stage['offset'] ?? -1) !== 2) {
+                    continue;
+                }
                 $contract = [...$stage, 'stage' => 'three_fold_confirmation',
                     'window_plan_hash' => $plan['window_plan_hash'], 'universe_folds' => $plan['universe_folds']];
                 $evidence = (array) json_decode((string) $row->evidence, true);
@@ -1566,7 +1833,9 @@ class DependencyAwareEdgeGenesisFoundryService
             LabGeneration::query()->whereIn('id', LabAgent::query()->whereIn('id', $trials->pluck('agent_id'))
                 ->pluck('lab_generation_id')->unique())->update(['status' => 'queued', 'completed_at' => null, 'updated_at' => now()]);
         });
-        foreach ($trials as $trial) EvaluateLabAgentJob::dispatch((int) $trial->agent_id, strtoupper($symbol), 'full');
+        foreach ($trials as $trial) {
+            EvaluateLabAgentJob::dispatch((int) $trial->agent_id, strtoupper($symbol), 'full');
+        }
 
         return ['protocol' => self::PROTOCOL, 'status' => 'queued', 'seats' => $trials->count(),
             'folds' => 3, 'discovery_approved' => $selection['approved']->count(),
@@ -1581,15 +1850,17 @@ class DependencyAwareEdgeGenesisFoundryService
             ->where('p.symbol', strtoupper($symbol))->where('p.timeframe', strtoupper($timeframe))
             ->where('p.phase', 'EDGE_CONFIRMATION')->where('t.status', 'edge_replication_passed')
             ->where('t.stage', 'three_fold_confirmation')->whereIn('a.lifecycle_status', ['screened', 'rejected'])
-             ->select(['t.id as trial_id', 't.edge_genesis_passport_id as passport_id', 't.arm', 't.stage',
-                 'a.id as agent_id', 'a.model_version_id'])->get();
+            ->select(['t.id as trial_id', 't.edge_genesis_passport_id as passport_id', 't.arm', 't.stage',
+                'a.id as agent_id', 'a.model_version_id'])->get();
         // In the management-harvest revision, absolute authority without the
         // exact source composition is not causal evidence. Promote the
         // latent control alongside a promising treatment even when the
         // control itself missed the cheap discovery screen. Conversely, a
         // control alone can never spend a nine-fold authority budget.
         $travelingControlArms = self::TRAVELING_CONTROL_ARMS;
-        if ($progressing->isEmpty()) return ['protocol' => self::PROTOCOL, 'status' => 'none', 'seats' => 0, 'promotion_evidence' => false];
+        if ($progressing->isEmpty()) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'none', 'seats' => 0, 'promotion_evidence' => false];
+        }
         // A sparse specialist may pass after its exact control has already
         // been terminalized. Reload only the controls belonging to passports
         // that currently have a viable treatment so comparative selection
@@ -1615,7 +1886,10 @@ class DependencyAwareEdgeGenesisFoundryService
         $treatments = $progressing->whereNotIn('arm', $travelingControlArms)->values();
         $orphanControls = $progressing->whereIn('arm', $travelingControlArms)->values();
         if ($treatments->isEmpty() && $orphanControls->isNotEmpty()) {
-            if ($apply) $this->settleDiscoveryControlsWithoutTreatment($orphanControls);
+            if ($apply) {
+                $this->settleDiscoveryControlsWithoutTreatment($orphanControls);
+            }
+
             return ['protocol' => self::PROTOCOL,
                 'status' => $apply ? 'controls_settled' : 'would_settle_controls',
                 'seats' => 0, 'folds' => 0, 'controls' => $orphanControls->count(),
@@ -1633,10 +1907,14 @@ class DependencyAwareEdgeGenesisFoundryService
             ->select(['t.id as trial_id', 't.edge_genesis_passport_id as passport_id', 't.arm', 't.stage',
                 'a.id as agent_id', 'a.model_version_id'])->get();
         $trials = $treatments->concat($travelingControls)->unique('trial_id')->values();
-        if ($trials->isEmpty()) return ['protocol' => self::PROTOCOL, 'status' => 'none', 'seats' => 0, 'promotion_evidence' => false];
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => 'would_queue', 'seats' => $trials->count(),
-            'folds' => 9, 'replication_approved' => $treatments->count(),
-            'discovery_dominated' => 0, 'promotion_evidence' => false];
+        if ($trials->isEmpty()) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'none', 'seats' => 0, 'promotion_evidence' => false];
+        }
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'would_queue', 'seats' => $trials->count(),
+                'folds' => 9, 'replication_approved' => $treatments->count(),
+                'discovery_dominated' => 0, 'promotion_evidence' => false];
+        }
         DB::transaction(function () use ($trials, $travelingControlArms): void {
             foreach ($trials as $trial) {
                 $row = DB::table('edge_genesis_trials')->where('id', $trial->trial_id)->lockForUpdate()->first();
@@ -1656,7 +1934,9 @@ class DependencyAwareEdgeGenesisFoundryService
                 $plan = (array) data_get($metadata, 'edge_genesis.frozen_window_plan', []);
                 $authorityStage = (array) data_get($plan, 'stages.nine_fold_authority', []);
                 if (($plan['protocol'] ?? null) !== EdgeCohortIdentityService::WINDOW_PROTOCOL
-                    || (int) ($authorityStage['fold_count'] ?? 0) !== 9 || (int) ($authorityStage['offset'] ?? -1) !== 5) continue;
+                    || (int) ($authorityStage['fold_count'] ?? 0) !== 9 || (int) ($authorityStage['offset'] ?? -1) !== 5) {
+                    continue;
+                }
                 $validationContract = [...$authorityStage, 'stage' => 'nine_fold_authority',
                     'window_plan_hash' => $plan['window_plan_hash'], 'universe_folds' => $plan['universe_folds']];
                 $evidence['authority_dispatch'] = [
@@ -1697,7 +1977,10 @@ class DependencyAwareEdgeGenesisFoundryService
                 ]);
         });
         $agents = LabAgent::query()->whereIn('id', $trials->pluck('agent_id'))->get();
-        foreach ($agents as $agent) EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
+        foreach ($agents as $agent) {
+            EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
+        }
+
         return ['protocol' => self::PROTOCOL, 'status' => 'queued', 'seats' => $agents->count(), 'folds' => 9,
             'replication_approved' => $treatments->count(),
             'discovery_dominated' => 0, 'promotion_evidence' => false];
@@ -1716,7 +1999,9 @@ class DependencyAwareEdgeGenesisFoundryService
         }
         $passport = DB::table('edge_genesis_passports')->where('genesis_key', data_get($genesis, 'genesis_key'))->first();
         $lab = $edgeAgent->generation?->laboratory;
-        if (! $passport || ! $lab) return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'EDGE_GENESIS_CONTEXT_MISSING', 'promotion_evidence' => false];
+        if (! $passport || ! $lab) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'EDGE_GENESIS_CONTEXT_MISSING', 'promotion_evidence' => false];
+        }
         $sourceTrial = DB::table('edge_genesis_trials')->where('lab_agent_id', $edgeAgent->id)->first();
         $sourceMetrics = $this->latestValidMetrics($edgeAgent->modelVersion, $edgeAgent->symbol, $edgeAgent->timeframe);
         $sourceContextRequired = data_get($genesis, 'context.enforcement') === 'required';
@@ -1732,9 +2017,13 @@ class DependencyAwareEdgeGenesisFoundryService
         $arms = ['full_composition', 'no_confirmation', 'alternate_tactic', 'alternate_temporal_binding', 'frozen_minimal_control'];
         $existing = DB::table('edge_genesis_trials')->where('edge_genesis_passport_id', $passport->id)->where('packet_key', data_get($genesis, 'packet_key').':attribution')
             ->whereIn('status', ['queued', 'running', 'settled'])->exists();
-        if ($existing) return ['protocol' => self::PROTOCOL, 'status' => 'already_materialized', 'promotion_evidence' => false];
-        $generation = null; $agents = [];
-        DB::transaction(function () use ($edgeAgent, $genesis, $passport, $lab, $sourceTrial, $sourceWindowIdentity, $sourceParameterHash, $arms, &$generation, &$agents): void {
+        if ($existing) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'already_materialized', 'promotion_evidence' => false];
+        }
+        $generation = null;
+        $agents = [];
+        $kernel = null;
+        DB::transaction(function () use ($edgeAgent, $genesis, $passport, $lab, $sourceTrial, $sourceWindowIdentity, $sourceParameterHash, $arms, &$generation, &$agents, &$kernel): void {
             $sourceContext = (array) $edgeAgent->generation?->trigger_context;
             $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => ((int) $lab->generations()->max('generation')) + 1,
                 'trigger_type' => 'edge_component_attribution', 'trigger_context' => ['protocol' => self::PROTOCOL, 'genesis_key' => $genesis['genesis_key'],
@@ -1744,7 +2033,7 @@ class DependencyAwareEdgeGenesisFoundryService
                     'mtf_bundle_manifest' => data_get($sourceContext, 'mtf_bundle_manifest'),
                     'canonical_dataset_snapshots' => data_get($sourceContext, 'canonical_dataset_snapshots'),
                     'risk_governor_frozen' => true, 'research_only' => true, 'promotion_evidence' => false],
-                'data_fingerprint' => $passport->data_hash, 'population_size' => count($arms), 'status' => 'queued', 'started_at' => now()]);
+                'data_fingerprint' => $passport->data_hash, 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE, 'status' => 'queued', 'started_at' => now()]);
             foreach ($arms as $index => $arm) {
                 $baseStrategy = (string) data_get($edgeAgent->modelVersion->metadata, 'base_strategy', 'confirmation_entry_mtf_v1');
                 $parameters = $this->attributionParameters($arm, (array) $edgeAgent->modelVersion->parameters, $baseStrategy);
@@ -1774,16 +2063,40 @@ class DependencyAwareEdgeGenesisFoundryService
                 ]);
                 $agents[] = $agent;
             }
+            $protectedGenes = collect($agents)->flatMap(
+                fn (LabAgent $candidate): array => array_keys((array) $candidate->parameter_diff),
+            )->unique()->values()->all();
+            $kernel = $this->compoundingKernel->complete(
+                $generation,
+                $edgeAgent->modelVersion,
+                $edgeAgent,
+                (string) $passport->data_hash,
+                (string) $passport->execution_hash,
+                'edge_quality',
+                $protectedGenes,
+            );
         });
-        foreach ($agents as $agent) EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
-        return ['protocol' => self::PROTOCOL, 'status' => 'queued', 'generation_id' => $generation?->id, 'agent_ids' => collect($agents)->pluck('id')->all(), 'promotion_evidence' => false];
+        foreach ($agents as $agent) {
+            EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
+        }
+        foreach ((array) data_get($kernel, 'dispatches', []) as $dispatch) {
+            EvaluateLabAgentJob::dispatch($dispatch['agent']->id, $dispatch['agent']->symbol, $dispatch['mode']);
+        }
+
+        return ['protocol' => self::PROTOCOL, 'status' => 'queued', 'generation_id' => $generation?->id,
+            'agent_ids' => collect([...$agents, ...((array) data_get($kernel, 'agents', []))])->pluck('id')->all(),
+            'population_size' => CausalCompoundingKernelService::POPULATION_SIZE,
+            'primary_proof_seats' => count($agents),
+            'compounding_kernel' => data_get($kernel, 'contract'), 'promotion_evidence' => false];
     }
 
     private function settleAttributionOutcome(LabAgent $agent): array
     {
         $contract = (array) data_get($agent->modelVersion?->metadata, 'edge_genesis_attribution', []);
         $passport = DB::table('edge_genesis_passports')->where('genesis_key', data_get($contract, 'genesis_key'))->first();
-        if (! $passport) return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'EDGE_GENESIS_PASSPORT_MISSING', 'promotion_evidence' => false];
+        if (! $passport) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => 'EDGE_GENESIS_PASSPORT_MISSING', 'promotion_evidence' => false];
+        }
         if ((string) $passport->status === 'attribution_settled') {
             return ['protocol' => self::PROTOCOL, 'status' => 'already_settled', 'phase' => 'RISK_SHAPING', 'promotion_evidence' => false];
         }
@@ -1794,7 +2107,8 @@ class DependencyAwareEdgeGenesisFoundryService
             return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
                 'reason' => 'COMPLETE_ATTRIBUTION_ARM_SET_REQUIRED', 'promotion_evidence' => false];
         }
-        $metrics = []; $models = [];
+        $metrics = [];
+        $models = [];
         foreach ($trials as $trial) {
             $model = ModelVersion::query()->find($trial->model_version_id);
             $performance = $model?->marketPerformances()->where('symbol', $agent->symbol)
@@ -1844,6 +2158,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 'evidence' => json_encode($evidence, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
                 'updated_at' => now(),
             ]);
+
             return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
                 'reason' => 'ATTRIBUTION_IDENTITY_OR_FULL_EDGE_RECONFIRMATION_FAILED',
                 'violations' => array_values(array_unique($identityViolations)), 'promotion_evidence' => false];
@@ -1901,6 +2216,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 'phase_changed_at' => now(), 'updated_at' => now(),
             ]);
         });
+
         return ['protocol' => self::PROTOCOL,
             'status' => $resolved ? 'attribution_settled' : 'attribution_inconclusive',
             'phase' => $resolved ? 'RISK_SHAPING' : 'EDGE_ATTRIBUTION',
@@ -1912,7 +2228,10 @@ class DependencyAwareEdgeGenesisFoundryService
     {
         $ledger = (array) data_get($result, 'edge_observability', data_get($result, 'confirmation_entry_ledger', []));
         $required = ['opportunity_detected', 'setup_location_valid', 'context_bias_aligned', 'confirmation', 'entry', 'execution_price', 'invalidation_price', 'mfe_mae', 'exit_outcome'];
-        if ($ledger !== []) return collect($required)->every(fn (string $key): bool => array_key_exists($key, $ledger));
+        if ($ledger !== []) {
+            return collect($required)->every(fn (string $key): bool => array_key_exists($key, $ledger));
+        }
+
         return (bool) data_get($result, 'confirmation_entry_observed', false) && (bool) data_get($result, 'behavior_delta_observed', false);
     }
 
@@ -1920,7 +2239,9 @@ class DependencyAwareEdgeGenesisFoundryService
     public function preflight(LabAgent $agent): array
     {
         $contract = (array) data_get($agent->modelVersion?->metadata, 'edge_genesis', []);
-        if (data_get($contract, 'protocol') !== self::PROTOCOL) return ['allowed' => true, 'status' => 'not_edge_genesis', 'promotion_evidence' => false];
+        if (data_get($contract, 'protocol') !== self::PROTOCOL) {
+            return ['allowed' => true, 'status' => 'not_edge_genesis', 'promotion_evidence' => false];
+        }
         $ledger = (array) data_get($agent->modelVersion?->metadata, 'edge_observability_contract', []);
         $required = (array) data_get($ledger, 'required_fields', []);
         $executionContract = (array) data_get($agent->modelVersion?->metadata, 'execution_contract', []);
@@ -1946,6 +2267,7 @@ class DependencyAwareEdgeGenesisFoundryService
                         'direction' => 'allowed_directions',
                         default => null,
                     };
+
                     return $key !== null && (array) data_get($context, $key, []) !== [];
                 })));
         $allowed = data_get($ledger, 'protocol') === self::PROTOCOL && count($required) === 9
@@ -1962,6 +2284,7 @@ class DependencyAwareEdgeGenesisFoundryService
             && data_get($mtfManifest, 'validation_bundle_protocol') === 'agent_owned_mtf_foundation_bundle_v1'
             && data_get($mtfManifest, 'data_role') === 'pre_2026_foundation_training_only'
             && data_get($mtfManifest, 'promotion_evidence') === false;
+
         return ['protocol' => self::PROTOCOL, 'allowed' => $allowed, 'status' => $allowed ? 'admitted' : 'INVALID_EDGE_OBSERVABILITY',
             'required_fields' => $required, 'attribution_ablation_valid' => $attributionAblationValid,
             'promotion_evidence' => false];
@@ -1970,10 +2293,24 @@ class DependencyAwareEdgeGenesisFoundryService
     /** Read-only progress dashboard: discovery progress is not mistaken for promotion progress. */
     public function dashboard(string $symbol, string $timeframe): array
     {
-        if (! $this->available()) return ['protocol' => self::PROTOCOL, 'status' => 'unavailable', 'promotion_evidence' => false];
-        $passports = DB::table('edge_genesis_passports')->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe));
+        if (! $this->available()) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'unavailable', 'promotion_evidence' => false];
+        }
+        $symbol = strtoupper($symbol);
+        $timeframe = strtoupper($timeframe);
+        $passports = DB::table('edge_genesis_passports')->where('symbol', $symbol)->where('timeframe', $timeframe);
         $ids = (clone $passports)->pluck('id');
         $trials = DB::table('edge_genesis_trials')->whereIn('edge_genesis_passport_id', $ids);
+        $transplants = Schema::hasTable('skill_cartridge_transplant_trials')
+            ? DB::table('skill_cartridge_transplant_trials')->where('symbol', $symbol)->where('timeframe', $timeframe)
+            : null;
+        $settledTransplantArms = $transplants ? (clone $transplants)->whereIn('status', ['passed', 'failed'])->count() : 0;
+        $passedTransplantArms = $transplants ? (clone $transplants)->where('status', 'passed')->count() : 0;
+        $allEdgeTrials = (clone $trials)->count();
+        $observableEdgeTrials = (clone $trials)->whereNotIn('status', ['invalid_edge_observability'])->count();
+        $scope = ['symbol' => $symbol, 'laboratory_timeframe' => $timeframe];
+        $period = ['kind' => 'all_time', 'through' => now()->utc()->toIso8601String()];
+
         return ['protocol' => self::PROTOCOL, 'status' => 'research_monitoring',
             'edge_bearing_compositions' => (clone $passports)->whereIn('phase', ['EDGE_ATTRIBUTION', 'RISK_SHAPING', 'MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION'])->count(),
             // EDGE_CONFIRMATION is still a question, not a viable specialist.
@@ -1982,15 +2319,41 @@ class DependencyAwareEdgeGenesisFoundryService
             'contextual_viable_specialists' => (clone $passports)->whereIn('phase', ['EDGE_ATTRIBUTION', 'RISK_SHAPING', 'MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION'])->count(),
             'positive_powered_folds' => (clone $trials)->where('status', 'edge_progressing')->count(),
             'confirmed_component_effects' => DB::table('edge_genesis_component_attributions')->whereIn('edge_genesis_passport_id', $ids)->where('status', 'supported')->count(),
-            'transplant_success_rate' => Schema::hasTable('skill_cartridge_transplant_trials') ? round((float) DB::table('skill_cartridge_transplant_trials')->where('status', 'passed')->count() / max(1, DB::table('skill_cartridge_transplant_trials')->whereIn('status', ['passed', 'failed'])->count()), 4) : null,
+            'transplant_arm_pass_rate' => $this->ratioMetric($passedTransplantArms, $settledTransplantArms,
+                'passed_transplant_arm_trial', 'settled_pass_or_fail_transplant_arm_trial', $scope, $period,
+                'Research arm outcomes only; this is not confirmed transfer, mentor, parent, paper, or deployment authority.'),
             'retired_dead_baselines' => (clone $trials)->where('status', 'edge_not_found')->count(),
-            'confirmation_entry_coverage' => round((float) (clone $trials)->whereNotIn('status', ['invalid_edge_observability'])->count() / max(1, $trials->count()), 4),
+            'valid_edge_observability_trial_share' => $this->ratioMetric($observableEdgeTrials, $allEdgeTrials,
+                'edge_trial_without_invalid_observability_status', 'scoped_edge_trial', $scope, $period,
+                'Engineering observability coverage only; it is not economic or promotion evidence.'),
             'compute_wasted_on_invalid_trials' => (clone $trials)->whereIn('status', ['invalid_edge_observability', 'invalid_hash_mismatch'])->count(),
             'full_stack_passports' => Schema::hasTable('full_stack_playbook_passports') ? DB::table('full_stack_playbook_passports')->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->count() : null,
             'procedural_mastery_only' => Schema::hasTable('full_stack_playbook_passports') ? DB::table('full_stack_playbook_passports')->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->where('status', 'procedural_mastery_only')->count() : null,
             'master_candidates' => Schema::hasTable('full_stack_playbook_passports') ? DB::table('full_stack_playbook_passports')->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->where('status', 'master_candidate')->count() : null,
             'architecture_repair' => $this->architectureRepairReadiness($symbol, $timeframe),
             'promotion_evidence' => false];
+    }
+
+    /** @return array<string,mixed> */
+    private function ratioMetric(
+        int $numerator,
+        int $denominator,
+        string $numeratorSubject,
+        string $denominatorSubject,
+        array $scope,
+        array $period,
+        string $interpretation,
+    ): array {
+        return [
+            'value' => $denominator > 0 ? round($numerator / $denominator, 6) : null,
+            'unit' => 'ratio',
+            'status' => $denominator > 0 ? 'measured' : 'no_denominator',
+            'scope' => $scope,
+            'period' => $period,
+            'numerator' => ['value' => $numerator, 'unique_subject_type' => $numeratorSubject],
+            'denominator' => ['value' => $denominator, 'unique_subject_type' => $denominatorSubject],
+            'interpretation' => $interpretation,
+        ];
     }
 
     /**
@@ -2000,8 +2363,10 @@ class DependencyAwareEdgeGenesisFoundryService
      */
     public function reconcileContextAuthorityEffects(string $symbol, string $timeframe, bool $apply = false): array
     {
-        if (! $this->available()) return ['protocol' => 'context_authority_effect_settlement_v1',
-            'status' => 'unavailable', 'effects' => 0, 'promotion_evidence' => false];
+        if (! $this->available()) {
+            return ['protocol' => 'context_authority_effect_settlement_v1',
+                'status' => 'unavailable', 'effects' => 0, 'promotion_evidence' => false];
+        }
         $passports = DB::table('edge_genesis_passports as p')->join('lab_generations as g', 'g.id', '=', 'p.lab_generation_id')
             ->where('p.symbol', strtoupper($symbol))->where('p.timeframe', strtoupper($timeframe))
             ->where('g.trigger_context->architecture_revision', self::CONTEXT_ROUTER_REPAIR_REVISION)
@@ -2012,7 +2377,9 @@ class DependencyAwareEdgeGenesisFoundryService
                 ->whereIn('arm', self::CONTEXT_ROUTER_REPAIR_ARMS)->get()->keyBy('arm');
             $controlTrial = $trials->get('unfiltered_context_control');
             if (! $controlTrial || (string) $controlTrial->stage !== 'nine_fold_authority'
-                || (string) $controlTrial->status !== 'control_settled') continue;
+                || (string) $controlTrial->status !== 'control_settled') {
+                continue;
+            }
             $controlModel = ModelVersion::query()->find((int) $controlTrial->model_version_id);
             $control = $this->latestValidMetrics($controlModel, $symbol, $timeframe);
             $controlExpectancy = $this->afterCost($control);
@@ -2025,7 +2392,9 @@ class DependencyAwareEdgeGenesisFoundryService
             foreach ($axesByArm as $arm => $expectedAxes) {
                 $treatmentTrial = $trials->get($arm);
                 if (! $treatmentTrial || (string) $treatmentTrial->stage !== 'nine_fold_authority'
-                    || ! in_array((string) $treatmentTrial->status, ['edge_not_confirmed', 'edge_progressing'], true)) continue;
+                    || ! in_array((string) $treatmentTrial->status, ['edge_not_confirmed', 'edge_progressing'], true)) {
+                    continue;
+                }
                 $treatmentModel = ModelVersion::query()->find((int) $treatmentTrial->model_version_id);
                 $treatment = $this->latestValidMetrics($treatmentModel, $symbol, $timeframe);
                 $sameParameters = $controlModel && $treatmentModel
@@ -2038,7 +2407,9 @@ class DependencyAwareEdgeGenesisFoundryService
                     && data_get($treatment, 'edge_context_enforcement.protocol') === 'edge_context_authority_firewall_v1'
                     && data_get($treatment, 'edge_context_enforcement.enforced') === true
                     && data_get($treatment, 'edge_context_enforcement.admission_axes') === $expectedAxes;
-                if (! $identityValid) continue;
+                if (! $identityValid) {
+                    continue;
+                }
                 $treatmentExpectancy = $this->afterCost($treatment);
                 $delta = round($treatmentExpectancy - $controlExpectancy, 6);
                 $effect = [
@@ -2063,14 +2434,20 @@ class DependencyAwareEdgeGenesisFoundryService
                     'parent_authority' => false, 'promotion_evidence' => false,
                 ];
                 $effect['effect_hash'] = hash('sha256', json_encode($effect, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
-                if (data_get(json_decode((string) $treatmentTrial->evidence, true), 'causal_context_effect.effect_hash') === $effect['effect_hash']) continue;
+                if (data_get(json_decode((string) $treatmentTrial->evidence, true), 'causal_context_effect.effect_hash') === $effect['effect_hash']) {
+                    continue;
+                }
                 $effects->push(['passport' => $passport, 'control' => $controlTrial, 'treatment' => $treatmentTrial, 'effect' => $effect]);
             }
         }
-        if ($effects->isEmpty()) return ['protocol' => 'context_authority_effect_settlement_v1',
-            'status' => 'none', 'effects' => 0, 'promotion_evidence' => false];
-        if (! $apply) return ['protocol' => 'context_authority_effect_settlement_v1',
-            'status' => 'would_reconcile', 'effects' => $effects->count(), 'promotion_evidence' => false];
+        if ($effects->isEmpty()) {
+            return ['protocol' => 'context_authority_effect_settlement_v1',
+                'status' => 'none', 'effects' => 0, 'promotion_evidence' => false];
+        }
+        if (! $apply) {
+            return ['protocol' => 'context_authority_effect_settlement_v1',
+                'status' => 'would_reconcile', 'effects' => $effects->count(), 'promotion_evidence' => false];
+        }
         DB::transaction(function () use ($effects): void {
             foreach ($effects as $row) {
                 $arm = (string) $row['effect']['arm'];
@@ -2101,6 +2478,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 ]);
             }
         });
+
         return ['protocol' => 'context_authority_effect_settlement_v1',
             'status' => 'reconciled', 'effects' => $effects->count(), 'promotion_evidence' => false];
     }
@@ -2112,27 +2490,33 @@ class DependencyAwareEdgeGenesisFoundryService
      */
     public function reconcileRepairGenerationCoverage(string $symbol, string $timeframe, bool $apply = false): array
     {
-        $symbol = strtoupper($symbol); $timeframe = strtoupper($timeframe);
+        $symbol = strtoupper($symbol);
+        $timeframe = strtoupper($timeframe);
         $generation = LabGeneration::query()->with('agents.modelVersion')->where('trigger_type', 'edge_genesis')
-            ->latest('id')->get()->first(fn (LabGeneration $candidate): bool =>
-                in_array(data_get($candidate->trigger_context, 'architecture_revision'), [self::CONFIRMATION_REPAIR_REVISION, self::TRIGGER_REPAIR_REVISION, self::LATENT_HARVEST_REVISION, self::CONTEXT_ROUTER_REPAIR_REVISION, self::REGIME_ENTRY_SYNTHESIS_REVISION, self::FAILURE_CELL_FACTORIAL_REVISION, self::SPECIALIST_DENSIFICATION_REVISION, self::TEMPORAL_BREAKOUT_BINDING_REVISION, self::M15_SETUP_QUALITY_REVISION], true)
+            ->latest('id')->get()->first(fn (LabGeneration $candidate): bool => in_array(data_get($candidate->trigger_context, 'architecture_revision'), [self::CONFIRMATION_REPAIR_REVISION, self::TRIGGER_REPAIR_REVISION, self::LATENT_HARVEST_REVISION, self::CONTEXT_ROUTER_REPAIR_REVISION, self::REGIME_ENTRY_SYNTHESIS_REVISION, self::FAILURE_CELL_FACTORIAL_REVISION, self::SPECIALIST_DENSIFICATION_REVISION, self::TEMPORAL_BREAKOUT_BINDING_REVISION, self::M15_SETUP_QUALITY_REVISION], true)
                 && strtoupper((string) $candidate->laboratory?->symbol) === $symbol
                 && strtoupper((string) $candidate->laboratory?->timeframe) === $timeframe);
-        if (! $generation) return ['protocol' => self::PROTOCOL, 'status' => 'none', 'promotion_evidence' => false];
+        if (! $generation) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'none', 'promotion_evidence' => false];
+        }
         $dataHash = (string) data_get($generation->trigger_context, 'data_hash', $generation->data_fingerprint);
         $current = (array) data_get($generation->trigger_context, 'canonical_dataset_snapshots', []);
         if ($this->canonicalDatasetSnapshotsValid($current, $dataHash)) {
             return ['protocol' => self::PROTOCOL, 'status' => 'already_valid', 'generation_id' => $generation->id, 'promotion_evidence' => false];
         }
 
-        $agents = $generation->agents;
+        $agents = $generation->agents->filter(fn (LabAgent $candidate): bool => data_get($candidate->modelVersion?->metadata, 'edge_genesis.protocol') === self::PROTOCOL
+        )->values();
         $revision = (string) data_get($generation->trigger_context, 'architecture_revision', '');
         $expectedPackets = count((array) data_get($generation->trigger_context, 'causal_repair_contract.packet_keys', []));
-        if ($expectedPackets <= 0) $expectedPackets = count($this->packets());
+        if ($expectedPackets <= 0) {
+            $expectedPackets = count($this->packets());
+        }
         $exactOperationalFailure = $agents->count() === $expectedPackets * count($this->armsForRevision($revision))
             && $agents->every(function (LabAgent $agent): bool {
                 $errors = array_values((array) data_get($agent->modelVersion?->metadata, 'preflight_quarantine.errors', []));
                 sort($errors);
+
                 return $agent->lifecycle_status === 'technical_quarantine'
                     && $errors === ['FULL_REPLAY_DATASET_COVERAGE_INSUFFICIENT'];
             });
@@ -2149,15 +2533,20 @@ class DependencyAwareEdgeGenesisFoundryService
         $source = LabGeneration::query()->where('id', '<', $generation->id)->where('trigger_type', 'edge_genesis')
             ->latest('id')->get()->first(function (LabGeneration $candidate) use ($dataHash, $targetBundleHash): bool {
                 $snapshots = (array) data_get($candidate->trigger_context, 'canonical_dataset_snapshots', []);
+
                 return hash_equals($dataHash, (string) data_get($candidate->trigger_context, 'data_hash', $candidate->data_fingerprint))
                     && hash_equals($targetBundleHash, (string) data_get($candidate->trigger_context, 'mtf_bundle_hash', ''))
                     && $this->canonicalDatasetSnapshotsValid($snapshots, $dataHash);
             });
-        if (! $source) return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
-            'reason' => 'BYTE_VALID_SOURCE_COVERAGE_SNAPSHOTS_NOT_FOUND', 'generation_id' => $generation->id, 'promotion_evidence' => false];
+        if (! $source) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'blocked',
+                'reason' => 'BYTE_VALID_SOURCE_COVERAGE_SNAPSHOTS_NOT_FOUND', 'generation_id' => $generation->id, 'promotion_evidence' => false];
+        }
 
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => 'would_repair', 'generation_id' => $generation->id,
-            'source_generation_id' => $source->id, 'agents' => $agents->count(), 'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'would_repair', 'generation_id' => $generation->id,
+                'source_generation_id' => $source->id, 'agents' => $agents->count(), 'promotion_evidence' => false];
+        }
         $context = (array) $generation->trigger_context;
         $context['canonical_dataset_snapshots'] = $this->reusedCanonicalDatasetSnapshots(
             (array) data_get($source->trigger_context, 'canonical_dataset_snapshots', []),
@@ -2194,6 +2583,7 @@ class DependencyAwareEdgeGenesisFoundryService
             && $observedSignals === $matchedSignals + $rejectedSignals
             && $matchedSignals >= (int) data_get($result, 'total_trades', 0)
         );
+
         return ['financial' => $expectancy > 0 && $pfLower > 1 && (float) data_get($result, 'net_profit_percent', 0) > 0,
             'temporal' => $folds >= 9 && $positive >= 3 && ! (bool) data_get($result, 'temporal_leakage', data_get($result, 'is_overfit', false)),
             'behavior' => $this->observability($result) && (bool) data_get($result, 'behavior_delta_observed', false),
@@ -2208,15 +2598,19 @@ class DependencyAwareEdgeGenesisFoundryService
             'fold_context_authority' => $foldContextAuthority,
             'pf_lower_confidence_bound' => $pfLower, 'after_cost_expectancy_r' => $expectancy, 'powered_folds' => $folds, 'positive_folds' => $positive, 'promotion_evidence' => false];
     }
-    private function edgeAdmissionPassed(array $result, bool $contextEnforcementRequired = false): bool { return collect($this->edgeAdmission($result, $contextEnforcementRequired))->only(['financial','temporal','behavior','context','safety'])->every(fn ($v): bool => $v === true); }
+
+    private function edgeAdmissionPassed(array $result, bool $contextEnforcementRequired = false): bool
+    {
+        return collect($this->edgeAdmission($result, $contextEnforcementRequired))->only(['financial', 'temporal', 'behavior', 'context', 'safety'])->every(fn ($v): bool => $v === true);
+    }
+
     /** @return array<string,mixed> */
     private function discoveryAdmission(
         array $result,
         bool $contextEnforcementRequired = false,
         array $contextAxes = [],
         bool $m15SetupQualityExperiment = false,
-    ): array
-    {
+    ): array {
         $expectancy = (float) data_get($result, 'after_cost_expectancy_r', data_get($result, 'after_cost_expectancy', 0));
         $trades = (int) data_get($result, 'total_trades', 0);
         $folds = (int) data_get($result, 'forward_window_protocol.powered_windows', data_get($result, 'walk_forward.forward_window_protocol.powered_windows', 0));
@@ -2253,39 +2647,68 @@ class DependencyAwareEdgeGenesisFoundryService
         ];
         $contract['passed'] = collect($contract)->only(['financial_signal', 'temporal_signal', 'decision_path_activated', 'context', 'safety'])
             ->every(fn ($value): bool => $value === true);
+
         return $contract;
     }
+
     private function decisionPathActivated(array $result): bool
     {
         $ledger = (array) data_get($result, 'edge_observability', data_get($result, 'confirmation_entry_ledger', []));
         $trades = (int) data_get($result, 'total_trades', 0);
         $count = static function ($value, array $keys, int $fallback = 0): int {
-            if (is_bool($value)) return $value ? $fallback : 0;
-            if (! is_array($value)) return 0;
-            foreach ($keys as $key) if (array_key_exists($key, $value)) return (int) $value[$key];
+            if (is_bool($value)) {
+                return $value ? $fallback : 0;
+            }
+            if (! is_array($value)) {
+                return 0;
+            }
+            foreach ($keys as $key) {
+                if (array_key_exists($key, $value)) {
+                    return (int) $value[$key];
+                }
+            }
+
             return 0;
         };
         $setup = $count($ledger['setup_location_valid'] ?? null, ['setup_count', 'location_count', 'count'], $trades);
         $confirmation = $count($ledger['confirmation'] ?? null, ['count'], $trades);
         $entry = $count($ledger['entry'] ?? null, ['count'], $trades);
         $closed = $count($ledger['exit_outcome'] ?? null, ['closed_trade_count', 'count'], $trades);
+
         return $trades > 0 && $setup > 0 && $confirmation > 0 && $entry > 0 && $closed > 0;
     }
-    private function edgeViable(array $result): bool { return (float) data_get($result, 'after_cost_expectancy_r', data_get($result, 'after_cost_expectancy', 0)) > 0 && (float) data_get($result, 'statistical_evidence.edge_quality.bootstrap_pf.pf_5_percentile_lower_bound', data_get($result, 'pf_lower_confidence_bound', 0)) > 1; }
-    private function blocked(string $reason, string $phase, bool $risk): array { return ['protocol' => self::PROTOCOL, 'allowed' => false, 'reason' => $reason, 'phase' => $phase, 'risk_gene' => $risk, 'architecture_genesis_required' => $phase === 'EDGE_DISCOVERY', 'promotion_evidence' => false]; }
-    private function available(): bool { return Schema::hasTable('edge_genesis_passports') && Schema::hasTable('edge_genesis_trials'); }
+
+    private function edgeViable(array $result): bool
+    {
+        return (float) data_get($result, 'after_cost_expectancy_r', data_get($result, 'after_cost_expectancy', 0)) > 0 && (float) data_get($result, 'statistical_evidence.edge_quality.bootstrap_pf.pf_5_percentile_lower_bound', data_get($result, 'pf_lower_confidence_bound', 0)) > 1;
+    }
+
+    private function blocked(string $reason, string $phase, bool $risk): array
+    {
+        return ['protocol' => self::PROTOCOL, 'allowed' => false, 'reason' => $reason, 'phase' => $phase, 'risk_gene' => $risk, 'architecture_genesis_required' => $phase === 'EDGE_DISCOVERY', 'promotion_evidence' => false];
+    }
+
+    private function available(): bool
+    {
+        return Schema::hasTable('edge_genesis_passports') && Schema::hasTable('edge_genesis_trials');
+    }
 
     /** @return array<string,mixed> */
     private function architectureRepairAssessment(string $symbol, string $timeframe): array
     {
-        $symbol = strtoupper($symbol); $timeframe = strtoupper($timeframe);
+        $symbol = strtoupper($symbol);
+        $timeframe = strtoupper($timeframe);
         $base = ['protocol' => self::PROTOCOL, 'repair_revision' => self::CONFIRMATION_REPAIR_REVISION,
             'admitted' => false, 'promotion_evidence' => false];
-        if (! $this->available()) return [...$base, 'status' => 'blocked', 'reason' => 'EDGE_GENESIS_TABLES_UNAVAILABLE'];
+        if (! $this->available()) {
+            return [...$base, 'status' => 'blocked', 'reason' => 'EDGE_GENESIS_TABLES_UNAVAILABLE'];
+        }
 
         $scope = DB::table('edge_genesis_passports')->where('symbol', $symbol)->where('timeframe', $timeframe);
         $generationId = (int) ((clone $scope)->max('lab_generation_id') ?? 0);
-        if ($generationId <= 0) return [...$base, 'status' => 'not_applicable', 'reason' => 'NO_COMPLETED_EDGE_COHORT'];
+        if ($generationId <= 0) {
+            return [...$base, 'status' => 'not_applicable', 'reason' => 'NO_COMPLETED_EDGE_COHORT'];
+        }
         $edgeEstablished = (clone $scope)->whereIn('phase', [
             'EDGE_ATTRIBUTION', 'RISK_SHAPING', 'MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION',
         ])->exists();
@@ -2494,8 +2917,8 @@ class DependencyAwareEdgeGenesisFoundryService
         }
 
         $eligible = collect($diagnostic)->groupBy('packet_key')->map(function ($rows, string $packetKey): array {
-            $best = $rows->sortByDesc(fn (array $row): float =>
-                ((int) $row['observed_trades'] * 10) + (float) $row['average_mfe_r_before_exit_bar'])->first();
+            $best = $rows->sortByDesc(fn (array $row): float => ((int) $row['observed_trades'] * 10) + (float) $row['average_mfe_r_before_exit_bar'])->first();
+
             return ['packet_key' => $packetKey, 'trials' => $rows->count(),
                 'observed_trades' => $rows->sum('observed_trades'), 'best' => $best];
         })->filter(fn (array $row): bool => $row['trials'] >= 2 && $row['observed_trades'] >= 8)
@@ -2509,6 +2932,7 @@ class DependencyAwareEdgeGenesisFoundryService
 
         $packetKey = (string) $selected['packet_key'];
         $best = (array) $selected['best'];
+
         return [...$base, 'status' => 'admitted', 'admitted' => true,
             'reason' => 'REPLICATED_CONSERVATIVE_PRE_EXIT_EXCURSION_NOT_HARVESTED',
             'source_generation_id' => $generationId, 'source_bundle_hash' => $identity['bundle_hash'],
@@ -2559,6 +2983,7 @@ class DependencyAwareEdgeGenesisFoundryService
         }
 
         $packetKey = (string) $controlTrial->packet_key;
+
         return [...$base, 'status' => 'admitted', 'admitted' => true,
             'repair_revision' => self::CONTEXT_ROUTER_REPAIR_REVISION,
             'reason' => 'DECLARED_CONTEXT_ROUTER_NOT_EXECUTION_ENFORCED',
@@ -2626,6 +3051,7 @@ class DependencyAwareEdgeGenesisFoundryService
         }
 
         $packetKey = (string) $regimeTrial->packet_key;
+
         return [...$base, 'repair_revision' => self::REGIME_ENTRY_SYNTHESIS_REVISION,
             'status' => 'admitted', 'admitted' => true,
             'reason' => 'REGIME_ROUTER_BENEFICIAL_BUT_ENTRY_EDGE_ABSENT',
@@ -2722,6 +3148,7 @@ class DependencyAwareEdgeGenesisFoundryService
         }
 
         $packetKey = (string) $controlTrial->packet_key;
+
         return [...$base, 'repair_revision' => self::FAILURE_CELL_FACTORIAL_REVISION,
             'status' => 'admitted', 'admitted' => true,
             'reason' => 'NINE_FOLD_FAILURE_CELLS_REQUIRE_PROSPECTIVE_FACTORIAL_ROUTER_TEST',
@@ -2800,6 +3227,7 @@ class DependencyAwareEdgeGenesisFoundryService
         }
 
         $packetKey = (string) $specialistTrial->packet_key;
+
         return [...$base, 'repair_revision' => self::SPECIALIST_DENSIFICATION_REVISION,
             'status' => 'admitted', 'admitted' => true,
             'reason' => 'BUY_HIGH_VOLATILITY_EDGE_DIFFERENTIAL_REQUIRES_PROFESSIONAL_COVERAGE_CURRICULUM',
@@ -2872,6 +3300,7 @@ class DependencyAwareEdgeGenesisFoundryService
             ->where('arm', '!=', 'specialist_interaction_control')
             ->every(function ($trial) use ($models, $symbol, $timeframe, $controlExpectancy): bool {
                 $metrics = $this->latestValidMetrics($models->get((int) $trial->model_version_id), $symbol, $timeframe);
+
                 return (string) $trial->status === 'edge_not_found'
                     && $this->afterCost($metrics) <= $controlExpectancy;
             });
@@ -2888,6 +3317,7 @@ class DependencyAwareEdgeGenesisFoundryService
         }
 
         $packetKey = (string) $controlTrial->packet_key;
+
         return [...$base, 'repair_revision' => self::TEMPORAL_BREAKOUT_BINDING_REVISION,
             'status' => 'admitted', 'admitted' => true,
             'reason' => 'SPARSE_BREAKOUT_CONTROL_REQUIRES_TEMPORAL_ROLE_BINDING',
@@ -2975,6 +3405,7 @@ class DependencyAwareEdgeGenesisFoundryService
         }
 
         $packetKey = (string) $m15Trial->packet_key;
+
         return [...$base, 'repair_revision' => self::M15_SETUP_QUALITY_REVISION,
             'status' => 'admitted', 'admitted' => true,
             'reason' => 'M15_SETUP_EXPANDED_COVERAGE_BUT_REQUIRES_CONFIRMATION_QUALITY_MASTERY',
@@ -3024,6 +3455,7 @@ class DependencyAwareEdgeGenesisFoundryService
             && data_get($manifest, 'data_role') === 'pre_2026_foundation_training_only'
             && data_get($manifest, 'promotion_evidence') === false
             && $this->canonicalDatasetSnapshotsValid($canonicalSnapshots, (string) $dataHashes->first());
+
         return ['valid' => $valid, 'bundle_hash' => $bundleHash,
             'materialization_contract' => ['data_hash' => (string) $dataHashes->first(),
                 'execution_hash' => (string) $executionHashes->first(),
@@ -3036,6 +3468,7 @@ class DependencyAwareEdgeGenesisFoundryService
     {
         $performance = $model?->marketPerformances->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->where('evidence_status', 'valid')->sortByDesc('id')->first();
+
         return (array) $performance?->metrics;
     }
 
@@ -3051,18 +3484,28 @@ class DependencyAwareEdgeGenesisFoundryService
     {
         $base = ['protocol' => CausalStageMasteryDirectorService::PROTOCOL, 'status' => 'not_applicable',
             'enforce' => false, 'promotion_evidence' => false];
-        if ($stage !== 'two_fold_discovery' || $controlRole || ! $trial || ! $agent->modelVersion) return $base;
+        if ($stage !== 'two_fold_discovery' || $controlRole || ! $trial || ! $agent->modelVersion) {
+            return $base;
+        }
         $controlTrial = DB::table('edge_genesis_trials')->where('edge_genesis_passport_id', $passport->id)
             ->where('stage', 'two_fold_discovery')->whereIn('arm', self::TRAVELING_CONTROL_ARMS)
             ->whereNotNull('settled_at')->orderBy('id')->first();
-        if (! $controlTrial) return [...$base, 'status' => 'awaiting_paired_control'];
+        if (! $controlTrial) {
+            return [...$base, 'status' => 'awaiting_paired_control'];
+        }
         $controlModel = ModelVersion::query()->find((int) $controlTrial->model_version_id);
         $controlMetrics = $this->latestValidMetrics($controlModel, $agent->symbol, $agent->timeframe);
-        if (! $controlModel || $controlMetrics === []) return [...$base, 'status' => 'awaiting_valid_control_metrics'];
+        if (! $controlModel || $controlMetrics === []) {
+            return [...$base, 'status' => 'awaiting_valid_control_metrics'];
+        }
         $axis = $this->stageMastery->inferAxis((array) $controlModel->parameters, (array) $agent->modelVersion->parameters);
-        if (($axis['status'] ?? '') !== 'single_axis') return [...$base, 'axis' => $axis];
+        if (($axis['status'] ?? '') !== 'single_axis') {
+            return [...$base, 'axis' => $axis];
+        }
         $owner = (array) ($axis['owner'] ?? []);
-        if (($owner['declared'] ?? false) !== true) return [...$base, 'axis' => $axis];
+        if (($owner['declared'] ?? false) !== true) {
+            return [...$base, 'axis' => $axis];
+        }
         $gene = (string) $axis['gene'];
         $control = [...$controlMetrics, 'value' => data_get($controlModel->parameters, $gene)];
         $candidate = [...$result, 'value' => data_get($agent->modelVersion->parameters, $gene)];
@@ -3092,6 +3535,7 @@ class DependencyAwareEdgeGenesisFoundryService
             $agent->modelVersion->update(['metadata' => $metadata]);
             $agent->setRelation('modelVersion', $agent->modelVersion->fresh());
         }
+
         return ['protocol' => CausalStageMasteryDirectorService::PROTOCOL, 'status' => 'assessed',
             'enforce' => true, 'axis' => $axis, 'assessment' => $assessment,
             'scaffold' => $this->stageMastery->scaffold($assessment), 'ratchet' => $ratchet, 'promotion_evidence' => false];
@@ -3111,26 +3555,36 @@ class DependencyAwareEdgeGenesisFoundryService
             ->where('t.stage', 'two_fold_discovery')->where('t.status', 'edge_progressing')
             ->whereNotIn('t.arm', self::TRAVELING_CONTROL_ARMS)
             ->select(['t.*', 'p.genesis_key', 'p.data_hash', 'p.execution_hash'])->get();
-        $assessed = 0; $retired = 0;
+        $assessed = 0;
+        $retired = 0;
         foreach ($trials as $trial) {
             $priorEvidence = is_string($trial->evidence) ? (array) json_decode($trial->evidence, true) : (array) $trial->evidence;
             // A comparative selector has already made the bounded cohort's
             // terminal decision. Ratchet reconciliation must not reopen or
             // overwrite that decision with an earlier local preflight.
-            if (data_get($priorEvidence, 'authority_selection.decision') !== null) continue;
+            if (data_get($priorEvidence, 'authority_selection.decision') !== null) {
+                continue;
+            }
             $agent = LabAgent::query()->with('modelVersion')->find((int) $trial->lab_agent_id);
             $metrics = $agent?->modelVersion?->marketPerformances()->where('evidence_status', 'valid')->latest('id')->value('metrics');
-            if (! $agent || ! is_array($metrics)) continue;
+            if (! $agent || ! is_array($metrics)) {
+                continue;
+            }
             $passport = (object) ['id' => $trial->edge_genesis_passport_id, 'genesis_key' => $trial->genesis_key,
                 'data_hash' => $trial->data_hash, 'execution_hash' => $trial->execution_hash];
             $outcome = $this->stageMasteryAssessment($agent, $trial, $passport, $metrics, 'two_fold_discovery', false);
-            if (($outcome['status'] ?? '') !== 'assessed') continue;
+            if (($outcome['status'] ?? '') !== 'assessed') {
+                continue;
+            }
             $assessed++;
             $evidence = $priorEvidence;
-            if (data_get($outcome, 'assessment.status') === 'non_controlling_axis') $retired++;
+            if (data_get($outcome, 'assessment.status') === 'non_controlling_axis') {
+                $retired++;
+            }
             DB::table('edge_genesis_trials')->where('id', $trial->id)->update([
                 'evidence' => json_encode([...$evidence, 'causal_stage_mastery' => $outcome, 'promotion_evidence' => false]), 'updated_at' => now()]);
         }
+
         return compact('assessed', 'retired');
     }
 
@@ -3138,6 +3592,7 @@ class DependencyAwareEdgeGenesisFoundryService
     private function withoutMaterializationContract(array $assessment): array
     {
         unset($assessment['materialization_contract']);
+
         return $assessment;
     }
 
@@ -3170,8 +3625,11 @@ class DependencyAwareEdgeGenesisFoundryService
             $path = (string) ($snapshot['path'] ?? '');
             $sha = (string) ($snapshot['sha256'] ?? '');
             $actual = $path !== '' && is_file($path) ? hash_file('sha256', $path) : false;
-            if ($sha === '' || ! is_string($actual) || ! hash_equals($sha, $actual)) return false;
+            if ($sha === '' || ! is_string($actual) || ! hash_equals($sha, $actual)) {
+                return false;
+            }
         }
+
         return hash_equals($dataHash, (string) ($foundation['sha256'] ?? ''))
             && data_get($foundation, 'manifest.source_role') === 'foundation_training_only'
             && data_get($foundation, 'manifest.promotion_evidence') === false
@@ -3186,6 +3644,7 @@ class DependencyAwareEdgeGenesisFoundryService
     {
         return collect(['foundation', 'price'])->mapWithKeys(function (string $key) use ($snapshots, $sourceGenerationId, $targetGenerationId): array {
             $snapshot = (array) ($snapshots[$key] ?? []);
+
             return [$key => [...$snapshot, 'causal_reuse' => [
                 'protocol' => 'edge_generation_coverage_snapshot_reuse_v1',
                 'source_generation_id' => $sourceGenerationId,
@@ -3246,28 +3705,50 @@ class DependencyAwareEdgeGenesisFoundryService
             // against confirmation_floor_control. Risk and management stay
             // frozen, so a new trade cannot be credited to sizing or exits.
             $p['minimum_independent_confirmations'] = 1;
-            if ($arm === 'internal_structure_trigger') $p['swing_lookback'] = 10;
-            if ($arm === 'aggressive_trigger') $p['entry_mode'] = 'aggressive';
-            if ($arm === 'extended_retest_trigger') $p['m5_retest_expiry_minutes'] = 60;
+            if ($arm === 'internal_structure_trigger') {
+                $p['swing_lookback'] = 10;
+            }
+            if ($arm === 'aggressive_trigger') {
+                $p['entry_mode'] = 'aggressive';
+            }
+            if ($arm === 'extended_retest_trigger') {
+                $p['m5_retest_expiry_minutes'] = 60;
+            }
         }
         if ($architectureRevision === self::LATENT_HARVEST_REVISION) {
             // Each treatment changes one management axis around the exact
             // source composition that produced conservative pre-exit-bar MFE.
             // Entry, invalidation, position risk and temporal roles remain
             // byte-identical to the latent_edge_control arm.
-            if ($arm === 'partial_harvest') $p['partial_take_profit_fraction'] = .5;
-            if ($arm === 'trailing_harvest') $p['trailing_atr_multiplier'] = 1.0;
-            if ($arm === 'time_stop_harvest') $p['time_stop_candles'] = 12;
-            if ($arm === 'target_harvest') $p['atr_target_multiplier'] = 1.5;
+            if ($arm === 'partial_harvest') {
+                $p['partial_take_profit_fraction'] = .5;
+            }
+            if ($arm === 'trailing_harvest') {
+                $p['trailing_atr_multiplier'] = 1.0;
+            }
+            if ($arm === 'time_stop_harvest') {
+                $p['time_stop_candles'] = 12;
+            }
+            if ($arm === 'target_harvest') {
+                $p['atr_target_multiplier'] = 1.5;
+            }
         }
         if ($architectureRevision === self::REGIME_ENTRY_SYNTHESIS_REVISION) {
             // The regime firewall is inherited as a proven stepping stone.
             // Every treatment changes one entry-quality axis only; none may
             // alter risk, management, data, or the temporal role binding.
-            if ($arm === 'retest_entry_gate') $p['entry_mode'] = 'balanced';
-            if ($arm === 'independent_confirmation_gate') $p['minimum_independent_confirmations'] = 2;
-            if ($arm === 'reward_space_gate') $p['minimum_reward_space_r'] = 2.0;
-            if ($arm === 'chase_quality_gate') $p['max_chase_atr'] = .75;
+            if ($arm === 'retest_entry_gate') {
+                $p['entry_mode'] = 'balanced';
+            }
+            if ($arm === 'independent_confirmation_gate') {
+                $p['minimum_independent_confirmations'] = 2;
+            }
+            if ($arm === 'reward_space_gate') {
+                $p['minimum_reward_space_r'] = 2.0;
+            }
+            if ($arm === 'chase_quality_gate') {
+                $p['max_chase_atr'] = .75;
+            }
         }
         if ($architectureRevision === self::FAILURE_CELL_FACTORIAL_REVISION) {
             // This cohort changes no strategy/risk/management gene.  Its only
@@ -3278,20 +3759,36 @@ class DependencyAwareEdgeGenesisFoundryService
             // The professional BUY/high-volatility organism is frozen. Each
             // treatment changes one tactic/topology or opportunity-density
             // axis; risk sizing and trade management remain byte-identical.
-            if ($arm === 'trend_continuation_topology') $p['entry_model'] = 'trend_continuation';
-            if ($arm === 'false_break_reversal_topology') $p['entry_model'] = 'false_break_reversal';
-            if ($arm === 'extended_retest_window') $p['m5_retest_expiry_minutes'] = 40;
-            if ($arm === 'lower_displacement_gate') $p['m5_minimum_displacement_atr'] = .35;
+            if ($arm === 'trend_continuation_topology') {
+                $p['entry_model'] = 'trend_continuation';
+            }
+            if ($arm === 'false_break_reversal_topology') {
+                $p['entry_model'] = 'false_break_reversal';
+            }
+            if ($arm === 'extended_retest_window') {
+                $p['m5_retest_expiry_minutes'] = 40;
+            }
+            if ($arm === 'lower_displacement_gate') {
+                $p['m5_minimum_displacement_atr'] = .35;
+            }
         }
         if ($architectureRevision === self::TEMPORAL_BREAKOUT_BINDING_REVISION) {
             // H1 remains the bias authority. Treatments move exactly one
             // executable setup/trigger axis so M15/M5 can be learned as
             // temporal roles rather than separate tradable instruments.
             $p['breakout_setup_timeframe'] = 'H1';
-            if ($arm === 'm15_setup_breakout') $p['breakout_setup_timeframe'] = 'M15';
-            if ($arm === 'short_structure_horizon') $p['swing_lookback'] = 20;
-            if ($arm === 'long_structure_horizon') $p['swing_lookback'] = 60;
-            if ($arm === 'balanced_retest_confirmation') $p['entry_mode'] = 'balanced';
+            if ($arm === 'm15_setup_breakout') {
+                $p['breakout_setup_timeframe'] = 'M15';
+            }
+            if ($arm === 'short_structure_horizon') {
+                $p['swing_lookback'] = 20;
+            }
+            if ($arm === 'long_structure_horizon') {
+                $p['swing_lookback'] = 60;
+            }
+            if ($arm === 'balanced_retest_confirmation') {
+                $p['entry_mode'] = 'balanced';
+            }
         }
         if ($architectureRevision === self::M15_SETUP_QUALITY_REVISION) {
             // The losing but behavior-owning M15 composition is a causal
@@ -3300,10 +3797,18 @@ class DependencyAwareEdgeGenesisFoundryService
             $p['breakout_setup_timeframe'] = 'M15';
             $p['entry_mode'] = 'aggressive';
             $p['minimum_independent_confirmations'] = 1;
-            if ($arm === 'm15_balanced_confirmation') $p['entry_mode'] = 'balanced';
-            if ($arm === 'm15_conservative_confirmation') $p['entry_mode'] = 'conservative';
-            if ($arm === 'm15_two_family_confirmation') $p['minimum_independent_confirmations'] = 2;
-            if ($arm === 'm15_three_family_confirmation') $p['minimum_independent_confirmations'] = 3;
+            if ($arm === 'm15_balanced_confirmation') {
+                $p['entry_mode'] = 'balanced';
+            }
+            if ($arm === 'm15_conservative_confirmation') {
+                $p['entry_mode'] = 'conservative';
+            }
+            if ($arm === 'm15_two_family_confirmation') {
+                $p['minimum_independent_confirmations'] = 2;
+            }
+            if ($arm === 'm15_three_family_confirmation') {
+                $p['minimum_independent_confirmations'] = 3;
+            }
         }
         if ($architectureRevision === self::EVIDENCE_COMPILED_REVISION) {
             $axis = (string) ($packet['compiled_axis'] ?? '');
@@ -3332,6 +3837,7 @@ class DependencyAwareEdgeGenesisFoundryService
             // no memory or outcome is consulted before registration.
             $p['rejection_wick_ratio'] = .45;
         }
+
         return [
             'base_strategy' => 'confirmation_entry_mtf_v1',
             'family' => 'confirmation_entry_mtf',
@@ -3360,6 +3866,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 'sell_direction_negative_control' => ['SELL'],
                 default => [],
             };
+
             return [...$context,
                 'enforcement' => 'required',
                 'admission_axes' => $axes,
@@ -3414,7 +3921,9 @@ class DependencyAwareEdgeGenesisFoundryService
                 'promotion_evidence' => false,
             ];
         }
-        if ($architectureRevision !== self::CONTEXT_ROUTER_REPAIR_REVISION) return $context;
+        if ($architectureRevision !== self::CONTEXT_ROUTER_REPAIR_REVISION) {
+            return $context;
+        }
 
         $axes = match ($arm) {
             'regime_compatibility_gate' => ['regime'],
@@ -3423,6 +3932,7 @@ class DependencyAwareEdgeGenesisFoundryService
             'strict_context_gate' => ['regime', 'session', 'volatility'],
             default => [],
         };
+
         return [...$context,
             'enforcement' => $axes === [] ? 'telemetry_only_control' : 'required',
             'admission_axes' => $axes,
@@ -3432,12 +3942,15 @@ class DependencyAwareEdgeGenesisFoundryService
             'promotion_evidence' => false,
         ];
     }
+
     private function attributionParameters(string $arm, array $base, string $baseStrategy): array
     {
         $family = str_contains($baseStrategy, 'mtf_research_control') ? 'mtf_research_control' : 'confirmation_entry_mtf';
         $p = $this->schemas->normalizeForGeneration($family, $base);
         if ($family === 'confirmation_entry_mtf') {
-            if ($arm === 'no_confirmation') $p['attribution_confirmation_bypass'] = true;
+            if ($arm === 'no_confirmation') {
+                $p['attribution_confirmation_bypass'] = true;
+            }
             if ($arm === 'alternate_tactic') {
                 $p['entry_model'] = match ((string) ($p['entry_model'] ?? 'trend_continuation')) {
                     'breakout_retest' => 'false_break_reversal',
@@ -3446,7 +3959,11 @@ class DependencyAwareEdgeGenesisFoundryService
                     default => 'breakout_retest',
                 };
             }
-            if ($arm === 'alternate_temporal_binding') { $p['h4_context_max_age_bars'] = 4.; $p['h1_context_max_age_bars'] = 4.; $p['m15_context_max_age_bars'] = 6.; }
+            if ($arm === 'alternate_temporal_binding') {
+                $p['h4_context_max_age_bars'] = 4.;
+                $p['h1_context_max_age_bars'] = 4.;
+                $p['m15_context_max_age_bars'] = 6.;
+            }
             if ($arm === 'frozen_minimal_control') {
                 // This is an explicit low-selectivity negative control, not a
                 // copy of the professional defaults.  Returning defaults made
@@ -3464,16 +3981,51 @@ class DependencyAwareEdgeGenesisFoundryService
                 ];
             }
         }
+
         return $this->schemas->validate($family, $p);
     }
-    private function afterCost(array $result): float { return (float) data_get($result, 'after_cost_expectancy_r', data_get($result, 'pf_attribution.after_cost_expectancy_r', data_get($result, 'net_r', 0))); }
+
+    private function afterCost(array $result): float
+    {
+        return (float) data_get($result, 'after_cost_expectancy_r', data_get($result, 'pf_attribution.after_cost_expectancy_r', data_get($result, 'net_r', 0)));
+    }
+
     private function parameterHash(array $parameters): string
     {
-        return hash('sha256', json_encode($parameters, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+        return hash('sha256', json_encode($this->canonicalParameterValue($parameters), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
     }
+
+    private function canonicalParameterValue(mixed $value): mixed
+    {
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+        if (! is_array($value)) {
+            return $value;
+        }
+        if (array_is_list($value)) {
+            return array_map(fn (mixed $item): mixed => $this->canonicalParameterValue($item), $value);
+        }
+        ksort($value);
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalParameterValue($item);
+        }
+
+        return $value;
+    }
+
+    private function parameterValuesEquivalent(mixed $old, mixed $new): bool
+    {
+        return json_encode($this->canonicalParameterValue($old), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)
+            === json_encode($this->canonicalParameterValue($new), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+    }
+
     private function tacticForArm(string $reference, string $arm): string
     {
-        if ($arm !== 'confirmation_tactic_change') return $reference;
+        if ($arm !== 'confirmation_tactic_change') {
+            return $reference;
+        }
+
         return match ($reference) {
             'trend_pullback' => 'trend_breakout_retest',
             'liquidity_reversal' => 'liquidity_sweep_reversal',
@@ -3482,6 +4034,7 @@ class DependencyAwareEdgeGenesisFoundryService
             default => $reference.'_confirmation_variant',
         };
     }
+
     private function temporalContractForArm(string $arm): array
     {
         // A role ablation is explicit in the frozen passport. It cannot turn
@@ -3491,6 +4044,7 @@ class DependencyAwareEdgeGenesisFoundryService
             ? ['m5_canonical' => false, 'm1_execution' => false, 'closed_at_available_at' => true, 'backward_only_alignment' => true]
             : ['m5_canonical' => true, 'm1_execution' => false, 'closed_at_available_at' => true, 'backward_only_alignment' => true];
     }
+
     /** @return array<string,mixed> */
     private function edgeSemanticGroup(string $symbol, string $timeframe, string $family, array $packet): array
     {
@@ -3507,7 +4061,7 @@ class DependencyAwareEdgeGenesisFoundryService
      * context gate must beat its exact unfiltered composition on the same
      * frozen windows; otherwise the filter has only removed opportunity.
      *
-     * @return array{selected:\Illuminate\Support\Collection,approved:\Illuminate\Support\Collection,dominated:\Illuminate\Support\Collection}
+     * @return array{selected:Collection,approved:Collection,dominated:Collection}
      */
     private function contextAuthoritySelection($rows): array
     {
@@ -3524,7 +4078,9 @@ class DependencyAwareEdgeGenesisFoundryService
                 ?: $passportRows->firstWhere('arm', 'h1_breakout_control')
                 ?: $passportRows->firstWhere('arm', 'm15_aggressive_control')
                 ?: $passportRows->firstWhere('arm', 'compiled_control');
-            if (! $control) continue;
+            if (! $control) {
+                continue;
+            }
             $eligibleArms = match ((string) $control->arm) {
                 'regime_entry_control' => self::REGIME_ENTRY_SYNTHESIS_ARMS,
                 'failure_cell_control' => self::FAILURE_CELL_FACTORIAL_ARMS,
@@ -3538,7 +4094,9 @@ class DependencyAwareEdgeGenesisFoundryService
             $controlMetrics = $this->discoveryMetricsForModel((int) $control->model_version_id);
             foreach ($passportRows as $candidate) {
                 if ($candidate->arm === $control->arm
-                    || ! in_array((string) $candidate->arm, $eligibleArms, true)) continue;
+                    || ! in_array((string) $candidate->arm, $eligibleArms, true)) {
+                    continue;
+                }
                 $candidateMetrics = $this->discoveryMetricsForModel((int) $candidate->model_version_id);
                 $controlExpectancy = $controlMetrics === null ? null : $this->afterCost($controlMetrics);
                 $candidateExpectancy = $candidateMetrics === null ? null : $this->afterCost($candidateMetrics);
@@ -3566,6 +4124,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 ];
                 if ($windowIdentity && $enforced && $delta !== null && $delta > 0) {
                     $approved->push((object) [...((array) $candidate), 'authority_selection' => $decision]);
+
                     continue;
                 }
                 $dominated->push((object) [
@@ -3589,6 +4148,7 @@ class DependencyAwareEdgeGenesisFoundryService
                 ]);
             }
         }
+
         return [
             'selected' => $rows->reject(fn ($row): bool => $dominated->contains(
                 fn ($item): bool => (int) $item->trial_id === (int) $row->trial_id,
@@ -3640,11 +4200,13 @@ class DependencyAwareEdgeGenesisFoundryService
             ), fn ($identity): bool => is_string($identity) && $identity !== '|'));
             if ($historyWindows !== []) {
                 $priorWindows = [...$priorWindows, ...$historyWindows];
+
                 continue;
             }
             $priorMetrics = $this->metricsForModelAndFold((int) $agent->model_version_id, $priorFoldCount);
             if (! $priorMetrics) {
                 $priorComplete = false;
+
                 continue;
             }
             $priorWindows = [...$priorWindows, ...$this->discoveryWindowIdentity($priorMetrics)];
@@ -3678,7 +4240,9 @@ class DependencyAwareEdgeGenesisFoundryService
             ->where('evidence_status', 'valid')->where('rolling_windows_count', $foldCount)->latest('id')->first(['metrics']);
         if ($row) {
             $metrics = is_string($row->metrics) ? json_decode($row->metrics, true) : $row->metrics;
-            if (is_array($metrics)) return $metrics;
+            if (is_array($metrics)) {
+                return $metrics;
+            }
         }
 
         // The market-performance row is a current projection and may be
@@ -3692,8 +4256,11 @@ class DependencyAwareEdgeGenesisFoundryService
             $envelope = is_string($run->metrics) ? json_decode($run->metrics, true) : $run->metrics;
             $metrics = (array) data_get($envelope, 'agent_result', $envelope);
             if ((int) data_get($metrics, 'rolling_windows_count', 0) === $foldCount
-                && $this->discoveryWindowIdentity($metrics) !== []) return $metrics;
+                && $this->discoveryWindowIdentity($metrics) !== []) {
+                return $metrics;
+            }
         }
+
         return null;
     }
 
@@ -3703,9 +4270,11 @@ class DependencyAwareEdgeGenesisFoundryService
         $windows = (array) data_get($metrics, 'forward_window_protocol.windows',
             data_get($metrics, 'walk_forward.forward_window_protocol.windows',
                 data_get($metrics, 'walk_forward.windows', [])));
+
         return collect($windows)->map(function ($window): string {
             $start = data_get($window, 'start', data_get($window, 'periods.forward.0', ''));
             $end = data_get($window, 'end', data_get($window, 'periods.forward.1', ''));
+
             return (string) $start.'|'.(string) $end;
         })->filter(fn (string $identity): bool => $identity !== '|')->values()->all();
     }
@@ -3717,18 +4286,23 @@ class DependencyAwareEdgeGenesisFoundryService
             $windows = (array) data_get($metrics, 'forward_window_protocol.windows',
                 data_get($metrics, 'walk_forward.forward_window_protocol.windows',
                     data_get($metrics, 'walk_forward.windows', [])));
+
             return collect($windows)->mapWithKeys(function ($window): array {
                 $start = (string) data_get($window, 'start', data_get($window, 'periods.forward.0', ''));
                 $end = (string) data_get($window, 'end', data_get($window, 'periods.forward.1', ''));
-                if ($start === '' || $end === '') return [];
+                if ($start === '' || $end === '') {
+                    return [];
+                }
+
                 return [$start.'|'.$end => (float) data_get($window, 'net_profit_percent',
                     data_get($window, 'results.forward.net_profit_percent', 0))];
             })->all();
         };
-        $fullWindows = $extract($full); $alternativeWindows = $extract($alternative);
+        $fullWindows = $extract($full);
+        $alternativeWindows = $extract($alternative);
         $identities = array_values(array_intersect(array_keys($fullWindows), array_keys($alternativeWindows)));
-        $deltas = collect($identities)->map(fn (string $identity): float =>
-            round((float) $fullWindows[$identity] - (float) $alternativeWindows[$identity], 6));
+        $deltas = collect($identities)->map(fn (string $identity): float => round((float) $fullWindows[$identity] - (float) $alternativeWindows[$identity], 6));
+
         return [
             'comparable_windows' => count($identities),
             'positive_windows' => $deltas->filter(fn (float $delta): bool => $delta > 0)->count(),
@@ -3745,7 +4319,9 @@ class DependencyAwareEdgeGenesisFoundryService
         DB::transaction(function () use ($rows): void {
             foreach ($rows as $candidate) {
                 $trial = DB::table('edge_genesis_trials')->where('id', $candidate->trial_id)->lockForUpdate()->first();
-                if (! $trial || ! in_array((string) $trial->status, ['edge_progressing', 'queued'], true)) continue;
+                if (! $trial || ! in_array((string) $trial->status, ['edge_progressing', 'queued'], true)) {
+                    continue;
+                }
                 $evidence = (array) json_decode((string) $trial->evidence, true);
                 $evidence['authority_selection'] = $candidate->authority_selection;
                 DB::table('edge_genesis_trials')->where('id', $trial->id)->update([
@@ -3754,7 +4330,9 @@ class DependencyAwareEdgeGenesisFoundryService
                     'updated_at' => now(),
                 ]);
                 $agent = LabAgent::query()->find((int) $candidate->agent_id);
-                if (! $agent) continue;
+                if (! $agent) {
+                    continue;
+                }
                 $fromStatus = (string) $agent->lifecycle_status;
                 $agent->update([
                     'lifecycle_status' => 'rejected',
@@ -3772,7 +4350,9 @@ class DependencyAwareEdgeGenesisFoundryService
     {
         foreach ($rows as $candidate) {
             $trial = DB::table('edge_genesis_trials')->where('id', $candidate->trial_id)->first();
-            if (! $trial) continue;
+            if (! $trial) {
+                continue;
+            }
             $evidence = (array) json_decode((string) $trial->evidence, true);
             $evidence['authority_selection'] = $candidate->authority_selection;
             DB::table('edge_genesis_trials')->where('id', $trial->id)->update([
@@ -3789,7 +4369,9 @@ class DependencyAwareEdgeGenesisFoundryService
             foreach ($rows as $candidate) {
                 $trial = DB::table('edge_genesis_trials')->where('id', $candidate->trial_id)->lockForUpdate()->first();
                 if (! $trial || (string) $trial->status !== 'edge_progressing'
-                    || (string) $trial->stage !== 'two_fold_discovery') continue;
+                    || (string) $trial->stage !== 'two_fold_discovery') {
+                    continue;
+                }
                 $evidence = (array) json_decode((string) $trial->evidence, true);
                 $evidence['authority_selection'] = [
                     'protocol' => 'paired_discovery_authority_budget_v1',
@@ -3821,11 +4403,17 @@ class DependencyAwareEdgeGenesisFoundryService
 
     private function repairableAdmissionQuarantine(LabAgent $agent): bool
     {
-        if (data_get($agent->modelVersion?->metadata, 'edge_genesis.protocol') !== self::PROTOCOL) return false;
+        if (data_get($agent->modelVersion?->metadata, 'edge_genesis.protocol') !== self::PROTOCOL) {
+            return false;
+        }
         $errors = array_values(array_unique((array) data_get($agent->modelVersion?->metadata, 'preflight_quarantine.errors', [])));
         sort($errors);
+        if ($errors === ['ZERO_DIFF_INVARIANT_FAILED']) {
+            return $this->isCompiledControlNumericRepresentationQuarantine($agent);
+        }
         if ($errors === ['FULL_REPLAY_DATASET_COVERAGE_INSUFFICIENT']) {
             $generation = $agent->generation;
+
             return in_array(data_get($agent->modelVersion?->metadata, 'edge_genesis.architecture_revision'), [self::CONFIRMATION_REPAIR_REVISION, self::TRIGGER_REPAIR_REVISION, self::LATENT_HARVEST_REVISION, self::CONTEXT_ROUTER_REPAIR_REVISION, self::REGIME_ENTRY_SYNTHESIS_REVISION, self::FAILURE_CELL_FACTORIAL_REVISION, self::SPECIALIST_DENSIFICATION_REVISION, self::TEMPORAL_BREAKOUT_BINDING_REVISION, self::M15_SETUP_QUALITY_REVISION], true)
                 && $generation !== null
                 && $this->canonicalDatasetSnapshotsValid(
@@ -3836,25 +4424,73 @@ class DependencyAwareEdgeGenesisFoundryService
         }
         $known = ['FULL_REPLAY_EXECUTION_HASH_MISSING_OR_INVALID', 'SEMANTIC_GROUP_NOT_DECLARED'];
         sort($known);
-        if ($errors !== $known) return false;
+        if ($errors !== $known) {
+            return false;
+        }
         $contract = (array) data_get($agent->modelVersion?->metadata, 'edge_genesis', []);
         $passport = DB::table('edge_genesis_passports')->where('genesis_key', data_get($contract, 'genesis_key'))->first();
         $expected = $this->executionContracts->for($agent->symbol, self::EXECUTION_TIMEFRAME);
+
         return $passport
             && hash_equals((string) $passport->execution_hash, (string) data_get($contract, 'execution_hash', ''))
             && hash_equals((string) $passport->execution_hash, (string) $expected['execution_hash'])
             && hash_equals((string) $passport->data_hash, (string) data_get($contract, 'data_hash', ''));
     }
+
+    private function isCompiledControlNumericRepresentationQuarantine(LabAgent $agent): bool
+    {
+        $model = $agent->modelVersion;
+        $contract = (array) data_get($model?->metadata, 'edge_genesis', []);
+        $attestation = (array) data_get($contract, 'intervention_attestation', []);
+        $errors = array_values(array_unique((array) data_get($model?->metadata, 'preflight_quarantine.errors', [])));
+        sort($errors);
+        if (! $model
+            || $agent->lifecycle_status !== 'technical_quarantine'
+            || $model->evidence_status !== 'stale_quarantine'
+            || $model->invalidation_reason !== 'strict_lab_agent_preflight_failed'
+            || $errors !== ['ZERO_DIFF_INVARIANT_FAILED']
+            || data_get($contract, 'architecture_revision') !== self::EVIDENCE_COMPILED_REVISION
+            || data_get($contract, 'arm') !== 'compiled_control'
+            || data_get($attestation, 'protocol') !== 'edge_genesis_intervention_attestation_v1'
+            || data_get($attestation, 'control_identity') !== true
+            || $model->marketPerformances()->exists()) {
+            return false;
+        }
+        $baselineId = (int) data_get($contract, 'causal_baseline_model_version_id', 0);
+        $baseline = $baselineId > 0 ? ModelVersion::query()->find($baselineId) : null;
+        if (! $baseline || $this->diff((array) $baseline->parameters, (array) $model->parameters) !== []) {
+            return false;
+        }
+        $declaredDiff = (array) $agent->parameter_diff;
+        if ($declaredDiff === [] || ! collect($declaredDiff)->every(fn (mixed $change): bool => is_array($change)
+            && array_key_exists('old', $change) && array_key_exists('new', $change)
+            && $this->parameterValuesEquivalent($change['old'], $change['new']))) {
+            return false;
+        }
+        $passport = DB::table('edge_genesis_passports')->where('genesis_key', data_get($contract, 'genesis_key'))->first();
+
+        return $passport
+            && hash_equals((string) $passport->data_hash, (string) data_get($contract, 'data_hash', ''))
+            && hash_equals((string) $passport->execution_hash, (string) data_get($contract, 'execution_hash', ''));
+    }
+
     private function repairableEdgeRuntimeFailure(LabAgent $agent): bool
     {
         if (! in_array($agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true)
-            || data_get($agent->modelVersion?->metadata, 'edge_genesis.protocol') !== self::PROTOCOL) return false;
+            || data_get($agent->modelVersion?->metadata, 'edge_genesis.protocol') !== self::PROTOCOL) {
+            return false;
+        }
         $reason = $this->edgeRuntimeFailureReason($agent);
-        if ($reason === null) return false;
+        if ($reason === null) {
+            return false;
+        }
         $performances = $agent->modelVersion?->marketPerformances()->where('evidence_status', 'valid')->get() ?? collect();
-        if ($performances->isEmpty()) return true;
+        if ($performances->isEmpty()) {
+            return true;
+        }
         $authorityQueued = DB::table('edge_genesis_trials')->where('lab_agent_id', $agent->id)
             ->where('stage', 'nine_fold_authority')->where('status', 'queued')->exists();
+
         return $reason === 'EDGE_CONTEXT_TELEMETRY_SCOPE_INITIALIZATION_REPAIRED'
             && $authorityQueued
             // v2 replaces the discovery projection with its independent
@@ -3864,11 +4500,14 @@ class DependencyAwareEdgeGenesisFoundryService
                 (int) $performance->rolling_windows_count, [2, 3], true
             ));
     }
+
     private function edgeRuntimeFailureReason(LabAgent $agent): ?string
     {
         $run = DB::table('lab_evaluation_runs')->where('lab_agent_id', $agent->id)
             ->latest('id')->first(['status', 'error_message']);
-        if (! $run || $run->status !== 'technical_error') return null;
+        if (! $run || $run->status !== 'technical_error') {
+            return null;
+        }
         $message = (string) $run->error_message;
         if (str_contains($message, 'Causal confirmation fold')
             && preg_match('/exceeded its \d+s budget/', $message) === 1
@@ -3884,18 +4523,58 @@ class DependencyAwareEdgeGenesisFoundryService
         if (str_contains($message, "UnboundLocalError: cannot access local variable 'context_declared'")) {
             return 'EDGE_CONTEXT_TELEMETRY_SCOPE_INITIALIZATION_REPAIRED';
         }
+
         return null;
     }
+
     private function repairAdmissionMetadata(LabAgent $agent): void
     {
         $model = $agent->modelVersion;
-        if (! $model || ! $this->repairableAdmissionQuarantine($agent)) return;
+        if (! $model || ! $this->repairableAdmissionQuarantine($agent)) {
+            return;
+        }
         $metadata = (array) $model->metadata;
         $errors = array_values(array_unique((array) data_get($metadata, 'preflight_quarantine.errors', [])));
         sort($errors);
         $contract = (array) data_get($metadata, 'edge_genesis', []);
+        if ($this->isCompiledControlNumericRepresentationQuarantine($agent)) {
+            $baseline = ModelVersion::query()->findOrFail((int) data_get($contract, 'causal_baseline_model_version_id'));
+            $priorAttestation = (array) data_get($contract, 'intervention_attestation', []);
+            $canonicalHash = $this->parameterHash((array) $baseline->parameters);
+            $history = (array) data_get($metadata, 'admission_metadata_recovery_history', []);
+            $history[] = [
+                'protocol' => 'edge_genesis_numeric_control_identity_recovery_v1',
+                'source_errors' => $errors,
+                'prior_parameter_diff' => (array) $agent->parameter_diff,
+                'prior_source_parameter_hash' => data_get($priorAttestation, 'source_parameter_hash'),
+                'prior_consumed_parameter_hash' => data_get($priorAttestation, 'consumed_parameter_hash'),
+                'parameters_unchanged' => true,
+                'passport_hashes_unchanged' => true,
+                'recorded_at' => now()->utc()->toIso8601String(),
+                'promotion_evidence' => false,
+            ];
+            data_set($metadata, 'admission_metadata_recovery_history', $history);
+            data_set($metadata, 'edge_genesis.intervention_attestation.source_parameter_hash', $canonicalHash);
+            data_set($metadata, 'edge_genesis.intervention_attestation.consumed_parameter_hash', $canonicalHash);
+            data_set($metadata, 'edge_genesis.intervention_attestation.actual_parameter_diff', []);
+            data_set($metadata, 'preflight_quarantine.classification', 'numeric_representation');
+            data_set($metadata, 'preflight_quarantine.restored_at', now()->utc()->toIso8601String());
+            data_set($metadata, 'preflight_quarantine.restoration_protocol', 'edge_genesis_numeric_control_identity_recovery_v1');
+            $model->update([
+                'metadata' => $metadata,
+                'evidence_status' => 'valid',
+                'invalidated_at' => null,
+                'invalidation_reason' => null,
+            ]);
+            $agent->update(['parameter_diff' => []]);
+            $agent->setRelation('modelVersion', $model->fresh());
+
+            return;
+        }
         $packet = collect($this->packets())->firstWhere('key', data_get($contract, 'packet_key'));
-        if (! is_array($packet)) return;
+        if (! is_array($packet)) {
+            return;
+        }
         $metadata['lab_symbol'] = strtoupper($agent->symbol);
         $metadata['lab_timeframe'] = strtoupper($agent->timeframe);
         $metadata['semantic_group'] = $this->edgeSemanticGroup($agent->symbol, $agent->timeframe, $agent->strategy_family, $packet);
@@ -3919,6 +4598,7 @@ class DependencyAwareEdgeGenesisFoundryService
         ]);
         $agent->setRelation('modelVersion', $model->fresh());
     }
+
     /** Translate existing causal transition evidence into Academy curriculum depth. */
     private function academyStageFor(array $assessment): string
     {
@@ -3928,12 +4608,33 @@ class DependencyAwareEdgeGenesisFoundryService
             'closed_trade' => 'management_specialist', default => 'market_cartographer',
         };
     }
-    private function diff(array $old, array $new): array { $out = []; foreach (array_unique([...array_keys($old), ...array_keys($new)]) as $key) if (($old[$key] ?? null) !== ($new[$key] ?? null)) $out[$key] = ['old' => $old[$key] ?? null, 'new' => $new[$key] ?? null]; return $out; }
-    private function packets(): array { return [
-        ['key' => 'trend_pullback', 'label' => 'Trend Pullback', 'strategy_id' => 'str_001_ema_adx_pullback', 'tactic_id' => 'trend_pullback', 'management_id' => 'balanced_professional', 'emitter' => 'prior_seed', 'context' => ['regime' => 'trend', 'allowed_regimes' => ['trend_up', 'trend_down'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'london_new_york_overlap'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
-        ['key' => 'liquidity_reversal', 'label' => 'Liquidity Reversal', 'strategy_id' => 'str_032_choch_reversal', 'tactic_id' => 'liquidity_reversal', 'management_id' => 'balanced_professional', 'emitter' => 'local_recombination', 'context' => ['regime' => 'transition', 'allowed_regimes' => ['transition'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'new_york'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
-        ['key' => 'break_retest', 'label' => 'Break and Retest', 'strategy_id' => 'str_031_bos_retest', 'tactic_id' => 'break_retest', 'management_id' => 'balanced_professional', 'emitter' => 'temporal_binder', 'context' => ['regime' => 'trend', 'allowed_regimes' => ['trend_up', 'trend_down'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'london_new_york_overlap'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
-        ['key' => 'range_session_specialist', 'label' => 'Range Session Specialist', 'strategy_id' => 'str_020_bb_rsi_reversion', 'tactic_id' => 'range_reversion', 'management_id' => 'balanced_professional', 'emitter' => 'confirmation_entry', 'context' => ['regime' => 'range', 'allowed_regimes' => ['range'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'new_york'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
-    ]; }
-    private function recordComputeLedger(int $passportId, string $symbol, string $timeframe, string $phase): void { foreach (self::EMITTER_BUDGETS as $emitter => $budget) DB::table('edge_genesis_compute_ledgers')->updateOrInsert(['ledger_key' => hash('sha256', implode('|', [self::PROTOCOL, $passportId, $emitter, $phase]))], ['edge_genesis_passport_id' => $passportId, 'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'emitter' => $emitter, 'phase' => $phase, 'budget_share' => $budget, 'priority' => $budget * ($emitter === 'risk_mutation' && $phase === 'EDGE_DISCOVERY' ? 0 : 1), 'status' => $budget > 0 ? 'allocated' : 'locked', 'evidence' => json_encode(['protocol' => self::PROTOCOL, 'quality_diversity_required' => true, 'information_gain_adaptive_after_settlement' => true, 'promotion_evidence' => false]), 'updated_at' => now(), 'created_at' => now()]); }
+
+    private function diff(array $old, array $new): array
+    {
+        $out = [];
+        foreach (array_unique([...array_keys($old), ...array_keys($new)]) as $key) {
+            if (! $this->parameterValuesEquivalent($old[$key] ?? null, $new[$key] ?? null)) {
+                $out[$key] = ['old' => $old[$key] ?? null, 'new' => $new[$key] ?? null];
+            }
+        }
+
+return $out;
+    }
+
+    private function packets(): array
+    {
+        return [
+            ['key' => 'trend_pullback', 'label' => 'Trend Pullback', 'strategy_id' => 'str_001_ema_adx_pullback', 'tactic_id' => 'trend_pullback', 'management_id' => 'balanced_professional', 'emitter' => 'prior_seed', 'context' => ['regime' => 'trend', 'allowed_regimes' => ['trend_up', 'trend_down'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'london_new_york_overlap'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
+            ['key' => 'liquidity_reversal', 'label' => 'Liquidity Reversal', 'strategy_id' => 'str_032_choch_reversal', 'tactic_id' => 'liquidity_reversal', 'management_id' => 'balanced_professional', 'emitter' => 'local_recombination', 'context' => ['regime' => 'transition', 'allowed_regimes' => ['transition'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'new_york'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
+            ['key' => 'break_retest', 'label' => 'Break and Retest', 'strategy_id' => 'str_031_bos_retest', 'tactic_id' => 'break_retest', 'management_id' => 'balanced_professional', 'emitter' => 'temporal_binder', 'context' => ['regime' => 'trend', 'allowed_regimes' => ['trend_up', 'trend_down'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'london_new_york_overlap'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
+            ['key' => 'range_session_specialist', 'label' => 'Range Session Specialist', 'strategy_id' => 'str_020_bb_rsi_reversion', 'tactic_id' => 'range_reversion', 'management_id' => 'balanced_professional', 'emitter' => 'confirmation_entry', 'context' => ['regime' => 'range', 'allowed_regimes' => ['range'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'new_york'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
+        ];
+    }
+
+    private function recordComputeLedger(int $passportId, string $symbol, string $timeframe, string $phase): void
+    {
+        foreach (self::EMITTER_BUDGETS as $emitter => $budget) {
+            DB::table('edge_genesis_compute_ledgers')->updateOrInsert(['ledger_key' => hash('sha256', implode('|', [self::PROTOCOL, $passportId, $emitter, $phase]))], ['edge_genesis_passport_id' => $passportId, 'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'emitter' => $emitter, 'phase' => $phase, 'budget_share' => $budget, 'priority' => $budget * ($emitter === 'risk_mutation' && $phase === 'EDGE_DISCOVERY' ? 0 : 1), 'status' => $budget > 0 ? 'allocated' : 'locked', 'evidence' => json_encode(['protocol' => self::PROTOCOL, 'quality_diversity_required' => true, 'information_gain_adaptive_after_settlement' => true, 'promotion_evidence' => false]), 'updated_at' => now(), 'created_at' => now()]);
+        }
+    }
 }

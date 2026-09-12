@@ -36,6 +36,12 @@ class EvaluateLabIncrementally extends Command
                 ->unique();
 
             foreach ($symbols as $symbol) {
+                if (strtoupper((string) $symbol) === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
+                    // Health evidence is retained above; only the canonical
+                    // Research Loop Arbiter may turn it into XAUUSD new work.
+                    $this->warn("{$symbol}: degradation evidence recorded; generation selection delegated to Research Loop Arbiter.");
+                    continue;
+                }
                 $generation = $populations->build($symbol, 'degradation');
                 if ($generation) {
                     $this->warn("{$symbol}: degradation triggered generation {$generation->generation}.");

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\CanonicalLaboratoryScope;
 use App\Models\AiLaboratory;
 use App\Models\LabLearningLanePair;
 use App\Services\ChampionCouncilMonitorService;
@@ -15,7 +16,10 @@ use Illuminate\Console\Command;
 
 class MonitorChampionReadiness extends Command
 {
+    use CanonicalLaboratoryScope;
+
     protected $signature = 'trading:monitor-champion-readiness {symbol?} {--timeframe=H1} {--source-generation=62} {--json}';
+
     protected $description = 'Fast, read-only Champion Council readiness and evidence bottleneck monitor';
 
     public function handle(
@@ -27,8 +31,10 @@ class MonitorChampionReadiness extends Command
         ChampionCouncilTransitionService $transition,
         G62CausalContractService $g62,
     ): int {
-        $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
-        $timeframe = strtoupper((string) $this->option('timeframe'));
+        [$symbol, $timeframe] = $this->canonicalLaboratoryScope(
+            (string) ($this->argument('symbol') ?: 'XAUUSD'),
+            (string) $this->option('timeframe'),
+        );
         $lab = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->first();
         $generation = $lab?->generations()->where('generation', (int) $this->option('source-generation'))->first();
         $pairQuery = LabLearningLanePair::query()->where('symbol', $symbol)->where('timeframe', $timeframe);
@@ -59,8 +65,12 @@ class MonitorChampionReadiness extends Command
             ],
             'promotion_evidence' => false,
         ];
-        if ($this->option('json')) $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-        else $this->info('Council readiness: incumbent_protected; live activation=false');
+        if ($this->option('json')) {
+            $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        } else {
+            $this->info('Council readiness: incumbent_protected; live activation=false');
+        }
+
         return self::SUCCESS;
     }
 }

@@ -17,6 +17,7 @@ class AcademyExperimentMaterializerService
     public function __construct(
         private AcademyExperimentContractCompilerService $compiler,
         private ResearchExperimentConversionKernelService $conversion,
+        private CausalCompoundingKernelService $compoundingKernel,
     ) {}
 
     public function materialize(int $trialId, int $baselineModelVersionId, array $identity, bool $apply = false): array
@@ -25,19 +26,30 @@ class AcademyExperimentMaterializerService
         $passport = $trial ? DB::table('edge_academy_passports')->find($trial->edge_academy_passport_id) : null;
         $baseline = ModelVersion::query()->find($baselineModelVersionId);
         $baselineAgent = LabAgent::query()->with('generation.laboratory')->where('model_version_id', $baselineModelVersionId)->latest('id')->first();
-        if (! $trial || ! $passport || ! $baseline || ! $baselineAgent?->generation?->laboratory) return $this->blocked('ACADEMY_TRIAL_BASELINE_AND_LAB_REQUIRED');
-        if ($trial->settled_at !== null) return $this->blocked('SETTLED_ACADEMY_TRIAL_CANNOT_BE_MATERIALIZED');
+        if (! $trial || ! $passport || ! $baseline || ! $baselineAgent?->generation?->laboratory) {
+            return $this->blocked('ACADEMY_TRIAL_BASELINE_AND_LAB_REQUIRED');
+        }
+        if ($trial->settled_at !== null) {
+            return $this->blocked('SETTLED_ACADEMY_TRIAL_CANNOT_BE_MATERIALIZED');
+        }
         if (($identity['pre_2026_only'] ?? false) !== true || ! filled($identity['data_hash'] ?? null)
-            || ! filled($identity['execution_hash'] ?? null) || ! is_array($identity['canonical_dataset_snapshots'] ?? null)) return $this->blocked('PRE2026_DATA_EXECUTION_AND_SNAPSHOT_CONTRACT_REQUIRED');
+            || ! filled($identity['execution_hash'] ?? null) || ! is_array($identity['canonical_dataset_snapshots'] ?? null)) {
+            return $this->blocked('PRE2026_DATA_EXECUTION_AND_SNAPSHOT_CONTRACT_REQUIRED');
+        }
         $compiled = $this->compiler->compile([
             'axis' => data_get(json_decode((string) $trial->outcome, true), 'axis', null) ?: $this->axisFromArms($trial->arms),
             'arms' => json_decode((string) $trial->arms, true) ?: [],
         ], (array) $baseline->parameters, ['symbol' => strtoupper($passport->symbol), 'laboratory_timeframe' => strtoupper($passport->timeframe), 'execution_timeframe' => 'M5']);
-        if (($compiled['status'] ?? null) !== 'compiled') return [...$compiled, 'status' => 'blocked'];
+        if (($compiled['status'] ?? null) !== 'compiled') {
+            return [...$compiled, 'status' => 'blocked'];
+        }
         $researchContract = $this->researchContract($trial, $passport, $baseline, $identity, $compiled);
-        if (! $apply) return ['protocol' => self::PROTOCOL, 'status' => 'would_queue', 'trial_id' => $trialId,
-            'baseline_model_version_id' => $baseline->id, 'seats' => count($compiled['arms']),
-            'compiled_contract' => $compiled, 'research_experiment_contract' => $researchContract, 'promotion_evidence' => false];
+        if (! $apply) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'would_queue', 'trial_id' => $trialId,
+                'baseline_model_version_id' => $baseline->id, 'seats' => CausalCompoundingKernelService::POPULATION_SIZE,
+                'primary_proof_seats' => count($compiled['arms']),
+                'compiled_contract' => $compiled, 'research_experiment_contract' => $researchContract, 'promotion_evidence' => false];
+        }
 
         $academyContext = (array) data_get(json_decode((string) $trial->frozen_contract, true) ?: [], 'context', []);
         $created = DB::transaction(function () use ($trial, $passport, $baseline, $baselineAgent, $identity, $compiled, $researchContract, $academyContext): array {
@@ -49,11 +61,13 @@ class AcademyExperimentMaterializerService
                     'canonical_dataset_snapshots' => $identity['canonical_dataset_snapshots'], 'compiled_contract' => $compiled,
                     'research_experiment_contract' => $researchContract,
                     'pre_2026_only' => true, 'research_only' => true, 'promotion_evidence' => false],
-                'data_fingerprint' => $identity['data_hash'], 'population_size' => count($compiled['arms']), 'status' => 'queued', 'started_at' => now()]);
+                'data_fingerprint' => $identity['data_hash'], 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE, 'status' => 'queued', 'started_at' => now()]);
             $agents = [];
             foreach ($compiled['arms'] as $index => $arm) {
                 $label = 'academy_t'.$trial->id.'_g'.$generation->generation.'_a'.($index + 1);
                 $metadata = [...((array) $baseline->metadata), 'base_strategy' => 'confirmation_entry_mtf_v1',
+                    'causal_baseline_model_version_id' => $baseline->id,
+                    'genetic_parent_model_version_id' => null,
                     'academy_experiment' => ['protocol' => self::PROTOCOL, 'academy_trial_id' => $trial->id, 'arm_role' => $arm['role'],
                         'planner_value' => $arm['planner_value'], 'runtime_value' => $arm['runtime_value'], 'contract_hash' => hash('sha256', json_encode($compiled)),
                         'research_experiment_contract' => $researchContract,
@@ -70,12 +84,33 @@ class AcademyExperimentMaterializerService
                     'origin' => 'academy_experiment', 'lifecycle_status' => 'full_queued', 'parameter_diff' => $this->diff((array) $baseline->parameters, $arm['runtime_parameters']),
                     'decision_reason' => 'Compiled Academy '.$arm['role'].' arm; causal baseline only; research-only.']);
             }
+            $protectedGenes = collect($agents)->flatMap(fn (LabAgent $agent): array => array_keys((array) $agent->parameter_diff))
+                ->unique()->values()->all();
+            $kernel = $this->compoundingKernel->complete(
+                $generation,
+                $baseline,
+                $baselineAgent,
+                (string) $identity['data_hash'],
+                (string) $identity['execution_hash'],
+                'selection_quality',
+                $protectedGenes,
+            );
             DB::table('edge_academy_trials')->where('id', $trial->id)->update(['status' => 'materialized',
                 'outcome' => json_encode(['protocol' => self::PROTOCOL, 'generation_id' => $generation->id, 'compiled_contract' => $compiled, 'promotion_evidence' => false]), 'updated_at' => now()]);
-            return compact('generation', 'agents');
+
+            return compact('generation', 'agents', 'kernel');
         });
-        foreach ($created['agents'] as $agent) EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
-        return ['protocol' => self::PROTOCOL, 'status' => 'queued', 'generation_id' => $created['generation']->id, 'agent_ids' => collect($created['agents'])->pluck('id')->all(), 'promotion_evidence' => false];
+        foreach ($created['agents'] as $agent) {
+            EvaluateLabAgentJob::dispatch($agent->id, $agent->symbol, 'full');
+        }
+        foreach ($created['kernel']['dispatches'] as $dispatch) {
+            EvaluateLabAgentJob::dispatch($dispatch['agent']->id, $dispatch['agent']->symbol, $dispatch['mode']);
+        }
+
+        return ['protocol' => self::PROTOCOL, 'status' => 'queued', 'generation_id' => $created['generation']->id,
+            'agent_ids' => collect([...$created['agents'], ...$created['kernel']['agents']])->pluck('id')->all(),
+            'population_size' => CausalCompoundingKernelService::POPULATION_SIZE,
+            'compounding_kernel' => $created['kernel']['contract'], 'promotion_evidence' => false];
     }
 
     /** Settle only after every explicit arm has immutable replay evidence. */
@@ -83,21 +118,37 @@ class AcademyExperimentMaterializerService
     {
         $agent->loadMissing('modelVersion', 'generation.agents.modelVersion');
         $contract = (array) data_get($agent->modelVersion?->metadata, 'academy_experiment', []);
-        if (($contract['protocol'] ?? null) !== self::PROTOCOL) return ['status' => 'not_academy_experiment', 'promotion_evidence' => false];
+        if (($contract['protocol'] ?? null) !== self::PROTOCOL) {
+            return ['status' => 'not_academy_experiment', 'promotion_evidence' => false];
+        }
         $trial = DB::table('edge_academy_trials')->find((int) ($contract['academy_trial_id'] ?? 0));
-        if (! $trial) return $this->blocked('ACADEMY_TRIAL_MISSING_AT_SETTLEMENT');
-        if ($trial->settled_at !== null) return ['protocol' => self::PROTOCOL, 'status' => (string) $trial->status, 'promotion_evidence' => false];
+        if (! $trial) {
+            return $this->blocked('ACADEMY_TRIAL_MISSING_AT_SETTLEMENT');
+        }
+        if ($trial->settled_at !== null) {
+            return ['protocol' => self::PROTOCOL, 'status' => (string) $trial->status, 'promotion_evidence' => false];
+        }
         $rows = collect($agent->generation?->agents ?? [])->filter(fn (LabAgent $row): bool => data_get($row->modelVersion?->metadata, 'academy_experiment.academy_trial_id') === (int) $trial->id);
-        if ($rows->isEmpty()) return $this->blocked('ACADEMY_COHORT_MEMBERS_MISSING');
+        if ($rows->isEmpty()) {
+            return $this->blocked('ACADEMY_COHORT_MEMBERS_MISSING');
+        }
         $observations = $rows->map(function (LabAgent $row): ?array {
             $metrics = $row->modelVersion?->marketPerformances()->where('symbol', $row->symbol)->where('timeframe', $row->timeframe)->latest('id')->value('metrics');
-            if (is_string($metrics)) $metrics = json_decode($metrics, true);
-            if (! is_array($metrics)) return null;
+            if (is_string($metrics)) {
+                $metrics = json_decode($metrics, true);
+            }
+            if (! is_array($metrics)) {
+                return null;
+            }
+
             return ['agent_id' => $row->id, 'model_version_id' => $row->model_version_id,
                 'role' => data_get($row->modelVersion?->metadata, 'academy_experiment.arm_role'), 'metrics' => $metrics];
         });
-        if ($observations->contains(null)) return ['protocol' => self::PROTOCOL, 'status' => 'awaiting_all_arm_evidence', 'promotion_evidence' => false];
-        $expectedData = (string) ($contract['data_hash'] ?? ''); $expectedExecution = (string) ($contract['execution_hash'] ?? '');
+        if ($observations->contains(null)) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'awaiting_all_arm_evidence', 'promotion_evidence' => false];
+        }
+        $expectedData = (string) ($contract['data_hash'] ?? '');
+        $expectedExecution = (string) ($contract['execution_hash'] ?? '');
         foreach ($observations as $observation) {
             $metrics = $observation['metrics'];
             $data = (string) data_get($metrics, 'data_manifest.sha256', data_get($metrics, 'data_hash', ''));
@@ -133,11 +184,16 @@ class AcademyExperimentMaterializerService
 
         return DB::transaction(function () use ($trial, $contract, $observations, $counts, $outcome): array {
             $locked = DB::table('edge_academy_trials')->lockForUpdate()->find($trial->id);
-            if (! $locked) throw new RuntimeException('ACADEMY_TRIAL_MISSING_AT_SETTLEMENT');
-            if ($locked->settled_at !== null) return ['protocol' => self::PROTOCOL, 'status' => (string) $locked->status, 'promotion_evidence' => false];
+            if (! $locked) {
+                throw new RuntimeException('ACADEMY_TRIAL_MISSING_AT_SETTLEMENT');
+            }
+            if ($locked->settled_at !== null) {
+                return ['protocol' => self::PROTOCOL, 'status' => (string) $locked->status, 'promotion_evidence' => false];
+            }
             $settlement = app(XauusdEdgeFormationAcademyService::class)->settleTrial((int) $locked->id, $counts, $outcome);
             $classification = $this->classification($settlement, $outcome, $counts);
             $receipt = $this->recordReceipt($contract, $locked, $observations, $settlement, $classification, $outcome, $counts);
+
             return [...$settlement, 'classification' => $classification, 'conversion_receipt' => $receipt, 'promotion_evidence' => false];
         });
     }
@@ -192,12 +248,17 @@ class AcademyExperimentMaterializerService
     {
         return DB::transaction(function () use ($trial, $armContract, $observations, $reason): array {
             $locked = DB::table('edge_academy_trials')->lockForUpdate()->find($trial->id);
-            if (! $locked) throw new RuntimeException('ACADEMY_TRIAL_MISSING_AT_SETTLEMENT');
-            if ($locked->settled_at !== null) return ['protocol' => self::PROTOCOL, 'status' => (string) $locked->status, 'promotion_evidence' => false];
+            if (! $locked) {
+                throw new RuntimeException('ACADEMY_TRIAL_MISSING_AT_SETTLEMENT');
+            }
+            if ($locked->settled_at !== null) {
+                return ['protocol' => self::PROTOCOL, 'status' => (string) $locked->status, 'promotion_evidence' => false];
+            }
             $settlement = ['protocol' => self::PROTOCOL, 'status' => 'technical_quarantine', 'reason' => $reason, 'promotion_evidence' => false];
             DB::table('edge_academy_trials')->where('id', $locked->id)->update(['status' => 'technical_quarantine',
                 'outcome' => json_encode($settlement), 'settled_at' => now(), 'updated_at' => now()]);
             $receipt = $this->recordReceipt($armContract, $locked, $observations, $settlement, 'TECHNICAL_QUARANTINE', [], []);
+
             return [...$settlement, 'classification' => 'TECHNICAL_QUARANTINE', 'conversion_receipt' => $receipt];
         });
     }
@@ -207,11 +268,13 @@ class AcademyExperimentMaterializerService
         $density = (string) data_get($settlement, 'density.status');
         if ($density === 'powered_for_economic_settlement') {
             $effect = $outcome['treatment_effect_after_cost_r'] ?? null;
+
             return ! is_numeric($effect) ? 'INCONCLUSIVE' : ((float) $effect > 0 ? 'POSITIVE_CANDIDATE' : ((float) $effect < 0 ? 'HARMFUL' : 'INCONCLUSIVE'));
         }
         if ($density === 'topology_failure_insufficient_events') {
             return (int) ($counts['setup'] ?? 0) === 0 || (int) ($counts['trigger'] ?? 0) === 0 ? 'UNREACHABLE' : 'UNDERPOWERED';
         }
+
         return 'UNDERPOWERED';
     }
 
@@ -219,7 +282,9 @@ class AcademyExperimentMaterializerService
     private function recordReceipt(array $armContract, object $trial, iterable $observations, array $settlement, string $classification, array $outcome, array $counts): array
     {
         $contract = (array) ($armContract['research_experiment_contract'] ?? []);
-        if ($contract === []) throw new RuntimeException('ACADEMY_RESEARCH_CONTRACT_MISSING_AT_SETTLEMENT');
+        if ($contract === []) {
+            throw new RuntimeException('ACADEMY_RESEARCH_CONTRACT_MISSING_AT_SETTLEMENT');
+        }
         $work = match ($classification) {
             'POSITIVE_CANDIDATE' => ['type' => 'academy_independent_replication', 'priority' => 8],
             'HARMFUL' => ['type' => 'academy_harmful_intervention_repair', 'priority' => 8],
@@ -237,13 +302,52 @@ class AcademyExperimentMaterializerService
             'immutable_arm_evidence' => $references, 'outcome' => $outcome, 'counts' => $counts,
             'promotion_evidence' => false,
         ], $classification, [...$work, 'identity' => 'academy-trial:'.$trial->id], []);
-        if (($result['status'] ?? null) !== 'recorded') throw new RuntimeException('ACADEMY_CONVERSION_RECEIPT_FAILED:'.($result['reason'] ?? 'UNKNOWN'));
+        if (($result['status'] ?? null) !== 'recorded') {
+            throw new RuntimeException('ACADEMY_CONVERSION_RECEIPT_FAILED:'.($result['reason'] ?? 'UNKNOWN'));
+        }
+
         return $result;
     }
 
-    private function axisFromArms(string $arms): ?string { $first = (json_decode($arms, true) ?: [])[0] ?? []; return $first['changed_axis'] ?? null; }
-    private function diff(array $old, array $new): array { $out=[]; foreach (array_unique([...array_keys($old), ...array_keys($new)]) as $key) if (($old[$key]??null) !== ($new[$key]??null)) $out[$key]=['old'=>$old[$key]??null,'new'=>$new[$key]??null]; return $out; }
-    private function hash(mixed $value): string { return hash('sha256', json_encode($this->canonicalize($value), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)); }
-    private function canonicalize(mixed $value): mixed { if (! is_array($value)) return $value; if (! array_is_list($value)) ksort($value); foreach ($value as $key => $item) $value[$key] = $this->canonicalize($item); return $value; }
-    private function blocked(string $reason): array { return ['protocol'=>self::PROTOCOL,'status'=>'blocked','reason'=>$reason,'promotion_evidence'=>false]; }
+    private function axisFromArms(string $arms): ?string
+    {
+        $first = (json_decode($arms, true) ?: [])[0] ?? [];
+
+        return $first['changed_axis'] ?? null;
+    }
+
+    private function diff(array $old, array $new): array
+    {
+        $out = [];
+        foreach (array_unique([...array_keys($old), ...array_keys($new)]) as $key) {
+            if (($old[$key] ?? null) !== ($new[$key] ?? null)) {
+                $out[$key] = ['old' => $old[$key] ?? null, 'new' => $new[$key] ?? null];
+            }
+        }
+
+return $out;
+    }
+
+    private function hash(mixed $value): string
+    {
+        return hash('sha256', json_encode($this->canonicalize($value), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+    }
+
+    private function canonicalize(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        } if (! array_is_list($value)) {
+            ksort($value);
+        } foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalize($item);
+        }
+
+return $value;
+    }
+
+    private function blocked(string $reason): array
+    {
+        return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => $reason, 'promotion_evidence' => false];
+    }
 }

@@ -10,7 +10,6 @@ use App\Models\MarketDriftSnapshot;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use App\Models\MutationMemory;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -24,10 +23,12 @@ use Illuminate\Support\Str;
 class AgentKnowledgeService
 {
     public const CARD_PROTOCOL = 'agent_knowledge_card_v1';
+
     public const LESSON_PROTOCOL = 'agent_lesson_ledger_v1';
 
     /** Directional quarantine is immutable within one population build. */
     private array $blockedDirectionCache = [];
+
     /** The expensive agent/model projection is shared across regime scopes. */
     private array $blockedDirectionUniverseCache = [];
 
@@ -136,11 +137,11 @@ class AgentKnowledgeService
             $universe = $this->blockedDirectionUniverseCache[$universeKey];
             $result = $scope === null
                 ? $universe
-                : collect($universe)->filter(fn (array $direction): bool =>
-                    (bool) data_get($direction, 'global_scope', false)
+                : collect($universe)->filter(fn (array $direction): bool => (bool) data_get($direction, 'global_scope', false)
                     || in_array($scope, (array) data_get($direction, 'scopes', []), true)
                 )->values()->all();
             $this->blockedDirectionCache[$cacheKey] = $result;
+
             return $result;
         }
         $directions = [];
@@ -176,7 +177,9 @@ class AgentKnowledgeService
         foreach ($agents as $agent) {
             $model = $agent->modelVersion;
             $diff = (array) $agent->parameter_diff;
-            if (! $model || count($diff) !== 1) continue;
+            if (! $model || count($diff) !== 1) {
+                continue;
+            }
 
             $metadata = (array) $model->metadata;
             $roleComplete = data_get($metadata, 'role_complete_council.protocol') === 'role_complete_council_v1';
@@ -187,7 +190,9 @@ class AgentKnowledgeService
 
             $key = (string) array_key_first($diff);
             $change = (array) ($diff[$key] ?? []);
-            if (! array_key_exists('new', $change)) continue;
+            if (! array_key_exists('new', $change)) {
+                continue;
+            }
 
             $memoryStrong = in_array($key, (array) $memoryKeys->get($agent->id, []), true);
             $lessonStrong = in_array($key, (array) $lessonKeys->get($agent->id, []), true);
@@ -199,7 +204,9 @@ class AgentKnowledgeService
                     || str_contains($decision, 'failed independent')
                     || str_contains($decision, 'known-failed'));
 
-            if (! $memoryStrong && ! $lessonStrong && ! $quarantineStrong) continue;
+            if (! $memoryStrong && ! $lessonStrong && ! $quarantineStrong) {
+                continue;
+            }
 
             $signature = $this->mutationDirectionSignature($key, $change['new']);
             if (! isset($directions[$signature])) {
@@ -226,13 +233,13 @@ class AgentKnowledgeService
         $universe = collect($directions)->map(function (array $direction): array {
             $direction['source_agent_ids'] = array_values(array_unique($direction['source_agent_ids']));
             $direction['scopes'] = array_values(array_unique($direction['scopes']));
+
             return $direction;
         })->values()->all();
         $this->blockedDirectionUniverseCache[$universeKey] = $universe;
         $result = $scope === null
             ? $universe
-            : collect($universe)->filter(fn (array $direction): bool =>
-                (bool) data_get($direction, 'global_scope', false)
+            : collect($universe)->filter(fn (array $direction): bool => (bool) data_get($direction, 'global_scope', false)
                 || in_array($scope, (array) data_get($direction, 'scopes', []), true)
             )->values()->all();
         $this->blockedDirectionCache[$cacheKey] = $result;
@@ -341,7 +348,11 @@ class AgentKnowledgeService
                 'regime' => data_get($niche, 'regime'),
                 'volatility' => data_get($niche, 'volatility'),
                 'transition_state' => data_get($niche, 'transition_state'),
-                'state_cluster_id' => data_get($niche, 'state_cluster'),
+                'session' => data_get($niche, 'session', data_get($niche, 'owner_context.session')),
+                'spread_liquidity_state' => data_get($niche, 'spread_liquidity_state', data_get($niche, 'state_cluster.spread_liquidity_state')),
+                'volume_state' => data_get($niche, 'volume_state', data_get($niche, 'state_cluster.volume_state')),
+                'direction' => data_get($niche, 'direction'),
+                'state_cluster_id' => data_get($niche, 'state_cluster.cluster_id', data_get($niche, 'state_cluster')),
             ],
             null,
             null,
@@ -359,11 +370,17 @@ class AgentKnowledgeService
             $agent = $performance?->model_version_id
                 ? LabAgent::query()->where('model_version_id', $performance->model_version_id)->latest('id')->first()
                 : null;
-            if (! $agent) continue;
+            if (! $agent) {
+                continue;
+            }
 
             $card = AgentKnowledgeCard::query()->where('lab_agent_id', $agent->id)->first();
-            if (! $card) continue;
-            if (! app(AgentProfessionalExamService::class)->skillUsable($card)) continue;
+            if (! $card) {
+                continue;
+            }
+            if (! app(AgentProfessionalExamService::class)->skillUsable($card)) {
+                continue;
+            }
             $card->update([
                 'skill_stage' => 'elite_council_member',
                 'skill_contract' => [
@@ -382,6 +399,7 @@ class AgentKnowledgeService
             ]);
             $updated++;
         }
+
         return $updated;
     }
 
@@ -474,9 +492,9 @@ class AgentKnowledgeService
             'promotion_evidence' => false,
             'organism_lane' => data_get($twinContract, 'profile.lane', 'champion'),
             'organism_learning_objective' => data_get($twinContract, 'profile.learning_objective'),
-                'state_cluster_rule' => 'Calendar month is diagnostic only; skill scope is regime/volatility/transition/liquidity/veto.',
-                'learning_exams' => $windowEvidence,
-            ];
+            'state_cluster_rule' => 'Calendar month is diagnostic only; skill scope is regime/volatility/transition/liquidity/veto.',
+            'learning_exams' => $windowEvidence,
+        ];
 
         $card = AgentKnowledgeCard::query()->updateOrCreate(
             ['lab_agent_id' => $agent->id],
@@ -599,7 +617,9 @@ class AgentKnowledgeService
         foreach ((array) ($agent->parameter_diff ?? []) as $key => $change) {
             $memory = MutationMemory::query()->where('lab_agent_id', $agent->id)
                 ->where('parameter_key', $key)->latest('id')->first();
-            if (! $memory || ! in_array($memory->outcome, ['beneficial', 'harmful'], true)) continue;
+            if (! $memory || ! in_array($memory->outcome, ['beneficial', 'harmful'], true)) {
+                continue;
+            }
             $creditStatus = (string) data_get($memory->behavioral_effect, 'causal_credit.status', '');
             $priorConfirmed = AgentLearningLesson::query()
                 ->where('lab_agent_id', $agent->id)
@@ -632,8 +652,7 @@ class AgentKnowledgeService
         $transitionTrades = (int) data_get($transition, 'transition_trades', 0);
         $falseEntryRate = (float) data_get($transition, 'false_entry_rate', 0);
         $policyEvaluations = collect((array) data_get($result, 'veto_policy_lab.evaluations', []));
-        $policyLesson = $policyEvaluations->first(fn ($item): bool =>
-            data_get($item, 'status') === 'negative_or_uncertain'
+        $policyLesson = $policyEvaluations->first(fn ($item): bool => data_get($item, 'status') === 'negative_or_uncertain'
             && (int) data_get($item, 'sample_count', 0) >= 30
             && is_numeric(data_get($item, 'lower_confidence_bound'))
             && (float) data_get($item, 'lower_confidence_bound') <= 0
@@ -688,6 +707,7 @@ class AgentKnowledgeService
         $hash = hash('sha256', json_encode($identity, JSON_PRESERVE_ZERO_FRACTION));
         $confirmationCount = max(0, (int) data_get($evidence, 'confirmation_count', 0));
         $lowerBound = data_get($evidence, 'lower_confidence_bound', data_get($evidence, 'policy_evidence.lower_confidence_bound'));
+
         return [
             'lesson_hash' => $hash,
             'attributes' => [
@@ -733,6 +753,7 @@ class AgentKnowledgeService
                 'state_cluster_v1', $regime, $volatility, $transition, $spread, $veto,
             ]));
         }
+
         return [
             'state_cluster_id' => $clusterId,
             'regime' => $regime, 'volatility' => $volatility,
@@ -760,7 +781,9 @@ class AgentKnowledgeService
             [$regime, $volatility] = array_pad(explode('|', (string) $key, 2), 2, null);
             $trades = (int) data_get($row, 'trades', 0);
             $pf = (float) data_get($row, 'net_pf', data_get($row, 'profit_factor', 0));
-            if ($trades < 10 || $pf < 1.3) continue;
+            if ($trades < 10 || $pf < 1.3) {
+                continue;
+            }
             $clusterId = ($context['regime'] === $regime && $context['volatility'] === $volatility)
                 ? $context['state_cluster_id']
                 : hash('sha256', implode('|', ['state_cluster_v1', $regime, $volatility, 'unknown', 'unknown', null]));
@@ -811,6 +834,7 @@ class AgentKnowledgeService
         if ($stopShare >= .5) {
             $profiles[] = ['class' => 'exit', 'severity' => 'medium', 'evidence' => ['stop_share' => $stopShare]];
         }
+
         return collect($profiles)->unique('class')->values()->all();
     }
 
@@ -823,6 +847,7 @@ class AgentKnowledgeService
             'catastrophic_forgetting' => 0.0,
             default => null,
         };
+
         return ['status' => $status, 'score' => $score, 'lost_skills' => (array) data_get($exam, 'lost_skills', [])];
     }
 
@@ -850,8 +875,13 @@ class AgentKnowledgeService
             $trades = (int) data_get($window, 'trades', data_get($window, 'summary.trades', 0));
             $pf = data_get($window, 'profit_factor', data_get($window, 'net_pf', data_get($window, 'summary.net_pf')));
             $score = data_get($window, 'score');
-            if ($trades < 10) return false;
-            if (is_numeric($pf)) return (float) $pf >= 1.30 && (float) data_get($window, 'net_profit_percent', 1) > 0;
+            if ($trades < 10) {
+                return false;
+            }
+            if (is_numeric($pf)) {
+                return (float) $pf >= 1.30 && (float) data_get($window, 'net_profit_percent', 1) > 0;
+            }
+
             return is_numeric($score) && (float) $score > 0;
         })->count();
 
@@ -904,10 +934,13 @@ class AgentKnowledgeService
             && (int) data_get($item, 'sample_count', 0) >= 30
             && is_numeric(data_get($item, 'lower_confidence_bound'))
             && (float) data_get($item, 'lower_confidence_bound') <= 0);
-        if ($confirmed) return ['status' => 'confirmed', 'precision' => (float) data_get($transition, 'abstention_quality', 0)];
+        if ($confirmed) {
+            return ['status' => 'confirmed', 'precision' => (float) data_get($transition, 'abstention_quality', 0)];
+        }
         if ((int) data_get($transition, 'transition_trades', 0) >= 10) {
             return ['status' => 'provisional', 'precision' => (float) data_get($transition, 'abstention_quality', 0)];
         }
+
         return ['status' => 'unassessed', 'precision' => null];
     }
 
@@ -917,10 +950,15 @@ class AgentKnowledgeService
         $confirmation = app(MarketDriftDetectionService::class)->confirmation($symbol, $timeframe);
         $validated = $confirmation['status'] === 'confirmed'
             || (app()->environment('testing') && $snapshot?->status === 'drift');
-        if ($validated) return [
-            'status' => 'recheck_required', 'recheck_at' => now(), 'confirmation' => $confirmation,
-        ];
-        if ($snapshot) return ['status' => 'stable', 'recheck_at' => null];
+        if ($validated) {
+            return [
+                'status' => 'recheck_required', 'recheck_at' => now(), 'confirmation' => $confirmation,
+            ];
+        }
+        if ($snapshot) {
+            return ['status' => 'stable', 'recheck_at' => null];
+        }
+
         return ['status' => 'unknown', 'recheck_at' => null];
     }
 
@@ -936,8 +974,12 @@ class AgentKnowledgeService
         string $lowerConfidenceStatus,
         string $driftStatus = 'unknown',
     ): string {
-        if ($screening) return 'novice';
-        if ($driftStatus === 'recheck_required') return 'apprentice';
+        if ($screening) {
+            return 'novice';
+        }
+        if ($driftStatus === 'recheck_required') {
+            return 'apprentice';
+        }
         $passport = data_get($performance?->metrics, 'elite_agent_passport.status') === 'passed';
         $adversarial = data_get($performance?->metrics, 'secret_adversarial_arena.status') === 'passed';
         $temporal = data_get($performance?->metrics, 'temporal_firewall.status') === 'passed';
@@ -946,8 +988,13 @@ class AgentKnowledgeService
             && $independentWindows >= CausalSkillCompilerService::MINIMUM_POSITIVE_WINDOWS
             && $controlStatus === 'assessed'
             && $lowerConfidenceStatus === 'positive';
-        if ($passport && $retentionStatus === 'retained' && $adversarial && $temporal && $learningEvidence) return 'certified';
-        if ($learningEvidence) return 'specialist';
+        if ($passport && $retentionStatus === 'retained' && $adversarial && $temporal && $learningEvidence) {
+            return 'certified';
+        }
+        if ($learningEvidence) {
+            return 'specialist';
+        }
+
         return 'apprentice';
     }
 
@@ -959,23 +1006,36 @@ class AgentKnowledgeService
         array $abstention,
         array $drift,
     ): float {
-        if ($screening) return 15.0;
+        if ($screening) {
+            return 15.0;
+        }
         $score = 35 + min(20, $regimeCount * 7) + min(25, $stateCount * 12.5);
-        if ($retention['status'] === 'retained') $score += 12;
-        if ($abstention['status'] === 'confirmed') $score += 10;
-        if ($drift['status'] === 'recheck_required') $score -= 15;
+        if ($retention['status'] === 'retained') {
+            $score += 12;
+        }
+        if ($abstention['status'] === 'confirmed') {
+            $score += 10;
+        }
+        if ($drift['status'] === 'recheck_required') {
+            $score -= 15;
+        }
+
         return round(max(0, min(100, $score)), 2);
     }
 
     private function unknownStateAction(array $result): string
     {
         $action = (string) data_get($result, 'epistemic_boundary.unknown_state_action', 'WAIT');
+
         return in_array($action, ['WAIT', 'REDUCE_RISK', 'ALLOW_WITH_GUARDS'], true) ? $action : 'WAIT';
     }
 
     private function normalizeScope(?string $scope): ?string
     {
-        if ($scope === null || $scope === '') return null;
+        if ($scope === null || $scope === '') {
+            return null;
+        }
+
         return str_starts_with($scope, 'market:') ? substr($scope, 7) : $scope;
     }
 }

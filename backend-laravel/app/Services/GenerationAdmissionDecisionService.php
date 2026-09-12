@@ -32,6 +32,7 @@ class GenerationAdmissionDecisionService
     {
         $velocity = app(LearningVelocityGateService::class)->inspect($lab);
         $trigger = (string) data_get($input, 'trigger');
+        $learningConfirmation = (bool) data_get($input, 'learning_confirmation');
         $screenedHandoff = $latest?->status === 'screened'
             && in_array($trigger, ['candidate_handoff', 'data_edge_audit', 'coverage_rescue'], true);
         $terminalStatus = ! $latest || in_array((string) $latest->status, ['screened', 'completed', 'technical_quarantine', 'abandoned', 'failed'], true);
@@ -52,8 +53,9 @@ class GenerationAdmissionDecisionService
             || (bool) data_get($input, 'role_complete')
             || (bool) data_get($input, 'shadow_research')
             || (bool) data_get($input, 'coverage_rescue')
-            || (bool) data_get($input, 'learning_confirmation')
+            || $learningConfirmation
             || in_array($trigger, ['candidate_handoff', 'data_edge_audit', 'coverage_rescue'], true);
+        $autonomy = app(AutonomousModeService::class)->status((string) $lab->symbol, (string) $lab->timeframe);
         $decision = self::OPEN_NORMAL_GENERATION;
         $allowed = true;
         $reasons = [];
@@ -62,6 +64,20 @@ class GenerationAdmissionDecisionService
             (string) $lab->symbol,
             (string) $lab->timeframe,
         );
+        // A canonical beneficial lesson awaiting the current target-aligned
+        // protocol is the next generation curriculum. Generic, targeted and
+        // structural-escape builders must not consume the only lineage head
+        // first; the dedicated learning-confirmation trigger below is the
+        // sole consumer and still passes every ordinary safety boundary.
+        $causalLesson = null;
+        if (! $learningConfirmation
+            && strtoupper((string) $lab->symbol) === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+            && strtoupper((string) $lab->timeframe) === LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME) {
+            $causalLesson = app(CausalLearningCohortPlannerService::class)->eligibleLesson(
+                (string) $lab->symbol,
+                (string) $lab->timeframe,
+            );
+        }
 
         if (($edgeOwnership['owned'] ?? false) === true) {
             // Edge Genesis is itself the current learning/evolution state
@@ -75,6 +91,14 @@ class GenerationAdmissionDecisionService
             $decision = self::WAIT_ACTIVE_WORK;
             $allowed = false;
             $reasons[] = 'LATEST_GENERATION_OR_AGENT_WORK_ACTIVE';
+        } elseif (! (bool) data_get($autonomy, 'enabled', false)) {
+            $decision = self::BLOCK_HARD;
+            $allowed = false;
+            $reasons[] = 'AUTONOMOUS_MODE_STOPPED';
+        } elseif ($causalLesson !== null) {
+            $decision = self::DISPATCH_LEARNING;
+            $allowed = false;
+            $reasons[] = 'TARGET_ALIGNED_CAUSAL_LESSON_HAS_GENERATION_PRIORITY';
         } elseif (! (bool) data_get($velocity, 'allowed', true)) {
             $status = (string) data_get($velocity, 'status');
             $actionable = (int) data_get($velocity, 'learning_starvation.actionable_pending_dojo', 0);
@@ -104,9 +128,17 @@ class GenerationAdmissionDecisionService
             $allowed = false;
             $reasons[] = 'GENERATION_CREATION_SAFETY_PAUSED';
         } elseif ($latest && $this->screenDecisions($latest) > 0 && $this->screenPasses($latest) === 0) {
-            $decision = self::BLOCK_HARD;
-            $allowed = false;
-            $reasons[] = 'ZERO_PASS_THRESHOLD_NOT_YET_STRUCTURAL_ESCAPE_ELIGIBLE';
+            if ($trigger === 'new_data') {
+                // An enabled autonomous loop must be able to accumulate the
+                // configured number of independent zero-pass observations.
+                // LabPopulationService still requires a fresh data window;
+                // this is not permission to recycle the sealed snapshot.
+                $reasons[] = 'AUTONOMOUS_ZERO_PASS_ACCUMULATION_REQUIRES_FRESH_DATA';
+            } else {
+                $decision = self::BLOCK_HARD;
+                $allowed = false;
+                $reasons[] = 'ZERO_PASS_THRESHOLD_NOT_YET_STRUCTURAL_ESCAPE_ELIGIBLE';
+            }
         }
 
         $capabilityAgents = collect((array) data_get($velocity, 'observations', []))
@@ -115,7 +147,7 @@ class GenerationAdmissionDecisionService
             $decision = self::QUARANTINE_CAPABILITY_LANE;
             $reasons[] = 'DATA_CAPABILITY_LANE_ISOLATED';
         }
-        if ((bool) data_get($input, 'learning_confirmation')
+        if ($learningConfirmation
             && $terminal
             && ! $allowed
             && $decision === self::DISPATCH_LEARNING) {
@@ -127,7 +159,11 @@ class GenerationAdmissionDecisionService
             $allowed = true;
             $reasons[] = 'CAUSAL_CONFIRMATION_SATISFIES_LEARNING_DISPATCH';
         }
-        if ($special && $terminal && ! $allowed && $decision === self::BLOCK_HARD) {
+        if ($special
+            && $terminal
+            && ! $allowed
+            && $decision === self::BLOCK_HARD
+            && ! in_array('AUTONOMOUS_MODE_STOPPED', $reasons, true)) {
             // Operator input is not a bypass. It is an audited input to this
             // authority and can only open a bounded structural/recovery path.
             $decision = self::OPEN_STRUCTURAL_ESCAPE;
@@ -142,7 +178,18 @@ class GenerationAdmissionDecisionService
             'latest_generation_id' => $latest?->id,
             'input' => $input,
             'generation_creation_safety_paused' => $safetyPaused,
+            'autonomous_mode' => $autonomy,
             'learning_velocity' => $velocity,
+            'causal_confirmation_priority' => $causalLesson === null ? null : [
+                'lesson_id' => (int) $causalLesson->id,
+                'target' => (string) data_get(
+                    $causalLesson->evidence,
+                    'failure_signature.failure_target',
+                    $causalLesson->failure_class ?: 'causal_learning',
+                ),
+                'gene_key' => (string) $causalLesson->parameter_key,
+                'promotion_evidence' => false,
+            ],
             'edge_research_lane' => $edgeOwnership,
             'promotion_evidence' => false,
         ];
@@ -158,7 +205,8 @@ class GenerationAdmissionDecisionService
                 'allowed' => $allowed,
                 'reason_codes' => $result['reason_codes'],
                 'context' => ['input' => $input, 'learning_velocity' => $velocity,
-                    'edge_research_lane' => $edgeOwnership, 'promotion_evidence' => false],
+                    'causal_confirmation_priority' => $result['causal_confirmation_priority'],
+                    'autonomous_mode' => $autonomy, 'edge_research_lane' => $edgeOwnership, 'promotion_evidence' => false],
                 'decided_at' => now(),
             ]);
             $result['decision_id'] = (int) $row->id;

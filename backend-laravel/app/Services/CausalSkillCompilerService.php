@@ -13,7 +13,9 @@ use App\Models\LabAgent;
 class CausalSkillCompilerService
 {
     public const PROTOCOL = 'causal_skill_compiler_v1';
+
     public const REQUIRED_WINDOWS = 3;
+
     public const MINIMUM_POSITIVE_WINDOWS = 2;
 
     private const SCALAR_GENES = [
@@ -74,6 +76,7 @@ class CausalSkillCompilerService
     /**
      * A semantic fingerprint prevents different numeric values with the same
      * decision trace from being counted as separate evolution.
+     *
      * @return array<string, mixed>
      */
     public function behavioralFingerprint(array $result): array
@@ -121,12 +124,24 @@ class CausalSkillCompilerService
                 : (string) $key;
         })->filter()->values()->all();
         foreach ($cases as $case) {
-            if (! is_array($case)) continue;
-            if (array_key_exists('no_trade', $case)) $observed[] = 'veto_on';
-            if (array_key_exists('real_trade', $case)) $observed[] = 'veto_off';
-            if ((string) data_get($case, 'delayed_entry.status', '') === 'assessed_fixed_exit') $observed[] = 'delayed_entry';
-            if ((string) data_get($case, 'half_risk.status', '') === 'assessed') $observed[] = 'half_risk';
-            if ((string) data_get($case, 'alternative_exit.status', '') === 'assessed') $observed[] = 'alternate_exit';
+            if (! is_array($case)) {
+                continue;
+            }
+            if (array_key_exists('no_trade', $case)) {
+                $observed[] = 'veto_on';
+            }
+            if (array_key_exists('real_trade', $case)) {
+                $observed[] = 'veto_off';
+            }
+            if ((string) data_get($case, 'delayed_entry.status', '') === 'assessed_fixed_exit') {
+                $observed[] = 'delayed_entry';
+            }
+            if ((string) data_get($case, 'half_risk.status', '') === 'assessed') {
+                $observed[] = 'half_risk';
+            }
+            if ((string) data_get($case, 'alternative_exit.status', '') === 'assessed') {
+                $observed[] = 'alternate_exit';
+            }
         }
         $observed = collect($observed)->map(fn (string $name): string => $name === 'alternative_exit' ? 'alternate_exit' : $name)->unique()->values()->all();
         $missing = array_values(array_diff($required, $observed));
@@ -167,6 +182,7 @@ class CausalSkillCompilerService
     {
         $counts = collect($failures)->map(function ($failure): string {
             $gene = is_array($failure) ? (string) data_get($failure, 'changed_gene', data_get($failure, 'declared_gene', '')) : (string) $failure;
+
             return $this->axisForGene($gene);
         })->countBy()->all();
         $scalar = array_sum(array_intersect_key($counts, array_fill_keys(['scalar_wait', 'scalar_threshold'], true)));
@@ -227,8 +243,7 @@ class CausalSkillCompilerService
     public function interactionContract(array $genes, array $mentors = []): array
     {
         $genes = array_values(array_unique(array_filter(array_map('strval', $genes))));
-        $confirmed = collect($mentors)->count() === 2 && collect($mentors)->every(fn ($mentor): bool =>
-            in_array((string) data_get($mentor, 'status'), ['confirmed', 'confirmed_shadow_mentor'], true)
+        $confirmed = collect($mentors)->count() === 2 && collect($mentors)->every(fn ($mentor): bool => in_array((string) data_get($mentor, 'status'), ['confirmed', 'confirmed_shadow_mentor'], true)
             && (int) data_get($mentor, 'independent_windows', 0) >= self::REQUIRED_WINDOWS
             && (int) data_get($mentor, 'positive_windows', 0) >= self::MINIMUM_POSITIVE_WINDOWS
         );
@@ -249,6 +264,7 @@ class CausalSkillCompilerService
     public function routerContract(array $specialistSignals = []): array
     {
         $disagreement = collect($specialistSignals)->map(fn ($signal): string => strtolower((string) data_get($signal, 'decision', data_get($signal, 'action', 'unknown'))))->unique()->count() > 1;
+
         return [
             'protocol' => 'regime_router_safety_v1',
             'status' => $disagreement ? 'wait_on_disagreement' : 'consensus_or_unassessed',
@@ -264,15 +280,17 @@ class CausalSkillCompilerService
     {
         $metadata = (array) ($agent?->modelVersion?->metadata ?? []);
         $declared = (array) data_get($metadata, 'control_pair_contract', []);
-        $sameSnapshot = (bool) data_get($result, 'mutation_observability.control_relative.same_snapshot', data_get($result, 'same_snapshot', false));
-        $sameExecution = (bool) data_get($result, 'mutation_observability.control_relative.same_execution_contract', data_get($result, 'same_execution_contract', false));
+        $sameContract = (bool) data_get($result, 'mutation_observability.control_relative.same_contract', false);
+        $sameSnapshot = (bool) data_get($result, 'mutation_observability.control_relative.same_snapshot', data_get($result, 'same_snapshot', $sameContract));
+        $sameExecution = (bool) data_get($result, 'mutation_observability.control_relative.same_execution_contract', data_get($result, 'same_execution_contract', $sameContract));
         $available = data_get($result, 'mutation_observability.control_relative.control_agent_id') !== null
-            || (bool) data_get($result, 'control_pair_available', false);
+            && (bool) data_get($result, 'mutation_observability.control_relative.interpretation_allowed', false);
 
         return [
-            'protocol' => 'frozen_control_pair_v1',
-            'status' => $available && ($sameSnapshot || data_get($declared, 'same_generation') === true) && ($sameExecution || data_get($declared, 'same_execution_contract') === true) ? 'available' : 'missing_or_unverified',
+            'protocol' => ExactCausalBaselineService::PROTOCOL,
+            'status' => $available && $sameSnapshot && $sameExecution ? 'available' : 'missing_or_unverified',
             'same_generation' => (bool) data_get($declared, 'same_generation', false),
+            'same_parameter_baseline' => $available,
             'same_snapshot' => $sameSnapshot,
             'same_execution_contract' => $sameExecution,
             'control_agent_id' => data_get($result, 'mutation_observability.control_relative.control_agent_id'),
@@ -287,6 +305,7 @@ class CausalSkillCompilerService
         $positive = $windows->filter(function ($window): bool {
             $trades = (int) data_get($window, 'trades', data_get($window, 'summary.trades', 0));
             $pf = data_get($window, 'profit_factor', data_get($window, 'net_pf', data_get($window, 'summary.net_pf')));
+
             return $trades >= 10 && is_numeric($pf) && (float) $pf >= 1.30 && (float) data_get($window, 'net_profit_percent', 1) > 0;
         })->count();
 
@@ -314,6 +333,7 @@ class CausalSkillCompilerService
                 default => 'The declared decision surface must change measurably and improve the named target against its frozen control.',
             };
         }
+
         return [
             'falsifiable_statement' => $statement,
             'decision_surface' => $stage,
@@ -330,6 +350,7 @@ class CausalSkillCompilerService
         $observability = (array) data_get($result, 'mutation_observability', []);
         $delta = $targetDelta ?: (array) data_get($observability, 'behavioral_delta', data_get($result, 'behavioral_delta', []));
         $changed = (bool) data_get($observability, 'observable_effect', data_get($delta, 'observable_effect', false));
+
         return [
             'protocol' => 'behavioral_delta_contract_v1',
             'status' => $changed ? 'observed' : 'not_observed',
@@ -350,6 +371,7 @@ class CausalSkillCompilerService
             && data_get($windows, 'status') === 'passed'
             && data_get($behavior, 'status') === 'observed'
             && data_get($prediction, 'status') === 'declared';
+
         return [
             'status' => $ready ? 'reusable' : 'diagnostic_only',
             'reason' => $ready ? 'all_causal_artifacts_present' : 'missing_causal_artifact',
@@ -364,28 +386,51 @@ class CausalSkillCompilerService
         $text = strtolower(implode('|', array_filter([
             $target, (string) data_get($signature, 'failure_reason'), (string) data_get($result, 'failure_reason'),
         ])));
-        if (str_contains($text, 'temporal') || str_contains($text, 'calendar') || str_contains($text, 'transition') || data_get($signature, 'state.transition_state') !== 'unknown') return 'regime_transition';
-        if (str_contains($text, 'exit') || str_contains($text, 'drawdown') || str_contains($text, 'risk')) return 'exit';
-        if (str_contains($text, 'regime')) return 'regime_classification';
-        if (str_contains($text, 'entry') || str_contains($text, 'signal')) return 'entry';
+        if (str_contains($text, 'temporal') || str_contains($text, 'calendar') || str_contains($text, 'transition') || data_get($signature, 'state.transition_state') !== 'unknown') {
+            return 'regime_transition';
+        }
+        if (str_contains($text, 'exit') || str_contains($text, 'drawdown') || str_contains($text, 'risk')) {
+            return 'exit';
+        }
+        if (str_contains($text, 'regime')) {
+            return 'regime_classification';
+        }
+        if (str_contains($text, 'entry') || str_contains($text, 'signal')) {
+            return 'entry';
+        }
+
         return 'decision_surface';
     }
 
     private function axisForGene(string $gene): string
     {
         $gene = strtolower($gene);
-        if (in_array($gene, self::SCALAR_GENES, true)) return str_contains($gene, 'threshold') || str_contains($gene, 'spread') ? 'scalar_threshold' : 'scalar_wait';
-        if (str_contains($gene, 'regime') || str_contains($gene, 'classifier')) return 'regime_classification';
-        if (str_contains($gene, 'entry') || str_contains($gene, 'signal') || str_contains($gene, 'topology')) return 'signal_construction';
-        if (str_contains($gene, 'exit') || str_contains($gene, 'stop') || str_contains($gene, 'target')) return 'entry_exit_state';
+        if (in_array($gene, self::SCALAR_GENES, true)) {
+            return str_contains($gene, 'threshold') || str_contains($gene, 'spread') ? 'scalar_threshold' : 'scalar_wait';
+        }
+        if (str_contains($gene, 'regime') || str_contains($gene, 'classifier')) {
+            return 'regime_classification';
+        }
+        if (str_contains($gene, 'entry') || str_contains($gene, 'signal') || str_contains($gene, 'topology')) {
+            return 'signal_construction';
+        }
+        if (str_contains($gene, 'exit') || str_contains($gene, 'stop') || str_contains($gene, 'target')) {
+            return 'entry_exit_state';
+        }
+
         return 'other';
     }
 
     private function normalizeForHash(mixed $value): mixed
     {
-        if (! is_array($value)) return is_scalar($value) || $value === null ? $value : (string) $value;
-        if (array_is_list($value)) return array_values(array_map(fn ($item) => $this->normalizeForHash($item), $value));
+        if (! is_array($value)) {
+            return is_scalar($value) || $value === null ? $value : (string) $value;
+        }
+        if (array_is_list($value)) {
+            return array_values(array_map(fn ($item) => $this->normalizeForHash($item), $value));
+        }
         ksort($value);
+
         return array_map(fn ($item) => $this->normalizeForHash($item), $value);
     }
 

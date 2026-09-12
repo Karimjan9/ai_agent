@@ -1,0 +1,312 @@
+Muhim topilma: 6 ta absolute-positive settlement, 48 provisional skill va bir nechta yaxshi target-delta mavjud. Demak tizim mutlaqo signalsiz emas. Muammo signalni confirmed component → composition → viable organism zanjiriga aylantirishda.
+Asosiy sabab: tizim kichik yutuqdan juda katta natija talab qilmoqda
+Hozir [CausalLearningConfirmationService.php (line 468)](C:/x_programs/xamp/htdocs/laravel_projects/ai_agent/backend-laravel/app/Services/CausalLearningConfirmationService.php:468) bitta gene uchun quyidagilarni bir paytda talab qiladi:
+- controlni yengish;
+- blinded armni yengish;
+- target yaxshilanishi;
+- barcha non-target invariantlar;
+- independent windows;
+- to‘liq absolute viability.
+Agar boshlang‘ich model zaif bo‘lsa, bitta gene uni birdaniga mukammal organizmga aylantirmaydi. Natijada foydali kichik qadam ham provisional bo‘lib qoladi va keyingi qadamga qo‘shilmaydi.
+Bu all-or-nothing learning deadlock.
+Tavsiya: Causal Capability Lattice
+Bitta uzun status o‘rniga uchta authority darajasi bo‘lishi kerak:
+Research Inbox
+      ↓
+Causally Confirmed Component
+      ↓
+Contextual Shadow Capability
+      ↓
+Viable Component Composition
+      ↓
+Mentor Incubator
+      ↓
+Two Descendant Proofs
+      ↓
+Eligible Parent
+      ↓
+Child beats parent + frozen control
+      ↓
+Performance Credit
+1. Counterfactual Credit Escrow
+Kichik, lekin ishonchli yutuqni yo‘qotmaslik kerak.
+Component quyidagi shartlarda causally_confirmed_component bo‘ladi:
+- exact frozen control;
+- retrieve-before-mutate yoki aniq independent intent;
+- control va blinded’dan yaxshi;
+- 3 disjoint window’dan kamida 2 positive;
+- target bo‘yicha minimum meaningful effect;
+- hard-risk regression yo‘q;
+- qolgan non-target metrikalar safety corridor ichida;
+- exact intent → run → outcome linkage.
+Bu status:
+- parent authority bermaydi;
+- paper/live authority bermaydi;
+- faqat keyingi composition tajribasida frozen research baseline bo‘lishi mumkin.
+Shunday qilib foydali qadam saqlanadi, lekin xavfsizlik yumshamaydi.
+absolute viability faqat bir nechta component yig‘ilgan organizmdan talab qilinadi.
+2. Evidence Salvage Conveyor
+Hozirgi eng qimmat aktiv — 6 ta absolute-positive settlement, 48 provisional skill va 45 retry_ready pair.
+Director yangi random mutation boshlashdan oldin ularni tekshirishi kerak:
+positive/provisional evidence
+    ↓
+contract completeness audit
+    ↓
+exact v2 bo‘lsa causal triplet
+legacy bo‘lsa fresh v2 reproduction
+    ↓
+guided + blinded + control
+    ↓
+component confirmation yoki honest rejection
+Priority formulasi:
+priority =
+    expected_information_gain
+    × probability_of_closing_next_gate
+    × target_gap_reduction
+    × context_relevance
+    ÷ compute_cost
+    ÷ (1 + repeated_failure_count)
+Bu bir xil failure’ni qayta-qayta tekshirish o‘rniga tasdiqqa eng yaqin signalni birinchi ishlatadi.
+Director priority tartibi:
+1. terminal settlement;
+2. exact positive evidence salvage;
+3. near-confirmed component;
+4. interaction/composition proof;
+5. bounded fresh exploration.
+3. Contextual Instrument Bundle Graph
+Hozir instrument posteriori asosan oddiy o‘rtacha qiymat va 1/sqrt(n) uncertainty orqali hisoblanadi: [TradingInstrumentOperatingSystemService.php (line 132)](C:/x_programs/xamp/htdocs/laravel_projects/ai_agent/backend-laravel/app/Services/TradingInstrumentOperatingSystemService.php:132). Instrumentlar bo‘yicha gene qiymati alohida yig‘iladi, lekin kombinatsiya interaction credit hali yo‘q: [LabInstrumentResearchService.php (line 198)](C:/x_programs/xamp/htdocs/laravel_projects/ai_agent/backend-laravel/app/Services/LabInstrumentResearchService.php:198).
+Buni quyidagicha kuchaytirish kerak.
+Har posterior kaliti:
+instrument/version
++ role
++ regime
++ session
++ volatility
++ spread/liquidity
++ transition state
++ target stage
++ baseline epoch
+Har instrument uchun uch xil qiymat saqlanadi:
+- standalone marginal effect;
+- bundle ichidagi marginal effect;
+- boshqa instrument bilan interaction effect.
+Instrument bundle tanlash kombinatorial contextual bandit bo‘ladi. Bunday algoritmlar alohida instrument emas, cheklangan instrument to‘plamini tanlab, har tanlangan komponent feedbackidan o‘rganadi. Bu toolbox muammosiga to‘g‘ridan-to‘g‘ri mos keladi. Combinatorial Linear Thompson Sampling/UCB.
+Tanlov:
+bundle_score =
+    sampled_contextual_value
+    + information_gain_bonus
+    - risk_penalty
+    - complexity_cost
+    - correlated_failure_penalty
+Qoidalar:
+- assignment credit bermaydi;
+- invocation ham credit bermaydi;
+- faqat decision trace’da real aktivlashgan instrument attributionga kiradi;
+- London evidence Asia uchun prior bo‘lishi mumkin, policy emas;
+- sparse/noaniq contextda default abstain;
+- zarar contextga bog‘langan anti-skill bo‘ladi, global ban emas;
+- bir xil vazifani bajaruvchi redundant instrumentlar bitta bundle’da kamaytiriladi.
+Noaniqlik yuqori holatda baseline/abstain’ga qaytish SPIBB’ning safe baseline g‘oyasiga mos. Safe Policy Improvement with Baseline Bootstrapping.
+4. Instrument kombinatsiyalarini halol o‘lchash
+A va B instrument kombinatsiyasi uchun:
+Control
+A
+B
+A+B
+Interaction qiymati:
+interaction =
+    Y(A+B) - Y(A) - Y(B) + Y(Control)
+Bu A va B alohida foydalimi yoki faqat birgalikda foydalimi — ajratadi. Factorial design aynan main effect va interaction effect’ni ajratish uchun ishlatiladi. NIST factorial effects.
+Muhim qoida:
+- A va B alohida yomon, A+B yaxshi bo‘lsa, faqat A+B cartridge tasdiqlanadi.
+- A yoki B’ga alohida soxta credit berilmaydi.
+- A+B removal ablation’dan o‘tishi shart.
+- Kombinatsiya faqat foydali contextlarda ishlatiladi.
+5. Adaptive 20-seat Constitution
+Barcha generation 20 agent bo‘lib qoladi, lekin tarkib learning holatiga moslashadi.
+Holat	20-seat taqsimot
+Signal yo‘q	10 exact candidate/control pair
+Provisional signal	3 causal arm + 8 exact pair + 1 abstain
+Confirmed component	4 component replication pair + 2 factorial interaction block + 2 novelty pair
+Viable composition	5 incubator + 6 descendant challenge + 3 confirmation + 6 paired discovery
+Eligible parent	parent/child/control counterfactuallar + context transfer + adversarial regression
+
+
+Yomon candidate’ga full replay sarflash shart emas. Discovery bosqichida Hyperband/Successive Halving orqali tez no-effect yoki zararli candidate yopiladi; confirmatory window esa adaptiv tanlovdan alohida muzlatiladi. Hyperband paper.
+6. Proof-Carrying Genome
+Har bir inherited trait quyidagi dalil paketini o‘zi bilan olib yurishi kerak:
+trait:
+  gene_or_program_hash:
+  source_intent_id:
+  exact_control_id:
+  causal_experiment_id:
+  context_predicate:
+  positive_windows:
+  non_target_corridor:
+  contraindications:
+  data_hash:
+  execution_hash:
+  valid_from_epoch:
+  expires_at:
+  transfer_receipts:
+  descendant_receipts:
+Constructor ushbu proof yo‘q bo‘lsa traitni inherit qilmaydi.
+Natija:
+- parent ID borligi yetarli bo‘lmaydi;
+- har bir gene qayerdan kelgani ma’lum bo‘ladi;
+- contextdan tashqarida avtomatik o‘chadi;
+- drift bo‘lsa tarix o‘chmaydi, authority revoke/hibernate bo‘ladi;
+- bola parentdan qaysi traitni olgani aniq isbotlanadi.
+7. Search Island Ledger
+Repeat failure <30%ga tushishi uchun denominatorni to‘g‘ri belgilashdan tashqari search’ning o‘zi ham yopilishi kerak.
+Fingerprint:
+family
++ context cell
++ failure target
++ gene/program
++ direction
++ frozen baseline hash
++ data epoch
++ execution version
+Qoidalar:
+- birinchi failure → boshqa bounded value;
+- ikkinchi independent failure → gene/direction anti-skill;
+- scalar portfolio tugasa → architecture escape;
+- architecture portfolio tugasa → island dormant;
+- faqat yangi data epoch, yangi primitive yoki yangi context evidence islandni qayta ochadi.
+MAP-Elites bitta global champion o‘rniga turli behavior/context cell ichidagi eng yaxshi yechimlarni saqlaydi. XAUUSD session/regime specializatsiyasi uchun bu mos, lekin cell’lar haddan tashqari ko‘paymasligi kerak. MAP-Elites paper.
+8. Learning’ning o‘zini A/B sinash
+Learning bazasi ko‘paygani uning foydali ekanini isbotlamaydi.
+Teng compute va bir xil sealed challenge’larda:
+A — memory + confirmed components + contextual instruments
+B — xuddi shu search engine, lekin memory/inheritance blinded
+O‘lchanadi:
+- confirmed component yield;
+- next-gate closure uchun compute;
+- repeat failure;
+- transfer success;
+- worst-context regression;
+- final viable composition soni.
+A muntazam B’dan yaxshi bo‘lmasa:
+- memory hajmini oshirish kerak emas;
+- retrieval, ranking yoki application noto‘g‘ri;
+- learning mexanizmi credit olmaydi.
+PBT’dan faqat tasdiqlangan partial natijani exploit qilish va fixed compute ichida explorationni saqlash g‘oyasi olinadi; unverified parent nusxalanmaydi. Population Based Training.
+9. Eng muhim test: Three-World End-to-End Proof
+Real bozorda edge topilishini kutib, wiring ishlashini tekshirish noto‘g‘ri. Deterministik uchta yopiq ilmiy dunyo kerak.
+Positive world
+London + trend-up contextida bitta oldindan ma’lum instrument/gene foydali.
+Sistema mustaqil ravishda:
+discover
+→ confirm component
+→ shadow policy
+→ viable composition
+→ mentor
+→ 2 descendants
+→ eligible parent
+→ better child
+→ performance credit
+zanjirini tugatishi shart.
+Null world
+Hech qanday instrument foyda bermaydi.
+Kutiladigan natija:
+- false confirmed = 0;
+- eligible parent = 0;
+- search island bounded holda yopiladi;
+- bir xil failure takrorlanmaydi.
+Poisoned world
+Target yaxshilanadi, lekin hidden drawdown/cost/non-target regression mavjud.
+Kutiladigan natija:
+- component yoki composition reject qilinadi;
+- shadow policy authority olmaydi;
+- parent va performance credit yaratilmaydi.
+Context-switch world
+Instrument London’da foydali, Asia’da zararli.
+Kutiladigan natija:
+- London policy enabled;
+- Asia policy abstain/forbidden;
+- global inheritance yo‘q.
+Mana shu testlar to‘liq o‘tmasdan “zanjir 100% ishlaydi” deyish mumkin emas.
+Failure turlariga maxsus yechim
+Failure	Aqlli yechim
+Wound regression	Har composition eski wound-set’ni majburiy replay qiladi; regression bo‘lsa trait escrow’ga qaytadi
+Temporal instability	Calendar-average emas, disjoint epoch/session cell; zaif contextda abstain
+Stress cost	Bitta stress nuqta emas, spread/slippage sensitivity curve
+Regime coverage	Har MAP-Elites cell’da support va worst-cell metric; unsupported cell WAIT
+Historical survival	Purged/embargoed disjoint windows; discovery window confirmation bo‘la olmaydi
+Profit factor	PF bilan birga opportunity floor; zero-trade orqali sun’iy PF taqiqlanadi
+Non-target regression	Hard safety + uncertainty-aware corridor; barcha metrikani bir xil nol tolerance bilan bo‘g‘maslik
+Control/blinded’ni yengmaslik	Negative evidence selectorga beriladi; boshqa gene/context yoki island
+Insufficient windows	Yangi random explorationdan oldin near-confirmed signalga replication budget
+
+
+Adaptive ko‘p tajribada false discovery xavfi oshadi; trial ledger va online error-budget/FDR qoidasidan foydalanish kerak. SAFFRON online FDR. Moliyaviy search tarixida PBO kabi backtest-overfitting nazorati ham saqlanadi. Probability of Backtest Overfitting.
+Implementatsiya tartibi
+P1 — Post-v2 truth epoch
+- protocol_epoch generation, pair, intent, settlement, lesson va authorityga bog‘lanadi.
+- Legacy va v2 denominatorlari aralashtirilmaydi.
+- New-v2 verified control coverage real o‘lchanadi.
+- Source linkage 100% bo‘lmasa generation learning-credit’siz yopiladi.
+P1 — Component Credit Escrow
+- causally_confirmed_component;
+- composition_eligible;
+- organism_viable;
+- reproductive_authority
+alohida derived holatlar bo‘ladi.
+P1 — Evidence Salvage
+- 6 positive settlement;
+- 48 provisional skill;
+- top-frontier target improvements
+fresh exact-v2 causal proofga qayta yo‘naltiriladi. Legacy row authority olmaydi.
+P1 — Contextual Bundle Attribution
+- instrument main-effect;
+- pair interaction;
+- leave-one-out effect;
+- context-specific contraindication;
+- posterior decay.
+P1 — End-to-End Golden Worlds
+Positive, null, poisoned va context-switch fixturelar butun zanjirni tekshiradi.
+P2 — Adaptive compute va QD islands
+Faqat yuqoridagi prooflar o‘tgach Hyperband, MAP-Elites va contextual combinatorial selector to‘liq authority oladi.
+problems.txtda nima turishi kerak?
+Oldingi tuzatilgan wiring xatolarini qayta yozish kerak emas. Lekin quyidagi yangi, aniq bandlar turishi kerak:
+[P1][ACTIVE][POST_V2_END_TO_END_LEARNING_PROOF_MISSING]
+Yangi v2 real cohortda control coverage, ordering, linkage va full authority
+transition birgalikda hali isbotlanmagan.
+
+[P1][ACTIVE][CAUSAL_COMPONENT_COMPOUNDING_GAP]
+Local causal micro-win bilan organism viability bir xil authority bosqichiga
+bog‘langan; foydali kichik qadamlar compositionga muntazam o‘tmayapti.
+
+[P1][ACTIVE][CONTEXTUAL_INSTRUMENT_BUNDLE_ATTRIBUTION_GAP]
+Instrumentlarning context-specific individual qiymati mavjud, ammo learned
+bundle interaction, leave-one-out va combination posterior hali yo‘q.
+
+[P1][ACTIVE][GOLDEN_WORLD_ACCEPTANCE_HARNESS_MISSING]
+Positive, null, poisoned va context-switch dunyolarda butun
+learning→reproduction zanjiri end-to-end isbotlanmagan.
+Yakuniy tanlov
+Eng kuchli yo‘l — yangi yuzta servis qo‘shish emas. Mavjud tizim ustiga quyidagi to‘rtta mexanizmni qo‘shish:
+1. Counterfactual Credit Escrow.
+2. Evidence Salvage Conveyor.
+3. Contextual Instrument Bundle Graph.
+4. Three-World End-to-End Proof.
+Shu kombinatsiya bir vaqtning o‘zida:
+- confirmed skill deadlockini;
+- instrument kombinatsiya learning’ini;
+- repeat failure’ni;
+- parent bootstrapni;
+- context specializatsiyasini;
+- learning haqiqatan foyda berayotganini
+hal qiladi.
+Profitable edge’ni hech qanday arxitektura kafolatlay olmaydi. Ammo ushbu tizim edge mavjud bo‘lsa uni kichik causal yutuqlardan yig‘ib topadi; edge yo‘q bo‘lsa search islandni bounded tarzda yopadi. “Guaranteed profit” va’da qiladigan yechim ilmiy emas.
+Sources
+1. Mouret & Clune, Illuminating Search Spaces by Mapping Elites.
+2. Jaderberg et al., Population Based Training of Neural Networks.
+3. Laroche et al., Safe Policy Improvement with Baseline Bootstrapping.
+4. Li et al., Hyperband.
+5. Wen, Kveton & Ashkan, Efficient Learning in Large-Scale Combinatorial Semi-Bandits.
+6. NIST, Factorial Main and Interaction Effects.
+7. Jiang & Li, Doubly Robust Off-policy Value Evaluation.
+8. Ramdas et al., SAFFRON: Adaptive Online FDR Control.
+9. Bailey et al., The Probability of Backtest Overfitting.

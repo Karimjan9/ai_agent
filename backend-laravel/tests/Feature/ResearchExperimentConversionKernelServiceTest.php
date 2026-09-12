@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\ResearchExperimentWorkItem;
+use App\Services\ResearchClosureInvariantService;
 use App\Services\ResearchExperimentConversionKernelService;
+use App\Services\ResearchLoopArbiterService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -35,5 +37,63 @@ class ResearchExperimentConversionKernelServiceTest extends TestCase
         $this->assertFalse($kernel->complete($first, ['status' => 'stale']));
         $this->assertTrue($kernel->complete($second, ['status' => 'done']));
         $this->assertSame('settled', ResearchExperimentWorkItem::query()->find($second->id)->status);
+    }
+
+    public function test_terminal_closure_requires_exactly_one_next_work_or_reason(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+
+        $neither = $kernel->record($this->contract(), ['settlement_id' => 10], 'INCONCLUSIVE');
+        $both = $kernel->record($this->contract(), ['settlement_id' => 11], 'INCONCLUSIVE',
+            ['type' => 'replication'], ['code' => 'TERMINAL']);
+
+        $this->assertSame('RESEARCH_CLOSURE_EXACTLY_ONE_OUTCOME_REQUIRED', $neither['reason']);
+        $this->assertSame('RESEARCH_CLOSURE_EXACTLY_ONE_OUTCOME_REQUIRED', $both['reason']);
+        $this->assertDatabaseCount('research_experiment_receipts', 0);
+    }
+
+    public function test_next_work_is_owned_retry_bounded_and_visible_to_closure_truth(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $kernel->record($this->contract(), ['settlement_id' => 12], 'UNDERPOWERED',
+            ['type' => 'academy_power_extension', 'identity' => 'power']);
+        $work = ResearchExperimentWorkItem::query()->sole();
+
+        $this->assertSame('blocked', $work->status);
+        $this->assertSame(\App\Services\ResearchLoopArbiterService::class, data_get($work->payload, 'owner'));
+        $this->assertSame('NEW_INDEPENDENT_POWERED_WINDOW_REQUIRED', data_get($work->payload, 'retry_condition.code'));
+        $closure = app(ResearchClosureInvariantService::class)->inspect('XAUUSD', 'H1');
+        $this->assertTrue($closure['healthy']);
+        $this->assertSame(1, data_get($closure, 'work.blocked_with_explicit_retry'));
+    }
+
+    public function test_owner_claim_cannot_be_starved_by_another_owners_priority_rows(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        for ($id = 1; $id <= 21; $id++) {
+            $contract = $this->contract();
+            $contract['source']['id'] = 100 + $id;
+            $kernel->record($contract, ['settlement_id' => 100 + $id], 'INCONCLUSIVE', [
+                'type' => 'foreign_work',
+                'identity' => 'foreign-'.$id,
+                'priority' => 9,
+                'owner' => 'ExternalOwner',
+            ]);
+        }
+        $contract = $this->contract();
+        $contract['source']['id'] = 999;
+        $kernel->record($contract, ['settlement_id' => 999], 'INCONCLUSIVE', [
+            'type' => 'arbiter_work',
+            'identity' => 'arbiter',
+            'priority' => 1,
+        ]);
+
+        $claimed = $kernel->claimForOwner(ResearchLoopArbiterService::OWNER, 1);
+
+        $this->assertCount(1, $claimed);
+        $this->assertSame('arbiter_work', $claimed[0]->work_type);
+        $this->assertSame('leased', $claimed[0]->status);
+        $this->assertSame(21, ResearchExperimentWorkItem::query()
+            ->where('status', 'ready')->where('payload->owner', 'ExternalOwner')->count());
     }
 }

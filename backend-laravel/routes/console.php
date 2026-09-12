@@ -19,12 +19,31 @@ $scheduleArtisan = static function (string $command, array $arguments = []) {
         'trading:pump-learning-lane',
         'trading:process-canonical-learning-outbox',
         'trading:reconcile-screening-learning-projections',
-        'trading:dispatch-lab',
-        'trading:dispatch-full-validation',
         'trading:recover-lab-replay-mutex',
         'trading:promote-lab-frontier',
         'trading:dispatch-mtf-powered-prior-validation',
+    ];
+    // A full population constructor must not wait behind the general research
+    // compiler backlog. This lane is still single-concurrency and every entry
+    // point additionally shares the canonical population mutex.
+    $constructors = [
+        'trading:run-research-loop',
+        'trading:consume-research-work',
+        'trading:process-targeted-generations',
+        'trading:detect-drift',
+        'trading:lab-generation',
         'trading:advance-learning-progress',
+        'trading:run-lifecycle-cycle',
+        // These commands may all enter LabPopulationService::build(). Keep
+        // every autonomous XAUUSD population writer on one worker, including
+        // normally read-mostly dispatch/recovery entry points.
+        'trading:dispatch-lab',
+        'trading:lab-incremental',
+        'trading:dispatch-controlled-targeted-rescue',
+        // Dataset sealing, consistency checks and candidate export regularly
+        // exceed the short critical budget. Serialize this heavy coordinator
+        // with generation construction so the two cannot race for snapshots.
+        'trading:dispatch-full-validation',
     ];
     $research = [
         'market-data:backfill-intraday-shadow',
@@ -40,19 +59,27 @@ $scheduleArtisan = static function (string $command, array $arguments = []) {
         'trading:compile-causal-skills',
         'trading:compile-strategic-research-plans',
         'trading:prepare-gene-interactions',
+        // Scheduled direct generations are EURUSD/GBPUSD shadow research.
+        // Keep them off the XAUUSD constructor lane so the top-of-hour batch
+        // cannot delay the canonical organism lifecycle.
+        'trading:lab-generation',
         'trading:lab-learn-from-history',
         'trading:process-screening-learning-outbox',
         'trading:process-dual-track-evidence',
         'trading:mtf-ablation',
+        'trading:mtf-strategy-research',
+        'trading:dispatch-mtf-research-cycle',
         'trading:mtf-research-report',
         'trading:validate-elite-portfolios',
         'trading:audit-agent-lifecycle',
-        'trading:detect-drift',
-        'trading:run-lifecycle-cycle',
     ];
-    $lane = in_array($command, $critical, true)
-        ? 'scheduler-critical'
-        : (in_array($command, $research, true) ? 'scheduler-research' : 'scheduler-ops');
+    $shadowDirectGeneration = $command === 'trading:lab-generation'
+        && strtoupper((string) ($arguments[0] ?? 'XAUUSD')) !== 'XAUUSD';
+    $lane = in_array($command, $constructors, true) && ! $shadowDirectGeneration
+        ? 'scheduler-constructor'
+        : (in_array($command, $critical, true)
+            ? 'scheduler-critical'
+            : (in_array($command, $research, true) ? 'scheduler-research' : 'scheduler-ops'));
 
     return Schedule::job(
         new RunScheduledArtisanCommandJob($command, $arguments, $lane),
@@ -195,64 +222,49 @@ if (config('services.secondary_intelligence.enabled', false)) {
 $scheduleArtisan('trading:lab-incremental')
     ->hourlyAt(40)
     ->withoutOverlapping();
-$scheduleArtisan('trading:lab-generation')
-    // New drift evidence is detected hourly. Build the corresponding
-    // generation at the next hour so it can be screened five minutes later;
-    // leaving this daily strands otherwise valid Generation drafts.
-    ->hourlyAt(0)
-    ->withoutOverlapping();
-// M15 has its own population/evolution ledger. It may use the last CLOSED H1
-// regime as context, but it must never inherit an H1 model as a parent.
-$scheduleArtisan('trading:lab-generation', ['--timeframe' => 'M15'])
-    ->hourlyAt(15)
-    ->withoutOverlapping();
-// Pair queues run only short screening. The expensive full validation is one
-// global FIFO queue, which prevents the three markets from exhausting the
-// shared Python service at the same time.
-$scheduleArtisan('trading:dispatch-lab')
-    ->hourlyAt(5)
-    ->withoutOverlapping();
-$scheduleArtisan('trading:dispatch-lab', ['--timeframe' => 'M15'])
-    ->hourlyAt(20)
-    ->withoutOverlapping();
-// H1 remains the baseline/regime lane and M15 owns an independent
-// entry/volume full-validation lane once its own foundation, fresh replay and
-// closed-H1 evidence are ready. Never substitute H1 history for M15 prices or
-// force a promotion from a stale/legacy screen.
-$scheduleStaggeredFive('trading:dispatch-full-validation', [], 0);
-// Screening can finish after the old hourly selector has already run.
-// Poll for the newest eligible screened generation so a ready cohort is
-// picked up within one scheduler interval instead of waiting an hour.
-// M15 now has an independent pre-2026 foundation and can enter the same
-// sealed full-validation/council gates. Its H1 regime source is still passed
-// separately by the evaluator and is always delayed until the H1 candle closes.
-$scheduleStaggeredFive('trading:dispatch-full-validation', ['--timeframe' => 'M15'], 1);
+// XAUUSD generation ownership belongs exclusively to the lifecycle
+// orchestrator below. Keep this legacy cadence only for non-XAUUSD research.
+foreach (['EURUSD', 'GBPUSD'] as $shadowSymbol) {
+    $scheduleArtisan('trading:lab-generation', [0 => $shadowSymbol])
+        ->hourlyAt(0)
+        ->withoutOverlapping();
+}
+// Legacy non-XAUUSD research symbols may retain M15 shadow populations.
+// XAUUSD is deliberately excluded: M15 is a role inside its one organism.
+foreach (['EURUSD', 'GBPUSD'] as $shadowSymbol) {
+    $scheduleArtisan('trading:lab-generation', [0 => $shadowSymbol, '--timeframe' => 'M15'])
+        ->hourlyAt(15)
+        ->withoutOverlapping();
+}
+// The lifecycle orchestrator owns XAUUSD population creation and directly
+// dispatches every missing screening seat. The old generic H1/M15 dispatches
+// were redundant; the M15 variant also aliased back to XAUUSD's H1 storage
+// key and could race the ten-minute causal constructor. Shadow laboratories
+// remain research-only and are not screened through the canonical organism.
+// Non-XAUUSD shadow labs retain their independent M15 validation cadence.
+// XAUUSD's inactive M15 archive is skipped: its M15 setup/confirmation and M5
+// execution evidence travels inside the single H1-keyed organism generation.
+// Never substitute H1 prices for lower-timeframe inputs or promote stale data.
+// The XAUUSD arbiter/lifecycle owns both screening and full-validation
+// settlement. Preserve only explicit non-XAUUSD shadow validation cadences.
+foreach (['EURUSD', 'GBPUSD'] as $shadowSymbol) {
+    $scheduleStaggeredFive('trading:dispatch-full-validation', [0 => $shadowSymbol, '--timeframe' => 'H1'], 0);
+    $scheduleStaggeredFive('trading:dispatch-full-validation', [0 => $shadowSymbol, '--timeframe' => 'M15'], 1);
+}
 // A single-seat pump retries only after the queue, shared replay mutex and AI
 // evaluator are idle. Micro-confirmation is enforced inside dispatch. Fresh
 // pairs are materialized by the screening projection; the scheduler does not
 // rescan the entire historical response-map plane every five minutes.
-$scheduleArtisan('trading:pump-learning-lane', [
-    'XAUUSD',
-    '--timeframe' => 'H1',
-    '--limit' => 1,
-    '--autonomous' => true,
-])
-    ->everyMinute()
-    ->withoutOverlapping();
+// Exact-control learning pairs are a high-priority arbiter continuation.
 $scheduleArtisan('trading:process-canonical-learning-outbox', ['--limit' => 25])
     ->everyMinute()
     ->withoutOverlapping();
 // Turn one canonical provisional lesson at a time into a bounded causal
-// experiment. The lane is an explicit three-seat guided/blinded/control
-// exception to the normal generation pause; it cannot promote or trade and
-// creates nothing while another generation/queue owns the laboratory.
-$scheduleArtisan('trading:dispatch-lab', [
-    'symbol' => 'XAUUSD',
-    '--timeframe' => 'H1',
-    '--learning-confirmation' => true,
-])
-    ->everyTenMinutes()
-    ->withoutOverlapping();
+// experiment. Guided/blinded/control consume three reserved seats inside the
+// ordinary twenty-seat organism cohort; the other seats keep exploring. Only
+// the causal triplet receives full replay, and it cannot promote or trade.
+// Direct XAUUSD learning-confirmation construction is disabled. The Research
+// Loop Arbiter ranks this continuation against authority, MTF and lifecycle.
 // Operator-facing monitor commands are intentionally disabled. They produce
 // diagnostic artifacts and are not part of the unattended worker lane.
 $scheduleArtisan('trading:reconcile-lab-funnel')
@@ -294,12 +306,9 @@ $scheduleArtisan('trading:prepare-gene-interactions', [
 ])
     ->everyFifteenMinutes()
     ->withoutOverlapping();
-$scheduleArtisan('trading:dispatch-portfolio-member-replay')
-    // This is a research-only second lane for strong niche members whose
-    // broad standalone calendar gate failed. It never emits paper signals.
-    ->hourlyAt(22)
-    ->withoutOverlapping();
-$scheduleStaggeredFive('trading:process-targeted-generations', [], 0);
+// Portfolio-member replay is admitted by the arbiter after causal/MTF work.
+// Durable XAUUSD targeted handoffs are consumed only after the Research Loop
+// Arbiter selects them; this former direct schedule was a second writer.
 // History learning is a read/append-only operation. It runs before the next
 // generation planner and never changes a quality or paper gate.
 $scheduleStaggeredFive('trading:lab-learn-from-history', [
@@ -317,7 +326,8 @@ $scheduleStaggeredFive('trading:recover-lab-evaluation-errors', [], 3);
 // Scheduled ticks are dry-run only. Same-generation replay recovery is
 // dispatched only after an operator approval and an empty lab queue.
 $scheduleStaggeredFive('trading:recover-incomplete-lab-evidence', ['--limit' => 6, '--scheduled-sweep' => true], 4);
-// Only the XAUUSD H1 lighthouse may be proposed by the rescue scheduler.
+// Only the unified XAUUSD organism may be proposed by the rescue scheduler;
+// H1 below is its legacy storage key, not its population or execution scope.
 // The tick is dry-run; creation still requires explicit operator approval.
 $scheduleStaggeredFive('trading:dispatch-controlled-targeted-rescue', [
     'symbol' => 'XAUUSD',
@@ -352,14 +362,15 @@ $scheduleStaggeredFive('trading:paper-monitor', [], 3);
 // This is the primary outcome monitor: it records the exact first missing
 // milestone from reproducible candidate through reality feedback. It never
 // creates a generation or promotes a paper candidate.
-$scheduleStaggeredFive('trading:monitor-lighthouse-loop', ['--symbol' => 'XAUUSD', '--timeframe' => 'H1'], 4);
-// XAUUSD MTF shadow outcomes are reconciled under the same next-M15 execution
-// contract, but they never write official paper orders or promotion evidence.
+$scheduleStaggeredFive('trading:monitor-lighthouse-loop', ['--symbol' => 'XAUUSD'], 4);
+// XAUUSD MTF shadow outcomes reconcile M15 setup evidence with the organism's
+// M5 execution contract; they never write promotion evidence.
 $scheduleArtisan('trading:reconcile-mtf-shadow', ['--symbol' => 'XAUUSD', '--limit' => 50])
     ->everyFifteenMinutes()
     ->withoutOverlapping();
-// The monitor records closed-H1 alignment, M15 freshness, Risk Sentinel
-// behavior, passport integrity, paper lifecycle and ablation-control health.
+// The monitor records closed-H1 regime alignment, M15 setup freshness, Risk
+// Sentinel behavior, passport integrity, paper lifecycle and ablation-control
+// health inside the one XAUUSD organism. Production execution remains M5.
 // It is read-only with respect to strategy and gates.
 $scheduleArtisan('trading:monitor-mtf-pilot', ['--symbol' => 'XAUUSD'])
     ->everyFifteenMinutes()
@@ -369,14 +380,14 @@ $scheduleArtisan('trading:monitor-mtf-pilot', ['--symbol' => 'XAUUSD'])
 $scheduleArtisan('trading:mtf-shadow-candidates', ['--symbol' => 'XAUUSD', '--limit' => 3])
     ->hourlyAt(50)
     ->withoutOverlapping();
-// Four-lane ablation is research-only and costed with the sealed execution
-// contract. Its immutable result is monitored, never used to auto-promote.
-$scheduleArtisan('trading:mtf-ablation', ['--symbol' => 'XAUUSD'])
-    ->dailyAt('02:20')
-    ->withoutOverlapping();
-// Strategy hypotheses are intentionally operator-triggered because each
-// hypothesis is an expensive replay. The report itself is cheap and can run
-// unattended without changing a strategy, gate, or paper state.
+// Daily ablation remains a recovery checkpoint. The current-cohort dispatcher
+// below normally creates it on demand and then advances bounded hypotheses.
+// MTF control sealing is an arbiter-owned experiment family.
+// START authorizes one bounded current-cohort action per tick: seal an exact
+// control first, then spend at most four seats on highest economic-information
+// hypotheses. The child runs in the hidden research lane and cannot promote.
+// Economic-information batches are selected by the same arbiter.
+// The report remains diagnostic and never changes a strategy or gate.
 $scheduleArtisan('trading:mtf-research-report', ['--symbol' => 'XAUUSD', '--lookback-hours' => 720])
     ->dailyAt('03:10')
     ->withoutOverlapping();
@@ -384,34 +395,17 @@ $scheduleArtisan('trading:mtf-research-report', ['--symbol' => 'XAUUSD', '--look
 // unique queued job sits behind full-validation, re-checks the current runtime
 // identity at execution time and gives the five Confirmation & Entry models
 // first research priority. These rows remain E1/prior-only and cannot promote.
-$scheduleArtisan('trading:dispatch-mtf-playbook-prior', [
-    'symbol' => 'XAUUSD',
-    '--confirmation-first' => true,
-])
-    ->everyThirtyMinutes()
-    ->withoutOverlapping();
+// Playbook prior exploration is allocated by the Research Loop Arbiter.
 // Reconcile a powered paper-shadow prior into model-owned historical evidence.
 // Candidate and frozen control receive nine disjoint purged folds; even a
 // supported E2 candidate remains unable to trade, parent or promote.
-$scheduleArtisan('trading:dispatch-mtf-powered-prior-validation', ['symbol' => 'XAUUSD'])
-    ->everyFifteenMinutes()
-    ->withoutOverlapping();
+// Powered-prior settlement is allocated by the same arbiter.
 // Edge -> attribution -> cartridge transfer -> authority incubation is one
 // research state machine. This director opens at most one expensive cohort
 // per tick, keeps 2026 paper data excluded and never bypasses safety/promotion
 // authority. Expected WAIT outcomes are scheduler successes, not failures.
-$scheduleArtisan('trading:advance-learning-progress', [
-    'symbol' => 'XAUUSD',
-    '--timeframe' => 'H1',
-    '--apply' => true,
-    '--json' => true,
-])
-    // The admission service requires two stable idle probes separated by at
-    // least ten seconds. Separate one-minute scheduler ticks satisfy that
-    // proof without sleeping or holding the scheduler worker, while the
-    // cohort hash and distributed lock keep materialization exactly once.
-    ->everyMinute()
-    ->withoutOverlapping();
+// The Director retains domain logic but receives apply authority only from
+// the Research Loop Arbiter after one evidence-ranked action is selected.
 // Academy arms settle through their immutable replay metrics. This runs on a
 // separate, no-new-replay lane so active evaluations cannot postpone a
 // terminal receipt or its durable next-work decision.
@@ -434,12 +428,7 @@ $scheduleArtisan('trading:reconcile-edge-experiment-receipts', [
 ])
     ->everyMinute()
     ->withoutOverlapping();
-$scheduleArtisan('trading:validate-elite-portfolios')
-    // Individual forward validation remains the first gate. This replay is
-    // idle until at least two strict members exist, then certifies the
-    // combined routing interaction on the same canonical execution contract.
-    ->hourlyAt(25)
-    ->withoutOverlapping();
+// Combined portfolio replay is likewise an arbiter-owned research action.
 $scheduleStaggeredFive('trading:watch-lab-lifecycle', [], 0);
 // The watchdog repairs only bounded abandoned replays.  This broader audit
 // is read-only for agent/evidence state and records the complete lifecycle
@@ -476,19 +465,16 @@ $scheduleArtisan('trading:sync-economic-calendar', ['--provider' => 'currents_ap
 $scheduleArtisan('trading:detect-drift')->hourlyAt(45)->withoutOverlapping();
 $scheduleArtisan('trading:release-holdouts')->hourlyAt(40)->withoutOverlapping();
 
-// NeuroTrader Lifecycle Orchestrator — resumable, idempotent cycle.
-// Runs after drift detection so a new generation is built from the freshest
-// evidence. Locks per symbol/timeframe; withoutOverlapping prevents overlap.
-$scheduleArtisan('trading:run-lifecycle-cycle', [
+// The single XAUUSD Research Loop Arbiter ranks closure repair, causal proof,
+// MTF information work and the normal 20-seat lifecycle. Domain services may
+// execute its selected action, but none is scheduled as a second autonomous
+// new-work selector.
+$scheduleArtisan('trading:run-research-loop', [
     '--symbol' => 'XAUUSD',
-    '--timeframe' => 'H1',
+    '--json' => true,
 ])
-    ->description('Lifecycle orchestrator (XAUUSD/H1) — resumable cycle')
-    // A terminal generation is picked up quickly: ensureGeneration() only
-    // creates the successor after the prior lifecycle has no active work and
-    // every existing strategy/learning gate is open. The service lock keeps
-    // repeated ticks idempotent.
-    ->everyFiveMinutes()
+    ->description('Single autonomous XAUUSD research-loop owner')
+    ->everyMinute()
     ->withoutOverlapping();
 // Database backups are written to the configured G: volume by the scheduled
 // ops:backup-database task above. Never add a local C: dump fallback here.

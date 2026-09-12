@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 
@@ -25,10 +24,10 @@ class ControlRelativeRewardService
         );
         $normalPairingAllowed = $generationMode !== 'normal_research'
             || (bool) data_get($generationContext, 'control_pairing_contract.allowed', false);
-        $controls = $agent->generation?->agents?->filter(fn (LabAgent $member): bool =>
-            (int) $member->id !== (int) $agent->id
+        $controls = $agent->generation?->agents?->filter(fn (LabAgent $member): bool => (int) $member->id !== (int) $agent->id
             && $this->controls->isControl($member)
             && $this->sameCohort($agent, $member)
+            && app(ExactCausalBaselineService::class)->matches($agent, $member)
             && $this->usesVolumeResearch($agent) === $this->usesVolumeResearch($member)
         ) ?? collect();
         $control = $controls->first();
@@ -48,10 +47,14 @@ class ControlRelativeRewardService
                 : ($control ? 'control_evidence_missing' : 'control_missing'),
             'promotion_evidence' => false,
         ];
-        if (! $normalPairingAllowed || ! $control) return $base;
+        if (! $normalPairingAllowed || ! $control) {
+            return $base;
+        }
 
         $controlResult = $this->result($control);
-        if ($controlResult === []) return $base;
+        if ($controlResult === []) {
+            return $base;
+        }
         $target = (string) data_get($observability, 'target', data_get($agent->modelVersion?->metadata, 'generation_target', 'profit_factor'));
         $comparison = $this->margins->compare($candidate, $controlResult, $target);
         $controlDelta = data_get($comparison, 'margin_delta');
@@ -74,11 +77,17 @@ class ControlRelativeRewardService
         ];
     }
 
-    /** @return array{status:string,safe:bool} */
+    /** @return array{status:string,safe:bool,reason_code:?string} */
     private function nonTargetRegression(array $candidate): array
     {
         $status = (string) data_get($candidate, 'differential_no_regression.status', data_get($candidate, 'no_regression_contract.status', 'not_recorded'));
-        return ['status' => $status, 'safe' => in_array($status, ['', 'not_recorded', 'not_applicable', 'passed', 'confirmed'], true)];
+        $safe = in_array($status, ['passed', 'confirmed'], true);
+
+        return [
+            'status' => $status,
+            'safe' => $safe,
+            'reason_code' => $safe ? null : 'EXPLICIT_NON_TARGET_EVIDENCE_REQUIRED',
+        ];
     }
 
     /** @return array{status:string,confirmed:bool} */
@@ -86,8 +95,11 @@ class ControlRelativeRewardService
     {
         foreach (['holdout_confirmation', 'independent_holdout', 'forward_confirmation', 'verified_mutation_skill'] as $path) {
             $status = (string) data_get($candidate, $path.'.status', '');
-            if (in_array($status, ['passed', 'confirmed', 'valid'], true)) return ['status' => $status, 'confirmed' => true];
+            if (in_array($status, ['passed', 'confirmed', 'valid'], true)) {
+                return ['status' => $status, 'confirmed' => true];
+            }
         }
+
         return ['status' => 'not_confirmed', 'confirmed' => false];
     }
 
@@ -110,13 +122,17 @@ class ControlRelativeRewardService
         }
         $leftCohort = (string) data_get($left->modelVersion?->metadata, 'repair_anchor.sibling_cohort_id', data_get($left->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id', 'generation:'.$left->lab_generation_id));
         $rightCohort = (string) data_get($right->modelVersion?->metadata, 'repair_anchor.sibling_cohort_id', data_get($right->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id', 'generation:'.$right->lab_generation_id));
+
         return $leftCohort !== '' && $leftCohort === $rightCohort;
     }
 
     private function result(LabAgent $agent): array
     {
         $result = (array) data_get($agent->modelVersion?->metadata, 'last_screen_result', []);
-        if ($result !== []) return $result;
+        if ($result !== []) {
+            return $result;
+        }
+
         return (array) LabEvaluationRun::query()->where('lab_agent_id', $agent->id)->where('phase', 'screening')->latest('id')->first()?->metrics;
     }
 

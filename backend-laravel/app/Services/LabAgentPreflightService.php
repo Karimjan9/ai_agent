@@ -25,8 +25,7 @@ class LabAgentPreflightService
         private ExecutionContractService $executionContracts,
         private ControlRootInheritanceService $controlRootInheritance,
         private HistoricalDataQualityService $historicalData,
-    ) {
-    }
+    ) {}
 
     /** @return array<string, mixed> */
     public function inspect(LabAgent $agent, string $stage = 'screening'): array
@@ -124,9 +123,13 @@ class LabAgentPreflightService
             'adaptive_parent_ecosystem.causal_counterfactual_parent_lock',
             [],
         );
-        $causalBaselineHandoff = in_array($agent->origin, [
-            'causal_confirm', 'causal_repair', 'causal_arch_escape', 'causal_arch_bundle',
-        ], true)
+        // The causal planner may replace three ordinary G98 plan seats while
+        // preserving their original origin label. Authority comes from the
+        // immutable learning-confirmation cohort and parent lock, not from a
+        // mutable/display origin string. Requiring `causal_confirm` here
+        // quarantined otherwise valid memory/blinded/control arms with
+        // EXACT_PARENT_PROTOCOL_MISSING.
+        $causalBaselineHandoff = $generation?->trigger_type === 'learning_confirmation'
             && data_get($causalCohort, 'protocol') === CausalLearningCohortPlannerService::PROTOCOL
             && in_array((string) data_get($causalCohort, 'role'), ['memory_guided', 'repair_guided', 'blinded', 'frozen_control'], true)
             && (int) data_get($causalParentLock, 'parent_model_version_id', 0) > 0
@@ -163,7 +166,9 @@ class LabAgentPreflightService
                     $family,
                     $expectedNiche,
                 );
-                if (! $exact) $errors[] = 'NON_EXACT_SEMANTIC_PARENT';
+                if (! $exact) {
+                    $errors[] = 'NON_EXACT_SEMANTIC_PARENT';
+                }
             }
             foreach ($graphLinks as $link) {
                 $linkedParent = $link->parentModel;
@@ -210,7 +215,9 @@ class LabAgentPreflightService
                     || ! ($this->controlRootInheritance->inspectSeed($rootAgent, $family, $expectedNiche)['passed'] ?? false)) {
                     $errors[] = 'CONTROL_ROOT_INHERITANCE_INVALID';
                 }
-                if (! $controlRootAudit) $errors[] = 'CONTROL_ROOT_INHERITANCE_AUDIT_MISSING';
+                if (! $controlRootAudit) {
+                    $errors[] = 'CONTROL_ROOT_INHERITANCE_AUDIT_MISSING';
+                }
                 if (data_get($lineage, 'mode') !== 'control_root_seed_inheritance') {
                     $errors[] = 'CONTROL_ROOT_LINEAGE_MODE_MISSING';
                 }
@@ -229,7 +236,9 @@ class LabAgentPreflightService
         }
 
         try {
-            if ($model) $this->schemas->validate($family, (array) $model->parameters);
+            if ($model) {
+                $this->schemas->validate($family, (array) $model->parameters);
+            }
         } catch (\Throwable) {
             $errors[] = 'PARAMETER_SCHEMA_INVALID';
         }
@@ -272,11 +281,14 @@ class LabAgentPreflightService
             $errors[] = 'ONE_GENE_INVARIANT_FAILED';
         }
         if (! $isControl && $parameterDiff !== [] && collect($parameterDiff)->every(function ($change): bool {
-            if (! is_array($change) || ! array_key_exists('old', $change) || ! array_key_exists('new', $change)) return false;
+            if (! is_array($change) || ! array_key_exists('old', $change) || ! array_key_exists('new', $change)) {
+                return false;
+            }
             if (! is_bool($change['old']) && ! is_bool($change['new'])
                 && is_numeric($change['old']) && is_numeric($change['new'])) {
                 return (float) $change['old'] === (float) $change['new'];
             }
+
             return json_encode($change['old'], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)
                 === json_encode($change['new'], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES);
         })) {
@@ -557,7 +569,9 @@ class LabAgentPreflightService
             data_get($model?->metadata, 'last_result.execution_contract'),
             data_get($model?->metadata, 'execution_contract'),
         ] as $candidate) {
-            if (is_array($candidate) && filled(data_get($candidate, 'execution_hash'))) return $candidate;
+            if (is_array($candidate) && filled(data_get($candidate, 'execution_hash'))) {
+                return $candidate;
+            }
         }
         $ledger = LabTrialLedger::query()
             ->where('lab_agent_id', $agent->id)
@@ -572,6 +586,7 @@ class LabAgentPreflightService
                 'execution_hash' => (string) $ledger->execution_hash,
             ];
         }
+
         return null;
     }
 }

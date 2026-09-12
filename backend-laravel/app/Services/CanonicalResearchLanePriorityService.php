@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -24,6 +24,9 @@ class CanonicalResearchLanePriorityService
     {
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', trim($symbol)));
         $timeframe = strtoupper(trim($timeframe));
+        if ($symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
+            $timeframe = strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'));
+        }
 
         if (! Schema::hasTable('edge_genesis_passports') || ! Schema::hasTable('edge_genesis_trials')) {
             return $this->result(false, $symbol, $timeframe, 0, 0);
@@ -49,8 +52,13 @@ class CanonicalResearchLanePriorityService
                 return $this->result(false, $symbol, $timeframe, $passportIds->count(), $pendingTrials,
                     'fair_interleave_slot', $debt);
             }
+
             return $this->result(true, $symbol, $timeframe, $passportIds->count(), $pendingTrials,
                 $consolidationRequired ? 'promotion_debt_consolidation' : 'active_edge_state_machine', [...$debt, 'allocation' => $allocation]);
+        }
+
+        if (! (bool) config('services.edge_director.autonomous_specialized_cohorts_enabled', false)) {
+            return $this->result(false, $symbol, $timeframe, 0, 0, 'normal_twenty_generation_mode');
         }
 
         // Reserve the expensive lane during the short boundary between a

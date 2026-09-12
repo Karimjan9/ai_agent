@@ -1,0 +1,29 @@
+AI LAB OPEN PROBLEMS
+====================
+
+Purpose
+-------
+This file contains only current, reproducible technical blockers. Resolved or
+obsolete entries and completed-work summaries must not remain here.
+
+ACTIVE TECHNICAL BLOCKERS
+=========================
+
+None.
+
+Scientific rejection, `edge_not_found`, `INCONCLUSIVE`, and missing Champion
+evidence are research outcomes, not technical blockers, and are not listed in
+this file.
+
+Entry template for a new real problem
+-------------------------------------
+
+[P0|P1|P2][ACTIVE][STABLE_ID]
+Date/time:
+Scope:
+Exact command or request:
+Exact error/output:
+Impact:
+Required next action:
+
+Remove the entry after its repair and verification are complete.

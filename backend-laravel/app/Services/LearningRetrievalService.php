@@ -12,6 +12,8 @@ use Illuminate\Support\Str;
 
 class LearningRetrievalService
 {
+    public function __construct(private ContextContractV2Service $contexts) {}
+
     /**
      * Retrieve the single canonical lesson pre-registered by a causal cohort.
      *
@@ -121,31 +123,53 @@ class LearningRetrievalService
         if (! Schema::hasTable('agent_learning_lessons') || ! Schema::hasTable('agent_learning_retrievals')) {
             return ['packet_id' => $packetId, 'status' => 'unavailable', 'positive_lessons' => [], 'harmful_lessons' => [], 'uncertainty_lessons' => [], 'blocked_mutations' => []];
         }
+        $canonicalContext = array_filter(
+            $this->contexts->canonicalAxes($context),
+            static fn ($value): bool => $value !== null && $value !== '',
+        );
         $rows = AgentLearningLesson::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->where(function ($q) use ($family): void {
             if ($family) {
                 $q->where('strategy_family', $family);
             }
         })->whereIn('status', ['provisional', 'confirmed'])->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))->get();
         $lessonPairIds = $rows->map(fn (AgentLearningLesson $lesson): int => (int) data_get($lesson->evidence, 'pair_id', 0))->filter()->unique()->values();
-        $settledPairIds = $lessonPairIds->isEmpty()
+        $settlements = $lessonPairIds->isEmpty()
             || ! Schema::hasTable('agent_learning_settlements')
             || ! Schema::hasTable('lab_learning_lane_pairs')
             ? collect()
-            : AgentLearningSettlement::query()->where('source_type', LabLearningLanePair::class)->whereIn('source_id', $lessonPairIds)->pluck('source_id');
-        $canonicalPairIds = $settledPairIds->isEmpty()
+            : AgentLearningSettlement::query()->where('source_type', LabLearningLanePair::class)->whereIn('source_id', $lessonPairIds)->get();
+        $settledPairIds = $settlements->pluck('source_id')->unique()->values();
+        $verifiedPairIds = $settledPairIds->isEmpty()
             ? collect()
             : LabLearningLanePair::query()->with('controlResponseMap')->whereIn('id', $settledPairIds)
                 ->whereIn('status', ['canonical_episode_settled', 'lesson_compiled', 'skill_confirmed'])->get()
                 ->filter(fn (LabLearningLanePair $pair): bool => $pair->isVerifiedControlPair())
                 ->pluck('id');
-        $ranked = $rows->map(function (AgentLearningLesson $lesson) use ($context, $canonicalPairIds): array {
-            $fields = ['regime', 'volatility', 'transition_state', 'spread_liquidity_state', 'state_cluster_id'];
+        $positivePairIds = $settlements->filter(fn (AgentLearningSettlement $settlement): bool => $verifiedPairIds->contains((int) $settlement->source_id)
+            && $settlement->evidence_state === 'positive'
+            && ! $settlement->hard_failure
+        )->pluck('source_id')->unique()->values();
+        $negativePairIds = $settlements->filter(fn (AgentLearningSettlement $settlement): bool => $verifiedPairIds->contains((int) $settlement->source_id)
+            && ($settlement->evidence_state === 'negative' || $settlement->hard_failure)
+        )->pluck('source_id')->unique()->values();
+        $ranked = $rows->map(function (AgentLearningLesson $lesson) use ($canonicalContext, $verifiedPairIds, $positivePairIds, $negativePairIds): array {
+            $fields = ['regime', 'volatility', 'session', 'transition_state', 'spread_liquidity_state', 'volume_state', 'direction', 'state_cluster_id'];
+            $lessonContext = $this->contexts->canonicalAxes([
+                'regime' => $lesson->regime,
+                'volatility' => $lesson->volatility,
+                'session' => data_get($lesson->evidence, 'failure_signature.state.session', data_get($lesson->evidence, 'context.session')),
+                'transition_state' => $lesson->transition_state,
+                'spread_liquidity_state' => $lesson->spread_liquidity_state,
+                'volume_state' => data_get($lesson->evidence, 'failure_signature.state.volume_state', data_get($lesson->evidence, 'context.volume_state')),
+                'direction' => data_get($lesson->evidence, 'failure_signature.state.direction', data_get($lesson->evidence, 'context.direction')),
+                'state_cluster_id' => $lesson->state_cluster_id,
+            ]);
             $exact = 0;
             $conflict = false;
             $specified = 0;
             foreach ($fields as $field) {
-                $stored = $this->contextValue($lesson->{$field}, $field);
-                $requested = $this->contextValue($context[$field] ?? null, $field);
+                $stored = $lessonContext[$field] ?? null;
+                $requested = $canonicalContext[$field] ?? null;
                 if ($stored !== null && $stored !== '') {
                     $specified++;
                     if ($requested !== null && $stored === $requested) {
@@ -155,9 +179,14 @@ class LearningRetrievalService
                     }
                 }
             }
-            $canonical = $canonicalPairIds->contains((int) data_get($lesson->evidence, 'pair_id', 0));
+            $pairId = (int) data_get($lesson->evidence, 'pair_id', 0);
+            $canonical = match ((string) $lesson->outcome) {
+                'beneficial' => $positivePairIds->contains($pairId),
+                'harmful' => $negativePairIds->contains($pairId),
+                default => $verifiedPairIds->contains($pairId),
+            };
 
-            return ['lesson' => $lesson, 'match_level' => $conflict ? 'incompatible' : ($specified > 0 && $exact === $specified ? 'exact_context' : ($specified > 0 ? 'family_prior' : 'broad_prior')), 'provenance' => $canonical ? 'canonical_settled' : 'legacy_prior', 'score' => ($canonical ? 4 : 0) + ($lesson->status === 'confirmed' ? 2 : 1) + $exact + (float) ($lesson->lower_confidence_bound ?? 0)];
+            return ['lesson' => $lesson, 'match_level' => $conflict ? 'incompatible' : ($specified > 0 && $exact === $specified ? 'exact_context' : ($specified > 0 ? 'family_prior' : 'broad_prior')), 'provenance' => $canonical ? 'canonical_settled' : 'legacy_prior', 'score' => ($canonical ? 4 : 0) + ($lesson->status === 'confirmed' ? 2 : 1) + $exact + ($specified > 0 && $exact === $specified ? 2 : 0) + (float) ($lesson->lower_confidence_bound ?? 0)];
         })->reject(fn (array $row) => $row['match_level'] === 'incompatible')->sortByDesc('score')->values();
         // Retrieval is a bounded decision aid, not an unbounded prompt that
         // can drown a single-gene experiment in historical advice. Keep at
@@ -172,43 +201,13 @@ class LearningRetrievalService
             if (count($groups[$bucket]) >= $bucketLimit) {
                 continue;
             }
-            $record = AgentLearningRetrieval::query()->create(['retrieval_id' => (string) Str::uuid(), 'packet_id' => $packetId, 'episode_id' => $episodeId, 'agent_learning_lesson_id' => $lesson->id, 'lab_agent_id' => $agent?->id, 'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'strategy_family' => $family, 'retrieval_state' => 'retrieved', 'match_level' => $row['match_level'], 'rank_score' => $row['score'], 'context' => $context, 'metadata' => ['parameter_key' => $lesson->parameter_key, 'provenance' => $row['provenance'], 'retrieval_decision' => ['considered' => true, 'compatible' => true, 'accepted' => false, 'reason' => 'CONTEXT_COMPATIBLE', 'expected_uplift' => null, 'uncertainty' => null, 'outcome_settlement_id' => null], 'promotion_evidence' => false]]);
+            $record = AgentLearningRetrieval::query()->create(['retrieval_id' => (string) Str::uuid(), 'packet_id' => $packetId, 'episode_id' => $episodeId, 'agent_learning_lesson_id' => $lesson->id, 'lab_agent_id' => $agent?->id, 'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'strategy_family' => $family, 'retrieval_state' => 'retrieved', 'match_level' => $row['match_level'], 'rank_score' => $row['score'], 'context' => $canonicalContext, 'metadata' => ['parameter_key' => $lesson->parameter_key, 'provenance' => $row['provenance'], 'raw_requested_context' => $context, 'retrieval_decision' => ['considered' => true, 'compatible' => true, 'accepted' => false, 'reason' => 'CONTEXT_COMPATIBLE', 'expected_uplift' => null, 'uncertainty' => null, 'outcome_settlement_id' => null], 'promotion_evidence' => false]]);
             $payload = ['lesson_id' => $lesson->id, 'retrieval_id' => $record->retrieval_id, 'parameter_key' => $lesson->parameter_key, 'failure_class' => $lesson->failure_class, 'match_level' => $row['match_level'], 'provenance' => $row['provenance'], 'score' => $row['score']];
             $groups[$bucket][] = $payload;
             $ids[] = $lesson->parameter_key;
         }
 
         return ['packet_id' => $packetId, 'status' => 'ok', ...$groups, 'blocked_mutations' => array_values(array_unique(array_filter(array_column($groups['harmful_lessons'], 'parameter_key')))), 'recommended_genes' => array_values(array_unique(array_filter(array_column($groups['positive_lessons'], 'parameter_key')))), 'retrieval_count' => count($groups['positive_lessons']) + count($groups['harmful_lessons']) + count($groups['uncertainty_lessons']), 'promotion_evidence' => false];
-    }
-
-    private function contextValue(mixed $value, string $field): ?string
-    {
-        if ($value === null) {
-            return null;
-        }
-        if (is_array($value)) {
-            $semanticKeys = match ($field) {
-                'state_cluster_id' => ['cluster_id', 'state_cluster_id'],
-                'transition_state' => ['transition_state', 'state'],
-                'spread_liquidity_state' => ['spread_liquidity_state', 'spread_state'],
-                'regime' => ['regime'],
-                'volatility' => ['volatility'],
-                default => [],
-            };
-            foreach ($semanticKeys as $key) {
-                $semantic = data_get($value, $key);
-                if (is_scalar($semantic) || $semantic instanceof \Stringable) {
-                    return (string) $semantic;
-                }
-            }
-            if (! array_is_list($value)) {
-                ksort($value);
-            }
-
-            return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION) ?: null;
-        }
-
-        return is_scalar($value) || $value instanceof \Stringable ? (string) $value : null;
     }
 
     /** @return array<string, mixed> */

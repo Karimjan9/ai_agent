@@ -53,7 +53,7 @@ class AdaptiveParentFrontierService
     ) {}
 
     /**
-     * @param iterable<ModelVersion> $parents Already exact-cell filtered.
+     * @param  iterable<ModelVersion>  $parents  Already exact-cell filtered.
      * @return array{parents: Collection, selected_parent_ids: array, candidate_parent_ids: array, contract: array, capability_genome: array, runtime_ensemble_policy: ?array}
      */
     public function select(
@@ -82,7 +82,9 @@ class AdaptiveParentFrontierService
         $snapshot = $generation
             ? (array) data_get($generation->trigger_context, 'adaptive_evolution_policy', [])
             : [];
-        if ($snapshot === []) $snapshot = $this->governor->scopeSnapshot($symbol, $timeframe);
+        if ($snapshot === []) {
+            $snapshot = $this->governor->scopeSnapshot($symbol, $timeframe);
+        }
 
         if (! (bool) config('services.lab_selection.adaptive_parent_enabled', true)) {
             // Disabling the adaptive scorer must not disable the evolutionary
@@ -99,15 +101,18 @@ class AdaptiveParentFrontierService
                 $target,
                 $snapshot,
             );
-            $selectedCandidates = $causal
-                ? $eligibleProfiles->take(1)->pluck('model')->values()
-                : $eligibleProfiles->take((int) $policy['max_parents'] > 0 ? (int) $policy['max_parents'] : $eligibleProfiles->count())->pluck('model')->values();
+            $selectedProfiles = $causal
+                ? $eligibleProfiles->take(1)->values()
+                : $eligibleProfiles->take((int) $policy['max_parents'] > 0 ? (int) $policy['max_parents'] : $eligibleProfiles->count())->values();
+            $selectedCandidates = $selectedProfiles->pluck('model')->values();
             $candidateIds = $allProfiles->pluck('model.id')->map(fn ($id): int => (int) $id)->values()->all();
             $ids = $selectedCandidates->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
             $candidateScores = $allProfiles->mapWithKeys(fn (array $profile): array => [(string) $profile['model']->id => [
                 'parent_eligible' => (bool) data_get($profile, 'parent_eligible', false),
                 'parent_selection_reason' => data_get($profile, 'parent_selection_reason', 'rejected_parent_passport'),
                 'parent_selection_reasons' => (array) data_get($profile, 'parent_selection_reasons', []),
+                'mentor_authority_transitioned' => (bool) data_get($profile, 'mentor_authority_transitioned', false),
+                'trait_capsule_assessment' => data_get($profile, 'trait_capsule_assessment'),
             ]])->all();
             $contract = [
                 'protocol' => 'adaptive_parent_frontier_v1',
@@ -119,12 +124,14 @@ class AdaptiveParentFrontierService
                 'selected_parent_model_version_ids' => $ids,
                 'eligible_parent_model_version_ids' => $eligibleProfiles->pluck('model.id')->map(fn ($id): int => (int) $id)->values()->all(),
                 'candidate_scores' => $candidateScores,
+                'selected_contextual_trait_capsules' => $this->selectedCapsules($selectedProfiles),
                 'parent_firewall' => 'parent_eligible_true_only',
                 'causal_lane' => $causal,
                 'min_parents' => $policy['min_parents'],
                 'max_parents' => $policy['max_parents'],
                 'promotion_evidence' => false,
             ];
+
             return [
                 'parents' => $selectedCandidates,
                 'selected_parent_ids' => $ids,
@@ -170,6 +177,8 @@ class AdaptiveParentFrontierService
                 'exclusion_reason' => data_get($profile, 'parent_exclusion_reason'),
                 'parent_selection_reason' => data_get($profile, 'parent_selection_reason', 'rejected_parent_passport'),
                 'parent_selection_reasons' => (array) data_get($profile, 'parent_selection_reasons', []),
+                'mentor_authority_transitioned' => (bool) data_get($profile, 'mentor_authority_transitioned', false),
+                'trait_capsule_assessment' => data_get($profile, 'trait_capsule_assessment'),
                 'archive_type' => data_get($profile, 'archive_type'),
             ];
         }
@@ -190,6 +199,7 @@ class AdaptiveParentFrontierService
             'min_parents' => $policy['min_parents'],
             'max_parents' => $policy['max_parents'],
             'candidate_scores' => $candidateScores,
+            'selected_contextual_trait_capsules' => $this->selectedCapsules($selectedProfiles),
             'exploration_ratio' => $policy['exploration_ratio'],
             'diversity_score' => $policy['diversity_score'],
             'progress_score' => $policy['progress_score'],
@@ -251,14 +261,28 @@ class AdaptiveParentFrontierService
         return $candidates->map(function (ModelVersion $model) use ($symbol, $timeframe, $family, $target, $niche, $performanceByModel): array {
             $performance = $performanceByModel->get($model->id);
             $metrics = (array) ($performance?->metrics ?? []);
+            $trustSkillKey = (string) data_get($model->metadata, 'skill_mentor.parameter_key', (string) ($target ?: 'general_skill'));
+            $trustContext = (array) $niche;
+            $authoritySnapshot = app(EvolutionaryAuthorityFoundryService::class)->authorityFor($model);
+            $activation = (array) data_get($authoritySnapshot, 'evidence.trait_capsule.activation_context.predicate', []);
+            // The constructor may know only the broad regime/volatility cell.
+            // Fill unresolved runtime axes from the sealed capsule for the
+            // trust lookup; never overwrite an explicit requested axis.
+            foreach ($activation as $axis => $value) {
+                if (! array_key_exists($axis, $trustContext) || $trustContext[$axis] === null || $trustContext[$axis] === '') {
+                    $trustContext[$axis] = $value;
+                }
+            }
             $contextTrust = $this->parentTrust->score(
                 $model,
                 $symbol,
                 $timeframe,
                 $family,
-                (string) ($target ?: 'general_skill'),
-                (array) $niche,
+                $trustSkillKey,
+                $trustContext,
             );
+            $contextTrust['requested_context'] = (array) $niche;
+            $contextTrust['resolved_activation_context'] = $trustContext;
             $statusBonus = match ((string) ($performance?->status ?? '')) {
                 'champion' => 8, 'forward_validated' => 6, 'challenger' => 4, 'paper' => 3,
                 default => 0,
@@ -290,18 +314,21 @@ class AdaptiveParentFrontierService
                 'performance_id' => $performance?->id,
                 'archive_type' => $model->getAttribute('_adaptive_archive_type'),
                 'context_trust' => $contextTrust,
-                ...$this->parentEligibilityProfile($model, $performance),
+                ...$this->parentEligibilityProfile($model, $performance, (array) $niche, $contextTrust),
                 'semantic_group_key' => data_get($this->semanticGroups->fromModel($model, $family), 'key'),
                 'niche' => $niche,
             ];
         })->sortByDesc('score')->values()->tap(function (Collection $profiles): void {
             $anchor = $profiles->first();
-            if (! $anchor) return;
+            if (! $anchor) {
+                return;
+            }
             $profiles->transform(function (array $profile) use ($anchor): array {
                 $profile['novelty_to_anchor'] = $this->parameterDistance(
                     (array) $profile['model']->parameters,
                     (array) $anchor['model']->parameters,
                 );
+
                 return $profile;
             });
         });
@@ -309,8 +336,12 @@ class AdaptiveParentFrontierService
 
     private function desiredParentCount(array $policy, int $candidateCount): int
     {
-        if ($candidateCount === 0) return 0;
-        if ((bool) $policy['causal_lane']) return 1;
+        if ($candidateCount === 0) {
+            return 0;
+        }
+        if ((bool) $policy['causal_lane']) {
+            return 1;
+        }
 
         $configuredMax = (int) ($policy['max_parents'] ?? 0);
         // A zero policy max is deliberately resolved here, after exact-cell
@@ -342,7 +373,9 @@ class AdaptiveParentFrontierService
     /** @param Collection<int, array<string, mixed>> $profiles */
     private function selectProfiles(Collection $profiles, int $desired, int $slot, array $policy): Collection
     {
-        if ($profiles->isEmpty() || $desired <= 0) return collect();
+        if ($profiles->isEmpty() || $desired <= 0) {
+            return collect();
+        }
         // The old selector always started at profiles[0]. That made every
         // child inherit the same champion even after the governor detected
         // concentration. Keep the score-ranked champion in the pool, but
@@ -360,10 +393,11 @@ class AdaptiveParentFrontierService
             : 0;
         $anchor = $profiles->get($anchorIndex) ?: $profiles->first();
         $selected = collect([$anchor]);
-        if ($desired === 1) return $selected;
+        if ($desired === 1) {
+            return $selected;
+        }
 
-        $remaining = $profiles->reject(fn (array $profile): bool =>
-            (int) data_get($profile, 'model.id') === (int) data_get($anchor, 'model.id')
+        $remaining = $profiles->reject(fn (array $profile): bool => (int) data_get($profile, 'model.id') === (int) data_get($anchor, 'model.id')
         )->values();
         $lineageCounts = [$anchor['lineage_id'] => 1];
         $lineageCap = max(1, (int) ceil($desired * max(.25, (float) $policy['lineage_cap'])));
@@ -384,9 +418,12 @@ class AdaptiveParentFrontierService
                     + ($newLineage ? $diversityWeight : 0)
                     - ($blocked ? 1000000 : 0);
                 $candidate['marginal_novelty'] = $novelty;
+
                 return $candidate;
             })->sortByDesc('selection_utility')->first();
-            if (! $ranked) break;
+            if (! $ranked) {
+                break;
+            }
             $selected->push($ranked);
             $lineageCounts[$ranked['lineage_id']] = ($lineageCounts[$ranked['lineage_id']] ?? 0) + 1;
             $remaining = $remaining->reject(fn (array $candidate): bool => (int) $candidate['model']->id === (int) $ranked['model']->id)->values();
@@ -419,7 +456,9 @@ class AdaptiveParentFrontierService
             $contributors = [];
             foreach ($parents as $parent) {
                 $present = array_values(array_intersect($keys, array_keys((array) $parent->parameters)));
-                if ($present === []) continue;
+                if ($present === []) {
+                    continue;
+                }
                 $profile = (array) ($profileMap[(string) $parent->id] ?? []);
                 $contributors[] = [
                     'parent_model_version_id' => (int) $parent->id,
@@ -428,14 +467,20 @@ class AdaptiveParentFrontierService
                     'source_evidence_id' => data_get($profile, 'performance_id'),
                     'evidence_confidence' => round((float) data_get($profile, 'evidence_confidence', 0), 4),
                     'scope' => data_get($profile, 'niche'),
+                    'contextual_trait_capsule' => (bool) data_get($profile, 'trait_capsule_assessment.valid', false)
+                        ? data_get($profile, 'evolutionary_authority.evidence.trait_capsule')
+                        : null,
                 ];
             }
-            if ($contributors === []) continue;
+            if ($contributors === []) {
+                continue;
+            }
             usort($contributors, fn (array $left, array $right): int => $right['quality_score'] <=> $left['quality_score']);
             $positiveScores = collect($contributors)->map(fn (array $entry): float => max(0.0, (float) $entry['quality_score']));
             $scoreTotal = max(0.0001, (float) $positiveScores->sum());
             $contributors = array_map(function (array $entry) use ($scoreTotal): array {
                 $entry['contribution_weight'] = round(max(0.0, (float) $entry['quality_score']) / $scoreTotal, 6);
+
                 return $entry;
             }, $contributors);
             $modules[$module] = [
@@ -456,6 +501,9 @@ class AdaptiveParentFrontierService
                         'source_confidence' => (float) data_get($sourceEntry, 'evidence_confidence', 0),
                         'contribution_weight' => (float) data_get($sourceEntry, 'contribution_weight', 0),
                         'scope' => data_get($sourceEntry, 'scope'),
+                        'contextual_trait_capsule' => data_get($sourceEntry, 'contextual_trait_capsule.trait.gene') === $key
+                            ? data_get($sourceEntry, 'contextual_trait_capsule')
+                            : null,
                         'parameter_hash' => hash('sha256', json_encode([$key => $sourceParameters[$key] ?? null], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
                         'provenance_confidence' => data_get($sourceEntry, 'source_evidence_id') ? 'evidence_backed' : 'research_seed',
                     ];
@@ -480,8 +528,27 @@ class AdaptiveParentFrontierService
         ];
     }
 
+    /** @return array<string,array<string,mixed>> */
+    private function selectedCapsules(Collection $profiles): array
+    {
+        return $profiles->mapWithKeys(function (array $profile): array {
+            $capsule = (array) data_get($profile, 'evolutionary_authority.evidence.trait_capsule', []);
+            if (! (bool) data_get($profile, 'trait_capsule_assessment.valid', false) || $capsule === []) {
+                return [];
+            }
+
+            return [(string) data_get($profile, 'model.id') => [
+                ...$capsule,
+                'source_authority' => 'eligible_parent',
+                'source_parent_model_version_id' => (int) data_get($profile, 'model.id'),
+                'runtime_policy' => 'activate_only_when_full_predicate_matches_else_abstain',
+                'promotion_evidence' => false,
+            ]];
+        })->all();
+    }
+
     /** @return array<string, mixed> */
-    private function parentEligibilityProfile(ModelVersion $model, ?ModelMarketPerformance $performance): array
+    private function parentEligibilityProfile(ModelVersion $model, ?ModelMarketPerformance $performance, array $niche = [], array $contextTrust = []): array
     {
         $shadowOnly = (
             (bool) data_get($model->metadata, 'shadow_research_lane.shadow_only', false)
@@ -519,10 +586,27 @@ class AdaptiveParentFrontierService
             || $performance === null
             || (bool) data_get($model->metadata, 'screening_seed_only', false);
         $evolutionStage = (string) data_get($model->metadata, 'evolution_stage.stage', '');
-        $mentorOnly = in_array($evolutionStage, ['screen_validated_seed', 'skill_mentor', 'screen_validated_control', 'repair_anchor', 'repair_anchor_control'], true)
-            || data_get($model->metadata, 'skill_mentor.status') === 'confirmed';
         $authority = app(EvolutionaryAuthorityFoundryService::class)->authorityFor($model);
-        $authorityEligible = data_get($authority, 'stage') === 'eligible_parent';
+        $mentorDeclared = in_array($evolutionStage, ['screen_validated_seed', 'skill_mentor', 'skill_confirmed_capsule_pending', 'screen_validated_control', 'repair_anchor', 'repair_anchor_control'], true)
+            || in_array((string) data_get($model->metadata, 'skill_mentor.status'), ['confirmed', 'causal_capsule_pending'], true);
+        $capsuleAssessment = $mentorDeclared
+            ? app(ContextualCausalTraitCapsuleService::class)->assess(
+                (array) data_get($authority, 'evidence.trait_capsule', []),
+                (string) data_get($model->metadata, 'skill_mentor.parameter_key', ''),
+                $niche,
+            )
+            : ['valid' => true, 'status' => 'not_applicable', 'reason_codes' => []];
+        $contextTrustEligible = ! $mentorDeclared
+            || (data_get($contextTrust, 'status') === 'context_confirmed'
+                && (int) data_get($contextTrust, 'success_count', 0) >= 2);
+        $authorityEligible = data_get($authority, 'stage') === 'eligible_parent'
+            && (bool) data_get($capsuleAssessment, 'valid', false)
+            && $contextTrustEligible;
+        // Mentor-only is a temporary authority state, not a permanent tag.
+        // Once the immutable Foundry ledger proves incubation, descendants
+        // and passport, the original skill marker must no longer veto the
+        // very parent authority that ladder was designed to earn.
+        $mentorOnly = $mentorDeclared && ! $authorityEligible;
         // A legacy performance passport describes quality, not reproductive
         // authority. The Foundry is mandatory for new parent selection.
         $passportParentEligible = ($parentEligible || $rootSeed) && ! $mentorOnly && ! $fullStackLineageBlocked && $authorityEligible;
@@ -532,10 +616,24 @@ class AdaptiveParentFrontierService
         // score so a future selector cannot mistake a challenger row for a
         // legal parent merely because its status string looks advanced.
         $selectionReasons = [];
-        if ($shadowOnly) $selectionReasons[] = 'rejected_shadow_only';
-        if ($edgeGenesisLineageBlocked) $selectionReasons[] = 'rejected_edge_genesis_dependency_order';
-        if ($fullStackLineageBlocked) $selectionReasons[] = 'rejected_full_stack_mastery_required';
-        if ($mentorOnly) $selectionReasons[] = 'rejected_mentor_only';
+        if ($shadowOnly) {
+            $selectionReasons[] = 'rejected_shadow_only';
+        }
+        if ($edgeGenesisLineageBlocked) {
+            $selectionReasons[] = 'rejected_edge_genesis_dependency_order';
+        }
+        if ($fullStackLineageBlocked) {
+            $selectionReasons[] = 'rejected_full_stack_mastery_required';
+        }
+        if ($mentorOnly) {
+            $selectionReasons[] = 'rejected_mentor_only';
+        }
+        if ($mentorDeclared && ! (bool) data_get($capsuleAssessment, 'valid', false)) {
+            $selectionReasons[] = 'rejected_trait_capsule_context';
+        }
+        if ($mentorDeclared && ! $contextTrustEligible) {
+            $selectionReasons[] = 'rejected_context_trust';
+        }
         if ($performance !== null && (float) data_get($metrics, 'profit_factor', 0) < 1.3) {
             $selectionReasons[] = 'rejected_low_pf';
         }
@@ -551,7 +649,9 @@ class AdaptiveParentFrontierService
                 || ((int) $performance->rolling_windows_count >= 3
                     && (int) $performance->rolling_forward_wins >= 3
                     && data_get($metrics, 'forward_protocol.status') === 'confirmed'));
-        if (! $independentForward) $selectionReasons[] = 'rejected_no_independent_forward';
+        if (! $independentForward) {
+            $selectionReasons[] = 'rejected_no_independent_forward';
+        }
         $pairedReplayStatus = strtolower((string) (
             data_get($metrics, 'paired_replay.status')
             ?: data_get($metrics, 'paired_replay_status', '')
@@ -559,10 +659,15 @@ class AdaptiveParentFrontierService
         if (in_array($pairedReplayStatus, ['pending', 'queued', 'started', 'in_progress'], true)) {
             $selectionReasons[] = 'rejected_pending_paired_replay';
         }
-        if ($mentorOnly && $selectionReasons === []) $selectionReasons[] = 'rejected_mentor_only';
-        if (! $authorityEligible) $selectionReasons[] = 'rejected_evolutionary_authority';
-        if (! $passportParentEligible && $selectionReasons === []) $selectionReasons[] = 'rejected_parent_passport';
-        if ($passportParentEligible) $selectionReasons = ['eligible'];
+        if (! $authorityEligible) {
+            $selectionReasons[] = 'rejected_evolutionary_authority';
+        }
+        if (! $passportParentEligible && $selectionReasons === []) {
+            $selectionReasons[] = 'rejected_parent_passport';
+        }
+        if ($passportParentEligible) {
+            $selectionReasons = ['eligible'];
+        }
 
         $confidence = $performance === null ? 0.0 : min(1.0, max(0.0,
             .20
@@ -579,6 +684,8 @@ class AdaptiveParentFrontierService
             'parent_selection_reasons' => array_values(array_unique($selectionReasons)),
             'root_seed_eligible' => $rootSeed,
             'research_seed_eligible' => $researchSeed,
+            'mentor_authority_transitioned' => $mentorDeclared && $authorityEligible,
+            'trait_capsule_assessment' => $capsuleAssessment,
             'parent_exclusion_reason' => $passportParentEligible
                 ? null
                 : ($shadowOnly
@@ -592,7 +699,9 @@ class AdaptiveParentFrontierService
     private function parameterDistance(array $left, array $right): float
     {
         $keys = array_values(array_unique(array_merge(array_keys($left), array_keys($right))));
-        if ($keys === []) return 0.0;
+        if ($keys === []) {
+            return 0.0;
+        }
         $different = 0;
         foreach ($keys as $key) {
             if (json_encode($left[$key] ?? null, JSON_PRESERVE_ZERO_FRACTION)
@@ -600,6 +709,7 @@ class AdaptiveParentFrontierService
                 $different++;
             }
         }
+
         return $different / count($keys);
     }
 }

@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
+use App\Models\LabGeneration;
+use App\Models\LabSkillZooEntry;
 use App\Services\AutonomousLearningProgressDirectorService;
 use App\Services\ExecutionContractService;
 use App\Services\LabDatasetExportService;
@@ -11,6 +13,7 @@ use App\Services\LabQueueJobInspector;
 use App\Services\MultiTimeframeSnapshotService;
 use App\Services\RuntimeMonitoringService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -24,6 +27,7 @@ class AutonomousLearningProgressDirectorTest extends TestCase
     public function test_it_opens_exactly_one_pre2026_edge_cohort_and_then_waits_idempotently(): void
     {
         Queue::fake();
+        config()->set('services.edge_director.autonomous_specialized_cohorts_enabled', true);
         config()->set('services.edge_director.idle_stability_seconds', 0);
         AiLaboratory::create(['name' => 'Autonomous Mastery XAUUSD H1', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
             'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse']);
@@ -102,12 +106,59 @@ class AutonomousLearningProgressDirectorTest extends TestCase
         $this->assertSame('ACTIVE_AGENT_WORK_EXISTS', $second['reason']);
         $this->assertDatabaseCount('lab_generations', 1);
 
-        $generation = \App\Models\LabGeneration::query()->firstOrFail();
+        $generation = LabGeneration::query()->firstOrFail();
         $generation->update(['status' => 'technical_quarantine', 'completed_at' => now()]);
         $generation->agents()->update(['lifecycle_status' => 'draft']);
         $third = app(AutonomousLearningProgressDirectorService::class)->advance('XAUUSD', 'H1', true);
         $this->assertSame('blocked', $third['status']);
         $this->assertNotSame('ACTIVE_AGENT_WORK_EXISTS', $third['reason']);
         $this->assertSame('EDGE_GENESIS_SETTLEMENT_INCOMPLETE', $third['reason']);
+
+        // Production mode keeps the immutable Edge history but hands new
+        // generation authority to the normal twenty-seat organism lifecycle.
+        DB::table('edge_genesis_trials')->update([
+            'status' => 'edge_not_found', 'settled_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('edge_genesis_passports')->update([
+            'status' => 'edge_not_found', 'updated_at' => now(),
+        ]);
+        $generation->update(['status' => 'completed', 'completed_at' => now()]);
+        $generation->agents()->update(['lifecycle_status' => 'rejected']);
+        config()->set('services.edge_director.autonomous_specialized_cohorts_enabled', false);
+
+        $baseline = $generation->agents()->firstOrFail();
+        $provisional = LabSkillZooEntry::create([
+            'skill_key' => hash('sha256', 'director-provisional-skill'),
+            'cartridge_key' => hash('sha256', 'director-provisional-cartridge'),
+            'revision' => 2, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'module_key' => 'entry', 'niche_key' => 'trend_up|normal|london', 'gene_key' => 'minimum_confidence',
+            'lab_agent_id' => $baseline->id, 'model_version_id' => $baseline->model_version_id,
+            'causal_baseline_agent_id' => $baseline->id, 'quality_score' => .2, 'confidence' => .8,
+            'status' => 'provisional', 'component_status' => 'paired_observed', 'organism_viability' => 'not_viable',
+            'evidence' => ['intervention' => ['old_value' => .6, 'tested_value' => .55]],
+        ]);
+        foreach ([1, 2] as $observation) {
+            DB::table('skill_cartridge_observations')->insert([
+                'observation_key' => hash('sha256', 'director-observation-'.$observation),
+                'lab_skill_zoo_entry_id' => $provisional->id, 'outcome' => 'positive',
+                'target_delta' => .1, 'evidence' => json_encode(['window' => $observation]),
+                'observed_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+        $confirmation = app(AutonomousLearningProgressDirectorService::class)->advance('XAUUSD', 'H1', false);
+        $this->assertSame('dry_run', $confirmation['status']);
+        $this->assertSame('PROVISIONAL_SKILL_CARTRIDGE_CONFIRMATION', $confirmation['action']);
+        $this->assertSame(20, data_get($confirmation, 'result.population_size'));
+        $provisional->delete();
+
+        $handoff = app(AutonomousLearningProgressDirectorService::class)->advance('XAUUSD', 'M15', true);
+
+        $this->assertSame('waiting', $handoff['status']);
+        $this->assertSame('RUN_XAUUSD_ORGANISM_LIFECYCLE', $handoff['action']);
+        $this->assertSame('NORMAL_TWENTY_GENERATION_HANDOFF', $handoff['reason']);
+        $this->assertSame(20, data_get($handoff, 'generation_contract.population_size'));
+        $this->assertSame('XAUUSD', data_get($handoff, 'organism.symbol'));
+        $this->assertSame('H1', data_get($handoff, 'organism.laboratory_storage_timeframe'));
+        $this->assertSame(1, LabGeneration::query()->count());
     }
 }

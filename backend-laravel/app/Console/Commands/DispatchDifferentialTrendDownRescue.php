@@ -103,6 +103,11 @@ class DispatchDifferentialTrendDownRescue extends Command
 
             return self::SUCCESS;
         }
+        if (strtoupper((string) $lab->symbol) === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
+            $this->info('Standalone differential generation disabled: XAUUSD repair is allocated inside the unified 20-seat lifecycle population.');
+
+            return self::SUCCESS;
+        }
         $active = $lab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->latest('generation')->first();
         if ($active) {
             $this->warn("{$lab->symbol}: G{$active->generation} hali {$active->status}; yangi differential generation locklandi.");

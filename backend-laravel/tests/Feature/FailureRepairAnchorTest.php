@@ -197,7 +197,7 @@ class FailureRepairAnchorTest extends TestCase
         }
     }
 
-    public function test_normal_generation_is_blocked_after_screening_failures_until_a_pass_exists(): void
+    public function test_forced_fresh_generation_can_accumulate_the_next_zero_pass_observation(): void
     {
         $generation = app(LabPopulationService::class)->build('XAUUSD', 'new_data', true);
         $this->assertNotNull($generation);
@@ -215,7 +215,15 @@ class FailureRepairAnchorTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $this->assertNull(app(LabPopulationService::class)->build('XAUUSD', 'new_data', true));
+        $next = app(LabPopulationService::class)->build('XAUUSD', 'new_data', true);
+
+        $this->assertNotNull($next);
+        $this->assertSame(2, $next->generation);
+        $this->assertSame(20, $next->agents()->count());
+        $this->assertContains(
+            'AUTONOMOUS_ZERO_PASS_ACCUMULATION_REQUIRES_FRESH_DATA',
+            (array) data_get($next->trigger_context, 'generation_admission_decision.reason_codes', []),
+        );
     }
 
     public function test_strategy_failure_aliases_compile_to_a_causal_target_but_evidence_failures_do_not(): void
@@ -773,9 +781,11 @@ class FailureRepairAnchorTest extends TestCase
                 'profit_factor' => 1.2,
             ],
         );
-        $this->assertSame('skill_mentor', $mentor['stage']);
+        $this->assertSame('skill_confirmed_capsule_pending', $mentor['stage']);
+        $this->assertSame('causal_capsule_pending', $mentor['status']);
         $this->assertFalse($mentor['parent_eligible']);
-        $this->assertSame('skill_mentor', data_get($agent->fresh('modelVersion')->modelVersion->metadata, 'evolution_stage.stage'));
+        $this->assertSame('skill_confirmed_capsule_pending', data_get($agent->fresh('modelVersion')->modelVersion->metadata, 'evolution_stage.stage'));
+        $this->assertNull(data_get($agent->fresh('modelVersion')->modelVersion->metadata, 'skill_mentor.trait_capsule'));
 
         app(MutationResponseMapService::class)->recordFullReplay(
             $agent->fresh(['modelVersion']),

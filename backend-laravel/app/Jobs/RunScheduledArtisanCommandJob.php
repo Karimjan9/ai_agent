@@ -2,8 +2,9 @@
 
 namespace App\Jobs;
 
-use App\Services\ScheduledCommandOutcomeClassifierService;
 use App\Services\CanonicalResearchLanePriorityService;
+use App\Services\ScheduledArtisanProcessRunnerService;
+use App\Services\ScheduledCommandOutcomeClassifierService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -20,7 +21,10 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 1;
+    // A worker can be recycled after reserving an otherwise idempotent
+    // command. Permit exactly one transport-level replay so the Redis
+    // visibility retry is executed instead of being rejected before handle().
+    public int $tries = 2;
 
     public int $timeout;
 
@@ -34,12 +38,34 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
         public array $arguments = [],
         public string $lane = 'scheduler-ops',
     ) {
-        $this->lane = in_array($lane, ['scheduler-critical', 'scheduler-research'], true)
+        $this->lane = in_array($lane, ['scheduler-critical', 'scheduler-constructor', 'scheduler-research'], true)
             ? $lane
             : 'scheduler-ops';
-        $this->timeout = $this->lane === 'scheduler-critical' ? 180 : 900;
-        $this->uniqueFor = $this->timeout + 300;
-        $this->onConnection((string) config('queue.default', 'redis'));
+        // Normal research commands remain bounded to 15 minutes. Commands
+        // capable of compiling a full population receive the same longer
+        // lease: twenty immutable seats can legitimately take 20-35 minutes
+        // on the local evidence store and remain resumable after interruption.
+        $fullPopulationConstructor = in_array($this->command, [
+            'trading:run-research-loop',
+            'trading:consume-research-work',
+            'trading:run-lifecycle-cycle',
+            'trading:process-targeted-generations',
+            'trading:detect-drift',
+            'trading:lab-generation',
+            'trading:advance-learning-progress',
+            'trading:dispatch-full-validation',
+        ], true) || ($this->command === 'trading:dispatch-lab'
+            && (bool) ($this->arguments['--learning-confirmation'] ?? false));
+        $this->timeout = $this->lane === 'scheduler-critical'
+            ? 180
+            : ($fullPopulationConstructor ? 2400 : 900);
+        $connection = (string) config('queue.default', 'redis');
+        $retryAfter = max(0, (int) config("queue.connections.{$connection}.retry_after", 0));
+        // Keep the uniqueness lease beyond Redis visibility. Otherwise a
+        // killed worker can leave the first delivery reserved while a later
+        // scheduler tick dispatches a duplicate of the same command.
+        $this->uniqueFor = max($this->timeout + 300, $retryAfter + 300);
+        $this->onConnection($connection);
         $this->onQueue($this->lane);
     }
 
@@ -51,9 +77,10 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
     public function handle(
         ScheduledCommandOutcomeClassifierService $outcomes,
         ?CanonicalResearchLanePriorityService $priority = null,
-    ): void
-    {
+        ?ScheduledArtisanProcessRunnerService $processRunner = null,
+    ): void {
         $priority ??= app(CanonicalResearchLanePriorityService::class);
+        $processRunner ??= app(ScheduledArtisanProcessRunnerService::class);
         $started = microtime(true);
         $key = 'system:scheduled-command:'.$this->uniqueId();
         Cache::put($key, $this->status('running', $started), now()->addDay());
@@ -64,9 +91,19 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
             // memory or generation authority. Their source rows are durable,
             // so completing this tick as deferred is lossless; cadence will
             // schedule them again after the canonical owner settles.
-            if ($this->lane === 'scheduler-research') {
+            if (in_array($this->lane, ['scheduler-constructor', 'scheduler-research'], true)) {
                 $ownership = $priority->edgeGenesisOwnership('XAUUSD', 'H1');
-                if (($ownership['owned'] ?? false) === true) {
+                $arbiterOwned = in_array($this->command, [
+                    'trading:run-research-loop',
+                    'trading:consume-research-work',
+                    'trading:dispatch-mtf-research-cycle',
+                    'trading:dispatch-mtf-playbook-prior',
+                    'trading:dispatch-portfolio-member-replay',
+                    'trading:validate-elite-portfolios',
+                    'trading:run-lifecycle-cycle',
+                ], true) || ($this->command === 'trading:advance-learning-progress'
+                    && (bool) ($this->arguments['--arbiter-authorized'] ?? false));
+                if (($ownership['owned'] ?? false) === true && ! $arbiterOwned) {
                     $detail = 'Deferred to canonical Edge Genesis; immutable research source preserved for the next scheduler tick.';
                     Cache::put($key, $this->status('deferred', $started, $detail, [
                         'protocol' => 'scheduled_research_priority_arbitration_v1',
@@ -85,8 +122,22 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
                     return;
                 }
             }
-            $exitCode = Artisan::call($this->command, $this->arguments);
-            $output = trim(Artisan::output());
+            if (app()->runningUnitTests()) {
+                // Unit/feature tests may use an in-memory database and mock
+                // Artisan. Production commands must run as bounded children:
+                // PHP on Windows has no pcntl alarm, so queue --timeout alone
+                // cannot interrupt an in-process CPU loop.
+                $exitCode = Artisan::call($this->command, $this->arguments);
+                $output = trim(Artisan::output());
+            } else {
+                $execution = $processRunner->run(
+                    $this->command,
+                    $this->arguments,
+                    max(30, $this->timeout - 30),
+                );
+                $exitCode = $execution['exit_code'];
+                $output = $execution['output'];
+            }
             $outcome = $outcomes->classify($this->command, $this->arguments, $exitCode, $output);
             if ((bool) ($outcome['throw'] ?? true)) {
                 throw new RuntimeException("Scheduled command {$this->command} returned exit code {$exitCode}: ".substr($output, 0, 1000));

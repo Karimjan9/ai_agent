@@ -1,11 +1,15 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pm2Cli = path.join(projectRoot, 'node_modules', 'pm2', 'bin', 'pm2');
 const cleanEnvironment = { ...process.env };
+const require = createRequire(import.meta.url);
+const managedProcessNames = require(path.join(projectRoot, 'ecosystem.config.cjs')).apps
+    .map((entry) => entry.name);
 // Queue topology is intentionally reconciled, not only reloaded. PM2 keeps
 // removed ecosystem entries alive across a reload unless the old names are
 // deleted first; leaving lab-screening/lab-full-validation online would
@@ -29,7 +33,7 @@ const run = (args, options = {}) => spawnSync(process.execPath, [pm2Cli, ...args
     ...options,
 });
 
-const assertDurableReplayIdle = () => {
+const assertDurableReplayIdle = (onFailure = null) => {
     const preflight = spawnSync(process.env.PHP_BINARY || 'php', [
         'artisan', 'system:runtime-reload-preflight', '--json',
     ], {
@@ -40,6 +44,9 @@ const assertDurableReplayIdle = () => {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
     if (preflight.status !== 0) {
+        if (onFailure) {
+            onFailure();
+        }
         process.stderr.write(preflight.stdout || preflight.stderr
             || 'Durable replay preflight refused the PM2 rolling sync.\n');
         process.exit(2);
@@ -136,14 +143,54 @@ if (stale.length > 0) {
     }
 }
 
-const reloaded = run(['reload', 'ecosystem.config.cjs', '--update-env']);
-if (reloaded.status !== 0) {
-    process.exit(reloaded.status ?? 1);
+// Freeze cadence before touching workers. A whole-ecosystem reload can take
+// several minutes on Windows; if the scheduler restarts near the beginning it
+// can reserve fresh work that a later worker reload then kills. The scheduler
+// is deliberately the last ecosystem entry, so it stays stopped until every
+// queue consumer has accepted the new runtime.
+const schedulerWasOnline = processes.some((entry) => entry.name === 'neurotrader-scheduler'
+    && entry.pm2_env?.status === 'online');
+if (schedulerWasOnline) {
+    const stoppedScheduler = run(['stop', 'neurotrader-scheduler']);
+    if (stoppedScheduler.status !== 0) {
+        process.exit(stoppedScheduler.status ?? 1);
+    }
+}
+assertDurableReplayIdle(() => {
+    if (schedulerWasOnline) {
+        run(['start', 'neurotrader-scheduler']);
+    }
+});
+
+// PM2 reload on Windows fork-mode can leave the previous PHP queue:work child
+// alive indefinitely even after the replacement is online. That orphan can
+// later reserve a scheduled job with stale application code. This script is
+// already guarded by the durable idle preflight above, so a deterministic
+// restart is safe here and guarantees one worker per configured PM2 process.
+// Restart consumers first; start the cadence source only after every consumer
+// has accepted the new runtime.
+const consumerNames = managedProcessNames.filter((name) => name !== 'neurotrader-scheduler');
+const restarted = run([
+    'restart', 'ecosystem.config.cjs', '--only', consumerNames.join(','), '--update-env',
+]);
+if (restarted.status !== 0) {
+    if (schedulerWasOnline) {
+        run(['start', 'neurotrader-scheduler']);
+    }
+    process.exit(restarted.status ?? 1);
+}
+if (schedulerWasOnline) {
+    const startedScheduler = run([
+        'start', 'ecosystem.config.cjs', '--only', 'neurotrader-scheduler', '--update-env',
+    ]);
+    if (startedScheduler.status !== 0) {
+        process.exit(startedScheduler.status ?? 1);
+    }
 }
 
-// Reloading fixes the live daemon, but it does not protect the next daemon
+// Restarting fixes the live daemon, but it does not protect the next daemon
 // restart unless the reconciled topology is persisted. Save only after a
-// successful reload so a failed/partial sync can never overwrite the last
+// successful restart so a failed/partial sync can never overwrite the last
 // known-good PM2 resurrection set.
 const saved = run(['save']);
 process.exit(saved.status ?? 1);

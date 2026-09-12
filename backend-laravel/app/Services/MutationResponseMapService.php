@@ -20,7 +20,9 @@ class MutationResponseMapService
     /** @return array<string, mixed>|null */
     public function recordScreening(LabAgent $agent, array $result): ?array
     {
-        if (! $this->available() || ! filled(data_get($result, 'evidence_run_id'))) return null;
+        if (! $this->available() || ! filled(data_get($result, 'evidence_run_id'))) {
+            return null;
+        }
 
         $agent->loadMissing('modelVersion');
         $metadata = (array) ($agent->modelVersion?->metadata ?? []);
@@ -77,7 +79,9 @@ class MutationResponseMapService
         ?array $verification = null,
         array $options = [],
     ): ?array {
-        if (! $this->available() || ! filled(data_get($result, 'evidence_run_id'))) return null;
+        if (! $this->available() || ! filled(data_get($result, 'evidence_run_id'))) {
+            return null;
+        }
 
         $agent->loadMissing('modelVersion');
         $metadata = (array) ($agent->modelVersion?->metadata ?? []);
@@ -133,7 +137,9 @@ class MutationResponseMapService
         ?string $target = null,
         ?string $role = null,
     ): ?array {
-        if (! $this->available()) return null;
+        if (! $this->available()) {
+            return null;
+        }
 
         $rows = LabMutationResponseMap::query()
             ->with('agent')
@@ -145,8 +151,7 @@ class MutationResponseMapService
             ->when($target !== null && $target !== '', fn ($query) => $query->where('target', $target))
             ->latest('id')
             ->get();
-        $rows = $rows->filter(fn (LabMutationResponseMap $row): bool =>
-            $row->parameter_key !== null
+        $rows = $rows->filter(fn (LabMutationResponseMap $row): bool => $row->parameter_key !== null
             && ($row->agent === null || count((array) $row->agent->parameter_diff) === 1)
             && (data_get($row->metadata, 'causal_credit_eligible', null) === true
                 // Legacy confirmed maps predate the explicit causal flag. A
@@ -156,15 +161,16 @@ class MutationResponseMapService
                     && data_get($row->metadata, 'single_gene', null) !== false))
         );
         if ($role !== null && $role !== '') {
-            $roleRows = $rows->filter(fn (LabMutationResponseMap $row): bool =>
-                (string) data_get($row->metadata, 'specialist_role', '') === $role
+            $roleRows = $rows->filter(fn (LabMutationResponseMap $row): bool => (string) data_get($row->metadata, 'specialist_role', '') === $role
             );
             // A role-specific child may consume only the same role's
             // independently confirmed capability. Falling back to another
             // specialist would silently turn the council into a shared
             // champion-parameter pool and erase the point of role-specific
             // hypotheses.
-            if ($roleRows->isEmpty()) return null;
+            if ($roleRows->isEmpty()) {
+                return null;
+            }
             $rows = $roleRows;
         }
 
@@ -175,9 +181,12 @@ class MutationResponseMapService
             $utility = in_array($target, ['drawdown', 'drawdown_risk', 'max_drawdown', 'risk'], true)
                 ? -$delta
                 : $delta;
+
             return [$improved ? 1 : 0, $utility, (int) $candidate->id];
         })->first();
-        if (! $row) return null;
+        if (! $row) {
+            return null;
+        }
 
         return [
             'response_map_id' => (int) $row->id,
@@ -206,6 +215,7 @@ class MutationResponseMapService
             ->when($family, fn ($builder) => $builder->where('strategy_family', $family));
         $rows = $query->get();
         $confirmed = $rows->where('status', 'independently_confirmed')->count();
+
         return [
             'protocol' => self::PROTOCOL,
             'status' => 'available',
@@ -233,7 +243,7 @@ class MutationResponseMapService
      * can be silently recorded as an ordinary mutation and later look like a
      * candidate baseline.
      *
-     * @param array<string, mixed> $metadata
+     * @param  array<string, mixed>  $metadata
      */
     private function isControlOnly(array $metadata, string $sibling = ''): bool
     {
@@ -404,7 +414,10 @@ class MutationResponseMapService
     private function parentBaseline(LabAgent $agent): array
     {
         $parentIds = array_values(array_filter([(int) $agent->parent_a_model_version_id, (int) $agent->parent_b_model_version_id]));
-        if ($parentIds === []) return [];
+        if ($parentIds === []) {
+            return [];
+        }
+
         return (array) ModelMarketPerformance::query()
             ->whereIn('model_version_id', $parentIds)
             ->where('symbol', $agent->symbol)
@@ -421,6 +434,7 @@ class MutationResponseMapService
         $improved = $before !== null && $after !== null
             ? (in_array(strtolower($target), ['drawdown', 'drawdown_risk', 'max_drawdown', 'risk'], true) ? $delta < 0 : $delta > 0)
             : false;
+
         return ['baseline' => $before, 'observed' => $after, 'delta' => $delta, 'improved' => $improved];
     }
 
@@ -440,6 +454,7 @@ class MutationResponseMapService
             'architecture' => data_get($metrics, 'profit_factor', data_get($metrics, 'forward_score')),
             default => null,
         };
+
         return is_numeric($value) ? (float) $value : null;
     }
 
@@ -451,7 +466,8 @@ class MutationResponseMapService
             'max_drawdown_percent', 'max_drawdown', 'net_profit_percent',
             'screening_survival', 'window_survival', 'monthly_passport', 'pf_attribution',
             'stress_test', 'opportunity_recall', 'opportunity_metrics',
-            'regime_performance', 'statistical_evidence',
+            'regime_performance', 'robustness_matrix', 'certified_coverage_passport',
+            'instrument_research_trace', 'statistical_evidence',
             'monte_carlo', 'data_manifest', 'execution_contract',
         ])->all();
 
@@ -470,7 +486,9 @@ class MutationResponseMapService
         $first = static function (array $paths) use ($metrics): mixed {
             foreach ($paths as $path) {
                 $value = data_get($metrics, $path);
-                if ($value !== null && $value !== '') return $value;
+                if ($value !== null && $value !== '') {
+                    return $value;
+                }
             }
 
             return null;
@@ -493,7 +511,10 @@ class MutationResponseMapService
         if (is_numeric($old) && is_numeric($new)) {
             return (float) $new > (float) $old ? 'increase' : ((float) $new < (float) $old ? 'decrease' : 'unchanged');
         }
-        if (is_bool($old) || is_bool($new)) return (bool) $new ? 'enable' : 'disable';
+        if (is_bool($old) || is_bool($new)) {
+            return (bool) $new ? 'enable' : 'disable';
+        }
+
         return $old === $new ? 'unchanged' : 'alternate';
     }
 }

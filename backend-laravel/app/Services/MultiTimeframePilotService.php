@@ -6,12 +6,12 @@ use App\Models\ModelMarketPerformance;
 use App\Models\PaperSignal;
 
 /**
- * Laravel-side contract for the XAUUSD H1 -> M15 pilot.
+ * Laravel-side compatibility adapter for the single XAUUSD MTF organism.
+ * H1 and M15 are evidence roles; they are not independent populations.
  *
  * Python is the canonical candle-level calculator. Laravel owns the sealed
- * request identity, fail-closed response guard and immutable passport. H1
- * never becomes a genetic parent of an M15 model; this service only creates
- * runtime context for the entry stream.
+ * request identity, fail-closed response guard and immutable passport. This
+ * service supplies lower-timeframe context without opening another lineage.
  */
 class MultiTimeframePilotService
 {
@@ -71,7 +71,7 @@ class MultiTimeframePilotService
      * without the expected MTF decision can never create an official BUY/SELL
      * paper signal for the pilot.
      *
-     * @param array<string, mixed> $signal
+     * @param  array<string, mixed>  $signal
      * @return array<string, mixed>
      */
     public function enforcePaperResponse(ModelMarketPerformance $candidate, array $signal): array
@@ -112,6 +112,7 @@ class MultiTimeframePilotService
         }
 
         $signal['mtf_contract'] = $contract;
+
         return $signal;
     }
 

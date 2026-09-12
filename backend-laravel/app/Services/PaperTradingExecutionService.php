@@ -108,7 +108,15 @@ class PaperTradingExecutionService
     private function paperTrackAllowed(ModelMarketPerformance $candidate): bool
     {
         $model = $candidate->modelVersion;
-        if (! $model) return false;
+        if (! $model) {
+            return false;
+        }
+        $metadata = (array) ($model->metadata ?? []);
+        $isCouncilMember = data_get($metadata, 'council_specialist_contract.protocol') === 'agent_council_v1'
+            || data_get($metadata, 'portfolio_council_lane.protocol') === 'portfolio_council_v1';
+        if ($isCouncilMember || ! filled($candidate->symbol) || ! filled($candidate->timeframe)) {
+            return false;
+        }
         $admission = $this->authorityAdmissions->admit($model, $candidate->symbol, $candidate->timeframe, [
             'passport_hash' => data_get($model->metadata, 'elite_agent_passport.passport_hash', data_get($candidate->metrics, 'elite_agent_passport.passport_hash')),
             'execution_hash' => data_get($candidate->metrics, 'execution_contract.execution_hash'),
@@ -121,11 +129,10 @@ class PaperTradingExecutionService
             'training_pre_2026' => data_get($candidate->metrics, 'training_boundary.used_for_training') === false
                 && data_get($candidate->metrics, 'gold_holdout.used_for_training') === false,
         ]);
-        if (($admission['status'] ?? null) !== 'e3_paper_candidate') return false;
+        if (($admission['status'] ?? null) !== 'e3_paper_candidate') {
+            return false;
+        }
         if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
-            if (! filled($candidate->symbol) || ! filled($candidate->timeframe)) {
-                return false;
-            }
             $ready = $this->portfolios->ready($candidate->symbol, $candidate->timeframe);
             if ($ready !== null && (int) $ready->id === (int) data_get($candidate->metrics, 'elite_portfolio_id', 0)) {
                 return true;
@@ -135,14 +142,10 @@ class PaperTradingExecutionService
             return in_array((string) data_get($transition, 'decision'), ['HYBRID_CANARY', 'COUNCIL_CANARY'], true);
         }
 
-        $metadata = (array) ($candidate->modelVersion?->metadata ?? []);
-        $isCouncilMember = data_get($metadata, 'council_specialist_contract.protocol') === 'agent_council_v1'
-            || data_get($metadata, 'portfolio_council_lane.protocol') === 'portfolio_council_v1';
-
         // Ordinary standalone forward-valid agents retain their existing
         // paper path. Only explicitly declared council members are held for
         // the combined proxy.
-        return ! $isCouncilMember;
+        return true;
     }
 
     private function captureLatestSignal(ModelMarketPerformance $candidate, $universe): int
@@ -320,6 +323,9 @@ class PaperTradingExecutionService
                 'volatility' => $this->instrumentVolatility($signal),
                 'spread_atr_ratio' => data_get($signal, 'execution_contract.spread_atr_ratio', data_get($signal, 'spread_atr_ratio')),
                 'transition' => (bool) data_get($signal, 'transition.active', false),
+                'direction' => (string) ($signal['signal'] ?? 'WAIT'),
+                'strategy_family' => (string) ($candidate->strategy_family ?? app(StrategyParameterSchemaService::class)->family((string) $model->strategy)),
+                'routing_mode' => 'paper',
             ]);
             $signal['trading_instrument_router'] = [
                 'decision' => $instrumentRoute['decision'], 'reason_code' => $instrumentRoute['reason_code'],

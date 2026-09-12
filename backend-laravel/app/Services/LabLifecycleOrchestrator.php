@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLifecycleCycle;
@@ -58,7 +59,11 @@ class LabLifecycleOrchestrator
 
     public const STATUS_BLOCKED = 'blocked';
 
-    public const LOCK_TTL_SECONDS = 600;
+    // A complete 20-seat constructor can legitimately spend well over ten
+    // minutes compiling historical/causal contracts. Keep the cycle lease
+    // above the scheduled constructor budget so a later five-minute tick
+    // cannot mistake live construction for interrupted work.
+    public const LOCK_TTL_SECONDS = 3000;
 
     public const MAX_RECOVERY_DISPATCH = 3;
 
@@ -79,6 +84,7 @@ class LabLifecycleOrchestrator
         private readonly GenerationConstructionAdmissionService $constructionAdmission,
         private readonly GenerationConstructionReconciliationService $constructionReconciliation,
         private readonly LabGenerationTerminalBoundaryService $terminalBoundaries,
+        private readonly LabDataEdgeAuditService $dataEdgeAudits,
     ) {
         $this->errors = new LabLifecycleErrorLogger;
     }
@@ -86,7 +92,7 @@ class LabLifecycleOrchestrator
     public function run(string $symbol, string $timeframe = 'H1', ?string $cycleId = null, bool $startCycle = false): array
     {
         $symbol = strtoupper($symbol);
-        $timeframe = strtoupper($timeframe);
+        $timeframe = $this->canonicalLaboratoryTimeframe($symbol, $timeframe);
         $cycleId = $cycleId ?? $this->generateCycleId();
         $lock = Cache::lock($this->lockKey($symbol, $timeframe), $this->lockTtl());
         $acquired = false;
@@ -198,11 +204,37 @@ class LabLifecycleOrchestrator
             }
 
             // 1. Generation step (idempotent): only if no active generation.
-            $generation = $this->ensureGeneration($symbol, $timeframe, $cycleId, $stage, $startCycle);
+            $generation = $this->ensureGeneration(
+                $symbol,
+                $timeframe,
+                $cycleId,
+                $stage,
+                $startCycle,
+                (string) data_get($strategy, 'generation_trigger', ''),
+            );
             if ($generation === null) {
                 $outcome = $this->lastGenerationOutcome;
                 $reason = (string) data_get($outcome, 'reason_code', 'GENERATION_CREATION_NOT_ADMITTED');
                 $retryable = (bool) data_get($outcome, 'retryable', false);
+                if ($reason === 'DATA_EDGE_AUDIT_REQUIRED') {
+                    $auditGeneration = LabGeneration::query()
+                        ->whereHas('laboratory', fn ($query) => $query
+                            ->where('symbol', $symbol)->where('timeframe', $timeframe))
+                        ->orderByDesc('generation')->orderByDesc('id')->first();
+                    $audit = $auditGeneration
+                        ? $this->dataEdgeAudits->recordFromFinalReport($auditGeneration)
+                        : ['status' => 'blocked', 'reason_code' => 'GENERATION_NOT_FOUND'];
+                    if (in_array((string) data_get($audit, 'status'), ['recorded', 'already_recorded'], true)) {
+                        return $this->summarize($cycleId, $symbol, $timeframe, self::STATUS_PAUSED,
+                            'Autonomous data/edge audit recorded; successor root portfolio will be retried on the next cycle.',
+                            $stage, [
+                                'generation_outcome' => [...$outcome, 'retryable' => true],
+                                'data_edge_audit' => $audit,
+                                'next_action' => 'create_data_edge_root_portfolio_next_cycle',
+                            ]);
+                    }
+                    $outcome['data_edge_audit'] = $audit;
+                }
                 if ($this->successorRequestPending($symbol, $timeframe)) {
                     $this->recordSuccessorBlock($symbol, $timeframe, $reason, $retryable, $outcome);
                 }
@@ -277,7 +309,7 @@ class LabLifecycleOrchestrator
         if (($queueSnapshot['available'] ?? true) === false) {
             return ['healthy' => false, 'reason' => 'queue_transport_unavailable'];
         }
-        $risk = $this->queueRisk($queueSnapshot);
+        $risk = $this->queueRisk($queueSnapshot, $symbol, $timeframe);
         if ($risk !== null) {
             return ['healthy' => false, 'reason' => $risk, 'queue' => $queueSnapshot];
         }
@@ -305,6 +337,31 @@ class LabLifecycleOrchestrator
         }
         $pendingSuccessor = $this->successorRequestPending($symbol, $timeframe);
         $latest = $lab->generations()->latest('generation')->first();
+
+        // A persisted immutable population plan has already passed generation
+        // admission. It must finish before learning recovery or any successor
+        // admission can own the constructor lane. Otherwise an eligible causal
+        // lesson can repeatedly request a new generation while the incomplete
+        // lineage head prevents that generation from being created, leaving
+        // both operations deadlocked. This exception cannot create a new
+        // generation: ensureGeneration() may only resume the existing plan.
+        if (LabPopulationService::constructionIncomplete($latest)) {
+            $plannedSlots = count((array) data_get($latest?->trigger_context, 'generation_plan', []));
+
+            return [
+                'state' => 'open',
+                'reason' => 'INCOMPLETE_GENERATION_OWNS_CONSTRUCTION_PRIORITY',
+                'actionable_pending_dojo' => 0,
+                'consume_successor_request' => false,
+                'generation_admission' => [
+                    'decision' => 'RESUME_EXISTING_GENERATION',
+                    'latest_generation_id' => (int) $latest->id,
+                    'planned_slots' => $plannedSlots,
+                    'created_slots' => $latest->agents()->count(),
+                ],
+            ];
+        }
+
         $decision = $this->admission->decide($lab, $latest, [
             'trigger' => ($startCycle || $pendingSuccessor) ? 'operator_successor' : 'new_data',
             'operator_approved_successor' => $startCycle || $pendingSuccessor,
@@ -316,6 +373,22 @@ class LabLifecycleOrchestrator
             'screened', 'completed', 'technical_quarantine', 'abandoned', 'failed',
         ], true);
         $typed = (string) data_get($decision, 'decision', GenerationAdmissionDecisionService::BLOCK_HARD);
+        if ($typed === GenerationAdmissionDecisionService::DISPATCH_LEARNING
+            && (int) data_get($decision, 'causal_confirmation_priority.lesson_id', 0) > 0) {
+            // DISPATCH_LEARNING has two intentionally distinct consumers.
+            // Dojo rows use learningRecovery(); a canonical target-aligned
+            // lesson needs a new guided/blinded/frozen-control generation.
+            // Sending the latter through the Dojo branch dispatches zero
+            // work and permanently starves the reserved causal curriculum.
+            return [
+                'state' => 'open',
+                'reason' => 'CAUSAL_CONFIRMATION_GENERATION_PRIORITY',
+                'generation_trigger' => 'learning_confirmation',
+                'actionable_pending_dojo' => $actionable,
+                'consume_successor_request' => false,
+                'generation_admission' => $decision,
+            ];
+        }
         if (in_array($typed, [GenerationAdmissionDecisionService::DISPATCH_LEARNING, GenerationAdmissionDecisionService::RECOVER_TECHNICAL], true)) {
             return [
                 'state' => 'recovery_required',
@@ -501,7 +574,7 @@ class LabLifecycleOrchestrator
             // hash-verified authority as transport timeouts. It never
             // broadens recovery to an economic/quality failure.
             $retryBudgetPending = $generation->agents()->with('modelVersion')
-                ->where('lifecycle_status', 'evaluation_error')
+                ->whereIn('lifecycle_status', ['evaluation_error', 'technical_quarantine'])
                 ->get()
                 ->contains(fn (LabAgent $agent): bool => $this->isRetryBudgetRecoveryPending($agent));
             $exitCode = Artisan::call('trading:recover-lab-evaluation-errors', [
@@ -519,7 +592,10 @@ class LabLifecycleOrchestrator
             $record = json_decode($output, true);
             $dispatched = $exitCode === 0 && is_array($record) ? (int) ($record['dispatched'] ?? 0) : 0;
             if ($dispatched > 0) {
-                Cache::put($cooldownKey, true, now()->addSeconds(max(60, (int) config('services.lifecycle_orchestrator.recovery_cooldown_seconds', 900))));
+                Cache::put($cooldownKey, true, now()->addSeconds(max(60, (int) config(
+                    'services.lifecycle_orchestrator.autonomous_technical_recovery_cooldown_seconds',
+                    60,
+                ))));
             }
 
             return [
@@ -535,22 +611,53 @@ class LabLifecycleOrchestrator
         }
     }
 
-    private function ensureGeneration(string $symbol, string $timeframe, string $cycleId, string $stage, bool $startCycle = false): ?LabGeneration
+    private function ensureGeneration(string $symbol, string $timeframe, string $cycleId, string $stage, bool $startCycle = false, ?string $admittedTrigger = null): ?LabGeneration
     {
         $this->lastGenerationOutcome = [
             'status' => 'blocked', 'reason_code' => 'GENERATION_CREATION_NOT_STARTED', 'retryable' => false,
         ];
+        // Construction authority belongs only to the newest generation in
+        // the lineage. Older draft/technical-quarantine rows are immutable
+        // historical evidence; attempting to resume one after a successor
+        // exists can permanently hide that active successor from lifecycle
+        // dispatch. Resolve the lineage head once and make every branch below
+        // operate on that same row.
+        $latest = LabGeneration::query()
+            ->whereHas('laboratory', fn ($q) => $q->where('symbol', $symbol)->where('timeframe', $timeframe))
+            ->orderByDesc('generation')
+            ->orderByDesc('id')
+            ->first();
         // A brand-new 'draft' generation with no queued/queued-screening work is
         // not yet an active pipeline: it is handed off to this very cycle. Any
         // generation that has already entered queued/screening/full stages is
         // resumable and must not be duplicated.
-        $draft = LabGeneration::query()
-            ->whereHas('laboratory', fn ($q) => $q->where('symbol', $symbol)->where('timeframe', $timeframe))
-            ->where('status', 'draft')->latest('id')->first();
+        $draft = $latest !== null && (string) $latest->status === 'draft' ? $latest : null;
         if ($draft !== null) {
             $plannedSlots = count((array) data_get($draft->trigger_context, 'generation_plan', []));
             $existingSlots = $draft->agents()->count();
             if ($plannedSlots > 0 && $existingSlots < $plannedSlots) {
+                // The generation row and immutable plan are persisted before
+                // its agents are compiled. A normal 20-seat build can remain
+                // draft for many minutes, so a later scheduler tick must not
+                // run the recovery constructor concurrently. Only the same
+                // age boundary used for interrupted-draft recovery may take
+                // ownership of missing slots.
+                $constructorIsActive = $this->population->constructorIsActive($symbol, $timeframe);
+                $constructionIsStale = ! $constructorIsActive
+                    || $draft->created_at === null
+                    || $draft->created_at->lt(now()->subSeconds($this->draftTimeout()));
+                if (! $constructionIsStale) {
+                    $this->lastGenerationOutcome = [
+                        'status' => 'existing',
+                        'reason_code' => 'GENERATION_CONSTRUCTION_ACTIVE',
+                        'retryable' => true,
+                        'generation_id' => (int) $draft->id,
+                        'planned_slots' => $plannedSlots,
+                        'created_slots' => $existingSlots,
+                    ];
+
+                    return $draft;
+                }
                 $continuation = $this->population->continueInterruptedConstruction((int) $draft->id, 4);
                 $continued = $continuation['generation'] ?? $draft->fresh(['laboratory']);
                 $complete = (string) data_get($continuation, 'status') === 'complete';
@@ -566,32 +673,14 @@ class LabLifecycleOrchestrator
 
                 return $complete ? $continued : null;
             }
-            if ($draft->created_at !== null && $draft->created_at->lt(now()->subSeconds($this->draftTimeout()))) {
-                $latest = LabGeneration::query()
-                    ->whereHas('laboratory', fn ($q) => $q->where('symbol', $symbol)->where('timeframe', $timeframe))
-                    ->latest('id')->first();
-                // A stale older draft must not permanently prevent a requested
-                // successor after a newer generation has already completed.
-                if ($latest !== null && (int) $latest->id !== (int) $draft->id
-                    && in_array((string) $latest->status, ['screened', 'completed', 'abandoned', 'failed'], true)) {
-                    $draft->update(['status' => 'abandoned', 'completed_at' => now()]);
-                    $this->errors->record($cycleId, $symbol, $timeframe, self::PHASE_GENERATION,
-                        new \RuntimeException('Stale older draft abandoned before successor generation creation.'), (int) $draft->id);
-                } else {
-                    $this->lastGenerationOutcome = ['status' => 'existing', 'reason_code' => 'DRAFT_GENERATION_RESUMABLE', 'retryable' => true, 'generation_id' => (int) $draft->id];
+            $this->lastGenerationOutcome = ['status' => 'existing', 'reason_code' => 'DRAFT_GENERATION_RESUMABLE', 'retryable' => true, 'generation_id' => (int) $draft->id];
 
-                    return $draft;
-                }
-            } else {
-                $this->lastGenerationOutcome = ['status' => 'existing', 'reason_code' => 'DRAFT_GENERATION_RESUMABLE', 'retryable' => true, 'generation_id' => (int) $draft->id];
-
-                return $draft;
-            }
+            return $draft;
         }
 
-        $quarantinedDraft = LabGeneration::query()
-            ->whereHas('laboratory', fn ($q) => $q->where('symbol', $symbol)->where('timeframe', $timeframe))
-            ->where('status', 'technical_quarantine')->latest('id')->first();
+        $quarantinedDraft = $latest !== null && (string) $latest->status === 'technical_quarantine'
+            ? $latest
+            : null;
         if ($quarantinedDraft !== null) {
             $plannedSlots = count((array) data_get($quarantinedDraft->trigger_context, 'generation_plan', []));
             $existingSlots = $quarantinedDraft->agents()->count();
@@ -615,9 +704,6 @@ class LabLifecycleOrchestrator
         // Historical interrupted cohorts remain auditable, but only the most
         // recent generation may block its successor. A stale older `queued`
         // row must never freeze the laboratory forever.
-        $latest = LabGeneration::query()
-            ->whereHas('laboratory', fn ($q) => $q->where('symbol', $symbol)->where('timeframe', $timeframe))
-            ->latest('id')->first();
         $active = $latest !== null && in_array((string) $latest->status,
             ['queued', 'screening', 'full_queued', 'training', 'full_validation'], true);
 
@@ -632,7 +718,14 @@ class LabLifecycleOrchestrator
         }
 
         try {
-            $trigger = ($startCycle || $this->successorRequestPending($symbol, $timeframe)) ? 'operator_successor' : 'new_data';
+            $trigger = $admittedTrigger === 'learning_confirmation'
+                ? 'learning_confirmation'
+                : (($startCycle || $this->successorRequestPending($symbol, $timeframe))
+                    ? 'operator_successor'
+                    : ((string) data_get($latest?->trigger_context, 'data_edge_audit.protocol') === LabDataEdgeAuditService::PROTOCOL
+                        && (string) data_get($latest?->trigger_context, 'latest_generation_report.next_action') === 'data_edge_audit_completed'
+                            ? 'data_edge_audit'
+                            : 'new_data'));
             $generation = $this->population->build($symbol, $trigger, $trigger === 'operator_successor', $timeframe);
             $this->lastGenerationOutcome = $this->population->lastBuildOutcome();
 
@@ -660,7 +753,9 @@ class LabLifecycleOrchestrator
             // classifier before technicalRecovery() can select it. After its
             // single repair attempt is consumed, the next cycle isolates it
             // like every other unresolved evaluator error.
-            if ($this->isRetryBudgetRecoveryPending($agent)) continue;
+            if ($this->isRetryBudgetRecoveryPending($agent)) {
+                continue;
+            }
 
             $agent->update([
                 'lifecycle_status' => 'technical_quarantine',
@@ -685,11 +780,11 @@ class LabLifecycleOrchestrator
     private function isRetryBudgetRecoveryPending(LabAgent $agent): bool
     {
         $reason = strtolower((string) $agent->decision_reason);
+        $classification = app(TechnicalFailureClassifierService::class)->forAgent($agent);
 
         return (int) data_get($agent->modelVersion?->metadata, 'retry_budget_repair_recovery_attempts', 0) < 1
             && str_contains($reason, 'strategy verdict withheld')
-            && (str_contains($reason, 'attempted too many times')
-                || str_contains($reason, 'bounded screening batch exhausted operational retries'));
+            && (string) data_get($classification, 'reason_code') === 'REPLAY_RETRY_BUDGET_EXHAUSTED';
     }
 
     private function dispatchScreening(LabGeneration $generation, string $cycleId, string $stage): void
@@ -913,13 +1008,14 @@ class LabLifecycleOrchestrator
         return max(60, (int) config('services.lifecycle_orchestrator.draft_timeout_seconds', 5400));
     }
 
-    private function queueRisk(array $snapshot): ?string
+    private function queueRisk(array $snapshot, string $symbol, string $timeframe): ?string
     {
         // Research-only toolbox priors cannot promote an agent and must not
         // poison the canonical generation circuit breaker when they yield or
         // retry. Canonical screening/full-validation rows remain fail-closed.
         $canonicalRows = collect((array) ($snapshot['rows'] ?? []))->reject(function (array $row): bool {
             $payload = (string) ($row['payload'] ?? '');
+
             return str_contains($payload, 'App\\\\Jobs\\\\EvaluateMtfPlaybookPriorJob')
                 || str_contains($payload, 'App\\Jobs\\EvaluateMtfPlaybookPriorJob')
                 || str_contains($payload, 'App\\\\Jobs\\\\ValidateMtfPoweredPriorJob')
@@ -936,15 +1032,98 @@ class LabLifecycleOrchestrator
         if ($staleReserved >= (int) config('services.lifecycle_orchestrator.max_stale_reserved_jobs', 1)) {
             return 'queue_stale_reserved_jobs';
         }
-        if (Schema::hasTable('failed_jobs') && DB::table('failed_jobs')->whereIn('queue', $this->labQueues())
-            ->where('failed_at', '>=', now()->subSeconds(max(60, (int) config('services.lifecycle_orchestrator.failed_job_window_seconds', 3600))))
-            ->where('payload', 'not like', '%EvaluateMtfPlaybookPriorJob%')
-            ->where('payload', 'not like', '%ValidateMtfPoweredPriorJob%')
-            ->count() >= (int) config('services.lifecycle_orchestrator.max_failed_jobs', 1)) {
+        if ($this->uncontainedRecentFailedJobs($symbol, $timeframe)
+            >= (int) config('services.lifecycle_orchestrator.max_failed_jobs', 1)) {
             return 'queue_failed_jobs';
         }
 
         return null;
+    }
+
+    /**
+     * Failed queue rows are transport evidence, not an everlasting circuit
+     * breaker. Once the exact EvaluateLabAgentJob failure is durably attached
+     * to an agent and immutable technical_error run, the lifecycle must be
+     * allowed to reach its bounded quarantine/recovery stage. Any unknown,
+     * cross-scope or incompletely projected failure remains fail-closed.
+     */
+    private function uncontainedRecentFailedJobs(string $symbol, string $timeframe): int
+    {
+        if (! Schema::hasTable('failed_jobs')) {
+            return 0;
+        }
+
+        return DB::table('failed_jobs')->whereIn('queue', $this->labQueues())
+            ->where('failed_at', '>=', now()->subSeconds(max(60, (int) config('services.lifecycle_orchestrator.failed_job_window_seconds', 3600))))
+            ->where('payload', 'not like', '%EvaluateMtfPlaybookPriorJob%')
+            ->where('payload', 'not like', '%ValidateMtfPoweredPriorJob%')
+            ->get(['payload', 'failed_at'])
+            ->reject(fn ($row): bool => $this->failedEvaluationIsDurablyContained(
+                (string) $row->payload,
+                $symbol,
+                $timeframe,
+                $row->failed_at,
+            ))
+            ->count();
+    }
+
+    private function failedEvaluationIsDurablyContained(
+        string $payloadJson,
+        string $symbol,
+        string $timeframe,
+        mixed $failedAt = null,
+    ): bool {
+        $payload = json_decode($payloadJson, true);
+        if (! is_array($payload)
+            || (string) data_get($payload, 'displayName') !== EvaluateLabAgentJob::class) {
+            return false;
+        }
+
+        $serialized = (string) data_get($payload, 'data.command', '');
+        if (! preg_match('/s:10:"labAgentId";i:(\d+);/', $serialized, $matches)) {
+            return false;
+        }
+
+        $agent = LabAgent::query()->find((int) $matches[1]);
+        if (! $agent
+            || strtoupper((string) $agent->symbol) !== strtoupper($symbol)
+            || strtoupper((string) $agent->timeframe) !== strtoupper($timeframe)) {
+            return false;
+        }
+
+        $technicalEvidenceExists = LabEvaluationRun::query()
+            ->where('lab_agent_id', $agent->id)
+            ->whereIn('phase', ['screening', 'full_validation'])
+            ->where('status', 'technical_error')
+            ->exists();
+        if (! $technicalEvidenceExists) {
+            return false;
+        }
+        if (in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true)) {
+            return true;
+        }
+
+        // A successful bounded recovery supersedes the failed transport row.
+        // Keep the old failed_jobs record for audit, but do not let it reopen
+        // the circuit breaker after newer immutable evidence has completed.
+        if (! filled($failedAt)) {
+            return false;
+        }
+        $expectedPhase = null;
+        if (preg_match('/s:4:"mode";s:\d+:"([^"]+)";/', $serialized, $modeMatch)) {
+            $expectedPhase = (string) $modeMatch[1] === 'screen' ? 'screening' : 'full_validation';
+        }
+        $recovery = LabEvaluationRun::query()
+            ->where('lab_agent_id', $agent->id)
+            ->where('status', 'completed')
+            ->where('finished_at', '>=', $failedAt);
+        if ($expectedPhase !== null) {
+            $recovery->where('phase', $expectedPhase);
+        } else {
+            $recovery->whereIn('phase', ['screening', 'full_validation']);
+        }
+
+        return $recovery->exists();
     }
 
     private function beginCheckpoint(string $cycleId, string $symbol, string $timeframe, string $stage): ?LabLifecycleCycle
@@ -1109,7 +1288,7 @@ class LabLifecycleOrchestrator
     public function status(string $symbol, string $timeframe): array
     {
         $symbol = strtoupper($symbol);
-        $timeframe = strtoupper($timeframe);
+        $timeframe = $this->canonicalLaboratoryTimeframe($symbol, $timeframe);
         $latest = LabGeneration::query()
             ->whereHas('laboratory', fn ($q) => $q->where('symbol', $symbol)->where('timeframe', $timeframe))
             ->latest('id')->first();
@@ -1128,29 +1307,69 @@ class LabLifecycleOrchestrator
             ->selectRaw('status, count(*) as count')->groupBy('status')->pluck('count', 'status')->toArray();
         $generationMonitor = $this->generationMonitor($symbol, $timeframe);
         $cohortMonitor = $this->cohortMonitor($symbol, $timeframe);
+        $autonomy = app(AutonomousModeService::class)->status($symbol, $timeframe);
         $successorRequest = SystemEvent::query()
             ->where('event_key', "lifecycle:successor-request:{$symbol}:{$timeframe}")
             ->first();
         $successorPayload = (array) ($successorRequest?->payload ?? []);
-        $successorNextAction = (string) data_get($successorPayload, 'next_action', '');
-        if ($successorNextAction === '' && (string) data_get($successorPayload, 'status') === 'pending') {
+        $successorPending = (string) data_get($successorPayload, 'status') === 'pending';
+        // A consumed historical request may retain its old failure advice.
+        // Only a pending request owns the current operator-facing next action.
+        $successorNextAction = $successorPending
+            ? (string) data_get($successorPayload, 'next_action', '')
+            : '';
+        if ($successorNextAction === '' && $successorPending) {
             $successorNextAction = $this->currentGenerationNeedsConstruction($symbol, $timeframe)
                 ? 'continue_successor_construction_next_cycle'
                 : 'create_or_resume_successor_next_cycle';
+        }
+        $lastCycleReason = (string) data_get($checkpoint?->context, 'data.reason', '');
+        $nextAction = ! (bool) data_get($autonomy, 'enabled', false)
+            ? (string) data_get($autonomy, 'next_action', 'monitor_only_until_ai_start')
+            : ($successorNextAction !== ''
+                ? $successorNextAction
+                : ($lastCycleReason !== '' ? $lastCycleReason : ($velocity['next_action'] ?? null)));
+        $brief = $this->briefStatus($latest, $queue, $generationMonitor, $successorPayload);
+        if (! (bool) data_get($autonomy, 'enabled', false)) {
+            $brief = [
+                'state' => data_get($autonomy, 'state', 'stopped'),
+                'code' => 'AUTONOMY_STOPPED',
+                'message' => 'Avtonom yangi ishlar to‘xtatilgan; monitoring davom etmoqda.',
+                'action' => data_get($autonomy, 'next_action', 'monitor_only_until_ai_start'),
+            ];
         }
 
         return [
             'symbol' => $symbol,
             'timeframe' => $timeframe,
+            'organism' => [
+                'scope' => $symbol,
+                'population_scope' => $symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
+                    ? (string) config('services.xauusd_organism.population_scope', 'symbol')
+                    : 'symbol_timeframe',
+                'laboratory_storage_timeframe' => $timeframe,
+                'execution_timeframe' => $symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
+                    ? (string) config('services.xauusd_organism.execution_timeframe', 'M5')
+                    : $timeframe,
+                'timeframe_roles' => $symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
+                    ? (array) config('services.xauusd_organism.timeframe_roles', [])
+                    : [$timeframe => 'laboratory_and_execution'],
+            ],
             'generation' => $latest?->generation,
             'generation_status' => $latest?->status,
             'generation_id' => $latest?->id,
             'population_contract' => [
                 'expected_per_normal_generation' => (int) config('services.lab_selection.population_size', 20),
+                'autonomous_generation_authority' => self::class,
+                'autonomous_specialized_cohorts_enabled' => (bool) config('services.edge_director.autonomous_specialized_cohorts_enabled', false),
+                'latest_trigger_type' => $latest?->trigger_type,
                 'latest_planned' => $generationMonitor[0]['planned'] ?? null,
                 'latest_actual' => $generationMonitor[0]['actual'] ?? null,
                 'latest_complete' => $generationMonitor[0]['complete'] ?? null,
+                'latest_is_normal_contract' => ($generationMonitor[0]['planned'] ?? null) === (int) config('services.lab_selection.population_size', 20)
+                    && ($generationMonitor[0]['actual'] ?? null) === (int) config('services.lab_selection.population_size', 20),
             ],
+            'autonomous_mode' => $autonomy,
             'agent_counts' => $agents,
             'generation_stages' => $generationMonitor,
             'cohort_diversity' => $cohortMonitor,
@@ -1169,8 +1388,9 @@ class LabLifecycleOrchestrator
                 'last_attempt_at' => data_get($successorPayload, 'last_attempt_at'),
                 'next_action' => $successorNextAction !== '' ? $successorNextAction : null,
             ] : null,
-            'brief' => $this->briefStatus($latest, $queue, $generationMonitor, $successorPayload),
-            'next_action' => $successorNextAction !== '' ? $successorNextAction : ($velocity['next_action'] ?? null),
+            'brief' => $brief,
+            'last_cycle_reason' => $lastCycleReason !== '' ? $lastCycleReason : null,
+            'next_action' => $nextAction,
             'checkpoint' => $checkpoint ? ['cycle_id' => $checkpoint->cycle_id, 'status' => $checkpoint->status,
                 'stage' => $checkpoint->stage, 'heartbeat_at' => $checkpoint->heartbeat_at?->toIso8601String()] : null,
             'errors_today' => $this->errorSummary(),
@@ -1205,6 +1425,7 @@ class LabLifecycleOrchestrator
                 return [
                     'generation' => (int) $generation->generation,
                     'generation_id' => (int) $generation->id,
+                    'trigger_type' => (string) $generation->trigger_type,
                     'status' => (string) $generation->status,
                     'planned' => $planned,
                     'actual' => $actual,
@@ -1213,6 +1434,15 @@ class LabLifecycleOrchestrator
                     'lifecycle_statuses' => $counts,
                 ];
             })->values()->all();
+    }
+
+    private function canonicalLaboratoryTimeframe(string $symbol, string $requested): string
+    {
+        if (strtoupper($symbol) === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
+            return strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'));
+        }
+
+        return strtoupper($requested);
     }
 
     /** @return array<string, mixed> */

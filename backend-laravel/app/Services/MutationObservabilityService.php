@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\LabAgent;
 use App\Models\LabFailureRepairAnchor;
+use Illuminate\Support\Collection;
 
 /**
  * Separates a real behavioural mutation from a parameter-only change.
@@ -17,7 +18,7 @@ class MutationObservabilityService
 {
     public const PROTOCOL = 'mutation_observability_v1';
 
-    /** @var array<string, \Illuminate\Support\Collection<int, LabAgent>> */
+    /** @var array<string, Collection<int, LabAgent>> */
     private array $sameGenerationControlCache = [];
 
     /** @return array<string, mixed> */
@@ -136,7 +137,8 @@ class MutationObservabilityService
             $candidate,
             $normalGenerationExpected || $controlPairContract !== [],
         );
-        if (! $baseline['available'] && $requiresBehavioralDelta && $controlPair['available']) {
+        if ($requiresBehavioralDelta && $controlPair['available']
+            && ($controlPairRequired || ! $baseline['available'])) {
             $baseline = $controlPair;
             $baselineSnapshot = $this->snapshot($baseline['result']);
             $signal = $this->compareDimension($candidateSnapshot, $baselineSnapshot, 'signal');
@@ -303,7 +305,9 @@ class MutationObservabilityService
     public function record(LabAgent $agent, array $observability): void
     {
         $model = $agent->modelVersion;
-        if (! $model) return;
+        if (! $model) {
+            return;
+        }
 
         $metadata = (array) ($model->metadata ?? []);
         $history = array_values((array) data_get($metadata, 'mutation_observability_history', []));
@@ -321,15 +325,19 @@ class MutationObservabilityService
      * ledger as success. This constrains future gene reuse only; it never
      * relaxes or replaces the economic screening gates.
      *
-     * @param array<string, mixed> $expected
-     * @param array<string, mixed> $candidate
-     * @param array<string, mixed> $baseline
+     * @param  array<string, mixed>  $expected
+     * @param  array<string, mixed>  $candidate
+     * @param  array<string, mixed>  $baseline
      * @return array<string, mixed>
      */
     private function expectedBehavioralAssessment(array $expected, array $candidate, array $baseline, bool $behaviourChanged): array
     {
-        if ($expected === []) return ['status' => 'not_declared', 'checked' => false, 'promotion_evidence' => false];
-        if ($baseline === []) return ['status' => 'evidence_incomplete', 'checked' => false, 'expected' => $expected, 'promotion_evidence' => false];
+        if ($expected === []) {
+            return ['status' => 'not_declared', 'checked' => false, 'promotion_evidence' => false];
+        }
+        if ($baseline === []) {
+            return ['status' => 'evidence_incomplete', 'checked' => false, 'expected' => $expected, 'promotion_evidence' => false];
+        }
 
         $candidateFunnel = (array) data_get($candidate, 'entry_funnel', []);
         $baselineFunnel = (array) data_get($baseline, 'entry_funnel', []);
@@ -412,11 +420,16 @@ class MutationObservabilityService
     /** @param array<string, mixed> $funnel */
     private function vetoCount(array $funnel, string $channel): int
     {
-        if ($channel === '') return 0;
+        if ($channel === '') {
+            return 0;
+        }
         $total = 0;
         foreach ((array) data_get($funnel, 'rejected', []) as $reason => $count) {
-            if (str_contains(strtolower((string) $reason), strtolower($channel))) $total += max(0, (int) $count);
+            if (str_contains(strtolower((string) $reason), strtolower($channel))) {
+                $total += max(0, (int) $count);
+            }
         }
+
         return $total;
     }
 
@@ -426,9 +439,9 @@ class MutationObservabilityService
      * The replay payload varies by strategy version, so each dimension has a
      * small ordered set of canonical aliases.
      *
-     * @param array<string, mixed> $expected
-     * @param array<string, mixed> $candidate
-     * @param array<string, mixed> $baseline
+     * @param  array<string, mixed>  $expected
+     * @param  array<string, mixed>  $candidate
+     * @param  array<string, mixed>  $baseline
      * @return array<string, array<string, mixed>>
      */
     private function expectedDistributionChecks(array $expected, array $candidate, array $baseline): array
@@ -447,11 +460,14 @@ class MutationObservabilityService
         ];
         $checks = [];
         foreach ($dimensions as $dimension => $paths) {
-            if (data_get($expected, $dimension) !== 'change') continue;
+            if (data_get($expected, $dimension) !== 'change') {
+                continue;
+            }
             $candidateValue = $this->firstPresentValue($candidate, $paths);
             $baselineValue = $this->firstPresentValue($baseline, $paths);
             if (! $candidateValue['available'] || ! $baselineValue['available']) {
                 $checks[$dimension] = ['expected' => 'change', 'status' => 'evidence_incomplete'];
+
                 continue;
             }
             $changed = $this->canonicalValue($candidateValue['value']) !== $this->canonicalValue($baselineValue['value']);
@@ -468,10 +484,13 @@ class MutationObservabilityService
     private function firstPresentValue(array $payload, array $paths): array
     {
         foreach ($paths as $path) {
-            $marker = new \stdClass();
+            $marker = new \stdClass;
             $value = data_get($payload, $path, $marker);
-            if ($value !== $marker) return ['available' => true, 'path' => $path, 'value' => $value];
+            if ($value !== $marker) {
+                return ['available' => true, 'path' => $path, 'value' => $value];
+            }
         }
+
         return ['available' => false, 'path' => null, 'value' => null];
     }
 
@@ -480,8 +499,10 @@ class MutationObservabilityService
         if (is_array($value)) {
             $normalized = $value;
             ksort($normalized);
+
             return $this->hash($normalized);
         }
+
         return is_bool($value) ? ($value ? 'true' : 'false') : (string) $value;
     }
 
@@ -493,7 +514,9 @@ class MutationObservabilityService
         if ($anchorId > 0) {
             $anchor = LabFailureRepairAnchor::query()->with('sourceModelVersion')->find($anchorId);
             $result = (array) data_get($anchor?->evidence, 'screening_result', []);
-            if ($result === []) $result = (array) data_get($anchor?->sourceModelVersion?->metadata, 'last_screen_result', []);
+            if ($result === []) {
+                $result = (array) data_get($anchor?->sourceModelVersion?->metadata, 'last_screen_result', []);
+            }
             if ($result !== []) {
                 return [
                     'available' => true,
@@ -524,8 +547,7 @@ class MutationObservabilityService
         bool $controlOnly,
         array $candidate,
         bool $exactPairContractRequired = false,
-    ): array
-    {
+    ): array {
         if ($controlOnly || ! $agent->lab_generation_id) {
             return ['available' => false, 'result' => [], 'source' => 'not_applicable', 'agent_id' => null];
         }
@@ -545,9 +567,17 @@ class MutationObservabilityService
                 ->get();
         $controls = $controls
             ->filter(function (LabAgent $candidate) use ($agent, $structural): bool {
-                if ((int) $candidate->id === (int) $agent->id) return false;
-                if (! app(FrozenControlParityService::class)->isControl($candidate)) return false;
+                if ((int) $candidate->id === (int) $agent->id) {
+                    return false;
+                }
+                if (! app(FrozenControlParityService::class)->isControl($candidate)) {
+                    return false;
+                }
+                if (! app(ExactCausalBaselineService::class)->matches($agent, $candidate)) {
+                    return false;
+                }
                 $candidateStructural = (string) data_get($candidate->modelVersion?->metadata, 'portfolio_council_lane.structural_cohort_id', '');
+
                 return $structural === '' || $candidateStructural === '' || $structural === $candidateStructural;
             });
 
@@ -556,9 +586,13 @@ class MutationObservabilityService
         $candidateExecutionHash = $this->resultIdentity($candidate, 'execution');
         foreach ($controls as $control) {
             $controlPairKey = (string) data_get($control->modelVersion?->metadata, 'control_pair_contract.pair_key', '');
-            if ($candidatePairKey !== '' && $controlPairKey !== $candidatePairKey) continue;
+            if ($candidatePairKey !== '' && $controlPairKey !== $candidatePairKey) {
+                continue;
+            }
             $result = (array) data_get($control->modelVersion?->metadata, 'last_screen_result', []);
-            if ($result === [] || $candidateUsesVolume !== $this->usesVolumeResearch($control)) continue;
+            if ($result === [] || $candidateUsesVolume !== $this->usesVolumeResearch($control)) {
+                continue;
+            }
 
             // A control with a different sealed snapshot or execution
             // contract is not a control for this candidate. Do not silently
@@ -566,8 +600,12 @@ class MutationObservabilityService
             // pairing gap this service is meant to close.
             $controlDataHash = $this->resultIdentity($result, 'data');
             $controlExecutionHash = $this->resultIdentity($result, 'execution');
-            if ($candidateDataHash !== '' && $controlDataHash !== '' && $candidateDataHash !== $controlDataHash) continue;
-            if ($candidateExecutionHash !== '' && $controlExecutionHash !== '' && $candidateExecutionHash !== $controlExecutionHash) continue;
+            if ($candidateDataHash !== '' && $controlDataHash !== '' && $candidateDataHash !== $controlDataHash) {
+                continue;
+            }
+            if ($candidateExecutionHash !== '' && $controlExecutionHash !== '' && $candidateExecutionHash !== $controlExecutionHash) {
+                continue;
+            }
 
             return [
                 'available' => true,
@@ -615,13 +653,17 @@ class MutationObservabilityService
             'signal_decision_hash', 'decision_hash', 'signal_hash',
             'observability_manifest.decision_trace_hash', 'decision_trace_hash',
         ]);
-        if ($signalHash === '' && is_array($trace)) $signalHash = $this->hash($trace);
+        if ($signalHash === '' && is_array($trace)) {
+            $signalHash = $this->hash($trace);
+        }
 
         $ledger = data_get($result, 'trade_ledger', data_get($result, 'trades'));
         $ledgerHash = $this->firstFilled($result, [
             'trade_ledger_hash', 'observability_manifest.trade_ledger_hash',
         ]);
-        if ($ledgerHash === '' && is_array($ledger)) $ledgerHash = $this->hash($ledger);
+        if ($ledgerHash === '' && is_array($ledger)) {
+            $ledgerHash = $this->hash($ledger);
+        }
 
         $eventHash = $this->firstFilled($result, [
             'event_ledger_hash', 'event_hash', 'execution_event_hash',
@@ -707,7 +749,9 @@ class MutationObservabilityService
     {
         foreach ($paths as $path) {
             $value = data_get($payload, $path);
-            if (is_scalar($value) && trim((string) $value) !== '') return (string) $value;
+            if (is_scalar($value) && trim((string) $value) !== '') {
+                return (string) $value;
+            }
         }
 
         return '';
@@ -717,7 +761,9 @@ class MutationObservabilityService
     {
         foreach ($paths as $path) {
             $value = data_get($payload, $path);
-            if (is_numeric($value)) return (float) $value;
+            if (is_numeric($value)) {
+                return (float) $value;
+            }
         }
 
         return null;

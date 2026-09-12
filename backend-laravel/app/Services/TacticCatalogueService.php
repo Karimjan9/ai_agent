@@ -215,6 +215,12 @@ class TacticCatalogueService
         'unknown_state_curiosity' => ['minimum_signal_confidence', 'minimum_confidence', 'transition_firewall_enabled', 'transition_wait_candles'],
     ];
 
+    /** Complete Block-1 tactic inventory; entries remain research contracts. */
+    public function catalogue(): array
+    {
+        return self::CATALOGUE;
+    }
+
     public function for(string $family, string $architecture, ?string $target = null): array
     {
         $canonicalArchitecture = match (true) {

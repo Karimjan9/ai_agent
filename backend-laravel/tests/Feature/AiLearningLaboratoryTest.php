@@ -2,25 +2,74 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\PromoteLabFrontier;
+use App\Jobs\EvaluateLabAgentJob;
+use App\Jobs\Middleware\PreferFullValidationQueue;
+use App\Models\AgentLearningLesson;
+use App\Models\AiLaboratory;
+use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
+use App\Models\LabGeneration;
+use App\Models\MarketDriftSnapshot;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
-use App\Services\LabPopulationService;
-use App\Services\LabGenerationReportService;
-use App\Services\LabCandidateSelectionService;
-use App\Services\LabAgentEvaluationService;
-use App\Services\LabImmutableEvidenceService;
-use App\Services\ScreeningLearningOutboxService;
+use App\Models\MutationMemory;
+use App\Services\AgentKnowledgeService;
+use App\Services\AgentProfessionalExamService;
 use App\Services\CandidateHandoffService;
+use App\Services\EliteAgentPortfolioGateService;
+use App\Services\LabAgentEvaluationService;
+use App\Services\LabCandidateSelectionService;
+use App\Services\LabDataEdgeAuditService;
+use App\Services\LabGenerationReportService;
+use App\Services\LabImmutableEvidenceService;
+use App\Services\LabPopulationService;
 use App\Services\LearningProtocolSafetyService;
-use Illuminate\Support\Collection;
+use App\Services\PaperTradingExecutionService;
+use App\Services\ScreeningLearningOutboxService;
+use App\Services\StrategyParameterSchemaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AiLearningLaboratoryTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_xauusd_timeframe_alias_cannot_open_a_second_population(): void
+    {
+        $service = app(LabPopulationService::class);
+        $generation = $service->build('XAUUSD', 'new_data', true, 'M15');
+
+        $this->assertNotNull($generation);
+        $this->assertSame('H1', $generation->laboratory->timeframe);
+        $this->assertSame(
+            20,
+            $generation->agents()->count(),
+            (string) json_encode([
+                'constructor_audit' => data_get($generation->fresh(), 'trigger_context.constructor_audit'),
+                'constructor_continuation' => data_get($generation->fresh(), 'trigger_context.constructor_continuation'),
+            ], JSON_UNESCAPED_SLASHES),
+        );
+        $this->assertCount(0, $generation->agents()->with('modelVersion')->get()->filter(function (LabAgent $agent): bool {
+            $metadata = (array) $agent->modelVersion?->metadata;
+            $singleGeneRequired = (bool) data_get($metadata, 'mutation_constructor_invariant.single_gene_required', false);
+            $controlOnly = (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false);
+            $architectureChanged = (bool) data_get($metadata, 'mutation_constructor_invariant.architecture_changed', false);
+
+            return $singleGeneRequired && ! $controlOnly && ! $architectureChanged
+                && count((array) $agent->parameter_diff) !== 1;
+        }));
+        $this->assertDatabaseCount('lab_generations', 1);
+        $this->assertFalse((bool) AiLaboratory::query()
+            ->where('symbol', 'XAUUSD')
+            ->where('timeframe', 'M15')
+            ->value('is_active'));
+
+        $this->assertNull($service->build('XAUUSD', 'operator_retry', true, 'H1'));
+        $this->assertDatabaseCount('lab_generations', 1);
+    }
 
     public function test_each_pair_gets_a_bounded_owned_twenty_agent_population(): void
     {
@@ -41,6 +90,7 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertGreaterThanOrEqual(4, $structuralAgents->count());
         $this->assertTrue($structuralAgents->every(function (LabAgent $agent): bool {
             $gene = (string) data_get($agent->modelVersion->metadata, 'structural_research_contract.declared_gene');
+
             return $gene !== ''
                 && count((array) $agent->parameter_diff) === 1
                 && array_key_first((array) $agent->parameter_diff) === $gene;
@@ -74,7 +124,11 @@ class AiLearningLaboratoryTest extends TestCase
         )->every(fn ($members): bool => $members->pluck('modelVersion')->filter(
             fn (ModelVersion $model): bool => data_get($model->metadata, 'population_group.search_mode') === 'depth'
         )->count() === 2));
-        $isolated = $xau->agents->firstWhere('origin', 'g98_council');
+        $isolated = $xau->agents->first(
+            fn (LabAgent $agent): bool => $agent->origin === 'g98_council'
+                && count((array) $agent->parameter_diff) === 1,
+        );
+        $this->assertNotNull($isolated);
         $this->assertCount(1, $isolated->parameter_diff);
         $this->assertSame('isolated_single_gene', data_get($isolated->modelVersion->metadata, 'causal_experiment_lane.status'));
         $this->assertTrue(data_get($isolated->modelVersion->metadata, 'g98_council_lane.parent_lane_freeze'));
@@ -164,7 +218,9 @@ class AiLearningLaboratoryTest extends TestCase
             ],
         ]]);
 
-        $this->assertNotNull($service->build('XAUUSD', 'data_edge_audit', true));
+        $successor = $service->build('XAUUSD', 'new_data', true);
+        $this->assertNotNull($successor);
+        $this->assertSame('data_edge_audit', $successor->trigger_type);
     }
 
     public function test_root_data_edge_portfolio_keeps_every_declared_mutation_type_and_value(): void
@@ -183,19 +239,40 @@ class AiLearningLaboratoryTest extends TestCase
             ],
         ]);
 
-        $generation = $service->build('XAUUSD', 'data_edge_audit', true)->fresh(['agents.modelVersion']);
+        $built = $service->build('XAUUSD', 'data_edge_audit', true);
+        $this->assertNotNull($built, json_encode($service->lastBuildOutcome(), JSON_UNESCAPED_SLASHES));
+        $generation = $built->fresh(['agents.modelVersion']);
 
         $this->assertSame(20, $generation->population_size, json_encode(data_get($generation->trigger_context, 'constructor_audit.skipped_zero_diff_slots')));
         $this->assertSame('draft', $generation->status);
         $this->assertCount(20, $generation->agents);
         $plan = (array) data_get($generation->trigger_context, 'generation_plan', []);
-        $defaults = app(\App\Services\StrategyParameterSchemaService::class);
+        $defaults = app(StrategyParameterSchemaService::class);
         $this->assertTrue((bool) data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.allowed'));
-        $this->assertSame(5, data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.controls'));
-        $this->assertSame(15, data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.candidates'));
+        $this->assertSame(10, data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.controls'));
+        $this->assertSame(10, data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.candidates'));
+        $this->assertTrue((bool) data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.exact_one_to_one_pairs'));
         $this->assertGreaterThanOrEqual(10, data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.independent_candidate_hypothesis_families'));
         $this->assertSame([], data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.over_budget_hypothesis_families'));
         $this->assertSame([], data_get($generation->trigger_context, 'adaptive_evolution_policy.root_portfolio_integrity.declaration_or_pairing_violations'));
+        $agentPairs = $generation->agents->groupBy(
+            fn ($agent): string => (string) data_get($agent->modelVersion->metadata, 'control_pair_contract.pair_key', ''),
+        );
+        $this->assertCount(10, $agentPairs);
+        foreach ($agentPairs as $pairAgents) {
+            $control = $pairAgents->first(fn ($agent): bool => data_get($agent->modelVersion->metadata, 'control_pair_contract.role') === 'control');
+            $candidate = $pairAgents->first(fn ($agent): bool => data_get($agent->modelVersion->metadata, 'control_pair_contract.role') === 'candidate');
+            $this->assertNotNull($control);
+            $this->assertNotNull($candidate);
+            $this->assertSame($control->id, (int) data_get($candidate->modelVersion->metadata, 'control_pair_contract.control_agent_id'));
+            $this->assertSame($control->model_version_id, (int) data_get($candidate->modelVersion->metadata, 'causal_baseline_model_version_id'));
+            $this->assertSame($control->parent_a_model_version_id, $candidate->parent_a_model_version_id);
+            $this->assertSame($control->parent_b_model_version_id, $candidate->parent_b_model_version_id);
+            $gene = (string) array_key_first((array) $candidate->parameter_diff);
+            $candidateBaseline = (array) $candidate->modelVersion->parameters;
+            $candidateBaseline[$gene] = data_get($candidate->parameter_diff, $gene.'.old');
+            $this->assertSame((array) $control->modelVersion->parameters, $candidateBaseline);
+        }
 
         foreach ($generation->agents as $agent) {
             $slot = (int) preg_replace('/^.*_a(\d+)$/', '$1', (string) $agent->modelVersion->strategy);
@@ -204,6 +281,7 @@ class AiLearningLaboratoryTest extends TestCase
             $this->assertTrue((bool) data_get($niche, 'root_experiment_portfolio'));
             if ((bool) data_get($niche, 'control_only')) {
                 $this->assertSame([], data_get($agent->modelVersion->metadata, 'mutation_constructor_invariant.changed_parameter_keys'));
+
                 continue;
             }
 
@@ -240,6 +318,42 @@ class AiLearningLaboratoryTest extends TestCase
         ])->assertExitCode(0);
 
         $this->assertSame('data_edge_audit_v1', data_get($generation->fresh()->trigger_context, 'data_edge_audit.protocol'));
+    }
+
+    public function test_clean_final_report_can_record_an_idempotent_autonomous_data_edge_audit(): void
+    {
+        $generation = app(LabPopulationService::class)->build('XAUUSD', 'new_data', true);
+        $generation->update([
+            'status' => 'screened',
+            'trigger_context' => [
+                ...($generation->trigger_context ?? []),
+                'latest_generation_report' => [
+                    'protocol' => LabGenerationReportService::PROTOCOL,
+                    'report_state' => 'FINAL',
+                    'next_action' => 'data_edge_audit_required',
+                    'recorded_at' => now()->utc()->toIso8601String(),
+                    'gate_failures' => ['FAILED_STRESS_COST' => 20, 'FAILED_REGIME_COVERAGE' => 18],
+                    'kpis' => [
+                        'technical_completion_rate' => 100,
+                        'pipeline_failure_count' => 0,
+                        'screen_pass_rate' => 0,
+                        'observable_mutation_count' => 9,
+                        'control_relative_improvement_count' => 0,
+                    ],
+                ],
+            ],
+        ]);
+        $generation->agents()->update(['lifecycle_status' => 'screened']);
+
+        $service = app(LabDataEdgeAuditService::class);
+        $first = $service->recordFromFinalReport($generation);
+        $second = $service->recordFromFinalReport($generation->fresh());
+
+        $this->assertSame('recorded', $first['status']);
+        $this->assertSame('already_recorded', $second['status']);
+        $this->assertSame('autonomous_final_report', data_get($generation->fresh()->trigger_context, 'data_edge_audit.source'));
+        $this->assertSame('data_edge_audit_completed', data_get($generation->fresh()->trigger_context, 'latest_generation_report.next_action'));
+        $this->assertFalse((bool) data_get($generation->fresh()->trigger_context, 'data_edge_audit.promotion_evidence'));
     }
 
     public function test_forward_gate_failure_opens_a_targeted_evolution_handoff(): void
@@ -329,7 +443,7 @@ class AiLearningLaboratoryTest extends TestCase
     {
         $weak = ModelVersion::create([
             'name' => 'weak-trend', 'strategy' => 'xauusd_trend_g1_a01', 'version' => 'v1', 'generation' => 1,
-            'status' => 'testing', 'parameters' => app(\App\Services\StrategyParameterSchemaService::class)->defaults('trend'),
+            'status' => 'testing', 'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
             'metadata' => [], 'evidence_status' => 'valid',
         ]);
         ModelMarketPerformance::create([
@@ -349,7 +463,7 @@ class AiLearningLaboratoryTest extends TestCase
     {
         $model = ModelVersion::create([
             'name' => 'weak-breakout', 'strategy' => 'xauusd_breakout_g1_a01', 'version' => 'v1', 'generation' => 1,
-            'status' => 'testing', 'parameters' => app(\App\Services\StrategyParameterSchemaService::class)->defaults('breakout'),
+            'status' => 'testing', 'parameters' => app(StrategyParameterSchemaService::class)->defaults('breakout'),
             'metadata' => [], 'evidence_status' => 'valid',
         ]);
         ModelMarketPerformance::create([
@@ -423,8 +537,7 @@ class AiLearningLaboratoryTest extends TestCase
         // construction. This selector fixture needs two actual mutation
         // candidates; a frozen control must never be relabelled as recall
         // research merely to exercise the ranking branch.
-        $agents = $generation->agents->filter(fn (LabAgent $agent): bool =>
-            ! (bool) data_get($agent->modelVersion->metadata, 'mutation_constructor_invariant.control_only', false)
+        $agents = $generation->agents->filter(fn (LabAgent $agent): bool => ! (bool) data_get($agent->modelVersion->metadata, 'mutation_constructor_invariant.control_only', false)
                 && ! (bool) data_get($agent->modelVersion->metadata, 'portfolio_council_lane.control_only', false)
         )->take(2)->values();
 
@@ -467,7 +580,7 @@ class AiLearningLaboratoryTest extends TestCase
                 'max_drawdown' => 8,
                 'risk_of_ruin' => 4,
             ]);
-            \App\Models\CandidateGateDecision::create([
+            CandidateGateDecision::create([
                 'lab_agent_id' => $agent->id,
                 'stage' => 'screening',
                 'decision' => 'failed',
@@ -514,7 +627,7 @@ class AiLearningLaboratoryTest extends TestCase
     {
         $model = ModelVersion::create([
             'name' => 'calendar-near-miss', 'strategy' => 'xauusd_hybrid_g95_a01', 'version' => 'v1', 'generation' => 95,
-            'status' => 'testing', 'parameters' => app(\App\Services\StrategyParameterSchemaService::class)->defaults('hybrid'),
+            'status' => 'testing', 'parameters' => app(StrategyParameterSchemaService::class)->defaults('hybrid'),
             'metadata' => [
                 'portfolio_council_lane' => [
                     'protocol' => 'portfolio_council_v1', 'regime' => 'range', 'volatility' => 'low_volatility',
@@ -542,7 +655,7 @@ class AiLearningLaboratoryTest extends TestCase
         ];
         $badModel = ModelVersion::create([
             'name' => 'stress-near-miss', 'strategy' => 'xauusd_hybrid_g95_a02', 'version' => 'v1', 'generation' => 95,
-            'status' => 'testing', 'parameters' => app(\App\Services\StrategyParameterSchemaService::class)->defaults('hybrid'),
+            'status' => 'testing', 'parameters' => app(StrategyParameterSchemaService::class)->defaults('hybrid'),
             'metadata' => [
                 'portfolio_council_lane' => ['protocol' => 'portfolio_council_v1', 'regime' => 'range', 'volatility' => 'low_volatility'],
                 'parameter_fingerprint' => 'stress-near-miss-fingerprint',
@@ -572,7 +685,7 @@ class AiLearningLaboratoryTest extends TestCase
         $lab = app(LabPopulationService::class)->build('XAUUSD', 'directional_evidence', true)->laboratory;
         $model = ModelVersion::create([
             'name' => 'directional-source', 'strategy' => 'xauusd_hybrid_directional_source', 'version' => 'v3', 'generation' => 72,
-            'status' => 'testing', 'parameters' => app(\App\Services\StrategyParameterSchemaService::class)->defaults('hybrid'),
+            'status' => 'testing', 'parameters' => app(StrategyParameterSchemaService::class)->defaults('hybrid'),
             'metadata' => ['statistical_gate_version' => 3], 'evidence_status' => 'valid',
         ]);
         ModelMarketPerformance::create([
@@ -661,7 +774,7 @@ class AiLearningLaboratoryTest extends TestCase
 
     public function test_generated_trend_parameters_preserve_indicator_relationships(): void
     {
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $normalized = $schema->normalizeForGeneration('trend', [
             'ema_fast' => 172, 'ema_slow' => 13,
             'rsi_period' => 14, 'rsi_buy_min' => 72.0, 'rsi_buy_max' => 41.0,
@@ -678,7 +791,7 @@ class AiLearningLaboratoryTest extends TestCase
         $service = app(LabPopulationService::class);
         $method = new \ReflectionMethod($service, 'differentialSingleGene');
         $method->setAccessible(true);
-        $base = app(\App\Services\StrategyParameterSchemaService::class)->defaults('differential_router');
+        $base = app(StrategyParameterSchemaService::class)->defaults('differential_router');
 
         $monthly = $method->invoke($service, $base, 1, 'trend_up', 'monthly_survival');
         $temporal = $method->invoke($service, $base, 2, 'trend_up', 'temporal_stability');
@@ -731,7 +844,7 @@ class AiLearningLaboratoryTest extends TestCase
         $service = app(LabPopulationService::class);
         $method = new \ReflectionMethod($service, 'stateClusterForPerformance');
         $method->setAccessible(true);
-        $performance = new \App\Models\ModelMarketPerformance([
+        $performance = new ModelMarketPerformance([
             'metrics' => [
                 'entry_funnel' => ['dominant_rejection' => 'regime_transition_wait'],
                 'veto_regret' => [
@@ -767,7 +880,7 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_state_cluster_monthly_mutation_is_one_bounded_context_gene(): void
     {
         $service = app(LabPopulationService::class);
-        $schemaService = app(\App\Services\StrategyParameterSchemaService::class);
+        $schemaService = app(StrategyParameterSchemaService::class);
         $method = new \ReflectionMethod($service, 'stateClusterMonthlyMutation');
         $method->setAccessible(true);
         $base = $schemaService->defaults('differential_router');
@@ -798,7 +911,10 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_agent_knowledge_card_records_lessons_skills_and_child_contract(): void
     {
         $generation = app(LabPopulationService::class)->build('XAUUSD', 'knowledge_card_test', true);
-        $agent = $generation->agents->first();
+        $agent = $generation->agents->first(fn (LabAgent $candidate): bool => ! (bool) data_get($candidate->modelVersion?->metadata, 'mutation_constructor_invariant.control_only', false)
+            && count((array) $candidate->parameter_diff) === 1
+        );
+        $this->assertNotNull($agent, 'A knowledge-card test requires a real one-gene candidate, not its control.');
         $model = $agent->modelVersion;
         $parameterKey = array_key_first($agent->parameter_diff);
         $this->assertSame('agent_knowledge_card_v1', data_get($model->metadata, 'agent_knowledge_contract.protocol'));
@@ -821,7 +937,7 @@ class AiLearningLaboratoryTest extends TestCase
             'epistemic_boundary' => ['unknown_state_action' => 'WAIT'],
         ];
         $screen['evidence_run_id'] = $this->completeEvidenceRun($agent);
-        $screenCard = app(\App\Services\AgentKnowledgeService::class)->recordScreening(
+        $screenCard = app(AgentKnowledgeService::class)->recordScreening(
             $agent->fresh(['modelVersion', 'generation']), $screen, $screen['evidence_run_id']
         );
 
@@ -830,7 +946,7 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertSame('provisional', $screenCard->abstention_status);
         $this->assertSame('WAIT', $screenCard->unknown_state_action);
 
-        \App\Models\MutationMemory::create([
+        MutationMemory::create([
             'lab_agent_id' => $agent->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
             'strategy_family' => $agent->strategy_family, 'parameter_key' => $parameterKey,
             'old_value' => ['value' => 1], 'new_value' => ['value' => 2],
@@ -866,16 +982,16 @@ class AiLearningLaboratoryTest extends TestCase
             'evidence_status' => 'valid', 'forward_score' => 35, 'sample_count' => 40,
             'rolling_windows_count' => 3, 'rolling_forward_wins' => 2, 'metrics' => $full,
         ]);
-        $fullCard = app(\App\Services\AgentKnowledgeService::class)->recordFullReplay(
+        $fullCard = app(AgentKnowledgeService::class)->recordFullReplay(
             $agent->fresh(['modelVersion', 'generation']), $performance, $full, $screen['evidence_run_id']
         );
 
         $this->assertSame('specialist', $fullCard->skill_stage);
         $this->assertContains($parameterKey, $fullCard->blocked_mutations);
-        $this->assertTrue(\App\Models\AgentLearningLesson::where('lab_agent_id', $agent->id)
+        $this->assertTrue(AgentLearningLesson::where('lab_agent_id', $agent->id)
             ->where('lesson_type', 'harmful_lesson')->where('status', 'confirmed')->exists());
 
-        $contract = app(\App\Services\AgentKnowledgeService::class)->childContract(
+        $contract = app(AgentKnowledgeService::class)->childContract(
             'XAUUSD', 'H1', $agent->strategy_family, $model->fresh(),
             ['regime' => 'trend_up', 'state_cluster' => ['cluster_id' => 'cluster-test']],
             'monthly_survival',
@@ -885,7 +1001,7 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertFalse($contract['promotion_evidence']);
 
         $baselineAgent = $generation->agents()->where('id', '!=', $agent->id)->first() ?: $generation->agents()->latest('id')->first();
-        $baseline = app(\App\Services\AgentKnowledgeService::class)->recordBaseline($baselineAgent->fresh(['modelVersion', 'generation']));
+        $baseline = app(AgentKnowledgeService::class)->recordBaseline($baselineAgent->fresh(['modelVersion', 'generation']));
         $this->assertSame('novice', $baseline->skill_stage);
         $this->assertSame('WAIT', $baseline->unknown_state_action);
         $this->assertFalse((bool) data_get($baseline->provenance, 'promotion_evidence'));
@@ -893,12 +1009,12 @@ class AiLearningLaboratoryTest extends TestCase
 
     public function test_council_sequence_requires_specialists_then_router_before_combined_replay(): void
     {
-        $service = app(\App\Services\EliteAgentPortfolioGateService::class);
+        $service = app(EliteAgentPortfolioGateService::class);
         $method = new \ReflectionMethod($service, 'councilSequence');
         $method->setAccessible(true);
-        $candidate = function (string $role, string $regime): \App\Models\ModelMarketPerformance {
-            $performance = new \App\Models\ModelMarketPerformance();
-            $performance->setRelation('modelVersion', new \App\Models\ModelVersion([
+        $candidate = function (string $role, string $regime): ModelMarketPerformance {
+            $performance = new ModelMarketPerformance;
+            $performance->setRelation('modelVersion', new ModelVersion([
                 'metadata' => [
                     'council_specialist_contract' => [
                         'protocol' => 'agent_council_v1',
@@ -907,6 +1023,7 @@ class AiLearningLaboratoryTest extends TestCase
                     ],
                 ],
             ]));
+
             return $performance;
         };
 
@@ -952,7 +1069,7 @@ class AiLearningLaboratoryTest extends TestCase
             'evidence_run_id' => 'professional-exam-run',
         ];
 
-        $projection = app(\App\Services\AgentProfessionalExamService::class)->assessAndRecord(
+        $projection = app(AgentProfessionalExamService::class)->assessAndRecord(
             $agent->fresh(['modelVersion', 'generation']), $agent->modelVersion, null, $result,
         );
 
@@ -989,7 +1106,7 @@ class AiLearningLaboratoryTest extends TestCase
         ]);
         $agent->update(['parent_a_model_version_id' => $parent->id]);
 
-        $shadow = app(\App\Services\AgentProfessionalExamService::class)->teacherStudentShadow(
+        $shadow = app(AgentProfessionalExamService::class)->teacherStudentShadow(
             $agent->fresh(), $agent->modelVersion, [
                 'capability_vector' => ['trend' => 75, 'range' => 68],
                 'statistical_evidence' => ['edge_quality' => ['confidence_calibration' => ['score' => 70]]],
@@ -1007,15 +1124,15 @@ class AiLearningLaboratoryTest extends TestCase
     {
         $generation = app(LabPopulationService::class)->build('XAUUSD', 'professional_safety_test', true);
         $agent = $generation->agents->first();
-        $card = app(\App\Services\AgentKnowledgeService::class)->recordBaseline(
+        $card = app(AgentKnowledgeService::class)->recordBaseline(
             $agent->fresh(['modelVersion', 'generation'])
         );
-        \App\Models\MarketDriftSnapshot::create([
+        MarketDriftSnapshot::create([
             'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'psi_score' => .40,
             'volatility_ratio' => 1.8, 'mean_return_shift' => .2, 'status' => 'drift',
             'metrics' => ['source' => 'test'], 'detected_at' => now(),
         ]);
-        $drift = app(\App\Services\AgentProfessionalExamService::class)->driftRecertification(
+        $drift = app(AgentProfessionalExamService::class)->driftRecertification(
             'XAUUSD', 'H1', [], $card,
         );
         $this->assertSame('required', $drift['status']);
@@ -1023,8 +1140,8 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertSame('expired', $drift['skill_status']);
 
         $key = array_key_first($agent->modelVersion->parameters ?: ['minimum_signal_confidence' => .5]);
-        \App\Models\AgentLearningLesson::create([
-            'lesson_id' => (string) \Illuminate\Support\Str::uuid(),
+        AgentLearningLesson::create([
+            'lesson_id' => (string) Str::uuid(),
             'lesson_hash' => hash('sha256', 'professional-harmful-'.$agent->id),
             'lab_agent_id' => $agent->id, 'model_version_id' => $agent->model_version_id,
             'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => $agent->strategy_family,
@@ -1032,20 +1149,20 @@ class AiLearningLaboratoryTest extends TestCase
             'confirmation_count' => 2, 'source_run_ids' => ['professional-safety-run'],
             'evidence' => ['promotion_evidence' => false], 'observed_at' => now(),
         ]);
-        $budget = app(\App\Services\AgentProfessionalExamService::class)->mutationBudget(
+        $budget = app(AgentProfessionalExamService::class)->mutationBudget(
             'XAUUSD', 'H1', $agent->strategy_family,
         );
         $this->assertContains($key, $budget['confirmed_harmful_keys']);
-        $this->assertNotContains($key, app(\App\Services\AgentProfessionalExamService::class)->allowedMutationKeys([$key, 'unrelated_gene'], $budget));
+        $this->assertNotContains($key, app(AgentProfessionalExamService::class)->allowedMutationKeys([$key, 'unrelated_gene'], $budget));
     }
 
     public function test_council_selection_includes_the_passed_router_in_combined_replay(): void
     {
-        $service = app(\App\Services\EliteAgentPortfolioGateService::class);
+        $service = app(EliteAgentPortfolioGateService::class);
         $method = new \ReflectionMethod($service, 'selectCouncilMembers');
         $method->setAccessible(true);
-        $candidate = function (int $id, string $role, string $regime, float $pf): \App\Models\ModelMarketPerformance {
-            $performance = new \App\Models\ModelMarketPerformance([
+        $candidate = function (int $id, string $role, string $regime, float $pf): ModelMarketPerformance {
+            $performance = new ModelMarketPerformance([
                 'id' => $id,
                 'forward_score' => 40,
                 'strategy_family' => $role === 'transition_risk_router' ? 'hybrid' : 'differential_router',
@@ -1057,7 +1174,7 @@ class AiLearningLaboratoryTest extends TestCase
                 ],
             ]);
             $performance->setAttribute('id', $id);
-            $performance->setRelation('modelVersion', new \App\Models\ModelVersion([
+            $performance->setRelation('modelVersion', new ModelVersion([
                 'metadata' => [
                     'council_specialist_contract' => [
                         'protocol' => 'agent_council_v1',
@@ -1070,6 +1187,7 @@ class AiLearningLaboratoryTest extends TestCase
                     ],
                 ],
             ]));
+
             return $performance;
         };
 
@@ -1077,8 +1195,8 @@ class AiLearningLaboratoryTest extends TestCase
             $candidate(101, 'trend_up_specialist', 'trend_up', 1.4),
             $candidate(102, 'range_specialist', 'range', 1.35),
             $candidate(103, 'transition_risk_router', 'trend_up', 1.3),
-            tap(new \App\Models\ModelMarketPerformance(['id' => 104, 'strategy_family' => 'ordinary']), function ($ordinary): void {
-                $ordinary->setRelation('modelVersion', new \App\Models\ModelVersion(['metadata' => []]));
+            tap(new ModelMarketPerformance(['id' => 104, 'strategy_family' => 'ordinary']), function ($ordinary): void {
+                $ordinary->setRelation('modelVersion', new ModelVersion(['metadata' => []]));
             }),
         ]));
 
@@ -1087,32 +1205,33 @@ class AiLearningLaboratoryTest extends TestCase
             (string) data_get($item->modelVersion->metadata, 'council_specialist_contract.role'),
             '_specialist'
         ))->count());
-        $this->assertSame(1, $selected->filter(fn ($item): bool =>
-            data_get($item->modelVersion->metadata, 'council_specialist_contract.role') === 'transition_risk_router'
+        $this->assertSame(1, $selected->filter(fn ($item): bool => data_get($item->modelVersion->metadata, 'council_specialist_contract.role') === 'transition_risk_router'
         )->count());
         $this->assertFalse($selected->contains(fn ($item): bool => $item->id === 104));
     }
 
     public function test_council_members_cannot_start_individual_paper_track(): void
     {
-        $service = app(\App\Services\PaperTradingExecutionService::class);
+        $service = app(PaperTradingExecutionService::class);
         $method = new \ReflectionMethod($service, 'paperTrackAllowed');
         $method->setAccessible(true);
 
-        $member = new \App\Models\ModelMarketPerformance(['metrics' => []]);
-        $member->setRelation('modelVersion', new \App\Models\ModelVersion([
+        $member = new ModelMarketPerformance(['metrics' => []]);
+        $member->setRelation('modelVersion', new ModelVersion([
             'metadata' => [
                 'council_specialist_contract' => ['protocol' => 'agent_council_v1'],
             ],
         ]));
         $this->assertFalse($method->invoke($service, $member));
 
-        $ordinary = new \App\Models\ModelMarketPerformance(['metrics' => []]);
-        $ordinary->setRelation('modelVersion', new \App\Models\ModelVersion(['metadata' => []]));
-        $this->assertTrue($method->invoke($service, $ordinary));
+        $ordinary = new ModelMarketPerformance(['metrics' => []]);
+        $ordinary->setRelation('modelVersion', new ModelVersion(['metadata' => []]));
+        // A standalone model is not excluded by the council rule, but an
+        // unbound record still fails closed before E3 paper admission.
+        $this->assertFalse($method->invoke($service, $ordinary));
 
-        $proxy = new \App\Models\ModelMarketPerformance(['metrics' => ['portfolio_proxy' => true]]);
-        $proxy->setRelation('modelVersion', new \App\Models\ModelVersion(['metadata' => []]));
+        $proxy = new ModelMarketPerformance(['metrics' => ['portfolio_proxy' => true]]);
+        $proxy->setRelation('modelVersion', new ModelVersion(['metadata' => []]));
         // A proxy may paper only after its sealed portfolio passport exists;
         // an unbound legacy/mock proxy must fail closed.
         $this->assertFalse($method->invoke($service, $proxy));
@@ -1121,7 +1240,7 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_historical_novelty_cannot_add_a_second_gene_to_an_isolated_child(): void
     {
         $service = app(LabPopulationService::class);
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $base = $schema->defaults('differential_router');
 
         $fingerprintMethod = new \ReflectionMethod($service, 'parameterFingerprint');
@@ -1160,7 +1279,7 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_historical_novelty_cache_is_scoped_to_each_generation(): void
     {
         $service = app(LabPopulationService::class);
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $base = $schema->defaults('hybrid');
         $first = [...$base, 'atr_stop_multiplier' => 1.15];
 
@@ -1196,16 +1315,114 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertSame($base['atr_target_multiplier'], $child['atr_target_multiplier']);
     }
 
+    public function test_historical_novelty_snapshot_keeps_computed_and_legacy_fingerprints_without_full_model_hydration(): void
+    {
+        $service = app(LabPopulationService::class);
+        $generation = $service->build('XAUUSD', 'compact_history_snapshot_test', true);
+        $agent = $generation->agents()->with('modelVersion')->firstOrFail();
+        $model = $agent->modelVersion;
+        $legacyFingerprint = hash('sha256', 'legacy-pre-normalization-fingerprint');
+        $model->update([
+            'metadata' => [
+                ...((array) $model->metadata),
+                'parameter_fingerprint' => $legacyFingerprint,
+                // This payload represents provenance that novelty lookup must
+                // leave inside MySQL rather than hydrating into PHP.
+                'large_unrelated_provenance' => str_repeat('x', 4096),
+            ],
+        ]);
+
+        $fingerprintMethod = new \ReflectionMethod($service, 'parameterFingerprint');
+        $fingerprintMethod->setAccessible(true);
+        $computedFingerprint = $fingerprintMethod->invoke(
+            $service,
+            $agent->strategy_family,
+            (array) $model->parameters,
+        );
+        $snapshotMethod = new \ReflectionMethod($service, 'historicalParameterFingerprintSnapshot');
+        $snapshotMethod->setAccessible(true);
+        $snapshot = $snapshotMethod->invoke(
+            $service,
+            'XAUUSD',
+            'H1',
+            $agent->strategy_family,
+            $generation->id + 1,
+        );
+
+        $this->assertArrayHasKey($computedFingerprint, $snapshot);
+        $this->assertArrayHasKey($legacyFingerprint, $snapshot);
+        $this->assertTrue($snapshot[$computedFingerprint]);
+        $this->assertTrue($snapshot[$legacyFingerprint]);
+
+        $snapshotCache = new \ReflectionProperty($service, 'parentPerformanceSnapshots');
+        $snapshotCache->setAccessible(true);
+        $snapshotCache->setValue($service, []);
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+        $qualityParents = new \ReflectionMethod($service, 'qualityParents');
+        $qualityParents->setAccessible(true);
+        $qualityParents->invoke($service, 'XAUUSD', 'H1', $agent->strategy_family, 'profit_factor', []);
+        $qualityParents->invoke($service, 'XAUUSD', 'H1', $agent->strategy_family, 'stress_cost', []);
+        $frontierQueries = collect($queries)->filter(
+            fn (string $sql): bool => str_contains(strtolower($sql), 'from "model_market_performance"'),
+        );
+
+        $this->assertCount(1, $frontierQueries);
+    }
+
+    public function test_unavailable_causal_or_repair_dependencies_become_non_credit_controls_instead_of_shrinking_population(): void
+    {
+        $service = app(LabPopulationService::class);
+        $replaceable = new \ReflectionMethod($service, 'canReplaceMutationConstruction');
+        $replaceable->setAccessible(true);
+        $replacements = new \ReflectionMethod($service, 'zeroDiffReplacementSpecs');
+        $replacements->setAccessible(true);
+        $baseSpec = [
+            'family' => 'hybrid',
+            'origin' => 'targeted_failure_profile',
+            'target' => 'stress_cost',
+            'niche' => [
+                'protocol' => LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL,
+                'declared_gene' => 'atr_stop_multiplier',
+                'repair_anchor_id' => 999,
+                'causal_learning_cohort' => ['source_lesson_id' => 77, 'role' => 'memory_guided'],
+                'learning_memory_required' => true,
+                'composition_passport' => [
+                    'learning_experiment' => ['source_lesson_id' => 77],
+                    'learning_directive' => ['required_gene' => 'atr_stop_multiplier'],
+                    'consumed_learning_receipt_ids' => [11],
+                ],
+            ],
+        ];
+
+        foreach (['CAUSAL_LEARNING_MUTATION_NOT_EXECUTABLE', 'REPAIR_ANCHOR_NOT_FOUND'] as $reason) {
+            $this->assertTrue($replaceable->invoke($service, $baseSpec, $reason));
+            $replacement = $replacements->invoke($service, [$baseSpec], 0, $baseSpec, $reason, true)[0];
+
+            $this->assertSame('dependency_control', $replacement['origin']);
+            $this->assertTrue(data_get($replacement, 'niche.control_only'));
+            $this->assertSame('frozen_dependency_control', data_get($replacement, 'niche.replacement_contract.replacement_mode'));
+            $this->assertFalse((bool) data_get($replacement, 'niche.replacement_contract.promotion_evidence'));
+            $this->assertNull(data_get($replacement, 'niche.causal_learning_cohort'));
+            $this->assertNull(data_get($replacement, 'niche.repair_anchor_id'));
+            $this->assertNull(data_get($replacement, 'niche.composition_passport.learning_experiment'));
+        }
+    }
+
     public function test_parameter_fingerprint_is_stable_across_numeric_round_trip_types(): void
     {
         $service = app(LabPopulationService::class);
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $base = $schema->defaults('hybrid');
         $databaseRoundTrip = $base;
 
         foreach ($schema->schema('hybrid') as $key => $definition) {
             [$type] = array_pad($definition, 3, null);
-            if (! array_key_exists($key, $databaseRoundTrip)) continue;
+            if (! array_key_exists($key, $databaseRoundTrip)) {
+                continue;
+            }
 
             // Model JSON hydration can expose an integer schema value as a
             // float while keeping its executable meaning unchanged.
@@ -1226,7 +1443,7 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_targeted_final_novelty_probe_preserves_a_single_declared_gene(): void
     {
         $service = app(LabPopulationService::class);
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $base = $schema->defaults('hybrid');
         $first = [...$base, 'atr_stop_multiplier' => 1.15];
 
@@ -1268,7 +1485,7 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_historical_novelty_expands_bounded_probe_when_local_ring_is_exhausted(): void
     {
         $service = app(LabPopulationService::class);
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $base = $schema->defaults('hybrid');
         $first = [...$base, 'atr_stop_multiplier' => 1.15];
         $leftRing = [...$first, 'atr_stop_multiplier' => 1.115];
@@ -1310,7 +1527,7 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_historical_novelty_expands_integer_ring_past_failed_values(): void
     {
         $service = app(LabPopulationService::class);
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $base = $schema->defaults('differential_router');
         $first = [...$base, 'trend_up_roc_period' => 15];
 
@@ -1352,7 +1569,7 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_historical_novelty_reports_a_fully_exhausted_boolean_lane(): void
     {
         $service = app(LabPopulationService::class);
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $base = $schema->defaults('hybrid');
         $first = [...$base, 'transition_firewall_enabled' => ! (bool) $base['transition_firewall_enabled']];
 
@@ -1394,7 +1611,7 @@ class AiLearningLaboratoryTest extends TestCase
         $service = app(LabPopulationService::class);
         $method = new \ReflectionMethod($service, 'rangeCouncilSingleGene');
         $method->setAccessible(true);
-        $base = app(\App\Services\StrategyParameterSchemaService::class)->defaults('hybrid');
+        $base = app(StrategyParameterSchemaService::class)->defaults('hybrid');
 
         $monthly = $method->invoke($service, $base, 4, 'monthly_survival');
         $temporal = $method->invoke($service, $base, 5, 'temporal_stability');
@@ -1412,7 +1629,7 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_role_complete_council_uses_safe_owner_mutations_and_wait_invariants(): void
     {
         $service = app(LabPopulationService::class);
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $differential = $schema->defaults('differential_router');
         $hybrid = $schema->defaults('hybrid');
         $method = new \ReflectionMethod($service, 'differentialSingleGene');
@@ -1465,7 +1682,7 @@ class AiLearningLaboratoryTest extends TestCase
     public function test_role_mutation_firewall_never_falls_back_to_another_owner_gene(): void
     {
         $service = app(LabPopulationService::class);
-        $schema = app(\App\Services\StrategyParameterSchemaService::class);
+        $schema = app(StrategyParameterSchemaService::class);
         $method = new \ReflectionMethod($service, 'councilRoleMutationCandidate');
         $method->setAccessible(true);
 
@@ -1511,9 +1728,9 @@ class AiLearningLaboratoryTest extends TestCase
 
     public function test_full_validation_fairness_middleware_is_wired_into_evaluator_jobs(): void
     {
-        $screen = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
-        $full = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'full');
-        $frontier = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'screen', null, 'lab-frontier');
+        $screen = new EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
+        $full = new EvaluateLabAgentJob(1, 'XAUUSD', 'full');
+        $frontier = new EvaluateLabAgentJob(1, 'XAUUSD', 'screen', null, 'lab-frontier');
 
         $this->assertSame('lab-screening', $screen->queue);
         $this->assertSame('lab-full-validation', $full->queue);
@@ -1522,42 +1739,42 @@ class AiLearningLaboratoryTest extends TestCase
         $screenMiddleware = collect($screen->middleware());
         $fullMiddleware = collect($full->middleware());
 
-        $this->assertTrue($screenMiddleware->contains(fn ($middleware): bool => $middleware instanceof \App\Jobs\Middleware\PreferFullValidationQueue));
-        $this->assertTrue($fullMiddleware->contains(fn ($middleware): bool => $middleware instanceof \App\Jobs\Middleware\PreferFullValidationQueue));
+        $this->assertTrue($screenMiddleware->contains(fn ($middleware): bool => $middleware instanceof PreferFullValidationQueue));
+        $this->assertTrue($fullMiddleware->contains(fn ($middleware): bool => $middleware instanceof PreferFullValidationQueue));
     }
 
     public function test_fresh_role_complete_cohort_is_classified_as_frontier_priority(): void
     {
-        $command = app(\App\Console\Commands\PromoteLabFrontier::class);
+        $command = app(PromoteLabFrontier::class);
         $method = new \ReflectionMethod($command, 'frontierReason');
         $method->setAccessible(true);
 
-        $agent = new \App\Models\LabAgent;
+        $agent = new LabAgent;
         $agent->id = 999999;
         $agent->lifecycle_status = 'queued';
-        $agent->setRelation('generation', new \App\Models\LabGeneration([
+        $agent->setRelation('generation', new LabGeneration([
             'status' => 'screening',
             'trigger_context' => ['role_complete_council' => true],
         ]));
-        $agent->setRelation('modelVersion', new \App\Models\ModelVersion(['metadata' => [
-                'role_complete_council' => [
-                    'protocol' => 'role_complete_council_v1',
-                    'full_replay_required' => true,
-                ],
-            ]]));
+        $agent->setRelation('modelVersion', new ModelVersion(['metadata' => [
+            'role_complete_council' => [
+                'protocol' => 'role_complete_council_v1',
+                'full_replay_required' => true,
+            ],
+        ]]));
 
         $this->assertSame('ROLE_COMPLETE_COHORT_PRIORITY', $method->invoke($command, $agent));
     }
 
     public function test_frontier_promotion_is_dry_run_by_default(): void
     {
-        $command = app(\App\Console\Commands\PromoteLabFrontier::class);
+        $command = app(PromoteLabFrontier::class);
         $this->assertFalse((bool) $command->getDefinition()->getOption('apply')->getDefault());
     }
 
     public function test_targeted_failure_profile_plan_uses_four_distinct_repair_dimensions(): void
     {
-        $lab = \App\Models\AiLaboratory::firstOrCreate(
+        $lab = AiLaboratory::firstOrCreate(
             ['symbol' => 'XAUUSD', 'timeframe' => 'H1'],
             ['name' => 'XAUUSD Lab', 'strategy_families' => ['differential_router', 'hybrid'], 'is_active' => true],
         );
@@ -1581,7 +1798,7 @@ class AiLearningLaboratoryTest extends TestCase
 
     public function test_controlled_rescue_plan_is_five_by_four_and_pause_stays_fail_closed(): void
     {
-        $lab = \App\Models\AiLaboratory::firstOrCreate(
+        $lab = AiLaboratory::firstOrCreate(
             ['symbol' => 'XAUUSD', 'timeframe' => 'H1'],
             ['name' => 'XAUUSD Lab', 'strategy_families' => ['hybrid', 'volatility', 'regime_ensemble', 'differential_router'], 'is_active' => true],
         );
@@ -1609,8 +1826,7 @@ class AiLearningLaboratoryTest extends TestCase
             collect($plan)->pluck('research_group')->unique()->sort()->values()->all(),
         );
         $this->assertTrue(collect($plan)->groupBy('research_group')->every(fn ($rows): bool => $rows->count() === 4));
-        $this->assertTrue(collect($plan)->every(fn (array $seat): bool =>
-            data_get($seat, 'niche.protocol') === LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL
+        $this->assertTrue(collect($plan)->every(fn (array $seat): bool => data_get($seat, 'niche.protocol') === LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL
             && data_get($seat, 'niche.rescue_protocol') === LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL
             && data_get($seat, 'niche.non_target_parent_freeze') === true
             && data_get($seat, 'niche.promotion_rule') === 'unchanged_screen_full_forward_paper_gates'
@@ -1628,8 +1844,8 @@ class AiLearningLaboratoryTest extends TestCase
 
     public function test_screen_retry_window_can_wait_behind_a_long_full_validation_lane(): void
     {
-        $screen = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
-        $full = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'full');
+        $screen = new EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
+        $full = new EvaluateLabAgentJob(1, 'XAUUSD', 'full');
 
         $this->assertSame(
             360 * 60,
@@ -1641,7 +1857,7 @@ class AiLearningLaboratoryTest extends TestCase
             $full->retryUntil()->getTimestamp(),
         );
 
-        $legacy = new \App\Jobs\EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
+        $legacy = new EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
         $legacy->retryDeadline = now()->addMinutes(90);
         unset($legacy->screenQueuedAt);
 
@@ -1663,7 +1879,7 @@ class AiLearningLaboratoryTest extends TestCase
             'created_at' => now()->timestamp,
         ]);
 
-        $middleware = new \App\Jobs\Middleware\PreferFullValidationQueue('screen');
+        $middleware = new PreferFullValidationQueue('screen');
         $waiting = new \ReflectionMethod($middleware, 'fullValidationIsWaiting');
         $waiting->setAccessible(true);
 
@@ -1718,7 +1934,7 @@ class AiLearningLaboratoryTest extends TestCase
             'lab_agent_id' => $agent->id,
             'outcome' => 'screen_inconclusive',
         ]);
-        $memory = \App\Models\MutationMemory::where('lab_agent_id', $agent->id)->latest('id')->firstOrFail();
+        $memory = MutationMemory::where('lab_agent_id', $agent->id)->latest('id')->firstOrFail();
         $this->assertStringContainsString('screen_survival_failed_train_forward_gap;', (string) $memory->decision);
         $this->assertStringContainsString('no causal credit', (string) $memory->decision);
     }

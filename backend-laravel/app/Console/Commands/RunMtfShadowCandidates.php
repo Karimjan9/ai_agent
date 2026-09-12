@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\ModelMarketPerformance;
+use App\Services\AutonomousModeService;
 use App\Services\ExecutionContractService;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\MultiTimeframePilotService;
@@ -25,8 +26,14 @@ class RunMtfShadowCandidates extends Command
         MultiTimeframePilotService $pilot,
         PaperMtfLedgerService $ledger,
         StrategyParameterSchemaService $schemas,
+        AutonomousModeService $autonomy,
     ): int {
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', (string) $this->option('symbol')));
+        if (! $autonomy->enabled($symbol, 'H1')) {
+            $this->info('MTF shadow observation deferred: autonomous mode is stopped; monitoring remains available.');
+
+            return self::SUCCESS;
+        }
         $candidates = ModelMarketPerformance::query()
             ->with('modelVersion')
             ->where('symbol', $symbol)
@@ -41,6 +48,7 @@ class RunMtfShadowCandidates extends Command
             ->get();
         if ($candidates->isEmpty()) {
             $this->warn("{$symbol} M15 uchun valid rejected near-miss candidate topilmadi.");
+
             return self::SUCCESS;
         }
 
@@ -48,6 +56,7 @@ class RunMtfShadowCandidates extends Command
         $h1 = $candles->candlesForTraining($symbol, 'H1', limit: 2000);
         if (count($m15) < 200 || count($h1) < 200) {
             $this->error('Shadow candidate kuzatuvi uchun mustaqil M15/H1 candle stream yetarli emas.');
+
             return self::FAILURE;
         }
 
@@ -77,6 +86,7 @@ class RunMtfShadowCandidates extends Command
                 ->post(rtrim(config('services.ai_service.url'), '/').'/api/paper/signal', $request);
             if ($response->failed()) {
                 $rows[] = ['candidate_id' => $candidate->id, 'status' => 'technical_error', 'shadow_rows' => 0];
+
                 continue;
             }
             $signal = (array) $response->json();

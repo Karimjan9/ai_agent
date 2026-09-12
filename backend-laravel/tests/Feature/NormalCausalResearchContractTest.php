@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\DispatchLabGeneration;
 use App\Models\AiLaboratory;
 use App\Services\LabPopulationService;
 use App\Services\ResearchAllocationPolicyService;
@@ -46,11 +47,16 @@ class NormalCausalResearchContractTest extends TestCase
         $this->assertTrue((bool) data_get($result, 'contract.allowed'));
         $this->assertCount(2, data_get($result, 'contract.materialized_controls'));
         $this->assertSame([], data_get($result, 'contract.missing_candidate_pairs'));
+        $this->assertTrue((bool) data_get($result, 'contract.one_control_per_candidate'));
 
         foreach ((array) data_get($result, 'plan') as $slot) {
-            $this->assertSame('frozen_control_pair_v1', data_get($slot, 'niche.control_pair_contract.protocol'));
+            $this->assertSame(ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL, data_get($slot, 'niche.control_pair_contract.protocol'));
             $this->assertNotEmpty(data_get($slot, 'niche.control_pair_contract.pair_key'));
         }
+        $pairs = collect((array) data_get($result, 'plan'))->groupBy('niche.control_pair_contract.pair_key');
+        $this->assertCount(2, $pairs);
+        $this->assertTrue($pairs->every(fn ($seats): bool => $seats->count() === 2
+            && $seats->pluck('niche.control_pair_contract.role')->sort()->values()->all() === ['candidate', 'control']));
     }
 
     public function test_structural_genes_are_schema_and_tactic_declared(): void
@@ -120,7 +126,6 @@ class NormalCausalResearchContractTest extends TestCase
 
         $this->assertTrue((bool) data_get($result, 'contract.allowed'));
         $this->assertSame([], data_get($result, 'contract.missing_candidate_pairs'));
-        $this->assertNotNull(data_get($result, 'contract.volume_pair_repair'));
         $this->assertSame(1, data_get($result, 'contract.candidate_counts.volume|differential_router'));
         $this->assertSame('volume', data_get($result, 'plan.1.niche.data_lane'));
         $this->assertSame('volume_lane', data_get($result, 'plan.1.niche.shadow_mutation_gene'));
@@ -152,9 +157,67 @@ class NormalCausalResearchContractTest extends TestCase
 
         $this->assertTrue((bool) data_get($result, 'contract.allowed'));
         $this->assertSame([], data_get($result, 'contract.missing_candidate_pairs'));
-        $this->assertSame('hybrid', data_get($result, 'contract.family_pairability_repairs.0.from_family'));
-        $this->assertSame('mean_reversion', data_get($result, 'contract.family_pairability_repairs.0.to_family'));
-        $this->assertSame(1, data_get($result, 'contract.candidate_counts.price|mean_reversion'));
-        $this->assertSame(1, data_get($result, 'contract.candidate_counts.volume|mean_reversion'));
+        $this->assertTrue((bool) data_get($result, 'contract.one_control_per_candidate'));
+        $counts = (array) data_get($result, 'contract.candidate_counts', []);
+        $this->assertSame(2, $counts['price|mean_reversion'] ?? null, json_encode($counts));
+        $this->assertSame(1, $counts['volume|mean_reversion'] ?? null, json_encode($counts));
+    }
+
+    public function test_three_proof_seats_leave_eight_exact_pairs_and_one_explicit_abstention(): void
+    {
+        $plan = [];
+        foreach (range(1, 20) as $seat) {
+            $plan[] = [
+                'family' => 'hybrid',
+                'origin' => 'test',
+                'target' => 'profit_factor',
+                'niche' => $seat <= 3 ? [
+                    'causal_learning_cohort' => [
+                        'protocol' => 'causal_triplet_constructor_v4',
+                        'role' => ['memory_guided', 'blinded', 'frozen_control'][$seat - 1],
+                    ],
+                ] : ['declared_gene' => 'minimum_signal_confidence'],
+            ];
+        }
+
+        $result = app(ResearchAllocationPolicyService::class)->materializeNormalControlPairing(
+            $plan,
+            'XAUUSD',
+            'H1',
+            999,
+        );
+
+        $this->assertTrue((bool) data_get($result, 'contract.allowed'));
+        $this->assertSame([1, 2, 3], data_get($result, 'contract.primary_proof_slots'));
+        $this->assertSame(8, data_get($result, 'contract.pair_count'));
+        $this->assertCount(8, data_get($result, 'contract.materialized_controls'));
+        $this->assertSame([20], data_get($result, 'contract.uncertainty_abstain_slots'));
+        $this->assertSame('memory_guided', data_get($result, 'plan.0.niche.causal_learning_cohort.role'));
+        $this->assertSame('uncertainty_abstain', data_get($result, 'plan.19.niche.control_pair_contract.role'));
+        $this->assertTrue((bool) data_get($result, 'plan.19.niche.control_only'));
+    }
+
+    public function test_dispatch_admission_consumes_the_same_exact_pair_protocol_as_the_constructor(): void
+    {
+        $command = app(DispatchLabGeneration::class);
+        $method = new \ReflectionMethod($command, 'normalCausalAdmission');
+        $method->setAccessible(true);
+        $generation = (object) ['trigger_context' => [
+            'research_allocation_budget' => ['mode' => 'normal_research'],
+            'control_pairing_contract' => [
+                'protocol' => ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL,
+                'allowed' => true,
+                'missing_execution_lanes' => [],
+                'missing_candidate_pairs' => [],
+            ],
+            'normal_structural_research_expected' => false,
+        ]];
+
+        $this->assertSame(['allowed' => true, 'reasons' => []], $method->invoke($command, $generation));
+
+        $generation->trigger_context['control_pairing_contract']['protocol'] = 'frozen_control_pair_v1';
+        $legacy = $method->invoke($command, $generation);
+        $this->assertFalse($legacy['allowed']);
+        $this->assertContains('NORMAL_CONTROL_PAIR_PROTOCOL_MISSING', $legacy['reasons']);
     }
 }

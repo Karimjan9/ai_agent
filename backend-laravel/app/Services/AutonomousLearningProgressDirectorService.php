@@ -34,36 +34,70 @@ class AutonomousLearningProgressDirectorService
         private LegacyControlDebtFirewallService $legacyDebt,
         private EdgeHypothesisCompilerService $hypotheses,
         private CausalProgressRatchetGovernorService $ratchetGovernor,
+        private AutonomousModeService $autonomy,
     ) {}
 
     /** @return array<string,mixed> */
-    public function advance(string $symbol = 'XAUUSD', string $timeframe = 'H1', bool $apply = false): array
+    public function advance(
+        string $symbol = 'XAUUSD',
+        string $timeframe = 'H1',
+        bool $apply = false,
+        bool $arbiterAuthorized = false,
+        bool $planningOnly = false,
+    ): array
     {
+        if ($apply && $planningOnly) {
+            throw new \InvalidArgumentException('PLANNING_ONLY_CANNOT_APPLY');
+        }
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', trim($symbol)));
-        $timeframe = strtoupper(trim($timeframe));
-        if ($symbol !== 'XAUUSD' || $timeframe !== 'H1') {
-            return $this->blocked('XAUUSD_H1_ORGANISM_SCOPE_REQUIRED');
+        $organismSymbol = strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'));
+        $timeframe = $symbol === $organismSymbol
+            ? strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'))
+            : strtoupper(trim($timeframe));
+        if ($symbol !== $organismSymbol) {
+            return $this->blocked('XAUUSD_ORGANISM_SCOPE_REQUIRED');
         }
 
         $lock = Cache::lock('learning-progress-director:'.$symbol.':'.$timeframe, 300);
-        if ($apply && ! $lock->get()) return $this->blocked('DIRECTOR_ALREADY_RUNNING');
+        if ($apply && ! $lock->get()) {
+            return $this->blocked('DIRECTOR_ALREADY_RUNNING');
+        }
 
         try {
-            return $this->advanceLocked($symbol, $timeframe, $apply);
+            return $this->advanceLocked($symbol, $timeframe, $apply, $arbiterAuthorized, $planningOnly);
         } finally {
-            if ($apply) $lock->release();
+            if ($apply) {
+                $lock->release();
+            }
         }
     }
 
     /** @return array<string,mixed> */
-    private function advanceLocked(string $symbol, string $timeframe, bool $apply): array
+    private function advanceLocked(
+        string $symbol,
+        string $timeframe,
+        bool $apply,
+        bool $arbiterAuthorized,
+        bool $planningOnly,
+    ): array
     {
         $lab = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->where('is_active', true)->first();
-        if (! $lab) return $this->blocked('ACTIVE_LABORATORY_NOT_FOUND');
-        if (! $this->tablesReady()) return $this->blocked('EVOLUTION_ARCHITECTURE_MIGRATIONS_NOT_READY');
+        if (! $lab) {
+            return $this->blocked('ACTIVE_LABORATORY_NOT_FOUND');
+        }
+        if (! $this->tablesReady()) {
+            return $this->blocked('EVOLUTION_ARCHITECTURE_MIGRATIONS_NOT_READY');
+        }
+        $autonomy = $this->autonomy->status($symbol, $timeframe);
+        if (! (bool) data_get($autonomy, 'enabled', false)) {
+            return $this->blocked('AUTONOMOUS_MODE_STOPPED', [
+                'autonomous_mode' => $autonomy,
+                'next_action' => 'monitor_only_until_ai_start',
+            ]);
+        }
 
         $admission = $this->admission->assess($symbol, $timeframe, $apply);
-        if (! ($admission['admitted'] ?? false)) {
+        if (! ($admission['admitted'] ?? false) && ! $planningOnly) {
             return $this->blocked((string) data_get($admission, 'blockers.0', 'EDGE_DIRECTOR_ADMISSION_FAILED'),
                 ['admission' => $admission]);
         }
@@ -116,6 +150,81 @@ class AutonomousLearningProgressDirectorService
             return $this->result('EDGE_DISCOVERY_RESUME', $pendingEdge, $reconciliation, $apply);
         }
 
+        // Authority proof is settlement already earned by confirmed causal
+        // evidence, not open-ended specialized exploration. Keep it ahead of
+        // the ordinary twenty-seat handoff so disabling Edge micro-cohorts
+        // cannot strand selection -> inheritance -> reproduction again.
+        $incubatedMentor = $this->nextIncubatedMentorAwaitingDescendants($symbol, $timeframe);
+        if ($incubatedMentor) {
+            $result = $apply
+                ? $this->authority->materializeDescendantCohort($incubatedMentor->modelVersion, $incubatedMentor)
+                : ['status' => 'would_queue', 'mentor_agent_id' => $incubatedMentor->id,
+                    'population_size' => CausalCompoundingKernelService::POPULATION_SIZE,
+                    'protocol' => CausalCompoundingKernelService::PROTOCOL];
+            if (in_array(($result['status'] ?? null), ['queued', 'would_queue'], true)) {
+                return $this->result('AUTHORITY_DESCENDANT_PROOF', $result, $reconciliation, $apply);
+            }
+        }
+
+        $confirmedMentor = $this->nextConfirmedMentor($symbol, $timeframe);
+        if ($confirmedMentor) {
+            $result = $apply
+                ? $this->authority->materializeIncubator($confirmedMentor)
+                : ['status' => 'would_queue', 'mentor_agent_id' => $confirmedMentor->id,
+                    'population_size' => CausalCompoundingKernelService::POPULATION_SIZE,
+                    'protocol' => CausalCompoundingKernelService::PROTOCOL];
+            if (in_array(($result['status'] ?? null), ['queued', 'would_queue'], true)) {
+                return $this->result('AUTHORITY_INCUBATOR', $result, $reconciliation, $apply);
+            }
+        }
+
+        // A provisional cartridge with two independent positive paired
+        // observations has one bounded next action: the third five-arm proof
+        // inside a real twenty-seat compounding population. This is part of
+        // the canonical learning ladder, not
+        // optional Edge exploration, so the normal twenty-seat handoff must
+        // not make it unreachable when specialized Edge cohorts are off.
+        $provisional = $this->nextProvisionalCartridgeConfirmation($symbol, $timeframe);
+        if ($provisional) {
+            $baselineModelId = (int) LabAgent::query()->find($provisional->causal_baseline_agent_id)?->model_version_id;
+            $result = ! $apply
+                ? ['status' => 'would_queue', 'cartridge_id' => $provisional->id, 'baseline_model_version_id' => $baselineModelId,
+                    'population_size' => CausalCompoundingKernelService::POPULATION_SIZE,
+                    'protocol' => CausalCompoundingKernelService::PROTOCOL,
+                    'proof_protocol' => CanonicalSkillCartridgeService::PROTOCOL, 'research_only' => true, 'promotion_evidence' => false]
+                : ($baselineModelId > 0
+                    ? $this->cartridges->materializeTransplant($provisional, $baselineModelId, ['confirmation_lane' => 'two_positive_independent_five_arm'], true)
+                    : ['status' => 'blocked', 'reason' => 'CAUSAL_BASELINE_MODEL_MISSING', 'promotion_evidence' => false]);
+
+            return $this->result('PROVISIONAL_SKILL_CARTRIDGE_CONFIRMATION', $result, $reconciliation, $apply);
+        }
+
+        // Existing immutable Edge work may be resumed above, but production
+        // generation ownership belongs to the ordinary twenty-seat lifecycle.
+        // Without this boundary the one-minute Edge director repeatedly opens
+        // five-arm diagnostic generations before the five-minute lifecycle can
+        // admit its normal population.
+        if (! $arbiterAuthorized
+            && ! (bool) config('services.edge_director.autonomous_specialized_cohorts_enabled', false)) {
+            return $this->handoff('NORMAL_TWENTY_GENERATION_HANDOFF', [
+                'next_action' => 'run_xauusd_organism_lifecycle',
+                'generation_contract' => [
+                    'authority' => LabLifecycleOrchestrator::class,
+                    'population_size' => (int) config('services.lab_selection.population_size', 20),
+                    'scope' => $symbol,
+                    'specialized_cohort_materialization' => false,
+                ],
+                'organism' => [
+                    'symbol' => $symbol,
+                    'population_scope' => 'symbol',
+                    'laboratory_storage_timeframe' => $timeframe,
+                    'execution_timeframe' => (string) config('services.xauusd_organism.execution_timeframe', 'M5'),
+                    'timeframe_roles' => (array) config('services.xauusd_organism.timeframe_roles', []),
+                ],
+                'reconciliation' => $reconciliation,
+            ]);
+        }
+
         $replication = $this->edge->materializeIndependentReplication($symbol, $timeframe, $apply);
         if (in_array(($replication['status'] ?? null), ['queued', 'would_queue'], true)) {
             return $this->result('EDGE_INDEPENDENT_REPLICATION', $replication, $reconciliation, $apply);
@@ -131,23 +240,8 @@ class AutonomousLearningProgressDirectorService
             $result = $apply
                 ? $this->edge->materializeAttribution($attributionAgent)
                 : ['status' => 'would_queue', 'agent_id' => $attributionAgent->id];
-            return $this->result('EDGE_ATTRIBUTION', $result, $reconciliation, $apply);
-        }
 
-        // Do not make component confirmation wait for a whole-organism Edge
-        // passport. A two-positive, no-negative cartridge is precisely the
-        // research evidence that can rescue a useful categorical/topological
-        // component from an otherwise non-viable baseline.
-        $provisional = $this->nextProvisionalCartridgeConfirmation($symbol, $timeframe);
-        if ($provisional) {
-            $baselineModelId = (int) LabAgent::query()->find($provisional->causal_baseline_agent_id)?->model_version_id;
-            $result = ! $apply
-                ? ['status' => 'would_queue', 'cartridge_id' => $provisional->id, 'baseline_model_version_id' => $baselineModelId,
-                    'protocol' => CanonicalSkillCartridgeService::PROTOCOL, 'research_only' => true, 'promotion_evidence' => false]
-                : ($baselineModelId > 0
-                    ? $this->cartridges->materializeTransplant($provisional, $baselineModelId, ['confirmation_lane' => 'two_positive_independent_five_arm'], true)
-                    : ['status' => 'blocked', 'reason' => 'CAUSAL_BASELINE_MODEL_MISSING', 'promotion_evidence' => false]);
-            return $this->result('PROVISIONAL_SKILL_CARTRIDGE_CONFIRMATION', $result, $reconciliation, $apply);
+            return $this->result('EDGE_ATTRIBUTION', $result, $reconciliation, $apply);
         }
 
         // A five-arm cartridge cohort proves or rejects one frozen claim. It
@@ -159,6 +253,7 @@ class AutonomousLearningProgressDirectorService
             $result = ! $apply
                 ? ['status' => 'would_queue', 'source_generation_id' => $qualitySource->id, 'population_size' => 20, 'quality_first' => true]
                 : $this->qualityEvolution->materialize($qualitySource);
+
             return $this->result('QUALITY_EVOLUTION_SYNTHESIS', $result, $reconciliation, $apply);
         }
 
@@ -168,16 +263,6 @@ class AutonomousLearningProgressDirectorService
             'EDGE_ATTRIBUTION', 'RISK_SHAPING', 'MANAGEMENT_OPTIMIZATION', 'PAPER_VALIDATION',
         ])->exists();
         if ($edgeEstablished) {
-            $mentor = $this->nextConfirmedMentor($symbol, $timeframe);
-            if ($mentor) {
-                $result = $apply
-                    ? $this->authority->materializeIncubator($mentor)
-                    : ['status' => 'would_queue', 'mentor_agent_id' => $mentor->id];
-                if (($result['status'] ?? null) !== 'already_materialized') {
-                    return $this->result('AUTHORITY_INCUBATOR', $result, $reconciliation, $apply);
-                }
-            }
-
             $cartridge = collect($this->cartridges->rankedForReplay($symbol, $timeframe, 20))
                 ->first(fn (LabSkillZooEntry $entry): bool => ! $this->hasTransplant($entry));
             if ($cartridge) {
@@ -187,6 +272,7 @@ class AutonomousLearningProgressDirectorService
                     : ($baselineModelId > 0
                         ? $this->cartridges->materializeTransplant($cartridge, $baselineModelId, [], true)
                         : ['status' => 'blocked', 'reason' => 'CAUSAL_BASELINE_MODEL_MISSING']);
+
                 return $this->result('SKILL_CARTRIDGE_TRANSPLANT', $result, $reconciliation, $apply);
             }
         }
@@ -204,12 +290,14 @@ class AutonomousLearningProgressDirectorService
                 $repairReadiness = $this->edge->architectureRepairReadiness($symbol, $timeframe);
                 if (($repairReadiness['admitted'] ?? false) === true) {
                     $result = $this->edge->materializeNextArchitectureRepair($lab, $apply);
+
                     return $this->result('EDGE_ARCHITECTURE_REPAIR', $result, $reconciliation, $apply);
                 }
                 $hypothesis = $this->hypotheses->compile($symbol, $timeframe);
                 if (($hypothesis['admitted'] ?? false) === true) {
                     $hypothesis['director_admission_snapshot'] = $this->admissionSnapshot($admission);
                     $result = $this->edge->materializeCompiledHypothesis($lab, $hypothesis, $apply);
+
                     return $this->result('EDGE_HYPOTHESIS_COMPILED', $result, $reconciliation, $apply);
                 }
             }
@@ -275,7 +363,9 @@ class AutonomousLearningProgressDirectorService
         $pre2026 = filled($last) && CarbonImmutable::parse((string) $last, 'UTC')->lt($cutoff)
             && data_get($foundation, 'manifest.source_role') === 'foundation_training_only'
             && data_get($foundation, 'manifest.promotion_evidence') === false;
-        if (! $pre2026) return $this->blocked('PRE_2026_FOUNDATION_ATTESTATION_FAILED', ['last_candle_at' => $last]);
+        if (! $pre2026) {
+            return $this->blocked('PRE_2026_FOUNDATION_ATTESTATION_FAILED', ['last_candle_at' => $last]);
+        }
 
         // Seal both sides of the temporal partition before any Edge job is
         // dispatched. Foundation is pre-2026 training evidence; the rolling
@@ -315,6 +405,7 @@ class AutonomousLearningProgressDirectorService
             DependencyAwareEdgeGenesisFoundryService::INITIAL_REVISION,
             $canonicalSnapshots,
         );
+
         return $this->result('EDGE_GENESIS', $result, $reconciliation, true);
     }
 
@@ -323,10 +414,13 @@ class AutonomousLearningProgressDirectorService
         return LabAgent::query()->with(['modelVersion', 'generation.laboratory'])->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->where('origin', 'edge_genesis')->latest('id')->get()
             ->first(function (LabAgent $agent): bool {
-                if (data_get($agent->modelVersion?->metadata, 'edge_genesis.phase') !== 'EDGE_ATTRIBUTION') return false;
+                if (data_get($agent->modelVersion?->metadata, 'edge_genesis.phase') !== 'EDGE_ATTRIBUTION') {
+                    return false;
+                }
                 $passportId = DB::table('edge_genesis_passports')
                     ->where('genesis_key', data_get($agent->modelVersion?->metadata, 'edge_genesis.genesis_key'))
                     ->value('id');
+
                 return $passportId && ! DB::table('edge_genesis_trials')->where('edge_genesis_passport_id', $passportId)
                     ->where('packet_key', data_get($agent->modelVersion?->metadata, 'edge_genesis.packet_key').':attribution')->exists();
             });
@@ -337,9 +431,36 @@ class AutonomousLearningProgressDirectorService
         return LabAgent::query()->with(['modelVersion', 'generation.laboratory', 'parentA'])
             ->where('symbol', $symbol)->where('timeframe', $timeframe)->latest('id')->limit(500)->get()
             ->first(function (LabAgent $agent): bool {
-                if (data_get($agent->modelVersion?->metadata, 'skill_mentor.status') !== 'confirmed') return false;
+                if (data_get($agent->modelVersion?->metadata, 'skill_mentor.status') !== 'confirmed') {
+                    return false;
+                }
+                if (! $this->authority->hasVerifiedCausalBaseline($agent)) {
+                    return false;
+                }
+
                 return ! DB::table('skill_incubation_trials')->where('mentor_model_version_id', $agent->model_version_id)
                     ->whereIn('status', ['queued', 'running', 'passed'])->exists();
+            });
+    }
+
+    private function nextIncubatedMentorAwaitingDescendants(string $symbol, string $timeframe): ?LabAgent
+    {
+        return LabAgent::query()->with(['modelVersion', 'generation.laboratory'])
+            ->where('symbol', $symbol)->where('timeframe', $timeframe)->latest('id')->limit(500)->get()
+            ->first(function (LabAgent $agent): bool {
+                if (data_get($agent->modelVersion?->metadata, 'skill_mentor.status') !== 'confirmed'
+                    || data_get($this->authority->authorityFor($agent->modelVersion), 'stage') !== 'skill_mentor') {
+                    return false;
+                }
+
+                $generations = LabGeneration::query()->where('ai_laboratory_id', $agent->generation?->ai_laboratory_id)
+                    ->where('trigger_type', 'authority_descendant')->get()
+                    ->filter(fn (LabGeneration $generation): bool => (int) data_get($generation->trigger_context, 'mentor_model_version_id') === (int) $agent->model_version_id);
+
+                return $generations->count() < EvolutionaryAuthorityFoundryService::DESCENDANT_COHORT_LIMIT
+                    && ! $generations->contains(fn (LabGeneration $generation): bool => in_array($generation->status, [
+                        'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation',
+                    ], true));
             });
     }
 
@@ -357,7 +478,9 @@ class AutonomousLearningProgressDirectorService
             ->first(function (LabSkillZooEntry $entry): bool {
                 if ($this->hasTransplant($entry)) {
                     $baselineModelId = (int) LabAgent::query()->find($entry->causal_baseline_agent_id)?->model_version_id;
-                    if ($baselineModelId <= 0 || ! $this->cartridges->canRetryRepairableTechnicalPreflightCohort($entry, $baselineModelId)) return false;
+                    if ($baselineModelId <= 0 || ! $this->cartridges->canRetryRepairableTechnicalPreflightCohort($entry, $baselineModelId)) {
+                        return false;
+                    }
                 }
                 $observations = DB::table('skill_cartridge_observations')->where('lab_skill_zoo_entry_id', $entry->id);
                 $positive = (clone $observations)->where('outcome', 'positive')->count();
@@ -378,7 +501,7 @@ class AutonomousLearningProgressDirectorService
     {
         return collect(['edge_genesis_passports', 'edge_genesis_trials', 'full_stack_playbook_passports',
             'skill_cartridge_transplant_trials', 'skill_incubation_trials', 'edge_hypothesis_packets',
-            'edge_genesis_cohorts'])
+            'edge_genesis_cohorts', 'descendant_value_trials', 'evolutionary_authority_ledgers'])
             ->every(fn (string $table): bool => Schema::hasTable($table));
     }
 
@@ -410,6 +533,14 @@ class AutonomousLearningProgressDirectorService
     private function blocked(string $reason, array $context = []): array
     {
         return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => $reason,
+            'expensive_cohorts_opened' => 0, ...$context, 'promotion_evidence' => false];
+    }
+
+    /** @return array<string,mixed> */
+    private function handoff(string $reason, array $context = []): array
+    {
+        return ['protocol' => self::PROTOCOL, 'status' => 'waiting',
+            'action' => 'RUN_XAUUSD_ORGANISM_LIFECYCLE', 'reason' => $reason,
             'expensive_cohorts_opened' => 0, ...$context, 'promotion_evidence' => false];
     }
 }

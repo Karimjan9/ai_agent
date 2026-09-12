@@ -3,14 +3,23 @@
 namespace Tests\Feature;
 
 use App\Jobs\AdvanceIntradayTrainingArchiveJob;
+use App\Models\MarketSymbol;
+use App\Models\MarketTrainingArchive;
+use App\Services\MarketData\DukascopyMarketDataProvider;
+use App\Services\MarketData\MarketTrainingDataService;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Mockery;
 use Tests\TestCase;
 
 class IntradayTrainingMaintenanceIsolationTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_intraday_archive_checkpoint_is_unique_bounded_and_isolated_from_learning(): void
     {
         Cache::forget('market-maintenance:intraday-training:failure-cooldown');
@@ -39,5 +48,39 @@ class IntradayTrainingMaintenanceIsolationTest extends TestCase
             'completed_checkpoint',
             data_get(Cache::get('system:intraday-training-maintenance-heartbeat'), 'status'),
         );
+    }
+
+    public function test_completed_immutable_archive_does_not_repeat_full_coverage_scans(): void
+    {
+        MarketSymbol::create([
+            'symbol' => 'XAUUSD',
+            'provider_symbol' => 'XAU_USD',
+            'name' => 'Gold / US Dollar',
+            'market_type' => 'forex',
+            'is_active' => true,
+        ]);
+        $cutoff = CarbonImmutable::parse('2026-01-01 00:00:00', 'UTC');
+        $training = Mockery::mock(MarketTrainingDataService::class);
+        $training->shouldReceive('trainingCutoff')->once()->andReturn($cutoff);
+        $training->shouldReceive('ensureArchive')->times(3)->andReturnUsing(
+            static fn (string $dataset, string $provider, string $symbol, string $timeframe) => new MarketTrainingArchive([
+                'dataset_key' => $dataset,
+                'provider' => $provider,
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+                'status' => 'complete',
+                'backfill_cursor_at' => $cutoff,
+                'row_count' => 100,
+            ]),
+        );
+        $training->shouldNotReceive('refreshCoverage');
+        $provider = Mockery::mock(DukascopyMarketDataProvider::class);
+        $provider->shouldNotReceive('fetchCandles');
+        $this->app->instance(MarketTrainingDataService::class, $training);
+        $this->app->instance(DukascopyMarketDataProvider::class, $provider);
+
+        $this->artisan('market-data:backfill-intraday-training')
+            ->expectsOutput('XAUUSD intraday training archive already complete.')
+            ->assertSuccessful();
     }
 }

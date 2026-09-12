@@ -8,11 +8,16 @@ use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
+use App\Models\LabSkillZooEntry;
+use App\Models\ModelVersion;
+use App\Services\CanonicalResearchLanePriorityService;
 use App\Services\DependencyAwareEdgeGenesisFoundryService;
 use App\Services\DirectResearchReplayAdmissionService;
 use App\Services\ExecutionContractService;
+use App\Services\FullStackPlaybookMasteryService;
 use App\Services\GenerationAdmissionDecisionService;
 use App\Services\LabAgentPreflightService;
+use App\Services\StrategyParameterSchemaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -23,6 +28,45 @@ use Tests\TestCase;
 class DependencyAwareEdgeGenesisFoundryTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_dashboard_transplant_metric_is_scope_bound_and_does_not_claim_confirmed_transfer(): void
+    {
+        $h1 = LabSkillZooEntry::create([
+            'skill_key' => 'dashboard-h1', 'cartridge_key' => hash('sha256', 'dashboard-h1'), 'revision' => 1,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'module_key' => 'entry',
+            'niche_key' => 'all', 'gene_key' => 'entry_mode', 'status' => 'confirmed', 'evidence' => [],
+        ]);
+        $m15 = LabSkillZooEntry::create([
+            'skill_key' => 'dashboard-m15', 'cartridge_key' => hash('sha256', 'dashboard-m15'), 'revision' => 1,
+            'symbol' => 'XAUUSD', 'timeframe' => 'M15', 'strategy_family' => 'hybrid', 'module_key' => 'entry',
+            'niche_key' => 'all', 'gene_key' => 'entry_mode', 'status' => 'confirmed', 'evidence' => [],
+        ]);
+        foreach ([
+            [$h1->id, 'XAUUSD', 'H1', 'passed'],
+            [$h1->id, 'XAUUSD', 'H1', 'failed'],
+            [$m15->id, 'XAUUSD', 'M15', 'passed'],
+        ] as $index => [$entryId, $symbol, $timeframe, $status]) {
+            DB::table('skill_cartridge_transplant_trials')->insert([
+                'trial_key' => hash('sha256', 'dashboard-transplant-'.$index),
+                'lab_skill_zoo_entry_id' => $entryId, 'symbol' => $symbol, 'timeframe' => $timeframe,
+                'mode' => 'exact_replication', 'status' => $status, 'context' => json_encode([]),
+                'evidence' => json_encode(['promotion_evidence' => false]), 'settled_at' => now(),
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+
+        $dashboard = app(DependencyAwareEdgeGenesisFoundryService::class)->dashboard('XAUUSD', 'H1');
+        $metric = $dashboard['transplant_arm_pass_rate'];
+
+        $this->assertArrayNotHasKey('transplant_success_rate', $dashboard);
+        $this->assertSame(.5, $metric['value']);
+        $this->assertSame(1, data_get($metric, 'numerator.value'));
+        $this->assertSame(2, data_get($metric, 'denominator.value'));
+        $this->assertSame('transplant_arm_trial', substr((string) data_get($metric, 'denominator.unique_subject_type'), -20));
+        $this->assertSame('XAUUSD', data_get($metric, 'scope.symbol'));
+        $this->assertSame('H1', data_get($metric, 'scope.laboratory_timeframe'));
+        $this->assertStringContainsString('not confirmed transfer', $metric['interpretation']);
+    }
 
     public function test_edge_model_identity_is_deterministic_and_fits_the_production_name_column(): void
     {
@@ -64,7 +108,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $service = app(DependencyAwareEdgeGenesisFoundryService::class);
         $method = new \ReflectionMethod($service, 'runtimeForArm');
         $method->setAccessible(true);
-        $source = app(\App\Services\StrategyParameterSchemaService::class)->defaults('confirmation_entry_mtf');
+        $source = app(StrategyParameterSchemaService::class)->defaults('confirmation_entry_mtf');
         $source['entry_model'] = 'breakout_retest';
         $source['swing_lookback'] = 60;
         $packet = [
@@ -78,6 +122,77 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $this->assertSame('breakout_retest', $runtime['parameters']['entry_model']);
         $this->assertSame(60, $runtime['parameters']['swing_lookback']);
         $this->assertSame(.4, $runtime['parameters']['rejection_wick_ratio']);
+    }
+
+    public function test_parameter_identity_treats_integer_and_float_representations_as_the_same_numeric_value(): void
+    {
+        $service = app(DependencyAwareEdgeGenesisFoundryService::class);
+        $diff = new \ReflectionMethod($service, 'diff');
+        $diff->setAccessible(true);
+        $hash = new \ReflectionMethod($service, 'parameterHash');
+        $hash->setAccessible(true);
+
+        $integer = ['nested' => ['minimum_reward_space_r' => 2, 'swing_lookback' => 60]];
+        $float = ['nested' => ['swing_lookback' => 60.0, 'minimum_reward_space_r' => 2.0]];
+
+        $this->assertSame([], $diff->invoke($service, $integer, $float));
+        $this->assertSame($hash->invoke($service, $integer), $hash->invoke($service, $float));
+        $this->assertSame(['minimum_reward_space_r' => ['old' => 2, 'new' => 2.1]],
+            $diff->invoke($service, ['minimum_reward_space_r' => 2], ['minimum_reward_space_r' => 2.1]));
+    }
+
+    public function test_compiled_control_numeric_representation_quarantine_has_a_bounded_audited_recovery(): void
+    {
+        Queue::fake();
+        $lab = AiLaboratory::create(['name' => 'Compiled control recovery', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse']);
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 191,
+            'trigger_type' => 'edge_genesis', 'trigger_context' => [], 'population_size' => 1, 'status' => 'completed']);
+        $baseline = ModelVersion::create(['name' => 'Compiled source', 'strategy' => 'compiled-source', 'version' => 'v1',
+            'generation' => 190, 'status' => 'testing', 'parameters' => ['minimum_reward_space_r' => 2], 'metadata' => []]);
+        $genesisKey = hash('sha256', 'compiled-control-numeric-recovery');
+        $dataHash = hash('sha256', 'compiled-control-data');
+        $executionHash = hash('sha256', 'compiled-control-execution');
+        $model = ModelVersion::create(['name' => 'Compiled control', 'strategy' => 'compiled-control', 'version' => 'v1',
+            'generation' => 191, 'status' => 'testing', 'parameters' => ['minimum_reward_space_r' => 2.0],
+            'evidence_status' => 'stale_quarantine', 'invalidation_reason' => 'strict_lab_agent_preflight_failed',
+            'metadata' => ['preflight_quarantine' => ['errors' => ['ZERO_DIFF_INVARIANT_FAILED']],
+                'edge_genesis' => ['protocol' => DependencyAwareEdgeGenesisFoundryService::PROTOCOL,
+                    'architecture_revision' => DependencyAwareEdgeGenesisFoundryService::EVIDENCE_COMPILED_REVISION,
+                    'genesis_key' => $genesisKey, 'arm' => 'compiled_control', 'data_hash' => $dataHash,
+                    'execution_hash' => $executionHash, 'causal_baseline_model_version_id' => $baseline->id,
+                    'intervention_attestation' => ['protocol' => 'edge_genesis_intervention_attestation_v1',
+                        'control_identity' => true, 'source_parameter_hash' => 'legacy-int-hash',
+                        'consumed_parameter_hash' => 'legacy-float-hash',
+                        'actual_parameter_diff' => ['minimum_reward_space_r' => ['old' => 2, 'new' => 2.0]]]]]]);
+        $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'confirmation_entry_mtf',
+            'origin' => 'edge_genesis', 'lifecycle_status' => 'technical_quarantine',
+            'parameter_diff' => ['minimum_reward_space_r' => ['old' => 2, 'new' => 2.0]],
+            'decision_reason' => 'Technical quarantine: strict lab preflight failed (ZERO_DIFF_INVARIANT_FAILED).']);
+        $passportId = DB::table('edge_genesis_passports')->insertGetId(['genesis_key' => $genesisKey,
+            'lab_generation_id' => $generation->id, 'baseline_model_version_id' => $baseline->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'phase' => 'EDGE_DISCOVERY',
+            'status' => 'queued', 'data_hash' => $dataHash, 'execution_hash' => $executionHash,
+            'context' => '{}', 'evidence' => '{}', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('edge_genesis_trials')->insert(['trial_key' => hash('sha256', 'compiled-control-trial'),
+            'edge_genesis_passport_id' => $passportId, 'lab_agent_id' => $agent->id, 'model_version_id' => $model->id,
+            'packet_key' => 'compiled-fixture', 'emitter' => 'evidence_compiler', 'arm' => 'compiled_control',
+            'stage' => 'two_fold_discovery', 'status' => 'queued', 'evidence' => '{}',
+            'created_at' => now(), 'updated_at' => now()]);
+
+        $foundry = app(DependencyAwareEdgeGenesisFoundryService::class);
+        $this->assertSame(1, $foundry->resumePendingTrials('XAUUSD', 'H1', false)['seats']);
+        $this->assertSame('queued', $foundry->resumePendingTrials('XAUUSD', 'H1', true)['status']);
+        $agent = $agent->fresh(['modelVersion']);
+        $this->assertSame([], $agent->parameter_diff);
+        $this->assertSame('valid', $agent->modelVersion->evidence_status);
+        $this->assertSame([], data_get($agent->modelVersion->metadata, 'edge_genesis.intervention_attestation.actual_parameter_diff'));
+        $this->assertSame(data_get($agent->modelVersion->metadata, 'edge_genesis.intervention_attestation.source_parameter_hash'),
+            data_get($agent->modelVersion->metadata, 'edge_genesis.intervention_attestation.consumed_parameter_hash'));
+        $this->assertSame('edge_genesis_numeric_control_identity_recovery_v1',
+            data_get($agent->modelVersion->metadata, 'admission_metadata_recovery_history.0.protocol'));
+        Queue::assertPushed(EvaluateLabAgentJob::class, 1);
     }
 
     public function test_compiled_direct_source_parameter_map_is_reduced_to_one_canonical_audit_hash(): void
@@ -344,7 +459,9 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
             'end' => sprintf('2023-%02d-28', $fold),
             'net_profit_percent' => -.15,
         ])->all();
-        foreach (['confirmation', 'entry'] as $field) $controlResult['edge_observability'][$field]['count'] = 0;
+        foreach (['confirmation', 'entry'] as $field) {
+            $controlResult['edge_observability'][$field]['count'] = 0;
+        }
         $controlResult['edge_observability']['exit_outcome']['closed_trade_count'] = 12;
         $control->modelVersion->marketPerformances()->update([
             'status' => 'accepted', 'fitness' => .04, 'forward_score' => .04, 'sample_count' => 12,
@@ -384,11 +501,12 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
 
         $attribution = $foundry->materializeAttribution($agent->fresh(['modelVersion', 'generation.laboratory']));
         $this->assertSame('queued', $attribution['status']);
-        $this->assertSame(25, LabAgent::count());
+        $this->assertSame(40, LabAgent::count());
+        $this->assertSame(20, LabAgent::query()->where('lab_generation_id', $attribution['generation_id'])->count());
         $this->assertDatabaseCount('edge_genesis_trials', 25);
         $this->assertDatabaseCount('full_stack_playbook_passports', 25);
         $attributionAgent = LabAgent::query()->with('modelVersion')->where('origin', 'edge_component_attribution')->firstOrFail();
-        $this->assertTrue(app(\App\Services\FullStackPlaybookMasteryService::class)->preflight($attributionAgent)['allowed']);
+        $this->assertTrue(app(FullStackPlaybookMasteryService::class)->preflight($attributionAgent)['allowed']);
         $this->assertTrue(app(DirectResearchReplayAdmissionService::class)->inspect($attributionAgent)['allowed']);
         $noConfirmation = LabAgent::query()->with('modelVersion')->where('origin', 'edge_component_attribution')->get()
             ->first(fn (LabAgent $seat): bool => data_get($seat->modelVersion->metadata, 'edge_genesis_attribution.arm') === 'no_confirmation');
@@ -432,6 +550,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $this->assertDatabaseCount('edge_genesis_component_attributions', 4);
         $this->assertTrue(DB::table('edge_genesis_component_attributions')->get()->every(function ($row): bool {
             $evidence = json_decode((string) $row->evidence, true);
+
             return $row->status === 'supported'
                 && data_get($evidence, 'paired_window_effect.positive_windows') === 9
                 && data_get($evidence, 'parent_authority') === false;
@@ -554,7 +673,12 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $this->assertTrue($readiness['admitted'], json_encode($readiness));
         $this->assertSame('REPLICATED_CONFIRMATION_BREADTH_STARVATION', $readiness['reason']);
         $this->assertSame(4, count($readiness['diagnostic_packets']));
-        $reservation = app(\App\Services\CanonicalResearchLanePriorityService::class)->edgeGenesisOwnership('XAUUSD', 'H1');
+        config()->set('services.edge_director.autonomous_specialized_cohorts_enabled', false);
+        $normalMode = app(CanonicalResearchLanePriorityService::class)->edgeGenesisOwnership('XAUUSD', 'H1');
+        $this->assertFalse($normalMode['owned']);
+        $this->assertSame('normal_twenty_generation_mode', $normalMode['reservation_reason']);
+        config()->set('services.edge_director.autonomous_specialized_cohorts_enabled', true);
+        $reservation = app(CanonicalResearchLanePriorityService::class)->edgeGenesisOwnership('XAUUSD', 'H1');
         $this->assertTrue($reservation['owned']);
         $this->assertSame('causally_admitted_edge_architecture_repair', $reservation['reservation_reason']);
         $parallelAdmission = app(GenerationAdmissionDecisionService::class)->decide($lab, $sourceGeneration, [
@@ -574,14 +698,11 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $this->assertDatabaseCount('edge_genesis_trials', 40);
         $this->assertDatabaseCount('lab_agents', 40);
         $repairAgents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $repair['generation_id'])->get();
-        $this->assertSame(4, $repairAgents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion->metadata, 'edge_genesis.arm') === 'confirmation_floor_one')->count());
-        $this->assertTrue($repairAgents->every(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion->metadata, 'edge_genesis.architecture_revision')
+        $this->assertSame(4, $repairAgents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'edge_genesis.arm') === 'confirmation_floor_one')->count());
+        $this->assertTrue($repairAgents->every(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'edge_genesis.architecture_revision')
                 === DependencyAwareEdgeGenesisFoundryService::CONFIRMATION_REPAIR_REVISION));
 
-        $packet = $repairAgents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion->metadata, 'edge_genesis.packet_key') === 'trend_pullback');
+        $packet = $repairAgents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'edge_genesis.packet_key') === 'trend_pullback');
         $reference = (array) $packet->first(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'edge_genesis.arm') === 'professional_reference')?->modelVersion->parameters;
         $floor = (array) $packet->first(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'edge_genesis.arm') === 'confirmation_floor_one')?->modelVersion->parameters;
         $changed = collect(array_unique([...array_keys($reference), ...array_keys($floor)]))
@@ -651,8 +772,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $this->assertEqualsCanonicalizing(DependencyAwareEdgeGenesisFoundryService::TRIGGER_REPAIR_ARMS,
             $triggerAgents->map(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'))->unique()->all());
 
-        $triggerPacket = $triggerAgents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion->metadata, 'edge_genesis.packet_key') === 'trend_pullback');
+        $triggerPacket = $triggerAgents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'edge_genesis.packet_key') === 'trend_pullback');
         $byArm = $triggerPacket->keyBy(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'));
         $baseline = (array) $byArm['confirmation_floor_control']->modelVersion->parameters;
         $this->assertSame(1, $baseline['minimum_independent_confirmations']);
@@ -704,8 +824,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         // conservative pre-exit excursion. That failure is terminal (never
         // edge authority), but it is valid input to one management-only
         // harvest experiment instead of a state-machine dead end.
-        $failedAuthority = $triggerAgents->first(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion->metadata, 'edge_genesis.packet_key') === 'break_retest'
+        $failedAuthority = $triggerAgents->first(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'edge_genesis.packet_key') === 'break_retest'
             && data_get($agent->modelVersion->metadata, 'edge_genesis.arm') === 'aggressive_trigger');
         $failedAuthorityTrial = DB::table('edge_genesis_trials')->where('lab_agent_id', $failedAuthority->id)->first();
         DB::table('edge_genesis_trials')->where('id', $failedAuthorityTrial->id)->update([
@@ -722,13 +841,12 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
 
         $harvest = $foundry->materializeNextArchitectureRepair($lab, true);
         $this->assertSame('queued', $harvest['status']);
-        $this->assertSame(5, $harvest['seats']);
-        $harvestAgents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $harvest['generation_id'])->get();
+        $this->assertSame(20, $harvest['seats']);
+        $harvestAgents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $harvest['generation_id'])
+            ->where('origin', 'edge_genesis')->get();
         $this->assertCount(5, $harvestAgents);
-        $this->assertTrue($harvestAgents->every(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion->metadata, 'edge_genesis.packet_key') === 'break_retest'));
-        $harvestByArm = $harvestAgents->keyBy(fn (LabAgent $agent): string =>
-            (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'));
+        $this->assertTrue($harvestAgents->every(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'edge_genesis.packet_key') === 'break_retest'));
+        $harvestByArm = $harvestAgents->keyBy(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'));
         $harvestControl = (array) $harvestByArm['latent_edge_control']->modelVersion->parameters;
         foreach ([
             'partial_harvest' => ['partial_take_profit_fraction'],
@@ -743,7 +861,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         }
         $this->assertNotNull(DB::table('edge_genesis_passports')->where('lab_generation_id', $harvest['generation_id'])
             ->value('baseline_model_version_id'));
-        Queue::assertPushed(EvaluateLabAgentJob::class, 65);
+        Queue::assertPushed(EvaluateLabAgentJob::class, 80);
 
         $harvestPlan = (array) data_get($harvestByArm['latent_edge_control']->modelVersion->metadata,
             'edge_genesis.frozen_window_plan');
@@ -887,14 +1005,13 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
 
         $contextRepair = $foundry->materializeNextArchitectureRepair($lab, true);
         $this->assertSame('queued', $contextRepair['status']);
-        $this->assertSame(5, $contextRepair['seats']);
-        $contextAgents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $contextRepair['generation_id'])->get();
+        $this->assertSame(20, $contextRepair['seats']);
+        $contextAgents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $contextRepair['generation_id'])
+            ->where('origin', 'edge_genesis')->get();
         $this->assertEqualsCanonicalizing(DependencyAwareEdgeGenesisFoundryService::CONTEXT_ROUTER_REPAIR_ARMS,
             $contextAgents->map(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'))->all());
-        $this->assertSame(1, $contextAgents->pluck('modelVersion.parameters')->map(fn ($parameters): string =>
-            hash('sha256', json_encode($parameters, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)))->unique()->count());
-        $contextByArm = $contextAgents->keyBy(fn (LabAgent $agent): string =>
-            (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'));
+        $this->assertSame(1, $contextAgents->pluck('modelVersion.parameters')->map(fn ($parameters): string => hash('sha256', json_encode($parameters, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)))->unique()->count());
+        $contextByArm = $contextAgents->keyBy(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'));
         $this->assertSame('telemetry_only_control', data_get($contextByArm['unfiltered_context_control']->modelVersion->metadata,
             'edge_genesis.context.enforcement'));
         $this->assertSame(['regime', 'session', 'volatility'], data_get($contextByArm['strict_context_gate']->modelVersion->metadata,
@@ -1019,8 +1136,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         }
         $this->assertSame(2, $foundry->resumePendingTrials('XAUUSD', 'H1', false)['seats']);
         $this->assertSame(2, $foundry->resumePendingTrials('XAUUSD', 'H1', true)['seats']);
-        $this->assertTrue($authorityAgents->every(fn (LabAgent $authorityAgent): bool =>
-            $authorityAgent->fresh()->lifecycle_status === 'full_queued'));
+        $this->assertTrue($authorityAgents->every(fn (LabAgent $authorityAgent): bool => $authorityAgent->fresh()->lifecycle_status === 'full_queued'));
 
         // A regime filter may be causally beneficial without being an edge.
         // Preserve it as the next packet's frozen stepping stone and move the
@@ -1078,12 +1194,12 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $this->assertSame(.28, $entrySynthesisReadiness['expectancy_delta_r']);
         $entrySynthesis = $foundry->materializeNextArchitectureRepair($lab, true);
         $this->assertSame('queued', $entrySynthesis['status']);
-        $this->assertSame(5, $entrySynthesis['seats']);
-        $synthesisAgents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $entrySynthesis['generation_id'])->get();
+        $this->assertSame(20, $entrySynthesis['seats']);
+        $synthesisAgents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $entrySynthesis['generation_id'])
+            ->where('origin', 'edge_genesis')->get();
         $this->assertEqualsCanonicalizing(DependencyAwareEdgeGenesisFoundryService::REGIME_ENTRY_SYNTHESIS_ARMS,
             $synthesisAgents->map(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'))->all());
-        $synthesisByArm = $synthesisAgents->keyBy(fn (LabAgent $agent): string =>
-            (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'));
+        $synthesisByArm = $synthesisAgents->keyBy(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'));
         $synthesisControl = (array) $synthesisByArm['regime_entry_control']->modelVersion->parameters;
         foreach ([
             'retest_entry_gate' => ['entry_mode'],
@@ -1171,12 +1287,12 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $this->assertFalse($factorialReadiness['authority_from_subset_analysis']);
         $factorial = $foundry->materializeNextArchitectureRepair($lab, true);
         $this->assertSame('queued', $factorial['status']);
-        $this->assertSame(5, $factorial['seats']);
-        $factorialAgents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $factorial['generation_id'])->get();
+        $this->assertSame(20, $factorial['seats']);
+        $factorialAgents = LabAgent::query()->with('modelVersion')->where('lab_generation_id', $factorial['generation_id'])
+            ->where('origin', 'edge_genesis')->get();
         $this->assertEqualsCanonicalizing(DependencyAwareEdgeGenesisFoundryService::FAILURE_CELL_FACTORIAL_ARMS,
             $factorialAgents->map(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'))->all());
-        $factorialByArm = $factorialAgents->keyBy(fn (LabAgent $agent): string =>
-            (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'));
+        $factorialByArm = $factorialAgents->keyBy(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.arm'));
         $this->assertSame(['regime'], data_get($factorialByArm['failure_cell_control']->modelVersion->metadata,
             'edge_genesis.context.admission_axes'));
         $this->assertSame(['regime', 'direction'], data_get($factorialByArm['buy_direction_gate']->modelVersion->metadata,
@@ -1191,8 +1307,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
             'edge_genesis.context.admission_axes'));
         $this->assertSame(['SELL'], data_get($factorialByArm['sell_direction_negative_control']->modelVersion->metadata,
             'edge_genesis.context.allowed_directions'));
-        $this->assertCount(1, $factorialAgents->pluck('modelVersion.parameters')->map(fn ($parameters): string =>
-            hash('sha256', json_encode($parameters, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)))->unique());
+        $this->assertCount(1, $factorialAgents->pluck('modelVersion.parameters')->map(fn ($parameters): string => hash('sha256', json_encode($parameters, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)))->unique());
 
         // Direction specialists have fewer opportunities by construction.
         // A positive, pre-registered one-powered-fold result may reach the
@@ -1337,6 +1452,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
                 'edge_genesis.context.admission_axes', []);
             $armWindows = collect($nineFoldWindows)->map(function (array $window, int $index) use ($controlArm): array {
                 $window['net_profit_percent'] = $controlArm ? -.10 : ($index < 6 ? .20 : -.20);
+
                 return $window;
             })->all();
             $authorityMetrics = [
@@ -1376,12 +1492,12 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
             ];
             $authorityAgent->modelVersion->marketPerformances()->where('symbol', 'XAUUSD')
                 ->where('timeframe', 'H1')->firstOrFail()->update([
-                'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => $authorityAgent->strategy_family,
-                'status' => 'rejected', 'fitness' => 0, 'forward_score' => 0,
-                'sample_count' => $controlArm ? 35 : 20, 'rolling_windows_count' => 9,
-                'rolling_forward_wins' => $controlArm ? 2 : 5,
-                'metrics' => $authorityMetrics, 'evidence_status' => 'valid',
-            ]);
+                    'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => $authorityAgent->strategy_family,
+                    'status' => 'rejected', 'fitness' => 0, 'forward_score' => 0,
+                    'sample_count' => $controlArm ? 35 : 20, 'rolling_windows_count' => 9,
+                    'rolling_forward_wins' => $controlArm ? 2 : 5,
+                    'metrics' => $authorityMetrics, 'evidence_status' => 'valid',
+                ]);
             $foundry->settleOutcome($authorityAgent->fresh('modelVersion'), $authorityMetrics);
         }
         $this->assertSame('edge_progressing', DB::table('edge_genesis_trials')
@@ -1437,16 +1553,14 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $this->assertFalse($densificationReadiness['parent_authority']);
         $densification = $foundry->materializeNextArchitectureRepair($lab, true);
         $this->assertSame('queued', $densification['status']);
-        $this->assertSame(5, $densification['seats']);
+        $this->assertSame(20, $densification['seats']);
         $densificationAgents = LabAgent::query()->with('modelVersion')
-            ->where('lab_generation_id', $densification['generation_id'])->get();
+            ->where('lab_generation_id', $densification['generation_id'])->where('origin', 'edge_genesis')->get();
         $this->assertEqualsCanonicalizing(DependencyAwareEdgeGenesisFoundryService::SPECIALIST_DENSIFICATION_ARMS,
             $densificationAgents->map(fn (LabAgent $seat): string => (string) data_get($seat->modelVersion->metadata,
                 'edge_genesis.arm'))->all());
-        $densificationByArm = $densificationAgents->keyBy(fn (LabAgent $seat): string =>
-            (string) data_get($seat->modelVersion->metadata, 'edge_genesis.arm'));
-        $this->assertTrue($densificationAgents->every(fn (LabAgent $seat): bool =>
-            data_get($seat->modelVersion->metadata, 'edge_genesis.context.admission_axes')
+        $densificationByArm = $densificationAgents->keyBy(fn (LabAgent $seat): string => (string) data_get($seat->modelVersion->metadata, 'edge_genesis.arm'));
+        $this->assertTrue($densificationAgents->every(fn (LabAgent $seat): bool => data_get($seat->modelVersion->metadata, 'edge_genesis.context.admission_axes')
                 === ['regime', 'direction', 'volatility']
             && data_get($seat->modelVersion->metadata, 'edge_genesis.context.allowed_directions') === ['BUY']
             && data_get($seat->modelVersion->metadata, 'edge_genesis.context.allowed_volatility') === ['high_volatility']));
@@ -1529,14 +1643,13 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
             $temporalReadiness['temporal_roles']);
         $temporal = $foundry->materializeNextArchitectureRepair($lab, true);
         $this->assertSame('queued', $temporal['status']);
-        $this->assertSame(5, $temporal['seats']);
+        $this->assertSame(20, $temporal['seats']);
         $temporalAgents = LabAgent::query()->with('modelVersion')
-            ->where('lab_generation_id', $temporal['generation_id'])->get();
+            ->where('lab_generation_id', $temporal['generation_id'])->where('origin', 'edge_genesis')->get();
         $this->assertEqualsCanonicalizing(DependencyAwareEdgeGenesisFoundryService::TEMPORAL_BREAKOUT_BINDING_ARMS,
             $temporalAgents->map(fn (LabAgent $seat): string => (string) data_get($seat->modelVersion->metadata,
                 'edge_genesis.arm'))->all());
-        $temporalByArm = $temporalAgents->keyBy(fn (LabAgent $seat): string =>
-            (string) data_get($seat->modelVersion->metadata, 'edge_genesis.arm'));
+        $temporalByArm = $temporalAgents->keyBy(fn (LabAgent $seat): string => (string) data_get($seat->modelVersion->metadata, 'edge_genesis.arm'));
         $this->assertSame('H1', data_get($temporalByArm['h1_breakout_control']->modelVersion->parameters,
             'breakout_setup_timeframe'));
         $this->assertSame('M15', data_get($temporalByArm['m15_setup_breakout']->modelVersion->parameters,
@@ -1547,8 +1660,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
             'swing_lookback'));
         $this->assertSame('balanced', data_get($temporalByArm['balanced_retest_confirmation']->modelVersion->parameters,
             'entry_mode'));
-        $this->assertTrue($temporalAgents->every(fn (LabAgent $seat): bool =>
-            data_get($seat->modelVersion->metadata, 'edge_genesis.context.temporal_role_experiment') === true));
+        $this->assertTrue($temporalAgents->every(fn (LabAgent $seat): bool => data_get($seat->modelVersion->metadata, 'edge_genesis.context.temporal_role_experiment') === true));
 
         // M15 owns more opportunity coverage in the real-shaped observation,
         // but aggressive/minimum-one confirmation turns that activity into a
@@ -1624,12 +1736,11 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
         $quality = $foundry->materializeNextArchitectureRepair($lab, true);
         $this->assertSame('queued', $quality['status']);
         $qualityAgents = LabAgent::query()->with('modelVersion')
-            ->where('lab_generation_id', $quality['generation_id'])->get();
+            ->where('lab_generation_id', $quality['generation_id'])->where('origin', 'edge_genesis')->get();
         $this->assertEqualsCanonicalizing(DependencyAwareEdgeGenesisFoundryService::M15_SETUP_QUALITY_ARMS,
             $qualityAgents->map(fn (LabAgent $seat): string => (string) data_get($seat->modelVersion->metadata,
                 'edge_genesis.arm'))->all());
-        $qualityByArm = $qualityAgents->keyBy(fn (LabAgent $seat): string =>
-            (string) data_get($seat->modelVersion->metadata, 'edge_genesis.arm'));
+        $qualityByArm = $qualityAgents->keyBy(fn (LabAgent $seat): string => (string) data_get($seat->modelVersion->metadata, 'edge_genesis.arm'));
         $this->assertSame('balanced', data_get($qualityByArm['m15_balanced_confirmation']->modelVersion->parameters,
             'entry_mode'));
         $this->assertSame('conservative', data_get($qualityByArm['m15_conservative_confirmation']->modelVersion->parameters,
@@ -1638,8 +1749,7 @@ class DependencyAwareEdgeGenesisFoundryTest extends TestCase
             'minimum_independent_confirmations'));
         $this->assertSame(3, data_get($qualityByArm['m15_three_family_confirmation']->modelVersion->parameters,
             'minimum_independent_confirmations'));
-        $this->assertTrue($qualityAgents->every(fn (LabAgent $seat): bool =>
-            data_get($seat->modelVersion->parameters, 'breakout_setup_timeframe') === 'M15'
+        $this->assertTrue($qualityAgents->every(fn (LabAgent $seat): bool => data_get($seat->modelVersion->parameters, 'breakout_setup_timeframe') === 'M15'
             && data_get($seat->modelVersion->metadata, 'edge_genesis.context.m15_setup_quality_experiment') === true));
 
         // Three sparse but profitable conservative entries are not edge

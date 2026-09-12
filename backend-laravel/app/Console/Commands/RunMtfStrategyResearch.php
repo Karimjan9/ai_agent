@@ -2,12 +2,11 @@
 
 namespace App\Console\Commands;
 
-use App\Models\ModelMarketPerformance;
 use App\Models\MtfAblationRun;
 use App\Models\MtfStrategyResearchRun;
+use App\Services\AutonomousModeService;
 use App\Services\ExecutionContractService;
-use App\Services\MarketData\CandlePayloadService;
-use App\Services\MarketData\MarketVolumeService;
+use App\Services\MtfResearchCohortService;
 use App\Services\MtfStrategyResearchService;
 use App\Services\MtfStrategyResearchReportService;
 use App\Services\MtfResearchSnapshotService;
@@ -20,7 +19,7 @@ use Illuminate\Support\Facades\Http;
 class RunMtfStrategyResearch extends Command
 {
     protected $signature = 'trading:mtf-strategy-research
-        {--candidate= : Valid XAUUSD M15 near-miss candidate; defaults to the newest valid candidate}
+        {--candidate= : Valid unified XAUUSD organism candidate; defaults to the newest valid candidate}
         {--symbol=XAUUSD : Lighthouse symbol}
         {--hypothesis= : Run one catalog hypothesis by key}
         {--hypotheses= : Run comma-separated catalog hypotheses on one immutable candle snapshot}
@@ -33,30 +32,49 @@ class RunMtfStrategyResearch extends Command
     protected $description = 'Run bounded XAUUSD H1/M15 strategy hypotheses under the sealed four-lane contract';
 
     public function handle(
-        CandlePayloadService $candles,
+        MtfResearchCohortService $cohorts,
         MtfStrategyResearchService $research,
         MultiTimeframePilotService $pilot,
         StrategyParameterSchemaService $schemas,
-        MarketVolumeService $volumes,
         MtfStrategyResearchReportService $researchReport,
         MtfResearchSnapshotService $snapshots,
+        AutonomousModeService $autonomy,
     ): int {
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', (string) $this->option('symbol')));
-        $candidateQuery = ModelMarketPerformance::with('modelVersion')
-            ->where('symbol', $symbol)
-            ->where('timeframe', 'M15')
-            ->where('evidence_status', 'valid')
-            ->whereHas('modelVersion', fn ($query) => $query->where('evidence_status', 'valid'))
-            ->whereIn('status', ['forward_validated', 'paper', 'rejected'])
-            ->latest('id');
-        if (filled($this->option('candidate'))) {
-            $candidateQuery->whereKey((int) $this->option('candidate'));
+        if (! $autonomy->enabled($symbol, 'H1')) {
+            $this->info('MTF strategy research deferred: autonomous mode is stopped; monitoring remains available.');
+
+            return self::SUCCESS;
         }
-        $candidate = $candidateQuery->first();
+
+        $snapshotRun = filled($this->option('control-run'))
+            ? MtfAblationRun::query()
+                ->whereKey((int) $this->option('control-run'))
+                ->where('symbol', $symbol)
+                ->where('status', 'completed')
+                ->first()
+            : null;
+        $requestedCandidateId = filled($this->option('candidate'))
+            ? (int) $this->option('candidate')
+            : ($snapshotRun?->model_market_performance_id ? (int) $snapshotRun->model_market_performance_id : null);
+        $candidate = $cohorts->candidate($symbol, $requestedCandidateId);
         if (! $candidate || ! $candidate->modelVersion) {
-            $this->error("{$symbol} M15 uchun valid research candidate topilmadi.");
+            $this->error("{$symbol} unified organism uchun valid research candidate topilmadi.");
             return self::FAILURE;
         }
+
+        $snapshot = $snapshotRun ? $snapshots->load($snapshotRun) : null;
+        if (filled($this->option('control-run')) && (! $snapshotRun || ! $snapshot)) {
+            $this->error('Ko\'rsatilgan MTF control run immutable snapshotga ega emas yoki snapshot integrity tekshiruvidan o\'tmadi.');
+            return self::FAILURE;
+        }
+        $cohort = $snapshotRun ? null : $cohorts->current($symbol, (int) $candidate->id);
+        if (! $snapshotRun && ($cohort['status'] ?? null) !== 'ready') {
+            $this->error('MTF cohort unavailable: '.(string) ($cohort['reason_code'] ?? 'UNKNOWN'));
+
+            return self::FAILURE;
+        }
+        $frontierDataHash = (string) ($snapshotRun?->data_hash ?: data_get($cohort, 'data_hash', ''));
 
         $batch = trim((string) $this->option('hypotheses'));
         if ($batch !== '') {
@@ -79,7 +97,7 @@ class RunMtfStrategyResearch extends Command
             } else {
                 // Keep the four-lane control frozen, but rotate the bounded
                 // challenger frontier across still-unobserved families.
-                $report = $researchReport->report($symbol, 720);
+                $report = $researchReport->report($symbol, 720, $frontierDataHash, (int) $candidate->id);
                 $currentDataHash = (string) data_get($report, 'current_cohort_data_hash', '');
                 $observations = collect((array) data_get($report, 'runs', []))
                     ->when($currentDataHash !== '', fn ($rows) => $rows->where('data_hash', $currentDataHash))
@@ -98,25 +116,15 @@ class RunMtfStrategyResearch extends Command
             return self::FAILURE;
         }
 
-        $snapshotRun = null;
-        $snapshot = null;
-        if (filled($this->option('control-run'))) {
-            $snapshotRun = MtfAblationRun::query()
-                ->whereKey((int) $this->option('control-run'))
-                ->where('model_market_performance_id', $candidate->id)
-                ->where('symbol', $symbol)
-                ->where('status', 'completed')
-                ->first();
-            $snapshot = $snapshots->load($snapshotRun);
-            if (! $snapshotRun || ! $snapshot) {
-                $this->error('Ko\'rsatilgan MTF control run immutable snapshotga ega emas yoki snapshot integrity tekshiruvidan o\'tmadi.');
-                return self::FAILURE;
-            }
+        if ($snapshotRun && (int) $snapshotRun->model_market_performance_id !== (int) $candidate->id) {
+            $this->error('Frozen control unified-organism candidate identity bilan mos emas.');
+
+            return self::FAILURE;
         }
 
         $volumeContext = $snapshot
             ? (array) ($snapshot['volume_context'] ?? [])
-            : $volumes->mtfContext($symbol);
+            : (array) data_get($cohort, 'volume_context', []);
         $volumeHypotheses = array_values(array_filter(
             $experiments,
             fn (array $item): bool => (string) ($item['volume_lane'] ?? 'none') !== 'none',
@@ -131,33 +139,18 @@ class RunMtfStrategyResearch extends Command
         // The no-volume control remains explicit through volume_lane=none.
         $m15 = $snapshot
             ? array_values((array) ($snapshot['m15_candles'] ?? []))
-            : $candles->candlesForTraining($symbol, 'M15', limit: 5000, includeVolume: true);
+            : array_values((array) data_get($cohort, 'm15_candles', []));
         $h1 = $snapshot
             ? array_values((array) ($snapshot['h1_candles'] ?? []))
-            : $candles->candlesForTraining($symbol, 'H1', limit: 2000, includeVolume: true);
+            : array_values((array) data_get($cohort, 'h1_candles', []));
         if (count($m15) < 200 || count($h1) < 200) {
             $this->error('Strategy research uchun mustaqil M15 va H1 candle stream yetarli emas.');
             return self::FAILURE;
         }
 
         $execution = app(ExecutionContractService::class)->for($symbol, 'M15');
-        $latestH1 = $h1[array_key_last($h1)] ?? [];
-        $latestM15 = $m15[array_key_last($m15)] ?? [];
-        $dataHash = $pilot->hash([
-            'symbol' => $symbol,
-            'h1_count' => count($h1),
-            'm15_count' => count($m15),
-            'h1_first' => data_get($h1[0] ?? [], 'time'),
-            'h1_last' => data_get($latestH1, 'time'),
-            'm15_first' => data_get($m15[0] ?? [], 'time'),
-            'm15_last' => data_get($latestM15, 'time'),
-            'volume_context_hash' => $pilot->hash($volumeContext),
-        ]);
+        $dataHash = $snapshotRun ? (string) $snapshotRun->data_hash : (string) data_get($cohort, 'data_hash', '');
         $executionHash = (string) data_get($execution, 'execution_hash', '');
-        if ($snapshotRun && (string) $snapshotRun->data_hash !== $dataHash) {
-            $this->error('Control snapshot data hash qayta hisoblangan hash bilan mos emas; replay fail-closed qilindi.');
-            return self::FAILURE;
-        }
         if ($snapshotRun && (string) $snapshotRun->execution_hash !== $executionHash) {
             $this->error('Control snapshot execution hash joriy execution contract bilan mos emas; replay fail-closed qilindi.');
             return self::FAILURE;

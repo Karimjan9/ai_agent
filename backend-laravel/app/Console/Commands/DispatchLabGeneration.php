@@ -7,29 +7,29 @@ use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Services\CandidateHandoffService;
+use App\Services\CausalLearningCohortService;
 use App\Services\FrozenControlScreeningAdmissionService;
+use App\Services\GenerationConstructionAdmissionService;
+use App\Services\GenerationSnapshotAdmissionService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabGenerationContextService;
-use App\Services\GenerationSnapshotAdmissionService;
-use App\Services\GenerationConstructionAdmissionService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use App\Services\LabQueueJobInspector;
+use App\Services\LearningEvidenceGate;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\LearningTechnicalCircuitBreakerService;
-use App\Services\LearningEvidenceGate;
 use App\Services\MarketData\MarketDataContinuityService;
+use App\Services\ResearchAllocationPolicyService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class DispatchLabGeneration extends Command
 {
-    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1} {--force-generation} {--controlled-rescue : Dispatch an already-approved XAUUSD H1 controlled rescue only} {--shadow-research : Dispatch only an already-approved shadow-research generation} {--audited-data-edge : Dispatch only an explicitly audited data-edge generation while normal creation remains paused} {--learning-confirmation : Build/dispatch one bounded guided-vs-blinded-vs-frozen-control confirmation triplet} {--resume-draft-agents : Continue stranded draft agents after a complete constructor has already opened the generation}';
+    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1 : Internal storage key; XAUUSD aliases route to one organism} {--force-generation} {--controlled-rescue : Dispatch an already-approved XAUUSD organism rescue only} {--shadow-research : Dispatch only an already-approved shadow-research generation} {--audited-data-edge : Dispatch only an explicitly audited data-edge generation while normal creation remains paused} {--learning-confirmation : Build/dispatch one bounded guided-vs-blinded-vs-frozen-control confirmation triplet} {--resume-draft-agents : Continue stranded draft agents after a complete constructor has already opened the generation}';
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
@@ -41,31 +41,36 @@ class DispatchLabGeneration extends Command
         $auditedDataEdge = (bool) $this->option('audited-data-edge');
         $learningConfirmation = (bool) $this->option('learning-confirmation');
         $resumeDraftAgents = (bool) $this->option('resume-draft-agents');
+        $requestedTimeframe = strtoupper((string) $this->option('timeframe'));
+        $requestedSymbol = strtoupper((string) ($this->argument('symbol') ?: ''));
+        $scopeTimeframe = $requestedSymbol === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+            ? strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'))
+            : $requestedTimeframe;
         if ($learningConfirmation
-            && (strtoupper((string) ($this->argument('symbol') ?: '')) !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
-                || strtoupper((string) $this->option('timeframe')) !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
-            $this->error('Learning confirmation faqat XAUUSD H1 lighthouse uchun ruxsat etiladi.');
+            && ($requestedSymbol !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+                || $scopeTimeframe !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
+            $this->error('Learning confirmation faqat yagona XAUUSD organizmi uchun ruxsat etiladi.');
 
             return self::FAILURE;
         }
         if ($shadowResearch
-            && (strtoupper((string) ($this->argument('symbol') ?: '')) !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
-                || strtoupper((string) $this->option('timeframe')) !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
-            $this->error('Shadow research dispatch faqat XAUUSD H1 lighthouse uchun ruxsat etiladi.');
+            && ($requestedSymbol !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+                || $scopeTimeframe !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
+            $this->error('Shadow research dispatch faqat yagona XAUUSD organizmi uchun ruxsat etiladi.');
 
             return self::FAILURE;
         }
         if ($controlledRescue
-            && (strtoupper((string) ($this->argument('symbol') ?: '')) !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
-                || strtoupper((string) $this->option('timeframe')) !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
-            $this->error('Controlled rescue dispatch faqat XAUUSD H1 uchun ruxsat etiladi.');
+            && ($requestedSymbol !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+                || $scopeTimeframe !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
+            $this->error('Controlled rescue dispatch faqat yagona XAUUSD organizmi uchun ruxsat etiladi.');
 
             return self::FAILURE;
         }
         if ($auditedDataEdge
-            && (strtoupper((string) ($this->argument('symbol') ?: '')) !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
-                || strtoupper((string) $this->option('timeframe')) !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
-            $this->error('Audited data-edge dispatch faqat XAUUSD H1 lighthouse uchun ruxsat etiladi.');
+            && ($requestedSymbol !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+                || $scopeTimeframe !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
+            $this->error('Audited data-edge dispatch faqat yagona XAUUSD organizmi uchun ruxsat etiladi.');
 
             return self::FAILURE;
         }
@@ -106,8 +111,10 @@ class DispatchLabGeneration extends Command
             }
         }
 
-        $timeframe = strtoupper((string) $this->option('timeframe'));
         foreach ($symbols as $symbol) {
+            $timeframe = $symbol === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+                ? strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'))
+                : $requestedTimeframe;
             // Idempotency is evaluated before admission gates. An already
             // queued/screening/full-validation generation needs neither new
             // evidence nor a technical-breaker decision; it simply remains
@@ -125,18 +132,21 @@ class DispatchLabGeneration extends Command
                 && $existingGeneration
                 && in_array((string) $existingGeneration->status, ['queued', 'training', 'screening', 'full_queued', 'full_validation'], true)) {
                 $this->info("{$symbol}: generation is already dispatched or evaluated.");
+
                 continue;
             }
             if ($technicalBreaker->blocked($symbol, $timeframe)
                 && ! $resumeDraftAgents
                 && ! $resumeLearningConfirmationDraft) {
                 $this->warn("{$symbol} {$timeframe}: repeated technical failure circuit breaker active; new generation blocked pending technical repair.");
+
                 continue;
             }
             if (! $resumeDraftAgents && ! $controlledRescue && ! $shadowResearch && ! $auditedDataEdge && ! $learningConfirmation) {
                 $generationGate = $evidenceGate->allowsNextGeneration($symbol, $timeframe);
                 if (! $generationGate['allowed']) {
                     $this->warn("{$symbol} {$timeframe}: new generation blocked by Learning Evidence Gate ({$generationGate['reason']}).");
+
                     continue;
                 }
             }
@@ -144,7 +154,7 @@ class DispatchLabGeneration extends Command
             if ($auditedDataEdge
                 && ($symbol !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
                     || $timeframe !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)) {
-                $this->error('Audited data-edge dispatch faqat XAUUSD H1 lighthouse uchun ruxsat etiladi.');
+                $this->error('Audited data-edge dispatch faqat yagona XAUUSD organizmi uchun ruxsat etiladi.');
 
                 return self::FAILURE;
             }
@@ -216,7 +226,11 @@ class DispatchLabGeneration extends Command
                     && ! in_array((string) $generation->status, $activeStatuses, true));
             if ($shouldBuildGeneration) {
                 $generation = $learningConfirmation
-                    ? $populations->build($symbol, 'learning_confirmation', false, $timeframe, [], false, false, 3)
+                    // Learning is a reserved triplet inside the ordinary
+                    // twenty-seat organism generation. The other seventeen
+                    // seats continue bounded discovery; full validation still
+                    // admits only the exact guided/blinded/control triplet.
+                    ? $populations->build($symbol, 'learning_confirmation', false, $timeframe, [], false, false)
                     : ($shadowResearch
                     ? $populations->build($symbol, 'shadow_research', false, $timeframe, [], false, false, (int) config('services.lab_selection.population_size', 20))
                     : ($auditedDataEdge
@@ -227,7 +241,17 @@ class DispatchLabGeneration extends Command
             if (! $generation) {
                 $outcome = $populations->lastBuildOutcome();
                 $reason = (string) data_get($outcome, 'reason_code', 'POPULATION_BUILD_UNAVAILABLE');
-                $this->warn("{$symbol}: generation build deferred [{$reason}].");
+                $diagnostic = match ($reason) {
+                    'MUTATION_DIVERSITY_CONTRACT_FAILED' => (array) data_get($outcome, 'context.mutation_diversity', []),
+                    'GENERATION_CONSTRUCTOR_ACTIVE' => [
+                        'lock_owner' => data_get($outcome, 'context.lock_owner'),
+                    ],
+                    default => [],
+                };
+                $diagnosticSuffix = $diagnostic !== []
+                    ? ' '.json_encode($diagnostic, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)
+                    : '';
+                $this->warn("{$symbol}: generation build deferred [{$reason}].{$diagnosticSuffix}");
                 if ($learningConfirmation) {
                     $technicalBreaker->releaseAcquiredProbe($symbol, $timeframe, $reason);
                 }
@@ -295,119 +319,82 @@ class DispatchLabGeneration extends Command
 
             try {
 
-            // A second scheduler/manual invocation may observe the same
-            // generation while its screening jobs are already running. Do
-            // not re-export the frozen dataset in that case: the export lock
-            // belongs to the active evaluator and re-exporting can turn a
-            // harmless duplicate dispatch into a false operational failure.
-            $generation = $generation->fresh(['agents.modelVersion']);
-            $draftAgents = $generation->agents->where('lifecycle_status', 'draft');
-            $strandedQueuedAgents = ($resumeDraftAgents
-                && in_array((string) $generation->status, ['queued', 'screening'], true)
-                && $this->constructorCompleteForDraftContinuation($generation))
-                ? $this->strandedQueuedAgents($generation, $queueState)
-                : collect();
-            $continuation = $resumeDraftAgents
-                && in_array((string) $generation->status, ['queued', 'screening'], true)
-                && $this->constructorCompleteForDraftContinuation($generation)
-                && ($draftAgents->isNotEmpty() || $strandedQueuedAgents->isNotEmpty());
-            if (($draftAgents->isEmpty() && $strandedQueuedAgents->isEmpty())
-                || ((string) $generation->status !== 'draft' && ! $continuation)) {
-                $this->info("{$symbol}: generation is already dispatched or evaluated.");
-
-                continue;
-            }
-            if ($continuation) {
-                $this->info("{$symbol}: continuing complete generation G{$generation->generation}; stranded draft/queued agents only.");
-            }
-            // A queued agent recovered after an integrity repair already has
-            // the generation's frozen snapshot. Re-export only when there
-            // are still draft agents to admit; replacing the live export for
-            // a queued-only recovery cannot repair its missing queue job.
-            if ($draftAgents->isNotEmpty()) {
-                $datasets->export($symbol, $lab->timeframe);
-            }
-            // The export is frozen before the first queue job starts. Re-read
-            // after export so no concurrent dispatcher can queue the same
-            // draft agents twice.
-            $generation = $generation->fresh(['agents.modelVersion']);
-            $strandedQueuedAgents = ($resumeDraftAgents
-                && in_array((string) $generation->status, ['queued', 'screening'], true)
-                && $this->constructorCompleteForDraftContinuation($generation))
-                ? $this->strandedQueuedAgents($generation, $queueState)
-                : collect();
-            $draftIntegrityQuarantines = [];
-            foreach ($generation->agents->where('lifecycle_status', 'draft') as $agent) {
-                $contractRepair = $this->repairDifferentialContractCoordinate($agent);
-                if ($contractRepair !== []) {
-                    $agent = $agent->fresh(['modelVersion']);
-                    $evidence->recordLifecycle($agent, 'draft_integrity_repair', [
-                        'reason_code' => 'DIFFERENTIAL_TARGET_REGIME_IS_EXECUTION_CONTRACT',
-                        ...$contractRepair,
-                        'parameters_unchanged' => true,
-                        'promotion_evidence' => false,
-                    ], 'screening', null, null, self::class, null, 'draft', 'draft');
-                    $handoffs->record($generation, $agent, 'integrity_repair', 'passed', 'DERIVED_DIFF_CONTRACT_REPAIRED', [
-                        ...$contractRepair,
-                        'parameters_unchanged' => true,
-                        'promotion_evidence' => false,
-                    ]);
-                    $this->info("{$symbol}: agent {$agent->id} derived differential contract repaired before screening.");
-                }
-                $preflightInspection = $preflight->inspect($agent, 'screening');
-                if (! $preflightInspection['passed']) {
-                    $preflight->quarantine($agent, $preflightInspection, 'draft_queue_admission');
-                    $draftIntegrityQuarantines[] = [
-                        'agent_id' => $agent->id,
-                        'violations' => $preflightInspection['errors'],
-                        'promotion_evidence' => false,
-                    ];
+                // A second scheduler/manual invocation may observe the same
+                // generation while its screening jobs are already running. Do
+                // not re-export the frozen dataset in that case: the export lock
+                // belongs to the active evaluator and re-exporting can turn a
+                // harmless duplicate dispatch into a false operational failure.
+                $generation = $generation->fresh(['agents.modelVersion']);
+                $draftAgents = $generation->agents->where('lifecycle_status', 'draft');
+                $strandedQueuedAgents = ($resumeDraftAgents
+                    && in_array((string) $generation->status, ['queued', 'screening'], true)
+                    && $this->constructorCompleteForDraftContinuation($generation))
+                    ? $this->strandedQueuedAgents($generation, $queueState)
+                    : collect();
+                $continuation = $resumeDraftAgents
+                    && in_array((string) $generation->status, ['queued', 'screening'], true)
+                    && $this->constructorCompleteForDraftContinuation($generation)
+                    && ($draftAgents->isNotEmpty() || $strandedQueuedAgents->isNotEmpty());
+                if (($draftAgents->isEmpty() && $strandedQueuedAgents->isEmpty())
+                    || ((string) $generation->status !== 'draft' && ! $continuation)) {
+                    $this->info("{$symbol}: generation is already dispatched or evaluated.");
 
                     continue;
                 }
-                $violations = $this->draftIntegrityViolations($agent, $schemas);
-                if ($violations === []) {
-                    continue;
+                if ($continuation) {
+                    $this->info("{$symbol}: continuing complete generation G{$generation->generation}; stranded draft/queued agents only.");
                 }
-
-                $reason = 'Draft identity/integrity contract failed; child quarantined before screening. Strategy verdict withheld.';
-                $agent->update([
-                    'lifecycle_status' => 'technical_quarantine',
-                    'decision_reason' => $reason,
-                ]);
-                $draftIntegrityQuarantines[] = [
-                    'agent_id' => $agent->id,
-                    'violations' => $violations,
-                    'promotion_evidence' => false,
-                ];
-                $evidence->recordLifecycle($agent->fresh(), 'draft_integrity_quarantine', [
-                    'reason_code' => 'DRAFT_IDENTITY_INTEGRITY_BREACH',
-                    'violations' => $violations,
-                    'quality_verdict' => 'withheld',
-                    'promotion_evidence' => false,
-                ], 'screening', null, null, self::class, null, 'draft', 'technical_quarantine');
-                $handoffs->record($generation, $agent->fresh(), 'integrity_quarantine', 'failed', 'DRAFT_IDENTITY_INTEGRITY_BREACH', [
-                    'violations' => $violations,
-                    'next_action' => 'repair_in_draft_or_open_bounded_child',
-                    'promotion_evidence' => false,
-                ]);
-            }
-            $admittedStrandedQueuedAgents = collect();
-            foreach ($strandedQueuedAgents as $agent) {
-                $preflightInspection = $preflight->inspect($agent, 'screening');
-                if (! $preflightInspection['passed']) {
-                    $preflight->quarantine($agent, $preflightInspection, 'stranded_queue_recovery');
-                    $draftIntegrityQuarantines[] = [
-                        'agent_id' => $agent->id,
-                        'violations' => $preflightInspection['errors'],
-                        'promotion_evidence' => false,
-                    ];
-
-                    continue;
+                // A queued agent recovered after an integrity repair already has
+                // the generation's frozen snapshot. Re-export only when there
+                // are still draft agents to admit; replacing the live export for
+                // a queued-only recovery cannot repair its missing queue job.
+                if ($draftAgents->isNotEmpty()) {
+                    $datasets->export($symbol, $lab->timeframe);
                 }
-                $violations = $this->draftIntegrityViolations($agent, $schemas);
-                if ($violations !== []) {
-                    $reason = 'Queued recovery identity/integrity contract failed; child quarantined before screening. Strategy verdict withheld.';
+                // The export is frozen before the first queue job starts. Re-read
+                // after export so no concurrent dispatcher can queue the same
+                // draft agents twice.
+                $generation = $generation->fresh(['agents.modelVersion']);
+                $strandedQueuedAgents = ($resumeDraftAgents
+                    && in_array((string) $generation->status, ['queued', 'screening'], true)
+                    && $this->constructorCompleteForDraftContinuation($generation))
+                    ? $this->strandedQueuedAgents($generation, $queueState)
+                    : collect();
+                $draftIntegrityQuarantines = [];
+                foreach ($generation->agents->where('lifecycle_status', 'draft') as $agent) {
+                    $contractRepair = $this->repairDifferentialContractCoordinate($agent);
+                    if ($contractRepair !== []) {
+                        $agent = $agent->fresh(['modelVersion']);
+                        $evidence->recordLifecycle($agent, 'draft_integrity_repair', [
+                            'reason_code' => 'DIFFERENTIAL_TARGET_REGIME_IS_EXECUTION_CONTRACT',
+                            ...$contractRepair,
+                            'parameters_unchanged' => true,
+                            'promotion_evidence' => false,
+                        ], 'screening', null, null, self::class, null, 'draft', 'draft');
+                        $handoffs->record($generation, $agent, 'integrity_repair', 'passed', 'DERIVED_DIFF_CONTRACT_REPAIRED', [
+                            ...$contractRepair,
+                            'parameters_unchanged' => true,
+                            'promotion_evidence' => false,
+                        ]);
+                        $this->info("{$symbol}: agent {$agent->id} derived differential contract repaired before screening.");
+                    }
+                    $preflightInspection = $preflight->inspect($agent, 'screening');
+                    if (! $preflightInspection['passed']) {
+                        $preflight->quarantine($agent, $preflightInspection, 'draft_queue_admission');
+                        $draftIntegrityQuarantines[] = [
+                            'agent_id' => $agent->id,
+                            'violations' => $preflightInspection['errors'],
+                            'promotion_evidence' => false,
+                        ];
+
+                        continue;
+                    }
+                    $violations = $this->draftIntegrityViolations($agent, $schemas);
+                    if ($violations === []) {
+                        continue;
+                    }
+
+                    $reason = 'Draft identity/integrity contract failed; child quarantined before screening. Strategy verdict withheld.';
                     $agent->update([
                         'lifecycle_status' => 'technical_quarantine',
                         'decision_reason' => $reason,
@@ -417,205 +404,245 @@ class DispatchLabGeneration extends Command
                         'violations' => $violations,
                         'promotion_evidence' => false,
                     ];
-                    $evidence->recordLifecycle($agent->fresh(), 'queued_recovery_integrity_quarantine', [
-                        'reason_code' => 'QUEUED_RECOVERY_IDENTITY_INTEGRITY_BREACH',
+                    $evidence->recordLifecycle($agent->fresh(), 'draft_integrity_quarantine', [
+                        'reason_code' => 'DRAFT_IDENTITY_INTEGRITY_BREACH',
                         'violations' => $violations,
                         'quality_verdict' => 'withheld',
                         'promotion_evidence' => false,
-                    ], 'screening', null, null, self::class, null, 'queued', 'technical_quarantine');
-                    $handoffs->record($generation, $agent->fresh(), 'integrity_quarantine', 'failed', 'QUEUED_RECOVERY_IDENTITY_INTEGRITY_BREACH', [
+                    ], 'screening', null, null, self::class, null, 'draft', 'technical_quarantine');
+                    $handoffs->record($generation, $agent->fresh(), 'integrity_quarantine', 'failed', 'DRAFT_IDENTITY_INTEGRITY_BREACH', [
                         'violations' => $violations,
                         'next_action' => 'repair_in_draft_or_open_bounded_child',
                         'promotion_evidence' => false,
                     ]);
-
-                    continue;
                 }
-                $admittedStrandedQueuedAgents->push($agent->fresh(['modelVersion']));
-                $evidence->recordLifecycle($agent->fresh(), 'screening_queue_recovery_admitted', [
-                    'reason_code' => 'MISSING_SCREENING_JOB_RECOVERED',
-                    'queue' => (string) config('services.lab_queue.screening_queue', 'lab-screening'),
-                    'promotion_evidence' => false,
-                ], 'screening', null, null, self::class, null, 'queued', 'queued');
-            }
-            $strandedQueuedAgents = $admittedStrandedQueuedAgents;
-            if ($draftIntegrityQuarantines !== []) {
-                $context = (array) $generation->trigger_context;
-                $context['draft_integrity_quarantines'] = array_merge(
-                    (array) ($context['draft_integrity_quarantines'] ?? []),
-                    $draftIntegrityQuarantines,
-                );
-                $generation->update(['trigger_context' => $context]);
-            }
-            $draftAgents = $generation->agents
-                ->where('lifecycle_status', 'draft')
-                // A fresh repair control is the first observation for the
-                // snapshot. Put it in the first bounded job without changing
-                // the sibling order or any candidate parameters.
-                ->sortBy(fn (LabAgent $agent): array => [
-                    $this->isFrozenRepairControl($agent) ? 0 : 1,
-                    (int) $agent->id,
-                ])
-                ->values();
-            $dispatchAgents = $draftAgents->concat($strandedQueuedAgents)->values();
-            $agentIds = $dispatchAgents->pluck('id');
-            if ($agentIds->isEmpty()) {
-                if ($draftIntegrityQuarantines !== []) {
-                    $generation->update(['status' => 'technical_quarantine', 'completed_at' => now()]);
-                    if ($learningConfirmation) {
-                        $reasons = collect($draftIntegrityQuarantines)
-                            ->flatMap(fn (array $row): array => (array) ($row['violations'] ?? []))
-                            ->map('strval')->unique()->values()->all();
-                        app(\App\Services\CausalLearningCohortService::class)
-                            ->invalidateGeneration($generation->fresh(), $reasons);
-                        $technicalBreaker->releaseAcquiredProbe(
-                            $symbol,
-                            $timeframe,
-                            'LEARNING_CONFIRMATION_PREFLIGHT_REJECTED',
-                        );
+                $admittedStrandedQueuedAgents = collect();
+                foreach ($strandedQueuedAgents as $agent) {
+                    $preflightInspection = $preflight->inspect($agent, 'screening');
+                    if (! $preflightInspection['passed']) {
+                        $preflight->quarantine($agent, $preflightInspection, 'stranded_queue_recovery');
+                        $draftIntegrityQuarantines[] = [
+                            'agent_id' => $agent->id,
+                            'violations' => $preflightInspection['errors'],
+                            'promotion_evidence' => false,
+                        ];
+
+                        continue;
                     }
-                    $this->warn("{$symbol}: all recoverable children failed identity integrity; generation quarantined without screening evidence.");
+                    $violations = $this->draftIntegrityViolations($agent, $schemas);
+                    if ($violations !== []) {
+                        $reason = 'Queued recovery identity/integrity contract failed; child quarantined before screening. Strategy verdict withheld.';
+                        $agent->update([
+                            'lifecycle_status' => 'technical_quarantine',
+                            'decision_reason' => $reason,
+                        ]);
+                        $draftIntegrityQuarantines[] = [
+                            'agent_id' => $agent->id,
+                            'violations' => $violations,
+                            'promotion_evidence' => false,
+                        ];
+                        $evidence->recordLifecycle($agent->fresh(), 'queued_recovery_integrity_quarantine', [
+                            'reason_code' => 'QUEUED_RECOVERY_IDENTITY_INTEGRITY_BREACH',
+                            'violations' => $violations,
+                            'quality_verdict' => 'withheld',
+                            'promotion_evidence' => false,
+                        ], 'screening', null, null, self::class, null, 'queued', 'technical_quarantine');
+                        $handoffs->record($generation, $agent->fresh(), 'integrity_quarantine', 'failed', 'QUEUED_RECOVERY_IDENTITY_INTEGRITY_BREACH', [
+                            'violations' => $violations,
+                            'next_action' => 'repair_in_draft_or_open_bounded_child',
+                            'promotion_evidence' => false,
+                        ]);
+
+                        continue;
+                    }
+                    $admittedStrandedQueuedAgents->push($agent->fresh(['modelVersion']));
+                    $evidence->recordLifecycle($agent->fresh(), 'screening_queue_recovery_admitted', [
+                        'reason_code' => 'MISSING_SCREENING_JOB_RECOVERED',
+                        'queue' => (string) config('services.lab_queue.screening_queue', 'lab-screening'),
+                        'promotion_evidence' => false,
+                    ], 'screening', null, null, self::class, null, 'queued', 'queued');
+                }
+                $strandedQueuedAgents = $admittedStrandedQueuedAgents;
+                if ($draftIntegrityQuarantines !== []) {
+                    $context = (array) $generation->trigger_context;
+                    $context['draft_integrity_quarantines'] = array_merge(
+                        (array) ($context['draft_integrity_quarantines'] ?? []),
+                        $draftIntegrityQuarantines,
+                    );
+                    $generation->update(['trigger_context' => $context]);
+                }
+                $draftAgents = $generation->agents
+                    ->where('lifecycle_status', 'draft')
+                    // A fresh repair control is the first observation for the
+                    // snapshot. Put it in the first bounded job without changing
+                    // the sibling order or any candidate parameters.
+                    ->sortBy(fn (LabAgent $agent): array => [
+                        $this->isFrozenRepairControl($agent) ? 0 : 1,
+                        (int) $agent->id,
+                    ])
+                    ->values();
+                $dispatchAgents = $draftAgents->concat($strandedQueuedAgents)->values();
+                $agentIds = $dispatchAgents->pluck('id');
+                if ($agentIds->isEmpty()) {
+                    if ($draftIntegrityQuarantines !== []) {
+                        $generation->update(['status' => 'technical_quarantine', 'completed_at' => now()]);
+                        if ($learningConfirmation) {
+                            $reasons = collect($draftIntegrityQuarantines)
+                                ->flatMap(fn (array $row): array => (array) ($row['violations'] ?? []))
+                                ->map('strval')->unique()->values()->all();
+                            app(CausalLearningCohortService::class)
+                                ->invalidateGeneration($generation->fresh(), $reasons);
+                            $technicalBreaker->releaseAcquiredProbe(
+                                $symbol,
+                                $timeframe,
+                                'LEARNING_CONFIRMATION_PREFLIGHT_REJECTED',
+                            );
+                        }
+                        $this->warn("{$symbol}: all recoverable children failed identity integrity; generation quarantined without screening evidence.");
+
+                        continue;
+                    }
+                    $this->info("{$symbol}: generation is already dispatched or evaluated.");
 
                     continue;
                 }
-                $this->info("{$symbol}: generation is already dispatched or evaluated.");
-
-                continue;
-            }
-            $includeVolume = $generation->agents->contains(fn ($agent): bool => $this->screeningDatasetContract($agent) === 'volume');
-            // Freeze the exact price/volume snapshot before the first queue
-            // job starts. Evaluator workers may drain over several new
-            // candles; every child in this generation must see one dataset.
-            // Keep the independent pre-2026 foundation contract beside the
-            // rolling snapshot from the beginning. Screening may proceed
-            // with the rolling tail, but full replay must never discover a
-            // missing foundation only after queue admission.
-            $foundationSnapshot = $datasets->ensureGenerationFoundationSnapshot($generation);
-            // A volume lane adds evidence; it never replaces the mandatory
-            // immutable price snapshot used by generation admission.
-            $priceSnapshot = $datasets->ensureGenerationSnapshot($generation, false);
-            $rollingSnapshot = $includeVolume
-                ? $datasets->ensureGenerationSnapshot($generation, true)
-                : $priceSnapshot;
-            // Verify the frozen split before changing any child to queued.
-            // A failed check leaves the generation draft/blocked instead of
-            // allowing a paper candle to influence evolutionary screening.
-            $datasets->assertGenerationDataPartition($generation, $foundationSnapshot, $rollingSnapshot);
-            if ($timeframe === 'M15') {
-                // M15 entries are evaluated against one immutable H1 regime
-                // snapshot whose last candle is already closed. This keeps
-                // screening reproducible and prevents a later open H1 candle
-                // from changing the meaning of an earlier M15 candidate.
-                $datasets->ensureGenerationRegimeSnapshot($generation);
-            }
-            $generation = $generation->fresh(['agents.modelVersion']);
-            $snapshotCheck = $snapshotAdmission->inspect($generation);
-            if (! $snapshotCheck['allowed']) {
-                $this->warn(sprintf(
-                    '%s: G%s immutable snapshot/execution admission failed; screening was not queued (%s).',
-                    $symbol,
-                    $generation->generation,
-                    implode(',', $snapshotCheck['reasons']),
-                ));
-                continue;
-            }
-            $generation->agents()->whereIn('id', $agentIds)->update(['lifecycle_status' => 'queued']);
-            foreach ($generation->agents->whereIn('id', $draftAgents->pluck('id')) as $agent) {
-                $agent->lifecycle_status = 'queued';
-                $evidence->recordAgentStatusChanged($agent, 'draft', 'queued', 'DispatchLabGeneration.bulk_dispatch');
-            }
-            $generation->update(['status' => 'screening']);
-            $configuredBatchSize = max(1, min(6, (int) config('services.lab_queue.screening_batch_size', 4)));
-            // Differential/volume/portfolio lanes have materially more
-            // stateful diagnostic work than a plain specialist. Keep those
-            // cohorts smaller so one HTTP deadline cannot strand four
-            // otherwise valid candidates. This is a scheduling budget only;
-            // every agent keeps the same snapshot, trace, ledger and gates.
-            $heavyScreeningBatch = $generation->agents
-                ->whereIn('id', $agentIds)
-                ->contains(function (LabAgent $agent): bool {
-                    $metadata = (array) ($agent->modelVersion?->metadata ?? []);
-
-                    return $agent->strategy_family === 'differential_router'
-                        || (bool) data_get($metadata, 'volume_research_contract.enabled', false)
-                        || data_get($metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
-                        || (bool) data_get($metadata, 'risk_bounded_evolution.volume_shadow', false)
-                        || (bool) data_get($metadata, 'portfolio_council_lane.volume_shadow', false)
-                        || data_get($metadata, 'portfolio_council_lane.role') === 'volume_m15_specialist'
-                        || data_get($metadata, 'portfolio_council_lane.specialist_role') === 'volume_m15_specialist'
-                        || data_get($metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1';
-                });
-            // A causal triplet must run its two counterfactuals concurrently
-            // after the frozen control exists. Their stateful replay dominates
-            // the few seconds saved by sharing feature construction; putting
-            // both arms in one HTTP batch serialises them and roughly doubles
-            // wall-clock learning latency. Single-agent jobs alternate the two
-            // mutex slots: the control owns slot 0 first, while both candidates
-            // later use slot 1/0 and keep independent immutable runs.
-            $batchSize = $learningConfirmation
-                ? 1
-                : ($heavyScreeningBatch
-                    ? min($configuredBatchSize, 2)
-                    : $configuredBatchSize);
-            $orderedIds = $agentIds->map(fn ($id): int => (int) $id)->all();
-            // Recovery may contribute already-queued stranded agents while
-            // draftAgents is empty. Classify controls from the complete set
-            // being dispatched so a resumed causal cohort cannot put its
-            // control and candidates back into one self-waiting batch.
-            $controlIds = $dispatchAgents
-                ->filter(fn (LabAgent $agent): bool => $this->isFrozenRepairControl($agent))
-                ->pluck('id')->map(fn ($id): int => (int) $id)->all();
-            $remainingIds = array_values(array_diff($orderedIds, $controlIds));
-            $chunks = [];
-            foreach ($controlIds as $controlId) $chunks[] = [$controlId];
-            // A bounded batch shares one dataset path.  Never mix price and
-            // volume contracts in one request: the old global `contains`
-            // check made a price control inherit the volume snapshot merely
-            // because a sibling in the same chunk used volume.
-            $remainingAgents = $generation->agents
-                ->whereIn('id', $remainingIds)
-                ->sortBy(fn (LabAgent $agent): int => array_search((int) $agent->id, $remainingIds, true))
-                ->groupBy(fn (LabAgent $agent): string => $this->screeningDatasetContract($agent));
-            foreach ($remainingAgents as $contractAgents) {
-                foreach (array_chunk($contractAgents->pluck('id')->map(fn ($id): int => (int) $id)->all(), $batchSize) as $chunk) {
-                    $chunks[] = $chunk;
+                $includeVolume = $generation->agents->contains(fn ($agent): bool => $this->screeningDatasetContract($agent) === 'volume');
+                // Freeze the exact price/volume snapshot before the first queue
+                // job starts. Evaluator workers may drain over several new
+                // candles; every child in this generation must see one dataset.
+                // Keep the independent pre-2026 foundation contract beside the
+                // rolling snapshot from the beginning. Screening may proceed
+                // with the rolling tail, but full replay must never discover a
+                // missing foundation only after queue admission.
+                $foundationSnapshot = $datasets->ensureGenerationFoundationSnapshot($generation);
+                // A volume lane adds evidence; it never replaces the mandatory
+                // immutable price snapshot used by generation admission.
+                $priceSnapshot = $datasets->ensureGenerationSnapshot($generation, false);
+                $rollingSnapshot = $includeVolume
+                    ? $datasets->ensureGenerationSnapshot($generation, true)
+                    : $priceSnapshot;
+                // Verify the frozen split before changing any child to queued.
+                // A failed check leaves the generation draft/blocked instead of
+                // allowing a paper candle to influence evolutionary screening.
+                $datasets->assertGenerationDataPartition($generation, $foundationSnapshot, $rollingSnapshot);
+                if ($timeframe === 'M15') {
+                    // M15 entries are evaluated against one immutable H1 regime
+                    // snapshot whose last candle is already closed. This keeps
+                    // screening reproducible and prevents a later open H1 candle
+                    // from changing the meaning of an earlier M15 candidate.
+                    $datasets->ensureGenerationRegimeSnapshot($generation);
                 }
-            }
-            $jobs = collect($chunks)
-                ->values()
-                ->map(fn (array $ids, int $index) => new EvaluateLabScreeningBatchJob($ids, $symbol, $index % 2, $generation->id, $timeframe))
-                ->all();
+                $generation = $generation->fresh(['agents.modelVersion']);
+                $snapshotCheck = $snapshotAdmission->inspect($generation);
+                if (! $snapshotCheck['allowed']) {
+                    $this->warn(sprintf(
+                        '%s: G%s immutable snapshot/execution admission failed; screening was not queued (%s).',
+                        $symbol,
+                        $generation->generation,
+                        implode(',', $snapshotCheck['reasons']),
+                    ));
 
-            $batch = Bus::batch($jobs)
-                ->name("{$symbol} {$timeframe} Lab G{$generation->generation} screening")
-                ->allowFailures()
-                ->onConnection((string) config('queue.default', 'redis'))
-                ->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))
-                ->dispatch();
-            // The evaluator can start immediately after dispatch and append
-            // its own report/context projection.  Merge the batch id under a
-            // short row lock so that the queue-batch identity cannot be lost
-            // to a stale model instance or a concurrent worker write.
-            $generationContext->update($generation, function (array $context) use ($batch): array {
-                $queueBatches = (array) ($context['queue_batches'] ?? []);
-                $queueBatches['screening'] = array_values(array_unique([
-                    ...((array) ($queueBatches['screening'] ?? [])),
-                    (string) $batch->id,
-                ]));
-                $context['queue_batches'] = $queueBatches;
+                    continue;
+                }
+                $generation->agents()->whereIn('id', $agentIds)->update(['lifecycle_status' => 'queued']);
+                foreach ($generation->agents->whereIn('id', $draftAgents->pluck('id')) as $agent) {
+                    $agent->lifecycle_status = 'queued';
+                    $evidence->recordAgentStatusChanged($agent, 'draft', 'queued', 'DispatchLabGeneration.bulk_dispatch');
+                }
+                $generation->update(['status' => 'screening']);
+                $configuredBatchSize = max(1, min(6, (int) config('services.lab_queue.screening_batch_size', 4)));
+                // Differential/volume/portfolio lanes have materially more
+                // stateful diagnostic work than a plain specialist. Keep those
+                // cohorts smaller so one HTTP deadline cannot strand four
+                // otherwise valid candidates. This is a scheduling budget only;
+                // every agent keeps the same snapshot, trace, ledger and gates.
+                $heavyScreeningBatch = $generation->agents
+                    ->whereIn('id', $agentIds)
+                    ->contains(function (LabAgent $agent): bool {
+                        $metadata = (array) ($agent->modelVersion?->metadata ?? []);
 
-                return $context;
-            });
+                        return $agent->strategy_family === 'differential_router'
+                            || (bool) data_get($metadata, 'volume_research_contract.enabled', false)
+                            || data_get($metadata, 'volume_research_contract.protocol') === 'volume_council_v1'
+                            || (bool) data_get($metadata, 'risk_bounded_evolution.volume_shadow', false)
+                            || (bool) data_get($metadata, 'portfolio_council_lane.volume_shadow', false)
+                            || data_get($metadata, 'portfolio_council_lane.role') === 'volume_m15_specialist'
+                            || data_get($metadata, 'portfolio_council_lane.specialist_role') === 'volume_m15_specialist'
+                            || data_get($metadata, 'portfolio_research_contract.protocol') === 'portfolio_member_research_v1';
+                    });
+                // A causal triplet must run its two counterfactuals concurrently
+                // after the frozen control exists. Their stateful replay dominates
+                // the few seconds saved by sharing feature construction; putting
+                // both arms in one HTTP batch serialises them and roughly doubles
+                // wall-clock learning latency. Single-agent jobs alternate the two
+                // mutex slots: the control owns slot 0 first, while both candidates
+                // later use slot 1/0 and keep independent immutable runs.
+                $batchSize = $learningConfirmation
+                    ? 1
+                    : ($heavyScreeningBatch
+                        ? min($configuredBatchSize, 2)
+                        : $configuredBatchSize);
+                $orderedIds = $agentIds->map(fn ($id): int => (int) $id)->all();
+                // Recovery may contribute already-queued stranded agents while
+                // draftAgents is empty. Classify controls from the complete set
+                // being dispatched so a resumed causal cohort cannot put its
+                // control and candidates back into one self-waiting batch.
+                $controlIds = $dispatchAgents
+                    ->filter(fn (LabAgent $agent): bool => $this->isFrozenRepairControl($agent))
+                    ->pluck('id')->map(fn ($id): int => (int) $id)->all();
+                $remainingIds = array_values(array_diff($orderedIds, $controlIds));
+                $chunks = [];
+                foreach ($controlIds as $controlId) {
+                    $chunks[] = [$controlId];
+                }
+                // A bounded batch shares one dataset path.  Never mix price and
+                // volume contracts in one request: the old global `contains`
+                // check made a price control inherit the volume snapshot merely
+                // because a sibling in the same chunk used volume.
+                $remainingAgents = $generation->agents
+                    ->whereIn('id', $remainingIds)
+                    ->sortBy(fn (LabAgent $agent): int => array_search((int) $agent->id, $remainingIds, true))
+                    ->groupBy(fn (LabAgent $agent): string => $this->screeningDatasetContract($agent));
+                foreach ($remainingAgents as $contractAgents) {
+                    foreach (array_chunk($contractAgents->pluck('id')->map(fn ($id): int => (int) $id)->all(), $batchSize) as $chunk) {
+                        $chunks[] = $chunk;
+                    }
+                }
+                $jobs = collect($chunks)
+                    ->values()
+                    ->map(fn (array $ids, int $index) => new EvaluateLabScreeningBatchJob($ids, $symbol, $index % 2, $generation->id, $timeframe))
+                    ->all();
 
-            $this->info(sprintf(
-                '%s: %s, %d agents in %d bounded screening batches dispatched (batch_size=%d, heavy_lane=%s).',
-                $symbol,
-                $batch->id,
-                count($agentIds),
-                count($jobs),
-                $batchSize,
-                $heavyScreeningBatch ? 'yes' : 'no',
-            ));
+                $batch = Bus::batch($jobs)
+                    ->name("{$symbol} {$timeframe} Lab G{$generation->generation} screening")
+                    ->allowFailures()
+                    ->onConnection((string) config('queue.default', 'redis'))
+                    ->onQueue((string) config('services.lab_queue.screening_queue', 'lab-screening'))
+                    ->dispatch();
+                // The evaluator can start immediately after dispatch and append
+                // its own report/context projection.  Merge the batch id under a
+                // short row lock so that the queue-batch identity cannot be lost
+                // to a stale model instance or a concurrent worker write.
+                $generationContext->update($generation, function (array $context) use ($batch): array {
+                    $queueBatches = (array) ($context['queue_batches'] ?? []);
+                    $queueBatches['screening'] = array_values(array_unique([
+                        ...((array) ($queueBatches['screening'] ?? [])),
+                        (string) $batch->id,
+                    ]));
+                    $context['queue_batches'] = $queueBatches;
+
+                    return $context;
+                });
+
+                $this->info(sprintf(
+                    '%s: %s, %d agents in %d bounded screening batches dispatched (batch_size=%d, heavy_lane=%s).',
+                    $symbol,
+                    $batch->id,
+                    count($agentIds),
+                    count($jobs),
+                    $batchSize,
+                    $heavyScreeningBatch ? 'yes' : 'no',
+                ));
             } finally {
                 $dispatchLease->release();
             }
@@ -662,7 +689,7 @@ class DispatchLabGeneration extends Command
 
         $reasons = [];
         $pairing = (array) data_get($context, 'control_pairing_contract', []);
-        if ((string) data_get($pairing, 'protocol', '') !== 'frozen_control_pair_v1') {
+        if ((string) data_get($pairing, 'protocol', '') !== ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL) {
             $reasons[] = 'NORMAL_CONTROL_PAIR_PROTOCOL_MISSING';
         }
         if (! (bool) data_get($pairing, 'allowed', false)) {

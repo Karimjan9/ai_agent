@@ -77,8 +77,20 @@ class LearningLaneTest extends TestCase
         $this->assertSame($controlMap->id, $pair['control_response_map_id']);
         $this->assertSame(0, AgentLearningLesson::count(), 'A non-complete test run cannot create learning credit.');
         $this->assertFalse((bool) data_get($candidate->fresh('modelVersion')->modelVersion->metadata, 'learning_lane.promotion_evidence', false));
+        $pairModel = LabLearningLanePair::query()->findOrFail($pair['id']);
+        $this->assertTrue($pairModel->isVerifiedControlPair());
 
-        LabLearningLanePair::query()->findOrFail($pair['id'])->update(['status' => 'canonical_episode_settled']);
+        $drifted = (array) $candidate->modelVersion->parameters;
+        $drifted['unrelated_parameter_drift'] = true;
+        $candidate->modelVersion->update(['parameters' => $drifted]);
+        $this->assertFalse(
+            $pairModel->fresh()->isVerifiedControlPair(),
+            'A matching dataset/execution hash must not hide an unrelated parameter drift.',
+        );
+        unset($drifted['unrelated_parameter_drift']);
+        $candidate->modelVersion->update(['parameters' => $drifted]);
+
+        $pairModel->update(['status' => 'canonical_episode_settled']);
         $lateProjection = app(LearningLaneService::class)->pairScreeningObservation(
             $candidate,
             ['evidence_run_id' => 'candidate-run-1'],
@@ -309,10 +321,12 @@ class LearningLaneTest extends TestCase
         ]);
         $schema = app(StrategyParameterSchemaService::class);
         $parameters = $schema->defaults('differential_router');
-        $make = function (string $name, array $metadata) use ($generation, $parameters): LabAgent {
+        $make = function (string $name, array $metadata, bool $control = false) use ($generation, $parameters): LabAgent {
+            $modelParameters = $parameters;
+            $modelParameters['minimum_confidence'] = $control ? .9 : 1.0;
             $model = ModelVersion::create([
                 'name' => $name, 'strategy' => 'xauusd_'.$name, 'version' => 'v1',
-                'generation' => 1, 'status' => 'testing', 'parameters' => $parameters,
+                'generation' => 1, 'status' => 'testing', 'parameters' => $modelParameters,
                 'metadata' => $metadata, 'evidence_status' => 'valid',
             ]);
 
@@ -320,7 +334,7 @@ class LearningLaneTest extends TestCase
                 'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
                 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
                 'origin' => 'test', 'lifecycle_status' => 'screened',
-                'parameter_diff' => ['minimum_confidence' => ['old' => .9, 'new' => 1.0]],
+                'parameter_diff' => $control ? [] : ['minimum_confidence' => ['old' => .9, 'new' => 1.0]],
             ])->fresh(['modelVersion', 'generation']);
         };
         $candidate = $make('learning-candidate', [
@@ -330,7 +344,7 @@ class LearningLaneTest extends TestCase
         $control = $make('learning-control', [
             'generation_target' => 'profit_factor',
             'causal_experiment_lane' => ['control_only' => true],
-        ]);
+        ], true);
 
         return [$candidate, $control];
     }

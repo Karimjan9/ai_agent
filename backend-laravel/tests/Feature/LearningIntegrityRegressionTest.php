@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AgentLearningLesson;
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
@@ -10,6 +11,7 @@ use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\ModelVersion;
+use App\Services\CausalLearningCohortPlannerService;
 use App\Services\GenerationAdmissionDecisionService;
 use App\Services\LabGenerationTerminalBoundaryService;
 use App\Services\LabQueueJobInspector;
@@ -17,6 +19,7 @@ use App\Services\LearningLaneService;
 use App\Services\LearningVelocityGateService;
 use App\Services\MutationResponseMapService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class LearningIntegrityRegressionTest extends TestCase
@@ -65,6 +68,31 @@ class LearningIntegrityRegressionTest extends TestCase
         $this->assertGreaterThan(0, $status['missing_control']);
     }
 
+    public function test_monitor_percentages_expose_scope_period_and_denominators_without_false_birth_rates(): void
+    {
+        $status = app(LearningLaneService::class)->status('XAUUSD', 'H1');
+
+        $this->assertArrayNotHasKey('provisional_skill_birth_rate_percent', $status['kpis']);
+        $this->assertArrayNotHasKey('confirmed_mentor_birth_rate_percent', $status['kpis']);
+        $this->assertArrayNotHasKey('forward_confirmation_rate_percent', $status['kpis']);
+        $this->assertSame('density_not_probability', data_get($status, 'kpis.provisional_skill_lesson_density.interpretation'));
+        $this->assertSame('lessons_per_verified_control_pair', data_get($status, 'kpis.provisional_skill_lesson_density.unit'));
+
+        foreach (['paired_delta_coverage_percent', 'target_improvement_rate_percent',
+            'repeat_failure_occurrence_share_percent', 'confirmed_skill_share_percent',
+            'observed_pair_confirmation_rate_percent'] as $key) {
+            $metric = $status['kpis'][$key];
+            $this->assertSame('percent', $metric['unit']);
+            $this->assertSame('XAUUSD', data_get($metric, 'scope.symbol'));
+            $this->assertSame('H1', data_get($metric, 'scope.laboratory_timeframe'));
+            $this->assertSame('all_time', data_get($metric, 'period.kind'));
+            $this->assertArrayHasKey('unique_subject_type', $metric['numerator']);
+            $this->assertArrayHasKey('unique_subject_type', $metric['denominator']);
+            $this->assertNull($metric['value']);
+            $this->assertSame('no_denominator', $metric['status']);
+        }
+    }
+
     public function test_three_consecutive_zero_pass_generations_open_strategy_deadlock_not_learning_starvation(): void
     {
         [$lab, $generation] = $this->scope();
@@ -95,8 +123,9 @@ class LearningIntegrityRegressionTest extends TestCase
             false,
         );
 
-        $this->assertSame(GenerationAdmissionDecisionService::BLOCK_HARD, $firstDecision['decision']);
-        $this->assertFalse($firstDecision['allowed']);
+        $this->assertSame(GenerationAdmissionDecisionService::OPEN_NORMAL_GENERATION, $firstDecision['decision']);
+        $this->assertTrue($firstDecision['allowed']);
+        $this->assertContains('AUTONOMOUS_ZERO_PASS_ACCUMULATION_REQUIRES_FRESH_DATA', $firstDecision['reason_codes']);
         $this->assertFalse($summary['allowed']);
         $this->assertSame('strategy_deadlock', $summary['status']);
         $this->assertTrue($summary['health_layers']['strategy_deadlock']['active']);
@@ -104,6 +133,32 @@ class LearningIntegrityRegressionTest extends TestCase
         $this->assertFalse($summary['health_layers']['live_learning_backlog']['active']);
         $this->assertSame(GenerationAdmissionDecisionService::OPEN_STRUCTURAL_ESCAPE, $escapeDecision['decision']);
         $this->assertTrue($escapeDecision['allowed']);
+    }
+
+    public function test_terminal_failed_job_audit_does_not_become_live_learning_backlog(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $model = ModelVersion::create([
+            'name' => 'terminal-failed-job-model', 'strategy' => 'terminal-failed-job-model',
+            'version' => 'v1', 'generation' => 1, 'status' => 'testing',
+            'parameters' => [], 'metadata' => [],
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'rejected', 'parameter_diff' => [],
+        ]);
+        DB::table('failed_jobs')->insert([
+            'uuid' => 'terminal-failed-job-audit', 'connection' => 'redis', 'queue' => 'lab-full-validation',
+            'payload' => json_encode(['data' => ['command' => 's:10:"labAgentId";i:'.$agent->id.';']]),
+            'exception' => 'historical transport failure', 'failed_at' => now(),
+        ]);
+
+        $status = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertSame(0, data_get($status, 'learning_starvation.failed_lab_jobs'));
+        $this->assertFalse(data_get($status, 'health_layers.live_learning_backlog.active'));
+        $this->assertTrue($status['allowed']);
     }
 
     public function test_learning_confirmation_consumes_dispatch_learning_without_bypassing_other_blocks(): void
@@ -132,6 +187,42 @@ class LearningIntegrityRegressionTest extends TestCase
         $this->assertSame(GenerationAdmissionDecisionService::DISPATCH_LEARNING, $decision['decision']);
         $this->assertTrue($decision['allowed']);
         $this->assertContains('CAUSAL_CONFIRMATION_SATISFIES_LEARNING_DISPATCH', $decision['reason_codes']);
+    }
+
+    public function test_target_aligned_lesson_preempts_a_generic_generation_constructor(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $lesson = new AgentLearningLesson([
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'failure_class' => 'regime_coverage',
+            'parameter_key' => 'state_machine_variant',
+        ]);
+        $lesson->id = 77;
+        $this->mock(CausalLearningCohortPlannerService::class, function ($mock) use ($lesson): void {
+            $mock->shouldReceive('eligibleLesson')->once()->with('XAUUSD', 'H1')->andReturn($lesson);
+        });
+        $this->mock(LearningVelocityGateService::class, function ($mock): void {
+            $mock->shouldReceive('inspect')->once()->andReturn([
+                'allowed' => false,
+                'status' => 'strategy_deadlock',
+                'learning_starvation' => ['actionable_pending_dojo' => 0, 'active_dispatches' => 0],
+                'observations' => [],
+            ]);
+        });
+
+        $decision = app(GenerationAdmissionDecisionService::class)->decide(
+            $lab,
+            $generation,
+            ['trigger' => 'candidate_handoff'],
+            false,
+        );
+
+        $this->assertFalse($decision['allowed']);
+        $this->assertSame(GenerationAdmissionDecisionService::DISPATCH_LEARNING, $decision['decision']);
+        $this->assertContains('TARGET_ALIGNED_CAUSAL_LESSON_HAS_GENERATION_PRIORITY', $decision['reason_codes']);
+        $this->assertSame(77, data_get($decision, 'causal_confirmation_priority.lesson_id'));
+        $this->assertSame('regime_coverage', data_get($decision, 'causal_confirmation_priority.target'));
     }
 
     public function test_model_version_status_follows_agent_lifecycle(): void

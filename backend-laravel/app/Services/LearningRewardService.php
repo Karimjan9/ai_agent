@@ -5,13 +5,15 @@ namespace App\Services;
 /** Multi-objective reward with safety vetoes that always dominate selection. */
 class LearningRewardService
 {
+    public const PROTOCOL = 'learning_reward_v2';
+
     public const WEIGHTS = [
         'edge_quality' => .25, 'cost_adjusted_return' => .20, 'drawdown_safety' => .15,
         'risk_of_ruin' => .15, 'temporal_stability' => .10, 'regime_coverage' => .05,
         'calibration' => .05, 'abstention_quality' => .05,
     ];
 
-    /** @return array{selection_reward:float,components:array<string,float>,hard_failure:bool,vetoes:list<string>,evidence_state:string,insufficient_reasons:list<string>,promotion_evidence:bool} */
+    /** @return array<string,mixed> */
     public function score(array $outcome): array
     {
         $metrics = (array) ($outcome['metrics'] ?? $outcome);
@@ -19,34 +21,76 @@ class LearningRewardService
         $missing = [];
         foreach (self::WEIGHTS as $key => $weight) {
             $value = $metrics[$key] ?? null;
-            if (! is_numeric($value)) $missing[] = $key;
+            if (! is_numeric($value)) {
+                $missing[] = $key;
+            }
             $components[$key] = is_numeric($value) ? max(0.0, min(1.0, (float) $value)) : null;
         }
         $vetoes = [];
         $drawdown = $this->number($metrics, ['drawdown_percent', 'max_drawdown_percent', 'drawdown']);
         $ruin = $this->number($metrics, ['risk_of_ruin_percent', 'risk_of_ruin']);
         $stressPf = $this->number($metrics, ['stress_profit_factor', 'stress_pf']);
-        if ($drawdown !== null && $drawdown > 15) $vetoes[] = 'DRAWDOWN_LIMIT';
-        if ($ruin !== null && $ruin > 10) $vetoes[] = 'RISK_OF_RUIN_LIMIT';
-        if ($stressPf !== null && $stressPf < 1.05) $vetoes[] = 'STRESS_PF_LIMIT';
-        if (($metrics['temporal_firewall_passed'] ?? true) !== true) $vetoes[] = 'TEMPORAL_FIREWALL';
-        if (($metrics['data_drift'] ?? false) === true || ($metrics['execution_drift'] ?? false) === true) $vetoes[] = 'TECHNICAL_QUARANTINE';
+        if ($drawdown !== null && $drawdown > 15) {
+            $vetoes[] = 'DRAWDOWN_LIMIT';
+        }
+        if ($ruin !== null && $ruin > 10) {
+            $vetoes[] = 'RISK_OF_RUIN_LIMIT';
+        }
+        if ($stressPf !== null && $stressPf < 1.05) {
+            $vetoes[] = 'STRESS_PF_LIMIT';
+        }
+        if (($metrics['temporal_firewall_passed'] ?? true) !== true) {
+            $vetoes[] = 'TEMPORAL_FIREWALL';
+        }
+        if (($metrics['data_drift'] ?? false) === true || ($metrics['execution_drift'] ?? false) === true) {
+            $vetoes[] = 'TECHNICAL_QUARANTINE';
+        }
         if (data_get($metrics, 'process_outcome_audit.hard_veto') === 'BAD_PROCESS_OUTCOME') {
             $vetoes[] = 'BAD_PROCESS_OUTCOME';
         }
         $trades = $this->number($metrics, ['total_trades', 'trade_count', 'executed_trades']);
         $insufficientReasons = [];
-        if ($trades !== null && $trades <= 0) $insufficientReasons[] = 'INSUFFICIENT_ACTIVITY';
-        if (count($missing) > 0) $insufficientReasons[] = 'COVERAGE_FAILURE:'.implode(',', $missing);
-        if ((bool) ($metrics['opportunity_recall_failure'] ?? false)) $insufficientReasons[] = 'OPPORTUNITY_RECALL_FAILURE';
+        if ($trades !== null && $trades <= 0) {
+            $insufficientReasons[] = 'INSUFFICIENT_ACTIVITY';
+        }
+        if (count($missing) > 0) {
+            $insufficientReasons[] = 'COVERAGE_FAILURE:'.implode(',', $missing);
+        }
+        if ((bool) ($metrics['opportunity_recall_failure'] ?? false)) {
+            $insufficientReasons[] = 'OPPORTUNITY_RECALL_FAILURE';
+        }
         $availableWeight = array_sum(array_map(fn (string $key): float => $components[$key] === null ? 0.0 : self::WEIGHTS[$key], array_keys(self::WEIGHTS)));
+        $observed = array_values(array_keys(array_filter($components, fn ($value): bool => $value !== null)));
         $reward = 0.0;
-        foreach (self::WEIGHTS as $key => $weight) if ($components[$key] !== null) $reward += $components[$key] * $weight;
-        if ($availableWeight > 0) $reward /= $availableWeight;
+        foreach (self::WEIGHTS as $key => $weight) {
+            if ($components[$key] !== null) {
+                $reward += $components[$key] * $weight;
+            }
+        }
+        if ($availableWeight > 0) {
+            $reward /= $availableWeight;
+        }
         $hardFailure = $vetoes !== [];
+
         return [
+            'protocol' => self::PROTOCOL,
             'selection_reward' => round($hardFailure ? min(-1.0, $reward - 1.0) : $reward, 6),
             'components' => $components,
+            'evidence_coverage' => [
+                'observed_components' => $observed,
+                'missing_components' => array_values(array_diff(array_keys(self::WEIGHTS), $observed)),
+                'component_ratio' => round(count($observed) / count(self::WEIGHTS), 6),
+                'weight_ratio' => round($availableWeight / array_sum(self::WEIGHTS), 6),
+                'complete' => count($observed) === count(self::WEIGHTS),
+            ],
+            // A partial score is useful for research allocation, but is not
+            // an absolute-positive or promotion claim. Causal confirmation
+            // still requires the full paired replay contract.
+            'signal_authority' => $availableWeight <= 0
+                ? 'uninformative'
+                : (count($observed) === count(self::WEIGHTS)
+                    ? 'absolute_quality_observation'
+                    : 'diagnostic_partial_quality'),
             'hard_failure' => $hardFailure,
             'vetoes' => $vetoes,
             'evidence_state' => $insufficientReasons !== [] ? 'insufficient_evidence' : ($hardFailure ? 'negative' : 'positive'),
@@ -58,7 +102,12 @@ class LearningRewardService
 
     private function number(array $values, array $keys): ?float
     {
-        foreach ($keys as $key) if (isset($values[$key]) && is_numeric($values[$key])) return (float) $values[$key];
+        foreach ($keys as $key) {
+            if (isset($values[$key]) && is_numeric($values[$key])) {
+                return (float) $values[$key];
+            }
+        }
+
         return null;
     }
 }

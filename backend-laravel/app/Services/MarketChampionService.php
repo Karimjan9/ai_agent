@@ -108,6 +108,8 @@ class MarketChampionService
                 && data_get($agent->modelVersion?->metadata, 'learning_lane.promotion_evidence', false) !== true;
             $authorityIncubator = $agent !== null
                 && data_get($agent->modelVersion?->metadata, 'authority_incubator.protocol') === EvolutionaryAuthorityFoundryService::PROTOCOL;
+            $authorityDescendant = $agent !== null
+                && data_get($agent->modelVersion?->metadata, 'authority_descendant.protocol') === EvolutionaryAuthorityFoundryService::PROTOCOL;
             $cartridgeTransplant = $agent !== null
                 && data_get($agent->modelVersion?->metadata, 'skill_cartridge_transplant.protocol') === CanonicalSkillCartridgeService::PROTOCOL;
             $cartridgeInteraction = $agent !== null
@@ -186,6 +188,7 @@ class MarketChampionService
                     report($exception);
                     $result['skill_cartridge_transplant'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
                 }
+
                 // Transplant outcomes are component evidence only.  They are
                 // intentionally barred from the ordinary paper/champion path.
                 return $this->recordCausalResearchObservation(
@@ -194,8 +197,13 @@ class MarketChampionService
                 );
             }
             if ($cartridgeInteraction) {
-                try { $result['skill_cartridge_interaction'] = app(CanonicalSkillCartridgeService::class)->settleInteractionOutcome($agent->fresh(['modelVersion', 'generation.agents.modelVersion'])); }
-                catch (\Throwable $exception) { report($exception); $result['skill_cartridge_interaction'] = ['status' => 'settlement_error', 'promotion_evidence' => false]; }
+                try {
+                    $result['skill_cartridge_interaction'] = app(CanonicalSkillCartridgeService::class)->settleInteractionOutcome($agent->fresh(['modelVersion', 'generation.agents.modelVersion']));
+                } catch (\Throwable $exception) {
+                    report($exception);
+                    $result['skill_cartridge_interaction'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
+                }
+
                 return $this->recordCausalResearchObservation($model, $agent, $family, $symbol, $timeframe, $fitness, $forward, $sampleCount, $observedForwardWindows, $wins, $result);
             }
             if ($edgeGenesis) {
@@ -215,6 +223,7 @@ class MarketChampionService
                     report($exception);
                     $result['edge_genesis'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
                 }
+
                 // Architecture Genesis evaluates a whole pre-registered
                 // hypothesis. It can establish edge research, but cannot
                 // receive gene credit, paper admission or parent authority.
@@ -232,6 +241,7 @@ class MarketChampionService
                     report($exception);
                     $result['full_stack_playbook'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
                 }
+
                 // A procedural passport is research evidence; it never skips
                 // causal attribution, sealed paper validation or authority.
                 return $this->recordCausalResearchObservation(
@@ -447,7 +457,18 @@ class MarketChampionService
                 }
             }
             $forwardDecision = $this->gateDecisions->recordForward($performance->fresh(), $result);
-            $repairQuarantined = $agent && ! $learningLane && ! $causalConfirmation
+            if ($authorityDescendant) {
+                try {
+                    $result['authority_descendant'] = app(EvolutionaryAuthorityFoundryService::class)->settleDescendantOutcome(
+                        $agent->fresh(['modelVersion', 'generation.agents.modelVersion']), $result, $forwardDecision,
+                    );
+                    $performance->update(['metrics' => [...((array) $performance->metrics),
+                        'authority_descendant' => $result['authority_descendant']]]);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
+            $repairQuarantined = $agent && ! $learningLane && ! $causalConfirmation && ! $authorityIncubator && ! $authorityDescendant
                 ? $this->applyRepairQuarantine($agent, $model, $performance, $forwardDecision, $result)
                 : false;
             // The gate ledger is the authoritative evaluation record; mirror
@@ -528,60 +549,60 @@ class MarketChampionService
                     report($exception);
                 }
                 if (! $causalConfirmation) {
-                try {
-                    // Parent-aware credit is deliberately downstream of the
-                    // immutable full-replay/forward decision. It records
-                    // performance, learning and discovery separately and
-                    // keeps parent credit blocked until autonomous/mentored/
-                    // ablated branches are observed on the same contract.
-                    $parentAwareCredit = app(ParentAwareCreditService::class)->recordFullReplay(
-                        $agent->fresh(['modelVersion']),
-                        $result,
-                        $performance->fresh(),
-                        $forwardDecision,
-                    );
-                    $result['parent_aware_credit'] = $parentAwareCredit;
-                    $performance->update([
-                        'metrics' => [
+                    try {
+                        // Parent-aware credit is deliberately downstream of the
+                        // immutable full-replay/forward decision. It records
+                        // performance, learning and discovery separately and
+                        // keeps parent credit blocked until autonomous/mentored/
+                        // ablated branches are observed on the same contract.
+                        $parentAwareCredit = app(ParentAwareCreditService::class)->recordFullReplay(
+                            $agent->fresh(['modelVersion']),
+                            $result,
+                            $performance->fresh(),
+                            $forwardDecision,
+                        );
+                        $result['parent_aware_credit'] = $parentAwareCredit;
+                        $performance->update([
+                            'metrics' => [
+                                ...((array) $performance->metrics),
+                                'parent_aware_credit' => $parentAwareCredit,
+                                'promotion_evidence' => false,
+                            ],
+                        ]);
+                    } catch (\Throwable $exception) {
+                        report($exception);
+                    }
+                    try {
+                        // Trait credit is a separate immutable lineage ledger.
+                        // It rewards no parent until this child has independently
+                        // passed forward, and it never changes promotion status.
+                        $descendantCredit = app(DescendantTraitCreditService::class)->record(
+                            $agent->fresh(['modelVersion']),
+                            $result,
+                            $forwardDecision,
+                        );
+                        $result['descendant_trait_credit'] = $descendantCredit;
+                        $performance->update(['metrics' => [
                             ...((array) $performance->metrics),
-                            'parent_aware_credit' => $parentAwareCredit,
+                            'descendant_trait_credit' => $descendantCredit,
                             'promotion_evidence' => false,
-                        ],
-                    ]);
-                } catch (\Throwable $exception) {
-                    report($exception);
-                }
-                try {
-                    // Trait credit is a separate immutable lineage ledger.
-                    // It rewards no parent until this child has independently
-                    // passed forward, and it never changes promotion status.
-                    $descendantCredit = app(DescendantTraitCreditService::class)->record(
-                        $agent->fresh(['modelVersion']),
-                        $result,
-                        $forwardDecision,
-                    );
-                    $result['descendant_trait_credit'] = $descendantCredit;
-                    $performance->update(['metrics' => [
-                        ...((array) $performance->metrics),
-                        'descendant_trait_credit' => $descendantCredit,
-                        'promotion_evidence' => false,
-                    ]]);
-                } catch (\Throwable $exception) {
-                    report($exception);
-                }
-                try {
-                    $mutationBrain = app(MutationBrainService::class)->settle(
-                        $agent->fresh(['modelVersion']),
-                        $result,
-                        (array) ($result['descendant_trait_credit'] ?? []),
-                    );
-                    $result['mutation_brain'] = $mutationBrain;
-                    $performance->update(['metrics' => [
-                        ...((array) $performance->metrics), 'mutation_brain' => $mutationBrain, 'promotion_evidence' => false,
-                    ]]);
-                } catch (\Throwable $exception) {
-                    report($exception);
-                }
+                        ]]);
+                    } catch (\Throwable $exception) {
+                        report($exception);
+                    }
+                    try {
+                        $mutationBrain = app(MutationBrainService::class)->settle(
+                            $agent->fresh(['modelVersion']),
+                            $result,
+                            (array) ($result['descendant_trait_credit'] ?? []),
+                        );
+                        $result['mutation_brain'] = $mutationBrain;
+                        $performance->update(['metrics' => [
+                            ...((array) $performance->metrics), 'mutation_brain' => $mutationBrain, 'promotion_evidence' => false,
+                        ]]);
+                    } catch (\Throwable $exception) {
+                        report($exception);
+                    }
                 }
                 $this->handoffs->record($agent->generation, $agent, 'forward_gate', $forwardDecision->decision, null, [
                     'candidate_gate_decision_id' => $forwardDecision->id,

@@ -79,8 +79,15 @@ class GenerationConstructionAdmissionService
             'adaptive_evolution_policy.causal_learning_counterfactual_cohort.blinded_selector.protocol',
             '',
         );
+        $immutableContract = app(ImmutableGenerationContractService::class)->validate($generation);
         if ($selectorProtocol !== '' && $selectorProtocol !== CausalBlindedMutationSelectorService::PROTOCOL) {
             $reasons[] = 'CAUSAL_SELECTOR_PROTOCOL_SUPERSEDED';
+        }
+        if (! (bool) ($immutableContract['valid'] ?? false)) {
+            $reasons = [
+                ...$reasons,
+                ...(array) ($immutableContract['reason_codes'] ?? ['IMMUTABLE_GENERATION_CONTRACT_INVALID']),
+            ];
         }
 
         return [
@@ -96,6 +103,7 @@ class GenerationConstructionAdmissionService
             'lineage_allowed' => $lineageAllowed === true,
             'causal_selector_protocol' => $selectorProtocol !== '' ? $selectorProtocol : null,
             'required_causal_selector_protocol' => CausalBlindedMutationSelectorService::PROTOCOL,
+            'immutable_generation_contract' => $immutableContract,
             'promotion_evidence' => false,
         ];
     }

@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\AiLaboratory;
 use App\Models\AgentKnowledgeCard;
+use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\EliteAgentPortfolio;
 use App\Models\LabAgent;
@@ -56,8 +56,7 @@ class AgentLifecycleAuditService
         private readonly MarketVolumeService $volumes,
         private readonly SystemLogService $logs,
         private readonly LabQueueJobInspector $queueState,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -371,6 +370,7 @@ class AgentLifecycleAuditService
         $missingCandidateContracts = $candidates
             ->filter(function (LabAgent $agent) use ($controlPairs): bool {
                 $pair = (string) data_get($agent->modelVersion?->metadata, 'control_pair_contract.pair_key', '');
+
                 return $pair === '' || ! $controlPairs->has($pair);
             })
             ->pluck('id')->values()->all();
@@ -378,14 +378,30 @@ class AgentLifecycleAuditService
             ->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'structural_research_contract.protocol') === 'normal_structural_hypothesis_v1')
             ->pluck('id')->values()->all();
         $issues = [];
-        if (data_get($pairing, 'protocol') !== 'frozen_control_pair_v1') $issues[] = 'NORMAL_CONTROL_PAIR_CONTRACT_MISSING';
-        if (! (bool) data_get($pairing, 'allowed', false)) $issues[] = 'NORMAL_CONTROL_PAIRING_NOT_ALLOWED';
-        if ((array) data_get($pairing, 'missing_execution_lanes', []) !== []) $issues[] = 'NORMAL_CONTROL_LANE_MISSING';
-        if ((array) data_get($pairing, 'missing_candidate_pairs', []) !== []) $issues[] = 'NORMAL_CANDIDATE_PAIR_MISSING';
-        if ($controls->isEmpty()) $issues[] = 'NORMAL_FROZEN_CONTROL_MISSING';
-        if ($missingCandidateContracts !== []) $issues[] = 'NORMAL_CANDIDATE_CONTROL_PAIR_MISSING';
-        if ($structuralExpected && data_get($structural, 'protocol') !== 'normal_structural_research_v1') $issues[] = 'NORMAL_STRUCTURAL_RESEARCH_CONTRACT_MISSING';
-        if ($structuralExpected && $structuralCandidates === []) $issues[] = 'NORMAL_STRUCTURAL_CANDIDATE_MISSING';
+        if (data_get($pairing, 'protocol') !== ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL) {
+            $issues[] = 'NORMAL_CONTROL_PAIR_CONTRACT_MISSING';
+        }
+        if (! (bool) data_get($pairing, 'allowed', false)) {
+            $issues[] = 'NORMAL_CONTROL_PAIRING_NOT_ALLOWED';
+        }
+        if ((array) data_get($pairing, 'missing_execution_lanes', []) !== []) {
+            $issues[] = 'NORMAL_CONTROL_LANE_MISSING';
+        }
+        if ((array) data_get($pairing, 'missing_candidate_pairs', []) !== []) {
+            $issues[] = 'NORMAL_CANDIDATE_PAIR_MISSING';
+        }
+        if ($controls->isEmpty()) {
+            $issues[] = 'NORMAL_FROZEN_CONTROL_MISSING';
+        }
+        if ($missingCandidateContracts !== []) {
+            $issues[] = 'NORMAL_CANDIDATE_CONTROL_PAIR_MISSING';
+        }
+        if ($structuralExpected && data_get($structural, 'protocol') !== 'normal_structural_research_v1') {
+            $issues[] = 'NORMAL_STRUCTURAL_RESEARCH_CONTRACT_MISSING';
+        }
+        if ($structuralExpected && $structuralCandidates === []) {
+            $issues[] = 'NORMAL_STRUCTURAL_CANDIDATE_MISSING';
+        }
         $active = in_array((string) $generation->status, self::ACTIVE_GENERATION_STATUSES, true);
 
         return $this->check(
@@ -458,7 +474,9 @@ class AgentLifecycleAuditService
         $failureSamples = [];
         foreach ($preflightFailures as $agentId => $errors) {
             $failureSamples[] = ['agent_id' => $agentId, 'errors' => array_slice($errors, 0, 8)];
-            if (count($failureSamples) >= 20) break;
+            if (count($failureSamples) >= 20) {
+                break;
+            }
         }
 
         return $this->check(
@@ -625,9 +643,15 @@ class AgentLifecycleAuditService
             )
             : ['status' => 'skipped', 'reasons' => []];
         $issues = [];
-        if (($quality['status'] ?? 'blocked') !== 'ready') $issues[] = 'HISTORICAL_DATA_NOT_READY';
-        if (! $snapshotValid) $issues[] = 'GENERATION_PRICE_SNAPSHOT_HASH_INVALID_OR_MISSING';
-        if ($deep && ($full['status'] ?? 'blocked') !== 'ready') $issues[] = 'FULL_REPLAY_COVERAGE_NOT_READY';
+        if (($quality['status'] ?? 'blocked') !== 'ready') {
+            $issues[] = 'HISTORICAL_DATA_NOT_READY';
+        }
+        if (! $snapshotValid) {
+            $issues[] = 'GENERATION_PRICE_SNAPSHOT_HASH_INVALID_OR_MISSING';
+        }
+        if ($deep && ($full['status'] ?? 'blocked') !== 'ready') {
+            $issues[] = 'FULL_REPLAY_COVERAGE_NOT_READY';
+        }
         $active = in_array((string) $generation->status, self::ACTIVE_GENERATION_STATUSES, true);
         $fullReplayBlockingStatuses = [
             'full_validation', 'completed', 'screened', 'forward_validated',
@@ -709,7 +733,9 @@ class AgentLifecycleAuditService
         $mismatches = [];
         foreach ($completedRuns as $run) {
             $observed = (string) data_get($run->request_meta, 'dataset_manifest.regime_snapshot_sha256', '');
-            if ($observed !== $expectedHash) $mismatches[] = ['run_id' => $run->run_id, 'observed_hash' => $observed];
+            if ($observed !== $expectedHash) {
+                $mismatches[] = ['run_id' => $run->run_id, 'observed_hash' => $observed];
+            }
         }
         $active = in_array((string) $generation->status, self::ACTIVE_GENERATION_STATUSES, true);
         $issue = ! $snapshotValid || $mismatches !== [] || ($generation->status === 'screened' && $completedRuns->isEmpty());
@@ -856,10 +882,18 @@ class AgentLifecycleAuditService
         $globalChampionClaims = $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'specialist_council_membership.global_champion') === true)->pluck('id')->values()->all();
         $normalPopulation = (int) $generation->population_size >= 20 && $generation->trigger_type !== 'volume_context_council';
         $issues = [];
-        if ($normalPopulation && data_get($groupContract, 'protocol') !== 'population_group_checkpoint_v1') $issues[] = 'POPULATION_GROUP_CHECKPOINT_MISSING';
-        if ($normalPopulation && data_get($council, 'protocol') !== 'specialist_council_v1') $issues[] = 'SPECIALIST_COUNCIL_CONTRACT_MISSING';
-        if ($normalPopulation && $missingMembership !== []) $issues[] = 'SPECIALIST_MEMBERSHIP_MISSING';
-        if ($globalChampionClaims !== []) $issues[] = 'GLOBAL_CHAMPION_FORBIDDEN';
+        if ($normalPopulation && data_get($groupContract, 'protocol') !== 'population_group_checkpoint_v1') {
+            $issues[] = 'POPULATION_GROUP_CHECKPOINT_MISSING';
+        }
+        if ($normalPopulation && data_get($council, 'protocol') !== 'specialist_council_v1') {
+            $issues[] = 'SPECIALIST_COUNCIL_CONTRACT_MISSING';
+        }
+        if ($normalPopulation && $missingMembership !== []) {
+            $issues[] = 'SPECIALIST_MEMBERSHIP_MISSING';
+        }
+        if ($globalChampionClaims !== []) {
+            $issues[] = 'GLOBAL_CHAMPION_FORBIDDEN';
+        }
         $active = in_array((string) $generation->status, self::ACTIVE_GENERATION_STATUSES, true);
 
         return $this->check(
@@ -940,7 +974,9 @@ class AgentLifecycleAuditService
                 ->where(function ($query) use ($performanceIds, $agentIds): void {
                     if ($performanceIds->isNotEmpty()) {
                         $query->whereIn('model_market_performance_id', $performanceIds->all());
-                        if ($agentIds->isNotEmpty()) $query->orWhereIn('lab_agent_id', $agentIds->all());
+                        if ($agentIds->isNotEmpty()) {
+                            $query->orWhereIn('lab_agent_id', $agentIds->all());
+                        }
                     } elseif ($agentIds->isNotEmpty()) {
                         $query->whereIn('lab_agent_id', $agentIds->all());
                     }
@@ -986,10 +1022,12 @@ class AgentLifecycleAuditService
             $decision = $forwardByPerformance->get((int) $performance->id);
             if (! $decision) {
                 $missingForwardGatePerformanceIds[] = (int) $performance->id;
+
                 continue;
             }
             if ($decision->decision !== 'passed') {
                 $forwardGateMismatchPerformanceIds[] = (int) $performance->id;
+
                 continue;
             }
             $forwardGatePassedCount++;
@@ -1034,6 +1072,7 @@ class AgentLifecycleAuditService
                         'reasons' => (array) ($portfolio->gate_reasons ?? data_get($portfolio->evidence, 'gate.reason_codes', [])),
                     ];
                 }
+
                 continue;
             }
 
@@ -1072,6 +1111,7 @@ class AgentLifecycleAuditService
                     || $performance->evidence_status !== 'valid'
                     || $performance->modelVersion?->evidence_status !== 'valid') {
                     $issues[] = 'ELITE_MEMBER_EVIDENCE_INVALID';
+
                     continue;
                 }
                 $decision = CandidateGateDecision::query()
@@ -1105,15 +1145,33 @@ class AgentLifecycleAuditService
         }
 
         $issues = [];
-        if ($missingPerformanceAgentIds !== []) $issues[] = 'ADVANCED_AGENT_PERFORMANCE_MISSING';
-        if ($missingForwardGatePerformanceIds !== []) $issues[] = 'FORWARD_GATE_MISSING';
-        if ($forwardGateMismatchPerformanceIds !== []) $issues[] = 'FORWARD_GATE_STATUS_MISMATCH';
-        if ($missingForwardPassportPerformanceIds !== []) $issues[] = 'FORWARD_PASSPORT_MISSING';
-        if ($invalidForwardEvidencePerformanceIds !== []) $issues[] = 'FORWARD_EVIDENCE_INVALID';
-        if ($missingPaperEvidencePerformanceIds !== []) $issues[] = 'PAPER_EVIDENCE_MISSING';
-        if ($portfolioGateFailures !== []) $issues[] = 'ELITE_PORTFOLIO_GATE_FAILED';
-        if ($portfolioContractIssues !== []) $issues[] = 'ELITE_PORTFOLIO_CONTRACT_INVALID';
-        if ($eliteKnowledgeMissing !== []) $issues[] = 'ELITE_KNOWLEDGE_CHECKPOINT_MISSING';
+        if ($missingPerformanceAgentIds !== []) {
+            $issues[] = 'ADVANCED_AGENT_PERFORMANCE_MISSING';
+        }
+        if ($missingForwardGatePerformanceIds !== []) {
+            $issues[] = 'FORWARD_GATE_MISSING';
+        }
+        if ($forwardGateMismatchPerformanceIds !== []) {
+            $issues[] = 'FORWARD_GATE_STATUS_MISMATCH';
+        }
+        if ($missingForwardPassportPerformanceIds !== []) {
+            $issues[] = 'FORWARD_PASSPORT_MISSING';
+        }
+        if ($invalidForwardEvidencePerformanceIds !== []) {
+            $issues[] = 'FORWARD_EVIDENCE_INVALID';
+        }
+        if ($missingPaperEvidencePerformanceIds !== []) {
+            $issues[] = 'PAPER_EVIDENCE_MISSING';
+        }
+        if ($portfolioGateFailures !== []) {
+            $issues[] = 'ELITE_PORTFOLIO_GATE_FAILED';
+        }
+        if ($portfolioContractIssues !== []) {
+            $issues[] = 'ELITE_PORTFOLIO_CONTRACT_INVALID';
+        }
+        if ($eliteKnowledgeMissing !== []) {
+            $issues[] = 'ELITE_KNOWLEDGE_CHECKPOINT_MISSING';
+        }
 
         $activeGeneration = in_array((string) $generation->status, self::ACTIVE_GENERATION_STATUSES, true);
         $hasOpenAgents = $agents->whereIn('lifecycle_status', self::OPEN_AGENT_STATUSES)->isNotEmpty();
@@ -1223,10 +1281,16 @@ class AgentLifecycleAuditService
         // contention" after the release burst has stopped.
         $retryStorm = $staleReserved > 0 || $recentRetryReleases >= 5;
         $issues = [];
-        if ($backlogAge > 7200) $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_TWO_HOURS';
-        elseif ($backlogAge > 1800) $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_THIRTY_MINUTES';
-        if ($retryStorm) $issues[] = 'QUEUE_RETRY_OR_STALE_RESERVATION';
-        elseif ($highAttemptJobs > 0) $issues[] = 'QUEUE_HIGH_ATTEMPT_BACKLOG';
+        if ($backlogAge > 7200) {
+            $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_TWO_HOURS';
+        } elseif ($backlogAge > 1800) {
+            $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_THIRTY_MINUTES';
+        }
+        if ($retryStorm) {
+            $issues[] = 'QUEUE_RETRY_OR_STALE_RESERVATION';
+        } elseif ($highAttemptJobs > 0) {
+            $issues[] = 'QUEUE_HIGH_ATTEMPT_BACKLOG';
+        }
         $status = $issues === [] ? 'passed' : (in_array('QUEUE_BACKLOG_OLDER_THAN_TWO_HOURS', $issues, true) ? 'blocked' : 'attention');
 
         return [
@@ -1300,10 +1364,16 @@ class AgentLifecycleAuditService
             ->all();
         $retryStorm = $staleReserved > 0 || $recentRetryReleases >= 5;
         $issues = [];
-        if ($backlogAge > 7200) $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_TWO_HOURS';
-        elseif ($backlogAge > 1800) $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_THIRTY_MINUTES';
-        if ($retryStorm) $issues[] = 'QUEUE_RETRY_OR_STALE_RESERVATION';
-        elseif ($highAttemptJobs > 0) $issues[] = 'QUEUE_HIGH_ATTEMPT_BACKLOG';
+        if ($backlogAge > 7200) {
+            $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_TWO_HOURS';
+        } elseif ($backlogAge > 1800) {
+            $issues[] = 'QUEUE_BACKLOG_OLDER_THAN_THIRTY_MINUTES';
+        }
+        if ($retryStorm) {
+            $issues[] = 'QUEUE_RETRY_OR_STALE_RESERVATION';
+        } elseif ($highAttemptJobs > 0) {
+            $issues[] = 'QUEUE_HIGH_ATTEMPT_BACKLOG';
+        }
         $status = $issues === [] ? 'passed' : (in_array('QUEUE_BACKLOG_OLDER_THAN_TWO_HOURS', $issues, true) ? 'blocked' : 'attention');
 
         return [
@@ -1385,7 +1455,9 @@ class AgentLifecycleAuditService
         if (collect($scopes)->contains(fn (array $scope): bool => data_get($this->scopeCheck($scope, 'CANONICAL_VOLUME_CONTRACT'), 'status') === 'passed')) {
             $strengths[] = 'Canonical volume contract is available for audited M15 research.';
         }
-        if ($strengths === []) $strengths[] = 'Audit is fail-closed and is preserving diagnostic evidence while issues are investigated.';
+        if ($strengths === []) {
+            $strengths[] = 'Audit is fail-closed and is preserving diagnostic evidence while issues are investigated.';
+        }
 
         return $strengths;
     }
@@ -1423,7 +1495,9 @@ class AgentLifecycleAuditService
     /** @param array<string, mixed> $report */
     private function persist(array $report): void
     {
-        if (! Schema::hasTable('system_logs')) return;
+        if (! Schema::hasTable('system_logs')) {
+            return;
+        }
 
         $summary = (array) ($report['summary'] ?? []);
         $level = match ((string) ($summary['status'] ?? 'attention')) {
@@ -1504,7 +1578,10 @@ class AgentLifecycleAuditService
 
         return (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false)
             || (bool) data_get($metadata, 'g98_council_lane.control_only', false)
-            || (data_get($metadata, 'control_pair_contract.protocol') === 'frozen_control_pair_v1'
+            || (in_array(data_get($metadata, 'control_pair_contract.protocol'), [
+                ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL,
+                FrozenControlParityService::LEGACY_CONTROL_PAIR_PROTOCOL,
+            ], true)
                 && data_get($metadata, 'control_pair_contract.required_for_candidate') === false)
             || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
     }
@@ -1533,10 +1610,14 @@ class AgentLifecycleAuditService
 
     private function isZeroDiff(array $diff): bool
     {
-        if ($diff === []) return true;
+        if ($diff === []) {
+            return true;
+        }
 
         return collect($diff)->every(function ($change): bool {
-            if (! is_array($change) || ! array_key_exists('old', $change) || ! array_key_exists('new', $change)) return false;
+            if (! is_array($change) || ! array_key_exists('old', $change) || ! array_key_exists('new', $change)) {
+                return false;
+            }
 
             // JSON/database casts may preserve a numeric mutation as 0 vs
             // 0.0 even though the executable value is identical. Keep audit
@@ -1553,8 +1634,12 @@ class AgentLifecycleAuditService
 
     private function epoch(mixed $value): int
     {
-        if (is_numeric($value)) return (int) $value;
-        if ($value === null || $value === '') return 0;
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+        if ($value === null || $value === '') {
+            return 0;
+        }
         try {
             return CarbonImmutable::parse((string) $value, 'UTC')->timestamp;
         } catch (\Throwable) {

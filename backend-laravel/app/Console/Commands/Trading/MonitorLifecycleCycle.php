@@ -10,13 +10,14 @@ use Symfony\Component\Console\Input\InputOption;
 class MonitorLifecycleCycle extends Command
 {
     protected $name = 'trading:monitor-lifecycle-cycle';
+
     protected $description = 'Read-only view of the current NeuroTrader lifecycle cycle, generation, agents, queue, and recovery state.';
 
     protected function getOptions(): array
     {
         return [
             ['symbol', null, InputOption::VALUE_OPTIONAL, 'Trading symbol, e.g. XAUUSD', null],
-            ['timeframe', null, InputOption::VALUE_OPTIONAL, 'Timeframe, e.g. H1', 'H1'],
+            ['timeframe', null, InputOption::VALUE_OPTIONAL, 'Internal laboratory storage key; XAUUSD is monitored as one MTF organism', null],
             ['json', null, InputOption::VALUE_NONE, 'Output machine-readable JSON'],
             ['brief', null, InputOption::VALUE_NONE, 'Output one short operator decision'],
         ];
@@ -25,24 +26,26 @@ class MonitorLifecycleCycle extends Command
     public function handle(LabLifecycleOrchestrator $orchestrator): int
     {
         $symbol = $this->option('symbol') ?? config('services.lighthouse.symbol', 'XAUUSD');
-        $timeframe = (string) $this->option('timeframe');
+        $timeframe = (string) ($this->option('timeframe') ?: config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'));
 
         $status = $orchestrator->status((string) $symbol, $timeframe);
 
         if ($this->option('brief')) {
             $brief = (array) ($status['brief'] ?? []);
-            $this->line(sprintf('[%s] %s/%s — %s — %s',
-                $brief['code'] ?? 'UNKNOWN', strtoupper((string) $symbol), $timeframe,
+            $this->line(sprintf('[%s] %s organism — %s — %s',
+                $brief['code'] ?? 'UNKNOWN', strtoupper((string) $symbol),
                 $brief['message'] ?? 'Holat mavjud emas.', $brief['action'] ?? 'inspect'));
+
             return 0;
         }
 
         if ($this->option('json')) {
             $this->line(json_encode($status, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+
             return 0;
         }
 
-        $this->info('NeuroTrader Lifecycle — '.strtoupper($symbol).'/'.$timeframe);
+        $this->info('NeuroTrader Lifecycle — '.strtoupper($symbol).' organism');
         $this->line('Saqla: '.Carbon::now('Asia/Tashkent')->toDateTimeString().' (Asia/Tashkent)');
 
         $brief = (array) ($status['brief'] ?? []);
@@ -97,7 +100,9 @@ class MonitorLifecycleCycle extends Command
         $this->line(sprintf('  Last checkpoint: %s / %s / %s', $checkpoint['cycle_id'] ?? '-', $checkpoint['status'] ?? '-', $checkpoint['stage'] ?? '-'));
         $errors = (array) ($status['errors_today'] ?? []);
         $this->line(sprintf('  Lifecycle errors today: %d', (int) ($errors['count'] ?? 0)));
-        if (($errors['latest']['safe_message'] ?? null) !== null) $this->line('  Latest safe error: '.$errors['latest']['safe_message']);
+        if (($errors['latest']['safe_message'] ?? null) !== null) {
+            $this->line('  Latest safe error: '.$errors['latest']['safe_message']);
+        }
 
         return 0;
     }

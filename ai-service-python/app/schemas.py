@@ -71,6 +71,10 @@ class StrategyRuntimeConfig(BaseModel):
     # edges are asymmetric inside the same regime/volatility niche. It is a
     # sealed routing declaration, never inferred from the combined outcome.
     target_direction: Literal["BUY", "SELL"] | None = None
+    # Sealed by Laravel before a laboratory replay. The runtime may attest
+    # only bindings it actually received and consumed; the declaration grants
+    # neither paper authority nor promotion evidence.
+    instrument_research_assignment: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExecutionConfig(BaseModel):
@@ -149,6 +153,9 @@ class SimpleBacktestRequest(BaseModel):
     # Sealed policy evidence used by the paper execution path for OOD and
     # uncertainty-aware abstention. It does not alter replay gate thresholds.
     policy_context: dict[str, Any] = Field(default_factory=dict)
+    # Candidate-specific assignment copied from StrategyRuntimeConfig while a
+    # cohort is replayed. It is part of the immutable candidate cache key.
+    instrument_research_assignment: dict[str, Any] = Field(default_factory=dict)
     # Canonical volume provenance is passed separately from strategy genes so
     # an unavailable source can never be interpreted as low volume.
     volume_context: dict[str, Any] = Field(default_factory=dict)

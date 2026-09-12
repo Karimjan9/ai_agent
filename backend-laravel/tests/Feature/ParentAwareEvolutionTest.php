@@ -115,6 +115,23 @@ class ParentAwareEvolutionTest extends TestCase
         $this->assertSame('parent_helpful', data_get($result, 'counterfactual.status'));
         $this->assertGreaterThan(0, (float) data_get($result, 'parent_incremental_value'));
         $this->assertSame(1, LabParentContextScore::query()->where('parent_model_version_id', $parent->id)->count());
+
+        app(ParentAwareCreditService::class)->recordFullReplay(
+            $agent->fresh(['modelVersion']),
+            [
+                'evidence_run_id' => 'parent-cf-test',
+                'parent_counterfactual' => [
+                    'autonomous' => ['forward_score' => 1.00],
+                    'mentored' => ['forward_score' => 1.20],
+                    'ablated' => ['forward_score' => 1.05],
+                ],
+            ],
+            null,
+            (object) ['decision' => 'passed'],
+        );
+        $trust = LabParentContextScore::query()->where('parent_model_version_id', $parent->id)->firstOrFail();
+        $this->assertSame(1, $trust->success_count);
+        $this->assertSame('probation', $trust->status);
     }
 
     public function test_council_ablation_is_planned_for_every_declared_member(): void

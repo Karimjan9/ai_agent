@@ -458,7 +458,7 @@ class MtfStrategyResearchService
                 'mutation_class' => 'volume_risk_management',
                 'target_gate' => 'stress_drawdown',
                 'volume_lane' => 'low_volume_risk_firewall',
-                'hypothesis' => 'When relative volume is thin, the H1 direction may remain valid but M15 execution risk should abstain or halve size instead of changing the signal topology.',
+                'hypothesis' => 'When relative volume is thin, the H1 regime may remain valid but M5 execution risk should abstain or halve size instead of changing the signal topology.',
                 'parameter_overrides' => [
                     'volume_lane' => 'low_volume_risk_firewall',
                 ],
@@ -521,8 +521,8 @@ class MtfStrategyResearchService
      * their hypothesis again lets the deterministic recovery identity retry
      * the runtime without spending strategy evidence on the error.
      *
-     * @param list<array<string, mixed>> $observations
-     * @param array<string, array<string, mixed>> $familyBudgets
+     * @param  list<array<string, mixed>>  $observations
+     * @param  array<string, array<string, mixed>>  $familyBudgets
      * @return list<array<string, mixed>>
      */
     public function selectFrontier(
@@ -530,8 +530,7 @@ class MtfStrategyResearchService
         array $familyBudgets = [],
         int $limit = 4,
         ?string $cohortDataHash = null,
-    ): array
-    {
+    ): array {
         $limit = max(1, min(12, $limit));
         $history = collect($observations)
             ->filter(fn (array $row): bool => (string) ($row['status'] ?? '') === 'completed');
@@ -571,6 +570,7 @@ class MtfStrategyResearchService
             ->sort(function (string $left, string $right) use ($completedFamilyCounts): int {
                 $leftCount = (int) $completedFamilyCounts->get($left, 0);
                 $rightCount = (int) $completedFamilyCounts->get($right, 0);
+
                 return $leftCount <=> $rightCount;
             })
             ->values()
@@ -635,8 +635,7 @@ class MtfStrategyResearchService
         string $executionHash,
         ?int $frozenControlRunId = null,
         ?array $volumeContext = null,
-    ): array
-    {
+    ): array {
         return [
             'protocol' => self::PROTOCOL,
             'hypothesis_key' => $experiment['key'],
@@ -696,8 +695,12 @@ class MtfStrategyResearchService
         if ($regimeLag === null || $regimeLag > $regimeMax) {
             $reasons[] = 'h1_volume_freshness_exceeded';
         }
-        if ($entryLag !== null && $entryLag < 0) $reasons[] = 'm15_volume_future_observation';
-        if ($regimeLag !== null && $regimeLag < 0) $reasons[] = 'h1_volume_future_observation';
+        if ($entryLag !== null && $entryLag < 0) {
+            $reasons[] = 'm15_volume_future_observation';
+        }
+        if ($regimeLag !== null && $regimeLag < 0) {
+            $reasons[] = 'h1_volume_future_observation';
+        }
         // Lightweight monitor projections intentionally omit the expensive
         // all-history hashes. The sealed research context must include them;
         // only then do missing hashes become a hard research reason.
@@ -725,12 +728,14 @@ class MtfStrategyResearchService
      * cost/exit/forward diagnostics. This is stricter than generic PF
      * ranking and keeps every hypothesis accountable to its own objective.
      *
-     * @param array<string, mixed> $candidate
-     * @param array<string, mixed> $reference
+     * @param  array<string, mixed>  $candidate
+     * @param  array<string, mixed>  $reference
      */
     public function targetGateImproved(string $gate, array $candidate, array $reference): bool
     {
-        if ($reference === []) return false;
+        if ($reference === []) {
+            return false;
+        }
         $pf = (float) ($candidate['profit_factor'] ?? 0);
         $refPf = (float) ($reference['profit_factor'] ?? 0);
         $dd = (float) ($candidate['max_drawdown_percent'] ?? 0);

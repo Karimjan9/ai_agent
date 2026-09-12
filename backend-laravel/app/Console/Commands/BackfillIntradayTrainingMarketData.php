@@ -43,8 +43,12 @@ class BackfillIntradayTrainingMarketData extends Command
             $from = CarbonImmutable::parse((string) $this->option('from'), 'UTC')->utc();
             $to = CarbonImmutable::parse((string) $this->option('to'), 'UTC')->utc();
             $cutoff = $training->trainingCutoff();
-            if ($to->greaterThan($cutoff)) $to = $cutoff;
-            if ($from->greaterThanOrEqualTo($to)) throw new RuntimeException('Foundation range bo\'sh bo\'lishi mumkin emas.');
+            if ($to->greaterThan($cutoff)) {
+                $to = $cutoff;
+            }
+            if ($from->greaterThanOrEqualTo($to)) {
+                throw new RuntimeException('Foundation range bo\'sh bo\'lishi mumkin emas.');
+            }
         } catch (\Throwable $exception) {
             $this->error('Noto\'g\'ri UTC foundation range: '.$exception->getMessage());
 
@@ -58,9 +62,17 @@ class BackfillIntradayTrainingMarketData extends Command
         ]);
         $requestedCursor = $this->option('cursor') ? CarbonImmutable::parse((string) $this->option('cursor'), 'UTC')->utc() : null;
         $cursor = $requestedCursor ?: CarbonImmutable::instance($archives['M1']->backfill_cursor_at ?: $from)->utc();
-        if ($cursor->lessThan($from)) $cursor = $from;
+        if ($cursor->lessThan($from)) {
+            $cursor = $from;
+        }
         if ($cursor->greaterThanOrEqualTo($to)) {
-            $this->finaliseArchives($archives, $training, $to);
+            // The pre-2026 store is immutable after its cursor reaches the
+            // cutoff. Recounting several million M1/M5/M30 rows every minute
+            // consumed the same database capacity needed by agent creation.
+            // Recount only the one legacy/incomplete manifest transition.
+            if (! $this->archivesAlreadyFinalized($archives, $to)) {
+                $this->finaliseArchives($archives, $training, $to);
+            }
             $this->info('XAUUSD intraday training archive already complete.');
 
             return self::SUCCESS;
@@ -69,7 +81,9 @@ class BackfillIntradayTrainingMarketData extends Command
         $lockPath = storage_path('app/market-training-backfill-intraday.lock');
         $lock = fopen($lockPath, 'c');
         if ($lock === false || ! flock($lock, LOCK_EX | LOCK_NB)) {
-            if ($lock !== false) fclose($lock);
+            if ($lock !== false) {
+                fclose($lock);
+            }
             $this->line('XAUUSD intraday training backfill already running; this tick skipped.');
 
             return self::SUCCESS;
@@ -88,7 +102,9 @@ class BackfillIntradayTrainingMarketData extends Command
                     $archive->update(['status' => 'backfilling', 'last_attempt_at' => now(), 'last_chunk_from' => $chunkFrom, 'last_chunk_to' => $chunkTo, 'last_error' => null]);
                 }
                 $m1 = $provider->fetchCandles($symbol, $marketSymbol->provider_symbol ?? $symbol, 'M1', 1_000_000, $chunkFrom, $chunkTo);
-                if ($m1 === []) throw new RuntimeException('Dukascopy M1 archive bo\'sh qaytdi; cursor advance qilinmadi.');
+                if ($m1 === []) {
+                    throw new RuntimeException('Dukascopy M1 archive bo\'sh qaytdi; cursor advance qilinmadi.');
+                }
                 $m5 = $this->aggregate($m1, 5);
                 $m30 = $this->aggregate($m1, 30);
                 $saved = [
@@ -132,7 +148,9 @@ class BackfillIntradayTrainingMarketData extends Command
             fclose($lock);
         }
 
-        foreach ($archives as $archive) $training->refreshCoverage($archive->fresh());
+        // Coverage was refreshed and persisted for every archive immediately
+        // after the chunk above. A second full-table aggregate here duplicated
+        // all three scans without adding evidence.
         $this->info('Intraday training checkpoint saved.');
 
         return self::SUCCESS;
@@ -148,6 +166,7 @@ class BackfillIntradayTrainingMarketData extends Command
             $key = $bucket->format('Y-m-d H:i:s');
             if (! isset($buckets[$key])) {
                 $buckets[$key] = ['time' => $key, 'open' => (float) $row['open'], 'high' => (float) $row['high'], 'low' => (float) $row['low'], 'close' => (float) $row['close'], 'volume' => (float) ($row['volume'] ?? 0), 'count' => 1];
+
                 continue;
             }
             $buckets[$key]['high'] = max($buckets[$key]['high'], (float) $row['high']);
@@ -166,5 +185,19 @@ class BackfillIntradayTrainingMarketData extends Command
             $training->refreshCoverage($archive);
             $archive->update(['status' => 'complete', 'backfill_cursor_at' => $to, 'last_error' => null]);
         }
+    }
+
+    private function archivesAlreadyFinalized($archives, CarbonImmutable $to): bool
+    {
+        foreach ($archives as $archive) {
+            if ((string) $archive->status !== 'complete' || $archive->backfill_cursor_at === null) {
+                return false;
+            }
+            if (CarbonImmutable::instance($archive->backfill_cursor_at)->utc()->lessThan($to)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

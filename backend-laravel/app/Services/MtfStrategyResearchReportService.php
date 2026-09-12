@@ -17,10 +17,18 @@ class MtfStrategyResearchReportService
 {
     public const PROTOCOL = 'xauusd_mtf_research_report_v2';
 
-    public function __construct(private MtfStrategyResearchService $catalog) {}
+    public function __construct(
+        private MtfStrategyResearchService $catalog,
+        private MtfResearchCohortService $cohorts,
+    ) {}
 
     /** @return array<string, mixed> */
-    public function report(string $symbol = 'XAUUSD', int $lookbackHours = 720): array
+    public function report(
+        string $symbol = 'XAUUSD',
+        int $lookbackHours = 720,
+        ?string $observedDataHash = null,
+        ?int $observedCandidateId = null,
+    ): array
     {
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', trim($symbol)));
         $now = CarbonImmutable::now('UTC');
@@ -52,10 +60,27 @@ class MtfStrategyResearchReportService
             $analyses,
         );
         $latestAblation = $this->latestAblation($symbol);
-        $currentDataHash = $latestAblation['data_hash'] ?? null;
+        $cohort = null;
+        if ($observedDataHash === null) {
+            try {
+                $cohort = $this->cohorts->current($symbol, $observedCandidateId);
+            } catch (\Throwable $exception) {
+                $cohort = [
+                    'status' => 'unavailable',
+                    'reason_code' => 'CURRENT_COHORT_INSPECTION_FAILED',
+                    'error_class' => $exception::class,
+                    'promotion_evidence' => false,
+                ];
+            }
+        }
+        $currentDataHash = $observedDataHash
+            ?: (($cohort['status'] ?? null) === 'ready' ? (string) ($cohort['data_hash'] ?? '') : null);
+        $currentCandidateId = $observedCandidateId
+            ?: (($cohort['status'] ?? null) === 'ready' ? (int) ($cohort['candidate_id'] ?? 0) : null);
         $currentRuns = $runs->filter(fn (MtfStrategyResearchRun $run): bool =>
-            $currentDataHash !== null
+            filled($currentDataHash)
             && $run->data_hash === $currentDataHash
+            && (! $currentCandidateId || (int) $run->model_market_performance_id === $currentCandidateId)
             && $run->status === 'completed'
             && (array) data_get($run->result, 'frozen_control.m15_only', []) !== []
         );
@@ -76,6 +101,10 @@ class MtfStrategyResearchReportService
             ], $this->catalog->catalog()),
             'run_count' => count($analyses),
             'current_cohort_data_hash' => $currentDataHash,
+            'current_cohort_candidate_id' => $currentCandidateId ?: null,
+            'current_cohort_status' => filled($currentDataHash) ? 'observed' : 'unavailable',
+            'current_cohort_reason' => $cohort['reason_code'] ?? null,
+            'current_cohort_source' => $observedDataHash !== null ? 'explicit_immutable_control' : 'canonical_payload_observation',
             'current_cohort_run_count' => $currentRuns->count(),
             'runs' => $analyses,
             'family_budget' => $families,

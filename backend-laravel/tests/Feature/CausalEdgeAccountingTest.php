@@ -52,7 +52,20 @@ class CausalEdgeAccountingTest extends TestCase
         ]);
 
         $this->assertSame('day_structure', $passport['horizon_mode']);
+        $this->assertSame('symbol', $passport['population_scope']);
+        $this->assertSame('H1', $passport['laboratory_storage_timeframe']);
+        $this->assertSame('M5', $passport['execution_timeframe']);
+        $this->assertSame(['H4', 'H1', 'M15', 'M5'], $passport['temporal_sensor_scope']);
+        $this->assertSame('H4', $passport['temporal_owners']['owners']['macro_bias_owner']);
         $this->assertSame('H1', $passport['temporal_owners']['owners']['direction_owner']);
+        $this->assertSame('H1', $passport['temporal_owners']['owners']['location_owner']);
+        $this->assertSame('M15', $passport['temporal_owners']['owners']['confirmation_owner']);
+        $this->assertSame('M5', $passport['temporal_owners']['owners']['execution_owner']);
+        $this->assertSame('M5', $passport['components']['temporal_roles']['trigger']);
+        $this->assertSame('M5', $passport['components']['temporal_roles']['execution']);
+        $this->assertSame('M5', $passport['horizon_contract']['roles']['execution']);
+        $this->assertSame('M5', $passport['typed_program']['nodes'][4]['timeframe']);
+        $this->assertFalse($passport['temporal_policy']['data_contract']['m1_execution']);
         $this->assertFalse($passport['location_thesis']['trigger_admissible']);
         $this->assertSame('structure_stop', $passport['invalidation_target_contract']['invalidation_model']);
         $this->assertSame('H1_liquidity_target', $passport['invalidation_target_contract']['target_model']);

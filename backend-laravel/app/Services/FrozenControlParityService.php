@@ -6,7 +6,6 @@ use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
-use Illuminate\Support\Collection;
 
 /**
  * Audits the frozen member of a research cohort before interpreting a
@@ -15,7 +14,10 @@ use Illuminate\Support\Collection;
 class FrozenControlParityService
 {
     public const PROTOCOL = 'frozen_control_parity_v1';
-    public const CONTROL_PAIR_PROTOCOL = 'frozen_control_pair_v1';
+
+    public const CONTROL_PAIR_PROTOCOL = ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL;
+
+    public const LEGACY_CONTROL_PAIR_PROTOCOL = 'frozen_control_pair_v1';
 
     public function __construct(private GateMarginService $margins) {}
 
@@ -43,8 +45,7 @@ class FrozenControlParityService
         foreach ($controls as $control) {
             $cohort = $this->cohortId($control);
             $controlResult = $this->result($control);
-            $members = $agents->filter(fn (LabAgent $agent): bool =>
-                ! $this->isControl($agent) && $this->cohortId($agent) === $cohort
+            $members = $agents->filter(fn (LabAgent $agent): bool => ! $this->isControl($agent) && $this->cohortId($agent) === $cohort
             );
             foreach ($members as $candidate) {
                 $candidateResult = $this->result($candidate);
@@ -115,7 +116,10 @@ class FrozenControlParityService
             // is the only reference member for that cohort.
             || (! $repairSibling && (bool) data_get($metadata, 'mutation_constructor_invariant.control_only', false))
             || (! $repairSibling && (bool) data_get($metadata, 'g98_council_lane.control_only', false))
-            || data_get($metadata, 'control_pair_contract.protocol') === self::CONTROL_PAIR_PROTOCOL
+            || in_array(data_get($metadata, 'control_pair_contract.protocol'), [
+                self::CONTROL_PAIR_PROTOCOL,
+                self::LEGACY_CONTROL_PAIR_PROTOCOL,
+            ], true)
                 && data_get($metadata, 'control_pair_contract.required_for_candidate') === false
             // Structural cohort niches are stored as an immutable
             // portfolio-council contract. Keep their frozen seats out of the
@@ -159,7 +163,9 @@ class FrozenControlParityService
     {
         $metadata = (array) ($agent->modelVersion?->metadata ?? []);
         $pairKey = (string) data_get($metadata, 'control_pair_contract.pair_key', '');
-        if ($pairKey !== '') return 'pair:'.$pairKey;
+        if ($pairKey !== '') {
+            return 'pair:'.$pairKey;
+        }
         $structural = (string) data_get($metadata, 'portfolio_council_lane.structural_cohort_id', data_get($metadata, 'structural_cohort_id', ''));
         if ($structural !== '') {
             // A structural cohort may contain hybrid and differential-router
@@ -179,7 +185,9 @@ class FrozenControlParityService
     private function result(LabAgent $agent): array
     {
         $result = (array) data_get($agent->modelVersion?->metadata, 'last_screen_result', []);
-        if ($result !== []) return $result;
+        if ($result !== []) {
+            return $result;
+        }
 
         $run = LabEvaluationRun::query()
             ->where('lab_agent_id', $agent->id)

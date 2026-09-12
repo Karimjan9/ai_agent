@@ -44,12 +44,15 @@ class CapabilityOrganismServiceTest extends TestCase
     {
         $cemetery = app(AntiSkillCemeteryService::class);
         $failure = ['symbol' => 'XAUUSD', 'timeframe' => 'M15', 'state_key' => 'range|london|normal', 'strategy_id' => 'range_reversion', 'failure_mode' => 'risk_breach'];
-        $cemetery->bury($failure);
-        $cemetery->bury($failure);
-        $burial = $cemetery->bury($failure);
+        $first = $cemetery->bury([...$failure, 'independent_window_key' => 'w1']);
+        $duplicate = $cemetery->bury([...$failure, 'independent_window_key' => 'w1']);
+        $burial = $cemetery->bury([...$failure, 'independent_window_key' => 'w2']);
         $governor = app(ExperimentGovernorService::class)->decide(['primary_cause' => 'execution', 'severity' => .9], ['drawdown_percent' => 10]);
 
         $this->assertSame('forbidden', $burial['status']);
+        $this->assertSame('retry_with_new_hypothesis', $first['status']);
+        $this->assertSame(1, $duplicate['independent_failure_count']);
+        $this->assertSame(2, $burial['independent_failure_count']);
         $this->assertSame('repair', $governor['contract']['lane']);
         $this->assertSame(1, $governor['contract']['max_changed_axes']);
         $this->assertFalse($governor['contract']['live_execution']);

@@ -8,12 +8,12 @@ use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\ModelVersion;
-use App\Services\MicroReplayService;
-use App\Services\MutationResponseMapService;
 use App\Services\LearningLaneService;
 use App\Services\LearningProtocolSafetyService;
-use App\Services\StructuralResearchCohortService;
+use App\Services\MicroReplayService;
+use App\Services\MutationResponseMapService;
 use App\Services\StrategyParameterSchemaService;
+use App\Services\StructuralResearchCohortService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -144,15 +144,17 @@ class StructuralCausalCohortTest extends TestCase
             'population_size' => 2, 'status' => 'screened', 'data_fingerprint' => 'snapshot-hash', 'trigger_context' => [],
         ]);
         $parameters = app(StrategyParameterSchemaService::class)->defaults('hybrid');
+        $controlParameters = [...$parameters, 'entry_threshold' => 1];
+        $candidateParameters = [...$parameters, 'entry_threshold' => 2];
         $controlModel = ModelVersion::create([
             'name' => 'causal-control', 'strategy' => 'causal-control', 'version' => 'v1', 'generation' => 1,
-            'status' => 'testing', 'parameters' => $parameters, 'metadata' => ['control_contract' => [
+            'status' => 'testing', 'parameters' => $controlParameters, 'metadata' => ['control_contract' => [
                 'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
             ]],
         ]);
         $candidateModel = ModelVersion::create([
             'name' => 'causal-candidate', 'strategy' => 'causal-candidate', 'version' => 'v1', 'generation' => 1,
-            'status' => 'testing', 'parameters' => $parameters, 'metadata' => ['generation_target' => 'profit_factor'],
+            'status' => 'testing', 'parameters' => $candidateParameters, 'metadata' => ['generation_target' => 'profit_factor'],
         ]);
         $control = LabAgent::create([
             'lab_generation_id' => $generation->id, 'model_version_id' => $controlModel->id,

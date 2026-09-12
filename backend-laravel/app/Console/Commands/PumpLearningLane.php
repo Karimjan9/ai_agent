@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\AutonomousModeService;
 use App\Services\LabQueueJobInspector;
 use App\Services\LearningLaneService;
 use Illuminate\Console\Command;
@@ -17,11 +18,23 @@ class PumpLearningLane extends Command
 
     protected $description = 'Pump one micro-confirmed learning-lane replay only when the heavy evaluator is idle';
 
-    public function handle(LearningLaneService $learning, LabQueueJobInspector $queueState): int
+    public function handle(LearningLaneService $learning, LabQueueJobInspector $queueState, AutonomousModeService $autonomy): int
     {
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
         $timeframe = strtoupper((string) $this->option('timeframe'));
         $limit = max(1, min(2, (int) $this->option('limit')));
+        if ((bool) $this->option('autonomous') && ! $autonomy->enabled($symbol, $timeframe)) {
+            $this->line((string) json_encode([
+                'protocol' => 'learning_lane_pump_v1',
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+                'status' => 'autonomous_mode_stopped',
+                'next_action' => 'monitor_only_until_ai_start',
+                'promotion_evidence' => false,
+            ], JSON_UNESCAPED_SLASHES));
+
+            return self::SUCCESS;
+        }
         $queue = (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation');
         $mutexKey = Cache::getStore()->getPrefix().'laravel-queue-overlap:'.(string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay');
         $queueSnapshot = $queueState->queueSnapshot([$queue, 'lab-full-hold']);

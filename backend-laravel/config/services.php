@@ -69,6 +69,9 @@ return [
     ],
 
     'scheduler' => [
+        // Node supplies Windows' CREATE_NO_WINDOW + detached process-group
+        // combination for scheduled Artisan children. PHP proc_open cannot
+        // request both without flashing a visible cmd/conhost window.
         // One renewable process lease prevents PM2/Windows reloads from
         // leaving two headless loops executing the same due callbacks.
         'lease_key' => env('SCHEDULER_LEASE_KEY', 'trading:headless-scheduler:v1'),
@@ -317,10 +320,49 @@ return [
         'units' => (float) env('PAPER_UNITS', 1),
     ],
 
-    // XAUUSD's official multi-timeframe pilot. H1 is a closed regime
-    // controller; M15 remains an independent entry population. This
-    // contract is copied into screening, replay and paper requests so the
-    // execution meaning cannot drift between stages.
+    // One governed XAUUSD organism consumes a frozen multi-timeframe bundle.
+    // H1 remains only the compatibility key of the existing laboratory rows;
+    // it is not a separate organism, execution lane, or genetic population.
+    'xauusd_organism' => [
+        'symbol' => 'XAUUSD',
+        'laboratory_storage_timeframe' => env('XAUUSD_ORGANISM_STORAGE_TIMEFRAME', 'H1'),
+        'execution_timeframe' => env('XAUUSD_ORGANISM_EXECUTION_TIMEFRAME', 'M5'),
+        'timeframe_roles' => [
+            'H4' => 'macro_bias',
+            'H1' => 'regime_and_location',
+            'M15' => 'setup_and_confirmation',
+            'M5' => 'entry_and_execution',
+        ],
+        'decision_roles' => [
+            'macro_bias' => 'H4',
+            'bias' => 'H1',
+            'regime' => 'H1',
+            'location' => 'H1',
+            'setup' => 'M15',
+            'confirmation' => 'M15',
+            'trigger' => 'M5',
+            'execution' => 'M5',
+            'invalidation' => 'M5',
+        ],
+        'population_scope' => 'symbol',
+    ],
+
+    // One persistent operator switch controls new autonomous work. STOP is a
+    // drain-first state: evidence/monitoring continue, but no new generation
+    // or autonomous research cohort is admitted until `php artisan ai:start`.
+    'autonomous_mode' => [
+        'default_enabled' => (bool) env('NEUROTRADER_AUTONOMOUS_MODE_DEFAULT_ENABLED', true),
+        // The controller profile changes only the monitoring surface. Both
+        // profiles operate the same governed scheduler and neither may open
+        // a generation manually or bypass admission/safety gates.
+        'default_controller_profile' => env('NEUROTRADER_AUTONOMOUS_CONTROLLER_PROFILE', 'lightweight_monitor'),
+        'stop_policy' => 'deny_new_work_and_drain_admitted_work',
+    ],
+
+    // XAUUSD's official multi-timeframe pilot. H1 regime context and M15/M5
+    // setup/entry logic are independent causal inputs inside one organism,
+    // not separate production populations. This contract is copied into
+    // screening, replay and paper so execution meaning cannot drift.
     'mtf_pilot' => [
         'enabled' => (bool) env('MTF_PILOT_ENABLED', true),
         'pilot_id' => env('MTF_PILOT_ID', 'xauusd_h1_m15_v1'),
@@ -356,9 +398,9 @@ return [
         'holdout_stale_minutes' => (int) env('PAPER_HOLDOUT_STALE_MINUTES', 180),
     ],
 
-    // Economic events are an execution veto, never an alpha source.  A real
-    // provider credential is required before the veto is enabled; this avoids
-    // pretending that a static calendar is live news data.
+    // Economic events are an execution veto, never an alpha source. External
+    // providers require a credential; official_bls uses the curated,
+    // provenance-bound release schedule and never pretends to be live news.
     'economic_calendar' => [
         'enabled' => env('ECONOMIC_CALENDAR_ENABLED', false),
         'provider' => env('ECONOMIC_CALENDAR_PROVIDER', 'financial_modeling_prep'),
@@ -369,6 +411,9 @@ return [
         // secondary credential is available.
         'api_key_secondary' => env('FMP_API_KEY_2'),
         'timeout_seconds' => (int) env('ECONOMIC_CALENDAR_TIMEOUT_SECONDS', 30),
+        // The execution veto fails closed when the latest external-provider
+        // synchronization is missing or older than the scheduler cadence.
+        'max_staleness_minutes' => (int) env('ECONOMIC_CALENDAR_MAX_STALENESS_MINUTES', 420),
         'pre_event_minutes' => (int) env('ECONOMIC_CALENDAR_PRE_EVENT_MINUTES', 30),
         'post_event_minutes' => (int) env('ECONOMIC_CALENDAR_POST_EVENT_MINUTES', 30),
         'minimum_impact' => env('ECONOMIC_CALENDAR_MINIMUM_IMPACT', 'high'),
@@ -477,6 +522,13 @@ return [
         // raise it without changing parent or promotion contracts.
         'population_size' => (int) env('LAB_POPULATION_SIZE', 20),
         'population_min_size' => (int) env('LAB_POPULATION_MIN_SIZE', 1),
+        // A normal generation is admitted and materialized as one complete
+        // twenty-seat experiment. Constructor progress is heartbeated and the
+        // scheduler job has its own long, hidden process budget; deliberately
+        // stopping after three seats mislabeled healthy construction as a
+        // technical quarantine. The continuation path remains available only
+        // for a genuinely interrupted process.
+        'constructor_initial_seat_budget' => max(1, (int) env('LAB_CONSTRUCTOR_INITIAL_SEAT_BUDGET', 20)),
         // Zero means no application-level population ceiling; positive values
         // are explicit infrastructure limits for a particular deployment.
         'population_max_size' => (int) env('LAB_POPULATION_MAX_SIZE', 0),
@@ -498,8 +550,13 @@ return [
         'robustness_matrix_frontier_limit' => (int) env('LAB_ROBUSTNESS_MATRIX_FRONTIER_LIMIT', 0),
         'robustness_matrix_source_limit' => (int) env('LAB_ROBUSTNESS_MATRIX_SOURCE_LIMIT', 0),
         'archive_failure_limit' => (int) env('LAB_ARCHIVE_FAILURE_LIMIT', 0),
-        'archive_max_per_island' => (int) env('LAB_ARCHIVE_MAX_PER_ISLAND', 0),
-        'archive_migration_limit' => (int) env('LAB_ARCHIVE_MIGRATION_LIMIT', 0),
+        // Archive lookup is a ranked diagnostic frontier, not an exhaustive
+        // evidence scan. Thousands of historical rows (especially the
+        // differential router) made one new seat spend tens of minutes
+        // hydrating repeated model metadata. The complete archive remains in
+        // storage; only construction-time retrieval is bounded.
+        'archive_max_per_island' => max(1, (int) env('LAB_ARCHIVE_MAX_PER_ISLAND', 64)),
+        'archive_migration_limit' => max(1, (int) env('LAB_ARCHIVE_MIGRATION_LIMIT', 16)),
         'confirmed_parent_traits_limit' => (int) env('LAB_CONFIRMED_PARENT_TRAITS_LIMIT', 0),
         'mutation_scope_source_limit' => (int) env('LAB_MUTATION_SCOPE_SOURCE_LIMIT', 0),
         'shadow_veto_decision_limit' => (int) env('LAB_SHADOW_VETO_DECISION_LIMIT', 0),
@@ -529,8 +586,9 @@ return [
         'learning_starvation_stale_seconds' => (int) env('LAB_LEARNING_STARVATION_STALE_SECONDS', 1800),
         'learning_starvation_min_pending_dojo' => (int) env('LAB_LEARNING_STARVATION_MIN_PENDING_DOJO', 1),
         // Three terminal zero-pass cohorts are a strategy deadlock, not a
-        // learning-worker outage. Normal evolution stops; only a bounded,
-        // shadow/rescue plan may be considered with operator approval.
+        // learning-worker outage. While autonomous mode is enabled, fresh-data
+        // generations may accumulate this evidence; the threshold then opens
+        // only a bounded structural escape and never relaxes promotion gates.
         'zero_pass_circuit_breaker_generations' => (int) env('LAB_ZERO_PASS_CIRCUIT_BREAKER_GENERATIONS', 3),
         // Parent-aware evolution. A parent can propose a bounded skill, but it
         // cannot replace the child's autonomous branch or bypass evidence gates.
@@ -692,6 +750,10 @@ return [
     'instrument_policy' => [
         'minimum_active_instruments' => (int) env('INSTRUMENT_POLICY_MIN_ACTIVE', 3),
         'maximum_active_instruments' => (int) env('INSTRUMENT_POLICY_MAX_ACTIVE', 6),
+        'minimum_posterior_observations' => max(3, (int) env('INSTRUMENT_POLICY_MIN_POSTERIOR_OBSERVATIONS', 3)),
+        'minimum_independent_windows' => max(3, (int) env('INSTRUMENT_POLICY_MIN_INDEPENDENT_WINDOWS', 3)),
+        'minimum_confirmed_net_utility' => max(.00001, (float) env('INSTRUMENT_POLICY_MIN_CONFIRMED_NET_UTILITY', .001)),
+        'minimum_forbidden_net_utility' => min(-.00001, (float) env('INSTRUMENT_POLICY_MIN_FORBIDDEN_NET_UTILITY', -.001)),
     ],
 
     // Versioned parameters consumed by lab, full replay, paper and holdout.
@@ -748,7 +810,7 @@ return [
         // Cooldown (seconds) between a generation being created and the next.
         'generation_cooldown_seconds' => (int) env('NEUROTRADER_LIFECYCLE_GENERATION_COOLDOWN_SECONDS', 300),
         // Cycle lock TTL (seconds) so a crashed cycle does not block forever.
-        'lock_ttl_seconds' => (int) env('NEUROTRADER_LIFECYCLE_LOCK_TTL_SECONDS', 600),
+        'lock_ttl_seconds' => (int) env('NEUROTRADER_LIFECYCLE_LOCK_TTL_SECONDS', 3000),
         // Error-log retention in days.
         'log_retention_days' => (int) env('NEUROTRADER_LIFECYCLE_LOG_RETENTION_DAYS', 14),
         'draft_timeout_seconds' => (int) env('NEUROTRADER_LIFECYCLE_DRAFT_TIMEOUT_SECONDS', 5400),
@@ -765,7 +827,15 @@ return [
         // still require an explicit operator repair mode.
         'autonomous_technical_recovery_enabled' => env('NEUROTRADER_AUTONOMOUS_TECHNICAL_RECOVERY_ENABLED', true),
         'autonomous_technical_recovery_max_dispatch' => max(1, min(2, (int) env('NEUROTRADER_AUTONOMOUS_TECHNICAL_RECOVERY_MAX_DISPATCH', 2))),
-        'autonomous_technical_recovery_daily_limit' => max(1, min(6, (int) env('NEUROTRADER_AUTONOMOUS_TECHNICAL_RECOVERY_DAILY_LIMIT', 2))),
+        // Per-agent recovery is already one-shot and daily bounded. A short
+        // batch cooldown lets a shared incident across one 20-seat cohort
+        // drain over successive lifecycle ticks instead of blocking it for
+        // hours, without increasing either safety budget.
+        'autonomous_technical_recovery_cooldown_seconds' => max(60, min(900, (int) env('NEUROTRADER_AUTONOMOUS_TECHNICAL_RECOVERY_COOLDOWN_SECONDS', 60))),
+        // A single 20-seat generation can be hit by one shared runtime
+        // incident. Keep every agent one-shot and every dispatch at two, but
+        // allow that one complete cohort to drain autonomously in a day.
+        'autonomous_technical_recovery_daily_limit' => max(1, min(20, (int) env('NEUROTRADER_AUTONOMOUS_TECHNICAL_RECOVERY_DAILY_LIMIT', 20))),
     ],
 
     // Bounded learning-recovery dispatch limit reuse (shadow lane only).
@@ -775,6 +845,12 @@ return [
     // Two scheduler observations must agree that the replay lane is idle;
     // delayed jobs alone are not classified as a retry storm.
     'edge_director' => [
+        // The production default has one generation authority: the normal
+        // twenty-seat lifecycle. Edge Genesis may finish/reconcile existing
+        // immutable trials, but it must not pre-empt that lifecycle by opening
+        // a separate five-seat generation every minute. Deliberate causal-lab
+        // runs can opt in without changing the normal production contract.
+        'autonomous_specialized_cohorts_enabled' => (bool) env('EDGE_DIRECTOR_AUTONOMOUS_SPECIALIZED_COHORTS_ENABLED', false),
         'idle_stability_seconds' => max(0, (int) env('EDGE_DIRECTOR_IDLE_STABILITY_SECONDS', 10)),
         'idle_stability_max_age_seconds' => max(30, (int) env('EDGE_DIRECTOR_IDLE_STABILITY_MAX_AGE_SECONDS', 180)),
         'retry_storm_attempts' => max(2, (int) env('EDGE_DIRECTOR_RETRY_STORM_ATTEMPTS', 5)),

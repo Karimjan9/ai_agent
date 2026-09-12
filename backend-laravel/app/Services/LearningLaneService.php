@@ -157,6 +157,7 @@ class LearningLaneService
                         'control_scope' => data_get($control, 'scope'),
                         'same_snapshot' => $controlVerified && (bool) data_get($control, 'same_snapshot', false),
                         'same_execution_contract' => $controlVerified && (bool) data_get($control, 'same_execution_contract', false),
+                        'same_parameter_baseline' => $controlVerified && (bool) data_get($control, 'same_parameter_baseline', false),
                         'control_pair_status' => $controlVerified ? 'verified' : 'missing_control',
                         'pair_integrity_status' => $pairIntegrityStatus,
                         'same_generation' => $sameGeneration,
@@ -200,6 +201,7 @@ class LearningLaneService
                     'control_scope' => data_get($control, 'scope'),
                     'same_snapshot' => $controlVerified && (bool) data_get($control, 'same_snapshot', false),
                     'same_execution_contract' => $controlVerified && (bool) data_get($control, 'same_execution_contract', false),
+                    'same_parameter_baseline' => $controlVerified && (bool) data_get($control, 'same_parameter_baseline', false),
                     'control_pair_status' => $controlVerified ? 'verified' : 'missing_control',
                     'pair_integrity_status' => $pairIntegrityStatus,
                     'same_generation' => $sameGeneration,
@@ -390,6 +392,7 @@ class LearningLaneService
                             'same_generation' => true,
                             'same_snapshot' => true,
                             'same_execution_contract' => true,
+                            'same_parameter_baseline' => true,
                             'baseline_is_diagnostic_only' => false,
                             'promotion_evidence' => false,
                         ],
@@ -1360,6 +1363,12 @@ class LearningLaneService
             ->count();
         $completedReplays = $dispatches->where('status', 'completed')->count();
         $observedReplays = $activePairs->whereIn('status', ['learning_observed', 'confirmed'])->count();
+        $observedPairIds = $activePairs->whereIn('status', ['learning_observed', 'confirmed'])
+            ->pluck('id')->map(fn ($id): int => (int) $id)->unique();
+        $confirmedObservedPairCount = $usableLessons->where('status', 'confirmed')
+            ->map(fn (AgentLearningLesson $lesson): int => (int) data_get($lesson->evidence, 'pair_id', 0))
+            ->filter(fn (int $pairId): bool => $pairId > 0 && $observedPairIds->contains($pairId))
+            ->unique()->count();
         $oldestQueuedAt = $dispatches->whereIn('status', ['selected', 'queued', 'running'])
             ->pluck('queued_at')
             ->filter()
@@ -1367,6 +1376,14 @@ class LearningLaneService
             ->sortBy(fn (Carbon $value): int => $value->timestamp)
             ->first();
         $coverageDenominator = $pairedCount + $missingCount;
+        $scope = [
+            'symbol' => strtoupper($symbol),
+            'laboratory_timeframe' => strtoupper($timeframe),
+            'strategy_family' => $family ?: 'all',
+        ];
+        $period = ['kind' => 'all_time', 'through' => now()->utc()->toIso8601String()];
+        $provisionalLessonCount = $usableLessons->where('status', 'provisional')->count();
+        $confirmedLessonCount = $usableLessons->where('status', 'confirmed')->count();
 
         return [
             'protocol' => self::PROTOCOL,
@@ -1398,14 +1415,34 @@ class LearningLaneService
                 || ((string) $dispatch->status === 'retry_ready' && $activeBatchIds->contains((string) $dispatch->queue_batch_id)))->count(),
             'queued_replay_jobs' => $queuedReplayJobs,
             'kpis' => [
-                'paired_delta_coverage_percent' => $coverageDenominator > 0 ? round(($pairedCount / $coverageDenominator) * 100, 2) : 0.0,
-                'target_improvement_rate_percent' => $pairedCount > 0 ? round(($improvedCount / $pairedCount) * 100, 2) : 0.0,
-                'repeat_failure_rate_percent' => $activePairs->count() > 0 ? round(($repeatCount / $activePairs->count()) * 100, 2) : 0.0,
-                'provisional_skill_birth_rate_percent' => $pairedCount > 0 ? round(($usableLessons->where('status', 'provisional')->count() / $pairedCount) * 100, 2) : 0.0,
-                'confirmed_mentor_birth_rate_percent' => $usableLessons->count() > 0 ? round(($usableLessons->where('status', 'confirmed')->count() / $usableLessons->count()) * 100, 2) : 0.0,
+                'paired_delta_coverage_percent' => $this->percentageMetric(
+                    $pairedCount, $coverageDenominator, 'verified_control_pair', 'scoped_active_pair', $scope, $period,
+                ),
+                'target_improvement_rate_percent' => $this->percentageMetric(
+                    $improvedCount, $pairedCount, 'verified_control_pair_with_target_improvement', 'verified_control_pair', $scope, $period,
+                ),
+                'repeat_failure_occurrence_share_percent' => $this->percentageMetric(
+                    $repeatCount, $activePairs->count(), 'repeat_failure_occurrence_after_first', 'scoped_active_pair', $scope, $period,
+                ),
+                // This is intentionally a density, not a conversion rate: a
+                // verified pair may yield more than one immutable lesson.
+                'provisional_skill_lesson_density' => [
+                    'value' => $pairedCount > 0 ? round($provisionalLessonCount / $pairedCount, 6) : null,
+                    'unit' => 'lessons_per_verified_control_pair',
+                    'scope' => $scope,
+                    'period' => $period,
+                    'numerator' => ['value' => $provisionalLessonCount, 'unique_subject_type' => 'agent_learning_lesson'],
+                    'denominator' => ['value' => $pairedCount, 'unique_subject_type' => 'verified_control_pair'],
+                    'interpretation' => 'density_not_probability',
+                ],
+                'confirmed_skill_share_percent' => $this->percentageMetric(
+                    $confirmedLessonCount, $usableLessons->count(), 'confirmed_agent_learning_lesson', 'verified_control_skill_lesson', $scope, $period,
+                ),
+                'observed_pair_confirmation_rate_percent' => $this->percentageMetric(
+                    $confirmedObservedPairCount, $observedReplays, 'confirmed_observed_pair', 'observed_replay_pair', $scope, $period,
+                ),
                 'full_replay_throughput' => $completedReplays,
                 'full_replay_observed' => $observedReplays,
-                'forward_confirmation_rate_percent' => $observedReplays > 0 ? round(($usableLessons->where('status', 'confirmed')->count() / $observedReplays) * 100, 2) : 0.0,
                 'queue_oldest_age_seconds' => $oldestQueuedAt ? max(0, now()->utc()->timestamp - $oldestQueuedAt->timestamp) : 0,
                 'superseded_duplicate_pairs' => $pairs->where('status', 'superseded')->count(),
             ],
@@ -1444,23 +1481,36 @@ class LearningLaneService
         $candidateExecution = $this->executionHashOf($candidate);
         $candidateSnapshot = $this->snapshotHashOf($candidate);
         $controls = $controlRows ?? LabMutationResponseMap::query()
-            ->with('agent')
+            ->with('agent.modelVersion')
             ->where('stage', 'screening')
             ->where('status', 'control')
             ->where('symbol', strtoupper((string) $agent->symbol))
             ->where('timeframe', strtoupper((string) $agent->timeframe))
             ->latest('id')
             ->get();
-        $sameGenerationControl = $controls
-            ->first(fn (LabMutationResponseMap $row): bool => (string) $row->strategy_family === (string) $agent->strategy_family
+        $candidatePairKey = (string) data_get($agent->modelVersion?->metadata, 'control_pair_contract.pair_key', '');
+        $eligibleControl = fn (LabMutationResponseMap $row): bool => (string) $row->strategy_family === (string) $agent->strategy_family
                 && (int) ($row->agent?->lab_generation_id ?? 0) === (int) $agent->lab_generation_id
                 && (string) data_get($row->metadata, 'control_contract.protocol') === 'frozen_control_v2'
                 && data_get($row->metadata, 'control_contract.control_only') === true
                 && (string) data_get($row->metadata, 'control_contract.role') === 'control'
                 && (int) data_get($row->metadata, 'control_contract.generation_id') === (int) $agent->lab_generation_id
+                && $row->agent !== null
+                && app(ExactCausalBaselineService::class)->matches($agent, $row->agent)
                 && $candidateExecution !== ''
                 && $this->sameExecutionContract($candidate, $row)
-                && $this->sameSnapshot($candidate, $row));
+                && $this->sameSnapshot($candidate, $row);
+        // Kernel-v2 pairs are one-to-one. If a candidate declares an exact
+        // pair key, an unrelated same-family control must never be substituted
+        // merely because its hashes happen to match. Legacy candidates without
+        // a pair key retain the prior same-generation-family fallback.
+        $sameGenerationControl = $candidatePairKey !== ''
+            ? $controls->first(fn (LabMutationResponseMap $row): bool => $eligibleControl($row)
+                && hash_equals(
+                    $candidatePairKey,
+                    (string) data_get($row->agent?->modelVersion?->metadata, 'control_pair_contract.pair_key', ''),
+                ))
+            : $controls->first($eligibleControl);
         if ($sameGenerationControl) {
             return [
                 'map_id' => $sameGenerationControl->id,
@@ -1475,6 +1525,7 @@ class LearningLaneService
                 'quality' => 'same_generation_family',
                 'same_snapshot' => $this->sameSnapshot($candidate, $sameGenerationControl),
                 'same_execution_contract' => $this->sameExecutionContract($candidate, $sameGenerationControl),
+                'same_parameter_baseline' => true,
             ];
         }
 
@@ -1503,7 +1554,8 @@ class LearningLaneService
             && filled(data_get($control, 'data_hash'))
             && filled(data_get($control, 'execution_hash'))
             && (bool) data_get($control, 'same_snapshot', false)
-            && (bool) data_get($control, 'same_execution_contract', false);
+            && (bool) data_get($control, 'same_execution_contract', false)
+            && (bool) data_get($control, 'same_parameter_baseline', false);
     }
 
     private function sameExecutionContract(LabMutationResponseMap $candidate, LabMutationResponseMap $control): bool
@@ -1717,6 +1769,26 @@ class LearningLaneService
         array $delta,
     ): array {
         return app(CanonicalLearningOutboxService::class)->record($agent, $pair, $result, $causalCreditEligible, $delta);
+    }
+
+    /** @return array<string,mixed> */
+    private function percentageMetric(
+        int $numerator,
+        int $denominator,
+        string $numeratorSubject,
+        string $denominatorSubject,
+        array $scope,
+        array $period,
+    ): array {
+        return [
+            'value' => $denominator > 0 ? round(($numerator / $denominator) * 100, 2) : null,
+            'unit' => 'percent',
+            'status' => $denominator > 0 ? 'measured' : 'no_denominator',
+            'scope' => $scope,
+            'period' => $period,
+            'numerator' => ['value' => $numerator, 'unique_subject_type' => $numeratorSubject],
+            'denominator' => ['value' => $denominator, 'unique_subject_type' => $denominatorSubject],
+        ];
     }
 
     private function available(): bool

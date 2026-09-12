@@ -18,14 +18,43 @@ class AntiSkillCemeteryService
         $strategy = (string) ($failure['strategy_id'] ?? '');
         $tactic = (string) ($failure['tactic_id'] ?? '');
         $mode = (string) ($failure['failure_mode'] ?? 'unclassified');
-        $key = hash('sha256', implode('|', [$symbol, $timeframe, $state, $strategy, $tactic, $mode]));
+        $gene = (string) ($failure['gene'] ?? $failure['changed_gene'] ?? '');
+        $direction = (string) ($failure['direction'] ?? $failure['mutation_direction'] ?? '');
+        $baselineHash = (string) ($failure['baseline_hash'] ?? data_get($failure, 'causal_baseline.parameter_hash', ''));
+        $key = hash('sha256', implode('|', [
+            self::PROTOCOL, $symbol, $timeframe, $state, $strategy, $tactic,
+            $mode, $gene, $direction, $baselineHash,
+        ]));
         $row = CapabilityAntiSkillCemetery::firstOrNew(['cemetery_key' => $key]);
-        $failures = ((int) ($row->failures ?? 0)) + 1;
+        $existingEvidence = (array) ($row->evidence ?? []);
+        $observationKey = (string) ($failure['independent_window_key']
+            ?? $failure['evidence_run_id']
+            ?? $failure['pair_id']
+            ?? hash('sha256', json_encode($failure, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)));
+        $observationKeys = collect((array) data_get($existingEvidence, 'anti_skill_contract.observation_keys', []))
+            ->push($observationKey)->filter()->unique()->sort()->values()->all();
+        $failures = count($observationKeys);
         $hardFailure = (bool) ($failure['hard_risk_violation'] ?? false);
-        $status = $hardFailure || $failures >= 3 ? 'forbidden' : 'retry_with_new_hypothesis';
-        $row->fill(['symbol' => $symbol, 'timeframe' => $timeframe, 'state_key' => $state, 'strategy_id' => $strategy ?: null, 'tactic_id' => $tactic ?: null, 'failure_mode' => $mode, 'status' => $status, 'failures' => $failures, 'evidence' => $failure, 'buried_at' => now()])->save();
+        $status = $hardFailure || $failures >= 2 ? 'forbidden' : 'retry_with_new_hypothesis';
+        $row->fill(['symbol' => $symbol, 'timeframe' => $timeframe, 'state_key' => $state, 'strategy_id' => $strategy ?: null, 'tactic_id' => $tactic ?: null, 'failure_mode' => $mode, 'status' => $status, 'failures' => $failures, 'evidence' => [
+            ...$failure,
+            'anti_skill_contract' => [
+                'protocol' => self::PROTOCOL,
+                'fingerprint_axes' => ['family', 'context', 'failure', 'gene', 'direction', 'baseline_hash'],
+                'gene' => $gene ?: null,
+                'direction' => $direction ?: null,
+                'baseline_hash' => $baselineHash ?: null,
+                'observation_keys' => $observationKeys,
+                'independent_failure_count' => $failures,
+                'forbidden_threshold' => 2,
+                'duplicate_observations_do_not_increment' => true,
+                'promotion_evidence' => false,
+            ],
+        ], 'buried_at' => now()])->save();
 
-        return ['status' => $status, 'cemetery_id' => $row->id, 'retry_requires_new_hypothesis' => $status !== 'forbidden', 'promotion_evidence' => false];
+        return ['status' => $status, 'cemetery_id' => $row->id,
+            'independent_failure_count' => $failures,
+            'retry_requires_new_hypothesis' => $status !== 'forbidden', 'promotion_evidence' => false];
     }
 
     public function blocks(string $symbol, string $timeframe, string $stateKey, ?string $strategyId, ?string $tacticId): bool

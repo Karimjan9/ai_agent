@@ -8,6 +8,8 @@ use Illuminate\Support\Collection;
 /** Shared output and exit-code contract for monitor/recovery commands. */
 abstract class OperationalCommand extends Command
 {
+    use CanonicalLaboratoryScope;
+
     /** @param array<string, mixed> $payload */
     protected function writeJson(array $payload, bool $pretty = false): void
     {

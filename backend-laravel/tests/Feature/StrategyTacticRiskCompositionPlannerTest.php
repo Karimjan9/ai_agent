@@ -3,11 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\AiLaboratory;
+use App\Models\CompositionComponentPosterior;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
+use App\Services\CanonicalSkillCartridgeService;
 use App\Services\CompositionAuthorityKernelService;
 use App\Services\CompositionLibrarySettlementService;
+use App\Services\CompositionSettlementFanoutService;
 use App\Services\StrategyTacticRiskCompositionPlannerService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -71,5 +74,51 @@ class StrategyTacticRiskCompositionPlannerTest extends TestCase
         $this->assertSame('confirmed_composition_consolidated', $confirmed['status']);
         $this->assertDatabaseCount('composition_settlements', 1);
         $this->assertDatabaseCount('lab_skill_zoo_entries', 1);
+    }
+
+    public function test_component_fanout_credits_only_explicit_paired_ablation_and_is_idempotent(): void
+    {
+        $passport = ['protocol' => CompositionAuthorityKernelService::PROTOCOL, 'composition_id' => 'causal-fanout', 'components' => [
+            'strategy_id' => 'hybrid', 'tactic_id' => 'trend_pullback', 'risk_id' => 'atr_risk_envelope', 'management_id' => 'balanced_professional',
+        ]];
+        $service = app(CompositionSettlementFanoutService::class);
+        $blocked = $service->settle([
+            'source_key' => 'fanout-1', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'state_key' => 'trend_up|london',
+            'after_cost_r' => .4, 'composition_passport' => $passport,
+        ]);
+        $this->assertSame('settled_packet_only_awaiting_component_ablation', $blocked['status']);
+        $this->assertDatabaseCount('composition_component_posteriors', 0);
+
+        $packet = [
+            'source_key' => 'fanout-2', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'state_key' => 'trend_up|london',
+            'after_cost_r' => .4, 'composition_passport' => $passport,
+            'component_effects' => ['tactic' => [
+                'component_id' => 'trend_pullback', 'incremental_after_cost_r' => .12,
+                'paired_control' => true, 'same_data_hash' => true, 'same_execution_hash' => true, 'non_target_safe' => true,
+            ]],
+        ];
+        $settled = $service->settle($packet);
+        $service->settle($packet);
+
+        $this->assertSame('settled_causal_component_effects', $settled['status']);
+        $this->assertSame(['tactic'], array_keys($settled['component_posteriors']));
+        $posterior = CompositionComponentPosterior::firstOrFail();
+        $this->assertSame(1, $posterior->observations);
+        $this->assertSame(.12, (float) $posterior->after_cost_value);
+        $this->assertFalse($settled['whole_packet_credit_fanned_out']);
+    }
+
+    public function test_combination_synergy_uses_factorial_interaction_not_ab_beating_one_arm(): void
+    {
+        $method = new \ReflectionMethod(CanonicalSkillCartridgeService::class, 'factorialInteraction');
+        $service = app(CanonicalSkillCartridgeService::class);
+
+        $subAdditive = $method->invoke($service, 1.0, 1.2, 1.2, 1.3);
+        $superAdditive = $method->invoke($service, 1.0, 1.1, 1.1, 1.35);
+
+        $this->assertSame('antagonistic', $subAdditive['status']);
+        $this->assertEqualsWithDelta(-.1, $subAdditive['interaction_delta'], .000001);
+        $this->assertSame('synergistic', $superAdditive['status']);
+        $this->assertEqualsWithDelta(.15, $superAdditive['interaction_delta'], .000001);
     }
 }

@@ -18,7 +18,7 @@ class TraitEvidenceLedgerService
         $observable = (bool) data_get($observability, 'observable_effect', data_get($observability, 'classification') === 'observable_effect');
         $control = data_get($observability, 'mutation_contract.control_pair_status') === 'available';
         $safe = ! (bool) data_get($observability, 'non_target_regression.failed', false)
-            && (bool) data_get($observability, 'non_target_regression.safe', true);
+            && (bool) data_get($observability, 'non_target_regression.safe', false);
         $status = match (true) {
             ! $control || $numericDelta === null => 'technical_incomplete',
             ! $observable => 'no_effect',

@@ -15,9 +15,7 @@ class RuntimeReloadPreflightService
 {
     public const PROTOCOL = 'runtime_reload_preflight_v1';
 
-    public function __construct(private readonly LabQueueJobInspector $queues)
-    {
-    }
+    public function __construct(private readonly LabQueueJobInspector $queues) {}
 
     /** @return array<string,mixed> */
     public function inspect(): array
@@ -26,7 +24,7 @@ class RuntimeReloadPreflightService
             'lab-screening', 'lab-frontier', 'lab-full-validation',
             'lab-xauusd', 'lab-eurusd', 'lab-gbpusd', 'lab-learning',
             'market-maintenance', 'scheduler-critical', 'scheduler-ops',
-            'scheduler-research', 'strategy-lab', 'backtests',
+            'scheduler-constructor', 'scheduler-research', 'strategy-lab', 'backtests',
         ]);
         $activeGenerations = LabGeneration::query()->whereIn('status', [
             'draft', 'queued', 'training', 'screening',

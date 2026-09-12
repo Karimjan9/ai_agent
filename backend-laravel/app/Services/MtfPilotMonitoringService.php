@@ -8,7 +8,6 @@ use App\Models\MtfAblationRun;
 use App\Models\MtfPilotMonitorRun;
 use App\Models\MtfStrategyResearchRun;
 use App\Models\PaperMtfShadowObservation;
-use App\Models\PaperSignalOutcome;
 use App\Models\PaperSignalPassport;
 use App\Models\ServiceHealthCheck;
 use App\Models\Symbol;
@@ -17,7 +16,8 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Read-only operational monitor for the XAUUSD H1 -> M15 pilot.
+ * Read-only monitor for the legacy H1-regime/M15-setup research sub-contract.
+ * Production ownership remains the single XAUUSD organism and executes on M5.
  *
  * It records what happened and raises health signals; it never changes a
  * candidate, strategy, gate threshold, paper order, or promotion decision.
@@ -63,7 +63,7 @@ class MtfPilotMonitoringService
             'MTF_CONTRACT',
             $contractOk ? 'ok' : 'critical',
             $contractOk
-                ? 'XAUUSD H1/M15 closed-context contract is enabled.'
+                ? 'The H1 regime and M15 setup research roles are enabled inside the single XAUUSD organism; execution remains M5.'
                 : 'MTF contract drift or disabled pilot; no promotion decision is allowed.',
             [
                 'enabled' => (bool) ($config['enabled'] ?? false),
@@ -343,6 +343,7 @@ class MtfPilotMonitoringService
     {
         if (! Schema::hasTable('market_data_sync_states')) {
             $addCheck($checks, 'FEED_STATE', 'warning', 'Per-stream feed state is unavailable; candle freshness is the fallback.', []);
+
             return;
         }
 
@@ -358,8 +359,12 @@ class MtfPilotMonitoringService
         $m15Fresh = is_numeric($freshness['m15_age_seconds'] ?? null)
             && (int) $freshness['m15_age_seconds'] <= (int) ($freshness['m15_max_age_seconds'] ?? 0);
         $freshnessFailures = [];
-        if (! $h1Fresh) $freshnessFailures[] = 'H1_FEED_FRESHNESS_FAILED';
-        if (! $m15Fresh) $freshnessFailures[] = 'M15_FEED_FRESHNESS_FAILED';
+        if (! $h1Fresh) {
+            $freshnessFailures[] = 'H1_FEED_FRESHNESS_FAILED';
+        }
+        if (! $m15Fresh) {
+            $freshnessFailures[] = 'M15_FEED_FRESHNESS_FAILED';
+        }
         $lost = $bad->contains(fn (MarketDataSyncState $state): bool => in_array(strtolower((string) $state->status), ['lost', 'failed'], true));
         $status = $lost || $freshnessFailures !== []
             ? 'critical'
@@ -445,9 +450,12 @@ class MtfPilotMonitoringService
         foreach ($passports as $passport) {
             $closed = $this->timestamp($passport->h1_closed_at);
             $decision = $this->timestamp($passport->m15_decision_at);
-            if (! filled($passport->h1_context_hash)) $missingHash++;
+            if (! filled($passport->h1_context_hash)) {
+                $missingHash++;
+            }
             if (! $closed || ! $decision) {
                 $invalid++;
+
                 continue;
             }
             $ageAtDecision = $decision->timestamp - $closed->timestamp;
@@ -467,7 +475,9 @@ class MtfPilotMonitoringService
             ->map(fn ($rows): int => $rows->pluck('h1_context_hash')->filter()->unique()->count())
             ->filter(fn (int $count): bool => $count > 1)
             ->all();
-        if ($contextVariants !== []) $invalid++;
+        if ($contextVariants !== []) {
+            $invalid++;
+        }
 
         return [
             'total' => $passports->count(),
@@ -494,6 +504,7 @@ class MtfPilotMonitoringService
             ->oldest('candle_time')
             ->get();
         $outcomes = $rows->filter(fn ($row): bool => $row->outcome !== null && $row->profit_percent !== null);
+
         return [
             'observation_count' => $rows->count(),
             'executable_count' => $rows->whereIn('decision', ['BUY', 'SELL'])->count(),
@@ -512,6 +523,7 @@ class MtfPilotMonitoringService
             ->loadMissing('signal.outcome')
             ->map(fn ($passport) => $passport->signal?->outcome)
             ->filter();
+
         return [
             'passport_count' => $passports->count(),
             'outcome_count' => $outcomes->count(),
@@ -552,6 +564,7 @@ class MtfPilotMonitoringService
         $officialDd = (float) ($official['max_drawdown_percent'] ?? 100);
         $m15Dd = (float) ($m15['max_drawdown_percent'] ?? 100);
         $edge = $required && $officialPf > $h1Pf && ($officialPf >= $m15Pf || $officialDd <= $m15Dd);
+
         return [
             'status' => $required && $edge ? 'ok' : 'warning',
             'message' => $required && $edge
@@ -677,7 +690,9 @@ class MtfPilotMonitoringService
             ->where('strategy_family', 'council')
             ->where('hypothesis_key', 'like', 'council_composite_v1@%')
             ->where('status', 'completed');
-        if ($dataHash !== '') $query->where('data_hash', $dataHash);
+        if ($dataHash !== '') {
+            $query->where('data_hash', $dataHash);
+        }
         $rows = $query->latest('completed_at')->get();
         $proxies = $rows->map(function (MtfStrategyResearchRun $run): array {
             $result = (array) $run->result;
@@ -689,6 +704,7 @@ class MtfPilotMonitoringService
                     (array) data_get($result, 'declared_members', []),
                 );
             }
+
             return [
                 'research_run_id' => $run->id,
                 'pass' => data_get($result, 'council_pass'),
@@ -732,6 +748,7 @@ class MtfPilotMonitoringService
             $peak = max($peak, $balance);
             $drawdown = max($drawdown, $peak > 0 ? (($peak - $balance) / $peak) * 100 : 100);
         }
+
         return [
             'total_trades' => count($profits),
             'profit_factor' => round($grossLoss > 0 ? $grossProfit / $grossLoss : ($grossProfit > 0 ? 99.0 : 0.0), 4),
@@ -742,7 +759,9 @@ class MtfPilotMonitoringService
 
     private function upsertHealth(string $pilotId, string $symbol, string $status, float $score, array $report, ?string $previousStatus): void
     {
-        if (! Schema::hasTable('service_health_checks')) return;
+        if (! Schema::hasTable('service_health_checks')) {
+            return;
+        }
         ServiceHealthCheck::updateOrCreate(
             ['service_key' => "mtf_pilot:{$symbol}"],
             [
@@ -760,7 +779,10 @@ class MtfPilotMonitoringService
 
     private function previousStatus(string $pilotId, string $symbol): ?string
     {
-        if (! Schema::hasTable('service_health_checks')) return null;
+        if (! Schema::hasTable('service_health_checks')) {
+            return null;
+        }
+
         return ServiceHealthCheck::query()->where('service_key', "mtf_pilot:{$symbol}")->value('status');
     }
 

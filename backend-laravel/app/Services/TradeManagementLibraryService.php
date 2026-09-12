@@ -7,10 +7,10 @@ class TradeManagementLibraryService
 {
     public const PROTOCOL = 'trade_management_library_v1';
 
-    /** @return array<string,mixed> */
-    public function compile(string $profile = 'balanced_professional', string $regime = 'trend'): array
+    /** @return array<string,array<string,mixed>> */
+    public function library(): array
     {
-        $profiles = [
+        return [
             'balanced_professional' => ['entry' => ['confirmation_entry' => .5, 'retest_confirmation_add' => .3, 'structure_confirmation_add' => .2], 'profit' => ['tp_ladder_r' => [['r' => 1, 'close_fraction' => .4], ['r' => 2, 'close_fraction' => .3]], 'runner_fraction' => .3], 'stop' => ['breakeven_after' => 'tp1_or_structure', 'trail' => 'atr_or_structure'], 'exit' => ['time_stop' => true, 'news_exit' => true]],
             'range_fixed_target' => ['entry' => ['single_confirmation_entry' => 1], 'profit' => ['fixed_target_r' => 1.25, 'close_fraction' => 1], 'stop' => ['breakeven_after' => 'none'], 'exit' => ['time_stop' => true, 'session_exit' => true]],
             'structure_runner' => ['profit' => ['tp_ladder_r' => [['r' => 1, 'close_fraction' => .25]], 'runner_fraction' => .75], 'stop' => ['breakeven_after' => 'confirmed_m5_structure', 'trail' => 'm5_then_m15_structure'], 'exit' => ['time_stop' => true, 'cost_aware_exit' => true]],
@@ -18,6 +18,12 @@ class TradeManagementLibraryService
             'reversal_reduced_risk' => ['profit' => ['tp_ladder_r' => [['r' => 1, 'close_fraction' => .5]], 'runner_fraction' => .5], 'stop' => ['breakeven_after' => 'opposite_liquidity_reaction', 'trail' => 'm5_structure'], 'exit' => ['volatility_exit' => true, 'time_stop' => true]],
             'session_orb' => ['profit' => ['target' => 'opening_range_multiple', 'runner_fraction' => .4], 'stop' => ['trail' => 'm5_structure'], 'exit' => ['session_exit' => true, 'news_exit' => true, 'time_stop' => true]],
         ];
+    }
+
+    /** @return array<string,mixed> */
+    public function compile(string $profile = 'balanced_professional', string $regime = 'trend'): array
+    {
+        $profiles = $this->library();
         $plan = $profiles[$profile] ?? $profiles['balanced_professional'];
         if ($regime === 'range') {
             $plan = $profiles['range_fixed_target'];

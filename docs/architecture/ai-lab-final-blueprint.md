@@ -1,9 +1,17 @@
 **NeuroTrader Lab — learning, evolution va instrument yaratishni birlashtiruvchi yakuniy loyiha rejasi**
 
 ```yaml
-blueprint_version: 1.1
+blueprint_version: 1.2
 authority: implementation_source
 status: active
+learning_confirmation_protocol: target_aligned_causal_confirmation_v2
+learning_confirmation_population: 20
+causal_triplet_reserved_seats: 3
+causal_triplet_paired_discovery_seats: 16
+causal_triplet_uncertainty_abstain_seats: 1
+normal_exact_control_pairs: 10
+compounding_kernel_protocol: causal_compounding_kernel_v2
+real_progress_authority: target_aligned_confirmed_safe_beneficial_skill_only
 supersedes:
   - previous conceptual proposals
 implementation_order: P0 -> P1 -> P2 -> P3 -> P4 -> P5
@@ -19,9 +27,86 @@ Maqsad: XAUUSD bo‘yicha tajriba o‘tkazadigan, executable ko‘nikma yaratadi
 
 Asosiy qaror: mavjud Laravel boshqaruvi va Python replay engine saqlanadi. Learning, Academy, Foundry va evolution bitta tekshiriladigan experiment contract orqali ulanadi. Dastlab bitta ko‘nikmaning to‘liq hayot sikli ishlatiladi; keyin shu mexanizm yangi instrumentlar va Council uchun kengaytiriladi. Foyda topilishi tadqiqot natijasi; ishlaydigan laboratoriyaning texnik qabul mezoni foydali natijani ham, rad etish va dalil yetishmasligini ham to‘g‘ri qayd etishdir.
 
+Production ownership kontrakti: XAUUSD — bitta multi-timeframe organizm va bitta generation lineage. H4/H1/M15/M5 alohida organizm yoki parallel genetic population emas; ular bitta muzlatilgan qaror kontraktidagi macro bias, regime/location, setup/confirmation va entry/execution rollaridir. Mavjud `ai_laboratories.timeframe=H1` qiymati faqat tarixiy storage compatibility anchor bo‘lib qoladi. Barcha avtonom XAUUSD new-work authority `ResearchLoopArbiterService`ga tegishli va default population `20`; terminal no-candidate evidence’dan kelgan bounded `candidate_handoff` ham shu yagona arbiter, lineage va 20-seat constructordan foydalanadi. Lifecycle, Learning Director, MTF va instrument servislar domain executor bo‘lib qoladi, lekin mustaqil scheduled selector emas. Arbiter Director’ni planning-only rejimda to‘liq causal ladder bo‘ylab tekshiradi va tanlangan childgagina apply authority beradi; eski specialized feature flag zanjirning pastki qismini productionda unreachable qilmaydi. Population ochishi mumkin bo‘lgan barcha child buyruqlar serial `scheduler-constructor` lane, canonical constructor mutex va immutable decision orqali boshqariladi; umumiy research backlog lifecycle’ni och qoldirmaydi.
+
+2026-09-11 implementation truth: joriy MTF cohort to‘liq tartiblangan H1 va
+M15 historical OHLCV payload hash’i bilan aniqlanadi; eski ablation current
+cohort o‘rnini bosa olmaydi. Autonomy yoqilganida 30 daqiqalik dispatcher avval
+exact frozen controlni, keyingi ticklarda esa ko‘pi bilan to‘rtta yuqori
+economic-information hypothesisni research lane’ga beradi. Instrument
+candidate exact same-generation control reservationisiz replayga kirmaydi.
+Verified settlement changed instrument va exact contextual bundle uchun
+alohida posterior yozadi; support komponentlar credit olmaydi va factorial
+control/A/B/AB dalilisiz synergy e’lon qilinmaydi. Reuse faqat local contextda
+isolated instrument hamda exact bundle ijobiy dalili kelishganda mumkin.
+Acceptance truth zanjiri:
+
+```text
+hypothesis -> exact controlled experiment -> positive economic signal
+-> confirmed instrument -> confirmed contextual bundle -> eligible parent
+-> positive performance credit
+```
+
+Har bosqich evidence-derived; keyingi artifact oldingi yetishmayotgan bosqichni
+yashira olmaydi. Full regression: Laravel 846/846 (5,421 assertion), Python
+192/192. Bu engineering wiring isboti, profitable edge isboti emas; real
+projectiondagi birinchi ochiq ilmiy bosqich hozir `confirmed_instrument`.
+
+`causal_compounding_kernel_v2` barcha yangi ilmiy ishni shu 20-seat
+population ichida birlashtiradi. Oddiy cold-start generation 10 ta mustaqil
+candidate/control juftligidan iborat. Uch o‘rinli causal confirmation bo‘lsa,
+qolgan 17 o‘rin 8 ta exact juftlik va bitta explicit `uncertainty_abstain`
+o‘rniga aylanadi. Besh o‘rinli Academy, cartridge, Edge yoki Parent Foundry
+proof bloki bo‘lsa, qolgan 15 o‘rin 7 ta exact juftlik va bitta abstain bilan
+yopiladi. Alohida 3 yoki 5 agentli avtonom production generation ochilmaydi.
+
+Har exact juftlikda control candidate’dan oldin persist qilinadi; candidate
+controlning to‘liq parameter vectori va genetic-source identifikatorlarini
+nusxalaydi, keyin faqat bitta pre-registered gene o‘zgartiradi. Control causal
+baseline, genetic parent emas. Dataset/execution hash tengligi o‘zi yetarli
+emas: parameter vector, pair key, role, generation, family va parent-source
+tengligi ham tekshiriladi. Shu invariantlardan biri buzilsa row
+`diagnostic_only` bo‘ladi va learning, inheritance yoki full replay authority
+bermaydi.
+
+Knowledge authority ikki blokli: Research Inbox legacy, provisional, salbiy,
+noaniq va family-prior kuzatuvlarini faqat experiment taklif qilish uchun
+saqlaydi; Proven Skill Registry esa faqat exact control, single intervention,
+mustaqil powered windows, absolute viability va non-target safety bilan causal
+tasdiqlangan skillni inheritance manbasi qiladi. Memory-first constructor avval
+canonical context bo‘yicha skillni tanlaydi yoki `abstain` qiladi, keyin aynan
+shu mutation intentini agent yaratilishidan oldin seal qiladi. Family prior
+to‘g‘ridan-to‘g‘ri inheritance bera olmaydi.
+
+Operator boshqaruvi nazoratsiz autonomy emas. Bir xil admission, learning,
+safety va lifecycle governorlar ustida ikkita monitoring profili mavjud:
+`strong_supervisor` kuchli modelga chuqur read-only generation/admission
+diagnostikasini beradi; `lightweight_monitor` kuchsiz modelga faqat ixcham
+`ai:start`, `ai:status`, `ai:stop` sirtini beradi. Hech bir profil manual
+generation, `force` yoki gate bypass vakolatiga ega emas. `STOP` yangi ishni
+bloklaydi va avval qabul qilingan ishni drain qiladi; monitoring to‘xtamaydi.
+Fresh-data normal generationlar ketma-ket zero-pass dalilini konfiguratsiyadagi
+thresholdgacha yig‘a oladi, thresholdga yetgach esa faqat bounded structural
+escape ochiladi.
+
+Constructor authority ham symbol/timeframe darajasidagi umumiy lease bilan
+yopilgan: lifecycle, targeted handoff, manual start va interrupted continuation
+bir-biri bilan parallel population qura olmaydi. Inactive XAUUSD M15 archive
+handofflari yangi generation ochmaydi va active lighthouse uchun faqat eng yangi
+waiting request ko‘riladi. Rescue allocation `targeted_rescue=0%` bo‘lsa,
+risk/management seatlari Edge tasdiqlanmasidan bajarilmaydi; ular auditli ravishda
+signal/context prerequisite tajribalariga qayta ajratiladi, population esa 20
+seat kontraktidan kichraymaydi.
+
+Bir xil dependency-gated seat uchun bounded prerequisite yo'llari oldingi
+continuationda tugagan bo'lsa, keyingi continuation qimmat taqiqlangan mutationni
+takrorlamaydi: u `promotion_evidence=false` bo'lgan explicit frozen diagnostic
+controlni yaratadi. Tugallangan immutable intraday archive checkpointlari ham
+keyingi scheduler ticklarida full-range coverage scanini takrorlamaydi.
+
 **Tekshirilgan boshlang‘ich holat**
 
-Quyidagi qiymatlar XAUUSD/H1 monitoring buyruqlaridan olindi va 2026-09-07, taxminan 09:41 Asia/Tashkent vaqtida qayta tekshirildi. Ular bir atomik DB snapshot emas; buyruqlar ketayotgan paytda tizim ishlashda davom etishi mumkin. H1 laboratoriya ownership’i bilan M5 execution timeframe bir tushuncha emas.
+Quyidagi qiymatlar yagona XAUUSD organizmi monitoring buyruqlaridan olindi va 2026-09-07, taxminan 09:41 Asia/Tashkent vaqtida qayta tekshirildi. Ular bir atomik DB snapshot emas; buyruqlar ketayotgan paytda tizim ishlashda davom etishi mumkin. Buyruqlardagi legacy `H1` storage anchor organizm scope’i emas; executable kontrakt H4/H1/M15/M5 rollarini birga muzlatadi va order execution M5’da amalga oshadi.
 
 | Ko‘rsatkich | Kuzatilgan qiymat | Talqin |
 | --- | ---: | --- |
@@ -152,9 +237,11 @@ Bitta canonical paket quyidagilarni bog‘laydi:
 ```yaml
 contract_version: research_experiment_v1
 scope:
-  symbol: XAUUSD
-  laboratory_timeframe: H1
+  organism: XAUUSD
+  population_scope: symbol
+  laboratory_storage_timeframe: H1
   execution_timeframe: M5
+  timeframe_roles: [H4_macro_bias, H1_regime_location, M15_setup_confirmation, M5_entry_execution]
 claim:
   target_stage: confirmation
   hypothesis: explicit_testable_statement
@@ -239,6 +326,16 @@ Skill Cartridge quyidagilarni olib yuradi: executable program/parameter patch; p
 Transfer zanjiri: compatible host baseline → host+skill va host control → mustaqil sinov → removal → oldingi hostdagi regressiya → mentor evaluation → research descendant → amaldagi parent gate. Tadqiqot uchun descendant yaratish genetic parent authority berish bilan teng emas; bootstrap deadlock bo‘lmasligi kerak.
 
 **Eng muhim qo‘shimcha: learning foyda berayotganini ham tajriba bilan isbotlash**
+
+Learning monitoring uch xil dalilni aralashtirmaydi. Screening settlement — tezkor diagnostik kuzatuv: unda mavjud komponentlar o‘lchanadi, yetishmayotgan risk, temporal yoki calibration komponentlari `0` deb soxtalashtirilmaydi, lekin u canonical positive yoki inheritable skill hisoblanmaydi. Canonical pair settlement — bir xil data/execution contractidagi candidate-control natijasi. Confirmed causal skill esa guided arm control va blinded armni oldindan muhrlangan mustaqil oynalarda yengib, explicit non-target safety, replication va amaldagi absolute viability gate’laridan o‘tgan dalildir. “So‘nggi 90 settlementda nechta positive?” kabi aralash source-type KPI learning sifati haqidagi yakuniy hukm bo‘la olmaydi.
+
+Causal yutuq umumiy window P&L bilan target yutug‘ini aralashtirmaydi. Har arm full replay’dan declared target measurement va invariant vector chiqaradi. `drawdown_risk` drawdown hamda ruin bo‘yicha Pareto yaxshilanishini, `volatility_session_stability` yetarli sample’li eng yomon volatility va session PF’larini, `regime_coverage` worst-regime PF’ni, `temporal_stability` worst-fold PF’ni, `portfolio_router` calibration hamda abstentionni tekshiradi. Stress profile full causal replayda mavjud bo‘lsa stress PF ishlatiladi; aks holda uning yolg‘on o‘rnini bosuvchi qiymat yaratilmaydi va faqat aniq nomlangan realized cost-burden o‘lchovi qo‘llanadi. Target yaxshilanishidan tashqari PF, realized cost burden, drawdown, ruin, temporal, regime, volatility, session, calibration va abstention invariantlari targetga tegishli qismi chiqarib tashlangach explicit taqqoslanadi. Required metric yo‘qolsa `incomplete`, yomonlashsa `failed`; ikkala holat ham skill, bandit reward va research ratchet uchun unsafe.
+
+**Causal research ratchet — foydali qisman effektni xavfsiz jamlash**
+
+Bitta intervention control va blinded armni yengsa-yu, yakuniy model hali absolut iqtisodiy gate’dan o‘tmasa, bu na confirmed skill, na butunlay foydasiz signal hisoblanadi. Quyidagi qat’iy shartlarning barchasi bajarilgandagina guided model keyingi bitta-gene research tajribasi uchun muzlatilgan baseline sifatida saqlanadi: verified canonical pair; component va selector effect pass; powered/disjoint counterfactual oynalar; explicit `passed` yoki `confirmed` non-target safety; valid data/execution/intervention contract; yagona confirmation blocker — absolute viability. Missing yoki taxmin qilingan non-target evidence pass hisoblanmaydi.
+
+Research ratchet production parent emas, promotion evidence emas va risk/gate bypass qila olmaydi. Har keyingi bosqich oldingi causal-positive baseline ustiga faqat bitta yangi declared intervention qo‘shadi; dalil stale, invalid yoki unsafe bo‘lsa original frozen controlga qaytiladi. Shu yo‘l qisman foydali effektlarni ketma-ket kompozitsiya qilishga imkon beradi, final authority esa faqat to‘liq absolute, temporal, cost, risk, replication, transfer va paper gate’laridan keyin ochiladi.
 
 Loyihaning markaziy maqsadi uchun alohida compounding benchmark kerak. Xuddi bir xil yangi, ajratilgan pre-2026 challenge’larda va teng compute limitida ikkita research jarayoni taqqoslanadi:
 
@@ -339,6 +436,11 @@ Academy materializationdan so‘ng `trading:reconcile-academy-experiments` sched
 
 Sun’iy fixture software transitionni tekshiradi va `promotion_evidence=false` bo‘lib qoladi. Real economic authority faqat real data protokoli orqali olinadi.
 
-Ushbu auditda mavjud to‘rtta test klassi SQLite in-memory muhitida bajarildi: `XauusdEdgeFormationAcademyServiceTest`, `CausalStageMasteryDirectorServiceTest`, `CausalProgressRatchetGovernorServiceTest`, `AutonomousLearningProgressDirectorTest`. Natija: **16 test, 81 assertion — passed**. Academy/Python qiymatlari alohida taqqoslandi va DSR numeric reproducer bajarildi. Bu testlar yuqoridagi yangi arxitektura implementatsiya qilinganini yoki butun repository regressiyasi tekshirilganini bildirmaydi.
+2026-09-07 dagi dastlabki audit faqat to‘rtta test klassi va 16/81
+natijadan iborat edi. 2026-09-11 yakuniy implementation verification esa
+butun Laravel suite’ni **846 test / 5,421 assertion** va Python suite’ni
+**192 test** bilan o‘tkazdi. Single arbiter, immutable generation seal,
+terminal closure XOR, durable owner/fencing consumer va production dry-run
+natijalari [implementation audit](./causal-compounding-kernel-v2-implementation-audit.md)da qayd etilgan. Bu engineering zanjir isboti; real profitable edge yoki economic authority isboti emas.
 
 Asosiy delivery: ishlaydigan bitta ilmiy sikl, keyin uning real skill transferga qo‘shgan qiymati, undan keyin yangi instrumentlar yaratish va Council. Har kengayish oldingi siklning evidence, budget va regression contractidan foydalanadi.

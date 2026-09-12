@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Jobs\EvaluateLabAgentJob;
 use App\Console\Commands\RecoverLabEvaluationErrors;
 use App\Console\Commands\RecoverLabFullEvaluationErrors;
+use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AgentLearningCausalExperiment;
 use App\Models\AgentLearningLesson;
 use App\Models\AgentLearningMutationIntent;
@@ -22,25 +22,27 @@ use App\Models\LabSkillZooEntry;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use App\Models\MutationMemory;
-use App\Services\CausalLearningCohortPlannerService;
-use App\Services\CausalLearningConfirmationService;
-use App\Services\CausalLearningCohortService;
-use App\Services\CausalLearningMutationIntentService;
+use App\Services\CanonicalSkillCartridgeService;
 use App\Services\CausalBlindedMutationSelectorService;
+use App\Services\CausalLearningCohortPlannerService;
+use App\Services\CausalLearningCohortService;
+use App\Services\CausalLearningConfirmationService;
+use App\Services\CausalLearningMutationIntentService;
 use App\Services\CausalParameterActivationService;
-use App\Services\CausalScreeningBehaviorPreflightService;
 use App\Services\CausalRepairFrontierService;
+use App\Services\CausalScreeningBehaviorPreflightService;
 use App\Services\DependencyAwareEdgeGenesisFoundryService;
 use App\Services\FrozenControlScreeningAdmissionService;
-use App\Services\LearningKernelService;
-use App\Services\LabImmutableEvidenceService;
 use App\Services\LabAgentEvaluationService;
+use App\Services\LabAgentPreflightService;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
-use App\Services\MarketChampionService;
+use App\Services\LearningKernelService;
 use App\Services\LearningPulseService;
 use App\Services\LearningReceiptService;
-use App\Services\StrategySemanticGroupService;
+use App\Services\MarketChampionService;
 use App\Services\StrategyParameterSchemaService;
+use App\Services\StrategySemanticGroupService;
 use App\Services\TechnicalFailureClassifierService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -49,6 +51,82 @@ use Tests\TestCase;
 class CausalLearningLoopContractTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_causal_triplet_is_reserved_outside_the_seventeen_seat_discovery_diversity_budget(): void
+    {
+        $lab = AiLaboratory::create([
+            'name' => 'Causal diversity laboratory',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'],
+            'is_active' => true,
+            'lifecycle_mode' => 'lighthouse',
+        ]);
+        $plan = collect(range(1, 20))->map(fn (int $slot): array => [
+            'family' => 'hybrid',
+            'origin' => $slot <= 3 ? 'causal_confirm' : 'discovery',
+            'target' => 'regime_coverage',
+            'niche' => $slot <= 3
+                ? ['causal_confirmation_source_lesson_id' => 2387, 'control_only' => false]
+                : ['control_only' => false],
+        ])->all();
+        $population = app(LabPopulationService::class);
+        $planner = new \ReflectionMethod($population, 'normalStructuralResearchPlan');
+        $planned = $planner->invoke($population, $plan, $lab);
+
+        foreach ([0, 1, 2] as $index) {
+            $this->assertFalse((bool) data_get($planned, "plan.{$index}.niche.structural_research", false));
+        }
+
+        $validator = new \ReflectionMethod($population, 'normalMutationDiversityContract');
+        $contract = $validator->invoke($population, $planned['plan']);
+
+        $this->assertTrue($contract['allowed'], json_encode($contract, JSON_PRETTY_PRINT));
+        $this->assertSame(17, $contract['candidate_count']);
+        $this->assertSame(5, $contract['structural_candidate_count']);
+        $this->assertEmpty($contract['missing_genes']);
+        $this->assertEmpty($contract['over_replicated_mutation_signatures']);
+    }
+
+    public function test_post_materialization_repair_uses_the_real_thirteen_seat_learning_budget(): void
+    {
+        $lab = AiLaboratory::create([
+            'name' => 'Post-materialization diversity laboratory',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'],
+            'is_active' => true,
+            'lifecycle_mode' => 'lighthouse',
+        ]);
+        $plan = collect(range(0, 19))->map(fn (int $slot): array => [
+            'family' => 'hybrid',
+            'origin' => 'discovery',
+            'target' => 'regime_coverage',
+            'niche' => ['control_only' => in_array($slot, [4, 9, 14, 19], true)],
+        ])->all();
+        $population = app(LabPopulationService::class);
+        $planner = new \ReflectionMethod($population, 'normalStructuralResearchPlan');
+        $planned = $planner->invoke($population, $plan, $lab)['plan'];
+
+        foreach ([0, 1, 2] as $index) {
+            $planned[$index]['niche'] = [
+                'control_only' => false,
+                'causal_learning_cohort' => ['role' => ['memory_guided', 'blinded', 'frozen_control'][$index]],
+            ];
+        }
+
+        $repair = new \ReflectionMethod($population, 'ensureFinalStructuralFloor');
+        $repaired = $repair->invoke($population, $planned);
+        $validator = new \ReflectionMethod($population, 'normalMutationDiversityContract');
+        $contract = $validator->invoke($population, $repaired['plan']);
+
+        $this->assertTrue($repaired['repaired']);
+        $this->assertTrue($contract['allowed'], json_encode($contract, JSON_PRETTY_PRINT));
+        $this->assertSame(13, $contract['candidate_count']);
+        $this->assertSame(4, $contract['structural_candidate_count']);
+        $this->assertEmpty($contract['missing_genes']);
+        $this->assertEmpty($contract['over_replicated_mutation_signatures']);
+    }
 
     public function test_canonical_memory_is_sealed_before_agent_persistence_and_receipt_reports_only_truthful_use(): void
     {
@@ -67,6 +145,7 @@ class CausalLearningLoopContractTest extends TestCase
             'positive_lessons' => [[
                 'lesson_id' => $sourceLesson->id, 'retrieval_id' => $retrievalId,
                 'parameter_key' => 'entry_threshold', 'provenance' => 'canonical_settled',
+                'match_level' => 'exact_context',
             ]],
             'harmful_lessons' => [], 'uncertainty_lessons' => [], 'retrieval_count' => 1,
         ];
@@ -125,6 +204,45 @@ class CausalLearningLoopContractTest extends TestCase
         );
     }
 
+    public function test_family_prior_cannot_be_upgraded_post_hoc_into_memory_guided_mutation(): void
+    {
+        [$generation, $sourceLesson] = $this->canonicalSource();
+        $packet = [
+            'packet_id' => (string) Str::uuid(),
+            'positive_lessons' => [[
+                'lesson_id' => $sourceLesson->id,
+                'retrieval_id' => (string) Str::uuid(),
+                'parameter_key' => 'entry_threshold',
+                'provenance' => 'canonical_settled',
+                'match_level' => 'family_prior',
+                'score' => 100,
+            ]],
+            'harmful_lessons' => [],
+            'uncertainty_lessons' => [],
+        ];
+        $service = app(CausalLearningMutationIntentService::class);
+        $selection = $service->selectIntervention(
+            $packet,
+            ['entry_threshold' => 1],
+            ['entry_threshold' => ['integer', 0, 5]],
+            ['entry_threshold'],
+        );
+        $plan = $service->plan(
+            $generation->fresh('laboratory'),
+            $packet,
+            'hybrid',
+            'profit_factor',
+            ['entry_threshold' => 1],
+            ['entry_threshold' => 2],
+            ['entry_threshold' => ['old' => 1, 'new' => 2]],
+        );
+
+        $this->assertSame('memory_abstained', $selection['status']);
+        $this->assertSame('independent_exploration', $plan['influence_type']);
+        $this->assertSame([], $plan['causally_applied_lesson_ids']);
+        $this->assertSame([], $plan['causally_applied_retrieval_ids']);
+    }
+
     public function test_receipt_gene_mismatch_is_invalid_and_cannot_settle_provisional(): void
     {
         [$generation] = $this->canonicalSource();
@@ -174,12 +292,20 @@ class CausalLearningLoopContractTest extends TestCase
             'parameters' => ['high_volatility_risk_multiplier' => .5],
             'metadata' => ['semantic_group' => $baselineGroup],
         ]);
+        $this->projectCartridgeForLesson($sourceLesson->fresh());
         $seedPlan = app(CausalLearningCohortPlannerService::class)->seedPlan($sourceLesson->fresh());
         $this->assertSame(['causal_confirm'], collect($seedPlan)->pluck('origin')->unique()->values()->all());
         $this->assertTrue(collect($seedPlan)->every(fn (array $slot): bool => strlen($slot['origin']) <= 24));
         $plan = collect(range(1, 4))->map(fn (int $slot): array => [
             'family' => 'hybrid', 'origin' => 'test', 'target' => 'profit_factor',
-            'niche' => ['data_lane' => 'price', 'slot' => $slot],
+            'niche' => [
+                'data_lane' => 'price', 'slot' => $slot,
+                'structural_research' => true,
+                'structural_mutation_required' => true,
+                'structural_operation' => 'displaced-discovery-contract',
+                'declared_gene' => 'entry_topology_variant',
+                'declared_value' => 'regime_consensus_v1',
+            ],
         ])->all();
 
         $materialized = app(CausalLearningCohortPlannerService::class)->materialize(
@@ -192,6 +318,12 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertSame(['memory_guided', 'blinded', 'frozen_control'], $roles);
         $this->assertTrue((bool) data_get($materialized['plan'][2], 'niche.control_only'));
         $this->assertSame('high_volatility_risk_multiplier', data_get($materialized['plan'][0], 'niche.declared_gene'));
+        $this->assertSame(
+            'compatible_cartridge_found',
+            data_get($materialized['plan'][0], 'niche.causal_learning_cohort.skill_cartridge.status'),
+        );
+        $this->assertNull(data_get($materialized['plan'][1], 'niche.causal_learning_cohort.skill_cartridge'));
+        $this->assertNull(data_get($materialized['plan'][2], 'niche.causal_learning_cohort.skill_cartridge'));
         $this->assertNull(data_get($materialized['plan'][1], 'niche.declared_gene'));
         $this->assertSame('cold_start_memory_blinded_selector', data_get($materialized['plan'][1], 'niche.selector_policy'));
         $this->assertSame(
@@ -206,6 +338,10 @@ class CausalLearningLoopContractTest extends TestCase
         foreach (collect($materialized['plan'])->filter(
             fn (array $slot): bool => filled(data_get($slot, 'niche.causal_learning_cohort.role')),
         ) as $slot) {
+            $this->assertFalse((bool) data_get($slot, 'niche.structural_research'));
+            $this->assertFalse((bool) data_get($slot, 'niche.structural_mutation_required'));
+            $this->assertNull(data_get($slot, 'niche.structural_operation'));
+            $this->assertTrue((bool) data_get($slot, 'niche.causal_displaced_slot_contract.structural_research'));
             $this->assertSame('range_specialist', data_get($slot, 'niche.role'));
             $this->assertSame('range_specialist', data_get($slot, 'niche.specialist_role'));
             $this->assertSame('range', data_get($slot, 'niche.regime'));
@@ -218,12 +354,94 @@ class CausalLearningLoopContractTest extends TestCase
         );
     }
 
+    public function test_legacy_attempts_cannot_exhaust_target_aligned_confirmation_budget(): void
+    {
+        [$generation, $lesson] = $this->canonicalSource();
+        $lesson->update([
+            'parameter_key' => 'high_volatility_risk_multiplier',
+            'evidence' => [...((array) $lesson->evidence),
+                'old_value' => ['value' => .5], 'new_value' => ['value' => .55],
+            ],
+        ]);
+        $lesson = $lesson->fresh();
+        $pairId = (int) data_get($lesson->evidence, 'pair_id');
+        $pair = LabLearningLanePair::query()->findOrFail($pairId);
+        $pair->candidateAgent->update(['parameter_diff' => [
+            'high_volatility_risk_multiplier' => ['old' => .5, 'new' => .55],
+        ]]);
+        $pair->candidateAgent->modelVersion->update(['parameters' => ['high_volatility_risk_multiplier' => .55]]);
+        $pair->controlAgent->modelVersion->update(['parameters' => ['high_volatility_risk_multiplier' => .5]]);
+        $this->projectCartridgeForLesson($lesson->fresh());
+
+        foreach (range(1, 3) as $attempt) {
+            AgentLearningCausalExperiment::create([
+                'experiment_key' => hash('sha512', 'legacy-attempt-'.$attempt),
+                'lab_generation_id' => $generation->id,
+                'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+                'target' => 'profit_factor', 'gene_key' => 'high_volatility_risk_multiplier',
+                'source_lesson_id' => $lesson->id, 'status' => 'provisional',
+                'evidence' => ['source_pair_id' => $pairId, 'promotion_evidence' => false],
+            ]);
+        }
+
+        $planner = app(CausalLearningCohortPlannerService::class);
+        $canonical = new \ReflectionMethod(CausalLearningCohortPlannerService::class, 'canonicalPositive');
+        $canonical->setAccessible(true);
+        $this->assertTrue($canonical->invoke($planner, $lesson));
+        $this->assertSame(0, AgentLearningCausalExperiment::query()
+            ->where('source_lesson_id', $lesson->id)
+            ->get()->filter(fn ($row): bool => data_get($row->evidence, 'confirmation_evidence_protocol')
+                === CausalLearningConfirmationService::EVIDENCE_PROTOCOL)->count());
+        $this->assertSame($lesson->id, $planner->eligibleLesson('XAUUSD', 'H1', 'hybrid', $lesson->id)?->id);
+
+        foreach (range(1, 3) as $attempt) {
+            AgentLearningCausalExperiment::create([
+                'experiment_key' => hash('sha512', 'target-aligned-attempt-'.$attempt),
+                'lab_generation_id' => $generation->id,
+                'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+                'target' => 'profit_factor', 'gene_key' => 'high_volatility_risk_multiplier',
+                'source_lesson_id' => $lesson->id, 'status' => 'provisional',
+                'evidence' => [
+                    'source_pair_id' => $pairId,
+                    'confirmation_evidence_protocol' => CausalLearningConfirmationService::EVIDENCE_PROTOCOL,
+                    'promotion_evidence' => false,
+                ],
+            ]);
+        }
+
+        $this->assertNull($planner->eligibleLesson('XAUUSD', 'H1', 'hybrid', $lesson->id));
+    }
+
+    public function test_planner_does_not_admit_a_descriptive_lesson_without_an_executable_cartridge(): void
+    {
+        [, $lesson] = $this->canonicalSource();
+
+        $this->assertSame('positive', AgentLearningSettlement::query()->latest('id')->value('evidence_state'));
+        $this->assertSame(
+            'LESSON_EXECUTABLE_CARTRIDGE_MISSING',
+            data_get(app(CanonicalSkillCartridgeService::class)->retrieveForLesson($lesson), 'reason'),
+        );
+        $this->assertNull(
+            app(CausalLearningCohortPlannerService::class)->eligibleLesson(
+                'XAUUSD',
+                'H1',
+                'hybrid',
+                $lesson->id,
+            ),
+        );
+    }
+
     public function test_falsified_confirmation_becomes_bounded_one_gene_repair_without_inheriting_failed_gene(): void
     {
         [$generation, $sourceLesson] = $this->canonicalSource();
         $sourcePair = LabLearningLanePair::query()->findOrFail((int) data_get($sourceLesson->evidence, 'pair_id'));
         $sourcePair->controlAgent->modelVersion->update(['parameters' => [
             'entry_threshold' => 1,
+            'high_volatility_risk_multiplier' => .5,
+            'max_loss_streak_before_wait' => 4,
+        ]]);
+        $sourcePair->candidateAgent->modelVersion->update(['parameters' => [
+            'entry_threshold' => 2,
             'high_volatility_risk_multiplier' => .5,
             'max_loss_streak_before_wait' => 4,
         ]]);
@@ -335,6 +553,173 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertNull(app(CausalRepairFrontierService::class)->eligible('XAUUSD', 'H1', $experiment->id));
     }
 
+    public function test_causal_positive_absolute_negative_step_is_retained_only_as_next_research_baseline(): void
+    {
+        [$generation, $sourceLesson] = $this->canonicalSource();
+        $pair = LabLearningLanePair::query()->findOrFail((int) data_get($sourceLesson->evidence, 'pair_id'));
+        $guided = $pair->candidateAgent;
+        $parameters = app(StrategyParameterSchemaService::class)->defaults('hybrid');
+        $parameters['entry_threshold'] = 2;
+        $parameters['high_volatility_risk_multiplier'] = .5;
+        $parameters['max_loss_streak_before_wait'] = 4;
+        $controlParameters = $parameters;
+        $controlParameters['entry_threshold'] = 1;
+        $pair->controlAgent->modelVersion->update(['parameters' => $controlParameters]);
+        $guided->modelVersion->update([
+            'parameters' => $parameters,
+            'metadata' => [...((array) $guided->modelVersion->metadata),
+                'edge_genesis' => ['phase' => 'RISK_SHAPING'],
+            ],
+        ]);
+        $pair->update(['non_target_regression' => ['status' => 'passed', 'safe' => true]]);
+        $blinded = $this->agent($generation, $this->model('ratchet-source-blind', $parameters), [
+            'entry_threshold' => ['old' => 1, 'new' => 1.2],
+        ]);
+        $experiment = AgentLearningCausalExperiment::create([
+            'experiment_key' => hash('sha512', 'causal-research-ratchet'),
+            'lab_generation_id' => $generation->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'target' => 'profit_factor', 'gene_key' => 'entry_threshold',
+            'source_lesson_id' => $sourceLesson->id,
+            'guided_agent_id' => $guided->id,
+            'blinded_agent_id' => $blinded->id,
+            'control_agent_id' => $pair->control_agent_id,
+            'status' => 'provisional',
+            'guided_beats_control' => true,
+            'guided_beats_blinded' => true,
+            'evidence' => [
+                'source_pair_id' => $pair->id,
+                'source_control_agent_id' => $pair->control_agent_id,
+                'baseline_model_version_id' => $pair->controlAgent->model_version_id,
+                'repair_frontier' => [
+                    'status' => 'bounded_repair_required',
+                    'inherit_gene' => false,
+                    'target' => 'drawdown_risk',
+                    'next_experiment' => 'one_gene_paired_replay',
+                    'research_ratchet' => [
+                        'protocol' => 'causal_research_ratchet_v1',
+                        'status' => 'eligible_research_baseline',
+                        'allowed' => true,
+                        'research_baseline_agent_id' => $guided->id,
+                        'research_baseline_model_version_id' => $guided->model_version_id,
+                        'root_source_pair_id' => $pair->id,
+                        'root_control_agent_id' => $pair->control_agent_id,
+                        'root_baseline_model_version_id' => $pair->controlAgent->model_version_id,
+                        'retained_steps' => [['gene' => 'entry_threshold', 'promotion_evidence' => false]],
+                        'production_parent_allowed' => false,
+                        'promotion_evidence' => false,
+                    ],
+                    'promotion_evidence' => false,
+                ],
+                'promotion_evidence' => false,
+            ],
+        ]);
+        $episode = app(LearningKernelService::class)->openEpisode($guided, [
+            'decision_key' => 'causal-research-ratchet-negative',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'context' => [],
+        ]);
+        AgentLearningSettlement::create([
+            'settlement_id' => (string) Str::uuid(), 'episode_id' => $episode->id,
+            'source_key' => 'causal-research-ratchet-negative',
+            'source_type' => LabLearningLanePair::class, 'source_id' => $pair->id,
+            'outcome_status' => 'settled', 'failure_class' => 'drawdown_risk',
+            'evidence_state' => 'negative', 'selection_reward' => -1,
+            'hard_failure' => true, 'outcome' => [], 'settled_at' => now()->addSecond(),
+        ]);
+
+        $frontier = app(CausalRepairFrontierService::class)->eligible('XAUUSD', 'H1', $experiment->id);
+
+        $this->assertNotNull($frontier);
+        $this->assertSame('causal_positive_research_ratchet', $frontier['baseline_policy']);
+        $this->assertSame($guided->id, $frontier['source_control_agent_id']);
+        $this->assertSame($guided->model_version_id, $frontier['baseline_model_version_id']);
+        $this->assertFalse(data_get($frontier, 'research_ratchet.production_parent_allowed'));
+        $this->assertFalse(data_get($frontier, 'research_ratchet.promotion_evidence'));
+        $this->assertSame(.5, $frontier['old_value']);
+        $this->assertNotSame(.5, $frontier['value']);
+
+        $materialized = app(CausalLearningCohortPlannerService::class)->materialize(
+            app(CausalRepairFrontierService::class)->seedPlan($frontier),
+            'XAUUSD',
+            'H1',
+            $generation->id,
+        );
+        $this->assertSame('materialized', $materialized['contract']['status']);
+        $this->assertSame('causal_positive_research_ratchet', $materialized['contract']['baseline_policy']);
+        $this->assertSame($guided->model_version_id, $materialized['contract']['baseline_model_version_id']);
+        $this->assertTrue(data_get($materialized, 'contract.research_ratchet.allowed'));
+        $this->assertFalse(data_get($materialized, 'contract.research_ratchet.production_parent_allowed'));
+    }
+
+    public function test_research_ratchet_requires_explicit_non_target_evidence(): void
+    {
+        [$generation, $sourceLesson] = $this->canonicalSource();
+        $pair = LabLearningLanePair::query()->findOrFail((int) data_get($sourceLesson->evidence, 'pair_id'));
+        $guided = $pair->candidateAgent->fresh('modelVersion');
+        $experiment = AgentLearningCausalExperiment::create([
+            'experiment_key' => hash('sha512', 'ratchet-explicit-non-target'),
+            'lab_generation_id' => $generation->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'target' => 'profit_factor', 'gene_key' => 'entry_threshold',
+            'guided_agent_id' => $guided->id, 'control_agent_id' => $pair->control_agent_id,
+            'status' => 'provisional',
+            'evidence' => [
+                'source_pair_id' => $pair->id,
+                'source_control_agent_id' => $pair->control_agent_id,
+                'baseline_model_version_id' => $pair->controlAgent->model_version_id,
+                'promotion_evidence' => false,
+            ],
+        ]);
+        $episode = app(LearningKernelService::class)->openEpisode($guided, [
+            'decision_key' => 'ratchet-explicit-non-target-negative',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'context' => [],
+        ]);
+        $negative = AgentLearningSettlement::create([
+            'settlement_id' => (string) Str::uuid(), 'episode_id' => $episode->id,
+            'source_key' => 'ratchet-explicit-non-target-negative',
+            'source_type' => LabLearningLanePair::class, 'source_id' => $pair->id,
+            'outcome_status' => 'settled', 'failure_class' => 'drawdown_risk',
+            'evidence_state' => 'negative', 'selection_reward' => -1,
+            'hard_failure' => true, 'outcome' => [], 'settled_at' => now()->addSecond(),
+        ]);
+        $effect = ['passed' => true, 'mean_delta' => .25, 'positive_delta_windows' => 7];
+        $method = new \ReflectionMethod(CausalLearningConfirmationService::class, 'researchRatchetDecision');
+        $method->setAccessible(true);
+        $pair->update(['non_target_regression' => ['status' => 'not_recorded', 'safe' => true]]);
+
+        $blocked = $method->invoke(
+            app(CausalLearningConfirmationService::class),
+            $experiment,
+            $pair->fresh('controlResponseMap'),
+            $guided,
+            $negative,
+            $effect,
+            $effect,
+            ['GUIDED_ABSOLUTE_VIABILITY_FAILED'],
+        );
+        $this->assertFalse($blocked['allowed']);
+        $this->assertContains('NON_TARGET_EVIDENCE_NOT_EXPLICITLY_PASSED', $blocked['reason_codes']);
+
+        $pair->update(['non_target_regression' => ['status' => 'passed', 'safe' => true]]);
+        $eligible = $method->invoke(
+            app(CausalLearningConfirmationService::class),
+            $experiment,
+            $pair->fresh('controlResponseMap'),
+            $guided,
+            $negative,
+            $effect,
+            $effect,
+            ['GUIDED_ABSOLUTE_VIABILITY_FAILED'],
+        );
+        $this->assertTrue($eligible['allowed']);
+        $this->assertSame('eligible_research_baseline', $eligible['status']);
+        $this->assertSame($guided->model_version_id, $eligible['research_baseline_model_version_id']);
+        $this->assertFalse($eligible['production_parent_allowed']);
+        $this->assertFalse($eligible['promotion_evidence']);
+    }
+
     public function test_repair_frontier_skips_a_gene_whose_required_context_never_activated(): void
     {
         [$generation, $sourceLesson] = $this->canonicalSource();
@@ -344,6 +729,11 @@ class CausalLearningLoopContractTest extends TestCase
             'high_volatility_risk_multiplier' => .5,
             'max_loss_streak_before_wait' => 4,
         ], 'metadata' => ['edge_genesis' => ['phase' => 'RISK_SHAPING']]]);
+        $sourcePair->candidateAgent->modelVersion->update(['parameters' => [
+            'entry_threshold' => 2,
+            'high_volatility_risk_multiplier' => .5,
+            'max_loss_streak_before_wait' => 4,
+        ]]);
         $blinded = $this->agent($generation, $this->model('activation-screen-blind', ['entry_threshold' => 1]), [
             'entry_threshold' => ['old' => 1, 'new' => 1.2],
         ]);
@@ -448,6 +838,33 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertSame(0, $selection['memory_inputs']);
         $this->assertSame(1, $selection['feasibility_inputs']);
         $this->assertFalse((bool) data_get($selection, 'feasibility_screen.performance_credit'));
+    }
+
+    public function test_memory_blinded_selector_exhausts_target_genes_before_schema_fallback(): void
+    {
+        $selection = app(CausalBlindedMutationSelectorService::class)->select(
+            'differential_router',
+            'regime_coverage',
+            [
+                'trend_down_strength_min' => 20.0,
+                'trend_up_strength_min' => 20.0,
+                'minimum_signal_confidence' => 0.6,
+                'lookback' => 20,
+                'partial_take_profit_fraction' => 0.0,
+                'time_stop_candles' => 12,
+            ],
+            'target-tier-regression',
+        );
+
+        $this->assertNotNull($selection);
+        $this->assertContains($selection['gene'], [
+            'trend_down_strength_min',
+            'trend_up_strength_min',
+            'minimum_signal_confidence',
+            'lookback',
+        ]);
+        $this->assertSame('target_preferred', $selection['selection_tier']);
+        $this->assertSame(3, $selection['target_preferred_gene_count']);
     }
 
     public function test_blinded_selector_skips_runtime_semantic_aliases(): void
@@ -619,7 +1036,11 @@ class CausalLearningLoopContractTest extends TestCase
         [$generation, $sourceLesson] = $this->canonicalSource();
         $sourcePair = LabLearningLanePair::query()->findOrFail((int) data_get($sourceLesson->evidence, 'pair_id'));
         $baseline = app(StrategyParameterSchemaService::class)->defaults('hybrid');
+        $baseline['entry_threshold'] = 1;
         $sourcePair->controlAgent->modelVersion->update(['parameters' => $baseline]);
+        $candidateBaseline = $baseline;
+        $candidateBaseline['entry_threshold'] = 2;
+        $sourcePair->candidateAgent->modelVersion->update(['parameters' => $candidateBaseline]);
         $blinded = $this->agent($generation, $this->model('architecture-source-blind', $baseline), [
             'entry_threshold' => ['old' => 1, 'new' => 1.2],
         ]);
@@ -788,7 +1209,11 @@ class CausalLearningLoopContractTest extends TestCase
         $sourcePair = LabLearningLanePair::query()->findOrFail((int) data_get($sourceLesson->evidence, 'pair_id'));
         $baseline = app(StrategyParameterSchemaService::class)->defaults('hybrid');
         unset($baseline['architecture_interaction_variant']);
+        $baseline['entry_threshold'] = 1;
         $sourcePair->controlAgent->modelVersion->update(['parameters' => $baseline]);
+        $candidateBaseline = $baseline;
+        $candidateBaseline['entry_threshold'] = 2;
+        $sourcePair->candidateAgent->modelVersion->update(['parameters' => $candidateBaseline]);
         $blinded = $this->agent($generation, $this->model('interaction-source-blind', $baseline), [
             'trend_weight' => ['old' => 1, 'new' => .87],
         ]);
@@ -959,6 +1384,21 @@ class CausalLearningLoopContractTest extends TestCase
         ]);
         $result = static fn (array $scores): array => [
             'evidence_run_id' => 'forward-proof',
+            'profit_factor' => 1 + (array_sum($scores) / count($scores) / 100),
+            'max_drawdown_percent' => 8,
+            'monte_carlo' => ['risk_of_ruin_percent' => 4],
+            'pf_attribution' => [
+                'summary' => ['cost_to_gross_profit_percent' => 5],
+                'stress_cost' => ['profit_factor' => 1.10],
+                'by_volatility' => ['normal' => ['trades' => 20, 'net_pf' => 1.05]],
+                'by_session' => ['london' => ['trades' => 20, 'net_pf' => 1.04]],
+            ],
+            'statistical_evidence' => ['edge_quality' => [
+                'worst_fold_profit_factor' => 1.02,
+                'worst_regime_pf' => 1.01,
+                'confidence_calibration' => ['calibration_score' => .75],
+            ]],
+            'opportunity_recall' => ['abstention_precision' => .70],
             'forward_window_protocol' => [
                 'independence_verified' => true, 'overlap_detected' => false,
                 'observed_windows' => 3, 'positive_windows' => 2,
@@ -1015,6 +1455,99 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertSame('confirmed', $experiment->fresh()->status);
     }
 
+    public function test_declared_target_and_non_target_evidence_are_fail_closed(): void
+    {
+        $service = app(CausalLearningConfirmationService::class);
+        $targetMeasurement = new \ReflectionMethod($service, 'targetMeasurement');
+        $compareTargets = new \ReflectionMethod($service, 'compareTargetMeasurements');
+        $invariantVector = new \ReflectionMethod($service, 'invariantVector');
+        $compareInvariants = new \ReflectionMethod($service, 'compareNonTargetInvariants');
+        $candidateResult = [
+            'profit_factor' => 1.20,
+            'max_drawdown_percent' => 9,
+            'monte_carlo' => ['risk_of_ruin_percent' => 4],
+            'pf_attribution' => [
+                'summary' => ['cost_to_gross_profit_percent' => 5],
+                'stress_cost' => ['profit_factor' => 1.10],
+                'by_volatility' => ['normal' => ['trades' => 20, 'net_pf' => 1.05]],
+                'by_session' => ['london' => ['trades' => 20, 'net_pf' => 1.04]],
+            ],
+            'statistical_evidence' => ['edge_quality' => [
+                'worst_fold_profit_factor' => .70,
+                'worst_regime_pf' => .55,
+                'confidence_calibration' => ['calibration_score' => .80],
+            ]],
+            'opportunity_recall' => ['abstention_precision' => .70],
+        ];
+        $controlResult = [
+            'profit_factor' => 1.00,
+            'max_drawdown_percent' => 10,
+            'monte_carlo' => ['risk_of_ruin_percent' => 5],
+            'pf_attribution' => [
+                'summary' => ['cost_to_gross_profit_percent' => 5.5],
+                'stress_cost' => ['profit_factor' => 1.08],
+                'by_volatility' => ['normal' => ['trades' => 20, 'net_pf' => 1.04]],
+                'by_session' => ['london' => ['trades' => 20, 'net_pf' => 1.03]],
+            ],
+            'statistical_evidence' => ['edge_quality' => [
+                'worst_fold_profit_factor' => .65,
+                'worst_regime_pf' => .60,
+                'confidence_calibration' => ['calibration_score' => .78],
+            ]],
+            'opportunity_recall' => ['abstention_precision' => .69],
+        ];
+
+        $candidateProfit = $targetMeasurement->invoke($service, 'profit_factor', $candidateResult);
+        $controlProfit = $targetMeasurement->invoke($service, 'profit_factor', $controlResult);
+        $this->assertTrue(data_get(
+            $compareTargets->invoke($service, ['target_measurement' => $candidateProfit], ['target_measurement' => $controlProfit]),
+            'passed',
+        ));
+
+        $candidateRegime = $targetMeasurement->invoke($service, 'regime_coverage', $candidateResult);
+        $controlRegime = $targetMeasurement->invoke($service, 'regime_coverage', $controlResult);
+        $this->assertFalse(data_get(
+            $compareTargets->invoke($service, ['target_measurement' => $candidateRegime], ['target_measurement' => $controlRegime]),
+            'passed',
+        ));
+
+        $candidateOutcome = ['invariant_vector' => $invariantVector->invoke($service, $candidateResult)];
+        $controlOutcome = ['invariant_vector' => $invariantVector->invoke($service, $controlResult)];
+        $safe = $compareInvariants->invoke($service, $candidateOutcome, $controlOutcome, 'regime_coverage');
+        $this->assertSame('passed', $safe['status']);
+        $this->assertTrue($safe['safe']);
+
+        unset($candidateResult['monte_carlo']);
+        $candidateOutcome = ['invariant_vector' => $invariantVector->invoke($service, $candidateResult)];
+        $incomplete = $compareInvariants->invoke($service, $candidateOutcome, $controlOutcome, 'regime_coverage');
+        $this->assertSame('incomplete', $incomplete['status']);
+        $this->assertFalse($incomplete['safe']);
+        $this->assertContains('risk_of_ruin', $incomplete['missing_required_metrics']);
+
+        $candidateDrawdownRisk = $targetMeasurement->invoke($service, 'drawdown_risk', [
+            ...$candidateResult,
+            'monte_carlo' => ['risk_of_ruin_percent' => 4],
+        ]);
+        $controlDrawdownRisk = $targetMeasurement->invoke($service, 'drawdown_risk', $controlResult);
+        $this->assertTrue(data_get(
+            $compareTargets->invoke(
+                $service,
+                ['target_measurement' => $candidateDrawdownRisk],
+                ['target_measurement' => $controlDrawdownRisk],
+            ),
+            'passed',
+        ));
+        data_set($candidateDrawdownRisk, 'components.risk_of_ruin.value', 6);
+        $this->assertFalse(data_get(
+            $compareTargets->invoke(
+                $service,
+                ['target_measurement' => $candidateDrawdownRisk],
+                ['target_measurement' => $controlDrawdownRisk],
+            ),
+            'passed',
+        ));
+    }
+
     public function test_volume_quality_failure_is_capability_isolation_not_global_recovery(): void
     {
         $result = app(TechnicalFailureClassifierService::class)->classify(
@@ -1056,6 +1589,55 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertSame(TechnicalFailureClassifierService::TERMINAL, $result['class']);
         $this->assertFalse($result['blocks_global_generation']);
         $this->assertSame('TERMINAL_DIAGNOSTIC', $result['action']);
+    }
+
+    public function test_causal_parent_lock_is_authoritative_when_planner_preserves_g98_origin(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $generation->update(['trigger_type' => 'learning_confirmation']);
+        $schema = app(StrategyParameterSchemaService::class);
+        $parameters = $schema->defaults('hybrid');
+        $group = app(StrategySemanticGroupService::class)->descriptor(
+            'XAUUSD', 'H1', 'hybrid', ['role' => 'general'],
+        );
+        $parent = $this->model('g98-causal-parent-lock-control', $parameters, [
+            'lab_symbol' => 'XAUUSD', 'lab_timeframe' => 'H1', 'semantic_group' => $group,
+        ]);
+        $child = $this->model('g98-causal-parent-lock-child', $parameters, [
+            'lab_symbol' => 'XAUUSD', 'lab_timeframe' => 'H1', 'semantic_group' => $group,
+            'causal_learning_cohort' => [
+                'protocol' => CausalLearningCohortPlannerService::PROTOCOL,
+                'role' => 'frozen_control',
+                'status' => 'awaiting_counterfactuals',
+            ],
+            'adaptive_parent_ecosystem' => [
+                'selected_parent_model_version_ids' => [$parent->id],
+                'causal_counterfactual_parent_lock' => [
+                    'parent_model_version_id' => $parent->id,
+                    'research_baseline_only_until_confirmation' => true,
+                ],
+            ],
+            'parent_inheritance_protocol' => [
+                'parent_selection' => 'same_canonical_source_baseline_for_all_counterfactual_arms',
+            ],
+            'semantic_lineage' => [
+                'mode' => 'exact_semantic_parent',
+                'genetic_parent_model_version_id' => $parent->id,
+            ],
+        ]);
+        $agent = $this->agent($generation->fresh(), $child, []);
+        $agent->update([
+            'origin' => 'g98_council',
+            'parent_a_model_version_id' => $parent->id,
+        ]);
+
+        $inspection = app(LabAgentPreflightService::class)->inspect(
+            $agent->fresh(['generation', 'modelVersion', 'parentA']),
+            'screening',
+        );
+
+        $this->assertNotContains('EXACT_PARENT_PROTOCOL_MISSING', $inspection['errors']);
+        $this->assertNotContains('NON_EXACT_SEMANTIC_PARENT', $inspection['errors']);
     }
 
     public function test_causal_frozen_control_identity_is_shared_with_screening_scheduler(): void
@@ -1234,6 +1816,28 @@ class CausalLearningLoopContractTest extends TestCase
             $agent->fresh(['generation', 'modelVersion']),
         ));
 
+        LabEvaluationRun::create([
+            'run_id' => 'retry-budget-immutable-run',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id,
+            'phase' => 'screening',
+            'mode' => 'screen',
+            'status' => 'technical_error',
+            'error_class' => 'Illuminate\\Queue\\MaxAttemptsExceededException',
+            'error_message' => 'App\\Jobs\\EvaluateLabAgentJob has been attempted too many times.',
+            'started_at' => now()->subMinute(),
+            'finished_at' => now(),
+        ]);
+        $agent->update([
+            'lifecycle_status' => 'technical_quarantine',
+            'decision_reason' => 'Technical quarantine after bounded learning-lane transport failures; strategy verdict withheld.',
+        ]);
+        $this->assertTrue($method->invoke(
+            app(RecoverLabEvaluationErrors::class),
+            $agent->fresh(['generation', 'modelVersion']),
+        ));
+
         $agent->update(['decision_reason' => 'Failed profit-factor quality gate.']);
         $this->assertFalse($method->invoke(
             app(RecoverLabEvaluationErrors::class),
@@ -1400,6 +2004,84 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertTrue($quarantineMethod->invoke($command, $agent->fresh(['generation', 'modelVersion'])));
     }
 
+    public function test_expired_full_replay_job_is_recoverable_after_service_repair_even_when_breaker_hid_the_reason(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $generation->update(['trigger_type' => 'edge_genesis', 'status' => 'queued']);
+        $model = $this->model('expired-service-job', ['entry_threshold' => 2]);
+        $agent = $this->agent($generation, $model, ['entry_threshold' => ['old' => 1, 'new' => 2]]);
+        $agent->update([
+            'lifecycle_status' => 'technical_quarantine',
+            'decision_reason' => 'Technical quarantine after bounded learning-lane transport failures; strategy verdict withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'expired-service-job-run', 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id, 'model_version_id' => $model->id,
+            'phase' => 'full_validation', 'mode' => 'full', 'status' => 'technical_error',
+            'error_class' => 'Illuminate\\Queue\\MaxAttemptsExceededException',
+            'error_message' => 'EvaluateLabAgentJob has been attempted too many times.',
+            'started_at' => now()->subMinute(), 'finished_at' => now(),
+        ]);
+
+        $method = new \ReflectionMethod(RecoverLabFullEvaluationErrors::class, 'isRepairableServiceFailure');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke(
+            app(RecoverLabFullEvaluationErrors::class),
+            $agent->fresh(['generation', 'modelVersion']),
+        ));
+    }
+
+    public function test_memory_first_selector_builds_the_exact_retrieved_cartridge_intervention(): void
+    {
+        [, $lesson] = $this->canonicalSource();
+        $this->projectCartridgeForLesson($lesson);
+        $packet = app(LearningKernelService::class)->retrieveCanonicalLesson(
+            $lesson->id, 'XAUUSD', 'H1', 'hybrid', [],
+        );
+
+        $selection = app(CausalLearningMutationIntentService::class)->selectIntervention(
+            $packet,
+            ['entry_threshold' => 1],
+            ['entry_threshold' => ['integer', 0, 5]],
+            ['entry_threshold'],
+        );
+
+        $this->assertSame('selected', $selection['status']);
+        $this->assertSame('retrieve_then_build_exact_mutation', $selection['selection_order']);
+        $this->assertSame($lesson->id, $selection['source_lesson_id']);
+        $this->assertSame(['entry_threshold' => 2], $selection['parameters']);
+        $this->assertSame('compatible_cartridge_found', data_get($selection, 'skill_cartridge.status'));
+    }
+
+    public function test_learning_pulse_counts_decision_packets_instead_of_prompt_rows(): void
+    {
+        [, $lesson] = $this->canonicalSource();
+        $settlement = AgentLearningSettlement::query()->firstOrFail();
+        $packetId = (string) Str::uuid();
+        foreach (['consumed', 'rejected', 'rejected'] as $index => $state) {
+            AgentLearningRetrieval::create([
+                'retrieval_id' => (string) Str::uuid(), 'packet_id' => $packetId,
+                'episode_id' => $settlement->episode_id, 'agent_learning_lesson_id' => $lesson->id,
+                'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+                'retrieval_state' => $state, 'match_level' => 'exact_context', 'context' => [],
+                'metadata' => ['causal_application' => $index === 0],
+                'consumed_at' => $state === 'consumed' ? now() : null,
+                'outcome_linked_at' => $state === 'consumed' ? now() : null,
+            ]);
+        }
+
+        $pulse = app(LearningPulseService::class)->pulse('XAUUSD', 'H1', 'hybrid');
+
+        $this->assertSame(3, $pulse['retrieval_rows']);
+        $this->assertSame(1, $pulse['retrieval_packets']);
+        $this->assertSame(1.0, $pulse['retrieval_hit_rate']);
+        $this->assertSame(1.0, $pulse['memory_utilization']);
+        $this->assertSame(1.0, $pulse['causal_memory_utilization']);
+        $this->assertSame(0.0, $pulse['negative_settlement_rate']);
+        $this->assertSame(0.0, $pulse['repeated_failure_rate']);
+    }
+
     /** @return array{0: LabGeneration, 1: AgentLearningLesson} */
     private function canonicalSource(): array
     {
@@ -1438,6 +2120,36 @@ class CausalLearningLoopContractTest extends TestCase
         ]);
 
         return [$generation->fresh('laboratory'), $lesson];
+    }
+
+    /** @return array<string,mixed> */
+    private function projectCartridgeForLesson(AgentLearningLesson $lesson): array
+    {
+        $pair = LabLearningLanePair::query()
+            ->with(['candidateAgent.modelVersion', 'controlAgent.modelVersion', 'candidateResponseMap', 'controlResponseMap'])
+            ->findOrFail((int) data_get($lesson->evidence, 'pair_id'));
+        $gene = (string) $lesson->parameter_key;
+        $change = (array) data_get($pair->candidateAgent->parameter_diff, $gene, []);
+        $map = $pair->candidateResponseMap;
+        $map->update([
+            'parameter_key' => $gene,
+            'old_value' => ['value' => data_get($change, 'old')],
+            'new_value' => ['value' => data_get($change, 'new')],
+        ]);
+        $settlement = AgentLearningSettlement::query()
+            ->where('source_type', LabLearningLanePair::class)
+            ->where('source_id', $pair->id)
+            ->latest('id')
+            ->firstOrFail();
+        $projection = app(CanonicalSkillCartridgeService::class)->project(
+            $pair->fresh(['candidateAgent.modelVersion', 'controlAgent.modelVersion', 'candidateResponseMap', 'controlResponseMap']),
+            [],
+            $map->fresh(),
+            $settlement,
+        );
+        $this->assertNotNull($projection);
+
+        return $projection;
     }
 
     /** @return array{0: LabLearningLanePair, 1: AgentLearningLesson} */
@@ -1485,6 +2197,9 @@ class CausalLearningLoopContractTest extends TestCase
             'pair_integrity_status' => 'verified', 'same_generation' => true,
             'candidate_metrics' => ['profit_factor' => 1 + $delta], 'control_metrics' => ['profit_factor' => 1],
             'target_delta' => ['delta' => $delta, 'improved' => $delta > 0],
+            'non_target_regression' => [
+                'protocol' => 'test_explicit_non_target_v1', 'status' => 'passed', 'safe' => true,
+            ],
         ]);
     }
 

@@ -4,22 +4,23 @@ namespace App\Console\Commands;
 
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
-use App\Models\LabGeneration;
-use App\Models\LabEvaluationRun;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
+use App\Models\LabGeneration;
 use App\Models\LabTrialLedger;
 use App\Models\ModelVersion;
-use App\Services\LabAgentPreflightService;
 use App\Services\ControlRootCatalogueService;
 use App\Services\ControlRootInheritanceService;
 use App\Services\ExecutionContractService;
+use App\Services\LabAgentPreflightService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
-use App\Services\LabReplayRecoveryService;
 use App\Services\LabQueueJobInspector;
+use App\Services\LabReplayRecoveryService;
+use App\Services\LearningProtocolSafetyService;
+use App\Services\ResearchAllocationPolicyService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
-use App\Services\LearningProtocolSafetyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -51,13 +52,13 @@ class RepairLabIntegrity extends Command
         LabImmutableEvidenceService $evidence,
         LabReplayRecoveryService $replayRecovery,
         LearningProtocolSafetyService $protocolSafety,
-    ): int
-    {
+    ): int {
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
         $timeframe = strtoupper((string) $this->option('timeframe'));
         $lab = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->first();
         if (! $lab) {
             $this->error("{$symbol} {$timeframe}: laboratory topilmadi.");
+
             return self::FAILURE;
         }
 
@@ -74,6 +75,7 @@ class RepairLabIntegrity extends Command
 
         if ($generations->isEmpty()) {
             $this->info("{$symbol} {$timeframe}: repair talab qiladigan active generation yo'q.");
+
             return self::SUCCESS;
         }
 
@@ -93,7 +95,9 @@ class RepairLabIntegrity extends Command
                 && $this->generationHasNoEvidenceOrQueueJobs($generation, $queueInspector)) {
                 $this->warn("G{$generation->generation}: normal causal contract incomplete; draft cohort technical quarantine qilinmoqda.");
                 foreach ($generation->fresh(['agents.modelVersion'])->agents as $agent) {
-                    if (! in_array((string) $agent->lifecycle_status, ['draft', 'queued'], true)) continue;
+                    if (! in_array((string) $agent->lifecycle_status, ['draft', 'queued'], true)) {
+                        continue;
+                    }
                     $fromStatus = (string) $agent->lifecycle_status;
                     $agent->update([
                         'lifecycle_status' => 'technical_quarantine',
@@ -124,6 +128,7 @@ class RepairLabIntegrity extends Command
                     'status' => 'technical_quarantine',
                     'completed_at' => now(),
                 ]);
+
                 continue;
             }
             foreach ($generation->agents as $agent) {
@@ -173,7 +178,9 @@ class RepairLabIntegrity extends Command
                     continue;
                 }
                 $inspection = $preflight->inspect($agent, 'screening');
-                if ($inspection['passed']) continue;
+                if ($inspection['passed']) {
+                    continue;
+                }
                 $invalid++;
                 $generationInvalid++;
                 $this->line("G{$generation->generation} A{$agent->id}: ".implode(', ', $inspection['errors']));
@@ -339,7 +346,9 @@ class RepairLabIntegrity extends Command
                     ['draft', 'queued', 'training', 'screening', 'evaluation_error', 'full_queued', 'full_validation'],
                     true,
                 ));
-                if ($open) continue;
+                if ($open) {
+                    continue;
+                }
                 $context = (array) ($screenedGeneration->trigger_context ?? []);
                 $context['screening_terminal'] = [
                     'protocol' => 'generation_terminal_boundary_v1',
@@ -397,6 +406,7 @@ class RepairLabIntegrity extends Command
             }
             if (! $this->option('apply')) {
                 $this->warn('--rebuild-root ishlashi uchun --apply ham kerak.');
+
                 return $invalid > 0 ? self::FAILURE : self::SUCCESS;
             }
             // The failure curriculum is already persisted in the generation;
@@ -410,7 +420,9 @@ class RepairLabIntegrity extends Command
                 $rootFailures = 0;
                 foreach ($rebuilt->load('agents.modelVersion')->agents as $agent) {
                     $inspection = $preflight->inspect($agent, 'screening');
-                    if ($inspection['passed']) continue;
+                    if ($inspection['passed']) {
+                        continue;
+                    }
                     $rootFailures++;
                     $preflight->quarantine($agent, $inspection, 'root_constructor_postflight');
                 }
@@ -621,6 +633,7 @@ class RepairLabIntegrity extends Command
             if ($hasOpenRun || $hasQueuedJob) {
                 $skipped++;
                 $this->line("G{$generation->generation} A{$agent->id}: recovery skipped; open run or queue job already exists.");
+
                 continue;
             }
 
@@ -628,11 +641,13 @@ class RepairLabIntegrity extends Command
             if (! $inspection['passed']) {
                 $skipped++;
                 $this->warn("G{$generation->generation} A{$agent->id}: recovery skipped; preflight failed.");
+
                 continue;
             }
 
             if (! $this->option('apply')) {
                 $requeued++;
+
                 continue;
             }
 
@@ -712,10 +727,18 @@ class RepairLabIntegrity extends Command
         }
         $skipped = (array) data_get($context, 'constructor_audit.skipped_zero_diff_slots', []);
         $issues = [];
-        if ($contractExpected > 0 && $contractExpected !== $actual) $issues[] = 'POPULATION_COUNT_MISMATCH';
-        if ($actual !== $expected) $issues[] = 'GENERATION_POPULATION_SIZE_MISMATCH';
-        if ((bool) data_get($contract, 'balanced_core', false) && $groupMismatches !== []) $issues[] = 'COUNCIL_GROUP_SEAT_MISMATCH';
-        if ($skipped !== []) $issues[] = 'CONSTRUCTOR_SKIPPED_ZERO_DIFF_SLOTS';
+        if ($contractExpected > 0 && $contractExpected !== $actual) {
+            $issues[] = 'POPULATION_COUNT_MISMATCH';
+        }
+        if ($actual !== $expected) {
+            $issues[] = 'GENERATION_POPULATION_SIZE_MISMATCH';
+        }
+        if ((bool) data_get($contract, 'balanced_core', false) && $groupMismatches !== []) {
+            $issues[] = 'COUNCIL_GROUP_SEAT_MISMATCH';
+        }
+        if ($skipped !== []) {
+            $issues[] = 'CONSTRUCTOR_SKIPPED_ZERO_DIFF_SLOTS';
+        }
 
         return [
             'issues' => array_values(array_unique($issues)),
@@ -749,7 +772,7 @@ class RepairLabIntegrity extends Command
         $pairing = (array) data_get($context, 'control_pairing_contract', []);
         $structural = (array) data_get($context, 'structural_research_contract', []);
         $issues = [];
-        if ((string) data_get($pairing, 'protocol', '') !== 'frozen_control_pair_v1') {
+        if ((string) data_get($pairing, 'protocol', '') !== ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL) {
             $issues[] = 'NORMAL_CONTROL_PAIR_PROTOCOL_MISSING';
         }
         if (! (bool) data_get($pairing, 'allowed', false)) {
@@ -811,7 +834,9 @@ class RepairLabIntegrity extends Command
             if ($protocolSafety->generationCreationPaused()) {
                 return null;
             }
-            if ($lockedLab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->exists()) return null;
+            if ($lockedLab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->exists()) {
+                return null;
+            }
             $latest = $lockedLab->generations()->latest('generation')->lockForUpdate()->first();
             $number = (int) ($latest?->generation ?? 0) + 1;
             $canonical = $semanticGroups->canonicalSpecialistGroups();
@@ -956,6 +981,7 @@ class RepairLabIntegrity extends Command
                 $agent->setRelation('modelVersion', $model);
                 $rootInheritance->finalizeSeed($model, $agent);
             }
+
             return $generation->fresh(['agents.modelVersion']);
         });
     }

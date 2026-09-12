@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ExactCausalBaselineService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -63,11 +64,17 @@ class LabLearningLanePair extends Model
      */
     public function isVerifiedControlPair(): bool
     {
+        $this->loadMissing([
+            'controlResponseMap',
+            'candidateAgent.modelVersion',
+            'controlAgent.modelVersion',
+        ]);
         $control = $this->controlResponseMap;
         $contract = (array) data_get($control?->metadata, 'control_contract', []);
 
         return (string) $this->pair_integrity_status === 'verified'
             && (bool) $this->same_generation
+            && (string) $this->baseline_source === 'control'
             && (int) $this->lab_generation_id > 0
             && (int) $this->control_agent_id > 0
             && (int) $this->control_response_map_id > 0
@@ -84,6 +91,9 @@ class LabLearningLanePair extends Model
             && hash_equals((string) $this->candidate_data_hash, (string) $this->control_data_hash)
             && hash_equals((string) $this->candidate_execution_hash, (string) $this->control_execution_hash)
             && hash_equals((string) $this->control_data_hash, (string) data_get($contract, 'data_hash'))
-            && hash_equals((string) $this->control_execution_hash, (string) data_get($contract, 'execution_hash'));
+            && hash_equals((string) $this->control_execution_hash, (string) data_get($contract, 'execution_hash'))
+            && $this->candidateAgent !== null
+            && $this->controlAgent !== null
+            && app(ExactCausalBaselineService::class)->matches($this->candidateAgent, $this->controlAgent);
     }
 }

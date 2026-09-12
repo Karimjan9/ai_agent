@@ -14,7 +14,7 @@ class ResearchAllocationPolicyService
 
     public const SHADOW_ALLOCATION_PROTOCOL = 'smart_courage_allocation_v1';
 
-    public const CONTROL_PAIR_PROTOCOL = 'frozen_control_pair_v1';
+    public const CONTROL_PAIR_PROTOCOL = 'exact_frozen_control_pair_v2';
 
     /** Authoritative normal shadow allocation. */
     public const SHADOW_SMART_SHARES = [
@@ -115,10 +115,10 @@ class ResearchAllocationPolicyService
             'controlled_exploration_share' => $allocation['controlled_exploration_share'],
             'control_share' => $allocation['control_share'],
             'control_pairing_contract' => [
-                'protocol' => 'frozen_control_pair_v1',
-                'scope' => 'same_generation_same_strategy_family_same_price_or_volume_lane',
-                'minimum_control_per_execution_lane' => true,
-                'materialize_missing_control_from_seat' => true,
+                'protocol' => self::CONTROL_PAIR_PROTOCOL,
+                'scope' => 'same_generation_same_strategy_family_exact_parameter_vector_except_one_gene',
+                'minimum_exact_control_per_candidate' => true,
+                'persist_control_before_candidate' => true,
                 'missing_control_action' => 'diagnostic_only_no_learning_credit_no_full_replay',
                 'promotion_evidence' => false,
             ],
@@ -236,8 +236,9 @@ class ResearchAllocationPolicyService
      * constructed. Shadow cohorts already use ShadowResearchGovernorService;
      * this companion path covers audited/normal generations so an allocation
      * label can never be mistaken for an actual causal control. One exact
-     * frozen control is reserved per executable family and price/volume lane;
-     * every other seat receives the same-generation pair key.
+     * frozen control is reserved for every candidate; shared family/lane
+     * controls are forbidden because they may carry a different untouched
+     * parameter vector.
      *
      * @return array{plan: array<int, array<string, mixed>>, contract: array<string, mixed>}
      */
@@ -247,357 +248,300 @@ class ResearchAllocationPolicyService
         string $timeframe,
         int $generationId,
     ): array {
-        // A volume/MTF lane is a real research lane only when it has both a
-        // frozen no-volume baseline and at least one executable volume
-        // candidate.  The governor historically reserved one volume-shadow
-        // seat, which the control materializer correctly converted into the
-        // control and thereby left the lane without a candidate.  Convert one
-        // otherwise ordinary same-family price seat into the explicit volume
-        // probe before pairing; this keeps the lane observable and preserves
-        // the all-gates fail-closed rule.
-        $volumePairRepair = $this->ensureNormalVolumeCandidate($plan);
-        $plan = (array) data_get($volumePairRepair, 'plan', $plan);
-        // The volume repair can legitimately consume the second seat of a
-        // price-family pair. Rebalance only a generic risk-management seat
-        // from an overrepresented family on the same execution lane. Tactic,
-        // structural and validated-lineage identities remain immutable.
-        $familyPairabilityRepair = $this->ensureNormalFamilyPairability($plan);
-        $plan = (array) data_get($familyPairabilityRepair, 'plan', $plan);
-        $required = [];
-        $controls = [];
+        $plan = array_values($plan);
+        $protected = [];
+        $free = [];
         foreach ($plan as $index => $slot) {
-            $family = (string) data_get($slot, 'family', '');
-            if ($family === '') {
-                continue;
-            }
-            $lane = $this->executionLane($slot);
-            $key = $lane.'|'.$family;
-            $required[$key] = ['lane' => $lane, 'family' => $family, 'key' => $key];
-            $role = (string) data_get($slot, 'niche.role', data_get($slot, 'niche.specialist_role', ''));
-            if ((bool) data_get($slot, 'niche.control_only', false)
-                || $role === 'frozen_control'
-                || data_get($slot, 'evolution_mode') === 'frozen_control') {
-                $controls[$key] = (int) $index;
+            if ($this->isPrimaryProofSeat((array) $slot)) {
+                $protected[] = (int) $index;
+            } else {
+                $free[] = (int) $index;
             }
         }
 
-        foreach ($required as $key => $contract) {
-            if (array_key_exists($key, $controls)) {
-                continue;
-            }
-            foreach ($plan as $index => $slot) {
-                if (($controls[$key] ?? null) === (int) $index) {
-                    continue;
-                }
-                $family = (string) data_get($slot, 'family', '');
-                if ($family !== $contract['family'] || $this->executionLane($slot) !== $contract['lane']) {
-                    continue;
-                }
-                $role = (string) data_get($slot, 'niche.role', data_get($slot, 'niche.specialist_role', ''));
-                if ($role === 'frozen_control' || (bool) data_get($slot, 'niche.control_only', false)) {
-                    continue;
-                }
-                // Keep a structural hypothesis interpretable whenever a
-                // non-structural seat is available.  The control is a
-                // frozen baseline, not a converted topology experiment.
-                if ((bool) data_get($slot, 'niche.structural_research', false)) {
-                    continue;
-                }
-                $controls[$key] = (int) $index;
-                break;
-            }
-            if (! array_key_exists($key, $controls)) {
-                foreach ($plan as $index => $slot) {
-                    if (($controls[$key] ?? null) === (int) $index) {
-                        continue;
-                    }
-                    $family = (string) data_get($slot, 'family', '');
-                    if ($family !== $contract['family'] || $this->executionLane($slot) !== $contract['lane']) {
-                        continue;
-                    }
-                    $role = (string) data_get($slot, 'niche.role', data_get($slot, 'niche.specialist_role', ''));
-                    if ($role === 'frozen_control' || (bool) data_get($slot, 'niche.control_only', false)) {
-                        continue;
-                    }
-                    $controls[$key] = (int) $index;
-                    break;
-                }
-            }
-        }
-
-        $assignments = [];
+        $pairCount = intdiv(count($free), 2);
+        $templateIndexes = $this->diverseCandidateTemplateIndexes($plan, $free, $pairCount);
+        $templatePlan = $plan;
+        $materialized = [];
         $candidateCounts = [];
-        foreach ($plan as $index => &$slot) {
-            $family = (string) data_get($slot, 'family', '');
-            $lane = $this->executionLane($slot);
-            $key = $lane.'|'.$family;
-            if ($family === '' || ! isset($required[$key])) {
-                continue;
-            }
+        $pairedSlots = [];
+
+        for ($pairIndex = 0; $pairIndex < $pairCount; $pairIndex++) {
+            $controlIndex = (int) $free[$pairIndex * 2];
+            $candidateIndex = (int) $free[($pairIndex * 2) + 1];
+            $templateIndex = (int) ($templateIndexes[$pairIndex] ?? $candidateIndex);
+            $template = (array) ($templatePlan[$templateIndex] ?? $templatePlan[$candidateIndex]);
+            $family = (string) data_get($template, 'family', '');
+            $lane = $this->executionLane($template);
             $pairKey = hash('sha256', json_encode([
-                'protocol' => 'frozen_control_pair_v1',
+                'protocol' => self::CONTROL_PAIR_PROTOCOL,
                 'generation_id' => $generationId,
                 'symbol' => strtoupper($symbol),
                 'timeframe' => strtoupper($timeframe),
+                'pair_index' => $pairIndex + 1,
                 'family' => $family,
                 'execution_lane' => $lane,
-            ], JSON_UNESCAPED_SLASHES));
-            $isPrimaryControl = (int) ($controls[$key] ?? -1) === (int) $index;
-            // A root portfolio deliberately has three frozen seats, two of
-            // them in the same execution family.  The normal pair contract
-            // only needs one primary control per family, but must not turn a
-            // declared extra frozen root control into an undeclared candidate.
-            $isControl = $isPrimaryControl || (
-                (bool) data_get($slot, 'niche.root_experiment_portfolio', false)
-                && (bool) data_get($slot, 'niche.control_only', false)
+                'hypothesis_family' => data_get($template, 'niche.hypothesis_family'),
+                'declared_gene' => data_get($template, 'niche.declared_gene'),
+                'declared_value' => data_get($template, 'niche.declared_value'),
+            ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+
+            // Preserve the two host seats' population-group coordinates, but
+            // run both against one copied experiment definition. This keeps
+            // the 5x4 scheduler budget intact while making the scientific
+            // unit a real one-candidate/one-control pair.
+            $control = $this->pairHost($plan[$controlIndex], $template);
+            $candidate = $this->pairHost($plan[$candidateIndex], $template);
+            $semanticRole = (string) data_get(
+                $template,
+                'niche.paired_semantic_role',
+                data_get($template, 'niche.specialist_role', data_get($template, 'niche.role', '')),
             );
-            $slot['niche'] = [
-                ...((array) ($slot['niche'] ?? [])),
+            $contract = [
+                'protocol' => self::CONTROL_PAIR_PROTOCOL,
+                'pair_key' => $pairKey,
+                'pair_index' => $pairIndex + 1,
+                'same_generation' => true,
+                'same_symbol_timeframe' => true,
+                'same_strategy_family' => true,
+                'same_parameter_baseline' => true,
+                'single_intervention_required' => true,
+                'execution_lane' => $lane,
+                'strategy_family' => $family,
+                'same_execution_contract' => true,
+                'missing_control_action' => 'diagnostic_only_no_learning_credit_no_full_replay',
+                'promotion_evidence' => false,
+            ];
+
+            $control['evolution_mode'] = 'frozen_control';
+            $control['niche'] = [
+                ...$this->withoutIntervention((array) data_get($control, 'niche', [])),
+                'control_only' => true,
+                'paired_semantic_role' => $semanticRole !== '' ? $semanticRole : null,
+                'data_lane' => $lane,
+                'control_lane' => $lane,
+                'control_family' => $family,
                 'control_pair_contract' => [
-                    'protocol' => 'frozen_control_pair_v1',
+                    ...$contract,
+                    'role' => 'control',
+                    'required_for_candidate' => false,
+                ],
+            ];
+            $candidate['niche'] = [
+                ...((array) data_get($candidate, 'niche', [])),
+                'control_only' => false,
+                'paired_semantic_role' => $semanticRole !== '' ? $semanticRole : null,
+                'data_lane' => $lane,
+                'control_pair_contract' => [
+                    ...$contract,
+                    'role' => 'candidate',
+                    'required_for_candidate' => true,
+                ],
+            ];
+            if ((string) data_get($candidate, 'evolution_mode') === 'frozen_control') {
+                $candidate['evolution_mode'] = 'paired_discovery_candidate';
+            }
+
+            $plan[$controlIndex] = $control;
+            $plan[$candidateIndex] = $candidate;
+            $cell = $lane.'|'.$family;
+            $candidateCounts[$cell] = ($candidateCounts[$cell] ?? 0) + 1;
+            $materialized[] = [
+                'pair_index' => $pairIndex + 1,
+                'control_slot' => $controlIndex + 1,
+                'candidate_slot' => $candidateIndex + 1,
+                'family' => $family,
+                'execution_lane' => $lane,
+                'pair_key' => $pairKey,
+            ];
+            $pairedSlots[] = $controlIndex + 1;
+            $pairedSlots[] = $candidateIndex + 1;
+        }
+
+        $abstainSlots = [];
+        if (count($free) % 2 === 1) {
+            $index = (int) end($free);
+            $slot = (array) $plan[$index];
+            $family = (string) data_get($slot, 'family', '');
+            $lane = $this->executionLane($slot);
+            $pairKey = hash('sha256', self::CONTROL_PAIR_PROTOCOL.'|'.$generationId.'|abstain|'.($index + 1));
+            $slot['evolution_mode'] = 'uncertainty_abstain';
+            $slot['niche'] = [
+                ...$this->withoutIntervention((array) data_get($slot, 'niche', [])),
+                'control_only' => true,
+                'uncertainty_abstain' => true,
+                'control_pair_contract' => [
+                    'protocol' => self::CONTROL_PAIR_PROTOCOL,
                     'pair_key' => $pairKey,
-                    'required_for_candidate' => ! $isControl,
+                    'role' => 'uncertainty_abstain',
+                    'required_for_candidate' => false,
                     'same_generation' => true,
                     'same_symbol_timeframe' => true,
                     'same_strategy_family' => true,
+                    'same_parameter_baseline' => true,
+                    'single_intervention_required' => false,
                     'execution_lane' => $lane,
                     'strategy_family' => $family,
                     'same_execution_contract' => true,
-                    'missing_control_action' => 'diagnostic_only_no_learning_credit_no_full_replay',
                     'promotion_evidence' => false,
                 ],
             ];
-            if ($isControl) {
-                $slot['evolution_mode'] = 'frozen_control';
-                $slot['niche']['role'] = 'frozen_control';
-                $slot['niche']['specialist_role'] = 'frozen_control';
-                $slot['niche']['control_only'] = true;
-                $slot['niche']['control_lane'] = $lane;
-                $slot['niche']['control_family'] = $family;
-                unset(
-                    $slot['niche']['declared_gene'],
-                    $slot['niche']['declared_gene_requested'],
-                    $slot['niche']['declared_value'],
-                    $slot['niche']['structural_research'],
-                    $slot['niche']['structural_hypothesis_protocol'],
-                    $slot['niche']['structural_hypothesis_id'],
-                    $slot['niche']['structural_operation'],
-                    $slot['niche']['structural_mutation_required'],
-                    $slot['niche']['shadow_mutation_gene'],
-                    $slot['niche']['shadow_mutation_index'],
-                    $slot['niche']['entry_topology_variant'],
-                    $slot['niche']['state_machine_variant'],
-                    $slot['niche']['regime_classifier_variant'],
-                    $slot['niche']['architecture_experiment'],
-                    $slot['niche']['architecture_escape'],
-                    $slot['niche']['architecture_control_only'],
-                );
-                if ($isPrimaryControl) {
-                    $assignments[$key] = [
-                        'slot' => (int) $index + 1,
-                        'family' => $family,
-                        'execution_lane' => $lane,
-                        'pair_key' => $pairKey,
-                    ];
-                }
-            } else {
-                $slot['niche']['control_only'] = false;
-                $candidateCounts[$key] = ($candidateCounts[$key] ?? 0) + 1;
-            }
+            $plan[$index] = $slot;
+            $abstainSlots[] = $index + 1;
         }
-        unset($slot);
 
-        $missing = array_values(array_diff(array_keys($required), array_keys($assignments)));
-        $missingCandidates = array_values(array_filter(
-            array_keys($required),
-            fn (string $key): bool => (int) ($candidateCounts[$key] ?? 0) < 1,
-        ));
+        $allowed = $pairCount > 0
+            && count($materialized) === $pairCount
+            && count($pairedSlots) === $pairCount * 2
+            && count($plan) === count($pairedSlots) + count($protected) + count($abstainSlots);
 
         return [
             'plan' => array_values($plan),
             'contract' => [
-                'protocol' => 'frozen_control_pair_v1',
+                'protocol' => self::CONTROL_PAIR_PROTOCOL,
                 'mode' => 'normal_research',
                 'generation_id' => $generationId,
                 'symbol' => strtoupper($symbol),
                 'timeframe' => strtoupper($timeframe),
-                'required_execution_lanes' => array_values($required),
-                'materialized_controls' => array_values($assignments),
-                'missing_execution_lanes' => $missing,
+                'population_size' => count($plan),
+                'primary_proof_slots' => array_map(fn (int $index): int => $index + 1, $protected),
+                'pair_count' => $pairCount,
+                'materialized_controls' => $materialized,
                 'candidate_counts' => $candidateCounts,
-                'missing_candidate_pairs' => $missingCandidates,
-                'volume_pair_repair' => data_get($volumePairRepair, 'repair'),
-                'family_pairability_repairs' => data_get($familyPairabilityRepair, 'repairs', []),
-                'allowed' => $missing === [] && $missingCandidates === [],
+                'missing_execution_lanes' => [],
+                'missing_candidate_pairs' => [],
+                'uncertainty_abstain_slots' => $abstainSlots,
+                'one_control_per_candidate' => true,
+                'candidate_must_copy_persisted_control_baseline' => true,
+                'allowed' => $allowed,
                 'missing_control_action' => 'generation_diagnostic_only_no_learning_credit_no_full_replay',
                 'promotion_evidence' => false,
             ],
         ];
     }
 
-    /**
-     * A causal execution lane needs at least two seats per family: one frozen
-     * control and one candidate. Smart composition deliberately carries
-     * several generic risk-management variants in the same family, so one of
-     * those excess seats may be reassigned to a singleton family without
-     * changing the 6/6/5/3 composition budget or any family-bound tactic.
-     *
-     * @return array{plan: array<int, array<string, mixed>>, repairs: array<int, array<string, mixed>>}
-     */
-    private function ensureNormalFamilyPairability(array $plan): array
+    /** @param array<string,mixed> $slot */
+    private function isPrimaryProofSeat(array $slot): bool
     {
-        $repairs = [];
-
-        while (true) {
-            $counts = collect($plan)->countBy(fn (array $slot): string => $this->executionLane($slot).'|'.(string) data_get($slot, 'family', '')
-            );
-            $deficitKey = $counts
-                ->filter(fn (int $count, string $key): bool => $count === 1 && ! str_ends_with($key, '|'))
-                ->keys()
-                ->first();
-            if ($deficitKey === null) {
-                break;
-            }
-
-            [$lane, $family] = explode('|', (string) $deficitKey, 2);
-            $donorIndex = collect($plan)->keys()
-                ->filter(fn (int $index): bool => $this->executionLane($plan[$index]) === $lane)
-                ->filter(fn (int $index): bool => (string) data_get($plan[$index], 'niche.composition_lane') === 'risk_management_mutation')
-                ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.control_only', false))
-                ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.structural_research', false))
-                ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.validated_parent_required', false))
-                ->filter(function (int $index) use ($counts, $plan): bool {
-                    $key = $this->executionLane($plan[$index]).'|'.(string) data_get($plan[$index], 'family', '');
-
-                    return (int) $counts->get($key, 0) >= 3;
-                })
-                ->sortByDesc(function (int $index) use ($counts, $plan): int {
-                    $slot = $plan[$index];
-                    $key = $this->executionLane($slot).'|'.(string) data_get($slot, 'family', '');
-
-                    return (int) $counts->get($key, 0);
-                })
-                ->first();
-            if ($donorIndex === null) {
-                break;
-            }
-
-            $previousFamily = (string) data_get($plan[$donorIndex], 'family', '');
-            $plan[$donorIndex]['family'] = $family;
-            $plan[$donorIndex]['niche'] = [
-                ...((array) data_get($plan[$donorIndex], 'niche', [])),
-                'family_pairability_repair' => [
-                    'protocol' => 'normal_family_pairability_repair_v1',
-                    'from_family' => $previousFamily,
-                    'to_family' => $family,
-                    'execution_lane' => $lane,
-                    'reason' => 'singleton_family_lane_requires_frozen_control_and_candidate',
-                    'promotion_evidence' => false,
-                ],
-            ];
-            $repairs[] = [
-                'slot' => (int) $donorIndex + 1,
-                'from_family' => $previousFamily,
-                'to_family' => $family,
-                'execution_lane' => $lane,
-                'composition_lane' => 'risk_management_mutation',
-                'promotion_evidence' => false,
-            ];
-        }
-
-        return ['plan' => array_values($plan), 'repairs' => $repairs];
+        return (array) data_get($slot, 'niche.causal_learning_cohort', []) !== []
+            || (int) data_get($slot, 'niche.causal_confirmation_source_lesson_id', 0) > 0
+            || (int) data_get($slot, 'niche.causal_repair_source_experiment_id', 0) > 0;
     }
 
     /**
-     * Ensure a lone volume lane has an actual candidate seat.  This is a
-     * plan-level allocation repair, not a score or gate adjustment: the
-     * converted seat is still required to differ in exactly one executable
-     * `volume_lane` gene and every volume freshness/coverage contract remains
-     * mandatory at dispatch/evaluation time.
-     *
-     * @return array{plan: array<int, array<string, mixed>>, repair: ?array<string, mixed>}
+     * @param  array<int,array<string,mixed>>  $plan
+     * @param  array<int,int>  $free
+     * @return array<int,int>
      */
-    private function ensureNormalVolumeCandidate(array $plan): array
+    private function diverseCandidateTemplateIndexes(array $plan, array $free, int $limit): array
     {
-        $volumeSlots = collect($plan)
-            ->filter(fn (array $slot): bool => $this->executionLane($slot) === 'volume')
-            ->groupBy(fn (array $slot): string => (string) data_get($slot, 'family', ''));
-
-        foreach ($volumeSlots as $family => $slots) {
-            if ($family === '' || $slots->count() >= 2) {
-                continue;
-            }
-
-            $volumeIndex = (int) $slots->keys()->first();
-            $candidateIndex = collect($plan)
-                ->keys()
-                ->filter(fn (int $index): bool => (string) data_get($plan[$index], 'family', '') === $family)
-                ->reject(fn (int $index): bool => $this->executionLane($plan[$index]) === 'volume')
-                ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.control_only', false))
-                ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.structural_research', false))
-                ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.shadow_only', false))
-                ->values()
-                ->first();
-            if ($candidateIndex === null) {
-                continue;
-            }
-
-            $niche = (array) data_get($plan[$candidateIndex], 'niche', []);
-            unset(
-                $niche['declared_gene'],
-                $niche['declared_gene_requested'],
-                $niche['declared_value'],
-                $niche['structural_research'],
-                $niche['structural_hypothesis_protocol'],
-                $niche['structural_hypothesis_id'],
-                $niche['structural_operation'],
-                $niche['structural_mutation_required'],
-                $niche['entry_topology_variant'],
-                $niche['state_machine_variant'],
-                $niche['regime_classifier_variant'],
-                $niche['architecture_experiment'],
-                $niche['architecture_escape'],
-            );
-            $niche = [
-                ...$niche,
-                'protocol' => 'adaptive_exploration_lane_v1',
-                'role' => 'volume_m15_specialist',
-                'specialist_role' => 'volume_m15_specialist',
-                'data_lane' => 'volume',
-                'volume_shadow' => true,
-                'shadow_only' => true,
-                'shadow_mutation_gene' => 'volume_lane',
-                'shadow_mutation_index' => max(0, $candidateIndex),
-                'shadow_mutation_contract' => [
-                    'protocol' => 'shadow_volume_mutation_v1',
-                    'gene' => 'volume_lane',
-                    'freshness_required' => true,
-                    'coverage_required' => true,
-                    'no_volume_control_required' => false,
-                    'same_generation_control_pair_required' => true,
-                    'promotion_evidence' => false,
-                ],
-                'control_only' => false,
-                'research_only_until_independent_replay' => true,
-                'promotion_evidence' => false,
-            ];
-            $plan[$candidateIndex]['niche'] = $niche;
+        $eligible = collect($free)
+            ->reject(fn (int $index): bool => (bool) data_get($plan[$index], 'niche.control_only', false))
+            ->reject(fn (int $index): bool => count((array) data_get($plan[$index], 'niche.declared_values', [])) > 1)
+            ->values();
+        if ($eligible->count() < $limit) {
+            $eligible = collect($free)
+                ->reject(fn (int $index): bool => count((array) data_get($plan[$index], 'niche.declared_values', [])) > 1)
+                ->values();
+        }
+        $requiredStructuralGenes = ['entry_topology_variant', 'state_machine_variant', 'regime_classifier_variant'];
+        $rank = function (int $index) use ($plan, $requiredStructuralGenes): array {
+            $gene = (string) data_get($plan[$index], 'niche.declared_gene', '');
 
             return [
-                'plan' => array_values($plan),
-                'repair' => [
-                    'protocol' => 'normal_volume_pair_materialization_v1',
-                    'family' => $family,
-                    'control_slot' => $volumeIndex + 1,
-                    'candidate_slot' => $candidateIndex + 1,
-                    'gene' => 'volume_lane',
-                    'reason' => 'lone_volume_lane_would_otherwise_become_control_only',
-                    'promotion_evidence' => false,
-                ],
+                in_array($gene, $requiredStructuralGenes, true)
+                    ? 0
+                    : ((bool) data_get($plan[$index], 'niche.structural_research', false)
+                        ? 1
+                        : ($this->executionLane((array) $plan[$index]) === 'volume' ? 2 : 3)),
+                $index,
             ];
+        };
+
+        $selected = [];
+        $selectedIndexes = [];
+        $seen = [];
+        for ($pairIndex = 0; $pairIndex < $limit; $pairIndex++) {
+            $hostIndexes = array_values(array_filter([
+                $free[$pairIndex * 2] ?? null,
+                $free[($pairIndex * 2) + 1] ?? null,
+            ], fn (mixed $index): bool => is_int($index)));
+            $hostBuckets = collect($hostIndexes)
+                ->map(fn (int $index): string => $this->templateBucket((array) $plan[$index]))
+                ->filter()->unique()->values();
+            $available = $eligible
+                ->reject(fn (int $index): bool => isset($selectedIndexes[$index]));
+            $local = $available
+                ->filter(fn (int $index): bool => $hostBuckets->contains($this->templateBucket((array) $plan[$index])))
+                ->sortBy($rank)
+                ->values();
+            $pool = $local->isNotEmpty() ? $local : $available->sortBy($rank)->values();
+            $choice = $pool->first(function (int $index) use ($plan, $seen): bool {
+                return ! isset($seen[$this->templateSignature((array) $plan[$index])]);
+            });
+            $choice ??= $pool->first();
+            if ($choice === null) {
+                break;
+            }
+            $choice = (int) $choice;
+            $selected[] = $choice;
+            $selectedIndexes[$choice] = true;
+            $seen[$this->templateSignature((array) $plan[$choice])] = true;
         }
 
-        return ['plan' => array_values($plan), 'repair' => null];
+        return $selected;
+    }
+
+    /** @param array<string,mixed> $slot */
+    private function templateBucket(array $slot): string
+    {
+        return (string) (
+            data_get($slot, 'research_group')
+            ?: data_get($slot, 'target')
+            ?: ((string) data_get($slot, 'family', '')).'|'.$this->executionLane($slot)
+        );
+    }
+
+    /** @param array<string,mixed> $slot */
+    private function templateSignature(array $slot): string
+    {
+        return (string) (
+            data_get($slot, 'niche.hypothesis_family')
+            ?: implode('|', [
+                (string) data_get($slot, 'family', ''),
+                $this->executionLane($slot),
+                (string) data_get($slot, 'niche.declared_gene', data_get($slot, 'target', '')),
+                json_encode(data_get($slot, 'niche.declared_value'), JSON_PRESERVE_ZERO_FRACTION),
+            ])
+        );
+    }
+
+    /** @param array<string,mixed> $host @param array<string,mixed> $template @return array<string,mixed> */
+    private function pairHost(array $host, array $template): array
+    {
+        return [
+            ...$template,
+            'research_group' => data_get($host, 'research_group', data_get($template, 'research_group')),
+            'group_seat' => data_get($host, 'group_seat', data_get($template, 'group_seat')),
+        ];
+    }
+
+    /** @param array<string,mixed> $niche @return array<string,mixed> */
+    private function withoutIntervention(array $niche): array
+    {
+        foreach ([
+            'declared_gene', 'declared_gene_requested', 'declared_value', 'declared_genes', 'declared_values',
+            'structural_research', 'structural_hypothesis_protocol', 'structural_hypothesis_id',
+            'structural_operation', 'structural_mutation_required', 'shadow_mutation_gene',
+            'shadow_mutation_index', 'entry_topology_variant', 'state_machine_variant',
+            'regime_classifier_variant', 'architecture_interaction_variant', 'architecture_experiment',
+            'architecture_escape', 'architecture_control_only', 'learning_evolution',
+            'learning_receipt_injection',
+        ] as $key) {
+            unset($niche[$key]);
+        }
+
+        return $niche;
     }
 
     /** @return array<string, mixed> */
@@ -647,6 +591,15 @@ class ResearchAllocationPolicyService
         $origin = (string) data_get($slot, 'origin', '');
         $target = (string) data_get($slot, 'target', '');
         $niche = (array) data_get($slot, 'niche', []);
+        $dependencyReallocation = (array) data_get($niche, 'dependency_prerequisite_reallocation', []);
+        $explicitLane = (string) data_get($slot, 'allocation_lane', '');
+        if (data_get($dependencyReallocation, 'protocol') === 'dependency_prerequisite_reallocation_v1'
+            && data_get($dependencyReallocation, 'status') === 'reallocated'
+            && in_array($explicitLane, [
+                'architecture_signal', 'regime_abstention', 'frozen_control_replication',
+            ], true)) {
+            return $explicitLane;
+        }
         if ($origin === 'targeted_failure_profile' || $origin === 'gate_targeted') {
             return 'targeted_rescue';
         }

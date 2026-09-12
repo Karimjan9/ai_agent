@@ -9,13 +9,14 @@ use App\Models\LabEvaluationRun;
 use App\Models\ModelVersion;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\MarketData\MarketVolumeService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class LabAgentEvaluationService
 {
-    public function __construct(private CandlePayloadService $candles, private MarketChampionService $champions, private LabDatasetExportService $datasets, private ScreeningLearningOutboxService $screeningOutbox, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger, private CandidateHandoffService $handoffs, private CounterfactualBlameGraphService $blameGraph, private LearningProtocolSafetyService $protocolSafety, private LabImmutableEvidenceService $evidence, private StrategyParameterSchemaService $schemas, private MarketVolumeService $volumes, private AgentKnowledgeService $knowledge, private ParentContributionGraphService $parentGraphService, private LabGenerationContextService $generationContext) {}
+    public function __construct(private CandlePayloadService $candles, private MarketChampionService $champions, private LabDatasetExportService $datasets, private ScreeningLearningOutboxService $screeningOutbox, private CandidateGateDecisionService $gateDecisions, private ShadowVetoLedgerService $shadowVetoLedger, private CandidateHandoffService $handoffs, private CounterfactualBlameGraphService $blameGraph, private LearningProtocolSafetyService $protocolSafety, private LabImmutableEvidenceService $evidence, private StrategyParameterSchemaService $schemas, private MarketVolumeService $volumes, private AgentKnowledgeService $knowledge, private ParentContributionGraphService $parentGraphService, private LabGenerationContextService $generationContext, private LabInstrumentResearchService $instrumentResearch) {}
 
     public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
@@ -139,25 +140,7 @@ class LabAgentEvaluationService
             if ($cohort->isEmpty()) {
                 $cohort = collect([$agent]);
             }
-            if ($edgeGenesisReplay) {
-                // An Edge Genesis cohort is a closed causal experiment. It
-                // must never share execution/cache artifacts with an ordinary
-                // H1 generation merely because both belong to the same lab.
-                $cohort = $cohort->filter(fn (LabAgent $peer): bool =>
-                    data_get($peer->modelVersion?->metadata, 'edge_genesis.protocol') === DependencyAwareEdgeGenesisFoundryService::PROTOCOL
-                )->values();
-                if ($cohort->isEmpty()) $cohort = collect([$agent]);
-            }
-            $cartridgeConfirmation = data_get($model->metadata, 'skill_cartridge_transplant.protocol') === CanonicalSkillCartridgeService::PROTOCOL;
-            if ($cartridgeConfirmation) {
-                // Cartridge arms are a closed, research-only cohort. Mixing a
-                // normal generation seat into it would invalidate both the
-                // frozen control and the one-arm/one-result identity rule.
-                $cohort = $cohort->filter(fn (LabAgent $peer): bool =>
-                    data_get($peer->modelVersion?->metadata, 'skill_cartridge_transplant.protocol') === CanonicalSkillCartridgeService::PROTOCOL
-                )->values();
-                if ($cohort->isEmpty()) $cohort = collect([$agent]);
-            }
+            $cohort = $this->closedResearchCohort($cohort, $model, $agent);
             // Promotion and research-only learning jobs may share a
             // generation, but they must never share a sealed cohort cache.
             // Otherwise a learning near-miss could alter the request
@@ -299,6 +282,7 @@ class LabAgentEvaluationService
                     'base_strategy' => $this->schemas->runtimeBaseStrategy($peer->modelVersion->strategy, data_get($peer->modelVersion->metadata, 'base_strategy'), $peer->strategy_family),
                     'version' => $peer->modelVersion->version,
                     'parameters' => $peer->modelVersion->parameters ?? [],
+                    'instrument_research_assignment' => $this->instrumentResearch->assignment($peer),
                 ])->all(),
                 'initial_balance' => 10000, 'risk_per_trade' => 1, 'dataset_path' => $dataset,
                 'full_replay_runtime_policy' => $runtimePolicy,
@@ -370,7 +354,9 @@ class LabAgentEvaluationService
                     })->all(),
                     'edge_genesis_contracts' => $cohort->mapWithKeys(function (LabAgent $peer): array {
                         $edge = (array) data_get($peer->modelVersion?->metadata, 'edge_genesis', []);
-                        if (data_get($edge, 'protocol') !== DependencyAwareEdgeGenesisFoundryService::PROTOCOL) return [];
+                        if (data_get($edge, 'protocol') !== DependencyAwareEdgeGenesisFoundryService::PROTOCOL) {
+                            return [];
+                        }
                         $phase = (string) data_get($edge, 'phase', 'EDGE_DISCOVERY');
                         $attribution = data_get($peer->modelVersion?->metadata, 'edge_genesis_attribution.protocol') === DependencyAwareEdgeGenesisFoundryService::PROTOCOL;
                         $validation = (array) data_get($edge, 'validation_contract', []);
@@ -415,7 +401,9 @@ class LabAgentEvaluationService
                     'skill_cartridge_confirmation_contracts' => $cohort->mapWithKeys(function (LabAgent $peer): array {
                         $contract = (array) data_get($peer->modelVersion?->metadata, 'skill_cartridge_transplant.confirmation_contract', []);
                         if (data_get($peer->modelVersion?->metadata, 'skill_cartridge_transplant.protocol') !== CanonicalSkillCartridgeService::PROTOCOL
-                            || data_get($contract, 'protocol') !== 'bounded_skill_cartridge_confirmation_v1') return [];
+                            || data_get($contract, 'protocol') !== 'bounded_skill_cartridge_confirmation_v1') {
+                            return [];
+                        }
 
                         return [$peer->modelVersion->strategy => $contract];
                     })->all(),
@@ -531,9 +519,9 @@ class LabAgentEvaluationService
                     'generation_id' => $agent->lab_generation_id,
                     'item' => $peerItem,
                     'code_hash' => $currentCodeHash,
-                     'parameter_hash' => $this->evidence->parameterHash($peer),
-                     'data_hash' => (string) ($manifest['snapshot_sha256'] ?? $manifest['sha256'] ?? ''),
-                     'foundation_data_hash' => (string) ($foundationSnapshot['sha256'] ?? ''),
+                    'parameter_hash' => $this->evidence->parameterHash($peer),
+                    'data_hash' => (string) ($manifest['snapshot_sha256'] ?? $manifest['sha256'] ?? ''),
+                    'foundation_data_hash' => (string) ($foundationSnapshot['sha256'] ?? ''),
                     'regime_data_hash' => (string) ($regimeSnapshot['sha256'] ?? ''),
                     'request_manifest' => $request,
                     'full_replay_runtime_policy' => $runtimePolicy,
@@ -622,7 +610,7 @@ class LabAgentEvaluationService
             // already sealed in the evidence plane; this compact ledger keeps
             // role disagreement queryable without exposing trace data to any
             // promotion selector.
-            app(\App\Services\CouncilDisagreementService::class)->recordResult($fullResult, [
+            app(CouncilDisagreementService::class)->recordResult($fullResult, [
                 'symbol' => $agent->symbol,
                 'timeframe' => $agent->timeframe,
                 'family' => $agent->strategy_family,
@@ -684,6 +672,7 @@ class LabAgentEvaluationService
             if ($bridgeCovered && ! $closedLoop['generation_may_close']) {
                 $generation->update(['status' => 'learning_settlement_pending']);
                 $this->handoffs->record($generation, $agent, 'closed_loop_audit', 'pending', 'CLOSED_LOOP_COVERAGE_INCOMPLETE', $closedLoop);
+
                 return;
             }
             $generation->update(['status' => 'completed', 'completed_at' => now()]);
@@ -729,6 +718,7 @@ class LabAgentEvaluationService
                 'strategy' => $model->strategy,
                 'base_strategy' => $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $agent->strategy_family),
                 'version' => $model->version, 'parameters' => $model->parameters ?? [],
+                'instrument_research_assignment' => $this->instrumentResearch->assignment($agent),
             ]],
             'initial_balance' => 10000,
             // Immutable snapshot-path transport keeps the request/evidence
@@ -904,7 +894,7 @@ class LabAgentEvaluationService
         $screenResult['trial_ledger'] = app(LabTrialLedgerService::class)->record(
             $agent, $model, $agent->symbol, $agent->timeframe, 'screening', $screenResult, $run->run_id
         );
-        app(\App\Services\CouncilDisagreementService::class)->recordResult($screenResult, [
+        app(CouncilDisagreementService::class)->recordResult($screenResult, [
             'symbol' => $agent->symbol,
             'timeframe' => $agent->timeframe,
             'family' => $agent->strategy_family,
@@ -1062,7 +1052,7 @@ class LabAgentEvaluationService
      * ATR features once for the request. The response is still split back
      * into one evidence run and one gate decision per agent.
      *
-     * @param array<int, int> $agentIds
+     * @param  array<int, int>  $agentIds
      */
     public function screenBatch(array $agentIds, string $symbol): void
     {
@@ -1163,6 +1153,7 @@ class LabAgentEvaluationService
                 ),
                 'version' => $model->version,
                 'parameters' => $model->parameters ?? [],
+                'instrument_research_assignment' => $this->instrumentResearch->assignment($agent),
             ];
             $repairContracts[(string) $agent->id] = [
                 'changed_gene' => count((array) $agent->parameter_diff) === 1
@@ -1345,6 +1336,7 @@ class LabAgentEvaluationService
             // immutable cohort; the recovery command can explicitly reopen
             // these agent IDs after the transport is healthy.
             report($exception);
+
             return;
         }
 
@@ -1385,6 +1377,7 @@ class LabAgentEvaluationService
                 ], $error);
                 LabAgent::query()->whereKey($agent->id)->whereIn('lifecycle_status', ['queued', 'screening'])
                     ->update(['lifecycle_status' => 'evaluation_error', 'decision_reason' => 'Batch result identity mismatch; strategy verdict withheld.']);
+
                 continue;
             }
             try {
@@ -1402,6 +1395,37 @@ class LabAgentEvaluationService
                 report($exception);
             }
         }
+    }
+
+    /**
+     * Keep proof arms closed while allowing the unused seats of the same
+     * twenty-agent generation to run independent paired discovery. Cached
+     * replay evidence is valid only inside the active proof protocol.
+     *
+     * @param  Collection<int,LabAgent>  $cohort
+     * @return Collection<int,LabAgent>
+     */
+    private function closedResearchCohort(Collection $cohort, ModelVersion $model, LabAgent $fallback): Collection
+    {
+        $protocols = [
+            ['edge_genesis.protocol', DependencyAwareEdgeGenesisFoundryService::PROTOCOL],
+            ['skill_cartridge_transplant.protocol', CanonicalSkillCartridgeService::PROTOCOL],
+            ['skill_cartridge_interaction.protocol', CanonicalSkillCartridgeService::PROTOCOL],
+            ['academy_experiment.protocol', AcademyExperimentMaterializerService::PROTOCOL],
+            ['authority_incubator.protocol', EvolutionaryAuthorityFoundryService::PROTOCOL],
+            ['authority_descendant.protocol', EvolutionaryAuthorityFoundryService::PROTOCOL],
+        ];
+        foreach ($protocols as [$path, $protocol]) {
+            if (data_get($model->metadata, $path) !== $protocol) {
+                continue;
+            }
+            $closed = $cohort->filter(fn (LabAgent $peer): bool => data_get($peer->modelVersion?->metadata, $path) === $protocol
+            )->values();
+
+            return $closed->isEmpty() ? collect([$fallback]) : $closed;
+        }
+
+        return $cohort;
     }
 
     private function volumeEnabled($model): bool
@@ -1487,7 +1511,7 @@ class LabAgentEvaluationService
             $screenResult,
             $run->run_id,
         );
-        app(\App\Services\CouncilDisagreementService::class)->recordResult($screenResult, [
+        app(CouncilDisagreementService::class)->recordResult($screenResult, [
             'symbol' => $agent->symbol,
             'timeframe' => $agent->timeframe,
             'family' => $agent->strategy_family,
@@ -1846,8 +1870,7 @@ class LabAgentEvaluationService
         ?string $strategyFamily = null,
         ?string $symbol = null,
         ?string $timeframe = null,
-    ): array
-    {
+    ): array {
         $contract = (array) data_get($model->metadata, 'differential_router_contract', []);
         $router = (array) data_get($result, 'differential_router', []);
         // A paired non-target contract belongs only to an explicitly

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\AgentLearningEpisode;
 use App\Models\AgentLearningLesson;
 use App\Models\AgentLearningSettlement;
@@ -358,6 +359,21 @@ class LearningVelocityGateService
             return false;
         }
 
+        // A transient replay failure remains actionable only while its one
+        // explicitly bounded repair seat is still unused.  Once that exact
+        // immutable timeout/retry-budget repair has also failed, the row is
+        // terminal technical history: it stays quarantined and earns no
+        // strategy evidence, but cannot deadlock every future generation.
+        $reasonCode = (string) data_get($classification, 'reason_code');
+        if ($reasonCode === 'REPLAY_RETRY_BUDGET_EXHAUSTED'
+            && (int) data_get($agent->modelVersion?->metadata, 'retry_budget_repair_recovery_attempts', 0) >= 1) {
+            return false;
+        }
+        if ($reasonCode === 'REPLAY_TRANSPORT_TIMEOUT'
+            && (int) data_get($agent->modelVersion?->metadata, 'timeout_budget_repair_recovery_attempts', 0) >= 1) {
+            return false;
+        }
+
         // A closed generation-level constructor contract breach has no
         // executable evidence to recover.  Replaying its surviving agents
         // would create an incomplete cohort and would turn infrastructure
@@ -370,6 +386,23 @@ class LearningVelocityGateService
             ?? data_get($agent->generation?->trigger_context, 'shadow_research_constructor_abort.reason_code')
             ?? data_get($agent->generation?->trigger_context, 'controlled_rescue_constructor_abort.reason_code');
         $constructorQuarantine = strtolower((string) $agent->decision_reason);
+        $supersededCausalSelector = data_get(
+            $agent->generation?->trigger_context,
+            'constructor_contract_abort.protocol',
+        ) === 'superseded_causal_selector_construction_v1'
+            && in_array('CAUSAL_SELECTOR_PROTOCOL_SUPERSEDED', (array) data_get(
+                $agent->generation?->trigger_context,
+                'constructor_contract_abort.reason_codes',
+                [],
+            ), true);
+        if ($supersededCausalSelector) {
+            // This cohort was closed before any replay because its immutable
+            // selector contract was replaced. There is no transport attempt
+            // to recover, and its rows already carry zero strategy/promotion
+            // authority. Counting it as actionable technical work deadlocks
+            // the valid replacement causal generation forever.
+            return false;
+        }
         if ($constructorAbort !== null && (
             $contractDrift !== []
             || (str_contains($constructorQuarantine, 'generation construction incomplete')
@@ -482,11 +515,63 @@ class LearningVelocityGateService
 
             return $pairId > 0 && $verified->contains('id', $pairId);
         });
-        $confirmed = $usableLessons->where('status', 'confirmed')->count();
-        $provisional = $usableLessons->where('status', 'provisional')->count();
-        $real = $settlements + $confirmed - $pairs->where('status', 'canonical_failed')->count() - $falseGreen;
+        $canonicalSkills = $usableLessons->filter(fn (AgentLearningLesson $lesson): bool => (string) $lesson->lesson_type === 'skill_lesson'
+            && (string) $lesson->outcome === 'beneficial'
+        );
+        $experiments = Schema::hasTable('agent_learning_causal_experiments')
+            ? $scope(AgentLearningCausalExperiment::query())->where('status', 'confirmed')->get()
+            : collect();
+        $targetAlignedExperiments = $experiments->filter(fn (AgentLearningCausalExperiment $experiment): bool => data_get($experiment->evidence, 'confirmation_evidence_protocol') === CausalLearningConfirmationService::EVIDENCE_PROTOCOL
+            && data_get($experiment->evidence, 'component_effect.passed') === true
+            && data_get($experiment->evidence, 'selector_effect.passed') === true
+            && data_get($experiment->evidence, 'component_effect.target_effect.passed') === true
+            && data_get($experiment->evidence, 'selector_effect.target_effect.passed') === true
+            && data_get($experiment->evidence, 'absolute_viability.status') === 'passed'
+            && (array) data_get($experiment->evidence, 'confirmation_blockers', []) === []
+        )->keyBy('id');
+        $confirmedSkills = $canonicalSkills
+            ->where('status', 'confirmed')
+            ->filter(function (AgentLearningLesson $lesson) use ($targetAlignedExperiments, $verified): bool {
+                $experiment = $targetAlignedExperiments->get((int) data_get($lesson->evidence, 'causal_experiment_id', 0));
+                $pair = $verified->firstWhere('id', (int) data_get($lesson->evidence, 'pair_id', 0));
 
-        return ['generation_activity' => Schema::hasTable('lab_generations') ? LabGeneration::query()->whereHas('laboratory', fn ($q) => $q->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe)))->count() : 0, 'evaluation_completed' => $evaluations, 'verified_pair_count' => $verified->count(), 'canonical_episode_count' => $episodes, 'settlement_count' => $settlements, 'provisional_lesson_count' => $provisional, 'confirmed_skill_count' => $confirmed, 'legacy_lesson_count' => max(0, $lessons->count() - $usableLessons->count()), 'legacy_confirmed_label_count' => $lessons->where('status', 'confirmed')->reject(fn (AgentLearningLesson $lesson): bool => $usableLessons->contains('id', $lesson->id))->count(), 'anti_skill_count' => 0, 'canonical_failure_count' => $pairs->where('status', 'canonical_failed')->count(), 'false_green_count' => $falseGreen, 'learning_starvation' => $settlements === 0 ? 1 : 0, 'technical_quarantine' => $technical, 'insufficient_activity' => Schema::hasTable('agent_learning_settlements') ? AgentLearningSettlement::query()->where('evidence_state', 'insufficient_evidence')->count() : 0, 'real_progress' => $real];
+                return $experiment !== null
+                    && $pair !== null
+                    && (int) $experiment->guided_agent_id === (int) $lesson->lab_agent_id
+                    && (int) $pair->candidate_agent_id === (int) $lesson->lab_agent_id
+                    && data_get($pair->non_target_regression, 'safe') === true
+                    && in_array((string) data_get($pair->non_target_regression, 'status'), ['passed', 'confirmed'], true);
+            });
+        $provisional = $canonicalSkills->where('status', 'provisional')->count();
+        $antiSkills = $usableLessons->filter(fn (AgentLearningLesson $lesson): bool => (string) $lesson->lesson_type === 'harmful_lesson'
+            || (string) $lesson->outcome === 'harmful'
+        )->count();
+        $confirmed = $confirmedSkills->count();
+
+        return [
+            'generation_activity' => Schema::hasTable('lab_generations') ? LabGeneration::query()->whereHas('laboratory', fn ($q) => $q->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe)))->count() : 0,
+            'evaluation_completed' => $evaluations,
+            'verified_pair_count' => $verified->count(),
+            'canonical_episode_count' => $episodes,
+            'settlement_count' => $settlements,
+            'provisional_lesson_count' => $provisional,
+            'confirmed_skill_count' => $confirmed,
+            'target_aligned_confirmed_experiment_count' => $targetAlignedExperiments->count(),
+            'legacy_lesson_count' => max(0, $lessons->count() - $usableLessons->count()),
+            'legacy_confirmed_label_count' => max(0, $lessons->where('status', 'confirmed')->count() - $confirmed),
+            'unverified_confirmed_skill_label_count' => max(0, $lessons->where('lesson_type', 'skill_lesson')->where('status', 'confirmed')->count() - $confirmed),
+            'anti_skill_count' => $antiSkills,
+            'canonical_failure_count' => $pairs->where('status', 'canonical_failed')->count(),
+            'false_green_count' => $falseGreen,
+            'learning_starvation' => $settlements === 0 ? 1 : 0,
+            'technical_quarantine' => $technical,
+            'insufficient_activity' => Schema::hasTable('agent_learning_settlements') ? AgentLearningSettlement::query()->where('evidence_state', 'insufficient_evidence')->count() : 0,
+            // Observation volume is not progress. Only a beneficial skill with
+            // a target-aligned causal experiment and explicit non-target pass
+            // is allowed into this number.
+            'real_progress' => $confirmed,
+            'real_progress_definition' => 'target_aligned_causally_confirmed_safe_skill_count',
+        ];
     }
 
     /**
@@ -529,6 +614,26 @@ class LearningVelocityGateService
                 }
                 $agent = DB::table('lab_agents')->where('id', (int) $match[1])->first();
                 if (! $agent || strtoupper((string) $agent->symbol) !== strtoupper($symbol) || strtoupper((string) $agent->timeframe) !== strtoupper($timeframe)) {
+                    return false;
+                }
+
+                // failed_jobs is an append-only operational audit. A job is
+                // live admission debt only while its agent is still waiting
+                // for technical recovery and has no valid replacement replay.
+                // Counting terminal rejected/completed agents here kept the
+                // learning gate closed forever after the failure was already
+                // isolated and the generation had settled.
+                if (! in_array((string) $agent->lifecycle_status, [
+                    'evaluation_error', 'technical_quarantine', 'training', 'full_queued', 'full_validation',
+                ], true)) {
+                    return false;
+                }
+                if (Schema::hasTable('model_market_performance') && DB::table('model_market_performance')
+                    ->where('model_version_id', (int) $agent->model_version_id)
+                    ->where('symbol', strtoupper($symbol))
+                    ->where('timeframe', strtoupper($timeframe))
+                    ->where('evidence_status', 'valid')
+                    ->exists()) {
                     return false;
                 }
 

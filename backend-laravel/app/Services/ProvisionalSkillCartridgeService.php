@@ -14,10 +14,18 @@ class ProvisionalSkillCartridgeService
     {
         $agent->loadMissing('modelVersion');
         $model = $agent->modelVersion;
-        if (! $model || data_get($observability, 'classification') !== 'observable_effect') return null;
-        if (count((array) $agent->parameter_diff) !== 1) return null;
-        if (! (bool) data_get($observability, 'gate_margin.target_gate_improved', false)) return null;
-        if (data_get($controlRelative, 'non_target_regression.safe', true) !== true) return null;
+        if (! $model || data_get($observability, 'classification') !== 'observable_effect') {
+            return null;
+        }
+        if (count((array) $agent->parameter_diff) !== 1) {
+            return null;
+        }
+        if (! (bool) data_get($observability, 'gate_margin.target_gate_improved', false)) {
+            return null;
+        }
+        if (data_get($controlRelative, 'non_target_regression.safe', false) !== true) {
+            return null;
+        }
 
         $gene = (string) array_key_first((array) $agent->parameter_diff);
         $lowerBound = data_get(
@@ -32,7 +40,7 @@ class ProvisionalSkillCartridgeService
             (int) data_get($result, 'market_adaptive_replay.independent_windows', 0),
         );
         $controlDelta = (float) data_get($controlRelative, 'control_delta', 0.0);
-        $nonTargetSafe = data_get($controlRelative, 'non_target_regression.safe', true) === true;
+        $nonTargetSafe = data_get($controlRelative, 'non_target_regression.safe', false) === true;
         $independentConfirmation = $independentWindows >= 2
             && is_numeric($lowerBound)
             && (float) $lowerBound > 0
@@ -83,6 +91,7 @@ class ProvisionalSkillCartridgeService
         ];
         data_set($metadata, 'provisional_skill_cartridge', [...$cartridge, 'history' => $history]);
         $model->update(['metadata' => $metadata]);
+
         return $cartridge;
     }
 

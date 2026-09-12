@@ -77,9 +77,23 @@ class SkillMentorService
             : ($control ? 'screen_validated_control'
             : ($fullParent ? 'full_parent' : ($skillConfirmed ? 'skill_mentor' : 'full_replay_observed')));
         $gene = array_key_first((array) $agent->parameter_diff);
+        $capsuleResolution = $skillConfirmed && is_string($gene)
+            ? app(CanonicalSkillCartridgeService::class)->traitCapsuleForMentor(
+                $agent->modelVersion,
+                $agent,
+                $gene,
+            )
+            : ['status' => 'not_applicable', 'valid' => false, 'promotion_evidence' => false];
+        $capsuleReady = $skillConfirmed && (bool) data_get($capsuleResolution, 'valid', false);
+        if ($stage === 'skill_mentor' && ! $capsuleReady) {
+            $stage = 'skill_confirmed_capsule_pending';
+        }
+        $mentorStatus = $capsuleReady && in_array($stage, ['skill_mentor', 'full_parent'], true)
+            ? 'confirmed'
+            : ($skillConfirmed ? 'causal_capsule_pending' : 'not_confirmed');
         $mentor = [
             'protocol' => self::PROTOCOL,
-            'status' => $stage === 'skill_mentor' || $stage === 'full_parent' ? 'confirmed' : 'not_confirmed',
+            'status' => $mentorStatus,
             'stage' => $stage,
             'target' => data_get($metadata, 'repair_anchor.failure_target', data_get($metadata, 'generation_target')),
             'parameter_key' => $gene,
@@ -90,6 +104,18 @@ class SkillMentorService
             'parent_eligible' => $fullParent,
             'learning_lane' => $learningLane,
             'mentor_contract' => $mentorContract,
+            'trait_capsule' => (bool) data_get($capsuleResolution, 'valid', false)
+                ? data_get($capsuleResolution, 'capsule')
+                : null,
+            'trait_capsule_resolution' => [
+                'status' => data_get($capsuleResolution, 'status'),
+                'valid' => (bool) data_get($capsuleResolution, 'valid', false),
+                'reason_codes' => (array) data_get($capsuleResolution, 'reason_codes', []),
+                'cartridge_id' => data_get($capsuleResolution, 'cartridge_id'),
+                'cartridge_key' => data_get($capsuleResolution, 'cartridge_key'),
+                'cartridge_revision' => data_get($capsuleResolution, 'cartridge_revision'),
+                'promotion_evidence' => false,
+            ],
             'shadow_only' => ! $fullParent,
             'promotion_evidence' => false,
         ];
@@ -98,19 +124,20 @@ class SkillMentorService
             'protocol' => self::PROTOCOL,
             'stage' => $stage,
             'screening_passed' => ! $learningLane,
-            'skill_mentor' => $stage === 'skill_mentor',
+            'skill_mentor' => $stage === 'skill_mentor' && $capsuleReady,
             'full_parent' => $fullParent,
             'parent_eligible' => $fullParent,
             'updated_at' => now()->utc()->toIso8601String(),
             'promotion_evidence' => false,
         ]);
-        if ($stage === 'skill_mentor') {
+        if (in_array($stage, ['skill_mentor', 'skill_confirmed_capsule_pending'], true)) {
             data_set($metadata, 'screening_seed_only', true);
         } elseif ($fullParent) {
             data_set($metadata, 'screening_seed_only', false);
         }
         $agent->modelVersion->update(['metadata' => $metadata]);
-        if ($stage === 'skill_mentor' && in_array((string) $agent->lifecycle_status, ['challenger', 'forward_validated', 'paper', 'champion'], true)) {
+        if (in_array($stage, ['skill_mentor', 'skill_confirmed_capsule_pending'], true)
+            && in_array((string) $agent->lifecycle_status, ['challenger', 'forward_validated', 'paper', 'champion'], true)) {
             // A mentor may have a good economic replay but is not a global
             // parent yet. Keep operational status truthful while metadata
             // prevents parent selection from treating it as full parent.

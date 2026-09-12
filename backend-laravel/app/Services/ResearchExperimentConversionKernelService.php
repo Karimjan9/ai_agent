@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AgentLearningSettlement;
 use App\Models\CanonicalLearningOutbox;
+use App\Models\LabSkillZooEntry;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\ResearchExperimentReceipt;
@@ -28,6 +29,12 @@ class ResearchExperimentConversionKernelService
     public function record(array $contract, array $evidence, string $classification, array $nextWork = [], array $terminalReason = []): array
     {
         if (! $this->available()) return $this->blocked('RESEARCH_CONVERSION_TABLES_UNAVAILABLE');
+        // A terminal experiment must close in exactly one direction. Allowing
+        // neither produces a silent WAIT; allowing both makes the authority
+        // state ambiguous and permits a terminal claim to keep reproducing.
+        if (($nextWork === []) === ($terminalReason === [])) {
+            return $this->blocked('RESEARCH_CLOSURE_EXACTLY_ONE_OUTCOME_REQUIRED');
+        }
         $validation = $this->validate($contract, $classification);
         if (! $validation['valid']) return $this->blocked($validation['reason']);
         $contract = $validation['contract'];
@@ -57,18 +64,23 @@ class ResearchExperimentConversionKernelService
             }
             $work = null;
             if ($nextWork !== []) {
+                $nextWork = $this->normalizeNextWork($nextWork);
                 $type = (string) ($nextWork['type'] ?? '');
                 if ($type === '') throw new \InvalidArgumentException('NEXT_WORK_TYPE_REQUIRED');
                 $work = ResearchExperimentWorkItem::query()->firstOrCreate(
                     ['work_key' => hash('sha256', self::PROTOCOL.'|'.$receipt->receipt_key.'|'.$type.'|'.($nextWork['identity'] ?? 'default'))],
                     ['research_experiment_receipt_id' => $receipt->id, 'symbol' => $receipt->symbol,
                         'timeframe' => $receipt->laboratory_timeframe, 'work_type' => $type,
-                        'status' => isset($nextWork['dependency_key']) ? 'blocked' : 'ready',
+                        'status' => (bool) ($nextWork['executable'] ?? false)
+                            && ! isset($nextWork['dependency_key']) ? 'ready' : 'blocked',
                         'priority' => max(1, min(9, (int) ($nextWork['priority'] ?? 5))),
                         'dependency_key' => $nextWork['dependency_key'] ?? null,
                         'payload' => ['protocol' => self::PROTOCOL, ...$nextWork, 'promotion_evidence' => false],
                     ],
                 );
+                // Idempotent redelivery also repairs pre-owner rows produced
+                // before the executable closure contract was introduced.
+                $this->normalizePersistedWork($work);
             }
             return ['protocol' => self::PROTOCOL, 'status' => 'recorded', 'receipt_id' => $receipt->id,
                 'receipt_key' => $receipt->receipt_key, 'classification' => $receipt->classification,
@@ -125,11 +137,86 @@ class ResearchExperimentConversionKernelService
     public function claim(int $limit = 10): array
     {
         if (! $this->available()) return [];
-        return DB::transaction(function () use ($limit): array {
+        return $this->claimMatching($limit);
+    }
+
+    /** Claim only work explicitly owned by the single research arbiter. */
+    public function claimForOwner(string $owner, int $limit = 1): array
+    {
+        if (! $this->available()) return [];
+        $this->reconcileOwnershipAndDependencies();
+
+        return $this->claimMatching($limit, $owner);
+    }
+
+    /**
+     * Repair legacy metadata and release only dependencies that are now
+     * executable. Unsupported follow-ups remain visible and explicitly
+     * blocked; they can never masquerade as a runnable queue.
+     *
+     * @return array<string,int|string|bool>
+     */
+    public function reconcileOwnershipAndDependencies(): array
+    {
+        if (! $this->available()) {
+            return ['protocol' => self::PROTOCOL, 'normalized' => 0, 'released' => 0, 'blocked' => 0, 'promotion_evidence' => false];
+        }
+        $normalized = 0;
+        $released = 0;
+        $blocked = 0;
+        ResearchExperimentWorkItem::query()
+            ->whereIn('status', ['ready', 'blocked'])
+            ->orderBy('id')
+            ->chunkById(100, function ($items) use (&$normalized, &$released, &$blocked): void {
+                foreach ($items as $item) {
+                    $before = (array) $item->payload;
+                    $this->normalizePersistedWork($item);
+                    $item->refresh();
+                    if ($before !== (array) $item->payload) $normalized++;
+                    $payload = (array) $item->payload;
+                    $executable = (bool) ($payload['executable'] ?? false);
+                    $dependencyReady = $this->dependencyReady($item, $payload);
+                    $desired = $executable && $dependencyReady ? 'ready' : 'blocked';
+                    if ((string) $item->status !== $desired) {
+                        $item->update([
+                            'status' => $desired,
+                            'last_error' => $desired === 'blocked'
+                                ? (string) data_get($payload, 'retry_condition.code', 'DEPENDENCY_NOT_READY')
+                                : null,
+                        ]);
+                        $desired === 'ready' ? $released++ : $blocked++;
+                    }
+                }
+            });
+
+        return ['protocol' => self::PROTOCOL, 'normalized' => $normalized, 'released' => $released,
+            'blocked' => $blocked, 'promotion_evidence' => false];
+    }
+
+    /** Fenced defer: preserves the work and makes its retry state explicit. */
+    public function defer(ResearchExperimentWorkItem $item, string $reason, bool $retryable = true): bool
+    {
+        return ResearchExperimentWorkItem::query()->whereKey($item->id)->where('status', 'leased')
+            ->where('lease_token', $item->lease_token)->where('fence_version', (int) $item->fence_version)
+            ->update(['status' => $retryable ? 'ready' : 'blocked', 'last_error' => $reason,
+                'lease_token' => null, 'lease_expires_at' => null, 'heartbeat_at' => null]) === 1;
+    }
+
+    /** @return array<int,ResearchExperimentWorkItem> */
+    private function claimMatching(int $limit, ?string $owner = null): array
+    {
+        return DB::transaction(function () use ($limit, $owner): array {
             ResearchExperimentWorkItem::query()->where('status', 'leased')->where('lease_expires_at', '<=', now())
                 ->update(['status' => 'ready', 'lease_token' => null, 'lease_expires_at' => null, 'heartbeat_at' => null,
                     'last_error' => 'LEASE_EXPIRED', 'updated_at' => now()]);
-            $items = ResearchExperimentWorkItem::query()->where('status', 'ready')->orderByDesc('priority')->orderBy('id')
+            $query = ResearchExperimentWorkItem::query()->where('status', 'ready');
+            if ($owner !== null) {
+                // Filter ownership in SQL before applying the bounded claim
+                // limit. Otherwise twenty unrelated high-priority rows can
+                // indefinitely hide valid arbiter work just beyond the scan.
+                $query->where('payload->owner', $owner);
+            }
+            $items = $query->orderByDesc('priority')->orderBy('id')
                 ->lockForUpdate()->limit(max(1, min(50, $limit)))->get();
             foreach ($items as $item) {
                 $now = now();
@@ -148,6 +235,61 @@ class ResearchExperimentConversionKernelService
             ->where('lease_token', $item->lease_token)->where('fence_version', (int) $item->fence_version)
             ->update(['status' => 'settled', 'result' => ['protocol' => self::PROTOCOL, ...$result, 'promotion_evidence' => false],
                 'completed_at' => now(), 'lease_token' => null, 'lease_expires_at' => null, 'heartbeat_at' => null]) === 1;
+    }
+
+    /** @return array<string,mixed> */
+    private function normalizeNextWork(array $nextWork): array
+    {
+        $type = (string) ($nextWork['type'] ?? '');
+        $profiles = [
+            'cartridge_confirmation' => [true, 'CANONICAL_CARTRIDGE_AND_BASELINE_READY', 3],
+            // Replaying the same deterministic archive is not independent
+            // replication. This becomes executable only after a distinct,
+            // preregistered window contract is attached by a later compiler.
+            'academy_independent_replication' => [false, 'NEW_INDEPENDENT_WINDOW_CONTRACT_REQUIRED', 2],
+            'academy_harmful_intervention_repair' => [false, 'VERSIONED_REPAIR_COMPILER_REQUIRED', 1],
+            'academy_upstream_repair' => [false, 'UPSTREAM_CURRICULUM_EVIDENCE_REQUIRED', 1],
+            'academy_power_extension' => [false, 'NEW_INDEPENDENT_POWERED_WINDOW_REQUIRED', 1],
+            'academy_technical_quarantine' => [false, 'TECHNICAL_ROOT_CAUSE_REPAIR_REQUIRED', 1],
+            'academy_adversarial_ablation' => [false, 'VERSIONED_ABLATION_CONTRACT_REQUIRED', 1],
+        ];
+        [$executable, $retryCode, $maxExperiments] = $profiles[$type] ?? [true, 'OWNER_RETRY_ADMISSION', 1];
+
+        return [
+            ...$nextWork,
+            'owner' => (string) ($nextWork['owner'] ?? ResearchLoopArbiterService::class),
+            'executor' => (string) ($nextWork['executor'] ?? ResearchExperimentWorkConsumerService::class),
+            'executable' => (bool) ($nextWork['executable'] ?? $executable),
+            'retry_condition' => (array) ($nextWork['retry_condition'] ?? [
+                'code' => $retryCode,
+                'max_experiments' => $maxExperiments,
+                'same_evidence_replay_forbidden' => true,
+            ]),
+        ];
+    }
+
+    private function normalizePersistedWork(ResearchExperimentWorkItem $item): void
+    {
+        $payload = $this->normalizeNextWork([
+            ...((array) $item->payload),
+            'type' => (string) ($item->work_type ?: data_get($item->payload, 'type', '')),
+        ]);
+        if ((array) $item->payload !== $payload) {
+            $item->update(['payload' => $payload]);
+        }
+    }
+
+    private function dependencyReady(ResearchExperimentWorkItem $item, array $payload): bool
+    {
+        if (! (bool) ($payload['executable'] ?? false)) return false;
+        if ((string) $item->work_type !== 'cartridge_confirmation') return true;
+        $cartridgeId = (int) ($payload['cartridge_id'] ?? 0);
+        if ($cartridgeId <= 0) return false;
+        $cartridge = LabSkillZooEntry::query()->find($cartridgeId);
+
+        return $cartridge !== null
+            && in_array((string) $cartridge->status, ['provisional', 'confirmed'], true)
+            && (int) $cartridge->causal_baseline_agent_id > 0;
     }
 
     private function validate(array $contract, string $classification): array

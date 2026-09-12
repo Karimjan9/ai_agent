@@ -3,12 +3,16 @@
 namespace Tests\Feature;
 
 use App\Models\AiLaboratory;
+use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
+use App\Services\CandidateGateDecisionService;
 use App\Services\LabPopulationService;
 use App\Services\MutationObservabilityService;
+use App\Services\ResearchAllocationPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class MutationObservabilityTest extends TestCase
@@ -53,6 +57,248 @@ class MutationObservabilityTest extends TestCase
         $this->assertSame('loss_streak_wait_candles', data_get($replacements[0], 'niche.declared_gene'));
         $this->assertSame('zero_diff_replacement_compiler_v1', data_get($replacements[0], 'niche.replacement_contract.protocol'));
         $this->assertSame('transition_firewall_enabled', data_get($replacements[0], 'niche.replacement_contract.replaced_gene'));
+    }
+
+    public function test_dependency_blocked_targeted_seat_is_replaced_by_an_edge_prerequisite(): void
+    {
+        $service = app(LabPopulationService::class);
+        $replaceable = new \ReflectionMethod($service, 'canReplaceMutationConstruction');
+        $replaceable->setAccessible(true);
+        $replacements = new \ReflectionMethod($service, 'zeroDiffReplacementSpecs');
+        $replacements->setAccessible(true);
+        $spec = [
+            'origin' => 'targeted_failure_profile',
+            'family' => 'hybrid',
+            'target' => 'drawdown_risk',
+            'niche' => [
+                'declared_gene' => 'time_stop_candles',
+                'control_only' => false,
+                'failure_target' => 'drawdown_risk',
+                'mutation_target' => 'drawdown_risk',
+            ],
+        ];
+
+        $reason = 'MANAGEMENT_MUTATION_LOCKED_UNTIL_RISK_SHAPING';
+        $this->assertTrue($replaceable->invoke($service, $spec, $reason));
+        data_set($spec, 'niche.protocol', LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL);
+        $this->assertTrue($replaceable->invoke($service, $spec, 'CONSTRUCTOR_MUTATION_INVARIANT_FAILED'));
+
+        $compiled = $replacements->invoke($service, [$spec], 0, $spec, $reason);
+
+        $this->assertNotEmpty($compiled);
+        $this->assertSame('minimum_signal_confidence', data_get($compiled[0], 'niche.declared_gene'));
+        $this->assertSame('profit_factor', data_get($compiled[0], 'target'));
+        $this->assertSame('drawdown_risk', data_get($compiled[0], 'niche.deferred_failure_target'));
+        $this->assertSame($reason, data_get($compiled[0], 'niche.replacement_contract.original_failure_reason'));
+
+        $repeated = $replacements->invoke($service, [$spec], 0, $spec, $reason, true);
+        $this->assertCount(1, $repeated);
+        $this->assertTrue((bool) data_get($repeated[0], 'niche.control_only'));
+        $this->assertNull(data_get($repeated[0], 'niche.declared_gene'));
+        $this->assertSame('dependency_control', data_get($repeated[0], 'origin'));
+        $this->assertSame('frozen_control_replication', data_get($repeated[0], 'allocation_lane'));
+        $this->assertSame(
+            'dependency_prerequisites_exhausted_frozen_control',
+            data_get($repeated[0], 'niche.replacement_contract.reason'),
+        );
+
+        $preemptive = new \ReflectionMethod($service, 'repeatedFailureReplacementSpec');
+        $preemptive->setAccessible(true);
+        $retrySpec = $preemptive->invoke($service, [$spec], 0, $spec, [
+            ['slot' => 1, 'reason' => $reason],
+        ]);
+        $this->assertIsArray($retrySpec);
+        $this->assertSame('dependency_control', data_get($retrySpec, 'origin'));
+        $this->assertSame(
+            'frozen_dependency_control',
+            data_get($retrySpec, 'niche.replacement_contract.replacement_mode'),
+        );
+        $this->assertSame('frozen_control', data_get($retrySpec, 'evolution_mode'));
+
+        $learningSpec = [
+            ...$spec,
+            'origin' => 'causal_confirm',
+        ];
+        $this->assertTrue($replaceable->invoke($service, $learningSpec, $reason));
+        $learningControl = $preemptive->invoke($service, [$learningSpec], 0, $learningSpec, [
+            ['slot' => 1, 'reason' => $reason],
+        ]);
+        $this->assertSame('dependency_control', data_get($learningControl, 'origin'));
+        $this->assertTrue((bool) data_get($learningControl, 'niche.control_only'));
+
+        $blindedControl = $preemptive->invoke($service, [$learningSpec], 0, $learningSpec, [
+            ['slot' => 1, 'reason' => 'CAUSAL_BLINDED_SELECTOR_NOT_EXACT_SINGLE_GENE'],
+        ]);
+        $this->assertSame('frozen_dependency_control', data_get(
+            $blindedControl,
+            'niche.replacement_contract.replacement_mode',
+        ));
+        $this->assertFalse((bool) data_get($blindedControl, 'promotion_evidence', false));
+    }
+
+    public function test_failed_shadow_experiment_becomes_an_explicit_frozen_control(): void
+    {
+        $service = app(LabPopulationService::class);
+        $replaceable = new \ReflectionMethod($service, 'canReplaceMutationConstruction');
+        $replaceable->setAccessible(true);
+        $replacements = new \ReflectionMethod($service, 'zeroDiffReplacementSpecs');
+        $replacements->setAccessible(true);
+        $preemptive = new \ReflectionMethod($service, 'repeatedFailureReplacementSpec');
+        $preemptive->setAccessible(true);
+        $spec = [
+            'origin' => 'architecture',
+            'family' => 'differential_router',
+            'target' => 'architecture',
+            'allocation_lane' => 'architecture_explorer',
+            'niche' => [
+                'shadow_only' => true,
+                'control_only' => false,
+                'architecture_experiment' => true,
+                'entry_topology_variant' => 'volatility_persistence_v1',
+                'shadow_mutation_gene' => 'entry_topology_variant',
+                'shadow_mutation_contract' => ['gene' => 'entry_topology_variant'],
+                'shadow_research_lane' => ['role' => 'architecture_explorer'],
+            ],
+        ];
+
+        $reason = 'SHADOW_MUTATION_CONTRACT_FAILED';
+        $this->assertTrue($replaceable->invoke($service, $spec, $reason));
+        $compiled = $replacements->invoke($service, [$spec], 0, $spec, $reason, true);
+
+        $this->assertCount(1, $compiled);
+        $this->assertSame('shadow_control', data_get($compiled[0], 'origin'));
+        $this->assertSame('frozen_control_replication', data_get($compiled[0], 'allocation_lane'));
+        $this->assertTrue((bool) data_get($compiled[0], 'niche.control_only'));
+        $this->assertNull(data_get($compiled[0], 'niche.declared_gene'));
+        $this->assertNull(data_get($compiled[0], 'niche.shadow_mutation_gene'));
+        $this->assertSame('frozen_control', data_get($compiled[0], 'niche.shadow_research_lane.role'));
+        $this->assertSame('architecture_explorer', data_get($compiled[0], 'niche.shadow_research_lane.replaced_role'));
+        $this->assertSame('frozen_shadow_control', data_get($compiled[0], 'niche.replacement_contract.replacement_mode'));
+        $this->assertFalse((bool) data_get($compiled[0], 'niche.replacement_contract.mutation_credit'));
+        $this->assertFalse((bool) data_get($compiled[0], 'niche.replacement_contract.promotion_evidence'));
+
+        $retrySpec = $preemptive->invoke($service, [$spec], 0, $spec, [
+            ['slot' => 1, 'reason' => $reason],
+        ]);
+        $this->assertSame('shadow_control', data_get($retrySpec, 'origin'));
+        $this->assertSame('frozen_shadow_control', data_get($retrySpec, 'niche.replacement_contract.replacement_mode'));
+    }
+
+    public function test_dependency_blocked_shadow_seat_uses_the_same_non_promoting_control_fallback(): void
+    {
+        $service = app(LabPopulationService::class);
+        $replaceable = new \ReflectionMethod($service, 'canReplaceMutationConstruction');
+        $replaceable->setAccessible(true);
+        $replacements = new \ReflectionMethod($service, 'zeroDiffReplacementSpecs');
+        $replacements->setAccessible(true);
+        $spec = [
+            'origin' => 'robust_crossover',
+            'family' => 'hybrid',
+            'target' => 'robustness',
+            'niche' => [
+                'shadow_only' => true,
+                'shadow_mutation_gene' => 'cooldown_shadow_min_samples',
+                'shadow_mutation_contract' => ['gene' => 'cooldown_shadow_min_samples'],
+            ],
+        ];
+        $reason = 'RISK_MUTATION_BEFORE_EDGE_CONFIRMATION';
+
+        $this->assertTrue($replaceable->invoke($service, $spec, $reason));
+        $compiled = $replacements->invoke($service, [$spec], 0, $spec, $reason, true);
+
+        $this->assertCount(1, $compiled);
+        $this->assertSame('shadow_control', data_get($compiled[0], 'origin'));
+        $this->assertSame($reason, data_get($compiled[0], 'niche.replacement_contract.original_failure_reason'));
+        $this->assertTrue((bool) data_get($compiled[0], 'niche.control_only'));
+    }
+
+    public function test_blocked_targeted_allocation_is_executable_and_reports_zero_targeted_seats(): void
+    {
+        $service = app(LabPopulationService::class);
+        $method = new \ReflectionMethod($service, 'reallocateBlockedTargetedPrerequisites');
+        $method->setAccessible(true);
+        $base = [
+            'origin' => 'targeted_failure_profile',
+            'family' => 'hybrid',
+            'target' => 'drawdown_risk',
+            'allocation_lane' => 'targeted_rescue',
+            'niche' => ['protocol' => LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL],
+        ];
+        $plan = [
+            [...$base, 'niche' => [...$base['niche'], 'declared_gene' => 'time_stop_candles']],
+            [...$base, 'target' => 'regime_coverage', 'niche' => [...$base['niche'], 'declared_gene' => 'trend_roc_threshold']],
+            [...$base, 'niche' => [...$base['niche'], 'control_only' => true]],
+            [...$base, 'target' => 'architecture', 'niche' => [...$base['niche'], 'architecture_experiment' => true]],
+        ];
+
+        $reallocated = $method->invoke($service, $plan, true);
+        $audit = app(ResearchAllocationPolicyService::class)->audit($reallocated, true);
+
+        $this->assertNotSame('time_stop_candles', data_get($reallocated[0], 'niche.declared_gene'));
+        $this->assertSame('profit_factor', data_get($reallocated[0], 'target'));
+        $this->assertSame('architecture_signal', data_get($reallocated[0], 'allocation_lane'));
+        $this->assertSame(0, data_get($audit, 'targeted_rescue_observed'));
+        $this->assertSame('audited', data_get($audit, 'allocation_status'));
+    }
+
+    public function test_population_build_defers_while_another_entry_point_owns_the_constructor(): void
+    {
+        $lockKey = 'lab-population-constructor:XAUUSD:H1:v1';
+        $ownerKey = $lockKey.':owner';
+        $lock = Cache::lock($lockKey, LabPopulationService::CONSTRUCTOR_LOCK_TTL_SECONDS);
+        $this->assertTrue($lock->get());
+        $owner = [
+            'protocol' => 'lab_population_constructor_owner_v1',
+            'operation' => 'build',
+            'trigger' => 'learning_confirmation',
+            'command' => 'artisan trading:dispatch-lab XAUUSD',
+        ];
+        Cache::put($ownerKey, $owner, 60);
+
+        try {
+            $service = app(LabPopulationService::class);
+            $this->assertNull($service->build('XAUUSD', 'new_data', false, 'M15'));
+            $this->assertSame('GENERATION_CONSTRUCTOR_ACTIVE', data_get($service->lastBuildOutcome(), 'reason_code'));
+            $this->assertTrue((bool) data_get($service->lastBuildOutcome(), 'retryable'));
+            $this->assertSame($owner, data_get($service->lastBuildOutcome(), 'context.lock_owner'));
+        } finally {
+            $lock->release();
+            Cache::forget($ownerKey);
+        }
+    }
+
+    public function test_interrupted_constructor_cannot_modify_an_older_generation(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD',
+            'name' => 'XAUUSD Unified MTF Organism',
+            'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'],
+            'is_active' => true,
+            'lifecycle_mode' => 'lighthouse',
+        ]);
+        $older = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 1,
+            'trigger_type' => 'candidate_handoff',
+            'population_size' => 1,
+            'status' => 'technical_quarantine',
+            'trigger_context' => ['generation_plan' => [['family' => 'hybrid']]],
+        ]);
+        $newer = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 2,
+            'trigger_type' => 'candidate_handoff',
+            'population_size' => 20,
+            'status' => 'draft',
+            'trigger_context' => ['generation_plan' => array_fill(0, 20, ['family' => 'hybrid'])],
+        ]);
+
+        $result = app(LabPopulationService::class)->continueInterruptedConstruction($older->id, 1);
+
+        $this->assertSame('superseded_by_newer_generation', $result['status']);
+        $this->assertSame(0, $older->agents()->count());
+        $this->assertSame('draft', $newer->fresh()->status);
     }
 
     public function test_parameter_change_without_signal_or_ledger_change_is_not_observable(): void
@@ -207,7 +453,7 @@ class MutationObservabilityTest extends TestCase
         $this->assertSame('failed_evidence_incomplete', data_get($observability, 'mutation_contract.status'));
         $this->assertSame('mutation_no_observable_effect', $observability['classification']);
 
-        $decision = app(\App\Services\CandidateGateDecisionService::class)->recordScreening($child, $candidate);
+        $decision = app(CandidateGateDecisionService::class)->recordScreening($child, $candidate);
 
         $this->assertContains('FAILED_BEHAVIORAL_MUTATION_EVIDENCE', (array) $decision->reason_codes);
         $this->assertSame('failed', $decision->decision);
@@ -250,7 +496,7 @@ class MutationObservabilityTest extends TestCase
     public function test_reconciliation_never_upgrades_a_failed_gate_projection(): void
     {
         [$child, $candidate] = $this->childAndCandidate(false);
-        $decision = \App\Models\CandidateGateDecision::create([
+        $decision = CandidateGateDecision::create([
             'lab_agent_id' => $child->id,
             'stage' => 'screening',
             'decision' => 'failed',

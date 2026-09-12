@@ -6,6 +6,7 @@ use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\ModelMarketPerformance;
 use App\Models\PaperConfidenceCalibration;
+use App\Models\PaperSignal;
 
 class CandidateGateDecisionService
 {
@@ -131,6 +132,7 @@ class CandidateGateDecisionService
                 'promotion_evidence' => false,
             ]);
         }
+
         return $decisionRow;
     }
 
@@ -147,6 +149,10 @@ class CandidateGateDecisionService
             // This gate row is retained for auditability, but a research-only
             // learning replay can never be a forward/paper candidate.
             $reasons[] = 'LEARNING_LANE_RESEARCH_ONLY';
+        }
+        if (data_get($agent?->modelVersion?->metadata, 'authority_incubator.protocol') === EvolutionaryAuthorityFoundryService::PROTOCOL
+            || data_get($agent?->modelVersion?->metadata, 'authority_descendant.protocol') === EvolutionaryAuthorityFoundryService::PROTOCOL) {
+            $reasons[] = 'AUTHORITY_FOUNDRY_RESEARCH_ONLY';
         }
         $hybridLane = (string) data_get($agent?->modelVersion?->metadata, 'hybrid_evolution.lane', '');
         if (in_array($hybridLane, ['bold_structural', 'adversarial_escape'], true)
@@ -218,22 +224,36 @@ class CandidateGateDecisionService
                 }
             }
         }
-        if ((bool) data_get($result, 'is_overfit', false)) $reasons[] = 'FAILED_OVERFIT';
+        if ((bool) data_get($result, 'is_overfit', false)) {
+            $reasons[] = 'FAILED_OVERFIT';
+        }
         if (data_get($result, 'pf_attribution.method') === 'identical_replay_execution_profiles'
-            && (float) data_get($result, 'pf_attribution.stress_cost.profit_factor', 0) < 1.05) $reasons[] = 'FAILED_STRESS_COST';
+            && (float) data_get($result, 'pf_attribution.stress_cost.profit_factor', 0) < 1.05) {
+            $reasons[] = 'FAILED_STRESS_COST';
+        }
         $edge = data_get($result, 'statistical_evidence.edge_quality', []);
-        if (data_get($edge, 'worst_regime_sampled', false) && (float) data_get($edge, 'worst_regime_pf', 0) < 1.0) $reasons[] = 'FAILED_REGIME_COVERAGE';
+        if (data_get($edge, 'worst_regime_sampled', false) && (float) data_get($edge, 'worst_regime_pf', 0) < 1.0) {
+            $reasons[] = 'FAILED_REGIME_COVERAGE';
+        }
         $survival = data_get($result, 'window_survival', []);
         if ((int) data_get($survival, 'positive_windows', 0) > 0
-            && ((int) data_get($survival, 'positive_windows', 0) < 3 || (int) data_get($survival, 'catastrophic_windows', 0) > 0)) $reasons[] = 'FAILED_CALENDAR_MONTH_SURVIVAL';
+            && ((int) data_get($survival, 'positive_windows', 0) < 3 || (int) data_get($survival, 'catastrophic_windows', 0) > 0)) {
+            $reasons[] = 'FAILED_CALENDAR_MONTH_SURVIVAL';
+        }
         // A failed chronological month is a monthly-survival defect, not a
         // regime-PF defect. Keep the reason specific so historical learning
         // routes the next mutation to the monthly lane.
-        if (data_get($result, 'monthly_passport.status') === 'seasonal_or_luck') $reasons[] = 'FAILED_CALENDAR_MONTH_SURVIVAL';
+        if (data_get($result, 'monthly_passport.status') === 'seasonal_or_luck') {
+            $reasons[] = 'FAILED_CALENDAR_MONTH_SURVIVAL';
+        }
         if (data_get($result, 'selection_validation.status') === 'assessed'
-            && (float) data_get($result, 'selection_validation.probability_of_backtest_overfitting', 1) > .5) $reasons[] = 'FAILED_OVERFIT';
+            && (float) data_get($result, 'selection_validation.probability_of_backtest_overfitting', 1) > .5) {
+            $reasons[] = 'FAILED_OVERFIT';
+        }
         if (data_get($result, 'statistical_evidence.deflated_sharpe.status') === 'assessed'
-            && (float) data_get($result, 'statistical_evidence.deflated_sharpe.deflated_sharpe_probability', 0) < .95) $reasons[] = 'FAILED_OVERFIT';
+            && (float) data_get($result, 'statistical_evidence.deflated_sharpe.deflated_sharpe_probability', 0) < .95) {
+            $reasons[] = 'FAILED_OVERFIT';
+        }
         if (data_get($result, 'elite_agent_passport.status') !== 'passed') {
             $reasons[] = 'FAILED_ELITE_PASSPORT';
             $reasons = [...$reasons, ...(array) data_get($result, 'elite_agent_passport.reason_codes', [])];
@@ -267,6 +287,7 @@ class CandidateGateDecisionService
             $decision->update(['quarantined_at' => now(), 'quarantine_reason' => 'primary_and_independent_ledger_verifier_disagree']);
             $performance->update(['status' => 'rejected', 'paper_status' => 'failed']);
         }
+
         return $decision;
     }
 
@@ -449,6 +470,7 @@ class CandidateGateDecisionService
     public function recordDiagnosticReplay(LabAgent $agent, array $result): CandidateGateDecision
     {
         $reasons = $this->economicReasons($result, 10, 1.0, 100.0, 100.0, 0);
+
         return $this->store(null, $agent, 'diagnostic_rescue_replay', 'failed', $reasons, [
             'diagnostic_telemetry' => data_get($result, 'diagnostic_telemetry', []),
             'entry_funnel' => data_get($result, 'entry_funnel', []),
@@ -465,6 +487,7 @@ class CandidateGateDecisionService
             $probe = in_array($reason, ['CAUSAL_PROBE_ONLY', 'CAUSAL_PROBE_ALTERNATIVE'], true);
             $portfolio = $reason === 'PORTFOLIO_MEMBER_REPLAY';
             $targetedResearch = $reason === 'TARGETED_RESEARCH_ONLY';
+
             return $this->store(null, $agent, 'full_replay_selection', 'waiting', [$probe ? $reason : 'FULL_REPLAY_ELIGIBLE', 'WAITING_FOR_FULL_REPLAY'], [
                 'screening_metrics' => $screen, 'promotion_evidence' => false,
                 'replay_purpose' => $portfolio
@@ -480,6 +503,7 @@ class CandidateGateDecisionService
         $reason ??= (int) $agent->sample_count < 10 ? 'FAILED_LOW_SCREEN_TRADES'
             : ((float) $agent->forward_score <= 0 ? 'FAILED_NON_POSITIVE_SCORE'
             : ((int) data_get($screen, 'entry_funnel.flat_signal_opportunities', 0) === 0 ? 'FAILED_NO_OPPORTUNITY' : 'DOMINATED_BY_OTHER_AGENT'));
+
         return $this->store(null, $agent, 'full_replay_selection', 'failed', [$reason], [
             'screening_metrics' => $screen, 'promotion_evidence' => false,
         ]);
@@ -497,16 +521,27 @@ class CandidateGateDecisionService
             && ! $this->hybridIndependentConfirmationPassed($metrics)) {
             $reasons[] = 'HYBRID_RESEARCH_ONLY_UNTIL_INDEPENDENT_CONFIRMATION';
         }
-        if ((int) data_get($metrics, 'sample_count', 0) < $minimum) $reasons[] = 'WAITING_FOR_SAMPLE';
+        if ((int) data_get($metrics, 'sample_count', 0) < $minimum) {
+            $reasons[] = 'WAITING_FOR_SAMPLE';
+        }
         if ((int) data_get($metrics, 'sample_count', 0) >= $minimum) {
-            if ((float) data_get($metrics, 'profit_factor', 0) < 1.3) $reasons[] = 'FAILED_PROFIT_FACTOR';
-            if ((float) data_get($metrics, 'max_drawdown', 100) > 15) $reasons[] = 'FAILED_DRAWDOWN';
+            if ((float) data_get($metrics, 'profit_factor', 0) < 1.3) {
+                $reasons[] = 'FAILED_PROFIT_FACTOR';
+            }
+            if ((float) data_get($metrics, 'max_drawdown', 100) > 15) {
+                $reasons[] = 'FAILED_DRAWDOWN';
+            }
         }
         $calibration = PaperConfidenceCalibration::query()->where('model_market_performance_id', $performance->id)->orderByDesc('sample_count')->first();
-        if (! $calibration || $calibration->sample_count < (int) config('services.paper_calibration.minimum_samples', 20)) $reasons[] = 'FAILED_CALIBRATION';
+        if (! $calibration || $calibration->sample_count < (int) config('services.paper_calibration.minimum_samples', 20)) {
+            $reasons[] = 'FAILED_CALIBRATION';
+        }
         $readiness = $this->paperEvidence->inspect();
-        if (! data_get($readiness, 'gates.feed_uptime', false)) $reasons[] = 'FAILED_FEED_UPTIME';
+        if (! data_get($readiness, 'gates.feed_uptime', false)) {
+            $reasons[] = 'FAILED_FEED_UPTIME';
+        }
         $decision = in_array('WAITING_FOR_SAMPLE', $reasons, true) ? 'waiting' : ($reasons === [] ? 'passed' : 'failed');
+
         return $this->store($performance, null, 'paper_observation', $decision, $reasons, [...$metrics, 'global_paper_readiness' => $readiness]);
     }
 
@@ -534,12 +569,21 @@ class CandidateGateDecisionService
         $forward = CandidateGateDecision::query()->where('model_market_performance_id', $performance->id)
             ->where('stage', 'statistical_forward_gate')->latest('evaluated_at')->first();
         $passport = (array) data_get($forward?->metrics, 'elite_agent_passport', data_get($performance->metrics, 'elite_agent_passport', []));
-        $firstSignal = \App\Models\PaperSignal::query()->where('model_market_performance_id', $performance->id)->oldest('created_at')->first();
+        $firstSignal = PaperSignal::query()->where('model_market_performance_id', $performance->id)->oldest('created_at')->first();
         $reasons = [];
-        if ($forward?->decision !== 'passed') $reasons[] = 'FORWARD_GATE_NOT_PASSED';
-        if (data_get($passport, 'status') !== 'passed') $reasons[] = 'SEALED_PASSPORT_MISSING';
-        if (! filled(data_get($passport, 'agent.parameter_hash')) || ! filled(data_get($passport, 'final_exam_result_hash'))) $reasons[] = 'IMMUTABLE_IDENTITY_MISSING';
-        if (! $firstSignal && $performance->updated_at?->lte(now()->subDay())) $reasons[] = 'PAPER_ARMED_NO_SIGNAL_24H';
+        if ($forward?->decision !== 'passed') {
+            $reasons[] = 'FORWARD_GATE_NOT_PASSED';
+        }
+        if (data_get($passport, 'status') !== 'passed') {
+            $reasons[] = 'SEALED_PASSPORT_MISSING';
+        }
+        if (! filled(data_get($passport, 'agent.parameter_hash')) || ! filled(data_get($passport, 'final_exam_result_hash'))) {
+            $reasons[] = 'IMMUTABLE_IDENTITY_MISSING';
+        }
+        if (! $firstSignal && $performance->updated_at?->lte(now()->subDay())) {
+            $reasons[] = 'PAPER_ARMED_NO_SIGNAL_24H';
+        }
+
         return $this->store($performance, null, 'paper_admission_handshake', $reasons === [] ? 'armed' : 'waiting', $reasons ?: ['PAPER_REGISTERED_WAITING_FOR_FIRST_SIGNAL'], [
             'sealed_strategy_passport' => $passport,
             'immutable_config_hash' => data_get($passport, 'agent.parameter_hash'),
@@ -555,20 +599,34 @@ class CandidateGateDecisionService
     {
         $result = (array) data_get($holdout, 'result', []);
         $reasons = $this->economicReasons($result, 30, 1.3, 15.0, 10.0, 0);
-        if ((float) data_get($holdout, 'score', 0) < 50) $reasons[] = 'FAILED_FORWARD_SCORE';
+        if ((float) data_get($holdout, 'score', 0) < 50) {
+            $reasons[] = 'FAILED_FORWARD_SCORE';
+        }
+
         return $this->store($performance, null, 'sealed_holdout', $reasons === [] ? 'passed' : 'failed', array_values(array_unique($reasons)), $holdout);
     }
 
     private function economicReasons(array $metrics, int $minimumTrades, float $minimumPf, float $maxDrawdown, float $maxRuin, int $minimumRollingWins): array
     {
         $reasons = [];
-        if ((int) data_get($metrics, 'total_trades', data_get($metrics, 'sample_count', 0)) < $minimumTrades) $reasons[] = 'FAILED_TRADE_COUNT';
-        if ((float) data_get($metrics, 'profit_factor', 0) < $minimumPf) $reasons[] = 'FAILED_PROFIT_FACTOR';
-        if ((float) data_get($metrics, 'max_drawdown_percent', data_get($metrics, 'max_drawdown', 100)) > $maxDrawdown) $reasons[] = 'FAILED_DRAWDOWN';
-        if ((float) data_get($metrics, 'monte_carlo.risk_of_ruin_percent', 0) > $maxRuin) $reasons[] = 'FAILED_RUIN_RISK';
+        if ((int) data_get($metrics, 'total_trades', data_get($metrics, 'sample_count', 0)) < $minimumTrades) {
+            $reasons[] = 'FAILED_TRADE_COUNT';
+        }
+        if ((float) data_get($metrics, 'profit_factor', 0) < $minimumPf) {
+            $reasons[] = 'FAILED_PROFIT_FACTOR';
+        }
+        if ((float) data_get($metrics, 'max_drawdown_percent', data_get($metrics, 'max_drawdown', 100)) > $maxDrawdown) {
+            $reasons[] = 'FAILED_DRAWDOWN';
+        }
+        if ((float) data_get($metrics, 'monte_carlo.risk_of_ruin_percent', 0) > $maxRuin) {
+            $reasons[] = 'FAILED_RUIN_RISK';
+        }
         // Forward rolling wins are the chronological monthly-survival
         // requirement. Do not mislabel it as regime coverage.
-        if ($minimumRollingWins > 0 && (int) data_get($metrics, 'rolling_forward_wins', 0) < $minimumRollingWins) $reasons[] = 'FAILED_CALENDAR_MONTH_SURVIVAL';
+        if ($minimumRollingWins > 0 && (int) data_get($metrics, 'rolling_forward_wins', 0) < $minimumRollingWins) {
+            $reasons[] = 'FAILED_CALENDAR_MONTH_SURVIVAL';
+        }
+
         return $reasons;
     }
 
@@ -577,7 +635,9 @@ class CandidateGateDecisionService
     private function causalCooldownRescueReasons(LabAgent $agent, array $result): array
     {
         $contract = (array) data_get($agent->modelVersion?->metadata, 'causal_rescue_contract', []);
-        if (data_get($contract, 'kind') !== 'loss_cooldown_single_gene') return [];
+        if (data_get($contract, 'kind') !== 'loss_cooldown_single_gene') {
+            return [];
+        }
 
         $reasons = [];
         $diff = (array) ($agent->parameter_diff ?? []);
@@ -585,16 +645,33 @@ class CandidateGateDecisionService
         if (array_keys($diff) !== ['loss_cooldown_candles']
             || (int) data_get($diff, 'loss_cooldown_candles.old') !== 4
             || (int) data_get($diff, 'loss_cooldown_candles.new') !== $expected
-            || ! in_array($expected, [2, 3], true)) $reasons[] = 'FAILED_RESCUE_SINGLE_GENE_CONTRACT';
-        if ((int) data_get($result, 'total_trades', 0) < 10) $reasons[] = 'FAILED_RESCUE_TRADE_COUNT';
-        if ((float) data_get($result, 'profit_factor', 0) < 1.30) $reasons[] = 'FAILED_RESCUE_PROFIT_FACTOR';
-        if ((float) data_get($result, 'screening_survival.stress_cost_pf', data_get($result, 'pf_attribution.stress_cost.profit_factor', 0)) < 1.05) $reasons[] = 'FAILED_RESCUE_STRESS_COST';
+            || ! in_array($expected, [2, 3], true)) {
+            $reasons[] = 'FAILED_RESCUE_SINGLE_GENE_CONTRACT';
+        }
+        if ((int) data_get($result, 'total_trades', 0) < 10) {
+            $reasons[] = 'FAILED_RESCUE_TRADE_COUNT';
+        }
+        if ((float) data_get($result, 'profit_factor', 0) < 1.30) {
+            $reasons[] = 'FAILED_RESCUE_PROFIT_FACTOR';
+        }
+        if ((float) data_get($result, 'screening_survival.stress_cost_pf', data_get($result, 'pf_attribution.stress_cost.profit_factor', 0)) < 1.05) {
+            $reasons[] = 'FAILED_RESCUE_STRESS_COST';
+        }
         $worstRegime = data_get($result, 'screening_survival.worst_regime_pf');
-        if ($worstRegime === null || (float) $worstRegime < 1.0) $reasons[] = 'FAILED_RESCUE_REGIME_COVERAGE';
+        if ($worstRegime === null || (float) $worstRegime < 1.0) {
+            $reasons[] = 'FAILED_RESCUE_REGIME_COVERAGE';
+        }
         $worstTemporal = (float) data_get($result, 'screening_survival.worst_temporal_chunk_pf', data_get($result, 'screening_survival.worst_window_pf', 0));
-        if ($worstTemporal < 1.0) $reasons[] = 'FAILED_RESCUE_TEMPORAL_SURVIVAL';
-        if ((float) data_get($result, 'screening_survival.train_forward_gap', PHP_FLOAT_MAX) > 25.0) $reasons[] = 'FAILED_RESCUE_TEMPORAL_GAP';
-        if ((float) data_get($result, 'screening_survival.parameter_perturbation_ratio', 0) < .80) $reasons[] = 'FAILED_RESCUE_PARAMETER_STABILITY';
+        if ($worstTemporal < 1.0) {
+            $reasons[] = 'FAILED_RESCUE_TEMPORAL_SURVIVAL';
+        }
+        if ((float) data_get($result, 'screening_survival.train_forward_gap', PHP_FLOAT_MAX) > 25.0) {
+            $reasons[] = 'FAILED_RESCUE_TEMPORAL_GAP';
+        }
+        if ((float) data_get($result, 'screening_survival.parameter_perturbation_ratio', 0) < .80) {
+            $reasons[] = 'FAILED_RESCUE_PARAMETER_STABILITY';
+        }
+
         return $reasons;
     }
 
@@ -606,8 +683,7 @@ class CandidateGateDecisionService
         array $reasons,
         array $metrics,
         ?string $attributionOverride = null,
-    ): CandidateGateDecision
-    {
+    ): CandidateGateDecision {
         $attribution = $attributionOverride ?? match (true) {
             $stage === 'statistical_forward_gate' && $agent !== null => 'deterministic',
             $stage === 'statistical_forward_gate' => 'ATTRIBUTION_MISSING',

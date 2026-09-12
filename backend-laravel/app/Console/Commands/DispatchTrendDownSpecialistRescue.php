@@ -54,6 +54,11 @@ class DispatchTrendDownSpecialistRescue extends Command
 
             return self::SUCCESS;
         }
+        if (strtoupper((string) $lab->symbol) === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
+            $this->info('Standalone specialist generation disabled: XAUUSD repair is allocated inside the unified 20-seat lifecycle population.');
+
+            return self::SUCCESS;
+        }
         if ((float) data_get($sourceModel->metadata, 'last_screen_result.screening_survival.worst_regime_pf', 99) >= 1.0) {
             $this->error('This rescue is allowed only for an evidenced regime failure (worst regime PF < 1).');
 

@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
+use App\Services\EvolutionGovernorService;
 use App\Services\LearningVelocityGateService;
 use App\Services\MtfShadowCouncilSandboxService;
 use App\Services\StrategyParameterSchemaService;
@@ -38,7 +40,7 @@ class RiskBoundedEvolutionTest extends TestCase
             ],
         ];
 
-        $adapted = app(\App\Services\EvolutionGovernorService::class)->adaptPlan($plan, $snapshot);
+        $adapted = app(EvolutionGovernorService::class)->adaptPlan($plan, $snapshot);
         $tail = array_slice($adapted, -8);
         $modes = array_values(array_map(
             static fn (array $slot): string => (string) data_get($slot, 'niche.evolution_mode'),
@@ -129,6 +131,51 @@ class RiskBoundedEvolutionTest extends TestCase
         $this->assertTrue($result['allowed']);
         $this->assertSame('healthy', $result['status']);
         $this->assertSame(0, $result['technical_recovery_agents']);
+    }
+
+    public function test_exhausted_retry_budget_quarantine_is_terminal_history_not_a_generation_deadlock(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Retry budget terminal test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
+            'population_size' => 1, 'status' => 'screened', 'trigger_context' => [],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'retry-budget-terminal', 'strategy' => 'retry-budget-terminal', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => [], 'evidence_status' => 'valid',
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+            'decision_reason' => 'Technical quarantine after bounded learning-lane transport failures; strategy verdict withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'retry-budget-terminal-run', 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id, 'model_version_id' => $model->id,
+            'phase' => 'screening', 'mode' => 'screen', 'status' => 'technical_error',
+            'error_class' => 'Illuminate\\Queue\\MaxAttemptsExceededException',
+            'error_message' => 'EvaluateLabAgentJob has been attempted too many times.',
+            'started_at' => now()->subMinute(), 'finished_at' => now(),
+        ]);
+
+        $pending = app(LearningVelocityGateService::class)->inspect($lab);
+        $this->assertFalse($pending['allowed']);
+        $this->assertSame(1, $pending['technical_recovery_agents']);
+
+        $metadata = $model->fresh()->metadata;
+        data_set($metadata, 'retry_budget_repair_recovery_attempts', 1);
+        $model->update(['metadata' => $metadata]);
+        $terminal = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertTrue($terminal['allowed']);
+        $this->assertSame(0, $terminal['technical_recovery_agents']);
+        $this->assertSame('healthy', $terminal['status']);
     }
 
     public function test_closed_population_contract_quarantine_is_excluded_without_quality_credit(): void
@@ -253,6 +300,47 @@ class RiskBoundedEvolutionTest extends TestCase
         $this->assertSame('healthy', $result['status']);
     }
 
+    public function test_superseded_causal_selector_quarantine_is_terminal_history_not_recovery_work(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Superseded causal selector test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 214, 'trigger_type' => 'learning_confirmation',
+            'population_size' => 20, 'status' => 'technical_quarantine',
+            'trigger_context' => [
+                'constructor_contract_abort' => [
+                    'protocol' => 'superseded_causal_selector_construction_v1',
+                    'reason_codes' => ['CAUSAL_SELECTOR_PROTOCOL_SUPERSEDED'],
+                    'stored_selector_protocol' => 'causal_blinded_single_gene_selector_v5',
+                    'required_selector_protocol' => 'causal_blinded_single_gene_selector_v6',
+                    'learning_evidence' => false,
+                    'promotion_evidence' => false,
+                ],
+            ],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'superseded-selector-test', 'strategy' => 'superseded-selector-test', 'version' => 'v1',
+            'generation' => 214, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => [], 'evidence_status' => 'stale_quarantine',
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'causal_learning_confirmation', 'lifecycle_status' => 'technical_quarantine',
+            'parameter_diff' => ['trend_down_roc_threshold' => ['old' => -0.001, 'new' => -0.0015]],
+            'decision_reason' => 'Causal constructor selector protocol was superseded before screening; strategy verdict withheld.',
+        ]);
+
+        $result = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame(0, $result['technical_recovery_agents']);
+        $this->assertSame('healthy', $result['status']);
+    }
+
     public function test_shadow_council_is_explicitly_research_only(): void
     {
         $contract = app(MtfShadowCouncilSandboxService::class)->contract([
@@ -271,7 +359,7 @@ class RiskBoundedEvolutionTest extends TestCase
 
     public function test_outcome_policy_separates_recovery_failure_and_confirmed_exploration(): void
     {
-        $governor = app(\App\Services\EvolutionGovernorService::class);
+        $governor = app(EvolutionGovernorService::class);
 
         $technical = $governor->evolutionModePolicy('technical_error');
         $failure = $governor->evolutionModePolicy('strategy_failure');

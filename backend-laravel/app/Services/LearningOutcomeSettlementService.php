@@ -15,7 +15,10 @@ class LearningOutcomeSettlementService
     /** @return AgentLearningSettlement|array<string,mixed> */
     public function settle(AgentLearningEpisode|array $episode, array $outcome): AgentLearningSettlement|array
     {
-        if (! $episode instanceof AgentLearningEpisode || ! Schema::hasTable('agent_learning_settlements')) return ['status' => 'unavailable'];
+        if (! $episode instanceof AgentLearningEpisode || ! Schema::hasTable('agent_learning_settlements')) {
+            return ['status' => 'unavailable'];
+        }
+
         return DB::transaction(function () use ($episode, $outcome): AgentLearningSettlement {
             $reward = $this->rewards->score($outcome);
             $reflection = $this->reflections->reflect($outcome, $reward);
@@ -25,9 +28,18 @@ class LearningOutcomeSettlementService
                 'source_id' => $outcome['source_id'] ?? null, 'outcome_status' => (string) ($outcome['outcome_status'] ?? 'settled'),
                 'failure_class' => $reflection['failure'], 'evidence_state' => $reward['hard_failure'] ? 'negative' : (($outcome['evidence_state'] ?? null) ?: $reward['evidence_state']),
                 'selection_reward' => $reward['selection_reward'], 'hard_failure' => $reward['hard_failure'], 'outcome' => $outcome,
-                'reward_components' => [...$reward['components'], 'vetoes' => $reward['vetoes'], 'insufficient_reasons' => $reward['insufficient_reasons'], 'promotion_evidence' => false], 'reflection' => $reflection, 'settled_at' => now(),
+                'reward_components' => [
+                    'protocol' => $reward['protocol'] ?? LearningRewardService::PROTOCOL,
+                    ...$reward['components'],
+                    'evidence_coverage' => $reward['evidence_coverage'] ?? [],
+                    'signal_authority' => $reward['signal_authority'] ?? 'uninformative',
+                    'vetoes' => $reward['vetoes'],
+                    'insufficient_reasons' => $reward['insufficient_reasons'],
+                    'promotion_evidence' => false,
+                ], 'reflection' => $reflection, 'settled_at' => now(),
             ]);
             $episode->update(['status' => $reward['hard_failure'] ? 'technical_quarantine' : 'settled', 'settled_at' => now()]);
+
             return $settlement->fresh();
         });
     }

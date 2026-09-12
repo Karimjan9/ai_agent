@@ -13,10 +13,11 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Turns a falsified causal confirmation into one bounded repair experiment.
  *
- * A failed guided gene is never inherited.  The repair starts from the same
- * frozen control model, changes one target-owning gene and keeps a blinded
- * selector plus frozen control.  Three failed scalar repairs close the lane;
- * the next legal action is an architecture hypothesis, not another threshold.
+ * A failed guided model is never a production parent. A guided component that
+ * beat both counterfactuals with explicit non-target safety may nevertheless
+ * become the frozen baseline of the next research-only repair. This causal
+ * ratchet allows beneficial components to compound without granting parent or
+ * promotion authority. Unproven steps reset to the original frozen control.
  */
 class CausalRepairFrontierService
 {
@@ -265,9 +266,11 @@ class CausalRepairFrontierService
                 'gene' => (string) $frontier['gene'],
                 'value' => $frontier['value'],
                 'source_pair_id' => (int) $frontier['source_pair_id'],
+                'root_source_pair_id' => (int) data_get($frontier, 'root_source_pair_id', $frontier['source_pair_id']),
                 'source_candidate_agent_id' => (int) $frontier['source_candidate_agent_id'],
                 'source_control_agent_id' => (int) $frontier['source_control_agent_id'],
                 'baseline_model_version_id' => (int) $frontier['baseline_model_version_id'],
+                'baseline_policy' => (string) data_get($frontier, 'baseline_policy', 'original_frozen_control'),
                 'baseline_old_value' => $frontier['old_value'],
                 'repair_depth' => (int) $frontier['repair_depth'],
                 'attempted_genes' => (array) $frontier['attempted_genes'],
@@ -277,6 +280,7 @@ class CausalRepairFrontierService
                 'interaction_components' => (array) data_get($frontier, 'interaction_components', []),
                 'structural_operation' => data_get($frontier, 'structural_operation'),
                 'activation_screen' => (array) data_get($frontier, 'activation_screen', []),
+                'research_ratchet' => (array) data_get($frontier, 'research_ratchet', []),
                 'construction_protocol' => self::CONSTRUCTION_PROTOCOL,
                 'blinded_selector' => $blindedMutation,
                 'same_parent_required' => true,
@@ -356,9 +360,12 @@ class CausalRepairFrontierService
             'interaction_components' => (array) data_get($frontier, 'interaction_components', []),
             'structural_operation' => data_get($frontier, 'structural_operation'),
             'activation_screen' => (array) data_get($frontier, 'activation_screen', []),
+            'research_ratchet' => (array) data_get($frontier, 'research_ratchet', []),
             'construction_protocol' => self::CONSTRUCTION_PROTOCOL,
             'blinded_selector' => $blindedMutation,
             'baseline_model_version_id' => (int) $frontier['baseline_model_version_id'],
+            'baseline_policy' => (string) data_get($frontier, 'baseline_policy', 'original_frozen_control'),
+            'root_source_pair_id' => (int) data_get($frontier, 'root_source_pair_id', $frontier['source_pair_id']),
             'slots' => $indexes->map(fn (int $index): int => $index + 1)->all(),
             'rule' => $interaction
                 ? 'Single structural axes are exhausted; one fixed macro-gene measures their pre-registered interaction against a blinded selector and the exact original frozen control over nine disjoint folds.'
@@ -476,8 +483,7 @@ class CausalRepairFrontierService
             ->latest('id')
             ->limit(50)
             ->get()
-            ->filter(fn (AgentLearningCausalExperiment $child): bool =>
-                (int) data_get($child->evidence, 'source_causal_experiment_id', 0) === (int) $experiment->id
+            ->filter(fn (AgentLearningCausalExperiment $child): bool => (int) data_get($child->evidence, 'source_causal_experiment_id', 0) === (int) $experiment->id
                 && data_get($child->evidence, 'construction_protocol') === self::CONSTRUCTION_PROTOCOL
             );
         $repeatedFailure = $invalidConstructionAttempts
@@ -519,6 +525,7 @@ class CausalRepairFrontierService
         }
 
         $guidedPair = LabLearningLanePair::query()
+            ->with(['candidateAgent.modelVersion', 'controlAgent.modelVersion', 'controlResponseMap'])
             ->where('candidate_agent_id', $experiment->guided_agent_id)
             ->where('control_agent_id', $experiment->control_agent_id)
             ->latest('id')->first();
@@ -531,13 +538,40 @@ class CausalRepairFrontierService
             return null;
         }
 
-        $sourcePairId = (int) data_get($experiment->evidence, 'source_pair_id', 0);
-        $sourcePair = $sourcePairId > 0 ? LabLearningLanePair::query()
+        $sourcePairId = (int) data_get(
+            $experiment->evidence,
+            'root_source_pair_id',
+            data_get($experiment->evidence, 'source_pair_id', 0),
+        );
+        $rootSourcePair = $sourcePairId > 0 ? LabLearningLanePair::query()
             ->with(['controlAgent.modelVersion'])->find($sourcePairId) : null;
-        $sourceControl = $sourcePair?->controlAgent;
+        $sourceControl = $rootSourcePair?->controlAgent;
         $baseline = $sourceControl?->modelVersion;
-        if (! $sourcePair || ! $sourcePair->isVerifiedControlPair() || ! $sourceControl || ! $baseline) {
+        if (! $rootSourcePair || ! $rootSourcePair->isVerifiedControlPair() || ! $sourceControl || ! $baseline) {
             return null;
+        }
+
+        $ratchet = (array) data_get($frontier, 'research_ratchet', []);
+        $ratchetAllowed = data_get($ratchet, 'protocol') === 'causal_research_ratchet_v1'
+            && data_get($ratchet, 'allowed') === true;
+        $baselineSourcePair = $rootSourcePair;
+        if ($ratchetAllowed) {
+            $ratchetAgentId = (int) data_get($ratchet, 'research_baseline_agent_id', 0);
+            $ratchetModelId = (int) data_get($ratchet, 'research_baseline_model_version_id', 0);
+            $candidate = $guidedPair?->candidateAgent;
+            if (! $guidedPair || ! $guidedPair->isVerifiedControlPair()
+                || ! $candidate || ! $candidate->modelVersion
+                || $ratchetAgentId !== (int) $candidate->id
+                || $ratchetModelId !== (int) $candidate->model_version_id
+                || data_get($ratchet, 'production_parent_allowed') !== false
+                || data_get($ratchet, 'promotion_evidence') !== false) {
+                // A stale or forged ratchet marker must never silently select
+                // a different baseline. Leave the frontier pending for audit.
+                return null;
+            }
+            $baselineSourcePair = $guidedPair;
+            $sourceControl = $candidate;
+            $baseline = $candidate->modelVersion;
         }
 
         $target = $this->normalizeTarget((string) data_get($frontier, 'target', $settlement->failure_class));
@@ -622,10 +656,21 @@ class CausalRepairFrontierService
             'protocol' => $protocol,
             'experiment_kind' => $experimentKind,
             'source_experiment_id' => (int) $experiment->id,
-            'source_pair_id' => (int) $sourcePair->id,
-            'source_candidate_agent_id' => (int) $sourcePair->candidate_agent_id,
+            'source_pair_id' => (int) $baselineSourcePair->id,
+            'root_source_pair_id' => (int) $rootSourcePair->id,
+            'source_candidate_agent_id' => (int) $baselineSourcePair->candidate_agent_id,
             'source_control_agent_id' => (int) $sourceControl->id,
             'baseline_model_version_id' => (int) $baseline->id,
+            'baseline_policy' => $ratchetAllowed
+                ? 'causal_positive_research_ratchet'
+                : 'original_frozen_control',
+            'research_ratchet' => $ratchetAllowed ? $ratchet : [
+                'protocol' => 'causal_research_ratchet_v1',
+                'status' => 'not_applied',
+                'allowed' => false,
+                'production_parent_allowed' => false,
+                'promotion_evidence' => false,
+            ],
             'strategy_family' => (string) $experiment->strategy_family,
             'target' => $target,
             'gene' => $mutation['gene'],
@@ -644,8 +689,8 @@ class CausalRepairFrontierService
             'structural_operation' => $mutation['operation'] ?? null,
             'activation_screen' => $activationScreen,
             'activation_manifest' => $activationManifest,
-            'data_hash' => (string) $sourcePair->control_data_hash,
-            'execution_hash' => (string) $sourcePair->control_execution_hash,
+            'data_hash' => (string) $baselineSourcePair->control_data_hash,
+            'execution_hash' => (string) $baselineSourcePair->control_execution_hash,
             'promotion_evidence' => false,
         ];
     }
@@ -739,8 +784,7 @@ class CausalRepairFrontierService
         ModelVersion $baseline,
         array $attempted,
         ?LabLearningLanePair $latestPair = null,
-    ): ?array
-    {
+    ): ?array {
         $schema = app(StrategyParameterSchemaService::class)->schema($family);
         $parameters = (array) $baseline->parameters;
         $keys = self::TARGET_GENES[$target] ?? [];
@@ -758,6 +802,7 @@ class CausalRepairFrontierService
                 $screen = $this->activationStatus($gene, $old, $new, $activation, $parameters);
                 if ((string) $screen['status'] === 'unsupported') {
                     $skipped[] = $screen;
+
                     continue;
                 }
 

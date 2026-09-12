@@ -4390,10 +4390,19 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
 
     def summary(rows: list[SimpleTrade]) -> dict[str, float | int]:
         values = [float(row.profit_percent) for row in rows]
+        equity = 100.0
+        peak = equity
+        max_drawdown = 0.0
+        for value in values:
+            equity += value
+            peak = max(peak, equity)
+            max_drawdown = max(max_drawdown, ((peak - equity) / peak) * 100 if peak > 0 else 0.0)
         return {
             "trades": len(rows),
             "net_pf": _profit_factor_for(values),
             "net_profit_percent": round(sum(values), 6),
+            "max_drawdown_percent": round(max_drawdown, 6),
+            "execution_cost_percent": round(sum(float(row.execution_cost_percent) for row in rows), 6),
             "winrate": round(100 * sum(value > 0 for value in values) / max(1, len(values)), 2),
         }
 

@@ -186,6 +186,7 @@ class RunHeadlessScheduler extends Command
                 // process has lost/expired its lease.
                 if ($lease->isOwnedByCurrentProcess()) {
                     Cache::forget('system:scheduler-lease');
+                    Cache::forget('system:scheduler-heartbeat');
                 }
                 $lease->release();
             } catch (Throwable $exception) {
@@ -284,7 +285,7 @@ class RunHeadlessScheduler extends Command
         $lease->forceRelease();
         Cache::forget('system:scheduler-lease');
         Cache::forget('system:scheduler-heartbeat');
-        Log::critical('Recovered a stale headless scheduler lease from a dead local process.', [
+        Log::warning('Recovered a stale headless scheduler lease from a dead local process.', [
             'lease_key' => $leaseKey,
             'stale_pid' => $ownerPid,
             'stale_age_seconds' => $ageSeconds,

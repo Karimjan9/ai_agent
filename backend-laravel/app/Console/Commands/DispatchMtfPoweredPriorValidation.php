@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\ValidateMtfPoweredPriorJob;
+use App\Services\AutonomousModeService;
 use App\Services\CanonicalResearchLanePriorityService;
 use App\Services\MtfPoweredPriorValidationService;
 use Illuminate\Console\Command;
@@ -16,12 +17,18 @@ class DispatchMtfPoweredPriorValidation extends Command
     public function handle(
         MtfPoweredPriorValidationService $validation,
         CanonicalResearchLanePriorityService $priority,
-    ): int
-    {
+        AutonomousModeService $autonomy,
+    ): int {
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', trim((string) $this->argument('symbol'))));
         if ($symbol !== 'XAUUSD') {
             $this->error('MTF powered-prior validation is sealed to XAUUSD.');
+
             return self::FAILURE;
+        }
+        if (! $autonomy->enabled($symbol, 'H1')) {
+            $this->info('Powered MTF prior deferred: autonomous mode is stopped; monitoring remains available.');
+
+            return self::SUCCESS;
         }
         if (($priority->edgeGenesisOwnership($symbol, 'H1')['owned'] ?? false) === true) {
             $this->info('Powered MTF prior deferred: canonical Edge Genesis currently owns the replay lane.');
@@ -31,6 +38,7 @@ class DispatchMtfPoweredPriorValidation extends Command
         $source = $validation->nextEligible($symbol);
         if (! $source) {
             $this->info('No current powered MTF prior is awaiting model-owned validation.');
+
             return self::SUCCESS;
         }
         ValidateMtfPoweredPriorJob::dispatch((int) $source->id);

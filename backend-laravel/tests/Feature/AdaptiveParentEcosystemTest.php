@@ -4,12 +4,19 @@ namespace Tests\Feature;
 
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
+use App\Models\LabEvolutionArchiveEntry;
 use App\Models\LabGeneration;
 use App\Models\LabParentSelectionDecision;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use App\Services\AdaptiveParentFrontierService;
+use App\Services\ContextContractV2Service;
+use App\Services\ContextualCausalTraitCapsuleService;
 use App\Services\EvolutionArchiveService;
+use App\Services\EvolutionaryAuthorityFoundryService;
+use App\Services\EvolutionGovernorService;
+use App\Services\LabPopulationService;
+use App\Services\ParentContextTrustService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -115,7 +122,7 @@ class AdaptiveParentEcosystemTest extends TestCase
 
     public function test_regime_ensemble_targeted_repair_keeps_causal_policy_identity(): void
     {
-        $policy = app(\App\Services\EvolutionGovernorService::class)->selectionPolicy(
+        $policy = app(EvolutionGovernorService::class)->selectionPolicy(
             'regime_ensemble', 'gate_targeted', 'monthly_survival', [
                 'exploration_ratio' => .8,
                 'diversity_score' => .1,
@@ -163,9 +170,9 @@ class AdaptiveParentEcosystemTest extends TestCase
         $previous = config('services.lab_selection.population_size');
         config(['services.lab_selection.population_size' => 25]);
         try {
-            $method = new \ReflectionMethod(\App\Services\LabPopulationService::class, 'generationPlan');
+            $method = new \ReflectionMethod(LabPopulationService::class, 'generationPlan');
             $method->setAccessible(true);
-            $plan = $method->invoke(app(\App\Services\LabPopulationService::class), $lab);
+            $plan = $method->invoke(app(LabPopulationService::class), $lab);
         } finally {
             config(['services.lab_selection.population_size' => $previous]);
         }
@@ -174,6 +181,70 @@ class AdaptiveParentEcosystemTest extends TestCase
         $this->assertContains('robust_crossover', array_column($plan, 'origin'));
         $this->assertContains('architecture', array_column($plan, 'origin'));
         $this->assertContains('curiosity_probe', array_column($plan, 'origin'));
+    }
+
+    public function test_confirmed_mentor_becomes_selectable_after_foundry_grants_parent_authority(): void
+    {
+        $mentor = $this->makeModel('authority-transitioned-mentor', 31);
+        $niche = ['role' => 'general', 'regime' => 'trend_up', 'volatility' => 'normal', 'session' => 'london'];
+        $mentor->update(['metadata' => [
+            ...((array) $mentor->metadata),
+            'skill_mentor' => ['status' => 'confirmed', 'parameter_key' => 'ema_fast', 'target' => 'profit_factor'],
+            'evolution_stage' => ['stage' => 'skill_mentor'],
+            'semantic_group' => app(StrategySemanticGroupService::class)->descriptor('XAUUSD', 'H1', 'trend', $niche),
+        ]]);
+        $this->makePerformance($mentor->fresh(), 91);
+
+        // A confirmed label plus an eligible_parent string is not authority.
+        // The selector must fail closed until the contextual capsule and its
+        // exact-context descendant trust exist.
+        $unsealed = app(AdaptiveParentFrontierService::class)->select(
+            collect([$mentor->fresh()]),
+            'XAUUSD', 'H1', 'trend', 'gate_targeted', 'profit_factor',
+            $niche, 1,
+        );
+        $this->assertSame([], $unsealed['selected_parent_ids']);
+        $this->assertContains(
+            'rejected_trait_capsule_context',
+            (array) data_get($unsealed, 'contract.candidate_scores.'.$mentor->id.'.parent_selection_reasons'),
+        );
+
+        $this->attachContextualMentorAuthority($mentor->fresh(), $niche);
+        $selection = app(AdaptiveParentFrontierService::class)->select(
+            collect([$mentor->fresh()]),
+            'XAUUSD', 'H1', 'trend', 'gate_targeted', 'profit_factor',
+            $niche, 1,
+        );
+
+        $this->assertSame([$mentor->id], $selection['selected_parent_ids']);
+        $this->assertSame(1, $selection['contract']['eligible_candidate_count']);
+        $this->assertTrue(data_get($selection, 'contract.candidate_scores.'.$mentor->id.'.mentor_authority_transitioned', false));
+        $this->assertTrue(data_get($selection, 'contract.candidate_scores.'.$mentor->id.'.trait_capsule_assessment.valid', false));
+        $this->assertSame(
+            data_get($selection, 'contract.selected_contextual_trait_capsules.'.$mentor->id.'.capsule_hash'),
+            data_get($selection, 'capability_genome.parameter_sources.ema_fast.contextual_trait_capsule.capsule_hash'),
+        );
+
+        $broadCell = [...$niche];
+        unset($broadCell['session']);
+        $guarded = app(AdaptiveParentFrontierService::class)->select(
+            collect([$mentor->fresh()]), 'XAUUSD', 'H1', 'trend', 'gate_targeted', 'profit_factor', $broadCell, 1,
+        );
+        $this->assertSame([$mentor->id], $guarded['selected_parent_ids']);
+        $this->assertSame(
+            'routing_match_runtime_guard_required',
+            data_get($guarded, 'contract.candidate_scores.'.$mentor->id.'.trait_capsule_assessment.context_compatibility.status'),
+        );
+
+        $wrongSession = [...$niche, 'session' => 'asia'];
+        $abstained = app(AdaptiveParentFrontierService::class)->select(
+            collect([$mentor->fresh()]), 'XAUUSD', 'H1', 'trend', 'gate_targeted', 'profit_factor', $wrongSession, 1,
+        );
+        $this->assertSame([], $abstained['selected_parent_ids']);
+        $this->assertContains(
+            'rejected_trait_capsule_context',
+            (array) data_get($abstained, 'contract.candidate_scores.'.$mentor->id.'.parent_selection_reasons'),
+        );
     }
 
     public function test_architecture_lane_uses_dynamic_capability_parents_with_gene_hashes(): void
@@ -260,13 +331,24 @@ class AdaptiveParentEcosystemTest extends TestCase
             ['role' => 'general'],
         );
 
+        // Maintenance from a different candidate cell must not copy the same
+        // immutable failed model into that caller's island.
+        app(EvolutionArchiveService::class)->augmentFrontier(
+            collect(), 'XAUUSD', 'H1', 'trend', 'curiosity_probe', 'unknown_state_curiosity',
+            ['role' => 'general', 'regime' => 'trend_down', 'volatility' => 'high'],
+        );
+
         $this->assertNotContains($failed->id, $frontier->pluck('id')->all());
+        $this->assertSame(1, LabEvolutionArchiveEntry::query()
+            ->where('model_version_id', $failed->id)
+            ->where('archive_type', 'failure')
+            ->count());
         $this->assertNotNull($failedAgent->fresh());
     }
 
     public function test_runtime_policy_waits_on_unknown_or_disagreeing_regimes(): void
     {
-        $policy = app(\App\Services\EvolutionGovernorService::class)
+        $policy = app(EvolutionGovernorService::class)
             ->runtimePolicy('regime_ensemble', [11, 12, 13]);
 
         $this->assertSame('WAIT', $policy['unknown_regime_action']);
@@ -284,7 +366,7 @@ class AdaptiveParentEcosystemTest extends TestCase
         $generation = LabGeneration::create([
             'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
             'population_size' => 1, 'status' => 'draft', 'trigger_context' => [
-                'adaptive_evolution_policy' => app(\App\Services\EvolutionGovernorService::class)
+                'adaptive_evolution_policy' => app(EvolutionGovernorService::class)
                     ->scopeSnapshot('XAUUSD', 'H1'),
             ],
         ]);
@@ -295,10 +377,10 @@ class AdaptiveParentEcosystemTest extends TestCase
             $parents->push($parent);
         }
 
-        $method = new \ReflectionMethod(\App\Services\LabPopulationService::class, 'createAgent');
+        $method = new \ReflectionMethod(LabPopulationService::class, 'createAgent');
         $method->setAccessible(true);
         $created = $method->invoke(
-            app(\App\Services\LabPopulationService::class),
+            app(LabPopulationService::class),
             $generation, 'trend', 'robust_crossover', 1, 'robustness', null, null,
         );
         $this->assertTrue($created);
@@ -333,7 +415,7 @@ class AdaptiveParentEcosystemTest extends TestCase
             'stagnation_generations' => 3,
             'market_drift' => ['status' => 'recheck_required'],
         ];
-        $adapted = app(\App\Services\EvolutionGovernorService::class)->adaptPlan($plan, $snapshot);
+        $adapted = app(EvolutionGovernorService::class)->adaptPlan($plan, $snapshot);
 
         $this->assertNotSame($plan, $adapted);
         $this->assertSame(
@@ -400,5 +482,92 @@ class AdaptiveParentEcosystemTest extends TestCase
             'evidence' => json_encode(['protocol' => 'evolutionary_authority_foundry_v1', 'fixture' => true, 'promotion_evidence' => false]),
             'evaluated_at' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
+    }
+
+    /** @param array<string,mixed> $niche */
+    private function attachContextualMentorAuthority(ModelVersion $mentor, array $niche): void
+    {
+        $context = app(ContextContractV2Service::class)->project($niche);
+        $core = [
+            'protocol' => ContextualCausalTraitCapsuleService::PROTOCOL,
+            'hash_protocol' => ContextualCausalTraitCapsuleService::HASH_PROTOCOL,
+            'trait' => [
+                'gene' => 'ema_fast', 'old_value' => 50, 'tested_value' => 51,
+                'direction' => 'increase', 'executable' => true,
+            ],
+            'instrument_bundle' => [
+                'status' => 'exact_bundle_attested', 'playbook_key' => 'test-trend-playbook',
+                'primary_instrument_key' => 'trend_pullback',
+                'instrument_keys' => ['trend_pullback', 'atr_risk_envelope', 'cost_aware_exit'],
+                'bundle_hash' => hash('sha256', 'test-trend-bundle'),
+                'assignment_hash' => hash('sha256', 'test-assignment'),
+                'runtime_trace_hash' => hash('sha256', 'test-trace'),
+                'powered_context_slices' => 3,
+                'credit_scope' => 'atomic_bundle_only_until_factorial_component_ablation',
+                'component_synergy_claimed' => false,
+            ],
+            'activation_context' => [
+                'protocol' => ContextContractV2Service::PROTOCOL, 'status' => 'valid',
+                'predicate' => array_filter((array) data_get($context, 'extended_axes', []), fn ($value): bool => $value !== null && $value !== ''),
+                'context_hash' => data_get($context, 'identity_hash'),
+            ],
+            'scope' => ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend'],
+            'frozen_dependencies' => [
+                'pair_id' => 1, 'causal_baseline_agent_id' => 1, 'causal_baseline_model_version_id' => 1,
+                'source_agent_id' => 1, 'source_model_version_id' => $mentor->id,
+                'data_hash' => str_repeat('a', 64), 'execution_hash' => str_repeat('b', 64),
+            ],
+        ];
+        $capsule = [
+            ...$core, 'status' => 'sealed', 'capsule_hash' => $this->canonicalHash($core),
+            'target_effect_vector' => ['target' => 'profit_factor', 'mean_delta' => .2, 'total_windows' => 3],
+            'non_target_effect_vector' => ['non_target_regression' => false],
+            'contraindicated_contexts' => [],
+            'support' => ['revision' => 3, 'component_status' => 'component_confirmed',
+                'receipt_ids' => [1, 2, 3], 'response_map_ids' => [1, 2, 3], 'independent_windows' => 3],
+            'authority_level' => 'causally_confirmed_component',
+            'expiry' => ['policy' => 'revalidate_on_data_execution_drift_or_context_contraindication'],
+            'promotion_evidence' => false,
+        ];
+        $this->assertTrue(app(ContextualCausalTraitCapsuleService::class)->assess($capsule, 'ema_fast', $niche)['valid']);
+
+        DB::table('evolutionary_authority_ledgers')->where('model_version_id', $mentor->id)->update([
+            'evidence' => json_encode([
+                'protocol' => EvolutionaryAuthorityFoundryService::PROTOCOL,
+                'trait_capsule_valid' => true, 'trait_capsule' => $capsule,
+                'incubation_passed' => true, 'descendant_improving_children' => 2,
+                'context_trust_confirmed' => true, 'promotion_evidence' => false,
+            ]),
+            'updated_at' => now(),
+        ]);
+        $trust = app(ParentContextTrustService::class);
+        $trust->record($mentor, 'XAUUSD', 'H1', 'trend', 'ema_fast', $niche, 'positive', .1,
+            ['evidence_run_id' => 'adaptive-mentor-descendant-a', 'counterfactual_status' => 'matched_trait_ablation_positive']);
+        $trust->record($mentor, 'XAUUSD', 'H1', 'trend', 'ema_fast', $niche, 'positive', .2,
+            ['evidence_run_id' => 'adaptive-mentor-descendant-b', 'counterfactual_status' => 'matched_trait_ablation_positive']);
+    }
+
+    private function canonicalHash(mixed $value): string
+    {
+        $canonicalize = function (mixed $item) use (&$canonicalize): mixed {
+            if (is_int($item) || is_float($item)) {
+                $number = rtrim(rtrim(sprintf('%.14F', (float) $item), '0'), '.');
+
+                return 'number:'.($number === '-0' || $number === '' ? '0' : $number);
+            }
+            if (! is_array($item)) {
+                return $item;
+            }
+            foreach ($item as $key => $child) {
+                $item[$key] = $canonicalize($child);
+            }
+            if (! array_is_list($item)) {
+                ksort($item);
+            }
+
+            return $item;
+        };
+
+        return hash('sha256', json_encode($canonicalize($value), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR));
     }
 }

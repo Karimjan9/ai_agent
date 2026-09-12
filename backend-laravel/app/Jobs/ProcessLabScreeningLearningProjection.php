@@ -2,16 +2,19 @@
 
 namespace App\Jobs;
 
-use App\Models\CandidateGateDecision;
 use App\Models\AgentLearningEpisode;
+use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
-use App\Services\AgentKnowledgeService;
+use App\Models\LabLearningLanePair;
 use App\Services\AdversarialCoEvolutionService;
+use App\Services\AgentKnowledgeService;
 use App\Services\AgentProgressCardService;
+use App\Services\CausalEdgeAccountingService;
 use App\Services\FailureRepairAnchorService;
+use App\Services\InstrumentInvocationLedgerService;
 use App\Services\LabImmutableEvidenceService;
-use App\Services\LearningLaneService;
 use App\Services\LearningKernelService;
+use App\Services\LearningLaneService;
 use App\Services\LearningReceiptService;
 use App\Services\MutationResponseMapService;
 use App\Services\ParentAwareCreditService;
@@ -39,8 +42,11 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 0;
+
     public int $maxExceptions = 3;
+
     public int $timeout = 300;
+
     public int $uniqueFor = 86400;
 
     public function __construct(
@@ -87,6 +93,8 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         LearningReceiptService $learningReceipts,
         SkillZooService $skillZoo,
         AdversarialCoEvolutionService $adversarialMarket,
+        InstrumentInvocationLedgerService $instrumentInvocations,
+        CausalEdgeAccountingService $edgeAccounting,
     ): void {
         $agent = LabAgent::with('modelVersion', 'generation')->find($this->labAgentId);
         $decision = CandidateGateDecision::find($this->decisionId);
@@ -102,6 +110,9 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         }
 
         $result = [...$this->screenProjection, 'evidence_run_id' => $this->runId];
+        // Catalogue selection alone is not an invocation. The ledger opens
+        // only after Python returned an exact assignment/parameter attestation.
+        $instrumentInvocations->recordResearchObservation($agent, $result, 'screening');
         if ((int) data_get($agent->modelVersion->metadata, 'repair_anchor.id', 0) > 0) {
             $repairAnchors->recordRepairScreeningOutcome($agent, $result);
         } elseif ((string) $decision->decision === 'failed') {
@@ -138,8 +149,12 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
             $screeningResponseMap,
         );
         $pair = is_array($pairProjection) && filled($pairProjection['id'])
-            ? \App\Models\LabLearningLanePair::find((int) $pairProjection['id'])
+            ? LabLearningLanePair::find((int) $pairProjection['id'])
             : null;
+        // The service itself re-verifies generation, snapshot and execution
+        // identity. Missing controls remain awaiting evidence rather than
+        // being guessed from parent/baseline metrics.
+        $instrumentInvocations->settleResearchPair($pair);
         $learningReceipts->settle($agent->fresh(['modelVersion']), $result, $pair);
         $credit = $parentCredit->recordScreening(
             $agent->fresh(['modelVersion']),
@@ -174,6 +189,15 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         $episodeId = (int) data_get($freshModel?->metadata, 'learning_decision.episode_id', 0);
         $episode = $episodeId > 0 ? AgentLearningEpisode::find($episodeId) : null;
         if ($episode) {
+            // The replay payload uses domain metrics (PF, drawdown, powered
+            // folds, calibration, abstention, ...), while the learning
+            // kernel consumes a normalized multi-objective vector. Passing
+            // the raw replay here made every screening settlement look as if
+            // all reward components were missing, collapsing useful research
+            // observations to 0/-1. This projection remains diagnostic: any
+            // component unavailable at screening stays null and can never
+            // become canonical/promotion evidence.
+            $learningMetrics = $edgeAccounting->project($result);
             $learningKernel->settleOutcome($episode, [
                 'source_key' => 'screening-decision:'.$agent->id.':'.$this->runId,
                 'source_type' => LabAgent::class,
@@ -181,7 +205,8 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
                 'outcome_status' => 'settled',
                 'failure_class' => data_get($result, 'mutation_observability.declared_target', data_get($freshModel?->metadata, 'generation_target', 'profit_factor')),
                 'parameter_key' => data_get($freshModel?->metadata, 'learning_decision.selected_gene'),
-                'metrics' => $result,
+                'metrics' => $learningMetrics,
+                'reward_stage' => 'screening_diagnostic',
             ]);
             $metadata = (array) $freshModel->metadata;
             $metadata['learning_decision']['outcome_status'] = 'screening_settled';

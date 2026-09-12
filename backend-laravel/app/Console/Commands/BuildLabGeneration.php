@@ -14,7 +14,7 @@ class BuildLabGeneration extends Command
     public function handle(LabPopulationService $service): int
     {
         $symbols = $this->argument('symbol') ? [strtoupper($this->argument('symbol'))] : ['XAUUSD', 'EURUSD', 'GBPUSD'];
-        $timeframe = strtoupper((string) $this->option('timeframe'));
+        $requestedTimeframe = strtoupper((string) $this->option('timeframe'));
         $trigger = (string) $this->option('trigger');
         // Candidate handoff is invoked after screening/full selection has
         // already produced the current curriculum.  Historical learning is
@@ -24,6 +24,9 @@ class BuildLabGeneration extends Command
         // consumes the latest append-only insights and checkpoint inputs.
         $refreshHistoricalLearning = ! in_array($trigger, ['candidate_handoff', 'data_edge_audit', 'operator_successor'], true);
         foreach ($symbols as $symbol) {
+            $timeframe = $symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
+                ? strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'))
+                : $requestedTimeframe;
             $generation = $service->build(
                 $symbol,
                 $trigger,

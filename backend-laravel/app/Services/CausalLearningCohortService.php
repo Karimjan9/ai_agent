@@ -7,6 +7,7 @@ use App\Models\AgentLearningMutationIntent;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
+use App\Models\ModelVersion;
 use Illuminate\Support\Facades\Schema;
 
 /** Binds constructed agents to the pre-registered counterfactual triplet. */
@@ -122,7 +123,9 @@ class CausalLearningCohortService
     /** Terminalize a pre-replay triplet that failed immutable queue admission. */
     public function invalidateGeneration(LabGeneration $generation, array $reasonCodes): int
     {
-        if (! Schema::hasTable('agent_learning_causal_experiments')) return 0;
+        if (! Schema::hasTable('agent_learning_causal_experiments')) {
+            return 0;
+        }
 
         $experiments = AgentLearningCausalExperiment::query()
             ->where('lab_generation_id', $generation->id)
@@ -150,7 +153,9 @@ class CausalLearningCohortService
                 $experiment->control_agent_id,
             ]) as $agentId) {
                 $agent = LabAgent::query()->with('modelVersion')->find($agentId);
-                if (! $agent?->modelVersion) continue;
+                if (! $agent?->modelVersion) {
+                    continue;
+                }
                 if (! in_array((string) $agent->lifecycle_status, [
                     'rejected', 'stagnated', 'retired', 'technical_quarantine',
                 ], true)) {
@@ -206,6 +211,7 @@ class CausalLearningCohortService
                 'status' => 'awaiting_counterfactuals',
                 'evidence' => [
                     'protocol' => CausalLearningCohortPlannerService::PROTOCOL,
+                    'confirmation_evidence_protocol' => CausalLearningConfirmationService::EVIDENCE_PROTOCOL,
                     'experiment_kind' => (string) data_get($contract, 'experiment_kind', 'memory_confirmation'),
                     'source_causal_experiment_id' => (int) data_get($contract, 'source_causal_experiment_id', 0) ?: null,
                     'repair_lineage' => in_array((string) data_get($contract, 'experiment_kind'), [
@@ -230,8 +236,11 @@ class CausalLearningCohortService
                         'promotion_evidence' => false,
                     ] : null,
                     'source_pair_id' => (int) data_get($contract, 'source_pair_id', 0),
+                    'root_source_pair_id' => (int) data_get($contract, 'root_source_pair_id', data_get($contract, 'source_pair_id', 0)),
                     'source_control_agent_id' => (int) data_get($contract, 'source_control_agent_id', 0),
                     'baseline_model_version_id' => (int) data_get($contract, 'baseline_model_version_id', 0),
+                    'baseline_policy' => (string) data_get($contract, 'baseline_policy', 'original_frozen_control'),
+                    'research_ratchet' => (array) data_get($contract, 'research_ratchet', []),
                     'baseline_old_value' => data_get($contract, 'baseline_old_value'),
                     'construction_protocol' => (string) data_get($contract, 'construction_protocol', ''),
                     'activation_screen' => (array) data_get($contract, 'activation_screen', []),
@@ -367,7 +376,7 @@ class CausalLearningCohortService
         if ($baselineModelId <= 0 || (int) $guided?->parent_a_model_version_id !== $baselineModelId) {
             $reasons[] = 'SOURCE_BASELINE_MODEL_MISMATCH';
         }
-        $baselineParameters = (array) \App\Models\ModelVersion::query()->find($baselineModelId)?->parameters;
+        $baselineParameters = (array) ModelVersion::query()->find($baselineModelId)?->parameters;
         if ($baselineParameters === []) {
             $reasons[] = 'SOURCE_BASELINE_PARAMETERS_MISSING';
         } else {

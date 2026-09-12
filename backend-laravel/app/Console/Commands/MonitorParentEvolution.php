@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Services\ParentAwareCreditService;
 use App\Console\Commands\Concerns\OperationalCommand;
+use App\Services\ParentAwareCreditService;
 
 class MonitorParentEvolution extends OperationalCommand
 {
@@ -16,15 +16,21 @@ class MonitorParentEvolution extends OperationalCommand
 
     public function handle(ParentAwareCreditService $evolution): int
     {
+        [$symbol, $timeframe] = $this->canonicalLaboratoryScope(
+            (string) ($this->argument('symbol') ?: 'XAUUSD'),
+            (string) $this->option('timeframe'),
+        );
         $result = $evolution->monitor(
-            strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD')),
-            strtoupper((string) $this->option('timeframe')),
+            $symbol,
+            $timeframe,
         );
         if ($this->option('json')) {
             $this->writeJson($result, pretty: true);
+
             return self::SUCCESS;
         }
         $this->writeMetrics($result, ['protocol', 'promotion_evidence']);
+
         return self::SUCCESS;
     }
 }

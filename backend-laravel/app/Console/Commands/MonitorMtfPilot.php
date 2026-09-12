@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Services\MtfPilotMonitoringService;
 use App\Console\Commands\Concerns\OperationalCommand;
+use App\Services\MtfPilotMonitoringService;
 
 class MonitorMtfPilot extends OperationalCommand
 {
@@ -13,7 +13,7 @@ class MonitorMtfPilot extends OperationalCommand
         {--strict : Return failure when a critical MTF check exists}
         {--json : Print the complete monitor report as JSON}';
 
-    protected $description = 'Monitor closed H1 context, M15 execution, Risk Sentinel, paper lifecycle, shadow twin and ablation controls';
+    protected $description = 'Monitor H1 regime and M15 setup evidence inside the single XAUUSD organism; production execution remains M5';
 
     public function handle(MtfPilotMonitoringService $monitor): int
     {

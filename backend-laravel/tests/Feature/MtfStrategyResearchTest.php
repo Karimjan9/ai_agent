@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\ModelMarketPerformance;
+use App\Models\ModelVersion;
 use App\Models\MtfStrategyResearchRun;
 use App\Models\MtfAblationRun;
 use App\Services\MtfStrategyResearchReportService;
@@ -9,6 +11,7 @@ use App\Services\MtfStrategyResearchService;
 use App\Services\MtfCouncilGateService;
 use App\Services\MtfControlReplacementGateService;
 use App\Services\MtfResearchSnapshotService;
+use App\Services\MtfResearchCohortService;
 use Illuminate\Support\Facades\File;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use LogicException;
@@ -57,6 +60,36 @@ class MtfStrategyResearchTest extends TestCase
         );
         $this->assertTrue($volume->every(fn (array $item): bool => ($item['evidence_basis']['source_url'] ?? '') !== ''));
         $this->assertCount(1, collect($service->select('council_transition_risk_router_v1', 4)));
+    }
+
+    public function test_default_candidate_comes_from_unified_organism_not_legacy_m15_population(): void
+    {
+        $unified = ModelVersion::create([
+            'name' => 'unified-g212', 'strategy' => 'hybrid', 'version' => 'v212',
+            'generation' => 212, 'status' => 'testing', 'parameters' => [],
+            'metadata' => [], 'evidence_status' => 'valid',
+        ]);
+        $unifiedPerformance = ModelMarketPerformance::create([
+            'model_version_id' => $unified->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'strategy_family' => 'hybrid', 'status' => 'rejected', 'metrics' => [],
+            'evidence_status' => 'valid',
+        ]);
+        $legacy = ModelVersion::create([
+            'name' => 'legacy-m15-g3', 'strategy' => 'hybrid', 'version' => 'v3',
+            'generation' => 3, 'status' => 'testing', 'parameters' => [],
+            'metadata' => [], 'evidence_status' => 'valid',
+        ]);
+        ModelMarketPerformance::create([
+            'model_version_id' => $legacy->id, 'symbol' => 'XAUUSD', 'timeframe' => 'M15',
+            'strategy_family' => 'hybrid', 'status' => 'rejected', 'metrics' => [],
+            'evidence_status' => 'valid',
+        ]);
+
+        $selected = app(MtfResearchCohortService::class)->candidate('XAUUSD');
+
+        $this->assertSame($unifiedPerformance->id, $selected?->id);
+        $this->assertSame('H1', $selected?->timeframe);
+        $this->assertSame(212, $selected?->modelVersion?->generation);
     }
 
     public function test_challenger_frontier_rotates_unseen_families_without_replacing_the_frozen_control(): void
@@ -166,6 +199,29 @@ class MtfStrategyResearchTest extends TestCase
         $this->assertFalse($result['replacement_authorized']);
     }
 
+    public function test_latest_historical_control_is_never_mislabeled_as_current_cohort(): void
+    {
+        $historicalHash = str_repeat('9', 64);
+        MtfAblationRun::create([
+            'pilot_id' => 'xauusd_h1_m15_v1', 'symbol' => 'XAUUSD',
+            'regime_timeframe' => 'H1', 'entry_timeframe' => 'M15',
+            'run_key' => hash('sha256', 'historical-only-control'),
+            'data_hash' => $historicalHash, 'execution_hash' => str_repeat('8', 64),
+            'status' => 'completed', 'variants' => [], 'promotion_evidence' => false,
+            'completed_at' => now(),
+        ]);
+
+        // No unified-organism candidate/training payload exists in this
+        // fixture. The old implementation incorrectly reused the row above
+        // and called it the current cohort.
+        $report = app(MtfStrategyResearchReportService::class)->report('XAUUSD', 720);
+
+        $this->assertNull($report['current_cohort_data_hash']);
+        $this->assertSame('unavailable', $report['current_cohort_status']);
+        $this->assertSame($historicalHash, data_get($report, 'latest_controlled_ablation.data_hash'));
+        $this->assertSame('canonical_payload_observation', $report['current_cohort_source']);
+    }
+
     public function test_report_classifies_entry_starvation_and_applies_family_budget_without_mutating_gates(): void
     {
         $dataHash = str_repeat('c', 64);
@@ -224,7 +280,7 @@ class MtfStrategyResearchTest extends TestCase
             ]);
         }
 
-        $report = app(MtfStrategyResearchReportService::class)->report('XAUUSD', 720);
+        $report = app(MtfStrategyResearchReportService::class)->report('XAUUSD', 720, $dataHash);
 
         $this->assertSame(3, $report['run_count']);
         $this->assertSame('mtf_entry_starvation', $report['runs'][0]['classification']);

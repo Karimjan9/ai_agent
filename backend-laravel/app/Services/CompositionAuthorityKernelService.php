@@ -32,7 +32,14 @@ class CompositionAuthorityKernelService
     public function freeze(array $proposal): array
     {
         $symbol = strtoupper((string) ($proposal['symbol'] ?? 'XAUUSD'));
-        if ($symbol !== 'XAUUSD') throw new \InvalidArgumentException('Composition Authority faqat XAUUSD research scope uchun ruxsat beradi.');
+        if ($symbol !== 'XAUUSD') {
+            throw new \InvalidArgumentException('Composition Authority faqat XAUUSD research scope uchun ruxsat beradi.');
+        }
+        $storageTimeframe = strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'));
+        $executionTimeframe = strtoupper((string) config('services.xauusd_organism.execution_timeframe', 'M5'));
+        $sensorScope = array_map('strtoupper', array_keys((array) config('services.xauusd_organism.timeframe_roles', [
+            'H4' => 'macro_bias', 'H1' => 'regime_and_location', 'M15' => 'setup_and_confirmation', 'M5' => 'entry_and_execution',
+        ])));
 
         $strategyId = (string) ($proposal['strategy_id'] ?? '');
         $tacticId = (string) ($proposal['tactic_id'] ?? 'trend_pullback');
@@ -68,7 +75,7 @@ class CompositionAuthorityKernelService
         $typedProgram = $this->typedPrograms->compile($proposal, $components, $temporal, $invalidationTarget, $management);
         $learningDirective = (array) ($proposal['learning_directive'] ?? []);
         $payload = $this->canonicalize([
-            'protocol' => self::PROTOCOL, 'symbol' => $symbol, 'timeframe' => strtoupper((string) ($proposal['timeframe'] ?? 'H1')),
+            'protocol' => self::PROTOCOL, 'symbol' => $symbol, 'timeframe' => $storageTimeframe,
             'components' => $components, 'state' => $state, 'prior_ids' => $priorIds,
             'learning_receipt_ids' => (array) ($learningDirective['consumed_receipt_ids'] ?? []),
             'data_hash' => (string) ($proposal['data_hash'] ?? ''), 'execution_hash' => (string) ($proposal['execution_hash'] ?? ''),
@@ -80,7 +87,10 @@ class CompositionAuthorityKernelService
             'composition_id' => $compositionId,
             'status' => 'frozen_research_only',
             'tradable_symbol' => 'XAUUSD',
-            'temporal_sensor_scope' => ['H1', 'M30', 'M15', 'M5', 'M1'],
+            'population_scope' => (string) config('services.xauusd_organism.population_scope', 'symbol'),
+            'laboratory_storage_timeframe' => $storageTimeframe,
+            'execution_timeframe' => $executionTimeframe,
+            'temporal_sensor_scope' => $sensorScope,
             'decision_tools' => $components['tools'],
             'market_state' => $state,
             'components' => $components,
@@ -212,9 +222,14 @@ class CompositionAuthorityKernelService
     private function canonicalize(array $value): array
     {
         foreach ($value as $key => $item) {
-            if (is_array($item)) $value[$key] = $this->canonicalize($item);
+            if (is_array($item)) {
+                $value[$key] = $this->canonicalize($item);
+            }
         }
-        if (! array_is_list($value)) ksort($value);
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
         return $value;
     }
 }

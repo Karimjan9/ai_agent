@@ -3,10 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\EconomicEvent;
-use App\Services\EconomicCalendarService;
 use App\Services\CalendarAlignmentEvidenceService;
+use App\Services\EconomicCalendarService;
 use App\Services\OfficialUsdCalendarBackfillService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -61,6 +62,55 @@ class EconomicCalendarServiceTest extends TestCase
         $this->assertSame(1, $result['synced']);
         Http::assertSentCount(2);
         Http::assertSent(fn ($request) => $request['apikey'] === 'secondary-key');
+    }
+
+    public function test_failed_external_calendar_sync_fails_closed_instead_of_reporting_clear(): void
+    {
+        config([
+            'services.economic_calendar.enabled' => true,
+            'services.economic_calendar.provider' => 'financial_modeling_prep',
+            'services.economic_calendar.endpoint' => 'https://financialmodelingprep.com/stable/economic-calendar',
+            'services.economic_calendar.api_key' => 'plan-limited-key',
+            'services.economic_calendar.api_key_secondary' => null,
+        ]);
+        Cache::forget('economic-calendar:provider-sync:financial_modeling_prep');
+        Http::fake([
+            'financialmodelingprep.com/stable/economic-calendar*' => Http::response(['message' => 'plan required'], 402),
+        ]);
+
+        $result = app(EconomicCalendarService::class)->sync();
+        $veto = app(EconomicCalendarService::class)->veto('XAUUSD');
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertTrue($veto['active']);
+        $this->assertSame('provider_unavailable', $veto['status']);
+    }
+
+    public function test_official_bls_provider_syncs_without_api_key_and_vetoes_release_window(): void
+    {
+        config([
+            'services.economic_calendar.enabled' => true,
+            'services.economic_calendar.provider' => 'official_bls',
+            'services.economic_calendar.api_key' => null,
+            'services.economic_calendar.api_key_secondary' => null,
+        ]);
+        Http::preventStrayRequests();
+
+        $result = app(EconomicCalendarService::class)->sync(
+            'official_bls',
+            now('UTC')->setDate(2026, 1, 1)->startOfDay(),
+            now('UTC')->setDate(2026, 12, 31)->endOfDay(),
+        );
+        $veto = app(EconomicCalendarService::class)->veto(
+            'XAUUSD',
+            now('UTC')->setDate(2026, 9, 11)->setTime(12, 30),
+        );
+
+        $this->assertSame('ok', $result['status']);
+        $this->assertSame(24, $result['synced']);
+        $this->assertTrue($veto['active']);
+        $this->assertSame('veto', $veto['status']);
+        $this->assertSame('official_bls', EconomicEvent::findOrFail($veto['event']['id'])->source);
     }
 
     public function test_alpha_vantage_macro_headline_becomes_short_lived_usd_execution_veto(): void

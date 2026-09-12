@@ -15,8 +15,8 @@ use App\Models\PaperSignalPassport;
 use App\Models\RealityScore;
 use App\Models\ServiceHealthCheck;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -41,13 +41,17 @@ class LighthouseVerticalLoopMonitoringService
         private readonly LabImmutableEvidenceService $evidence,
         private readonly PaperEvidenceReadinessService $paperReadiness,
         private readonly SystemLogService $logs,
+        private readonly LabPopulationService $population,
     ) {}
 
     /** @return array<string, mixed> */
     public function inspect(string $symbol = 'XAUUSD', string $timeframe = 'H1', bool $persist = true): array
     {
         $symbol = strtoupper(trim($symbol));
-        $timeframe = strtoupper(trim($timeframe));
+        $requestedTimeframe = strtoupper(trim($timeframe));
+        $timeframe = $symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
+            ? strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'))
+            : $requestedTimeframe;
         $now = CarbonImmutable::now('UTC');
 
         if ($symbol !== LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
@@ -117,7 +121,8 @@ class LighthouseVerticalLoopMonitoringService
         );
 
         if (! $generation) {
-            $addCheck($checks, 'GENERATION', 'blocked', 'XAUUSD H1 lighthouse has no generation to monitor.', []);
+            $addCheck($checks, 'GENERATION', 'blocked', 'The XAUUSD organism has no generation to monitor.', []);
+
             return $this->finish($symbol, $timeframe, null, $now, $checks, [], $persist);
         }
 
@@ -158,10 +163,8 @@ class LighthouseVerticalLoopMonitoringService
         );
         $addCheck(
             $checks,
-            'M15_ENTRY_LAYER',
-            ! $entryLayer['shadow_only'] || $entryLayer['parent_transfer_violations'] > 0
-                ? 'blocked'
-                : ($entryLayer['forward_ready'] ? 'passed' : 'attention'),
+            'MTF_ROLE_CONTRACT',
+            $entryLayer['separate_population_active'] ? 'blocked' : 'passed',
             $entryLayer['message'],
             $entryLayer,
         );
@@ -186,6 +189,7 @@ class LighthouseVerticalLoopMonitoringService
             'checked_at' => $now->toIso8601String(),
             'symbol' => $symbol,
             'timeframe' => $timeframe,
+            'organism' => $this->organismContract(),
             'lab_id' => $lab?->id,
             'generation_id' => $generation->id,
             'generation' => $generation->generation,
@@ -213,7 +217,7 @@ class LighthouseVerticalLoopMonitoringService
         $checks = [[
             'code' => 'LIGHTHOUSE_SCOPE',
             'status' => 'blocked',
-            'message' => 'Vertical-loop monitor is fail-closed outside XAUUSD H1.',
+            'message' => 'Vertical-loop monitor is fail-closed outside the XAUUSD organism.',
             'metrics' => [
                 'requested_symbol' => $symbol,
                 'requested_timeframe' => $timeframe,
@@ -228,7 +232,7 @@ class LighthouseVerticalLoopMonitoringService
             'symbol' => $symbol,
             'timeframe' => $timeframe,
             'current_stage' => 'scope_blocked',
-            'next_operator_action' => 'Run the lighthouse monitor for XAUUSD H1; M15 remains an execution/shadow lane.',
+            'next_operator_action' => 'Monitor the single XAUUSD organism; H1 is only its storage key, M15 owns setup/confirmation, and M5 owns execution.',
             'milestones' => [],
             'promotion_evidence' => false,
         ], $persist);
@@ -237,94 +241,33 @@ class LighthouseVerticalLoopMonitoringService
     /** @return array<string, mixed> */
     private function entryLayerState(): array
     {
-        $lab = AiLaboratory::query()
+        $archive = AiLaboratory::query()
             ->where('symbol', LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL)
             ->where('timeframe', 'M15')
-            ->where('is_active', true)
             ->first();
-        $generation = $lab?->generations()
-            ->with('agents')
-            ->latest('generation')
-            ->first();
-        if (! $lab || ! $generation) {
-            return [
-                'lab_id' => $lab?->id,
-                'generation_id' => $generation?->id,
-                'lifecycle_mode' => $lab?->lifecycle_mode,
-                'shadow_only' => true,
-                'forward_ready' => false,
-                'forward_count' => 0,
-                'forward_performance_ids' => [],
-                'full_replay_count' => 0,
-                'parent_transfer_violations' => 0,
-                'message' => 'Independent XAUUSD M15 entry shadow lab has no completed generation yet.',
-            ];
-        }
-
-        $agents = $generation->agents;
-        $modelIds = $agents->pluck('model_version_id')->map(fn ($id): int => (int) $id)->values()->all();
-        $performances = ModelMarketPerformance::query()
-            ->whereIn('model_version_id', $modelIds ?: [0])
-            ->where('symbol', LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL)
-            ->where('timeframe', 'M15')
-            ->get();
-        $fullRuns = LabEvaluationRun::query()
-            ->where('lab_generation_id', $generation->id)
-            ->where('phase', 'full_validation')
-            ->where('status', 'completed')
-            ->latest('id')
-            ->get()
-            ->groupBy('lab_agent_id');
-        $fullReplayAgentIds = $fullRuns->filter(function ($runs): bool {
-            $run = $runs->first();
-
-            return $run && $this->evidence->learningEligibility($run)['complete'];
-        })->keys()->map(fn ($id): int => (int) $id)->values();
-        $h1Generation = AiLaboratory::query()
-            ->where('symbol', LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL)
-            ->where('timeframe', LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)
-            ->first()?->generations()
-            ->latest('generation')
-            ->first();
-        $h1ModelIds = $h1Generation?->agents()
-            ->pluck('model_version_id')
-            ->map(fn ($id): int => (int) $id)
-            ->values() ?? collect();
-        $parentViolations = $agents->filter(fn ($agent): bool =>
-            $h1ModelIds->contains((int) $agent->parent_a_model_version_id)
-            || $h1ModelIds->contains((int) $agent->parent_b_model_version_id)
-        )->count();
-        $forward = $performances->filter(function (ModelMarketPerformance $performance) use ($agents, $fullReplayAgentIds): bool {
-            $agent = $agents->firstWhere('model_version_id', $performance->model_version_id);
-
-            return $agent
-                && $fullReplayAgentIds->contains((int) $agent->id)
-                && in_array((string) $performance->status, ['forward_validated', 'paper', 'champion'], true)
-                && (string) $performance->evidence_status === 'valid';
-        })->values();
-        $shadowOnly = strtolower((string) $lab->lifecycle_mode) === 'shadow';
-        $forwardReady = $shadowOnly && $parentViolations === 0 && $forward->isNotEmpty();
+        $archiveHasActiveGeneration = $archive?->generations()
+            ->whereIn('status', self::ACTIVE_GENERATION_STATUSES)
+            ->exists() ?? false;
+        $separatePopulationActive = (bool) $archive?->is_active || $archiveHasActiveGeneration;
 
         return [
-            'lab_id' => $lab->id,
-            'generation_id' => $generation->id,
-            'generation' => $generation->generation,
-            'generation_status' => $generation->status,
-            'lifecycle_mode' => $lab->lifecycle_mode,
-            'shadow_only' => $shadowOnly,
-            'agent_count' => $agents->count(),
-            'forward_ready' => $forwardReady,
-            'forward_count' => $forward->count(),
-            'forward_performance_ids' => $forward->pluck('id')->map(fn ($id): int => (int) $id)->all(),
-            'full_replay_count' => $fullReplayAgentIds->count(),
-            'parent_transfer_violations' => $parentViolations,
-            'message' => ! $shadowOnly
-                ? 'M15 entry lab is not shadow-only; scope contract is violated.'
-                : ($parentViolations > 0
-                    ? 'M15 entry population has an H1 parent link; independent population contract is violated.'
-                    : ($forwardReady
-                        ? 'Independent M15 entry layer has a complete forward-valid shadow candidate.'
-                        : 'M15 entry layer remains research/shadow-only until a complete forward-valid candidate exists.')),
+            'archive_lab_id' => $archive?->id,
+            'archive_active' => (bool) $archive?->is_active,
+            'archive_has_active_generation' => $archiveHasActiveGeneration,
+            'separate_population_active' => $separatePopulationActive,
+            'population_scope' => 'symbol',
+            'timeframe_roles' => (array) config('services.xauusd_organism.timeframe_roles', []),
+            // Compatibility fields remain zero/healthy for older consumers;
+            // forward and paper evidence now belongs to the unified generation.
+            'shadow_only' => true,
+            'forward_ready' => ! $separatePopulationActive,
+            'forward_count' => 0,
+            'forward_performance_ids' => [],
+            'full_replay_count' => 0,
+            'parent_transfer_violations' => 0,
+            'message' => $separatePopulationActive
+                ? 'A separate XAUUSD M15 population is active; the unified organism contract is violated.'
+                : 'M15 is the setup/confirmation role inside one XAUUSD population; no separate M15 population is active.',
         ];
     }
 
@@ -345,59 +288,125 @@ class LighthouseVerticalLoopMonitoringService
         ];
 
         $run = null;
-        if ($persist && Schema::hasTable('lighthouse_vertical_loop_monitor_runs')) {
-            $run = LighthouseVerticalLoopMonitorRun::create([
-                'lab_generation_id' => $generation?->id,
-                'symbol' => $symbol,
-                'timeframe' => $timeframe,
-                'generation' => $generation?->generation,
-                'stage' => (string) ($report['current_stage'] ?? 'unknown'),
-                'status' => $status,
-                'health_score' => $score,
-                'report' => $report,
-                'checked_at' => $now,
-            ]);
+        $persistenceRequested = $persist;
+        if ($persist && $generation && $this->population->constructorIsActive($symbol, $timeframe)) {
+            // The constructor owns a long-lived transaction while it seals a
+            // generation. An observational snapshot must never wait on its
+            // generation FK or turn healthy research into a failed scheduler
+            // job. The next scheduled monitor tick persists the same derived
+            // truth after the canonical owner releases its lease.
+            $persist = false;
+            $report['monitor_persistence'] = [
+                'status' => 'deferred',
+                'reason_code' => 'POPULATION_CONSTRUCTOR_ACTIVE',
+                'retry_policy' => 'next_scheduler_tick',
+                'canonical_evidence_affected' => false,
+            ];
         }
 
-        if ($persist && Schema::hasTable('service_health_checks')) {
-            $key = "lighthouse_vertical_loop:{$symbol}:{$timeframe}";
-            $previous = ServiceHealthCheck::query()->where('service_key', $key)->first();
-            ServiceHealthCheck::updateOrCreate(
-                ['service_key' => $key],
-                [
-                    'service_label' => "Lighthouse Vertical Loop {$symbol} {$timeframe}",
-                    'status' => $status,
-                    'health_score' => $score,
-                    'last_ok_at' => $status === 'ok' ? now() : $previous?->last_ok_at,
-                    'last_checked_at' => now(),
-                    'stale_after_seconds' => 900,
-                    'message' => (string) ($report['next_operator_action'] ?? "Vertical loop status: {$status}."),
-                    'metrics' => $report,
-                ],
-            );
+        if ($persist) {
+            try {
+                $run = DB::transaction(function () use ($generation, $symbol, $timeframe, $status, $score, $report, $now): ?LighthouseVerticalLoopMonitorRun {
+                    $run = null;
+                    if (Schema::hasTable('lighthouse_vertical_loop_monitor_runs')) {
+                        $run = LighthouseVerticalLoopMonitorRun::create([
+                            'lab_generation_id' => $generation?->id,
+                            'symbol' => $symbol,
+                            'timeframe' => $timeframe,
+                            'generation' => $generation?->generation,
+                            'stage' => (string) ($report['current_stage'] ?? 'unknown'),
+                            'status' => $status,
+                            'health_score' => $score,
+                            'report' => $report,
+                            'checked_at' => $now,
+                        ]);
+                    }
 
-            if ($previous?->status !== $status) {
-                $this->logs->write(
-                    'lighthouse_vertical_loop_status_changed',
-                    "Lighthouse vertical loop {$symbol} {$timeframe} status changed to {$status}.",
-                    ['previous_status' => $previous?->status, 'status' => $status, 'report' => $report],
-                    $status === 'critical' ? 'critical' : ($status === 'warning' ? 'warning' : 'info'),
-                    'lighthouse_vertical_loop',
-                    'monitor',
-                    $status,
-                    LighthouseVerticalLoopMonitorRun::class,
-                    $run?->id,
-                );
+                    if (Schema::hasTable('service_health_checks')) {
+                        $key = "lighthouse_vertical_loop:{$symbol}:{$timeframe}";
+                        $previous = ServiceHealthCheck::query()->where('service_key', $key)->first();
+                        ServiceHealthCheck::updateOrCreate(
+                            ['service_key' => $key],
+                            [
+                                'service_label' => "Lighthouse Vertical Loop {$symbol} {$timeframe}",
+                                'status' => $status,
+                                'health_score' => $score,
+                                'last_ok_at' => $status === 'ok' ? now() : $previous?->last_ok_at,
+                                'last_checked_at' => now(),
+                                'stale_after_seconds' => 900,
+                                'message' => (string) ($report['next_operator_action'] ?? "Vertical loop status: {$status}."),
+                                'metrics' => $report,
+                            ],
+                        );
+
+                        if ($previous?->status !== $status) {
+                            $this->logs->write(
+                                'lighthouse_vertical_loop_status_changed',
+                                "Lighthouse vertical loop {$symbol} {$timeframe} status changed to {$status}.",
+                                ['previous_status' => $previous?->status, 'status' => $status, 'report' => $report],
+                                $status === 'critical' ? 'critical' : ($status === 'warning' ? 'warning' : 'info'),
+                                'lighthouse_vertical_loop',
+                                'monitor',
+                                $status,
+                                LighthouseVerticalLoopMonitorRun::class,
+                                $run?->id,
+                            );
+                        }
+                    }
+
+                    return $run;
+                });
+            } catch (QueryException $exception) {
+                if (! $this->isTransientLockContention($exception)) {
+                    throw $exception;
+                }
+
+                // A constructor may acquire its lease in the narrow interval
+                // after the preflight probe. Roll back this disposable
+                // projection and let the next monitor tick persist it.
+                $report['monitor_persistence'] = [
+                    'status' => 'deferred',
+                    'reason_code' => 'TRANSIENT_DATABASE_LOCK_CONTENTION',
+                    'retry_policy' => 'next_scheduler_tick',
+                    'canonical_evidence_affected' => false,
+                ];
             }
         }
 
+        if ($persistenceRequested && ! isset($report['monitor_persistence'])) {
+            $report['monitor_persistence'] = [
+                'status' => 'persisted',
+                'reason_code' => null,
+                'retry_policy' => null,
+                'canonical_evidence_affected' => false,
+            ];
+        }
+
         return $report + ['monitor_run_id' => $run?->id];
+    }
+
+    private function isTransientLockContention(QueryException $exception): bool
+    {
+        $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
+        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+
+        return in_array($driverCode, [1205, 1213], true)
+            || $sqlState === '40001'
+            || str_contains(strtolower($exception->getMessage()), 'lock wait timeout')
+            || str_contains(strtolower($exception->getMessage()), 'deadlock found');
     }
 
     /** @return array<string, mixed> */
     private function scopeContract(?AiLaboratory $lab, ?LabGeneration $generation): array
     {
         $activeLabs = AiLaboratory::query()->where('is_active', true)->get(['id', 'symbol', 'timeframe', 'lifecycle_mode']);
+        $parallelXauusdLabs = $activeLabs->filter(fn (AiLaboratory $item): bool => strtoupper((string) $item->symbol) === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+            && strtoupper((string) $item->timeframe) !== LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME
+        )->map(fn (AiLaboratory $item): array => [
+            'symbol' => $item->symbol,
+            'timeframe' => $item->timeframe,
+            'lifecycle_mode' => $item->lifecycle_mode,
+        ])->values()->all();
         $violations = $activeLabs->filter(function (AiLaboratory $item): bool {
             $expected = strtoupper((string) $item->symbol) === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
                 && strtoupper((string) $item->timeframe) === LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME
@@ -414,8 +423,7 @@ class LighthouseVerticalLoopMonitoringService
             ->with('laboratory:id,symbol,timeframe,lifecycle_mode')
             ->whereIn('status', self::ACTIVE_GENERATION_STATUSES)
             ->get()
-            ->filter(fn (LabGeneration $item): bool =>
-                ! ($item->laboratory
+            ->filter(fn (LabGeneration $item): bool => ! ($item->laboratory
                     && strtoupper((string) $item->laboratory->symbol) === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
                     && strtoupper((string) $item->laboratory->timeframe) === LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)
                 && strtolower((string) $item->laboratory?->lifecycle_mode) === 'shadow'
@@ -425,8 +433,7 @@ class LighthouseVerticalLoopMonitoringService
             ->with('laboratory:id,symbol,timeframe,lifecycle_mode')
             ->whereIn('status', self::ACTIVE_GENERATION_STATUSES)
             ->get()
-            ->filter(fn (LabGeneration $item): bool =>
-                ! ($item->laboratory
+            ->filter(fn (LabGeneration $item): bool => ! ($item->laboratory
                     && strtoupper((string) $item->laboratory->symbol) === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
                     && strtoupper((string) $item->laboratory->timeframe) === LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME)
                 && strtolower((string) $item->laboratory?->lifecycle_mode) !== 'shadow'
@@ -436,6 +443,7 @@ class LighthouseVerticalLoopMonitoringService
         $ok = $lab !== null
             && strtolower((string) $lab->lifecycle_mode) === 'lighthouse'
             && $violations === []
+            && $parallelXauusdLabs === []
             && $unexpectedActive === 0;
 
         return [
@@ -445,10 +453,11 @@ class LighthouseVerticalLoopMonitoringService
             'active_labs' => $activeLabs->count(),
             'active_shadow_generations' => $activeShadow,
             'lifecycle_mode_violations' => $violations,
+            'parallel_xauusd_labs' => $parallelXauusdLabs,
             'unexpected_non_lighthouse_active_generations' => $unexpectedActive,
             'message' => $ok
-                ? 'XAUUSD H1 is lighthouse and all other active labs are shadow-only.'
-                : 'Lab scope does not match the lighthouse/shadow contract; promotion remains blocked.',
+                ? 'One XAUUSD multi-timeframe organism owns the production lineage; H1 is only its storage key.'
+                : 'Lab scope does not match the single-organism contract; promotion remains blocked.',
         ];
     }
 
@@ -477,8 +486,7 @@ class LighthouseVerticalLoopMonitoringService
             ? LabTrialLedger::query()->where('lab_generation_id', $generation->id)->get()
             : collect();
 
-        $canonicalTrialRows = $trialRows->filter(fn (LabTrialLedger $row): bool =>
-            (string) $row->identity_status === 'canonical'
+        $canonicalTrialRows = $trialRows->filter(fn (LabTrialLedger $row): bool => (string) $row->identity_status === 'canonical'
             && $this->isSha256($row->data_manifest_hash)
             && $this->isSha256($row->identity_fingerprint)
         );
@@ -528,7 +536,7 @@ class LighthouseVerticalLoopMonitoringService
         })->filter()->values();
         $forwardPass = $forwardAgentIds->intersect($fullPass)->isNotEmpty();
         $paperSignals = Schema::hasTable('paper_signals')
-            ? PaperSignal::query()->whereIn('model_market_performance_id', (array) $entryLayer['forward_performance_ids'] ?: [0])->where('symbol', LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL)->get()
+            ? PaperSignal::query()->whereIn('model_market_performance_id', $forwardPassIds->pluck('id')->all() ?: [0])->where('symbol', LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL)->get()
             : collect();
         $passports = Schema::hasTable('paper_signal_passports')
             ? PaperSignalPassport::query()->whereIn('paper_signal_id', $paperSignals->pluck('id')->all() ?: [0])->where('lane', 'official')->get()
@@ -547,7 +555,7 @@ class LighthouseVerticalLoopMonitoringService
             : collect();
         $realityScores = Schema::hasTable('reality_scores')
             ? RealityScore::query()
-                ->whereIn('source_id', $forwardPassIds->pluck('id')->merge($entryLayer['forward_performance_ids'])->all() ?: [0])
+                ->whereIn('source_id', $forwardPassIds->pluck('id')->all() ?: [0])
                 ->whereIn('source_type', [ModelMarketPerformance::class, 'model_market_performance'])
                 ->get()
             : collect();
@@ -556,8 +564,7 @@ class LighthouseVerticalLoopMonitoringService
         $fullReady = $candidateReady && $fullPass->isNotEmpty();
         $forwardReady = $fullReady && $forwardPass;
         $paperSignalReady = $forwardReady
-            && (bool) $entryLayer['forward_ready']
-            && (int) $entryLayer['parent_transfer_violations'] === 0
+            && ! (bool) $entryLayer['separate_population_active']
             && $validPassports->isNotEmpty();
         $paperOutcomeReady = $paperSignalReady && $paperOutcomes->isNotEmpty();
         $realityReady = $paperOutcomeReady && $realityScores->isNotEmpty();
@@ -588,13 +595,13 @@ class LighthouseVerticalLoopMonitoringService
                 'ready' => $paperSignalReady,
                 'count' => $validPassports->count(),
                 'signal_ids' => $paperSignals->pluck('id')->map(fn ($id): int => (int) $id)->all(),
-                'entry_layer_forward_count' => (int) $entryLayer['forward_count'],
+                'entry_layer_forward_count' => 0,
                 'official_passport_count' => $passports->count(),
                 'valid_passport_count' => $validPassports->count(),
                 'passport_integrity_missing_hash_count' => $passports->count() - $validPassports->count(),
                 'message' => $paperSignalReady
-                    ? 'An official MTF paper passport exists after both H1 regime and M15 entry layers passed.'
-                    : 'Paper signal is blocked until H1 forward, independent M15 entry forward, and an official passport all exist.',
+                    ? 'An official passport proves the unified H4/H1/M15/M5 organism evidence chain.'
+                    : 'Paper signal is blocked until the unified generation passes forward validation and an official MTF passport exists.',
             ],
             'paper_outcome' => [
                 'ready' => $paperOutcomeReady,
@@ -728,7 +735,7 @@ class LighthouseVerticalLoopMonitoringService
     /** @return array<string, mixed> */
     private function paperState(LabGeneration $generation, array $milestones, array $entryLayer): array
     {
-        $forwardIds = (array) ($entryLayer['forward_performance_ids'] ?? []);
+        $forwardIds = (array) data_get($milestones, 'forward.performance_ids', []);
         $signals = Schema::hasTable('paper_signals')
             ? PaperSignal::query()->whereIn('model_market_performance_id', $forwardIds ?: [0])->where('symbol', LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL)->get()
             : collect();
@@ -752,7 +759,7 @@ class LighthouseVerticalLoopMonitoringService
             'passport_missing_count' => max(0, $signals->count() - $validPassports->count()),
             'passport_integrity_missing_hash_count' => $passports->count() - $validPassports->count(),
             'paper_clock_started' => $validPassports->where('lane', 'official')->isNotEmpty() && (bool) data_get($milestones, 'paper_signal.ready', false),
-            'mtf_contract' => 'H1 closed regime + independent M15 entry + Risk Sentinel passport',
+            'mtf_contract' => 'One XAUUSD population: H4 macro + H1 regime/location + M15 setup/confirmation + M5 execution/invalidation + Risk Sentinel passport',
             'promotion_evidence' => false,
         ];
     }
@@ -862,6 +869,7 @@ class LighthouseVerticalLoopMonitoringService
         if (($strategy['screening_failure_count'] ?? 0) > 0 && ! $milestones['candidate']['ready']) {
             return $strategy['strategy_next_action'];
         }
+
         return match ($this->currentStage($milestones)) {
             'candidate' => 'Complete clean screening and canonical trial identity for one candidate.',
             'full_replay' => 'Dispatch full replay only for the reproducible candidate after the queue contract is satisfied.',
@@ -876,5 +884,17 @@ class LighthouseVerticalLoopMonitoringService
     private function isSha256(mixed $value): bool
     {
         return is_string($value) && preg_match('/^[a-f0-9]{64}$/i', trim($value)) === 1;
+    }
+
+    /** @return array<string, mixed> */
+    private function organismContract(): array
+    {
+        return [
+            'scope' => (string) config('services.xauusd_organism.symbol', 'XAUUSD'),
+            'population_scope' => (string) config('services.xauusd_organism.population_scope', 'symbol'),
+            'laboratory_storage_timeframe' => (string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'),
+            'execution_timeframe' => (string) config('services.xauusd_organism.execution_timeframe', 'M5'),
+            'timeframe_roles' => (array) config('services.xauusd_organism.timeframe_roles', []),
+        ];
     }
 }

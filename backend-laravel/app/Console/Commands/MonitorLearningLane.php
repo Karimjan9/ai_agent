@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\CanonicalLaboratoryScope;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
 use App\Services\LearningLaneService;
@@ -10,14 +11,18 @@ use Illuminate\Console\Command;
 /** Read-only operational monitor for the research-only learning lane. */
 class MonitorLearningLane extends Command
 {
+    use CanonicalLaboratoryScope;
+
     protected $signature = 'trading:monitor-learning-lane {symbol?} {--timeframe=H1} {--family=} {--json}';
 
     protected $description = 'Monitor paired learning observations, provisional skills and research replay status';
 
     public function handle(LearningLaneService $learning): int
     {
-        $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
-        $timeframe = strtoupper((string) $this->option('timeframe'));
+        [$symbol, $timeframe] = $this->canonicalLaboratoryScope(
+            (string) ($this->argument('symbol') ?: 'XAUUSD'),
+            (string) $this->option('timeframe'),
+        );
         $family = (string) $this->option('family') ?: null;
         $status = $learning->status($symbol, $timeframe, $family);
         $dispatches = LabLearningLaneDispatch::query()
