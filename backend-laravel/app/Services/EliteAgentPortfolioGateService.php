@@ -34,8 +34,7 @@ class EliteAgentPortfolioGateService
 
     public function syncMarket(string $symbol, string $timeframe, Collection $candidates): array
     {
-        $eligible = $this->eligibleMembers($candidates->filter(fn (ModelMarketPerformance $candidate): bool =>
-            $candidate->symbol === $symbol && $candidate->timeframe === $timeframe));
+        $eligible = $this->eligibleMembers($candidates->filter(fn (ModelMarketPerformance $candidate): bool => $candidate->symbol === $symbol && $candidate->timeframe === $timeframe));
 
         if ($eligible->isEmpty()) {
             return ['status' => 'waiting_for_individual_forward', 'portfolio' => null, 'members' => []];
@@ -78,6 +77,7 @@ class EliteAgentPortfolioGateService
                 'regime' => $this->targetRegime($candidate),
                 'volatility' => $this->targetVolatility($candidate),
                 'direction' => $this->targetDirection($candidate),
+                'session' => $this->targetSession($candidate),
             ])->values()->all(),
         ], JSON_PRESERVE_ZERO_FRACTION));
 
@@ -120,8 +120,7 @@ class EliteAgentPortfolioGateService
      */
     public function syncResearchMarket(string $symbol, string $timeframe, Collection $candidates): array
     {
-        $eligible = $this->eligibleResearchMembers($candidates->filter(fn (ModelMarketPerformance $candidate): bool =>
-            $candidate->symbol === $symbol && $candidate->timeframe === $timeframe));
+        $eligible = $this->eligibleResearchMembers($candidates->filter(fn (ModelMarketPerformance $candidate): bool => $candidate->symbol === $symbol && $candidate->timeframe === $timeframe));
         if ($eligible->isEmpty()) {
             return ['status' => 'waiting_for_portfolio_member_replay', 'portfolio' => null, 'members' => []];
         }
@@ -168,6 +167,7 @@ class EliteAgentPortfolioGateService
                 'regime' => $this->targetRegime($candidate),
                 'volatility' => $this->targetVolatility($candidate),
                 'direction' => $this->targetDirection($candidate),
+                'session' => $this->targetSession($candidate),
             ])->values()->all(),
         ], JSON_PRESERVE_ZERO_FRACTION));
         $portfolio = EliteAgentPortfolio::query()->firstOrCreate(
@@ -192,8 +192,7 @@ class EliteAgentPortfolioGateService
      */
     private function councilSequence(Collection $candidates): array
     {
-        $council = $candidates->filter(fn (ModelMarketPerformance $candidate): bool =>
-            data_get($candidate->modelVersion?->metadata, 'council_specialist_contract.protocol') === 'agent_council_v1'
+        $council = $candidates->filter(fn (ModelMarketPerformance $candidate): bool => data_get($candidate->modelVersion?->metadata, 'council_specialist_contract.protocol') === 'agent_council_v1'
         )->values();
 
         if ($council->isEmpty()) {
@@ -209,12 +208,10 @@ class EliteAgentPortfolioGateService
             ];
         }
 
-        $routerCount = $council->filter(fn (ModelMarketPerformance $candidate): bool =>
-            $this->councilRole($candidate) === 'transition_risk_router'
+        $routerCount = $council->filter(fn (ModelMarketPerformance $candidate): bool => $this->councilRole($candidate) === 'transition_risk_router'
         )->count();
         $specialistRegimes = $council
-            ->filter(fn (ModelMarketPerformance $candidate): bool =>
-                in_array($this->councilRole($candidate), ['trend_up_specialist', 'trend_down_specialist', 'range_specialist'], true)
+            ->filter(fn (ModelMarketPerformance $candidate): bool => in_array($this->councilRole($candidate), ['trend_up_specialist', 'trend_down_specialist', 'range_specialist'], true)
             )
             ->map(fn (ModelMarketPerformance $candidate): string => $this->councilRegime($candidate))
             ->filter(fn (string $regime): bool => in_array($regime, ['trend_up', 'trend_down', 'range'], true))
@@ -288,16 +285,14 @@ class EliteAgentPortfolioGateService
      */
     private function selectCouncilMembers(Collection $eligible): Collection
     {
-        $specialists = $eligible->filter(fn (ModelMarketPerformance $candidate): bool =>
-            in_array($this->councilRole($candidate), ['trend_up_specialist', 'trend_down_specialist', 'range_specialist'], true)
+        $specialists = $eligible->filter(fn (ModelMarketPerformance $candidate): bool => in_array($this->councilRole($candidate), ['trend_up_specialist', 'trend_down_specialist', 'range_specialist'], true)
         )->values();
         $selected = $this->selectComplementaryMembers($specialists);
 
         // Keep the two-regime requirement explicit even if a future selector
         // changes its scoring/near-duplicate behavior.
         $selectedRegimes = $selected
-            ->filter(fn (ModelMarketPerformance $candidate): bool =>
-                in_array($this->councilRole($candidate), ['trend_up_specialist', 'trend_down_specialist', 'range_specialist'], true)
+            ->filter(fn (ModelMarketPerformance $candidate): bool => in_array($this->councilRole($candidate), ['trend_up_specialist', 'trend_down_specialist', 'range_specialist'], true)
             )
             ->map(fn (ModelMarketPerformance $candidate): string => $this->councilRegime($candidate))
             ->filter()
@@ -306,16 +301,19 @@ class EliteAgentPortfolioGateService
         if ($selectedRegimes->count() < 2) {
             foreach ($specialists->sortByDesc(fn (ModelMarketPerformance $candidate): float => $this->stateScore($candidate)) as $candidate) {
                 $regime = $this->councilRegime($candidate);
-                if ($regime === '' || $selected->contains(fn (ModelMarketPerformance $item): bool => $item->id === $candidate->id)) continue;
+                if ($regime === '' || $selected->contains(fn (ModelMarketPerformance $item): bool => $item->id === $candidate->id)) {
+                    continue;
+                }
                 $selected->push($candidate);
                 $selectedRegimes = $selectedRegimes->push($regime)->unique()->values();
-                if ($selectedRegimes->count() >= 2) break;
+                if ($selectedRegimes->count() >= 2) {
+                    break;
+                }
             }
         }
 
         $router = $eligible
-            ->filter(fn (ModelMarketPerformance $candidate): bool =>
-                $this->councilRole($candidate) === 'transition_risk_router'
+            ->filter(fn (ModelMarketPerformance $candidate): bool => $this->councilRole($candidate) === 'transition_risk_router'
             )
             ->sortByDesc(fn (ModelMarketPerformance $candidate): float => $this->stateScore($candidate))
             ->first();
@@ -329,17 +327,30 @@ class EliteAgentPortfolioGateService
     public function eligibleMembers(Collection $candidates): Collection
     {
         return $candidates->filter(function (ModelMarketPerformance $candidate): bool {
-            if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)) return false;
+            if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
+                return false;
+            }
             if (! in_array($candidate->status, ['forward_validated', 'paper'], true)
                 || $candidate->evidence_status !== 'valid'
-                || $candidate->modelVersion?->evidence_status !== 'valid') return false;
-            if ((int) $candidate->sample_count < 30 || $this->profitFactor($candidate) < 1.3) return false;
-            if ((float) data_get($candidate->metrics, 'pf_attribution.stress_cost.profit_factor', 0) < 1.05) return false;
+                || $candidate->modelVersion?->evidence_status !== 'valid') {
+                return false;
+            }
+            if ((int) $candidate->sample_count < 30 || $this->profitFactor($candidate) < 1.3) {
+                return false;
+            }
+            if ((float) data_get($candidate->metrics, 'pf_attribution.stress_cost.profit_factor', 0) < 1.05) {
+                return false;
+            }
             $forward = CandidateGateDecision::query()
                 ->where('model_market_performance_id', $candidate->id)
                 ->where('stage', 'statistical_forward_gate')->latest('evaluated_at')->first();
-            return $forward?->decision === 'passed'
-                && data_get($forward->metrics, 'elite_agent_passport.status') === 'passed';
+
+            if ($forward?->decision !== 'passed'
+                || data_get($forward->metrics, 'elite_agent_passport.status') !== 'passed') {
+                return false;
+            }
+
+            return $this->sessionPassportPassed($candidate);
         })->values();
     }
 
@@ -359,23 +370,32 @@ class EliteAgentPortfolioGateService
             if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)
                 || ! in_array($candidate->status, ['forward_validated', 'paper'], true)
                 || $candidate->evidence_status !== 'valid'
-                || $candidate->modelVersion?->evidence_status !== 'valid') return false;
+                || $candidate->modelVersion?->evidence_status !== 'valid') {
+                return false;
+            }
             $contract = (array) data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract', []);
-            if (data_get($contract, 'protocol') !== 'portfolio_member_research_v1') return false;
+            if (data_get($contract, 'protocol') !== 'portfolio_member_research_v1') {
+                return false;
+            }
             $forward = CandidateGateDecision::query()
                 ->where('model_market_performance_id', $candidate->id)
                 ->where('stage', 'statistical_forward_gate')
                 ->latest('evaluated_at')
                 ->first();
             if ($forward?->decision !== 'passed'
-                || data_get($forward->metrics, 'elite_agent_passport.status') !== 'passed') return false;
+                || data_get($forward->metrics, 'elite_agent_passport.status') !== 'passed') {
+                return false;
+            }
             $globalTrades = (int) $candidate->sample_count;
             if ($globalTrades < 20
                 || $this->profitFactor($candidate) < 1.3
-                || (float) data_get($candidate->metrics, 'pf_attribution.stress_cost.profit_factor', 0) < 1.05) return false;
+                || (float) data_get($candidate->metrics, 'pf_attribution.stress_cost.profit_factor', 0) < 1.05) {
+                return false;
+            }
             $regime = (string) data_get($contract, 'target_regime', 'unproven');
             $volatility = (string) data_get($contract, 'target_volatility', 'any');
             $direction = (string) data_get($contract, 'target_direction', 'any');
+            $session = (string) data_get($contract, 'target_session', 'any');
             // The router does not execute a member on its global replay. It
             // executes it only inside the sealed regime x volatility lane.
             // A global/regime PF therefore cannot certify a portfolio member:
@@ -385,11 +405,15 @@ class EliteAgentPortfolioGateService
             // refreshed under the richer evidence contract.
             $nicheKey = $regime.'|'.$volatility;
             $niche = $volatility !== '' && $volatility !== 'any'
-                ? ($direction !== '' && $direction !== 'any'
+                ? ($session !== '' && $session !== 'any'
+                    ? (array) data_get($candidate->metrics, "pf_attribution.breakdown.by_regime_volatility_session.{$nicheKey}.{$session}", [])
+                    : ($direction !== '' && $direction !== 'any'
                     ? (array) data_get($candidate->metrics, "pf_attribution.breakdown.by_regime_volatility_direction.{$nicheKey}.{$direction}", [])
-                    : (array) data_get($candidate->metrics, "pf_attribution.breakdown.by_regime_volatility.{$nicheKey}", []))
+                    : (array) data_get($candidate->metrics, "pf_attribution.breakdown.by_regime_volatility.{$nicheKey}", [])))
                 : (array) data_get($candidate->metrics, "pf_attribution.breakdown.by_regime.{$regime}", []);
-            if ($volatility !== '' && $volatility !== 'any' && $niche === []) return false;
+            if ($volatility !== '' && $volatility !== 'any' && $niche === []) {
+                return false;
+            }
             // This is a research admission floor, not a promotion shortcut.
             // A 5-7 trade PF spike is too small to be a reusable council seat
             // and was the reason the old combined replay looked strong while
@@ -399,8 +423,10 @@ class EliteAgentPortfolioGateService
             $nicheTrades = (int) data_get($niche, 'trades', 0);
             $nichePf = (float) data_get($niche, 'net_pf', 0);
             $normalNiche = $nicheTrades >= 10 && $nichePf >= 1.3;
+
             return $normalNiche
-                && (float) data_get($candidate->metrics, 'monte_carlo.risk_of_ruin_percent', 0) <= 10;
+                && (float) data_get($candidate->metrics, 'monte_carlo.risk_of_ruin_percent', 0) <= 10
+                && $this->sessionPassportPassed($candidate);
         })->values();
     }
 
@@ -412,7 +438,9 @@ class EliteAgentPortfolioGateService
             ->whereIn('status', ['forward_validated', 'paper'])
             ->latest('last_evaluated_at')->first();
 
-        if (! $portfolio || ! $this->activePassport($portfolio)) return null;
+        if (! $portfolio || ! $this->activePassport($portfolio)) {
+            return null;
+        }
 
         // New council portfolios must complete the incumbent-to-council
         // handoff before paper/live routing. Legacy rows without this
@@ -479,16 +507,23 @@ class EliteAgentPortfolioGateService
                 || data_get($decision->metrics, 'elite_agent_passport.status') !== 'passed') {
                 return false;
             }
+            if (! $this->sessionPassportPassed($performance)) {
+                return false;
+            }
         }
 
         return true;
     }
 
-    public function routeMembers(EliteAgentPortfolio $portfolio, string $regime, string $volatility): Collection
-    {
-        return $portfolio->members->filter(fn ($member): bool =>
-            ($member->target_regime === null || $member->target_regime === $regime)
-            && ($member->target_volatility === null || $member->target_volatility === $volatility));
+    public function routeMembers(
+        EliteAgentPortfolio $portfolio,
+        string $regime,
+        string $volatility,
+        ?string $session = null,
+    ): Collection {
+        return $portfolio->members->filter(fn ($member): bool => ($member->target_regime === null || $member->target_regime === $regime)
+            && ($member->target_volatility === null || $member->target_volatility === $volatility)
+            && ($member->target_session === null || $member->target_session === $session));
     }
 
     /** Build the sealed request consumed by /api/portfolio/backtest. */
@@ -496,6 +531,7 @@ class EliteAgentPortfolioGateService
     {
         return $portfolio->members->map(function ($member): array {
             $model = $member->performance?->modelVersion;
+
             return [
                 'strategy' => $model?->strategy,
                 'base_strategy' => $model?->strategy
@@ -510,6 +546,8 @@ class EliteAgentPortfolioGateService
                 'target_regime' => $member->target_regime,
                 'target_volatility' => $member->target_volatility,
                 'target_direction' => $member->target_direction,
+                'target_session' => $member->target_session,
+                'specialist_context_contract' => (array) data_get($member->evidence, 'portfolio_contract.contextual_specialist_cell', []),
             ];
         })->filter(fn (array $spec): bool => filled($spec['strategy']))->values()->all();
     }
@@ -541,16 +579,22 @@ class EliteAgentPortfolioGateService
             // v3 and would distort the benchmark against which a new council
             // is judged.  A portfolio proxy is also excluded: it is an
             // output of this very lane and must never become its own trial.
-            if ((int) data_get($metadata, 'statistical_gate_version', 0) < 3) continue;
+            if ((int) data_get($metadata, 'statistical_gate_version', 0) < 3) {
+                continue;
+            }
             // A two-trade row can have an extreme Sharpe purely from a tiny
             // denominator and would poison both PBO and DSR. It remains in
             // the historical audit, but not in the statistical trial
             // frontier. Ten trades is the unchanged screening evidence
             // floor; final portfolio promotion still requires its own 30+
             // trade and passport gates.
-            if ((int) $candidate->sample_count < 10) continue;
+            if ((int) $candidate->sample_count < 10) {
+                continue;
+            }
             $metrics = (array) $candidate->metrics;
-            if ((bool) data_get($metrics, 'portfolio_proxy', false)) continue;
+            if ((bool) data_get($metrics, 'portfolio_proxy', false)) {
+                continue;
+            }
             $scores = array_values(array_filter(
                 (array) data_get($metrics, 'forward_window_scores', []),
                 fn ($value): bool => is_numeric($value) && is_finite((float) $value),
@@ -568,7 +612,9 @@ class EliteAgentPortfolioGateService
             // legacy candidate without four aligned checkpoints may remain
             // in the audit database, but it cannot contribute a Sharpe trial
             // to this portfolio frontier.
-            if (count($scores) < 4) continue;
+            if (count($scores) < 4) {
+                continue;
+            }
             $rows[] = $scores;
             $candidateIds[] = (int) $candidate->id;
             if ($windowIntervals === []) {
@@ -589,6 +635,7 @@ class EliteAgentPortfolioGateService
             $observedSharpe = data_get($metrics, 'statistical_evidence.deflated_sharpe.observed_sharpe');
             if (is_numeric($observedSharpe) && is_finite((float) $observedSharpe)) {
                 $trialSharpes[] = (float) $observedSharpe;
+
                 continue;
             }
 
@@ -599,13 +646,17 @@ class EliteAgentPortfolioGateService
             $returns = [];
             foreach (array_slice($equity, 1) as $index => $current) {
                 $previous = (float) ($equity[$index] ?? 0);
-                if ($previous > 0) $returns[] = ((float) $current / $previous) - 1;
+                if ($previous > 0) {
+                    $returns[] = ((float) $current / $previous) - 1;
+                }
             }
             if (count($returns) >= 2) {
                 $mean = array_sum($returns) / count($returns);
                 $variance = array_sum(array_map(fn (float $value): float => ($value - $mean) ** 2, $returns)) / count($returns);
                 $deviation = sqrt($variance);
-                if ($deviation > 0 && is_finite($deviation)) $trialSharpes[] = $mean / $deviation;
+                if ($deviation > 0 && is_finite($deviation)) {
+                    $trialSharpes[] = $mean / $deviation;
+                }
             }
         }
 
@@ -652,18 +703,31 @@ class EliteAgentPortfolioGateService
             $performance = $member->performance;
             if (! $performance || ! in_array($performance->status, ['forward_validated', 'paper'], true)
                 || $performance->evidence_status !== 'valid'
-                || $performance->modelVersion?->evidence_status !== 'valid') return true;
+                || $performance->modelVersion?->evidence_status !== 'valid') {
+                return true;
+            }
             $decision = CandidateGateDecision::query()
                 ->where('model_market_performance_id', $performance->id)
                 ->where('stage', 'statistical_forward_gate')->latest('evaluated_at')->first();
+
             return $decision?->decision !== 'passed'
                 || data_get($decision->metrics, 'elite_agent_passport.status') !== 'passed';
         });
-        if ($memberGateFailures->isNotEmpty()) $reasons[] = 'FAILED_PORTFOLIO_MEMBER_INDIVIDUAL_GATE';
-        if ((int) data_get($result, 'total_trades', 0) < 30) $reasons[] = 'FAILED_PORTFOLIO_TRADE_COUNT';
-        if ((float) data_get($result, 'profit_factor', 0) < 1.3) $reasons[] = 'FAILED_PORTFOLIO_PROFIT_FACTOR';
-        if ((float) data_get($result, 'pf_attribution.stress_cost.profit_factor', 0) < 1.05) $reasons[] = 'FAILED_PORTFOLIO_STRESS_COST';
-        if ((bool) data_get($result, 'is_overfit', false)) $reasons[] = 'FAILED_PORTFOLIO_OVERFIT';
+        if ($memberGateFailures->isNotEmpty()) {
+            $reasons[] = 'FAILED_PORTFOLIO_MEMBER_INDIVIDUAL_GATE';
+        }
+        if ((int) data_get($result, 'total_trades', 0) < 30) {
+            $reasons[] = 'FAILED_PORTFOLIO_TRADE_COUNT';
+        }
+        if ((float) data_get($result, 'profit_factor', 0) < 1.3) {
+            $reasons[] = 'FAILED_PORTFOLIO_PROFIT_FACTOR';
+        }
+        if ((float) data_get($result, 'pf_attribution.stress_cost.profit_factor', 0) < 1.05) {
+            $reasons[] = 'FAILED_PORTFOLIO_STRESS_COST';
+        }
+        if ((bool) data_get($result, 'is_overfit', false)) {
+            $reasons[] = 'FAILED_PORTFOLIO_OVERFIT';
+        }
         if (data_get($result, 'selection_validation.status') === 'assessed'
             && (float) data_get($result, 'selection_validation.probability_of_backtest_overfitting', 0) > .5) {
             $reasons[] = 'FAILED_PORTFOLIO_OVERFIT';
@@ -681,7 +745,9 @@ class EliteAgentPortfolioGateService
             $reasons[] = 'FAILED_PORTFOLIO_REGIME_EVIDENCE';
         }
         $worstRegime = $regimePfs->filter(fn ($pf): bool => $pf !== null)->min();
-        if ($worstRegime !== null && $worstRegime < 1.0) $reasons[] = 'FAILED_PORTFOLIO_REGIME_COVERAGE';
+        if ($worstRegime !== null && $worstRegime < 1.0) {
+            $reasons[] = 'FAILED_PORTFOLIO_REGIME_COVERAGE';
+        }
         $qualifiedRegimePfs = $regimeRows->filter(fn ($metrics): bool => (int) data_get($metrics, 'trades', 0) >= 5)
             ->mapWithKeys(function ($metrics, $regime) use ($regimePfs): array {
                 return [(string) $regime => $regimePfs->get((string) $regime)];
@@ -750,6 +816,7 @@ class EliteAgentPortfolioGateService
                 'target_regime' => $member->target_regime,
                 'target_volatility' => $member->target_volatility,
                 'target_direction' => $member->target_direction,
+                'target_session' => $member->target_session,
             ])->all(),
             $result,
         );
@@ -824,6 +891,7 @@ class EliteAgentPortfolioGateService
                 report($exception);
             }
         }
+
         return $gate;
     }
 
@@ -849,6 +917,7 @@ class EliteAgentPortfolioGateService
             (string) data_get($member, 'target_regime', data_get($member, 'role', 'any')),
             (string) data_get($member, 'target_volatility', 'any'),
             (string) data_get($member, 'target_direction', 'any'),
+            (string) data_get($member, 'target_session', 'any'),
         ]))->unique()->values();
         $checks = [
             'signal_viability' => (int) data_get($result, 'entry_funnel.raw_strategy_signals', 0) > 0
@@ -920,26 +989,51 @@ class EliteAgentPortfolioGateService
             $candidate = $pool->sortByDesc(function (ModelMarketPerformance $item) use ($selected): float {
                 $state = $this->stateScore($item);
                 $complement = $selected->isEmpty() ? 0.0 : $this->failureSignatureComplementarity($item, $selected);
+
                 return $state + ($complement * 50.0);
             })->first();
-            if (! $candidate) break;
+            if (! $candidate) {
+                break;
+            }
             $pool = $pool->reject(fn (ModelMarketPerformance $item): bool => $item->id === $candidate->id)->values();
-            if ($candidate->metrics && data_get($candidate->metrics, 'behavioral_diversity.status') === 'near_duplicate') continue;
-            $niche = $this->targetRegime($candidate).'|'.$this->targetVolatility($candidate).'|'.$this->targetDirection($candidate);
+            if ($candidate->metrics && data_get($candidate->metrics, 'behavioral_diversity.status') === 'near_duplicate') {
+                continue;
+            }
+            $niche = implode('|', [
+                $this->targetRegime($candidate),
+                $this->targetVolatility($candidate),
+                $this->targetDirection($candidate),
+                $this->targetSession($candidate),
+            ]);
             $candidateRegime = $this->targetRegime($candidate);
             // A universal portfolio must own at least two independent market
             // regimes. Same-regime councils may be added only after that
             // first orthogonal pair exists.
-            if (count($selectedRegimes) < 2 && in_array($candidateRegime, $selectedRegimes, true)) continue;
-            $sameNicheCount = $selected->filter(fn (ModelMarketPerformance $item): bool =>
-                $this->targetRegime($item).'|'.$this->targetVolatility($item).'|'.$this->targetDirection($item) === $niche)->count();
-            $sameFamily = $selected->contains(fn (ModelMarketPerformance $item): bool =>
-                $item->strategy_family === $candidate->strategy_family
-                && $this->targetRegime($item).'|'.$this->targetVolatility($item).'|'.$this->targetDirection($item) === $niche);
-            if ($sameNicheCount >= 2 || $sameFamily) continue;
+            if (count($selectedRegimes) < 2 && in_array($candidateRegime, $selectedRegimes, true)) {
+                continue;
+            }
+            $sameNicheCount = $selected->filter(fn (ModelMarketPerformance $item): bool => implode('|', [
+                $this->targetRegime($item),
+                $this->targetVolatility($item),
+                $this->targetDirection($item),
+                $this->targetSession($item),
+            ]) === $niche)->count();
+            $sameFamily = $selected->contains(fn (ModelMarketPerformance $item): bool => $item->strategy_family === $candidate->strategy_family
+                && implode('|', [
+                    $this->targetRegime($item),
+                    $this->targetVolatility($item),
+                    $this->targetDirection($item),
+                    $this->targetSession($item),
+                ]) === $niche);
+            if ($sameNicheCount >= 2 || $sameFamily) {
+                continue;
+            }
             $selected->push($candidate);
-            if (! in_array($candidateRegime, $selectedRegimes, true)) $selectedRegimes[] = $candidateRegime;
+            if (! in_array($candidateRegime, $selectedRegimes, true)) {
+                $selectedRegimes[] = $candidateRegime;
+            }
         }
+
         return $selected;
     }
 
@@ -951,7 +1045,9 @@ class EliteAgentPortfolioGateService
     private function failureSignatureComplementarity(ModelMarketPerformance $candidate, Collection $selected): float
     {
         $candidateContexts = $this->contextProfile($candidate);
-        if ($candidateContexts === []) return 0.0;
+        if ($candidateContexts === []) {
+            return 0.0;
+        }
         $scores = [];
         foreach ($selected as $existing) {
             $existingContexts = $this->contextProfile($existing);
@@ -959,7 +1055,9 @@ class EliteAgentPortfolioGateService
             foreach ($overlap as $context) {
                 $candidateRow = $candidateContexts[$context];
                 $existingRow = $existingContexts[$context];
-                if ((int) data_get($candidateRow, 'trades', 0) <= 0 || (int) data_get($existingRow, 'trades', 0) <= 0) continue;
+                if ((int) data_get($candidateRow, 'trades', 0) <= 0 || (int) data_get($existingRow, 'trades', 0) <= 0) {
+                    continue;
+                }
                 $candidatePositive = (float) data_get($candidateRow, 'net_pf', 0) >= 1.0;
                 $existingPositive = (float) data_get($existingRow, 'net_pf', 0) >= 1.0;
                 $scores[] = match (true) {
@@ -970,27 +1068,46 @@ class EliteAgentPortfolioGateService
                 };
             }
         }
+
         return $scores === [] ? 0.0 : round(array_sum($scores) / count($scores), 5);
     }
 
     private function contextProfile(ModelMarketPerformance $candidate): array
     {
+        $sessionRows = (array) data_get($candidate->metrics, 'pf_attribution.breakdown.by_regime_volatility_session', []);
+        if ($sessionRows !== []) {
+            $flattened = [];
+            foreach ($sessionRows as $regimeVolatility => $sessions) {
+                foreach ((array) $sessions as $session => $row) {
+                    $flattened[$regimeVolatility.'|'.$session] = $row;
+                }
+            }
+
+            return $flattened;
+        }
+
         return (array) data_get($candidate->metrics, 'pf_attribution.breakdown.by_regime_volatility', []);
     }
 
     private function targetRegime(ModelMarketPerformance $candidate): string
     {
         $contractRegime = data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract.target_regime');
-        if (filled($contractRegime)) return (string) $contractRegime;
+        if (filled($contractRegime)) {
+            return (string) $contractRegime;
+        }
         $atlas = AgentSkillAtlasEntry::query()->where('model_market_performance_id', $candidate->id)->orderByDesc('quality_score')->first();
+
         return (string) (data_get($candidate->metrics, 'edge_claim.target_regime') ?: $atlas?->regime ?: 'unproven');
     }
 
     private function targetVolatility(ModelMarketPerformance $candidate): string
     {
         $contractVolatility = data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract.target_volatility');
-        if (filled($contractVolatility)) return (string) $contractVolatility;
+        if (filled($contractVolatility)) {
+            return (string) $contractVolatility;
+        }
         $atlas = AgentSkillAtlasEntry::query()->where('model_market_performance_id', $candidate->id)->orderByDesc('quality_score')->first();
+
         return (string) (data_get($candidate->metrics, 'edge_claim.target_volatility') ?: $atlas?->volatility ?: 'any');
     }
 
@@ -1001,9 +1118,36 @@ class EliteAgentPortfolioGateService
             return strtoupper((string) $contractDirection);
         }
         $edgeDirection = data_get($candidate->metrics, 'edge_claim.target_direction');
+
         return in_array(strtoupper((string) $edgeDirection), ['BUY', 'SELL'], true)
             ? strtoupper((string) $edgeDirection)
             : null;
+    }
+
+    private function targetSession(ModelMarketPerformance $candidate): ?string
+    {
+        $session = data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract.target_session')
+            ?: data_get($candidate->modelVersion?->metadata, 'specialist_council_membership.contextual_cell.session');
+        $session = strtolower((string) $session);
+
+        return in_array($session, ['asia', 'london', 'new_york', 'overlap'], true) ? $session : null;
+    }
+
+    /**
+     * A declared session owner must keep its contextual passport valid at
+     * admission and again at runtime. Non-session legacy candidates continue
+     * through the ordinary individual gate without being relabelled.
+     */
+    private function sessionPassportPassed(ModelMarketPerformance $candidate): bool
+    {
+        if ($this->targetSession($candidate) === null) {
+            return true;
+        }
+
+        return data_get($this->specialistPassports->build($candidate, [
+            'individual_forward_passed' => true,
+            'individual_passport_passed' => true,
+        ]), 'status') === 'passed';
     }
 
     private function declaredNicheEvidence(ModelMarketPerformance $candidate, string $field): mixed
@@ -1011,13 +1155,18 @@ class EliteAgentPortfolioGateService
         $regime = $this->targetRegime($candidate);
         $volatility = $this->targetVolatility($candidate);
         $direction = $this->targetDirection($candidate);
+        $session = $this->targetSession($candidate);
         $contextKey = $regime.'|'.$volatility;
+        if ($volatility !== 'any' && filled($session)) {
+            return data_get($candidate->metrics, "pf_attribution.breakdown.by_regime_volatility_session.{$contextKey}.{$session}.{$field}");
+        }
         if ($volatility !== 'any' && filled($direction)) {
             return data_get($candidate->metrics, "pf_attribution.breakdown.by_regime_volatility_direction.{$contextKey}.{$direction}.{$field}");
         }
         if ($volatility !== 'any') {
             return data_get($candidate->metrics, "pf_attribution.breakdown.by_regime_volatility.{$contextKey}.{$field}");
         }
+
         return data_get($candidate->metrics, "pf_attribution.breakdown.by_regime.{$regime}.{$field}");
     }
 
@@ -1042,8 +1191,11 @@ class EliteAgentPortfolioGateService
             data_get($result, "statistical_evidence.edge_quality.regime_pf.{$regime}"),
             data_get($row, 'profit_factor'),
         ] as $value) {
-            if (is_numeric($value)) return (float) $value;
+            if (is_numeric($value)) {
+                return (float) $value;
+            }
         }
+
         return null;
     }
 
@@ -1081,9 +1233,10 @@ class EliteAgentPortfolioGateService
                 'regime' => $this->targetRegime($candidate),
                 'volatility' => $this->targetVolatility($candidate),
                 'direction' => $this->targetDirection($candidate),
+                'session' => $this->targetSession($candidate),
                 'trades' => $this->declaredNicheEvidence($candidate, 'trades'),
                 'net_pf' => $this->declaredNicheEvidence($candidate, 'net_pf'),
-                'evidence_protocol' => 'sealed_regime_volatility_direction_intersection_v1',
+                'evidence_protocol' => 'sealed_regime_volatility_direction_session_intersection_v2',
             ],
             'portfolio_contract' => data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract'),
             'specialist_passport' => $passport,
@@ -1113,6 +1266,7 @@ class EliteAgentPortfolioGateService
                         'target_regime' => $this->targetRegime($candidate),
                         'target_volatility' => $this->targetVolatility($candidate),
                         'target_direction' => $this->targetDirection($candidate),
+                        'target_session' => $this->targetSession($candidate),
                         'risk_weight' => 1.0,
                         'parameter_hash' => $this->parameterHash($candidate),
                         'evidence' => $this->memberEvidence($candidate),
@@ -1122,15 +1276,15 @@ class EliteAgentPortfolioGateService
             $portfolio->update([
                 'member_count' => $selected->count(),
                 'route_policy' => [
-                    'router' => 'sealed_regime_volatility_direction_ownership_v1',
+                    'router' => 'sealed_regime_volatility_direction_session_ownership_v2',
                     'admission_mode' => $mode,
                     'disagreement' => 'WAIT',
-                'duplicate_trade_rule' => 'one_position_per_portfolio_signal',
-                'member_independence_required' => true,
-                'standalone_member_promotion' => false,
-                'council_compatibility' => $compatibility,
-                'transition_firewall' => $this->portfolioPolicy(),
-            ],
+                    'duplicate_trade_rule' => 'one_position_per_portfolio_signal',
+                    'member_independence_required' => true,
+                    'standalone_member_promotion' => false,
+                    'council_compatibility' => $compatibility,
+                    'transition_firewall' => $this->portfolioPolicy(),
+                ],
                 'last_evaluated_at' => now(),
             ]);
         });
@@ -1140,7 +1294,9 @@ class EliteAgentPortfolioGateService
     {
         $portfolio->load('members.performance.modelVersion');
         $primary = $portfolio->members->first()?->performance?->modelVersion;
-        if (! $primary) return null;
+        if (! $primary) {
+            return null;
+        }
         $strategy = 'portfolio_'.$portfolio->symbol.'_'.$portfolio->timeframe.'_v1';
         $memberSpecs = $this->memberSpecs($portfolio);
         $parameterHash = hash('sha256', json_encode([
@@ -1172,6 +1328,7 @@ class EliteAgentPortfolioGateService
                 'protocol' => 'portfolio_constitution_v1',
                 'status' => 'sealed',
                 'allowed_regimes' => collect($memberSpecs)->pluck('target_regime')->filter()->unique()->values()->all(),
+                'allowed_sessions' => collect($memberSpecs)->pluck('target_session')->filter()->unique()->values()->all(),
                 'abstention_rules' => ['strong_member_disagreement', 'out_of_distribution', 'negative_net_ev'],
             ],
             // Router/calibration policy is part of the strategy identity. A
@@ -1212,6 +1369,7 @@ class EliteAgentPortfolioGateService
             ['model_market_performance_id' => $performance->id, 'status' => 'pending'],
             ['started_at' => now()]
         );
+
         return $performance->fresh('modelVersion');
     }
 

@@ -207,13 +207,20 @@ class ContextualCausalTraitCapsuleService
         $bundle = (array) data_get($assignment, 'bundle_identity', []);
         $keys = array_values(array_unique(array_filter(array_map('strval', (array) data_get($bundle, 'instrument_keys', [])))));
         $runtimeKeys = collect((array) data_get($trace, 'instruments', []))
-            ->filter(fn ($item): bool => is_array($item) && data_get($item, 'status') === 'consumed')
+            ->filter(fn ($item): bool => is_array($item)
+                && data_get($item, 'status') === 'consumed'
+                && data_get($item, 'decision_path_activated') === true
+                && data_get($item, 'runtime_observation_valid') === true
+                && data_get($item, 'runtime_receipt_consistent') === true
+                && data_get($item, 'activation_contract_protocol') === LabInstrumentResearchService::ACTIVATION_PROTOCOL)
             ->pluck('instrument_key')->filter()->map(fn ($key): string => (string) $key)->unique()->values()->all();
         $assignmentWithoutHash = $assignment;
         unset($assignmentWithoutHash['assignment_hash']);
         $assignmentHash = (string) data_get($assignment, 'assignment_hash', '');
+        $bundleContexts = array_flip(array_map('strval', (array) data_get($trace, 'bundle_activation_context_keys', [])));
         $poweredContextSupport = collect((array) data_get($trace, 'context_slices', []))
             ->filter(fn ($slice): bool => is_array($slice) && data_get($slice, 'powered') === true)
+            ->filter(fn (array $slice): bool => isset($bundleContexts[(string) data_get($slice, 'context_key', '')]))
             ->filter(fn (array $slice): bool => $this->sliceMatchesActivation((array) data_get($slice, 'context', []), $activation))
             ->count();
         $checks = [
@@ -221,11 +228,14 @@ class ContextualCausalTraitCapsuleService
             'assignment_hash_protocol' => data_get($assignment, 'hash_protocol') === LabInstrumentResearchService::HASH_PROTOCOL,
             'assignment_status' => data_get($assignment, 'status') === 'assigned',
             'assignment_hash' => $assignmentHash !== '' && hash_equals($assignmentHash, $this->hash($assignmentWithoutHash)),
-            'runtime_trace' => data_get($trace, 'protocol') === 'lab_instrument_runtime_trace_v1'
+            'runtime_trace' => data_get($trace, 'protocol') === LabInstrumentResearchService::RUNTIME_TRACE_PROTOCOL
                 && data_get($trace, 'status') === 'consumed'
                 && data_get($trace, 'assignment_hash_valid') === true
                 && data_get($trace, 'parameter_hash_valid') === true
-                && data_get($trace, 'runtime_bindings_valid') === true,
+                && data_get($trace, 'runtime_bindings_valid') === true
+                && data_get($trace, 'activation_contracts_valid') === true
+                && data_get($trace, 'runtime_observations_valid') === true
+                && data_get($trace, 'bundle_fully_activated') === true,
             'same_assignment' => $assignmentHash !== '' && hash_equals($assignmentHash, (string) data_get($trace, 'assignment_hash', '')),
             'exact_bundle' => $keys !== [] && $keys === $runtimeKeys,
             'bundle_hash' => filled(data_get($bundle, 'bundle_hash')),

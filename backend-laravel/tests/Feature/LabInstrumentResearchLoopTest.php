@@ -34,6 +34,26 @@ class LabInstrumentResearchLoopTest extends TestCase
         $this->assertTrue((bool) collect($assignment['selected'])->firstWhere('instrument_key', 'volume_confirmation')['causal_candidate']);
         $this->assertSame('reserved', data_get($assignment, 'pair_reservation.status'));
         $this->assertTrue((bool) data_get($assignment, 'pair_reservation.exact_parameter_baseline'));
+        $this->assertSame(
+            LabInstrumentResearchService::ACTIVATION_PROTOCOL,
+            data_get($assignment, 'activation_policy.protocol'),
+        );
+        $this->assertTrue((bool) data_get($assignment, 'activation_policy.selection_is_not_invocation'));
+        $this->assertSame(
+            LabInstrumentResearchService::DECISION_DOCTRINE_PROTOCOL,
+            data_get($assignment, 'decision_doctrine.protocol'),
+        );
+        $this->assertSame(1, data_get($assignment, 'decision_doctrine.causal_candidate_limit'));
+        $this->assertSame(
+            'changed_gene_causal_surface',
+            data_get(collect($assignment['selected'])->firstWhere('instrument_key', 'volume_confirmation'), 'selection_reason'),
+        );
+        $this->assertTrue(collect($assignment['selected'])->every(
+            fn (array $selected): bool => data_get($selected, 'activation_contract.protocol') === LabInstrumentResearchService::ACTIVATION_PROTOCOL
+                && data_get($selected, 'activation_contract.mode') === 'instrument_specific_runtime_event'
+                && data_get($selected, 'activation_contract.aggregate_metric_fallback_allowed') === false
+                && (array) data_get($selected, 'activation_contract.required_runtime_events', []) !== [],
+        ));
         $this->assertFalse((bool) data_get($assignment, 'bundle_identity.interaction_identified'));
         $this->assertFalse($assignment['promotion_evidence']);
         $this->assertDatabaseCount('instrument_invocation_ledger', 0);
@@ -82,6 +102,29 @@ class LabInstrumentResearchLoopTest extends TestCase
             $candidate->fresh(['modelVersion']),
             $this->attestedResult($assignment, 'must-not-run'),
         ));
+        $this->assertDatabaseCount('instrument_invocation_ledger', 0);
+    }
+
+    public function test_inventory_and_parameter_binding_without_runtime_activation_open_no_invocation(): void
+    {
+        [$candidate] = $this->pairAgents();
+        $assignment = app(LabInstrumentResearchService::class)->assignment($candidate);
+        $result = $this->attestedResult($assignment, 'inventory-only-run');
+        $result['instrument_research_trace']['bundle_fully_activated'] = false;
+        $result['instrument_research_trace']['bundle_activation_context_keys'] = [];
+        foreach ($result['instrument_research_trace']['instruments'] as &$runtime) {
+            $runtime['status'] = 'not_activated';
+            $runtime['decision_path_activated'] = false;
+            $runtime['activated_context_keys'] = [];
+        }
+        unset($runtime);
+
+        $count = app(InstrumentInvocationLedgerService::class)->recordResearchObservation(
+            $candidate->fresh(['modelVersion']),
+            $result,
+        );
+
+        $this->assertSame(0, $count);
         $this->assertDatabaseCount('instrument_invocation_ledger', 0);
     }
 
@@ -163,6 +206,10 @@ class LabInstrumentResearchLoopTest extends TestCase
             'instrument_key' => 'volume_confirmation',
             'verdict' => 'helped',
         ]);
+        $this->assertSame(
+            'activated_contexts_only',
+            data_get(InstrumentInvocationLedger::query()->where('instrument_key', 'volume_confirmation')->firstOrFail()->control_delta, 'scope'),
+        );
         $this->assertSame(2, InstrumentInvocationLedger::query()->where('verdict', 'support_consumed')->count());
         $this->assertDatabaseCount('instrument_evidence', 1);
         $this->assertSame(1, InstrumentValuePosterior::query()->count());
@@ -384,18 +431,27 @@ class LabInstrumentResearchLoopTest extends TestCase
             'max_drawdown_percent' => 5.0,
             'total_trades' => 42,
             'instrument_research_trace' => [
-                'protocol' => 'lab_instrument_runtime_trace_v1',
+                'protocol' => LabInstrumentResearchService::RUNTIME_TRACE_PROTOCOL,
                 'status' => 'consumed',
                 'assignment_hash' => $assignment['assignment_hash'],
                 'assignment_hash_valid' => true,
                 'parameter_hash_valid' => true,
                 'runtime_bindings_valid' => true,
+                'activation_contracts_valid' => true,
+                'runtime_observations_valid' => true,
                 'runtime_observed' => true,
+                'bundle_fully_activated' => true,
+                'bundle_activation_context_keys' => ['trend_up|normal_volatility|london|BUY'],
                 'instruments' => array_map(fn (array $selected): array => [
                     'instrument_key' => $selected['instrument_key'],
                     'status' => 'consumed',
                     'causal_candidate' => $selected['causal_candidate'],
                     'parameter_bindings' => $selected['parameter_bindings'],
+                    'activation_contract_protocol' => LabInstrumentResearchService::ACTIVATION_PROTOCOL,
+                    'runtime_observation_valid' => true,
+                    'runtime_receipt_consistent' => true,
+                    'decision_path_activated' => true,
+                    'activated_context_keys' => ['trend_up|normal_volatility|london|BUY'],
                     'promotion_evidence' => false,
                 ], $assignment['selected']),
                 'promotion_evidence' => false,

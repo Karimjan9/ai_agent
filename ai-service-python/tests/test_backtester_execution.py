@@ -7,13 +7,16 @@ from app.schemas import ExecutionConfig, SimpleBacktestRequest, SimpleTrade
 from app.services.backtester import (
     _differential_router_report,
     _edge_context_admission,
-    _sealed_strategy_parameters,
-    _entry_eligibility,
     _edge_formation_academy_diagnostic,
+    _entry_eligibility,
+    _instrument_runtime_report,
+    _instrument_runtime_state,
     _management_evidence_report,
     _proof_carrying_replay,
-    _temporal_survival_assessment,
+    _record_strategy_instrument_events,
+    _sealed_strategy_parameters,
     _temporal_register_signal,
+    _temporal_survival_assessment,
     _temporal_survival_report,
     _temporal_survival_state,
     _temporal_update_pending,
@@ -31,7 +34,9 @@ def golden_strategy(frame: pd.DataFrame, _parameters: dict | None) -> pd.DataFra
     return frame
 
 
-def cooldown_shadow_strategy(frame: pd.DataFrame, _parameters: dict | None) -> pd.DataFrame:
+def cooldown_shadow_strategy(
+    frame: pd.DataFrame, _parameters: dict | None
+) -> pd.DataFrame:
     frame = frame.copy()
     frame["signal"] = "WAIT"
     frame.loc[199, "signal"] = "BUY"
@@ -42,7 +47,9 @@ def cooldown_shadow_strategy(frame: pd.DataFrame, _parameters: dict | None) -> p
     return frame
 
 
-def loss_streak_probe_strategy(frame: pd.DataFrame, _parameters: dict | None) -> pd.DataFrame:
+def loss_streak_probe_strategy(
+    frame: pd.DataFrame, _parameters: dict | None
+) -> pd.DataFrame:
     frame = frame.copy()
     frame["signal"] = "WAIT"
     # Signals execute one candle later: four losses, a signal during the
@@ -53,7 +60,9 @@ def loss_streak_probe_strategy(frame: pd.DataFrame, _parameters: dict | None) ->
     return frame
 
 
-def cooldown_timing_strategy(frame: pd.DataFrame, _parameters: dict | None) -> pd.DataFrame:
+def cooldown_timing_strategy(
+    frame: pd.DataFrame, _parameters: dict | None
+) -> pd.DataFrame:
     frame = frame.copy()
     frame["signal"] = "WAIT"
     frame.loc[199, "signal"] = "BUY"
@@ -64,7 +73,9 @@ def cooldown_timing_strategy(frame: pd.DataFrame, _parameters: dict | None) -> p
     return frame
 
 
-def cooldown_context_strategy(frame: pd.DataFrame, _parameters: dict | None) -> pd.DataFrame:
+def cooldown_context_strategy(
+    frame: pd.DataFrame, _parameters: dict | None
+) -> pd.DataFrame:
     frame = frame.copy()
     frame["signal"] = "WAIT"
     frame["signal_confidence"] = 1.0
@@ -75,7 +86,9 @@ def cooldown_context_strategy(frame: pd.DataFrame, _parameters: dict | None) -> 
     return frame
 
 
-def differential_identity_strategy(frame: pd.DataFrame, _parameters: dict | None) -> pd.DataFrame:
+def differential_identity_strategy(
+    frame: pd.DataFrame, _parameters: dict | None
+) -> pd.DataFrame:
     frame = frame.copy()
     frame["signal"] = "WAIT"
     frame["signal_confidence"] = 0.0
@@ -89,43 +102,148 @@ def differential_identity_strategy(frame: pd.DataFrame, _parameters: dict | None
 
 
 class BacktesterExecutionRegressionTest(unittest.TestCase):
+    def instrument_assignment(self, keys: list[str]) -> dict:
+        return {
+            "protocol": "lab_instrument_research_assignment_v2",
+            "assignment_hash": "sealed-assignment",
+            "activation_policy": {
+                "protocol": "instrument_runtime_activation_contract_v1"
+            },
+            "selected": [
+                {
+                    "instrument_key": key,
+                    "activation_contract": {
+                        "protocol": "instrument_runtime_activation_contract_v1",
+                        "required_runtime_events": ["*"],
+                        "context": {
+                            "compatible_regimes": ["trend_up", "trend_down"]
+                            if key == "trend_pullback"
+                            else [],
+                            "forbidden_regimes": ["range"]
+                            if key == "trend_pullback"
+                            else [],
+                            "declared_context": {"session": "london"}
+                            if key == "trend_pullback"
+                            else {},
+                        },
+                    },
+                }
+                for key in keys
+            ],
+        }
+
+    def test_instrument_runtime_ledger_records_exact_event_and_context_abstention(
+        self,
+    ) -> None:
+        state = _instrument_runtime_state(
+            self.instrument_assignment(["trend_pullback"])
+        )
+        london = pd.Series(
+            {
+                "time": "2026-06-02 09:00:00+00:00",
+                "market_regime": "trend_up",
+                "volatility_regime": "normal_volatility",
+                "entry_contract_model": "trend_continuation",
+                "entry_setup_detected": True,
+            }
+        )
+        asia_range = london.copy()
+        asia_range["time"] = "2026-06-02 02:00:00+00:00"
+        asia_range["market_regime"] = "range"
+
+        _record_strategy_instrument_events(state, london, "BUY", "trend")
+        _record_strategy_instrument_events(state, asia_range, "BUY", "trend")
+        report = _instrument_runtime_report(state)
+        observation = report["instruments"]["trend_pullback"]
+
+        self.assertEqual(1, observation["activation_count"])
+        self.assertEqual(
+            ["trend_up|normal_volatility|london|BUY"],
+            observation["activated_context_keys"],
+        )
+        self.assertEqual(
+            ["range|normal_volatility|asia|BUY"], observation["abstained_context_keys"]
+        )
+        self.assertFalse(observation["promotion_evidence"])
+
+    @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
+    def test_replay_emits_risk_and_exit_instrument_receipts_only_on_real_paths(
+        self, _strategy
+    ) -> None:
+        frame = self.candles()
+        frame.loc[200, "low"] = 99.4
+        assignment = self.instrument_assignment(
+            ["atr_risk_envelope", "cost_aware_exit"]
+        )
+        payload = self.payload().model_copy(
+            update={"instrument_research_assignment": assignment}
+        )
+
+        result = run_simple_ema_rsi_backtest_on_dataframe(payload, frame)
+        observations = result.instrument_runtime_observations
+
+        self.assertEqual("instrument_runtime_observations_v1", observations["protocol"])
+        self.assertEqual(
+            1, observations["instruments"]["atr_risk_envelope"]["activation_count"]
+        )
+        self.assertEqual(
+            1, observations["instruments"]["cost_aware_exit"]["activation_count"]
+        )
+        self.assertFalse(observations["paper_execution_authority"])
 
     def test_confirmation_ablation_requires_the_sealed_attribution_arm(self) -> None:
         unauthorized = SimpleBacktestRequest(
-            symbol="XAUUSD", timeframe="M5", strategy="edge_attr",
+            symbol="XAUUSD",
+            timeframe="M5",
+            strategy="edge_attr",
             base_strategy="confirmation_entry_mtf_v1",
             parameters={"attribution_confirmation_bypass": True},
         )
         with self.assertRaisesRegex(ValueError, "BYPASS_OUTSIDE_SEALED_ABLATION"):
             _sealed_strategy_parameters(unauthorized)
 
-        authorized = unauthorized.model_copy(update={"policy_context": {
-            "edge_genesis_contracts": {"edge_attr": {
-                "protocol": "bounded_edge_genesis_replay_v1",
-                "attribution_arm": "no_confirmation",
-            }},
-        }})
-        self.assertTrue(_sealed_strategy_parameters(authorized)["attribution_confirmation_bypass"])
+        authorized = unauthorized.model_copy(
+            update={
+                "policy_context": {
+                    "edge_genesis_contracts": {
+                        "edge_attr": {
+                            "protocol": "bounded_edge_genesis_replay_v1",
+                            "attribution_arm": "no_confirmation",
+                        }
+                    },
+                }
+            }
+        )
+        self.assertTrue(
+            _sealed_strategy_parameters(authorized)["attribution_confirmation_bypass"]
+        )
 
-        missing_intervention = authorized.model_copy(update={
-            "parameters": {"attribution_confirmation_bypass": False},
-        })
+        missing_intervention = authorized.model_copy(
+            update={
+                "parameters": {"attribution_confirmation_bypass": False},
+            }
+        )
         with self.assertRaisesRegex(ValueError, "ABLATION_NOT_ACTIVATED"):
             _sealed_strategy_parameters(missing_intervention)
 
     def test_edge_context_firewall_converts_out_of_scope_signals_to_wait(self) -> None:
-        contract = {"context": {
-            "enforcement": "required",
-            "admission_axes": ["regime", "session", "volatility"],
-            "allowed_regimes": ["trend_up", "trend_down"],
-            "allowed_sessions": ["london", "london_new_york_overlap"],
-            "allowed_volatility": ["normal_volatility"],
-            "outside_scope": "WAIT",
-        }}
-        valid = pd.Series({
-            "time": "2025-06-02 10:00:00+00:00",
-            "market_regime": "trend_up", "volatility_regime": "normal_volatility",
-        })
+        contract = {
+            "context": {
+                "enforcement": "required",
+                "admission_axes": ["regime", "session", "volatility"],
+                "allowed_regimes": ["trend_up", "trend_down"],
+                "allowed_sessions": ["london", "london_new_york_overlap"],
+                "allowed_volatility": ["normal_volatility"],
+                "outside_scope": "WAIT",
+            }
+        }
+        valid = pd.Series(
+            {
+                "time": "2025-06-02 10:00:00+00:00",
+                "market_regime": "trend_up",
+                "volatility_regime": "normal_volatility",
+            }
+        )
         allowed, reason, evidence = _edge_context_admission(valid, contract)
         self.assertTrue(allowed)
         self.assertIsNone(reason)
@@ -143,35 +261,56 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertEqual("edge_context_session_outside_scope", reason)
 
-    def test_edge_context_control_is_observational_and_transition_is_closed_state(self) -> None:
-        row = pd.Series({
-            "time": "2025-06-02 10:00:00+00:00",
-            "market_regime": "trend_up", "volatility_regime": "normal_volatility",
-        })
-        control = {"context": {"enforcement": "telemetry_only_control", "admission_axes": []}}
+    def test_edge_context_control_is_observational_and_transition_is_closed_state(
+        self,
+    ) -> None:
+        row = pd.Series(
+            {
+                "time": "2025-06-02 10:00:00+00:00",
+                "market_regime": "trend_up",
+                "volatility_regime": "normal_volatility",
+            }
+        )
+        control = {
+            "context": {"enforcement": "telemetry_only_control", "admission_axes": []}
+        }
         self.assertTrue(_edge_context_admission(row, control)[0])
 
-        transition = {"context": {
-            "enforcement": "required", "admission_axes": ["regime"],
-            "allowed_regimes": ["transition"],
-        }}
-        self.assertTrue(_edge_context_admission(row, transition, transition_event=True)[0])
-        self.assertFalse(_edge_context_admission(row, transition, transition_event=False)[0])
+        transition = {
+            "context": {
+                "enforcement": "required",
+                "admission_axes": ["regime"],
+                "allowed_regimes": ["transition"],
+            }
+        }
+        self.assertTrue(
+            _edge_context_admission(row, transition, transition_event=True)[0]
+        )
+        self.assertFalse(
+            _edge_context_admission(row, transition, transition_event=False)[0]
+        )
 
     def test_edge_context_direction_is_a_pre_entry_specialist_boundary(self) -> None:
-        row = pd.Series({
-            "time": "2025-06-02 10:00:00+00:00",
-            "market_regime": "trend_up", "volatility_regime": "high_volatility",
-        })
-        contract = {"context": {
-            "enforcement": "required",
-            "admission_axes": ["regime", "direction", "volatility"],
-            "allowed_regimes": ["trend_up", "trend_down"],
-            "allowed_directions": ["BUY"],
-            "allowed_volatility": ["high_volatility"],
-            "outside_scope": "WAIT",
-        }}
-        allowed, reason, evidence = _edge_context_admission(row, contract, direction="BUY")
+        row = pd.Series(
+            {
+                "time": "2025-06-02 10:00:00+00:00",
+                "market_regime": "trend_up",
+                "volatility_regime": "high_volatility",
+            }
+        )
+        contract = {
+            "context": {
+                "enforcement": "required",
+                "admission_axes": ["regime", "direction", "volatility"],
+                "allowed_regimes": ["trend_up", "trend_down"],
+                "allowed_directions": ["BUY"],
+                "allowed_volatility": ["high_volatility"],
+                "outside_scope": "WAIT",
+            }
+        }
+        allowed, reason, evidence = _edge_context_admission(
+            row, contract, direction="BUY"
+        )
         self.assertTrue(allowed)
         self.assertIsNone(reason)
         self.assertEqual("BUY", evidence["observed"]["direction"])
@@ -183,15 +322,56 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
     def test_h1_regime_is_available_only_after_that_h1_candle_closes(self) -> None:
         from app.services.backtester import _apply_execution_regime
 
-        execution = pd.DataFrame([
-            {"time": "2026-07-20 10:45:00", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1},
-            {"time": "2026-07-20 11:00:00", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1},
-            {"time": "2026-07-20 11:15:00", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1},
-        ])
-        h1 = pd.DataFrame([
-            {"time": "2026-07-20 10:00:00", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1, "regime_label": "trend_up"},
-            {"time": "2026-07-20 11:00:00", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1, "regime_label": "range"},
-        ])
+        execution = pd.DataFrame(
+            [
+                {
+                    "time": "2026-07-20 10:45:00",
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1,
+                },
+                {
+                    "time": "2026-07-20 11:00:00",
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1,
+                },
+                {
+                    "time": "2026-07-20 11:15:00",
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1,
+                },
+            ]
+        )
+        h1 = pd.DataFrame(
+            [
+                {
+                    "time": "2026-07-20 10:00:00",
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1,
+                    "regime_label": "trend_up",
+                },
+                {
+                    "time": "2026-07-20 11:00:00",
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1,
+                    "regime_label": "range",
+                },
+            ]
+        )
 
         def labelled_regime(frame: pd.DataFrame) -> pd.DataFrame:
             result = frame.copy()
@@ -201,33 +381,46 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
             result["atr_regime"] = 1.0
             return result
 
-        with patch("app.services.backtester.apply_market_regime", side_effect=labelled_regime):
+        with patch(
+            "app.services.backtester.apply_market_regime", side_effect=labelled_regime
+        ):
             result = _apply_execution_regime(execution, h1)
 
-        self.assertEqual(["unknown", "trend_up", "trend_up"], result["market_regime"].tolist())
+        self.assertEqual(
+            ["unknown", "trend_up", "trend_up"], result["market_regime"].tolist()
+        )
+
     def candles(self) -> pd.DataFrame:
         rows = 205
         prices = [100.0 + ((index % 10) * 0.01) for index in range(rows)]
-        frame = pd.DataFrame({
-            "time": pd.date_range("2026-01-05 00:00:00", periods=rows, freq="h", tz="UTC"),
-            "open": prices,
-            "high": [price + 0.4 for price in prices],
-            "low": [price - 0.4 for price in prices],
-            "close": prices,
-            "volume": [1000.0] * rows,
-        })
+        frame = pd.DataFrame(
+            {
+                "time": pd.date_range(
+                    "2026-01-05 00:00:00", periods=rows, freq="h", tz="UTC"
+                ),
+                "open": prices,
+                "high": [price + 0.4 for price in prices],
+                "low": [price - 0.4 for price in prices],
+                "close": prices,
+                "volume": [1000.0] * rows,
+            }
+        )
         return frame
 
     def extended_candles(self) -> pd.DataFrame:
         frame = self.candles()
-        extension = pd.DataFrame({
-            "time": pd.date_range(frame.iloc[-1]["time"] + pd.Timedelta(hours=1), periods=10, freq="h"),
-            "open": [100.0] * 10,
-            "high": [100.4] * 10,
-            "low": [99.6] * 10,
-            "close": [100.0] * 10,
-            "volume": [1000.0] * 10,
-        })
+        extension = pd.DataFrame(
+            {
+                "time": pd.date_range(
+                    frame.iloc[-1]["time"] + pd.Timedelta(hours=1), periods=10, freq="h"
+                ),
+                "open": [100.0] * 10,
+                "high": [100.4] * 10,
+                "low": [99.6] * 10,
+                "close": [100.0] * 10,
+                "volume": [1000.0] * 10,
+            }
+        )
         return pd.concat([frame, extension], ignore_index=True)
 
     def payload(self, reject_gaps: bool = True) -> SimpleBacktestRequest:
@@ -302,38 +495,101 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertEqual(evidence["measured_winner_paths"], 8)
         self.assertEqual(evidence["target_capture_ratio"], 0.5)
         self.assertEqual(evidence["average_mfe_r_before_exit_bar"], 1.5)
-        self.assertEqual(evidence["latent_harvest_admission_source"], "average_mfe_r_before_exit_bar_only")
+        self.assertEqual(
+            evidence["latent_harvest_admission_source"],
+            "average_mfe_r_before_exit_bar_only",
+        )
         self.assertIsNone(evidence["premature_stop_rate"])
         self.assertFalse(evidence["promotion_evidence"])
 
-    def test_academy_diagnostic_is_hindsight_only_and_does_not_fabricate_an_oracle(self):
-        trades = [SimpleTrade(
-            direction="BUY", entry_time="2026-01-01T00:00:00Z", exit_time="2026-01-01T01:00:00Z",
-            entry_price=100., exit_price=101., result="WIN", profit_percent=1., balance=10001.,
-            initial_risk_distance=1., initial_risk_percent=1., mfe_r=2., mae_r=.2,
-            mfe_r_before_exit_bar=1.5, mae_r_before_exit_bar=.2, realized_r_multiple=1., mfe_capture_ratio=.5,
-        )]
-        frame = pd.DataFrame({
-            "open": [100., 100., 101., 102., 103., 103., 103., 103., 103., 103.],
-            "high": [100., 101., 102., 103., 104., 104., 104., 104., 104., 104.],
-            "low": [99., 99., 100., 101., 102., 102., 102., 102., 102., 102.],
-            "entry_setup_detected": [True] + [False] * 9,
-            "entry_contract_direction": ["BUY"] * 10,
-            "entry_invalidation_reference_price": [98.] * 10,
-        })
+    def test_academy_diagnostic_is_hindsight_only_and_does_not_fabricate_an_oracle(
+        self,
+    ):
+        trades = [
+            SimpleTrade(
+                direction="BUY",
+                entry_time="2026-01-01T00:00:00Z",
+                exit_time="2026-01-01T01:00:00Z",
+                entry_price=100.0,
+                exit_price=101.0,
+                result="WIN",
+                profit_percent=1.0,
+                balance=10001.0,
+                initial_risk_distance=1.0,
+                initial_risk_percent=1.0,
+                mfe_r=2.0,
+                mae_r=0.2,
+                mfe_r_before_exit_bar=1.5,
+                mae_r_before_exit_bar=0.2,
+                realized_r_multiple=1.0,
+                mfe_capture_ratio=0.5,
+            )
+        ]
+        frame = pd.DataFrame(
+            {
+                "open": [
+                    100.0,
+                    100.0,
+                    101.0,
+                    102.0,
+                    103.0,
+                    103.0,
+                    103.0,
+                    103.0,
+                    103.0,
+                    103.0,
+                ],
+                "high": [
+                    100.0,
+                    101.0,
+                    102.0,
+                    103.0,
+                    104.0,
+                    104.0,
+                    104.0,
+                    104.0,
+                    104.0,
+                    104.0,
+                ],
+                "low": [
+                    99.0,
+                    99.0,
+                    100.0,
+                    101.0,
+                    102.0,
+                    102.0,
+                    102.0,
+                    102.0,
+                    102.0,
+                    102.0,
+                ],
+                "entry_setup_detected": [True] + [False] * 9,
+                "entry_contract_direction": ["BUY"] * 10,
+                "entry_invalidation_reference_price": [98.0] * 10,
+            }
+        )
         payload = self.payload()
         payload.parameters["academy_oracle_horizon_bars"] = 2
         payload.parameters["academy_oracle_minimum_setup_events"] = 1
         diagnostic = _edge_formation_academy_diagnostic(
             frame,
-            {"stage_counts": {"setup": 4, "confirmation": 3, "trigger": 2, "entry_ready": 1}},
-            _management_evidence_report(trades), trades, payload,
+            {
+                "stage_counts": {
+                    "setup": 4,
+                    "confirmation": 3,
+                    "trigger": 2,
+                    "entry_ready": 1,
+                }
+            },
+            _management_evidence_report(trades),
+            trades,
+            payload,
         )
         self.assertTrue(diagnostic["diagnostic_only"])
         self.assertFalse(diagnostic["runtime_signal"])
         self.assertTrue(diagnostic["full_oracle_gap_available"])
         self.assertEqual(diagnostic["status"], "full_oracle_gap_observed")
-        self.assertEqual(diagnostic["management_capture_loss_r"], .5)
+        self.assertEqual(diagnostic["management_capture_loss_r"], 0.5)
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
     def test_post_entry_gap_fills_at_open_not_stop_price(self, _strategy):
@@ -364,24 +620,37 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
 
         self.assertGreaterEqual(result.entry_funnel["raw_strategy_signals"], 1)
         self.assertEqual(result.entry_funnel["accepted_entries"], 0)
-        self.assertEqual(result.entry_funnel["dominant_rejection"], "minimum_confidence")
+        self.assertEqual(
+            result.entry_funnel["dominant_rejection"], "minimum_confidence"
+        )
 
     def test_differential_recall_threshold_is_target_lane_only(self):
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({
-            "minimum_signal_confidence": 0.34,
-            "differential_target_min_signal_confidence": 0.25,
-        })
-        row = pd.Series({"time": "2026-01-10 00:00:00", "open": 100.0, "atr_regime": 1.0})
-        target = pd.Series({
-            "signal": "BUY", "signal_confidence": 0.30, "differential_target": True,
-            "market_regime": "trend_up", "volatility_regime": "normal_volatility",
-        })
+        payload.parameters.update(
+            {
+                "minimum_signal_confidence": 0.34,
+                "differential_target_min_signal_confidence": 0.25,
+            }
+        )
+        row = pd.Series(
+            {"time": "2026-01-10 00:00:00", "open": 100.0, "atr_regime": 1.0}
+        )
+        target = pd.Series(
+            {
+                "signal": "BUY",
+                "signal_confidence": 0.30,
+                "differential_target": True,
+                "market_regime": "trend_up",
+                "volatility_regime": "normal_volatility",
+            }
+        )
         non_target = target.copy()
         non_target["differential_target"] = False
 
         target_allowed, target_reason = _entry_eligibility(row, payload, target)
-        non_target_allowed, non_target_reason = _entry_eligibility(row, payload, non_target)
+        non_target_allowed, non_target_reason = _entry_eligibility(
+            row, payload, non_target
+        )
 
         self.assertTrue(target_allowed)
         self.assertIsNone(target_reason)
@@ -390,12 +659,14 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
 
     def test_adaptive_signal_expiry_abstains_on_stale_signal(self):
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({
-            "temporal_survival_enabled": True,
-            "adaptive_signal_expiry_enabled": True,
-            "signal_max_age_candles": 2,
-            "signal_decay_half_life_candles": 3,
-        })
+        payload.parameters.update(
+            {
+                "temporal_survival_enabled": True,
+                "adaptive_signal_expiry_enabled": True,
+                "signal_max_age_candles": 2,
+                "signal_decay_half_life_candles": 3,
+            }
+        )
         state = _temporal_survival_state()
         metrics = {
             "signal_age_candles": 4,
@@ -407,20 +678,26 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
             "feature_drift_zscore": 0.0,
         }
         result = _temporal_survival_assessment(
-            {"signal": "BUY"}, metrics, payload, 0, state,
+            {"signal": "BUY"},
+            metrics,
+            payload,
+            0,
+            state,
         )
         self.assertTrue(result["veto"])
         self.assertIn("signal_expiry", result["reasons"])
 
     def test_drift_abstention_uses_spread_drift_and_loss_state(self):
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({
-            "temporal_survival_enabled": True,
-            "drift_abstention_enabled": True,
-            "temporal_spread_atr_ratio_max": .10,
-            "temporal_drift_zscore_max": 1.5,
-            "temporal_loss_streak_limit": 3,
-        })
+        payload.parameters.update(
+            {
+                "temporal_survival_enabled": True,
+                "drift_abstention_enabled": True,
+                "temporal_spread_atr_ratio_max": 0.10,
+                "temporal_drift_zscore_max": 1.5,
+                "temporal_loss_streak_limit": 3,
+            }
+        )
         state = _temporal_survival_state()
         state["feature_history"] = [1.0] * 20
         state["confidence_history"] = [1.0] * 20
@@ -430,11 +707,15 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
             "followthrough_sample_count": 0,
             "followthrough_rate": None,
             "volatility_ratio": 1.0,
-            "spread_atr_ratio": .20,
+            "spread_atr_ratio": 0.20,
             "feature_drift_zscore": 2.0,
         }
         result = _temporal_survival_assessment(
-            {"signal": "BUY"}, metrics, payload, 3, state,
+            {"signal": "BUY"},
+            metrics,
+            payload,
+            3,
+            state,
         )
         self.assertTrue(result["veto"])
         self.assertIn("spread_stress", result["reasons"])
@@ -443,15 +724,19 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         report = _temporal_survival_report(state, payload)
         self.assertGreaterEqual(report["abstention_count"], 1)
 
-    @patch("app.services.backtester.get_strategy", return_value=cooldown_shadow_strategy)
+    @patch(
+        "app.services.backtester.get_strategy", return_value=cooldown_shadow_strategy
+    )
     def test_temporal_survival_report_is_emitted_by_replay(self, _strategy):
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({
-            "temporal_survival_enabled": True,
-            "adaptive_signal_expiry_enabled": True,
-            "signal_max_age_candles": 2,
-            "temporal_followthrough_window": 2,
-        })
+        payload.parameters.update(
+            {
+                "temporal_survival_enabled": True,
+                "adaptive_signal_expiry_enabled": True,
+                "signal_max_age_candles": 2,
+                "temporal_followthrough_window": 2,
+            }
+        )
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, self.candles())
 
         self.assertTrue(result.temporal_survival["enabled"])
@@ -459,11 +744,13 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
 
     def test_frozen_control_collects_temporal_telemetry_without_veto(self):
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({
-            "temporal_followthrough_window": 1,
-            "temporal_followthrough_min_rate": .40,
-            "temporal_min_history": 5,
-        })
+        payload.parameters.update(
+            {
+                "temporal_followthrough_window": 1,
+                "temporal_followthrough_min_rate": 0.40,
+                "temporal_min_history": 5,
+            }
+        )
         state = _temporal_survival_state()
         signal = {"signal": "BUY", "close": 100.0, "_management_atr": 1.0}
         candle = {"open": 100.0, "high": 101.0, "low": 99.0}
@@ -489,21 +776,29 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         trace = result.decision_trace
         self.assertTrue(trace)
         self.assertTrue(result.data_quality["decision_trace"]["complete"])
-        rejected = [row for row in trace if row.get("rejection_code") == "minimum_confidence"]
+        rejected = [
+            row for row in trace if row.get("rejection_code") == "minimum_confidence"
+        ]
         self.assertTrue(rejected)
         self.assertIn("features", rejected[0])
         self.assertIn("candle_close", rejected[0]["features"])
         self.assertEqual(rejected[0]["accepted"], False)
 
-    @patch("app.services.backtester.get_strategy", return_value=cooldown_shadow_strategy)
-    def test_shadow_veto_ledger_measures_a_cooldown_rejection_without_opening_a_real_trade(self, _strategy):
+    @patch(
+        "app.services.backtester.get_strategy", return_value=cooldown_shadow_strategy
+    )
+    def test_shadow_veto_ledger_measures_a_cooldown_rejection_without_opening_a_real_trade(
+        self, _strategy
+    ):
         frame = self.candles()
         # First entry loses at candle 200. The next signal is then vetoed by
         # cooldown, but its counterfactual reaches target at candle 201.
         frame.loc[200, "low"] = 99.4
         frame.loc[201, "high"] = 101.5
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({"loss_cooldown_candles": 4, "dynamic_cooldown_enabled": True})
+        payload.parameters.update(
+            {"loss_cooldown_candles": 4, "dynamic_cooldown_enabled": True}
+        )
 
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, frame)
 
@@ -518,26 +813,34 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertIsInstance(record["market_regime"], str)
         self.assertEqual(result.cooldown_policy["loss_events"], 1)
 
-    @patch("app.services.backtester.get_strategy", return_value=loss_streak_probe_strategy)
-    def test_loss_streak_wait_expires_and_recovery_probe_returns_to_normal_risk(self, _strategy):
+    @patch(
+        "app.services.backtester.get_strategy", return_value=loss_streak_probe_strategy
+    )
+    def test_loss_streak_wait_expires_and_recovery_probe_returns_to_normal_risk(
+        self, _strategy
+    ):
         frame = self.extended_candles()
         for index in [200, 202, 204, 206]:
             frame.loc[index, "low"] = 99.4
         frame.loc[210, "high"] = 101.5
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({
-            "loss_cooldown_candles": 1,
-            "loss_streak_wait_candles": 3,
-            "max_loss_streak_before_wait": 4,
-            "dynamic_cooldown_enabled": False,
-            "recovery_probe_risk_multiplier": 0.5,
-        })
+        payload.parameters.update(
+            {
+                "loss_cooldown_candles": 1,
+                "loss_streak_wait_candles": 3,
+                "max_loss_streak_before_wait": 4,
+                "dynamic_cooldown_enabled": False,
+                "recovery_probe_risk_multiplier": 0.5,
+            }
+        )
 
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, frame)
 
         self.assertEqual(result.total_trades, 5)
         self.assertEqual(result.trades[-1].result, "WIN")
-        self.assertEqual(pd.Timestamp(result.trades[-1].entry_time), frame.loc[210, "time"])
+        self.assertEqual(
+            pd.Timestamp(result.trades[-1].entry_time), frame.loc[210, "time"]
+        )
         self.assertEqual(result.trades[-1].position_size_multiple, 1.0)
         self.assertGreaterEqual(result.entry_funnel["rejected"]["loss_streak_wait"], 1)
         self.assertEqual(result.cooldown_policy["loss_streak_wait_events"], 1)
@@ -545,7 +848,9 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertEqual(result.cooldown_policy["recovery_probe_wins"], 1)
         self.assertEqual(result.cooldown_policy["recovery_probe_losses"], 0)
 
-    @patch("app.services.backtester.get_strategy", return_value=cooldown_timing_strategy)
+    @patch(
+        "app.services.backtester.get_strategy", return_value=cooldown_timing_strategy
+    )
     def test_cooldown_two_and_three_change_accepted_trade_timing(self, _strategy):
         frame = self.candles()
         frame.loc[200, "low"] = 99.4
@@ -561,115 +866,191 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
 
         self.assertEqual(two.total_trades, 2)
         self.assertEqual(three.total_trades, 1)
-        self.assertEqual(pd.Timestamp(two.trades[-1].entry_time), frame.loc[202, "time"])
+        self.assertEqual(
+            pd.Timestamp(two.trades[-1].entry_time), frame.loc[202, "time"]
+        )
         self.assertGreaterEqual(three.entry_funnel["rejected"]["loss_cooldown"], 1)
 
-    @patch("app.services.backtester.get_strategy", return_value=cooldown_context_strategy)
+    @patch(
+        "app.services.backtester.get_strategy", return_value=cooldown_context_strategy
+    )
     def test_loss_cooldown_is_scoped_to_the_risk_context(self, _strategy):
         frame = self.candles()
         frame.loc[200, "low"] = 99.4
         frame.loc[202, "low"] = 99.4
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({"dynamic_cooldown_enabled": False, "loss_cooldown_candles": 4})
+        payload.parameters.update(
+            {"dynamic_cooldown_enabled": False, "loss_cooldown_candles": 4}
+        )
 
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, frame)
 
         # The trend-up loss creates a cooldown only for its own context; the
         # range lane remains eligible and takes the second signal.
         self.assertEqual(result.total_trades, 2)
-        self.assertEqual(pd.Timestamp(result.trades[-1].entry_time), frame.loc[202, "time"])
+        self.assertEqual(
+            pd.Timestamp(result.trades[-1].entry_time), frame.loc[202, "time"]
+        )
         self.assertEqual(result.cooldown_policy["loss_events"], 2)
 
     def test_global_confidence_fallback_is_not_a_hard_veto_for_a_new_context(self):
         from app.services.backtester import _confidence_assessment
 
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({
-            "confidence_calibration_enabled": True,
-            "confidence_calibration_min_samples": 15,
-            "confidence_ev_lower_bound_enabled": True,
-        })
-        signal = pd.Series({
-            "market_regime": "range", "volatility_regime": "normal_volatility",
-            "selected_specialist": "range_child", "signal_confidence": .8,
-        })
+        payload.parameters.update(
+            {
+                "confidence_calibration_enabled": True,
+                "confidence_calibration_min_samples": 15,
+                "confidence_ev_lower_bound_enabled": True,
+            }
+        )
+        signal = pd.Series(
+            {
+                "market_regime": "range",
+                "volatility_regime": "normal_volatility",
+                "selected_specialist": "range_child",
+                "signal_confidence": 0.8,
+            }
+        )
         history = {
-            "__global__": [{"confidence": .8, "profit_percent": -1.0} for _ in range(15)],
+            "__global__": [
+                {"confidence": 0.8, "profit_percent": -1.0} for _ in range(15)
+            ],
         }
 
-        assessment = _confidence_assessment(signal, "BUY", history, payload, self.candles().iloc[200])
+        assessment = _confidence_assessment(
+            signal, "BUY", history, payload, self.candles().iloc[200]
+        )
 
         self.assertEqual(assessment["source"], "global_fallback")
         self.assertFalse(assessment["hard_veto_eligible"])
 
     def test_weak_regime_veto_is_context_local_finite_and_recovers_with_a_probe(self):
-        from app.services.backtester import _advance_weak_regime_state, _record_weak_regime_outcome
+        from app.services.backtester import (
+            _advance_weak_regime_state,
+            _record_weak_regime_outcome,
+        )
 
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({"weak_regime_min_samples": 15, "weak_regime_wait_candles": 3})
+        payload.parameters.update(
+            {"weak_regime_min_samples": 15, "weak_regime_wait_candles": 3}
+        )
         states, events = {}, []
         candle = self.candles().iloc[200]
         context = "trend_down|normal_volatility|SELL|trend_down_child"
         for index in range(15):
-            _record_weak_regime_outcome(states, context, -1.0, "LOSS", False, index, candle, payload, events)
+            _record_weak_regime_outcome(
+                states, context, -1.0, "LOSS", False, index, candle, payload, events
+            )
 
         self.assertEqual(events[-1]["event"], "weak_regime_wait_started")
         wait_until = states[context]["wait_until"]
-        self.assertTrue(_advance_weak_regime_state(states, context, wait_until - 1, candle, events)[0])
-        self.assertEqual(_advance_weak_regime_state(states, "trend_up|normal_volatility|BUY|parent", wait_until - 1, candle, events), (False, False))
-        self.assertEqual(_advance_weak_regime_state(states, context, wait_until, candle, events), (False, True))
+        self.assertTrue(
+            _advance_weak_regime_state(states, context, wait_until - 1, candle, events)[
+                0
+            ]
+        )
+        self.assertEqual(
+            _advance_weak_regime_state(
+                states,
+                "trend_up|normal_volatility|BUY|parent",
+                wait_until - 1,
+                candle,
+                events,
+            ),
+            (False, False),
+        )
+        self.assertEqual(
+            _advance_weak_regime_state(states, context, wait_until, candle, events),
+            (False, True),
+        )
 
-        _record_weak_regime_outcome(states, context, 1.0, "WIN", True, wait_until, candle, payload, events)
+        _record_weak_regime_outcome(
+            states, context, 1.0, "WIN", True, wait_until, candle, payload, events
+        )
         self.assertEqual(states[context]["wait_until"], -1)
         self.assertEqual(states[context]["returns_window"], [])
 
         for index in range(15, 30):
-            _record_weak_regime_outcome(states, context, -1.0, "LOSS", False, index, candle, payload, events)
+            _record_weak_regime_outcome(
+                states, context, -1.0, "LOSS", False, index, candle, payload, events
+            )
         retry_at = states[context]["wait_until"]
         _advance_weak_regime_state(states, context, retry_at, candle, events)
-        _record_weak_regime_outcome(states, context, -1.0, "LOSS", True, retry_at, candle, payload, events)
+        _record_weak_regime_outcome(
+            states, context, -1.0, "LOSS", True, retry_at, candle, payload, events
+        )
         self.assertGreater(states[context]["wait_until"], retry_at)
 
-    def test_confidence_calibration_uses_only_closed_history_and_rejects_negative_lower_ev(self):
+    def test_confidence_calibration_uses_only_closed_history_and_rejects_negative_lower_ev(
+        self,
+    ):
         from collections import defaultdict
-        from app.services.backtester import _confidence_assessment, _record_confidence_observation
+
+        from app.services.backtester import (
+            _confidence_assessment,
+            _record_confidence_observation,
+        )
 
         payload = self.payload(reject_gaps=False)
-        payload.parameters.update({"confidence_calibration_enabled": True, "confidence_calibration_min_samples": 15})
+        payload.parameters.update(
+            {
+                "confidence_calibration_enabled": True,
+                "confidence_calibration_min_samples": 15,
+            }
+        )
         frame = self.candles()
         signal = frame.iloc[199].copy()
         signal["signal_confidence"] = 0.9
         history = defaultdict(list)
-        self.assertEqual(_confidence_assessment(signal, "BUY", history, payload, frame.iloc[200])["status"], "insufficient_evidence")
+        self.assertEqual(
+            _confidence_assessment(signal, "BUY", history, payload, frame.iloc[200])[
+                "status"
+            ],
+            "insufficient_evidence",
+        )
         for _ in range(15):
             _record_confidence_observation(history, signal, "BUY", -1.0)
-        calibrated = _confidence_assessment(signal, "BUY", history, payload, frame.iloc[200])
+        calibrated = _confidence_assessment(
+            signal, "BUY", history, payload, frame.iloc[200]
+        )
         self.assertEqual(calibrated["status"], "assessed")
         self.assertLessEqual(calibrated["ev_lower_bound"], 0)
 
     def test_differential_lane_selector_uses_parent_and_child_ledgers_separately(self):
         from app.services.backtester import _effective_lane_signal
 
-        row = pd.Series({
-            "signal": "BUY", "signal_confidence": .8,
-            "parent_signal": "SELL", "parent_signal_confidence": .6,
-            "differential_target": True, "selected_specialist": "range_child",
-        })
+        row = pd.Series(
+            {
+                "signal": "BUY",
+                "signal_confidence": 0.8,
+                "parent_signal": "SELL",
+                "parent_signal_confidence": 0.6,
+                "differential_target": True,
+                "selected_specialist": "range_child",
+            }
+        )
 
-        self.assertEqual(_effective_lane_signal(row, "target_parent")[:2], ("SELL", .6))
-        self.assertEqual(_effective_lane_signal(row, "target_child")[:2], ("BUY", .8))
-        self.assertEqual(_effective_lane_signal(row, "non_target_child")[:2], ("WAIT", 0.0))
+        self.assertEqual(
+            _effective_lane_signal(row, "target_parent")[:2], ("SELL", 0.6)
+        )
+        self.assertEqual(_effective_lane_signal(row, "target_child")[:2], ("BUY", 0.8))
+        self.assertEqual(
+            _effective_lane_signal(row, "non_target_child")[:2], ("WAIT", 0.0)
+        )
 
     def test_differential_identity_normalizes_equally_missing_non_target_values(self):
-        frame = pd.DataFrame({
-            "market_regime": ["range", "trend_down"],
-            "differential_target": [False, False],
-            "differential_target_regime": ["trend_up", "trend_up"],
-            "signal": [None, "WAIT"],
-            "parent_signal": [None, "WAIT"],
-            "signal_confidence": [None, 0.0],
-            "parent_signal_confidence": [None, 0.0],
-        })
+        frame = pd.DataFrame(
+            {
+                "market_regime": ["range", "trend_down"],
+                "differential_target": [False, False],
+                "differential_target_regime": ["trend_up", "trend_up"],
+                "signal": [None, "WAIT"],
+                "parent_signal": [None, "WAIT"],
+                "signal_confidence": [None, 0.0],
+                "parent_signal_confidence": [None, 0.0],
+            }
+        )
 
         report = _differential_router_report(frame, [])
 
@@ -680,69 +1061,124 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         payload = self.payload(reject_gaps=False)
         trades = [
             SimpleTrade(
-                direction="BUY", entry_time="2026-01-01T00:00:00", exit_time="2026-01-01T01:00:00",
-                entry_price=100, exit_price=101, result="WIN", profit_percent=1.0, balance=10100,
+                direction="BUY",
+                entry_time="2026-01-01T00:00:00",
+                exit_time="2026-01-01T01:00:00",
+                entry_price=100,
+                exit_price=101,
+                result="WIN",
+                profit_percent=1.0,
+                balance=10100,
             ),
             SimpleTrade(
-                direction="SELL", entry_time="2026-01-01T02:00:00", exit_time="2026-01-01T03:00:00",
-                entry_price=100, exit_price=100.5, result="LOSS", profit_percent=-0.5, balance=10049.5,
+                direction="SELL",
+                entry_time="2026-01-01T02:00:00",
+                exit_time="2026-01-01T03:00:00",
+                entry_price=100,
+                exit_price=100.5,
+                result="LOSS",
+                profit_percent=-0.5,
+                balance=10049.5,
             ),
         ]
-        result = _proof_carrying_replay({
-            "total_trades": 2,
-            "profit_factor": 2.0,
-            "net_profit_percent": 0.5,
-            "trade_ledger_hash": _trade_ledger_hash(trades),
-        }, trades, payload)
+        result = _proof_carrying_replay(
+            {
+                "total_trades": 2,
+                "profit_factor": 2.0,
+                "net_profit_percent": 0.5,
+                "trade_ledger_hash": _trade_ledger_hash(trades),
+            },
+            trades,
+            payload,
+        )
 
         self.assertEqual(result["status"], "passed")
-        self.assertEqual(result["independent_ledger_verifier"]["ledger_net_profit_percent"], 0.5)
+        self.assertEqual(
+            result["independent_ledger_verifier"]["ledger_net_profit_percent"], 0.5
+        )
 
     def test_proof_replay_does_not_double_round_profit_factor(self):
         payload = self.payload(reject_gaps=False)
         trades = [
             SimpleTrade(
-                direction="BUY", entry_time="2026-01-01T00:00:00", exit_time="2026-01-01T01:00:00",
-                entry_price=100, exit_price=101, result="WIN", profit_percent=1.8451, balance=10184.51,
+                direction="BUY",
+                entry_time="2026-01-01T00:00:00",
+                exit_time="2026-01-01T01:00:00",
+                entry_price=100,
+                exit_price=101,
+                result="WIN",
+                profit_percent=1.8451,
+                balance=10184.51,
             ),
             SimpleTrade(
-                direction="SELL", entry_time="2026-01-01T02:00:00", exit_time="2026-01-01T03:00:00",
-                entry_price=100, exit_price=100.0, result="LOSS", profit_percent=-1.0, balance=10082.66,
+                direction="SELL",
+                entry_time="2026-01-01T02:00:00",
+                exit_time="2026-01-01T03:00:00",
+                entry_price=100,
+                exit_price=100.0,
+                result="LOSS",
+                profit_percent=-1.0,
+                balance=10082.66,
             ),
         ]
-        result = _proof_carrying_replay({
-            "total_trades": 2,
-            "profit_factor": 1.85,
-            "net_profit_percent": 0.83,
-            "trade_ledger_hash": _trade_ledger_hash(trades),
-        }, trades, payload)
+        result = _proof_carrying_replay(
+            {
+                "total_trades": 2,
+                "profit_factor": 1.85,
+                "net_profit_percent": 0.83,
+                "trade_ledger_hash": _trade_ledger_hash(trades),
+            },
+            trades,
+            payload,
+        )
 
         self.assertEqual(result["status"], "passed")
         self.assertEqual(result["independent_ledger_verifier"]["profit_factor"], 1.85)
 
     def test_proof_replay_still_fails_on_real_ledger_mismatch(self):
         payload = self.payload(reject_gaps=False)
-        trades = [SimpleTrade(
-            direction="BUY", entry_time="2026-01-01T00:00:00", exit_time="2026-01-01T01:00:00",
-            entry_price=100, exit_price=101, result="WIN", profit_percent=1.0, balance=10100,
-        )]
-        result = _proof_carrying_replay({
-            "total_trades": 1,
-            "profit_factor": 1.0,
-            "net_profit_percent": 1.0,
-            "trade_ledger_hash": "tampered",
-        }, trades, payload)
+        trades = [
+            SimpleTrade(
+                direction="BUY",
+                entry_time="2026-01-01T00:00:00",
+                exit_time="2026-01-01T01:00:00",
+                entry_price=100,
+                exit_price=101,
+                result="WIN",
+                profit_percent=1.0,
+                balance=10100,
+            )
+        ]
+        result = _proof_carrying_replay(
+            {
+                "total_trades": 1,
+                "profit_factor": 1.0,
+                "net_profit_percent": 1.0,
+                "trade_ledger_hash": "tampered",
+            },
+            trades,
+            payload,
+        )
 
         self.assertEqual(result["status"], "mismatch")
 
-    @patch("app.services.backtester.get_strategy", return_value=differential_identity_strategy)
-    def test_lightweight_differential_replay_keeps_paired_identity_evidence(self, _strategy):
-        payload = self.payload(reject_gaps=False).model_copy(update={
-            "strategy": "XAUUSD_differential_router_g95_a01",
-            "base_strategy": "differential_router_v1",
-        })
+    @patch(
+        "app.services.backtester.get_strategy",
+        return_value=differential_identity_strategy,
+    )
+    def test_lightweight_differential_replay_keeps_paired_identity_evidence(
+        self, _strategy
+    ):
+        payload = self.payload(reject_gaps=False).model_copy(
+            update={
+                "strategy": "XAUUSD_differential_router_g95_a01",
+                "base_strategy": "differential_router_v1",
+            }
+        )
 
-        result = run_simple_ema_rsi_backtest_on_dataframe(payload, self.candles(), lightweight=True)
+        result = run_simple_ema_rsi_backtest_on_dataframe(
+            payload, self.candles(), lightweight=True
+        )
 
         paired = result.differential_router["paired_lane"]
         self.assertEqual(paired["status"], "deferred_until_core_gate")
@@ -750,48 +1186,61 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertIn("insufficient_core_trades", paired["core_gate"]["reasons"])
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
-    def test_window_survival_keeps_activity_absence_separate_from_edge_failure(self, _strategy):
-        result = run_simple_ema_rsi_backtest_on_dataframe(self.payload(reject_gaps=False), self.candles())
+    def test_window_survival_keeps_activity_absence_separate_from_edge_failure(
+        self, _strategy
+    ):
+        result = run_simple_ema_rsi_backtest_on_dataframe(
+            self.payload(reject_gaps=False), self.candles()
+        )
 
         self.assertIn("positive_windows", result.window_survival)
         self.assertIn("activity_absence", result.window_survival)
-        self.assertEqual(result.window_survival["protocol"], "calendar windows; activity absence is distinct from edge failure")
+        self.assertEqual(
+            result.window_survival["protocol"],
+            "calendar windows; activity absence is distinct from edge failure",
+        )
         self.assertIn("edge_density", result.opportunity_metrics)
 
     def test_xau_us_holiday_closure_is_not_a_hard_gap(self):
-        frame = pd.DataFrame({
-            "time": pd.to_datetime(["2005-02-18 18:00:00", "2005-02-22 08:00:00"]),
-            "open": [430.0, 431.0],
-            "high": [431.0, 432.0],
-            "low": [429.0, 430.0],
-            "close": [430.0, 431.0],
-            "volume": [1.0, 1.0],
-        })
+        frame = pd.DataFrame(
+            {
+                "time": pd.to_datetime(["2005-02-18 18:00:00", "2005-02-22 08:00:00"]),
+                "open": [430.0, 431.0],
+                "high": [431.0, 432.0],
+                "low": [429.0, 430.0],
+                "close": [430.0, 431.0],
+                "volume": [1.0, 1.0],
+            }
+        )
 
         self.assertEqual(_validate_data_gaps(frame, self.payload()), 0)
 
     def test_fx_christmas_closure_is_not_a_hard_gap(self):
-        frame = pd.DataFrame({
-            "time": pd.to_datetime(["2025-12-24 12:00:00", "2025-12-25 13:00:00"]),
-            "open": [1.10, 1.11],
-            "high": [1.11, 1.12],
-            "low": [1.09, 1.10],
-            "close": [1.10, 1.11],
-            "volume": [1.0, 1.0],
-        })
+        frame = pd.DataFrame(
+            {
+                "time": pd.to_datetime(["2025-12-24 12:00:00", "2025-12-25 13:00:00"]),
+                "open": [1.10, 1.11],
+                "high": [1.11, 1.12],
+                "low": [1.09, 1.10],
+                "close": [1.10, 1.11],
+                "volume": [1.0, 1.0],
+            }
+        )
 
         payload = self.payload().model_copy(update={"symbol": "EURUSD"})
         self.assertEqual(_validate_data_gaps(frame, payload), 0)
 
     def test_xau_maundy_thursday_closure_is_not_a_hard_gap(self):
-        frame = pd.DataFrame({
-            "time": pd.to_datetime(["2011-04-20 21:00:00", "2011-04-21 08:00:00"]),
-            "open": [1485.0, 1486.0],
-            "high": [1486.0, 1487.0],
-            "low": [1484.0, 1485.0],
-            "close": [1485.0, 1486.0],
-            "volume": [1.0, 1.0],
-        })
+        frame = pd.DataFrame(
+            {
+                "time": pd.to_datetime(["2011-04-20 21:00:00", "2011-04-21 08:00:00"]),
+                "open": [1485.0, 1486.0],
+                "high": [1486.0, 1487.0],
+                "low": [1484.0, 1485.0],
+                "close": [1485.0, 1486.0],
+                "volume": [1.0, 1.0],
+            }
+        )
 
         self.assertEqual(_validate_data_gaps(frame, self.payload()), 0)
 
@@ -810,63 +1259,101 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
     def test_cost_profiles_replay_identical_candles(self, _strategy):
         frame = self.candles()
         frame.loc[200, "high"] = 101.5
-        payload = self.payload(reject_gaps=False).model_copy(update={
-            "execution": ExecutionConfig(spread_points=20, point_size=0.01, slippage_points=2, commission_percent=0.01)
-        })
+        payload = self.payload(reject_gaps=False).model_copy(
+            update={
+                "execution": ExecutionConfig(
+                    spread_points=20,
+                    point_size=0.01,
+                    slippage_points=2,
+                    commission_percent=0.01,
+                )
+            }
+        )
         normal = run_simple_ema_rsi_backtest_on_dataframe(payload, frame).model_dump()
 
-        profiles = MarketAdaptiveReplayService._cost_profile_attribution(payload, frame, normal)
+        profiles = MarketAdaptiveReplayService._cost_profile_attribution(
+            payload, frame, normal
+        )
 
         self.assertEqual(profiles["method"], "identical_replay_execution_profiles")
         self.assertIn("profit_factor", profiles["zero_cost"])
         self.assertIn("profit_factor", profiles["stress_cost"])
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
-    def test_compact_event_digest_is_emitted_without_full_decision_trace(self, _strategy):
-        result = run_simple_ema_rsi_backtest_on_dataframe(self.payload(reject_gaps=False), self.candles())
+    def test_compact_event_digest_is_emitted_without_full_decision_trace(
+        self, _strategy
+    ):
+        result = run_simple_ema_rsi_backtest_on_dataframe(
+            self.payload(reject_gaps=False), self.candles()
+        )
 
         self.assertFalse(result.decision_trace)
         self.assertEqual(result.event_digest["protocol"], "event_ledger_digest_v1")
         self.assertEqual(result.event_ledger_hash, result.event_digest["hash"])
         self.assertGreater(result.event_ledger_count, 0)
         self.assertIn("entry:accepted", result.event_ledger_categories)
-        self.assertEqual(result.signal_decision_digest["protocol"], "signal_decision_digest_v1")
-        self.assertEqual(result.signal_decision_hash, result.signal_decision_digest["hash"])
+        self.assertEqual(
+            result.signal_decision_digest["protocol"], "signal_decision_digest_v1"
+        )
+        self.assertEqual(
+            result.signal_decision_hash, result.signal_decision_digest["hash"]
+        )
         self.assertEqual(len(result.signal_decision_hash), 64)
         self.assertGreater(result.signal_decision_count, 0)
         self.assertTrue(result.signal_decision_digest["streaming"])
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
     def test_shadow_state_machine_is_explicit_and_finite(self, _strategy):
-        payload = self.payload(reject_gaps=False).model_copy(update={
-            "parameters": {"state_machine_variant": "neutral_transition_cooldown_reentry_v1"},
-        })
+        payload = self.payload(reject_gaps=False).model_copy(
+            update={
+                "parameters": {
+                    "state_machine_variant": "neutral_transition_cooldown_reentry_v1"
+                },
+            }
+        )
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, self.candles())
 
         self.assertTrue(result.state_machine["enabled"])
-        self.assertEqual(result.state_machine["variant"], "neutral_transition_cooldown_reentry_v1")
-        self.assertIn(result.state_machine["final_state"], {"neutral", "transition", "cooldown", "reentry_permission"})
+        self.assertEqual(
+            result.state_machine["variant"], "neutral_transition_cooldown_reentry_v1"
+        )
+        self.assertIn(
+            result.state_machine["final_state"],
+            {"neutral", "transition", "cooldown", "reentry_permission"},
+        )
         self.assertEqual(result.event_ledger_hash, result.event_digest["hash"])
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
-    def test_architecture_interaction_activates_auditable_classifier_state_coherence(self, _strategy):
-        payload = self.payload(reject_gaps=False).model_copy(update={
-            "parameters": {"architecture_interaction_variant": "state_classifier_coherence_v1"},
-        })
+    def test_architecture_interaction_activates_auditable_classifier_state_coherence(
+        self, _strategy
+    ):
+        payload = self.payload(reject_gaps=False).model_copy(
+            update={
+                "parameters": {
+                    "architecture_interaction_variant": "state_classifier_coherence_v1"
+                },
+            }
+        )
 
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, self.candles())
 
         self.assertTrue(result.state_machine["enabled"])
-        self.assertEqual(result.state_machine["activation_source"], "architecture_interaction")
         self.assertEqual(
-            result.data_quality["architecture_interaction"]["regime_classifier_variant"],
+            result.state_machine["activation_source"], "architecture_interaction"
+        )
+        self.assertEqual(
+            result.data_quality["architecture_interaction"][
+                "regime_classifier_variant"
+            ],
             "adx_hysteresis_v1",
         )
         self.assertEqual(
             result.data_quality["architecture_interaction"]["state_machine_variant"],
             "neutral_transition_cooldown_reentry_v1",
         )
-        self.assertTrue(result.data_quality["architecture_interaction"]["single_macro_gene"])
+        self.assertTrue(
+            result.data_quality["architecture_interaction"]["single_macro_gene"]
+        )
 
 
 if __name__ == "__main__":

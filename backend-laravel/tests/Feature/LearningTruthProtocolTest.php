@@ -71,6 +71,23 @@ class LearningTruthProtocolTest extends TestCase
     public function test_canonical_settlement_completes_dispatch_and_zero_trades_remain_insufficient_evidence(): void
     {
         [$agent, $pair] = $this->pair(true);
+        $screenLesson = AgentLearningLesson::create([
+            'lesson_id' => 'screen-positive-before-inconclusive-full',
+            'lesson_hash' => hash('sha256', 'screen-positive-before-inconclusive-full'),
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'lesson_type' => 'skill_lesson',
+            'status' => 'provisional',
+            'failure_class' => 'profit_factor',
+            'parameter_key' => 'minimum_confidence',
+            'outcome' => 'beneficial',
+            'evidence' => ['pair_id' => $pair->id, 'stage' => 'screening', 'promotion_evidence' => false],
+            'observed_at' => now(),
+            'expires_at' => now()->addDays(30),
+        ]);
         LabLearningLaneDispatch::create(['dispatch_key' => 'truth-dispatch', 'pair_id' => $pair->id, 'lab_generation_id' => $pair->lab_generation_id, 'lab_agent_id' => $agent->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'status' => 'running', 'stage' => 'full_replay']);
         $result = app(CanonicalLearningOutboxService::class)->record($agent, $pair, ['evidence_run_id' => 'truth-valid', 'total_trades' => 0, 'opportunity_recall_failure' => true], false, ['improved' => false]);
 
@@ -79,6 +96,22 @@ class LearningTruthProtocolTest extends TestCase
         $this->assertDatabaseHas('lab_learning_lane_dispatches', ['status' => 'canonical_settled']);
         $this->assertDatabaseHas('agent_learning_settlements', ['evidence_state' => 'insufficient_evidence']);
         $this->assertSame('execution_admission_starvation', data_get($pair->fresh()->metadata, 'targeted_repair_lane.classification'));
+        $this->assertSame('inconclusive', $screenLesson->fresh()->status);
+        $this->assertNotNull($screenLesson->fresh()->expires_at);
+        $this->assertFalse((bool) data_get($screenLesson->fresh()->evidence, 'canonical_reconciliation.screening_positive_reusable', true));
+
+        $outbox = CanonicalLearningOutbox::query()->where('pair_id', $pair->id)->firstOrFail();
+        $pair->fresh()->update([
+            'status' => 'canonical_failed',
+            'metadata' => [...((array) $pair->fresh()->metadata), 'canonical_failure' => 'TRANSIENT_PROJECTION_FAILURE'],
+        ]);
+        LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->update(['status' => 'canonical_failed']);
+        $reprojected = app(CanonicalLearningOutboxService::class)->reproject($outbox);
+        $this->assertSame('reprojected', $reprojected['status']);
+        $this->assertSame('canonical_episode_settled', $pair->fresh()->status);
+        $this->assertSame('canonical_settled', LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->value('status'));
+        $this->assertNull(data_get($pair->fresh()->metadata, 'canonical_failure'));
+        $this->assertTrue((bool) data_get($pair->fresh()->metadata, 'canonical_projection_recovered'));
     }
 
     public function test_missing_metrics_are_insufficient_evidence_not_zero_loss(): void
@@ -179,6 +212,23 @@ class LearningTruthProtocolTest extends TestCase
     public function test_relative_uplift_with_absolute_safety_failure_is_observation_not_preference(): void
     {
         [$agent, $pair] = $this->pair(true);
+        $screenLesson = AgentLearningLesson::create([
+            'lesson_id' => 'screen-positive-before-negative-full',
+            'lesson_hash' => hash('sha256', 'screen-positive-before-negative-full'),
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'lesson_type' => 'skill_lesson',
+            'status' => 'provisional',
+            'failure_class' => 'profit_factor',
+            'parameter_key' => 'minimum_confidence',
+            'outcome' => 'beneficial',
+            'evidence' => ['pair_id' => $pair->id, 'stage' => 'screening', 'promotion_evidence' => false],
+            'observed_at' => now(),
+            'expires_at' => now()->addDays(30),
+        ]);
         $result = app(CanonicalLearningOutboxService::class)->record($agent, $pair, [
             'evidence_run_id' => 'truth-valid',
             'total_trades' => 24,
@@ -199,6 +249,8 @@ class LearningTruthProtocolTest extends TestCase
         $this->assertContains('DRAWDOWN_LIMIT', (array) data_get($receipt->evidence, 'input.settlement_vetoes', []));
         $this->assertSame(0.0, (float) data_get($receipt->evidence, 'input.component_credit.drawdown_safety'));
         $this->assertSame(CausalEdgeAccountingService::PROTOCOL, data_get($receipt->evidence, 'input.causal_edge_accounting.protocol'));
+        $this->assertSame('falsified', $screenLesson->fresh()->status);
+        $this->assertSame('negative', data_get($screenLesson->fresh()->evidence, 'canonical_reconciliation.evidence_state'));
     }
 
     public function test_unexecuted_response_map_cannot_enter_canonical_or_cartridge_paths(): void

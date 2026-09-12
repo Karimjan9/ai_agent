@@ -58,6 +58,14 @@ class ContextContractV2Service
             'volume_state' => $this->bounded($raw['volume_state']),
             'direction' => $this->bounded($raw['direction']),
             'state_cluster_id' => $this->bounded($raw['state_cluster_id'], false),
+            'session_instance_id' => $this->bounded($raw['session_instance_id'], false),
+            'venue_phase' => $this->session($raw['venue_phase']),
+            'overlap_mask' => $this->mask($raw['overlap_mask']),
+            'minutes_from_boundary' => is_numeric($raw['minutes_from_boundary'])
+                ? (string) max(0, (int) $raw['minutes_from_boundary'])
+                : null,
+            'calendar_version' => $this->bounded($raw['calendar_version'], false),
+            'session_offset_state' => $this->bounded($raw['session_offset_state'], false),
         ];
     }
 
@@ -88,6 +96,12 @@ class ContextContractV2Service
             'volume_state' => $value('volume_state', ['volume_quality']),
             'direction' => $value('direction', ['side']),
             'state_cluster_id' => $value('state_cluster_id', ['cluster_id', 'state_cluster']),
+            'session_instance_id' => $value('session_instance_id', ['session_ownership.session_instance_id']),
+            'venue_phase' => $value('venue_phase', ['session_ownership.venue_phase']),
+            'overlap_mask' => $value('overlap_mask', ['session_ownership.overlap_mask']),
+            'minutes_from_boundary' => $value('minutes_from_boundary', ['session_ownership.minutes_from_boundary']),
+            'calendar_version' => $value('calendar_version', ['session_ownership.calendar_version']),
+            'session_offset_state' => $value('session_offset_state', ['offset_state']),
         ];
     }
 
@@ -170,6 +184,20 @@ class ContextContractV2Service
         }
 
         return $normalize ? $this->key($text) : $text;
+    }
+
+    private function mask(mixed $value): ?string
+    {
+        if (! is_array($value)) {
+            return $this->bounded($value);
+        }
+        $values = array_values(array_unique(array_filter(array_map(
+            fn (mixed $item): ?string => $this->bounded($item),
+            $value,
+        ))));
+        sort($values);
+
+        return $values === [] ? null : implode('+', $values);
     }
 
     private function key(mixed $value): string

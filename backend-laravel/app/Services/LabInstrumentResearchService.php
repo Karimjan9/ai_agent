@@ -23,6 +23,12 @@ class LabInstrumentResearchService
 
     public const HASH_PROTOCOL = 'numeric_canonical_json_v1';
 
+    public const ACTIVATION_PROTOCOL = 'instrument_runtime_activation_contract_v1';
+
+    public const RUNTIME_TRACE_PROTOCOL = 'lab_instrument_runtime_trace_v2';
+
+    public const DECISION_DOCTRINE_PROTOCOL = 'contextual_instrument_decision_doctrine_v1';
+
     public function __construct(
         private TradingInstrumentOperatingSystemService $instruments,
         private ExactCausalBaselineService $baselines,
@@ -44,6 +50,8 @@ class LabInstrumentResearchService
         unset($existingWithoutHash['assignment_hash']);
         if ((string) data_get($existing, 'protocol') === self::PROTOCOL
             && (string) data_get($existing, 'hash_protocol') === self::HASH_PROTOCOL
+            && (string) data_get($existing, 'activation_policy.protocol') === self::ACTIVATION_PROTOCOL
+            && (string) data_get($existing, 'decision_doctrine.protocol') === self::DECISION_DOCTRINE_PROTOCOL
             && (string) data_get($existing, 'parameter_hash') === $parameterHash
             && filled(data_get($existing, 'assignment_hash'))
             && hash_equals((string) data_get($existing, 'assignment_hash'), $this->hash($existingWithoutHash))) {
@@ -95,6 +103,13 @@ class LabInstrumentResearchService
                 'promotion_state' => (string) $instrument->promotion_state,
                 'parameter_bindings' => $bindings,
                 'causal_candidate' => $changedGene !== null && in_array($changedGene, $allowed, true),
+                'selection_reason' => $changedGene !== null && in_array($changedGene, $allowed, true)
+                    ? 'changed_gene_causal_surface'
+                    : ($experimentRole === 'frozen_control' ? 'frozen_control_observation' : 'frozen_support_component'),
+                'learning_authority' => $changedGene !== null && in_array($changedGene, $allowed, true)
+                    ? 'eligible_for_local_paired_delta_only_after_runtime_activation'
+                    : 'support_observation_only_without_factorial_attribution',
+                'activation_contract' => $this->activationContract($instrument, $agent, $pairReservation),
                 'tool_card_hash' => $this->hash((array) $instrument->definition),
                 'promotion_evidence' => false,
             ];
@@ -140,6 +155,37 @@ class LabInstrumentResearchService
             'experiment_role' => $experimentRole,
             'pair_reservation' => $pairReservation,
             'selection_mode' => $changedGene ? 'causal_changed_surface_plus_frozen_support' : 'frozen_baseline_bundle',
+            'activation_policy' => [
+                'protocol' => self::ACTIVATION_PROTOCOL,
+                'selection_is_not_invocation' => true,
+                'parameter_binding_is_not_activation' => true,
+                'runtime_decision_path_required' => true,
+                'outside_context_action' => 'ABSTAIN',
+                'inactive_disposition' => 'NOT_INVOKED_NO_CREDIT',
+                'credit_rule' => 'only the activated changed surface may receive isolated causal credit; support and bundle value require their own exact activation evidence',
+                'paper_execution_authority' => false,
+                'promotion_evidence' => false,
+            ],
+            'decision_doctrine' => [
+                'protocol' => self::DECISION_DOCTRINE_PROTOCOL,
+                'objective' => $changedGene
+                    ? "isolate whether {$changedGene} improves its pre-declared local context"
+                    : 'observe the frozen baseline bundle without assigning causal credit',
+                'changed_gene' => $changedGene,
+                'causal_candidate_limit' => 1,
+                'rules' => [
+                    'invoke_only_when_runtime_preconditions_and_context_contract_match',
+                    'abstain_outside_declared_context_even_when_the_tool_is_globally_available',
+                    'do_not_add_unregistered_instruments_during_replay',
+                    'do_not_credit_frozen_support_as_the_changed_cause',
+                    'negative_evidence_forbids_only_the_tested_context_and_gene_surface',
+                    'positive_evidence_remains_local_until_exact_pair_replication_and_factorial_attribution',
+                ],
+                'success_receipt' => 'instrument_runtime_observation + exact frozen control + local control delta',
+                'failure_receipt' => 'NOT_INVOKED_NO_CREDIT or context-local negative posterior',
+                'paper_execution_authority' => false,
+                'promotion_evidence' => false,
+            ],
             'playbook_key' => $playbook?->playbook_key,
             'bundle_identity' => $playbook ? [
                 'playbook_key' => $playbook->playbook_key,
@@ -419,6 +465,83 @@ class LabInstrumentResearchService
         $keys = array_values(array_unique(array_filter([$primary, 'atr_risk_envelope', 'cost_aware_exit'])));
 
         return array_slice($keys, 0, 6);
+    }
+
+    /**
+     * Tell the replay runtime what observable event constitutes use. Merely
+     * carrying a compatible parameter is inventory, not a decision. The
+     * context boundary is copied from the instrument contract so the runtime
+     * can expose local activation/abstention without inventing authority.
+     *
+     * @return array<string,mixed>
+     */
+    private function activationContract(TradingInstrument $instrument, LabAgent $agent, array $pairReservation): array
+    {
+        $key = (string) $instrument->instrument_key;
+        $runtimeEvents = match ($key) {
+            'trend_pullback' => ['trend_decision:*'],
+            'breakout_retest' => ['breakout_decision:*'],
+            'compression_expansion' => ['compression_decision:*'],
+            'range_reentry' => ['range_decision:*'],
+            'session_breakout' => ['session_breakout_signal_evaluated'],
+            'session_range' => ['session_range_evaluated'],
+            'volume_confirmation' => ['volume_policy_evaluated'],
+            'transition_protection' => ['transition_boundary_wait_started', 'transition_entry_veto'],
+            'cost_firewall' => ['entry_cost_gate_evaluated'],
+            'high_volatility_firewall' => ['high_volatility_gate_evaluated'],
+            'loss_streak_cooldown' => ['loss_streak_wait', 'loss_cooldown'],
+            'dynamic_cooldown' => ['loss_streak_wait', 'loss_cooldown', 'loss_cooldown_scheduled'],
+            'atr_risk_envelope' => ['entry_stop_target_sized'],
+            'cost_aware_exit' => ['position_exit:*'],
+            'regime_router' => ['router_selected:*'],
+            'adaptive_entry_topology' => ['entry_topology_selected:*'],
+            'confidence_firewall' => ['confidence_gate_evaluated'],
+            'temporal_survival_filter' => ['temporal_survival_evaluated', 'state_machine_transition:*'],
+            'meta_label_filter' => ['meta_label_gate_evaluated'],
+            'dynamic_fibonacci_zone', 'confirmed_swing' => ['structure_location_evaluated'],
+            'support_resistance_zone' => ['structure_location_evaluated'],
+            'bos_event' => ['bos_event_observed'],
+            'choch_event' => ['choch_event_observed'],
+            'liquidity_sweep' => ['liquidity_sweep_observed'],
+            'liquidity_pool' => ['liquidity_pool_proxy_evaluated'],
+            default => ['runtime_hook_unavailable_no_credit'],
+        };
+        $contract = $instrument->contract;
+        $capsuleContext = (array) data_get($pairReservation, 'trait_capsule.activation_context.predicate', []);
+        $semantic = (array) data_get($agent->modelVersion?->metadata, 'semantic_group', []);
+        $lane = (array) data_get($agent->modelVersion?->metadata, 'portfolio_council_lane', []);
+        $specialistCell = (array) data_get(
+            $agent->modelVersion?->metadata,
+            'specialist_council_membership.contextual_cell',
+            [],
+        );
+        $declaredContext = array_filter([
+            'regime' => data_get($capsuleContext, 'regime', data_get($specialistCell, 'regime', data_get($semantic, 'regime', data_get($lane, 'regime')))),
+            'session' => data_get($capsuleContext, 'session', data_get($specialistCell, 'session', data_get($lane, 'session', data_get($lane, 'owner_context.session')))),
+            'volatility' => data_get($capsuleContext, 'volatility', data_get($specialistCell, 'volatility', data_get($semantic, 'volatility', data_get($lane, 'volatility')))),
+            'spread_liquidity_state' => data_get($capsuleContext, 'spread_liquidity_state', data_get($specialistCell, 'spread_liquidity_state', data_get($lane, 'spread_liquidity_state'))),
+            'transition_state' => data_get($capsuleContext, 'transition_state', data_get($specialistCell, 'transition_state', data_get($lane, 'transition_state'))),
+            'direction' => data_get($capsuleContext, 'direction', data_get($specialistCell, 'direction', data_get($semantic, 'direction', data_get($lane, 'direction')))),
+        ], static fn ($value): bool => ! in_array($value, [null, '', '*', 'both', 'unknown'], true));
+
+        return [
+            'protocol' => self::ACTIVATION_PROTOCOL,
+            'mode' => 'instrument_specific_runtime_event',
+            'required_runtime_events' => $runtimeEvents,
+            'aggregate_metric_fallback_allowed' => false,
+            'context' => [
+                'compatible_regimes' => array_values((array) ($contract?->compatible_regimes ?? [])),
+                'forbidden_regimes' => array_values((array) ($contract?->forbidden_regimes ?? [])),
+                'required_inputs' => array_values((array) ($contract?->required_inputs ?? [])),
+                'declared_context' => $declaredContext,
+                'session_ownership' => data_get($specialistCell, 'session_ownership'),
+                'contextual_cell_hash' => data_get($specialistCell, 'cell_hash'),
+                'outside_scope_action' => 'ABSTAIN',
+            ],
+            'no_signal_status' => 'not_activated',
+            'assignment_or_binding_alone_is_evidence' => false,
+            'promotion_evidence' => false,
+        ];
     }
 
     private function instrumentForGene(string $gene): string

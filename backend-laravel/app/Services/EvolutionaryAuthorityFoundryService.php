@@ -907,11 +907,14 @@ class EvolutionaryAuthorityFoundryService
             return false;
         }
         $trace = (array) data_get($result, 'instrument_research_trace', []);
-        if (data_get($trace, 'protocol') !== 'lab_instrument_runtime_trace_v1'
+        if (data_get($trace, 'protocol') !== LabInstrumentResearchService::RUNTIME_TRACE_PROTOCOL
             || data_get($trace, 'status') !== 'consumed'
             || data_get($trace, 'assignment_hash_valid') !== true
             || data_get($trace, 'parameter_hash_valid') !== true
-            || data_get($trace, 'runtime_bindings_valid') !== true) {
+            || data_get($trace, 'runtime_bindings_valid') !== true
+            || data_get($trace, 'activation_contracts_valid') !== true
+            || data_get($trace, 'runtime_observations_valid') !== true
+            || data_get($trace, 'bundle_fully_activated') !== true) {
             return false;
         }
         $expectedKeys = array_values(array_unique(array_map(
@@ -919,14 +922,24 @@ class EvolutionaryAuthorityFoundryService
             (array) data_get($capsule, 'instrument_bundle.instrument_keys', []),
         )));
         $observedKeys = collect((array) data_get($trace, 'instruments', []))
-            ->filter(fn ($row): bool => is_array($row) && data_get($row, 'status') === 'consumed')
+            ->filter(fn ($row): bool => is_array($row)
+                && data_get($row, 'status') === 'consumed'
+                && data_get($row, 'decision_path_activated') === true
+                && data_get($row, 'runtime_observation_valid') === true
+                && data_get($row, 'runtime_receipt_consistent') === true
+                && data_get($row, 'activation_contract_protocol') === LabInstrumentResearchService::ACTIVATION_PROTOCOL)
             ->pluck('instrument_key')->map(fn ($key): string => (string) $key)->unique()->values()->all();
         if ($expectedKeys === [] || $expectedKeys !== $observedKeys) {
             return false;
         }
 
-        return collect((array) data_get($trace, 'context_slices', []))->contains(function ($slice) use ($capsule): bool {
+        $bundleContexts = array_flip(array_map('strval', (array) data_get($trace, 'bundle_activation_context_keys', [])));
+
+        return collect((array) data_get($trace, 'context_slices', []))->contains(function ($slice) use ($capsule, $bundleContexts): bool {
             if (! is_array($slice) || data_get($slice, 'powered') !== true) {
+                return false;
+            }
+            if (! isset($bundleContexts[(string) data_get($slice, 'context_key', '')])) {
                 return false;
             }
 

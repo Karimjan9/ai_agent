@@ -1,9 +1,9 @@
-from collections import Counter, defaultdict
-from dataclasses import dataclass
-from datetime import datetime, timedelta
 import hashlib
 import json
 import math
+from collections import Counter, defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -22,20 +22,24 @@ from app.schemas import (
     SimpleTrade,
     Trade,
 )
-from app.services.data_loader import load_candles
-from app.services.execution_contract import enforce_policy_boundary, execution_contract_metadata
 from app.services.control_roots import control_root_for
+from app.services.data_loader import load_candles
+from app.services.execution_contract import (
+    enforce_policy_boundary,
+    execution_contract_metadata,
+)
 from app.services.indicators import add_indicators
 from app.services.market_regime import apply_market_regime
+from app.services.market_sessions import apply_specialist_scope, session_membership
+from app.services.monte_carlo import MonteCarloService
 from app.services.multitimeframe import annotate_regime_source, apply_signal_policy
 from app.services.multitimeframe_stack import (
     PreparedClosedMtfContext,
     apply_closed_mtf_context,
     prepare_closed_mtf_context,
 )
-from app.services.monte_carlo import MonteCarloService
-from app.services.strategy_dna import StrategyDnaService
 from app.services.statistical_validation import bootstrap_profit_factor_lower_bound
+from app.services.strategy_dna import StrategyDnaService
 from app.services.volume_features import (
     add_volume_features,
     apply_volume_policy,
@@ -139,7 +143,9 @@ def core_replay_gate(result: dict[str, object]) -> dict[str, object]:
         "passed": not reasons,
         "minimum_trades": 10,
         "total_trades": total_trades,
-        "profit_factor": round(profit_factor, 6) if math.isfinite(profit_factor) else 0.0,
+        "profit_factor": round(profit_factor, 6)
+        if math.isfinite(profit_factor)
+        else 0.0,
         "hard_gate_failure_count": hard_gate_failures,
         "reasons": reasons,
         "promotion_evidence": False,
@@ -148,7 +154,9 @@ def core_replay_gate(result: dict[str, object]) -> dict[str, object]:
 
 
 def run_backtest(payload: BacktestRequest) -> BacktestResponse:
-    candles = load_candles(payload.dataset_path, payload.candles, payload.from_date, payload.to_date)
+    candles = load_candles(
+        payload.dataset_path, payload.candles, payload.from_date, payload.to_date
+    )
     strategy = payload.strategy
     prepared = add_indicators(
         candles,
@@ -173,13 +181,17 @@ def run_backtest(payload: BacktestRequest) -> BacktestResponse:
     )
 
 
-def run_simple_ema_rsi_backtest(payload: SimpleBacktestRequest) -> SimpleBacktestResponse:
+def run_simple_ema_rsi_backtest(
+    payload: SimpleBacktestRequest,
+) -> SimpleBacktestResponse:
     df = _load_simple_candles(payload)
 
     return run_simple_ema_rsi_backtest_on_dataframe(payload, df)
 
 
-def _prepare_simple_dataframe(payload: SimpleBacktestRequest, df: pd.DataFrame) -> pd.DataFrame:
+def _prepare_simple_dataframe(
+    payload: SimpleBacktestRequest, df: pd.DataFrame
+) -> pd.DataFrame:
     """Normalize and validate one candle stream exactly once per snapshot."""
     frame = df.copy()
     if "volume" not in frame.columns:
@@ -194,7 +206,10 @@ def _prepare_simple_dataframe(payload: SimpleBacktestRequest, df: pd.DataFrame) 
         raise ValueError(f"Dataset is missing required columns: {missing}")
 
     data_quality = _data_quality_diagnostics(frame)
-    if payload.execution.reject_unexpected_gaps and data_quality["hard_gate_failure_count"]:
+    if (
+        payload.execution.reject_unexpected_gaps
+        and data_quality["hard_gate_failure_count"]
+    ):
         raise ValueError(
             "Historical data hard-gate failed: data_quality "
             f"{data_quality['hard_gate_failures']}"
@@ -222,7 +237,11 @@ def _prepare_simple_dataframe(payload: SimpleBacktestRequest, df: pd.DataFrame) 
         )
     data_quality["rows_after_cleaning"] = len(frame)
     data_quality["unexpected_gap_count"] = unexpected_gap_count
-    data_quality["status"] = "warning" if data_quality["hard_gate_failure_count"] or unexpected_gap_count else "passed"
+    data_quality["status"] = (
+        "warning"
+        if data_quality["hard_gate_failure_count"] or unexpected_gap_count
+        else "passed"
+    )
     frame.attrs["unexpected_gap_count"] = unexpected_gap_count
     frame.attrs["data_quality"] = data_quality
 
@@ -274,7 +293,9 @@ def prepare_feature_snapshot(
     interaction_variant = str(
         payload.parameters.get("architecture_interaction_variant", "frozen") or "frozen"
     )
-    regime_variant = str(payload.parameters.get("regime_classifier_variant", "frozen") or "frozen")
+    regime_variant = str(
+        payload.parameters.get("regime_classifier_variant", "frozen") or "frozen"
+    )
     if interaction_variant == "state_classifier_coherence_v1":
         regime_variant = "adx_hysteresis_v1"
     prepared = _apply_execution_regime(normalized, regime_source, regime_variant)
@@ -292,13 +313,18 @@ def prepare_feature_snapshot(
     prepared = add_volume_features(prepared, payload.volume_context)
     prepared.attrs["execution_timeframe"] = str(payload.timeframe).upper()
     previous_close = prepared["close"].shift(1)
-    true_range = pd.concat([
-        prepared["high"] - prepared["low"],
-        (prepared["high"] - previous_close).abs(),
-        (prepared["low"] - previous_close).abs(),
-    ], axis=1).max(axis=1)
+    true_range = pd.concat(
+        [
+            prepared["high"] - prepared["low"],
+            (prepared["high"] - previous_close).abs(),
+            (prepared["low"] - previous_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
     prepared["_management_atr"] = true_range.rolling(14, min_periods=1).mean()
-    prepared.attrs["unexpected_gap_count"] = int(normalized.attrs.get("unexpected_gap_count", 0))
+    prepared.attrs["unexpected_gap_count"] = int(
+        normalized.attrs.get("unexpected_gap_count", 0)
+    )
     data_quality = dict(normalized.attrs.get("data_quality") or {})
     if "mtf_stack" in prepared.attrs:
         data_quality["mtf_stack"] = dict(prepared.attrs["mtf_stack"])
@@ -378,6 +404,7 @@ def prepare_signal_snapshot(
             strategy_parameters,
             payload.base_strategy or payload.strategy,
         )
+        prepared = apply_specialist_scope(prepared, payload.specialist_context_contract)
     prepared = _apply_signal_delay(prepared, payload.signal_delay_candles)
     prepared.attrs["unexpected_gap_count"] = features.unexpected_gap_count
     prepared.attrs["data_quality"] = dict(features.data_quality)
@@ -397,8 +424,16 @@ def _sealed_strategy_parameters(payload: SimpleBacktestRequest) -> dict[str, obj
     """Authorize research-only ablations against the signed policy context."""
     parameters = dict(payload.parameters)
     edge_contracts = (payload.policy_context or {}).get("edge_genesis_contracts", {})
-    edge_contract = edge_contracts.get(payload.strategy, {}) if isinstance(edge_contracts, dict) else {}
-    attribution_arm = str(edge_contract.get("attribution_arm", "")) if isinstance(edge_contract, dict) else ""
+    edge_contract = (
+        edge_contracts.get(payload.strategy, {})
+        if isinstance(edge_contracts, dict)
+        else {}
+    )
+    attribution_arm = (
+        str(edge_contract.get("attribution_arm", ""))
+        if isinstance(edge_contract, dict)
+        else ""
+    )
     bypass = bool(parameters.get("attribution_confirmation_bypass", False))
     if bypass and not (
         edge_contract.get("protocol") == "bounded_edge_genesis_replay_v1"
@@ -412,10 +447,12 @@ def _sealed_strategy_parameters(payload: SimpleBacktestRequest) -> dict[str, obj
 
 def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
     if payload.candles:
-        df = pd.DataFrame([
-            candle.model_dump() if hasattr(candle, "model_dump") else candle
-            for candle in payload.candles
-        ])
+        df = pd.DataFrame(
+            [
+                candle.model_dump() if hasattr(candle, "model_dump") else candle
+                for candle in payload.candles
+            ]
+        )
     else:
         dataset_path = payload.dataset_path
         if not dataset_path:
@@ -436,11 +473,18 @@ def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
 
 def _load_regime_source(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
     if payload.regime_candles:
-        return pd.DataFrame([candle.model_dump() if hasattr(candle, "model_dump") else candle for candle in payload.regime_candles])
+        return pd.DataFrame(
+            [
+                candle.model_dump() if hasattr(candle, "model_dump") else candle
+                for candle in payload.regime_candles
+            ]
+        )
     if payload.regime_dataset_path:
         frame = pd.read_csv(_resolve_dataset_path(payload.regime_dataset_path))
         if payload.regime_dataset_tail_rows is not None:
-            frame = frame.tail(int(payload.regime_dataset_tail_rows)).reset_index(drop=True)
+            frame = frame.tail(int(payload.regime_dataset_tail_rows)).reset_index(
+                drop=True
+            )
         return frame
     return None
 
@@ -451,10 +495,12 @@ def _load_mtf_streams(payload: SimpleBacktestRequest) -> dict[str, pd.DataFrame]
     inline = dict(payload.mtf_streams or {})
     for timeframe, candles in inline.items():
         if candles:
-            streams[str(timeframe).upper()] = pd.DataFrame([
-                candle.model_dump() if hasattr(candle, "model_dump") else candle
-                for candle in candles
-            ])
+            streams[str(timeframe).upper()] = pd.DataFrame(
+                [
+                    candle.model_dump() if hasattr(candle, "model_dump") else candle
+                    for candle in candles
+                ]
+            )
     for timeframe, path in dict(payload.mtf_dataset_paths or {}).items():
         key = str(timeframe).upper()
         if key in streams or not path:
@@ -469,15 +515,19 @@ def _load_mtf_streams(payload: SimpleBacktestRequest) -> dict[str, pd.DataFrame]
     return streams
 
 
-def _load_related_mtf_streams(payload: SimpleBacktestRequest) -> dict[str, pd.DataFrame]:
+def _load_related_mtf_streams(
+    payload: SimpleBacktestRequest,
+) -> dict[str, pd.DataFrame]:
     """Load independently sealed related-market context; never infer it from primary candles."""
     streams: dict[str, pd.DataFrame] = {}
     for timeframe, candles in dict(payload.related_mtf_streams or {}).items():
         if candles:
-            streams[str(timeframe).upper()] = pd.DataFrame([
-                candle.model_dump() if hasattr(candle, "model_dump") else candle
-                for candle in candles
-            ])
+            streams[str(timeframe).upper()] = pd.DataFrame(
+                [
+                    candle.model_dump() if hasattr(candle, "model_dump") else candle
+                    for candle in candles
+                ]
+            )
     for timeframe, path in dict(payload.related_mtf_dataset_paths or {}).items():
         key = str(timeframe).upper()
         if key in streams or not path:
@@ -498,11 +548,16 @@ def _apply_execution_regime(
     regime_classifier_variant: str = "frozen",
 ) -> pd.DataFrame:
     """Merge only closed H1 state into an M15 execution stream (no look-ahead)."""
+
     def classify(frame: pd.DataFrame) -> pd.DataFrame:
         # Keep the historical one-argument call for the frozen path. Besides
         # avoiding needless API churn, this preserves compatibility with
         # sealed test doubles and older local adapters.
-        return apply_market_regime(frame) if regime_classifier_variant == "frozen" else apply_market_regime(frame, regime_classifier_variant)
+        return (
+            apply_market_regime(frame)
+            if regime_classifier_variant == "frozen"
+            else apply_market_regime(frame, regime_classifier_variant)
+        )
 
     if regime_source is None:
         return classify(execution_df)
@@ -515,18 +570,34 @@ def _apply_execution_regime(
         higher["regime_classifier_variant"] = regime_classifier_variant
     higher["regime_available_at"] = higher["_h1_closed_at"]
     columns = [
-        "regime_available_at", "_h1_open_at", "_h1_closed_at", "_h1_context_hash",
-        "market_regime", "volatility_regime", "adx", "atr_regime",
+        "regime_available_at",
+        "_h1_open_at",
+        "_h1_closed_at",
+        "_h1_context_hash",
+        "market_regime",
+        "volatility_regime",
+        "adx",
+        "atr_regime",
         "regime_classifier_variant",
     ]
     base = execution_df.copy()
     base["time"] = pd.to_datetime(base["time"], utc=True)
-    merged = pd.merge_asof(base.sort_values("time"), higher[columns].sort_values("regime_available_at"), left_on="time", right_on="regime_available_at", direction="backward").drop(columns=["regime_available_at"])
+    merged = pd.merge_asof(
+        base.sort_values("time"),
+        higher[columns].sort_values("regime_available_at"),
+        left_on="time",
+        right_on="regime_available_at",
+        direction="backward",
+    ).drop(columns=["regime_available_at"])
     merged["market_regime"] = merged["market_regime"].fillna("unknown")
-    merged["volatility_regime"] = merged["volatility_regime"].fillna("normal_volatility")
+    merged["volatility_regime"] = merged["volatility_regime"].fillna(
+        "normal_volatility"
+    )
     merged["adx"] = merged["adx"].fillna(0.0)
     merged["atr_regime"] = merged["atr_regime"].ffill().fillna(0.0)
-    merged["regime_classifier_variant"] = merged["regime_classifier_variant"].fillna(regime_classifier_variant)
+    merged["regime_classifier_variant"] = merged["regime_classifier_variant"].fillna(
+        regime_classifier_variant
+    )
     return merged
 
 
@@ -596,7 +667,9 @@ def _run_prepared_simple_backtest(
     # state.  They are a counterfactual evidence ledger, not hidden trades.
     shadow_positions: list[dict[str, object]] = []
     shadow_ledger: list[dict[str, object]] = []
-    shadow_history: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    shadow_history: dict[str, dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     meta_returns: dict[str, list[float]] = defaultdict(list)
     confidence_history: dict[str, list[dict[str, float]]] = defaultdict(list)
     cooldown_decisions: list[dict[str, object]] = []
@@ -633,8 +706,14 @@ def _run_prepared_simple_backtest(
     mtf_vetoes = 0
     mtf_contexts: Counter[str] = Counter()
     edge_contracts = (payload.policy_context or {}).get("edge_genesis_contracts", {})
-    edge_contract = edge_contracts.get(payload.strategy, {}) if isinstance(edge_contracts, dict) else {}
-    edge_context = edge_contract.get("context", {}) if isinstance(edge_contract, dict) else {}
+    edge_contract = (
+        edge_contracts.get(payload.strategy, {})
+        if isinstance(edge_contracts, dict)
+        else {}
+    )
+    edge_context = (
+        edge_contract.get("context", {}) if isinstance(edge_contract, dict) else {}
+    )
     edge_context = edge_context if isinstance(edge_context, dict) else {}
     context_declared = (
         isinstance(edge_contract, dict)
@@ -642,11 +721,16 @@ def _run_prepared_simple_backtest(
         and bool(edge_context)
     )
     edge_context_required = edge_context.get("enforcement") == "required"
-    edge_context_axes = [str(axis) for axis in edge_context.get("admission_axes", []) if str(axis)]
+    edge_context_axes = [
+        str(axis) for axis in edge_context.get("admission_axes", []) if str(axis)
+    ]
     edge_context_observations = 0
     edge_context_matches = 0
     edge_context_rejections: Counter[str] = Counter()
     entry_funnel["raw_strategy_signals"] = _count_lane_signals(df, differential_lane)
+    instrument_runtime = _instrument_runtime_state(
+        payload.instrument_research_assignment
+    )
 
     def record_event(category: str, code: str, index: int, context: str = "") -> None:
         token = f"{index}|{category}|{code}|{context}"
@@ -674,7 +758,9 @@ def _run_prepared_simple_backtest(
         signal_decision_hasher.update(len(token).to_bytes(8, "big"))
         signal_decision_hasher.update(token)
         signal_decision_count += 1
-        signal_decision_categories[f"{phase}:{'accepted' if accepted else reason or 'observed'}"] += 1
+        signal_decision_categories[
+            f"{phase}:{'accepted' if accepted else reason or 'observed'}"
+        ] += 1
 
     # A signal is only knowable after its candle closes. Execute it at the
     # following candle's open, then include that same candle in exit checks.
@@ -687,43 +773,118 @@ def _run_prepared_simple_backtest(
         # missing temporal score and every candidate would beat zero by
         # construction.
         _temporal_update_pending(temporal_state, candle, index, payload)
-        temporal_metrics = _temporal_context_metrics(signal_row, candle, temporal_state, index, payload)
+        temporal_metrics = _temporal_context_metrics(
+            signal_row, candle, temporal_state, index, payload
+        )
         _temporal_commit_features(temporal_state, temporal_metrics, signal_row)
-        transition_event = _regime_transitioned(signal_row, row_at(index - 2) if index >= 2 else None)
+        transition_event = _regime_transitioned(
+            signal_row, row_at(index - 2) if index >= 2 else None
+        )
         if transition_event:
-            record_event("transition", "boundary", index, str(signal_row.get("market_regime", "unknown")))
-        if transition_event and bool(payload.parameters.get("transition_firewall_enabled", False)):
+            record_event(
+                "transition",
+                "boundary",
+                index,
+                str(signal_row.get("market_regime", "unknown")),
+            )
+        if transition_event and bool(
+            payload.parameters.get("transition_firewall_enabled", False)
+        ):
             transition_events += 1
-            transition_wait_until = max(transition_wait_until, index + _transition_wait_duration(payload))
-        transition_wait_active = bool(payload.parameters.get("transition_firewall_enabled", False)) and index < transition_wait_until
+            transition_wait_until = max(
+                transition_wait_until, index + _transition_wait_duration(payload)
+            )
+            _record_instrument_runtime_event(
+                instrument_runtime,
+                "transition_protection",
+                signal_row,
+                "WAIT",
+                "transition_boundary_wait_started",
+                context_overrides={"regime": "transition"},
+            )
+        transition_wait_active = (
+            bool(payload.parameters.get("transition_firewall_enabled", False))
+            and index < transition_wait_until
+        )
         if state_machine_enabled:
             if transition_event:
                 state_machine_state = "transition"
-                state_machine_wait_until = max(state_machine_wait_until, index + _transition_wait_duration(payload))
+                state_machine_wait_until = max(
+                    state_machine_wait_until, index + _transition_wait_duration(payload)
+                )
                 state_machine_transitions["neutral_to_transition"] += 1
-                state_machine_events.append({"index": index, "event": "neutral_to_transition"})
+                state_machine_events.append(
+                    {"index": index, "event": "neutral_to_transition"}
+                )
                 record_event("state_machine", "neutral_to_transition", index)
-            elif state_machine_state == "transition" and index >= state_machine_wait_until:
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "temporal_survival_filter",
+                    signal_row,
+                    "WAIT",
+                    "state_machine_transition:neutral_to_transition",
+                    context_overrides={"regime": "transition"},
+                )
+            elif (
+                state_machine_state == "transition"
+                and index >= state_machine_wait_until
+            ):
                 state_machine_state = "cooldown"
-                state_machine_wait_until = index + max(1, int(payload.parameters.get("loss_cooldown_candles", 1) or 1))
+                state_machine_wait_until = index + max(
+                    1, int(payload.parameters.get("loss_cooldown_candles", 1) or 1)
+                )
                 state_machine_transitions["transition_to_cooldown"] += 1
-                state_machine_events.append({"index": index, "event": "transition_to_cooldown"})
+                state_machine_events.append(
+                    {"index": index, "event": "transition_to_cooldown"}
+                )
                 record_event("state_machine", "transition_to_cooldown", index)
-            elif state_machine_state == "cooldown" and index >= state_machine_wait_until:
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "temporal_survival_filter",
+                    signal_row,
+                    "WAIT",
+                    "state_machine_transition:transition_to_cooldown",
+                )
+            elif (
+                state_machine_state == "cooldown" and index >= state_machine_wait_until
+            ):
                 state_machine_state = "reentry_permission"
                 state_machine_wait_until = -1
                 state_machine_transitions["cooldown_to_reentry_permission"] += 1
-                state_machine_events.append({"index": index, "event": "cooldown_to_reentry_permission"})
+                state_machine_events.append(
+                    {"index": index, "event": "cooldown_to_reentry_permission"}
+                )
                 record_event("state_machine", "cooldown_to_reentry_permission", index)
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "temporal_survival_filter",
+                    signal_row,
+                    "WAIT",
+                    "state_machine_transition:cooldown_to_reentry_permission",
+                )
         _advance_shadow_positions(
-            shadow_positions, shadow_ledger, shadow_history, candle, row_at(index - 1), payload, index
+            shadow_positions,
+            shadow_ledger,
+            shadow_history,
+            candle,
+            row_at(index - 1),
+            payload,
+            index,
         )
 
         if emit_decision_trace and position is not None:
-            decision_trace.append(_decision_trace_event(
-                index, candle, signal_row, 'position_management', 'WAIT', False, 'position_open',
-                {'position_open': True, 'loss_streak': loss_streak},
-            ))
+            decision_trace.append(
+                _decision_trace_event(
+                    index,
+                    candle,
+                    signal_row,
+                    "position_management",
+                    "WAIT",
+                    False,
+                    "position_open",
+                    {"position_open": True, "loss_streak": loss_streak},
+                )
+            )
         if position is not None:
             record_signal_decision(
                 index,
@@ -741,10 +902,32 @@ def _run_prepared_simple_backtest(
             loss_streak = 0
             loss_streak_wait_until = -1
             recovery_probe = True
-            recovery_probe_events.append({"time": str(candle["time"]), "scope": "global", "event": "wait_expired"})
+            recovery_probe_events.append(
+                {
+                    "time": str(candle["time"]),
+                    "scope": "global",
+                    "event": "wait_expired",
+                }
+            )
 
         if position is None:
-            signal, lane_confidence, lane_specialist = _effective_lane_signal(signal_row, differential_lane)
+            signal, lane_confidence, lane_specialist = _effective_lane_signal(
+                signal_row, differential_lane
+            )
+            pre_volume_signal = str(signal_row.get("pre_volume_signal", "WAIT"))
+            if pre_volume_signal in {"BUY", "SELL"} and (
+                str(signal_row.get("volume_lane_applied", "none") or "none").lower()
+                != "none"
+                or bool(signal_row.get("volume_policy_rejection", ""))
+                or float(signal_row.get("volume_risk_multiplier", 1.0) or 1.0) != 1.0
+            ):
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "volume_confirmation",
+                    signal_row,
+                    pre_volume_signal,
+                    "volume_policy_evaluated",
+                )
             if signal not in {"BUY", "SELL"} and _is_volume_policy_veto(signal_row):
                 # Keep the policy-visible signal WAIT for paper/UI callers,
                 # but restore the causal opportunity in replay so the
@@ -764,6 +947,12 @@ def _run_prepared_simple_backtest(
                 signal_row["signal"] = signal
                 signal_row["signal_confidence"] = lane_confidence
                 signal_row["selected_specialist"] = lane_specialist
+            _record_strategy_instrument_events(
+                instrument_runtime,
+                signal_row,
+                signal,
+                lane_specialist,
+            )
             mtf_policy = apply_signal_policy(
                 signal,
                 signal_row,
@@ -779,11 +968,19 @@ def _run_prepared_simple_backtest(
                 signal_row["risk_decision"] = mtf_policy.get("risk_decision")
                 signal_row["council_decision"] = mtf_policy.get("decision")
                 signal_row["specialist_strategy"] = lane_specialist
-            mtf_contexts[str(mtf_context.get("h1_regime", mtf_context.get("status", "not_applicable")))] += 1
+            mtf_contexts[
+                str(
+                    mtf_context.get(
+                        "h1_regime", mtf_context.get("status", "not_applicable")
+                    )
+                )
+            ] += 1
             if mtf_policy.get("decision") != signal:
                 if signal in {"BUY", "SELL"} and mtf_policy.get("decision") == "WAIT":
                     mtf_vetoes += 1
-                    entry_funnel[f"rejected_mtf_{mtf_policy.get('reason', 'unknown')}"] += 1
+                    entry_funnel[
+                        f"rejected_mtf_{mtf_policy.get('reason', 'unknown')}"
+                    ] += 1
                     record_event(
                         "veto",
                         "mtf_" + str(mtf_policy.get("reason", "unknown")),
@@ -801,19 +998,27 @@ def _run_prepared_simple_backtest(
                 signal_row["mtf_decision"] = signal
                 signal_row["mtf_context"] = mtf_context
             if signal not in {"BUY", "SELL"}:
-                policy_rejection = str(signal_row.get("volume_policy_rejection", "") or "")
+                policy_rejection = str(
+                    signal_row.get("volume_policy_rejection", "") or ""
+                )
                 signal_reason = str(
                     signal_row.get("mtf_veto_reason", "")
                     or policy_rejection
                     or "no_signal"
                 )
-                signal_context = "|".join([
-                    str(mtf_context.get("h1_regime", "unknown")),
-                    str(signal_row.get("mtf_raw_signal", signal)),
-                ])
+                signal_context = "|".join(
+                    [
+                        str(mtf_context.get("h1_regime", "unknown")),
+                        str(signal_row.get("mtf_raw_signal", signal)),
+                    ]
+                )
                 record_signal_decision(
-                    index, "signal_evaluation", "WAIT", False,
-                    signal_reason, signal_context,
+                    index,
+                    "signal_evaluation",
+                    "WAIT",
+                    False,
+                    signal_reason,
+                    signal_context,
                 )
                 record_event(
                     "veto" if policy_rejection else "signal",
@@ -822,12 +1027,26 @@ def _run_prepared_simple_backtest(
                     str(mtf_context.get("h1_regime", "unknown")),
                 )
                 if emit_decision_trace:
-                    decision_trace.append(_decision_trace_event(
-                        index, candle, signal_row, 'signal_evaluation', 'WAIT', False, 'no_signal',
-                        {'position_open': False, 'loss_streak': loss_streak, 'h1_context': mtf_context,
-                         'm15_raw_decision': signal, 'risk_decision': mtf_policy.get('risk_decision'),
-                         'council_decision': mtf_policy.get('decision'), 'specialist_strategy': lane_specialist},
-                    ))
+                    decision_trace.append(
+                        _decision_trace_event(
+                            index,
+                            candle,
+                            signal_row,
+                            "signal_evaluation",
+                            "WAIT",
+                            False,
+                            "no_signal",
+                            {
+                                "position_open": False,
+                                "loss_streak": loss_streak,
+                                "h1_context": mtf_context,
+                                "m15_raw_decision": signal,
+                                "risk_decision": mtf_policy.get("risk_decision"),
+                                "council_decision": mtf_policy.get("decision"),
+                                "specialist_strategy": lane_specialist,
+                            },
+                        )
+                    )
                 continue
             # A portfolio owns both the signal and its sealed execution
             # topology.  Using the first member's stop/target parameters for
@@ -837,8 +1056,13 @@ def _run_prepared_simple_backtest(
             entry_funnel["flat_signal_opportunities"] += 1
             month_key = _utc_month(signal_row["time"])
             opportunities_by_month[month_key] += 1
-            context_allowed, context_rejection, context_evidence = _edge_context_admission(
-                signal_row, edge_contract, transition_event=transition_event, direction=signal,
+            context_allowed, context_rejection, context_evidence = (
+                _edge_context_admission(
+                    signal_row,
+                    edge_contract,
+                    transition_event=transition_event,
+                    direction=signal,
+                )
             )
             if context_declared:
                 edge_context_observations += 1
@@ -849,29 +1073,58 @@ def _run_prepared_simple_backtest(
                     edge_context_rejections[reason] += 1
                     entry_funnel[f"rejected_{reason}"] += 1
                     observed_context = json.dumps(
-                        context_evidence.get("observed", {}), sort_keys=True, separators=(",", ":"),
+                        context_evidence.get("observed", {}),
+                        sort_keys=True,
+                        separators=(",", ":"),
                     )
                     record_signal_decision(
-                        index, "signal_evaluation", signal, False, reason, observed_context,
+                        index,
+                        "signal_evaluation",
+                        signal,
+                        False,
+                        reason,
+                        observed_context,
                     )
                     record_event("veto", "edge_context", index, observed_context)
                     shadow = _open_shadow_position(
-                        candle, signal_row, signal, execution_payload, index, reason,
+                        candle,
+                        signal_row,
+                        signal,
+                        execution_payload,
+                        index,
+                        reason,
                     )
                     if shadow is not None:
                         settled = _advance_shadow_position(
-                            shadow, candle, row_at(index - 1), execution_payload, index,
+                            shadow,
+                            candle,
+                            row_at(index - 1),
+                            execution_payload,
+                            index,
                         )
                         if settled is None:
                             shadow_positions.append(shadow)
                         else:
-                            _record_shadow_outcome(shadow_ledger, shadow_history, settled)
+                            _record_shadow_outcome(
+                                shadow_ledger, shadow_history, settled
+                            )
                     if emit_decision_trace:
-                        decision_trace.append(_decision_trace_event(
-                            index, candle, signal_row, "signal_evaluation", signal, False, reason,
-                            {"position_open": False, "loss_streak": loss_streak,
-                             "edge_context": context_evidence},
-                        ))
+                        decision_trace.append(
+                            _decision_trace_event(
+                                index,
+                                candle,
+                                signal_row,
+                                "signal_evaluation",
+                                signal,
+                                False,
+                                reason,
+                                {
+                                    "position_open": False,
+                                    "loss_streak": loss_streak,
+                                    "edge_context": context_evidence,
+                                },
+                            )
+                        )
                     continue
             context_key = _risk_context(signal_row, signal)
             context_wait = int(context_wait_until.get(context_key, -1))
@@ -879,8 +1132,17 @@ def _run_prepared_simple_backtest(
                 loss_streak_by_context[context_key] = 0
                 context_wait_until.pop(context_key, None)
                 context_recovery_probes.add(context_key)
-                recovery_probe_events.append({"time": str(candle["time"]), "scope": "context", "context": context_key, "event": "wait_expired"})
-            global_wait_active = loss_streak_wait_until >= 0 and index < loss_streak_wait_until
+                recovery_probe_events.append(
+                    {
+                        "time": str(candle["time"]),
+                        "scope": "context",
+                        "context": context_key,
+                        "event": "wait_expired",
+                    }
+                )
+            global_wait_active = (
+                loss_streak_wait_until >= 0 and index < loss_streak_wait_until
+            )
             context_wait_active = context_wait >= 0 and index < context_wait
             weak_regime_wait_active, weak_regime_probe = _advance_weak_regime_state(
                 weak_regime_state, context_key, index, candle, weak_regime_events
@@ -889,12 +1151,18 @@ def _run_prepared_simple_backtest(
                 signal_row, signal, confidence_history, execution_payload, candle
             )
             temporal_assessment = _temporal_survival_assessment(
-                signal_row, temporal_metrics, execution_payload, loss_streak, temporal_state,
+                signal_row,
+                temporal_metrics,
+                execution_payload,
+                loss_streak,
+                temporal_state,
             )
             # Register the same prior-signal follow-through probe for control
             # and mutation arms. The control remains behaviorally frozen
             # because its assessment is telemetry-only.
-            _temporal_register_signal(temporal_state, signal_row, signal, index, execution_payload)
+            _temporal_register_signal(
+                temporal_state, signal_row, signal, index, execution_payload
+            )
             liquid, rejection_reason = _entry_eligibility(
                 candle,
                 execution_payload,
@@ -909,63 +1177,194 @@ def _run_prepared_simple_backtest(
                 transition_wait_active=transition_wait_active,
                 temporal_assessment=temporal_assessment,
             )
-            if state_machine_enabled and state_machine_state in {"transition", "cooldown"}:
+            if state_machine_enabled and state_machine_state in {
+                "transition",
+                "cooldown",
+            }:
                 liquid = False
                 rejection_reason = f"state_machine_{state_machine_state}"
+            if (
+                _entry_gate_reached(rejection_reason, "temporal")
+                and str(temporal_assessment.get("status", "disabled")) != "disabled"
+            ):
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "temporal_survival_filter",
+                    signal_row,
+                    signal,
+                    "temporal_survival_evaluated",
+                )
+            if _entry_gate_reached(rejection_reason, "confidence"):
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "confidence_firewall",
+                    signal_row,
+                    signal,
+                    "confidence_gate_evaluated",
+                )
+            if (
+                _entry_gate_reached(rejection_reason, "high_volatility")
+                and str(signal_row.get("volatility_regime", "")) == "high_volatility"
+            ):
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "high_volatility_firewall",
+                    signal_row,
+                    signal,
+                    "high_volatility_gate_evaluated",
+                )
+            if _entry_gate_reached(rejection_reason, "cost"):
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "cost_firewall",
+                    signal_row,
+                    signal,
+                    "entry_cost_gate_evaluated",
+                )
+            if _entry_gate_reached(rejection_reason, "meta_label") and bool(
+                execution_payload.parameters.get("meta_label_enabled", False)
+            ):
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "meta_label_filter",
+                    signal_row,
+                    signal,
+                    "meta_label_gate_evaluated",
+                )
             if not liquid:
                 entry_funnel[f"rejected_{rejection_reason or 'unknown'}"] += 1
                 record_signal_decision(
-                    index, "signal_evaluation", signal, False,
-                    rejection_reason or "unknown", context_key,
+                    index,
+                    "signal_evaluation",
+                    signal,
+                    False,
+                    rejection_reason or "unknown",
+                    context_key,
                 )
                 if rejection_reason == "regime_transition_wait":
                     transition_vetoes += 1
+                    _record_instrument_runtime_event(
+                        instrument_runtime,
+                        "transition_protection",
+                        signal_row,
+                        signal,
+                        "transition_entry_veto",
+                        context_overrides={"regime": "transition"},
+                    )
+                if rejection_reason in {"loss_streak_wait", "loss_cooldown"}:
+                    _record_instrument_runtime_event(
+                        instrument_runtime,
+                        "dynamic_cooldown",
+                        signal_row,
+                        signal,
+                        str(rejection_reason),
+                    )
+                    _record_instrument_runtime_event(
+                        instrument_runtime,
+                        "loss_streak_cooldown",
+                        signal_row,
+                        signal,
+                        str(rejection_reason),
+                    )
                 if rejection_reason and rejection_reason.startswith("state_machine_"):
                     record_event("state_machine", rejection_reason, index, context_key)
                 elif rejection_reason == "regime_transition_wait":
                     record_event("transition", "veto", index, context_key)
                 elif rejection_reason in {"outside_session"}:
                     record_event("veto", "session_filter", index, context_key)
-                elif rejection_reason in {"volume_policy", "volume_unavailable", "minimum_volume"}:
-                    record_event("veto", "volume_" + rejection_reason, index, context_key)
+                elif rejection_reason in {
+                    "volume_policy",
+                    "volume_unavailable",
+                    "minimum_volume",
+                }:
+                    record_event(
+                        "veto", "volume_" + rejection_reason, index, context_key
+                    )
                 elif rejection_reason in {"spread_to_atr", "cost_exceeds_target"}:
                     record_event("cost", "rejection", index, context_key)
                 else:
-                    record_event("entry", rejection_reason or "unknown", index, context_key)
-                shadow = _open_shadow_position(candle, signal_row, signal, execution_payload, index, rejection_reason or "unknown")
+                    record_event(
+                        "entry", rejection_reason or "unknown", index, context_key
+                    )
+                shadow = _open_shadow_position(
+                    candle,
+                    signal_row,
+                    signal,
+                    execution_payload,
+                    index,
+                    rejection_reason or "unknown",
+                )
                 if shadow is not None:
-                    settled = _advance_shadow_position(shadow, candle, row_at(index - 1), execution_payload, index)
+                    settled = _advance_shadow_position(
+                        shadow, candle, row_at(index - 1), execution_payload, index
+                    )
                     if settled is None:
                         shadow_positions.append(shadow)
                     else:
                         _record_shadow_outcome(shadow_ledger, shadow_history, settled)
                 if emit_decision_trace:
-                    decision_trace.append(_decision_trace_event(
-                        index, candle, signal_row, 'signal_evaluation', signal, False,
-                        rejection_reason or 'unknown', {
-                            'position_open': False, 'loss_streak': loss_streak,
-                            'context_key': context_key, 'confidence_assessment': confidence_assessment,
-                            'temporal_assessment': temporal_assessment,
-                        },
-                    ))
+                    decision_trace.append(
+                        _decision_trace_event(
+                            index,
+                            candle,
+                            signal_row,
+                            "signal_evaluation",
+                            signal,
+                            False,
+                            rejection_reason or "unknown",
+                            {
+                                "position_open": False,
+                                "loss_streak": loss_streak,
+                                "context_key": context_key,
+                                "confidence_assessment": confidence_assessment,
+                                "temporal_assessment": temporal_assessment,
+                            },
+                        )
+                    )
                 continue
             entry_funnel["accepted_entries"] += 1
+            _record_instrument_runtime_event(
+                instrument_runtime,
+                "atr_risk_envelope",
+                signal_row,
+                signal,
+                "entry_stop_target_sized",
+            )
             record_signal_decision(
-                index, "signal_evaluation", signal, True, "accepted", context_key,
+                index,
+                "signal_evaluation",
+                signal,
+                True,
+                "accepted",
+                context_key,
             )
             record_event("entry", "accepted", index, context_key)
             accepted_by_month[month_key] += 1
-            probe_active = recovery_probe or context_key in context_recovery_probes or weak_regime_probe
-            probe_scope = "global" if recovery_probe else ("context" if context_key in context_recovery_probes else None)
+            probe_active = (
+                recovery_probe
+                or context_key in context_recovery_probes
+                or weak_regime_probe
+            )
+            probe_scope = (
+                "global"
+                if recovery_probe
+                else ("context" if context_key in context_recovery_probes else None)
+            )
             if state_machine_enabled and state_machine_state == "reentry_permission":
                 state_machine_state = "neutral"
                 state_machine_transitions["reentry_permission_to_neutral"] += 1
-                state_machine_events.append({"index": index, "event": "reentry_permission_to_neutral"})
-                record_event("state_machine", "reentry_permission_to_neutral", index, context_key)
+                state_machine_events.append(
+                    {"index": index, "event": "reentry_permission_to_neutral"}
+                )
+                record_event(
+                    "state_machine", "reentry_permission_to_neutral", index, context_key
+                )
 
             market_price = float(candle["open"])
             entry_price = _entry_price(market_price, signal, execution_payload)
-            stop_distance, target_distance = _exit_distances(market_price, signal_row, execution_payload)
+            stop_distance, target_distance = _exit_distances(
+                market_price, signal_row, execution_payload
+            )
             if signal == "BUY":
                 stop_loss = market_price - stop_distance
                 take_profit = market_price + target_distance
@@ -983,15 +1382,29 @@ def _run_prepared_simple_backtest(
                 "take_profit": take_profit,
                 "position_size_multiple": _position_size_multiple(
                     entry_price, stop_loss, signal, execution_payload
-                ) * _volatility_risk_multiplier(signal_row, execution_payload) * _meta_risk_multiplier(signal_row, signal, execution_payload, meta_returns)
-                * _regime_transition_multiplier(signal_row, row_at(index - 2) if index >= 2 else None)
+                )
+                * _volatility_risk_multiplier(signal_row, execution_payload)
+                * _meta_risk_multiplier(
+                    signal_row, signal, execution_payload, meta_returns
+                )
+                * _regime_transition_multiplier(
+                    signal_row, row_at(index - 2) if index >= 2 else None
+                )
                 * _regime_specific_risk_multiplier(signal_row, execution_payload)
                 * _volume_risk_multiplier(signal_row)
                 * float(mtf_policy.get("risk_multiplier", 1.0) or 1.0)
-                * (_recovery_probe_risk_multiplier(execution_payload) if probe_active else 1.0),
+                * (
+                    _recovery_probe_risk_multiplier(execution_payload)
+                    if probe_active
+                    else 1.0
+                ),
                 "market_regime": signal_row.get("market_regime", "unknown"),
-                "volatility_regime": signal_row.get("volatility_regime", "normal_volatility"),
-                "portfolio_member": signal_row.get("selected_specialist") if payload.portfolio_members else None,
+                "volatility_regime": signal_row.get(
+                    "volatility_regime", "normal_volatility"
+                ),
+                "portfolio_member": signal_row.get("selected_specialist")
+                if payload.portfolio_members
+                else None,
                 "signal_row": signal_row,
                 "risk_context": context_key,
                 "recovery_probe": probe_active,
@@ -1000,7 +1413,10 @@ def _run_prepared_simple_backtest(
                 "entry_index": index,
                 "execution_parameters": dict(execution_payload.parameters),
                 "partial_closed": False,
-                "partial_fraction": float(execution_payload.parameters.get("partial_take_profit_fraction", 0) or 0),
+                "partial_fraction": float(
+                    execution_payload.parameters.get("partial_take_profit_fraction", 0)
+                    or 0
+                ),
                 "partial_exit_price": None,
                 "initial_stop_loss": stop_loss,
                 "initial_risk_distance": abs(entry_price - stop_loss),
@@ -1008,30 +1424,56 @@ def _run_prepared_simple_backtest(
                 "maximum_adverse_excursion": 0.0,
             }
             if emit_decision_trace:
-                decision_trace.append(_decision_trace_event(
-                    index, candle, signal_row, 'signal_evaluation', signal, True, None, {
-                        'position_open': True, 'loss_streak': loss_streak,
-                        'context_key': context_key, 'entry_price': entry_price,
-                        'stop_loss': stop_loss, 'take_profit': take_profit,
-                        'position_size_multiple': position['position_size_multiple'],
-                        'recovery_probe': probe_active, 'recovery_probe_scope': probe_scope,
-                        'temporal_assessment': temporal_assessment,
-                    },
-                ))
+                decision_trace.append(
+                    _decision_trace_event(
+                        index,
+                        candle,
+                        signal_row,
+                        "signal_evaluation",
+                        signal,
+                        True,
+                        None,
+                        {
+                            "position_open": True,
+                            "loss_streak": loss_streak,
+                            "context_key": context_key,
+                            "entry_price": entry_price,
+                            "stop_loss": stop_loss,
+                            "take_profit": take_profit,
+                            "position_size_multiple": position[
+                                "position_size_multiple"
+                            ],
+                            "recovery_probe": probe_active,
+                            "recovery_probe_scope": probe_scope,
+                            "temporal_assessment": temporal_assessment,
+                        },
+                    )
+                )
 
         direction = str(position["direction"])
         position_payload = _payload_for_position(payload, position)
-        favorable_before_exit_bar = float(position.get("maximum_favorable_excursion", 0) or 0)
-        adverse_before_exit_bar = float(position.get("maximum_adverse_excursion", 0) or 0)
+        favorable_before_exit_bar = float(
+            position.get("maximum_favorable_excursion", 0) or 0
+        )
+        adverse_before_exit_bar = float(
+            position.get("maximum_adverse_excursion", 0) or 0
+        )
         _update_position_excursions(position, candle)
         _advance_trailing_stop(position, row_at(index - 1), position_payload)
         time_stop = int(position_payload.parameters.get("time_stop_candles", 0) or 0)
         if time_stop and index - int(position["entry_index"]) >= time_stop:
-            exit_price, exit_reason = _exit_price(float(candle["open"]), direction, position_payload), "time_stop"
+            exit_price, exit_reason = (
+                _exit_price(float(candle["open"]), direction, position_payload),
+                "time_stop",
+            )
         else:
-            exit_price, exit_reason = _intrabar_exit(direction, position, candle, position_payload)
+            exit_price, exit_reason = _intrabar_exit(
+                direction, position, candle, position_payload
+            )
 
-        if exit_reason is None and _take_partial_profit(position, candle, position_payload):
+        if exit_reason is None and _take_partial_profit(
+            position, candle, position_payload
+        ):
             continue
         if exit_reason is None or exit_price is None:
             continue
@@ -1041,25 +1483,51 @@ def _run_prepared_simple_backtest(
             market_profit_percent = ((exit_price - entry_price) / entry_price) * 100
         else:
             market_profit_percent = ((entry_price - exit_price) / entry_price) * 100
-        partial_fraction = float(position.get("partial_fraction", 0) or 0) if bool(position.get("partial_closed")) else 0.0
+        partial_fraction = (
+            float(position.get("partial_fraction", 0) or 0)
+            if bool(position.get("partial_closed"))
+            else 0.0
+        )
         partial_exit = position.get("partial_exit_price")
         if partial_fraction and partial_exit is not None:
-            partial_return = ((float(partial_exit) - entry_price) / entry_price) * 100 if direction == "BUY" else ((entry_price - float(partial_exit)) / entry_price) * 100
-            market_profit_percent = market_profit_percent * (1 - partial_fraction) + partial_return * partial_fraction
+            partial_return = (
+                ((float(partial_exit) - entry_price) / entry_price) * 100
+                if direction == "BUY"
+                else ((entry_price - float(partial_exit)) / entry_price) * 100
+            )
+            market_profit_percent = (
+                market_profit_percent * (1 - partial_fraction)
+                + partial_return * partial_fraction
+            )
             exit_reason = f"partial_target+{exit_reason}"
 
         holding_days = max(
-            (pd.Timestamp(candle["time"]) - pd.Timestamp(position["entry_time"])).total_seconds() / 86400,
+            (
+                pd.Timestamp(candle["time"]) - pd.Timestamp(position["entry_time"])
+            ).total_seconds()
+            / 86400,
             0,
         )
-        explicit_cost = payload.execution.commission_percent + payload.execution.swap_per_day_percent * holding_days
+        explicit_cost = (
+            payload.execution.commission_percent
+            + payload.execution.swap_per_day_percent * holding_days
+        )
         position_size = float(position["position_size_multiple"])
         gross_profit_percent = market_profit_percent * position_size
         scaled_cost_percent = explicit_cost * position_size
         profit_percent = gross_profit_percent - scaled_cost_percent
         result = "WIN" if profit_percent > 0 else "LOSS"
         closed_signal_row = position["signal_row"]
-        closed_context = str(position.get("risk_context", _risk_context(closed_signal_row, direction)))
+        closed_context = str(
+            position.get("risk_context", _risk_context(closed_signal_row, direction))
+        )
+        _record_instrument_runtime_event(
+            instrument_runtime,
+            "cost_aware_exit",
+            closed_signal_row,
+            direction,
+            f"position_exit:{exit_reason or 'unknown'}",
+        )
         record_event("exit", str(exit_reason or "unknown"), index, closed_context)
         record_event("outcome", result, index, closed_context)
         was_recovery_probe = bool(position.get("recovery_probe", False))
@@ -1077,58 +1545,161 @@ def _run_prepared_simple_backtest(
             if probe_scope == "context":
                 context_recovery_probes.discard(closed_context)
             if was_recovery_probe:
-                recovery_probe_events.append({"time": str(candle["time"]), "scope": probe_scope, "context": closed_context, "event": "probe_win"})
+                recovery_probe_events.append(
+                    {
+                        "time": str(candle["time"]),
+                        "scope": probe_scope,
+                        "context": closed_context,
+                        "event": "probe_win",
+                    }
+                )
         else:
             loss_streak += 1
             loss_streak_by_context[closed_context] += 1
         if state_machine_enabled:
             if result == "LOSS":
                 state_machine_state = "cooldown"
-                state_machine_wait_until = index + max(1, int(payload.parameters.get("loss_cooldown_candles", 1) or 1))
+                state_machine_wait_until = index + max(
+                    1, int(payload.parameters.get("loss_cooldown_candles", 1) or 1)
+                )
                 state_machine_transitions["loss_to_cooldown"] += 1
-                state_machine_events.append({"index": index, "event": "loss_to_cooldown", "context": closed_context})
+                state_machine_events.append(
+                    {
+                        "index": index,
+                        "event": "loss_to_cooldown",
+                        "context": closed_context,
+                    }
+                )
                 record_event("state_machine", "loss_to_cooldown", index, closed_context)
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "temporal_survival_filter",
+                    closed_signal_row,
+                    direction,
+                    "state_machine_transition:loss_to_cooldown",
+                )
             elif result == "WIN" and state_machine_state != "reentry_permission":
                 state_machine_state = "neutral"
                 state_machine_wait_until = -1
                 state_machine_transitions["win_to_neutral"] += 1
-                state_machine_events.append({"index": index, "event": "win_to_neutral", "context": closed_context})
+                state_machine_events.append(
+                    {
+                        "index": index,
+                        "event": "win_to_neutral",
+                        "context": closed_context,
+                    }
+                )
                 record_event("state_machine", "win_to_neutral", index, closed_context)
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "temporal_survival_filter",
+                    closed_signal_row,
+                    direction,
+                    "state_machine_transition:win_to_neutral",
+                )
         if result == "LOSS":
-            cooldown, evidence = _dynamic_cooldown_duration(closed_signal_row, payload, loss_streak, shadow_history)
+            cooldown, evidence = _dynamic_cooldown_duration(
+                closed_signal_row, payload, loss_streak, shadow_history
+            )
+            if bool(payload.parameters.get("dynamic_cooldown_enabled", True)):
+                _record_instrument_runtime_event(
+                    instrument_runtime,
+                    "dynamic_cooldown",
+                    closed_signal_row,
+                    direction,
+                    "loss_cooldown_scheduled",
+                )
             cooldown_until_by_context[closed_context] = index + cooldown
-            cooldown_decisions.append({
-                "time": str(candle["time"]), "market_regime": str(closed_signal_row.get("market_regime", "unknown")),
-                "volatility_regime": str(closed_signal_row.get("volatility_regime", "normal_volatility")),
-                "context": closed_context, "scope": "context", "loss_streak": loss_streak,
-                "cooldown_candles": cooldown, "until_index": index + cooldown,
-                "shadow_evidence": evidence,
-            })
-            threshold = int(payload.parameters.get("max_loss_streak_before_wait", 99) or 99)
+            cooldown_decisions.append(
+                {
+                    "time": str(candle["time"]),
+                    "market_regime": str(
+                        closed_signal_row.get("market_regime", "unknown")
+                    ),
+                    "volatility_regime": str(
+                        closed_signal_row.get("volatility_regime", "normal_volatility")
+                    ),
+                    "context": closed_context,
+                    "scope": "context",
+                    "loss_streak": loss_streak,
+                    "cooldown_candles": cooldown,
+                    "until_index": index + cooldown,
+                    "shadow_evidence": evidence,
+                }
+            )
+            threshold = int(
+                payload.parameters.get("max_loss_streak_before_wait", 99) or 99
+            )
             wait_candles = _loss_streak_wait_duration(payload)
             global_wait = bool(probe_scope == "global") or loss_streak >= threshold
-            context_wait = bool(probe_scope == "context") or loss_streak_by_context[closed_context] >= threshold
+            context_wait = (
+                bool(probe_scope == "context")
+                or loss_streak_by_context[closed_context] >= threshold
+            )
             if global_wait:
                 loss_streak_wait_until = index + wait_candles
                 recovery_probe = False
-                loss_streak_wait_events.append({"time": str(candle["time"]), "scope": "global", "until_index": loss_streak_wait_until, "loss_streak": loss_streak, "reason": "probe_loss" if probe_scope == "global" else "threshold"})
+                loss_streak_wait_events.append(
+                    {
+                        "time": str(candle["time"]),
+                        "scope": "global",
+                        "until_index": loss_streak_wait_until,
+                        "loss_streak": loss_streak,
+                        "reason": "probe_loss"
+                        if probe_scope == "global"
+                        else "threshold",
+                    }
+                )
             if context_wait:
                 context_wait_until[closed_context] = index + wait_candles
                 context_recovery_probes.discard(closed_context)
-                loss_streak_wait_events.append({"time": str(candle["time"]), "scope": "context", "context": closed_context, "until_index": context_wait_until[closed_context], "loss_streak": loss_streak_by_context[closed_context], "reason": "probe_loss" if probe_scope == "context" else "threshold"})
+                loss_streak_wait_events.append(
+                    {
+                        "time": str(candle["time"]),
+                        "scope": "context",
+                        "context": closed_context,
+                        "until_index": context_wait_until[closed_context],
+                        "loss_streak": loss_streak_by_context[closed_context],
+                        "reason": "probe_loss"
+                        if probe_scope == "context"
+                        else "threshold",
+                    }
+                )
             if was_recovery_probe:
-                recovery_probe_events.append({"time": str(candle["time"]), "scope": probe_scope, "context": closed_context, "event": "probe_loss"})
+                recovery_probe_events.append(
+                    {
+                        "time": str(candle["time"]),
+                        "scope": probe_scope,
+                        "context": closed_context,
+                        "event": "probe_loss",
+                    }
+                )
         _record_weak_regime_outcome(
-            weak_regime_state, closed_context, profit_percent, result, was_weak_regime_probe,
-            index, candle, payload, weak_regime_events,
+            weak_regime_state,
+            closed_context,
+            profit_percent,
+            result,
+            was_weak_regime_probe,
+            index,
+            candle,
+            payload,
+            weak_regime_events,
         )
-        regime_returns.setdefault(str(position.get("market_regime", "unknown")), []).append(profit_percent)
-        meta_returns[_meta_context(position["signal_row"], direction)].append(profit_percent)
-        _record_confidence_observation(confidence_history, position["signal_row"], direction, profit_percent)
+        regime_returns.setdefault(
+            str(position.get("market_regime", "unknown")), []
+        ).append(profit_percent)
+        meta_returns[_meta_context(position["signal_row"], direction)].append(
+            profit_percent
+        )
+        _record_confidence_observation(
+            confidence_history, position["signal_row"], direction, profit_percent
+        )
 
         balance += balance * (profit_percent / 100)
         peak_balance = max(peak_balance, balance)
-        drawdown = ((peak_balance - balance) / peak_balance) * 100 if peak_balance else 0
+        drawdown = (
+            ((peak_balance - balance) / peak_balance) * 100 if peak_balance else 0
+        )
         max_drawdown = max(max_drawdown, drawdown)
 
         if profit_percent > 0:
@@ -1136,29 +1707,39 @@ def _run_prepared_simple_backtest(
         else:
             gross_loss += abs(profit_percent)
 
-        mistake = classify_mistake(
-            direction,
-            position["signal_row"],
-            candle,
-            position,
-        ) if result == "LOSS" else None
+        mistake = (
+            classify_mistake(
+                direction,
+                position["signal_row"],
+                candle,
+                position,
+            )
+            if result == "LOSS"
+            else None
+        )
 
         initial_risk_distance = float(position.get("initial_risk_distance", 0) or 0)
         mfe_r = (
-            float(position.get("maximum_favorable_excursion", 0) or 0) / initial_risk_distance
-            if initial_risk_distance > 0 else None
+            float(position.get("maximum_favorable_excursion", 0) or 0)
+            / initial_risk_distance
+            if initial_risk_distance > 0
+            else None
         )
         mae_r = (
-            float(position.get("maximum_adverse_excursion", 0) or 0) / initial_risk_distance
-            if initial_risk_distance > 0 else None
+            float(position.get("maximum_adverse_excursion", 0) or 0)
+            / initial_risk_distance
+            if initial_risk_distance > 0
+            else None
         )
         mfe_r_before_exit_bar = (
             favorable_before_exit_bar / initial_risk_distance
-            if initial_risk_distance > 0 else None
+            if initial_risk_distance > 0
+            else None
         )
         mae_r_before_exit_bar = (
             adverse_before_exit_bar / initial_risk_distance
-            if initial_risk_distance > 0 else None
+            if initial_risk_distance > 0
+            else None
         )
         initial_risk_percent = _initial_executable_risk_percent(
             entry_price,
@@ -1167,10 +1748,15 @@ def _run_prepared_simple_backtest(
             position_payload,
             position_size,
         )
-        realized_r_multiple = profit_percent / initial_risk_percent if initial_risk_percent > 0 else None
+        realized_r_multiple = (
+            profit_percent / initial_risk_percent if initial_risk_percent > 0 else None
+        )
         mfe_capture_ratio = (
             max(0.0, min(1.0, realized_r_multiple / mfe_r))
-            if realized_r_multiple is not None and realized_r_multiple > 0 and mfe_r is not None and mfe_r > 0
+            if realized_r_multiple is not None
+            and realized_r_multiple > 0
+            and mfe_r is not None
+            and mfe_r > 0
             else None
         )
 
@@ -1191,33 +1777,62 @@ def _run_prepared_simple_backtest(
                 position_size_multiple=round(position_size, 5),
                 risk_budget_percent=payload.risk_per_trade,
                 signal_time=str(position["signal_time"]),
-                signal_confidence=round(float(position["signal_row"].get("signal_confidence", 1.0) or 0), 4),
+                signal_confidence=round(
+                    float(position["signal_row"].get("signal_confidence", 1.0) or 0), 4
+                ),
                 exit_reason=exit_reason,
                 balance=round(balance, 2),
                 market_regime=str(position.get("market_regime", "unknown")),
-                volatility_regime=str(position.get("volatility_regime", "normal_volatility")),
+                volatility_regime=str(
+                    position.get("volatility_regime", "normal_volatility")
+                ),
                 mistake_type=mistake["type"] if mistake else None,
                 reason=mistake["reason"] if mistake else None,
                 suggestion=mistake["suggestion"] if mistake else None,
                 portfolio_member=position.get("portfolio_member"),
-                initial_risk_distance=round(initial_risk_distance, 8) if initial_risk_distance > 0 else None,
-                initial_risk_percent=round(initial_risk_percent, 8) if initial_risk_percent > 0 else None,
+                initial_risk_distance=round(initial_risk_distance, 8)
+                if initial_risk_distance > 0
+                else None,
+                initial_risk_percent=round(initial_risk_percent, 8)
+                if initial_risk_percent > 0
+                else None,
                 mfe_r=round(mfe_r, 6) if mfe_r is not None else None,
                 mae_r=round(mae_r, 6) if mae_r is not None else None,
-                mfe_r_before_exit_bar=round(mfe_r_before_exit_bar, 6) if mfe_r_before_exit_bar is not None else None,
-                mae_r_before_exit_bar=round(mae_r_before_exit_bar, 6) if mae_r_before_exit_bar is not None else None,
-                realized_r_multiple=round(realized_r_multiple, 6) if realized_r_multiple is not None else None,
-                mfe_capture_ratio=round(mfe_capture_ratio, 6) if mfe_capture_ratio is not None else None,
+                mfe_r_before_exit_bar=round(mfe_r_before_exit_bar, 6)
+                if mfe_r_before_exit_bar is not None
+                else None,
+                mae_r_before_exit_bar=round(mae_r_before_exit_bar, 6)
+                if mae_r_before_exit_bar is not None
+                else None,
+                realized_r_multiple=round(realized_r_multiple, 6)
+                if realized_r_multiple is not None
+                else None,
+                mfe_capture_ratio=round(mfe_capture_ratio, 6)
+                if mfe_capture_ratio is not None
+                else None,
             )
         )
         if emit_decision_trace:
-            decision_trace.append(_decision_trace_event(
-                index, candle, closed_signal_row, 'trade_exit', direction, True, None, {
-                    'position_open': False, 'outcome': result, 'exit_reason': exit_reason,
-                    'profit_percent': round(profit_percent, 5), 'balance': round(balance, 2),
-                    'entry_time': str(position['entry_time']), 'exit_time': str(candle['time']),
-                },
-            ))
+            decision_trace.append(
+                _decision_trace_event(
+                    index,
+                    candle,
+                    closed_signal_row,
+                    "trade_exit",
+                    direction,
+                    True,
+                    None,
+                    {
+                        "position_open": False,
+                        "outcome": result,
+                        "exit_reason": exit_reason,
+                        "profit_percent": round(profit_percent, 5),
+                        "balance": round(balance, 2),
+                        "entry_time": str(position["entry_time"]),
+                        "exit_time": str(candle["time"]),
+                    },
+                )
+            )
         position = None
 
     # A shadow still open at the end of a bounded replay is closed at the last
@@ -1226,14 +1841,23 @@ def _run_prepared_simple_backtest(
     if shadow_positions:
         final_candle = row_at(len(df) - 1)
         for shadow in shadow_positions:
-            _record_shadow_outcome(shadow_ledger, shadow_history, _force_close_shadow(shadow, final_candle, payload))
+            _record_shadow_outcome(
+                shadow_ledger,
+                shadow_history,
+                _force_close_shadow(shadow, final_candle, payload),
+            )
 
     total_trades = len(trades)
     wins = len([trade for trade in trades if trade.result == "WIN"])
     losses = len([trade for trade in trades if trade.result == "LOSS"])
     winrate = round((wins / total_trades) * 100, 2) if total_trades else 0.0
-    net_profit = round(((balance - payload.initial_balance) / payload.initial_balance) * 100, 2)
-    equity_curve = [round(payload.initial_balance, 2), *[trade.balance for trade in trades]]
+    net_profit = round(
+        ((balance - payload.initial_balance) / payload.initial_balance) * 100, 2
+    )
+    equity_curve = [
+        round(payload.initial_balance, 2),
+        *[trade.balance for trade in trades],
+    ]
     max_drawdown = calculate_max_drawdown(equity_curve)
     profit_factor = calculate_profit_factor(trades)
     average_win = calculate_average_win(trades)
@@ -1246,8 +1870,16 @@ def _run_prepared_simple_backtest(
         profit_factor=profit_factor,
         total_trades=total_trades,
     )
-    period_start = payload.from_date.isoformat() if payload.from_date else df["time"].min().date().isoformat()
-    period_end = payload.to_date.isoformat() if payload.to_date else df["time"].max().date().isoformat()
+    period_start = (
+        payload.from_date.isoformat()
+        if payload.from_date
+        else df["time"].min().date().isoformat()
+    )
+    period_end = (
+        payload.to_date.isoformat()
+        if payload.to_date
+        else df["time"].max().date().isoformat()
+    )
     top_mistakes = _top_simple_mistakes(trades)
     regime_performance = calculate_regime_performance(trades)
     volatility_performance = calculate_volatility_performance(trades)
@@ -1265,21 +1897,28 @@ def _run_prepared_simple_backtest(
             starting_balance=payload.initial_balance,
             seed=payload.random_seed,
         ).run([trade.model_dump() for trade in trades])
-        strategy_dna = StrategyDnaService().generate({
-            "strategy": strategy_label(payload.strategy),
-            "total_trades": total_trades,
-            "max_drawdown_percent": max_drawdown,
-            "risk_reward_ratio": risk_reward_ratio,
-            "equity_curve": equity_curve,
-            "regime_performance": regime_performance,
-            "volatility_performance": volatility_performance,
-            "monte_carlo": monte_carlo,
-        }, [trade.model_dump() for trade in trades])
-    buy_hold_percent = ((float(row_at(len(df) - 1)["close"]) - float(row_at(0)["close"])) / max(float(row_at(0)["close"]), 0.0000001)) * 100
+        strategy_dna = StrategyDnaService().generate(
+            {
+                "strategy": strategy_label(payload.strategy),
+                "total_trades": total_trades,
+                "max_drawdown_percent": max_drawdown,
+                "risk_reward_ratio": risk_reward_ratio,
+                "equity_curve": equity_curve,
+                "regime_performance": regime_performance,
+                "volatility_performance": volatility_performance,
+                "monte_carlo": monte_carlo,
+            },
+            [trade.model_dump() for trade in trades],
+        )
+    buy_hold_percent = (
+        (float(row_at(len(df) - 1)["close"]) - float(row_at(0)["close"]))
+        / max(float(row_at(0)["close"]), 0.0000001)
+    ) * 100
     statistical_evidence = _statistical_evidence(trades, wins, total_trades)
     statistical_evidence["edge_quality"] = (
         {"status": "deferred_screening_subreplay", "promotion_evidence": False}
-        if lightweight else _edge_quality_evidence(trades)
+        if lightweight
+        else _edge_quality_evidence(trades)
     )
     # Keep the full trade ledger's chronological bucket attribution alongside
     # the usual regime/month breakdown.  Screening can consume this exact
@@ -1288,25 +1927,35 @@ def _run_prepared_simple_backtest(
     pf_attribution = _pf_attribution(trades, df)
     entry_funnel_report = _entry_funnel_report(entry_funnel)
     entry_contract_funnel = _entry_contract_funnel_report(df)
+    instrument_runtime_observations = _instrument_runtime_report(instrument_runtime)
     management_evidence = _management_evidence_report(trades)
     edge_formation_academy_diagnostic = _edge_formation_academy_diagnostic(
-        df, entry_contract_funnel, management_evidence, trades, payload,
+        df,
+        entry_contract_funnel,
+        management_evidence,
+        trades,
+        payload,
     )
     edge_observability = _edge_observability_report(
-        entry_contract_funnel, management_evidence, trades,
+        entry_contract_funnel,
+        management_evidence,
+        trades,
     )
     realized_r = [
         float(trade.realized_r_multiple)
         if trade.realized_r_multiple is not None
-        else float(trade.profit_percent) / max(float(trade.risk_budget_percent or payload.risk_per_trade or 1), 0.000001)
+        else float(trade.profit_percent)
+        / max(float(trade.risk_budget_percent or payload.risk_per_trade or 1), 0.000001)
         for trade in trades
     ]
-    after_cost_expectancy_r = round(float(np.mean(realized_r)), 6) if realized_r else 0.0
+    after_cost_expectancy_r = (
+        round(float(np.mean(realized_r)), 6) if realized_r else 0.0
+    )
     edge_context_report = {
         "protocol": "edge_context_authority_firewall_v1",
-        "status": "enforced" if edge_context_required and edge_context_axes else (
-            "telemetry_only_control" if context_declared else "not_applicable"
-        ),
+        "status": "enforced"
+        if edge_context_required and edge_context_axes
+        else ("telemetry_only_control" if context_declared else "not_applicable"),
         "enforced": bool(edge_context_required and edge_context_axes),
         "admission_axes": edge_context_axes,
         "observed_signals": int(edge_context_observations),
@@ -1327,13 +1976,22 @@ def _run_prepared_simple_backtest(
     behavioral_signature = {} if lightweight else _behavioral_signature(df, trades)
     diagnostic_telemetry = (
         {"status": "deferred_screening_subreplay", "promotion_evidence": False}
-        if lightweight else _diagnostic_telemetry(trades, entry_funnel_report, pf_attribution)
+        if lightweight
+        else _diagnostic_telemetry(trades, entry_funnel_report, pf_attribution)
     )
     veto_regret = {} if lightweight else _veto_regret_report(shadow_ledger)
-    decision_blame_graph = {} if lightweight else _decision_blame_graph(trades, veto_regret)
+    decision_blame_graph = (
+        {} if lightweight else _decision_blame_graph(trades, veto_regret)
+    )
     cooldown_policy = (
         {"status": "deferred_screening_subreplay", "promotion_evidence": False}
-        if lightweight else _cooldown_policy_report(cooldown_decisions, loss_streak_wait_events, recovery_probe_events, weak_regime_events)
+        if lightweight
+        else _cooldown_policy_report(
+            cooldown_decisions,
+            loss_streak_wait_events,
+            recovery_probe_events,
+            weak_regime_events,
+        )
     )
     transition_firewall = {
         "enabled": bool(payload.parameters.get("transition_firewall_enabled", False)),
@@ -1342,7 +2000,11 @@ def _run_prepared_simple_backtest(
         "vetoes": transition_vetoes,
         "rule": "A regime or volatility boundary creates a finite WAIT state; it never uses future outcomes or lowers a gate.",
     }
-    confidence_calibration = {} if lightweight else _confidence_calibration_report(confidence_history, payload)
+    confidence_calibration = (
+        {}
+        if lightweight
+        else _confidence_calibration_report(confidence_history, payload)
+    )
     temporal_survival = _temporal_survival_report(temporal_state, payload)
     robustness_matrix = _robustness_matrix(trades)
     # The paired differential lane is part of screening's causal contract,
@@ -1368,23 +2030,39 @@ def _run_prepared_simple_backtest(
     )
     if differential_lane is not None:
         differential_router["replay_lane"] = differential_lane
-    window_survival = _window_survival(df, trades, opportunities_by_month, accepted_by_month)
+    window_survival = _window_survival(
+        df, trades, opportunities_by_month, accepted_by_month
+    )
     regime_ensemble = {} if lightweight else _regime_ensemble_report(df, payload)
     portfolio_evidence = {} if lightweight else _portfolio_evidence(df, trades, payload)
-    opportunity_metrics = _opportunity_metrics(net_profit, entry_funnel_report, window_survival)
+    opportunity_metrics = _opportunity_metrics(
+        net_profit, entry_funnel_report, window_survival
+    )
     certified_coverage_passport = _certified_coverage_passport(trades, shadow_ledger)
     opportunity_recall = _opportunity_recall(entry_funnel_report, shadow_ledger, trades)
     router_evidence = (
         {"status": "deferred_screening_subreplay", "promotion_evidence": False}
         if lightweight
-        else _router_evidence(df, payload, portfolio_evidence, opportunity_recall, statistical_evidence)
+        else _router_evidence(
+            df, payload, portfolio_evidence, opportunity_recall, statistical_evidence
+        )
     )
-    edge_claim = {} if lightweight else _edge_claim(payload, pf_attribution, statistical_evidence["edge_quality"])
+    edge_claim = (
+        {}
+        if lightweight
+        else _edge_claim(payload, pf_attribution, statistical_evidence["edge_quality"])
+    )
     volume_quality = dict(df.attrs.get("volume_quality") or {})
     volume_shadow = (
-        {"status": "deferred_screening_subreplay", "promotion_evidence": False, "quality": volume_quality}
+        {
+            "status": "deferred_screening_subreplay",
+            "promotion_evidence": False,
+            "quality": volume_quality,
+        }
         if lightweight
-        else volume_shadow_report(df, [trade.model_dump() for trade in trades], payload.volume_context)
+        else volume_shadow_report(
+            df, [trade.model_dump() for trade in trades], payload.volume_context
+        )
     )
     volume_policy = _volume_policy_report(df, payload.parameters, volume_quality)
     event_digest = _event_ledger_digest(event_tokens, event_categories)
@@ -1412,7 +2090,9 @@ def _run_prepared_simple_backtest(
             "architecture_interaction"
             if architecture_interaction_variant == "state_classifier_coherence_v1"
             else "state_machine_gene"
-        ) if state_machine_enabled else "disabled",
+        )
+        if state_machine_enabled
+        else "disabled",
         "final_state": state_machine_state,
         "transition_counts": dict(state_machine_transitions),
         "event_count": len(state_machine_events),
@@ -1449,31 +2129,46 @@ def _run_prepared_simple_backtest(
         execution_contract=execution_contract_metadata(payload),
         control_root=control_root_for(payload.base_strategy or payload.strategy),
         policy_boundary=policy_boundary,
-        core_replay_gate=core_replay_gate({
-            "total_trades": total_trades,
-            "profit_factor": profit_factor,
-            "data_quality": dict(df.attrs.get("data_quality") or {}),
-        }),
-        data_quality={**dict(df.attrs.get("data_quality") or {}),
-                      "status": "warning" if (dict(df.attrs.get("data_quality") or {}).get("hard_gate_failure_count", 0) or unexpected_gap_count) else "passed",
-                      "rows": len(df), "gap_control": True, "hard_gate": payload.execution.reject_unexpected_gaps,
-                      "unexpected_gap_count": unexpected_gap_count,
-                      "spread_quality": _spread_quality(df, payload),
-                      "regime_source": regime_source_label,
-                      "mtf_pilot": {
-                          "protocol": "xauusd_h1_m15_mtf_v1",
-                          "enabled": bool(payload.mtf_pilot.get("enabled", False)),
-                          "mode": payload.mtf_pilot.get("mode", "m15_only"),
-                          "veto_count": mtf_vetoes,
-                          "context_counts": dict(mtf_contexts),
-                          "promotion_evidence": False,
-                      },
-                      "decision_trace": {
-                          "protocol": "candle_decision_trace_v1", "requested": emit_decision_trace,
-                          "complete": emit_decision_trace, "event_count": len(decision_trace),
-                          "evaluated_candle_count": max(0, len(df) - 200),
-                          "promotion_evidence": False,
-                      }},
+        core_replay_gate=core_replay_gate(
+            {
+                "total_trades": total_trades,
+                "profit_factor": profit_factor,
+                "data_quality": dict(df.attrs.get("data_quality") or {}),
+            }
+        ),
+        data_quality={
+            **dict(df.attrs.get("data_quality") or {}),
+            "status": "warning"
+            if (
+                dict(df.attrs.get("data_quality") or {}).get(
+                    "hard_gate_failure_count", 0
+                )
+                or unexpected_gap_count
+            )
+            else "passed",
+            "rows": len(df),
+            "gap_control": True,
+            "hard_gate": payload.execution.reject_unexpected_gaps,
+            "unexpected_gap_count": unexpected_gap_count,
+            "spread_quality": _spread_quality(df, payload),
+            "regime_source": regime_source_label,
+            "mtf_pilot": {
+                "protocol": "xauusd_h1_m15_mtf_v1",
+                "enabled": bool(payload.mtf_pilot.get("enabled", False)),
+                "mode": payload.mtf_pilot.get("mode", "m15_only"),
+                "veto_count": mtf_vetoes,
+                "context_counts": dict(mtf_contexts),
+                "promotion_evidence": False,
+            },
+            "decision_trace": {
+                "protocol": "candle_decision_trace_v1",
+                "requested": emit_decision_trace,
+                "complete": emit_decision_trace,
+                "event_count": len(decision_trace),
+                "evaluated_candle_count": max(0, len(df) - 200),
+                "promotion_evidence": False,
+            },
+        },
         volume_quality=volume_quality,
         volume_policy=volume_policy,
         volume_shadow=volume_shadow,
@@ -1481,21 +2176,35 @@ def _run_prepared_simple_backtest(
         pf_attribution=pf_attribution,
         entry_funnel=entry_funnel_report,
         entry_contract_funnel=entry_contract_funnel,
+        instrument_runtime_observations=instrument_runtime_observations,
         edge_observability=edge_observability,
         confirmation_entry_observed=entry_contract_funnel.get("status") == "observed",
         behavior_delta_observed=bool(
             entry_contract_funnel.get("status") == "observed"
-            and int((entry_contract_funnel.get("stage_counts") or {}).get("setup", 0) or 0) > 0
+            and int(
+                (entry_contract_funnel.get("stage_counts") or {}).get("setup", 0) or 0
+            )
+            > 0
             and (
-                int((entry_contract_funnel.get("stage_counts") or {}).get("setup", 0) or 0)
-                != int((entry_contract_funnel.get("stage_counts") or {}).get("entry_ready", 0) or 0)
+                int(
+                    (entry_contract_funnel.get("stage_counts") or {}).get("setup", 0)
+                    or 0
+                )
+                != int(
+                    (entry_contract_funnel.get("stage_counts") or {}).get(
+                        "entry_ready", 0
+                    )
+                    or 0
+                )
             )
         ),
         context_declared_before_replay=context_declared,
         context_occurrences=(
             int(edge_context_matches)
             if edge_context_required and edge_context_axes
-            else int((entry_contract_funnel.get("stage_counts") or {}).get("context", 0) or 0)
+            else int(
+                (entry_contract_funnel.get("stage_counts") or {}).get("context", 0) or 0
+            )
         ),
         edge_context_enforcement=edge_context_report,
         risk_governor_compliant=bool(context_declared and not forbidden_risk_bypass),
@@ -1509,7 +2218,9 @@ def _run_prepared_simple_backtest(
         decision_blame_graph=decision_blame_graph,
         observability_protocol_version=2,
         cooldown_policy=cooldown_policy,
-        transition_firewall=transition_firewall if not lightweight else {"status": "deferred_screening_subreplay", "promotion_evidence": False},
+        transition_firewall=transition_firewall
+        if not lightweight
+        else {"status": "deferred_screening_subreplay", "promotion_evidence": False},
         confidence_calibration=confidence_calibration,
         temporal_survival=temporal_survival,
         robustness_matrix=robustness_matrix,
@@ -1523,7 +2234,10 @@ def _run_prepared_simple_backtest(
         certified_coverage_passport=certified_coverage_passport,
         opportunity_recall=opportunity_recall,
         edge_claim=edge_claim,
-        benchmark={"buy_and_hold_percent": round(buy_hold_percent, 3), "edge_vs_buy_and_hold_percent": round(net_profit - buy_hold_percent, 3)},
+        benchmark={
+            "buy_and_hold_percent": round(buy_hold_percent, 3),
+            "edge_vs_buy_and_hold_percent": round(net_profit - buy_hold_percent, 3),
+        },
         trade_ledger_scope="full evaluation; API display is capped to the latest 20 closed trades",
         trade_ledger_hash=_trade_ledger_hash(trades),
         event_ledger_hash=str(event_digest["hash"]),
@@ -1550,7 +2264,9 @@ def _run_prepared_simple_backtest(
         ),
         decision_trace=[],
     )
-    response.proof_carrying_replay = _proof_carrying_replay(response.model_dump(), trades, payload)
+    response.proof_carrying_replay = _proof_carrying_replay(
+        response.model_dump(), trades, payload
+    )
     if emit_decision_trace:
         response.decision_trace = decision_trace
     if emit_decision_trace or bool(payload.emit_trade_ledger):
@@ -1564,15 +2280,29 @@ def _run_prepared_simple_backtest(
     ):
         if not lightweight and bool(response.core_replay_gate.get("passed", False)):
             target_regime = _differential_target_regime(payload, df)
-            portfolio_non_target_trades = [trade for trade in trades if trade.market_regime != target_regime]
-            portfolio_target_trades = [trade for trade in trades if trade.market_regime == target_regime]
+            portfolio_non_target_trades = [
+                trade for trade in trades if trade.market_regime != target_regime
+            ]
+            portfolio_target_trades = [
+                trade for trade in trades if trade.market_regime == target_regime
+            ]
             response.differential_router = {
                 **response.differential_router,
                 "paired_lane": _paired_differential_lane_report(
-                    payload, source_df, _trade_summary(portfolio_non_target_trades),
+                    payload,
+                    source_df,
+                    _trade_summary(portfolio_non_target_trades),
                     _trade_summary(portfolio_target_trades),
-                    bool(response.differential_router.get("non_target_signal_identity", False)),
-                    bool(response.differential_router.get("non_target_confidence_identity", False)),
+                    bool(
+                        response.differential_router.get(
+                            "non_target_signal_identity", False
+                        )
+                    ),
+                    bool(
+                        response.differential_router.get(
+                            "non_target_confidence_identity", False
+                        )
+                    ),
                     prepared_snapshot=snapshot,
                 ),
             }
@@ -1604,12 +2334,27 @@ def _data_quality_diagnostics(df: pd.DataFrame) -> dict[str, object]:
         converted[column] = values
         numeric_invalid[column] = int(values.isna().sum())
 
-    required_missing = int((timestamps.isna() | converted["open"].isna() | converted["high"].isna()
-                            | converted["low"].isna() | converted["close"].isna()).sum())
-    valid_ohlc = ~(converted["open"].isna() | converted["high"].isna()
-                   | converted["low"].isna() | converted["close"].isna())
-    non_positive = valid_ohlc & ((converted["open"] <= 0) | (converted["high"] <= 0)
-                                 | (converted["low"] <= 0) | (converted["close"] <= 0))
+    required_missing = int(
+        (
+            timestamps.isna()
+            | converted["open"].isna()
+            | converted["high"].isna()
+            | converted["low"].isna()
+            | converted["close"].isna()
+        ).sum()
+    )
+    valid_ohlc = ~(
+        converted["open"].isna()
+        | converted["high"].isna()
+        | converted["low"].isna()
+        | converted["close"].isna()
+    )
+    non_positive = valid_ohlc & (
+        (converted["open"] <= 0)
+        | (converted["high"] <= 0)
+        | (converted["low"] <= 0)
+        | (converted["close"] <= 0)
+    )
     invalid_geometry = valid_ohlc & (
         (converted["high"] < converted["open"])
         | (converted["high"] < converted["close"])
@@ -1619,11 +2364,16 @@ def _data_quality_diagnostics(df: pd.DataFrame) -> dict[str, object]:
     )
     invalid_ohlc_rows = int((non_positive | invalid_geometry).sum())
     failures = []
-    if int(timestamps.isna().sum()): failures.append("invalid_timestamp")
-    if duplicate_count: failures.append("duplicate_timestamp")
-    if non_monotonic_pairs: failures.append("non_monotonic_timestamp")
-    if required_missing: failures.append("missing_or_non_numeric_required_value")
-    if invalid_ohlc_rows: failures.append("invalid_ohlc_geometry")
+    if int(timestamps.isna().sum()):
+        failures.append("invalid_timestamp")
+    if duplicate_count:
+        failures.append("duplicate_timestamp")
+    if non_monotonic_pairs:
+        failures.append("non_monotonic_timestamp")
+    if required_missing:
+        failures.append("missing_or_non_numeric_required_value")
+    if invalid_ohlc_rows:
+        failures.append("invalid_ohlc_geometry")
     return {
         "protocol": "historical_data_quality_v2",
         "rows_before_cleaning": len(raw),
@@ -1640,8 +2390,17 @@ def _data_quality_diagnostics(df: pd.DataFrame) -> dict[str, object]:
     }
 
 
-def _spread_quality(df: pd.DataFrame, payload: SimpleBacktestRequest) -> dict[str, object]:
-    observed_column = next((column for column in ("spread_points", "spread", "bid_ask_spread") if column in df.columns), None)
+def _spread_quality(
+    df: pd.DataFrame, payload: SimpleBacktestRequest
+) -> dict[str, object]:
+    observed_column = next(
+        (
+            column
+            for column in ("spread_points", "spread", "bid_ask_spread")
+            if column in df.columns
+        ),
+        None,
+    )
     return {
         "status": "observed" if observed_column else "assumed",
         "source": observed_column or "execution_config",
@@ -1661,11 +2420,25 @@ def _apply_signal_delay(df: pd.DataFrame, delay: int) -> pd.DataFrame:
         return df
     delayed = df.copy()
     signal_columns = [
-        column for column in delayed.columns
-        if column in {"signal", "parent_signal", "target_signal", "pre_volume_signal", "selected_specialist"}
-        or column.endswith("_signal") or column.endswith("_specialist")
-        or column.endswith("_signal_confidence") or column in {"signal_confidence", "parent_signal_confidence", "target_signal_confidence", "pre_volume_signal_confidence"}
-        or column.startswith("entry_contract_") or column.startswith("entry_")
+        column
+        for column in delayed.columns
+        if column
+        in {
+            "signal",
+            "parent_signal",
+            "target_signal",
+            "pre_volume_signal",
+            "selected_specialist",
+        }
+        or column.endswith(("_signal", "_specialist", "_signal_confidence"))
+        or column
+        in {
+            "signal_confidence",
+            "parent_signal_confidence",
+            "target_signal_confidence",
+            "pre_volume_signal_confidence",
+        }
+        or column.startswith(("entry_contract_", "entry_"))
         or column in {"trade_invalidation_price"}
     ]
     for column in sorted(set(signal_columns)):
@@ -1705,14 +2478,18 @@ def _apply_portfolio_strategy(
     member_frames: list[tuple[dict[str, object], pd.DataFrame]] = []
     if prepared_member_frames is not None:
         if len(prepared_member_frames) != len(members):
-            raise ValueError("Prepared portfolio member snapshot count does not match the sealed council.")
+            raise ValueError(
+                "Prepared portfolio member snapshot count does not match the sealed council."
+            )
         for raw, member in zip(members, prepared_member_frames):
             config = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
             member_frames.append((config, member.copy()))
     else:
         for raw in members:
             config = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
-            function = get_strategy(str(config["strategy"]), config.get("base_strategy"))
+            function = get_strategy(
+                str(config["strategy"]), config.get("base_strategy")
+            )
             member = function(prepared.copy(), dict(config.get("parameters") or {}))
             member = apply_volume_policy(
                 member,
@@ -1741,15 +2518,25 @@ def _apply_portfolio_strategy(
     )
 
     for index in prepared.index:
-        regime = str(prepared.at[index, "market_regime"] if "market_regime" in prepared else "unknown")
-        volatility = str(prepared.at[index, "volatility_regime"] if "volatility_regime" in prepared else "normal_volatility")
+        regime = str(
+            prepared.at[index, "market_regime"]
+            if "market_regime" in prepared
+            else "unknown"
+        )
+        volatility = str(
+            prepared.at[index, "volatility_regime"]
+            if "volatility_regime" in prepared
+            else "normal_volatility"
+        )
         eligible: list[tuple[dict[str, object], pd.DataFrame]] = []
         for config, frame in member_frames:
             target_regime = config.get("target_regime")
             target_volatility = config.get("target_volatility")
             target_direction = config.get("target_direction")
             if target_direction not in {None, "BUY", "SELL"}:
-                raise ValueError(f"Unsupported portfolio target direction: {target_direction}")
+                raise ValueError(
+                    f"Unsupported portfolio target direction: {target_direction}"
+                )
             if target_regime and target_regime != regime:
                 continue
             if target_volatility and target_volatility != volatility:
@@ -1775,7 +2562,8 @@ def _apply_portfolio_strategy(
 
         direction = actionable[0]
         agreeing = [
-            (config, frame) for config, frame in eligible
+            (config, frame)
+            for config, frame in eligible
             if str(frame.at[index, "signal"]) == direction
         ]
         # If an owner exists but another same-niche member explicitly says the
@@ -1784,7 +2572,11 @@ def _apply_portfolio_strategy(
         if not agreeing:
             continue
         confidences = [
-            float(frame.at[index, "signal_confidence"] if "signal_confidence" in frame else 0.0)
+            float(
+                frame.at[index, "signal_confidence"]
+                if "signal_confidence" in frame
+                else 0.0
+            )
             for _, frame in agreeing
         ]
         # When multiple specialists own the same niche and agree on
@@ -1794,14 +2586,22 @@ def _apply_portfolio_strategy(
         # information and keeps the member's own exits bound to the trade.
         selected_config, _selected_frame = max(
             agreeing,
-            key=lambda item: float(item[1].at[index, "signal_confidence"] if "signal_confidence" in item[1] else 0.0),
+            key=lambda item: float(
+                item[1].at[index, "signal_confidence"]
+                if "signal_confidence" in item[1]
+                else 0.0
+            ),
         )
         selected = selected_config
         prepared.at[index, "signal"] = direction
-        prepared.at[index, "signal_confidence"] = max(0.0, min(1.0, sum(confidences) / max(1, len(confidences))))
+        prepared.at[index, "signal_confidence"] = max(
+            0.0, min(1.0, sum(confidences) / max(1, len(confidences)))
+        )
         prepared.at[index, "selected_specialist"] = _portfolio_member_key(selected)
         prepared.at[index, "portfolio_member_count"] = len(agreeing)
-        prepared.at[index, "portfolio_execution_parameters"] = dict(selected.get("parameters") or {})
+        prepared.at[index, "portfolio_execution_parameters"] = dict(
+            selected.get("parameters") or {}
+        )
     return prepared
 
 
@@ -1816,10 +2616,15 @@ def _apply_portfolio_strategy_vectorized(
     contract while the production path avoids per-candle ``.at`` writes.
     """
     index = prepared.index
-    regime = prepared.get("market_regime", pd.Series("unknown", index=index)).astype(str)
+    regime = prepared.get("market_regime", pd.Series("unknown", index=index)).astype(
+        str
+    )
     volatility = prepared.get(
         "volatility_regime", pd.Series("normal_volatility", index=index)
     ).astype(str)
+    sessions = session_membership(
+        prepared.get("time", pd.Series(index=index, dtype=object))
+    )
 
     eligible_masks: list[pd.Series] = []
     buy_masks: list[pd.Series] = []
@@ -1833,8 +2638,11 @@ def _apply_portfolio_strategy_vectorized(
         target_regime = config.get("target_regime")
         target_volatility = config.get("target_volatility")
         target_direction = config.get("target_direction")
+        target_session = config.get("target_session")
         if target_direction not in {None, "BUY", "SELL"}:
-            raise ValueError(f"Unsupported portfolio target direction: {target_direction}")
+            raise ValueError(
+                f"Unsupported portfolio target direction: {target_direction}"
+            )
         eligible = pd.Series(True, index=index)
         # Unknown market state is an explicit abstention boundary. A generic
         # member (target_regime omitted) must not turn missing regime evidence
@@ -1844,6 +2652,11 @@ def _apply_portfolio_strategy_vectorized(
             eligible &= regime.eq(str(target_regime))
         if target_volatility:
             eligible &= volatility.eq(str(target_volatility))
+        if target_session:
+            if str(target_session) not in sessions.columns:
+                eligible &= False
+            else:
+                eligible &= sessions[str(target_session)].astype(bool)
 
         signals = frame.get("signal", pd.Series("WAIT", index=index)).astype(str)
         # A directional specialist owns only its declared side. An opposite
@@ -1858,13 +2671,17 @@ def _apply_portfolio_strategy_vectorized(
         buy_masks.append(eligible & signals.eq("BUY"))
         sell_masks.append(eligible & signals.eq("SELL"))
         confidence_series.append(confidence)
-        volume_risk_series.append(pd.to_numeric(
-            frame.get("volume_risk_multiplier", pd.Series(1.0, index=index)),
-            errors="coerce",
-        ).fillna(1.0).clip(lower=0.1, upper=1.0))
-        volume_rejection_series.append(frame.get(
-            "volume_policy_rejection", pd.Series("", index=index)
-        ).astype(str))
+        volume_risk_series.append(
+            pd.to_numeric(
+                frame.get("volume_risk_multiplier", pd.Series(1.0, index=index)),
+                errors="coerce",
+            )
+            .fillna(1.0)
+            .clip(lower=0.1, upper=1.0)
+        )
+        volume_rejection_series.append(
+            frame.get("volume_policy_rejection", pd.Series("", index=index)).astype(str)
+        )
         member_keys.append(_portfolio_member_key(config))
 
     prepared["signal"] = "WAIT"
@@ -1892,11 +2709,17 @@ def _apply_portfolio_strategy_vectorized(
     prepared.loc[buy_only, "signal"] = "BUY"
     prepared.loc[sell_only, "signal"] = "SELL"
     prepared.loc[disagreement, "portfolio_disagreement"] = True
-    prepared.loc[disagreement, "portfolio_member_count"] = eligible_count.loc[disagreement]
+    prepared.loc[disagreement, "portfolio_member_count"] = eligible_count.loc[
+        disagreement
+    ]
     prepared.loc[disagreement, "portfolio_wait_reason"] = "council_disagreement"
     no_specialist = eligible_count.eq(0)
-    prepared.loc[no_specialist & regime.eq("unknown"), "portfolio_wait_reason"] = "unknown_state_wait"
-    prepared.loc[no_specialist & regime.ne("unknown"), "portfolio_wait_reason"] = "no_specialist_for_state"
+    prepared.loc[no_specialist & regime.eq("unknown"), "portfolio_wait_reason"] = (
+        "unknown_state_wait"
+    )
+    prepared.loc[no_specialist & regime.ne("unknown"), "portfolio_wait_reason"] = (
+        "no_specialist_for_state"
+    )
 
     # Average confidence uses only agreeing specialists. Selecting the
     # strongest current confidence uses strict `>` so ties preserve the first
@@ -1917,17 +2740,24 @@ def _apply_portfolio_strategy_vectorized(
 
     normal_action = actionable & ~disagreement
     prepared.loc[normal_action, "signal_confidence"] = (
-        confidence_total.loc[normal_action] / agreeing_count.loc[normal_action].clip(lower=1)
+        confidence_total.loc[normal_action]
+        / agreeing_count.loc[normal_action].clip(lower=1)
     ).clip(lower=0.0, upper=1.0)
     # The council refuses a low-confidence consensus as well as an
     # opposite-direction disagreement. This is a fixed safety invariant,
     # not a PF-trained threshold; calibration is evaluated separately.
     low_confidence = normal_action & prepared["signal_confidence"].lt(0.35)
     prepared.loc[low_confidence, "signal"] = "WAIT"
-    prepared.loc[low_confidence, "portfolio_wait_reason"] = "calibrated_confidence_below_minimum"
-    prepared.loc[low_confidence, "portfolio_member_count"] = eligible_count.loc[low_confidence]
+    prepared.loc[low_confidence, "portfolio_wait_reason"] = (
+        "calibrated_confidence_below_minimum"
+    )
+    prepared.loc[low_confidence, "portfolio_member_count"] = eligible_count.loc[
+        low_confidence
+    ]
     normal_action = normal_action & ~low_confidence
-    prepared.loc[normal_action, "portfolio_member_count"] = agreeing_count.loc[normal_action]
+    prepared.loc[normal_action, "portfolio_member_count"] = agreeing_count.loc[
+        normal_action
+    ]
 
     # Execution metadata remains bound to the selected sealed member. Build
     # object columns once instead of issuing one pandas .at write per candle.
@@ -1947,8 +2777,12 @@ def _apply_portfolio_strategy_vectorized(
         prepared.at[label, "volume_policy_rejection"] = str(
             volume_rejection_series[int(member_index)].loc[label]
         )
-    prepared["selected_specialist"] = pd.Series(selected_specialists, index=index, dtype=object)
-    prepared["portfolio_execution_parameters"] = pd.Series(execution_parameters, index=index, dtype=object)
+    prepared["selected_specialist"] = pd.Series(
+        selected_specialists, index=index, dtype=object
+    )
+    prepared["portfolio_execution_parameters"] = pd.Series(
+        execution_parameters, index=index, dtype=object
+    )
     return prepared
 
 
@@ -1969,7 +2803,8 @@ def _portfolio_member_key(config: dict[str, object]) -> str:
     regime = str(config.get("target_regime") or "").strip()
     volatility = str(config.get("target_volatility") or "").strip()
     direction = str(config.get("target_direction") or "").strip()
-    return "|".join([strategy, role, regime, volatility, direction])
+    session = str(config.get("target_session") or "").strip()
+    return f"{strategy}|{role}|{regime}|{volatility}|{direction}|{session}"
 
 
 def _portfolio_payload_for_signal(
@@ -1990,7 +2825,11 @@ def _portfolio_payload_for_signal(
     merged = {**member_parameters, **dict(payload.parameters or {})}
     # These are portfolio-owned controls and must never be overridden by a
     # member's local experiment.
-    for key in ("portfolio_policy_version", "transition_firewall_enabled", "transition_wait_candles"):
+    for key in (
+        "portfolio_policy_version",
+        "transition_firewall_enabled",
+        "transition_wait_candles",
+    ):
         if key in payload.parameters:
             merged[key] = payload.parameters[key]
     return payload.model_copy(update={"parameters": merged})
@@ -2006,14 +2845,17 @@ def _payload_for_position(
     return payload.model_copy(update={"parameters": dict(parameters)})
 
 
-def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: SimpleBacktestRequest) -> dict[str, object]:
+def _portfolio_evidence(
+    df: pd.DataFrame, trades: list[SimpleTrade], payload: SimpleBacktestRequest
+) -> dict[str, object]:
     if not payload.portfolio_members:
         return {"status": "not_applicable"}
     regimes = sorted({str(trade.market_regime) for trade in trades})
-    roles = sorted({str(trade.reason or "") for trade in trades if trade.reason})
     disagreements = int(df.get("portfolio_disagreement", pd.Series(dtype=bool)).sum())
     member_configs = {
-        _portfolio_member_key(member.model_dump() if hasattr(member, "model_dump") else dict(member)): member
+        _portfolio_member_key(
+            member.model_dump() if hasattr(member, "model_dump") else dict(member)
+        ): member
         for member in payload.portfolio_members
     }
     by_member: dict[str, list[SimpleTrade]] = {key: [] for key in member_configs}
@@ -2032,12 +2874,20 @@ def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: Si
             by_month.setdefault(month, []).append(float(trade.profit_percent))
             context = f"{trade.market_regime}|{trade.volatility_regime}"
             by_context.setdefault(context, []).append(float(trade.profit_percent))
-            by_context_month.setdefault(context, {}).setdefault(month, []).append(float(trade.profit_percent))
+            by_context_month.setdefault(context, {}).setdefault(month, []).append(
+                float(trade.profit_percent)
+            )
             direction = str(trade.direction)
-            by_context_direction.setdefault(context, {}).setdefault(direction, []).append(float(trade.profit_percent))
-            by_context_direction_month.setdefault(context, {}).setdefault(direction, {}).setdefault(month, []).append(float(trade.profit_percent))
+            by_context_direction.setdefault(context, {}).setdefault(
+                direction, []
+            ).append(float(trade.profit_percent))
+            by_context_direction_month.setdefault(context, {}).setdefault(
+                direction, {}
+            ).setdefault(month, []).append(float(trade.profit_percent))
         config = member_configs.get(member)
-        config_dict = config.model_dump() if hasattr(config, "model_dump") else dict(config or {})
+        config_dict = (
+            config.model_dump() if hasattr(config, "model_dump") else dict(config or {})
+        )
         direction_breakdown = {
             context: {
                 direction: {
@@ -2046,8 +2896,15 @@ def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: Si
                     "wins": sum(value > 0 for value in values),
                     "losses": sum(value <= 0 for value in values),
                     "monthly": {
-                        month: {"trades": len(month_values), "profit_factor": _profit_factor_for(month_values)}
-                        for month, month_values in by_context_direction_month.get(context, {}).get(direction, {}).items()
+                        month: {
+                            "trades": len(month_values),
+                            "profit_factor": _profit_factor_for(month_values),
+                        }
+                        for month, month_values in by_context_direction_month.get(
+                            context, {}
+                        )
+                        .get(direction, {})
+                        .items()
                     },
                 }
                 for direction, values in directions.items()
@@ -2059,12 +2916,18 @@ def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: Si
             "target_regime": config_dict.get("target_regime"),
             "target_volatility": config_dict.get("target_volatility"),
             "target_direction": config_dict.get("target_direction"),
+            "target_session": config_dict.get("target_session"),
             "trades": len(member_trades),
-            "profit_factor": _profit_factor_for([float(trade.profit_percent) for trade in member_trades]),
+            "profit_factor": _profit_factor_for(
+                [float(trade.profit_percent) for trade in member_trades]
+            ),
             "wins": sum(float(trade.profit_percent) > 0 for trade in member_trades),
             "losses": sum(float(trade.profit_percent) <= 0 for trade in member_trades),
             "monthly": {
-                month: {"trades": len(values), "profit_factor": _profit_factor_for(values)}
+                month: {
+                    "trades": len(values),
+                    "profit_factor": _profit_factor_for(values),
+                }
                 for month, values in by_month.items()
             },
             # This is diagnostic evidence, not a selector.  It lets the
@@ -2090,15 +2953,21 @@ def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: Si
             "direction_breakdown": direction_breakdown,
         }
     loss_sets = {
-        member: {str(trade.entry_time) for trade in member_trades if float(trade.profit_percent) < 0}
+        member: {
+            str(trade.entry_time)
+            for trade in member_trades
+            if float(trade.profit_percent) < 0
+        }
         for member, member_trades in by_member.items()
     }
     correlations = []
     member_keys = sorted(loss_sets)
     for index, left in enumerate(member_keys):
-        for right in member_keys[index + 1:]:
+        for right in member_keys[index + 1 :]:
             union = loss_sets[left] | loss_sets[right]
-            correlations.append(len(loss_sets[left] & loss_sets[right]) / len(union) if union else 0.0)
+            correlations.append(
+                len(loss_sets[left] & loss_sets[right]) / len(union) if union else 0.0
+            )
     member_returns = {
         member: [float(trade.profit_percent) for trade in member_trades]
         for member, member_trades in by_member.items()
@@ -2108,38 +2977,79 @@ def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: Si
     # sealed member from the already routed ledger, then re-aggregate it.
     leave_one_out = {
         member: {
-            "trades": sum(len(values) for key, values in member_returns.items() if key != member),
-            "profit_factor": _profit_factor_for([value for key, values in member_returns.items() if key != member for value in values]),
+            "trades": sum(
+                len(values) for key, values in member_returns.items() if key != member
+            ),
+            "profit_factor": _profit_factor_for(
+                [
+                    value
+                    for key, values in member_returns.items()
+                    if key != member
+                    for value in values
+                ]
+            ),
         }
         for member in member_returns
     }
     perturbations = {}
-    for member, values in member_returns.items():
+    for member in member_returns:
         for multiplier in (0.8, 1.2):
-            weighted = [value * multiplier if key == member else value for key, rows in member_returns.items() for value in rows]
-            perturbations[f"{member}@{multiplier}"] = {"profit_factor": _profit_factor_for(weighted), "trades": len(weighted)}
-    selected = df.get("selected_specialist", pd.Series("portfolio_wait", index=df.index)).astype(str)
-    contexts = (df.get("market_regime", pd.Series("unknown", index=df.index)).astype(str)
-        + "|" + df.get("volatility_regime", pd.Series("unknown", index=df.index)).astype(str))
+            weighted = [
+                value * multiplier if key == member else value
+                for key, rows in member_returns.items()
+                for value in rows
+            ]
+            perturbations[f"{member}@{multiplier}"] = {
+                "profit_factor": _profit_factor_for(weighted),
+                "trades": len(weighted),
+            }
+    selected = df.get(
+        "selected_specialist", pd.Series("portfolio_wait", index=df.index)
+    ).astype(str)
+    contexts = (
+        df.get("market_regime", pd.Series("unknown", index=df.index)).astype(str)
+        + "|"
+        + df.get("volatility_regime", pd.Series("unknown", index=df.index)).astype(str)
+    )
     active = selected.ne("portfolio_wait")
-    comparable = active & active.shift(1, fill_value=False) & contexts.eq(contexts.shift(1))
+    comparable = (
+        active & active.shift(1, fill_value=False) & contexts.eq(contexts.shift(1))
+    )
     switches = int((selected.ne(selected.shift(1)) & comparable).sum())
     stable_rows = int(comparable.sum())
     contribution = {member: sum(values) for member, values in member_returns.items()}
     positive_contribution = sum(max(0.0, value) for value in contribution.values())
-    contribution_share = max((max(0.0, value) / positive_contribution for value in contribution.values()), default=0.0) if positive_contribution else 0.0
-    regime_opportunities = {regime: sum(1 for trade in trades if str(trade.market_regime) == regime) for regime in regimes}
+    contribution_share = (
+        max(
+            (
+                max(0.0, value) / positive_contribution
+                for value in contribution.values()
+            ),
+            default=0.0,
+        )
+        if positive_contribution
+        else 0.0
+    )
+    regime_opportunities = {
+        regime: sum(1 for trade in trades if str(trade.market_regime) == regime)
+        for regime in regimes
+    }
     return {
         "status": "observed",
         "member_count": len(payload.portfolio_members),
         "declared_members": [
             {
-                "member_key": _portfolio_member_key(member.model_dump() if hasattr(member, "model_dump") else dict(member)),
+                "member_key": _portfolio_member_key(
+                    member.model_dump()
+                    if hasattr(member, "model_dump")
+                    else dict(member)
+                ),
                 "strategy": member.strategy,
                 "role": member.role,
                 "target_regime": member.target_regime,
                 "target_volatility": member.target_volatility,
                 "target_direction": member.target_direction,
+                "target_session": member.target_session,
             }
             for member in payload.portfolio_members
         ],
@@ -2148,28 +3058,49 @@ def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: Si
         "disagreement_rate": round(disagreements / max(1, len(df)), 6),
         "loss_correlation": {
             "max_jaccard": round(max(correlations, default=0.0), 6),
-            "mean_jaccard": round(sum(correlations) / len(correlations), 6) if correlations else 0.0,
+            "mean_jaccard": round(sum(correlations) / len(correlations), 6)
+            if correlations
+            else 0.0,
             "pair_count": len(correlations),
         },
         "leave_one_member_out": {
-            "method": "sealed_fixed_route_ledger_replay", "members": leave_one_out,
-            "minimum_profit_factor": round(min((row["profit_factor"] for row in leave_one_out.values()), default=0.0), 6),
+            "method": "sealed_fixed_route_ledger_replay",
+            "members": leave_one_out,
+            "minimum_profit_factor": round(
+                min(
+                    (row["profit_factor"] for row in leave_one_out.values()),
+                    default=0.0,
+                ),
+                6,
+            ),
         },
         "weight_perturbation": {
-            "method": "symmetric_member_return_scaling", "scenarios": perturbations,
-            "minimum_profit_factor": round(min((row["profit_factor"] for row in perturbations.values()), default=0.0), 6),
+            "method": "symmetric_member_return_scaling",
+            "scenarios": perturbations,
+            "minimum_profit_factor": round(
+                min(
+                    (row["profit_factor"] for row in perturbations.values()),
+                    default=0.0,
+                ),
+                6,
+            ),
         },
         "router_stability": {
-            "same_context_comparisons": stable_rows, "switches": switches,
+            "same_context_comparisons": stable_rows,
+            "switches": switches,
             "switch_rate": round(switches / max(1, stable_rows), 6),
         },
         "member_contribution": {
-            "net_profit_percent": {key: round(value, 6) for key, value in contribution.items()},
+            "net_profit_percent": {
+                key: round(value, 6) for key, value in contribution.items()
+            },
             "max_positive_share": round(contribution_share, 6),
         },
         "opportunity_coverage": {
             "regime_accepted_entries": regime_opportunities,
-            "covered_regimes": len([count for count in regime_opportunities.values() if count >= 3]),
+            "covered_regimes": len(
+                [count for count in regime_opportunities.values() if count >= 3]
+            ),
         },
         "member_breakdown": member_breakdown,
         "execution_contract": "member_specific_execution_v1",
@@ -2177,9 +3108,15 @@ def _portfolio_evidence(df: pd.DataFrame, trades: list[SimpleTrade], payload: Si
     }
 
 
-def _statistical_evidence(trades: list[SimpleTrade], wins: int, total_trades: int) -> dict[str, object]:
+def _statistical_evidence(
+    trades: list[SimpleTrade], wins: int, total_trades: int
+) -> dict[str, object]:
     if total_trades == 0:
-        return {"trade_count": 0, "winrate_ci_95": [0.0, 0.0], "regime_profit_factor": {}}
+        return {
+            "trade_count": 0,
+            "winrate_ci_95": [0.0, 0.0],
+            "regime_profit_factor": {},
+        }
 
     # Wilson interval is robust for small samples and makes the uncertainty of
     # a 10-trade backtest visible instead of presenting a point win rate as fact.
@@ -2187,17 +3124,33 @@ def _statistical_evidence(trades: list[SimpleTrade], wins: int, total_trades: in
     p = wins / total_trades
     denominator = 1 + z * z / total_trades
     centre = (p + z * z / (2 * total_trades)) / denominator
-    margin = z * (((p * (1 - p) / total_trades) + (z * z / (4 * total_trades * total_trades))) ** 0.5) / denominator
+    margin = (
+        z
+        * (
+            ((p * (1 - p) / total_trades) + (z * z / (4 * total_trades * total_trades)))
+            ** 0.5
+        )
+        / denominator
+    )
     regime_pf: dict[str, float] = {}
     for regime in {trade.market_regime for trade in trades}:
-        subset = [trade.profit_percent for trade in trades if trade.market_regime == regime]
+        subset = [
+            trade.profit_percent for trade in trades if trade.market_regime == regime
+        ]
         gross_win = sum(value for value in subset if value > 0)
         gross_loss = abs(sum(value for value in subset if value <= 0))
-        regime_pf[regime] = round(gross_win / gross_loss, 3) if gross_loss else (99.0 if gross_win else 0.0)
+        regime_pf[regime] = (
+            round(gross_win / gross_loss, 3)
+            if gross_loss
+            else (99.0 if gross_win else 0.0)
+        )
 
     return {
         "trade_count": total_trades,
-        "winrate_ci_95": [round(max(0, centre - margin) * 100, 2), round(min(1, centre + margin) * 100, 2)],
+        "winrate_ci_95": [
+            round(max(0, centre - margin) * 100, 2),
+            round(min(1, centre + margin) * 100, 2),
+        ],
         "regime_profit_factor": regime_pf,
         "minimum_sample_recommendation": 50,
     }
@@ -2207,14 +3160,24 @@ def _entry_price(close: float, signal: str, payload: SimpleBacktestRequest) -> f
     execution = payload.execution
     spread = execution.spread_points * execution.point_size
     slippage = execution.slippage_points * execution.point_size
-    return close + spread / 2 + slippage if signal == "BUY" else close - spread / 2 - slippage
+    return (
+        close + spread / 2 + slippage
+        if signal == "BUY"
+        else close - spread / 2 - slippage
+    )
 
 
-def _exit_price(market_price: float, direction: str, payload: SimpleBacktestRequest) -> float:
+def _exit_price(
+    market_price: float, direction: str, payload: SimpleBacktestRequest
+) -> float:
     execution = payload.execution
     spread = execution.spread_points * execution.point_size
     slippage = execution.slippage_points * execution.point_size
-    return market_price - spread / 2 - slippage if direction == "BUY" else market_price + spread / 2 + slippage
+    return (
+        market_price - spread / 2 - slippage
+        if direction == "BUY"
+        else market_price + spread / 2 + slippage
+    )
 
 
 def _position_size_multiple(
@@ -2225,9 +3188,13 @@ def _position_size_multiple(
 ) -> float:
     stop_execution_price = _exit_price(stop_loss, direction, payload)
     if direction == "BUY":
-        stop_return = (entry_price - stop_execution_price) / max(entry_price, 0.0000001) * 100
+        stop_return = (
+            (entry_price - stop_execution_price) / max(entry_price, 0.0000001) * 100
+        )
     else:
-        stop_return = (stop_execution_price - entry_price) / max(entry_price, 0.0000001) * 100
+        stop_return = (
+            (stop_execution_price - entry_price) / max(entry_price, 0.0000001) * 100
+        )
     stop_return = max(stop_return + payload.execution.commission_percent, 0.000001)
     return min(payload.execution.max_leverage, payload.risk_per_trade / stop_return)
 
@@ -2242,33 +3209,447 @@ def _initial_executable_risk_percent(
     """Return the actual account risk after spread, slippage and commission."""
     stop_execution_price = _exit_price(initial_stop_loss, direction, payload)
     if direction == "BUY":
-        stop_return = (entry_price - stop_execution_price) / max(entry_price, 0.0000001) * 100
+        stop_return = (
+            (entry_price - stop_execution_price) / max(entry_price, 0.0000001) * 100
+        )
     else:
-        stop_return = (stop_execution_price - entry_price) / max(entry_price, 0.0000001) * 100
+        stop_return = (
+            (stop_execution_price - entry_price) / max(entry_price, 0.0000001) * 100
+        )
     executable_risk = max(0.0, stop_return + payload.execution.commission_percent)
 
     return executable_risk * max(0.0, position_size)
 
 
+def _instrument_runtime_state(
+    assignment: dict[str, object] | None,
+) -> dict[str, object]:
+    """Create a bounded, pre-registered instrument invocation ledger.
+
+    The assignment is not trusted as proof. It only limits which keys can be
+    observed; a later event on the actual decision path must activate the key.
+    """
+    assignment = dict(assignment or {})
+    policy = assignment.get("activation_policy") or {}
+    enabled = (
+        assignment.get("protocol") == "lab_instrument_research_assignment_v2"
+        and isinstance(policy, dict)
+        and policy.get("protocol") == "instrument_runtime_activation_contract_v1"
+    )
+    instruments: dict[str, dict[str, object]] = {}
+    if enabled:
+        for selected in assignment.get("selected", []):
+            if not isinstance(selected, dict):
+                continue
+            key = str(selected.get("instrument_key") or "")
+            contract = selected.get("activation_contract") or {}
+            if not key or not isinstance(contract, dict):
+                continue
+            instruments[key] = {
+                "contract": contract,
+                "activation_count": 0,
+                "event_sources": Counter(),
+                "context_event_counts": Counter(),
+                "activated_contexts": {},
+                "abstention_context_counts": Counter(),
+            }
+    return {
+        "enabled": enabled,
+        "assignment_hash": str(assignment.get("assignment_hash") or ""),
+        "instruments": instruments,
+    }
+
+
+def _record_instrument_runtime_event(
+    state: dict[str, object],
+    instrument_key: str,
+    signal_row: object,
+    direction: str,
+    source: str,
+    *,
+    context_overrides: dict[str, str] | None = None,
+) -> None:
+    instruments = state.get("instruments") or {}
+    if not bool(state.get("enabled")) or not isinstance(instruments, dict):
+        return
+    observation = instruments.get(instrument_key)
+    if not isinstance(observation, dict):
+        return
+    context = _instrument_runtime_context(signal_row, direction, context_overrides)
+    context_key = "|".join(
+        [
+            str(context["regime"]),
+            str(context["volatility"]),
+            str(context["session"]),
+            str(context["direction"]),
+        ]
+    )
+    contract = observation.get("contract") or {}
+    if (
+        not isinstance(contract, dict)
+        or not _instrument_runtime_event_allowed(contract, source)
+        or not _instrument_contract_context_matches(contract, context)
+    ):
+        abstentions = observation.get("abstention_context_counts")
+        if isinstance(abstentions, Counter):
+            abstentions[context_key] += 1
+        return
+    observation["activation_count"] = (
+        int(observation.get("activation_count", 0) or 0) + 1
+    )
+    sources = observation.get("event_sources")
+    contexts = observation.get("context_event_counts")
+    if isinstance(sources, Counter):
+        sources[source] += 1
+    if isinstance(contexts, Counter):
+        contexts[context_key] += 1
+    definitions = observation.get("activated_contexts")
+    if isinstance(definitions, dict):
+        definitions[context_key] = dict(context)
+
+
+def _record_strategy_instrument_events(
+    state: dict[str, object],
+    signal_row: object,
+    direction: str,
+    specialist: str,
+) -> None:
+    """Record only an identifiable tactic/router/lens decision, never inventory."""
+    model = str(signal_row.get("entry_contract_model", "") or "").lower()
+    specialist = str(
+        specialist or signal_row.get("selected_specialist", "") or ""
+    ).lower()
+    status = str(signal_row.get("entry_contract_status", "") or "").lower()
+    actionable = direction in {"BUY", "SELL"}
+    setup_observed = (
+        actionable
+        or bool(signal_row.get("entry_setup_detected", False))
+        or status
+        not in {
+            "",
+            "unknown",
+            "not_evaluated",
+            "strategy_does_not_supply_entry_contract",
+        }
+    )
+    if not setup_observed:
+        return
+
+    if model == "trend_continuation" or specialist.startswith("trend"):
+        _record_instrument_runtime_event(
+            state,
+            "trend_pullback",
+            signal_row,
+            direction,
+            f"trend_decision:{model or specialist}",
+        )
+    if model == "breakout_retest" or "breakout" in specialist:
+        _record_instrument_runtime_event(
+            state,
+            "breakout_retest",
+            signal_row,
+            direction,
+            f"breakout_decision:{model or specialist}",
+        )
+    if model == "range_sweep" or "range" in specialist:
+        _record_instrument_runtime_event(
+            state,
+            "range_reentry",
+            signal_row,
+            direction,
+            f"range_decision:{model or specialist}",
+        )
+    if model == "htf_reversal" or "compression" in specialist:
+        _record_instrument_runtime_event(
+            state,
+            "compression_expansion",
+            signal_row,
+            direction,
+            f"compression_decision:{model or specialist}",
+        )
+    if specialist not in {"", "none", "unknown", "parent", "portfolio_wait"}:
+        _record_instrument_runtime_event(
+            state,
+            "regime_router",
+            signal_row,
+            direction,
+            f"router_selected:{specialist}",
+        )
+    if model:
+        _record_instrument_runtime_event(
+            state,
+            "adaptive_entry_topology",
+            signal_row,
+            direction,
+            f"entry_topology_selected:{model}",
+        )
+    if actionable:
+        _record_instrument_runtime_event(
+            state,
+            "session_breakout",
+            signal_row,
+            direction,
+            "session_breakout_signal_evaluated",
+        )
+        _record_instrument_runtime_event(
+            state,
+            "session_range",
+            signal_row,
+            direction,
+            "session_range_evaluated",
+        )
+    if bool(signal_row.get("entry_location_valid", False)):
+        for key in (
+            "dynamic_fibonacci_zone",
+            "confirmed_swing",
+            "support_resistance_zone",
+        ):
+            _record_instrument_runtime_event(
+                state,
+                key,
+                signal_row,
+                direction,
+                "structure_location_evaluated",
+            )
+    if bool(signal_row.get("bos_event", False)):
+        _record_instrument_runtime_event(
+            state,
+            "bos_event",
+            signal_row,
+            direction,
+            "bos_event_observed",
+        )
+    if bool(signal_row.get("choch_event", False)):
+        _record_instrument_runtime_event(
+            state,
+            "choch_event",
+            signal_row,
+            direction,
+            "choch_event_observed",
+            context_overrides={"regime": "transition"},
+        )
+    if str(signal_row.get("m15_trap_direction", "") or "").upper() in {"BUY", "SELL"}:
+        _record_instrument_runtime_event(
+            state,
+            "liquidity_sweep",
+            signal_row,
+            direction,
+            "liquidity_sweep_observed",
+        )
+        _record_instrument_runtime_event(
+            state,
+            "liquidity_pool",
+            signal_row,
+            direction,
+            "liquidity_pool_proxy_evaluated",
+        )
+
+
+def _instrument_runtime_context(
+    signal_row: object,
+    direction: str,
+    overrides: dict[str, str] | None = None,
+) -> dict[str, str]:
+    timestamp = signal_row.get("time")
+    try:
+        session = _edge_market_session(timestamp)
+    except (TypeError, ValueError, OverflowError):
+        session = "unknown"
+    session = _canonical_instrument_context_value("session", session)
+    volatility = str(
+        signal_row.get("volatility_regime", "normal_volatility") or "normal_volatility"
+    )
+    context = {
+        "regime": str(signal_row.get("market_regime", "unknown") or "unknown"),
+        "volatility": volatility,
+        "session": session,
+        "direction": direction if direction in {"BUY", "SELL"} else "WAIT",
+        "transition_state": "stable",
+    }
+    atr = float(signal_row.get("atr", signal_row.get("structure_atr", 0)) or 0)
+    spread = float(signal_row.get("spread", 0) or 0)
+    if atr > 0:
+        context["spread_liquidity_state"] = (
+            "liquid" if spread / atr <= 0.25 else "illiquid"
+        )
+    for key, value in (overrides or {}).items():
+        context[str(key)] = str(value)
+    if context.get("regime") == "transition":
+        context["transition_state"] = "transition"
+    return context
+
+
+def _instrument_contract_context_matches(
+    contract: dict[str, object], context: dict[str, str]
+) -> bool:
+    if contract.get("protocol") != "instrument_runtime_activation_contract_v1":
+        return False
+    boundary = contract.get("context") or {}
+    if not isinstance(boundary, dict):
+        return False
+    regime = context.get("regime", "unknown")
+    compatible = {str(value) for value in boundary.get("compatible_regimes", [])}
+    forbidden = {str(value) for value in boundary.get("forbidden_regimes", [])}
+    if regime in forbidden or (compatible and regime not in compatible):
+        return False
+    declared = boundary.get("declared_context") or {}
+    if not isinstance(declared, dict):
+        return False
+    for axis, expected in declared.items():
+        actual = context.get(str(axis))
+        if actual is None:
+            return False
+        if _canonical_instrument_context_value(
+            str(axis), actual
+        ) != _canonical_instrument_context_value(str(axis), expected):
+            return False
+    return True
+
+
+def _instrument_runtime_event_allowed(contract: dict[str, object], source: str) -> bool:
+    declared = contract.get("required_runtime_events") or []
+    if not isinstance(declared, list) or not declared:
+        return False
+    for raw_pattern in declared:
+        pattern = str(raw_pattern or "")
+        if pattern == "*" or pattern == source:
+            return True
+        if pattern.endswith("*") and source.startswith(pattern[:-1]):
+            return True
+    return False
+
+
+def _entry_gate_reached(rejection_reason: str | None, gate: str) -> bool:
+    """Whether sequential entry admission reached a given gate.
+
+    A precomputed diagnostic is not an invocation when an earlier admission
+    guard already decided WAIT. This keeps downstream tools from receiving
+    credit for work that could not affect the replay decision.
+    """
+    reason = str(rejection_reason or "accepted")
+    suffixes = {
+        "temporal": {
+            "accepted",
+            "minimum_confidence",
+            "negative_ev_lower_bound",
+            "high_volatility_veto",
+            "spread_to_atr",
+            "meta_label_veto",
+            "cost_exceeds_target",
+        },
+        "confidence": {
+            "accepted",
+            "minimum_confidence",
+            "negative_ev_lower_bound",
+            "high_volatility_veto",
+            "spread_to_atr",
+            "meta_label_veto",
+            "cost_exceeds_target",
+        },
+        "high_volatility": {
+            "accepted",
+            "high_volatility_veto",
+            "spread_to_atr",
+            "meta_label_veto",
+            "cost_exceeds_target",
+        },
+        "cost": {"accepted", "spread_to_atr", "meta_label_veto", "cost_exceeds_target"},
+        "meta_label": {"accepted", "meta_label_veto", "cost_exceeds_target"},
+    }
+    if gate == "temporal" and reason.startswith("temporal_"):
+        return True
+    return reason in suffixes.get(gate, set())
+
+
+def _canonical_instrument_context_value(axis: str, value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    if axis == "session":
+        return {
+            "london_new_york_overlap": "overlap",
+            "london_comex_overlap": "overlap",
+            "asian": "asia",
+        }.get(normalized, normalized)
+    return normalized
+
+
+def _instrument_runtime_report(state: dict[str, object]) -> dict[str, object]:
+    instruments = state.get("instruments") or {}
+    rows: dict[str, dict[str, object]] = {}
+    if isinstance(instruments, dict):
+        for key, raw in sorted(instruments.items()):
+            if not isinstance(raw, dict):
+                continue
+            count = int(raw.get("activation_count", 0) or 0)
+            sources = raw.get("event_sources") or Counter()
+            contexts = raw.get("context_event_counts") or Counter()
+            abstentions = raw.get("abstention_context_counts") or Counter()
+            definitions = raw.get("activated_contexts") or {}
+            rows[str(key)] = {
+                "status": "activated" if count > 0 else "not_activated",
+                "activation_count": count,
+                "event_sources": {
+                    str(name): int(value)
+                    for name, value in sorted(dict(sources).items())
+                },
+                "activated_context_keys": sorted(str(name) for name in dict(contexts)),
+                "context_event_counts": {
+                    str(name): int(value)
+                    for name, value in sorted(dict(contexts).items())
+                },
+                "activated_contexts": {
+                    str(name): dict(value)
+                    for name, value in sorted(dict(definitions).items())
+                    if isinstance(value, dict)
+                },
+                "abstained_context_keys": sorted(
+                    str(name) for name in dict(abstentions)
+                ),
+                "abstention_context_counts": {
+                    str(name): int(value)
+                    for name, value in sorted(dict(abstentions).items())
+                },
+                "decision_path_activated": count > 0,
+                "promotion_evidence": False,
+            }
+    return {
+        "protocol": "instrument_runtime_observations_v1",
+        "status": "observed" if bool(state.get("enabled")) else "not_applicable",
+        "assignment_hash": str(state.get("assignment_hash") or ""),
+        "selected_keys": sorted(rows),
+        "instruments": rows,
+        "selection_is_not_invocation": True,
+        "parameter_binding_is_not_activation": True,
+        "paper_execution_authority": False,
+        "promotion_evidence": False,
+    }
+
+
 def _risk_context(signal_row: pd.Series, direction: str) -> str:
     """Stable context key for loss containment; it contains no future data."""
-    return "|".join([
-        str(signal_row.get("market_regime", "unknown")),
-        str(signal_row.get("volatility_regime", "normal_volatility")),
-        direction, str(signal_row.get("selected_specialist", "parent")),
-    ])
+    return "|".join(
+        [
+            str(signal_row.get("market_regime", "unknown")),
+            str(signal_row.get("volatility_regime", "normal_volatility")),
+            direction,
+            str(signal_row.get("selected_specialist", "parent")),
+        ]
+    )
 
 
 def _edge_market_session(value: object) -> str:
-    """Canonical UTC session labels shared with the XAUUSD toolbox."""
-    hour = int(pd.Timestamp(value).hour)
-    if 7 <= hour < 12:
-        return "london"
-    if 12 <= hour <= 16:
-        return "london_new_york_overlap"
-    if 16 < hour <= 21:
-        return "new_york"
-    return "asian"
+    """Canonical DST-aware session label shared with the XAUUSD toolbox."""
+    row = session_membership(pd.Series([value])).iloc[0]
+    return str(row["session"])
+
+
+def _edge_market_session_offset(value: object) -> str:
+    """Stable offset-state coordinate for cross-DST validation."""
+    row = session_membership(pd.Series([value])).iloc[0]
+    session = str(row["session"])
+    phases = ["london", "new_york"] if session == "overlap" else [session]
+    ids = [str(row.get(f"{phase}_instance_id", "")) for phase in phases]
+    offsets = [item.rsplit("|", 1)[-1] for item in ids if "|" in item]
+    return "+".join(offsets) if offsets else "fixed_or_off_session"
 
 
 def _edge_context_admission(
@@ -2279,12 +3660,16 @@ def _edge_context_admission(
     direction: str | None = None,
 ) -> tuple[bool, str | None, dict[str, object]]:
     """Apply a frozen Edge passport before entry using only closed state."""
-    context = edge_contract.get("context", {}) if isinstance(edge_contract, dict) else {}
+    context = (
+        edge_contract.get("context", {}) if isinstance(edge_contract, dict) else {}
+    )
     context = context if isinstance(context, dict) else {}
     axes = [str(axis) for axis in context.get("admission_axes", []) if str(axis)]
     required = context.get("enforcement") == "required"
     observed = {
-        "regime": "transition" if transition_event else str(signal_row.get("market_regime", "unknown")),
+        "regime": "transition"
+        if transition_event
+        else str(signal_row.get("market_regime", "unknown")),
         "session": _edge_market_session(signal_row.get("time")),
         "volatility": str(signal_row.get("volatility_regime", "normal_volatility")),
         # Direction is the already-computed current signal.  It is available
@@ -2315,36 +3700,68 @@ def _edge_context_admission(
         if not values and singular.get(axis):
             values = [str(singular[axis])]
         if axis == "volatility":
-            values = ["normal_volatility" if value == "normal" else value for value in values]
+            values = [
+                "normal_volatility" if value == "normal" else value for value in values
+            ]
         if axis == "direction":
             values = [value.upper() for value in values]
         if axis not in observed or not values:
-            return False, f"edge_context_contract_missing_{axis}", {
-                "required": True, "axes": axes, "observed": observed, "allowed": declared,
-            }
+            return (
+                False,
+                f"edge_context_contract_missing_{axis}",
+                {
+                    "required": True,
+                    "axes": axes,
+                    "observed": observed,
+                    "allowed": declared,
+                },
+            )
         if str(observed[axis]) not in values:
-            return False, f"edge_context_{axis}_outside_scope", {
-                "required": True, "axes": axes, "observed": observed, "allowed": declared,
-            }
-    return True, None, {"required": True, "axes": axes, "observed": observed, "allowed": declared}
+            return (
+                False,
+                f"edge_context_{axis}_outside_scope",
+                {
+                    "required": True,
+                    "axes": axes,
+                    "observed": observed,
+                    "allowed": declared,
+                },
+            )
+    return (
+        True,
+        None,
+        {"required": True, "axes": axes, "observed": observed, "allowed": declared},
+    )
 
 
-def _differential_target_regime(payload: SimpleBacktestRequest, df: pd.DataFrame | None = None) -> str:
+def _differential_target_regime(
+    payload: SimpleBacktestRequest, df: pd.DataFrame | None = None
+) -> str:
     value = str(payload.parameters.get("differential_target_regime", "trend_down"))
     if value in {"trend_up", "range", "trend_down"}:
         return value
     if df is not None and "differential_target_regime" in df.columns:
         observed = df["differential_target_regime"].dropna().astype(str)
-        if not observed.empty and observed.iloc[0] in {"trend_up", "range", "trend_down"}:
+        if not observed.empty and observed.iloc[0] in {
+            "trend_up",
+            "range",
+            "trend_down",
+        }:
             return observed.iloc[0]
     return "trend_down"
 
 
 def _is_differential_router(payload: SimpleBacktestRequest, df: pd.DataFrame) -> bool:
-    return "differential_target" in df.columns or "differential_router" in str(payload.base_strategy or payload.strategy).lower()
+    return (
+        "differential_target" in df.columns
+        or "differential_router"
+        in str(payload.base_strategy or payload.strategy).lower()
+    )
 
 
-def _effective_lane_signal(signal_row: pd.Series, lane: str | None) -> tuple[str, float, str]:
+def _effective_lane_signal(
+    signal_row: pd.Series, lane: str | None
+) -> tuple[str, float, str]:
     """Return the signal owned by one side of a paired differential replay.
 
     ``*_parent`` lanes use the frozen parent signal, while ``*_child`` lanes
@@ -2355,28 +3772,40 @@ def _effective_lane_signal(signal_row: pd.Series, lane: str | None) -> tuple[str
     current = str(signal_row.get("signal", "WAIT"))
     current_confidence = float(signal_row.get("signal_confidence", 1.0) or 0)
     parent = str(signal_row.get("parent_signal", current))
-    parent_confidence = float(signal_row.get("parent_signal_confidence", current_confidence) or 0)
+    parent_confidence = float(
+        signal_row.get("parent_signal_confidence", current_confidence) or 0
+    )
     target = bool(signal_row.get("differential_target", False))
     if lane is None:
-        return current, current_confidence, str(signal_row.get("selected_specialist", "parent"))
+        return (
+            current,
+            current_confidence,
+            str(signal_row.get("selected_specialist", "parent")),
+        )
     target_lane = lane.startswith("target_")
     if target != target_lane:
         return "WAIT", 0.0, "parent"
     parent_lane = lane.endswith("_parent")
     if parent_lane:
         return parent, parent_confidence, "parent"
-    return current, current_confidence, str(signal_row.get("selected_specialist", "target_child"))
+    return (
+        current,
+        current_confidence,
+        str(signal_row.get("selected_specialist", "target_child")),
+    )
 
 
 def _is_volume_policy_veto(row: pd.Series | None) -> bool:
     if row is None:
         return False
     rejection = str(row.get("volume_policy_rejection", "") or "")
-    return rejection.startswith((
-        "breakout_volume",
-        "transition_volume",
-        "low_volume_wait",
-    ))
+    return rejection.startswith(
+        (
+            "breakout_volume",
+            "transition_volume",
+            "low_volume_wait",
+        )
+    )
 
 
 def _count_lane_signals(df: pd.DataFrame, lane: str | None) -> int:
@@ -2408,12 +3837,20 @@ def _volume_policy_report(
     lane = str(params.get("volume_lane", "none") or "none")
     quality = dict(quality or {})
     index = df.index
-    available = df.get("volume_feature_available", pd.Series(False, index=index)).fillna(False).astype(bool)
-    pre = df.get("pre_volume_signal", df.get("signal", pd.Series("WAIT", index=index))).astype(str)
+    available = (
+        df.get("volume_feature_available", pd.Series(False, index=index))
+        .fillna(False)
+        .astype(bool)
+    )
+    pre = df.get(
+        "pre_volume_signal", df.get("signal", pd.Series("WAIT", index=index))
+    ).astype(str)
     final = df.get("signal", pd.Series("WAIT", index=index)).astype(str)
     actionable = pre.isin(["BUY", "SELL"])
     accepted = final.isin(["BUY", "SELL"])
-    rejection = df.get("volume_policy_rejection", pd.Series("", index=index)).astype(str)
+    rejection = df.get("volume_policy_rejection", pd.Series("", index=index)).astype(
+        str
+    )
     risk = pd.to_numeric(
         df.get("volume_risk_multiplier", pd.Series(1.0, index=index)), errors="coerce"
     ).fillna(1.0)
@@ -2424,40 +3861,62 @@ def _volume_policy_report(
     observed_rejection = rejection.loc[observed.index]
     observed_risk = risk.loc[observed.index]
     counts = observed_rejection[observed_rejection.ne("")].value_counts().to_dict()
-    specialist = df.get("selected_specialist", pd.Series("unknown", index=index)).astype(str)
-    specialist_counts = specialist.loc[observed.index][observed_accepted].value_counts().to_dict()
-    quality_status = str(quality.get("status", "volume_unavailable") or "volume_unavailable")
+    specialist = df.get(
+        "selected_specialist", pd.Series("unknown", index=index)
+    ).astype(str)
+    specialist_counts = (
+        specialist.loc[observed.index][observed_accepted].value_counts().to_dict()
+    )
+    quality_status = str(
+        quality.get("status", "volume_unavailable") or "volume_unavailable"
+    )
     return {
         "protocol": "volume_policy_telemetry_v1",
         "lane": lane,
-        "status": "control" if lane == "none" else ("applied" if quality_status == "passed" else "volume_unavailable"),
+        "status": "control"
+        if lane == "none"
+        else ("applied" if quality_status == "passed" else "volume_unavailable"),
         "quality_status": quality_status,
-        "rows_evaluated": int(len(observed)),
+        "rows_evaluated": len(observed),
         "feature_available_rows": int(observed_available.sum()),
-        "feature_coverage": round(float(observed_available.mean()), 6) if len(observed_available) else 0.0,
+        "feature_coverage": round(float(observed_available.mean()), 6)
+        if len(observed_available)
+        else 0.0,
         "pre_volume_actionable": int(observed_actionable.sum()),
         "post_volume_actionable": int(observed_accepted.sum()),
         "volume_vetoes": int((observed_actionable & ~observed_accepted).sum()),
-        "unavailable_actionable": int((observed_actionable & ~observed_available).sum()),
+        "unavailable_actionable": int(
+            (observed_actionable & ~observed_available).sum()
+        ),
         "reduced_risk_rows": int((observed_actionable & observed_risk.lt(1.0)).sum()),
         "rejection_counts": {str(key): int(value) for key, value in counts.items()},
-        "selected_specialist_counts": {str(key): int(value) for key, value in specialist_counts.items()},
+        "selected_specialist_counts": {
+            str(key): int(value) for key, value in specialist_counts.items()
+        },
         "promotion_evidence": False,
     }
 
 
 def _trade_ledger_hash(trades: list[SimpleTrade]) -> str:
     values = [
-        "|".join([
-            str(trade.entry_time), str(trade.exit_time), str(trade.direction),
-            f"{float(trade.profit_percent):.8f}", str(trade.exit_reason), str(trade.market_regime),
-        ])
+        "|".join(
+            [
+                str(trade.entry_time),
+                str(trade.exit_time),
+                str(trade.direction),
+                f"{float(trade.profit_percent):.8f}",
+                str(trade.exit_reason),
+                str(trade.market_regime),
+            ]
+        )
         for trade in trades
     ]
     return hashlib.sha256("\n".join(values).encode()).hexdigest()
 
 
-def _event_ledger_digest(tokens: list[str], categories: Counter[str]) -> dict[str, object]:
+def _event_ledger_digest(
+    tokens: list[str], categories: Counter[str]
+) -> dict[str, object]:
     """Return compact event identity without retaining the candle trace.
 
     The ordered token stream captures veto/cooldown/transition/exit changes;
@@ -2469,7 +3928,9 @@ def _event_ledger_digest(tokens: list[str], categories: Counter[str]) -> dict[st
         "protocol": "event_ledger_digest_v1",
         "hash": hashlib.sha256(encoded.encode()).hexdigest(),
         "count": len(tokens),
-        "categories": {str(key): int(value) for key, value in sorted(categories.items())},
+        "categories": {
+            str(key): int(value) for key, value in sorted(categories.items())
+        },
         "ordered": True,
         "full_trace_emitted": False,
         "promotion_evidence": False,
@@ -2495,7 +3956,12 @@ def _decision_trace_event(
     features: dict[str, object] = {}
     for key, value in signal_row.items():
         name = str(key)
-        if name in {"time", "signal", "parent_signal", "selected_specialist"} or name.startswith("_"):
+        if name in {
+            "time",
+            "signal",
+            "parent_signal",
+            "selected_specialist",
+        } or name.startswith("_"):
             continue
         if isinstance(value, (dict, list, tuple)):
             continue
@@ -2512,7 +3978,9 @@ def _decision_trace_event(
         else:
             try:
                 scalar = value.item()
-                features[name] = float(scalar) if isinstance(scalar, (int, float)) else str(scalar)
+                features[name] = (
+                    float(scalar) if isinstance(scalar, (int, float)) else str(scalar)
+                )
             except (AttributeError, TypeError, ValueError):
                 if isinstance(value, str):
                     features[name] = value
@@ -2534,7 +4002,9 @@ def _decision_trace_event(
         "accepted": accepted,
         "rejection_code": rejection_code,
         "market_regime": str(signal_row.get("market_regime", "unknown")),
-        "volatility_regime": str(signal_row.get("volatility_regime", "normal_volatility")),
+        "volatility_regime": str(
+            signal_row.get("volatility_regime", "normal_volatility")
+        ),
         "confidence": float(signal_row.get("signal_confidence", 0.0) or 0.0),
         "price": float(candle.get("open", 0.0) or 0.0),
         "features": features,
@@ -2542,14 +4012,18 @@ def _decision_trace_event(
     }
 
 
-def _trade_summary(trades: list[SimpleTrade], ledger_hash: str | None = None) -> dict[str, object]:
+def _trade_summary(
+    trades: list[SimpleTrade], ledger_hash: str | None = None
+) -> dict[str, object]:
     values = [float(trade.profit_percent) for trade in trades]
     return {
         "trades": len(trades),
         "profit_factor": _profit_factor_for(values),
         "net_profit_percent": round(sum(values), 6),
         "ledger_hash": ledger_hash or _trade_ledger_hash(trades),
-        "entry_times_hash": hashlib.sha256("\n".join(str(trade.entry_time) for trade in trades).encode()).hexdigest(),
+        "entry_times_hash": hashlib.sha256(
+            "\n".join(str(trade.entry_time) for trade in trades).encode()
+        ).hexdigest(),
     }
 
 
@@ -2561,17 +4035,33 @@ def _response_trade_summary(response: SimpleBacktestResponse) -> dict[str, objec
     }
 
 
-def _differential_invariants(df: pd.DataFrame, trades: list[SimpleTrade]) -> dict[str, object]:
+def _differential_invariants(
+    df: pd.DataFrame, trades: list[SimpleTrade]
+) -> dict[str, object]:
     if "differential_target" not in df.columns:
         return {"enabled": False}
     target = df["differential_target"].fillna(False).astype(bool)
     result: dict[str, object] = {"enabled": True, "branches": {}}
     for regime in sorted(set(df.loc[~target, "market_regime"].astype(str))):
         mask = (~target) & (df["market_regime"].astype(str) == regime)
-        rows = df.loc[mask, ["time", "signal", "signal_confidence", "parent_signal", "parent_signal_confidence"]]
-        def digest(columns: list[str]) -> str:
-            values = ["|".join(str(row[column]) for column in columns) for _, row in rows.iterrows()]
+        rows = df.loc[
+            mask,
+            [
+                "time",
+                "signal",
+                "signal_confidence",
+                "parent_signal",
+                "parent_signal_confidence",
+            ],
+        ]
+
+        def digest(columns: list[str], source_rows: pd.DataFrame = rows) -> str:
+            values = [
+                "|".join(str(row[column]) for column in columns)
+                for _, row in source_rows.iterrows()
+            ]
             return hashlib.sha256("\n".join(values).encode()).hexdigest()
+
         branch_trades = [trade for trade in trades if trade.market_regime == regime]
         result["branches"][regime] = {
             "child_signal_hash": digest(["time", "signal"]),
@@ -2579,7 +4069,9 @@ def _differential_invariants(df: pd.DataFrame, trades: list[SimpleTrade]) -> dic
             "child_confidence_hash": digest(["time", "signal_confidence"]),
             "parent_confidence_hash": digest(["time", "parent_signal_confidence"]),
             "trade_ledger_hash": _trade_ledger_hash(branch_trades),
-            "entry_times_hash": hashlib.sha256("\n".join(str(trade.entry_time) for trade in branch_trades).encode()).hexdigest(),
+            "entry_times_hash": hashlib.sha256(
+                "\n".join(str(trade.entry_time) for trade in branch_trades).encode()
+            ).hexdigest(),
         }
     return result
 
@@ -2602,16 +4094,25 @@ def _paired_differential_lane_report(
     # trade, ledger hash, branch identity, or gate outcome.
     paired_kwargs = {"include_differential_pair": False, "lightweight": True}
     parent_non_target = _run_prepared_simple_backtest(
-        payload, source_df.copy(), differential_lane="non_target_parent",
-        prepared_snapshot=prepared_snapshot, **paired_kwargs
+        payload,
+        source_df.copy(),
+        differential_lane="non_target_parent",
+        prepared_snapshot=prepared_snapshot,
+        **paired_kwargs,
     )
     child_non_target = _run_prepared_simple_backtest(
-        payload, source_df.copy(), differential_lane="non_target_child",
-        prepared_snapshot=prepared_snapshot, **paired_kwargs
+        payload,
+        source_df.copy(),
+        differential_lane="non_target_child",
+        prepared_snapshot=prepared_snapshot,
+        **paired_kwargs,
     )
     parent_target = _run_prepared_simple_backtest(
-        payload, source_df.copy(), differential_lane="target_parent",
-        prepared_snapshot=prepared_snapshot, **paired_kwargs
+        payload,
+        source_df.copy(),
+        differential_lane="target_parent",
+        prepared_snapshot=prepared_snapshot,
+        **paired_kwargs,
     )
     parent_summary = _response_trade_summary(parent_non_target)
     child_summary = _response_trade_summary(child_non_target)
@@ -2620,20 +4121,34 @@ def _paired_differential_lane_report(
     # ledger. Reusing its immutable summary avoids a fourth identical child
     # execution while retaining an independent parent target comparison.
     target_child_summary = portfolio_target
-    parent_branches = (parent_non_target.differential_invariants or {}).get("branches", {})
-    child_branches = (child_non_target.differential_invariants or {}).get("branches", {})
+    parent_branches = (parent_non_target.differential_invariants or {}).get(
+        "branches", {}
+    )
+    child_branches = (child_non_target.differential_invariants or {}).get(
+        "branches", {}
+    )
     branch_identity = parent_branches == child_branches
-    ledger_identity = parent_summary["ledger_hash"] == child_summary["ledger_hash"] and branch_identity
-    target_delta = round(float(target_child_summary["net_profit_percent"]) - float(target_parent_summary["net_profit_percent"]), 6)
+    ledger_identity = (
+        parent_summary["ledger_hash"] == child_summary["ledger_hash"]
+        and branch_identity
+    )
+    target_delta = round(
+        float(target_child_summary["net_profit_percent"])
+        - float(target_parent_summary["net_profit_percent"]),
+        6,
+    )
     isolated_status = (
         signal_identity
         and confidence_identity
         and ledger_identity
         and int(parent_summary["trades"]) == int(child_summary["trades"])
-        and float(child_summary["net_profit_percent"]) >= float(parent_summary["net_profit_percent"]) - .01
+        and float(child_summary["net_profit_percent"])
+        >= float(parent_summary["net_profit_percent"]) - 0.01
     )
     portfolio_delta = round(
-        float(portfolio_non_target.get("net_profit_percent", 0)) - float(child_summary["net_profit_percent"]), 6
+        float(portfolio_non_target.get("net_profit_percent", 0))
+        - float(child_summary["net_profit_percent"]),
+        6,
     )
     return {
         "protocol": "differential_paired_lane_v4_calendar_context_v1",
@@ -2643,10 +4158,15 @@ def _paired_differential_lane_report(
         "non_target_confidence_identity": confidence_identity,
         "non_target_ledger_identity": ledger_identity,
         "non_target_entry_times_identity": all(
-            data.get("entry_times_hash") == child_branches.get(regime, {}).get("entry_times_hash")
+            data.get("entry_times_hash")
+            == child_branches.get(regime, {}).get("entry_times_hash")
             for regime, data in parent_branches.items()
-        ) and set(parent_branches) == set(child_branches),
-        "non_target_branch_hashes": {"parent": parent_branches, "child": child_branches},
+        )
+        and set(parent_branches) == set(child_branches),
+        "non_target_branch_hashes": {
+            "parent": parent_branches,
+            "child": child_branches,
+        },
         "parent_non_target": parent_summary,
         "child_non_target": child_summary,
         "parent_target": target_parent_summary,
@@ -2662,12 +4182,20 @@ def _paired_differential_lane_report(
 def _loss_streak_wait_duration(payload: SimpleBacktestRequest) -> int:
     """Finite wait duration, defaulting to the configured short cooldown."""
     fallback = int(payload.parameters.get("loss_cooldown_candles", 1) or 1)
-    return max(1, int(payload.parameters.get("loss_streak_wait_candles", fallback) or fallback))
+    return max(
+        1, int(payload.parameters.get("loss_streak_wait_candles", fallback) or fallback)
+    )
 
 
 def _recovery_probe_risk_multiplier(payload: SimpleBacktestRequest) -> float:
     """The probe is deliberately bounded below normal risk, never enlarged."""
-    return min(1.0, max(0.1, float(payload.parameters.get("recovery_probe_risk_multiplier", 0.5) or 0.5)))
+    return min(
+        1.0,
+        max(
+            0.1,
+            float(payload.parameters.get("recovery_probe_risk_multiplier", 0.5) or 0.5),
+        ),
+    )
 
 
 def _weak_regime_minimum_samples(payload: SimpleBacktestRequest) -> int:
@@ -2675,11 +4203,23 @@ def _weak_regime_minimum_samples(payload: SimpleBacktestRequest) -> int:
 
 
 def _weak_regime_wait_duration(payload: SimpleBacktestRequest) -> int:
-    return max(1, int(payload.parameters.get("weak_regime_wait_candles", payload.parameters.get("loss_streak_wait_candles", 4)) or 4))
+    return max(
+        1,
+        int(
+            payload.parameters.get(
+                "weak_regime_wait_candles",
+                payload.parameters.get("loss_streak_wait_candles", 4),
+            )
+            or 4
+        ),
+    )
 
 
 def _advance_weak_regime_state(
-    states: dict[str, dict[str, object]], context: str, index: int, candle: pd.Series,
+    states: dict[str, dict[str, object]],
+    context: str,
+    index: int,
+    candle: pd.Series,
     events: list[dict[str, object]],
 ) -> tuple[bool, bool]:
     """Return (temporarily_blocked, this-entry-is-recovery-probe)."""
@@ -2692,7 +4232,9 @@ def _advance_weak_regime_state(
     if wait_until >= 0:
         state["wait_until"] = -1
         state["probe_pending"] = True
-        events.append({"time": str(candle["time"]), "context": context, "event": "wait_expired"})
+        events.append(
+            {"time": str(candle["time"]), "context": context, "event": "wait_expired"}
+        )
     if bool(state.get("probe_pending", False)):
         # Mark it consumed only when the caller actually accepts the entry.
         # Until then, the next eligible signal remains the one bounded probe.
@@ -2701,11 +4243,25 @@ def _advance_weak_regime_state(
 
 
 def _record_weak_regime_outcome(
-    states: dict[str, dict[str, object]], context: str, profit_percent: float, result: str,
-    was_probe: bool, index: int, candle: pd.Series, payload: SimpleBacktestRequest,
+    states: dict[str, dict[str, object]],
+    context: str,
+    profit_percent: float,
+    result: str,
+    was_probe: bool,
+    index: int,
+    candle: pd.Series,
+    payload: SimpleBacktestRequest,
     events: list[dict[str, object]],
 ) -> None:
-    state = states.setdefault(context, {"returns_window": [], "loss_count": 0, "wait_until": -1, "probe_pending": False})
+    state = states.setdefault(
+        context,
+        {
+            "returns_window": [],
+            "loss_count": 0,
+            "wait_until": -1,
+            "probe_pending": False,
+        },
+    )
     values = list(state.get("returns_window", []))[-19:]
     values.append(float(profit_percent))
     state["returns_window"] = values
@@ -2716,18 +4272,36 @@ def _record_weak_regime_outcome(
             # A probe win removes the veto and starts fresh evidence for this
             # exact context.  Other contexts remain untouched.
             state.update({"returns_window": [], "loss_count": 0, "wait_until": -1})
-            events.append({"time": str(candle["time"]), "context": context, "event": "probe_win"})
+            events.append(
+                {"time": str(candle["time"]), "context": context, "event": "probe_win"}
+            )
             return
         state["wait_until"] = index + _weak_regime_wait_duration(payload)
-        events.append({"time": str(candle["time"]), "context": context, "event": "probe_loss", "until_index": state["wait_until"]})
+        events.append(
+            {
+                "time": str(candle["time"]),
+                "context": context,
+                "event": "probe_loss",
+                "until_index": state["wait_until"],
+            }
+        )
         return
-    if len(values) >= _weak_regime_minimum_samples(payload) and _profit_factor_for(values) < 1.0:
+    if (
+        len(values) >= _weak_regime_minimum_samples(payload)
+        and _profit_factor_for(values) < 1.0
+    ):
         state["wait_until"] = index + _weak_regime_wait_duration(payload)
         state["probe_pending"] = False
-        events.append({
-            "time": str(candle["time"]), "context": context, "event": "weak_regime_wait_started",
-            "until_index": state["wait_until"], "sample_count": len(values), "profit_factor": round(_profit_factor_for(values), 4),
-        })
+        events.append(
+            {
+                "time": str(candle["time"]),
+                "context": context,
+                "event": "weak_regime_wait_started",
+                "until_index": state["wait_until"],
+                "sample_count": len(values),
+                "profit_factor": round(_profit_factor_for(values), 4),
+            }
+        )
 
 
 def _intrabar_exit(
@@ -2758,7 +4332,9 @@ def _intrabar_exit(
     if stop_hit and target_hit:
         choose_stop = payload.execution.intrabar_policy == "conservative"
         market_exit = stop if choose_stop else target
-        return _exit_price(market_exit, direction, payload), "intrabar_stop" if choose_stop else "intrabar_target"
+        return _exit_price(
+            market_exit, direction, payload
+        ), "intrabar_stop" if choose_stop else "intrabar_target"
     if stop_hit:
         return _exit_price(stop, direction, payload), "intrabar_stop"
     if target_hit:
@@ -2766,12 +4342,22 @@ def _intrabar_exit(
     return None, None
 
 
-def _exit_distances(market_price: float, signal_row: pd.Series, payload: SimpleBacktestRequest) -> tuple[float, float]:
+def _exit_distances(
+    market_price: float, signal_row: pd.Series, payload: SimpleBacktestRequest
+) -> tuple[float, float]:
     atr = float(signal_row.get("_management_atr", 0) or 0)
     stop_multiplier = payload.parameters.get("atr_stop_multiplier")
     target_multiplier = payload.parameters.get("atr_target_multiplier")
-    stop = atr * float(stop_multiplier) if atr > 0 and stop_multiplier else market_price * payload.execution.stop_loss_percent / 100
-    target = atr * float(target_multiplier) if atr > 0 and target_multiplier else market_price * payload.execution.take_profit_percent / 100
+    stop = (
+        atr * float(stop_multiplier)
+        if atr > 0 and stop_multiplier
+        else market_price * payload.execution.stop_loss_percent / 100
+    )
+    target = (
+        atr * float(target_multiplier)
+        if atr > 0 and target_multiplier
+        else market_price * payload.execution.take_profit_percent / 100
+    )
     # Liquidity Trap MTF owns invalidation at the M15 trap extreme. An M5
     # micro-stop would contradict the declared trade idea. The buffer keeps
     # the normal cost/ATR envelope in force while never tightening that
@@ -2784,46 +4370,75 @@ def _exit_distances(market_price: float, signal_row: pd.Series, payload: SimpleB
         invalidation_price = float("nan")
     if math.isfinite(invalidation_price):
         structural_distance = (
-            market_price - invalidation_price if direction == "BUY"
-            else invalidation_price - market_price if direction == "SELL" else 0.0
+            market_price - invalidation_price
+            if direction == "BUY"
+            else invalidation_price - market_price
+            if direction == "SELL"
+            else 0.0
         )
         if structural_distance > 0:
             stop = (
                 structural_distance
-                if str(signal_row.get("entry_contract_protocol", "")) == "confirmation_entry_contract_v1"
+                if str(signal_row.get("entry_contract_protocol", ""))
+                == "confirmation_entry_contract_v1"
                 else max(stop, structural_distance)
             )
     # Confirmation & Entry models declare the next structural liquidity
     # reference as the actual target owner. Using an unrelated fixed/ATR
     # target after admitting the trade on structural R:R would make the
     # execution contract contradict the entry contract.
-    if str(signal_row.get("entry_contract_protocol", "")) == "confirmation_entry_contract_v1":
+    if (
+        str(signal_row.get("entry_contract_protocol", ""))
+        == "confirmation_entry_contract_v1"
+    ):
         target_reference = signal_row.get("entry_target_reference_price")
         try:
             target_price = float(target_reference)
         except (TypeError, ValueError):
             target_price = float("nan")
         structural_target = (
-            target_price - market_price if direction == "BUY"
-            else market_price - target_price if direction == "SELL" else 0.0
+            target_price - market_price
+            if direction == "BUY"
+            else market_price - target_price
+            if direction == "SELL"
+            else 0.0
         )
         if math.isfinite(target_price) and structural_target > 0:
             target = structural_target
     return max(stop, market_price * 0.00001), max(target, market_price * 0.00001)
 
 
-def _volatility_risk_multiplier(signal_row: pd.Series, payload: SimpleBacktestRequest) -> float:
+def _volatility_risk_multiplier(
+    signal_row: pd.Series, payload: SimpleBacktestRequest
+) -> float:
     if str(signal_row.get("volatility_regime", "")) == "high_volatility":
         return float(payload.parameters.get("high_volatility_risk_multiplier", 1.0))
     return 1.0
 
 
-def _regime_specific_risk_multiplier(signal_row: pd.Series, payload: SimpleBacktestRequest) -> float:
+def _regime_specific_risk_multiplier(
+    signal_row: pd.Series, payload: SimpleBacktestRequest
+) -> float:
     """Apply only explicitly declared directional-specialist risk scaling."""
-    if str(signal_row.get("selected_specialist", "")) in {"trend_down", "trend_down_child"}:
-        return min(1.0, max(0.1, float(payload.parameters.get("trend_down_risk_multiplier", 1.0) or 1.0)))
+    if str(signal_row.get("selected_specialist", "")) in {
+        "trend_down",
+        "trend_down_child",
+    }:
+        return min(
+            1.0,
+            max(
+                0.1,
+                float(payload.parameters.get("trend_down_risk_multiplier", 1.0) or 1.0),
+            ),
+        )
     if str(signal_row.get("selected_specialist", "")) in {"trend_up", "trend_up_child"}:
-        return min(1.0, max(0.1, float(payload.parameters.get("trend_up_risk_multiplier", 1.0) or 1.0)))
+        return min(
+            1.0,
+            max(
+                0.1,
+                float(payload.parameters.get("trend_up_risk_multiplier", 1.0) or 1.0),
+            ),
+        )
     return 1.0
 
 
@@ -2838,7 +4453,9 @@ def _volume_risk_multiplier(signal_row: pd.Series) -> float:
         return 1.0
 
 
-def _differential_router_report(df: pd.DataFrame, trades: list[SimpleTrade]) -> dict[str, object]:
+def _differential_router_report(
+    df: pd.DataFrame, trades: list[SimpleTrade]
+) -> dict[str, object]:
     if "differential_target" not in df.columns:
         return {"enabled": False}
     target = df["differential_target"].fillna(False).astype(bool)
@@ -2853,26 +4470,47 @@ def _differential_router_report(df: pd.DataFrame, trades: list[SimpleTrade]) -> 
     # values used to fail the identity gate even though the branch hashes and
     # ledgers were identical.  Normalize only missing values; do not round or
     # otherwise soften a real child/parent difference.
-    child_signals = df.loc[non_target, "signal"].fillna("WAIT").astype(str).reset_index(drop=True)
-    parent_signals = df.loc[non_target, "parent_signal"].fillna("WAIT").astype(str).reset_index(drop=True)
-    child_confidence = pd.to_numeric(df.loc[non_target, "signal_confidence"], errors="coerce").fillna(0.0).reset_index(drop=True)
-    parent_confidence = pd.to_numeric(df.loc[non_target, "parent_signal_confidence"], errors="coerce").fillna(0.0).reset_index(drop=True)
+    child_signals = (
+        df.loc[non_target, "signal"].fillna("WAIT").astype(str).reset_index(drop=True)
+    )
+    parent_signals = (
+        df.loc[non_target, "parent_signal"]
+        .fillna("WAIT")
+        .astype(str)
+        .reset_index(drop=True)
+    )
+    child_confidence = (
+        pd.to_numeric(df.loc[non_target, "signal_confidence"], errors="coerce")
+        .fillna(0.0)
+        .reset_index(drop=True)
+    )
+    parent_confidence = (
+        pd.to_numeric(df.loc[non_target, "parent_signal_confidence"], errors="coerce")
+        .fillna(0.0)
+        .reset_index(drop=True)
+    )
     signals_match = bool(child_signals.equals(parent_signals))
     confidence_match = bool(child_confidence.equals(parent_confidence))
     target_trades = sum(trade.market_regime == target_regime for trade in trades)
     non_target_trades = len(trades) - target_trades
     return {
-        "enabled": True, "protocol": "differential_router_v2",
-        "target_regime": target_regime, "target_candles": int(target.sum()), "non_target_candles": int(non_target.sum()),
+        "enabled": True,
+        "protocol": "differential_router_v2",
+        "target_regime": target_regime,
+        "target_candles": int(target.sum()),
+        "non_target_candles": int(non_target.sum()),
         "non_target_signal_identity": signals_match,
         "non_target_confidence_identity": confidence_match,
-        "target_trade_count": target_trades, "non_target_trade_count": non_target_trades,
+        "target_trade_count": target_trades,
+        "non_target_trade_count": non_target_trades,
         "non_target_trade_count_invariant": "requires paired parent replay under identical data/execution contract",
         "promotion_evidence": False,
     }
 
 
-def _regime_transition_multiplier(signal_row: pd.Series, previous_row: pd.Series | None) -> float:
+def _regime_transition_multiplier(
+    signal_row: pd.Series, previous_row: pd.Series | None
+) -> float:
     """Transition firewall: regime changes reduce exposure, never fabricate a trade."""
     return 0.5 if _regime_transitioned(signal_row, previous_row) else 1.0
 
@@ -2880,14 +4518,17 @@ def _regime_transition_multiplier(signal_row: pd.Series, previous_row: pd.Series
 def _regime_transitioned(signal_row: pd.Series, previous_row: pd.Series | None) -> bool:
     if previous_row is None:
         return False
-    return (
-        str(previous_row.get("market_regime", "unknown")) != str(signal_row.get("market_regime", "unknown"))
-        or str(previous_row.get("volatility_regime", "normal_volatility")) != str(signal_row.get("volatility_regime", "normal_volatility"))
+    return str(previous_row.get("market_regime", "unknown")) != str(
+        signal_row.get("market_regime", "unknown")
+    ) or str(previous_row.get("volatility_regime", "normal_volatility")) != str(
+        signal_row.get("volatility_regime", "normal_volatility")
     )
 
 
 def _transition_wait_duration(payload: SimpleBacktestRequest) -> int:
-    return max(1, min(6, int(payload.parameters.get("transition_wait_candles", 2) or 2)))
+    return max(
+        1, min(6, int(payload.parameters.get("transition_wait_candles", 2) or 2))
+    )
 
 
 def _temporal_survival_state() -> dict[str, object]:
@@ -2911,7 +4552,10 @@ def _temporal_enabled(payload: SimpleBacktestRequest) -> bool:
 
 
 def _temporal_update_pending(
-    state: dict[str, object], candle: object, index: int, payload: SimpleBacktestRequest,
+    state: dict[str, object],
+    candle: object,
+    index: int,
+    payload: SimpleBacktestRequest,
 ) -> None:
     """Close only prior signal probes; the current candle cannot veto itself.
 
@@ -2925,7 +4569,9 @@ def _temporal_update_pending(
         return
     completed = list(state.get("followthrough_results", []))
     next_pending: list[dict[str, object]] = []
-    window = max(1, int(payload.parameters.get("temporal_followthrough_window", 3) or 3))
+    window = max(
+        1, int(payload.parameters.get("temporal_followthrough_window", 3) or 3)
+    )
     for item in pending:
         start = int(item.get("start_index", index) or index)
         if index <= start:
@@ -2936,11 +4582,18 @@ def _temporal_update_pending(
         atr = max(float(item.get("atr", 0) or 0), 0.0000001)
         high = float(candle.get("high", candle.get("open", reference)) or reference)
         low = float(candle.get("low", candle.get("open", reference)) or reference)
-        favorable = (high - reference) / atr if direction == "BUY" else (reference - low) / atr
-        item["max_favorable_atr"] = max(float(item.get("max_favorable_atr", 0) or 0), favorable)
+        favorable = (
+            (high - reference) / atr if direction == "BUY" else (reference - low) / atr
+        )
+        item["max_favorable_atr"] = max(
+            float(item.get("max_favorable_atr", 0) or 0), favorable
+        )
         expiry = int(item.get("expiry_index", start + window) or (start + window))
         if index >= expiry:
-            threshold = float(payload.parameters.get("temporal_followthrough_atr_fraction", .25) or .25)
+            threshold = float(
+                payload.parameters.get("temporal_followthrough_atr_fraction", 0.25)
+                or 0.25
+            )
             completed.append(float(item.get("max_favorable_atr", 0) or 0) >= threshold)
         else:
             next_pending.append(item)
@@ -2949,7 +4602,10 @@ def _temporal_update_pending(
 
 
 def _temporal_register_signal(
-    state: dict[str, object], signal_row: object, direction: str, index: int,
+    state: dict[str, object],
+    signal_row: object,
+    direction: str,
+    index: int,
     payload: SimpleBacktestRequest,
 ) -> None:
     if direction not in {"BUY", "SELL"}:
@@ -2958,39 +4614,64 @@ def _temporal_register_signal(
     atr = float(signal_row.get("_management_atr", 0) or 0)
     if reference <= 0:
         return
-    window = max(1, int(payload.parameters.get("temporal_followthrough_window", 3) or 3))
+    window = max(
+        1, int(payload.parameters.get("temporal_followthrough_window", 3) or 3)
+    )
     pending = list(state.get("pending", []))
-    pending.append({
-        "direction": direction,
-        "start_index": index,
-        "expiry_index": index + window,
-        "reference_price": reference,
-        "atr": atr,
-        "max_favorable_atr": 0.0,
-    })
+    pending.append(
+        {
+            "direction": direction,
+            "start_index": index,
+            "expiry_index": index + window,
+            "reference_price": reference,
+            "atr": atr,
+            "max_favorable_atr": 0.0,
+        }
+    )
     state["pending"] = pending[-500:]
     state["signal_count"] = int(state.get("signal_count", 0) or 0) + 1
 
 
 def _temporal_context_metrics(
-    signal_row: object, candle: object, state: dict[str, object], index: int,
+    signal_row: object,
+    candle: object,
+    state: dict[str, object],
+    index: int,
     payload: SimpleBacktestRequest,
 ) -> dict[str, float | int | str | None]:
     atr = float(signal_row.get("_management_atr", 0) or 0)
-    history = [float(value) for value in list(state.get("feature_history", [])) if float(value) > 0]
+    history = [
+        float(value)
+        for value in list(state.get("feature_history", []))
+        if float(value) > 0
+    ]
     baseline = float(pd.Series(history[-100:]).median()) if history else atr
     volatility_ratio = atr / baseline if baseline > 0 else 1.0
-    spread = float(payload.execution.spread_points or 0) * float(payload.execution.point_size or 0)
+    spread = float(payload.execution.spread_points or 0) * float(
+        payload.execution.point_size or 0
+    )
     spread_ratio = spread / atr if atr > 0 else 0.0
     confidence = float(signal_row.get("signal_confidence", 1.0) or 0)
-    confidence_history = [float(value) for value in list(state.get("confidence_history", []))]
-    confidence_baseline = float(pd.Series(confidence_history[-100:]).mean()) if confidence_history else confidence
-    confidence_ratio = confidence / confidence_baseline if confidence_baseline > 0 else 1.0
+    confidence_history = [
+        float(value) for value in list(state.get("confidence_history", []))
+    ]
+    confidence_baseline = (
+        float(pd.Series(confidence_history[-100:]).mean())
+        if confidence_history
+        else confidence
+    )
+    confidence_ratio = (
+        confidence / confidence_baseline if confidence_baseline > 0 else 1.0
+    )
     returns = pd.Series(history[-100:])
     if len(returns) >= 5:
         mean = float(returns.mean())
         std = float(returns.std(ddof=0))
-        drift_zscore = abs((atr - mean) / std) if std > 0 else (0.0 if atr == mean else float("inf"))
+        drift_zscore = (
+            abs((atr - mean) / std)
+            if std > 0
+            else (0.0 if atr == mean else float("inf"))
+        )
     else:
         drift_zscore = 0.0
     time_value = signal_row.get("signal_time") or signal_row.get("signal_timestamp")
@@ -3014,18 +4695,26 @@ def _temporal_context_metrics(
         "feature_drift_zscore": drift_zscore,
         "raw_confidence": confidence,
         "confidence_ratio": confidence_ratio,
-        "volatility_regime": str(signal_row.get("volatility_regime", "normal_volatility")),
+        "volatility_regime": str(
+            signal_row.get("volatility_regime", "normal_volatility")
+        ),
         "followthrough_sample_count": len(completed),
         "followthrough_rate": sum(completed) / len(completed) if completed else None,
         "index": index,
     }
 
 
-def _temporal_commit_features(state: dict[str, object], metrics: dict[str, object], signal_row: object | None = None) -> None:
+def _temporal_commit_features(
+    state: dict[str, object],
+    metrics: dict[str, object],
+    signal_row: object | None = None,
+) -> None:
     atr = float(metrics.get("atr", 0) or 0)
     if atr > 0:
         state["feature_history"] = [*list(state.get("feature_history", []))[-199:], atr]
-    direction = str(signal_row.get("signal", "WAIT")) if signal_row is not None else "WAIT"
+    direction = (
+        str(signal_row.get("signal", "WAIT")) if signal_row is not None else "WAIT"
+    )
     if direction in {"BUY", "SELL"}:
         state["confidence_history"] = [
             *list(state.get("confidence_history", []))[-199:],
@@ -3034,7 +4723,10 @@ def _temporal_commit_features(state: dict[str, object], metrics: dict[str, objec
 
 
 def _temporal_survival_assessment(
-    signal_row: object, metrics: dict[str, object], payload: SimpleBacktestRequest, loss_streak: int,
+    signal_row: object,
+    metrics: dict[str, object],
+    payload: SimpleBacktestRequest,
+    loss_streak: int,
     state: dict[str, object],
 ) -> dict[str, object]:
     if not _temporal_enabled(payload):
@@ -3044,7 +4736,9 @@ def _temporal_survival_assessment(
     adaptive = bool(payload.parameters.get("adaptive_signal_expiry_enabled", False))
     drift = bool(payload.parameters.get("drift_abstention_enabled", False))
     atr = float(metrics.get("atr", 0) or 0)
-    spread = float(payload.execution.spread_points or 0) * float(payload.execution.point_size or 0)
+    spread = float(payload.execution.spread_points or 0) * float(
+        payload.execution.point_size or 0
+    )
     # Upstream temporal feature builders may already provide the ratio.  Do
     # not erase that evidence merely because this small helper is being used
     # without a candle ATR (the unit-test/diagnostic path does exactly that).
@@ -3060,40 +4754,67 @@ def _temporal_survival_assessment(
     age = int(metrics.get("signal_age_candles", 1) or 1)
     raw_confidence = float(metrics.get("raw_confidence", 0) or 0)
     if adaptive:
-        maximum_age = max(1, int(payload.parameters.get("signal_max_age_candles", 2) or 2))
-        half_life = max(1, int(payload.parameters.get("signal_decay_half_life_candles", 3) or 3))
-        decay = .5 ** (max(0, age - 1) / half_life)
+        maximum_age = max(
+            1, int(payload.parameters.get("signal_max_age_candles", 2) or 2)
+        )
+        half_life = max(
+            1, int(payload.parameters.get("signal_decay_half_life_candles", 3) or 3)
+        )
+        decay = 0.5 ** (max(0, age - 1) / half_life)
         metrics["signal_decay_factor"] = round(decay, 6)
         metrics["decayed_confidence"] = round(raw_confidence * decay, 6)
         if age > maximum_age:
             reasons.append("signal_expiry")
-        if raw_confidence * decay < float(payload.parameters.get("temporal_confidence_decay_floor", .35) or .35):
+        if raw_confidence * decay < float(
+            payload.parameters.get("temporal_confidence_decay_floor", 0.35) or 0.35
+        ):
             reasons.append("signal_decay")
 
     sample_count = int(metrics.get("followthrough_sample_count", 0) or 0)
     followthrough_rate = metrics.get("followthrough_rate")
-    if sample_count >= minimum and _is_numeric(followthrough_rate) and float(followthrough_rate) < float(payload.parameters.get("temporal_followthrough_min_rate", .40) or .40):
+    if (
+        sample_count >= minimum
+        and _is_numeric(followthrough_rate)
+        and float(followthrough_rate)
+        < float(payload.parameters.get("temporal_followthrough_min_rate", 0.40) or 0.40)
+    ):
         reasons.append("followthrough_failure")
 
     if drift:
         ratio = float(metrics.get("volatility_ratio", 1.0) or 1.0)
-        if ratio > float(payload.parameters.get("temporal_volatility_ratio_max", 2.5) or 2.5):
+        if ratio > float(
+            payload.parameters.get("temporal_volatility_ratio_max", 2.5) or 2.5
+        ):
             reasons.append("volatility_shift")
         zscore = float(metrics.get("feature_drift_zscore", 0.0) or 0.0)
-        if (not math.isfinite(zscore) or zscore > float(payload.parameters.get("temporal_drift_zscore_max", 2.5) or 2.5)) and len(list(state.get("feature_history", []))) >= minimum:
+        if (
+            not math.isfinite(zscore)
+            or zscore
+            > float(payload.parameters.get("temporal_drift_zscore_max", 2.5) or 2.5)
+        ) and len(list(state.get("feature_history", []))) >= minimum:
             reasons.append("feature_drift")
         spread_ratio = float(metrics.get("spread_atr_ratio", 0.0) or 0.0)
-        if spread_ratio > float(payload.parameters.get("temporal_spread_atr_ratio_max", .25) or .25):
+        if spread_ratio > float(
+            payload.parameters.get("temporal_spread_atr_ratio_max", 0.25) or 0.25
+        ):
             reasons.append("spread_stress")
-        if loss_streak >= int(payload.parameters.get("temporal_loss_streak_limit", 4) or 4):
+        if loss_streak >= int(
+            payload.parameters.get("temporal_loss_streak_limit", 4) or 4
+        ):
             reasons.append("temporal_loss_streak")
-        if len(list(state.get("confidence_history", []))) >= minimum and float(metrics.get("confidence_ratio", 1.0) or 1.0) < float(payload.parameters.get("temporal_confidence_decay_floor", .35) or .35):
+        if len(list(state.get("confidence_history", []))) >= minimum and float(
+            metrics.get("confidence_ratio", 1.0) or 1.0
+        ) < float(
+            payload.parameters.get("temporal_confidence_decay_floor", 0.35) or 0.35
+        ):
             reasons.append("confidence_decay")
 
     reason = reasons[0] if reasons else None
     if reason:
         state["vetoes"][reason] += 1
-        state["drift_observations"] = int(state.get("drift_observations", 0) or 0) + int(drift)
+        state["drift_observations"] = int(
+            state.get("drift_observations", 0) or 0
+        ) + int(drift)
     assessment = {
         "status": "veto" if reason else "pass",
         "veto": reason is not None,
@@ -3106,21 +4827,35 @@ def _temporal_survival_assessment(
 
 
 def _is_numeric(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
 
 
-def _temporal_survival_report(state: dict[str, object], payload: SimpleBacktestRequest) -> dict[str, object]:
+def _temporal_survival_report(
+    state: dict[str, object], payload: SimpleBacktestRequest
+) -> dict[str, object]:
     completed = [bool(value) for value in list(state.get("followthrough_results", []))]
     sample_count = len(completed)
     rate = sum(completed) / sample_count if sample_count else None
     minimum = max(5, int(payload.parameters.get("temporal_min_history", 12) or 12))
-    min_rate = float(payload.parameters.get("temporal_followthrough_min_rate", .40) or .40)
-    score = round(rate / min_rate, 6) if sample_count >= minimum and min_rate > 0 else None
+    min_rate = float(
+        payload.parameters.get("temporal_followthrough_min_rate", 0.40) or 0.40
+    )
+    score = (
+        round(rate / min_rate, 6) if sample_count >= minimum and min_rate > 0 else None
+    )
     return {
         "protocol": "temporal_survival_abstention_v1",
         "enabled": _temporal_enabled(payload),
-        "adaptive_signal_expiry": bool(payload.parameters.get("adaptive_signal_expiry_enabled", False)),
-        "drift_abstention": bool(payload.parameters.get("drift_abstention_enabled", False)),
+        "adaptive_signal_expiry": bool(
+            payload.parameters.get("adaptive_signal_expiry_enabled", False)
+        ),
+        "drift_abstention": bool(
+            payload.parameters.get("drift_abstention_enabled", False)
+        ),
         "signal_count": int(state.get("signal_count", 0) or 0),
         "abstention_count": int(sum((state.get("vetoes") or {}).values())),
         "vetoes_by_reason": dict(state.get("vetoes") or {}),
@@ -3135,24 +4870,39 @@ def _temporal_survival_report(state: dict[str, object], payload: SimpleBacktestR
     }
 
 
-def _advance_trailing_stop(position: dict[str, object], previous_candle: pd.Series, payload: SimpleBacktestRequest) -> None:
+def _advance_trailing_stop(
+    position: dict[str, object],
+    previous_candle: pd.Series,
+    payload: SimpleBacktestRequest,
+) -> None:
     multiplier = float(payload.parameters.get("trailing_atr_multiplier", 0) or 0)
     atr = float(previous_candle.get("_management_atr", 0) or 0)
     if multiplier <= 0 or atr <= 0:
         return
     distance = multiplier * atr
     if str(position["direction"]) == "BUY":
-        position["stop_loss"] = max(float(position["stop_loss"]), float(previous_candle["close"]) - distance)
+        position["stop_loss"] = max(
+            float(position["stop_loss"]), float(previous_candle["close"]) - distance
+        )
     else:
-        position["stop_loss"] = min(float(position["stop_loss"]), float(previous_candle["close"]) + distance)
+        position["stop_loss"] = min(
+            float(position["stop_loss"]), float(previous_candle["close"]) + distance
+        )
 
 
 def _entry_eligibility(
-    row: pd.Series, payload: SimpleBacktestRequest, signal_row: pd.Series | None = None,
-    loss_streak: int = 0, cooldown_active: bool = False, regime_returns: dict[str, list[float]] | None = None,
-    meta_returns: dict[str, list[float]] | None = None, loss_streak_wait_active: bool = False,
-    weak_regime_wait_active: bool = False, confidence_assessment: dict[str, object] | None = None,
-    transition_wait_active: bool = False, temporal_assessment: dict[str, object] | None = None,
+    row: pd.Series,
+    payload: SimpleBacktestRequest,
+    signal_row: pd.Series | None = None,
+    loss_streak: int = 0,
+    cooldown_active: bool = False,
+    regime_returns: dict[str, list[float]] | None = None,
+    meta_returns: dict[str, list[float]] | None = None,
+    loss_streak_wait_active: bool = False,
+    weak_regime_wait_active: bool = False,
+    confidence_assessment: dict[str, object] | None = None,
+    transition_wait_active: bool = False,
+    temporal_assessment: dict[str, object] | None = None,
 ) -> tuple[bool, str | None]:
     if _is_volume_policy_veto(signal_row if signal_row is not None else row):
         return False, "volume_policy"
@@ -3162,7 +4912,9 @@ def _entry_eligibility(
         allowed = False
         for session in execution.allowed_sessions_utc:
             start, end = (int(value) for value in session.split("-", 1))
-            allowed = allowed or (start <= hour < end if start < end else hour >= start or hour < end)
+            allowed = allowed or (
+                start <= hour < end if start < end else hour >= start or hour < end
+            )
         if not allowed:
             return False, "outside_session"
     if execution.min_volume is not None:
@@ -3173,9 +4925,13 @@ def _entry_eligibility(
     if signal_row is not None:
         # These columns are supplied only by a time-aligned official calendar
         # or risk controller. Missing data never masquerades as a veto.
-        if pd.notna(signal_row.get("news_veto", False)) and bool(signal_row.get("news_veto", False)):
+        if pd.notna(signal_row.get("news_veto", False)) and bool(
+            signal_row.get("news_veto", False)
+        ):
             return False, "news_veto"
-        if pd.notna(signal_row.get("risk_veto", False)) and bool(signal_row.get("risk_veto", False)):
+        if pd.notna(signal_row.get("risk_veto", False)) and bool(
+            signal_row.get("risk_veto", False)
+        ):
             return False, "risk_veto"
         fill_admission = _confirmation_fill_admission(row, payload, signal_row)
         if not bool(fill_admission["allowed"]):
@@ -3189,9 +4945,13 @@ def _entry_eligibility(
         if cooldown_active:
             return False, "loss_cooldown"
         if temporal_assessment and bool(temporal_assessment.get("veto", False)):
-            return False, "temporal_" + str(temporal_assessment.get("reason", "survival"))
+            return False, "temporal_" + str(
+                temporal_assessment.get("reason", "survival")
+            )
         confidence = float(signal_row.get("signal_confidence", 1.0) or 0)
-        minimum_signal_confidence = float(payload.parameters.get("minimum_signal_confidence", 0.0) or 0)
+        minimum_signal_confidence = float(
+            payload.parameters.get("minimum_signal_confidence", 0.0) or 0
+        )
         # Differential recall experiments may lower the entry threshold only
         # inside their declared target regime.  The parent/non-target lane
         # keeps the original threshold, preserving paired signal and ledger
@@ -3201,16 +4961,29 @@ def _entry_eligibility(
             target_lane = bool(target_lane) if pd.notna(target_lane) else False
         except (TypeError, ValueError):
             target_lane = False
-        if target_lane and "differential_target_min_signal_confidence" in payload.parameters:
+        if (
+            target_lane
+            and "differential_target_min_signal_confidence" in payload.parameters
+        ):
             minimum_signal_confidence = float(
-                payload.parameters.get("differential_target_min_signal_confidence", minimum_signal_confidence)
+                payload.parameters.get(
+                    "differential_target_min_signal_confidence",
+                    minimum_signal_confidence,
+                )
             )
         if confidence < minimum_signal_confidence:
             return False, "minimum_confidence"
-        if bool(payload.parameters.get("confidence_ev_lower_bound_enabled", False)) and (confidence_assessment or {}).get("status") == "assessed" and bool((confidence_assessment or {}).get("hard_veto_eligible", False)):
-            if float((confidence_assessment or {}).get("ev_lower_bound", 0)) <= 0:
-                return False, "negative_ev_lower_bound"
-        if bool(payload.parameters.get("avoid_high_volatility", False)) and str(signal_row.get("volatility_regime", "")) == "high_volatility":
+        if (
+            bool(payload.parameters.get("confidence_ev_lower_bound_enabled", False))
+            and (confidence_assessment or {}).get("status") == "assessed"
+            and bool((confidence_assessment or {}).get("hard_veto_eligible", False))
+            and float((confidence_assessment or {}).get("ev_lower_bound", 0)) <= 0
+        ):
+            return False, "negative_ev_lower_bound"
+        if (
+            bool(payload.parameters.get("avoid_high_volatility", False))
+            and str(signal_row.get("volatility_regime", "")) == "high_volatility"
+        ):
             return False, "high_volatility_veto"
         atr = float(signal_row.get("_management_atr", 0) or 0)
         spread = execution.spread_points * execution.point_size
@@ -3218,16 +4991,30 @@ def _entry_eligibility(
         if atr > 0 and spread / atr > maximum:
             return False, "spread_to_atr"
         if bool(payload.parameters.get("meta_label_enabled", False)):
-            meta_prior = (meta_returns or {}).get(_meta_context(signal_row, str(signal_row.get("signal", "WAIT"))), [])
+            meta_prior = (meta_returns or {}).get(
+                _meta_context(signal_row, str(signal_row.get("signal", "WAIT"))), []
+            )
             minimum = int(payload.parameters.get("meta_label_min_history", 10) or 10)
             minimum_pf = float(payload.parameters.get("meta_label_min_pf", 1.0) or 1.0)
-            if len(meta_prior) >= minimum and _profit_factor_for(meta_prior) < minimum_pf:
+            if (
+                len(meta_prior) >= minimum
+                and _profit_factor_for(meta_prior) < minimum_pf
+            ):
                 return False, "meta_label_veto"
-        expected_target = atr * float(payload.parameters.get("atr_target_multiplier", 0) or 0)
-        if str(signal_row.get("entry_contract_protocol", "")) == "confirmation_entry_contract_v1":
-            expected_target = _exit_distances(float(row["open"]), signal_row, payload)[1]
+        expected_target = atr * float(
+            payload.parameters.get("atr_target_multiplier", 0) or 0
+        )
+        if (
+            str(signal_row.get("entry_contract_protocol", ""))
+            == "confirmation_entry_contract_v1"
+        ):
+            expected_target = _exit_distances(float(row["open"]), signal_row, payload)[
+                1
+            ]
         expected_edge = expected_target / max(float(row["open"]), 0.0000001) * 100
-        round_trip_cost = (spread + execution.slippage_points * execution.point_size * 2) / max(float(row["open"]), 0.0000001) * 100 + execution.commission_percent
+        round_trip_cost = (
+            spread + execution.slippage_points * execution.point_size * 2
+        ) / max(float(row["open"]), 0.0000001) * 100 + execution.commission_percent
         if expected_target > 0 and expected_edge <= round_trip_cost:
             return False, "cost_exceeds_target"
     return True, None
@@ -3245,8 +5032,16 @@ def _confirmation_fill_admission(
     valid setup into a chased or sub-minimum-R trade, so the execution boundary
     must fail closed without rewriting the original signal evidence.
     """
-    if str(signal_row.get("entry_contract_protocol", "")) != "confirmation_entry_contract_v1":
-        return {"allowed": True, "status": "not_applicable", "reason": None, "promotion_evidence": False}
+    if (
+        str(signal_row.get("entry_contract_protocol", ""))
+        != "confirmation_entry_contract_v1"
+    ):
+        return {
+            "allowed": True,
+            "status": "not_applicable",
+            "reason": None,
+            "promotion_evidence": False,
+        }
     direction = str(signal_row.get("signal", "")).upper()
     contract_direction = str(signal_row.get("entry_contract_direction", "")).upper()
     if (
@@ -3254,36 +5049,86 @@ def _confirmation_fill_admission(
         or direction not in {"BUY", "SELL"}
         or contract_direction != direction
     ):
-        return {"allowed": False, "status": "blocked", "reason": "entry_contract_fill_direction", "promotion_evidence": False}
+        return {
+            "allowed": False,
+            "status": "blocked",
+            "reason": "entry_contract_fill_direction",
+            "promotion_evidence": False,
+        }
     try:
         market_price = float(execution_row["open"])
         entry_price = _entry_price(market_price, direction, payload)
         anchor = float(signal_row.get("entry_trigger_anchor_price"))
         atr = float(signal_row.get("entry_structure_atr"))
-        stop_distance, target_distance = _exit_distances(market_price, signal_row, payload)
+        stop_distance, target_distance = _exit_distances(
+            market_price, signal_row, payload
+        )
     except (KeyError, TypeError, ValueError):
-        return {"allowed": False, "status": "blocked", "reason": "entry_contract_fill_geometry", "promotion_evidence": False}
-    stop_price = market_price - stop_distance if direction == "BUY" else market_price + stop_distance
-    target_price = market_price + target_distance if direction == "BUY" else market_price - target_distance
+        return {
+            "allowed": False,
+            "status": "blocked",
+            "reason": "entry_contract_fill_geometry",
+            "promotion_evidence": False,
+        }
+    stop_price = (
+        market_price - stop_distance
+        if direction == "BUY"
+        else market_price + stop_distance
+    )
+    target_price = (
+        market_price + target_distance
+        if direction == "BUY"
+        else market_price - target_distance
+    )
     stop_execution_price = _exit_price(stop_price, direction, payload)
     target_execution_price = _exit_price(target_price, direction, payload)
-    commission_distance = entry_price * float(payload.execution.commission_percent) / 100
+    commission_distance = (
+        entry_price * float(payload.execution.commission_percent) / 100
+    )
     # Commission is the configured round-trip charge. Add it to a stopped
     # trade and deduct it from a target hit so admission reflects the same net
     # economics used by the settlement ledger. Spread and both slippage legs
     # are represented by the executable entry/exit prices above.
-    gross_risk = entry_price - stop_execution_price if direction == "BUY" else stop_execution_price - entry_price
-    gross_reward = target_execution_price - entry_price if direction == "BUY" else entry_price - target_execution_price
+    gross_risk = (
+        entry_price - stop_execution_price
+        if direction == "BUY"
+        else stop_execution_price - entry_price
+    )
+    gross_reward = (
+        target_execution_price - entry_price
+        if direction == "BUY"
+        else entry_price - target_execution_price
+    )
     risk = gross_risk + commission_distance
     reward = gross_reward - commission_distance
-    favorable_move = max(0.0, entry_price - anchor if direction == "BUY" else anchor - entry_price)
+    favorable_move = max(
+        0.0, entry_price - anchor if direction == "BUY" else anchor - entry_price
+    )
     values = [
-        market_price, entry_price, anchor, atr, stop_price, target_price,
-        stop_execution_price, target_execution_price, commission_distance,
-        risk, reward,
+        market_price,
+        entry_price,
+        anchor,
+        atr,
+        stop_price,
+        target_price,
+        stop_execution_price,
+        target_execution_price,
+        commission_distance,
+        risk,
+        reward,
     ]
-    if not all(math.isfinite(value) for value in values) or atr <= 0 or risk <= 0 or reward <= 0:
-        return {"allowed": False, "status": "blocked", "reason": "entry_contract_fill_geometry", "promotion_evidence": False}
+    if (
+        not all(math.isfinite(value) for value in values)
+        or atr <= 0
+        or risk <= 0
+        or reward <= 0
+    ):
+        return {
+            "allowed": False,
+            "status": "blocked",
+            "reason": "entry_contract_fill_geometry",
+            "promotion_evidence": False,
+        }
     reward_space_r = reward / risk
     chase_distance_atr = favorable_move / atr
     minimum_reward = float(payload.parameters.get("minimum_reward_space_r", 1.5) or 1.5)
@@ -3310,16 +5155,29 @@ def _confirmation_fill_admission(
 
 
 def _is_liquid_entry(
-    row: pd.Series, payload: SimpleBacktestRequest, signal_row: pd.Series | None = None,
-    loss_streak: int = 0, cooldown_active: bool = False, regime_returns: dict[str, list[float]] | None = None,
-    meta_returns: dict[str, list[float]] | None = None, loss_streak_wait_active: bool = False,
+    row: pd.Series,
+    payload: SimpleBacktestRequest,
+    signal_row: pd.Series | None = None,
+    loss_streak: int = 0,
+    cooldown_active: bool = False,
+    regime_returns: dict[str, list[float]] | None = None,
+    meta_returns: dict[str, list[float]] | None = None,
+    loss_streak_wait_active: bool = False,
     weak_regime_wait_active: bool = False,
     confidence_assessment: dict[str, object] | None = None,
 ) -> bool:
     """Compatibility wrapper for callers/tests that need only a yes/no veto."""
     return _entry_eligibility(
-        row, payload, signal_row, loss_streak, cooldown_active, regime_returns, meta_returns, loss_streak_wait_active,
-        weak_regime_wait_active, confidence_assessment,
+        row,
+        payload,
+        signal_row,
+        loss_streak,
+        cooldown_active,
+        regime_returns,
+        meta_returns,
+        loss_streak_wait_active,
+        weak_regime_wait_active,
+        confidence_assessment,
     )[0]
 
 
@@ -3328,20 +5186,28 @@ def _meta_context(signal_row: pd.Series, direction: str) -> str:
 
 
 def _meta_risk_multiplier(
-    signal_row: pd.Series, direction: str, payload: SimpleBacktestRequest, meta_returns: dict[str, list[float]],
+    signal_row: pd.Series,
+    direction: str,
+    payload: SimpleBacktestRequest,
+    meta_returns: dict[str, list[float]],
 ) -> float:
     if not bool(payload.parameters.get("meta_label_enabled", False)):
         return 1.0
     values = meta_returns.get(_meta_context(signal_row, direction), [])
     minimum = int(payload.parameters.get("meta_label_min_history", 10) or 10)
-    if len(values) < minimum or _profit_factor_for(values) < float(payload.parameters.get("meta_label_min_pf", 1.0) or 1.0):
+    if len(values) < minimum or _profit_factor_for(values) < float(
+        payload.parameters.get("meta_label_min_pf", 1.0) or 1.0
+    ):
         return 1.0
     return float(payload.parameters.get("meta_label_risk_multiplier", 1.0) or 1.0)
 
 
 def _confidence_assessment(
-    signal_row: pd.Series, direction: str, history: dict[str, list[dict[str, float]]],
-    payload: SimpleBacktestRequest, entry_candle: pd.Series,
+    signal_row: pd.Series,
+    direction: str,
+    history: dict[str, list[dict[str, float]]],
+    payload: SimpleBacktestRequest,
+    entry_candle: pd.Series,
 ) -> dict[str, object]:
     """Strictly online confidence -> calibrated probability -> EV lower bound.
 
@@ -3350,7 +5216,9 @@ def _confidence_assessment(
     """
     if not bool(payload.parameters.get("confidence_calibration_enabled", False)):
         return {"status": "disabled"}
-    minimum = max(15, int(payload.parameters.get("confidence_calibration_min_samples", 15) or 15))
+    minimum = max(
+        15, int(payload.parameters.get("confidence_calibration_min_samples", 15) or 15)
+    )
     context = _risk_context(signal_row, direction)
     context_values = history.get(context, [])
     values = context_values
@@ -3359,28 +5227,54 @@ def _confidence_assessment(
         values = history.get("__global__", [])
         source = "global_fallback"
     if len(values) < minimum:
-        return {"status": "insufficient_evidence", "sample_count": len(values), "source": source}
+        return {
+            "status": "insufficient_evidence",
+            "sample_count": len(values),
+            "source": source,
+        }
     raw = float(signal_row.get("signal_confidence", 1.0) or 0)
-    nearby = [item for item in values if abs(float(item["confidence"]) - raw) <= .20]
+    nearby = [item for item in values if abs(float(item["confidence"]) - raw) <= 0.20]
     if len(nearby) < minimum:
         nearby = values
         source += "_hierarchical"
-    wins = [float(item["profit_percent"]) for item in nearby if float(item["profit_percent"]) > 0]
-    losses = [abs(float(item["profit_percent"])) for item in nearby if float(item["profit_percent"]) <= 0]
+    wins = [
+        float(item["profit_percent"])
+        for item in nearby
+        if float(item["profit_percent"]) > 0
+    ]
+    losses = [
+        abs(float(item["profit_percent"]))
+        for item in nearby
+        if float(item["profit_percent"]) <= 0
+    ]
     n = len(nearby)
     probability = len(wins) / n if n else 0.0
     lower_probability = _wilson_lower_bound(len(wins), n)
     average_win = sum(wins) / len(wins) if wins else 0.0
     average_loss = sum(losses) / len(losses) if losses else 0.0
     execution = payload.execution
-    spread_cost = (execution.spread_points * execution.point_size + execution.slippage_points * execution.point_size * 2) / max(float(entry_candle["open"]), .0000001) * 100
+    spread_cost = (
+        (
+            execution.spread_points * execution.point_size
+            + execution.slippage_points * execution.point_size * 2
+        )
+        / max(float(entry_candle["open"]), 0.0000001)
+        * 100
+    )
     cost = spread_cost + execution.commission_percent
     ev = probability * average_win - (1 - probability) * average_loss - cost
-    lower_ev = lower_probability * average_win - (1 - lower_probability) * average_loss - cost
+    lower_ev = (
+        lower_probability * average_win - (1 - lower_probability) * average_loss - cost
+    )
     return {
-        "status": "assessed", "source": source, "sample_count": n, "raw_confidence": round(raw, 4),
-        "calibrated_win_probability": round(probability, 5), "win_probability_lower_bound": round(lower_probability, 5),
-        "expected_value": round(ev, 6), "ev_lower_bound": round(lower_ev, 6),
+        "status": "assessed",
+        "source": source,
+        "sample_count": n,
+        "raw_confidence": round(raw, 4),
+        "calibrated_win_probability": round(probability, 5),
+        "win_probability_lower_bound": round(lower_probability, 5),
+        "expected_value": round(ev, 6),
+        "ev_lower_bound": round(lower_ev, 6),
         # A global fallback is a prior for sizing/diagnostics, not a hard
         # veto for a new regime.  Only enough same-context closed evidence can
         # justify suppressing the next signal; otherwise the candidate stays
@@ -3391,31 +5285,61 @@ def _confidence_assessment(
 
 
 def _record_confidence_observation(
-    history: dict[str, list[dict[str, float]]], signal_row: pd.Series, direction: str, profit_percent: float,
+    history: dict[str, list[dict[str, float]]],
+    signal_row: pd.Series,
+    direction: str,
+    profit_percent: float,
 ) -> None:
-    observation = {"confidence": float(signal_row.get("signal_confidence", 1.0) or 0), "profit_percent": float(profit_percent)}
+    observation = {
+        "confidence": float(signal_row.get("signal_confidence", 1.0) or 0),
+        "profit_percent": float(profit_percent),
+    }
     context = _risk_context(signal_row, direction)
     history[context] = [*history.get(context, [])[-199:], observation]
     history["__global__"] = [*history.get("__global__", [])[-499:], observation]
 
 
-def _confidence_calibration_report(history: dict[str, list[dict[str, float]]], payload: SimpleBacktestRequest) -> dict[str, object]:
+def _confidence_calibration_report(
+    history: dict[str, list[dict[str, float]]], payload: SimpleBacktestRequest
+) -> dict[str, object]:
     values = history.get("__global__", [])
-    minimum = max(15, int(payload.parameters.get("confidence_calibration_min_samples", 15) or 15))
+    minimum = max(
+        15, int(payload.parameters.get("confidence_calibration_min_samples", 15) or 15)
+    )
     if not bool(payload.parameters.get("confidence_calibration_enabled", False)):
         return {"status": "disabled", "promotion_evidence": False}
     if len(values) < minimum:
-        return {"status": "insufficient_evidence", "sample_count": len(values), "minimum_samples": minimum, "promotion_evidence": False}
+        return {
+            "status": "insufficient_evidence",
+            "sample_count": len(values),
+            "minimum_samples": minimum,
+            "promotion_evidence": False,
+        }
     bins = []
-    for lower, upper in [(0.0, .33), (.33, .66), (.66, 1.01)]:
+    for lower, upper in [(0.0, 0.33), (0.33, 0.66), (0.66, 1.01)]:
         rows = [row for row in values if lower <= row["confidence"] < upper]
         if not rows:
             continue
-        bins.append({"range": [lower, min(upper, 1.0)], "sample_count": len(rows),
-                     "win_probability": round(sum(row["profit_percent"] > 0 for row in rows) / len(rows), 5),
-                     "average_profit_percent": round(sum(row["profit_percent"] for row in rows) / len(rows), 5)})
-    return {"status": "assessed", "protocol": "train_only_online_hierarchical_calibration_v1", "sample_count": len(values),
-            "bins": bins, "rule": "Only previously closed real trades update calibration; vetoed shadows never train it.", "promotion_evidence": False}
+        bins.append(
+            {
+                "range": [lower, min(upper, 1.0)],
+                "sample_count": len(rows),
+                "win_probability": round(
+                    sum(row["profit_percent"] > 0 for row in rows) / len(rows), 5
+                ),
+                "average_profit_percent": round(
+                    sum(row["profit_percent"] for row in rows) / len(rows), 5
+                ),
+            }
+        )
+    return {
+        "status": "assessed",
+        "protocol": "train_only_online_hierarchical_calibration_v1",
+        "sample_count": len(values),
+        "bins": bins,
+        "rule": "Only previously closed real trades update calibration; vetoed shadows never train it.",
+        "promotion_evidence": False,
+    }
 
 
 def _wilson_lower_bound(successes: int, sample: int, z: float = 1.96) -> float:
@@ -3424,7 +5348,11 @@ def _wilson_lower_bound(successes: int, sample: int, z: float = 1.96) -> float:
     p = successes / sample
     denominator = 1 + z * z / sample
     centre = (p + z * z / (2 * sample)) / denominator
-    margin = z * ((p * (1 - p) / sample + z * z / (4 * sample * sample)) ** .5) / denominator
+    margin = (
+        z
+        * ((p * (1 - p) / sample + z * z / (4 * sample * sample)) ** 0.5)
+        / denominator
+    )
     return max(0.0, centre - margin)
 
 
@@ -3446,45 +5374,95 @@ def _open_shadow_position(
     entry_price = _entry_price(market_price, direction, payload)
     stop_distance, target_distance = _exit_distances(market_price, signal_row, payload)
     if direction == "BUY":
-        stop_loss, take_profit = market_price - stop_distance, market_price + target_distance
+        stop_loss, take_profit = (
+            market_price - stop_distance,
+            market_price + target_distance,
+        )
     else:
-        stop_loss, take_profit = market_price + stop_distance, market_price - target_distance
-    spread_percent = payload.execution.spread_points * payload.execution.point_size / max(market_price, 1e-9) * 100
+        stop_loss, take_profit = (
+            market_price + stop_distance,
+            market_price - target_distance,
+        )
+    spread_percent = (
+        payload.execution.spread_points
+        * payload.execution.point_size
+        / max(market_price, 1e-9)
+        * 100
+    )
     atr = max(float(signal_row.get("_management_atr", 0) or 0), 1e-9)
-    spread_to_atr = (payload.execution.spread_points * payload.execution.point_size) / atr
-    spread_context = "high_spread" if spread_to_atr >= .20 else ("medium_spread" if spread_to_atr >= .08 else "low_spread")
+    spread_to_atr = (
+        payload.execution.spread_points * payload.execution.point_size
+    ) / atr
+    spread_context = (
+        "high_spread"
+        if spread_to_atr >= 0.20
+        else ("medium_spread" if spread_to_atr >= 0.08 else "low_spread")
+    )
     # Predetermined, deterministic 5% shadow exploration assignment. It
     # never opens a real position; it only makes policy propensities explicit
     # for later counterfactual OPE.
-    exploration = int(hashlib.sha256(f"{signal_row['time']}|{veto_reason}".encode()).hexdigest()[:8], 16) % 100 < 5
+    exploration = (
+        int(
+            hashlib.sha256(f"{signal_row['time']}|{veto_reason}".encode()).hexdigest()[
+                :8
+            ],
+            16,
+        )
+        % 100
+        < 5
+    )
     return {
-        "veto_reason": veto_reason, "direction": direction,
-        "signal_time": signal_row["time"], "entry_time": candle["time"],
-        "entry_price": entry_price, "market_entry_price": market_price,
-        "stop_loss": stop_loss, "take_profit": take_profit,
-        "position_size_multiple": _position_size_multiple(entry_price, stop_loss, direction, payload)
+        "veto_reason": veto_reason,
+        "direction": direction,
+        "signal_time": signal_row["time"],
+        "entry_time": candle["time"],
+        "entry_price": entry_price,
+        "market_entry_price": market_price,
+        "stop_loss": stop_loss,
+        "take_profit": take_profit,
+        "position_size_multiple": _position_size_multiple(
+            entry_price, stop_loss, direction, payload
+        )
         * _volatility_risk_multiplier(signal_row, payload),
         "market_regime": str(signal_row.get("market_regime", "unknown")),
-        "volatility_regime": str(signal_row.get("volatility_regime", "normal_volatility")),
-        "spread_context": spread_context, "spread_percent": round(spread_percent, 7),
-        "p_allow": .05, "p_veto": .95, "exploration_assigned": exploration,
+        "volatility_regime": str(
+            signal_row.get("volatility_regime", "normal_volatility")
+        ),
+        "spread_context": spread_context,
+        "spread_percent": round(spread_percent, 7),
+        "p_allow": 0.05,
+        "p_veto": 0.95,
+        "exploration_assigned": exploration,
         "policy_arm": "shadow_exploration" if exploration else "shadow_control",
-        "entry_index": index, "signal_row": signal_row,
+        "entry_index": index,
+        "signal_row": signal_row,
         "execution_parameters": dict(payload.parameters),
         "partial_closed": False,
-        "partial_fraction": float(payload.parameters.get("partial_take_profit_fraction", 0) or 0),
+        "partial_fraction": float(
+            payload.parameters.get("partial_take_profit_fraction", 0) or 0
+        ),
         "partial_exit_price": None,
     }
 
 
 def _advance_shadow_positions(
-    positions: list[dict[str, object]], ledger: list[dict[str, object]],
-    history: dict[str, dict[str, list[float]]], candle: pd.Series,
-    previous_candle: pd.Series, payload: SimpleBacktestRequest, index: int,
+    positions: list[dict[str, object]],
+    ledger: list[dict[str, object]],
+    history: dict[str, dict[str, list[float]]],
+    candle: pd.Series,
+    previous_candle: pd.Series,
+    payload: SimpleBacktestRequest,
+    index: int,
 ) -> None:
     active: list[dict[str, object]] = []
     for position in positions:
-        settled = _advance_shadow_position(position, candle, previous_candle, _payload_for_position(payload, position), index)
+        settled = _advance_shadow_position(
+            position,
+            candle,
+            previous_candle,
+            _payload_for_position(payload, position),
+            index,
+        )
         if settled is None:
             active.append(position)
         else:
@@ -3493,14 +5471,20 @@ def _advance_shadow_positions(
 
 
 def _advance_shadow_position(
-    position: dict[str, object], candle: pd.Series, previous_candle: pd.Series,
-    payload: SimpleBacktestRequest, index: int,
+    position: dict[str, object],
+    candle: pd.Series,
+    previous_candle: pd.Series,
+    payload: SimpleBacktestRequest,
+    index: int,
 ) -> dict[str, object] | None:
     direction = str(position["direction"])
     _advance_trailing_stop(position, previous_candle, payload)
     time_stop = int(payload.parameters.get("time_stop_candles", 0) or 0)
     if time_stop and index - int(position["entry_index"]) >= time_stop:
-        exit_price, exit_reason = _exit_price(float(candle["open"]), direction, payload), "time_stop"
+        exit_price, exit_reason = (
+            _exit_price(float(candle["open"]), direction, payload),
+            "time_stop",
+        )
     else:
         exit_price, exit_reason = _intrabar_exit(direction, position, candle, payload)
     if exit_reason is None and _take_partial_profit(position, candle, payload):
@@ -3510,43 +5494,87 @@ def _advance_shadow_position(
     return _shadow_outcome(position, candle, float(exit_price), exit_reason, payload)
 
 
-def _force_close_shadow(position: dict[str, object], candle: pd.Series, payload: SimpleBacktestRequest) -> dict[str, object]:
+def _force_close_shadow(
+    position: dict[str, object], candle: pd.Series, payload: SimpleBacktestRequest
+) -> dict[str, object]:
     position_payload = _payload_for_position(payload, position)
     return _shadow_outcome(
-        position, candle, _exit_price(float(candle["close"]), str(position["direction"]), position_payload), "replay_end", position_payload,
+        position,
+        candle,
+        _exit_price(
+            float(candle["close"]), str(position["direction"]), position_payload
+        ),
+        "replay_end",
+        position_payload,
     )
 
 
 def _shadow_outcome(
-    position: dict[str, object], candle: pd.Series, exit_price: float, exit_reason: str,
+    position: dict[str, object],
+    candle: pd.Series,
+    exit_price: float,
+    exit_reason: str,
     payload: SimpleBacktestRequest,
 ) -> dict[str, object]:
     direction, entry_price = str(position["direction"]), float(position["entry_price"])
-    market_profit = ((exit_price - entry_price) / entry_price) * 100 if direction == "BUY" else ((entry_price - exit_price) / entry_price) * 100
-    partial_fraction = float(position.get("partial_fraction", 0) or 0) if bool(position.get("partial_closed")) else 0.0
+    market_profit = (
+        ((exit_price - entry_price) / entry_price) * 100
+        if direction == "BUY"
+        else ((entry_price - exit_price) / entry_price) * 100
+    )
+    partial_fraction = (
+        float(position.get("partial_fraction", 0) or 0)
+        if bool(position.get("partial_closed"))
+        else 0.0
+    )
     partial_exit = position.get("partial_exit_price")
     if partial_fraction and partial_exit is not None:
-        partial_return = ((float(partial_exit) - entry_price) / entry_price) * 100 if direction == "BUY" else ((entry_price - float(partial_exit)) / entry_price) * 100
-        market_profit = market_profit * (1 - partial_fraction) + partial_return * partial_fraction
+        partial_return = (
+            ((float(partial_exit) - entry_price) / entry_price) * 100
+            if direction == "BUY"
+            else ((entry_price - float(partial_exit)) / entry_price) * 100
+        )
+        market_profit = (
+            market_profit * (1 - partial_fraction) + partial_return * partial_fraction
+        )
         exit_reason = f"partial_target+{exit_reason}"
-    holding_days = max((pd.Timestamp(candle["time"]) - pd.Timestamp(position["entry_time"])).total_seconds() / 86400, 0)
-    cost = (payload.execution.commission_percent + payload.execution.swap_per_day_percent * holding_days) * float(position["position_size_multiple"])
+    holding_days = max(
+        (
+            pd.Timestamp(candle["time"]) - pd.Timestamp(position["entry_time"])
+        ).total_seconds()
+        / 86400,
+        0,
+    )
+    cost = (
+        payload.execution.commission_percent
+        + payload.execution.swap_per_day_percent * holding_days
+    ) * float(position["position_size_multiple"])
     profit = market_profit * float(position["position_size_multiple"]) - cost
     return {
-        "veto_reason": str(position["veto_reason"]), "market_regime": str(position["market_regime"]),
-        "volatility_regime": str(position["volatility_regime"]), "direction": direction,
-        "spread_context": str(position.get("spread_context", "unknown")), "p_allow": float(position.get("p_allow", 0)),
-        "p_veto": float(position.get("p_veto", 1)), "exploration_assigned": bool(position.get("exploration_assigned", False)),
+        "veto_reason": str(position["veto_reason"]),
+        "market_regime": str(position["market_regime"]),
+        "volatility_regime": str(position["volatility_regime"]),
+        "direction": direction,
+        "spread_context": str(position.get("spread_context", "unknown")),
+        "p_allow": float(position.get("p_allow", 0)),
+        "p_veto": float(position.get("p_veto", 1)),
+        "exploration_assigned": bool(position.get("exploration_assigned", False)),
         "policy_arm": str(position.get("policy_arm", "shadow_control")),
-        "signal_time": str(position["signal_time"]), "entry_time": str(position["entry_time"]),
-        "exit_time": str(candle["time"]), "exit_reason": exit_reason,
-        "shadow_profit": round(max(profit, 0.0), 5), "shadow_loss": round(abs(min(profit, 0.0)), 5),
-        "shadow_profit_percent": round(profit, 5), "outcome": "WIN" if profit > 0 else "LOSS",
+        "signal_time": str(position["signal_time"]),
+        "entry_time": str(position["entry_time"]),
+        "exit_time": str(candle["time"]),
+        "exit_reason": exit_reason,
+        "shadow_profit": round(max(profit, 0.0), 5),
+        "shadow_loss": round(abs(min(profit, 0.0)), 5),
+        "shadow_profit_percent": round(profit, 5),
+        "outcome": "WIN" if profit > 0 else "LOSS",
     }
 
 
 def _record_shadow_outcome(
-    ledger: list[dict[str, object]], history: dict[str, dict[str, list[float]]], outcome: dict[str, object],
+    ledger: list[dict[str, object]],
+    history: dict[str, dict[str, list[float]]],
+    outcome: dict[str, object],
 ) -> None:
     ledger.append(outcome)
     reason = str(outcome["veto_reason"])
@@ -3555,7 +5583,9 @@ def _record_shadow_outcome(
 
 
 def _dynamic_cooldown_duration(
-    signal_row: pd.Series, payload: SimpleBacktestRequest, loss_streak: int,
+    signal_row: pd.Series,
+    payload: SimpleBacktestRequest,
+    loss_streak: int,
     shadow_history: dict[str, dict[str, list[float]]],
 ) -> tuple[int, dict[str, object]]:
     base = max(1, int(payload.parameters.get("loss_cooldown_candles", 1) or 1))
@@ -3585,40 +5615,80 @@ def _dynamic_cooldown_duration(
     elif pf is not None and pf < 1.0:
         adjustment = 1
     return max(1, min(6, duration + adjustment)), {
-        "mode": "online_shadow_regret", "samples": len(values), "shadow_pf": pf,
-        "adjustment": adjustment, "context": context,
+        "mode": "online_shadow_regret",
+        "samples": len(values),
+        "shadow_pf": pf,
+        "adjustment": adjustment,
+        "context": context,
     }
 
 
 def _veto_regret_report(ledger: list[dict[str, object]]) -> dict[str, object]:
-    def summarize(items: list[dict[str, object]], reason: str | None = None) -> dict[str, object]:
+    def summarize(
+        items: list[dict[str, object]], reason: str | None = None
+    ) -> dict[str, object]:
         profits = [float(item["shadow_profit_percent"]) for item in items]
         gross_profit = sum(float(item["shadow_profit"]) for item in items)
         gross_loss = sum(float(item["shadow_loss"]) for item in items)
-        pf = round(gross_profit / gross_loss, 3) if gross_loss else (99.0 if gross_profit else 0.0)
+        pf = (
+            round(gross_profit / gross_loss, 3)
+            if gross_loss
+            else (99.0 if gross_profit else 0.0)
+        )
         monthly: dict[str, list[dict[str, object]]] = defaultdict(list)
         for item in items:
             monthly[_utc_month(item["exit_time"])].append(item)
-        monthly_summary = {month: summarize_month(values) for month, values in monthly.items()}
-        robust_months = sum(float(data["shadow_profit_factor"]) > 1.30 for data in monthly_summary.values())
-        exploration = [item for item in items if bool(item.get("exploration_assigned", False))]
+        monthly_summary = {
+            month: summarize_month(values) for month, values in monthly.items()
+        }
+        robust_months = sum(
+            float(data["shadow_profit_factor"]) > 1.30
+            for data in monthly_summary.values()
+        )
+        exploration = [
+            item for item in items if bool(item.get("exploration_assigned", False))
+        ]
         mean = sum(profits) / len(profits) if profits else 0.0
         # Logged-propensity DR surrogate. It is useful for ranking bounded
         # research experiments but is explicitly counterfactual-only.
-        dr = sum(mean + ((value - mean) / max(.01, float(item.get("p_allow", .05)))) if bool(item.get("exploration_assigned", False)) else mean for item, value in zip(items, profits)) / len(items) if items else 0.0
-        variance = sum((value - mean) ** 2 for value in profits) / max(1, len(profits) - 1)
-        lower_bound = dr - 1.645 * (variance / max(1, len(profits))) ** .5
+        dr = (
+            sum(
+                mean + ((value - mean) / max(0.01, float(item.get("p_allow", 0.05))))
+                if bool(item.get("exploration_assigned", False))
+                else mean
+                for item, value in zip(items, profits)
+            )
+            / len(items)
+            if items
+            else 0.0
+        )
+        variance = sum((value - mean) ** 2 for value in profits) / max(
+            1, len(profits) - 1
+        )
+        lower_bound = dr - 1.645 * (variance / max(1, len(profits))) ** 0.5
         action = "preserve_veto"
-        if len(items) >= 30 and robust_months >= 3 and len(exploration) >= 5 and lower_bound > 0:
+        if (
+            len(items) >= 30
+            and robust_months >= 3
+            and len(exploration) >= 5
+            and lower_bound > 0
+        ):
             action = "bounded_relaxation_experiment"
         return {
-            "shadow_trades": len(items), "wins": sum(value > 0 for value in profits),
-            "losses": sum(value <= 0 for value in profits), "shadow_profit": round(gross_profit, 5),
-            "shadow_loss": round(gross_loss, 5), "shadow_profit_factor": pf,
-            "net_shadow_profit_percent": round(sum(profits), 5), "recommended_action": action,
-            "monthly_passport": monthly_summary, "monthly_pf_gt_1_30": robust_months,
-            "doubly_robust_value": round(dr, 6), "lower_confidence_bound": round(lower_bound, 6),
-            "exploration_count": len(exploration), "policy_evidence": "counterfactual_only",
+            "shadow_trades": len(items),
+            "wins": sum(value > 0 for value in profits),
+            "losses": sum(value <= 0 for value in profits),
+            "shadow_profit": round(gross_profit, 5),
+            "shadow_loss": round(gross_loss, 5),
+            "shadow_profit_factor": pf,
+            "net_shadow_profit_percent": round(sum(profits), 5),
+            "recommended_action": action,
+            "monthly_passport": monthly_summary,
+            "monthly_pf_gt_1_30": robust_months,
+            "doubly_robust_value": round(dr, 6),
+            "lower_confidence_bound": round(lower_bound, 6),
+            "exploration_count": len(exploration),
+            "policy_evidence": "counterfactual_only",
         }
 
     def summarize_month(items: list[dict[str, object]]) -> dict[str, object]:
@@ -3626,7 +5696,10 @@ def _veto_regret_report(ledger: list[dict[str, object]]) -> dict[str, object]:
         gross_profit = sum(float(item["shadow_profit"]) for item in items)
         gross_loss = sum(float(item["shadow_loss"]) for item in items)
         return {
-            "shadow_trades": len(items), "shadow_profit_factor": round(gross_profit / gross_loss, 3) if gross_loss else (99.0 if gross_profit else 0.0),
+            "shadow_trades": len(items),
+            "shadow_profit_factor": round(gross_profit / gross_loss, 3)
+            if gross_loss
+            else (99.0 if gross_profit else 0.0),
             "net_shadow_profit_percent": round(sum(profits), 5),
         }
 
@@ -3636,20 +5709,31 @@ def _veto_regret_report(ledger: list[dict[str, object]]) -> dict[str, object]:
         by_veto[str(item["veto_reason"])].append(item)
         key = f"{item['veto_reason']}|{item['market_regime']}|{item['volatility_regime']}|{item.get('spread_context', 'unknown')}"
         by_context[key].append(item)
-    ranked = sorted(by_veto.items(), key=lambda pair: summarize(pair[1], pair[0])["shadow_profit_factor"], reverse=True)
+    ranked = sorted(
+        by_veto.items(),
+        key=lambda pair: summarize(pair[1], pair[0])["shadow_profit_factor"],
+        reverse=True,
+    )
     return {
         "protocol": "same next-candle-open, costs, exits; logged shadow propensity + doubly-robust surrogate; never promotion evidence",
         "shadow_trade_count": len(ledger),
-        "by_veto_reason": {key: summarize(items, key) for key, items in by_veto.items()},
-        "by_regime_context": {key: summarize(items) for key, items in by_context.items()},
+        "by_veto_reason": {
+            key: summarize(items, key) for key, items in by_veto.items()
+        },
+        "by_regime_context": {
+            key: summarize(items) for key, items in by_context.items()
+        },
         "highest_regret_veto": ranked[0][0] if ranked else None,
         # Bounded sample keeps API and model metadata practical; aggregates
         # above always include the complete replay ledger.
-        "sample_records": ledger[:200], "sample_records_truncated": len(ledger) > 200,
+        "sample_records": ledger[:200],
+        "sample_records_truncated": len(ledger) > 200,
     }
 
 
-def _decision_blame_graph(trades: list[SimpleTrade], veto_regret: dict[str, object]) -> dict[str, object]:
+def _decision_blame_graph(
+    trades: list[SimpleTrade], veto_regret: dict[str, object]
+) -> dict[str, object]:
     """Aggregate, intervention-labelled decision graph from the full trade ledger.
 
     No-trade and half-risk branches are exact accounting counterfactuals. Exit
@@ -3664,61 +5748,174 @@ def _decision_blame_graph(trades: list[SimpleTrade], veto_regret: dict[str, obje
     for regime, rows in by_regime.items():
         values = [float(trade.profit_percent) for trade in rows]
         mean = sum(values) / len(values)
-        variance = sum((value - mean) ** 2 for value in values) / max(1, len(values) - 1)
-        margin = 1.96 * (variance / max(1, len(values))) ** .5
-        common = {"regime": regime, "cost_scenario": "normal_execution", "sample_count": len(values),
-                  "confidence_interval": [round(mean - margin, 6), round(mean + margin, 6)]}
-        edges.extend([
-            {"edge_key": f"market_context|regime_belief|{regime}", "source_node": "market_context", "target_node": "regime_belief",
-             "baseline": 1.0, "intervention": 1.0, "delta": 0.0, "evidence_status": "observed", "intervention_type": "none", **common},
-            {"edge_key": f"regime_belief|specialist_choice|{regime}", "source_node": "regime_belief", "target_node": "specialist_choice",
-             "baseline": None, "intervention": None, "delta": None, "evidence_status": "not_assessed", "intervention_type": "frozen_specialist_replay_required", **common},
-            {"edge_key": f"signal|entry_timing|{regime}", "source_node": "signal", "target_node": "entry_timing",
-             "baseline": round(mean, 6), "intervention": 0.0, "delta": round(-mean, 6), "evidence_status": "assessed_accounting", "intervention_type": "no_trade", **common},
-            {"edge_key": f"entry_timing|position_size|{regime}", "source_node": "entry_timing", "target_node": "position_size",
-             "baseline": round(mean, 6), "intervention": round(mean / 2, 6), "delta": round(-mean / 2, 6), "evidence_status": "assessed_accounting", "intervention_type": "half_size", **common},
-            {"edge_key": f"position_size|exit|{regime}", "source_node": "position_size", "target_node": "exit",
-             "baseline": round(mean, 6), "intervention": None, "delta": None, "evidence_status": "not_assessed", "intervention_type": "alternative_exit_replay_required", **common},
-            {"edge_key": f"exit|outcome|{regime}", "source_node": "exit", "target_node": "outcome",
-             "baseline": round(mean, 6), "intervention": None, "delta": None, "evidence_status": "observed", "intervention_type": "none", **common},
-        ])
+        variance = sum((value - mean) ** 2 for value in values) / max(
+            1, len(values) - 1
+        )
+        margin = 1.96 * (variance / max(1, len(values))) ** 0.5
+        common = {
+            "regime": regime,
+            "cost_scenario": "normal_execution",
+            "sample_count": len(values),
+            "confidence_interval": [round(mean - margin, 6), round(mean + margin, 6)],
+        }
+        edges.extend(
+            [
+                {
+                    "edge_key": f"market_context|regime_belief|{regime}",
+                    "source_node": "market_context",
+                    "target_node": "regime_belief",
+                    "baseline": 1.0,
+                    "intervention": 1.0,
+                    "delta": 0.0,
+                    "evidence_status": "observed",
+                    "intervention_type": "none",
+                    **common,
+                },
+                {
+                    "edge_key": f"regime_belief|specialist_choice|{regime}",
+                    "source_node": "regime_belief",
+                    "target_node": "specialist_choice",
+                    "baseline": None,
+                    "intervention": None,
+                    "delta": None,
+                    "evidence_status": "not_assessed",
+                    "intervention_type": "frozen_specialist_replay_required",
+                    **common,
+                },
+                {
+                    "edge_key": f"signal|entry_timing|{regime}",
+                    "source_node": "signal",
+                    "target_node": "entry_timing",
+                    "baseline": round(mean, 6),
+                    "intervention": 0.0,
+                    "delta": round(-mean, 6),
+                    "evidence_status": "assessed_accounting",
+                    "intervention_type": "no_trade",
+                    **common,
+                },
+                {
+                    "edge_key": f"entry_timing|position_size|{regime}",
+                    "source_node": "entry_timing",
+                    "target_node": "position_size",
+                    "baseline": round(mean, 6),
+                    "intervention": round(mean / 2, 6),
+                    "delta": round(-mean / 2, 6),
+                    "evidence_status": "assessed_accounting",
+                    "intervention_type": "half_size",
+                    **common,
+                },
+                {
+                    "edge_key": f"position_size|exit|{regime}",
+                    "source_node": "position_size",
+                    "target_node": "exit",
+                    "baseline": round(mean, 6),
+                    "intervention": None,
+                    "delta": None,
+                    "evidence_status": "not_assessed",
+                    "intervention_type": "alternative_exit_replay_required",
+                    **common,
+                },
+                {
+                    "edge_key": f"exit|outcome|{regime}",
+                    "source_node": "exit",
+                    "target_node": "outcome",
+                    "baseline": round(mean, 6),
+                    "intervention": None,
+                    "delta": None,
+                    "evidence_status": "observed",
+                    "intervention_type": "none",
+                    **common,
+                },
+            ]
+        )
     for context, metrics in (veto_regret.get("by_regime_context", {}) or {}).items():
         sample = int(metrics.get("shadow_trades", 0) or 0)
-        baseline = float(metrics.get("net_shadow_profit_percent", 0) or 0) / max(1, sample)
-        edges.append({"edge_key": f"veto|outcome|{context}", "source_node": "veto", "target_node": "outcome",
-                      "regime": context.split("|")[1] if "|" in context else "unknown", "cost_scenario": "same_next_open_costed_shadow",
-                      "baseline": round(baseline, 6), "intervention": 0.0, "delta": round(-baseline, 6), "confidence_interval": [None, None],
-                      "sample_count": sample, "evidence_status": "counterfactual_shadow_only", "intervention_type": "no_trade_vs_shadow_allow"})
-    return {"protocol": "decision_blame_graph_v1; full trade ledger aggregates; promotion evidence forbidden", "nodes": ["market_context", "regime_belief", "specialist_choice", "signal", "veto", "entry_timing", "position_size", "exit", "outcome"], "edges": edges}
+        baseline = float(metrics.get("net_shadow_profit_percent", 0) or 0) / max(
+            1, sample
+        )
+        edges.append(
+            {
+                "edge_key": f"veto|outcome|{context}",
+                "source_node": "veto",
+                "target_node": "outcome",
+                "regime": context.split("|")[1] if "|" in context else "unknown",
+                "cost_scenario": "same_next_open_costed_shadow",
+                "baseline": round(baseline, 6),
+                "intervention": 0.0,
+                "delta": round(-baseline, 6),
+                "confidence_interval": [None, None],
+                "sample_count": sample,
+                "evidence_status": "counterfactual_shadow_only",
+                "intervention_type": "no_trade_vs_shadow_allow",
+            }
+        )
+    return {
+        "protocol": "decision_blame_graph_v1; full trade ledger aggregates; promotion evidence forbidden",
+        "nodes": [
+            "market_context",
+            "regime_belief",
+            "specialist_choice",
+            "signal",
+            "veto",
+            "entry_timing",
+            "position_size",
+            "exit",
+            "outcome",
+        ],
+        "edges": edges,
+    }
 
 
 def _cooldown_policy_report(
-    decisions: list[dict[str, object]], loss_streak_wait_events: list[dict[str, object]] | None = None,
-    recovery_probe_events: list[dict[str, object]] | None = None, weak_regime_events: list[dict[str, object]] | None = None,
+    decisions: list[dict[str, object]],
+    loss_streak_wait_events: list[dict[str, object]] | None = None,
+    recovery_probe_events: list[dict[str, object]] | None = None,
+    weak_regime_events: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     durations = [int(item["cooldown_candles"]) for item in decisions]
-    adjusted = sum(int((item.get("shadow_evidence", {}) or {}).get("adjustment", 0) or 0) != 0 for item in decisions)
+    adjusted = sum(
+        int((item.get("shadow_evidence", {}) or {}).get("adjustment", 0) or 0) != 0
+        for item in decisions
+    )
     waits = loss_streak_wait_events or []
     probes = recovery_probe_events or []
     regime_events = weak_regime_events or []
     return {
         "protocol": "finite loss cooldown + finite global/context streak wait + reduced-risk recovery probe; prior closed shadow evidence only",
-        "loss_events": len(decisions), "average_cooldown_candles": round(sum(durations) / len(durations), 3) if durations else 0.0,
-        "shadow_adjusted_events": adjusted, "decisions": decisions[-100:],
-        "loss_streak_wait_events": len(waits), "loss_streak_wait_decisions": waits[-100:],
-        "recovery_probe_trades": sum(item.get("event") in {"probe_win", "probe_loss"} for item in probes),
+        "loss_events": len(decisions),
+        "average_cooldown_candles": round(sum(durations) / len(durations), 3)
+        if durations
+        else 0.0,
+        "shadow_adjusted_events": adjusted,
+        "decisions": decisions[-100:],
+        "loss_streak_wait_events": len(waits),
+        "loss_streak_wait_decisions": waits[-100:],
+        "recovery_probe_trades": sum(
+            item.get("event") in {"probe_win", "probe_loss"} for item in probes
+        ),
         "recovery_probe_wins": sum(item.get("event") == "probe_win" for item in probes),
-        "recovery_probe_losses": sum(item.get("event") == "probe_loss" for item in probes),
+        "recovery_probe_losses": sum(
+            item.get("event") == "probe_loss" for item in probes
+        ),
         "recovery_probe_events": probes[-100:],
-        "weak_regime_wait_events": sum(item.get("event") == "weak_regime_wait_started" for item in regime_events),
-        "weak_regime_probe_wins": sum(item.get("event") == "probe_win" for item in regime_events),
-        "weak_regime_probe_losses": sum(item.get("event") == "probe_loss" for item in regime_events),
+        "weak_regime_wait_events": sum(
+            item.get("event") == "weak_regime_wait_started" for item in regime_events
+        ),
+        "weak_regime_probe_wins": sum(
+            item.get("event") == "probe_win" for item in regime_events
+        ),
+        "weak_regime_probe_losses": sum(
+            item.get("event") == "probe_loss" for item in regime_events
+        ),
         "weak_regime_events": regime_events[-100:],
     }
 
 
 def _window_survival(
-    df: pd.DataFrame, trades: list[SimpleTrade], opportunities: Counter[str], accepted: Counter[str],
+    df: pd.DataFrame,
+    trades: list[SimpleTrade],
+    opportunities: Counter[str],
+    accepted: Counter[str],
 ) -> dict[str, object]:
     windows: list[dict[str, object]] = []
     start_month = _utc_month(df["time"].min())
@@ -3736,21 +5933,33 @@ def _window_survival(
             status = "positive"
         else:
             status = "edge_failure"
-        windows.append({
-            "month": month, "opportunities": opportunity_count, "accepted_entries": int(accepted.get(month, 0)),
-            "trades": len(subset), "profit_factor": pf, "net_profit_percent": round(net, 4),
-            "status": status, "catastrophic": bool(opportunity_count and net <= -5.0),
-        })
+        windows.append(
+            {
+                "month": month,
+                "opportunities": opportunity_count,
+                "accepted_entries": int(accepted.get(month, 0)),
+                "trades": len(subset),
+                "profit_factor": pf,
+                "net_profit_percent": round(net, 4),
+                "status": status,
+                "catastrophic": bool(opportunity_count and net <= -5.0),
+            }
+        )
     return {
         "protocol": "calendar windows; activity absence is distinct from edge failure",
-        "windows": windows, "positive_windows": sum(item["status"] == "positive" for item in windows),
+        "windows": windows,
+        "positive_windows": sum(item["status"] == "positive" for item in windows),
         "edge_failures": sum(item["status"] == "edge_failure" for item in windows),
-        "activity_absence": sum(item["status"] == "activity_absence" for item in windows),
+        "activity_absence": sum(
+            item["status"] == "activity_absence" for item in windows
+        ),
         "catastrophic_windows": sum(bool(item["catastrophic"]) for item in windows),
     }
 
 
-def _opportunity_metrics(net_profit_percent: float, funnel: dict[str, object], survival: dict[str, object]) -> dict[str, object]:
+def _opportunity_metrics(
+    net_profit_percent: float, funnel: dict[str, object], survival: dict[str, object]
+) -> dict[str, object]:
     valid = int(funnel.get("flat_signal_opportunities", 0))
     accepted = int(funnel.get("accepted_entries", 0))
     coverage = accepted / valid if valid else 0.0
@@ -3761,11 +5970,15 @@ def _opportunity_metrics(net_profit_percent: float, funnel: dict[str, object], s
         "edge_density": round(net_profit_percent / valid, 6) if valid else 0.0,
         "rolling_consistency": int(survival.get("positive_windows", 0)),
         "activity_absence_windows": int(survival.get("activity_absence", 0)),
-        "classification": "coverage_preserving" if coverage >= .30 and int(survival.get("positive_windows", 0)) >= 3 else "insufficient_coverage_evidence",
+        "classification": "coverage_preserving"
+        if coverage >= 0.30 and int(survival.get("positive_windows", 0)) >= 3
+        else "insufficient_coverage_evidence",
     }
 
 
-def _regime_ensemble_report(df: pd.DataFrame, payload: SimpleBacktestRequest) -> dict[str, object]:
+def _regime_ensemble_report(
+    df: pd.DataFrame, payload: SimpleBacktestRequest
+) -> dict[str, object]:
     if "selected_specialist" not in df.columns:
         return {"enabled": False}
     selected = df["selected_specialist"].value_counts().to_dict()
@@ -3773,10 +5986,16 @@ def _regime_ensemble_report(df: pd.DataFrame, payload: SimpleBacktestRequest) ->
         "enabled": True,
         "architecture": "frozen_regime_specialist_ensemble_v2",
         "router_policy": {
-            "high_volatility": "breakout", "trend_up": "trend_up", "trend_down": "trend_down",
-            "range": "range", "other": "session", "maximum_signals_per_candle": 1,
+            "high_volatility": "breakout",
+            "trend_up": "trend_up",
+            "trend_down": "trend_down",
+            "range": "range",
+            "other": "session",
+            "maximum_signals_per_candle": 1,
         },
-        "specialist_candle_ownership": {str(key): int(value) for key, value in selected.items()},
+        "specialist_candle_ownership": {
+            str(key): int(value) for key, value in selected.items()
+        },
         "selection_timing": "fixed before replay; no post-result specialist selection",
     }
 
@@ -3785,7 +6004,11 @@ def _entry_funnel_report(funnel: Counter[str]) -> dict[str, object]:
     raw = int(funnel["raw_strategy_signals"])
     flat = int(funnel["flat_signal_opportunities"])
     accepted = int(funnel["accepted_entries"])
-    rejected = {key.removeprefix("rejected_"): int(value) for key, value in funnel.items() if key.startswith("rejected_")}
+    rejected = {
+        key.removeprefix("rejected_"): int(value)
+        for key, value in funnel.items()
+        if key.startswith("rejected_")
+    }
     return {
         "raw_strategy_signals": raw,
         "flat_signal_opportunities": flat,
@@ -3797,7 +6020,9 @@ def _entry_funnel_report(funnel: Counter[str]) -> dict[str, object]:
     }
 
 
-def _entry_contract_funnel_report(df: pd.DataFrame, warmup_rows: int = 200) -> dict[str, object]:
+def _entry_contract_funnel_report(
+    df: pd.DataFrame, warmup_rows: int = 200
+) -> dict[str, object]:
     """Retain ordered WAIT decisions as truthful learning evidence.
 
     Strategy predicates are deliberately reported separately.  A trigger can
@@ -3805,10 +6030,17 @@ def _entry_contract_funnel_report(df: pd.DataFrame, warmup_rows: int = 200) -> d
     predicate counts are not a conversion funnel and must not drive repairs.
     """
     required = {
-        "entry_contract_protocol", "entry_contract_status", "entry_context_valid",
-        "entry_location_valid", "entry_setup_detected", "entry_confirmation_valid",
-        "entry_trigger_valid", "entry_invalidation_valid", "entry_reward_space_valid",
-        "entry_chase_valid", "entry_event_valid",
+        "entry_contract_protocol",
+        "entry_contract_status",
+        "entry_context_valid",
+        "entry_location_valid",
+        "entry_setup_detected",
+        "entry_confirmation_valid",
+        "entry_trigger_valid",
+        "entry_invalidation_valid",
+        "entry_reward_space_valid",
+        "entry_chase_valid",
+        "entry_event_valid",
     }
     if not required.issubset(df.columns):
         return {
@@ -3869,7 +6101,11 @@ def _entry_contract_funnel_report(df: pd.DataFrame, warmup_rows: int = 200) -> d
     ready = int(scope["entry_contract_status"].eq("entry_ready").sum())
     statuses = {
         str(key): int(value)
-        for key, value in scope["entry_contract_status"].fillna("unknown").value_counts().sort_index().items()
+        for key, value in scope["entry_contract_status"]
+        .fillna("unknown")
+        .value_counts()
+        .sort_index()
+        .items()
     }
     setup_scope = scope.loc[ordered_masks["setup"]]
     triggered_scope = scope.loc[ordered_masks["trigger"]]
@@ -3877,7 +6113,11 @@ def _entry_contract_funnel_report(df: pd.DataFrame, warmup_rows: int = 200) -> d
     def average(frame: pd.DataFrame, column: str) -> float | None:
         if column not in frame:
             return None
-        values = pd.to_numeric(frame[column], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+        values = (
+            pd.to_numeric(frame[column], errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+        )
         return round(float(values.mean()), 6) if not values.empty else None
 
     def optional_count(column: str) -> int | None:
@@ -3903,10 +6143,26 @@ def _entry_contract_funnel_report(df: pd.DataFrame, warmup_rows: int = 200) -> d
         "protocol": "entry_contract_funnel_v2",
         "status": "observed",
         "count_semantics": "ordered_cumulative_pipeline",
-        "entry_contract_protocol": str(scope["entry_contract_protocol"].dropna().iloc[-1]) if not scope.empty else None,
-        "model": str(scope.get("entry_contract_model", pd.Series("unknown", index=scope.index)).iloc[-1]) if not scope.empty else None,
-        "mode": str(scope.get("entry_contract_mode", pd.Series("unknown", index=scope.index)).iloc[-1]) if not scope.empty else None,
-        "evaluated_candles": int(len(scope)),
+        "entry_contract_protocol": str(
+            scope["entry_contract_protocol"].dropna().iloc[-1]
+        )
+        if not scope.empty
+        else None,
+        "model": str(
+            scope.get(
+                "entry_contract_model", pd.Series("unknown", index=scope.index)
+            ).iloc[-1]
+        )
+        if not scope.empty
+        else None,
+        "mode": str(
+            scope.get(
+                "entry_contract_mode", pd.Series("unknown", index=scope.index)
+            ).iloc[-1]
+        )
+        if not scope.empty
+        else None,
+        "evaluated_candles": len(scope),
         "stage_counts": {
             "context": context,
             "location": location,
@@ -3921,37 +6177,65 @@ def _entry_contract_funnel_report(df: pd.DataFrame, warmup_rows: int = 200) -> d
         },
         "predicate_counts": predicate_counts,
         "conversion": {
-            "setup_to_confirmation_percent": round(confirmation / setup * 100, 2) if setup else 0.0,
-            "confirmation_to_trigger_percent": round(trigger / confirmation * 100, 2) if confirmation else 0.0,
-            "trigger_to_entry_percent": round(ready / trigger * 100, 2) if trigger else 0.0,
+            "setup_to_confirmation_percent": round(confirmation / setup * 100, 2)
+            if setup
+            else 0.0,
+            "confirmation_to_trigger_percent": round(trigger / confirmation * 100, 2)
+            if confirmation
+            else 0.0,
+            "trigger_to_entry_percent": round(ready / trigger * 100, 2)
+            if trigger
+            else 0.0,
             "setup_to_entry_percent": round(ready / setup * 100, 2) if setup else 0.0,
         },
         "trigger_topology": {
             "setup_aligned_confirmation_families": {
                 "price_reaction": optional_count("entry_reaction_family_valid"),
                 "market_structure": optional_count("entry_structure_family_valid"),
-                "volatility_participation": optional_count("entry_participation_family_valid"),
+                "volatility_participation": optional_count(
+                    "entry_participation_family_valid"
+                ),
             },
             "counterfactual_mode_counts": {
                 "aggressive": aggressive,
                 "balanced": balanced,
                 "conservative": conservative,
             },
-            "selected_mode": str(scope.get("entry_contract_mode", pd.Series("unknown", index=scope.index)).iloc[-1]) if not scope.empty else None,
+            "selected_mode": str(
+                scope.get(
+                    "entry_contract_mode", pd.Series("unknown", index=scope.index)
+                ).iloc[-1]
+            )
+            if not scope.empty
+            else None,
             "diagnosis": trigger_diagnosis,
             "performance_credit": False,
         },
-        "no_trade_reasons": {key: value for key, value in statuses.items() if key != "entry_ready"},
+        "no_trade_reasons": {
+            key: value for key, value in statuses.items() if key != "entry_ready"
+        },
         "grade_distribution": {
             str(key): int(value)
-            for key, value in setup_scope.get("entry_grade", pd.Series(dtype="object")).fillna("SKIP").value_counts().sort_index().items()
+            for key, value in setup_scope.get("entry_grade", pd.Series(dtype="object"))
+            .fillna("SKIP")
+            .value_counts()
+            .sort_index()
+            .items()
         },
         "confirmation_cost": {
-            "average_independent_count": average(setup_scope, "entry_independent_confirmation_count"),
+            "average_independent_count": average(
+                setup_scope, "entry_independent_confirmation_count"
+            ),
             "average_raw_count": average(setup_scope, "entry_raw_confirmation_count"),
-            "average_redundancy_penalty": average(setup_scope, "entry_redundancy_penalty"),
-            "average_reward_space_r_after_trigger": average(triggered_scope, "entry_reward_space_r"),
-            "average_chase_distance_atr_after_trigger": average(triggered_scope, "entry_chase_distance_atr"),
+            "average_redundancy_penalty": average(
+                setup_scope, "entry_redundancy_penalty"
+            ),
+            "average_reward_space_r_after_trigger": average(
+                triggered_scope, "entry_reward_space_r"
+            ),
+            "average_chase_distance_atr_after_trigger": average(
+                triggered_scope, "entry_chase_distance_atr"
+            ),
             "rule": "Confirmation is valuable only when its marginal OOS expectancy exceeds lost reward-space and missed-opportunity cost.",
         },
         "promotion_evidence": False,
@@ -3972,10 +6256,16 @@ def _edge_observability_report(
     registered attribution arms.
     """
     observed = funnel.get("status") == "observed"
-    counts = funnel.get("stage_counts", {}) if isinstance(funnel.get("stage_counts"), dict) else {}
+    counts = (
+        funnel.get("stage_counts", {})
+        if isinstance(funnel.get("stage_counts"), dict)
+        else {}
+    )
     trade_count = len(trades)
     ledger_hash = _trade_ledger_hash(trades)
-    excursions = management.get("observed_trade_count", 0) if isinstance(management, dict) else 0
+    excursions = (
+        management.get("observed_trade_count", 0) if isinstance(management, dict) else 0
+    )
 
     def stage(name: str) -> dict[str, object]:
         return {"observed": observed, "count": int(counts.get(name, 0) or 0)}
@@ -4038,7 +6328,8 @@ def _update_position_excursions(position: dict[str, object], candle: pd.Series) 
 
 def _management_evidence_report(trades: list[SimpleTrade]) -> dict[str, object]:
     observed = [
-        trade for trade in trades
+        trade
+        for trade in trades
         if trade.initial_risk_distance is not None
         and trade.initial_risk_distance > 0
         and trade.mfe_r is not None
@@ -4046,7 +6337,8 @@ def _management_evidence_report(trades: list[SimpleTrade]) -> dict[str, object]:
         and trade.realized_r_multiple is not None
     ]
     captures = [
-        float(trade.mfe_capture_ratio) for trade in observed
+        float(trade.mfe_capture_ratio)
+        for trade in observed
         if trade.mfe_capture_ratio is not None
     ]
     minimum_trades = 8
@@ -4058,30 +6350,48 @@ def _management_evidence_report(trades: list[SimpleTrade]) -> dict[str, object]:
 
     return {
         "protocol": "replay_management_path_evidence_v1",
-        "status": "powered" if powered else ("underpowered" if observed else "missing_evidence"),
+        "status": "powered"
+        if powered
+        else ("underpowered" if observed else "missing_evidence"),
         "observed_trades": len(observed),
         "measured_winner_paths": len(captures),
         "minimum_trades": minimum_trades,
         "minimum_winner_paths": minimum_winner_paths,
         "powered": powered,
-        "average_mfe_r": average([float(trade.mfe_r) for trade in observed if trade.mfe_r is not None]),
-        "average_mae_r": average([float(trade.mae_r) for trade in observed if trade.mae_r is not None]),
-        "average_mfe_r_before_exit_bar": average([
-            float(trade.mfe_r_before_exit_bar) for trade in observed
-            if trade.mfe_r_before_exit_bar is not None
-        ]),
-        "average_mae_r_before_exit_bar": average([
-            float(trade.mae_r_before_exit_bar) for trade in observed
-            if trade.mae_r_before_exit_bar is not None
-        ]),
-        "average_realized_r": average([
-            float(trade.realized_r_multiple) for trade in observed
-            if trade.realized_r_multiple is not None
-        ]),
-        "average_initial_risk_percent": average([
-            float(trade.initial_risk_percent) for trade in observed
-            if trade.initial_risk_percent is not None
-        ]),
+        "average_mfe_r": average(
+            [float(trade.mfe_r) for trade in observed if trade.mfe_r is not None]
+        ),
+        "average_mae_r": average(
+            [float(trade.mae_r) for trade in observed if trade.mae_r is not None]
+        ),
+        "average_mfe_r_before_exit_bar": average(
+            [
+                float(trade.mfe_r_before_exit_bar)
+                for trade in observed
+                if trade.mfe_r_before_exit_bar is not None
+            ]
+        ),
+        "average_mae_r_before_exit_bar": average(
+            [
+                float(trade.mae_r_before_exit_bar)
+                for trade in observed
+                if trade.mae_r_before_exit_bar is not None
+            ]
+        ),
+        "average_realized_r": average(
+            [
+                float(trade.realized_r_multiple)
+                for trade in observed
+                if trade.realized_r_multiple is not None
+            ]
+        ),
+        "average_initial_risk_percent": average(
+            [
+                float(trade.initial_risk_percent)
+                for trade in observed
+                if trade.initial_risk_percent is not None
+            ]
+        ),
         "target_capture_ratio": average(captures),
         # Stop quality and premature-stop rate need a same-entry, post-exit
         # counterfactual. Missing is truthful; zero would fabricate quality.
@@ -4111,44 +6421,92 @@ def _edge_formation_academy_diagnostic(
     explicitly denied to runtime and promotion code.
     """
     counts = funnel.get("stage_counts", {}) if isinstance(funnel, dict) else {}
-    observed = [trade for trade in trades if trade.mfe_r_before_exit_bar is not None and trade.realized_r_multiple is not None]
-    upper = round(sum(max(0.0, float(t.mfe_r_before_exit_bar)) for t in observed) / len(observed), 6) if observed else None
-    realized = round(sum(float(t.realized_r_multiple) for t in observed) / len(observed), 6) if observed else None
-    loss = round(max(0.0, upper - realized), 6) if upper is not None and realized is not None else None
+    observed = [
+        trade
+        for trade in trades
+        if trade.mfe_r_before_exit_bar is not None
+        and trade.realized_r_multiple is not None
+    ]
+    upper = (
+        round(
+            sum(max(0.0, float(t.mfe_r_before_exit_bar)) for t in observed)
+            / len(observed),
+            6,
+        )
+        if observed
+        else None
+    )
+    realized = (
+        round(sum(float(t.realized_r_multiple) for t in observed) / len(observed), 6)
+        if observed
+        else None
+    )
+    loss = (
+        round(max(0.0, upper - realized), 6)
+        if upper is not None and realized is not None
+        else None
+    )
     envelope = _academy_setup_oracle_envelope(df, payload)
     return {
         "protocol": "edge_formation_academy_diagnostic_v2",
         "status": envelope["status"],
-        "diagnostic_only": True, "runtime_signal": False, "promotion_evidence": False,
+        "diagnostic_only": True,
+        "runtime_signal": False,
+        "promotion_evidence": False,
         "full_oracle_gap_available": envelope["status"] == "full_oracle_gap_observed",
         "oracle_contract": envelope["contract"],
-        "entry_contract_counts": {key: int(counts.get(key, 0) or 0) for key in ("setup", "confirmation", "trigger", "entry_ready")},
+        "entry_contract_counts": {
+            key: int(counts.get(key, 0) or 0)
+            for key in ("setup", "confirmation", "trigger", "entry_ready")
+        },
         "oracle_opportunity_edge_r": envelope["oracle_opportunity_edge_r"],
         "entry_envelope_after_cost_r": envelope.get("entry_envelope_after_cost_r"),
         "oracle_minimum_unavoidable_mae_r": envelope["minimum_unavoidable_mae_r"],
         "oracle_observed_setup_events": envelope["observed_setup_events"],
         "oracle_minimum_events": envelope["minimum_events"],
-        "observed_trade_path_upper_bound_r": upper, "realized_after_cost_r": realized, "management_capture_loss_r": loss,
-        "path_evidence_status": management.get("status") if isinstance(management, dict) else "missing_evidence",
+        "observed_trade_path_upper_bound_r": upper,
+        "realized_after_cost_r": realized,
+        "management_capture_loss_r": loss,
+        "path_evidence_status": management.get("status")
+        if isinstance(management, dict)
+        else "missing_evidence",
         "path_bound_rule": "pre-exit-bar MFE only; exit-bar ordering remains unknown",
     }
 
 
-def _academy_setup_oracle_envelope(df: pd.DataFrame, payload: SimpleBacktestRequest) -> dict[str, object]:
+def _academy_setup_oracle_envelope(
+    df: pd.DataFrame, payload: SimpleBacktestRequest
+) -> dict[str, object]:
     """Evaluate a frozen-horizon, setup-known entry envelope after replay."""
-    required = {"open", "high", "low", "entry_setup_detected", "entry_contract_direction", "entry_invalidation_reference_price"}
+    required = {
+        "open",
+        "high",
+        "low",
+        "entry_setup_detected",
+        "entry_contract_direction",
+        "entry_invalidation_reference_price",
+    }
     contract = {
         "entry": "next_candle_open_with_normal_execution_costs",
         "stop": "setup_time_invalidation_reference_with_normal_execution_costs",
         "exit": "best_future_extreme_inside_frozen_horizon_with_normal_execution_costs",
-        "horizon_bars": 24, "runtime_forbidden": True, "promotion_evidence": False,
+        "horizon_bars": 24,
+        "runtime_forbidden": True,
+        "promotion_evidence": False,
     }
     if not required.issubset(df.columns):
-        return {"status": "oracle_unavailable_missing_entry_contract", "oracle_opportunity_edge_r": None,
-                "minimum_unavoidable_mae_r": None, "observed_setup_events": 0, "minimum_events": 8, "contract": contract}
+        return {
+            "status": "oracle_unavailable_missing_entry_contract",
+            "oracle_opportunity_edge_r": None,
+            "minimum_unavoidable_mae_r": None,
+            "observed_setup_events": 0,
+            "minimum_events": 8,
+            "contract": contract,
+        }
     horizon = int(payload.parameters.get("academy_oracle_horizon_bars", 24) or 24)
     minimum = int(payload.parameters.get("academy_oracle_minimum_setup_events", 8) or 8)
-    horizon = max(1, min(240, horizon)); contract["horizon_bars"] = horizon
+    horizon = max(1, min(240, horizon))
+    contract["horizon_bars"] = horizon
     values: list[tuple[float, float, bool]] = []
     setup = df["entry_setup_detected"].fillna(False).astype(bool)
     for position in np.flatnonzero(setup.to_numpy()):
@@ -4156,44 +6514,88 @@ def _academy_setup_oracle_envelope(df: pd.DataFrame, payload: SimpleBacktestRequ
             continue
         row = df.iloc[position]
         direction = str(row.get("entry_contract_direction", "WAIT")).upper()
-        stop = pd.to_numeric(pd.Series([row.get("entry_invalidation_reference_price")]), errors="coerce").iloc[0]
+        stop = pd.to_numeric(
+            pd.Series([row.get("entry_invalidation_reference_price")]), errors="coerce"
+        ).iloc[0]
         if direction not in {"BUY", "SELL"} or not np.isfinite(stop):
             continue
         entry_market = float(df.iloc[position + 1]["open"])
         entry = _entry_price(entry_market, direction, payload)
         stop_execution = _exit_price(float(stop), direction, payload)
-        risk = (entry - stop_execution) if direction == "BUY" else (stop_execution - entry)
+        risk = (
+            (entry - stop_execution) if direction == "BUY" else (stop_execution - entry)
+        )
         commission = entry * float(payload.execution.commission_percent) / 100
         risk += commission
         if not np.isfinite(risk) or risk <= 0:
             continue
-        future = df.iloc[position + 1:position + horizon + 1]
-        best_market = float(future["high"].max()) if direction == "BUY" else float(future["low"].min())
-        worst_market = float(future["low"].min()) if direction == "BUY" else float(future["high"].max())
+        future = df.iloc[position + 1 : position + horizon + 1]
+        best_market = (
+            float(future["high"].max())
+            if direction == "BUY"
+            else float(future["low"].min())
+        )
+        worst_market = (
+            float(future["low"].min())
+            if direction == "BUY"
+            else float(future["high"].max())
+        )
         best_exit = _exit_price(best_market, direction, payload)
         favorable = (best_exit - entry) if direction == "BUY" else (entry - best_exit)
-        adverse = (entry - worst_market) if direction == "BUY" else (worst_market - entry)
-        values.append((max(0.0, favorable - commission) / risk, max(0.0, adverse + commission) / risk,
-                       bool(row.get("entry_contract_status") == "entry_ready")))
+        adverse = (
+            (entry - worst_market) if direction == "BUY" else (worst_market - entry)
+        )
+        values.append(
+            (
+                max(0.0, favorable - commission) / risk,
+                max(0.0, adverse + commission) / risk,
+                bool(row.get("entry_contract_status") == "entry_ready"),
+            )
+        )
     if len(values) < minimum:
-        return {"status": "oracle_underpowered_setup_envelope", "oracle_opportunity_edge_r": None,
-                "minimum_unavoidable_mae_r": None, "observed_setup_events": len(values), "minimum_events": minimum, "contract": contract}
-    return {"status": "full_oracle_gap_observed",
-            "oracle_opportunity_edge_r": round(float(np.mean([value[0] for value in values])), 6),
-            "entry_envelope_after_cost_r": (
-                round(float(np.mean([value[0] for value in values if value[2]])), 6)
-                if any(value[2] for value in values) else None
-            ),
-            "minimum_unavoidable_mae_r": round(float(np.mean([value[1] for value in values])), 6),
-            "observed_setup_events": len(values), "minimum_events": minimum, "contract": contract}
+        return {
+            "status": "oracle_underpowered_setup_envelope",
+            "oracle_opportunity_edge_r": None,
+            "minimum_unavoidable_mae_r": None,
+            "observed_setup_events": len(values),
+            "minimum_events": minimum,
+            "contract": contract,
+        }
+    return {
+        "status": "full_oracle_gap_observed",
+        "oracle_opportunity_edge_r": round(
+            float(np.mean([value[0] for value in values])), 6
+        ),
+        "entry_envelope_after_cost_r": (
+            round(float(np.mean([value[0] for value in values if value[2]])), 6)
+            if any(value[2] for value in values)
+            else None
+        ),
+        "minimum_unavoidable_mae_r": round(
+            float(np.mean([value[1] for value in values])), 6
+        ),
+        "observed_setup_events": len(values),
+        "minimum_events": minimum,
+        "contract": contract,
+    }
 
 
-def _diagnostic_telemetry(trades: list[SimpleTrade], funnel: dict[str, object], attribution: dict[str, object]) -> dict[str, object]:
+def _diagnostic_telemetry(
+    trades: list[SimpleTrade], funnel: dict[str, object], attribution: dict[str, object]
+) -> dict[str, object]:
     holding_hours = [
-        max(0.0, (pd.Timestamp(trade.exit_time) - pd.Timestamp(trade.entry_time)).total_seconds() / 3600)
+        max(
+            0.0,
+            (
+                pd.Timestamp(trade.exit_time) - pd.Timestamp(trade.entry_time)
+            ).total_seconds()
+            / 3600,
+        )
         for trade in trades
     ]
-    rejected = funnel.get("rejected", {}) if isinstance(funnel.get("rejected"), dict) else {}
+    rejected = (
+        funnel.get("rejected", {}) if isinstance(funnel.get("rejected"), dict) else {}
+    )
     return {
         "signal_count": int(funnel.get("raw_strategy_signals", 0)),
         "trade_count": len(trades),
@@ -4203,13 +6605,21 @@ def _diagnostic_telemetry(trades: list[SimpleTrade], funnel: dict[str, object], 
         # no such filter; a missing value is never mistaken for hidden alpha.
         "news_veto_count": int(rejected.get("news_veto", 0)),
         "risk_veto_count": int(rejected.get("risk", 0) + rejected.get("risk_veto", 0)),
-        "average_holding_time_hours": round(sum(holding_hours) / len(holding_hours), 3) if holding_hours else 0.0,
+        "average_holding_time_hours": round(sum(holding_hours) / len(holding_hours), 3)
+        if holding_hours
+        else 0.0,
         "exit_distribution": attribution.get("by_exit_reason", {}),
-        "signal_coverage": round(float(funnel.get("accepted_entries", 0)) / max(1, int(funnel.get("flat_signal_opportunities", 0))), 4),
+        "signal_coverage": round(
+            float(funnel.get("accepted_entries", 0))
+            / max(1, int(funnel.get("flat_signal_opportunities", 0))),
+            4,
+        ),
     }
 
 
-def _take_partial_profit(position: dict[str, object], candle: pd.Series, payload: SimpleBacktestRequest) -> bool:
+def _take_partial_profit(
+    position: dict[str, object], candle: pd.Series, payload: SimpleBacktestRequest
+) -> bool:
     fraction = float(position.get("partial_fraction", 0) or 0)
     if not fraction or bool(position.get("partial_closed")):
         return False
@@ -4218,19 +6628,29 @@ def _take_partial_profit(position: dict[str, object], candle: pd.Series, payload
         return False
     entry = float(position["market_entry_price"])
     distance = atr * float(payload.parameters.get("partial_target_atr_multiplier", 1.0))
-    target = entry + distance if str(position["direction"]) == "BUY" else entry - distance
-    hit = float(candle["high"]) >= target if str(position["direction"]) == "BUY" else float(candle["low"]) <= target
+    target = (
+        entry + distance if str(position["direction"]) == "BUY" else entry - distance
+    )
+    hit = (
+        float(candle["high"]) >= target
+        if str(position["direction"]) == "BUY"
+        else float(candle["low"]) <= target
+    )
     if not hit:
         return False
     position["partial_closed"] = True
-    position["partial_exit_price"] = _exit_price(target, str(position["direction"]), payload)
+    position["partial_exit_price"] = _exit_price(
+        target, str(position["direction"]), payload
+    )
     return True
 
 
 def _profit_factor_for(values: list[float]) -> float:
     gross_win = sum(value for value in values if value > 0)
     gross_loss = abs(sum(value for value in values if value <= 0))
-    return round(gross_win / gross_loss, 3) if gross_loss else (99.0 if gross_win else 0.0)
+    return (
+        round(gross_win / gross_loss, 3) if gross_loss else (99.0 if gross_win else 0.0)
+    )
 
 
 def _pf_attribution(
@@ -4241,11 +6661,21 @@ def _pf_attribution(
     """Full-ledger diagnostics; the response's displayed ledger is capped."""
     if not trades:
         return {
-            "summary": {"gross_pf": 0.0, "net_pf": 0.0, "cost_percent": 0.0, "cost_to_gross_profit_percent": 0.0},
-            "by_direction": {}, "by_session": {}, "by_regime": {},
-            "by_volatility": {}, "by_regime_volatility": {},
-            "by_regime_volatility_direction": {}, "by_regime_volatility_session": {},
-            "by_temporal_chunk": {}, "by_exit_reason": {},
+            "summary": {
+                "gross_pf": 0.0,
+                "net_pf": 0.0,
+                "cost_percent": 0.0,
+                "cost_to_gross_profit_percent": 0.0,
+            },
+            "by_direction": {},
+            "by_session": {},
+            "by_regime": {},
+            "by_volatility": {},
+            "by_regime_volatility": {},
+            "by_regime_volatility_direction": {},
+            "by_regime_volatility_session": {},
+            "by_temporal_chunk": {},
+            "by_exit_reason": {},
         }
 
     def breakdown(items: list[SimpleTrade]) -> dict[str, float | int]:
@@ -4260,22 +6690,41 @@ def _pf_attribution(
         for value in values:
             equity += value
             peak = max(peak, equity)
-            max_drawdown = max(max_drawdown, ((peak - equity) / peak) * 100 if peak > 0 else 0.0)
+            max_drawdown = max(
+                max_drawdown, ((peak - equity) / peak) * 100 if peak > 0 else 0.0
+            )
             consecutive_losses = consecutive_losses + 1 if value <= 0 else 0
             max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
         return {
-            "trades": len(items), "gross_pf": _profit_factor_for([trade.gross_profit_percent for trade in items]),
+            "trades": len(items),
+            "gross_pf": _profit_factor_for(
+                [trade.gross_profit_percent for trade in items]
+            ),
             "net_pf": _profit_factor_for([trade.profit_percent for trade in items]),
-            "winrate": round(sum(trade.profit_percent > 0 for trade in items) / len(items) * 100, 2),
-            "average_win": round(sum(trade.profit_percent for trade in items if trade.profit_percent > 0) / max(1, sum(trade.profit_percent > 0 for trade in items)), 4),
-            "average_loss": round(sum(trade.profit_percent for trade in items if trade.profit_percent <= 0) / max(1, sum(trade.profit_percent <= 0 for trade in items)), 4),
+            "winrate": round(
+                sum(trade.profit_percent > 0 for trade in items) / len(items) * 100, 2
+            ),
+            "average_win": round(
+                sum(trade.profit_percent for trade in items if trade.profit_percent > 0)
+                / max(1, sum(trade.profit_percent > 0 for trade in items)),
+                4,
+            ),
+            "average_loss": round(
+                sum(
+                    trade.profit_percent for trade in items if trade.profit_percent <= 0
+                )
+                / max(1, sum(trade.profit_percent <= 0 for trade in items)),
+                4,
+            ),
             "wins": sum(value > 0 for value in values),
             "losses": sum(value <= 0 for value in values),
             "net_profit_percent": round(sum(values), 6),
             "max_drawdown_percent": round(max_drawdown, 4),
             "max_consecutive_losses": max_consecutive_losses,
             "cost_percent": round(costs, 5),
-            "cost_to_gross_profit_percent": round(costs / gross_positive * 100, 2) if gross_positive else 0.0,
+            "cost_to_gross_profit_percent": round(costs / gross_positive * 100, 2)
+            if gross_positive
+            else 0.0,
         }
 
     def grouped(key) -> dict[str, dict[str, float | int]]:
@@ -4295,7 +6744,9 @@ def _pf_attribution(
             for context, months in values.items()
         }
 
-    def grouped_context_dimension(dimension) -> dict[str, dict[str, dict[str, float | int]]]:
+    def grouped_context_dimension(
+        dimension,
+    ) -> dict[str, dict[str, dict[str, float | int]]]:
         """Expose an observable micro-context without making it a selector."""
         values: dict[str, dict[str, list[SimpleTrade]]] = {}
         for trade in trades:
@@ -4303,7 +6754,10 @@ def _pf_attribution(
             dimension_value = str(dimension(trade))
             values.setdefault(context, {}).setdefault(dimension_value, []).append(trade)
         return {
-            context: {dimension_value: breakdown(items) for dimension_value, items in dimensions.items()}
+            context: {
+                dimension_value: breakdown(items)
+                for dimension_value, items in dimensions.items()
+            }
             for context, dimensions in values.items()
         }
 
@@ -4314,9 +6768,11 @@ def _pf_attribution(
     normalized_times = None
     if df is not None and not df.empty and "time" in df.columns:
         try:
-            normalized_times = pd.to_datetime(
-                df["time"], errors="coerce", utc=True
-            ).dropna().reset_index(drop=True)
+            normalized_times = (
+                pd.to_datetime(df["time"], errors="coerce", utc=True)
+                .dropna()
+                .reset_index(drop=True)
+            )
         except (TypeError, ValueError):
             normalized_times = None
 
@@ -4334,7 +6790,11 @@ def _pf_attribution(
         try:
             if len(normalized_times) < 3:
                 return "unknown"
-            position = int(normalized_times.searchsorted(pd.Timestamp(trade.entry_time), side="left"))
+            position = int(
+                normalized_times.searchsorted(
+                    pd.Timestamp(trade.entry_time), side="left"
+                )
+            )
             chunk_count = max(1, int(temporal_chunk_count))
             chunk_size = max(1, len(normalized_times) // chunk_count)
             return f"chunk_{min(chunk_count, position // chunk_size + 1)}"
@@ -4344,13 +6804,15 @@ def _pf_attribution(
     return {
         "summary": breakdown(trades),
         "by_direction": grouped(lambda trade: trade.direction),
-        "by_session": grouped(lambda trade: pd.Timestamp(trade.entry_time).hour),
+        "by_session": grouped(lambda trade: _edge_market_session(trade.entry_time)),
         "by_regime": grouped(lambda trade: trade.market_regime),
         "by_volatility": grouped(lambda trade: trade.volatility_regime),
         # Calendar evidence must be derived from the one chronological trade
         # ledger. Re-running each month from an empty indicator state creates
         # artificial boundary signals and is not a valid survival test.
-        "by_month": grouped(lambda trade: pd.Timestamp(trade.entry_time).strftime("%Y-%m")),
+        "by_month": grouped(
+            lambda trade: pd.Timestamp(trade.entry_time).strftime("%Y-%m")
+        ),
         # Diagnostic only: this intersection tells the council which market
         # context failed inside a weak month. Month labels never enter the
         # strategy/router contract or promotion selector.
@@ -4359,12 +6821,18 @@ def _pf_attribution(
         # global PF. Persisting it makes admission auditable and prevents a
         # strategy that is good in a regime but bad in the declared volatility
         # lane from masquerading as a complementary specialist.
-        "by_regime_volatility": grouped(lambda trade: f"{trade.market_regime}|{trade.volatility_regime}"),
+        "by_regime_volatility": grouped(
+            lambda trade: f"{trade.market_regime}|{trade.volatility_regime}"
+        ),
         # Second-order diagnostics guide the next specialist council. They
         # never lower promotion gates and never turn calendar labels into a
         # routing feature.
-        "by_regime_volatility_direction": grouped_context_dimension(lambda trade: trade.direction),
-        "by_regime_volatility_session": grouped_context_dimension(lambda trade: pd.Timestamp(trade.entry_time).hour),
+        "by_regime_volatility_direction": grouped_context_dimension(
+            lambda trade: trade.direction
+        ),
+        "by_regime_volatility_session": grouped_context_dimension(
+            lambda trade: _edge_market_session(trade.entry_time)
+        ),
         "by_temporal_chunk": grouped(temporal_chunk),
         "by_exit_reason": grouped(lambda trade: trade.exit_reason or "unknown"),
     }
@@ -4380,13 +6848,16 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
     """
     cells: dict[str, list[SimpleTrade]] = defaultdict(list)
     envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
+    dst_envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
     for trade in trades:
         timestamp = pd.Timestamp(trade.entry_time)
         month = timestamp.strftime("%Y-%m")
-        session = str(timestamp.hour)
+        session = _edge_market_session(timestamp)
+        offset_state = _edge_market_session_offset(timestamp)
         envelope = f"{trade.market_regime}|{trade.volatility_regime}|{session}|{trade.direction}"
         cells[f"{envelope}|{month}"].append(trade)
         envelopes[envelope].append(trade)
+        dst_envelopes[f"{envelope}|{offset_state}"].append(trade)
 
     def summary(rows: list[SimpleTrade]) -> dict[str, float | int]:
         values = [float(row.profit_percent) for row in rows]
@@ -4396,38 +6867,60 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
         for value in values:
             equity += value
             peak = max(peak, equity)
-            max_drawdown = max(max_drawdown, ((peak - equity) / peak) * 100 if peak > 0 else 0.0)
+            max_drawdown = max(
+                max_drawdown, ((peak - equity) / peak) * 100 if peak > 0 else 0.0
+            )
         return {
             "trades": len(rows),
             "net_pf": _profit_factor_for(values),
             "net_profit_percent": round(sum(values), 6),
             "max_drawdown_percent": round(max_drawdown, 6),
-            "execution_cost_percent": round(sum(float(row.execution_cost_percent) for row in rows), 6),
-            "winrate": round(100 * sum(value > 0 for value in values) / max(1, len(values)), 2),
+            "execution_cost_percent": round(
+                sum(float(row.execution_cost_percent) for row in rows), 6
+            ),
+            "winrate": round(
+                100 * sum(value > 0 for value in values) / max(1, len(values)), 2
+            ),
         }
 
     cell_rows = {key: summary(rows) for key, rows in cells.items()}
     envelope_rows = {key: summary(rows) for key, rows in envelopes.items()}
+    dst_envelope_rows = {key: summary(rows) for key, rows in dst_envelopes.items()}
     weak = [
-        {"context": key, **row,
-         "regime": key.split("|")[0], "volatility": key.split("|")[1],
-         "session": key.split("|")[2], "direction": key.split("|")[3]}
+        {
+            "context": key,
+            **row,
+            "regime": key.split("|")[0],
+            "volatility": key.split("|")[1],
+            "session": key.split("|")[2],
+            "direction": key.split("|")[3],
+        }
         for key, row in envelope_rows.items()
         if int(row["trades"]) >= 3 and float(row["net_pf"]) < 1.0
     ]
     weak.sort(key=lambda item: (float(item["net_pf"]), -int(item["trades"])))
     return {
         "protocol": "robustness_matrix_v1",
-        "axes": ["regime", "volatility", "session_utc_hour", "direction", "calendar_month"],
+        "axes": [
+            "regime",
+            "volatility",
+            "market_session",
+            "direction",
+            "dst_offset_state",
+            "calendar_month",
+        ],
         "cells": cell_rows,
         "envelopes": envelope_rows,
+        "dst_envelopes": dst_envelope_rows,
         "weakest_envelopes": weak[:20],
         "calendar_role": "diagnostic_recurrence_only_not_mutation_or_router_feature",
         "rule": "A failure is actionable only as a full causal context, never as a calendar label.",
     }
 
 
-def _certified_coverage_passport(trades: list[SimpleTrade], shadow_ledger: list[dict[str, object]]) -> dict[str, object]:
+def _certified_coverage_passport(
+    trades: list[SimpleTrade], shadow_ledger: list[dict[str, object]]
+) -> dict[str, object]:
     """Build an auditable trade/abstain passport with conservative backoff.
 
     Session and side are useful diagnostics, but a finite sample often makes
@@ -4437,7 +6930,10 @@ def _certified_coverage_passport(trades: list[SimpleTrade], shadow_ledger: list[
     contexts never become permission by silence.
     """
     scope_order = [
-        ("regime|volatility|session|direction", ("regime", "volatility", "session", "direction")),
+        (
+            "regime|volatility|session|direction",
+            ("regime", "volatility", "session", "direction"),
+        ),
         ("regime|volatility|direction", ("regime", "volatility", "direction")),
         ("regime|direction", ("regime", "direction")),
         ("regime", ("regime",)),
@@ -4445,8 +6941,15 @@ def _certified_coverage_passport(trades: list[SimpleTrade], shadow_ledger: list[
     fine_axes = scope_order[0][1]
     cells: dict[str, dict[str, object]] = {}
 
-    def context_for(regime: str, volatility: str, session: str, direction: str) -> dict[str, str]:
-        return {"regime": regime, "volatility": volatility, "session": session, "direction": direction}
+    def context_for(
+        regime: str, volatility: str, session: str, direction: str
+    ) -> dict[str, str]:
+        return {
+            "regime": regime,
+            "volatility": volatility,
+            "session": session,
+            "direction": direction,
+        }
 
     def key_for(context: dict[str, str], axes: tuple[str, ...]) -> str:
         return "|".join(context[axis] for axis in axes)
@@ -4457,45 +6960,73 @@ def _certified_coverage_passport(trades: list[SimpleTrade], shadow_ledger: list[
 
     def cell_for(context: dict[str, str]) -> dict[str, object]:
         key = key_for(context, fine_axes)
-        return cells.setdefault(key, {
-            "regime": context["regime"], "volatility": context["volatility"],
-            "session_utc_hour": context["session"], "direction": context["direction"],
-            "trades": [], "abstains": [],
-        })
+        return cells.setdefault(
+            key,
+            {
+                "regime": context["regime"],
+                "volatility": context["volatility"],
+                "session_utc_hour": context["session"],
+                "direction": context["direction"],
+                "trades": [],
+                "abstains": [],
+            },
+        )
 
     for trade in trades:
         stamp = pd.Timestamp(trade.entry_time)
-        cell_for(context_for(
-            str(trade.market_regime), str(trade.volatility_regime), str(stamp.hour), str(trade.direction)
-        ))["trades"].append(float(trade.profit_percent))
+        cell_for(
+            context_for(
+                str(trade.market_regime),
+                str(trade.volatility_regime),
+                str(stamp.hour),
+                str(trade.direction),
+            )
+        )["trades"].append(float(trade.profit_percent))
     for shadow in shadow_ledger:
-        cell_for(context_for(
-            str(shadow.get("market_regime", "unknown")),
-            str(shadow.get("volatility_regime", "unknown")),
-            hour_for(shadow.get("entry_time")),
-            str(shadow.get("direction", "unknown")),
-        ))["abstains"].append(float(shadow.get("shadow_profit_percent", 0)))
+        cell_for(
+            context_for(
+                str(shadow.get("market_regime", "unknown")),
+                str(shadow.get("volatility_regime", "unknown")),
+                hour_for(shadow.get("entry_time")),
+                str(shadow.get("direction", "unknown")),
+            )
+        )["abstains"].append(float(shadow.get("shadow_profit_percent", 0)))
 
-    def summary(scope: str, key: str, context: dict[str, str], trade_values: list[float], abstain_values: list[float]) -> dict[str, object]:
+    def summary(
+        scope: str,
+        key: str,
+        context: dict[str, str],
+        trade_values: list[float],
+        abstain_values: list[float],
+    ) -> dict[str, object]:
         profitable_missed = sum(value > 0 for value in abstain_values)
         harmful_filtered = sum(value <= 0 for value in abstain_values)
-        trade_permission = len(trade_values) >= 3 and _profit_factor_for(trade_values) >= 1.0
+        trade_permission = (
+            len(trade_values) >= 3 and _profit_factor_for(trade_values) >= 1.0
+        )
         # Abstaining is certified only when there is observed shadow evidence;
         # silence/zero opportunity cannot become an automatic pass.
-        abstain_permission = len(abstain_values) >= 3 and harmful_filtered >= profitable_missed
+        abstain_permission = (
+            len(abstain_values) >= 3 and harmful_filtered >= profitable_missed
+        )
         permissions = []
         if trade_permission:
             permissions.append("TRADE")
         if abstain_permission:
             permissions.append("ABSTAIN")
         return {
-            "scope": scope, "key": key,
-            "regime": context.get("regime"), "volatility": context.get("volatility"),
-            "session_utc_hour": context.get("session"), "direction": context.get("direction"),
+            "scope": scope,
+            "key": key,
+            "regime": context.get("regime"),
+            "volatility": context.get("volatility"),
+            "session_utc_hour": context.get("session"),
+            "direction": context.get("direction"),
             "trade_permission": "TRADE" if trade_permission else "NOT_CERTIFIED",
             "abstain_permission": "ABSTAIN" if abstain_permission else "NOT_CERTIFIED",
-            "trade_count": len(trade_values), "abstain_shadow_count": len(abstain_values),
-            "missed_profitable_opportunities": profitable_missed, "harmful_opportunities_filtered": harmful_filtered,
+            "trade_count": len(trade_values),
+            "abstain_shadow_count": len(abstain_values),
+            "missed_profitable_opportunities": profitable_missed,
+            "harmful_opportunities_filtered": harmful_filtered,
             "trade_pf": _profit_factor_for(trade_values) if trade_values else 0.0,
             "permissions": permissions,
         }
@@ -4505,19 +7036,29 @@ def _certified_coverage_passport(trades: list[SimpleTrade], shadow_ledger: list[
         grouped: dict[str, dict[str, object]] = {}
         for cell in cells.values():
             context = {
-                "regime": str(cell["regime"]), "volatility": str(cell["volatility"]),
-                "session": str(cell["session_utc_hour"]), "direction": str(cell["direction"]),
+                "regime": str(cell["regime"]),
+                "volatility": str(cell["volatility"]),
+                "session": str(cell["session_utc_hour"]),
+                "direction": str(cell["direction"]),
             }
             key = key_for(context, axes)
-            group = grouped.setdefault(key, {"context": context, "trades": [], "abstains": []})
+            group = grouped.setdefault(
+                key, {"context": context, "trades": [], "abstains": []}
+            )
             group["trades"].extend(cell["trades"])
             group["abstains"].extend(cell["abstains"])
         aggregates[scope] = {
-            key: summary(scope, key, {
-                axis: str(group["context"][axis])
-                for axis in ("regime", "volatility", "session", "direction")
-                if axis in axes
-            }, group["trades"], group["abstains"])
+            key: summary(
+                scope,
+                key,
+                {
+                    axis: str(group["context"][axis])
+                    for axis in ("regime", "volatility", "session", "direction")
+                    if axis in axes
+                },
+                group["trades"],
+                group["abstains"],
+            )
             for key, group in grouped.items()
         }
 
@@ -4525,8 +7066,10 @@ def _certified_coverage_passport(trades: list[SimpleTrade], shadow_ledger: list[
     effective_cells: dict[str, dict[str, object]] = {}
     for key, cell in cells.items():
         context = {
-            "regime": str(cell["regime"]), "volatility": str(cell["volatility"]),
-            "session": str(cell["session_utc_hour"]), "direction": str(cell["direction"]),
+            "regime": str(cell["regime"]),
+            "volatility": str(cell["volatility"]),
+            "session": str(cell["session_utc_hour"]),
+            "direction": str(cell["direction"]),
         }
         selected = None
         for scope, axes in scope_order:
@@ -4535,38 +7078,54 @@ def _certified_coverage_passport(trades: list[SimpleTrade], shadow_ledger: list[
                 selected = candidate
                 break
 
-        local = summary(scope_order[0][0], key, context, cell["trades"], cell["abstains"])
+        local = summary(
+            scope_order[0][0], key, context, cell["trades"], cell["abstains"]
+        )
         permissions = list(selected["permissions"]) if selected else []
         effective_permission = permissions[0] if permissions else "NOT_CERTIFIED"
         effective_scope = selected["scope"] if selected else None
         effective_key = selected["key"] if selected else None
         row = {
-            "regime": context["regime"], "volatility": context["volatility"],
-            "session_utc_hour": context["session"], "direction": context["direction"],
+            "regime": context["regime"],
+            "volatility": context["volatility"],
+            "session_utc_hour": context["session"],
+            "direction": context["direction"],
             "trade_permission": "TRADE" if "TRADE" in permissions else "NOT_CERTIFIED",
-            "abstain_permission": "ABSTAIN" if "ABSTAIN" in permissions else "NOT_CERTIFIED",
+            "abstain_permission": "ABSTAIN"
+            if "ABSTAIN" in permissions
+            else "NOT_CERTIFIED",
             "effective_permission": effective_permission,
-            "effective_scope": effective_scope, "effective_key": effective_key,
+            "effective_scope": effective_scope,
+            "effective_key": effective_key,
             "backoff_used": effective_scope not in {None, scope_order[0][0]},
-            "trade_count": local["trade_count"], "abstain_shadow_count": local["abstain_shadow_count"],
+            "trade_count": local["trade_count"],
+            "abstain_shadow_count": local["abstain_shadow_count"],
             "missed_profitable_opportunities": local["missed_profitable_opportunities"],
             "harmful_opportunities_filtered": local["harmful_opportunities_filtered"],
             "trade_pf": local["trade_pf"],
             "effective_trade_count": selected["trade_count"] if selected else 0,
-            "effective_abstain_shadow_count": selected["abstain_shadow_count"] if selected else 0,
+            "effective_abstain_shadow_count": selected["abstain_shadow_count"]
+            if selected
+            else 0,
             "effective_trade_pf": selected["trade_pf"] if selected else 0.0,
         }
         evidence[key] = row
         if selected:
             effective_cells[f"{selected['scope']}|{selected['key']}"] = selected
 
-    certified = [row for row in evidence.values() if row["effective_permission"] != "NOT_CERTIFIED"]
+    certified = [
+        row
+        for row in evidence.values()
+        if row["effective_permission"] != "NOT_CERTIFIED"
+    ]
     return {
-        "protocol": "certified_coverage_passport_v2", "cells": evidence,
+        "protocol": "certified_coverage_passport_v2",
+        "cells": evidence,
         "effective_cells": effective_cells,
         "scope_order": [scope for scope, _axes in scope_order],
         "status": "assessed" if evidence else "insufficient_evidence",
-        "certified_cells": len(certified), "uncertified_cells": len(evidence) - len(certified),
+        "certified_cells": len(certified),
+        "uncertified_cells": len(evidence) - len(certified),
         "runtime_policy": {
             "protocol": "coverage_backoff_policy_v1",
             "declared_scope": "the narrowest evidence-backed envelope in scope_order",
@@ -4577,35 +7136,61 @@ def _certified_coverage_passport(trades: list[SimpleTrade], shadow_ledger: list[
     }
 
 
-def _opportunity_recall(funnel: dict[str, object], shadow_ledger: list[dict[str, object]], trades: list[SimpleTrade]) -> dict[str, object]:
+def _opportunity_recall(
+    funnel: dict[str, object],
+    shadow_ledger: list[dict[str, object]],
+    trades: list[SimpleTrade],
+) -> dict[str, object]:
     opportunities = int(funnel.get("flat_signal_opportunities", 0))
     accepted = int(funnel.get("accepted_entries", 0))
-    missed_profitable = sum(float(row.get("shadow_profit_percent", 0)) > 0 for row in shadow_ledger)
-    harmful_filtered = sum(float(row.get("shadow_profit_percent", 0)) <= 0 for row in shadow_ledger)
+    missed_profitable = sum(
+        float(row.get("shadow_profit_percent", 0)) > 0 for row in shadow_ledger
+    )
+    harmful_filtered = sum(
+        float(row.get("shadow_profit_percent", 0)) <= 0 for row in shadow_ledger
+    )
     recall = accepted / max(1, opportunities)
     by_regime: dict[str, dict[str, int]] = {}
     for trade in trades:
-        row = by_regime.setdefault(str(trade.market_regime), {"opportunities": 0, "accepted_entries": 0})
+        row = by_regime.setdefault(
+            str(trade.market_regime), {"opportunities": 0, "accepted_entries": 0}
+        )
         row["opportunities"] += 1
         row["accepted_entries"] += 1
     for shadow in shadow_ledger:
-        row = by_regime.setdefault(str(shadow.get("market_regime", "unknown")), {"opportunities": 0, "accepted_entries": 0})
+        row = by_regime.setdefault(
+            str(shadow.get("market_regime", "unknown")),
+            {"opportunities": 0, "accepted_entries": 0},
+        )
         row["opportunities"] += 1
     by_regime_report = {
-        regime: {**row, "recall": round(int(row["accepted_entries"]) / max(1, int(row["opportunities"])), 6)}
+        regime: {
+            **row,
+            "recall": round(
+                int(row["accepted_entries"]) / max(1, int(row["opportunities"])), 6
+            ),
+        }
         for regime, row in by_regime.items()
     }
     # A candidate cannot manufacture a high PF by nearly never trading: it
     # needs both observable opportunities and recall evidence. Thresholds are
     # reported here; Laravel applies them only to G98 promotion passports.
     status = "assessed" if opportunities >= 10 else "insufficient_evidence"
-    return {"protocol": "opportunity_recall_gate_v1", "status": status,
-            "opportunities": opportunities, "accepted_entries": accepted,
-            "by_regime": by_regime_report,
-            "opportunity_recall": round(recall, 6), "missed_profitable_waits": missed_profitable,
-            "harmful_waits": harmful_filtered, "trade_count": len(trades),
-            "abstention_precision": round(harmful_filtered / max(1, harmful_filtered + missed_profitable), 6),
-            "rule": "PF is insufficient: a candidate must show opportunity recall and prove that WAIT filters more harm than missed edge."}
+    return {
+        "protocol": "opportunity_recall_gate_v1",
+        "status": status,
+        "opportunities": opportunities,
+        "accepted_entries": accepted,
+        "by_regime": by_regime_report,
+        "opportunity_recall": round(recall, 6),
+        "missed_profitable_waits": missed_profitable,
+        "harmful_waits": harmful_filtered,
+        "trade_count": len(trades),
+        "abstention_precision": round(
+            harmful_filtered / max(1, harmful_filtered + missed_profitable), 6
+        ),
+        "rule": "PF is insufficient: a candidate must show opportunity recall and prove that WAIT filters more harm than missed edge.",
+    }
 
 
 def _router_evidence(
@@ -4622,8 +7207,16 @@ def _router_evidence(
     from selecting a high-PF specialist that is poorly calibrated or unsafe
     in disagreement/unknown states.
     """
-    edge_quality = statistical_evidence.get("edge_quality", {}) if isinstance(statistical_evidence, dict) else {}
-    calibration = dict(edge_quality.get("confidence_calibration", {}) or {}) if isinstance(edge_quality, dict) else {}
+    edge_quality = (
+        statistical_evidence.get("edge_quality", {})
+        if isinstance(statistical_evidence, dict)
+        else {}
+    )
+    calibration = (
+        dict(edge_quality.get("confidence_calibration", {}) or {})
+        if isinstance(edge_quality, dict)
+        else {}
+    )
     sample_count = int(calibration.get("sample_count", 0) or 0)
     calibration_score = calibration.get("score", calibration.get("calibration_score"))
     if isinstance(calibration_score, (int, float)):
@@ -4639,13 +7232,22 @@ def _router_evidence(
     else:
         abstention_precision = None
 
-    disagreement = df.get("portfolio_disagreement", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+    disagreement = (
+        df.get("portfolio_disagreement", pd.Series(False, index=df.index))
+        .fillna(False)
+        .astype(bool)
+    )
     signals = df.get("signal", pd.Series("WAIT", index=df.index)).astype(str)
     disagreement_wait_invariant = bool(signals.loc[disagreement].eq("WAIT").all())
-    wait_reasons = df.get("portfolio_wait_reason", pd.Series("", index=df.index)).astype(str)
+    wait_reasons = df.get(
+        "portfolio_wait_reason", pd.Series("", index=df.index)
+    ).astype(str)
     reason_counts = {
         str(reason): int(count)
-        for reason, count in wait_reasons[wait_reasons.ne("")].value_counts().to_dict().items()
+        for reason, count in wait_reasons[wait_reasons.ne("")]
+        .value_counts()
+        .to_dict()
+        .items()
     }
     components = {
         "calibrated_confidence": calibration_score,
@@ -4654,15 +7256,20 @@ def _router_evidence(
     }
     objective = None
     if calibration_score is not None or abstention_precision is not None:
-        objective = round(100.0 * (
-            .50 * float(calibration_score or 0.0)
-            + .35 * float(abstention_precision or 0.0)
-            + .15 * (1.0 if disagreement_wait_invariant else 0.0)
-        ), 4)
+        objective = round(
+            100.0
+            * (
+                0.50 * float(calibration_score or 0.0)
+                + 0.35 * float(abstention_precision or 0.0)
+                + 0.15 * (1.0 if disagreement_wait_invariant else 0.0)
+            ),
+            4,
+        )
     status = (
         "assessed"
-        if objective is not None and sample_count >= 15
-        and float(abstention_precision or 0.0) >= .50
+        if objective is not None
+        and sample_count >= 15
+        and float(abstention_precision or 0.0) >= 0.50
         and disagreement_wait_invariant
         else "insufficient_evidence"
     )
@@ -4677,7 +7284,9 @@ def _router_evidence(
         "sample_count": sample_count,
         "portfolio_member_count": len(payload.portfolio_members),
         "disagreement_rows": int(disagreement.sum()),
-        "disagreement_rate": round(float(disagreement.mean()) if len(disagreement) else 0.0, 6),
+        "disagreement_rate": round(
+            float(disagreement.mean()) if len(disagreement) else 0.0, 6
+        ),
         "disagreement_wait_invariant": disagreement_wait_invariant,
         "wait_reason_counts": reason_counts,
         "components": components,
@@ -4687,7 +7296,9 @@ def _router_evidence(
     }
 
 
-def _proof_carrying_replay(result: dict[str, object], trades: list[SimpleTrade], payload: SimpleBacktestRequest) -> dict[str, object]:
+def _proof_carrying_replay(
+    result: dict[str, object], trades: list[SimpleTrade], payload: SimpleBacktestRequest
+) -> dict[str, object]:
     """Independent ledger verifier for promotion identity and arithmetic.
 
     The primary replay reports compounded account return, while the trade
@@ -4705,7 +7316,11 @@ def _proof_carrying_replay(result: dict[str, object], trades: list[SimpleTrade],
     for value in values:
         verifier_balance += verifier_balance * (value / 100.0)
     verifier_net_profit = round(
-        ((verifier_balance - float(payload.initial_balance)) / max(float(payload.initial_balance), 0.0000001)) * 100,
+        (
+            (verifier_balance - float(payload.initial_balance))
+            / max(float(payload.initial_balance), 0.0000001)
+        )
+        * 100,
         2,
     )
     # Match the primary replay's canonical rounding contract exactly.  The
@@ -4720,22 +7335,57 @@ def _proof_carrying_replay(result: dict[str, object], trades: list[SimpleTrade],
         "ledger_net_profit_percent": round(sum(values), 6),
         "trade_ledger_hash": _trade_ledger_hash(trades),
     }
-    primary = {"total_trades": int(result.get("total_trades", 0)), "profit_factor": round(float(result.get("profit_factor", 0)), 2),
-               "net_profit_percent": round(float(result.get("net_profit_percent", 0)), 6), "trade_ledger_hash": result.get("trade_ledger_hash", "")}
+    primary = {
+        "total_trades": int(result.get("total_trades", 0)),
+        "profit_factor": round(float(result.get("profit_factor", 0)), 2),
+        "net_profit_percent": round(float(result.get("net_profit_percent", 0)), 6),
+        "trade_ledger_hash": result.get("trade_ledger_hash", ""),
+    }
     matches = (
         primary["total_trades"] == verifier["total_trades"]
         and primary["profit_factor"] == verifier["profit_factor"]
-        and abs(float(primary["net_profit_percent"]) - float(verifier["net_profit_percent"])) <= 0.02
+        and abs(
+            float(primary["net_profit_percent"]) - float(verifier["net_profit_percent"])
+        )
+        <= 0.02
         and primary["trade_ledger_hash"] == verifier["trade_ledger_hash"]
     )
-    data_hash = hashlib.sha256(json.dumps(payload.candles and [c.model_dump(mode="json") for c in payload.candles] or [], sort_keys=True, default=str).encode()).hexdigest()
-    config_hash = hashlib.sha256(json.dumps({"strategy": payload.strategy, "base_strategy": payload.base_strategy, "parameters": payload.parameters, "execution": payload.execution.model_dump()}, sort_keys=True, default=str).encode()).hexdigest()
-    return {"protocol": "proof_carrying_replay_v1", "status": "passed" if matches else "mismatch",
-            "primary": primary, "independent_ledger_verifier": verifier,
-            "data_hash": data_hash, "config_hash": config_hash,
-            "gate_decision_hash": hashlib.sha256(json.dumps({"primary": primary, "verifier": verifier}, sort_keys=True).encode()).hexdigest(),
-            "comparison_tolerances": {"profit_factor": 0.0, "net_profit_percent": 0.02},
-            "rule": "Promotion fails closed when independently recomputed full-ledger facts differ from the primary replay after the canonical rounding/compounding contract."}
+    data_hash = hashlib.sha256(
+        json.dumps(
+            payload.candles
+            and [c.model_dump(mode="json") for c in payload.candles]
+            or [],
+            sort_keys=True,
+            default=str,
+        ).encode()
+    ).hexdigest()
+    config_hash = hashlib.sha256(
+        json.dumps(
+            {
+                "strategy": payload.strategy,
+                "base_strategy": payload.base_strategy,
+                "parameters": payload.parameters,
+                "execution": payload.execution.model_dump(),
+            },
+            sort_keys=True,
+            default=str,
+        ).encode()
+    ).hexdigest()
+    return {
+        "protocol": "proof_carrying_replay_v1",
+        "status": "passed" if matches else "mismatch",
+        "primary": primary,
+        "independent_ledger_verifier": verifier,
+        "data_hash": data_hash,
+        "config_hash": config_hash,
+        "gate_decision_hash": hashlib.sha256(
+            json.dumps(
+                {"primary": primary, "verifier": verifier}, sort_keys=True
+            ).encode()
+        ).hexdigest(),
+        "comparison_tolerances": {"profit_factor": 0.0, "net_profit_percent": 0.02},
+        "rule": "Promotion fails closed when independently recomputed full-ledger facts differ from the primary replay after the canonical rounding/compounding contract.",
+    }
 
 
 def _edge_quality_evidence(trades: list[SimpleTrade]) -> dict[str, object]:
@@ -4743,7 +7393,11 @@ def _edge_quality_evidence(trades: list[SimpleTrade]) -> dict[str, object]:
     regimes: dict[str, list[float]] = {}
     for trade in trades:
         regimes.setdefault(trade.market_regime, []).append(trade.profit_percent)
-    usable = {name: _profit_factor_for(items) for name, items in regimes.items() if len(items) >= 5}
+    usable = {
+        name: _profit_factor_for(items)
+        for name, items in regimes.items()
+        if len(items) >= 5
+    }
     return {
         "bootstrap_pf": bootstrap_profit_factor_lower_bound(values),
         "worst_regime_pf": round(min(usable.values()), 3) if usable else None,
@@ -4756,45 +7410,95 @@ def _edge_quality_evidence(trades: list[SimpleTrade]) -> dict[str, object]:
 def _confidence_calibration(trades: list[SimpleTrade]) -> dict[str, object]:
     if len(trades) < 10:
         return {"status": "insufficient_trades", "trade_count": len(trades)}
-    brier = sum((trade.signal_confidence - float(trade.profit_percent > 0)) ** 2 for trade in trades) / len(trades)
+    brier = sum(
+        (trade.signal_confidence - float(trade.profit_percent > 0)) ** 2
+        for trade in trades
+    ) / len(trades)
     bins: dict[int, list[SimpleTrade]] = {}
     for trade in trades:
         bins.setdefault(min(4, int(trade.signal_confidence * 5)), []).append(trade)
     return {
-        "schema_version": "2.0", "status": "assessed", "method": "closed_trade_confidence_calibration",
+        "schema_version": "2.0",
+        "status": "assessed",
+        "method": "closed_trade_confidence_calibration",
         # Laravel consumes a normalized skill score while Brier remains the
         # audit metric. Exposing both prevents a missing-field mismatch from
         # silently turning calibration capability into zero.
-        "brier_score": round(brier, 4), "calibration_score": round(max(0.0, min(1.0, 1 - brier)), 4),
+        "brier_score": round(brier, 4),
+        "calibration_score": round(max(0.0, min(1.0, 1 - brier)), 4),
         "score": round(max(0.0, min(100.0, (1 - brier) * 100)), 2),
         "sample_count": len(trades),
-        "bins": {str(bucket): {"trades": len(items), "mean_confidence": round(sum(item.signal_confidence for item in items) / len(items), 3), "realized_winrate": round(sum(item.profit_percent > 0 for item in items) / len(items), 3)} for bucket, items in bins.items()},
+        "bins": {
+            str(bucket): {
+                "trades": len(items),
+                "mean_confidence": round(
+                    sum(item.signal_confidence for item in items) / len(items), 3
+                ),
+                "realized_winrate": round(
+                    sum(item.profit_percent > 0 for item in items) / len(items), 3
+                ),
+            }
+            for bucket, items in bins.items()
+        },
     }
 
 
-def _edge_claim(payload: SimpleBacktestRequest, attribution: dict[str, object], edge_quality: dict[str, object]) -> dict[str, object]:
+def _edge_claim(
+    payload: SimpleBacktestRequest,
+    attribution: dict[str, object],
+    edge_quality: dict[str, object],
+) -> dict[str, object]:
     regimes = attribution.get("by_regime", {})
-    viable = [(name, data) for name, data in regimes.items() if int(data.get("trades", 0)) >= 5]
-    best = max(viable, key=lambda item: float(item[1].get("net_pf", 0)), default=("unproven", {"net_pf": 0, "trades": 0}))
+    viable = [
+        (name, data)
+        for name, data in regimes.items()
+        if int(data.get("trades", 0)) >= 5
+    ]
+    best = max(
+        viable,
+        key=lambda item: float(item[1].get("net_pf", 0)),
+        default=("unproven", {"net_pf": 0, "trades": 0}),
+    )
     return {
         "hypothesis": f"{payload.symbol} {payload.base_strategy or payload.strategy} claims net edge in {best[0]} regime.",
-        "target_regime": best[0], "observed_net_pf": best[1].get("net_pf", 0), "observed_trades": best[1].get("trades", 0),
-        "falsification_conditions": ["stress_cost_pf_below_1_05", "bootstrap_pf_5pct_below_1_10", "worst_regime_pf_below_1_00", "checkpoint_or_pbo_dsr_failure"],
-        "status": "candidate_claim" if best[0] != "unproven" else "insufficient_regime_evidence",
-        "confidence_calibration": edge_quality.get("confidence_calibration", {}).get("status"),
+        "target_regime": best[0],
+        "observed_net_pf": best[1].get("net_pf", 0),
+        "observed_trades": best[1].get("trades", 0),
+        "falsification_conditions": [
+            "stress_cost_pf_below_1_05",
+            "bootstrap_pf_5pct_below_1_10",
+            "worst_regime_pf_below_1_00",
+            "checkpoint_or_pbo_dsr_failure",
+        ],
+        "status": "candidate_claim"
+        if best[0] != "unproven"
+        else "insufficient_regime_evidence",
+        "confidence_calibration": edge_quality.get("confidence_calibration", {}).get(
+            "status"
+        ),
     }
 
 
-def _behavioral_signature(df: pd.DataFrame, trades: list[SimpleTrade]) -> dict[str, object]:
-    events = [f"{pd.Timestamp(row.time).isoformat()}:{row.signal}" for row in df[["time", "signal"]].itertuples(index=False) if str(row.signal) in {"BUY", "SELL"}]
+def _behavioral_signature(
+    df: pd.DataFrame, trades: list[SimpleTrade]
+) -> dict[str, object]:
+    events = [
+        f"{pd.Timestamp(row.time).isoformat()}:{row.signal}"
+        for row in df[["time", "signal"]].itertuples(index=False)
+        if str(row.signal) in {"BUY", "SELL"}
+    ]
     # Fixed MinHash sketch permits behaviour comparison without persisting a
     # large signal series in every model's JSON metrics.
     sketch: list[int] = []
     for salt in range(32):
-        hashes = [int(hashlib.sha256(f"{salt}|{event}".encode()).hexdigest()[:16], 16) for event in events]
+        hashes = [
+            int(hashlib.sha256(f"{salt}|{event}".encode()).hexdigest()[:16], 16)
+            for event in events
+        ]
         sketch.append(min(hashes) if hashes else -1)
     return {
-        "signal_event_count": len(events), "signal_minhash": sketch,
+        "signal_event_count": len(events),
+        "signal_minhash": sketch,
         "trade_entries": [trade.entry_time for trade in trades],
     }
 
@@ -4836,10 +7540,14 @@ def _is_expected_market_candle(timestamp: pd.Timestamp, symbol: str) -> bool:
         utc_time = _as_utc(timestamp)
         if utc_time.hour == 0 or utc_time.tz_convert("America/New_York").hour == 17:
             return False
-    return timestamp.weekday() < 5 and not (timestamp.weekday() == 4 and timestamp.hour >= 21)
+    return timestamp.weekday() < 5 and not (
+        timestamp.weekday() == 4 and timestamp.hour >= 21
+    )
 
 
-def _is_scheduled_market_closure(previous: pd.Timestamp, current: pd.Timestamp, symbol: str) -> bool:
+def _is_scheduled_market_closure(
+    previous: pd.Timestamp, current: pd.Timestamp, symbol: str
+) -> bool:
     duration_hours = (current - previous).total_seconds() / 3600
     if duration_hours <= 96 and previous.weekday() == 4 and current.weekday() in {6, 0}:
         return True
@@ -4856,20 +7564,31 @@ def _is_scheduled_market_closure(previous: pd.Timestamp, current: pd.Timestamp, 
     # session through the Christmas holiday.  Keep this in lockstep with the
     # Laravel historical-data gate so a valid foundation archive is not
     # rejected as if its scheduled holiday bars were a feed outage.
-    if duration_hours <= 48 and _crosses_fx_christmas_closure(previous, current, symbol):
+    if duration_hours <= 48 and _crosses_fx_christmas_closure(
+        previous, current, symbol
+    ):
         return True
     if not symbol.upper().startswith("XAU"):
         return False
     if duration_hours <= 120 and _crosses_xau_market_holiday(previous, current):
         return True
-    if duration_hours <= 8 and previous.month == 12 and previous.day == 31 and current.normalize() == previous.normalize():
+    if (
+        duration_hours <= 8
+        and previous.month == 12
+        and previous.day == 31
+        and current.normalize() == previous.normalize()
+    ):
         return True
     return duration_hours <= 3 and previous.hour == 23 and current.hour == 1
 
 
 def _as_utc(timestamp: pd.Timestamp) -> pd.Timestamp:
     normalized = pd.Timestamp(timestamp)
-    return normalized.tz_localize("UTC") if normalized.tzinfo is None else normalized.tz_convert("UTC")
+    return (
+        normalized.tz_localize("UTC")
+        if normalized.tzinfo is None
+        else normalized.tz_convert("UTC")
+    )
 
 
 def _utc_month(value: object) -> str:
@@ -4877,11 +7596,15 @@ def _utc_month(value: object) -> str:
     return _as_utc(pd.Timestamp(value)).strftime("%Y-%m")
 
 
-def _crosses_fx_christmas_closure(previous: pd.Timestamp, current: pd.Timestamp, symbol: str) -> bool:
+def _crosses_fx_christmas_closure(
+    previous: pd.Timestamp, current: pd.Timestamp, symbol: str
+) -> bool:
     if symbol.upper().startswith("XAU"):
         return False
 
-    previous_is_christmas_eve = previous.month == 12 and previous.day == 24 and previous.hour >= 12
+    previous_is_christmas_eve = (
+        previous.month == 12 and previous.day == 24 and previous.hour >= 12
+    )
     current_is_christmas_day = current.month == 12 and current.day == 25
     previous_is_christmas_day = previous.month == 12 and previous.day == 25
     current_is_day_after_christmas = current.month == 12 and current.day == 26
@@ -4889,7 +7612,8 @@ def _crosses_fx_christmas_closure(previous: pd.Timestamp, current: pd.Timestamp,
     return (
         previous_is_christmas_eve and (current_is_christmas_day or current.day == 24)
     ) or (
-        previous_is_christmas_day and (current_is_christmas_day or current_is_day_after_christmas)
+        previous_is_christmas_day
+        and (current_is_christmas_day or current_is_day_after_christmas)
     )
 
 
@@ -4932,7 +7656,9 @@ def _observed_fixed_holiday(year: int, month: int, day: int):
 
 def _nth_weekday_of_month(year: int, month: int, weekday: int, nth: int):
     first = pd.Timestamp(year=year, month=month, day=1)
-    return (first + pd.Timedelta(days=(weekday - first.weekday()) % 7 + ((nth - 1) * 7))).date()
+    return (
+        first + pd.Timedelta(days=(weekday - first.weekday()) % 7 + ((nth - 1) * 7))
+    ).date()
 
 
 def _last_weekday_of_month(year: int, month: int, weekday: int):
@@ -4953,14 +7679,24 @@ def classify_mistake(
     stop_loss = float(position["stop_loss"])
     entry_price = float(position["entry_price"])
 
-    if direction == "BUY" and ema_50 is not None and ema_200 is not None and ema_50 < ema_200:
+    if (
+        direction == "BUY"
+        and ema_50 is not None
+        and ema_200 is not None
+        and ema_50 < ema_200
+    ):
         return {
             "type": "trend_against_entry",
             "reason": "BUY signal umumiy trendga qarshi berilgan.",
             "suggestion": "BUY signal uchun EMA 50 EMA 200 dan yuqori bo'lishi shart.",
         }
 
-    if direction == "SELL" and ema_50 is not None and ema_200 is not None and ema_50 > ema_200:
+    if (
+        direction == "SELL"
+        and ema_50 is not None
+        and ema_200 is not None
+        and ema_50 > ema_200
+    ):
         return {
             "type": "trend_against_entry",
             "reason": "SELL signal umumiy trendga qarshi berilgan.",
@@ -4988,7 +7724,12 @@ def classify_mistake(
             "suggestion": "RSI signal zonasini trend kuchi bilan birga tekshirish kerak.",
         }
 
-    if close and ema_50 is not None and ema_200 is not None and abs(ema_50 - ema_200) / close < 0.001:
+    if (
+        close
+        and ema_50 is not None
+        and ema_200 is not None
+        and abs(ema_50 - ema_200) / close < 0.001
+    ):
         return {
             "type": "sideways_market",
             "reason": "EMA 50 va EMA 200 juda yaqin, bozor sideways bo'lishi mumkin.",
@@ -5010,7 +7751,9 @@ def classify_mistake(
 
 
 def _top_simple_mistakes(trades: list[SimpleTrade]) -> list[dict[str, int | str]]:
-    mistake_counter = Counter([trade.mistake_type for trade in trades if trade.mistake_type])
+    mistake_counter = Counter(
+        [trade.mistake_type for trade in trades if trade.mistake_type]
+    )
     return [
         {"type": mistake_type, "count": count}
         for mistake_type, count in mistake_counter.most_common(5)
@@ -5033,8 +7776,12 @@ def calculate_max_drawdown(equity_curve: list[float]) -> float:
 
 
 def calculate_profit_factor(trades: list[SimpleTrade]) -> float:
-    gross_profit = sum(trade.profit_percent for trade in trades if trade.profit_percent > 0)
-    gross_loss = abs(sum(trade.profit_percent for trade in trades if trade.profit_percent < 0))
+    gross_profit = sum(
+        trade.profit_percent for trade in trades if trade.profit_percent > 0
+    )
+    gross_loss = abs(
+        sum(trade.profit_percent for trade in trades if trade.profit_percent < 0)
+    )
 
     if gross_loss == 0:
         return round(gross_profit, 2) if gross_profit > 0 else 0.0
@@ -5116,17 +7863,22 @@ def calculate_stability_score(
     return max(min(score, 100), 0)
 
 
-def calculate_regime_performance(trades: list[SimpleTrade]) -> dict[str, dict[str, float | int]]:
+def calculate_regime_performance(
+    trades: list[SimpleTrade],
+) -> dict[str, dict[str, float | int]]:
     regimes: dict[str, dict[str, float | int]] = {}
 
     for trade in trades:
         regime = trade.market_regime or "unknown"
-        regimes.setdefault(regime, {
-            "trades": 0,
-            "wins": 0,
-            "losses": 0,
-            "profit_percent": 0.0,
-        })
+        regimes.setdefault(
+            regime,
+            {
+                "trades": 0,
+                "wins": 0,
+                "losses": 0,
+                "profit_percent": 0.0,
+            },
+        )
 
         regimes[regime]["trades"] += 1
         if trade.result == "WIN":
@@ -5139,17 +7891,22 @@ def calculate_regime_performance(trades: list[SimpleTrade]) -> dict[str, dict[st
     return _finalize_regime_performance(regimes)
 
 
-def calculate_volatility_performance(trades: list[SimpleTrade]) -> dict[str, dict[str, float | int]]:
+def calculate_volatility_performance(
+    trades: list[SimpleTrade],
+) -> dict[str, dict[str, float | int]]:
     regimes: dict[str, dict[str, float | int]] = {}
 
     for trade in trades:
         regime = trade.volatility_regime or "normal_volatility"
-        regimes.setdefault(regime, {
-            "trades": 0,
-            "wins": 0,
-            "losses": 0,
-            "profit_percent": 0.0,
-        })
+        regimes.setdefault(
+            regime,
+            {
+                "trades": 0,
+                "wins": 0,
+                "losses": 0,
+                "profit_percent": 0.0,
+            },
+        )
 
         regimes[regime]["trades"] += 1
         if trade.result == "WIN":
@@ -5214,7 +7971,9 @@ def _simple_conclusion(
     if net_profit > 0 and profit_factor >= 1.3 and max_drawdown <= 10:
         conclusion = "Strategiya risk va profit bo'yicha yaxshi natija berdi. "
     elif net_profit > 0 and max_drawdown > 15:
-        conclusion = "Strategiya profit berdi, lekin drawdown yuqori. Riskni kamaytirish kerak. "
+        conclusion = (
+            "Strategiya profit berdi, lekin drawdown yuqori. Riskni kamaytirish kerak. "
+        )
     elif net_profit < 0:
         conclusion = "Strategiya zarar bilan yakunlandi. Parametrlarni qayta optimizatsiya qilish kerak. "
     else:
@@ -5318,7 +8077,9 @@ def _simulate(candles: pd.DataFrame, payload: BacktestRequest) -> list[Trade]:
     return trades
 
 
-def _signal(candles: pd.DataFrame, index: int, payload: BacktestRequest) -> dict[str, str] | None:
+def _signal(
+    candles: pd.DataFrame, index: int, payload: BacktestRequest
+) -> dict[str, str] | None:
     strategy = payload.strategy
     row = candles.iloc[index]
 
@@ -5342,10 +8103,18 @@ def _signal(candles: pd.DataFrame, index: int, payload: BacktestRequest) -> dict
     short_zone_low = swing_low + (swing_range * strategy.fibonacci_min)
     short_zone_high = swing_low + (swing_range * strategy.fibonacci_max)
 
-    if ema_fast > ema_slow and 45 <= rsi_value <= 70 and long_zone_low <= close <= long_zone_high:
+    if (
+        ema_fast > ema_slow
+        and 45 <= rsi_value <= 70
+        and long_zone_low <= close <= long_zone_high
+    ):
         return {"direction": "long", "fib_zone": "38.2-61.8 pullback"}
 
-    if ema_fast < ema_slow and 30 <= rsi_value <= 55 and short_zone_low <= close <= short_zone_high:
+    if (
+        ema_fast < ema_slow
+        and 30 <= rsi_value <= 55
+        and short_zone_low <= close <= short_zone_high
+    ):
         return {"direction": "short", "fib_zone": "38.2-61.8 pullback"}
 
     return None
@@ -5444,7 +8213,9 @@ def _mistakes(trades: list[Trade]) -> list[MistakeJournalEntry]:
     return entries
 
 
-def _daily_report(trades: list[Trade], mistakes: list[MistakeJournalEntry]) -> DailyReport:
+def _daily_report(
+    trades: list[Trade], mistakes: list[MistakeJournalEntry]
+) -> DailyReport:
     if not trades:
         return DailyReport(summary="No trades were generated.", days=[])
 
@@ -5454,7 +8225,9 @@ def _daily_report(trades: list[Trade], mistakes: list[MistakeJournalEntry]) -> D
         grouped.setdefault(key, []).append(trade)
 
     mistake_reasons = Counter(entry.reason for entry in mistakes)
-    most_common_mistake = mistake_reasons.most_common(1)[0][0] if mistake_reasons else None
+    most_common_mistake = (
+        mistake_reasons.most_common(1)[0][0] if mistake_reasons else None
+    )
 
     days: list[DailyReportDay] = []
     for date, day_trades in sorted(grouped.items()):

@@ -225,6 +225,49 @@ class LearningIntegrityRegressionTest extends TestCase
         $this->assertSame('regime_coverage', data_get($decision, 'causal_confirmation_priority.target'));
     }
 
+    public function test_verified_positive_pair_preempts_even_an_operator_successor(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $map = new LabMutationResponseMap([
+            'parameter_key' => 'minimum_confidence',
+            'metadata' => ['causal_credit_eligible' => true],
+        ]);
+        $pair = new LabLearningLanePair([
+            'candidate_agent_id' => 42,
+            'target' => 'profit_factor',
+            'target_delta' => ['baseline' => 1.0, 'observed' => 1.2, 'delta' => .2, 'improved' => true],
+        ]);
+        $pair->id = 91;
+        $pair->setRelation('candidateResponseMap', $map);
+        $this->mock(LearningLaneService::class, function ($mock) use ($pair): void {
+            $mock->shouldReceive('priorityResearchPair')->once()->with('XAUUSD', 'H1')->andReturn($pair);
+        });
+        $this->mock(CausalLearningCohortPlannerService::class, function ($mock): void {
+            $mock->shouldReceive('eligibleLesson')->once()->with('XAUUSD', 'H1')->andReturnNull();
+        });
+        $this->mock(LearningVelocityGateService::class, function ($mock): void {
+            $mock->shouldReceive('inspect')->once()->andReturn([
+                'allowed' => true,
+                'status' => 'healthy',
+                'learning_starvation' => ['actionable_pending_dojo' => 0, 'active_dispatches' => 0],
+                'observations' => [],
+            ]);
+        });
+
+        $decision = app(GenerationAdmissionDecisionService::class)->decide(
+            $lab,
+            $generation,
+            ['trigger' => 'operator_successor', 'operator_approved_successor' => true, 'force' => true],
+            false,
+        );
+
+        $this->assertFalse($decision['allowed']);
+        $this->assertSame(GenerationAdmissionDecisionService::DISPATCH_LEARNING, $decision['decision']);
+        $this->assertContains('VERIFIED_POSITIVE_LEARNING_PAIR_HAS_REPLAY_PRIORITY', $decision['reason_codes']);
+        $this->assertSame(91, data_get($decision, 'learning_pair_priority.pair_id'));
+        $this->assertFalse((bool) data_get($decision, 'learning_pair_priority.promotion_evidence', true));
+    }
+
     public function test_model_version_status_follows_agent_lifecycle(): void
     {
         [$lab, $generation] = $this->scope();

@@ -2,9 +2,9 @@
 
 namespace App\Services;
 
-use App\Models\LabLearningLaneDispatch;
+use App\Models\LabAgent;
 use App\Models\LabLearningLanePair;
-use Illuminate\Support\Facades\Schema;
+use App\Models\LabMutationResponseMap;
 
 /**
  * Cheap confirmation gate for the learning lane.
@@ -19,6 +19,16 @@ class MicroReplayService
     public const PROTOCOL = 'micro_replay_v1';
 
     public function __construct(private readonly FailureDojoService $dojo) {}
+
+    /** @param array<string, mixed> $assessment */
+    public function isContextualNearPass(array $assessment): bool
+    {
+        return data_get($assessment, 'status') === 'failed'
+            && data_get($assessment, 'reason') === 'MICRO_CONFIRMATION_FAILED'
+            && data_get($assessment, 'causal_probe.status') === 'passed'
+            && (int) data_get($assessment, 'positive_windows', 0) >= 2
+            && (int) data_get($assessment, 'hard_failures', PHP_INT_MAX) <= 1;
+    }
 
     /** @return array<string, mixed> */
     public function assessPair(LabLearningLanePair $pair, bool $persist = true): array
@@ -36,7 +46,10 @@ class MicroReplayService
                 'hard_failures' => $hardFailures,
                 'promotion_evidence' => false,
             ];
-            if ($persist) $this->dojo->recordAssessment($pair, $assessment);
+            if ($persist) {
+                $this->dojo->recordAssessment($pair, $assessment);
+            }
+
             return $assessment;
         }
         if ($persist) {
@@ -51,8 +64,16 @@ class MicroReplayService
                 ]);
             }
         }
-        $candidate = (array) $pair->candidate_metrics;
-        $causal = $this->causalProbe($pair, $candidate, (array) $pair->control_metrics);
+        $pair->loadMissing(['candidateAgent.modelVersion', 'controlAgent.modelVersion']);
+        $candidate = $this->withSealedParameterHash(
+            (array) $pair->candidate_metrics,
+            $pair->candidateAgent,
+        );
+        $controlMetrics = $this->withSealedParameterHash(
+            (array) $pair->control_metrics,
+            $pair->controlAgent,
+        );
+        $causal = $this->causalProbe($pair, $candidate, $controlMetrics);
         if ($causal['status'] !== 'passed') {
             $assessment = [
                 'protocol' => self::PROTOCOL,
@@ -62,7 +83,10 @@ class MicroReplayService
                 'score' => 0.0,
                 'promotion_evidence' => false,
             ];
-            if ($persist) $this->dojo->recordAssessment($pair, $assessment);
+            if ($persist) {
+                $this->dojo->recordAssessment($pair, $assessment);
+            }
+
             return $assessment;
         }
         $windows = $this->windows($candidate);
@@ -77,7 +101,10 @@ class MicroReplayService
                 'score' => 0.0,
                 'promotion_evidence' => false,
             ];
-            if ($persist) $this->dojo->recordAssessment($pair, $assessment);
+            if ($persist) {
+                $this->dojo->recordAssessment($pair, $assessment);
+            }
+
             return $assessment;
         }
 
@@ -92,8 +119,12 @@ class MicroReplayService
                 || (is_numeric($pf) && (float) $pf > 1.0 && (! is_numeric($net) || (float) $net >= 0));
             $isHardFailure = in_array($status, ['fail', 'failed', 'invalid', 'blocked', 'critical'], true)
                 || (is_numeric($pf) && (float) $pf < 0.85);
-            if ($isPositive) $positive++;
-            if ($isHardFailure) $hardFailures++;
+            if ($isPositive) {
+                $positive++;
+            }
+            if ($isHardFailure) {
+                $hardFailures++;
+            }
             $scores[] = [
                 'key' => $window['key'] ?? $window['window_key'] ?? count($scores),
                 'positive' => $isPositive,
@@ -115,7 +146,10 @@ class MicroReplayService
             'score' => round($positive / max(1, $requiredWindows), 6),
             'promotion_evidence' => false,
         ];
-        if ($persist) $this->dojo->recordAssessment($pair, $assessment);
+        if ($persist) {
+            $this->dojo->recordAssessment($pair, $assessment);
+        }
+
         return $assessment;
     }
 
@@ -131,7 +165,7 @@ class MicroReplayService
             && (array) $pair->control_metrics !== []
             && (bool) data_get($metadata, 'same_snapshot', false)
             && (bool) data_get($metadata, 'same_execution_contract', false)
-            && \App\Models\LabMutationResponseMap::query()
+            && LabMutationResponseMap::query()
                 ->whereKey($pair->control_response_map_id)
                 ->where('status', 'control')
                 ->exists();
@@ -275,6 +309,32 @@ class MicroReplayService
         ];
     }
 
+    /**
+     * Parameter identity is an immutable request fact, not an economic result.
+     * Some evaluator versions omitted the duplicated response field even
+     * though the exact model version was sealed in Laravel before replay.
+     * Recover only that identity hash; behavioural hashes and target effects
+     * must still come from the evaluator and all promotion gates remain closed.
+     *
+     * @param  array<string, mixed>  $metrics
+     * @return array<string, mixed>
+     */
+    private function withSealedParameterHash(array $metrics, ?LabAgent $agent): array
+    {
+        $existing = data_get($metrics, 'causal_observation.parameter_hash', data_get($metrics, 'parameter_hash'));
+        if (filled($existing) || ! $agent?->modelVersion) {
+            return $metrics;
+        }
+
+        data_set(
+            $metrics,
+            'causal_observation.parameter_hash',
+            app(LabImmutableEvidenceService::class)->parameterHash($agent),
+        );
+
+        return $metrics;
+    }
+
     /** @return array{0:int,1:int} */
     private function windowCounts(array $windows): array
     {
@@ -285,9 +345,13 @@ class MicroReplayService
             $pf = $window['profit_factor'] ?? $window['pf'] ?? null;
             $net = $window['net_return'] ?? $window['net_pct'] ?? $window['net'] ?? null;
             if (in_array($status, ['pass', 'passed', 'positive', 'valid', 'ok'], true)
-                || (is_numeric($pf) && (float) $pf > 1.0 && (! is_numeric($net) || (float) $net >= 0))) $positive++;
+                || (is_numeric($pf) && (float) $pf > 1.0 && (! is_numeric($net) || (float) $net >= 0))) {
+                $positive++;
+            }
             if (in_array($status, ['fail', 'failed', 'invalid', 'blocked', 'critical'], true)
-                || (is_numeric($pf) && (float) $pf < 0.85)) $hardFailures++;
+                || (is_numeric($pf) && (float) $pf < 0.85)) {
+                $hardFailures++;
+            }
         }
 
         return [$positive, $hardFailures];
@@ -297,7 +361,9 @@ class MicroReplayService
     {
         foreach ($paths as $path) {
             $value = data_get($payload, $path);
-            if (is_numeric($value)) return (int) $value;
+            if (is_numeric($value)) {
+                return (int) $value;
+            }
         }
 
         return null;
@@ -332,6 +398,7 @@ class MicroReplayService
                 ];
             })->all();
         }
+
         return [];
     }
 }

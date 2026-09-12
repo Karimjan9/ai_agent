@@ -11,7 +11,6 @@ use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\LabMutationCreditEvent;
 use App\Models\ModelMarketPerformance;
-use App\Services\LabPopulationService;
 use Illuminate\Support\Collection;
 
 /**
@@ -29,7 +28,9 @@ class LabGenerationReportService
     public function record(LabGeneration $generation, string $phase): array
     {
         $generation = $generation->fresh(['laboratory', 'agents.modelVersion']);
-        if (! $generation) return [];
+        if (! $generation) {
+            return [];
+        }
 
         $agents = $generation->agents;
         $agentIds = $agents->pluck('id')->all();
@@ -74,6 +75,7 @@ class LabGenerationReportService
                 if ($margin === []) {
                     $margin = app(GateMarginService::class)->screening((array) $decision->metrics, (array) $decision->reason_codes);
                 }
+
                 return [
                     'agent_id' => (int) $decision->lab_agent_id,
                     'strategy_family' => $agents->firstWhere('id', $decision->lab_agent_id)?->strategy_family,
@@ -106,8 +108,11 @@ class LabGenerationReportService
         $parentMetrics = $parent ? $this->metrics((array) $parent->metrics, (int) $parent->sample_count) : null;
         $bestMetrics = $this->metrics($bestResult, (int) ($best?->sample_count ?? 0));
         $parentDeltaFor = function (?ModelMarketPerformance $candidate) use ($bestMetrics): ?array {
-            if (! $candidate) return null;
+            if (! $candidate) {
+                return null;
+            }
             $metrics = $this->metrics((array) $candidate->metrics, (int) $candidate->sample_count);
+
             return collect($bestMetrics)->mapWithKeys(function ($value, string $key) use ($metrics): array {
                 return [$key => $value === null || $metrics[$key] === null ? null : round((float) $value - (float) $metrics[$key], 6)];
             })->all();
@@ -124,8 +129,7 @@ class LabGenerationReportService
                 ->keys()->all())
             ->unique()->values()->all();
 
-        $selectedAgentIds = $handoffs->where('stage', 'selection_passed')->filter(fn (CandidateHandoffEvent $event): bool =>
-            $event->status === 'completed' && data_get($event->payload, 'selection_lane', 'none') !== 'none'
+        $selectedAgentIds = $handoffs->where('stage', 'selection_passed')->filter(fn (CandidateHandoffEvent $event): bool => $event->status === 'completed' && data_get($event->payload, 'selection_lane', 'none') !== 'none'
         )->pluck('lab_agent_id')->filter()->unique()->values()->all();
         $selected = count($selectedAgentIds);
         $fullRuns = LabEvaluationRun::query()
@@ -170,16 +174,13 @@ class LabGenerationReportService
             })
             ->unique('reconciliation_key')
             ->count();
-        $observableMutations = $agents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'mutation_observability.classification') === 'observable_effect'
+        $observableMutations = $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'mutation_observability.classification') === 'observable_effect'
         )->count();
-        $nonObservableMutations = $agents->filter(fn (LabAgent $agent): bool =>
-            in_array(data_get($agent->modelVersion?->metadata, 'mutation_observability.classification'), [
-                'mutation_no_observable_effect', 'zero_diff_mutation',
-            ], true)
+        $nonObservableMutations = $agents->filter(fn (LabAgent $agent): bool => in_array(data_get($agent->modelVersion?->metadata, 'mutation_observability.classification'), [
+            'mutation_no_observable_effect', 'zero_diff_mutation',
+        ], true)
         )->count();
-        $gateMarginImprovementCount = $agents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'mutation_observability.gate_margin.target_gate_improved') === true
+        $gateMarginImprovementCount = $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'mutation_observability.gate_margin.target_gate_improved') === true
         )->count();
         $technicalRunCount = LabEvaluationRun::query()
             ->where('lab_generation_id', $generation->id)
@@ -259,8 +260,7 @@ class LabGenerationReportService
             && $parentLinks > 0
             && $paperEligible > 0;
         $paperTransition = $forwardValidated > 0
-            ? $performances->whereIn('status', ['forward_validated', 'paper', 'champion'])->map(fn (ModelMarketPerformance $performance): ?int =>
-                $performance->created_at && $performance->updated_at ? $performance->created_at->diffInSeconds($performance->updated_at) : null
+            ? $performances->whereIn('status', ['forward_validated', 'paper', 'champion'])->map(fn (ModelMarketPerformance $performance): ?int => $performance->created_at && $performance->updated_at ? $performance->created_at->diffInSeconds($performance->updated_at) : null
             )->filter()->min()
             : null;
 
@@ -279,33 +279,24 @@ class LabGenerationReportService
             (string) $generation->laboratory?->symbol,
             (string) $generation->laboratory?->timeframe,
         );
-        $stageCounts = $agents->map(fn (LabAgent $agent): string =>
-            (string) data_get($agent->modelVersion?->metadata, 'evolution_stage.stage', 'unclassified')
+        $stageCounts = $agents->map(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion?->metadata, 'evolution_stage.stage', 'unclassified')
         )->countBy()->all();
-        $mentorCount = $agents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'skill_mentor'
+        $mentorCount = $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'skill_mentor'
         )->count();
-        $mentorBirths = $agents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'skill_mentor.status') === 'confirmed'
+        $mentorBirths = $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'skill_mentor.status') === 'confirmed'
             && data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'skill_mentor'
         )->count();
-        $seedCount = $agents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'screen_validated_seed'
+        $seedCount = $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'screen_validated_seed'
         )->count();
-        $anchorSiblingCounts = $agents->filter(fn (LabAgent $agent): bool =>
-            filled(data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id'))
+        $anchorSiblingCounts = $agents->filter(fn (LabAgent $agent): bool => filled(data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id'))
         )->countBy(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion?->metadata, 'repair_anchor_sibling.cohort_id'))->all();
-        $progressLadderCounts = $agents->map(fn (LabAgent $agent): string =>
-            (string) data_get($agent->modelVersion?->metadata, 'mutation_observability.progress_ladder.stage', 'none')
+        $progressLadderCounts = $agents->map(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion?->metadata, 'mutation_observability.progress_ladder.stage', 'none')
         )->countBy()->all();
-        $controlRelativeImprovements = $agents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'mutation_observability.control_relative_improved') === true
+        $controlRelativeImprovements = $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'mutation_observability.control_relative_improved') === true
         )->count();
-        $provisionalSkillCartridges = $agents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'provisional_skill_cartridge.status') === 'screen_provisional'
+        $provisionalSkillCartridges = $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'provisional_skill_cartridge.status') === 'screen_provisional'
         )->count();
-        $contextBanditObservations = $agents->filter(fn (LabAgent $agent): bool =>
-            filled(data_get($agent->modelVersion?->metadata, 'mutation_observability.contextual_bandit.context_key'))
+        $contextBanditObservations = $agents->filter(fn (LabAgent $agent): bool => filled(data_get($agent->modelVersion?->metadata, 'mutation_observability.contextual_bandit.context_key'))
         )->count();
         $roleFrontier = $agents->groupBy(fn (LabAgent $agent): string => (string) (
             data_get($agent->modelVersion?->metadata, 'council_specialist_contract.role')
@@ -313,13 +304,12 @@ class LabGenerationReportService
             ?: data_get($agent->modelVersion?->metadata, 'portfolio_council_lane.specialist_role')
             ?: 'unassigned'
         ))->map(function (Collection $members): array {
-            $eligible = $members->filter(fn (LabAgent $agent): bool =>
-                in_array((string) data_get($agent->modelVersion?->metadata, 'evolution_stage.stage'), ['full_parent', 'skill_mentor'], true)
+            $eligible = $members->filter(fn (LabAgent $agent): bool => in_array((string) data_get($agent->modelVersion?->metadata, 'evolution_stage.stage'), ['full_parent', 'skill_mentor'], true)
                 && data_get($agent->modelVersion?->metadata, 'evolution_stage.parent_eligible', false) === true
             );
-            $mentor = $members->filter(fn (LabAgent $agent): bool =>
-                data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'skill_mentor'
+            $mentor = $members->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'evolution_stage.stage') === 'skill_mentor'
             );
+
             return [
                 'member_count' => $members->count(),
                 'eligible_frontier_count' => $eligible->count(),
@@ -357,6 +347,10 @@ class LabGenerationReportService
             ] : null,
             'council' => [
                 'protocol' => 'specialist_council_v1',
+                'contextual_allocator' => data_get(
+                    $generation->trigger_context,
+                    'population_group_contract.contextual_allocator',
+                ),
                 'global_champion_forbidden' => true,
                 'member_model' => 'complementary_specialists_by_research_group_and_semantic_cell',
                 'selection_rule' => 'retain a same-cell frontier of parameter specialists; do not collapse the council to headline PF or one global winner',
@@ -464,8 +458,7 @@ class LabGenerationReportService
                 // experiments have no scalar parameter diff by design. They
                 // remain research-only, but must not inflate the technical
                 // zero-diff failure KPI.
-                'zero_diff_rate' => $agents->count() > 0 ? round($agents->filter(fn (LabAgent $agent): bool =>
-                    ! $this->isIntentionalZeroDiff($agent)
+                'zero_diff_rate' => $agents->count() > 0 ? round($agents->filter(fn (LabAgent $agent): bool => ! $this->isIntentionalZeroDiff($agent)
                     && (array) $agent->parameter_diff === []
                 )->count() / $agents->count() * 100, 2) : 0,
                 'technical_failure_rate' => $agents->count() > 0 ? round(count($technicalErrors) / $agents->count() * 100, 2) : 0,
@@ -501,14 +494,15 @@ class LabGenerationReportService
 
     private function repeatFailureRate(Collection $agents): float
     {
-        $withAnchors = $agents->filter(fn (LabAgent $agent): bool =>
-            filled(data_get($agent->modelVersion?->metadata, 'repair_anchor.id'))
+        $withAnchors = $agents->filter(fn (LabAgent $agent): bool => filled(data_get($agent->modelVersion?->metadata, 'repair_anchor.id'))
         );
-        if ($withAnchors->isEmpty()) return 0.0;
-        $repeated = $withAnchors->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'repair_anchor.sibling_kind') !== 'frozen_control'
+        if ($withAnchors->isEmpty()) {
+            return 0.0;
+        }
+        $repeated = $withAnchors->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'repair_anchor.sibling_kind') !== 'frozen_control'
             && data_get($agent->modelVersion?->metadata, 'repair_lineage.attempt', 0) > 1
         )->count();
+
         return round($repeated / $withAnchors->count() * 100, 2);
     }
 
@@ -519,9 +513,12 @@ class LabGenerationReportService
         $control = (bool) data_get($invariant, 'control_only', false)
             || (bool) data_get($metadata, 'g98_council_lane.control_only', false)
             || data_get($metadata, 'role_complete_council.role_control.type') === 'no_change_control';
-        if ($control) return true;
+        if ($control) {
+            return true;
+        }
 
         $variant = (string) data_get($invariant, 'architecture_variant', '');
+
         return (bool) data_get($invariant, 'architecture_changed', false)
             && $variant !== ''
             && (
@@ -533,8 +530,7 @@ class LabGenerationReportService
 
     private function targetGateDeltaCount(Collection $agents): int
     {
-        return $agents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'repair_anchor.verification.target_gate.improved') === true
+        return $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'repair_anchor.verification.target_gate.improved') === true
             || data_get($agent->modelVersion?->metadata, 'mutation_observability.gate_margin.target_gate_improved') === true
             || data_get($agent->modelVersion?->metadata, 'skill_mentor.status') === 'confirmed'
         )->count();
@@ -542,11 +538,13 @@ class LabGenerationReportService
 
     private function mutationCreditRate(Collection $agents): float
     {
-        if ($agents->isEmpty()) return 0.0;
-        $confirmed = $agents->filter(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion?->metadata, 'repair_anchor.mutation_credit_status') === 'independently_confirmed'
+        if ($agents->isEmpty()) {
+            return 0.0;
+        }
+        $confirmed = $agents->filter(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'repair_anchor.mutation_credit_status') === 'independently_confirmed'
             || data_get($agent->modelVersion?->metadata, 'skill_mentor.status') === 'confirmed'
         )->count();
+
         return round($confirmed / $agents->count() * 100, 2);
     }
 
@@ -556,8 +554,8 @@ class LabGenerationReportService
      * can become the next group's checkpoint; screening/quarantine remains
      * explanatory evidence only.
      *
-     * @param Collection<int, LabAgent> $agents
-     * @param Collection<int, ModelMarketPerformance> $performances
+     * @param  Collection<int, LabAgent>  $agents
+     * @param  Collection<int, ModelMarketPerformance>  $performances
      * @return array<string, array<string, mixed>>
      */
     private function populationGroupCheckpoints(Collection $agents, Collection $performances): array
@@ -577,6 +575,7 @@ class LabGenerationReportService
         foreach ($groups as $key => $members) {
             $ranked = $members->sortByDesc(function (LabAgent $agent) use ($performances): array {
                 $performance = $performances->get($agent->model_version_id);
+
                 return [
                     $performance?->status === 'champion' ? 1 : 0,
                     (float) ($performance?->forward_score ?? $agent->forward_score ?? 0),
@@ -588,6 +587,7 @@ class LabGenerationReportService
             $bestPerformance = $best ? $performances->get($best->model_version_id) : null;
             $checkpointEligible = function (LabAgent $agent) use ($performances, $checkpointStatuses, $terminalStatuses): bool {
                 $performance = $performances->get($agent->model_version_id);
+
                 return $performance
                     && $performance->evidence_status === 'valid'
                     && in_array((string) $performance->status, $checkpointStatuses, true)
@@ -607,11 +607,15 @@ class LabGenerationReportService
                 'frontier_member_count' => $frontier->count(),
                 'frontier_members' => $members->map(function (LabAgent $agent) use ($performances, $checkpointEligible): array {
                     $performance = $performances->get($agent->model_version_id);
+
                     return [
                         'agent_id' => $agent->id,
                         'model_version_id' => $agent->model_version_id,
                         'strategy_family' => $agent->strategy_family,
                         'search_role' => data_get($agent->modelVersion?->metadata, 'population_group.search_role'),
+                        'contextual_cell_hash' => data_get($agent->modelVersion?->metadata, 'specialist_council_membership.contextual_cell.cell_hash'),
+                        'session' => data_get($agent->modelVersion?->metadata, 'specialist_council_membership.contextual_cell.session'),
+                        'session_ownership' => data_get($agent->modelVersion?->metadata, 'specialist_council_membership.session_ownership'),
                         'parameter_specialties' => array_keys((array) $agent->parameter_diff),
                         'lifecycle_status' => $agent->lifecycle_status,
                         'performance_status' => $performance?->status,
@@ -635,7 +639,7 @@ class LabGenerationReportService
                     'rule' => 'Only valid challenger/forward/paper/champion evidence may advance this group frontier; the group retains complementary specialists and never borrows a foreign semantic parent.',
                     'promotion_evidence' => false,
                 ],
-                'progress_rule' => 'Compare the next four-seat cohort with this group checkpoint; carry confirmed beneficial traits only after independent replay credit.',
+                'progress_rule' => 'Compare the next evidence-allocated contextual pair budget with this checkpoint; carry confirmed beneficial traits only after independent same-cell replay credit.',
                 'promotion_evidence' => false,
             ];
         }
@@ -654,7 +658,9 @@ class LabGenerationReportService
                 ?? data_get($agent->modelVersion?->metadata, 'last_result', data_get($agent->modelVersion?->metadata, 'last_screen_result', [])));
             foreach ((array) data_get($result, 'certified_coverage_passport.cells', []) as $key => $cell) {
                 $cells[$key] = $cell;
-                if ((float) data_get($cell, 'trade_pf', 0) > 1 && (int) data_get($cell, 'trade_count', 0) > 0) $profitable++;
+                if ((float) data_get($cell, 'trade_pf', 0) > 1 && (int) data_get($cell, 'trade_count', 0) > 0) {
+                    $profitable++;
+                }
                 $abstentions += (int) data_get($cell, 'abstain_shadow_count', 0);
                 $missed += (int) data_get($cell, 'missed_profitable_opportunities', 0);
             }
@@ -665,8 +671,10 @@ class LabGenerationReportService
         $certified = collect($cells)->filter(fn ($cell): bool => data_get($cell, 'trade_permission') === 'CERTIFIED' || data_get($cell, 'abstain_permission') === 'CERTIFIED')->count();
         $recalls = $agents->map(function (LabAgent $agent) use ($performances): mixed {
             $result = (array) ($performances->get($agent->model_version_id)?->metrics ?? data_get($agent->modelVersion?->metadata, 'last_result', []));
+
             return data_get($result, 'opportunity_recall.opportunity_recall');
         })->filter(fn ($value) => is_numeric($value));
+
         return [
             'certified_cells' => $certified, 'uncertified_cells' => max(0, count($cells) - $certified),
             'profitable_trade_cells' => $profitable, 'abstention_cells' => $abstentions,
@@ -709,6 +717,7 @@ class LabGenerationReportService
                 // every promotion gate remains unchanged by this refresh.
                 $report = $this->record($generation, 'kpi_refresh');
             }
+
             return [
                 'symbol' => $lab->symbol,
                 'timeframe' => $lab->timeframe,
@@ -797,11 +806,14 @@ class LabGenerationReportService
         // best evaluated candidate—not a small-sample screening outlier that
         // was never replayed under the sealed contract.
         $evaluated = $eligible->filter(fn (LabAgent $agent): bool => $performances->has($agent->model_version_id));
-        if ($evaluated->isNotEmpty()) $eligible = $evaluated;
+        if ($evaluated->isNotEmpty()) {
+            $eligible = $evaluated;
+        }
 
         return $eligible
             ->sortByDesc(function (LabAgent $agent) use ($performances): float {
                 $metrics = (array) ($performances->get($agent->model_version_id)?->metrics ?? []);
+
                 return ((float) data_get($metrics, 'profit_factor', $agent->profit_factor ?? 0) * 1000)
                     + (int) ($agent->sample_count ?? 0);
             })->first();
@@ -810,8 +822,13 @@ class LabGenerationReportService
     /** @return Collection<int, ModelMarketPerformance> */
     private function parentPerformances(?LabAgent $agent, LabGeneration $generation, array $parentIds = []): Collection
     {
-        if ($parentIds === [] && $agent) $parentIds = app(ParentContributionGraphService::class)->ids($agent);
-        if ($parentIds === []) return collect();
+        if ($parentIds === [] && $agent) {
+            $parentIds = app(ParentContributionGraphService::class)->ids($agent);
+        }
+        if ($parentIds === []) {
+            return collect();
+        }
+
         return ModelMarketPerformance::query()->whereIn('model_version_id', $parentIds)
             ->where('symbol', $generation->laboratory?->symbol)->where('timeframe', $generation->laboratory?->timeframe)
             ->where('evidence_status', 'valid')->latest('id')->get()
@@ -845,11 +862,14 @@ class LabGenerationReportService
                 // a failed quality gate.  Keep the report focused on actual
                 // falsifiers so the next mutation is not aimed at a queue
                 // status such as FULL_REPLAY_ELIGIBLE.
-                if (! preg_match('/^(FAILED_|INSUFFICIENT_|DOMINATED_|OVERFIT|REJECTED)/', (string) $reason)) continue;
+                if (! preg_match('/^(FAILED_|INSUFFICIENT_|DOMINATED_|OVERFIT|REJECTED)/', (string) $reason)) {
+                    continue;
+                }
                 $counts[$reason] = ($counts[$reason] ?? 0) + 1;
             }
         }
         arsort($counts);
+
         return $counts;
     }
 
@@ -860,10 +880,18 @@ class LabGenerationReportService
 
     private function nextAction(LabGeneration $generation, array $technicalErrors, int $screenPassed, int $screenDecisions, int $selected, int $forwardValidated, int $targetedAttempts, bool $pipelineFailure = false, bool $evidenceInProgress = false, bool $screeningEvidenceRequired = true): string
     {
-        if ($evidenceInProgress) return 'EVIDENCE_IN_PROGRESS';
-        if ($pipelineFailure || $technicalErrors !== []) return 'recover_evidence_pipeline_before_quality_interpretation';
-        if ($forwardValidated > 0) return 'paper_admission_handshake';
-        if (! $screeningEvidenceRequired && $generation->status === 'completed') return 'settle_direct_research_outcome';
+        if ($evidenceInProgress) {
+            return 'EVIDENCE_IN_PROGRESS';
+        }
+        if ($pipelineFailure || $technicalErrors !== []) {
+            return 'recover_evidence_pipeline_before_quality_interpretation';
+        }
+        if ($forwardValidated > 0) {
+            return 'paper_admission_handshake';
+        }
+        if (! $screeningEvidenceRequired && $generation->status === 'completed') {
+            return 'settle_direct_research_outcome';
+        }
         if ($generation->status === 'screened' && $selected === 0) {
             return $targetedAttempts >= 2 ? 'data_edge_audit_required' : 'targeted_rescue_for_dominant_gate_failure';
         }
@@ -875,7 +903,10 @@ class LabGenerationReportService
                 ? 'data_edge_audit_required'
                 : 'targeted_rescue_for_dominant_gate_failure';
         }
-        if ($generation->status === 'full_validation' || $selected > 0) return 'complete_full_validation_before_new_generation';
+        if ($generation->status === 'full_validation' || $selected > 0) {
+            return 'complete_full_validation_before_new_generation';
+        }
+
         return 'finish_current_generation_phase';
     }
 }

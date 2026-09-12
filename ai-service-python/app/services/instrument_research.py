@@ -4,10 +4,11 @@ import hashlib
 import json
 from typing import Any
 
-
 ASSIGNMENT_PROTOCOL = "lab_instrument_research_assignment_v2"
 HASH_PROTOCOL = "numeric_canonical_json_v1"
-TRACE_PROTOCOL = "lab_instrument_runtime_trace_v1"
+ACTIVATION_PROTOCOL = "instrument_runtime_activation_contract_v1"
+OBSERVATION_PROTOCOL = "instrument_runtime_observations_v1"
+TRACE_PROTOCOL = "lab_instrument_runtime_trace_v2"
 
 
 def build_instrument_research_trace(
@@ -20,7 +21,9 @@ def build_instrument_research_trace(
 
     assignment = dict(assignment or {})
     parameters = dict(parameters or {})
-    declared_parameters = dict(declared_parameters if declared_parameters is not None else parameters)
+    declared_parameters = dict(
+        declared_parameters if declared_parameters is not None else parameters
+    )
     result = dict(result or {})
     if assignment.get("protocol") != ASSIGNMENT_PROTOCOL:
         return _empty("assignment_missing_or_invalid")
@@ -38,14 +41,13 @@ def build_instrument_research_trace(
     # legal runtime types (for example 1 -> 1.0). Compare the seal with the raw
     # declaration and verify each instrument binding against the normalized
     # executable vector below; conflating the two hashes rejects valid runs.
-    parameter_hash_valid = str(assignment.get("parameter_hash") or "") == _hash(declared_parameters)
-    runtime_observed = (
-        isinstance(result.get("execution_contract"), dict)
-        and (
-            "total_trades" in result
-            or isinstance(result.get("causal_observation"), dict)
-            or isinstance(result.get("opportunity_recall"), dict)
-        )
+    parameter_hash_valid = str(assignment.get("parameter_hash") or "") == _hash(
+        declared_parameters
+    )
+    runtime_observed = isinstance(result.get("execution_contract"), dict) and (
+        "total_trades" in result
+        or isinstance(result.get("causal_observation"), dict)
+        or isinstance(result.get("opportunity_recall"), dict)
     )
     entry_funnel = (result.get("causal_observation") or {}).get("entry_funnel", {})
     if not isinstance(entry_funnel, dict):
@@ -54,6 +56,7 @@ def build_instrument_research_trace(
     if not isinstance(rejection_counts, dict):
         rejection_counts = {}
 
+    context_slices = _context_slices(result)
     traces: list[dict[str, Any]] = []
     for selected in assignment.get("selected", []):
         if not isinstance(selected, dict):
@@ -65,45 +68,95 @@ def build_instrument_research_trace(
             key in parameters and parameters[key] == expected
             for key, expected in bindings.items()
         )
-        consumed = assignment_hash_valid and parameter_hash_valid and runtime_observed and binding_match
-        traces.append({
-            "instrument_key": str(selected.get("instrument_key") or ""),
-            "role": str(selected.get("role") or ""),
-            "status": "consumed" if consumed else "not_attested",
-            "causal_candidate": bool(selected.get("causal_candidate", False)),
-            "parameter_bindings": bindings,
-            "parameter_bindings_match": binding_match,
-            "runtime_observation": {
-                "total_trades": int(result.get("total_trades", 0) or 0),
-                "raw_strategy_signals": int(entry_funnel.get("raw_strategy_signals", 0) or 0),
-                "accepted_entries": int(entry_funnel.get("accepted_entries", 0) or 0),
-                "rejection_counts": rejection_counts,
-            },
-            "promotion_evidence": False,
-        })
+        activation = _activation_evidence(
+            selected, result, context_slices, declared_hash
+        )
+        consumed = (
+            assignment_hash_valid
+            and parameter_hash_valid
+            and runtime_observed
+            and binding_match
+            and activation["contract_valid"]
+            and activation["decision_path_activated"]
+        )
+        traces.append(
+            {
+                "instrument_key": str(selected.get("instrument_key") or ""),
+                "role": str(selected.get("role") or ""),
+                "status": "consumed"
+                if consumed
+                else (
+                    "not_activated"
+                    if assignment_hash_valid
+                    and parameter_hash_valid
+                    and runtime_observed
+                    and binding_match
+                    and activation["contract_valid"]
+                    else "not_attested"
+                ),
+                "causal_candidate": bool(selected.get("causal_candidate", False)),
+                "parameter_bindings": bindings,
+                "parameter_bindings_match": binding_match,
+                "activation_contract_protocol": activation["contract_protocol"],
+                "activation_contract_valid": activation["contract_valid"],
+                "runtime_observation_protocol": activation[
+                    "runtime_observation_protocol"
+                ],
+                "runtime_observation_valid": activation["runtime_observation_valid"],
+                "decision_path_activated": activation["decision_path_activated"],
+                "matched_activation_signals": activation["matched_signals"],
+                "observed_activation_signals": activation["observed_signals"],
+                "activated_context_keys": activation["activated_context_keys"],
+                "out_of_scope_context_keys": activation["out_of_scope_context_keys"],
+                "inactive_disposition": "NOT_INVOKED_NO_CREDIT",
+                "runtime_observation": {
+                    "total_trades": int(result.get("total_trades", 0) or 0),
+                    "raw_strategy_signals": int(
+                        entry_funnel.get("raw_strategy_signals", 0) or 0
+                    ),
+                    "accepted_entries": int(
+                        entry_funnel.get("accepted_entries", 0) or 0
+                    ),
+                    "rejection_counts": rejection_counts,
+                },
+                "promotion_evidence": False,
+            }
+        )
 
     consumed_count = sum(1 for item in traces if item["status"] == "consumed")
-    context_slices = _context_slices(result)
+    bundle_contexts = _bundle_activation_contexts(traces)
     return {
         "protocol": TRACE_PROTOCOL,
-        "status": "consumed" if traces and consumed_count == len(traces) else "incomplete",
+        "status": "consumed" if consumed_count > 0 else "incomplete",
         "assignment_protocol": ASSIGNMENT_PROTOCOL,
+        "activation_protocol": ACTIVATION_PROTOCOL,
         "assignment_hash": declared_hash,
         "calculated_assignment_hash": calculated_hash,
         "assignment_hash_valid": assignment_hash_valid,
         "parameter_hash_valid": parameter_hash_valid,
-        "runtime_bindings_valid": bool(traces) and all(item["parameter_bindings_match"] for item in traces),
+        "runtime_bindings_valid": bool(traces)
+        and all(item["parameter_bindings_match"] for item in traces),
+        "activation_contracts_valid": bool(traces)
+        and all(item["activation_contract_valid"] for item in traces),
+        "runtime_observations_valid": bool(traces)
+        and all(item["runtime_observation_valid"] for item in traces),
         "runtime_observed": runtime_observed,
         "selected_count": len(traces),
         "consumed_count": consumed_count,
+        "not_activated_count": sum(
+            1 for item in traces if item["status"] == "not_activated"
+        ),
         "instruments": traces,
+        "bundle_activation_context_keys": bundle_contexts,
+        "bundle_fully_activated": bool(traces) and consumed_count == len(traces),
         # These labels come from the immutable entry-time trade ledger.  They
         # let the paired Laravel settlement compare London with London (and
         # the same regime/volatility/direction) instead of awarding a global
         # historical_mixed posterior.  A slice is diagnostic until both arms
         # have enough observations; this trace never promotes it by itself.
-        "context_slices": context_slices,
+        "context_slices": _decorate_context_slices(context_slices, traces),
         "context_source": "decision_time_trade_ledger",
+        "instrument_activation_source": "instrument_specific_runtime_event_ledger",
         "causal_value": "awaiting_verified_paired_control",
         "paper_execution_authority": False,
         "promotion_evidence": False,
@@ -136,35 +189,280 @@ def _context_slices(result: dict[str, Any]) -> list[dict[str, Any]]:
         parts = str(key).split("|")
         if len(parts) != 4:
             continue
-        regime, volatility, raw_hour, direction = parts
+        regime, volatility, raw_session, direction = parts
         try:
-            hour = int(raw_hour)
+            hour = int(raw_session)
+            if not 0 <= hour <= 23:
+                continue
+            session = _session_for_hour(hour)  # legacy trace compatibility only
         except (TypeError, ValueError):
-            continue
-        if not 0 <= hour <= 23:
+            hour = None
+            session = _canonical_context_value("session", raw_session)
+        if session not in {"asia", "london", "new_york", "overlap", "off_session"}:
             continue
         trades = int(raw_metrics.get("trades", 0) or 0)
-        slices.append({
-            "context_key": f"{regime}|{volatility}|{_session_for_hour(hour)}|{direction}",
-            "context": {
-                "regime": regime,
-                "volatility": volatility,
-                "session": _session_for_hour(hour),
-                "session_utc_hour": hour,
-                "direction": direction,
-            },
-            "metrics": {
-                "trades": trades,
-                "net_pf": float(raw_metrics.get("net_pf", 0) or 0),
-                "net_profit_percent": float(raw_metrics.get("net_profit_percent", 0) or 0),
-                "max_drawdown_percent": float(raw_metrics.get("max_drawdown_percent", 0) or 0),
-                "execution_cost_percent": float(raw_metrics.get("execution_cost_percent", 0) or 0),
-            },
-            "powered": trades >= 3,
-            "promotion_evidence": False,
-        })
+        slices.append(
+            {
+                "context_key": f"{regime}|{volatility}|{session}|{direction}",
+                "context": {
+                    "regime": regime,
+                    "volatility": volatility,
+                    "session": session,
+                    "session_utc_hour": hour,
+                    "direction": direction,
+                },
+                "metrics": {
+                    "trades": trades,
+                    "net_pf": float(raw_metrics.get("net_pf", 0) or 0),
+                    "net_profit_percent": float(
+                        raw_metrics.get("net_profit_percent", 0) or 0
+                    ),
+                    "max_drawdown_percent": float(
+                        raw_metrics.get("max_drawdown_percent", 0) or 0
+                    ),
+                    "execution_cost_percent": float(
+                        raw_metrics.get("execution_cost_percent", 0) or 0
+                    ),
+                },
+                "powered": trades >= 3,
+                "promotion_evidence": False,
+            }
+        )
 
     return slices
+
+
+def _activation_evidence(
+    selected: dict[str, Any],
+    result: dict[str, Any],
+    context_slices: list[dict[str, Any]],
+    assignment_hash: str,
+) -> dict[str, Any]:
+    contract = selected.get("activation_contract") or {}
+    if not isinstance(contract, dict):
+        contract = {}
+    required_events = contract.get("required_runtime_events") or []
+    valid = (
+        contract.get("protocol") == ACTIVATION_PROTOCOL
+        and contract.get("mode") == "instrument_specific_runtime_event"
+        and contract.get("aggregate_metric_fallback_allowed") is False
+        and isinstance(required_events, list)
+        and bool(required_events)
+    )
+    runtime = result.get("instrument_runtime_observations") or {}
+    if not isinstance(runtime, dict):
+        runtime = {}
+    key = str(selected.get("instrument_key") or "")
+    instrument = (
+        (runtime.get("instruments") or {}).get(key, {})
+        if isinstance(runtime.get("instruments"), dict)
+        else {}
+    )
+    if not isinstance(instrument, dict):
+        instrument = {}
+    runtime_valid = (
+        runtime.get("protocol") == OBSERVATION_PROTOCOL
+        and bool(assignment_hash)
+        and str(runtime.get("assignment_hash") or "") == assignment_hash
+        and key in (runtime.get("selected_keys") or [])
+    )
+    event_sources = instrument.get("event_sources") or {}
+    if not isinstance(event_sources, dict):
+        event_sources = {}
+    matched = sorted(
+        str(source)
+        for source, count in event_sources.items()
+        if int(count or 0) > 0 and _runtime_event_allowed(required_events, str(source))
+    )
+    observed = [
+        {"event_source": source, "count": int(event_sources[source] or 0)}
+        for source in sorted(event_sources)
+    ]
+    context_event_counts = instrument.get("context_event_counts") or {}
+    if not isinstance(context_event_counts, dict):
+        context_event_counts = {}
+    reported_count = int(instrument.get("activation_count", 0) or 0)
+    source_count = sum(int(count or 0) for count in event_sources.values())
+    allowed_source_count = sum(
+        int(count or 0)
+        for source, count in event_sources.items()
+        if _runtime_event_allowed(required_events, str(source))
+    )
+    context_count = sum(int(count or 0) for count in context_event_counts.values())
+    receipt_consistent = (
+        reported_count >= 0
+        and reported_count == source_count == allowed_source_count == context_count
+        and bool(instrument.get("decision_path_activated", False))
+        == (reported_count > 0)
+    )
+    declared_activated = {
+        str(context_key)
+        for context_key in instrument.get("activated_context_keys", [])
+        if str(context_key)
+    }
+    runtime_contexts = instrument.get("activated_contexts") or {}
+    if not isinstance(runtime_contexts, dict):
+        runtime_contexts = {}
+    activated_context_keys = sorted(
+        context_key
+        for context_key in declared_activated
+        if _context_matches(
+            contract.get("context") or {},
+            runtime_contexts.get(context_key, _context_from_key(context_key))
+            if isinstance(
+                runtime_contexts.get(context_key, _context_from_key(context_key)), dict
+            )
+            else _context_from_key(context_key),
+        )
+    )
+    reported_abstentions = {
+        str(context_key)
+        for context_key in instrument.get("abstained_context_keys", [])
+        if str(context_key)
+    }
+    activated = (
+        valid
+        and runtime_valid
+        and instrument.get("status") == "activated"
+        and receipt_consistent
+        and reported_count > 0
+        and bool(matched)
+        and bool(activated_context_keys)
+    )
+    out_of_scope_context_keys: set[str] = set(reported_abstentions)
+    for slice_ in context_slices:
+        context_key = str(slice_.get("context_key") or "")
+        context = slice_.get("context") or {}
+        if not isinstance(context, dict) or not context_key:
+            continue
+        if context_key in activated_context_keys:
+            continue
+        if not _context_matches(contract.get("context") or {}, context):
+            out_of_scope_context_keys.add(context_key)
+
+    return {
+        "contract_protocol": str(contract.get("protocol") or ""),
+        "contract_valid": valid,
+        "runtime_observation_protocol": str(runtime.get("protocol") or ""),
+        "runtime_observation_valid": runtime_valid and receipt_consistent,
+        "runtime_receipt_consistent": receipt_consistent,
+        "decision_path_activated": activated,
+        "matched_signals": matched,
+        "observed_signals": observed,
+        "activated_context_keys": activated_context_keys if activated else [],
+        "out_of_scope_context_keys": sorted(out_of_scope_context_keys),
+    }
+
+
+def _context_from_key(context_key: str) -> dict[str, str]:
+    parts = context_key.split("|")
+    if len(parts) != 4:
+        return {}
+    return {
+        "regime": parts[0],
+        "volatility": parts[1],
+        "session": parts[2],
+        "direction": parts[3],
+    }
+
+
+def _runtime_event_allowed(patterns: list[Any], source: str) -> bool:
+    for raw_pattern in patterns:
+        pattern = str(raw_pattern or "")
+        if pattern == "*" or pattern == source:
+            return True
+        if pattern.endswith("*") and source.startswith(pattern[:-1]):
+            return True
+    return False
+
+
+def _path_value(value: dict[str, Any], path: str) -> Any:
+    current: Any = value
+    for segment in path.split(".") if path else []:
+        if not isinstance(current, dict) or segment not in current:
+            return None
+        current = current[segment]
+    return current
+
+
+def _signal_matches(observed: Any, operator: str, expected: Any) -> bool:
+    if operator == "gt":
+        try:
+            return float(observed) > float(expected)
+        except (TypeError, ValueError):
+            return False
+    if operator == "eq":
+        return observed == expected
+    if operator == "non_empty":
+        return observed not in (None, "", [], {})
+    return False
+
+
+def _context_matches(contract: dict[str, Any], context: dict[str, Any]) -> bool:
+    regime = str(context.get("regime") or "unknown")
+    compatible = {str(value) for value in contract.get("compatible_regimes", [])}
+    forbidden = {str(value) for value in contract.get("forbidden_regimes", [])}
+    if regime in forbidden:
+        return False
+    if compatible and regime not in compatible:
+        return False
+    declared = contract.get("declared_context") or {}
+    if not isinstance(declared, dict):
+        return False
+    aliases = {
+        "spread_liquidity_state": "spread_liquidity_state",
+        "transition_state": "transition_state",
+    }
+    for axis, expected in declared.items():
+        actual = context.get(aliases.get(str(axis), str(axis)))
+        if actual is None or _canonical_context_value(
+            str(axis), actual
+        ) != _canonical_context_value(str(axis), expected):
+            return False
+    return True
+
+
+def _canonical_context_value(axis: str, value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if axis == "session":
+        return {
+            "london_new_york_overlap": "overlap",
+            "london_comex_overlap": "overlap",
+            "asian": "asia",
+        }.get(normalized, normalized)
+    return normalized
+
+
+def _bundle_activation_contexts(traces: list[dict[str, Any]]) -> list[str]:
+    if not traces or any(item.get("status") != "consumed" for item in traces):
+        return []
+    context_sets = [set(item.get("activated_context_keys") or []) for item in traces]
+    if not context_sets or any(not values for values in context_sets):
+        return []
+    return sorted(set.intersection(*context_sets))
+
+
+def _decorate_context_slices(
+    slices: list[dict[str, Any]],
+    traces: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    decorated: list[dict[str, Any]] = []
+    for slice_ in slices:
+        row = dict(slice_)
+        key = str(row.get("context_key") or "")
+        usage: list[dict[str, str]] = []
+        for trace in traces:
+            instrument_key = str(trace.get("instrument_key") or "")
+            if key in (trace.get("activated_context_keys") or []):
+                state = "activated"
+            elif key in (trace.get("out_of_scope_context_keys") or []):
+                state = "abstained_outside_contract"
+            else:
+                state = "not_observed"
+            usage.append({"instrument_key": instrument_key, "state": state})
+        row["instrument_usage"] = usage
+        decorated.append(row)
+    return decorated
 
 
 def _session_for_hour(hour: int) -> str:
@@ -178,7 +476,9 @@ def _session_for_hour(hour: int) -> str:
 
 
 def _hash(value: Any) -> str:
-    encoded = json.dumps(_canonicalize(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    encoded = json.dumps(
+        _canonicalize(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -192,5 +492,8 @@ def _canonicalize(value: Any) -> Any:
     if isinstance(value, list):
         return [_canonicalize(item) for item in value]
     if isinstance(value, dict):
-        return {str(key): _canonicalize(item) for key, item in sorted(value.items(), key=lambda row: str(row[0]))}
+        return {
+            str(key): _canonicalize(item)
+            for key, item in sorted(value.items(), key=lambda row: str(row[0]))
+        }
     return value

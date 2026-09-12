@@ -48,8 +48,14 @@ class SpecialistPassportService
             ?: data_get($candidate->metrics, 'edge_claim.target_direction');
         $direction = in_array(strtoupper((string) $direction), ['BUY', 'SELL'], true)
             ? strtoupper((string) $direction) : null;
+        $session = (string) (
+            data_get($metadata, 'portfolio_research_contract.target_session')
+            ?: data_get($metadata, 'specialist_council_membership.contextual_cell.session')
+            ?: 'any'
+        );
 
-        $niche = $this->nicheEvidence($candidate, $regime, $volatility, $direction);
+        $niche = $this->nicheEvidence($candidate, $regime, $volatility, $direction, $session);
+        $dst = $this->dstEvidence($candidate, $regime, $volatility, $direction, $session);
         $checks = [
             'role_declared' => in_array($role, [...self::REGIME_ROLES, self::ROUTER_ROLE], true),
             'individual_forward' => (bool) ($overrides['individual_forward_passed'] ?? (
@@ -64,7 +70,16 @@ class SpecialistPassportService
                     || ((int) data_get($niche, 'trades', 0) >= 10
                         && (float) data_get($niche, 'net_pf', 0) >= 1.3)
             )),
-            'no_regression' => data_get($candidate->metrics, 'no_regression_contract.status', 'passed') === 'passed',
+            // Missing evidence must never become permission. Historical
+            // candidates without an explicit non-target comparison remain
+            // auditable, but cannot own a council seat.
+            'no_regression' => data_get($candidate->metrics, 'no_regression_contract.status', 'missing') === 'passed',
+            // London and New York change UTC offsets. A specialist which won
+            // in only one offset state is a provisional calendar fit, not a
+            // durable session capability. Asia has no DST and `any` is not a
+            // session-specialist claim, so neither requires a two-state test.
+            'dst_offset_coverage' => ! (bool) data_get($dst, 'required', false)
+                || (int) data_get($dst, 'qualified_offset_state_count', 0) >= 2,
             'router_calibration' => $role !== self::ROUTER_ROLE
                 || data_get($candidate->metrics, 'router_evidence.status', 'assessed') === 'assessed',
         ];
@@ -86,7 +101,9 @@ class SpecialistPassportService
             'owner_regime' => $regime,
             'owner_volatility' => $volatility,
             'owner_direction' => $direction,
+            'owner_session' => $session,
             'niche' => $niche,
+            'dst_offset_evidence' => $dst,
             'checks' => $checks,
             'reason_codes' => $failed,
             'skill' => [
@@ -101,25 +118,83 @@ class SpecialistPassportService
                 'regime' => $regime,
                 'volatility' => $volatility,
                 'direction' => $direction,
+                'session' => $session,
             ], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
         ];
     }
 
     /** @return array<string, mixed> */
-    private function nicheEvidence(ModelMarketPerformance $candidate, string $regime, string $volatility, ?string $direction): array
+    private function nicheEvidence(ModelMarketPerformance $candidate, string $regime, string $volatility, ?string $direction, string $session): array
     {
         $key = $regime.'|'.$volatility;
-        $path = filled($direction) && $volatility !== 'any'
-            ? "pf_attribution.breakdown.by_regime_volatility_direction.{$key}.{$direction}"
-            : ($volatility !== 'any'
-                ? "pf_attribution.breakdown.by_regime_volatility.{$key}"
-                : "pf_attribution.breakdown.by_regime.{$regime}");
+        $path = $session !== 'any' && $volatility !== 'any'
+            ? "pf_attribution.breakdown.by_regime_volatility_session.{$key}.{$session}"
+            : (filled($direction) && $volatility !== 'any'
+                ? "pf_attribution.breakdown.by_regime_volatility_direction.{$key}.{$direction}"
+                : ($volatility !== 'any'
+                    ? "pf_attribution.breakdown.by_regime_volatility.{$key}"
+                    : "pf_attribution.breakdown.by_regime.{$regime}"));
 
         return (array) data_get($candidate->metrics, $path, [
             'trades' => 0,
             'net_pf' => 0,
             'status' => 'missing',
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function dstEvidence(ModelMarketPerformance $candidate, string $regime, string $volatility, ?string $direction, string $session): array
+    {
+        $session = strtolower($session);
+        $required = in_array($session, ['london', 'new_york', 'overlap'], true);
+        $groups = [];
+
+        foreach ((array) data_get($candidate->metrics, 'robustness_matrix.dst_envelopes', []) as $key => $row) {
+            $parts = explode('|', (string) $key, 5);
+            if (count($parts) !== 5
+                || $parts[0] !== $regime
+                || $parts[1] !== $volatility
+                || strtolower($parts[2]) !== $session
+                || (filled($direction) && strtoupper($parts[3]) !== $direction)) {
+                continue;
+            }
+
+            $offset = $parts[4];
+            $groups[$offset] ??= [
+                'offset_state' => $offset,
+                'trades' => 0,
+                'worst_net_pf' => INF,
+                'source_contexts' => [],
+            ];
+            $groups[$offset]['trades'] += (int) data_get($row, 'trades', 0);
+            $groups[$offset]['worst_net_pf'] = min(
+                (float) $groups[$offset]['worst_net_pf'],
+                (float) data_get($row, 'net_pf', 0),
+            );
+            $groups[$offset]['source_contexts'][] = (string) $key;
+        }
+
+        $states = collect($groups)->map(function (array $row): array {
+            $row['worst_net_pf'] = is_finite((float) $row['worst_net_pf'])
+                ? (float) $row['worst_net_pf'] : 0.0;
+            $row['qualified'] = (int) $row['trades'] >= 3
+                && (float) $row['worst_net_pf'] >= 1.0;
+
+            return $row;
+        })->sortKeys()->values();
+
+        return [
+            'protocol' => 'specialist_dst_offset_evidence_v1',
+            'required' => $required,
+            'minimum_independent_offset_states' => $required ? 2 : 0,
+            'minimum_trades_per_state' => 3,
+            'minimum_worst_net_pf_per_state' => 1.0,
+            'observed_offset_state_count' => $states->count(),
+            'qualified_offset_state_count' => $states->where('qualified', true)->count(),
+            'states' => $states->all(),
+            'status' => ! $required || $states->where('qualified', true)->count() >= 2
+                ? 'passed' : 'insufficient',
+        ];
     }
 
     private function capabilityFor(string $role): string

@@ -4,10 +4,10 @@ namespace Tests\Unit;
 
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
+use App\Services\ChampionCouncilCanaryRouterService;
+use App\Services\ChampionCouncilTransitionService;
 use App\Services\CouncilCompatibilityService;
 use App\Services\CouncilCurriculumService;
-use App\Services\ChampionCouncilTransitionService;
-use App\Services\ChampionCouncilCanaryRouterService;
 use App\Services\SpecialistPassportService;
 use PHPUnit\Framework\TestCase;
 
@@ -15,7 +15,7 @@ class ChampionCouncilArchitectureTest extends TestCase
 {
     public function test_compatibility_requires_two_regimes_and_a_router(): void
     {
-        $service = new CouncilCompatibilityService();
+        $service = new CouncilCompatibilityService;
 
         $blocked = $service->assess([
             ['role' => 'trend_up_specialist', 'target_regime' => 'trend_up'],
@@ -34,7 +34,7 @@ class ChampionCouncilArchitectureTest extends TestCase
 
     public function test_compatibility_rejects_hidden_behavioral_clones(): void
     {
-        $result = (new CouncilCompatibilityService())->assess([
+        $result = (new CouncilCompatibilityService)->assess([
             ['role' => 'trend_up_specialist', 'target_regime' => 'trend_up', 'behavior_fingerprint' => 'same-replay'],
             ['role' => 'range_specialist', 'target_regime' => 'range', 'behavior_fingerprint' => 'same-replay'],
             ['role' => 'transition_risk_router', 'target_regime' => 'transition', 'behavior_fingerprint' => 'router-replay'],
@@ -46,7 +46,7 @@ class ChampionCouncilArchitectureTest extends TestCase
 
     public function test_curriculum_turns_repeat_failure_into_architecture_escape(): void
     {
-        $lesson = (new CouncilCurriculumService())->next(
+        $lesson = (new CouncilCurriculumService)->next(
             ['role' => 'trend_up_specialist', 'stage' => 'specialist_candidate'],
             ['repeat_count' => 2],
         );
@@ -75,6 +75,7 @@ class ChampionCouncilArchitectureTest extends TestCase
             'evidence_status' => 'valid',
             'metrics' => [
                 'elite_agent_passport' => ['status' => 'passed'],
+                'no_regression_contract' => ['status' => 'passed'],
                 'pf_attribution' => [
                     'breakdown' => [
                         'by_regime' => [
@@ -86,7 +87,7 @@ class ChampionCouncilArchitectureTest extends TestCase
         ]);
         $candidate->setRelation('modelVersion', $model);
 
-        $passport = (new SpecialistPassportService())->build($candidate);
+        $passport = (new SpecialistPassportService)->build($candidate);
 
         $this->assertSame('passed', $passport['status']);
         $this->assertFalse($passport['promotion_evidence']);
@@ -95,7 +96,7 @@ class ChampionCouncilArchitectureTest extends TestCase
 
     public function test_transition_protects_incumbent_until_council_proves_parity_and_anchor_independence(): void
     {
-        $service = new ChampionCouncilTransitionService();
+        $service = new ChampionCouncilTransitionService;
         $base = [
             'council_compatibility_status' => 'compatible',
             'all_council_members_passed' => true,
@@ -129,7 +130,7 @@ class ChampionCouncilArchitectureTest extends TestCase
 
     public function test_transition_rolls_back_when_drift_or_catastrophic_regression_appears(): void
     {
-        $result = (new ChampionCouncilTransitionService())->evaluate([], [], [
+        $result = (new ChampionCouncilTransitionService)->evaluate([], [], [
             'council_compatibility_status' => 'compatible',
             'all_council_members_passed' => true,
             'incumbent_score' => 1.0,
@@ -144,7 +145,7 @@ class ChampionCouncilArchitectureTest extends TestCase
 
     public function test_canary_assignment_is_deterministic_and_fail_closed(): void
     {
-        $router = new ChampionCouncilCanaryRouterService();
+        $router = new ChampionCouncilCanaryRouterService;
         $transition = ['decision' => 'HYBRID_CANARY', 'council_canary_share' => .25];
         $first = $router->decide($transition, 'XAUUSD|H1|candle-100');
         $second = $router->decide($transition, 'XAUUSD|H1|candle-100');

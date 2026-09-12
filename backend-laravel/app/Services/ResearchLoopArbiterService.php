@@ -24,6 +24,7 @@ use Throwable;
 class ResearchLoopArbiterService
 {
     public const PROTOCOL = 'research_loop_arbiter_v1';
+
     public const OWNER = self::class;
 
     private const ACTIVE_GENERATION_STATUSES = [
@@ -61,15 +62,23 @@ class ResearchLoopArbiterService
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', trim($symbol)));
         $organism = strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'));
         $timeframe = strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'));
-        if ($symbol !== $organism) return $this->blocked('XAUUSD_ORGANISM_SCOPE_REQUIRED');
-        if (! Schema::hasTable('research_loop_decisions')) return $this->blocked('RESEARCH_LOOP_DECISION_TABLE_MISSING');
+        if ($symbol !== $organism) {
+            return $this->blocked('XAUUSD_ORGANISM_SCOPE_REQUIRED');
+        }
+        if (! Schema::hasTable('research_loop_decisions')) {
+            return $this->blocked('RESEARCH_LOOP_DECISION_TABLE_MISSING');
+        }
 
         // A diagnostic dry-run must remain available while Redis/workers are
         // intentionally stopped. It cannot lease, persist or dispatch.
-        if ($dryRun) return $this->tickLocked($symbol, $timeframe, true);
+        if ($dryRun) {
+            return $this->tickLocked($symbol, $timeframe, true);
+        }
         try {
             $lock = Cache::lock('research-loop-arbiter:'.$symbol.':'.$timeframe, 300);
-            if (! $lock->get()) return $this->blocked('RESEARCH_LOOP_ARBITER_ALREADY_RUNNING');
+            if (! $lock->get()) {
+                return $this->blocked('RESEARCH_LOOP_ARBITER_ALREADY_RUNNING');
+            }
         } catch (Throwable $exception) {
             return $this->blocked('RESEARCH_LOOP_LOCK_UNAVAILABLE', ['error_class' => $exception::class]);
         }
@@ -88,8 +97,7 @@ class ResearchLoopArbiterService
     /** @return array<string,mixed> */
     private function tickLocked(string $symbol, string $timeframe, bool $dryRun): array
     {
-        $latest = LabGeneration::query()->whereHas('laboratory', fn ($query) =>
-            $query->where('symbol', $symbol)->where('timeframe', $timeframe)
+        $latest = LabGeneration::query()->whereHas('laboratory', fn ($query) => $query->where('symbol', $symbol)->where('timeframe', $timeframe)
         )->orderByDesc('generation')->orderByDesc('id')->first();
         $generation = $latest ? [
             'id' => (int) $latest->id,
@@ -132,18 +140,22 @@ class ResearchLoopArbiterService
                     'controller_profile' => data_get($mode, 'controller_profile')], $dryRun);
         }
 
-        $pendingLearningPair = $this->learningLane->pendingMicroPairs($symbol, $timeframe, null, 1)->first()
+        $priorityLearningPair = $this->learningLane->priorityResearchPair($symbol, $timeframe);
+        $pendingLearningPair = $priorityLearningPair
+            ?? $this->learningLane->pendingMicroPairs($symbol, $timeframe, null, 1)->first()
             ?? $this->learningLane->frontier($symbol, $timeframe, null, 1, false)->first();
         if ($pendingLearningPair) {
             return $this->decide($symbol, $timeframe, 'PUMP_CANONICAL_LEARNING_PAIR', 93,
                 'trading:pump-learning-lane', [0 => $symbol, '--timeframe' => $timeframe,
-                    '--limit' => 1, '--autonomous' => true],
-                'scheduler-critical', ['EXACT_CONTROL_LEARNING_PAIR_READY'], [
-                    'generation' => $generation, 'closure' => $this->compactClosure($closure),
-                    'pair_id' => (int) $pendingLearningPair->id,
-                    'candidate_agent_id' => (int) $pendingLearningPair->candidate_agent_id,
-                    'pair_status' => (string) $pendingLearningPair->status,
-                ], $dryRun);
+                    '--limit' => 1, '--pair-id' => (int) $pendingLearningPair->id, '--autonomous' => true],
+                'scheduler-critical', [$priorityLearningPair
+                        ? 'VERIFIED_POSITIVE_LEARNING_PAIR_READY'
+                        : 'EXACT_CONTROL_LEARNING_PAIR_READY'], [
+                            'generation' => $generation, 'closure' => $this->compactClosure($closure),
+                            'pair_id' => (int) $pendingLearningPair->id,
+                            'candidate_agent_id' => (int) $pendingLearningPair->candidate_agent_id,
+                            'pair_status' => (string) $pendingLearningPair->status,
+                        ], $dryRun);
         }
 
         // Durable evidence-earned work outranks fresh exploration. Dry-run
@@ -324,7 +336,9 @@ class ResearchLoopArbiterService
             'contract' => $contract,
             'promotion_evidence' => false,
         ];
-        if ($dryRun) return $payload;
+        if ($dryRun) {
+            return $payload;
+        }
 
         $decision = ResearchLoopDecision::query()->firstOrCreate(['decision_key' => $decisionKey], [
             'symbol' => $symbol, 'timeframe' => $timeframe, 'action' => $action,
@@ -356,8 +370,10 @@ class ResearchLoopArbiterService
                 'reason' => 'MTF_RESEARCH_TABLES_MISSING'];
         }
         $candidate = $this->mtfCohorts->candidate($symbol);
-        if (! $candidate) return ['research_due' => false, 'powered_prior_due' => false,
-            'playbook_prior_due' => false, 'reason' => 'CANONICAL_MTF_CANDIDATE_MISSING'];
+        if (! $candidate) {
+            return ['research_due' => false, 'powered_prior_due' => false,
+                'playbook_prior_due' => false, 'reason' => 'CANONICAL_MTF_CANDIDATE_MISSING'];
+        }
         $lastRun = MtfStrategyResearchRun::query()
             ->where('model_market_performance_id', $candidate->id)->latest('id')->first();
         $recent = fn (string $action, int $minutes): bool => ResearchLoopDecision::query()
@@ -380,7 +396,9 @@ class ResearchLoopArbiterService
 
     private function driftAlreadyConsumed(?LabGeneration $latest, array $drift): bool
     {
-        if (! $latest || (string) $latest->trigger_type !== 'market_drift') return false;
+        if (! $latest || (string) $latest->trigger_type !== 'market_drift') {
+            return false;
+        }
         $latestSnapshot = (int) ($drift['latest_snapshot_id'] ?? 0);
         $createdAfter = $latestSnapshot > 0
             ? MarketDriftSnapshot::query()->whereKey($latestSnapshot)->value('detected_at')
@@ -445,9 +463,15 @@ class ResearchLoopArbiterService
 
     private function canonicalize(mixed $value): mixed
     {
-        if (! is_array($value)) return $value;
-        foreach ($value as $key => $item) $value[$key] = $this->canonicalize($item);
-        if (! array_is_list($value)) ksort($value);
+        if (! is_array($value)) {
+            return $value;
+        }
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalize($item);
+        }
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
 
         return $value;
     }

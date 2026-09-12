@@ -12,7 +12,6 @@ use App\Models\PaperSignalOutcome;
 use App\Models\Symbol;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\MarketData\MarketReadinessService;
-use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
@@ -29,6 +28,7 @@ class PaperTradingExecutionService
         private EliteAgentPortfolioGateService $portfolios,
         private PaperConfidenceCalibrationService $calibration,
         private EconomicCalendarService $calendar,
+        private MarketSessionCalendarService $marketSessions,
         private CandidateGateDecisionService $gateDecisions,
         private PaperExecutionStateMachineService $executionState,
         private StrategyParameterSchemaService $schemas,
@@ -254,6 +254,7 @@ class PaperTradingExecutionService
             $candidate, $universe,
             (string) ($signal['market_regime'] ?? 'unknown'),
             (string) ($signal['volatility_regime'] ?? 'normal_volatility'),
+            $this->instrumentSession($signal),
         )) {
             $signal['signal'] = 'WAIT';
             $signal['allocator_reason'] = 'Another independent specialist owns the current regime risk budget.';
@@ -718,18 +719,14 @@ class PaperTradingExecutionService
     private function instrumentSession(array $signal): string
     {
         $time = data_get($signal, 'signal_time');
-        $hour = $time ? (int) CarbonImmutable::parse($time)->utc()->format('H') : (int) now()->utc()->format('H');
-        if ($hour >= 12 && $hour <= 16) {
-            return 'london_new_york_overlap';
-        }
-        if ($hour >= 7 && $hour < 12) {
-            return 'london';
-        }
-        if ($hour > 16 && $hour <= 21) {
-            return 'new_york';
-        }
 
-        return 'asian';
+        return (string) data_get(
+            $this->marketSessions->resolve($time ?: null, [
+                'spread_atr_ratio' => data_get($signal, 'execution_contract.spread_atr_ratio', data_get($signal, 'spread_atr_ratio')),
+            ]),
+            'session',
+            'off_session',
+        );
     }
 
     /** @return array<string, mixed> */

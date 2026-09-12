@@ -2,9 +2,9 @@
 
 namespace App\Services;
 
-use App\Models\ModelMarketPerformance;
 use App\Models\CandidateGateDecision;
 use App\Models\EliteAgentPortfolio;
+use App\Models\ModelMarketPerformance;
 
 /**
  * Converts a sealed portfolio passport into the executable portfolio_members
@@ -16,16 +16,16 @@ class RuntimeEnsemblePolicyService
 {
     public const PROTOCOL = 'runtime_ensemble_activation_v1';
 
-    public function __construct(private StrategyParameterSchemaService $schemas)
-    {
-    }
+    public function __construct(private StrategyParameterSchemaService $schemas) {}
 
     /** @return array<string, mixed> */
     public function forPerformance(ModelMarketPerformance $performance): array
     {
         $performance->loadMissing('modelVersion');
         $model = $performance->modelVersion;
-        if (! $model) return $this->wait('MODEL_VERSION_MISSING');
+        if (! $model) {
+            return $this->wait('MODEL_VERSION_MISSING');
+        }
 
         $metadata = (array) ($model->metadata ?? []);
         $members = array_values(array_filter((array) data_get($metadata, 'portfolio_members', []), 'is_array'));
@@ -37,11 +37,14 @@ class RuntimeEnsemblePolicyService
 
         if ($portfolioProxy && $passportPassed && $deployableStatus && count($members) >= 3) {
             $portfolio = $this->activePortfolio($performance);
-            if (! $portfolio) return $this->wait('PORTFOLIO_PASSPORT_NOT_ACTIVE');
+            if (! $portfolio) {
+                return $this->wait('PORTFOLIO_PASSPORT_NOT_ACTIVE');
+            }
             $sealedMembers = $this->validateSealedMembers($members, $performance, $portfolio);
             if (count($sealedMembers) !== count($members)) {
                 return $this->wait('PORTFOLIO_MEMBER_PASSPORT_NOT_ACTIVE');
             }
+
             return $this->active($sealedMembers, 'sealed_portfolio_passport', [
                 'portfolio_id' => $portfolio->id,
                 'combined_passport' => true,
@@ -73,6 +76,7 @@ class RuntimeEnsemblePolicyService
         }
 
         $model = $performance->modelVersion;
+
         return [
             'portfolio_members' => (array) data_get($policy, 'members', []),
             'parameters' => (array) data_get($model?->metadata, 'portfolio_parameters', $model?->parameters ?? []),
@@ -89,7 +93,9 @@ class RuntimeEnsemblePolicyService
             'elite_portfolio_id',
             data_get($owner->modelVersion?->metadata, 'elite_portfolio_id', 0),
         );
-        if ($portfolioId <= 0) return null;
+        if ($portfolioId <= 0) {
+            return null;
+        }
         if ((int) data_get($owner->metrics, 'portfolio_performance_id', $owner->id) !== (int) $owner->id) {
             return null;
         }
@@ -101,14 +107,19 @@ class RuntimeEnsemblePolicyService
             ->where('gate_status', 'passed')
             ->whereIn('status', ['forward_validated', 'paper'])
             ->first();
-        if (! $portfolio || data_get($portfolio->evidence, 'gate.status') !== 'passed') return null;
-        if ((int) data_get($portfolio->evidence, 'portfolio_performance_id', 0) !== (int) $owner->id) return null;
+        if (! $portfolio || data_get($portfolio->evidence, 'gate.status') !== 'passed') {
+            return null;
+        }
+        if ((int) data_get($portfolio->evidence, 'portfolio_performance_id', 0) !== (int) $owner->id) {
+            return null;
+        }
 
         $forward = CandidateGateDecision::query()
             ->where('model_market_performance_id', $owner->id)
             ->where('stage', 'statistical_forward_gate')
             ->latest('evaluated_at')
             ->first();
+
         return $forward?->decision === 'passed'
             && data_get($forward->metrics, 'portfolio_forward_identity.attribution_status') === 'portfolio_sealed'
             ? $portfolio
@@ -122,15 +133,14 @@ class RuntimeEnsemblePolicyService
      * statistical passport. This prevents stale members or raw genetic IDs
      * from entering paper/holdout through an old portfolio proxy record.
      *
-     * @param array<int, array<string, mixed>> $members
+     * @param  array<int, array<string, mixed>>  $members
      * @return array<int, array<string, mixed>>
      */
     private function validateSealedMembers(
         array $members,
         ModelMarketPerformance $owner,
         EliteAgentPortfolio $portfolio,
-    ): array
-    {
+    ): array {
         $performanceIds = [];
         foreach ($members as $member) {
             if (! is_array($member)
@@ -140,10 +150,14 @@ class RuntimeEnsemblePolicyService
             $performanceIds[] = (int) $matches[1];
         }
         $performanceIds = array_values(array_unique($performanceIds));
-        if (count($performanceIds) !== count($members)) return [];
+        if (count($performanceIds) !== count($members)) {
+            return [];
+        }
 
         $portfolioMembers = $portfolio->members->keyBy('model_market_performance_id');
-        if ($portfolioMembers->count() !== count($members)) return [];
+        if ($portfolioMembers->count() !== count($members)) {
+            return [];
+        }
 
         $performances = ModelMarketPerformance::with('modelVersion')
             ->whereIn('id', $performanceIds)
@@ -160,7 +174,9 @@ class RuntimeEnsemblePolicyService
             $performance = $performances->get((int) ($matches[1] ?? 0));
             $model = $performance?->modelVersion;
             $portfolioMember = $portfolioMembers->get((int) ($matches[1] ?? 0));
-            if (! $performance || ! $model || ! $portfolioMember || ! $this->hasIndependentPassport($performance)) return [];
+            if (! $performance || ! $model || ! $portfolioMember || ! $this->hasIndependentPassport($performance)) {
+                return [];
+            }
             if ((string) data_get($member, 'strategy') !== (string) $model->strategy
                 || (filled(data_get($member, 'version')) && (string) data_get($member, 'version') !== (string) $model->version)
                 || $this->parameterHash((array) data_get($member, 'parameters', []))
@@ -169,11 +185,15 @@ class RuntimeEnsemblePolicyService
                 || data_get($member, 'target_regime') !== $portfolioMember->target_regime
                 || data_get($member, 'target_volatility') !== $portfolioMember->target_volatility
                 || data_get($member, 'target_direction') !== $portfolioMember->target_direction
+                || data_get($member, 'target_session') !== $portfolioMember->target_session
+                || $this->parameterHash((array) data_get($member, 'specialist_context_contract', []))
+                    !== $this->parameterHash((array) data_get($portfolioMember->evidence, 'portfolio_contract.contextual_specialist_cell', []))
                 || $this->sealedParameterHash($model) !== (string) $portfolioMember->parameter_hash) {
                 return [];
             }
             $validated[] = $member;
         }
+
         return $validated;
     }
 
@@ -195,6 +215,7 @@ class RuntimeEnsemblePolicyService
             ->where('stage', 'statistical_forward_gate')
             ->latest('evaluated_at')
             ->first();
+
         return $decision?->decision === 'passed'
             && data_get($decision->metrics, 'elite_agent_passport.status') === 'passed';
     }
@@ -203,11 +224,15 @@ class RuntimeEnsemblePolicyService
     {
         $normalize = function (array $value) use (&$normalize): array {
             foreach ($value as $key => $item) {
-                if (is_array($item)) $value[$key] = $normalize($item);
+                if (is_array($item)) {
+                    $value[$key] = $normalize($item);
+                }
             }
             ksort($value);
+
             return $value;
         };
+
         return hash('sha256', json_encode($normalize($parameters), JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES));
     }
 

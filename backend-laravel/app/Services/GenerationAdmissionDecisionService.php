@@ -78,6 +78,12 @@ class GenerationAdmissionDecisionService
                 (string) $lab->timeframe,
             );
         }
+        $priorityLearningPair = $terminal
+            ? app(LearningLaneService::class)->priorityResearchPair(
+                (string) $lab->symbol,
+                (string) $lab->timeframe,
+            )
+            : null;
 
         if (($edgeOwnership['owned'] ?? false) === true) {
             // Edge Genesis is itself the current learning/evolution state
@@ -95,6 +101,10 @@ class GenerationAdmissionDecisionService
             $decision = self::BLOCK_HARD;
             $allowed = false;
             $reasons[] = 'AUTONOMOUS_MODE_STOPPED';
+        } elseif ($priorityLearningPair !== null) {
+            $decision = self::DISPATCH_LEARNING;
+            $allowed = false;
+            $reasons[] = 'VERIFIED_POSITIVE_LEARNING_PAIR_HAS_REPLAY_PRIORITY';
         } elseif ($causalLesson !== null) {
             $decision = self::DISPATCH_LEARNING;
             $allowed = false;
@@ -149,6 +159,7 @@ class GenerationAdmissionDecisionService
         }
         if ($learningConfirmation
             && $terminal
+            && $priorityLearningPair === null
             && ! $allowed
             && $decision === self::DISPATCH_LEARNING) {
             // This bounded triplet is the action requested by the velocity
@@ -190,6 +201,15 @@ class GenerationAdmissionDecisionService
                 'gene_key' => (string) $causalLesson->parameter_key,
                 'promotion_evidence' => false,
             ],
+            'learning_pair_priority' => $priorityLearningPair === null ? null : [
+                'pair_id' => (int) $priorityLearningPair->id,
+                'candidate_agent_id' => (int) $priorityLearningPair->candidate_agent_id,
+                'target' => (string) $priorityLearningPair->target,
+                'gene_key' => (string) $priorityLearningPair->candidateResponseMap?->parameter_key,
+                'target_delta' => (array) $priorityLearningPair->target_delta,
+                'research_only' => true,
+                'promotion_evidence' => false,
+            ],
             'edge_research_lane' => $edgeOwnership,
             'promotion_evidence' => false,
         ];
@@ -206,6 +226,7 @@ class GenerationAdmissionDecisionService
                 'reason_codes' => $result['reason_codes'],
                 'context' => ['input' => $input, 'learning_velocity' => $velocity,
                     'causal_confirmation_priority' => $result['causal_confirmation_priority'],
+                    'learning_pair_priority' => $result['learning_pair_priority'],
                     'autonomous_mode' => $autonomy, 'edge_research_lane' => $edgeOwnership, 'promotion_evidence' => false],
                 'decided_at' => now(),
             ]);

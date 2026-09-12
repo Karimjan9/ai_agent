@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Http;
 /** Single-seat learning-lane pump. It never competes with an active replay. */
 class PumpLearningLane extends Command
 {
-    protected $signature = 'trading:pump-learning-lane {symbol?} {--timeframe=H1} {--limit=1} {--dry-run} {--autonomous : Use the bounded lighthouse scheduler contract}';
+    protected $signature = 'trading:pump-learning-lane {symbol?} {--timeframe=H1} {--limit=1} {--pair-id= : Dispatch this exact scheduler-selected learning pair} {--dry-run} {--autonomous : Use the bounded lighthouse scheduler contract}';
 
     protected $description = 'Pump one micro-confirmed learning-lane replay only when the heavy evaluator is idle';
 
@@ -23,6 +23,7 @@ class PumpLearningLane extends Command
         $symbol = strtoupper((string) ($this->argument('symbol') ?: 'XAUUSD'));
         $timeframe = strtoupper((string) $this->option('timeframe'));
         $limit = max(1, min(2, (int) $this->option('limit')));
+        $pairId = max(0, (int) $this->option('pair-id'));
         if ((bool) $this->option('autonomous') && ! $autonomy->enabled($symbol, $timeframe)) {
             $this->line((string) json_encode([
                 'protocol' => 'learning_lane_pump_v1',
@@ -60,12 +61,20 @@ class PumpLearningLane extends Command
 
             return self::SUCCESS;
         }
-        $pendingMicro = $learning->pendingMicroPairs($symbol, $timeframe, null, $limit);
-        $existingFrontier = $learning->frontier($symbol, $timeframe, null, $limit, false);
-        $actualPlan = $pendingMicro
-            ->concat($existingFrontier->reject(fn ($pair): bool => $pendingMicro->contains('id', $pair->id)))
-            ->take($limit)
-            ->values();
+        if ($pairId > 0) {
+            $exactPair = $learning->actionablePairById($pairId, $symbol, $timeframe);
+            $actualPlan = $exactPair ? collect([$exactPair]) : collect();
+        } else {
+            $priorityPair = $learning->priorityResearchPair($symbol, $timeframe);
+            $pendingMicro = $learning->pendingMicroPairs($symbol, $timeframe, null, $limit);
+            $existingFrontier = $learning->frontier($symbol, $timeframe, null, $limit, false);
+            $actualPlan = collect([$priorityPair])->filter()
+                ->concat($pendingMicro)
+                ->concat($existingFrontier)
+                ->unique('id')
+                ->take($limit)
+                ->values();
+        }
         $payload['actual_plan'] = [
             'pair_ids' => $actualPlan->pluck('id')->map(fn ($id): int => (int) $id)->all(),
             'agent_ids' => $actualPlan->pluck('candidate_agent_id')->filter()->map(fn ($id): int => (int) $id)->all(),
@@ -94,6 +103,9 @@ class PumpLearningLane extends Command
                 '--limit' => $limit,
                 '--autonomous' => (bool) $this->option('autonomous'),
             ];
+            if ($pairId > 0) {
+                $arguments['--pair-id'] = $pairId;
+            }
             // Retry the durable frontier first. If it is empty, allow the
             // dispatcher to materialize one fresh verified frontier. This is
             // the only path that omits --retry-queued.

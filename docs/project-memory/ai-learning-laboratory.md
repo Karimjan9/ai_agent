@@ -6,10 +6,74 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # AI Learning Laboratory
+
+## Dynamic contextual council and session ownership (2026-09-12)
+
+Every ordinary XAUUSD organism generation remains exactly 20 seats, but it is
+no longer a fixed `5 objectives x 4 agents` roster. The
+`contextual_council_allocator_v1` distributes exact candidate/control pairs by
+objective pressure, uncertainty, recent local successes/failures/near-passes,
+repeat-failure exhaustion and context-local instrument posterior value. Every
+market phase keeps a one-pair exploration floor before contextual UCB may
+shift additional compute. Quotas may therefore split, merge, deepen or retire
+research cells without changing the 20-seat safety envelope.
+
+The unit of specialization is a sealed capsule, not a globally "good" agent:
+
+```text
+regime x volatility x direction x session
++ trait gene x instrument bundle x composition contract
+```
+
+Asia, London, New York and their London/New York overlap use a versioned IANA
+calendar. The contract preserves the session instance, local UTC offset,
+overlap mask, boundary distance and calendar version; observed spread and
+liquidity remain independent runtime gates. An out-of-scope specialist emits
+`WAIT`. Local evidence may allocate another paired experiment in the same
+cell, but can never grant global inheritance.
+
+Session promotion is fail-closed. It requires an explicit non-target
+regression pass and matched local niche evidence. London, New York and overlap
+specialists additionally need at least two independently profitable DST offset
+states; one seasonal UTC fit remains provisional. The specialist passport is
+checked when the member enters a portfolio and checked again before a passed
+portfolio can be routed. The sealed portfolio member row includes the exact
+session and runtime rejects altered session/context contracts.
+
+Historical generations keep their immutable allocation. The first generation
+constructed after this change is the first production cohort that can earn
+the new contextual-session evidence; older G216/G217 rows are not rewritten
+to simulate evidence they did not produce.
+
+### Production acceptance snapshot (2026-09-12)
+
+The lightweight operator profile is running and the scheduler is healthy.
+G217 is terminal at 20/20 agents with an empty queue, 100% technical
+completion and zero pipeline failures. Its final report is scientific failure,
+not technical failure: screen/full/forward/paper/champion progress is zero and
+the dominant blockers remain PF, stress cost, calendar/temporal survival,
+regime coverage, historical survival, wound regression and non-target
+regression. G217 predates the contextual allocator and retains its immutable
+historical fixed roster.
+
+The canonical learning projection currently contains 11 verified control
+pairs and one target-relative improvement, but zero canonical positive
+settlements and zero confirmed skills. Instrument runtime is real (237
+attested invocations and 58 settled rows), while canonical verified instrument
+value is still zero. Evolution credit remains performance=0,
+context-confirmed-parent=0. These zeros are evidence outcomes: the repaired
+system must continue controlled research from this frontier and must not
+manufacture a mentor, parent, champion or profitable edge.
+
+Acceptance regression after the repair passed 78 portfolio/learning/MTF tests
+(671 assertions), 60 focused learning/evolution/instrument/session tests (506
+assertions), 10 specialist passport/admission tests (31 assertions), and 51
+Python replay/session/instrument tests. Python lint/compile and Git whitespace
+checks are clean.
 
 ## Target-aligned autonomous learning lane (2026-09-09)
 
@@ -722,9 +786,21 @@ and gated typed-DSL inventions. A candidate entry is not evidence.
 Before laboratory screening or full replay, each agent receives a deterministic
 `lab_instrument_research_assignment_v2` bound to its exact parameter hash. The
 Python runtime independently verifies the assignment hash and exact parameter
-bindings and emits `lab_instrument_runtime_trace_v1`. Only that attestation can
-open a research invocation ledger row; paper/live execution authority remains
-false.
+bindings, then requires an instrument-specific runtime decision event under
+`instrument_runtime_activation_contract_v1`. Every assignment also carries a
+`contextual_instrument_decision_doctrine_v1`: at most one changed instrument is
+the causal candidate, the remaining bundle is frozen support, no unregistered
+tool may appear mid-replay, and an incompatible context must abstain. The
+runtime emits `instrument_runtime_observations_v1` directly from concrete
+tactic/router/gate/sizing/exit events; aggregate signal or trade counts are
+explicitly forbidden as a fallback. The observation receipt seals per-event
+counts, event sources, activated context keys and out-of-scope abstentions. It
+then emits
+`lab_instrument_runtime_trace_v2`, where assignment and matching bindings are
+inventory only: an invocation opens only for an actually activated decision
+path. Each context slice records `activated`, `not_observed`, or
+`abstained_outside_contract`; only activated context cells may receive paired
+credit. Paper/live execution authority remains false.
 
 Block 2 contains verified value only. An invocation may settle as helped,
 harmed, or neutral only when the existing learning lane supplies an exact

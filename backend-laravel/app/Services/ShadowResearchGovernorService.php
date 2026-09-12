@@ -6,7 +6,6 @@ use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
-use Illuminate\Support\Collection;
 
 /**
  * Opens a bounded research-only lane when a complete frozen control fails.
@@ -19,6 +18,7 @@ use Illuminate\Support\Collection;
 class ShadowResearchGovernorService
 {
     public const PROTOCOL = 'shadow_research_governor_v1';
+
     public const ALLOCATION_PROTOCOL = ResearchAllocationPolicyService::SHADOW_ALLOCATION_PROTOCOL;
 
     /** Exact 20-seat budget requested by the research contract. */
@@ -191,21 +191,27 @@ class ShadowResearchGovernorService
      * family/niche context is retained so the allocation changes search posture
      * without erasing the council's semantic cell.
      *
-     * @param array<int, array<string, mixed>> $plan
+     * @param  array<int, array<string, mixed>>  $plan
      * @return array<int, array<string, mixed>>
      */
     public function applyAllocation(array $plan, array $assessment, int $generationId = 0, bool $targetedRescueBlocked = false): array
     {
-        if (! (bool) data_get($assessment, 'allowed', false) || $plan === []) return $plan;
+        if (! (bool) data_get($assessment, 'allowed', false) || $plan === []) {
+            return $plan;
+        }
 
         $targetedRescueBlocked = $targetedRescueBlocked || (bool) data_get($assessment, 'escape_lane', false);
         $allocation = $this->allocation(count($plan), $targetedRescueBlocked);
         $roles = [];
         foreach ((array) data_get($allocation, 'counts', []) as $role => $count) {
-            for ($index = 0; $index < $count; $index++) $roles[] = $role;
+            for ($index = 0; $index < $count; $index++) {
+                $roles[] = $role;
+            }
         }
         $roles = array_slice($roles, 0, count($plan));
-        while (count($roles) < count($plan)) $roles[] = 'targeted_repair';
+        while (count($roles) < count($plan)) {
+            $roles[] = 'targeted_repair';
+        }
 
         // A single global control is not causal when the population mixes
         // executable families or price/volume datasets. Materialize the
@@ -263,7 +269,7 @@ class ShadowResearchGovernorService
             // from the same generation/family.  The pair key is metadata only;
             // it never manufactures a control result or relaxes a gate.
             $controlPairKey = hash('sha256', json_encode([
-                'protocol' => 'frozen_control_pair_v1',
+                'protocol' => ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL,
                 'generation_id' => $generationId,
                 'symbol' => data_get($assessment, 'scope.symbol'),
                 'timeframe' => data_get($assessment, 'scope.timeframe'),
@@ -271,15 +277,19 @@ class ShadowResearchGovernorService
                 'execution_lane' => $executionLane,
             ], JSON_UNESCAPED_SLASHES));
             $slot['niche']['control_pair_contract'] = [
-                'protocol' => 'frozen_control_pair_v1',
+                'protocol' => ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL,
                 'pair_key' => $controlPairKey,
+                'role' => $role === 'frozen_control' ? 'control' : 'candidate',
                 'required_for_candidate' => $role !== 'frozen_control',
                 'same_generation' => true,
                 'same_symbol_timeframe' => true,
                 'same_strategy_family' => true,
+                'same_parameter_baseline' => true,
+                'single_intervention_required' => $role !== 'frozen_control',
                 'execution_lane' => $executionLane,
                 'strategy_family' => $family,
                 'same_execution_contract' => true,
+                'shared_control_allowed_only_when_exact_baseline_matches' => true,
                 'missing_control_action' => 'diagnostic_only_no_learning_credit_no_full_replay',
                 'promotion_evidence' => false,
             ];
@@ -498,8 +508,8 @@ class ShadowResearchGovernorService
     }
 
     /**
-     * @param array<int, array<string, mixed>> $plan
-     * @param array<int, string> $roles
+     * @param  array<int, array<string, mixed>>  $plan
+     * @param  array<int, string>  $roles
      * @return array{roles: array<int, string>, assignments: array<int, array{lane: string, family: string, key: string}>}
      */
     private function materializeControlPairSeats(array $plan, array $roles): array
@@ -512,19 +522,27 @@ class ShadowResearchGovernorService
             $family = (string) ($slot['family'] ?? '');
             $key = $lane.'|'.$family;
             $required[$key] = ['lane' => $lane, 'family' => $family, 'key' => $key];
-            if ($role === 'frozen_control') $controls[$key] = true;
+            if ($role === 'frozen_control') {
+                $controls[$key] = true;
+            }
         }
 
         $assignments = [];
         foreach ($required as $key => $contract) {
-            if (isset($controls[$key])) continue;
+            if (isset($controls[$key])) {
+                continue;
+            }
 
             foreach ($plan as $index => $slot) {
-                if (($roles[$index] ?? null) === 'frozen_control') continue;
+                if (($roles[$index] ?? null) === 'frozen_control') {
+                    continue;
+                }
                 $role = (string) ($roles[$index] ?? 'targeted_repair');
                 $lane = $role === 'volume_m15_specialist' ? 'volume' : 'price';
                 $family = (string) ($slot['family'] ?? '');
-                if ($lane !== $contract['lane'] || $family !== $contract['family']) continue;
+                if ($lane !== $contract['lane'] || $family !== $contract['family']) {
+                    continue;
+                }
 
                 $roles[$index] = 'frozen_control';
                 $assignments[$index] = $contract;
@@ -588,11 +606,17 @@ class ShadowResearchGovernorService
     {
         $activeStatuses = ['draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation'];
         $reasons = [];
-        if (in_array((string) $generation->status, $activeStatuses, true)) $reasons[] = 'GENERATION_NOT_TERMINAL';
+        if (in_array((string) $generation->status, $activeStatuses, true)) {
+            $reasons[] = 'GENERATION_NOT_TERMINAL';
+        }
 
         foreach ($generation->agents as $agent) {
-            if (in_array((string) $agent->lifecycle_status, $activeStatuses, true)) $reasons[] = 'AGENT_NOT_TERMINAL';
-            if ((string) $agent->lifecycle_status === 'evaluation_error') $reasons[] = 'EVALUATION_ERROR';
+            if (in_array((string) $agent->lifecycle_status, $activeStatuses, true)) {
+                $reasons[] = 'AGENT_NOT_TERMINAL';
+            }
+            if ((string) $agent->lifecycle_status === 'evaluation_error') {
+                $reasons[] = 'EVALUATION_ERROR';
+            }
             if ((string) $agent->lifecycle_status === 'technical_quarantine') {
                 // Zero-diff is recoverable, but it is still technical evidence.
                 // It must never be converted into a strategy mutation signal.
@@ -602,9 +626,15 @@ class ShadowResearchGovernorService
 
         $controlRows = (array) data_get($this->parity->assess($generation), 'controls', []);
         foreach ($controlRows as $row) {
-            if ((string) data_get($row, 'status') !== 'failed') $reasons[] = 'CONTROL_ROW_NOT_COMPLETE_FAILURE';
-            if (trim((string) data_get($row, 'data_hash', '')) === '') $reasons[] = 'CONTROL_DATA_HASH_MISSING';
-            if (trim((string) data_get($row, 'execution_hash', '')) === '') $reasons[] = 'CONTROL_EXECUTION_HASH_MISSING';
+            if ((string) data_get($row, 'status') !== 'failed') {
+                $reasons[] = 'CONTROL_ROW_NOT_COMPLETE_FAILURE';
+            }
+            if (trim((string) data_get($row, 'data_hash', '')) === '') {
+                $reasons[] = 'CONTROL_DATA_HASH_MISSING';
+            }
+            if (trim((string) data_get($row, 'execution_hash', '')) === '') {
+                $reasons[] = 'CONTROL_EXECUTION_HASH_MISSING';
+            }
         }
 
         return [
@@ -619,8 +649,12 @@ class ShadowResearchGovernorService
         $generations = $lab->generations()->latest('generation')->get();
         $count = 0;
         foreach ($generations as $generation) {
-            if ($this->isConstructorAbortedShadow($generation)) continue;
-            if ((string) $generation->trigger_type !== 'shadow_research') break;
+            if ($this->isConstructorAbortedShadow($generation)) {
+                continue;
+            }
+            if ((string) $generation->trigger_type !== 'shadow_research') {
+                break;
+            }
             $count++;
         }
 
@@ -629,7 +663,9 @@ class ShadowResearchGovernorService
 
     private function isConstructorAbortedShadow(?LabGeneration $generation): bool
     {
-        if (! $generation || (string) $generation->trigger_type !== 'shadow_research') return false;
+        if (! $generation || (string) $generation->trigger_type !== 'shadow_research') {
+            return false;
+        }
         if ((string) data_get($generation->trigger_context, 'shadow_research_constructor_abort.reason_code') === 'INCOMPLETE_SHADOW_RESEARCH_POPULATION') {
             return true;
         }

@@ -73,11 +73,13 @@ class InstrumentInvocationLedgerService
         $runId = (string) data_get($result, 'evidence_run_id', '');
         if ((string) data_get($assignment, 'protocol') !== LabInstrumentResearchService::PROTOCOL
             || (string) data_get($assignment, 'status') !== 'assigned'
-            || (string) data_get($trace, 'protocol') !== 'lab_instrument_runtime_trace_v1'
+            || (string) data_get($trace, 'protocol') !== LabInstrumentResearchService::RUNTIME_TRACE_PROTOCOL
             || (string) data_get($trace, 'status') !== 'consumed'
             || data_get($trace, 'assignment_hash_valid') !== true
             || data_get($trace, 'parameter_hash_valid') !== true
             || data_get($trace, 'runtime_bindings_valid') !== true
+            || data_get($trace, 'activation_contracts_valid') !== true
+            || data_get($trace, 'runtime_observations_valid') !== true
             || data_get($trace, 'runtime_observed') !== true
             || $runId === ''
             || ! hash_equals((string) data_get($assignment, 'assignment_hash'), (string) data_get($trace, 'assignment_hash'))) {
@@ -104,7 +106,12 @@ class InstrumentInvocationLedgerService
         ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         $count = 0;
         foreach ((array) data_get($trace, 'instruments', []) as $runtime) {
-            if (! is_array($runtime) || ($runtime['status'] ?? null) !== 'consumed') {
+            if (! is_array($runtime)
+                || ($runtime['status'] ?? null) !== 'consumed'
+                || data_get($runtime, 'decision_path_activated') !== true
+                || data_get($runtime, 'runtime_observation_valid') !== true
+                || data_get($runtime, 'runtime_receipt_consistent') !== true
+                || (string) data_get($runtime, 'activation_contract_protocol') !== LabInstrumentResearchService::ACTIVATION_PROTOCOL) {
                 continue;
             }
             $key = (string) ($runtime['instrument_key'] ?? '');
@@ -145,6 +152,9 @@ class InstrumentInvocationLedgerService
                     'assignment_hash' => data_get($assignment, 'assignment_hash'),
                     'playbook_key' => data_get($assignment, 'playbook_key'),
                     'bundle_identity' => data_get($assignment, 'bundle_identity'),
+                    'activation_policy' => data_get($assignment, 'activation_policy'),
+                    'bundle_fully_activated' => (bool) data_get($trace, 'bundle_fully_activated', false),
+                    'bundle_activation_context_keys' => array_values((array) data_get($trace, 'bundle_activation_context_keys', [])),
                     'pair_reservation' => data_get($assignment, 'pair_reservation'),
                     'declaration' => $declaration,
                     'runtime_trace' => $runtime,
@@ -214,42 +224,12 @@ class InstrumentInvocationLedgerService
 
         $candidate = (array) $pair->candidate_metrics;
         $control = (array) $pair->control_metrics;
-        $candidateNet = (float) data_get($candidate, 'net_profit_percent', 0);
-        $controlNet = (float) data_get($control, 'net_profit_percent', 0);
-        $candidatePf = (float) data_get($candidate, 'profit_factor', 0);
-        $controlPf = (float) data_get($control, 'profit_factor', 0);
-        $candidateDrawdown = (float) data_get($candidate, 'max_drawdown_percent', data_get($candidate, 'max_drawdown', 0));
-        $controlDrawdown = (float) data_get($control, 'max_drawdown_percent', data_get($control, 'max_drawdown', 0));
-        $delta = [
-            'net_profit_percent' => round($candidateNet - $controlNet, 6),
-            'profit_factor' => round($candidatePf - $controlPf, 6),
-            'max_drawdown_percent' => round($candidateDrawdown - $controlDrawdown, 6),
-            'total_trades' => (int) data_get($candidate, 'total_trades', 0) - (int) data_get($control, 'total_trades', 0),
-        ];
-        $verdict = $delta['net_profit_percent'] > 0 && $delta['profit_factor'] >= 0 && $delta['max_drawdown_percent'] <= 0
-            ? 'helped'
-            : ($delta['net_profit_percent'] < 0 && $delta['profit_factor'] <= 0 ? 'harmed' : 'neutral');
         $contextualOutcomes = $this->pairedContextOutcomes($pair, $candidate, $control);
-        $outcomes = $contextualOutcomes !== [] ? $contextualOutcomes : [[
-            'context' => $this->researchContext($pair, $candidate),
-            'candidate' => [
-                'net_profit_percent' => $candidateNet, 'profit_factor' => $candidatePf,
-                'max_drawdown_percent' => $candidateDrawdown,
-                'total_trades' => (int) data_get($candidate, 'total_trades', 0),
-                'execution_cost_percent' => 0.0,
-            ],
-            'control' => [
-                'net_profit_percent' => $controlNet, 'profit_factor' => $controlPf,
-                'max_drawdown_percent' => $controlDrawdown,
-                'total_trades' => (int) data_get($control, 'total_trades', 0),
-                'execution_cost_percent' => 0.0,
-            ],
-            'delta' => $delta,
-            'verdict' => $verdict,
-            'suffix' => 'aggregate',
-            'source_type' => 'lab_verified_paired_control_aggregate_prior',
-            'independent_window_key' => (string) ($pair->independent_window_key ?? ''),
-        ]];
+        // Aggregate replay improvement cannot teach when or where an
+        // instrument helped. Without a powered same-context candidate/control
+        // slice, keep the result as a replay outcome and award no instrument
+        // posterior or inheritance credit.
+        $outcomes = $contextualOutcomes;
         $settled = 0;
         foreach ($rows as $row) {
             if (data_get($row->metadata, 'declaration.causal_candidate') !== true) {
@@ -257,7 +237,23 @@ class InstrumentInvocationLedgerService
 
                 continue;
             }
-            foreach ($outcomes as $outcome) {
+            $activatedOutcomes = $this->activatedOutcomes($row, $outcomes);
+            if ($activatedOutcomes === []) {
+                $metadata = (array) $row->metadata;
+                $metadata['paired_control_activation_rejection'] = [
+                    'pair_id' => (int) $pair->id,
+                    'reason_code' => 'INSTRUMENT_NOT_ACTIVATED_IN_MATCHED_CONTEXT',
+                    'promotion_evidence' => false,
+                ];
+                $row->update([
+                    'verdict' => 'not_activated_in_paired_context',
+                    'metadata' => $metadata,
+                    'settled_at' => now(),
+                ]);
+
+                continue;
+            }
+            foreach ($activatedOutcomes as $outcome) {
                 $this->operatingSystem->recordEvidence(
                     (string) $row->instrument_key,
                     strtoupper((string) $row->symbol),
@@ -272,6 +268,12 @@ class InstrumentInvocationLedgerService
                     ),
                 );
             }
+            $activatedDelta = $this->summarizeActivatedOutcomes($activatedOutcomes);
+            $activatedVerdict = $activatedDelta['net_profit_percent'] > 0
+                && $activatedDelta['profit_factor'] >= 0
+                && $activatedDelta['max_drawdown_percent'] <= 0
+                    ? 'helped'
+                    : ($activatedDelta['net_profit_percent'] < 0 && $activatedDelta['profit_factor'] <= 0 ? 'harmed' : 'neutral');
             $metadata = (array) $row->metadata;
             $metadata['paired_control'] = [
                 'pair_id' => (int) $pair->id,
@@ -279,14 +281,18 @@ class InstrumentInvocationLedgerService
                 'same_generation' => true,
                 'same_data_hash' => true,
                 'same_execution_hash' => true,
-                'contextual_settlements' => count($contextualOutcomes),
-                'context_source' => $contextualOutcomes !== [] ? 'decision_time_trade_ledger' : 'aggregate_research_prior',
+                'contextual_settlements' => count($activatedOutcomes),
+                'activated_context_keys' => array_values(array_map(
+                    fn (array $outcome): string => (string) ($outcome['context_key'] ?? 'aggregate'),
+                    $activatedOutcomes,
+                )),
+                'context_source' => 'decision_time_trade_ledger',
                 'promotion_evidence' => false,
             ];
             $row->update([
-                'verdict' => $verdict,
-                'causal_contribution' => $delta['net_profit_percent'],
-                'control_delta' => $delta,
+                'verdict' => $activatedVerdict,
+                'causal_contribution' => $activatedDelta['net_profit_percent'],
+                'control_delta' => $activatedDelta,
                 'metadata' => $metadata,
                 'settled_at' => now(),
             ]);
@@ -299,8 +305,15 @@ class InstrumentInvocationLedgerService
         // AB/control design, while this posterior answers whether this exact
         // bundle was useful in this context.
         $playbookKey = (string) data_get($assignment, 'playbook_key', '');
-        if ($settled > 0 && $playbookKey !== '') {
-            foreach ($outcomes as $outcome) {
+        $selectedKeys = array_values(array_unique(array_map('strval', (array) data_get($assignment, 'selected_keys', []))));
+        $activatedKeys = $rows->pluck('instrument_key')->map(fn ($key): string => (string) $key)->unique()->values()->all();
+        sort($selectedKeys);
+        sort($activatedKeys);
+        $bundleFullyActivated = $selectedKeys !== [] && $selectedKeys === $activatedKeys
+            && $rows->every(fn (InstrumentInvocationLedger $row): bool => data_get($row->metadata, 'bundle_fully_activated') === true);
+        $bundleOutcomes = $this->bundleActivatedOutcomes($rows->first(), $outcomes, $bundleFullyActivated);
+        if ($settled > 0 && $playbookKey !== '' && $bundleOutcomes !== []) {
+            foreach ($bundleOutcomes as $outcome) {
                 $this->operatingSystem->recordPlaybookEvidence(
                     $playbookKey,
                     strtoupper((string) $agent->symbol),
@@ -401,6 +414,7 @@ class InstrumentInvocationLedgerService
             $context = (array) data_get($candidateSlice, 'context', []);
             $context['strategy_family'] = (string) $pair->strategy_family;
             $outcomes[] = [
+                'context_key' => $key,
                 'context' => $context,
                 'candidate' => [
                     'net_profit_percent' => (float) data_get($candidateMetrics, 'net_profit_percent', 0),
@@ -425,6 +439,54 @@ class InstrumentInvocationLedgerService
         }
 
         return $outcomes;
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function activatedOutcomes(InstrumentInvocationLedger $row, array $outcomes): array
+    {
+        $active = array_flip(array_map('strval', (array) data_get($row->metadata, 'runtime_trace.activated_context_keys', [])));
+
+        return collect($outcomes)
+            ->filter(fn (array $outcome): bool => isset($active[(string) ($outcome['context_key'] ?? '')]))
+            ->values()
+            ->all();
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function bundleActivatedOutcomes(?InstrumentInvocationLedger $row, array $outcomes, bool $fullyActivated): array
+    {
+        if (! $row || ! $fullyActivated) {
+            return [];
+        }
+        $active = array_flip(array_map('strval', (array) data_get($row->metadata, 'bundle_activation_context_keys', [])));
+
+        return collect($outcomes)
+            ->filter(fn (array $outcome): bool => isset($active[(string) ($outcome['context_key'] ?? '')]))
+            ->values()
+            ->all();
+    }
+
+    /** @return array<string,mixed> */
+    private function summarizeActivatedOutcomes(array $outcomes): array
+    {
+        $weight = fn (array $outcome): int => max(1, min(
+            (int) data_get($outcome, 'candidate.total_trades', 0),
+            (int) data_get($outcome, 'control.total_trades', 0),
+        ));
+        $totalWeight = max(1, collect($outcomes)->sum($weight));
+        $weighted = fn (string $metric): float => (float) (collect($outcomes)->sum(
+            fn (array $outcome): float => (float) data_get($outcome, 'delta.'.$metric, 0) * $weight($outcome),
+        ) / $totalWeight);
+
+        return [
+            'net_profit_percent' => round((float) collect($outcomes)->sum(fn (array $outcome): float => (float) data_get($outcome, 'delta.net_profit_percent', 0)), 6),
+            'profit_factor' => round($weighted('profit_factor'), 6),
+            'max_drawdown_percent' => round((float) collect($outcomes)->max(fn (array $outcome): float => (float) data_get($outcome, 'delta.max_drawdown_percent', 0)), 6),
+            'execution_cost_percent' => round((float) collect($outcomes)->sum(fn (array $outcome): float => (float) data_get($outcome, 'delta.execution_cost_percent', 0)), 6),
+            'total_trades' => (int) collect($outcomes)->sum(fn (array $outcome): int => (int) data_get($outcome, 'delta.total_trades', 0)),
+            'context_keys' => array_values(array_map(fn (array $outcome): string => (string) ($outcome['context_key'] ?? ''), $outcomes)),
+            'scope' => 'activated_contexts_only',
+        ];
     }
 
     /** @return array<string,mixed> */

@@ -1211,9 +1211,24 @@ class LabPopulationService
                         ]);
                     }
                 }
+                $contextualCouncilAllocation = null;
+                if (! $controlledRescue
+                    && $rootExperimentPortfolio === null
+                    && (string) data_get($targetedFailureProfile, 'cohort_mode') !== 'four_siblings_plus_control_v1'
+                    && ! (bool) data_get($coverageRescue, 'eligible', false)
+                    && ! $roleComplete
+                    && $populationLimit === null
+                    && count($plan) === 20) {
+                    $contextualCouncilAllocation = app(ContextualCouncilAllocatorService::class)->allocate(
+                        $plan,
+                        $lockedLab,
+                        $adaptiveEvolutionPolicy,
+                    );
+                    $plan = (array) data_get($contextualCouncilAllocation, 'plan', $plan);
+                    $adaptiveEvolutionPolicy['contextual_council_allocation'] = data_get($contextualCouncilAllocation, 'contract');
+                }
                 $normalControlPairing = null;
-                if (! $shadowResearch
-                    && ! $controlledRescue
+                if (! $controlledRescue
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
                     && ! $roleComplete
                     && count($plan) >= 2) {
@@ -1292,7 +1307,10 @@ class LabPopulationService
                         return $this->blocked('STRUCTURAL_PLAN_VALIDATION_FAILED');
                     }
                 }
-                $populationGroupContract = $this->populationGroupContract($plan);
+                $populationGroupContract = $this->populationGroupContract(
+                    $plan,
+                    (array) data_get($contextualCouncilAllocation, 'contract', []),
+                );
                 $priorGroupCheckpoints = $this->latestGroupCheckpoints($lockedLab);
                 $generation->update(['trigger_context' => [
                     ...($generation->trigger_context ?? []),
@@ -1317,6 +1335,7 @@ class LabPopulationService
                     'group_checkpoint_inputs' => $priorGroupCheckpoints,
                     'specialist_council_contract' => [
                         'protocol' => self::SPECIALIST_COUNCIL_PROTOCOL,
+                        'contextual_allocator' => data_get($contextualCouncilAllocation, 'contract'),
                         'global_champion_forbidden' => true,
                         'member_model' => 'complementary_specialists_by_group_and_semantic_cell',
                         'parameter_specialist_rule' => 'Each member may own a bounded parameter/skill niche; group progress is measured as a frontier, not a singleton score.',
@@ -2875,7 +2894,7 @@ class LabPopulationService
     }
 
     /** @param array<int, array<string, mixed>> $plan */
-    private function populationGroupContract(array $plan): array
+    private function populationGroupContract(array $plan, array $contextualAllocation = []): array
     {
         $groups = collect($plan)
             ->map(function (array $spec, int $index): array {
@@ -2912,17 +2931,24 @@ class LabPopulationService
 
         $plannedCore = array_sum(array_map(fn (array $row): int => (int) $row['planned_seats'], $groupRows));
 
+        $dynamic = data_get($contextualAllocation, 'protocol') === ContextualCouncilAllocatorService::PROTOCOL
+            && (bool) data_get($contextualAllocation, 'dynamic', false);
+
         return [
             'protocol' => self::POPULATION_GROUP_PROTOCOL,
             'planned_population' => count($plan),
             'core_group_count' => count(self::POPULATION_GROUPS),
-            'core_seats_per_group' => self::POPULATION_GROUP_SEATS,
-            'core_population' => count(self::POPULATION_GROUPS) * self::POPULATION_GROUP_SEATS,
-            'balanced_core' => $plannedCore === count(self::POPULATION_GROUPS) * self::POPULATION_GROUP_SEATS
+            'core_seats_per_group' => $dynamic ? null : self::POPULATION_GROUP_SEATS,
+            'core_population' => $dynamic ? $plannedCore : count(self::POPULATION_GROUPS) * self::POPULATION_GROUP_SEATS,
+            'balanced_core' => ! $dynamic && $plannedCore === count(self::POPULATION_GROUPS) * self::POPULATION_GROUP_SEATS
                 && collect($groupRows)->every(fn (array $row): bool => (int) $row['planned_seats'] === self::POPULATION_GROUP_SEATS),
+            'dynamic_contextual_allocation' => $dynamic,
+            'contextual_allocator' => $contextualAllocation ?: null,
             'groups' => $groupRows,
             'overflow_seats' => max(0, count($plan) - $plannedCore),
-            'rule' => 'Five stable research groups receive four seats in the normal twenty-agent population; overflow is an explicit adaptive reserve and cannot replace a core group seat.',
+            'rule' => $dynamic
+                ? 'Twenty seats are evidence-weighted contextual candidate/control pairs; group quotas may split, merge, abstain or retire and local evidence never grants global authority.'
+                : 'Special-purpose cohorts retain their sealed allocation; they do not define the ordinary twenty-agent council.',
             'promotion_evidence' => false,
         ];
     }
@@ -8342,6 +8368,8 @@ class LabPopulationService
                     'protocol' => self::SPECIALIST_COUNCIL_PROTOCOL,
                     'group_key' => $researchGroup,
                     'member_role' => data_get($populationGroup, 'search_role'),
+                    'contextual_cell' => data_get($niche, 'contextual_specialist_cell'),
+                    'session_ownership' => data_get($niche, 'contextual_specialist_cell.session_ownership'),
                     'parameter_specialties' => array_keys($parameterDiff),
                     'global_champion' => false,
                     'council_frontier_only_until_individual_passport' => true,
@@ -8476,6 +8504,8 @@ class LabPopulationService
                     'protocol' => data_get($skillMentorInput, 'status') === 'provisional'
                         ? LearningLaneService::PROTOCOL
                         : SkillMentorService::PROTOCOL,
+                    'lesson_id' => data_get($skillMentorInput, 'lesson_id'),
+                    'pair_id' => data_get($skillMentorInput, 'pair_id'),
                     'status' => data_get($skillMentorInput, 'status', 'confirmed'),
                     'research_only' => (bool) data_get($skillMentorInput, 'research_only', false),
                     'response_map_id' => data_get($skillMentorInput, 'response_map_id'),
@@ -8552,6 +8582,8 @@ class LabPopulationService
                     'target_regime' => data_get($niche, 'regime'),
                     'target_volatility' => data_get($niche, 'volatility'),
                     'target_direction' => data_get($niche, 'direction'),
+                    'target_session' => data_get($niche, 'session'),
+                    'contextual_specialist_cell' => data_get($niche, 'contextual_specialist_cell'),
                     'screening_agent_id' => null,
                     'promotion_rule' => 'standalone_forward_passport_required; member_never_promotes_as_champion; combined_portfolio_after_passports',
                     'standalone_forward_required' => true,

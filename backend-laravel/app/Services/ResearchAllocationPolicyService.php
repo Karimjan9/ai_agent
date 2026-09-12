@@ -496,7 +496,8 @@ class ResearchAllocationPolicyService
     private function templateBucket(array $slot): string
     {
         return (string) (
-            data_get($slot, 'research_group')
+            data_get($slot, 'niche.contextual_specialist_cell.cell_hash')
+            ?: data_get($slot, 'research_group')
             ?: data_get($slot, 'target')
             ?: ((string) data_get($slot, 'family', '')).'|'.$this->executionLane($slot)
         );

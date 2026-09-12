@@ -8,6 +8,7 @@ use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
+use App\Services\ResearchAllocationPolicyService;
 use App\Services\ShadowResearchGovernorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -77,40 +78,44 @@ class ShadowResearchGovernorTest extends TestCase
             'volume_m15_specialist' => 1,
             'bounded_random_adversarial' => 1,
         ], $roles->countBy()->all());
-        $this->assertTrue(collect($adapted)->every(fn (array $slot): bool =>
-            data_get($slot, 'niche.shadow_only') === true
+        $this->assertTrue(collect($adapted)->every(fn (array $slot): bool => data_get($slot, 'niche.shadow_only') === true
             && data_get($slot, 'niche.promotion_evidence') === false
             && data_get($slot, 'niche.mutation_credit') === false
         ));
         $this->assertTrue((bool) data_get($adapted[0], 'niche.control_only'));
         $this->assertSame('monthly_survival', $adapted[0]['target']);
         $this->assertSame('price', data_get($adapted[0], 'niche.control_pair_contract.execution_lane'));
-        $this->assertTrue(collect($adapted)->filter(fn (array $slot): bool =>
-            data_get($slot, 'niche.control_only', false) === true
-        )->pluck('niche.control_pair_contract.execution_lane')->contains('volume'));
-
-        $architecture = collect($adapted)->filter(fn (array $slot): bool =>
-            data_get($slot, 'niche.shadow_research_lane.role') === 'architecture_explorer'
+        $this->assertSame(
+            ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL,
+            data_get($adapted[0], 'niche.control_pair_contract.protocol'),
         );
-        $this->assertSame($architecture->count(), $architecture->pluck('niche.entry_topology_variant')->unique()->count());
-        $this->assertTrue($architecture->every(fn (array $slot): bool =>
-            in_array(data_get($slot, 'niche.entry_topology_variant'), [
-                'regime_consensus_v1', 'transition_hazard_v1', 'breakout_retest_v1',
-                'trend_regime_confirmation_v1', 'range_reentry_confirmation_v1',
-                'volatility_persistence_v1',
-            ], true)
+        $this->assertSame('control', data_get($adapted[0], 'niche.control_pair_contract.role'));
+        $this->assertTrue(collect($adapted)->filter(fn (array $slot): bool => data_get($slot, 'niche.control_only', false) === true
+        )->pluck('niche.control_pair_contract.execution_lane')->contains('volume'));
+        $this->assertTrue(collect($adapted)->filter(fn (array $slot): bool => data_get($slot, 'niche.control_only', false) === false
+        )->every(fn (array $slot): bool => data_get($slot, 'niche.control_pair_contract.protocol') === ResearchAllocationPolicyService::CONTROL_PAIR_PROTOCOL
+            && data_get($slot, 'niche.control_pair_contract.role') === 'candidate'
+            && data_get($slot, 'niche.control_pair_contract.same_parameter_baseline') === true
+            && data_get($slot, 'niche.control_pair_contract.single_intervention_required') === true
         ));
 
-        $robustness = collect($adapted)->filter(fn (array $slot): bool =>
-            data_get($slot, 'niche.shadow_research_lane.role') === 'robustness_split_specialist'
+        $architecture = collect($adapted)->filter(fn (array $slot): bool => data_get($slot, 'niche.shadow_research_lane.role') === 'architecture_explorer'
+        );
+        $this->assertSame($architecture->count(), $architecture->pluck('niche.entry_topology_variant')->unique()->count());
+        $this->assertTrue($architecture->every(fn (array $slot): bool => in_array(data_get($slot, 'niche.entry_topology_variant'), [
+            'regime_consensus_v1', 'transition_hazard_v1', 'breakout_retest_v1',
+            'trend_regime_confirmation_v1', 'range_reentry_confirmation_v1',
+            'volatility_persistence_v1',
+        ], true)
+        ));
+
+        $robustness = collect($adapted)->filter(fn (array $slot): bool => data_get($slot, 'niche.shadow_research_lane.role') === 'robustness_split_specialist'
         );
         $this->assertSame($robustness->count(), $robustness->pluck('niche.shadow_mutation_gene')->unique()->count());
 
-        $volume = collect($adapted)->filter(fn (array $slot): bool =>
-            data_get($slot, 'niche.shadow_research_lane.role') === 'volume_m15_specialist'
+        $volume = collect($adapted)->filter(fn (array $slot): bool => data_get($slot, 'niche.shadow_research_lane.role') === 'volume_m15_specialist'
         );
-        $this->assertTrue($volume->every(fn (array $slot): bool =>
-            data_get($slot, 'niche.control_only', false) === false
+        $this->assertTrue($volume->every(fn (array $slot): bool => data_get($slot, 'niche.control_only', false) === false
             && data_get($slot, 'niche.shadow_mutation_gene') !== null
         ));
     }
@@ -130,8 +135,7 @@ class ShadowResearchGovernorTest extends TestCase
         ];
 
         $adapted = app(ShadowResearchGovernorService::class)->applyAllocation($plan, $assessment, 46, true);
-        $temporal = collect($adapted)->filter(fn (array $slot): bool =>
-            data_get($slot, 'niche.specialist_role') === 'temporal_survival_drift_abstention_specialist'
+        $temporal = collect($adapted)->filter(fn (array $slot): bool => data_get($slot, 'niche.specialist_role') === 'temporal_survival_drift_abstention_specialist'
         )->values();
 
         $this->assertCount(3, $temporal);
@@ -141,8 +145,7 @@ class ShadowResearchGovernorTest extends TestCase
             'expiry_half_life_probe',
             'drift_threshold_probe',
         ], $temporal->map(fn (array $slot): string => (string) data_get($slot, 'niche.temporal_hypothesis.variant'))->all());
-        $this->assertTrue($temporal->every(fn (array $slot): bool =>
-            data_get($slot, 'niche.shadow_only') === true
+        $this->assertTrue($temporal->every(fn (array $slot): bool => data_get($slot, 'niche.shadow_only') === true
             && data_get($slot, 'niche.temporal_hypothesis.independent_evidence_required') === true
             && data_get($slot, 'niche.temporal_hypothesis.mutation_credit') === false
             && data_get($slot, 'niche.temporal_hypothesis.promotion_evidence') === false
@@ -165,19 +168,15 @@ class ShadowResearchGovernorTest extends TestCase
             'scope' => ['symbol' => 'XAUUSD', 'timeframe' => 'H1'],
         ], 47);
 
-        $controls = collect($adapted)->filter(fn (array $slot): bool =>
-            data_get($slot, 'niche.control_only', false) === true
+        $controls = collect($adapted)->filter(fn (array $slot): bool => data_get($slot, 'niche.control_only', false) === true
         );
-        $pairs = $controls->map(fn (array $slot): string =>
-            data_get($slot, 'niche.control_pair_contract.execution_lane').'|'.data_get($slot, 'niche.control_pair_contract.strategy_family')
+        $pairs = $controls->map(fn (array $slot): string => data_get($slot, 'niche.control_pair_contract.execution_lane').'|'.data_get($slot, 'niche.control_pair_contract.strategy_family')
         )->values();
 
         $this->assertCount(4, $controls);
         $this->assertCount(4, $pairs->unique());
-        $this->assertTrue(collect($adapted)->filter(fn (array $slot): bool =>
-            data_get($slot, 'niche.control_only', false) === false
-        )->every(fn (array $slot): bool =>
-            data_get($slot, 'niche.control_pair_contract.required_for_candidate') === true
+        $this->assertTrue(collect($adapted)->filter(fn (array $slot): bool => data_get($slot, 'niche.control_only', false) === false
+        )->every(fn (array $slot): bool => data_get($slot, 'niche.control_pair_contract.required_for_candidate') === true
             && data_get($slot, 'niche.control_pair_contract.same_strategy_family') === true
         ));
     }

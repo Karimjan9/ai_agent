@@ -5,15 +5,16 @@ namespace App\Console\Commands;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
 use App\Models\LabLearningLaneDispatch;
+use App\Models\LabLearningLanePair;
 use App\Models\SystemEvent;
 use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
-use App\Services\LearningLaneService;
-use App\Services\LearningEvidenceGate;
-use App\Services\LearningMemoryService;
-use App\Services\MicroReplayService;
 use App\Services\LabQueueJobInspector;
+use App\Services\LearningEvidenceGate;
+use App\Services\LearningLaneService;
+use App\Services\LearningMemoryService;
 use App\Services\LearningProtocolSafetyService;
+use App\Services\MicroReplayService;
 use App\Services\OperatorApprovalService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
@@ -26,7 +27,7 @@ use Illuminate\Support\Facades\DB;
  */
 class DispatchLearningLane extends Command
 {
-    protected $signature = 'trading:dispatch-learning-lane {symbol?} {--timeframe=H1} {--family=} {--limit=4} {--dry-run} {--autonomous : Bounded lighthouse-only scheduler dispatch} {--force : Allow dispatch when the serialized full lane already has work} {--retry-queued : Reopen only terminal learning batches after worker recovery} {--bounded-recovery : Admit only verified 2-of-3 micro near-passes to research replay} {--generation-from=} {--generation-to=} {--approved-by=} {--approval-reason=}';
+    protected $signature = 'trading:dispatch-learning-lane {symbol?} {--timeframe=H1} {--family=} {--limit=4} {--pair-id= : Consume this exact scheduler-selected learning pair} {--dry-run} {--autonomous : Bounded lighthouse-only scheduler dispatch} {--force : Allow dispatch when the serialized full lane already has work} {--retry-queued : Reopen only terminal learning batches after worker recovery} {--bounded-recovery : Admit only verified 2-of-3 micro near-passes to research replay} {--generation-from=} {--generation-to=} {--approved-by=} {--approval-reason=}';
 
     protected $description = 'Queue paired near-miss full replays for research-only learning, never promotion';
 
@@ -45,6 +46,7 @@ class DispatchLearningLane extends Command
         $timeframe = strtoupper((string) $this->option('timeframe'));
         $family = (string) $this->option('family') ?: null;
         $limit = max(1, min(12, (int) $this->option('limit')));
+        $pairId = max(0, (int) $this->option('pair-id'));
         $autonomous = (bool) $this->option('autonomous');
         $boundedRecovery = (bool) $this->option('bounded-recovery');
         if (! (bool) config('services.learning_lane.enabled', true)) {
@@ -106,9 +108,13 @@ class DispatchLearningLane extends Command
         // Recovery only reuses the already-paired frontier. Recompiling every
         // historical screening observation here would make an operator retry
         // compete with the active lab queue and can exceed the CLI timeout.
-        if ($boundedRecovery) {
+        if ($pairId > 0) {
+            $exactPair = $learning->actionablePairById($pairId, $symbol, $timeframe, $family);
+            $pairs = $exactPair ? collect([$exactPair]) : collect();
+        } elseif ($boundedRecovery) {
             $pairs = $learning->boundedRecoveryPairs($symbol, $timeframe, $generationFrom, $generationTo, 1);
         } else {
+            $priorityPair = $learning->priorityResearchPair($symbol, $timeframe, $family);
             $pendingMicroPairs = $learning->pendingMicroPairs($symbol, $timeframe, $family, $limit);
             $pairs = $learning->frontier(
                 $symbol,
@@ -120,8 +126,10 @@ class DispatchLearningLane extends Command
             // Recovered micro seats have priority over fresh candidates. They
             // already consumed a bounded learning allocation and must not be
             // starved by newer screen pairs.
-            $pairs = $pendingMicroPairs
-                ->concat($pairs->reject(fn (\App\Models\LabLearningLanePair $pair): bool => $pendingMicroPairs->contains('id', $pair->id)))
+            $pairs = collect([$priorityPair])->filter()
+                ->concat($pendingMicroPairs)
+                ->concat($pairs)
+                ->unique('id')
                 ->take($limit)
                 ->values();
         }
@@ -155,7 +163,9 @@ class DispatchLearningLane extends Command
             .(string) config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay');
         $mutexProbe = Cache::lock($mutexKey, 1);
         $mutexBusy = ! $mutexProbe->get();
-        if (! $mutexBusy) $mutexProbe->release();
+        if (! $mutexBusy) {
+            $mutexProbe->release();
+        }
         if ($mutexBusy && ! $this->option('dry-run')) {
             $this->warn('Shared evaluator mutex band: learning lane queuega yangi heavy replay qo\'shilmadi.');
 
@@ -167,7 +177,7 @@ class DispatchLearningLane extends Command
         // map to deduplicate the whole research plane on every minute tick is
         // both redundant and memory-unbounded. Fresh materialization retains
         // the full deduplication pass before it may queue any replay.
-        if (! $this->option('dry-run') && ! $retryQueued && ! $boundedRecovery) {
+        if (! $this->option('dry-run') && ! $retryQueued && ! $boundedRecovery && $pairId <= 0) {
             $superseded = $learning->deduplicatePairs($symbol, $timeframe, $family);
             if ($superseded > 0) {
                 $this->info("{$symbol} {$timeframe}: {$superseded} duplicate learning pair(s) superseded; immutable maps preserved.");
@@ -178,7 +188,7 @@ class DispatchLearningLane extends Command
                 $pendingMicroPairs = $learning->pendingMicroPairs($symbol, $timeframe, $family, $limit);
                 $freshPairs = $learning->frontier($symbol, $timeframe, $family, $limit, false);
                 $pairs = $pendingMicroPairs
-                    ->concat($freshPairs->reject(fn (\App\Models\LabLearningLanePair $pair): bool => $pendingMicroPairs->contains('id', $pair->id)))
+                    ->concat($freshPairs->reject(fn (LabLearningLanePair $pair): bool => $pendingMicroPairs->contains('id', $pair->id)))
                     ->take($limit)
                     ->values();
             }
@@ -199,6 +209,7 @@ class DispatchLearningLane extends Command
                         ->whereIn('status', ['selected', 'queued', 'running', 'retry_ready'])
                         ->update(['status' => 'diagnostic_only', 'completed_at' => null]);
                 }
+
                 continue;
             }
             $gate = $evidenceGate->allow($pair, null, 'micro_passed');
@@ -206,6 +217,7 @@ class DispatchLearningLane extends Command
                 if (! $this->option('dry-run')) {
                     $pair->update(['status' => $gate['status'], 'metadata' => [...((array) $pair->metadata), 'evidence_gate' => $gate, 'promotion_evidence' => false]]);
                 }
+
                 continue;
             }
             $agent = $pair->candidateAgent?->fresh(['modelVersion', 'generation']);
@@ -242,10 +254,11 @@ class DispatchLearningLane extends Command
                 continue;
             }
             $micro = $microReplay->assessPair($pair, ! $this->option('dry-run'));
-            $researchAdmission = $boundedRecovery
-                && ($micro['reason'] ?? null) === 'MICRO_CONFIRMATION_FAILED'
-                && (int) ($micro['positive_windows'] ?? 0) >= 2
-                && (int) ($micro['hard_failures'] ?? PHP_INT_MAX) <= 1;
+            $contextualNearPass = $microReplay->isContextualNearPass($micro);
+            $researchAdmission = ($boundedRecovery && $contextualNearPass)
+                || ($autonomous
+                    && (bool) config('services.learning_lane.autonomous_contextual_near_pass_enabled', true)
+                    && $contextualNearPass);
             if (($micro['status'] ?? 'deferred') !== 'passed' && ! $researchAdmission) {
                 if (! $this->option('dry-run')) {
                     $microStatus = (string) ($micro['status'] ?? 'deferred');
@@ -270,6 +283,7 @@ class DispatchLearningLane extends Command
                         'promotion_evidence' => false,
                     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
                 }
+
                 continue;
             }
             if ($researchAdmission) {
@@ -277,8 +291,12 @@ class DispatchLearningLane extends Command
                     ...$micro,
                     'status' => 'research_admitted',
                     'ordinary_micro_status' => 'failed',
-                    'admission_protocol' => 'operator_bounded_micro_near_pass_v1',
-                    'approval_event_id' => $approval['event_id'],
+                    'admission_protocol' => $autonomous
+                        ? 'autonomous_contextual_micro_near_pass_v1'
+                        : 'operator_bounded_micro_near_pass_v1',
+                    'approval_event_id' => $autonomous ? null : $approval['event_id'],
+                    'context_decomposition_required' => true,
+                    'global_skill_authority' => false,
                     'promotion_evidence' => false,
                 ];
             }
@@ -304,6 +322,7 @@ class DispatchLearningLane extends Command
                     'micro' => $micro,
                     'promotion_evidence' => false,
                 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
                 continue;
             }
             $dispatch = DB::transaction(function () use ($existing, $dispatchKey, $pair, $agent, $symbol, $timeframe, $micro, $score, $decisions, $handoffs): LabLearningLaneDispatch {
@@ -386,6 +405,7 @@ class DispatchLearningLane extends Command
                     'selection_decision_id' => $decision->id,
                     'promotion_evidence' => false,
                 ]);
+
                 return $dispatch;
             });
             $jobs[] = new EvaluateLabAgentJob($agent->id, $symbol, 'full');

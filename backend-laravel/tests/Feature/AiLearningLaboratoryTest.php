@@ -79,9 +79,9 @@ class AiLearningLaboratoryTest extends TestCase
 
         $this->assertCount(20, $xau->agents);
         $this->assertNull($eur);
-        // G98 is a bounded failure-eliminator population: all 20 slots are
-        // one-gene robustness experiments, with four seats per layer. It no
-        // longer spends promotion budget on random/PF-only explorers.
+        // The ordinary cohort remains bounded to twenty, but its causal
+        // objectives are now evidence-weighted contextual pairs rather than
+        // a permanent five-by-four scaffold.
         $this->assertSame(20, $xau->agents->where('origin', 'g98_council')->count());
         $structuralAgents = $xau->agents->filter(
             fn (LabAgent $agent): bool => (bool) data_get($agent->modelVersion->metadata, 'structural_research_contract')
@@ -96,15 +96,18 @@ class AiLearningLaboratoryTest extends TestCase
                 && array_key_first((array) $agent->parameter_diff) === $gene;
         }));
         foreach (['monthly_survival', 'regime_coverage', 'volatility_session_stability', 'exit_topology', 'portfolio_router'] as $target) {
-            $this->assertSame(4, $xau->agents->where('origin', 'g98_council')->filter(
+            $this->assertGreaterThanOrEqual(2, $xau->agents->where('origin', 'g98_council')->filter(
                 fn (LabAgent $agent) => data_get($agent->modelVersion->metadata, 'generation_target') === $target
             )->count());
         }
         $groupContract = (array) data_get($xau->trigger_context, 'population_group_contract');
         $this->assertSame('population_group_checkpoint_v1', $groupContract['protocol']);
         $this->assertSame(5, $groupContract['core_group_count']);
-        $this->assertSame(4, $groupContract['core_seats_per_group']);
-        $this->assertTrue($groupContract['balanced_core']);
+        $this->assertNull($groupContract['core_seats_per_group']);
+        $this->assertFalse($groupContract['balanced_core']);
+        $this->assertTrue($groupContract['dynamic_contextual_allocation']);
+        $this->assertSame('contextual_council_allocator_v1', data_get($groupContract, 'contextual_allocator.protocol'));
+        $this->assertTrue((bool) data_get($groupContract, 'contextual_allocator.pair_integrity'));
         $this->assertTrue(data_get($xau->trigger_context, 'specialist_council_contract.global_champion_forbidden'));
         $pairing = (array) data_get($xau->trigger_context, 'control_pairing_contract', []);
         $this->assertTrue((bool) data_get($pairing, 'allowed'));
@@ -116,9 +119,12 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertTrue($xau->agents->every(
             fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'population_group.protocol') === 'population_group_checkpoint_v1'
         ));
-        $this->assertTrue($xau->agents->groupBy(
+        $this->assertFalse($xau->agents->groupBy(
             fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'population_group.key')
         )->every(fn ($members): bool => $members->count() === 4));
+        $this->assertTrue($xau->agents->every(fn (LabAgent $agent): bool => filled(data_get($agent->modelVersion->metadata, 'specialist_council_membership.contextual_cell.cell_hash'))
+            && filled(data_get($agent->modelVersion->metadata, 'specialist_council_membership.session_ownership.calendar_version'))
+        ));
         $this->assertTrue($xau->agents->groupBy(
             fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'population_group.key')
         )->every(fn ($members): bool => $members->pluck('modelVersion')->filter(
@@ -383,11 +389,21 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertArrayHasKey('population_group_checkpoints', $report);
         $this->assertCount(5, $report['population_group_checkpoints']);
         $this->assertTrue($report['council']['global_champion_forbidden']);
-        $this->assertTrue(collect($report['population_group_checkpoints'])->every(
-            fn (array $checkpoint): bool => data_get($checkpoint, 'protocol') === 'population_group_checkpoint_v1'
+        $seatCounts = (array) data_get($report, 'council.contextual_allocator.seat_counts', []);
+        $this->assertSame(20, array_sum($seatCounts));
+        $this->assertFalse(collect($seatCounts)->every(fn (int $count): bool => $count === 4));
+        $this->assertTrue(collect($report['population_group_checkpoints'])->every(function (
+            array $checkpoint,
+            string $group,
+        ) use ($seatCounts): bool {
+            return data_get($checkpoint, 'protocol') === 'population_group_checkpoint_v1'
                 && data_get($checkpoint, 'checkpoint.singleton_forbidden') === true
-                && count((array) data_get($checkpoint, 'frontier_members')) === 4
-        ));
+                && count((array) data_get($checkpoint, 'frontier_members')) === (int) ($seatCounts[$group] ?? 0);
+        }));
+        $sessions = collect($report['population_group_checkpoints'])
+            ->flatMap(fn (array $checkpoint): array => (array) data_get($checkpoint, 'frontier_members', []))
+            ->pluck('session')->filter()->unique();
+        $this->assertGreaterThanOrEqual(3, $sessions->count());
         $this->assertArrayHasKey('technical_completion_rate', $report['kpis']);
         $this->assertFalse($report['kpis']['evolution_safe']);
         $this->assertSame(0, $report['kpis']['screening_pass_rate']);

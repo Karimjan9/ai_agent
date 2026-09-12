@@ -145,6 +145,8 @@ class RuntimeEnsemblePolicyTest extends TestCase
                     'member_key' => 'performance:'.$performanceOne->id,
                     'role' => 'specialist',
                     'target_regime' => 'trend_up',
+                    'target_session' => 'london',
+                    'specialist_context_contract' => ['session' => 'london', 'scope_hash' => 'london-scope'],
                 ],
                 [
                     'strategy' => $memberTwo->strategy,
@@ -186,10 +188,10 @@ class RuntimeEnsemblePolicyTest extends TestCase
             ],
         ]);
         foreach ([
-            [$performanceOne, 'trend_up'],
-            [$performanceTwo, 'range'],
-            [$performanceThree, 'trend_down'],
-        ] as [$performance, $regime]) {
+            [$performanceOne, 'trend_up', 'london'],
+            [$performanceTwo, 'range', null],
+            [$performanceThree, 'trend_down', null],
+        ] as [$performance, $regime, $session]) {
             EliteAgentPortfolioMember::create([
                 'elite_agent_portfolio_id' => $portfolio->id,
                 'model_market_performance_id' => $performance->id,
@@ -197,8 +199,14 @@ class RuntimeEnsemblePolicyTest extends TestCase
                 'target_regime' => $regime,
                 'target_volatility' => null,
                 'target_direction' => null,
+                'target_session' => $session,
                 'risk_weight' => 1.0,
                 'parameter_hash' => $this->parameterHash($performance->modelVersion->parameters),
+                'evidence' => $session === null ? [] : [
+                    'portfolio_contract' => [
+                        'contextual_specialist_cell' => ['session' => 'london', 'scope_hash' => 'london-scope'],
+                    ],
+                ],
             ]);
         }
         CandidateGateDecision::create([
@@ -223,6 +231,15 @@ class RuntimeEnsemblePolicyTest extends TestCase
         $this->assertSame('ROUTE', $payload['runtime_action']);
         $this->assertCount(3, $payload['portfolio_members']);
         $this->assertTrue($payload['runtime_ensemble_policy']['combined_passport']);
+
+        $metadata = $owner->metadata;
+        $metadata['portfolio_members'][0]['target_session'] = 'asia';
+        $owner->update(['metadata' => $metadata]);
+        $ownerPerformance->unsetRelation('modelVersion');
+        $ownerPerformance->load('modelVersion');
+        $tampered = $service->forPerformance($ownerPerformance);
+        $this->assertSame('waiting', $tampered['status']);
+        $this->assertSame('PORTFOLIO_MEMBER_PASSPORT_NOT_ACTIVE', $tampered['reason']);
     }
 
     private function model(string $name, int $variant = 1, array $metadata = []): ModelVersion
@@ -270,6 +287,7 @@ class RuntimeEnsemblePolicyTest extends TestCase
             'metrics' => ['elite_agent_passport' => ['status' => 'passed']],
             'evaluated_at' => now()->addSeconds($variant),
         ]);
+
         return $performance;
     }
 
@@ -277,9 +295,12 @@ class RuntimeEnsemblePolicyTest extends TestCase
     {
         $normalize = function (array $value) use (&$normalize): array {
             foreach ($value as $key => $item) {
-                if (is_array($item)) $value[$key] = $normalize($item);
+                if (is_array($item)) {
+                    $value[$key] = $normalize($item);
+                }
             }
             ksort($value);
+
             return $value;
         };
 

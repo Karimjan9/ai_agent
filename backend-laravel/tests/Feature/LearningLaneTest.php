@@ -14,6 +14,7 @@ use App\Services\LearningLaneService;
 use App\Services\MicroReplayService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Mockery as m;
 use Tests\TestCase;
 
@@ -99,6 +100,175 @@ class LearningLaneTest extends TestCase
         $this->assertSame('canonical_episode_settled', $lateProjection['status'], 'A late screening projection must not roll canonical state backward.');
     }
 
+    public function test_control_that_finishes_later_reconciles_an_existing_missing_control_pair(): void
+    {
+        [$candidate, $control] = $this->agents();
+        $dataHash = str_repeat('d', 64);
+        $executionHash = str_repeat('e', 64);
+        $candidateMap = LabMutationResponseMap::create([
+            'response_key' => str_repeat('4', 64), 'stage' => 'screening', 'status' => 'screen_observed',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'profit_factor', 'lab_agent_id' => $candidate->id,
+            'evidence_run_id' => 'late-candidate-run', 'parameter_key' => 'minimum_confidence',
+            'direction' => 'increase', 'old_value' => ['value' => .9], 'new_value' => ['value' => 1.0],
+            'observed_metrics' => ['profit_factor' => 1.2, 'total_trades' => 40],
+            'metadata' => [
+                'execution_hash' => $executionHash, 'data_manifest_hash' => $dataHash,
+                'causal_credit_eligible' => true,
+            ],
+        ]);
+
+        $missing = app(LearningLaneService::class)->pairScreeningObservation(
+            $candidate,
+            ['evidence_run_id' => 'late-candidate-run'],
+            $candidateMap->toArray(),
+        );
+        $this->assertSame('missing_control', $missing['status']);
+
+        $controlMap = LabMutationResponseMap::create([
+            'response_key' => str_repeat('5', 64), 'stage' => 'screening', 'status' => 'control',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'profit_factor', 'lab_agent_id' => $control->id,
+            'evidence_run_id' => 'late-control-run',
+            'observed_metrics' => ['profit_factor' => 1.0, 'total_trades' => 40],
+            'metadata' => [
+                'execution_hash' => $executionHash, 'data_manifest_hash' => $dataHash,
+                'control_contract' => [
+                    'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
+                    'generation_id' => $control->lab_generation_id, 'data_hash' => $dataHash,
+                    'execution_hash' => $executionHash,
+                ],
+            ],
+        ]);
+
+        $reconciled = app(LearningLaneService::class)->pairUnpairedScreeningObservations(
+            'XAUUSD', 'H1', 'differential_router', 50, true,
+        );
+        $pair = LabLearningLanePair::findOrFail($missing['id']);
+
+        $this->assertSame(1, $reconciled);
+        $this->assertSame('screen_paired', $pair->status);
+        $this->assertSame($controlMap->id, $pair->control_response_map_id);
+        $this->assertTrue($pair->isVerifiedControlPair());
+        $this->assertTrue((bool) data_get($pair->target_delta, 'improved'));
+    }
+
+    public function test_micro_replay_recovers_parameter_identity_from_the_sealed_model(): void
+    {
+        [$candidate, $control] = $this->agents();
+        $dataHash = str_repeat('d', 64);
+        $executionHash = str_repeat('e', 64);
+        $controlMap = LabMutationResponseMap::create([
+            'response_key' => str_repeat('6', 64), 'stage' => 'screening', 'status' => 'control',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'profit_factor', 'lab_agent_id' => $control->id,
+            'observed_metrics' => [
+                'profit_factor' => 1.0,
+                'causal_observation' => [
+                    'trade_ledger_hash' => 'control-trades', 'event_ledger_hash' => 'control-events',
+                    'signal_decision_hash' => 'control-signals',
+                    'entry_funnel' => ['accepted_entries' => 10],
+                    'exit_funnel' => ['accepted_exits' => 10], 'abstention_count' => 0,
+                    'parameter_hash' => null,
+                ],
+            ],
+            'metadata' => ['control_contract' => [
+                'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
+                'generation_id' => $control->lab_generation_id, 'data_hash' => $dataHash,
+                'execution_hash' => $executionHash,
+            ]],
+        ]);
+        $candidateMap = LabMutationResponseMap::create([
+            'response_key' => str_repeat('7', 64), 'stage' => 'screening', 'status' => 'screen_observed',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'profit_factor', 'lab_agent_id' => $candidate->id,
+            'parameter_key' => 'minimum_confidence', 'direction' => 'increase',
+            'observed_metrics' => [
+                'profit_factor' => 1.2,
+                'causal_observation' => [
+                    'trade_ledger_hash' => 'candidate-trades', 'event_ledger_hash' => 'candidate-events',
+                    'signal_decision_hash' => 'candidate-signals',
+                    'entry_funnel' => ['accepted_entries' => 12],
+                    'exit_funnel' => ['accepted_exits' => 12], 'abstention_count' => 0,
+                    'parameter_hash' => null,
+                ],
+                'screening_survival' => ['temporal_chunk_survival' => [
+                    'window_profit_factors' => [0.0, 3.394, 1.471],
+                ]],
+            ],
+            'metadata' => ['causal_credit_eligible' => true],
+        ]);
+        $pair = LabLearningLanePair::create([
+            'pair_key' => str_repeat('8', 64), 'lab_generation_id' => $candidate->lab_generation_id,
+            'candidate_agent_id' => $candidate->id, 'control_agent_id' => $control->id,
+            'candidate_response_map_id' => $candidateMap->id, 'control_response_map_id' => $controlMap->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+            'target' => 'profit_factor', 'baseline_source' => 'control', 'status' => 'screen_paired',
+            'candidate_data_hash' => $dataHash, 'control_data_hash' => $dataHash,
+            'candidate_execution_hash' => $executionHash, 'control_execution_hash' => $executionHash,
+            'pair_integrity_status' => 'verified', 'same_generation' => true,
+            'candidate_metrics' => $candidateMap->observed_metrics,
+            'control_metrics' => $controlMap->observed_metrics,
+            'target_delta' => ['baseline' => 1.0, 'observed' => 1.2, 'delta' => .2, 'improved' => true],
+            'metadata' => ['same_snapshot' => true, 'same_execution_contract' => true],
+        ]);
+
+        $assessment = app(MicroReplayService::class)->assessPair($pair, false);
+
+        $this->assertSame('failed', $assessment['status']);
+        $this->assertSame('CAUSAL_EFFECT_CONFIRMED', data_get($assessment, 'causal_probe.reason'));
+        $this->assertTrue(app(MicroReplayService::class)->isContextualNearPass($assessment));
+        $this->assertFalse($assessment['promotion_evidence']);
+        $this->assertSame(
+            $pair->id,
+            app(LearningLaneService::class)->actionablePairById($pair->id, 'XAUUSD', 'H1')?->id,
+        );
+        $this->assertNull(
+            app(LearningLaneService::class)->actionablePairById($pair->id, 'EURUSD', 'H1'),
+        );
+
+        $exit = Artisan::call('trading:dispatch-learning-lane', [
+            'symbol' => 'XAUUSD',
+            '--timeframe' => 'H1',
+            '--limit' => 1,
+            '--pair-id' => $pair->id,
+            '--autonomous' => true,
+            '--retry-queued' => true,
+            '--dry-run' => true,
+        ]);
+        $output = Artisan::output();
+        $this->assertSame(0, $exit, $output);
+        $this->assertStringContainsString('"pair_id":'.$pair->id, $output);
+        $this->assertStringContainsString('autonomous_contextual_micro_near_pass_v1', $output);
+    }
+
+    public function test_only_a_causal_two_of_three_result_is_a_contextual_near_pass(): void
+    {
+        $service = app(MicroReplayService::class);
+        $nearPass = [
+            'status' => 'failed',
+            'reason' => 'MICRO_CONFIRMATION_FAILED',
+            'causal_probe' => ['status' => 'passed'],
+            'positive_windows' => 2,
+            'hard_failures' => 1,
+            'promotion_evidence' => false,
+        ];
+
+        $this->assertTrue($service->isContextualNearPass($nearPass));
+        $this->assertFalse($service->isContextualNearPass([
+            ...$nearPass,
+            'causal_probe' => ['status' => 'failed'],
+        ]));
+        $this->assertFalse($service->isContextualNearPass([
+            ...$nearPass,
+            'positive_windows' => 1,
+        ]));
+        $this->assertFalse($service->isContextualNearPass([
+            ...$nearPass,
+            'hard_failures' => 2,
+        ]));
+    }
+
     public function test_provisional_skill_is_role_scoped_and_can_be_used_only_as_one_research_probe(): void
     {
         [$candidate, $control] = $this->agents();
@@ -138,7 +308,7 @@ class LearningLaneTest extends TestCase
             'target_delta' => ['delta' => .2, 'improved' => true],
             'metadata' => ['same_snapshot' => true, 'same_execution_contract' => true],
         ]);
-        AgentLearningLesson::create([
+        $lesson = AgentLearningLesson::create([
             'lesson_id' => '00000000-0000-0000-0000-000000000001',
             'lesson_hash' => str_repeat('c', 128),
             'lab_agent_id' => $candidate->id,
@@ -173,6 +343,27 @@ class LearningLaneTest extends TestCase
         $this->assertTrue($skill['research_only']);
         $this->assertFalse($skill['promotion_evidence']);
         $this->assertNull($otherRole);
+
+        $pair->update(['status' => 'micro_failed']);
+        $this->assertNull(app(LearningLaneService::class)->bestProvisionalFor(
+            'XAUUSD', 'H1', 'differential_router', 'profit_factor', 'edge_quality_specialist',
+        ), 'A failed micro hypothesis must never be recycled as a positive prior.');
+
+        $pair->update(['status' => 'micro_deferred']);
+        config(['services.learning_lane.confirmation_max_attempts' => 1]);
+        ModelVersion::create([
+            'name' => 'used-provisional-probe', 'strategy' => 'used-provisional-probe',
+            'version' => 'v2', 'generation' => 2, 'status' => 'testing',
+            'parameters' => [],
+            'metadata' => ['skill_mentor_input' => [
+                'lesson_id' => $lesson->id,
+                'applied' => true,
+                'promotion_evidence' => false,
+            ]],
+        ]);
+        $this->assertNull(app(LearningLaneService::class)->bestProvisionalFor(
+            'XAUUSD', 'H1', 'differential_router', 'profit_factor', 'edge_quality_specialist',
+        ), 'An exhausted provisional probe budget must not restart from zero in another generation.');
     }
 
     public function test_baseline_without_contract_matched_control_stays_missing_control(): void

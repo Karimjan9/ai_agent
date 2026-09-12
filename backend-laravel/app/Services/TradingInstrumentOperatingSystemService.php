@@ -619,6 +619,13 @@ class TradingInstrumentOperatingSystemService
                 'paired_control_required' => data_get($contract, 'control_contract.mode') === 'paired_isolated',
             ],
             'mutation_surface' => (array) ($contract['allowed_genes'] ?? []),
+            'usage_contract' => [
+                'selection_is_not_invocation' => true,
+                'activate_only_when' => 'contract context matches and the runtime decision path emits an instrument-specific event',
+                'outside_context_action' => 'ABSTAIN',
+                'no_activation_disposition' => 'NOT_INVOKED_NO_CREDIT',
+                'causal_credit_requires' => 'pre-registered single intervention plus exact paired control and local activation evidence',
+            ],
             'learning_question' => 'Does '.$key.' improve conditional net edge versus its sealed paired control?',
             'expected_edge' => (string) ($raw['hypothesis'] ?? 'Conditional decision quality improvement.'),
             'promotion_evidence' => false,

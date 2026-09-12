@@ -17,6 +17,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Versioned XAUUSD market-session research calendar
+    |--------------------------------------------------------------------------
+    | Civil-time windows are resolved through IANA zones, so London/New York
+    | DST and their changing overlap are never frozen into one UTC-hour label.
+    | Venue holidays can be added as local YYYY-MM-DD values without code
+    | changes. They affect specialist scope only; observed broker availability
+    | and spread/liquidity remain mandatory runtime evidence.
+    */
+    'market_session_calendar' => [
+        'version' => env('MARKET_SESSION_CALENDAR_VERSION', 'xauusd_market_sessions_2026_v1'),
+        'phases' => [
+            'asia' => ['timezone' => 'Asia/Shanghai', 'start' => '08:00', 'end' => '16:00'],
+            'london' => ['timezone' => 'Europe/London', 'start' => '08:00', 'end' => '16:30'],
+            'new_york' => ['timezone' => 'America/New_York', 'start' => '08:00', 'end' => '17:00'],
+        ],
+        'holidays' => [
+            'asia' => [],
+            'london' => [],
+            'new_york' => [],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Third Party Services
     |--------------------------------------------------------------------------
     |
@@ -741,6 +765,10 @@ return [
         'confirmation_max_attempts' => max(1, min(5, (int) env('LAB_LEARNING_CONFIRMATION_MAX_ATTEMPTS', 3))),
         'micro_windows_required' => (int) env('LAB_LEARNING_LANE_MICRO_WINDOWS_REQUIRED', 3),
         'micro_positive_windows_required' => (int) env('LAB_LEARNING_LANE_MICRO_POSITIVE_WINDOWS_REQUIRED', 2),
+        // A 2-of-3 causal near-pass is not a global skill. It may spend one
+        // serialized full-replay seat so the winning contexts can be separated
+        // from the hard-failure context instead of discarding both signals.
+        'autonomous_contextual_near_pass_enabled' => env('LAB_LEARNING_LANE_CONTEXTUAL_NEAR_PASS_ENABLED', true),
         'negative_downrank_after' => (int) env('LAB_LEARNING_LANE_NEGATIVE_DOWNRANK_AFTER', 3),
         'negative_quarantine_after' => (int) env('LAB_LEARNING_LANE_NEGATIVE_QUARANTINE_AFTER', 5),
     ],

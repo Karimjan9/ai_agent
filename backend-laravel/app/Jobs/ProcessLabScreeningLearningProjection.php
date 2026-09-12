@@ -148,6 +148,24 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
             $result,
             $screeningResponseMap,
         );
+        if ((string) data_get($screeningResponseMap, 'status') === 'control') {
+            // Queue completion order is nondeterministic. A control that lands
+            // after its candidate must immediately repair the existing
+            // missing_control projection while both immutable runs are still
+            // inside the same terminal generation boundary.
+            $learningLane->pairUnpairedScreeningObservations(
+                $agent->symbol,
+                $agent->timeframe,
+                $agent->strategy_family,
+                50,
+                true,
+            );
+            LabLearningLanePair::query()
+                ->where('control_response_map_id', data_get($screeningResponseMap, 'id'))
+                ->get()
+                ->filter(fn (LabLearningLanePair $latePair): bool => $latePair->isVerifiedControlPair())
+                ->each(fn (LabLearningLanePair $latePair) => $instrumentInvocations->settleResearchPair($latePair));
+        }
         $pair = is_array($pairProjection) && filled($pairProjection['id'])
             ? LabLearningLanePair::find((int) $pairProjection['id'])
             : null;

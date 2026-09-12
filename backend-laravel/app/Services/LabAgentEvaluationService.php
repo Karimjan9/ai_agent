@@ -283,6 +283,7 @@ class LabAgentEvaluationService
                     'version' => $peer->modelVersion->version,
                     'parameters' => $peer->modelVersion->parameters ?? [],
                     'instrument_research_assignment' => $this->instrumentResearch->assignment($peer),
+                    'specialist_context_contract' => (array) data_get($peer->modelVersion->metadata, 'specialist_council_membership.contextual_cell', []),
                 ])->all(),
                 'initial_balance' => 10000, 'risk_per_trade' => 1, 'dataset_path' => $dataset,
                 'full_replay_runtime_policy' => $runtimePolicy,
@@ -450,6 +451,8 @@ class LabAgentEvaluationService
                     'target_regime' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_regime'), ['trend_up', 'trend_down', 'range']),
                     'target_volatility' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_volatility'), ['high_volatility', 'normal_volatility', 'low_volatility']),
                     'target_direction' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_direction'), ['BUY', 'SELL']),
+                    'target_session' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_session'), ['asia', 'london', 'new_york', 'overlap']),
+                    'specialist_context_contract' => (array) data_get($peer->modelVersion->metadata, 'portfolio_research_contract.contextual_specialist_cell', []),
                 ])->values()->all();
             }
             // M15 entries use the generation-frozen H1 regime. The Python
@@ -719,6 +722,7 @@ class LabAgentEvaluationService
                 'base_strategy' => $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $agent->strategy_family),
                 'version' => $model->version, 'parameters' => $model->parameters ?? [],
                 'instrument_research_assignment' => $this->instrumentResearch->assignment($agent),
+                'specialist_context_contract' => (array) data_get($model->metadata, 'specialist_council_membership.contextual_cell', []),
             ]],
             'initial_balance' => 10000,
             // Immutable snapshot-path transport keeps the request/evidence

@@ -184,7 +184,12 @@ class LabLifecycleOrchestrator
                 // Explicit cycle start prioritizes healthy strategy evolution.
                 // Recovery backlog remains recorded for a later maintenance
                 // cycle; it must not freeze every valid agent indefinitely.
-                if ($startCycle) {
+                $mandatoryLearningPair = (int) data_get(
+                    $strategy,
+                    'generation_admission.learning_pair_priority.pair_id',
+                    0,
+                ) > 0;
+                if ($startCycle && ! $mandatoryLearningPair) {
                     $strategy = ['state' => 'open', 'reason' => 'operator_start_prioritizes_healthy_agents', 'quarantined' => $quarantined];
                 } else {
                     $technical = ($strategy['reason'] ?? null) === GenerationAdmissionDecisionService::RECOVER_TECHNICAL;
@@ -374,6 +379,7 @@ class LabLifecycleOrchestrator
         ], true);
         $typed = (string) data_get($decision, 'decision', GenerationAdmissionDecisionService::BLOCK_HARD);
         if ($typed === GenerationAdmissionDecisionService::DISPATCH_LEARNING
+            && (int) data_get($decision, 'learning_pair_priority.pair_id', 0) <= 0
             && (int) data_get($decision, 'causal_confirmation_priority.lesson_id', 0) > 0) {
             // DISPATCH_LEARNING has two intentionally distinct consumers.
             // Dojo rows use learningRecovery(); a canonical target-aligned
@@ -444,6 +450,36 @@ class LabLifecycleOrchestrator
 
         $dispatched = 0;
         $records = [];
+
+        $priorityPairId = (int) data_get($strategy, 'generation_admission.learning_pair_priority.pair_id', 0);
+        if ($priorityPairId > 0) {
+            try {
+                Artisan::call('trading:pump-learning-lane', [
+                    0 => strtoupper($symbol),
+                    '--timeframe' => strtoupper($timeframe),
+                    '--limit' => 1,
+                    '--pair-id' => $priorityPairId,
+                    '--autonomous' => true,
+                ]);
+                $records['priority_pair_id'] = $priorityPairId;
+                $records['learning_lane_output'] = trim(Artisan::output());
+                $dispatched = LabLearningLaneDispatch::query()
+                    ->where('pair_id', $priorityPairId)
+                    ->whereIn('status', ['selected', 'queued', 'running'])
+                    ->count();
+            } catch (Throwable $e) {
+                $this->errors->record($cycleId, $symbol, $timeframe, self::PHASE_LEARNING_RECOVERY, $e);
+                $records['error_class'] = $e::class;
+            }
+
+            return [
+                'dispatched' => $dispatched,
+                'limit' => 1,
+                'records' => $records,
+                'strategy' => $strategy,
+                'priority_learning_pair' => true,
+            ];
+        }
 
         $cooldownKey = 'lifecycle-recovery:'.strtoupper($symbol).':'.strtoupper($timeframe);
         $dailyLimit = max(1, (int) config('services.lifecycle_orchestrator.max_recovery_dispatch_per_day', 9));

@@ -13,6 +13,7 @@ use App\Models\LabSkillZooEntry;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use App\Services\AutonomousLearningProgressDirectorService;
+use App\Services\CanonicalSkillCartridgeService;
 use App\Services\CausalCompoundingKernelService;
 use App\Services\ContextualCausalTraitCapsuleService;
 use App\Services\DirectResearchReplayAdmissionService;
@@ -460,7 +461,7 @@ class EvolutionaryAuthorityFoundryTest extends TestCase
     /** @return array<string,mixed> */
     private function recordPassedIncubator(EvolutionaryAuthorityFoundryService $service, LabAgent $mentor): array
     {
-        $resolution = app(\App\Services\CanonicalSkillCartridgeService::class)->traitCapsuleForMentor(
+        $resolution = app(CanonicalSkillCartridgeService::class)->traitCapsuleForMentor(
             $mentor->modelVersion,
             $mentor,
             'minimum_confidence',
@@ -486,19 +487,27 @@ class EvolutionaryAuthorityFoundryTest extends TestCase
     /** @return array<string,mixed> */
     private function attestedInstrumentResult(array $assignment, array $context, float $profitFactor = 1.2, float $drawdown = 5.0): array
     {
+        $contextKey = implode('|', array_filter([
+            data_get($context, 'regime'), data_get($context, 'volatility'), data_get($context, 'session'), data_get($context, 'direction'),
+        ]));
+
         return [
             'instrument_research_trace' => [
-                'protocol' => 'lab_instrument_runtime_trace_v1', 'status' => 'consumed',
+                'protocol' => LabInstrumentResearchService::RUNTIME_TRACE_PROTOCOL, 'status' => 'consumed',
                 'assignment_hash' => data_get($assignment, 'assignment_hash'),
                 'assignment_hash_valid' => true, 'parameter_hash_valid' => true, 'runtime_bindings_valid' => true,
+                'activation_contracts_valid' => true, 'runtime_observations_valid' => true, 'bundle_fully_activated' => true,
+                'bundle_activation_context_keys' => [$contextKey],
                 'instruments' => collect((array) data_get($assignment, 'selected', []))->map(fn (array $selected): array => [
                     'instrument_key' => $selected['instrument_key'], 'status' => 'consumed',
+                    'decision_path_activated' => true,
+                    'activation_contract_protocol' => LabInstrumentResearchService::ACTIVATION_PROTOCOL,
+                    'runtime_observation_valid' => true, 'runtime_receipt_consistent' => true,
+                    'activated_context_keys' => [$contextKey],
                     'parameter_bindings' => $selected['parameter_bindings'], 'promotion_evidence' => false,
                 ])->values()->all(),
                 'context_slices' => [[
-                    'context_key' => implode('|', array_filter([
-                        data_get($context, 'regime'), data_get($context, 'volatility'), data_get($context, 'session'), data_get($context, 'direction'),
-                    ])),
+                    'context_key' => $contextKey,
                     'context' => $context,
                     'metrics' => ['trades' => 30, 'net_pf' => $profitFactor, 'net_profit_percent' => 3.0,
                         'max_drawdown_percent' => $drawdown, 'execution_cost_percent' => .1],

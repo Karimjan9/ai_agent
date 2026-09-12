@@ -114,6 +114,7 @@ class CanonicalLearningOutboxService
             }
             $this->projectCapability($pair, $result, $insufficient, $trades, $map, $settlement);
             $cartridge = app(CanonicalSkillCartridgeService::class)->project($pair->fresh(['candidateAgent.modelVersion', 'candidateResponseMap', 'controlResponseMap']), $result, $map, $settlement);
+            $this->reconcileScreeningProvisionalTruth($pair, $settlement);
             $row->update(['status' => 'completed', 'attempts' => (int) $row->attempts + 1, 'last_error' => null, 'processed_at' => now()]);
             $this->markCanonicalSettled($pair, $row);
             // This is a derived receipt from the canonical settlement, not a
@@ -133,8 +134,9 @@ class CanonicalLearningOutboxService
 
     /**
      * Append/refresh projections from an already settled immutable outbox.
-     * This never reruns the market replay, creates a second settlement, or
-     * rewrites pair/gate state.
+     * This never reruns the market replay or creates a second settlement. It
+     * may repair a stale failed delivery projection after the durable outbox
+     * itself has completed successfully.
      *
      * @return array<string,mixed>
      */
@@ -162,6 +164,8 @@ class CanonicalLearningOutboxService
         app(LearningConsolidationService::class)->consolidate($settlement);
         $this->projectCapability($pair, $result, $insufficient, $trades, $pair->candidateResponseMap, $settlement);
         $cartridge = app(CanonicalSkillCartridgeService::class)->project($pair->fresh(['candidateAgent.modelVersion', 'candidateResponseMap', 'controlResponseMap']), $result, $pair->candidateResponseMap, $settlement);
+        $this->reconcileScreeningProvisionalTruth($pair, $settlement);
+        $this->markCanonicalSettled($pair, $row);
         if ($cartridge === null) {
             // A valid settlement without one reproducible intervention is
             // useful as canonical learning truth, but it is not a cartridge.
@@ -177,6 +181,54 @@ class CanonicalLearningOutboxService
 
         return ['status' => 'reprojected', 'outbox_id' => $row->id, 'settlement_id' => $settlement->id,
             'skill_cartridge' => $cartridge, 'promotion_evidence' => false];
+    }
+
+    /**
+     * A screening uplift is a hypothesis, not a durable positive lesson. Once
+     * its canonical replay settles, a non-positive result must retire that
+     * provisional belief so a later constructor cannot mistake the original
+     * screen signal for reusable knowledge. The immutable lesson and replay
+     * remain available as audit history.
+     */
+    private function reconcileScreeningProvisionalTruth(
+        LabLearningLanePair $pair,
+        AgentLearningSettlement $settlement,
+    ): void {
+        if ((string) $settlement->evidence_state === 'positive' && ! $settlement->hard_failure) {
+            return;
+        }
+
+        $status = (string) $settlement->evidence_state === 'negative' || $settlement->hard_failure
+            ? 'falsified'
+            : 'inconclusive';
+        AgentLearningLesson::query()
+            ->where('lab_agent_id', $pair->candidate_agent_id)
+            ->where('lesson_type', 'skill_lesson')
+            ->where('status', 'provisional')
+            ->where('outcome', 'beneficial')
+            ->get()
+            ->filter(fn (AgentLearningLesson $lesson): bool => (int) data_get($lesson->evidence, 'pair_id', 0) === (int) $pair->id)
+            ->each(function (AgentLearningLesson $lesson) use ($pair, $settlement, $status): void {
+                $lesson->update([
+                    'status' => $status,
+                    'expires_at' => now(),
+                    'evidence' => [
+                        ...((array) $lesson->evidence),
+                        'canonical_reconciliation' => [
+                            'protocol' => self::PROTOCOL,
+                            'pair_id' => (int) $pair->id,
+                            'settlement_id' => (int) $settlement->id,
+                            'evidence_state' => (string) $settlement->evidence_state,
+                            'hard_failure' => (bool) $settlement->hard_failure,
+                            'screening_positive_reusable' => false,
+                            'disposition' => $status,
+                            'reconciled_at' => now()->utc()->toIso8601String(),
+                            'promotion_evidence' => false,
+                        ],
+                        'promotion_evidence' => false,
+                    ],
+                ]);
+            });
     }
 
     /** A derived projection may evolve; the immutable outbox payload may not. */
@@ -308,10 +360,21 @@ class CanonicalLearningOutboxService
 
     private function markCanonicalSettled(LabLearningLanePair $pair, CanonicalLearningOutbox $row): void
     {
-        LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->whereIn('status', ['selected', 'queued', 'running'])->update([
+        LabLearningLaneDispatch::query()->where('pair_id', $pair->id)->whereIn('status', [
+            'selected', 'queued', 'running', 'canonical_pending', 'canonical_failed',
+        ])->update([
             'status' => 'canonical_settled', 'stage' => 'full_replay', 'completed_at' => null,
         ]);
-        $pair->update(['status' => 'canonical_episode_settled', 'metadata' => [...((array) $pair->metadata), 'canonical_outbox_id' => $row->id, 'canonical_settled_at' => now()->utc()->toIso8601String(), 'promotion_evidence' => false]]);
+        $metadata = (array) $pair->metadata;
+        $recovered = array_key_exists('canonical_failure', $metadata);
+        unset($metadata['canonical_failure'], $metadata['canonical_failure_at']);
+        $pair->update(['status' => 'canonical_episode_settled', 'metadata' => [
+            ...$metadata,
+            'canonical_outbox_id' => $row->id,
+            'canonical_settled_at' => now()->utc()->toIso8601String(),
+            'canonical_projection_recovered' => $recovered,
+            'promotion_evidence' => false,
+        ]]);
     }
 
     /** Complete only after a canonical settlement plus lesson decision. */

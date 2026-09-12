@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\AgentLearningSettlement;
 use App\Models\AgentLearningEpisode;
+use App\Models\AgentLearningSettlement;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
@@ -217,11 +217,17 @@ class ContextualCausalTraitCapsuleTest extends TestCase
             'forward_window_protocol' => ['window_keys' => [$window], 'observed_windows' => 1,
                 'positive_windows' => 1, 'independence_verified' => true, 'overlap_detected' => false],
             'instrument_research_trace' => [
-                'protocol' => 'lab_instrument_runtime_trace_v1', 'status' => 'consumed',
+                'protocol' => LabInstrumentResearchService::RUNTIME_TRACE_PROTOCOL, 'status' => 'consumed',
                 'assignment_hash' => $assignment['assignment_hash'], 'assignment_hash_valid' => true,
                 'parameter_hash_valid' => true, 'runtime_bindings_valid' => true,
+                'activation_contracts_valid' => true, 'runtime_observations_valid' => true, 'bundle_fully_activated' => true,
+                'bundle_activation_context_keys' => ['trend_up|normal|london|BUY'],
                 'instruments' => collect($assignment['selected'])->map(fn (array $instrument): array => [
                     'instrument_key' => $instrument['instrument_key'], 'status' => 'consumed',
+                    'decision_path_activated' => true,
+                    'activation_contract_protocol' => LabInstrumentResearchService::ACTIVATION_PROTOCOL,
+                    'runtime_observation_valid' => true, 'runtime_receipt_consistent' => true,
+                    'activated_context_keys' => ['trend_up|normal|london|BUY'],
                     'parameter_bindings' => $instrument['parameter_bindings'], 'promotion_evidence' => false,
                 ])->values()->all(),
                 'context_slices' => [[

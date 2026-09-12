@@ -3,7 +3,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-
 Timeframe = Literal["M5", "M15", "H1", "H4", "D1"]
 Direction = Literal["long", "short"]
 TradeResult = Literal["win", "loss", "open"]
@@ -71,6 +70,8 @@ class StrategyRuntimeConfig(BaseModel):
     # edges are asymmetric inside the same regime/volatility niche. It is a
     # sealed routing declaration, never inferred from the combined outcome.
     target_direction: Literal["BUY", "SELL"] | None = None
+    target_session: Literal["asia", "london", "new_york", "overlap"] | None = None
+    specialist_context_contract: dict[str, Any] = Field(default_factory=dict)
     # Sealed by Laravel before a laboratory replay. The runtime may attest
     # only bindings it actually received and consumed; the declaration grants
     # neither paper authority nor promotion evidence.
@@ -144,7 +145,9 @@ class SimpleBacktestRequest(BaseModel):
     # declaration is accepted for local unit tests but is never promotion
     # evidence.
     execution_contract: dict[str, Any] = Field(default_factory=dict)
-    evaluation_mode: Literal["incremental", "full", "replay", "temporal_ablation"] = "full"
+    evaluation_mode: Literal["incremental", "full", "replay", "temporal_ablation"] = (
+        "full"
+    )
     # A delayed signal is a deterministic execution-stress variant.  OHLC,
     # regime and volume features stay anchored to their observed candle; only
     # signal-derived columns move forward so the test cannot introduce look-ahead.
@@ -156,6 +159,9 @@ class SimpleBacktestRequest(BaseModel):
     # Candidate-specific assignment copied from StrategyRuntimeConfig while a
     # cohort is replayed. It is part of the immutable candidate cache key.
     instrument_research_assignment: dict[str, Any] = Field(default_factory=dict)
+    # A contextual specialist must abstain outside this pre-registered cell.
+    # It is routing scope only and cannot create promotion evidence.
+    specialist_context_contract: dict[str, Any] = Field(default_factory=dict)
     # Canonical volume provenance is passed separately from strategy genes so
     # an unavailable source can never be interpreted as low volume.
     volume_context: dict[str, Any] = Field(default_factory=dict)
@@ -299,7 +305,9 @@ class SimpleBacktestResponse(BaseModel):
     stability_score: int = 0
     equity_curve: list[float] = Field(default_factory=list)
     regime_performance: dict[str, dict[str, float | int]] = Field(default_factory=dict)
-    volatility_performance: dict[str, dict[str, float | int]] = Field(default_factory=dict)
+    volatility_performance: dict[str, dict[str, float | int]] = Field(
+        default_factory=dict
+    )
     monte_carlo: dict[str, Any] = Field(default_factory=dict)
     strategy_dna: dict[str, Any] = Field(default_factory=dict)
     execution_assumptions: dict[str, Any] = Field(default_factory=dict)
@@ -322,6 +330,10 @@ class SimpleBacktestResponse(BaseModel):
     # Strategy-owned WHERE->WHY->PROVE->TRIGGER funnel. Unlike entry_funnel,
     # it retains WAIT opportunities that never became raw trade signals.
     entry_contract_funnel: dict[str, Any] = Field(default_factory=dict)
+    # Instrument selection and parameter binding are not runtime invocation.
+    # This bounded ledger is written at the exact decision/management event
+    # that invoked each pre-registered instrument and is still research-only.
+    instrument_runtime_observations: dict[str, Any] = Field(default_factory=dict)
     # Architecture Genesis needs the entire decision-to-outcome chain even
     # when a stage truthfully observed zero entries. Values are structured
     # observations; their presence is not an edge or promotion claim.

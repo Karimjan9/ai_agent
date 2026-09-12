@@ -9,6 +9,7 @@ use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\ModelMarketPerformance;
+use App\Models\ModelVersion;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -239,14 +240,25 @@ class LearningLaneService
             ->when($symbol, fn ($query) => $query->where('symbol', strtoupper($symbol)))
             ->when($timeframe, fn ($query) => $query->where('timeframe', strtoupper($timeframe)))
             ->when($family, fn ($query) => $query->where('strategy_family', $family))
-            // Autonomous ticks consume only newly projected observations.
-            // Explicit operator materialization keeps the legacy refresh
-            // path so a later frozen control may repair missing-control rows.
-            ->when($unpairedOnly, fn ($query) => $query->whereNotExists(fn ($pairs) => $pairs
-                ->selectRaw('1')
-                ->from('lab_learning_lane_pairs as p')
-                ->whereColumn('p.candidate_response_map_id', 'lab_mutation_response_maps.id')
-                ->where('p.status', '!=', 'superseded')))
+            // Autonomous ticks consume newly projected observations and the
+            // bounded live rows whose exact control committed later. Broad
+            // legacy reconciliation remains an explicit operator action.
+            ->when($unpairedOnly, fn ($query) => $query->where(function ($candidates): void {
+                $candidates->whereNotExists(fn ($pairs) => $pairs
+                    ->selectRaw('1')
+                    ->from('lab_learning_lane_pairs as p')
+                    ->whereColumn('p.candidate_response_map_id', 'lab_mutation_response_maps.id')
+                    ->where('p.status', '!=', 'superseded'))
+                    // A candidate projection can commit before its paired
+                    // control. It already has a row, but it is still
+                    // operationally unpaired and must be revisited when the
+                    // control projection arrives later.
+                    ->orWhereExists(fn ($pairs) => $pairs
+                        ->selectRaw('1')
+                        ->from('lab_learning_lane_pairs as p')
+                        ->whereColumn('p.candidate_response_map_id', 'lab_mutation_response_maps.id')
+                        ->where('p.status', 'missing_control'));
+            }))
             ->latest('id')
             ->limit(max(1, $limit))
             ->get();
@@ -559,6 +571,92 @@ class LearningLaneService
             ->filter(fn (LabLearningLanePair $pair): bool => $this->pairHasVerifiedControl($pair))
             ->unique('id')
             ->values();
+    }
+
+    /**
+     * Return the one evidence-bearing learning obligation that must be
+     * consumed before another generic population is admitted.
+     *
+     * Already allocated micro work always wins. A fresh obligation requires
+     * an exact frozen control, one causally attributable gene and a positive
+     * target delta. It remains research-only and grants no parent, paper or
+     * promotion authority.
+     */
+    public function priorityResearchPair(
+        string $symbol,
+        string $timeframe,
+        ?string $family = null,
+    ): ?LabLearningLanePair {
+        $eligible = function (LabLearningLanePair $pair): bool {
+            $pair->loadMissing('candidateResponseMap');
+
+            return data_get($pair->target_delta, 'improved') === true
+                && filled($pair->candidateResponseMap?->parameter_key)
+                && data_get($pair->candidateResponseMap?->metadata, 'causal_credit_eligible') === true;
+        };
+        $pending = $this->pendingMicroPairs($symbol, $timeframe, $family, 500)->filter($eligible);
+        $fresh = $this->frontier($symbol, $timeframe, $family, 100, false)->filter($eligible);
+
+        // The newest terminal generation is the current curriculum. Older
+        // allocated rows remain durable and will be revisited, but they must
+        // not make a fresh verified improvement wait behind legacy backlog.
+        return $pending->concat($fresh)
+            ->unique('id')
+            ->sortByDesc(fn (LabLearningLanePair $pair): array => [
+                (int) $pair->lab_generation_id,
+                (int) $pair->id,
+            ])
+            ->first();
+    }
+
+    /**
+     * Resolve an exact scheduler-selected pair without letting a later queue
+     * query substitute another row. The dispatch command still applies every
+     * micro, evidence and replay gate; this method only preserves scheduling
+     * identity across lifecycle -> pump -> dispatcher.
+     */
+    public function actionablePairById(
+        int $pairId,
+        string $symbol,
+        string $timeframe,
+        ?string $family = null,
+    ): ?LabLearningLanePair {
+        if ($pairId <= 0 || ! $this->available()) {
+            return null;
+        }
+
+        $pair = LabLearningLanePair::query()
+            ->with([
+                'candidateAgent.modelVersion',
+                'candidateAgent.generation',
+                'candidateResponseMap',
+                'controlResponseMap',
+                'dispatches',
+            ])
+            ->whereKey($pairId)
+            ->where('symbol', strtoupper($symbol))
+            ->where('timeframe', strtoupper($timeframe))
+            ->when($family, fn ($query) => $query->where('strategy_family', $family))
+            ->whereIn('status', ['screen_paired', 'provisional'])
+            ->first();
+        if (! $pair || ! $this->pairHasVerifiedControl($pair)) {
+            return null;
+        }
+
+        $pendingMicro = $pair->dispatches->contains(fn (LabLearningLaneDispatch $dispatch): bool => (string) $dispatch->stage === 'micro'
+            && (string) $dispatch->micro_status === 'pending'
+            && in_array((string) $dispatch->status, ['retry_ready', 'selected'], true));
+        if ($pendingMicro) {
+            return $pair;
+        }
+
+        $alreadyConsumed = $pair->dispatches->contains(fn (LabLearningLaneDispatch $dispatch): bool => in_array((string) $dispatch->status, ['selected', 'queued', 'running', 'completed'], true));
+        $candidateReady = $pair->candidateAgent !== null
+            && in_array((string) $pair->candidateAgent->lifecycle_status, [
+                'screened', 'challenger', 'rejected', 'stagnated',
+            ], true);
+
+        return ! $alreadyConsumed && $candidateReady ? $pair : null;
     }
 
     /**
@@ -999,13 +1097,17 @@ class LearningLaneService
             ->where('lesson_type', 'skill_lesson')
             ->whereIn('status', ['provisional', 'confirmed'])
             ->where('failure_class', $target)
+            ->where(function ($query): void {
+                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
             ->latest('id')
             ->get()
             ->when($role !== null && $role !== '', fn (Collection $rows): Collection => $rows->filter(
                 fn (AgentLearningLesson $lesson): bool => (string) data_get($lesson->evidence, 'specialist_role', '') === $role,
             ))
             ->filter(fn (AgentLearningLesson $lesson): bool => filled($lesson->parameter_key)
-                && $this->lessonHasVerifiedControlPair($lesson));
+                && $this->lessonHasVerifiedControlPair($lesson)
+                && $this->provisionalProbeBudgetAvailable($lesson));
         $lesson = $lessons->sortByDesc(fn (AgentLearningLesson $row): array => [
             $row->status === 'confirmed' ? 1 : 0,
             $this->targetUtility($target, (float) data_get($row->evidence, 'target_delta.delta', 0)),
@@ -1017,6 +1119,7 @@ class LearningLaneService
 
         return [
             'lesson_id' => (int) $lesson->id,
+            'pair_id' => (int) data_get($lesson->evidence, 'pair_id'),
             'parameter_key' => $lesson->parameter_key,
             'direction' => data_get($lesson->evidence, 'direction'),
             'target' => $target,
@@ -1039,7 +1142,29 @@ class LearningLaneService
             return false;
         }
 
-        return $this->pairHasVerifiedControl($pair);
+        // A failed canonical boundary is an audit result, never an endlessly
+        // reusable positive prior. Screening and explicitly deferred micro
+        // hypotheses may receive a bounded research probe; canonical positive
+        // states are consumed by the causal cohort planner.
+        return in_array((string) $pair->status, [
+            'screen_paired', 'provisional', 'micro_deferred',
+            'canonical_episode_settled', 'lesson_compiled', 'skill_confirmed',
+        ], true) && $this->pairHasVerifiedControl($pair);
+    }
+
+    private function provisionalProbeBudgetAvailable(AgentLearningLesson $lesson): bool
+    {
+        if ((string) $lesson->status === 'confirmed') {
+            return true;
+        }
+
+        $maximum = max(1, (int) config('services.learning_lane.confirmation_max_attempts', 3));
+        $used = ModelVersion::query()
+            ->where('metadata->skill_mentor_input->lesson_id', (int) $lesson->id)
+            ->where('metadata->skill_mentor_input->applied', true)
+            ->count();
+
+        return $used < $maximum;
     }
 
     private function pairHasVerifiedControl(LabLearningLanePair $pair): bool

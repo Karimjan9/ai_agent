@@ -28,6 +28,9 @@ class CouncilCompatibilityService
             $this->regime($member) ?: 'any',
             (string) (data_get($member, 'target_volatility') ?: data_get($member, 'owner_volatility', data_get($member, 'volatility', data_get($member, 'modelVersion.metadata.portfolio_research_contract.target_volatility', 'any')))),
             (string) data_get($member, 'target_direction', data_get($member, 'direction', 'any')),
+            (string) (data_get($member, 'target_session')
+                ?: data_get($member, 'owner_session')
+                ?: data_get($member, 'modelVersion.metadata.portfolio_research_contract.target_session', 'any')),
         ]));
         $duplicateNiches = $niches->duplicates()->values()->all();
         // Different declared roles can still be the same executable trader.
@@ -44,10 +47,16 @@ class CouncilCompatibilityService
         if (! $roles->contains(SpecialistPassportService::ROUTER_ROLE)) {
             $reasons[] = 'COUNCIL_NEEDS_TRANSITION_RISK_ROUTER';
         }
-        if ($duplicateNiches !== []) $reasons[] = 'COUNCIL_HAS_DUPLICATE_NICHE';
-        if ($duplicateBehavior !== []) $reasons[] = 'COUNCIL_HAS_BEHAVIORAL_CLONE';
+        if ($duplicateNiches !== []) {
+            $reasons[] = 'COUNCIL_HAS_DUPLICATE_NICHE';
+        }
+        if ($duplicateBehavior !== []) {
+            $reasons[] = 'COUNCIL_HAS_BEHAVIORAL_CLONE';
+        }
         $max = (int) $this->setting('services.lab_selection.council_max_members', 6);
-        if ($roles->count() > $max) $reasons[] = 'COUNCIL_MEMBER_LIMIT_EXCEEDED';
+        if ($roles->count() > $max) {
+            $reasons[] = 'COUNCIL_MEMBER_LIMIT_EXCEEDED';
+        }
 
         return [
             'protocol' => self::PROTOCOL,
@@ -127,12 +136,15 @@ class CouncilCompatibilityService
         $fingerprint = (string) (data_get($member, 'behavior_fingerprint')
             ?: data_get($member, 'metrics.behavior_fingerprint')
             ?: data_get($member, 'modelVersion.metadata.behavior_fingerprint'));
-        if ($fingerprint !== '') return $fingerprint;
+        if ($fingerprint !== '') {
+            return $fingerprint;
+        }
 
         $trade = (string) (data_get($member, 'metrics.trade_ledger_hash')
             ?: data_get($member, 'modelVersion.metadata.last_screen_result.trade_ledger_hash'));
         $event = (string) (data_get($member, 'metrics.event_ledger_hash')
             ?: data_get($member, 'modelVersion.metadata.last_screen_result.event_ledger_hash'));
+
         return $trade !== '' && $event !== '' ? hash('sha256', $trade.'|'.$event) : '';
     }
 
