@@ -240,6 +240,36 @@ class LearningLaneTest extends TestCase
         $this->assertSame(0, $exit, $output);
         $this->assertStringContainsString('"pair_id":'.$pair->id, $output);
         $this->assertStringContainsString('autonomous_contextual_micro_near_pass_v1', $output);
+
+        $dispatch = LabLearningLaneDispatch::create([
+            'dispatch_key' => str_repeat('a', 64),
+            'pair_id' => $pair->id,
+            'lab_generation_id' => $candidate->lab_generation_id,
+            'lab_agent_id' => $candidate->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'differential_router',
+            'target' => 'profit_factor',
+            'status' => 'retry_ready',
+            'stage' => 'micro',
+            'micro_status' => 'pending',
+            'metadata' => ['promotion_evidence' => false],
+            'selected_at' => now(),
+        ]);
+        $candidate->update(['lifecycle_status' => 'technical_quarantine']);
+
+        $this->assertNull(app(LearningLaneService::class)
+            ->actionablePairById($pair->id, 'XAUUSD', 'H1'));
+        $this->assertFalse(app(LearningLaneService::class)
+            ->pendingMicroPairs('XAUUSD', 'H1', null, 10)->contains('id', $pair->id));
+        $this->assertNull(app(LearningLaneService::class)->priorityResearchPair('XAUUSD', 'H1'));
+        $this->assertSame(1, app(LearningLaneService::class)
+            ->reconcileStaleMicroDispatches('XAUUSD', 'H1'));
+        $this->assertSame('diagnostic_only', $dispatch->fresh()->status);
+        $this->assertSame(
+            'CANDIDATE_LIFECYCLE_NOT_REPLAYABLE',
+            data_get($dispatch->fresh()->micro_metadata, 'reason'),
+        );
     }
 
     public function test_only_a_causal_two_of_three_result_is_a_contextual_near_pass(): void

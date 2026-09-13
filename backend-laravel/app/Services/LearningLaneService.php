@@ -30,6 +30,10 @@ class LearningLaneService
 
     public const PAIR_PROTOCOL = 'paired_control_ledger_v1';
 
+    private const REPLAYABLE_CANDIDATE_LIFECYCLES = [
+        'screened', 'challenger', 'rejected', 'stagnated',
+    ];
+
     /** @return array<string, mixed>|null */
     public function pairScreeningObservation(
         LabAgent $agent,
@@ -493,9 +497,10 @@ class LearningLaneService
             ->whereNotNull('control_execution_hash')
             ->whereColumn('candidate_data_hash', 'control_data_hash')
             ->whereColumn('candidate_execution_hash', 'control_execution_hash')
-            ->whereHas('candidateAgent', fn ($query) => $query->whereIn('lifecycle_status', [
-                'screened', 'challenger', 'rejected', 'stagnated',
-            ]))
+            ->whereHas('candidateAgent', fn ($query) => $query->whereIn(
+                'lifecycle_status',
+                self::REPLAYABLE_CANDIDATE_LIFECYCLES,
+            ))
             ->whereHas('controlResponseMap', fn ($query) => $query->where('status', 'control'))
             ->whereDoesntHave('dispatches', fn ($query) => $query->whereIn('status', [
                 'selected', 'queued', 'running', 'completed',
@@ -563,6 +568,10 @@ class LearningLaneService
             ->where('micro_status', 'pending')
             ->whereIn('status', ['retry_ready', 'selected'])
             ->whereHas('pair', fn ($query) => $query->whereIn('status', ['screen_paired', 'provisional']))
+            ->whereHas('pair.candidateAgent', fn ($query) => $query->whereIn(
+                'lifecycle_status',
+                self::REPLAYABLE_CANDIDATE_LIFECYCLES,
+            ))
             ->oldest('id')
             ->limit(max(1, $limit))
             ->get()
@@ -588,9 +597,10 @@ class LearningLaneService
         ?string $family = null,
     ): ?LabLearningLanePair {
         $eligible = function (LabLearningLanePair $pair): bool {
-            $pair->loadMissing('candidateResponseMap');
+            $pair->loadMissing(['candidateAgent', 'candidateResponseMap']);
 
-            return data_get($pair->target_delta, 'improved') === true
+            return $this->candidateReplayable($pair->candidateAgent)
+                && data_get($pair->target_delta, 'improved') === true
                 && filled($pair->candidateResponseMap?->parameter_key)
                 && data_get($pair->candidateResponseMap?->metadata, 'causal_credit_eligible') === true;
         };
@@ -643,6 +653,14 @@ class LearningLaneService
             return null;
         }
 
+        // A durable retry receipt does not make a quarantined or otherwise
+        // non-replayable candidate executable again. This check must precede
+        // the pending-micro shortcut or one stale row can starve the entire
+        // evidence-ranked frontier forever.
+        if (! $this->candidateReplayable($pair->candidateAgent)) {
+            return null;
+        }
+
         $pendingMicro = $pair->dispatches->contains(fn (LabLearningLaneDispatch $dispatch): bool => (string) $dispatch->stage === 'micro'
             && (string) $dispatch->micro_status === 'pending'
             && in_array((string) $dispatch->status, ['retry_ready', 'selected'], true));
@@ -651,12 +669,8 @@ class LearningLaneService
         }
 
         $alreadyConsumed = $pair->dispatches->contains(fn (LabLearningLaneDispatch $dispatch): bool => in_array((string) $dispatch->status, ['selected', 'queued', 'running', 'completed'], true));
-        $candidateReady = $pair->candidateAgent !== null
-            && in_array((string) $pair->candidateAgent->lifecycle_status, [
-                'screened', 'challenger', 'rejected', 'stagnated',
-            ], true);
 
-        return ! $alreadyConsumed && $candidateReady ? $pair : null;
+        return ! $alreadyConsumed ? $pair : null;
     }
 
     /**
@@ -744,7 +758,7 @@ class LearningLaneService
         }
 
         $rows = LabLearningLaneDispatch::query()
-            ->with('pair')
+            ->with('pair.candidateAgent')
             ->where('symbol', strtoupper($symbol))
             ->where('timeframe', strtoupper($timeframe))
             ->when($family, fn ($query) => $query->where('strategy_family', $family))
@@ -756,6 +770,28 @@ class LearningLaneService
         foreach ($rows as $dispatch) {
             $pair = $dispatch->pair;
             if (! $pair) {
+                continue;
+            }
+            if (! $this->candidateReplayable($pair->candidateAgent)) {
+                $dispatch->update([
+                    'status' => 'diagnostic_only',
+                    'micro_status' => 'deferred',
+                    'micro_completed_at' => now(),
+                    'micro_metadata' => [
+                        'protocol' => MicroReplayService::PROTOCOL,
+                        'status' => 'deferred',
+                        'reason' => 'CANDIDATE_LIFECYCLE_NOT_REPLAYABLE',
+                    ],
+                    'metadata' => [
+                        ...((array) $dispatch->metadata),
+                        'recovery_protocol' => 'stale_micro_dispatch_reconciled_v1',
+                        'candidate_lifecycle_status' => $pair->candidateAgent?->lifecycle_status,
+                        'reason' => 'CANDIDATE_LIFECYCLE_NOT_REPLAYABLE',
+                        'promotion_evidence' => false,
+                    ],
+                ]);
+                $closed++;
+
                 continue;
             }
             $pairStatus = (string) $pair->status;
@@ -783,6 +819,12 @@ class LearningLaneService
         }
 
         return $closed;
+    }
+
+    private function candidateReplayable(?LabAgent $agent): bool
+    {
+        return $agent !== null
+            && in_array((string) $agent->lifecycle_status, self::REPLAYABLE_CANDIDATE_LIFECYCLES, true);
     }
 
     /**
