@@ -179,6 +179,15 @@ class CanonicalSkillCartridgeScopeTest extends TestCase
         $this->assertSame([
             'frozen_baseline', 'exact_replication', 'independent_exact_replication', 'negative_control', 'memory_blinded_autonomous',
         ], $plan['modes']);
+        $contractMethod = new \ReflectionMethod(CanonicalSkillCartridgeService::class, 'confirmationContract');
+        $contractMethod->setAccessible(true);
+        $contract = $contractMethod->invoke(
+            app(CanonicalSkillCartridgeService::class),
+            'exact_replication',
+            str_repeat('d', 64),
+            str_repeat('e', 64),
+        );
+        $this->assertSame(CanonicalSkillCartridgeService::PER_FOLD_BUDGET_SECONDS, $contract['per_fold_budget_seconds']);
         $this->assertDatabaseCount('skill_cartridge_transplant_trials', 5);
         $this->assertDatabaseHas('skill_cartridge_transplant_trials', ['lab_skill_zoo_entry_id' => $entry->id, 'mode' => 'independent_exact_replication']);
     }

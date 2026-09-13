@@ -21,6 +21,8 @@ class CanonicalSkillCartridgeService
 {
     public const PROTOCOL = 'canonical_skill_cartridge_pipeline_v1';
 
+    public const PER_FOLD_BUDGET_SECONDS = 240;
+
     public function __construct(
         private CausalCompoundingKernelService $compoundingKernel,
     ) {}
@@ -98,7 +100,7 @@ class CanonicalSkillCartridgeService
             'data_major' => substr((string) $pair->candidate_data_hash, 0, 16), 'execution_major' => substr((string) $pair->candidate_execution_hash, 0, 16)];
         $key = hash('sha256', json_encode($identity, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
 
-        return DB::transaction(function () use ($pair, $result, $map, $settlement, $agent, $context, $old, $new, $component, $intervention, $identity, $key, $capsulePreview): array {
+        return DB::transaction(function () use ($pair, $result, $map, $settlement, $agent, $context, $component, $intervention, $identity, $key, $capsulePreview): array {
             $entry = LabSkillZooEntry::query()->where('cartridge_key', $key)->lockForUpdate()->first();
             $delta = (float) data_get($pair->target_delta, 'delta', 0);
             $positive = $settlement->evidence_state === 'positive';
@@ -1126,7 +1128,8 @@ class CanonicalSkillCartridgeService
             'fold_count' => $folds, 'fold_offset' => $offset, 'fold_universe_count' => 9,
             'window_stage' => $mode === 'independent_exact_replication' ? 'disjoint_exact_replication' : 'frozen_confirmation',
             'data_hash' => $dataHash, 'execution_hash' => $executionHash, 'max_rows_per_fold' => 4096,
-            'audit_trace_rows' => 512, 'minimum_trades_per_window' => 8, 'promotion_evidence' => false];
+            'audit_trace_rows' => 512, 'minimum_trades_per_window' => 8,
+            'per_fold_budget_seconds' => self::PER_FOLD_BUDGET_SECONDS, 'promotion_evidence' => false];
     }
 
     private function transplantParameters(string $mode, array $base, string $gene, mixed $old, mixed $tested, string $blindGene, ?string $family = null): ?array

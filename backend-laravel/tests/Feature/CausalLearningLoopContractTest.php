@@ -2261,6 +2261,32 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertTrue($quarantineMethod->invoke($command, $agent->fresh(['generation', 'modelVersion'])));
     }
 
+    public function test_legacy_skill_cartridge_contract_receives_bounded_fold_budget_at_request_boundary(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $model = $this->model('legacy-cartridge-budget', [], [
+            'skill_cartridge_transplant' => [
+                'protocol' => CanonicalSkillCartridgeService::PROTOCOL,
+                'confirmation_contract' => [
+                    'protocol' => 'bounded_skill_cartridge_confirmation_v1',
+                    'fold_count' => 3,
+                    'max_rows_per_fold' => 4096,
+                ],
+            ],
+        ]);
+        $agent = $this->agent($generation, $model, []);
+        $method = new \ReflectionMethod(LabAgentEvaluationService::class, 'skillCartridgeConfirmationContract');
+        $method->setAccessible(true);
+
+        $contract = $method->invoke(
+            app(LabAgentEvaluationService::class),
+            $agent->fresh('modelVersion'),
+        );
+
+        $this->assertSame(CanonicalSkillCartridgeService::PER_FOLD_BUDGET_SECONDS, $contract['per_fold_budget_seconds']);
+        $this->assertSame(4096, $contract['max_rows_per_fold']);
+    }
+
     public function test_expired_full_replay_job_is_recoverable_after_service_repair_even_when_breaker_hid_the_reason(): void
     {
         [$generation] = $this->canonicalSource();

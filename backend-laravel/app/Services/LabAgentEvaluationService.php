@@ -402,9 +402,8 @@ class LabAgentEvaluationService
                     // engine, but never impersonates a learning-policy
                     // confirmation or a promotable Edge passport.
                     'skill_cartridge_confirmation_contracts' => $cohort->mapWithKeys(function (LabAgent $peer): array {
-                        $contract = (array) data_get($peer->modelVersion?->metadata, 'skill_cartridge_transplant.confirmation_contract', []);
-                        if (data_get($peer->modelVersion?->metadata, 'skill_cartridge_transplant.protocol') !== CanonicalSkillCartridgeService::PROTOCOL
-                            || data_get($contract, 'protocol') !== 'bounded_skill_cartridge_confirmation_v1') {
+                        $contract = $this->skillCartridgeConfirmationContract($peer);
+                        if ($contract === null) {
                             return [];
                         }
 
@@ -1681,6 +1680,27 @@ class LabAgentEvaluationService
             && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
                 'memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control',
             ], true);
+    }
+
+    /** @return array<string,mixed>|null */
+    private function skillCartridgeConfirmationContract(LabAgent $agent): ?array
+    {
+        $contract = (array) data_get($agent->modelVersion?->metadata, 'skill_cartridge_transplant.confirmation_contract', []);
+        if (data_get($agent->modelVersion?->metadata, 'skill_cartridge_transplant.protocol') !== CanonicalSkillCartridgeService::PROTOCOL
+            || data_get($contract, 'protocol') !== 'bounded_skill_cartridge_confirmation_v1') {
+            return null;
+        }
+
+        // Pre-repair cartridges did not seal a per-fold budget and inherited
+        // Python's old 90-second default. Their 4096-row fold is unchanged;
+        // only the technical guard is restored to the existing bounded 240s
+        // runtime ceiling so a ~200s valid fold can return its evidence.
+        $contract['per_fold_budget_seconds'] = max(45, min(
+            CanonicalSkillCartridgeService::PER_FOLD_BUDGET_SECONDS,
+            (int) ($contract['per_fold_budget_seconds'] ?? CanonicalSkillCartridgeService::PER_FOLD_BUDGET_SECONDS),
+        ));
+
+        return $contract;
     }
 
     /**
