@@ -134,7 +134,11 @@ class RecoverLabEvaluationErrors extends Command
                     // peers while one candidate is quarantined as an
                     // evaluation_error. Keep that terminal generation
                     // recoverable without reopening screening evidence.
-                    $query->whereIn('status', ['full_validation', 'completed', 'screened']);
+                    $statuses = ['full_validation', 'completed', 'screened'];
+                    if ($afterRuntimeSchemaRepair) {
+                        $statuses[] = 'technical_quarantine';
+                    }
+                    $query->whereIn('status', $statuses);
                 } else {
                     if ($afterRuntimeSchemaRepair) {
                         $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
