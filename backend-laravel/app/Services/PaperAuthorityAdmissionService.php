@@ -19,7 +19,10 @@ class PaperAuthorityAdmissionService
         $pre2026 = (bool) ($passport['training_pre_2026'] ?? false);
         $hashes = ['confirmation_entry_hash', 'risk_governor_hash', 'trade_management_hash', 'execution_hash'];
         $complete = collect($hashes)->every(fn (string $key): bool => filled($passport[$key] ?? null));
-        $status = data_get($authority, 'stage') === 'eligible_parent' && $pre2026 && $complete ? 'e3_paper_candidate' : 'withheld';
+        $status = data_get($authority, 'stage') === 'eligible_parent'
+            && data_get($authority, 'authority_tier') === EvolutionaryAuthorityLadderService::ECONOMIC_PARENT
+            && data_get($authority, 'parent_eligible') === true
+            && $pre2026 && $complete ? 'e3_paper_candidate' : 'withheld';
         $key = hash('sha256', implode('|', [self::PROTOCOL, $model->id, strtoupper($symbol), strtoupper($timeframe), (string) ($passport['passport_hash'] ?? '')]));
         DB::table('paper_authority_admissions')->updateOrInsert(['admission_key' => $key], [
             'model_version_id' => $model->id, 'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'status' => $status,

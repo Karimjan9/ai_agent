@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
+use App\Models\LabEvolutionCreditEvent;
 use App\Models\LabParentContextScore;
 use App\Models\ModelVersion;
 use App\Services\CouncilAblationService;
@@ -97,11 +98,26 @@ class ParentAwareEvolutionTest extends TestCase
 
         $registered = app(ParentAwareCreditService::class)->registerCandidate($agent->fresh(['modelVersion']));
         $this->assertSame('awaiting_branches', $registered['status']);
+        app(ParentAwareCreditService::class)->recordScreening(
+            $agent->fresh(['modelVersion']),
+            ['evidence_run_id' => 'parent-cf-screening'],
+            'failed',
+        );
 
         $result = app(ParentAwareCreditService::class)->recordFullReplay(
             $agent->fresh(['modelVersion']),
             [
                 'evidence_run_id' => 'parent-cf-test',
+                'net_profit_percent' => 2.0,
+                'verified_mutation_skill' => [
+                    'status' => 'confirmed',
+                    'requirements' => [
+                        'target_gate_improved' => true,
+                        'non_target_gates_preserved' => true,
+                    ],
+                    'same_data_manifest' => true,
+                    'same_execution_contract' => true,
+                ],
                 'parent_counterfactual' => [
                     'autonomous' => ['forward_score' => 1.00],
                     'mentored' => ['forward_score' => 1.20],
@@ -115,6 +131,11 @@ class ParentAwareEvolutionTest extends TestCase
         $this->assertSame('parent_helpful', data_get($result, 'counterfactual.status'));
         $this->assertGreaterThan(0, (float) data_get($result, 'parent_incremental_value'));
         $this->assertSame(1, LabParentContextScore::query()->where('parent_model_version_id', $parent->id)->count());
+        $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'information_credit')->count());
+        $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'repair_credit')->count());
+        $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'causal_skill_credit')->count());
+        $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'performance_credit')->count());
+        $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'inheritance_credit')->count());
 
         app(ParentAwareCreditService::class)->recordFullReplay(
             $agent->fresh(['modelVersion']),

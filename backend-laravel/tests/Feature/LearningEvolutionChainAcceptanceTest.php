@@ -70,7 +70,15 @@ class LearningEvolutionChainAcceptanceTest extends TestCase
             'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
             'authority_stage' => 'eligible_parent', 'status' => 'passed',
             'data_hash' => str_repeat('a', 64), 'execution_hash' => str_repeat('b', 64),
-            'evidence' => json_encode(['incubation_passed' => true]),
+            'evidence' => json_encode([
+                'protocol' => 'evolutionary_authority_foundry_v1', 'incubation_passed' => true,
+                'research_mentor_authority' => ['tier' => 'research_mentor', 'eligible' => true, 'parent_eligible' => false],
+                'economic_parent_authority' => [
+                    'tier' => 'economic_parent', 'eligible' => true, 'parent_eligible' => true,
+                    'checks' => ['performance_credit_earned' => true, 'two_inheritance_credits_earned' => true],
+                ],
+                'promotion_evidence' => false,
+            ]),
             'evaluated_at' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
         LabEvolutionCreditEvent::create([

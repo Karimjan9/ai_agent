@@ -31,6 +31,9 @@ class CouncilCompatibilityService
             (string) (data_get($member, 'target_session')
                 ?: data_get($member, 'owner_session')
                 ?: data_get($member, 'modelVersion.metadata.portfolio_research_contract.target_session', 'any')),
+            (string) (data_get($member, 'target_venue_phase')
+                ?: data_get($member, 'owner_venue_phase')
+                ?: data_get($member, 'modelVersion.metadata.specialist_council_membership.contextual_cell.venue_phase', 'any')),
         ]));
         $duplicateNiches = $niches->duplicates()->values()->all();
         // Different declared roles can still be the same executable trader.

@@ -146,7 +146,11 @@ class RuntimeEnsemblePolicyTest extends TestCase
                     'role' => 'specialist',
                     'target_regime' => 'trend_up',
                     'target_session' => 'london',
-                    'specialist_context_contract' => ['session' => 'london', 'scope_hash' => 'london-scope'],
+                    'target_venue_phase' => 'london_am_fix',
+                    'specialist_context_contract' => [
+                        'session' => 'london', 'venue_phase' => 'london_am_fix',
+                        'scope_hash' => 'london-scope',
+                    ],
                 ],
                 [
                     'strategy' => $memberTwo->strategy,
@@ -200,11 +204,15 @@ class RuntimeEnsemblePolicyTest extends TestCase
                 'target_volatility' => null,
                 'target_direction' => null,
                 'target_session' => $session,
+                'target_venue_phase' => $session === null ? null : 'london_am_fix',
                 'risk_weight' => 1.0,
                 'parameter_hash' => $this->parameterHash($performance->modelVersion->parameters),
                 'evidence' => $session === null ? [] : [
                     'portfolio_contract' => [
-                        'contextual_specialist_cell' => ['session' => 'london', 'scope_hash' => 'london-scope'],
+                        'contextual_specialist_cell' => [
+                            'session' => 'london', 'venue_phase' => 'london_am_fix',
+                            'scope_hash' => 'london-scope',
+                        ],
                     ],
                 ],
             ]);
@@ -230,6 +238,7 @@ class RuntimeEnsemblePolicyTest extends TestCase
         $this->assertCount(3, $policy['members']);
         $this->assertSame('ROUTE', $payload['runtime_action']);
         $this->assertCount(3, $payload['portfolio_members']);
+        $this->assertSame('london_am_fix', data_get($payload, 'portfolio_members.0.target_venue_phase'));
         $this->assertTrue($payload['runtime_ensemble_policy']['combined_passport']);
 
         $metadata = $owner->metadata;

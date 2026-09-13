@@ -600,6 +600,8 @@ class AdaptiveParentFrontierService
             || (data_get($contextTrust, 'status') === 'context_confirmed'
                 && (int) data_get($contextTrust, 'success_count', 0) >= 2);
         $authorityEligible = data_get($authority, 'stage') === 'eligible_parent'
+            && data_get($authority, 'authority_tier') === EvolutionaryAuthorityLadderService::ECONOMIC_PARENT
+            && data_get($authority, 'parent_eligible') === true
             && (bool) data_get($capsuleAssessment, 'valid', false)
             && $contextTrustEligible;
         // Mentor-only is a temporary authority state, not a permanent tag.

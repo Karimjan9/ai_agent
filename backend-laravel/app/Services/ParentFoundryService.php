@@ -50,7 +50,7 @@ class ParentFoundryService
         );
         $cohortRole = (string) data_get($model->metadata, 'causal_learning_cohort.role', '');
         $causalExperiment = (array) data_get($model->metadata, 'causal_learning_experiment', []);
-        $causalRequired = in_array($cohortRole, ['memory_guided', 'repair_guided'], true);
+        $causalRequired = in_array($cohortRole, ['memory_guided', 'hypothesis_guided', 'repair_guided'], true);
         $causalConfirmed = ! $causalRequired
             || data_get($causalExperiment, 'status') === 'confirmed';
         $parentEligible = data_get($mentor, 'stage') === 'full_parent'

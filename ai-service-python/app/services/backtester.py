@@ -30,7 +30,11 @@ from app.services.execution_contract import (
 )
 from app.services.indicators import add_indicators
 from app.services.market_regime import apply_market_regime
-from app.services.market_sessions import apply_specialist_scope, session_membership
+from app.services.market_sessions import (
+    RESEARCH_PHASES,
+    apply_specialist_scope,
+    session_membership,
+)
 from app.services.monte_carlo import MonteCarloService
 from app.services.multitimeframe import annotate_regime_source, apply_signal_policy
 from app.services.multitimeframe_stack import (
@@ -46,6 +50,14 @@ from app.services.volume_features import (
     volume_shadow_report,
 )
 from app.strategies.registry import get_strategy, strategy_label
+
+
+def _timeframe_duration_minutes(value: object) -> int:
+    key = str(value).upper()
+    return {
+        "M1": 1, "M5": 5, "M15": 15, "M30": 30,
+        "H1": 60, "H4": 240, "D1": 1440,
+    }.get(key, 0)
 
 
 @dataclass(frozen=True)
@@ -394,7 +406,11 @@ def prepare_signal_snapshot(
     )
     prepared = features.frame.copy()
     if payload.portfolio_members:
-        prepared = _apply_portfolio_strategy(prepared, payload.portfolio_members)
+        prepared = _apply_portfolio_strategy(
+            prepared,
+            payload.portfolio_members,
+            candle_duration_minutes=_timeframe_duration_minutes(payload.timeframe),
+        )
     else:
         strategy_function = get_strategy(payload.strategy, payload.base_strategy)
         strategy_parameters = _sealed_strategy_parameters(payload)
@@ -404,7 +420,11 @@ def prepare_signal_snapshot(
             strategy_parameters,
             payload.base_strategy or payload.strategy,
         )
-        prepared = apply_specialist_scope(prepared, payload.specialist_context_contract)
+        prepared = apply_specialist_scope(
+            prepared,
+            payload.specialist_context_contract,
+            _timeframe_duration_minutes(payload.timeframe),
+        )
     prepared = _apply_signal_delay(prepared, payload.signal_delay_candles)
     prepared.attrs["unexpected_gap_count"] = features.unexpected_gap_count
     prepared.attrs["data_quality"] = dict(features.data_quality)
@@ -947,12 +967,32 @@ def _run_prepared_simple_backtest(
                 signal_row["signal"] = signal
                 signal_row["signal_confidence"] = lane_confidence
                 signal_row["selected_specialist"] = lane_specialist
-            _record_strategy_instrument_events(
-                instrument_runtime,
-                signal_row,
-                signal,
-                lane_specialist,
+            owner_scope_allowed, blocked_instrument_owners = (
+                _instrument_owner_scope_allows(
+                    instrument_runtime, signal_row, signal, lane_specialist
+                )
             )
+            if owner_scope_allowed:
+                _record_strategy_instrument_events(
+                    instrument_runtime,
+                    signal_row,
+                    signal,
+                    lane_specialist,
+                )
+            else:
+                entry_funnel["rejected_instrument_context_outside_scope"] += 1
+                signal_row = signal_row.copy()
+                signal_row["instrument_scope_raw_signal"] = signal
+                signal_row["instrument_scope_rejection"] = (
+                    "instrument_context_outside_scope"
+                )
+                signal_row["instrument_scope_blocked_owners"] = (
+                    blocked_instrument_owners
+                )
+                signal_row["signal"] = "WAIT"
+                signal_row["signal_confidence"] = 0.0
+                signal = "WAIT"
+                lane_confidence = 0.0
             mtf_policy = apply_signal_policy(
                 signal,
                 signal_row,
@@ -1003,6 +1043,7 @@ def _run_prepared_simple_backtest(
                 )
                 signal_reason = str(
                     signal_row.get("mtf_veto_reason", "")
+                    or signal_row.get("instrument_scope_rejection", "")
                     or policy_rejection
                     or "no_signal"
                 )
@@ -2007,6 +2048,11 @@ def _run_prepared_simple_backtest(
     )
     temporal_survival = _temporal_survival_report(temporal_state, payload)
     robustness_matrix = _robustness_matrix(trades)
+    market_session_calendar_coverage = _market_session_calendar_coverage(
+        df,
+        payload.specialist_context_contract,
+        _timeframe_duration_minutes(payload.timeframe),
+    )
     # The paired differential lane is part of screening's causal contract,
     # even when promotion-only diagnostics are deferred.  Leaving this report
     # empty in a lightweight replay passed ``False`` identities into the
@@ -2224,6 +2270,7 @@ def _run_prepared_simple_backtest(
         confidence_calibration=confidence_calibration,
         temporal_survival=temporal_survival,
         robustness_matrix=robustness_matrix,
+        market_session_calendar_coverage=market_session_calendar_coverage,
         differential_router=differential_router,
         differential_invariants=differential_invariants,
         window_survival=window_survival,
@@ -2465,6 +2512,7 @@ def _apply_portfolio_strategy(
     members: list[object],
     *,
     prepared_member_frames: list[pd.DataFrame] | None = None,
+    candle_duration_minutes: int = 0,
 ) -> pd.DataFrame:
     """Apply a sealed complementary-member router to one candle stream.
 
@@ -2502,7 +2550,9 @@ def _apply_portfolio_strategy(
     # repeated for cost, temporal, adversarial and checkpoint evidence.  The
     # router is outcome-independent, so boolean masks preserve the exact
     # eligibility/disagreement rules without a nested Python row/member loop.
-    return _apply_portfolio_strategy_vectorized(prepared, member_frames)
+    return _apply_portfolio_strategy_vectorized(
+        prepared, member_frames, candle_duration_minutes=candle_duration_minutes
+    )
 
     prepared["signal"] = "WAIT"
     prepared["signal_confidence"] = 0.0
@@ -2608,6 +2658,8 @@ def _apply_portfolio_strategy(
 def _apply_portfolio_strategy_vectorized(
     prepared: pd.DataFrame,
     member_frames: list[tuple[dict[str, object], pd.DataFrame]],
+    *,
+    candle_duration_minutes: int = 0,
 ) -> pd.DataFrame:
     """Apply the sealed portfolio router using column masks.
 
@@ -2623,8 +2675,29 @@ def _apply_portfolio_strategy_vectorized(
         "volatility_regime", pd.Series("normal_volatility", index=index)
     ).astype(str)
     sessions = session_membership(
-        prepared.get("time", pd.Series(index=index, dtype=object))
+        prepared.get("time", pd.Series(index=index, dtype=object)),
+        duration_minutes=candle_duration_minutes,
     )
+    observed_transition = pd.Series("stable", index=index)
+    observed_transition.loc[regime.eq("transition")] = "transition"
+    atr = pd.to_numeric(
+        prepared.get(
+            "atr", prepared.get("structure_atr", pd.Series(float("nan"), index=index))
+        ),
+        errors="coerce",
+    )
+    spread = pd.to_numeric(
+        prepared.get("spread", pd.Series(float("nan"), index=index)),
+        errors="coerce",
+    )
+    observed_liquidity = pd.Series("unknown", index=index)
+    measurable_liquidity = atr.gt(0) & spread.notna()
+    observed_liquidity.loc[
+        measurable_liquidity & spread.div(atr).le(0.25)
+    ] = "liquid"
+    observed_liquidity.loc[
+        measurable_liquidity & spread.div(atr).gt(0.25)
+    ] = "illiquid"
 
     eligible_masks: list[pd.Series] = []
     buy_masks: list[pd.Series] = []
@@ -2639,6 +2712,17 @@ def _apply_portfolio_strategy_vectorized(
         target_volatility = config.get("target_volatility")
         target_direction = config.get("target_direction")
         target_session = config.get("target_session")
+        specialist_contract = config.get("specialist_context_contract", {})
+        specialist_contract = specialist_contract if isinstance(specialist_contract, dict) else {}
+        target_venue_phase = config.get("target_venue_phase") or specialist_contract.get("venue_phase")
+        target_transition = str(specialist_contract.get("transition_state") or "").lower()
+        target_liquidity = str(
+            specialist_contract.get("spread_liquidity_state") or ""
+        ).lower()
+        target_liquidity = {
+            "low_spread": "liquid", "high_spread": "illiquid",
+            "spread_filter_veto": "illiquid",
+        }.get(target_liquidity, target_liquidity)
         if target_direction not in {None, "BUY", "SELL"}:
             raise ValueError(
                 f"Unsupported portfolio target direction: {target_direction}"
@@ -2652,11 +2736,22 @@ def _apply_portfolio_strategy_vectorized(
             eligible &= regime.eq(str(target_regime))
         if target_volatility:
             eligible &= volatility.eq(str(target_volatility))
-        if target_session:
+        if target_venue_phase:
+            if str(target_venue_phase) not in sessions.columns:
+                eligible &= False
+            else:
+                eligible &= sessions[str(target_venue_phase)].astype(bool)
+        elif target_session:
             if str(target_session) not in sessions.columns:
                 eligible &= False
             else:
                 eligible &= sessions[str(target_session)].astype(bool)
+        if str(specialist_contract.get("execution_policy") or "").lower() == "abstain_only":
+            eligible &= False
+        if target_transition not in {"", "any", "unknown"}:
+            eligible &= observed_transition.eq(target_transition)
+        if target_liquidity not in {"", "any", "unknown", "closed_or_maintenance"}:
+            eligible &= observed_liquidity.eq(target_liquidity)
 
         signals = frame.get("signal", pd.Series("WAIT", index=index)).astype(str)
         # A directional specialist owns only its declared side. An opposite
@@ -2804,7 +2899,8 @@ def _portfolio_member_key(config: dict[str, object]) -> str:
     volatility = str(config.get("target_volatility") or "").strip()
     direction = str(config.get("target_direction") or "").strip()
     session = str(config.get("target_session") or "").strip()
-    return f"{strategy}|{role}|{regime}|{volatility}|{direction}|{session}"
+    venue_phase = str(config.get("target_venue_phase") or "").strip()
+    return f"{strategy}|{role}|{regime}|{volatility}|{direction}|{session}|{venue_phase}"
 
 
 def _portfolio_payload_for_signal(
@@ -2917,6 +3013,7 @@ def _portfolio_evidence(
             "target_volatility": config_dict.get("target_volatility"),
             "target_direction": config_dict.get("target_direction"),
             "target_session": config_dict.get("target_session"),
+            "target_venue_phase": config_dict.get("target_venue_phase"),
             "trades": len(member_trades),
             "profit_factor": _profit_factor_for(
                 [float(trade.profit_percent) for trade in member_trades]
@@ -3050,6 +3147,7 @@ def _portfolio_evidence(
                 "target_volatility": member.target_volatility,
                 "target_direction": member.target_direction,
                 "target_session": member.target_session,
+                "target_venue_phase": member.target_venue_phase,
             }
             for member in payload.portfolio_members
         ],
@@ -3247,6 +3345,7 @@ def _instrument_runtime_state(
                 continue
             instruments[key] = {
                 "contract": contract,
+                "role": str(selected.get("role") or ""),
                 "activation_count": 0,
                 "event_sources": Counter(),
                 "context_event_counts": Counter(),
@@ -3256,6 +3355,8 @@ def _instrument_runtime_state(
     return {
         "enabled": enabled,
         "assignment_hash": str(assignment.get("assignment_hash") or ""),
+        "strategy_family": str(assignment.get("strategy_family") or "").lower(),
+        "strategy": str(assignment.get("strategy") or "").lower(),
         "instruments": instruments,
     }
 
@@ -3319,6 +3420,8 @@ def _record_strategy_instrument_events(
     specialist = str(
         specialist or signal_row.get("selected_specialist", "") or ""
     ).lower()
+    family = str(state.get("strategy_family") or "").lower()
+    strategy = str(state.get("strategy") or "").lower()
     status = str(signal_row.get("entry_contract_status", "") or "").lower()
     actionable = direction in {"BUY", "SELL"}
     setup_observed = (
@@ -3335,68 +3438,11 @@ def _record_strategy_instrument_events(
     if not setup_observed:
         return
 
-    if model == "trend_continuation" or specialist.startswith("trend"):
+    for key, source in _strategy_owner_events(
+        model, specialist, family, strategy, actionable
+    ).items():
         _record_instrument_runtime_event(
-            state,
-            "trend_pullback",
-            signal_row,
-            direction,
-            f"trend_decision:{model or specialist}",
-        )
-    if model == "breakout_retest" or "breakout" in specialist:
-        _record_instrument_runtime_event(
-            state,
-            "breakout_retest",
-            signal_row,
-            direction,
-            f"breakout_decision:{model or specialist}",
-        )
-    if model == "range_sweep" or "range" in specialist:
-        _record_instrument_runtime_event(
-            state,
-            "range_reentry",
-            signal_row,
-            direction,
-            f"range_decision:{model or specialist}",
-        )
-    if model == "htf_reversal" or "compression" in specialist:
-        _record_instrument_runtime_event(
-            state,
-            "compression_expansion",
-            signal_row,
-            direction,
-            f"compression_decision:{model or specialist}",
-        )
-    if specialist not in {"", "none", "unknown", "parent", "portfolio_wait"}:
-        _record_instrument_runtime_event(
-            state,
-            "regime_router",
-            signal_row,
-            direction,
-            f"router_selected:{specialist}",
-        )
-    if model:
-        _record_instrument_runtime_event(
-            state,
-            "adaptive_entry_topology",
-            signal_row,
-            direction,
-            f"entry_topology_selected:{model}",
-        )
-    if actionable:
-        _record_instrument_runtime_event(
-            state,
-            "session_breakout",
-            signal_row,
-            direction,
-            "session_breakout_signal_evaluated",
-        )
-        _record_instrument_runtime_event(
-            state,
-            "session_range",
-            signal_row,
-            direction,
-            "session_range_evaluated",
+            state, key, signal_row, direction, source
         )
     if bool(signal_row.get("entry_location_valid", False)):
         for key in (
@@ -3445,16 +3491,91 @@ def _record_strategy_instrument_events(
         )
 
 
+def _strategy_owner_events(
+    model: str,
+    specialist: str,
+    family: str,
+    strategy: str,
+    actionable: bool,
+) -> dict[str, str]:
+    events: dict[str, str] = {}
+    if model == "trend_continuation" or specialist.startswith("trend") or (
+        family == "trend" and actionable
+    ):
+        events["trend_pullback"] = f"trend_decision:{model or specialist or 'family:trend'}"
+    if model == "breakout_retest" or "breakout" in specialist or (
+        family == "breakout" and actionable
+    ):
+        events["breakout_retest"] = f"breakout_decision:{model or specialist or 'family:breakout'}"
+    if model == "range_sweep" or "range" in specialist or (
+        family == "mean_reversion" and actionable
+    ):
+        events["range_reentry"] = f"range_decision:{model or specialist or 'family:mean_reversion'}"
+    if model == "htf_reversal" or "compression" in specialist or (
+        family == "volatility" and actionable
+    ):
+        events["compression_expansion"] = f"compression_decision:{model or specialist or 'family:volatility'}"
+    if specialist not in {"", "none", "unknown", "parent", "portfolio_wait"} or (
+        actionable and (family == "hybrid" or "router" in strategy or "ensemble" in strategy)
+    ):
+        owner = specialist if specialist not in {
+            "", "none", "unknown", "parent", "portfolio_wait"
+        } else "family:hybrid"
+        events["regime_router"] = f"router_selected:{owner}"
+    if model:
+        events["adaptive_entry_topology"] = f"entry_topology_selected:{model}"
+    if actionable:
+        events["session_breakout"] = "session_breakout_signal_evaluated"
+        events["session_range"] = "session_range_evaluated"
+    return events
+
+
+def _instrument_owner_scope_allows(
+    state: dict[str, object], signal_row: object, direction: str, specialist: str
+) -> tuple[bool, list[str]]:
+    """Fail closed when an active tactic/model owner leaves its sealed context."""
+    if direction not in {"BUY", "SELL"}:
+        return True, []
+    instruments = state.get("instruments") or {}
+    if not isinstance(instruments, dict):
+        return True, []
+    model = str(signal_row.get("entry_contract_model", "") or "").lower()
+    specialist = str(
+        specialist or signal_row.get("selected_specialist", "") or ""
+    ).lower()
+    events = _strategy_owner_events(
+        model,
+        specialist,
+        str(state.get("strategy_family") or "").lower(),
+        str(state.get("strategy") or "").lower(),
+        True,
+    )
+    blocked: list[str] = []
+    context = _instrument_runtime_context(signal_row, direction)
+    for key, source in events.items():
+        observation = instruments.get(key)
+        if not isinstance(observation, dict) or str(observation.get("role") or "") not in {"tactic", "model"}:
+            continue
+        contract = observation.get("contract") or {}
+        if isinstance(contract, dict) and _instrument_contract_context_matches(contract, context):
+            continue
+        _record_instrument_runtime_event(state, key, signal_row, direction, source)
+        blocked.append(key)
+    return blocked == [], sorted(blocked)
+
+
 def _instrument_runtime_context(
     signal_row: object,
     direction: str,
     overrides: dict[str, str] | None = None,
 ) -> dict[str, str]:
     timestamp = signal_row.get("time")
-    try:
-        session = _edge_market_session(timestamp)
-    except (TypeError, ValueError, OverflowError):
-        session = "unknown"
+    session = str(signal_row.get("market_session", "") or "")
+    if not session:
+        try:
+            session = _edge_market_session(timestamp)
+        except (TypeError, ValueError, OverflowError):
+            session = "unknown"
     session = _canonical_instrument_context_value("session", session)
     volatility = str(
         signal_row.get("volatility_regime", "normal_volatility") or "normal_volatility"
@@ -3642,14 +3763,29 @@ def _edge_market_session(value: object) -> str:
     return str(row["session"])
 
 
+def _edge_market_venue_phase(value: object) -> str:
+    """Exact venue phase used by local specialist evidence, never a global label."""
+    row = session_membership(pd.Series([value])).iloc[0]
+    return str(row["venue_phase"])
+
+
+def _edge_market_session_instance(value: object) -> str:
+    """Versioned active-phase instance fingerprint for pair-integrity audits."""
+    row = session_membership(pd.Series([value])).iloc[0]
+    return str(row["session_instance_id"])
+
+
 def _edge_market_session_offset(value: object) -> str:
     """Stable offset-state coordinate for cross-DST validation."""
     row = session_membership(pd.Series([value])).iloc[0]
-    session = str(row["session"])
-    phases = ["london", "new_york"] if session == "overlap" else [session]
-    ids = [str(row.get(f"{phase}_instance_id", "")) for phase in phases]
-    offsets = [item.rsplit("|", 1)[-1] for item in ids if "|" in item]
-    return "+".join(offsets) if offsets else "fixed_or_off_session"
+    offsets = row.get("dst_offset", {})
+    if not isinstance(offsets, dict):
+        return "fixed_or_off_session"
+    active_venues = row.get("overlap_mask", [])
+    active_venues = active_venues if isinstance(active_venues, list) else []
+    keys = ["london" if venue == "lbma" else venue for venue in active_venues]
+    values = [str(offsets.get(key, {}).get("offset", "")) for key in keys if isinstance(offsets.get(key), dict)]
+    return "+".join(value for value in values if value) or "fixed_or_off_session"
 
 
 def _edge_context_admission(
@@ -6669,11 +6805,13 @@ def _pf_attribution(
             },
             "by_direction": {},
             "by_session": {},
+            "by_venue_phase": {},
             "by_regime": {},
             "by_volatility": {},
             "by_regime_volatility": {},
             "by_regime_volatility_direction": {},
             "by_regime_volatility_session": {},
+            "by_regime_volatility_venue_phase": {},
             "by_temporal_chunk": {},
             "by_exit_reason": {},
         }
@@ -6805,6 +6943,7 @@ def _pf_attribution(
         "summary": breakdown(trades),
         "by_direction": grouped(lambda trade: trade.direction),
         "by_session": grouped(lambda trade: _edge_market_session(trade.entry_time)),
+        "by_venue_phase": grouped(lambda trade: _edge_market_venue_phase(trade.entry_time)),
         "by_regime": grouped(lambda trade: trade.market_regime),
         "by_volatility": grouped(lambda trade: trade.volatility_regime),
         # Calendar evidence must be derived from the one chronological trade
@@ -6833,8 +6972,120 @@ def _pf_attribution(
         "by_regime_volatility_session": grouped_context_dimension(
             lambda trade: _edge_market_session(trade.entry_time)
         ),
+        "by_regime_volatility_venue_phase": grouped_context_dimension(
+            lambda trade: _edge_market_venue_phase(trade.entry_time)
+        ),
         "by_temporal_chunk": grouped(temporal_chunk),
         "by_exit_reason": grouped(lambda trade: trade.exit_reason or "unknown"),
+    }
+
+
+def _market_session_calendar_coverage(
+    df: pd.DataFrame,
+    contract: dict[str, object] | None = None,
+    candle_duration_minutes: int = 0,
+) -> dict[str, object]:
+    """Seal the opportunity calendar, including candles which made no trade.
+
+    Trade-only attribution cannot prove that a candidate and its frozen
+    control saw the same session instances: their trade sets are expected to
+    differ. This digest covers every input candle and therefore supplies the
+    correct causal comparison identity.
+    """
+
+    raw_contract = contract if isinstance(contract, dict) else {}
+    cell = raw_contract.get("contextual_specialist_cell", raw_contract)
+    cell = cell if isinstance(cell, dict) else {}
+    ownership = cell.get("session_ownership", cell)
+    ownership = ownership if isinstance(ownership, dict) else {}
+    phase = str(
+        cell.get("venue_phase") or ownership.get("venue_phase") or ""
+    ).lower()
+    calendar_version = str(
+        ownership.get("calendar_version") or "xauusd_market_sessions_2026_v2"
+    )
+    memberships = session_membership(
+        df.get("time", pd.Series(index=df.index, dtype=object)),
+        ownership.get("phase_definitions")
+        if isinstance(ownership.get("phase_definitions"), dict)
+        else None,
+        ownership.get("holidays")
+        if isinstance(ownership.get("holidays"), dict)
+        else None,
+        ownership.get("no_night_session_dates")
+        if isinstance(ownership.get("no_night_session_dates"), list)
+        else None,
+        calendar_version,
+        candle_duration_minutes,
+    )
+    classified_or_quarantined = memberships.get(
+        "classified_or_quarantined", pd.Series(False, index=memberships.index)
+    ).astype(bool)
+    status = memberships.get(
+        "classification_status", pd.Series("unknown", index=memberships.index)
+    ).astype(str)
+    phase_counts = {
+        name: int(memberships[name].astype(bool).sum())
+        for name in RESEARCH_PHASES
+        if name in memberships.columns
+    }
+    target_mask = (
+        memberships[phase].astype(bool)
+        if phase in memberships.columns
+        else pd.Series(False, index=memberships.index)
+    )
+    instance_column = (
+        f"{phase}_instance_id"
+        if f"{phase}_instance_id" in memberships.columns
+        else "session_instance_id"
+    )
+    target_instances = sorted(
+        {
+            str(value)
+            for value in memberships.loc[target_mask, instance_column].tolist()
+            if str(value)
+        }
+    )
+    records = []
+    source_times = df.get("time", pd.Series(index=df.index, dtype=object))
+    for index in memberships.index:
+        records.append(
+            {
+                "time": str(source_times.get(index, "")),
+                "instance": str(memberships.at[index, "session_instance_id"]),
+                "status": str(status.at[index]),
+                "phases": [str(value) for value in memberships.at[index, "venue_phases"]],
+            }
+        )
+    coverage_hash = hashlib.sha256(
+        json.dumps(records, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+    scope = dict(df.attrs.get("specialist_context_contract") or {})
+
+    return {
+        "protocol": "market_session_calendar_coverage_v1",
+        "calendar_protocol": "market_session_calendar_v2",
+        "calendar_version": calendar_version,
+        "total_candles": int(len(memberships)),
+        "classified_count": int(status.eq("classified").sum()),
+        "quarantined_count": int(status.str.startswith("quarantined_").sum()),
+        "unknown_count": int((~classified_or_quarantined).sum()),
+        "classification_coverage": round(
+            float(classified_or_quarantined.mean()) if len(memberships) else 0.0,
+            6,
+        ),
+        "phase_counts": phase_counts,
+        "target_venue_phase": phase or None,
+        "target_session_instance_ids": target_instances,
+        "opportunity_calendar_hash": coverage_hash,
+        "outside_scope_activation_count": int(
+            scope.get("out_of_scope_activation_count", 0) or 0
+        ),
+        "outside_scope_raw_signal_count": int(
+            scope.get("out_of_scope_raw_signal_count", 0) or 0
+        ),
+        "outside_scope_action": str(scope.get("outside_scope_action") or "WAIT"),
+        "promotion_evidence": False,
     }
 
 
@@ -6849,15 +7100,21 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
     cells: dict[str, list[SimpleTrade]] = defaultdict(list)
     envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
     dst_envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
+    venue_phase_envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
+    session_instances: dict[str, int] = defaultdict(int)
     for trade in trades:
         timestamp = pd.Timestamp(trade.entry_time)
         month = timestamp.strftime("%Y-%m")
         session = _edge_market_session(timestamp)
         offset_state = _edge_market_session_offset(timestamp)
+        venue_phase = _edge_market_venue_phase(timestamp)
+        session_instance = _edge_market_session_instance(timestamp)
         envelope = f"{trade.market_regime}|{trade.volatility_regime}|{session}|{trade.direction}"
         cells[f"{envelope}|{month}"].append(trade)
         envelopes[envelope].append(trade)
         dst_envelopes[f"{envelope}|{offset_state}"].append(trade)
+        venue_phase_envelopes[f"{trade.market_regime}|{trade.volatility_regime}|{venue_phase}|{trade.direction}|{offset_state}"].append(trade)
+        session_instances[session_instance] += 1
 
     def summary(rows: list[SimpleTrade]) -> dict[str, float | int]:
         values = [float(row.profit_percent) for row in rows]
@@ -6886,6 +7143,7 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
     cell_rows = {key: summary(rows) for key, rows in cells.items()}
     envelope_rows = {key: summary(rows) for key, rows in envelopes.items()}
     dst_envelope_rows = {key: summary(rows) for key, rows in dst_envelopes.items()}
+    venue_phase_rows = {key: summary(rows) for key, rows in venue_phase_envelopes.items()}
     weak = [
         {
             "context": key,
@@ -6905,6 +7163,8 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
             "regime",
             "volatility",
             "market_session",
+            "venue_phase",
+            "session_instance_id",
             "direction",
             "dst_offset_state",
             "calendar_month",
@@ -6912,6 +7172,8 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
         "cells": cell_rows,
         "envelopes": envelope_rows,
         "dst_envelopes": dst_envelope_rows,
+        "venue_phase_envelopes": venue_phase_rows,
+        "session_instance_coverage": dict(session_instances),
         "weakest_envelopes": weak[:20],
         "calendar_role": "diagnostic_recurrence_only_not_mutation_or_router_feature",
         "rule": "A failure is actionable only as a full causal context, never as a calendar label.",

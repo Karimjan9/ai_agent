@@ -250,7 +250,7 @@ class LabInstrumentResearchService
         $requestedContext = array_filter(
             array_intersect_key(
                 app(ContextContractV2Service::class)->canonicalAxes($context),
-                array_flip(['regime', 'session', 'volatility', 'spread_liquidity_state', 'transition_state', 'direction']),
+                array_flip(['regime', 'session', 'venue_phase', 'volatility', 'spread_liquidity_state', 'transition_state', 'direction']),
             ),
             static fn ($value): bool => $value !== null && $value !== '',
         );
@@ -413,7 +413,7 @@ class LabInstrumentResearchService
     /** @return array<string,string> */
     private function posteriorContext(string $stateKey): array
     {
-        [$regime, $session, $volatility, $spread, $transition, $lossStreak, $direction, $family] = array_pad(explode('|', $stateKey), 8, null);
+        [$regime, $session, $volatility, $spread, $transition, $lossStreak, $direction, $family, $venuePhase] = array_pad(explode('|', $stateKey), 9, null);
         $axes = app(ContextContractV2Service::class)->canonicalAxes([
             'regime' => $regime,
             'session' => $session,
@@ -421,6 +421,7 @@ class LabInstrumentResearchService
             'spread_liquidity_state' => $spread,
             'transition_state' => $transition,
             'direction' => $direction,
+            'venue_phase' => $venuePhase,
         ]);
 
         if (filled($family)) {

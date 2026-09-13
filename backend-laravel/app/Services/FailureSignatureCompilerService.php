@@ -54,7 +54,9 @@ class FailureSignatureCompilerService
         return [
             ...$payload,
             'signature' => $signature,
+            'failure_fingerprint' => $signature,
             'repeat_failure_fingerprint' => $signature,
+            ...$this->productionLessonContract($payload, $signature),
         ];
     }
 
@@ -105,9 +107,11 @@ class FailureSignatureCompilerService
         return [
             ...$payload,
             'signature' => $signature,
+            'failure_fingerprint' => $signature,
             'repeat_failure_fingerprint' => $signature,
             'old_value' => $old,
             'new_value' => $new,
+            ...$this->productionLessonContract($payload, $signature, $old, $new),
             'secondary_diagnostics' => array_values(array_unique(array_filter([
                 data_get($evidence, 'screening_survival.reason_codes.0'),
                 data_get($evidence, 'gate_reason'),
@@ -281,5 +285,76 @@ class FailureSignatureCompilerService
         };
 
         return hash('sha256', json_encode($sort($parameters), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+    }
+
+    /** @return array<string,mixed> */
+    private function productionLessonContract(
+        array $payload,
+        string $fingerprint,
+        mixed $oldValue = null,
+        mixed $newValue = null,
+    ): array {
+        $target = (string) data_get($payload, 'failure_target', 'unknown');
+        $gene = data_get($payload, 'changed_gene');
+        $direction = data_get($payload, 'mutation_direction');
+        $contextHash = data_get($payload, 'canonical_context_hash');
+        $rootCause = match ($target) {
+            'trade_frequency' => 'The declared entry/abstention surface may be suppressing valid opportunities in this context.',
+            'profit_factor' => 'The declared decision surface may not create positive after-cost expectancy in this context.',
+            'stress_cost' => 'Execution cost or spread sensitivity may erase the local edge.',
+            'temporal_stability', 'monthly_survival' => 'The decision policy may be unstable across chronological market phases.',
+            'regime_coverage' => 'The router or activation predicate may not own the observed regime transition.',
+            'drawdown_risk' => 'The risk/exit response may permit excessive adverse excursion or tail concentration.',
+            'architecture' => 'The current architecture may be unable to express the required behavioural repair.',
+            default => 'The declared causal surface must be isolated before another mutation is attempted.',
+        };
+
+        return [
+            'root_cause_hypothesis' => [
+                'status' => 'unverified_hypothesis',
+                'statement' => $rootCause,
+                'target' => $target,
+                'must_be_falsified_against_exact_control' => true,
+            ],
+            'gene_policy' => [
+                'forbidden' => filled($gene) ? [[
+                    'gene' => $gene,
+                    'direction' => $direction,
+                    'old_value' => $oldValue,
+                    'new_value' => $newValue,
+                    'rule' => 'Do not replay this exact unresolved intervention without a new hypothesis revision.',
+                ]] : [],
+                'recommended' => filled($gene) ? [[
+                    'gene' => $gene,
+                    'mode' => 'revised_bounded_repair_or_ablation',
+                    'context_hash' => $contextHash,
+                ]] : [],
+            ],
+            'context_scope' => [
+                'context_hash' => $contextHash,
+                'state' => data_get($payload, 'state', []),
+                'global_inheritance_forbidden' => true,
+            ],
+            'next_experiment' => [
+                'action' => 'repair_or_deliberate_abstain',
+                'target' => $target,
+                'one_gene_or_one_structural_axis' => true,
+                'new_hypothesis_revision_required' => true,
+                'exact_frozen_control_required' => true,
+                'independent_windows_required' => 3,
+            ],
+            'exact_control' => [
+                'model_version_id' => data_get($payload, 'causal_baseline.model_version_id'),
+                'parameter_hash' => data_get($payload, 'causal_baseline.parameter_hash'),
+                'same_data_and_execution_contract_required' => true,
+            ],
+            'consumption_receipt' => [
+                'status' => 'pending',
+                'failure_fingerprint' => $fingerprint,
+                'must_be_sealed_before_mutation' => true,
+                'outcome_must_close_source_lesson' => true,
+                'promotion_evidence' => false,
+            ],
+        ];
     }
 }

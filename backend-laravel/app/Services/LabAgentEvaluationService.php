@@ -325,8 +325,8 @@ class LabAgentEvaluationService
                         $receipt = (array) data_get($peer->modelVersion?->metadata, 'learning_receipt', []);
                         $role = (string) data_get($receipt, 'causal_influence', '');
                         $cohortRole = (string) data_get($peer->modelVersion?->metadata, 'causal_learning_cohort.role', '');
-                        if (! in_array($role, ['memory_guided', 'causal_repair_guided', 'blinded_counterfactual', 'frozen_control'], true)
-                            || ! in_array($cohortRole, ['memory_guided', 'repair_guided', 'blinded', 'frozen_control'], true)
+                        if (! in_array($role, ['memory_guided', 'hypothesis_guided', 'causal_repair_guided', 'blinded_counterfactual', 'frozen_control'], true)
+                            || ! in_array($cohortRole, ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control'], true)
                             || data_get($receipt, 'integrity.valid') !== true) {
                             return [];
                         }
@@ -1673,7 +1673,7 @@ class LabAgentEvaluationService
     {
         return $agent->generation?->trigger_type === 'learning_confirmation'
             && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
-                'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+                'memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control',
             ], true);
     }
 

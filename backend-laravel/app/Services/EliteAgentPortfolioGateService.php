@@ -520,10 +520,33 @@ class EliteAgentPortfolioGateService
         string $regime,
         string $volatility,
         ?string $session = null,
+        ?string $venuePhase = null,
+        ?string $direction = null,
+        ?string $spreadLiquidity = null,
+        ?string $transitionState = null,
     ): Collection {
-        return $portfolio->members->filter(fn ($member): bool => ($member->target_regime === null || $member->target_regime === $regime)
-            && ($member->target_volatility === null || $member->target_volatility === $volatility)
-            && ($member->target_session === null || $member->target_session === $session));
+        return $portfolio->members->filter(function ($member) use (
+            $regime,
+            $volatility,
+            $session,
+            $venuePhase,
+            $direction,
+            $spreadLiquidity,
+            $transitionState,
+        ): bool {
+            $cell = (array) data_get($member->evidence, 'portfolio_contract.contextual_specialist_cell', []);
+
+            return ($member->target_regime === null || $member->target_regime === $regime)
+                && ($member->target_volatility === null || $member->target_volatility === $volatility)
+                && ($member->target_direction === null || (filled($direction) && $member->target_direction === strtoupper((string) $direction)))
+                && ($member->target_session === null || $member->target_session === $session)
+                && ($member->target_venue_phase === null || (filled($venuePhase) && $member->target_venue_phase === $venuePhase))
+                && data_get($cell, 'execution_policy') !== 'abstain_only'
+                && (! filled(data_get($cell, 'spread_liquidity_state'))
+                    || (filled($spreadLiquidity) && data_get($cell, 'spread_liquidity_state') === $spreadLiquidity))
+                && (! filled(data_get($cell, 'transition_state'))
+                    || (filled($transitionState) && data_get($cell, 'transition_state') === $transitionState));
+        });
     }
 
     /** Build the sealed request consumed by /api/portfolio/backtest. */
@@ -547,6 +570,7 @@ class EliteAgentPortfolioGateService
                 'target_volatility' => $member->target_volatility,
                 'target_direction' => $member->target_direction,
                 'target_session' => $member->target_session,
+                'target_venue_phase' => $member->target_venue_phase,
                 'specialist_context_contract' => (array) data_get($member->evidence, 'portfolio_contract.contextual_specialist_cell', []),
             ];
         })->filter(fn (array $spec): bool => filled($spec['strategy']))->values()->all();
@@ -918,6 +942,7 @@ class EliteAgentPortfolioGateService
             (string) data_get($member, 'target_volatility', 'any'),
             (string) data_get($member, 'target_direction', 'any'),
             (string) data_get($member, 'target_session', 'any'),
+            (string) data_get($member, 'target_venue_phase', 'any'),
         ]))->unique()->values();
         $checks = [
             'signal_viability' => (int) data_get($result, 'entry_funnel.raw_strategy_signals', 0) > 0
@@ -1133,6 +1158,18 @@ class EliteAgentPortfolioGateService
         return in_array($session, ['asia', 'london', 'new_york', 'overlap'], true) ? $session : null;
     }
 
+    private function targetVenuePhase(ModelMarketPerformance $candidate): ?string
+    {
+        $phase = strtolower((string) (
+            data_get($candidate->modelVersion?->metadata, 'specialist_council_membership.contextual_cell.venue_phase')
+            ?: data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract.target_venue_phase')
+            ?: data_get($candidate->modelVersion?->metadata, 'contextual_specialist_identity.venue_phase')
+        ));
+
+        return in_array($phase, app(MarketSessionCalendarService::class)->researchPhases(), true)
+            ? $phase : null;
+    }
+
     /**
      * A declared session owner must keep its contextual passport valid at
      * admission and again at runtime. Non-session legacy candidates continue
@@ -1234,9 +1271,10 @@ class EliteAgentPortfolioGateService
                 'volatility' => $this->targetVolatility($candidate),
                 'direction' => $this->targetDirection($candidate),
                 'session' => $this->targetSession($candidate),
+                'venue_phase' => $this->targetVenuePhase($candidate),
                 'trades' => $this->declaredNicheEvidence($candidate, 'trades'),
                 'net_pf' => $this->declaredNicheEvidence($candidate, 'net_pf'),
-                'evidence_protocol' => 'sealed_regime_volatility_direction_session_intersection_v2',
+                'evidence_protocol' => 'sealed_regime_volatility_direction_venue_phase_intersection_v3',
             ],
             'portfolio_contract' => data_get($candidate->modelVersion?->metadata, 'portfolio_research_contract'),
             'specialist_passport' => $passport,
@@ -1267,6 +1305,7 @@ class EliteAgentPortfolioGateService
                         'target_volatility' => $this->targetVolatility($candidate),
                         'target_direction' => $this->targetDirection($candidate),
                         'target_session' => $this->targetSession($candidate),
+                        'target_venue_phase' => $this->targetVenuePhase($candidate),
                         'risk_weight' => 1.0,
                         'parameter_hash' => $this->parameterHash($candidate),
                         'evidence' => $this->memberEvidence($candidate),
@@ -1276,7 +1315,7 @@ class EliteAgentPortfolioGateService
             $portfolio->update([
                 'member_count' => $selected->count(),
                 'route_policy' => [
-                    'router' => 'sealed_regime_volatility_direction_session_ownership_v2',
+                    'router' => 'sealed_regime_volatility_direction_venue_phase_ownership_v3',
                     'admission_mode' => $mode,
                     'disagreement' => 'WAIT',
                     'duplicate_trade_rule' => 'one_position_per_portfolio_signal',
@@ -1329,6 +1368,7 @@ class EliteAgentPortfolioGateService
                 'status' => 'sealed',
                 'allowed_regimes' => collect($memberSpecs)->pluck('target_regime')->filter()->unique()->values()->all(),
                 'allowed_sessions' => collect($memberSpecs)->pluck('target_session')->filter()->unique()->values()->all(),
+                'allowed_venue_phases' => collect($memberSpecs)->pluck('target_venue_phase')->filter()->unique()->values()->all(),
                 'abstention_rules' => ['strong_member_disagreement', 'out_of_distribution', 'negative_net_ev'],
             ],
             // Router/calibration policy is part of the strategy identity. A

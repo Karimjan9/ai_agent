@@ -23,7 +23,13 @@ class CandidateGateDecisionService
     {
         $survival = (array) data_get($result, 'screening_survival', []);
         if (data_get($survival, 'status') === 'insufficient_evidence') {
-            return $this->store(null, $agent, 'screening', 'insufficient_evidence', ['INSUFFICIENT_SCREENING_EVIDENCE'], $result);
+            $result['decision'] = 'insufficient_evidence';
+            $result['contextual_capsule_archive'] = app(ContextualCapsuleArchiveService::class)->recordScreening($agent, $result);
+            $row = $this->store(null, $agent, 'screening', 'insufficient_evidence', ['INSUFFICIENT_SCREENING_EVIDENCE'], $result);
+            $result['cooperative_experiment_settlement'] = app(CooperativeExperimentSettlementService::class)->observe($agent);
+            $row->update(['metrics' => $result]);
+
+            return $row->fresh();
         }
         $reasons = $this->economicReasons($result, 10, 1.0, 100.0, 100.0, 0);
         // A high global PF from one short slice is not a survivor claim. The
@@ -85,13 +91,17 @@ class CandidateGateDecisionService
             'causal_funnel_attribution' => $this->causalFunnel->assess([...$result, 'reason_codes' => $reasons]),
         ];
         $this->mutationObservability->record($agent, $observability);
-        $result['behavioral_map_elites'] = $this->evolutionArchive->recordScreeningBehavior($agent, $result);
         $decision = $reasons === [] ? 'passed' : 'failed';
+        $result['decision'] = $decision;
+        $result['behavioral_map_elites'] = $this->evolutionArchive->recordScreeningBehavior($agent, $result);
+        $result['contextual_capsule_archive'] = app(ContextualCapsuleArchiveService::class)->recordScreening($agent, $result);
         if ($decision === 'failed') {
             $result['wound_set']['sealed'] = app(FailureWoundSetService::class)
                 ->sealFromScreening($agent, $result, $reasons);
         }
         $decisionRow = $this->store(null, $agent, 'screening', $decision, $reasons, $result);
+        $result['cooperative_experiment_settlement'] = app(CooperativeExperimentSettlementService::class)->observe($agent);
+        $decisionRow->update(['metrics' => $result]);
 
         // A complete strategy failure becomes an immutable repair anchor. It
         // is deliberately written after the gate projection and never turns
@@ -133,7 +143,7 @@ class CandidateGateDecisionService
             ]);
         }
 
-        return $decisionRow;
+        return $decisionRow->fresh();
     }
 
     public function recordForward(ModelMarketPerformance $performance, array $result): CandidateGateDecision

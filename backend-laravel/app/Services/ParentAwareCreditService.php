@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Records parent-aware outcomes without allowing a parent to claim a child's
- * success. Performance, learning and discovery are separate credit types.
+ * success. Credit follows the five-rung constitutional ladder; early
+ * information can steer research but cannot manufacture parent authority.
  */
 class ParentAwareCreditService
 {
@@ -109,15 +110,19 @@ class ParentAwareCreditService
         $agent->loadMissing('modelVersion');
         $context = $this->contextFromAgent($agent, (array) data_get($agent->modelVersion?->metadata, 'parent_mentor_broker', []));
         $events = [];
-        if ($decision === 'passed') {
-            $events[] = $this->credit($agent, 'performance', 1.0, 'screen_pass_observed', $context, $result);
-        } else {
-            // A clean strategy failure is useful negative knowledge, but it is
-            // never the same as technical success and never opens promotion.
-            $events[] = $this->credit($agent, 'learning', .50, 'strategy_failure_observed', $context, $result);
+        $events[] = $this->credit(
+            $agent,
+            'information_credit',
+            .50,
+            $decision === 'passed' ? 'screen_pass_observed' : 'strategy_failure_observed',
+            $context,
+            $result,
+        );
+        if ($this->repairCreditEligible($result)) {
+            $events[] = $this->credit($agent, 'repair_credit', 1.0, 'target_gate_margin_improved', $context, $result);
         }
         if ($this->discoveryLane($agent)) {
-            $events[] = $this->credit($agent, 'discovery', .50, 'research_hypothesis_observed', $context, $result);
+            $events[] = $this->credit($agent, 'information_credit', .50, 'research_hypothesis_observed', $context, $result);
         }
         return [
             'protocol' => self::PROTOCOL,
@@ -143,19 +148,36 @@ class ParentAwareCreditService
         $context = $this->contextFromAgent($agent, $broker);
         $events = [];
         $forwardPassed = data_get($forwardDecision, 'decision') === 'passed';
-        $targetImproved = (bool) data_get($result, 'target_delta.improved', false)
-            || (bool) data_get($result, 'verified_mutation_skill.target_gate.improved', false);
-        if ($forwardPassed || $targetImproved) {
-            $events[] = $this->credit($agent, 'performance', 1.0, $forwardPassed ? 'independent_forward_pass' : 'target_gate_improved', $context, $result);
+        if ($this->repairCreditEligible($result)) {
+            $events[] = $this->credit($agent, 'repair_credit', 1.0, 'frozen_control_target_improved', $context, $result);
         }
-        if (data_get($result, 'failure_signature') !== null || data_get($result, 'learning_lane_projection') !== null) {
-            $events[] = $this->credit($agent, 'learning', 1.0, 'full_replay_learning_observed', $context, $result);
+        if (data_get($result, 'verified_mutation_skill.status') === 'confirmed'
+            || data_get($result, 'repair_anchor_verification.status') === 'confirmed') {
+            $events[] = $this->credit($agent, 'causal_skill_credit', 1.0, 'independently_replicated_causal_skill', $context, $result);
         }
-        if ($this->discoveryLane($agent) || data_get($result, 'discovery_credit') !== null) {
-            $events[] = $this->credit($agent, 'discovery', 1.0, 'full_replay_discovery_observed', $context, $result);
+        if ($forwardPassed && $this->positiveAbsoluteSettlement($result)) {
+            $events[] = $this->credit($agent, 'performance_credit', 1.0, 'positive_absolute_forward_settlement', $context, $result);
+        }
+        if (data_get($result, 'failure_signature') !== null
+            || data_get($result, 'learning_lane_projection') !== null
+            || $this->discoveryLane($agent)
+            || data_get($result, 'discovery_credit') !== null) {
+            $events[] = $this->credit($agent, 'information_credit', 1.0, 'full_replay_information_observed', $context, $result);
         }
 
         $counterfactual = $this->recordCounterfactual($agent, $result, $broker, $context);
+        if (data_get($counterfactual, 'status') === 'parent_helpful'
+            && (float) data_get($counterfactual, 'parent_incremental_value', 0) > 0) {
+            $events[] = $this->credit(
+                $agent,
+                'inheritance_credit',
+                1.0,
+                'child_beats_autonomous_and_ablation_controls',
+                $context,
+                $result,
+                (int) data_get($counterfactual, 'parent_model_version_id', 0),
+            );
+        }
         $model = $agent->modelVersion;
         if ($model) {
             $metadata = (array) $model->metadata;
@@ -199,9 +221,16 @@ class ParentAwareCreditService
             'symbol' => strtoupper($symbol),
             'timeframe' => strtoupper($timeframe),
             'credit_events' => $credits->count(),
-            'performance_credit' => $credits->where('event_type', 'performance')->count(),
-            'learning_credit' => $credits->where('event_type', 'learning')->count(),
-            'discovery_credit' => $credits->where('event_type', 'discovery')->count(),
+            'information_credit' => $credits->where('event_type', 'information_credit')->count(),
+            'repair_credit' => $credits->where('event_type', 'repair_credit')->count(),
+            'causal_skill_credit' => $credits->where('event_type', 'causal_skill_credit')->count(),
+            'performance_credit' => $credits->whereIn('event_type', ['performance_credit', 'performance'])->count(),
+            'inheritance_credit' => $credits->where('event_type', 'inheritance_credit')->count(),
+            // Backward-compatible projections for old dashboards. They are
+            // derived from the ladder and are not new credit authorities.
+            'learning_credit' => $credits->whereIn('event_type', ['information_credit', 'repair_credit', 'causal_skill_credit', 'learning'])->count(),
+            'discovery_credit' => $credits->whereIn('event_type', ['information_credit', 'discovery'])->count(),
+            'credit_constitution' => app(EvolutionaryAuthorityLadderService::class)->creditConstitution(),
             'counterfactuals' => $counterfactuals->count(),
             'counterfactual_statuses' => $counterfactuals->countBy('status')->all(),
             'parent_trust_rows' => $trust->count(),
@@ -300,6 +329,7 @@ class ParentAwareCreditService
         return [
             'status' => $status,
             'counterfactual_id' => (int) $row->id,
+            'parent_model_version_id' => $parentId,
             'autonomous_score' => $metrics['autonomous'],
             'mentored_score' => $metrics['mentored'],
             'ablated_score' => $metrics['ablated'],
@@ -309,7 +339,41 @@ class ParentAwareCreditService
         ];
     }
 
-    private function credit(LabAgent $agent, string $type, float $amount, string $status, array $context, array $evidence): array
+    public function recordInheritanceCredit(
+        LabAgent $child,
+        ModelVersion $parent,
+        array $evidence,
+    ): array {
+        $child->loadMissing('modelVersion');
+        if (! $this->available()
+            || data_get($evidence, 'child_beats_parent') !== true
+            || data_get($evidence, 'child_beats_frozen_control') !== true
+            || data_get($evidence, 'trait_beats_ablation') !== true
+            || data_get($evidence, 'non_target_regression') === true) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'inheritance_credit_withheld', 'promotion_evidence' => false];
+        }
+        $context = $this->contextFromAgent($child);
+
+        return $this->credit(
+            $child,
+            'inheritance_credit',
+            1.0,
+            'descendant_beats_parent_control_and_trait_ablation',
+            $context,
+            $evidence,
+            $parent->id,
+        );
+    }
+
+    private function credit(
+        LabAgent $agent,
+        string $type,
+        float $amount,
+        string $status,
+        array $context,
+        array $evidence,
+        ?int $parentIdOverride = null,
+    ): array
     {
         $fingerprint = hash('sha256', json_encode([
             'protocol' => self::PROTOCOL,
@@ -320,7 +384,7 @@ class ParentAwareCreditService
             'evidence_run_id' => data_get($evidence, 'evidence_run_id'),
             'context_key' => $context['context_key'],
         ], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES));
-        $parentId = (int) data_get($agent->modelVersion?->metadata, 'parent_mentor_broker.parent_suggestion.parent_model_version_id', 0);
+        $parentId = $parentIdOverride ?: (int) data_get($agent->modelVersion?->metadata, 'parent_mentor_broker.parent_suggestion.parent_model_version_id', 0);
         $event = LabEvolutionCreditEvent::firstOrCreate(
             ['evidence_fingerprint' => $fingerprint],
             [
@@ -371,6 +435,40 @@ class ParentAwareCreditService
         return (bool) data_get($metadata, 'risk_bounded_evolution.adversarial_red_team', false)
             || (bool) data_get($metadata, 'risk_bounded_evolution.volume_shadow', false)
             || in_array((string) data_get($metadata, 'risk_bounded_evolution.mode'), ['bold_explorer', 'regime_volume_explorer', 'adversarial_red_team'], true);
+    }
+
+    private function repairCreditEligible(array $result): bool
+    {
+        $targetImproved = data_get($result, 'verified_mutation_skill.requirements.target_gate_improved') === true
+            || data_get($result, 'repair_anchor_verification.target_gate.improved') === true
+            || data_get($result, 'mutation_observability.gate_margin.target_gate_improved') === true;
+        $nonTargetSafe = data_get($result, 'verified_mutation_skill.requirements.non_target_gates_preserved') === true
+            || data_get($result, 'repair_anchor_verification.no_regression_status') === 'passed'
+            || data_get($result, 'mutation_observability.control_relative.non_target_regression.safe') === true;
+        $exactControl = (data_get($result, 'verified_mutation_skill.same_data_manifest') === true
+                && data_get($result, 'verified_mutation_skill.same_execution_contract') === true)
+            || (data_get($result, 'repair_anchor_verification.paired_screening.status') === 'confirmed'
+                && data_get($result, 'repair_anchor_verification.same_data_manifest') === true
+                && data_get($result, 'repair_anchor_verification.same_execution_contract') === true)
+            || (data_get($result, 'mutation_observability.control_relative.interpretation_allowed') === true
+                && data_get($result, 'mutation_observability.control_relative.same_snapshot') === true
+                && data_get($result, 'mutation_observability.control_relative.same_execution_contract') === true);
+
+        return $targetImproved && $nonTargetSafe && $exactControl;
+    }
+
+    private function positiveAbsoluteSettlement(array $result): bool
+    {
+        foreach ([
+            'net_profit_percent', 'net_profit', 'total_return_percent', 'total_return',
+            'settlement.net_profit_percent', 'settlement.net_profit',
+            'economic_settlement.net_value',
+        ] as $path) {
+            $value = data_get($result, $path);
+            if (is_numeric($value)) return (float) $value > 0;
+        }
+
+        return false;
     }
 
     private function score(array $metrics): ?float

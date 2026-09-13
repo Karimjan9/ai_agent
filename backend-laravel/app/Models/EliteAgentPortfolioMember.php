@@ -10,6 +10,7 @@ class EliteAgentPortfolioMember extends Model
     protected $fillable = [
         'elite_agent_portfolio_id', 'model_market_performance_id', 'role',
         'target_regime', 'target_volatility', 'target_direction', 'target_session',
+        'target_venue_phase',
         'risk_weight', 'parameter_hash', 'evidence',
     ];
 

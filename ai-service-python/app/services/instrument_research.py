@@ -103,6 +103,7 @@ def build_instrument_research_trace(
                     "runtime_observation_protocol"
                 ],
                 "runtime_observation_valid": activation["runtime_observation_valid"],
+                "runtime_receipt_consistent": activation["runtime_receipt_consistent"],
                 "decision_path_activated": activation["decision_path_activated"],
                 "matched_activation_signals": activation["matched_signals"],
                 "observed_activation_signals": activation["observed_signals"],
@@ -148,7 +149,11 @@ def build_instrument_research_trace(
         ),
         "instruments": traces,
         "bundle_activation_context_keys": bundle_contexts,
-        "bundle_fully_activated": bool(traces) and consumed_count == len(traces),
+        "bundle_fully_activated": (
+            bool(traces)
+            and consumed_count == len(traces)
+            and bool(bundle_contexts)
+        ),
         # These labels come from the immutable entry-time trade ledger.  They
         # let the paired Laravel settlement compare London with London (and
         # the same regime/volatility/direction) instead of awarding a global

@@ -11,6 +11,7 @@ from app.services.backtester import (
     _entry_eligibility,
     _instrument_runtime_report,
     _instrument_runtime_state,
+    _instrument_owner_scope_allows,
     _management_evidence_report,
     _proof_carrying_replay,
     _record_strategy_instrument_events,
@@ -112,6 +113,7 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
             "selected": [
                 {
                     "instrument_key": key,
+                    "role": "tactic" if key == "trend_pullback" else "execution",
                     "activation_contract": {
                         "protocol": "instrument_runtime_activation_contract_v1",
                         "required_runtime_events": ["*"],
@@ -165,6 +167,60 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
             ["range|normal_volatility|asia|BUY"], observation["abstained_context_keys"]
         )
         self.assertFalse(observation["promotion_evidence"])
+
+    def test_legacy_family_signal_still_produces_a_specific_tactic_receipt(
+        self,
+    ) -> None:
+        assignment = self.instrument_assignment(["trend_pullback"])
+        assignment["strategy_family"] = "trend"
+        assignment["strategy"] = "str_001_ema_adx_pullback"
+        state = _instrument_runtime_state(assignment)
+        row = pd.Series(
+            {
+                "time": "2026-06-02 09:00:00+00:00",
+                "market_regime": "trend_up",
+                "volatility_regime": "normal_volatility",
+                "selected_specialist": "parent",
+            }
+        )
+
+        _record_strategy_instrument_events(state, row, "BUY", "parent")
+        observation = _instrument_runtime_report(state)["instruments"][
+            "trend_pullback"
+        ]
+
+        self.assertEqual(1, observation["activation_count"])
+        self.assertEqual({"trend_decision:parent": 1}, observation["event_sources"])
+
+    def test_tactic_owner_fails_closed_outside_its_pre_registered_context(
+        self,
+    ) -> None:
+        assignment = self.instrument_assignment(["trend_pullback"])
+        assignment["strategy_family"] = "trend"
+        state = _instrument_runtime_state(assignment)
+        asia = pd.Series(
+            {
+                "time": "2026-06-02 02:00:00+00:00",
+                "market_regime": "trend_up",
+                "volatility_regime": "normal_volatility",
+                "selected_specialist": "parent",
+            }
+        )
+
+        allowed, blocked = _instrument_owner_scope_allows(
+            state, asia, "BUY", "parent"
+        )
+        observation = _instrument_runtime_report(state)["instruments"][
+            "trend_pullback"
+        ]
+
+        self.assertFalse(allowed)
+        self.assertEqual(["trend_pullback"], blocked)
+        self.assertEqual(0, observation["activation_count"])
+        self.assertEqual(
+            ["trend_up|normal_volatility|asia|BUY"],
+            observation["abstained_context_keys"],
+        )
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
     def test_replay_emits_risk_and_exit_instrument_receipts_only_on_real_paths(

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\CandidateHandoffEvent;
+use App\Models\CooperativeExperimentSettlement;
 use App\Models\LabAgent;
 use App\Models\LabAgentParentLink;
 use App\Models\LabEvaluationRun;
@@ -12,6 +13,7 @@ use App\Models\LabGeneration;
 use App\Models\LabMutationCreditEvent;
 use App\Models\ModelMarketPerformance;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Produces the durable, human-readable result packet for every lab phase.
@@ -42,6 +44,9 @@ class LabGenerationReportService
             ->get()->keyBy('model_version_id');
         $decisions = CandidateGateDecision::query()->whereIn('lab_agent_id', $agentIds ?: [0])->get();
         $handoffs = CandidateHandoffEvent::query()->where('lab_generation_id', $generation->id)->get();
+        $blockSettlements = Schema::hasTable('cooperative_experiment_settlements')
+            ? CooperativeExperimentSettlement::query()->where('lab_generation_id', $generation->id)->get()
+            : collect();
 
         $cleanTerminalStatuses = ['screened', 'challenger', 'overfit', 'rejected', 'stagnated', 'forward_validated', 'paper', 'champion', 'archived'];
         $cleanTerminal = $agents->whereIn('lifecycle_status', $cleanTerminalStatuses)->count();
@@ -352,8 +357,20 @@ class LabGenerationReportService
                     'population_group_contract.contextual_allocator',
                 ),
                 'global_champion_forbidden' => true,
-                'member_model' => 'complementary_specialists_by_research_group_and_semantic_cell',
-                'selection_rule' => 'retain a same-cell frontier of parameter specialists; do not collapse the council to headline PF or one global winner',
+                'member_model' => 'temporary_organisms_from_coevolving_module_species_inside_contextual_cells',
+                'selection_rule' => 'exact context, risk veto, highest lower-confidence-bound; uncertainty falls back to baseline or WAIT',
+                'experiment_blocks' => (array) data_get($generation->trigger_context, 'population_group_contract.experiment_blocks', []),
+                'module_species' => (array) data_get($generation->trigger_context, 'population_group_contract.module_species', []),
+                'block_settlements' => [
+                    'protocol' => CooperativeExperimentSettlementService::PROTOCOL,
+                    'observed' => $blockSettlements->count(),
+                    'complete' => $blockSettlements->where('evidence_complete', true)->count(),
+                    'by_status' => $blockSettlements->countBy('outcome_status')->all(),
+                    'component_effects' => $blockSettlements->mapWithKeys(fn (CooperativeExperimentSettlement $row): array => [
+                        $row->block_key => $row->component_effects,
+                    ])->all(),
+                    'promotion_evidence' => false,
+                ],
                 'group_frontiers' => collect($populationGroupCheckpoints)->map(fn (array $checkpoint): array => [
                     'key' => $checkpoint['key'],
                     'member_agent_ids' => data_get($checkpoint, 'checkpoint.member_agent_ids', []),

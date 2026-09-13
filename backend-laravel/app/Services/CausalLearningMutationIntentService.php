@@ -5,10 +5,8 @@ namespace App\Services;
 use App\Models\AgentLearningLesson;
 use App\Models\AgentLearningMutationIntent;
 use App\Models\AgentLearningRetrieval;
-use App\Models\AgentLearningSettlement;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
-use App\Models\LabLearningLanePair;
 use App\Models\ModelVersion;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -98,6 +96,8 @@ class CausalLearningMutationIntentService
         array $parameterDiff,
         ?string $cohortRole = null,
         ?array $skillCartridge = null,
+        ?array $failureRepairContract = null,
+        ?array $learningMethodContract = null,
     ): array {
         $changedGenes = array_values(array_map('strval', array_keys($parameterDiff)));
         $selectedGene = count($changedGenes) === 1 ? $changedGenes[0] : null;
@@ -144,19 +144,37 @@ class CausalLearningMutationIntentService
             : null;
         $old = $selectedGene !== null ? data_get($parameterDiff, $selectedGene.'.old') : null;
         $new = $selectedGene !== null ? data_get($parameterDiff, $selectedGene.'.new') : null;
+        $repairContract = (array) ($failureRepairContract ?? []);
+        $portfolioContract = (array) ($learningMethodContract ?? []);
+        $portfolioMethod = (string) data_get($portfolioContract, 'learning_method', '');
+        $portfolioInfluence = $portfolioMethod !== '' ? 'portfolio_'.$portfolioMethod : null;
+        $failureFingerprint = (string) data_get($repairContract, 'failure_fingerprint', data_get($repairContract, 'signature', ''));
+        $hypothesisRevision = (string) data_get($repairContract, 'hypothesis_revision', '');
         $influence = match (true) {
             $cohortRole === 'blinded' => 'blinded_counterfactual',
-            $cohortRole === 'frozen_control' => 'frozen_control',
-            $cohortRole === 'repair_guided' => 'causal_repair_guided',
+            $cohortRole === 'frozen_control' || data_get($repairContract, 'action') === 'exact_frozen_control' => 'frozen_control',
+            $cohortRole === 'repair_guided' || $repairContract !== [] => 'causal_repair_guided',
+            $cohortRole === 'hypothesis_guided' => 'hypothesis_guided',
+            $cohortRole === 'repair_directed' => 'failure_directed_repair',
             $causalLessonIds->isNotEmpty() => 'memory_guided',
+            $portfolioInfluence !== null => $portfolioInfluence,
             default => 'independent_exploration',
         };
         $baselineHash = $this->hash($base);
         $parameterHash = $this->hash($parameters);
         $mutationHash = $this->hash($parameterDiff);
+        $blindRepeat = $failureFingerprint !== '' && $selectedGene !== null
+            && AgentLearningMutationIntent::query()
+                ->whereIn('status', ['sealed', 'bound', 'settled'])
+                ->where('mutation_hash', $mutationHash)
+                ->get(['metadata'])
+                ->contains(fn (AgentLearningMutationIntent $intent): bool => hash_equals($failureFingerprint, (string) data_get($intent->metadata, 'failure_repair_contract.failure_fingerprint', ''))
+                    && hash_equals($hypothesisRevision, (string) data_get($intent->metadata, 'failure_repair_contract.hypothesis_revision', ''))
+                );
         $intentKey = hash('sha512', json_encode([
             self::PROTOCOL, $generation->id, data_get($packet, 'packet_id'), $family,
             $target, $selectedGene, $mutationHash, $cohortRole,
+            data_get($portfolioContract, 'selection_receipt.receipt_hash'),
         ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
 
         return [
@@ -183,6 +201,34 @@ class CausalLearningMutationIntentService
             'retrieved_at' => $retrievedAt ? Carbon::parse($retrievedAt) : null,
             'cohort_role' => $cohortRole,
             'skill_cartridge' => $skillCartridge,
+            'failure_repair_contract' => $repairContract !== [] ? [
+                ...$repairContract,
+                'failure_fingerprint' => $failureFingerprint,
+                'hypothesis_revision' => $hypothesisRevision,
+                'selected_gene' => $selectedGene,
+                'mutation_hash' => $mutationHash,
+                'consumption_receipt' => [
+                    'status' => $blindRepeat ? 'blocked_repeat' : 'pre_sealed',
+                    'sealed_before_mutation_persistence' => true,
+                    'result_link_pending' => ! $blindRepeat,
+                    'promotion_evidence' => false,
+                ],
+            ] : null,
+            'learning_method_contract' => $portfolioContract !== [] ? [
+                ...$portfolioContract,
+                'selected_gene' => $selectedGene,
+                'mutation_hash' => $mutationHash,
+                'consumption_receipt' => [
+                    'source_receipt_hash' => data_get($portfolioContract, 'selection_receipt.receipt_hash'),
+                    'status' => 'pre_sealed',
+                    'selected_before_mutation' => data_get($portfolioContract, 'selection_receipt.selected_before_mutation') === true,
+                    'mutation_result_link_pending' => true,
+                    'promotion_evidence' => false,
+                ],
+            ] : null,
+            'protocol_violation' => $blindRepeat
+                ? 'UNRESOLVED_FAILURE_REPEAT_WITHOUT_NEW_HYPOTHESIS'
+                : null,
             'causal_order' => [
                 'retrieval_sequence' => 1,
                 'mutation_seal_sequence' => 2,
@@ -196,6 +242,45 @@ class CausalLearningMutationIntentService
     {
         if (! Schema::hasTable('agent_learning_mutation_intents')) {
             return ['status' => 'unavailable', 'protocol' => self::PROTOCOL, 'promotion_evidence' => false];
+        }
+        if (filled(data_get($plan, 'protocol_violation'))) {
+            return [
+                'status' => 'blocked',
+                'reason' => (string) data_get($plan, 'protocol_violation'),
+                'failure_fingerprint' => data_get($plan, 'failure_repair_contract.failure_fingerprint'),
+                'promotion_evidence' => false,
+            ];
+        }
+        $portfolioContract = (array) data_get($plan, 'learning_method_contract', []);
+        if ($portfolioContract !== []) {
+            $validPortfolio = data_get($portfolioContract, 'protocol') === MultiModalLearningPortfolioService::PROTOCOL
+                && filled(data_get($portfolioContract, 'learning_method'))
+                && data_get($portfolioContract, 'requires_exact_frozen_control') === true
+                && data_get($portfolioContract, 'research_nursery_only') === true
+                && data_get($portfolioContract, 'selection_receipt.selected_before_mutation') === true
+                && data_get($portfolioContract, 'promotion_evidence') === false;
+            $sourceRequired = data_get($portfolioContract, 'source_reference_required') === true;
+            $sourceContextRequired = data_get($portfolioContract, 'source_context_required') === true;
+            $contextStatus = (string) data_get($portfolioContract, 'context_binding.status', '');
+            $sourceContextInvalid = $sourceContextRequired && ! in_array($contextStatus, [
+                'same_source_context_bound', 'target_context_isolated',
+            ], true);
+            $topology = (array) data_get($portfolioContract, 'experiment_topology', []);
+            $topologyIncomplete = $topology !== [] && data_get($topology, 'status') !== 'complete';
+            if (! $validPortfolio || $topologyIncomplete || $sourceContextInvalid
+                || ($sourceRequired && (array) data_get($portfolioContract, 'source_reference', []) === [])) {
+                return [
+                    'status' => 'blocked',
+                    'reason' => match (true) {
+                        $sourceRequired && (array) data_get($portfolioContract, 'source_reference', []) === [] => 'LEARNING_METHOD_SOURCE_REFERENCE_MISSING',
+                        $topologyIncomplete => 'LEARNING_METHOD_EXPERIMENT_TOPOLOGY_INCOMPLETE',
+                        $sourceContextInvalid => 'LEARNING_METHOD_SOURCE_CONTEXT_INVALID',
+                        default => 'LEARNING_METHOD_CONTRACT_INVALID',
+                    },
+                    'learning_method' => data_get($portfolioContract, 'learning_method'),
+                    'promotion_evidence' => false,
+                ];
+            }
         }
         $influence = (string) data_get($plan, 'influence_type', 'independent_exploration');
         if (str_contains($influence, 'memory')) {
@@ -258,6 +343,8 @@ class CausalLearningMutationIntentService
                     'cohort_role' => data_get($plan, 'cohort_role'),
                     'causal_order' => data_get($plan, 'causal_order'),
                     'skill_cartridge' => data_get($plan, 'skill_cartridge'),
+                    'failure_repair_contract' => data_get($plan, 'failure_repair_contract'),
+                    'learning_method_contract' => data_get($plan, 'learning_method_contract'),
                     'post_hoc_upgrade_forbidden' => true,
                     'promotion_evidence' => false,
                 ],
@@ -342,6 +429,8 @@ class CausalLearningMutationIntentService
             'sealed_at' => $intent->sealed_at?->toIso8601String(),
             'bound_at' => $intent->bound_at?->toIso8601String(),
             'causal_order' => data_get($intent->metadata, 'causal_order'),
+            'failure_repair_contract' => data_get($intent->metadata, 'failure_repair_contract'),
+            'learning_method_contract' => data_get($intent->metadata, 'learning_method_contract'),
             'post_hoc_upgrade_forbidden' => true,
             'promotion_evidence' => false,
         ];
@@ -349,21 +438,11 @@ class CausalLearningMutationIntentService
 
     private function canonicalPositive(AgentLearningLesson $lesson): bool
     {
-        $pairId = (int) data_get($lesson->evidence, 'pair_id', 0);
-        if ($pairId <= 0 || $lesson->lesson_type !== 'skill_lesson' || $lesson->outcome !== 'beneficial') {
-            return false;
-        }
-        $pair = LabLearningLanePair::query()->with('controlResponseMap')->find($pairId);
-        if (! $pair || ! $pair->isVerifiedControlPair()) {
+        if ($lesson->lesson_type !== 'skill_lesson' || $lesson->outcome !== 'beneficial') {
             return false;
         }
 
-        return AgentLearningSettlement::query()
-            ->where('source_type', LabLearningLanePair::class)
-            ->where('source_id', $pairId)
-            ->where('evidence_state', 'positive')
-            ->where('hard_failure', false)
-            ->exists();
+        return data_get(app(CausalLessonAdmissionService::class)->assess($lesson), 'canonical_positive') === true;
     }
 
     private function matchesMutation(AgentLearningLesson $lesson, array $parameterDiff): bool

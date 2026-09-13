@@ -11,6 +11,8 @@ class ContextContractV2Service
 {
     public const PROTOCOL = 'context_contract_v2';
 
+    public function __construct(private MarketSessionCalendarService $marketSessions) {}
+
     /** @return array<string,mixed> */
     public function project(array $state): array
     {
@@ -47,6 +49,24 @@ class ContextContractV2Service
      */
     public function canonicalAxes(array $state): array
     {
+        $timestamp = data_get($state, 'timestamp', data_get(
+            $state,
+            'time',
+            data_get($state, 'candle_time', data_get($state, 'signal_time')),
+        ));
+        if (filled($timestamp)
+            && ! filled(data_get($state, 'venue_phase'))
+            && ! filled(data_get($state, 'session_ownership.venue_phase'))) {
+            $resolved = $this->marketSessions->resolve($timestamp, [
+                'candle_end' => data_get($state, 'candle_end'),
+                'duration_minutes' => data_get($state, 'duration_minutes'),
+                'spread_atr_ratio' => data_get($state, 'spread_atr_ratio'),
+                'spread_liquidity_state' => data_get($state, 'spread_liquidity_state'),
+            ]);
+            // Explicit caller axes remain authoritative declarations; the
+            // calendar only fills coordinates which were not supplied.
+            $state = [...$resolved, ...$state];
+        }
         $raw = $this->rawAxes($state);
 
         return [
@@ -59,13 +79,21 @@ class ContextContractV2Service
             'direction' => $this->bounded($raw['direction']),
             'state_cluster_id' => $this->bounded($raw['state_cluster_id'], false),
             'session_instance_id' => $this->bounded($raw['session_instance_id'], false),
-            'venue_phase' => $this->session($raw['venue_phase']),
+            'venue_phase' => $this->venuePhase($raw['venue_phase']),
+            'venue_phases' => $this->mask($raw['venue_phases']),
             'overlap_mask' => $this->mask($raw['overlap_mask']),
             'minutes_from_boundary' => is_numeric($raw['minutes_from_boundary'])
                 ? (string) max(0, (int) $raw['minutes_from_boundary'])
                 : null,
             'calendar_version' => $this->bounded($raw['calendar_version'], false),
             'session_offset_state' => $this->bounded($raw['session_offset_state'], false),
+            'local_time' => $this->structured($raw['local_time']),
+            'utc_interval' => $this->structured($raw['utc_interval']),
+            'dst_offset' => $this->structured($raw['dst_offset']),
+            'minutes_from_open' => $this->structured($raw['minutes_from_open']),
+            'minutes_from_fix_or_settlement' => $this->structured($raw['minutes_from_fix_or_settlement']),
+            'holiday_or_maintenance_state' => $this->structured($raw['holiday_or_maintenance_state']),
+            'classification_status' => $this->bounded($raw['classification_status']),
         ];
     }
 
@@ -98,10 +126,18 @@ class ContextContractV2Service
             'state_cluster_id' => $value('state_cluster_id', ['cluster_id', 'state_cluster']),
             'session_instance_id' => $value('session_instance_id', ['session_ownership.session_instance_id']),
             'venue_phase' => $value('venue_phase', ['session_ownership.venue_phase']),
+            'venue_phases' => $value('venue_phases', ['active_phases', 'session_ownership.venue_phases']),
             'overlap_mask' => $value('overlap_mask', ['session_ownership.overlap_mask']),
             'minutes_from_boundary' => $value('minutes_from_boundary', ['session_ownership.minutes_from_boundary']),
             'calendar_version' => $value('calendar_version', ['session_ownership.calendar_version']),
             'session_offset_state' => $value('session_offset_state', ['offset_state']),
+            'local_time' => $value('local_time', ['session_ownership.local_time']),
+            'utc_interval' => $value('utc_interval', ['session_ownership.utc_interval']),
+            'dst_offset' => $value('dst_offset', ['session_ownership.dst_offset']),
+            'minutes_from_open' => $value('minutes_from_open', ['session_ownership.minutes_from_open']),
+            'minutes_from_fix_or_settlement' => $value('minutes_from_fix_or_settlement', ['session_ownership.minutes_from_fix_or_settlement']),
+            'holiday_or_maintenance_state' => $value('holiday_or_maintenance_state', ['session_ownership.holiday_or_maintenance_state']),
+            'classification_status' => $value('classification_status', ['session_ownership.classification_status']),
         ];
     }
 
@@ -135,6 +171,21 @@ class ContextContractV2Service
             'overlap', 'london_new_york_overlap', 'london_ny_overlap' => 'overlap',
             default => null,
         };
+    }
+
+    private function venuePhase(mixed $value): ?string
+    {
+        $key = $this->key($value);
+        if (in_array($key, [
+            'asia_sge_night', 'asia_sge_day', 'london_pre_am_fix', 'london_am_fix',
+            'london_interfix', 'london_pm_fix', 'comex_active', 'comex_pre_settlement',
+            'comex_post_settlement', 'comex_maintenance', 'london_comex_overlap',
+            'calendar_quarantine',
+        ], true)) {
+            return $key;
+        }
+
+        return $this->session($value);
     }
 
     private function transition(mixed $value): ?string
@@ -198,6 +249,26 @@ class ContextContractV2Service
         sort($values);
 
         return $values === [] ? null : implode('+', $values);
+    }
+
+    private function structured(mixed $value): ?string
+    {
+        if (! is_array($value)) {
+            return $this->bounded($value, false);
+        }
+        $normalize = function (mixed $item) use (&$normalize): mixed {
+            if (! is_array($item)) {
+                return $item;
+            }
+            if (! array_is_list($item)) {
+                ksort($item);
+            }
+
+            return array_map($normalize, $item);
+        };
+        $encoded = json_encode($normalize($value), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+
+        return is_string($encoded) && $encoded !== '[]' ? $encoded : null;
     }
 
     private function key(mixed $value): string

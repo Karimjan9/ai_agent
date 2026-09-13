@@ -71,6 +71,11 @@ class StrategyRuntimeConfig(BaseModel):
     # sealed routing declaration, never inferred from the combined outcome.
     target_direction: Literal["BUY", "SELL"] | None = None
     target_session: Literal["asia", "london", "new_york", "overlap"] | None = None
+    target_venue_phase: Literal[
+        "asia_sge_night", "asia_sge_day", "london_pre_am_fix", "london_am_fix",
+        "london_interfix", "london_pm_fix", "comex_active", "comex_pre_settlement",
+        "comex_post_settlement", "comex_maintenance", "london_comex_overlap",
+    ] | None = None
     specialist_context_contract: dict[str, Any] = Field(default_factory=dict)
     # Sealed by Laravel before a laboratory replay. The runtime may attest
     # only bindings it actually received and consumed; the declaration grants
@@ -382,6 +387,9 @@ class SimpleBacktestResponse(BaseModel):
     # deliberately not a routing feature: calendar is evidence only and the
     # mutation contract names the failing causal context instead.
     robustness_matrix: dict[str, Any] = Field(default_factory=dict)
+    # Complete candle-level venue/session classification coverage. Candidate
+    # and control hashes must match before local causal authority can exist.
+    market_session_calendar_coverage: dict[str, Any] = Field(default_factory=dict)
     replay_compiler: dict[str, Any] = Field(default_factory=dict)
     certified_coverage_passport: dict[str, Any] = Field(default_factory=dict)
     opportunity_recall: dict[str, Any] = Field(default_factory=dict)

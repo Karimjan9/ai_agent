@@ -6,7 +6,7 @@ tags:
   - ai-learning
   - laboratory
   - champion-challenger
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # AI Learning Laboratory
@@ -15,12 +15,13 @@ updated: 2026-09-12
 
 Every ordinary XAUUSD organism generation remains exactly 20 seats, but it is
 no longer a fixed `5 objectives x 4 agents` roster. The
-`contextual_council_allocator_v1` distributes exact candidate/control pairs by
-objective pressure, uncertainty, recent local successes/failures/near-passes,
-repeat-failure exhaustion and context-local instrument posterior value. Every
-market phase keeps a one-pair exploration floor before contextual UCB may
-shift additional compute. Quotas may therefore split, merge, deepen or retire
-research cells without changing the 20-seat safety envelope.
+`cooperative_contextual_evolution_council_v1` distributes pair, factorial,
+replication, transfer, descendant, novelty and guard blocks by uncertainty,
+recent local successes/failures/near-passes, repeat-failure exhaustion and
+context-local instrument posterior value. Venue-phase coverage anchors run
+before contextual UCB may shift additional compute. Blocks may therefore
+split, merge, deepen or retire research cells without changing the 20-seat
+safety envelope.
 
 The unit of specialization is a sealed capsule, not a globally "good" agent:
 
@@ -107,6 +108,12 @@ vector and genetic source IDs. The candidate contains exactly one declared
 intervention. Its control is persisted first and is recorded as a non-genetic
 `causal_baseline_model_version_id`. Matching hashes without this exact
 parameter baseline are legacy diagnostic evidence, not a verified pair.
+Before any positive stepping-stone exists, `two_tier_evolutionary_authority_v1`
+assigns those pairs as six exact-repair blocks (12 seats), three structural-
+novelty blocks (6 seats), and one continuity/adversarial guard block (2 seats).
+After a causal skill appears, the same 20-seat and exact-control envelope shifts
+compute toward replication, factorial interaction and descendant challenge,
+while retaining repair, novelty and guard floors.
 
 The knowledge boundary has two explicit authority blocks. Research Inbox
 contains legacy/provisional/negative/uncertain lessons, failed mutations,
@@ -117,6 +124,45 @@ retrieve-before-mutate: canonical context is built first, one compatible
 proven skill is selected or the system abstains, and the exact intent is
 sealed before the agent is persisted. Family priors never directly grant
 inheritance or parent authority.
+
+### Multi-modal learning portfolio (2026-09-13)
+
+Failure repair is no longer the implicit default for all useful learning, and
+the absence of an executable causal lesson no longer forces every ordinary
+candidate into an unstructured `independent_exploration` label. The
+`multi_modal_learning_portfolio_v1` assigns every exact pair one
+pre-registered research method:
+
+1. terminal-failure or preregistered gate-deficit repair;
+2. independent replication of a positive causal skill;
+3. Bayesian active learning from a Beta-posterior entropy and bounded
+   expected-information-gain proxy;
+4. paired A/B marginal screening that may open the existing sealed
+   control/A/B/A+B factorial counterfactual cohort;
+5. contextual quality-diversity / MAP-Elites cell discovery;
+6. source-target transfer validation against a from-scratch control;
+7. historically bounded adversarial stress replay;
+8. confirmed-elite shadow rehearsal and non-regression guard.
+
+The allocator keeps the two-tier authority block as the safety envelope and
+chooses a compatible learning method inside each block. Cold start therefore
+still contains twelve repair, six structural-novelty and two guard seats, but
+its novelty seats explicitly split between active uncertainty reduction and
+quality-diversity search, while the guard pair runs bounded adversarial work.
+After a causal stepping stone exists, compute shifts to positive replication,
+factorial interaction, local transfer validation and descendant challenges.
+An economic parent adds elite rehearsal; it is never silently replaced by a
+new challenger.
+
+Every assignment carries the source credit/mentor/archive/failure reference
+when the method depends on historical evidence, its exact authority block,
+candidate/control roles and a hashed selection receipt created before mutation.
+The mutation intent binds that receipt to the selected gene and mutation hash.
+An evidence-dependent method with no source reference fails closed. All eight
+methods remain in the research nursery, carry `promotion_evidence=false`, and
+must settle back to their receipt. Transfer never transports authority across
+contexts; novelty never displaces a confirmed specialist; deployment remains
+restricted to separately confirmed contextual elites.
 
 ### Current-cohort MTF and instrument bridge (2026-09-11)
 
@@ -159,23 +205,41 @@ profitable edge. The production evidence projection currently stops first at
 
 ## Evolutionary Authority Foundry (2026-08-30)
 
-`evolutionary_authority_foundry_v1` is the prospective-only bridge from a
+`evolutionary_authority_foundry_v1` and
+`two_tier_evolutionary_authority_v1` are the prospective-only bridge from a
 causally confirmed component to evolutionary authority. A historical research
-arm is never a parent simply because it is useful. The ledger records:
+arm is never a parent simply because it is useful. The formal ladder is:
 
 ```text
-confirmed_skill -> five-arm incubator -> skill_mentor
--> two independently improving descendants -> breeder_candidate
--> full passport -> eligible_parent -> E3 paper candidate -> E4 champion
+information_credit -> repair_credit -> causal_skill_credit
+-> Research Mentor (local repair guidance only)
+-> performance_credit + two inheritance_credit events
+-> Economic Parent (context-bound genetic reproduction)
+-> E3 paper candidate -> E4 champion
 ```
+
+Research Mentor does not require positive absolute PnL. It does require a
+pre-registered failure/target, an exact frozen control, one declared gene,
+preserved non-target gates, a bound context and repeatable improvement across
+at least three independent windows with at least two positive windows. It may
+guide bounded repair, replication and factorial ablation only; it can never be
+a global parent, cross-context inheritance source or paper/live authority.
+
+Economic Parent additionally requires passed screening and full replay,
+positive absolute settlement, forward/paper evidence, a real
+`performance_credit`, two independently improving descendants with two
+`inheritance_credit` events, context-confirmed trust and the complete passport.
+Checking the underlying evidence and the immutable credit ledger prevents a
+status label from manufacturing reproductive authority.
 
 The five incubator arms are frozen control, single-gene child,
 memory-blinded child, skill ablation, and weakest-gate repair. Every final arm
 must bind the same data/execution hash, a single component delta, no
 non-target regression, and at least three independent windows. `confirmed_skill`
-is not equivalent to `eligible_parent`; the latter additionally requires two
-descendants that inherit only the confirmed component, mutate a different gene,
-improve independently, and do not repeat the inherited failure.
+is not equivalent to Research Mentor, and Research Mentor is not equivalent to
+`eligible_parent`. The latter additionally requires descendants that inherit
+only the confirmed component, mutate a different gene, improve independently,
+and do not repeat the inherited failure.
 
 Causal confirmation is target-aligned and fail-closed. A guided arm must beat
 both frozen control and memory-blinded control on the preregistered economic
@@ -356,7 +420,7 @@ Parent eligibility is stricter than a forward-score sort: a reusable parent must
 
 The parent layer is adaptive rather than champion-only. Read [[adaptive-evolution]] for the full contract. `EvolutionGovernorService` observes recent progress, stagnation and diversity; `AdaptiveParentFrontierService` then selects a dynamic K from the exact semantic cell. Causal/G98/differential repair remains one-parent, robust crossover can use 2-5 contributors, architecture/curiosity can revive young/archive lineages, and runtime ensemble policy can hold 3-8 sealed specialists. `EvolutionArchiveService` keeps convergence, diversity, young and failure archives separate. Failure evidence is preserved for diagnosis but never reintroduced as a parent. Every selected ID, module source and dynamic-K decision is recorded with `promotion_evidence=false` and all children repeat the normal replay/statistical/holdout/paper gates.
 
-Failure learning follows an explicit repair-anchor protocol: complete strategy failure -> technical/strategy classification -> target compiler -> immutable failed parameter snapshot -> one declared gene -> paired screen -> full replay -> independent forward confirmation. Technical or incomplete evidence never creates a mutation lesson. A failed model is therefore a repair baseline, not a genetic parent; only a confirmed repair may earn mutation credit and later parent eligibility. A normal generation is held when a terminal cohort has screening decisions but no screen pass, preventing repeated cold restarts while the failure curriculum is repaired.
+Failure learning follows an explicit repair-anchor protocol: complete strategy failure -> technical/strategy classification -> target compiler -> immutable failed parameter snapshot -> one declared gene -> paired screen -> full replay -> independent forward confirmation. Every terminal strategy failure also emits a production lesson contract containing `failure_fingerprint`, `root_cause_hypothesis`, forbidden/recommended gene policy, context scope, next experiment, exact control and a pending consumption receipt. The selected lesson is sealed before mutation, bound to the created agent, linked to screening/full replay/forward outcomes and closed only by confirmed repair or deliberate abstention. Replaying the same unresolved fingerprint with the same mutation and hypothesis revision is rejected. Technical or incomplete evidence never creates a mutation lesson. A failed model is therefore a repair baseline, not a genetic parent; only a confirmed repair may earn mutation credit and later parent eligibility. A normal generation is held when a terminal cohort has screening decisions but no screen pass, preventing repeated cold restarts while the failure curriculum is repaired.
 
 The repair lifecycle has four explicit evolutionary tiers. `Repair Anchor` is
 the immutable failed vector only. A passing screen creates a
@@ -449,9 +513,17 @@ and a failure down-ranks only its matching context.
 Mentored candidates carry an immutable three-branch contract:
 `autonomous`, `mentored` and `ablated`. Parent incremental value is
 `mentored - autonomous`; parent credit is blocked until all branches share the
-same snapshot and execution contract. Evolution credit is separated into
-performance, learning and discovery events, so a clean falsification can teach
-the next mutation without being mistaken for a promotion pass. Monitor this
+same snapshot and execution contract. Evolution credit has five explicit
+rungs: `information_credit` rejects or narrows a hypothesis, `repair_credit`
+improves the target margin, `causal_skill_credit` repeats that improvement,
+`performance_credit` records positive absolute economics, and
+`inheritance_credit` records a child beating parent and exact controls. The
+first two route experiments, the third grants only Research Mentor authority,
+and only the final two can unlock Economic Parent reproduction. A clean
+falsification can therefore steer the next mutation without being mistaken for
+a promotion pass. Legacy `learning`/`discovery` rows are conservatively
+projected as information credit for allocation only; they can never be
+retroactively upgraded to repair, causal skill or performance authority. Monitor this
 with `trading:monitor-parent-evolution XAUUSD --timeframe=H1 --json`.
 
 The parent-candidate preparation lane is deliberately narrower than council
@@ -795,7 +867,10 @@ runtime emits `instrument_runtime_observations_v1` directly from concrete
 tactic/router/gate/sizing/exit events; aggregate signal or trade counts are
 explicitly forbidden as a fallback. The observation receipt seals per-event
 counts, event sources, activated context keys and out-of-scope abstentions. It
-then emits
+also enforces tactic/model ownership on the decision path: a signal outside
+the instrument's pre-registered context is converted to `WAIT`; risk and
+management tools remain inactive until their own sequential gate is reached.
+After those checks it emits
 `lab_instrument_runtime_trace_v2`, where assignment and matching bindings are
 inventory only: an invocation opens only for an actually activated decision
 path. Each context slice records `activated`, `not_observed`, or
@@ -878,3 +953,141 @@ The autonomous monitor derives planned population from the immutable
 lightweight or strong controller therefore has the same narrow authority:
 start, stop and observe. Scheduler-owned lifecycle code alone performs
 generation construction, recovery, learning dispatch and validation.
+
+### Venue-phase session council (2026-09-13)
+
+XAUUSD session context is derived from each candle interval by the versioned
+`market_session_calendar_v2` rulebook. It uses IANA zones for Shanghai, London
+and Chicago and emits the exact session instance, every intersecting venue
+phase, overlap mask, local clocks, UTC intervals, DST offsets, distance from
+opens/fixes/settlement, holiday or maintenance state, and calendar version.
+SGE night/day, both LBMA fixes, the London inter-fix interval, COMEX active,
+pre/post-settlement and maintenance phases can coexist on one candle. A bounded
+London/COMEX core-overlap phase is an explicit project policy; it does not erase
+the underlying venue memberships or the backwards-compatible coarse session.
+
+Holiday closures and exceptional no-night-session dates are immutable,
+versioned configuration inputs. A production calendar release must populate
+those overrides from the authoritative venue calendar and bump
+`calendar_version`; a missing/invalid timestamp or a closed/maintenance-only
+context is quarantined or forced to abstain. Candle-duration intersection is
+part of classification, so H4/H1/M15/M5 remain one MTF organism rather than
+four independent session agents.
+
+The exact contextual specialist identity is now:
+regime, venue phase/session instance, volatility, spread/liquidity, transition,
+direction, trait, instrument bundle, strategy, tactic, risk, management, and
+calendar version. A phase-local result cannot become global inheritance.
+Candidate and frozen control must share the same opportunity/session-instance
+hash; promotion additionally requires screening and full replay, positive
+absolute settlement, independent chronological replication, DST coverage for
+London/COMEX, cost stress, local positive posterior, multiple-testing control,
+no cross-session regression, and zero out-of-scope activation.
+
+Twenty research seats are allocated as ten exact candidate/control pairs over
+venue-phase cells using coverage deficit, uncertainty, local evidence and
+guardrail demand. Persisted portfolio members carry `target_venue_phase` and
+the runtime router checks every declared context axis. Only a
+`contextually_confirmed_specialist` can displace an incumbent inside the exact
+cell; otherwise the council retains the frozen baseline or returns `WAIT`.
+
+### Cooperative contextual evolution council (2026-09-13)
+
+The ordinary twenty-agent population no longer passes through the historical
+five-groups-by-four-seats rebalance. That layout remains available only for a
+sealed operator-approved rescue, bounded fallback, or shadow comparison. The
+ordinary constitutional unit is now an experiment block: pair, four-arm
+factorial, chronological replication, source/target transfer, descendant
+challenge, novelty, or continuity/adversarial guard.
+
+Cold start spends twenty seats on six discovery pairs, one four-arm factorial
+and two guard pairs. Once a causal stepping stone exists, compute moves to
+replication, factorial interaction, transfer and descendant challenges while
+retaining one repair, novelty and guard floor. Every block is selected before
+mutation and stores the complete acquisition ledger: probability of
+improvement, expected information gain, context coverage, novelty,
+unresolved-failure pressure, replication need, execution cost, duplicate
+penalty, overfit risk and correlated-failure penalty.
+
+Each temporary agent is assembled from seven independently tracked species:
+strategy, model/regime router, tactic, toolbox/instrument, risk, trade
+management and activation/router. Screening persists those components and the
+whole capsule in its exact market context. Settlement records component
+marginal effects, factorial interaction and whole-capsule economic effect. One
+local observation can route repair or information credit; it cannot grant
+global inheritance, parent, paper or live authority.
+
+The contextual capsule archive is Pareto-safe. It maximizes after-cost
+expectancy, profit factor, temporal survival and session-local stability while
+minimizing drawdown, tail loss, cost sensitivity, complexity and out-of-scope
+activation. A local elite is replaced only by a contextually confirmed capsule
+that Pareto-dominates it. Harmful combinations remain local anti-skills, and
+London evidence cannot become Asia authority.
+
+External and agent-proposed ideas enter the durable research inbox. Duplicate
+and compatibility checks compile each idea into an executable bounded-gene
+contract; the allocator may then attach it to a novelty candidate/control
+block. Direct runtime installation and inheritance are forbidden. A terminal
+block settlement closes the inbox receipt, but normal causal promotion gates
+remain unchanged.
+
+Council execution is not majority voting. The router requires an exact context,
+applies risk vetoes and selects the eligible specialist with the best lower
+confidence bound. If evidence is missing or context is outside the activation
+contract, the result is the frozen baseline or `WAIT`.
+
+### Post-v2 learning proof layer (2026-09-13)
+
+New generations carry `post_v2_learning_truth_epoch_v1`. The epoch is
+deliberately non-retroactive: legacy settlements and labels may rank a fresh
+hypothesis, but they cannot enter the verified-v2 denominator or acquire
+authority. A sidecar linkage ledger connects the generation, sealed mutation
+intent, exact pair, causal experiment, settlement, lesson and eventual
+authority. Missing links remain visible debt; no historical row is silently
+backfilled into the new cohort.
+
+The causal capability lattice separates a component micro-win from an
+economically viable organism. A component may enter research escrow after it
+beats the exact control and blinded selector on a declared target in replicated
+windows, while preserving hard-risk and non-target corridors. Absolute profit
+is not required for that research-only component status. It is still required,
+together with screening/full replay and the existing forward, descendant and
+context-trust gates, before economic-parent authority. Escrow never grants
+paper/live or genetic-parent authority by itself.
+
+The evidence salvage conveyor ranks beneficial provisional/legacy lessons by
+expected information value, probability of closing the next gate, target-gap
+reduction and context relevance, with compute and repeat-failure penalties.
+Its output is binding only as the source of a new guided/blinded/exact-control
+experiment. `latest row wins` is no longer the confirmation policy, and legacy
+evidence is never promoted directly.
+
+Admission deliberately has two predicates. A canonical causal source must
+still satisfy `frozen_control_v2` pair integrity. A reconstructable legacy
+positive may instead receive `legacy_hypothesis_only`: its single gene,
+old/new values, candidate/control model values, positive settlement, schema
+bounds and executable cartridge must all agree, but the old pair earns no
+credit. It can open one `hypothesis_guided` post-v2 triplet whose intent records
+the source lesson as selected while keeping `causally_applied_lesson_ids`
+empty. Only the newly sealed triplet can create component credit. Ranking,
+cohort admission and mutation selection share the same fail-closed admission
+service so an item cannot be advertised as ready and then silently rejected by
+the constructor.
+
+Completed cooperative factorial blocks now persist context-local standalone,
+bundle, interaction and leave-one-out effects. If A and B are individually
+weak but A+B is positive, the graph marks only the combination as a research
+candidate and suppresses individual credit. All graph rows are research-only;
+assignment or invocation alone grants no credit and local evidence cannot
+become global inheritance.
+
+`php artisan trading:causal-golden-worlds` runs four deterministic acceptance
+worlds. The positive world completes component, composition, mentor, two-
+descendant, economic-parent and stronger-child transitions. The null world
+creates no false component or parent, the poisoned world is rejected by risk
+and non-target gates, and the context-switch world enables the London research
+scope while forcing Asia to abstain. Passing this harness proves wiring and
+fail-closed authority behavior, not profitable market edge. Hyperband,
+combinatorial bandit and other adaptive runtime authority remain deferred until
+fresh post-v2 market evidence demonstrates that this proof layer improves yield
+per unit of compute.

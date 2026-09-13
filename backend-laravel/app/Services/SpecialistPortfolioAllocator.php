@@ -23,6 +23,10 @@ class SpecialistPortfolioAllocator
         string $regime,
         string $volatility,
         ?string $session = null,
+        ?string $venuePhase = null,
+        ?string $direction = null,
+        ?string $spreadLiquidity = null,
+        ?string $transitionState = null,
     ): bool {
         $session ??= (string) data_get($this->marketSessions->resolve(null), 'session', 'off_session');
         // A specialist disagreement is an explicit epistemic boundary. The
@@ -43,9 +47,15 @@ class SpecialistPortfolioAllocator
                 // members are routed inside the canonical AI replay; the
                 // Laravel allocator must not reject the proxy because its id
                 // is intentionally different from every member id.
-                return $this->portfolioGate->routeMembers($portfolio, $regime, $volatility, $session)->isNotEmpty();
+                return $this->portfolioGate->routeMembers(
+                    $portfolio, $regime, $volatility, $session, $venuePhase,
+                    $direction, $spreadLiquidity, $transitionState,
+                )->isNotEmpty();
             }
-            $routed = $this->portfolioGate->routeMembers($portfolio, $regime, $volatility, $session)
+            $routed = $this->portfolioGate->routeMembers(
+                $portfolio, $regime, $volatility, $session, $venuePhase,
+                $direction, $spreadLiquidity, $transitionState,
+            )
                 ->map(fn ($member) => $member->performance)
                 ->filter()->values();
             if ($routed->isEmpty()) {
@@ -56,16 +66,32 @@ class SpecialistPortfolioAllocator
             return $winner?->id === $candidate->id;
         }
 
-        $eligible = $universe->filter(function (ModelMarketPerformance $item) use ($candidate, $regime, $volatility): bool {
+        $eligible = $universe->filter(function (ModelMarketPerformance $item) use (
+            $candidate, $regime, $volatility, $session, $venuePhase,
+            $direction, $spreadLiquidity, $transitionState,
+        ): bool {
             if ($item->symbol !== $candidate->symbol || $item->timeframe !== $candidate->timeframe) {
                 return false;
             }
             $claim = data_get($item->metrics, 'edge_claim', []);
             $atlasRequired = (int) data_get($item->modelVersion?->metadata, 'statistical_gate_version', 0) >= 3;
+            $ownedSession = data_get($item->modelVersion?->metadata, 'portfolio_research_contract.target_session');
+            $ownedPhase = data_get($item->modelVersion?->metadata, 'specialist_council_membership.contextual_cell.venue_phase',
+                data_get($item->modelVersion?->metadata, 'portfolio_research_contract.target_venue_phase'));
+            $cell = (array) data_get($item->modelVersion?->metadata, 'specialist_council_membership.contextual_cell', []);
+            $ownedDirection = data_get($item->modelVersion?->metadata, 'portfolio_research_contract.target_direction');
 
             return data_get($claim, 'falsification_report.status') !== 'falsified'
                 && data_get($item->metrics, 'behavioral_diversity.status') !== 'near_duplicate'
                 && in_array(data_get($claim, 'target_regime'), [$regime, 'unproven'], true)
+                && (! filled($ownedSession) || $ownedSession === $session)
+                && (! filled($ownedPhase) || (filled($venuePhase) && $ownedPhase === $venuePhase))
+                && (! filled($ownedDirection) || (filled($direction) && $ownedDirection === strtoupper((string) $direction)))
+                && data_get($cell, 'execution_policy') !== 'abstain_only'
+                && (! filled(data_get($cell, 'spread_liquidity_state'))
+                    || (filled($spreadLiquidity) && data_get($cell, 'spread_liquidity_state') === $spreadLiquidity))
+                && (! filled(data_get($cell, 'transition_state'))
+                    || (filled($transitionState) && data_get($cell, 'transition_state') === $transitionState))
                 // New-protocol agents must own an evidence-backed niche. A
                 // legacy record is not retroactively made ineligible merely
                 // because its historical archive entry does not exist.

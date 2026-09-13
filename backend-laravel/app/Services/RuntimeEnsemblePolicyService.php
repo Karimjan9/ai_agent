@@ -186,6 +186,7 @@ class RuntimeEnsemblePolicyService
                 || data_get($member, 'target_volatility') !== $portfolioMember->target_volatility
                 || data_get($member, 'target_direction') !== $portfolioMember->target_direction
                 || data_get($member, 'target_session') !== $portfolioMember->target_session
+                || data_get($member, 'target_venue_phase') !== $portfolioMember->target_venue_phase
                 || $this->parameterHash((array) data_get($member, 'specialist_context_contract', []))
                     !== $this->parameterHash((array) data_get($portfolioMember->evidence, 'portfolio_contract.contextual_specialist_cell', []))
                 || $this->sealedParameterHash($model) !== (string) $portfolioMember->parameter_hash) {

@@ -1266,7 +1266,7 @@ class LearningLaneService
         if ($causalCreditEligible && (bool) data_get($delta, 'improved', false)) {
             $lesson = $this->recordProvisionalSkill($pair->fresh(), 'full_replay', $result, $delta);
         }
-        if ($causalCreditEligible && in_array($cohortRole, ['memory_guided', 'repair_guided', 'blinded'], true)) {
+        if ($causalCreditEligible && in_array($cohortRole, ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded'], true)) {
             $causalExperiment = app(CausalLearningConfirmationService::class)->recordOutcome(
                 $agent->fresh(['modelVersion']),
                 $pair->fresh(),
@@ -1281,7 +1281,7 @@ class LearningLaneService
             $independent = $this->independentObservationCount($pair->fresh(), $result);
             $requiredIndependent = max(2, (int) config('services.learning_lane.independent_confirmations_required', 2));
             $cohortConfirmationSatisfied = $cohortRole === ''
-                || (in_array($cohortRole, ['memory_guided', 'repair_guided'], true)
+                || (in_array($cohortRole, ['memory_guided', 'hypothesis_guided', 'repair_guided'], true)
                     && data_get($causalExperiment, 'confirmed') === true);
             if ($independent >= $requiredIndependent
                 && $this->independentConfirmationEligible($result, $requiredIndependent)

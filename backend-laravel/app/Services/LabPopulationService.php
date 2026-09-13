@@ -1097,12 +1097,17 @@ class LabPopulationService
                 if (! $controlledRescue && (string) data_get($targetedFailureProfile, 'cohort_mode') === 'four_siblings_plus_control_v1') {
                     $plan = $this->anchorSiblingPlan($lockedLab, $targetedFailureProfile ?? [], $plannedPopulationSize);
                 }
-                // Group membership is an explicit council contract. Recompute it
-                // after adaptive planning so a governor cannot turn a balanced
-                // five-by-four core into an accidental target-count imbalance.
+                // Five-by-four remains a sealed rescue/fallback scaffold only.
+                // An ordinary twenty-seat generation reaches the cooperative
+                // allocator without being rebalanced into permanent quotas.
+                $specialPurposeAllocation = $controlledRescue
+                    || (bool) data_get($coverageRescue, 'eligible', false)
+                    || $roleComplete
+                    || $populationLimit !== null
+                    || count($plan) !== 20;
                 $plan = (string) data_get($targetedFailureProfile, 'cohort_mode') === 'four_siblings_plus_control_v1'
                     ? $this->assignAnchorCohortSeats($plan)
-                    : $this->assignPopulationGroupSeats($plan);
+                    : ($specialPurposeAllocation ? $this->assignPopulationGroupSeats($plan) : array_values($plan));
                 $rootExperimentPortfolio = null;
                 if ($trigger === 'data_edge_audit'
                     && ! $shadowResearch
@@ -1311,6 +1316,11 @@ class LabPopulationService
                     $plan,
                     (array) data_get($contextualCouncilAllocation, 'contract', []),
                 );
+                // This timestamped protocol boundary is written only for new
+                // generations. Historical rows are intentionally not
+                // backfilled, so old evidence can seed a hypothesis but can
+                // never inflate the post-v2 verified denominator.
+                $learningProtocolEpoch = app(LearningProtocolEpochService::class)->generationContract();
                 $priorGroupCheckpoints = $this->latestGroupCheckpoints($lockedLab);
                 $generation->update(['trigger_context' => [
                     ...($generation->trigger_context ?? []),
@@ -1332,6 +1342,7 @@ class LabPopulationService
                         'trigger' => 'shadow_research',
                     ] : null,
                     'population_group_contract' => $populationGroupContract,
+                    'learning_protocol_epoch' => $learningProtocolEpoch,
                     'group_checkpoint_inputs' => $priorGroupCheckpoints,
                     'specialist_council_contract' => [
                         'protocol' => self::SPECIALIST_COUNCIL_PROTOCOL,
@@ -1364,6 +1375,11 @@ class LabPopulationService
                         'promotion_evidence' => false,
                     ],
                 ]]);
+                app(LearningProtocolEpochService::class)->registerGeneration(
+                    $generation->fresh(),
+                    $lockedLab->symbol,
+                    $lockedLab->timeframe,
+                );
                 $this->historicalLearning->recordGenerationConsumption($generation, $plan);
 
                 return [
@@ -2896,6 +2912,28 @@ class LabPopulationService
     /** @param array<int, array<string, mixed>> $plan */
     private function populationGroupContract(array $plan, array $contextualAllocation = []): array
     {
+        $dynamic = data_get($contextualAllocation, 'protocol') === ContextualCouncilAllocatorService::PROTOCOL
+            && (bool) data_get($contextualAllocation, 'dynamic', false);
+        if ($dynamic) {
+            return [
+                'protocol' => self::POPULATION_GROUP_PROTOCOL,
+                'planned_population' => count($plan),
+                'core_group_count' => 0,
+                'core_seats_per_group' => null,
+                'core_population' => count($plan),
+                'balanced_core' => false,
+                'dynamic_contextual_allocation' => true,
+                'contextual_allocator' => $contextualAllocation,
+                'experiment_blocks' => (array) data_get($contextualAllocation, 'experiment_blocks', []),
+                'module_species' => (array) data_get($contextualAllocation, 'module_species', []),
+                'legacy_five_by_four_role' => 'fallback_shadow_or_operator_approved_rescue_only',
+                'groups' => [],
+                'overflow_seats' => 0,
+                'rule' => 'Ordinary seats belong to evidence-ranked causal blocks; no permanent semantic group receives a quota.',
+                'promotion_evidence' => false,
+            ];
+        }
+
         $groups = collect($plan)
             ->map(function (array $spec, int $index): array {
                 $key = (string) ($spec['research_group'] ?? $this->researchGroupForTarget((string) ($spec['target'] ?? ''), $index + 1));
@@ -2930,9 +2968,6 @@ class LabPopulationService
         }
 
         $plannedCore = array_sum(array_map(fn (array $row): int => (int) $row['planned_seats'], $groupRows));
-
-        $dynamic = data_get($contextualAllocation, 'protocol') === ContextualCouncilAllocatorService::PROTOCOL
-            && (bool) data_get($contextualAllocation, 'dynamic', false);
 
         return [
             'protocol' => self::POPULATION_GROUP_PROTOCOL,
@@ -3345,6 +3380,14 @@ class LabPopulationService
                 'gene' => data_get($slot, 'niche.declared_gene'),
                 'value' => data_get($slot, 'niche.declared_value'),
                 'topology' => data_get($slot, 'niche.entry_topology_variant', data_get($slot, 'niche.state_machine_variant')),
+                // The same bounded intervention in London and Asia is a
+                // contextual replication, not an identical clone. Within one
+                // market-context cell the two-replicate ceiling still holds.
+                'market_context_hash' => data_get(
+                    $slot,
+                    'niche.contextual_specialist_cell.market_context_hash',
+                    data_get($slot, 'niche.contextual_specialist_cell.cell_hash'),
+                ),
             ], JSON_UNESCAPED_SLASHES)))
             ->countBy();
         $overReplicated = $mutationSignatures->filter(fn (int $count): bool => $count > 2);
@@ -6221,11 +6264,28 @@ class LabPopulationService
         $failureReason = null;
         $lab = $generation->laboratory;
         $this->publishConstructorStage($generation, $slot, 'seat_started');
-        $researchGroup = $researchGroup && array_key_exists($researchGroup, self::POPULATION_GROUPS)
-            ? $researchGroup
-            : $this->researchGroupForTarget($target, $slot);
-        $groupSeat = $groupSeat > 0 ? $groupSeat : (($slot - 1) % self::POPULATION_GROUP_SEATS) + 1;
-        $populationGroup = $this->populationGroupSeatContract($researchGroup, $groupSeat);
+        $cooperativeBlock = (array) data_get($niche, 'cooperative_experiment_block', []);
+        $cooperativeSeat = data_get($cooperativeBlock, 'protocol') === CooperativeContextualEvolutionCouncilService::PROTOCOL;
+        $researchGroup = $cooperativeSeat
+            ? ((string) ($researchGroup ?: 'experiment_block:'.data_get($cooperativeBlock, 'block_type', 'unknown')))
+            : ($researchGroup && array_key_exists($researchGroup, self::POPULATION_GROUPS)
+                ? $researchGroup
+                : $this->researchGroupForTarget($target, $slot));
+        $groupSeat = $groupSeat > 0 ? $groupSeat : ($cooperativeSeat
+            ? max(1, (int) data_get($cooperativeBlock, 'arm_ordinal', 1))
+            : (($slot - 1) % self::POPULATION_GROUP_SEATS) + 1);
+        $populationGroup = $cooperativeSeat ? [
+            'protocol' => self::POPULATION_GROUP_PROTOCOL,
+            'key' => $researchGroup,
+            'label' => (string) data_get($cooperativeBlock, 'block_type', 'cooperative_experiment'),
+            'axis' => 'cooperative_causal_block',
+            'seat' => $groupSeat,
+            'cohort_size' => (int) data_get($cooperativeBlock, 'seat_count', 2),
+            'search_mode' => 'dynamic_priority',
+            'search_role' => (string) data_get($cooperativeBlock, 'arm', 'unknown_arm'),
+            'block_key' => data_get($cooperativeBlock, 'block_key'),
+            'promotion_evidence' => false,
+        ] : $this->populationGroupSeatContract($researchGroup, $groupSeat);
         if ($origin === 'targeted_failure_profile') {
             $populationGroup['rescue_objective'] = data_get($niche, 'rescue_lane');
             $populationGroup['rescue_protocol'] = data_get($niche, 'rescue_protocol');
@@ -6258,6 +6318,25 @@ class LabPopulationService
                 'blocked_mutations' => [],
                 'recommended_genes' => [],
                 'retrieval_count' => 0,
+                'promotion_evidence' => false,
+            ],
+            'hypothesis_guided' => [
+                'packet_id' => (string) Str::uuid(),
+                'status' => 'pre_registered_legacy_hypothesis',
+                'positive_lessons' => [[
+                    'lesson_id' => (int) data_get($niche, 'causal_learning_cohort.source_lesson_id', 0),
+                    'parameter_key' => (string) data_get($niche, 'causal_learning_cohort.gene', ''),
+                    'provenance' => 'legacy_hypothesis_only',
+                    'match_level' => 'fresh_post_v2_reproduction_required',
+                    'score' => 0,
+                    'promotion_evidence' => false,
+                ]],
+                'harmful_lessons' => [],
+                'uncertainty_lessons' => [],
+                'blocked_mutations' => [],
+                'recommended_genes' => [],
+                'retrieval_count' => 0,
+                'legacy_hypothesis_grants_credit' => false,
                 'promotion_evidence' => false,
             ],
             'memory_guided' => app(LearningKernelService::class)->retrieveCanonicalLesson(
@@ -7931,7 +8010,7 @@ class LabPopulationService
         // The blinded branch deliberately remains a cold-start single-gene
         // selector: the treatment is the selection policy, not a forced copy
         // of the guided mutation. Generic compilers remain free elsewhere.
-        if (in_array($causalCohortRole, ['memory_guided', 'repair_guided'], true)) {
+        if (in_array($causalCohortRole, ['memory_guided', 'hypothesis_guided', 'repair_guided'], true)) {
             $causalGene = (string) data_get($niche, 'causal_learning_cohort.gene', '');
             $causalValueDeclared = array_key_exists('value', (array) data_get($niche, 'causal_learning_cohort', []));
             $causalValue = data_get($niche, 'causal_learning_cohort.value');
@@ -7989,7 +8068,7 @@ class LabPopulationService
                 return false;
             }
         }
-        if (in_array($causalCohortRole, ['memory_guided', 'repair_guided'], true)) {
+        if (in_array($causalCohortRole, ['memory_guided', 'hypothesis_guided', 'repair_guided'], true)) {
             $causalGene = (string) data_get($niche, 'causal_learning_cohort.gene', '');
             if (count($parameterDiff) !== 1 || (string) array_key_first($parameterDiff) !== $causalGene) {
                 $failureReason = 'CAUSAL_LEARNING_MUTATION_NOT_EXECUTABLE';
@@ -8203,6 +8282,32 @@ class LabPopulationService
             || $g98Target || $targetedFailureLane
             || in_array($origin, ['g98_council', 'council_role_complete', 'causal_isolation'], true)
             ? 'council' : 'champion';
+        $failureRepairContract = null;
+        if ($repairAnchor !== null) {
+            $failureRepairContract = app(FailureSignatureCompilerService::class)->fromAnchor($repairAnchor);
+            $hypothesisRevision = data_get($niche, 'structural_hypothesis_id')
+                ?: data_get($niche, 'temporal_mutation_hypothesis')
+                ?: implode('|', array_filter([
+                    $repairSiblingKind,
+                    $declaredGene,
+                    $repairDirection,
+                    data_get($niche, 'state_machine_variant'),
+                    data_get($niche, 'architecture_variant'),
+                ], fn ($value): bool => filled($value)));
+            $failureRepairContract['hypothesis_revision'] = hash('sha256', is_scalar($hypothesisRevision)
+                ? (string) $hypothesisRevision
+                : json_encode($hypothesisRevision, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+            $failureRepairContract['repair_anchor_id'] = (int) $repairAnchor->id;
+            $failureRepairContract['action'] = $repairControlOnly ? 'exact_frozen_control' : 'repair';
+        }
+        $learningPairRole = (string) data_get($niche, 'learning_method_contract.pair_role', '');
+        $intentRole = $causalCohortRole !== ''
+            ? $causalCohortRole
+            : ($learningPairRole === 'exact_frozen_control'
+                ? 'frozen_control'
+                : (data_get($niche, 'evolutionary_experiment_block.block_type') === 'exact_repair'
+                    ? 'repair_directed'
+                    : null));
         $causalIntentPlan = app(CausalLearningMutationIntentService::class)->plan(
             $generation,
             $decisionPacket,
@@ -8211,10 +8316,12 @@ class LabPopulationService
             $base,
             $parameters,
             $parameterDiff,
-            $causalCohortRole !== '' ? $causalCohortRole : null,
+            $intentRole,
             (array) data_get($niche, 'causal_learning_cohort.skill_cartridge', []) ?: null,
+            $failureRepairContract,
+            (array) data_get($niche, 'learning_method_contract', []) ?: null,
         );
-        if ($causalCohortRole === 'memory_guided'
+        if (in_array($causalCohortRole, ['memory_guided', 'hypothesis_guided'], true)
             && data_get($causalIntentPlan, 'skill_cartridge.status') !== 'compatible_cartridge_found') {
             $failureReason = 'CAUSAL_LEARNING_EXECUTABLE_CARTRIDGE_MISSING';
 
@@ -8364,6 +8471,20 @@ class LabPopulationService
                     'parent_suggestion_applied' => $parentMentorApplied,
                     'promotion_evidence' => false,
                 ],
+                'contextual_specialist_identity' => (array) data_get($niche, 'contextual_specialist_cell', []) !== [] ? app(ContextualSpecialistIdentityService::class)->build(
+                    (array) data_get($niche, 'contextual_specialist_cell', []),
+                    $niche,
+                    (string) (data_get($niche, 'cooperative_evolution_capsule.components.strategy') ?: $family),
+                    (array) $tacticContract,
+                    (array) $instrumentMutationPolicy,
+                    [
+                        'strategy_library_id' => data_get($niche, 'strategy_library_id'),
+                        'risk_library_id' => data_get($niche, 'risk_library_id'),
+                        'management_id' => data_get($niche, 'management_id'),
+                    ],
+                ) : null,
+                'cooperative_evolution_capsule' => data_get($niche, 'cooperative_evolution_capsule'),
+                'cooperative_experiment_block' => data_get($niche, 'cooperative_experiment_block'),
                 'specialist_council_membership' => [
                     'protocol' => self::SPECIALIST_COUNCIL_PROTOCOL,
                     'group_key' => $researchGroup,
@@ -8804,7 +8925,8 @@ class LabPopulationService
             $generation,
             $model->fresh(),
         );
-        if ($causalCohortRole !== '' && ! $sealedCausalIntent instanceof AgentLearningMutationIntent) {
+        if (($causalCohortRole !== '' || $repairAnchor !== null || $learningPairRole !== '')
+            && ! $sealedCausalIntent instanceof AgentLearningMutationIntent) {
             throw new \RuntimeException('CAUSAL_LEARNING_INTENT_SEAL_FAILED '.json_encode($sealedCausalIntent, JSON_UNESCAPED_SLASHES));
         }
         $agent = $generation->agents()->create([
@@ -8828,15 +8950,17 @@ class LabPopulationService
             $actualCausalGene = count($parameterDiff) === 1 ? (string) array_key_first($parameterDiff) : null;
             $inheritanceDirective = [
                 ...$inheritanceDirective,
-                'experiment_role' => in_array($causalRole, ['memory_guided', 'repair_guided', 'blinded'], true) ? 'falsification' : 'explore',
+                'experiment_role' => in_array($causalRole, ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded'], true) ? 'falsification' : 'explore',
                 'required_component' => 'learning_policy',
                 'required_gene' => $causalRole === 'frozen_control' ? null : $actualCausalGene,
                 'mutation_from' => $causalRole === 'frozen_control' ? null : data_get($parameterDiff, $actualCausalGene.'.old'),
                 'mutation_to' => $causalRole === 'frozen_control' ? null : data_get($parameterDiff, $actualCausalGene.'.new'),
                 'mutation_reason' => $causalRole === 'repair_guided'
                     ? 'Pre-registered bounded repair for falsified causal experiment '.data_get($causalInheritance, 'source_causal_experiment_id')
-                    : 'Pre-registered '.$causalRole.' arm for canonical lesson '.data_get($causalInheritance, 'source_lesson_id'),
-                'source_lesson_ids' => $causalRole === 'memory_guided'
+                    : 'Pre-registered '.$causalRole.' arm for '.($causalRole === 'hypothesis_guided'
+                        ? 'legacy hypothesis reproduction '
+                        : 'canonical lesson ').data_get($causalInheritance, 'source_lesson_id'),
+                'source_lesson_ids' => in_array($causalRole, ['memory_guided', 'hypothesis_guided'], true)
                     ? array_values(array_filter([(int) data_get($causalInheritance, 'source_lesson_id', 0)]))
                     : [],
                 'control_pair_required' => $causalRole !== 'frozen_control',
@@ -8886,6 +9010,14 @@ class LabPopulationService
         );
         if (($intentBinding['status'] ?? null) === 'invalid') {
             throw new \RuntimeException('CAUSAL_LEARNING_INTENT_BINDING_FAILED '.json_encode($intentBinding, JSON_UNESCAPED_SLASHES));
+        }
+        if ($repairAnchor !== null && $sealedCausalIntent instanceof AgentLearningMutationIntent) {
+            app(FailureRepairAnchorService::class)->recordConsumptionReceipt(
+                $repairAnchor,
+                $agent,
+                $sealedCausalIntent,
+                $failureRepairContract ?? [],
+            );
         }
         $consumption = app(LearningKernelService::class)->recordConsumption(
             $decisionPacket,

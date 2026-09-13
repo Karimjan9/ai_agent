@@ -53,6 +53,22 @@ class SpecialistPassportService
             ?: data_get($metadata, 'specialist_council_membership.contextual_cell.session')
             ?: 'any'
         );
+        $venuePhase = (string) (
+            data_get($metadata, 'specialist_council_membership.contextual_cell.venue_phase')
+            ?: data_get($metadata, 'portfolio_research_contract.target_venue_phase')
+            ?: ''
+        );
+        $identityEnvelope = (array) data_get($metadata, 'contextual_specialist_identity', []);
+        $identity = (array) data_get($identityEnvelope, 'identity', $identityEnvelope);
+        if (filled(data_get($identityEnvelope, 'identity_hash'))) {
+            $identity['identity_hash'] = data_get($identityEnvelope, 'identity_hash');
+        }
+        $authorityEvidence = $venuePhase !== ''
+            ? app(ContextualSpecialistEvidenceService::class)->forCandidate($candidate)
+            : [];
+        $contextualAuthority = $venuePhase !== ''
+            ? app(ContextualSpecialistAuthorityService::class)->assess($authorityEvidence)
+            : null;
 
         $niche = $this->nicheEvidence($candidate, $regime, $volatility, $direction, $session);
         $dst = $this->dstEvidence($candidate, $regime, $volatility, $direction, $session);
@@ -82,6 +98,8 @@ class SpecialistPassportService
                 || (int) data_get($dst, 'qualified_offset_state_count', 0) >= 2,
             'router_calibration' => $role !== self::ROUTER_ROLE
                 || data_get($candidate->metrics, 'router_evidence.status', 'assessed') === 'assessed',
+            'contextual_session_authority' => $venuePhase === ''
+                || data_get($contextualAuthority, 'status') === 'contextually_confirmed_specialist',
         ];
         $failed = collect($checks)->filter(fn (bool $passed): bool => ! $passed)
             ->keys()->map(fn (string $key): string => 'FAILED_SPECIALIST_'.strtoupper($key))
@@ -102,6 +120,9 @@ class SpecialistPassportService
             'owner_volatility' => $volatility,
             'owner_direction' => $direction,
             'owner_session' => $session,
+            'owner_venue_phase' => $venuePhase !== '' ? $venuePhase : null,
+            'contextual_specialist_identity' => $identity !== [] ? $identity : null,
+            'contextual_specialist_authority' => $contextualAuthority,
             'niche' => $niche,
             'dst_offset_evidence' => $dst,
             'checks' => $checks,
@@ -119,6 +140,8 @@ class SpecialistPassportService
                 'volatility' => $volatility,
                 'direction' => $direction,
                 'session' => $session,
+                'venue_phase' => $venuePhase,
+                'contextual_identity_hash' => data_get($identity, 'identity_hash'),
             ], JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
         ];
     }

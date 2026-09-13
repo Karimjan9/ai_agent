@@ -56,6 +56,7 @@ class LearningReceiptService
         $mutationHash = $this->hash((array) $agent->parameter_diff);
         $intentHashMatches = ! $mutationIntent || hash_equals((string) $mutationIntent->mutation_hash, $mutationHash);
         $order = (array) data_get($mutationIntent?->metadata, 'causal_order', []);
+        $learningMethodContract = (array) data_get($mutationIntent?->metadata, 'learning_method_contract', []);
         $causalOrderValid = ! $mutationIntent || (
             (int) data_get($order, 'retrieval_sequence') < (int) data_get($order, 'mutation_seal_sequence')
             && (int) data_get($order, 'mutation_seal_sequence') < (int) data_get($order, 'agent_persistence_sequence')
@@ -90,6 +91,8 @@ class LearningReceiptService
                 ? $mutationIntent->influence_type
                 : 'unsealed_legacy_or_test',
             'causal_intent_id' => $mutationIntent instanceof AgentLearningMutationIntent ? (int) $mutationIntent->id : null,
+            'learning_method_contract' => $learningMethodContract ?: null,
+            'learning_method_receipt_hash' => data_get($learningMethodContract, 'selection_receipt.receipt_hash'),
             'integrity' => [
                 'valid' => $integrityValid,
                 'receipt_gene_matches_parameter_diff' => $geneMatch,
@@ -168,7 +171,54 @@ class LearningReceiptService
             'promotion_evidence' => false,
         ];
         $metadata = (array) $model->metadata;
-        $metadata['learning_receipt'] = [...$receipt, 'status' => $status, 'settlement' => $settlement];
+        $mutationIntent = AgentLearningMutationIntent::query()
+            ->where('lab_agent_id', $agent->id)
+            ->orWhere('model_version_id', $agent->model_version_id)
+            ->latest('id')
+            ->first();
+        $methodContract = (array) data_get($mutationIntent?->metadata, 'learning_method_contract', []);
+        $methodSettlement = null;
+        if ($methodContract !== []) {
+            $terminal = in_array($status, ['no_effect', 'harmful', 'provisional'], true);
+            $methodSettlement = [
+                'protocol' => MultiModalLearningPortfolioService::PROTOCOL,
+                'learning_method' => data_get($methodContract, 'learning_method'),
+                'source_receipt_hash' => data_get($methodContract, 'selection_receipt.receipt_hash'),
+                'source_reference' => data_get($methodContract, 'source_reference'),
+                'control_pair_id' => $pair?->id,
+                'control_pair_verified' => $controlVerified,
+                'evidence_run_id' => data_get($result, 'evidence_run_id'),
+                'target_delta' => $hasNumericDelta ? (float) $delta : null,
+                'verdict' => match ($status) {
+                    'provisional' => 'positive_control_relative_observation',
+                    'harmful' => 'harmful_observation',
+                    'no_effect' => 'falsified_or_neutral_observation',
+                    'technical_incomplete' => 'awaiting_complete_evidence',
+                    default => 'invalid_or_context_mismatched',
+                },
+                'status' => $terminal ? 'settled_back_to_source_receipt' : 'not_settled',
+                'settled_at' => $terminal ? now()->utc()->toIso8601String() : null,
+                'promotion_evidence' => false,
+            ];
+            $intentMetadata = (array) $mutationIntent->metadata;
+            data_set($intentMetadata, 'learning_method_contract.consumption_receipt', [
+                ...((array) data_get($methodContract, 'consumption_receipt', [])),
+                'status' => $terminal ? 'settled' : 'awaiting_valid_settlement',
+                'mutation_result_link_pending' => ! $terminal,
+                'settlement' => $methodSettlement,
+                'promotion_evidence' => false,
+            ]);
+            $mutationIntent->update([
+                'status' => $terminal ? 'settled' : $mutationIntent->status,
+                'metadata' => $intentMetadata,
+            ]);
+        }
+        $metadata['learning_receipt'] = [
+            ...$receipt,
+            'status' => $status,
+            'settlement' => $settlement,
+            'learning_method_settlement' => $methodSettlement,
+        ];
         $model->update(['metadata' => $metadata]);
 
         return $metadata['learning_receipt'];

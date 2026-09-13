@@ -93,6 +93,16 @@ class EvolutionaryAuthorityFoundryService
             || ! hash_equals($executionHash, (string) data_get($traitCapsule, 'frozen_dependencies.execution_hash', ''))) {
             return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason_code' => 'TRAIT_CAPSULE_BASELINE_CONTRACT_MISMATCH', 'promotion_evidence' => false];
         }
+        $mentorAuthority = $this->refreshAuthority($model, $mentor);
+        if (data_get($mentorAuthority, 'authority_tier') !== EvolutionaryAuthorityLadderService::RESEARCH_MENTOR
+            || data_get($mentorAuthority, 'research_mentor') !== true) {
+            return [
+                ...$mentorAuthority,
+                'status' => 'blocked',
+                'reason_code' => 'RESEARCH_MENTOR_AUTHORITY_REQUIRED',
+                'promotion_evidence' => false,
+            ];
+        }
 
         return DB::transaction(function () use ($mentor, $model, $baseline, $baselineContract, $lab, $gene, $baseParameters, $skillParameters, $dataHash, $executionHash, $traitCapsule): array {
             $generation = LabGeneration::create([
@@ -639,6 +649,21 @@ class EvolutionaryAuthorityFoundryService
                 'contextual_control_comparison' => $contextControlComparison,
                 'contextual_trait_ablation_comparison' => $contextAblationComparison,
             ]);
+            app(ParentAwareCreditService::class)->recordInheritanceCredit(
+                $childAgent,
+                $mentor,
+                [
+                    'evidence_run_id' => data_get($metrics, 'evidence_run_id', $windowKey),
+                    'child_beats_parent' => $improved,
+                    'child_beats_frozen_control' => (bool) data_get($contextControlComparison, 'eligible', false),
+                    'trait_beats_ablation' => $traitIncremental,
+                    'non_target_regression' => $nonTargetRegression,
+                    'independent_windows' => $observedWindows,
+                    'contextual_control_comparison' => $contextControlComparison,
+                    'contextual_trait_ablation_comparison' => $contextAblationComparison,
+                    'promotion_evidence' => false,
+                ],
+            );
             $settled++;
         }
         $mentorAgent = LabAgent::query()->where('model_version_id', $mentor->id)
@@ -739,6 +764,46 @@ class EvolutionaryAuthorityFoundryService
         $capsuleHash = (string) data_get($traitCapsule, 'capsule_hash', '');
         $activationContextHash = (string) data_get($traitCapsule, 'activation_context.context_hash', '');
         $instrumentBundleHash = (string) data_get($traitCapsule, 'instrument_bundle.bundle_hash', '');
+        $causalBaseline = $agent && $gene !== ''
+            ? $this->resolveCausalBaseline($agent, $model, $gene)
+            : null;
+        $sourcePair = $causalBaseline === null
+            ? null
+            : LabLearningLanePair::query()->find((int) $causalBaseline['pair_id']);
+        $failureFingerprint = (string) data_get($sourcePair?->failure_signature, 'failure_fingerprint', data_get(
+            $sourcePair?->failure_signature,
+            'signature',
+            '',
+        ));
+        if ($failureFingerprint === '' && $sourcePair) {
+            $failureFingerprint = hash('sha256', json_encode([
+                'pair_id' => (int) $sourcePair->id,
+                'target' => (string) $sourcePair->target,
+                'gene' => $gene,
+                'context_hash' => $activationContextHash,
+            ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+        }
+        $causalSkillCreditCount = Schema::hasTable('lab_evolution_credit_events')
+            ? DB::table('lab_evolution_credit_events')
+                ->where('model_version_id', $model->id)
+                ->where('event_type', 'causal_skill_credit')
+                ->where('amount', '>', 0)
+                ->count()
+            : 0;
+        $mentorAuthority = app(EvolutionaryAuthorityLadderService::class)->researchMentor([
+            'failure_fingerprint' => $failureFingerprint,
+            'target' => (string) data_get($model->metadata, 'skill_mentor.target', $sourcePair?->target),
+            'gene' => $gene,
+            'changed_gene_count' => count((array) $agent?->parameter_diff),
+            'context_hash' => $activationContextHash,
+            'exact_frozen_control' => $causalBaseline !== null,
+            'target_gate_improved' => (float) data_get($traitCapsule, 'target_effect_vector.mean_delta', 0) > 0,
+            'non_target_regression' => (bool) data_get($traitCapsule, 'non_target_effect_vector.non_target_regression', true),
+            'independence_verified' => (int) data_get($traitCapsule, 'support.independent_windows', 0) >= 3,
+            'independent_windows' => (int) data_get($traitCapsule, 'support.independent_windows', 0),
+            'positive_windows' => (int) data_get($traitCapsule, 'target_effect_vector.positive_windows', 0),
+            'causal_skill_credit_count' => $causalSkillCreditCount,
+        ]);
         $incubation = Schema::hasTable('skill_incubation_trials') ? DB::table('skill_incubation_trials')->where('mentor_model_version_id', $model->id)->get() : collect();
         $required = collect(self::INCUBATOR_ARMS);
         $finalPassed = $capsuleValid && $required->every(fn (string $arm): bool => $incubation->contains(function ($row) use ($arm, $capsuleHash, $activationContextHash, $instrumentBundleHash): bool {
@@ -781,13 +846,43 @@ class EvolutionaryAuthorityFoundryService
             : ['status' => 'no_context_evidence', 'success_count' => 0, 'promotion_evidence' => false];
         $contextTrustConfirmed = data_get($contextTrust, 'status') === 'context_confirmed'
             && (int) data_get($contextTrust, 'success_count', 0) >= 2;
-        $incubated = $sourceConfirmed && $capsuleValid && $finalPassed && $windows >= 3;
+        $researchMentor = $sourceConfirmed && $capsuleValid && (bool) data_get($mentorAuthority, 'eligible', false);
+        $incubated = $researchMentor && $finalPassed && $windows >= 3;
         $breeder = $incubated && $validChildren >= 2 && $contextTrustConfirmed;
         $passportPassed = (bool) ($passport['passed'] ?? false);
-        $stage = $passportPassed && $breeder ? 'eligible_parent' : ($breeder ? 'breeder_candidate' : ($incubated ? 'skill_mentor' : ($sourceConfirmed ? 'confirmed_skill' : 'research_only')));
+        $economicRequirements = (array) data_get($passport, 'economic_parent_requirements', []);
+        $performanceCreditCount = Schema::hasTable('lab_evolution_credit_events')
+            ? DB::table('lab_evolution_credit_events')
+                ->where('model_version_id', $model->id)
+                ->where('event_type', 'performance_credit')
+                ->where('amount', '>', 0)
+                ->count()
+            : 0;
+        $inheritanceCreditCount = Schema::hasTable('lab_evolution_credit_events')
+            ? DB::table('lab_evolution_credit_events')
+                ->where('parent_model_version_id', $model->id)
+                ->where('event_type', 'inheritance_credit')
+                ->where('amount', '>', 0)
+                ->distinct()
+                ->count('model_version_id')
+            : 0;
+        $economicAuthority = app(EvolutionaryAuthorityLadderService::class)->economicParent([
+            'screening_passed' => data_get($economicRequirements, 'screening_passed') === true,
+            'full_replay_passed' => data_get($economicRequirements, 'full_replay_passed') === true && $incubated,
+            'positive_absolute_settlement' => data_get($economicRequirements, 'positive_absolute_settlement') === true,
+            'forward_or_paper_evidence' => data_get($economicRequirements, 'forward_or_paper_evidence') === true,
+            'performance_credit_count' => $performanceCreditCount,
+            'improving_descendants' => $validChildren,
+            'inheritance_credit_count' => $inheritanceCreditCount,
+            'context_trust_confirmed' => $contextTrustConfirmed,
+        ], $mentorAuthority);
+        $economicParent = $passportPassed && $breeder && (bool) data_get($economicAuthority, 'eligible', false);
+        $stage = $economicParent ? 'eligible_parent' : ($breeder ? 'breeder_candidate' : ($incubated ? 'skill_mentor' : ($researchMentor ? 'research_mentor' : ($sourceConfirmed ? 'confirmed_skill' : 'research_only'))));
         $evidence = ['protocol' => self::PROTOCOL, 'source_confirmed' => $sourceConfirmed, 'incubation_passed' => $incubated,
             'incubation_final_arms' => $required->values()->all(), 'independent_windows' => $windows, 'descendant_improving_children' => $validChildren,
             'context_trust_confirmed' => $contextTrustConfirmed, 'context_trust' => $contextTrust,
+            'research_mentor_authority' => $mentorAuthority, 'economic_parent_authority' => $economicAuthority,
+            'credit_constitution' => app(EvolutionaryAuthorityLadderService::class)->creditConstitution(),
             'trait_capsule_valid' => $capsuleValid, 'trait_capsule' => $traitCapsule,
             'trait_capsule_resolution' => array_diff_key($capsuleResolution, ['capsule' => true]),
             'passport' => $passport, 'authority_is_prospective_only' => true, 'promotion_evidence' => false];
@@ -795,13 +890,19 @@ class EvolutionaryAuthorityFoundryService
         DB::table('evolutionary_authority_ledgers')->updateOrInsert(['authority_key' => $key], [
             'model_version_id' => $model->id, 'lab_agent_id' => $agent?->id, 'symbol' => $scope[0] ?: strtoupper((string) data_get($model->metadata, 'symbol', 'GLOBAL')),
             'timeframe' => $scope[1] ?: strtoupper((string) data_get($model->metadata, 'timeframe', 'GLOBAL')), 'strategy_family' => $scope[2],
-            'authority_stage' => $stage, 'status' => $stage === 'eligible_parent' ? 'passed' : 'withheld',
+            'authority_stage' => $stage,
+            'status' => $economicParent ? 'passed' : ($researchMentor ? 'research_mentor_granted' : 'withheld'),
             'data_hash' => data_get($traitCapsule, 'frozen_dependencies.data_hash', $incubation->first()?->data_hash),
             'execution_hash' => data_get($traitCapsule, 'frozen_dependencies.execution_hash', $incubation->first()?->execution_hash),
             'evidence' => json_encode($evidence), 'evaluated_at' => now(), 'updated_at' => now(), 'created_at' => now(),
         ]);
 
-        return ['protocol' => self::PROTOCOL, 'stage' => $stage, 'parent_eligible' => $stage === 'eligible_parent', 'evidence' => $evidence, 'promotion_evidence' => false];
+        return ['protocol' => self::PROTOCOL, 'stage' => $stage,
+            'authority_tier' => $economicParent
+                ? EvolutionaryAuthorityLadderService::ECONOMIC_PARENT
+                : ($researchMentor ? EvolutionaryAuthorityLadderService::RESEARCH_MENTOR : 'none'),
+            'research_mentor' => $researchMentor, 'parent_eligible' => $economicParent,
+            'evidence' => $evidence, 'promotion_evidence' => false];
     }
 
     /** @return array<string,mixed> */
@@ -812,8 +913,19 @@ class EvolutionaryAuthorityFoundryService
         }
         $row = DB::table('evolutionary_authority_ledgers')->where('model_version_id', $model->id)->latest('id')->first();
 
-        return $row ? ['protocol' => self::PROTOCOL, 'stage' => $row->authority_stage, 'status' => $row->status, 'evidence' => json_decode($row->evidence, true), 'promotion_evidence' => false]
-            : ['protocol' => self::PROTOCOL, 'stage' => 'research_only', 'status' => 'missing_authority_evidence', 'promotion_evidence' => false];
+        $evidence = $row ? (array) json_decode($row->evidence, true) : [];
+
+        return $row ? ['protocol' => self::PROTOCOL, 'stage' => $row->authority_stage, 'status' => $row->status,
+            'authority_tier' => data_get($evidence, 'economic_parent_authority.eligible') === true
+                ? EvolutionaryAuthorityLadderService::ECONOMIC_PARENT
+                : (data_get($evidence, 'research_mentor_authority.eligible') === true
+                    ? EvolutionaryAuthorityLadderService::RESEARCH_MENTOR : 'none'),
+            'research_mentor' => data_get($evidence, 'research_mentor_authority.eligible') === true,
+            'parent_eligible' => data_get($evidence, 'economic_parent_authority.eligible') === true && $row->status === 'passed',
+            'evidence' => $evidence, 'promotion_evidence' => false]
+            : ['protocol' => self::PROTOCOL, 'stage' => 'research_only', 'status' => 'missing_authority_evidence',
+                'authority_tier' => 'none', 'research_mentor' => false, 'parent_eligible' => false,
+                'promotion_evidence' => false];
     }
 
     /**
@@ -1075,7 +1187,15 @@ class EvolutionaryAuthorityFoundryService
 
     private function unavailable(): array
     {
-        return ['protocol' => self::PROTOCOL, 'status' => 'unavailable', 'promotion_evidence' => false];
+        return [
+            'protocol' => self::PROTOCOL,
+            'stage' => 'research_only',
+            'status' => 'unavailable',
+            'authority_tier' => 'none',
+            'research_mentor' => false,
+            'parent_eligible' => false,
+            'promotion_evidence' => false,
+        ];
     }
 
     /** @return array<string,mixed>|null */

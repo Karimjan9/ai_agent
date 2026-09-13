@@ -54,6 +54,12 @@ class TradingInstrumentOperatingSystemService
     public function fingerprint(string $symbol, string $timeframe, array $context = []): array
     {
         $state = MarketStateSnapshot::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->latest('time')->first();
+        $calendar = [];
+        $timestamp = $context['time'] ?? $context['timestamp'] ?? null;
+        if ($timestamp !== null && strtoupper(str_replace(['/', '_', '-'], '', $symbol)) === 'XAUUSD') {
+            $calendar = app(MarketSessionCalendarService::class)->resolve($timestamp, $context);
+        }
+        $context = [...$calendar, ...$context];
         $rawRegime = $context['regime'] ?? $context['h1_regime'] ?? $state?->market_state ?? 'unknown';
         $rawSession = $context['session'] ?? $this->sessionFor((int) now()->format('H'));
         $rawVolatility = $context['volatility'] ?? $this->volatilityFor($state);
@@ -74,6 +80,7 @@ class TradingInstrumentOperatingSystemService
         $session = (string) ($axes['session'] ?? $rawSession);
         $volatility = (string) ($axes['volatility'] ?? $rawVolatility);
         $direction = (string) ($axes['direction'] ?? 'both');
+        $venuePhase = (string) ($axes['venue_phase'] ?? 'calendar_unresolved');
         $family = app(StrategyParameterSchemaService::class)->family((string) ($context['strategy_family'] ?? 'unscoped'));
         $family = preg_replace('/[^a-z0-9_]/', '_', strtolower($family)) ?: 'unscoped';
 
@@ -81,13 +88,19 @@ class TradingInstrumentOperatingSystemService
             'regime' => $regime, 'm15_regime' => (string) ($context['m15_regime'] ?? $regime), 'session' => $session,
             'volatility' => $volatility, 'spread_atr_ratio' => $spread, 'spread_state' => $spread === null ? 'unknown' : ($spread > .25 ? 'high' : 'normal'),
             'liquidity' => $liquidity, 'transition' => $transition, 'loss_streak' => $lossStreak,
-            'direction' => $direction, 'strategy_family' => $family,
+            'direction' => $direction, 'strategy_family' => $family, 'venue_phase' => $venuePhase,
+            'session_instance_id' => $context['session_instance_id'] ?? null,
+            'calendar_version' => $context['calendar_version'] ?? null,
             'volume' => $context['volume'] ?? null, 'news_risk' => (bool) ($context['news_risk'] ?? false),
         ];
-        $fingerprint['state_key'] = implode('|', [
+        $stateParts = [
             $regime, $session, $volatility, $fingerprint['spread_state'],
-            $transition ? 'transition' : 'stable', min(9, $lossStreak), $direction, $family,
-        ]);
+            $transition ? 'transition' : 'stable', min(9, $lossStreak), $direction, $family, $venuePhase,
+        ];
+        if ($venuePhase === 'calendar_unresolved') {
+            array_pop($stateParts); // Exact compatibility for historical eight-axis posteriors.
+        }
+        $fingerprint['state_key'] = implode('|', $stateParts);
 
         return $fingerprint;
     }
@@ -434,6 +447,7 @@ class TradingInstrumentOperatingSystemService
         }
 
         $scopes = [
+            'regime_volatility_session_phase_direction' => ['regime', 'volatility', 'session', 'venue_phase', 'direction'],
             'regime_volatility_session_direction' => ['regime', 'volatility', 'session', 'direction'],
             'regime_volatility_direction' => ['regime', 'volatility', 'direction'],
             'regime_direction' => ['regime', 'direction'],
@@ -474,11 +488,11 @@ class TradingInstrumentOperatingSystemService
     /** @return array<string,string> */
     private function decodeStateKey(string $stateKey): array
     {
-        [$regime, $session, $volatility, $spread, $transition, $lossStreak, $direction, $family] = array_pad(explode('|', $stateKey), 8, null);
+        [$regime, $session, $volatility, $spread, $transition, $lossStreak, $direction, $family, $venuePhase] = array_pad(explode('|', $stateKey), 9, null);
         $axes = app(ContextContractV2Service::class)->canonicalAxes([
             'regime' => $regime, 'session' => $session, 'volatility' => $volatility,
             'spread_liquidity_state' => $spread, 'transition_state' => $transition,
-            'direction' => $direction,
+            'direction' => $direction, 'venue_phase' => $venuePhase,
         ]);
 
         return [
@@ -490,6 +504,7 @@ class TradingInstrumentOperatingSystemService
             'loss_streak' => (string) ($lossStreak ?? '0'),
             'direction' => (string) ($axes['direction'] ?? 'both'),
             'strategy_family' => (string) ($family ?: 'unscoped'),
+            'venue_phase' => (string) ($axes['venue_phase'] ?? $venuePhase ?? 'calendar_unresolved'),
         ];
     }
 

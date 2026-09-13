@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AgentLearningMutationIntent;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
@@ -435,6 +436,58 @@ class FailureRepairAnchorService
         ];
     }
 
+    /** @return array<string,mixed> */
+    public function recordConsumptionReceipt(
+        LabFailureRepairAnchor $anchor,
+        LabAgent $agent,
+        AgentLearningMutationIntent $intent,
+        array $contract,
+    ): array {
+        $fingerprint = (string) data_get($contract, 'failure_fingerprint', data_get($contract, 'signature', ''));
+        $intentFingerprint = (string) data_get($intent->metadata, 'failure_repair_contract.failure_fingerprint', '');
+        $valid = $fingerprint !== '' && $intentFingerprint !== ''
+            && hash_equals($fingerprint, $intentFingerprint)
+            && $intent->status === 'bound'
+            && (int) $intent->lab_agent_id === (int) $agent->id
+            && $intent->sealed_at !== null
+            && $intent->bound_at !== null
+            && $intent->sealed_at->lessThanOrEqualTo($intent->bound_at);
+        $receipt = [
+            'protocol' => 'failure_lesson_consumption_receipt_v1',
+            'status' => $valid ? 'bound_pending_outcome' : 'invalid',
+            'failure_fingerprint' => $fingerprint,
+            'repair_anchor_id' => (int) $anchor->id,
+            'root_cause_hypothesis' => data_get($contract, 'root_cause_hypothesis'),
+            'gene_policy' => data_get($contract, 'gene_policy'),
+            'context_scope' => data_get($contract, 'context_scope'),
+            'next_experiment' => data_get($contract, 'next_experiment'),
+            'exact_control' => data_get($contract, 'exact_control'),
+            'action' => data_get($contract, 'action', 'repair'),
+            'hypothesis_revision' => data_get($contract, 'hypothesis_revision'),
+            'selected_gene' => $intent->selected_gene,
+            'intent_id' => (int) $intent->id,
+            'intent_uuid' => (string) $intent->intent_id,
+            'lab_generation_id' => (int) $agent->lab_generation_id,
+            'lab_agent_id' => (int) $agent->id,
+            'model_version_id' => (int) $agent->model_version_id,
+            'sealed_at' => $intent->sealed_at?->toIso8601String(),
+            'bound_at' => $intent->bound_at?->toIso8601String(),
+            'sealed_before_execution' => $valid,
+            'result_link_pending' => $valid,
+            'promotion_evidence' => false,
+        ];
+        $evidence = (array) $anchor->evidence;
+        $receipts = collect((array) data_get($evidence, 'consumption_receipts', []))
+            ->reject(fn (mixed $row): bool => (string) data_get($row, 'intent_uuid') === (string) $intent->intent_id)
+            ->push($receipt)->values()->all();
+        $evidence['consumption_receipts'] = $receipts;
+        $evidence['consumption_receipt'] = $receipt;
+        data_set($evidence, 'failure_signature.consumption_receipt', $receipt);
+        $anchor->update(['evidence' => $evidence]);
+
+        return $receipt;
+    }
+
     /**
      * Record the completed full/forward observation against the same anchor.
      * Core anchor fields remain untouched; this is an append-only evidence
@@ -493,10 +546,23 @@ class FailureRepairAnchorService
             ->push($row)->values()->all();
         $evidence['repair_forward_outcomes'] = $rows;
         $policy = $this->policyFor($anchor->setAttribute('evidence', $evidence));
+        $resolutionStatus = data_get($verification, 'status') === 'confirmed'
+            ? 'confirmed_repair'
+            : ($policy['action'] === 'quarantine' ? 'deliberate_abstain' : 'falsified_repair');
+        $evidence = $this->linkConsumptionOutcome($evidence, $agent, [
+            'stage' => 'full_replay',
+            'status' => $resolutionStatus,
+            'resolution_action' => $policy['action'] === 'quarantine' ? 'deliberate_abstain' : 'repair',
+            'evidence_run_id' => data_get($result, 'evidence_run_id'),
+            'verification_status' => data_get($verification, 'status'),
+            'closed' => true,
+        ]);
         $evidence['latest_policy'] = $policy;
         $anchor->update([
             'evidence' => $evidence,
-            'status' => $policy['action'] === 'quarantine' ? 'quarantined' : 'open',
+            'status' => data_get($verification, 'status') === 'confirmed'
+                ? 'repaired'
+                : ($policy['action'] === 'quarantine' ? 'quarantined' : 'open'),
         ]);
         return $row + ['policy' => $policy];
     }
@@ -595,6 +661,12 @@ class FailureRepairAnchorService
             ->all();
         $evidence['repair_screenings'] = $screenings;
         $evidence['repair_screening'] = $repairScreening;
+        $evidence = $this->linkConsumptionOutcome($evidence, $agent, [
+            'stage' => 'screening',
+            'status' => 'screening_observed',
+            'evidence_run_id' => $eligibility['run_id'] ?? null,
+            'closed' => false,
+        ]);
         $anchor->update(['evidence' => $evidence]);
 
         return $repairScreening;
@@ -727,6 +799,45 @@ class FailureRepairAnchorService
 
         return (array) ($sourcePerformance?->metrics
             ?? data_get($anchor->evidence, 'screening_result', data_get($anchor->sourceModelVersion?->metadata, 'last_screen_result', [])));
+    }
+
+    /** @return array<string,mixed> */
+    private function linkConsumptionOutcome(array $evidence, LabAgent $agent, array $outcome): array
+    {
+        $matched = false;
+        $receipts = collect((array) data_get($evidence, 'consumption_receipts', []))
+            ->map(function (mixed $row) use ($agent, $outcome, &$matched): mixed {
+                if (! is_array($row) || (int) data_get($row, 'lab_agent_id', 0) !== (int) $agent->id) {
+                    return $row;
+                }
+                $matched = true;
+
+                return [
+                    ...$row,
+                    'status' => (string) data_get($outcome, 'status'),
+                    'result_link' => [
+                        'stage' => data_get($outcome, 'stage'),
+                        'evidence_run_id' => data_get($outcome, 'evidence_run_id'),
+                        'verification_status' => data_get($outcome, 'verification_status'),
+                    ],
+                    'resolution_action' => data_get($outcome, 'resolution_action', data_get($row, 'resolution_action')),
+                    'result_link_pending' => false,
+                    'closed_at' => data_get($outcome, 'closed') === true
+                        ? now()->utc()->toIso8601String()
+                        : data_get($row, 'closed_at'),
+                    'promotion_evidence' => false,
+                ];
+            })->values()->all();
+        if ($matched) {
+            $evidence['consumption_receipts'] = $receipts;
+            $latest = collect($receipts)->last(fn (mixed $row): bool =>
+                is_array($row) && (int) data_get($row, 'lab_agent_id', 0) === (int) $agent->id
+            );
+            $evidence['consumption_receipt'] = $latest;
+            data_set($evidence, 'failure_signature.consumption_receipt', $latest);
+        }
+
+        return $evidence;
     }
 
     private function latestCompleteRun(LabAgent $agent, string $stage): ?LabEvaluationRun

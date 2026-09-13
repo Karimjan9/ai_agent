@@ -241,6 +241,7 @@ class PaperTradingExecutionService
         $signal['raw_confidence'] = $rawConfidence;
         $signal['calibration'] = $calibrated;
         $signal['economic_calendar'] = $news;
+        $sessionContext = $this->instrumentSessionContext($signal);
         if (($signal['meta_agent']['decision'] ?? null) === 'WAIT') {
             $signal['signal'] = 'WAIT';
             $signal['meta_reason'] = $signal['meta_agent']['reason'] ?? 'META_AGENT_WAIT';
@@ -250,11 +251,18 @@ class PaperTradingExecutionService
         } elseif ($news['active']) {
             $signal['signal'] = 'WAIT';
             $signal['news_reason'] = 'High-impact economic event execution veto.';
+        } elseif (data_get($sessionContext, 'actionability') !== 'context_observed') {
+            $signal['signal'] = 'WAIT';
+            $signal['session_reason'] = 'Market-session calendar or observed liquidity is not actionable.';
         } elseif (! $this->allocator->ownsRegime(
             $candidate, $universe,
             (string) ($signal['market_regime'] ?? 'unknown'),
             (string) ($signal['volatility_regime'] ?? 'normal_volatility'),
-            $this->instrumentSession($signal),
+            (string) data_get($sessionContext, 'session', 'off_session'),
+            (string) data_get($sessionContext, 'venue_phase', 'calendar_quarantine'),
+            (string) ($signal['signal'] ?? 'WAIT'),
+            (string) data_get($sessionContext, 'spread_liquidity_state', ''),
+            (string) (($signal['market_regime'] ?? 'unknown') === 'transition' ? 'transition' : 'stable'),
         )) {
             $signal['signal'] = 'WAIT';
             $signal['allocator_reason'] = 'Another independent specialist owns the current regime risk budget.';
@@ -718,15 +726,17 @@ class PaperTradingExecutionService
 
     private function instrumentSession(array $signal): string
     {
+        return (string) data_get($this->instrumentSessionContext($signal), 'session', 'off_session');
+    }
+
+    /** @return array<string, mixed> */
+    private function instrumentSessionContext(array $signal): array
+    {
         $time = data_get($signal, 'signal_time');
 
-        return (string) data_get(
-            $this->marketSessions->resolve($time ?: null, [
+        return $this->marketSessions->resolve($time ?: null, [
                 'spread_atr_ratio' => data_get($signal, 'execution_contract.spread_atr_ratio', data_get($signal, 'spread_atr_ratio')),
-            ]),
-            'session',
-            'off_session',
-        );
+            ]);
     }
 
     /** @return array<string, mixed> */

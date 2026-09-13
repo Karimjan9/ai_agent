@@ -67,6 +67,22 @@ class SkillMentorService
             && data_get($mentorContract, 'status') === 'confirmed_shadow_mentor';
         $researchOnly = in_array((string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', '')), ['frozen_control', 'architecture_escape'], true);
         $decisionPassed = $forwardDecision && data_get($forwardDecision, 'decision') === 'passed';
+        $economicRequirements = [
+            // Reaching this normal full-replay settlement is itself downstream
+            // of screening. Learning-lane projections remain explicit because
+            // they may be replayed independently of normal candidate admission.
+            'screening_passed' => ! $learningLane
+                || data_get($metadata, 'evolution_stage.screening_passed') === true
+                || data_get($result, 'screening_gate_passed') === true,
+            'full_replay_passed' => $performance->evidence_status === 'valid'
+                && filled(data_get($result, 'evidence_run_id'))
+                && ! (bool) data_get($result, 'is_overfit', true),
+            'positive_absolute_settlement' => $this->positiveAbsoluteSettlement($result),
+            'forward_or_paper_evidence' => $decisionPassed
+                || in_array((string) $performance->status, ['forward_validated', 'paper', 'champion'], true),
+            'source' => 'immutable_full_replay_and_forward_gate',
+            'promotion_evidence' => false,
+        ];
         $learningParentEligible = ! $learningLane || $this->learningParentEligible($metadata, $verification);
         $fullParent = ! $control && $decisionPassed && $learningParentEligible
             && $this->fullParentPassport($agent, $performance, $result);
@@ -104,6 +120,10 @@ class SkillMentorService
             'parent_eligible' => $fullParent,
             'learning_lane' => $learningLane,
             'mentor_contract' => $mentorContract,
+            'authority_tier' => $skillConfirmed
+                ? EvolutionaryAuthorityLadderService::RESEARCH_MENTOR
+                : 'none',
+            'economic_parent_requirements' => $economicRequirements,
             'trait_capsule' => (bool) data_get($capsuleResolution, 'valid', false)
                 ? data_get($capsuleResolution, 'capsule')
                 : null,
@@ -155,7 +175,11 @@ class SkillMentorService
         $mentor['evolutionary_authority'] = app(EvolutionaryAuthorityFoundryService::class)->refreshAuthority(
             $agent->modelVersion->fresh(),
             $agent->fresh(),
-            ['passed' => $fullParent, 'elite_passport' => data_get($result, 'elite_agent_passport.status')],
+            [
+                'passed' => $fullParent,
+                'elite_passport' => data_get($result, 'elite_agent_passport.status'),
+                'economic_parent_requirements' => $economicRequirements,
+            ],
         );
 
         return $mentor;
@@ -211,10 +235,26 @@ class SkillMentorService
         if (in_array($role, ['blinded', 'frozen_control'], true)) {
             return false;
         }
-        if (in_array($role, ['memory_guided', 'repair_guided'], true)) {
+        if (in_array($role, ['memory_guided', 'hypothesis_guided', 'repair_guided'], true)) {
             return data_get($metadata, 'causal_learning_experiment.status') === 'confirmed';
         }
 
         return true;
+    }
+
+    private function positiveAbsoluteSettlement(array $result): bool
+    {
+        foreach ([
+            'net_profit_percent', 'net_profit', 'total_return_percent', 'total_return',
+            'settlement.net_profit_percent', 'settlement.net_profit',
+            'economic_settlement.net_value',
+        ] as $path) {
+            $value = data_get($result, $path);
+            if (is_numeric($value)) {
+                return (float) $value > 0;
+            }
+        }
+
+        return false;
     }
 }

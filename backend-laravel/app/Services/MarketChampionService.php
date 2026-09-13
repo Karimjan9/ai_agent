@@ -121,7 +121,7 @@ class MarketChampionService
             $causalConfirmation = $agent !== null
                 && $agent->generation?->trigger_type === 'learning_confirmation'
                 && in_array((string) data_get($model->metadata, 'causal_learning_cohort.role'), [
-                    'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+                    'memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control',
                 ], true);
             $shadowResearchLane = (bool) data_get($model->metadata, 'shadow_research_lane.shadow_only', false)
                 || data_get($model->metadata, 'shadow_research_lane.protocol') === ShadowResearchGovernorService::PROTOCOL;
@@ -535,7 +535,7 @@ class MarketChampionService
                     // their own cold-start windows before any lesson can be
                     // confirmed.
                     if (in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
-                        'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+                        'memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control',
                     ], true)) {
                         $result['causal_learning_confirmation'] = app(CausalLearningConfirmationService::class)
                             ->recordEvaluationOutcome(
@@ -552,9 +552,9 @@ class MarketChampionService
                     try {
                         // Parent-aware credit is deliberately downstream of the
                         // immutable full-replay/forward decision. It records
-                        // performance, learning and discovery separately and
-                        // keeps parent credit blocked until autonomous/mentored/
-                        // ablated branches are observed on the same contract.
+                        // all five credit rungs separately and keeps parent
+                        // credit blocked until autonomous/mentored/ablated
+                        // branches are observed on the same contract.
                         $parentAwareCredit = app(ParentAwareCreditService::class)->recordFullReplay(
                             $agent->fresh(['modelVersion']),
                             $result,
@@ -562,6 +562,18 @@ class MarketChampionService
                             $forwardDecision,
                         );
                         $result['parent_aware_credit'] = $parentAwareCredit;
+                        if (collect((array) data_get($parentAwareCredit, 'events', []))
+                            ->contains(fn (mixed $event): bool => data_get($event, 'event_type') === 'causal_skill_credit')) {
+                            // SkillMentorService evaluates the evidence before
+                            // the immutable credit row exists. Refresh once the
+                            // third rung is persisted so Research Mentor
+                            // authority becomes visible in the same settlement.
+                            $result['evolutionary_authority'] = app(EvolutionaryAuthorityFoundryService::class)
+                                ->refreshAuthority(
+                                    $agent->modelVersion->fresh(),
+                                    $agent->fresh(['modelVersion']),
+                                );
+                        }
                         $performance->update([
                             'metrics' => [
                                 ...((array) $performance->metrics),
@@ -1049,7 +1061,7 @@ class MarketChampionService
         ]);
         $causalConfirmation = $agent->generation?->trigger_type === 'learning_confirmation'
             && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
-                'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
+                'memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control',
             ], true);
         if ($causalConfirmation) {
             // The three-arm confirmation service is the sole authority for

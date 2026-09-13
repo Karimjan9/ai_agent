@@ -249,6 +249,11 @@ class ResearchAllocationPolicyService
         int $generationId,
     ): array {
         $plan = array_values($plan);
+        if (collect($plan)->contains(fn (array $slot): bool =>
+            data_get($slot, 'niche.cooperative_experiment_block.protocol') === CooperativeContextualEvolutionCouncilService::PROTOCOL
+        )) {
+            return $this->materializeCooperativeBlockPairing($plan, $symbol, $timeframe, $generationId);
+        }
         $protected = [];
         $free = [];
         foreach ($plan as $index => $slot) {
@@ -271,6 +276,12 @@ class ResearchAllocationPolicyService
             $candidateIndex = (int) $free[($pairIndex * 2) + 1];
             $templateIndex = (int) ($templateIndexes[$pairIndex] ?? $candidateIndex);
             $template = (array) ($templatePlan[$templateIndex] ?? $templatePlan[$candidateIndex]);
+            if (filled(data_get($plan[$controlIndex], 'niche.learning_method_contract.experiment_topology.group_key'))) {
+                // A four-arm factorial/transfer block is already grouped by
+                // the contextual allocator. Diversity reshuffling here would
+                // silently destroy its same-cell counterfactual.
+                $template = (array) $plan[$controlIndex];
+            }
             $family = (string) data_get($template, 'family', '');
             $lane = $this->executionLane($template);
             $pairKey = hash('sha256', json_encode([
@@ -327,6 +338,18 @@ class ResearchAllocationPolicyService
                     'required_for_candidate' => false,
                 ],
             ];
+            if (data_get($control, 'niche.evolutionary_experiment_block.protocol') === EvolutionaryAuthorityLadderService::PROTOCOL) {
+                data_set($control, 'niche.evolutionary_experiment_block.pair_role', 'exact_frozen_control');
+            }
+            if (data_get($control, 'niche.learning_method_contract.protocol') === MultiModalLearningPortfolioService::PROTOCOL) {
+                data_set($control, 'niche.learning_method_contract.pair_role', 'exact_frozen_control');
+                data_set($control, 'niche.learning_method_contract.control_pair_key', $pairKey);
+                data_set($control, 'niche.learning_method_contract.experiment_arm', data_get(
+                    $control,
+                    'niche.learning_method_contract.experiment_topology.control_arm',
+                    'exact_control',
+                ));
+            }
             $candidate['niche'] = [
                 ...((array) data_get($candidate, 'niche', [])),
                 'control_only' => false,
@@ -338,6 +361,18 @@ class ResearchAllocationPolicyService
                     'required_for_candidate' => true,
                 ],
             ];
+            if (data_get($candidate, 'niche.evolutionary_experiment_block.protocol') === EvolutionaryAuthorityLadderService::PROTOCOL) {
+                data_set($candidate, 'niche.evolutionary_experiment_block.pair_role', 'candidate');
+            }
+            if (data_get($candidate, 'niche.learning_method_contract.protocol') === MultiModalLearningPortfolioService::PROTOCOL) {
+                data_set($candidate, 'niche.learning_method_contract.pair_role', 'candidate');
+                data_set($candidate, 'niche.learning_method_contract.control_pair_key', $pairKey);
+                data_set($candidate, 'niche.learning_method_contract.experiment_arm', data_get(
+                    $candidate,
+                    'niche.learning_method_contract.experiment_topology.candidate_arm',
+                    'candidate',
+                ));
+            }
             if ((string) data_get($candidate, 'evolution_mode') === 'frozen_control') {
                 $candidate['evolution_mode'] = 'paired_discovery_candidate';
             }
@@ -418,6 +453,97 @@ class ResearchAllocationPolicyService
                 'promotion_evidence' => false,
             ],
         ];
+    }
+
+    /**
+     * Preserve pre-registered four-arm block structure while compiling every
+     * adjacent counterfactual into an exact same-generation baseline pair.
+     * A factorial B-only arm is allowed to be the frozen baseline for A+B;
+     * it remains a measured intervention relative to the block-wide control.
+     *
+     * @return array{plan:array<int,array<string,mixed>>,contract:array<string,mixed>}
+     */
+    private function materializeCooperativeBlockPairing(array $plan, string $symbol, string $timeframe, int $generationId): array
+    {
+        if (count($plan) % 2 !== 0) {
+            return ['plan' => $plan, 'contract' => [
+                'protocol' => self::CONTROL_PAIR_PROTOCOL, 'mode' => 'cooperative_experiment_blocks',
+                'allowed' => false, 'reason' => 'COOPERATIVE_BLOCK_SEATS_MUST_BE_EVEN', 'promotion_evidence' => false,
+            ]];
+        }
+        $materialized = [];
+        for ($index = 0; $index < count($plan); $index += 2) {
+            $control = (array) $plan[$index];
+            $candidate = (array) $plan[$index + 1];
+            $controlBlock = (array) data_get($control, 'niche.cooperative_experiment_block', []);
+            $candidateBlock = (array) data_get($candidate, 'niche.cooperative_experiment_block', []);
+            $blockKey = (string) data_get($controlBlock, 'block_key', '');
+            if ($blockKey === '' || ! hash_equals($blockKey, (string) data_get($candidateBlock, 'block_key', ''))) {
+                return ['plan' => $plan, 'contract' => [
+                    'protocol' => self::CONTROL_PAIR_PROTOCOL, 'mode' => 'cooperative_experiment_blocks',
+                    'allowed' => false, 'reason' => 'COOPERATIVE_PAIR_BLOCK_KEY_MISMATCH',
+                    'failed_slots' => [$index + 1, $index + 2], 'promotion_evidence' => false,
+                ]];
+            }
+            $pairIndex = intdiv($index, 2) + 1;
+            $pairKey = hash('sha256', json_encode([
+                self::CONTROL_PAIR_PROTOCOL, CooperativeContextualEvolutionCouncilService::PROTOCOL,
+                $generationId, strtoupper($symbol), strtoupper($timeframe), $blockKey, $pairIndex,
+                data_get($controlBlock, 'arm'), data_get($candidateBlock, 'arm'),
+            ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+            $family = (string) data_get($control, 'family', '');
+            $lane = $this->executionLane($control);
+            $baselineIntervention = (bool) data_get($controlBlock, 'pair_baseline_intervention', false);
+            $controlNiche = (array) data_get($control, 'niche', []);
+            if (! $baselineIntervention) $controlNiche = $this->withoutIntervention($controlNiche);
+            $contract = [
+                'protocol' => self::CONTROL_PAIR_PROTOCOL, 'pair_key' => $pairKey,
+                'pair_index' => $pairIndex, 'block_key' => $blockKey,
+                'block_type' => data_get($controlBlock, 'block_type'),
+                'same_generation' => true, 'same_symbol_timeframe' => true,
+                'same_strategy_family' => true, 'same_execution_contract' => true,
+                'same_parameter_baseline' => ! $baselineIntervention,
+                'baseline_is_measured_factorial_arm' => $baselineIntervention,
+                'single_intervention_required' => true, 'execution_lane' => $lane,
+                'strategy_family' => $family,
+                'missing_control_action' => 'diagnostic_only_no_learning_credit_no_full_replay',
+                'promotion_evidence' => false,
+            ];
+            $control['evolution_mode'] = $baselineIntervention ? 'factorial_baseline_intervention' : 'frozen_control';
+            $control['niche'] = [...$controlNiche,
+                'control_only' => ! $baselineIntervention,
+                'control_pair_contract' => [...$contract, 'role' => 'control', 'required_for_candidate' => false],
+            ];
+            data_set($control, 'niche.learning_method_contract.pair_role', 'exact_frozen_control');
+            data_set($control, 'niche.learning_method_contract.control_pair_key', $pairKey);
+            data_set($control, 'niche.learning_method_contract.experiment_arm', data_get($controlBlock, 'arm'));
+            $candidate['niche'] = [...((array) data_get($candidate, 'niche', [])),
+                'control_only' => false,
+                'control_pair_contract' => [...$contract, 'role' => 'candidate', 'required_for_candidate' => true],
+            ];
+            data_set($candidate, 'niche.learning_method_contract.pair_role', 'candidate');
+            data_set($candidate, 'niche.learning_method_contract.control_pair_key', $pairKey);
+            data_set($candidate, 'niche.learning_method_contract.experiment_arm', data_get($candidateBlock, 'arm'));
+            if ((string) data_get($candidate, 'evolution_mode') === 'frozen_control') $candidate['evolution_mode'] = 'paired_discovery_candidate';
+            $plan[$index] = $control;
+            $plan[$index + 1] = $candidate;
+            $materialized[] = [
+                'pair_index' => $pairIndex, 'control_slot' => $index + 1, 'candidate_slot' => $index + 2,
+                'block_key' => $blockKey, 'block_type' => data_get($controlBlock, 'block_type'),
+                'control_arm' => data_get($controlBlock, 'arm'), 'candidate_arm' => data_get($candidateBlock, 'arm'),
+                'pair_key' => $pairKey, 'factorial_baseline_intervention' => $baselineIntervention,
+            ];
+        }
+
+        return ['plan' => array_values($plan), 'contract' => [
+            'protocol' => self::CONTROL_PAIR_PROTOCOL, 'mode' => 'cooperative_experiment_blocks',
+            'generation_id' => $generationId, 'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe),
+            'population_size' => count($plan), 'pair_count' => count($materialized),
+            'materialized_controls' => $materialized, 'one_control_per_candidate' => true,
+            'four_arm_topologies_preserved' => true, 'candidate_must_copy_persisted_control_baseline' => true,
+            'allowed' => count($materialized) * 2 === count($plan),
+            'promotion_evidence' => false,
+        ]];
     }
 
     /** @param array<string,mixed> $slot */

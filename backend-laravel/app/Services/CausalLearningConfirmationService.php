@@ -13,7 +13,7 @@ use App\Models\LabLearningLanePair;
 use App\Models\ModelMarketPerformance;
 use Illuminate\Support\Facades\Schema;
 
-/** Confirms memory only when it beats both blinded mutation and frozen control. */
+/** Confirms a pre-registered intervention only after it beats blinded mutation and frozen control. */
 class CausalLearningConfirmationService
 {
     public const EVIDENCE_PROTOCOL = 'target_aligned_causal_confirmation_v2';
@@ -203,7 +203,11 @@ class CausalLearningConfirmationService
             $result['evidence_run_id'] = $candidateRunId;
             $receipt = (array) data_get($agent->modelVersion?->metadata, 'learning_receipt', []);
             $guidedRole = $this->guidedRole($experiment);
-            $expectedInfluence = $guidedRole === 'repair_guided' ? 'causal_repair_guided' : 'memory_guided';
+            $expectedInfluence = match ($guidedRole) {
+                'repair_guided' => 'causal_repair_guided',
+                'hypothesis_guided' => 'hypothesis_guided',
+                default => 'memory_guided',
+            };
             $causalCreditEligible = $role === $guidedRole
                 && data_get($receipt, 'integrity.valid') === true
                 && data_get($receipt, 'causal_influence') === $expectedInfluence
@@ -347,7 +351,12 @@ class CausalLearningConfirmationService
         // experiment circular: a screening no-effect could never be disproved
         // by the three independent full-replay windows it was sent to obtain.
         $repairExperiment = $guidedRole === 'repair_guided';
-        $expectedInfluence = $repairExperiment ? 'causal_repair_guided' : 'memory_guided';
+        $hypothesisReproduction = $guidedRole === 'hypothesis_guided';
+        $expectedInfluence = match (true) {
+            $repairExperiment => 'causal_repair_guided',
+            $hypothesisReproduction => 'hypothesis_guided',
+            default => 'memory_guided',
+        };
         $receiptValid = data_get($guidedReceipt, 'protocol') === LearningReceiptService::PROTOCOL
             && data_get($guidedReceipt, 'integrity.valid') === true
             && data_get($guidedReceipt, 'causal_influence') === $expectedInfluence
@@ -355,10 +364,17 @@ class CausalLearningConfirmationService
             && ($repairExperiment
                 ? ((array) data_get($guidedReceipt, 'causally_applied_lesson_ids', []) === []
                     && (int) data_get($experiment->evidence, 'source_causal_experiment_id', 0) > 0)
-                : in_array((int) $experiment->source_lesson_id, array_map(
-                    'intval',
-                    (array) data_get($guidedReceipt, 'causally_applied_lesson_ids', []),
-                ), true));
+                : ($hypothesisReproduction
+                    ? ((array) data_get($guidedReceipt, 'causally_applied_lesson_ids', []) === []
+                        && in_array((int) $experiment->source_lesson_id, array_map(
+                            'intval',
+                            (array) data_get($guidedReceipt, 'selected_lesson_ids', []),
+                        ), true)
+                        && (string) data_get($experiment->evidence, 'source_authority') === 'legacy_hypothesis_only')
+                    : in_array((int) $experiment->source_lesson_id, array_map(
+                        'intval',
+                        (array) data_get($guidedReceipt, 'causally_applied_lesson_ids', []),
+                    ), true)));
         $componentWindowEffect = $this->compareWindows($guided, $control, $required);
         $selectorWindowEffect = $this->compareWindows($guided, $blinded, $required);
         $componentTargetEffect = $this->compareTargetMeasurements($guided, $control);
@@ -409,6 +425,15 @@ class CausalLearningConfirmationService
             if ($guidedIntent?->influence_type !== 'causal_repair_guided'
                 || (array) $guidedIntent?->causally_applied_lesson_ids !== []) {
                 $reasons[] = 'GUIDED_REPAIR_FRONTIER_NOT_CAUSALLY_APPLIED';
+            }
+        } elseif ($hypothesisReproduction) {
+            if ($guidedIntent?->influence_type !== 'hypothesis_guided'
+                || (array) $guidedIntent?->causally_applied_lesson_ids !== []
+                || ! in_array((int) $experiment->source_lesson_id, array_map(
+                    'intval',
+                    (array) $guidedIntent?->selected_lesson_ids,
+                ), true)) {
+                $reasons[] = 'GUIDED_LEGACY_HYPOTHESIS_NOT_PRE_REGISTERED';
             }
         } elseif ($guidedIntent?->influence_type !== 'memory_guided'
             || (array) $guidedIntent?->causally_applied_lesson_ids === []) {
@@ -474,6 +499,16 @@ class CausalLearningConfirmationService
                 $selectorEffect,
                 $reasons,
             );
+            $capabilityLattice = app(CausalCapabilityLatticeService::class)->projectExperiment(
+                $experiment,
+                $guidedPair,
+                $latestCanonicalSettlement,
+                $componentEffect,
+                $selectorEffect,
+                $reasons,
+                $receiptValid,
+                $nonTargetSafe,
+            );
             $experiment->update([
                 'status' => 'provisional',
                 'independent_window_count' => $confirmedWindowCount,
@@ -483,6 +518,8 @@ class CausalLearningConfirmationService
                     'confirmation_evidence_protocol' => self::EVIDENCE_PROTOCOL,
                     'component_effect' => $componentEffect,
                     'selector_effect' => $selectorEffect,
+                    'protocol_epoch' => data_get($capabilityLattice, 'protocol_epoch_link.epoch'),
+                    'capability_lattice' => $capabilityLattice,
                     'confirmation_blockers' => $reasons,
                     'absolute_viability' => [
                         'status' => $canonicalSettlement ? 'passed' : ($latestCanonicalSettlement ? 'failed' : 'missing'),
@@ -534,8 +571,19 @@ class CausalLearningConfirmationService
                 ],
             ]);
 
-            return ['status' => 'provisional', 'confirmed' => false, 'reason_codes' => $reasons, 'promotion_evidence' => false];
+            return ['status' => 'provisional', 'confirmed' => false, 'reason_codes' => $reasons,
+                'capability_lattice' => $capabilityLattice, 'promotion_evidence' => false];
         }
+        $capabilityLattice = app(CausalCapabilityLatticeService::class)->projectExperiment(
+            $experiment,
+            $guidedPair,
+            $canonicalSettlement,
+            $componentEffect,
+            $selectorEffect,
+            [],
+            $receiptValid,
+            $nonTargetSafe,
+        );
         $experiment->update([
             'status' => 'confirmed',
             'independent_window_count' => $confirmedWindowCount,
@@ -547,6 +595,8 @@ class CausalLearningConfirmationService
                 'confirmation_protocol' => $this->confirmationProtocol($experiment),
                 'component_effect' => $componentEffect,
                 'selector_effect' => $selectorEffect,
+                'protocol_epoch' => data_get($capabilityLattice, 'protocol_epoch_link.epoch'),
+                'capability_lattice' => $capabilityLattice,
                 'confirmation_blockers' => [],
                 'promotion_evidence' => false,
             ],
@@ -691,6 +741,7 @@ class CausalLearningConfirmationService
             'guided_lesson_id' => $guidedLesson?->id,
             'policy_id' => $policy instanceof AgentLearningPolicy ? (int) $policy->id : null,
             'mentor' => $mentor,
+            'capability_lattice' => $capabilityLattice,
             'promotion_evidence' => false,
         ];
     }
@@ -1432,7 +1483,12 @@ class CausalLearningConfirmationService
 
     private function guidedRole(AgentLearningCausalExperiment $experiment): string
     {
-        return in_array((string) data_get($experiment->evidence, 'experiment_kind'), [
+        $kind = (string) data_get($experiment->evidence, 'experiment_kind');
+        if ($kind === 'legacy_hypothesis_reproduction') {
+            return 'hypothesis_guided';
+        }
+
+        return in_array($kind, [
             'causal_repair', 'causal_architecture_escape', 'causal_architecture_interaction',
         ], true)
             ? 'repair_guided'
@@ -1445,6 +1501,7 @@ class CausalLearningConfirmationService
             'causal_architecture_interaction' => 'architecture_interaction_guided_vs_blinded_vs_frozen_control_v1',
             'causal_architecture_escape' => 'architecture_guided_vs_blinded_vs_frozen_control_v1',
             'causal_repair' => 'repair_guided_vs_blinded_vs_frozen_control_v1',
+            'legacy_hypothesis_reproduction' => 'hypothesis_guided_vs_blinded_vs_frozen_control_v1',
             default => 'memory_guided_vs_blinded_vs_frozen_control_v1',
         };
     }

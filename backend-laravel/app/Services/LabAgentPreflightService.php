@@ -131,7 +131,7 @@ class LabAgentPreflightService
         // EXACT_PARENT_PROTOCOL_MISSING.
         $causalBaselineHandoff = $generation?->trigger_type === 'learning_confirmation'
             && data_get($causalCohort, 'protocol') === CausalLearningCohortPlannerService::PROTOCOL
-            && in_array((string) data_get($causalCohort, 'role'), ['memory_guided', 'repair_guided', 'blinded', 'frozen_control'], true)
+            && in_array((string) data_get($causalCohort, 'role'), ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control'], true)
             && (int) data_get($causalParentLock, 'parent_model_version_id', 0) > 0
             && (int) data_get($causalParentLock, 'parent_model_version_id', 0) === (int) $agent->parent_a_model_version_id
             && (string) data_get($inheritance, 'parent_selection') === 'same_canonical_source_baseline_for_all_counterfactual_arms'

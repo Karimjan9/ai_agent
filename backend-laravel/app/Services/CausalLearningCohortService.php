@@ -47,7 +47,7 @@ class CausalLearningCohortService
             $reasons[] = 'CAUSAL_COHORT_PROTOCOL_INVALID';
         }
         $role = (string) data_get($contract, 'role');
-        if (! in_array($role, ['memory_guided', 'repair_guided', 'blinded', 'frozen_control'], true)) {
+        if (! in_array($role, ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control'], true)) {
             $reasons[] = 'CAUSAL_COHORT_ROLE_INVALID';
         }
 
@@ -63,7 +63,7 @@ class CausalLearningCohortService
                 $reasons[] = 'CAUSAL_EXPERIMENT_NOT_REPLAYABLE';
             }
             $roleAgentId = match ($role) {
-                'memory_guided', 'repair_guided' => $experiment->guided_agent_id,
+                'memory_guided', 'hypothesis_guided', 'repair_guided' => $experiment->guided_agent_id,
                 'blinded' => $experiment->blinded_agent_id,
                 'frozen_control' => $experiment->control_agent_id,
                 default => null,
@@ -190,7 +190,7 @@ class CausalLearningCohortService
         }
         $role = (string) data_get($contract, 'role');
         $field = match ($role) {
-            'memory_guided', 'repair_guided' => 'guided_agent_id',
+            'memory_guided', 'hypothesis_guided', 'repair_guided' => 'guided_agent_id',
             'blinded' => 'blinded_agent_id',
             'frozen_control' => 'control_agent_id',
             default => null,
@@ -236,6 +236,9 @@ class CausalLearningCohortService
                         'promotion_evidence' => false,
                     ] : null,
                     'source_pair_id' => (int) data_get($contract, 'source_pair_id', 0),
+                    'source_authority' => (string) data_get($contract, 'source_authority', 'canonical_causal_source'),
+                    'source_authority_blockers' => (array) data_get($contract, 'source_authority_blockers', []),
+                    'legacy_hypothesis_grants_credit' => false,
                     'root_source_pair_id' => (int) data_get($contract, 'root_source_pair_id', data_get($contract, 'source_pair_id', 0)),
                     'source_control_agent_id' => (int) data_get($contract, 'source_control_agent_id', 0),
                     'baseline_model_version_id' => (int) data_get($contract, 'baseline_model_version_id', 0),
@@ -307,6 +310,7 @@ class CausalLearningCohortService
             'causal_repair', 'causal_architecture_escape', 'causal_architecture_interaction',
         ], true);
         $kind = (string) data_get($experiment->evidence, 'experiment_kind');
+        $hypothesisReproduction = $kind === 'legacy_hypothesis_reproduction';
         $architecture = in_array($kind, [
             'causal_architecture_escape', 'causal_architecture_interaction',
         ], true);
@@ -335,6 +339,16 @@ class CausalLearningCohortService
                         'state_machine_variant', 'regime_classifier_variant',
                     ])) {
                 $reasons[] = 'GUIDED_CAUSAL_ARCHITECTURE_INTERACTION_INVALID';
+            }
+        } elseif ($hypothesisReproduction) {
+            if ($guidedIntent?->influence_type !== 'hypothesis_guided'
+                || (array) $guidedIntent?->causally_applied_lesson_ids !== []
+                || ! in_array((int) $experiment->source_lesson_id, array_map(
+                    'intval',
+                    (array) $guidedIntent?->selected_lesson_ids,
+                ), true)
+                || (string) data_get($experiment->evidence, 'source_authority') !== 'legacy_hypothesis_only') {
+                $reasons[] = 'GUIDED_LEGACY_HYPOTHESIS_CONTRACT_INVALID';
             }
         } elseif ($guidedIntent?->influence_type !== 'memory_guided'
             || ! in_array((int) $experiment->source_lesson_id, (array) $guidedIntent?->causally_applied_lesson_ids, true)) {

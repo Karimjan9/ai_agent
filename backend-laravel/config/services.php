@@ -19,24 +19,31 @@ return [
     |--------------------------------------------------------------------------
     | Versioned XAUUSD market-session research calendar
     |--------------------------------------------------------------------------
-    | Civil-time windows are resolved through IANA zones, so London/New York
-    | DST and their changing overlap are never frozen into one UTC-hour label.
-    | Venue holidays can be added as local YYYY-MM-DD values without code
-    | changes. They affect specialist scope only; observed broker availability
-    | and spread/liquidity remain mandatory runtime evidence.
+    | Civil-time windows are resolved through IANA zones. These rulebook
+    | defaults must be version-bumped whenever a venue rule or closure override
+    | changes. They classify context only; observed broker availability and
+    | spread/liquidity remain mandatory runtime evidence.
     */
     'market_session_calendar' => [
-        'version' => env('MARKET_SESSION_CALENDAR_VERSION', 'xauusd_market_sessions_2026_v1'),
+        'version' => env('MARKET_SESSION_CALENDAR_VERSION', 'xauusd_market_sessions_2026_v2'),
         'phases' => [
-            'asia' => ['timezone' => 'Asia/Shanghai', 'start' => '08:00', 'end' => '16:00'],
-            'london' => ['timezone' => 'Europe/London', 'start' => '08:00', 'end' => '16:30'],
-            'new_york' => ['timezone' => 'America/New_York', 'start' => '08:00', 'end' => '17:00'],
+            'asia_sge_night' => ['timezone' => 'Asia/Shanghai', 'start' => '20:00', 'end' => '02:30', 'trading_day_basis' => 'end', 'holiday_venue' => 'sge'],
+            'asia_sge_day' => ['timezone' => 'Asia/Shanghai', 'start' => '09:00', 'end' => '15:30', 'holiday_venue' => 'sge'],
+            'london_pre_am_fix' => ['timezone' => 'Europe/London', 'start' => '08:00', 'end' => '10:30', 'holiday_venue' => 'lbma'],
+            'london_am_fix' => ['timezone' => 'Europe/London', 'start' => '10:30', 'end' => '10:32', 'holiday_venue' => 'lbma'],
+            'london_interfix' => ['timezone' => 'Europe/London', 'start' => '10:32', 'end' => '15:00', 'holiday_venue' => 'lbma'],
+            'london_pm_fix' => ['timezone' => 'Europe/London', 'start' => '15:00', 'end' => '15:02', 'holiday_venue' => 'lbma'],
+            'comex_active' => ['timezone' => 'America/Chicago', 'start' => '17:00', 'end' => '16:00', 'trading_day_basis' => 'end', 'holiday_venue' => 'comex'],
+            'comex_pre_settlement' => ['timezone' => 'America/Chicago', 'start' => '12:00', 'end' => '12:30', 'holiday_venue' => 'comex'],
+            'comex_post_settlement' => ['timezone' => 'America/Chicago', 'start' => '12:30', 'end' => '13:00', 'holiday_venue' => 'comex'],
+            'comex_maintenance' => ['timezone' => 'America/Chicago', 'start' => '16:00', 'end' => '17:00', 'weekdays' => [1, 2, 3, 4], 'holiday_venue' => 'comex'],
         ],
         'holidays' => [
-            'asia' => [],
-            'london' => [],
-            'new_york' => [],
+            'sge' => [],
+            'lbma' => [],
+            'comex' => [],
         ],
+        'sge_no_night_session_dates' => [],
     ],
 
     /*

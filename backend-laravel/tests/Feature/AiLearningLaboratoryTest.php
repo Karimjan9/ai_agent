@@ -95,19 +95,42 @@ class AiLearningLaboratoryTest extends TestCase
                 && count((array) $agent->parameter_diff) === 1
                 && array_key_first((array) $agent->parameter_diff) === $gene;
         }));
-        foreach (['monthly_survival', 'regime_coverage', 'volatility_session_stability', 'exit_topology', 'portfolio_router'] as $target) {
-            $this->assertGreaterThanOrEqual(2, $xau->agents->where('origin', 'g98_council')->filter(
-                fn (LabAgent $agent) => data_get($agent->modelVersion->metadata, 'generation_target') === $target
-            )->count());
-        }
+        $this->assertEqualsCanonicalizing(
+            ['repair_pair', 'novelty_pair', 'factorial', 'coverage_guard', 'adversarial_guard'],
+            $xau->agents->map(fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'generation_target'))->unique()->values()->all(),
+        );
         $groupContract = (array) data_get($xau->trigger_context, 'population_group_contract');
         $this->assertSame('population_group_checkpoint_v1', $groupContract['protocol']);
-        $this->assertSame(5, $groupContract['core_group_count']);
+        $this->assertSame(0, $groupContract['core_group_count']);
         $this->assertNull($groupContract['core_seats_per_group']);
         $this->assertFalse($groupContract['balanced_core']);
         $this->assertTrue($groupContract['dynamic_contextual_allocation']);
-        $this->assertSame('contextual_council_allocator_v1', data_get($groupContract, 'contextual_allocator.protocol'));
+        $this->assertSame('cooperative_contextual_evolution_council_v1', data_get($groupContract, 'contextual_allocator.protocol'));
+        $this->assertSame('fallback_shadow_or_operator_approved_rescue_only', $groupContract['legacy_five_by_four_role']);
+        $this->assertCount(9, $groupContract['experiment_blocks']);
+        $this->assertCount(7, data_get($groupContract, 'module_species.species'));
         $this->assertTrue((bool) data_get($groupContract, 'contextual_allocator.pair_integrity'));
+        $learningPortfolio = (array) data_get(
+            $groupContract,
+            'contextual_allocator.multi_modal_learning_portfolio',
+            [],
+        );
+        $this->assertGreaterThanOrEqual(4, (int) data_get($learningPortfolio, 'method_diversity', 0));
+        $this->assertContains('failure_directed_repair', (array) data_get($learningPortfolio, 'active_methods', []));
+        $this->assertContains('bayesian_active_learning', (array) data_get($learningPortfolio, 'active_methods', []));
+        $this->assertContains('quality_diversity_novelty', (array) data_get($learningPortfolio, 'active_methods', []));
+        $this->assertContains('adversarial_robustness', (array) data_get($learningPortfolio, 'active_methods', []));
+        $learningIntents = $xau->agents->map(
+            fn (LabAgent $agent): array => (array) data_get($agent->modelVersion->metadata, 'causal_learning_intent', []),
+        );
+        $this->assertCount(20, $learningIntents->filter());
+        $this->assertFalse($learningIntents->contains(
+            fn (array $intent): bool => data_get($intent, 'influence_type') === 'independent_exploration',
+        ));
+        $this->assertTrue($learningIntents->every(
+            fn (array $intent): bool => data_get($intent, 'learning_method_contract.protocol') === 'multi_modal_learning_portfolio_v1'
+                && data_get($intent, 'learning_method_contract.selection_receipt.selected_before_mutation') === true,
+        ));
         $this->assertTrue(data_get($xau->trigger_context, 'specialist_council_contract.global_champion_forbidden'));
         $pairing = (array) data_get($xau->trigger_context, 'control_pairing_contract', []);
         $this->assertTrue((bool) data_get($pairing, 'allowed'));
@@ -125,11 +148,11 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent): bool => filled(data_get($agent->modelVersion->metadata, 'specialist_council_membership.contextual_cell.cell_hash'))
             && filled(data_get($agent->modelVersion->metadata, 'specialist_council_membership.session_ownership.calendar_version'))
         ));
-        $this->assertTrue($xau->agents->groupBy(
-            fn (LabAgent $agent): string => (string) data_get($agent->modelVersion->metadata, 'population_group.key')
-        )->every(fn ($members): bool => $members->pluck('modelVersion')->filter(
-            fn (ModelVersion $model): bool => data_get($model->metadata, 'population_group.search_mode') === 'depth'
-        )->count() === 2));
+        $this->assertTrue($xau->agents->every(fn (LabAgent $agent): bool =>
+            data_get($agent->modelVersion->metadata, 'population_group.search_mode') === 'dynamic_priority'
+                && filled(data_get($agent->modelVersion->metadata, 'cooperative_experiment_block.block_key'))
+                && filled(data_get($agent->modelVersion->metadata, 'cooperative_evolution_capsule.genome_hash'))
+        ));
         $isolated = $xau->agents->first(
             fn (LabAgent $agent): bool => $agent->origin === 'g98_council'
                 && count((array) $agent->parameter_diff) === 1,
@@ -137,10 +160,10 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertNotNull($isolated);
         $this->assertCount(1, $isolated->parameter_diff);
         $this->assertSame('isolated_single_gene', data_get($isolated->modelVersion->metadata, 'causal_experiment_lane.status'));
-        $this->assertTrue(data_get($isolated->modelVersion->metadata, 'g98_council_lane.parent_lane_freeze'));
+        $this->assertTrue(data_get($isolated->modelVersion->metadata, 'cooperative_experiment_block.research_nursery_only'));
         $this->assertSame('g98_failure_eliminator_v1', data_get($xau->trigger_context, 'generation_protocol'));
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent) => $agent->lifecycle_status === 'draft'));
-        $this->assertContains(data_get($xau->agents->first()->modelVersion->metadata, 'generation_target'), ['monthly_survival', 'regime_coverage', 'volatility_session_stability', 'exit_topology', 'portfolio_router']);
+        $this->assertContains(data_get($xau->agents->first()->modelVersion->metadata, 'generation_target'), ['repair_pair', 'novelty_pair', 'factorial', 'coverage_guard', 'adversarial_guard']);
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent) => str_starts_with($agent->modelVersion->strategy, 'xauusd_')));
         // The smart-composition cohort gives each executable tactic family a
         // real runtime seat instead of concentrating the normal generation
@@ -396,10 +419,13 @@ class AiLearningLaboratoryTest extends TestCase
             array $checkpoint,
             string $group,
         ) use ($seatCounts): bool {
+            $blockType = str_replace('experiment_block:', '', $group);
             return data_get($checkpoint, 'protocol') === 'population_group_checkpoint_v1'
                 && data_get($checkpoint, 'checkpoint.singleton_forbidden') === true
-                && count((array) data_get($checkpoint, 'frontier_members')) === (int) ($seatCounts[$group] ?? 0);
+                && count((array) data_get($checkpoint, 'frontier_members')) === (int) ($seatCounts[$blockType] ?? 0);
         }));
+        $this->assertCount(9, data_get($report, 'council.experiment_blocks'));
+        $this->assertCount(7, data_get($report, 'council.module_species.species'));
         $sessions = collect($report['population_group_checkpoints'])
             ->flatMap(fn (array $checkpoint): array => (array) data_get($checkpoint, 'frontier_members', []))
             ->pluck('session')->filter()->unique();

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AgentLearningCausalExperiment extends Model
 {
@@ -17,4 +18,9 @@ class AgentLearningCausalExperiment extends Model
         'guided_beats_blinded' => 'boolean', 'guided_beats_control' => 'boolean',
         'evidence' => 'array', 'confirmed_at' => 'datetime',
     ];
+
+    public function generation(): BelongsTo
+    {
+        return $this->belongsTo(LabGeneration::class, 'lab_generation_id');
+    }
 }

@@ -7,6 +7,7 @@ use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
+use App\Models\LabEvolutionCreditEvent;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\LabSkillZooEntry;
@@ -39,6 +40,10 @@ class EvolutionaryAuthorityFoundryTest extends TestCase
         $result = app(EvolutionaryAuthorityFoundryService::class)->materializeIncubator($mentor);
 
         $this->assertSame('queued', $result['status'], json_encode($result, JSON_UNESCAPED_SLASHES));
+        $mentorAuthority = app(EvolutionaryAuthorityFoundryService::class)->authorityFor($mentor->modelVersion);
+        $this->assertSame('research_mentor', $mentorAuthority['authority_tier']);
+        $this->assertSame('research_mentor_granted', $mentorAuthority['status']);
+        $this->assertFalse($mentorAuthority['parent_eligible']);
         $generation = LabGeneration::findOrFail($result['generation_id']);
         $this->assertSame('authority_incubator', $generation->trigger_type);
         $this->assertSame('verified_frozen_control_pair', data_get($generation->trigger_context, 'baseline_source'));
@@ -112,6 +117,25 @@ class EvolutionaryAuthorityFoundryTest extends TestCase
 
         $this->assertSame('blocked', $result['status']);
         $this->assertSame('VERIFIED_CAUSAL_BASELINE_MISSING', $result['reason_code']);
+        $this->assertDatabaseCount('skill_incubation_trials', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_confirmed_label_without_causal_skill_credit_cannot_open_incubator(): void
+    {
+        Queue::fake();
+        [$mentor] = $this->confirmedMentorWithVerifiedControl();
+        LabEvolutionCreditEvent::query()
+            ->where('model_version_id', $mentor->model_version_id)
+            ->where('event_type', 'causal_skill_credit')
+            ->delete();
+
+        $result = app(EvolutionaryAuthorityFoundryService::class)
+            ->materializeIncubator($mentor->fresh(['modelVersion', 'generation.laboratory']));
+
+        $this->assertSame('blocked', $result['status']);
+        $this->assertSame('RESEARCH_MENTOR_AUTHORITY_REQUIRED', $result['reason_code']);
+        $this->assertFalse($result['research_mentor']);
         $this->assertDatabaseCount('skill_incubation_trials', 0);
         Queue::assertNothingPushed();
     }
@@ -200,10 +224,31 @@ class EvolutionaryAuthorityFoundryTest extends TestCase
 
         $service->refreshAuthority($model, $mentor, [
             'passed' => true, 'elite_passport' => 'passed', 'passport_hash' => 'immutable-passport',
+            'economic_parent_requirements' => [
+                'screening_passed' => true,
+                'full_replay_passed' => true,
+                'positive_absolute_settlement' => true,
+                'forward_or_paper_evidence' => true,
+            ],
         ]);
         $authority = $this->recordPassedIncubator($service, $mentor);
         $this->assertSame('skill_mentor', $authority['stage']);
         $this->assertSame('immutable-passport', data_get($authority, 'evidence.passport.passport_hash'));
+        LabEvolutionCreditEvent::create([
+            'lab_agent_id' => $mentor->id,
+            'model_version_id' => $model->id,
+            'parent_model_version_id' => null,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'event_type' => 'performance_credit',
+            'context_key' => hash('sha256', 'authority-economic-context'),
+            'amount' => 1.0,
+            'status' => 'positive_absolute_forward_settlement',
+            'evidence_fingerprint' => hash('sha256', 'authority-performance-credit-'.$model->id),
+            'payload' => ['synthetic_test_evidence' => true, 'promotion_evidence' => false],
+            'recorded_at' => now(),
+        ]);
 
         $cohort = $service->materializeDescendantCohort($model, $mentor);
         $this->assertSame('queued', $cohort['status']);
@@ -267,7 +312,10 @@ class EvolutionaryAuthorityFoundryTest extends TestCase
 
         $this->assertSame('settled', $settlement['status']);
         $this->assertSame('eligible_parent', $settlement['stage']);
+        $this->assertSame('economic_parent', $settlement['authority_tier']);
         $this->assertTrue($settlement['parent_eligible']);
+        $this->assertTrue(data_get($settlement, 'evidence.economic_parent_authority.checks.performance_credit_earned'));
+        $this->assertTrue(data_get($settlement, 'evidence.economic_parent_authority.checks.two_inheritance_credits_earned'));
         $this->assertSame(2, DB::table('descendant_value_trials')->where('mentor_model_version_id', $model->id)->count());
         $this->assertTrue(DB::table('descendant_value_trials')->where('mentor_model_version_id', $model->id)->get()->every(
             fn ($trial): bool => data_get(json_decode($trial->evidence, true), 'trait_incremental_over_ablation') === true
@@ -426,6 +474,18 @@ class EvolutionaryAuthorityFoundryTest extends TestCase
             'quality_score' => .20, 'confidence' => 1.0, 'status' => 'confirmed',
             'component_status' => 'component_confirmed', 'organism_viability' => 'viable',
             'evidence' => ['trait_capsule' => $capsule, 'promotion_evidence' => false],
+        ]);
+        LabEvolutionCreditEvent::create([
+            'lab_agent_id' => $mentor->id,
+            'model_version_id' => $mentor->model_version_id,
+            'parent_model_version_id' => null,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'event_type' => 'causal_skill_credit',
+            'context_key' => hash('sha256', 'authority-causal-skill-context'),
+            'amount' => 1.0, 'status' => 'independently_replicated_causal_skill',
+            'evidence_fingerprint' => hash('sha256', 'authority-causal-skill-credit-'.$mentor->model_version_id),
+            'payload' => ['synthetic_test_evidence' => true, 'promotion_evidence' => false],
+            'recorded_at' => now(),
         ]);
 
         return [$mentor->fresh(['modelVersion', 'generation.laboratory']), $control->fresh('modelVersion')];

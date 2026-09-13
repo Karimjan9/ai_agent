@@ -357,6 +357,88 @@ def test_aggregate_signal_cannot_replace_an_instrument_specific_runtime_receipt(
     assert trace["instruments"][0]["matched_activation_signals"] == []
 
 
+def test_tampered_runtime_receipt_counts_are_rejected():
+    parameters = {"atr_stop_multiplier": 1.5}
+    assignment = {
+        "protocol": "lab_instrument_research_assignment_v2",
+        "hash_protocol": "numeric_canonical_json_v1",
+        "parameter_hash": _hash(parameters),
+        "activation_policy": {"protocol": "instrument_runtime_activation_contract_v1"},
+        "selected": [
+            {
+                "instrument_key": "atr_risk_envelope",
+                "role": "execution",
+                "parameter_bindings": parameters,
+                "activation_contract": _activation("unused_aggregate_path"),
+            }
+        ],
+    }
+    assignment["assignment_hash"] = _hash(assignment)
+    runtime = _runtime(
+        assignment,
+        {"atr_risk_envelope": ["trend_up|normal_volatility|london|BUY"]},
+    )
+    runtime["instruments"]["atr_risk_envelope"]["activation_count"] = 2
+
+    trace = build_instrument_research_trace(
+        assignment,
+        parameters,
+        {
+            "execution_contract": {"status": "matched"},
+            "total_trades": 1,
+            "instrument_runtime_observations": runtime,
+        },
+    )
+
+    assert trace["status"] == "incomplete"
+    assert trace["runtime_observations_valid"] is False
+    assert trace["instruments"][0]["runtime_receipt_consistent"] is False
+
+
+def test_bundle_has_no_authority_when_components_activated_in_different_contexts():
+    parameters = {"atr_stop_multiplier": 1.5, "atr_target_multiplier": 2.0}
+    assignment = {
+        "protocol": "lab_instrument_research_assignment_v2",
+        "hash_protocol": "numeric_canonical_json_v1",
+        "parameter_hash": _hash(parameters),
+        "activation_policy": {"protocol": "instrument_runtime_activation_contract_v1"},
+        "selected": [
+            {
+                "instrument_key": "atr_risk_envelope",
+                "parameter_bindings": {"atr_stop_multiplier": 1.5},
+                "activation_contract": _activation("unused"),
+            },
+            {
+                "instrument_key": "cost_aware_exit",
+                "parameter_bindings": {"atr_target_multiplier": 2.0},
+                "activation_contract": _activation("unused"),
+            },
+        ],
+    }
+    assignment["assignment_hash"] = _hash(assignment)
+    runtime = _runtime(
+        assignment,
+        {
+            "atr_risk_envelope": ["trend_up|normal_volatility|london|BUY"],
+            "cost_aware_exit": ["trend_up|normal_volatility|asia|BUY"],
+        },
+    )
+
+    trace = build_instrument_research_trace(
+        assignment,
+        parameters,
+        {
+            "execution_contract": {"status": "matched"},
+            "total_trades": 2,
+            "instrument_runtime_observations": runtime,
+        },
+    )
+
+    assert trace["consumed_count"] == 2
+    assert trace["bundle_activation_context_keys"] == []
+    assert trace["bundle_fully_activated"] is False
+
+
 def test_activation_is_scoped_and_the_instrument_abstains_outside_its_contract():
     parameters = {"pullback_atr_fraction": 0.75}
     assignment = {

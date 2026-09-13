@@ -200,7 +200,21 @@ class LabInstrumentResearchLoopTest extends TestCase
             'metadata' => ['promotion_evidence' => false],
         ]);
 
-        $this->assertSame(1, $ledger->settleResearchPair($pair));
+        $candidateMetrics = (array) $pair->candidate_metrics;
+        $controlMetrics = (array) $pair->control_metrics;
+        $pair->update([
+            'candidate_metrics' => array_diff_key($candidateMetrics, ['instrument_research_trace' => true]),
+            'control_metrics' => array_diff_key($controlMetrics, ['instrument_research_trace' => true]),
+        ]);
+        $this->assertSame(0, $ledger->settleResearchPair($pair->fresh()));
+        $this->assertDatabaseCount('instrument_evidence', 0);
+        $this->assertDatabaseCount('instrument_value_posteriors', 0);
+        $pair->update([
+            'candidate_metrics' => $candidateMetrics,
+            'control_metrics' => $controlMetrics,
+        ]);
+
+        $this->assertSame(1, $ledger->settleResearchPair($pair->fresh()));
         $this->assertDatabaseHas('instrument_invocation_ledger', [
             'lab_agent_id' => $candidate->id,
             'instrument_key' => 'volume_confirmation',

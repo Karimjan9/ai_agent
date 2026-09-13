@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\AgentLearningCausalExperiment;
 use App\Models\AgentLearningLesson;
-use App\Models\AgentLearningSettlement;
 use App\Models\LabLearningLanePair;
 use Illuminate\Support\Facades\Schema;
 
@@ -16,7 +15,14 @@ class CausalLearningCohortPlannerService
     /** @return array<int, array<string, mixed>> */
     public function seedPlan(AgentLearningLesson $lesson): array
     {
-        return collect(['memory_guided', 'blinded', 'frozen_control'])
+        $authority = (string) data_get(
+            app(CausalLessonAdmissionService::class)->assess($lesson),
+            'source_authority',
+            'quarantined',
+        );
+        $guidedRole = $authority === 'canonical_causal_source' ? 'memory_guided' : 'hypothesis_guided';
+
+        return collect([$guidedRole, 'blinded', 'frozen_control'])
             ->map(fn (string $role, int $index): array => [
                 'family' => (string) $lesson->strategy_family,
                 // lab_agents.origin is an intentionally compact indexed
@@ -61,21 +67,13 @@ class CausalLearningCohortPlannerService
             $query->whereKey($lessonId);
         }
 
-        return $query->latest('observed_at')->latest('id')->get()
-            ->first(function (AgentLearningLesson $lesson): bool {
+        $eligible = $query->latest('observed_at')->latest('id')->get()
+            ->filter(function (AgentLearningLesson $lesson): bool {
                 $gene = (string) $lesson->parameter_key;
-                if (! array_key_exists($gene, app(StrategyParameterSchemaService::class)->schema((string) $lesson->strategy_family))) {
-                    return false;
-                }
-                if (! $this->canonicalPositive($lesson) || $this->lessonValue($lesson) === null) {
-                    return false;
-                }
-                // Admission and construction must agree on executability.
-                // A positive lesson without its exact paired cartridge caused
-                // a guided slot to persist without a seal and invalidated the
-                // whole counterfactual cohort.
-                if (data_get(app(CanonicalSkillCartridgeService::class)->retrieveForLesson($lesson), 'status')
-                    !== 'compatible_cartridge_found') {
+                // Planner and salvage ranking deliberately share this exact
+                // fail-closed predicate. A ranked hypothesis may never be
+                // reported ready when cohort construction would reject it.
+                if (data_get(app(CausalLessonAdmissionService::class)->assess($lesson), 'source_ready') !== true) {
                     return false;
                 }
 
@@ -108,6 +106,26 @@ class CausalLearningCohortPlannerService
                 return $currentProtocolAttempts->count()
                     < max(1, (int) config('services.learning_lane.confirmation_max_attempts', 3));
             });
+        if ($eligible->isEmpty()) {
+            return null;
+        }
+        // Use the deterministic salvage score instead of "latest wins".
+        // This sends compute to the signal closest to its next causal gate;
+        // the selected legacy row is still only a hypothesis and must run a
+        // fresh guided/blinded/frozen-control triplet below.
+        $salvagePlan = app(EvidenceSalvageConveyorService::class)
+            ->plan($symbol, $timeframe, max(20, $eligible->count()));
+        $selectedLessonId = (int) data_get($salvagePlan, 'selected.lesson_id', 0);
+        if ($selectedLessonId > 0) {
+            $selected = $eligible->first(fn (AgentLearningLesson $lesson): bool => (int) $lesson->id === $selectedLessonId);
+            if ($selected) {
+                return $selected;
+            }
+        }
+        $priority = collect($salvagePlan['ranked'] ?? [])
+            ->mapWithKeys(fn (array $row): array => [(int) $row['lesson_id'] => (float) $row['priority']]);
+
+        return $eligible->sortByDesc(fn (AgentLearningLesson $lesson): float => (float) ($priority[(int) $lesson->id] ?? 0))->first();
     }
 
     /** @return array{plan: array<int, array<string, mixed>>, contract: array<string, mixed>} */
@@ -130,13 +148,14 @@ class CausalLearningCohortPlannerService
         $base = [
             'protocol' => self::PROTOCOL,
             'generation_id' => $generationId,
-            'status' => 'no_eligible_canonical_memory',
-            'roles' => ['memory_guided', 'blinded', 'frozen_control'],
+            'status' => 'no_eligible_reproduction_source',
+            'roles' => ['memory_guided_or_hypothesis_guided', 'blinded', 'frozen_control'],
             'required_independent_windows' => (int) config('services.learning_lane.causal_fold_count', 9),
             'minimum_powered_windows' => (int) config('services.learning_lane.causal_minimum_powered_windows', 6),
             'minimum_positive_windows' => (int) config('services.learning_lane.causal_minimum_positive_windows', 4),
             'promotion_evidence' => false,
         ];
+        $base['evidence_salvage'] = app(EvidenceSalvageConveyorService::class)->plan($symbol, $timeframe, 10);
         if (! Schema::hasTable('agent_learning_lessons') || ! Schema::hasTable('agent_learning_settlements')) {
             return ['plan' => array_values($plan), 'contract' => $base];
         }
@@ -161,6 +180,13 @@ class CausalLearningCohortPlannerService
             if (! $lesson) {
                 continue;
             }
+            $sourceAdmission = app(CausalLessonAdmissionService::class)->assess($lesson);
+            if (data_get($sourceAdmission, 'research_reproduction_ready') !== true) {
+                continue;
+            }
+            $guidedRole = data_get($sourceAdmission, 'canonical_positive') === true
+                ? 'memory_guided'
+                : 'hypothesis_guided';
             $skillCartridge = app(CanonicalSkillCartridgeService::class)->retrieveForLesson($lesson);
             if (data_get($skillCartridge, 'status') !== 'compatible_cartridge_found') {
                 continue;
@@ -222,7 +248,7 @@ class CausalLearningCohortPlannerService
             if ($blindedMutation === null) {
                 continue;
             }
-            foreach (['memory_guided', 'blinded', 'frozen_control'] as $offset => $role) {
+            foreach ([$guidedRole, 'blinded', 'frozen_control'] as $offset => $role) {
                 $index = (int) $chosen[$offset];
                 $slot = (array) $plan[$index];
                 $niche = (array) data_get($slot, 'niche', []);
@@ -250,6 +276,9 @@ class CausalLearningCohortPlannerService
                     'causal_learning_cohort' => [
                         'protocol' => self::PROTOCOL,
                         'experiment_key' => $experimentKey,
+                        'experiment_kind' => $guidedRole === 'hypothesis_guided'
+                            ? 'legacy_hypothesis_reproduction'
+                            : 'memory_confirmation',
                         'role' => $role,
                         'source_lesson_id' => (int) $lesson->id,
                         'gene' => $gene,
@@ -257,6 +286,9 @@ class CausalLearningCohortPlannerService
                         'source_pair_id' => (int) $pair->id,
                         'source_candidate_agent_id' => (int) $pair->candidate_agent_id,
                         'source_control_agent_id' => (int) $pair->control_agent_id,
+                        'source_authority' => (string) data_get($sourceAdmission, 'source_authority'),
+                        'source_authority_blockers' => (array) data_get($sourceAdmission, 'authority_blockers', []),
+                        'legacy_hypothesis_grants_credit' => false,
                         'baseline_model_version_id' => (int) $pair->controlAgent->model_version_id,
                         'baseline_old_value' => $this->lessonOldValue($lesson),
                         'construction_protocol' => CausalRepairFrontierService::CONSTRUCTION_PROTOCOL,
@@ -268,9 +300,11 @@ class CausalLearningCohortPlannerService
                         // Only the guided arm may receive executable memory.
                         // Blinded/control metadata must not carry the donor
                         // intervention even when their mutations are frozen.
-                        'skill_cartridge' => $role === 'memory_guided' ? $skillCartridge : null,
+                        'skill_cartridge' => in_array($role, ['memory_guided', 'hypothesis_guided'], true)
+                            ? $skillCartridge : null,
                     ],
                     'learning_memory_required' => $role === 'memory_guided',
+                    'legacy_hypothesis_reproduction' => $role === 'hypothesis_guided',
                     'learning_memory_blinded' => $role === 'blinded',
                     'control_only' => $role === 'frozen_control',
                     'composition_lane' => 'causal_learning_confirmation',
@@ -285,7 +319,7 @@ class CausalLearningCohortPlannerService
                         $niche['specialist_role'] = 'frozen_control';
                     }
                     $slot['evolution_mode'] = 'frozen_control';
-                } elseif ($role === 'memory_guided') {
+                } elseif (in_array($role, ['memory_guided', 'hypothesis_guided'], true)) {
                     $niche['declared_gene'] = $gene;
                     $niche['declared_value'] = $value;
                     $niche['causal_learning_exact_value'] = $value;
@@ -319,6 +353,9 @@ class CausalLearningCohortPlannerService
                 'gene' => $gene,
                 'value' => $value,
                 'source_pair_id' => (int) $pair->id,
+                'guided_role' => $guidedRole,
+                'source_authority' => (string) data_get($sourceAdmission, 'source_authority'),
+                'legacy_hypothesis_grants_credit' => false,
                 'skill_cartridge_id' => (int) data_get($skillCartridge, 'cartridge_id'),
                 'baseline_model_version_id' => (int) $pair->controlAgent->model_version_id,
                 'blinded_policy' => 'cold_start_memory_blinded_selector',
@@ -343,7 +380,7 @@ class CausalLearningCohortPlannerService
     public function isolateCausalNiche(array $niche): array
     {
         $role = (string) data_get($niche, 'causal_learning_cohort.role', '');
-        if (! in_array($role, ['memory_guided', 'repair_guided', 'blinded', 'frozen_control'], true)) {
+        if (! in_array($role, ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control'], true)) {
             return $niche;
         }
 
@@ -367,7 +404,7 @@ class CausalLearningCohortPlannerService
         $niche['structural_mutation_required'] = false;
         $niche['control_only'] = $role === 'frozen_control';
 
-        if (in_array($role, ['memory_guided', 'repair_guided'], true)) {
+        if (in_array($role, ['memory_guided', 'hypothesis_guided', 'repair_guided'], true)) {
             $niche['declared_gene'] = data_get($niche, 'causal_learning_cohort.gene');
             $niche['declared_value'] = data_get($niche, 'causal_learning_cohort.value');
             $niche['causal_learning_exact_value'] = data_get($niche, 'causal_learning_cohort.value');
@@ -383,55 +420,16 @@ class CausalLearningCohortPlannerService
 
     private function canonicalPositive(AgentLearningLesson $lesson): bool
     {
-        $pairId = (int) data_get($lesson->evidence, 'pair_id', 0);
-        $pair = $pairId > 0 ? LabLearningLanePair::query()->with([
-            'controlResponseMap', 'candidateAgent.modelVersion', 'controlAgent.modelVersion',
-        ])->find($pairId) : null;
-        if (! $pair || ! $pair->isVerifiedControlPair()) {
-            return false;
-        }
-
-        $gene = (string) $lesson->parameter_key;
-        $change = (array) data_get($pair->candidateAgent?->parameter_diff, $gene, []);
-        $old = $this->lessonOldValue($lesson);
-        $new = $this->lessonValue($lesson);
-        if ($gene === '' || count((array) $pair->candidateAgent?->parameter_diff) !== 1
-            || $change === [] || ! $this->same($old, data_get($change, 'old'))
-            || ! $this->same($new, data_get($change, 'new'))
-            || ! $this->same($old, data_get($pair->controlAgent?->modelVersion?->parameters, $gene))
-            || ! $this->same($new, data_get($pair->candidateAgent?->modelVersion?->parameters, $gene))) {
-            return false;
-        }
-
-        return AgentLearningSettlement::query()
-            ->where('source_type', LabLearningLanePair::class)
-            ->where('source_id', $pairId)
-            ->where('evidence_state', 'positive')
-            ->where('hard_failure', false)
-            ->exists();
+        return data_get(app(CausalLessonAdmissionService::class)->assess($lesson), 'canonical_positive') === true;
     }
 
     private function lessonValue(AgentLearningLesson $lesson): mixed
     {
-        $value = data_get($lesson->evidence, 'new_value', data_get($lesson->evidence, 'failure_signature.new_value'));
-
-        return is_array($value) && array_key_exists('value', $value) ? $value['value'] : $value;
+        return app(CausalLessonAdmissionService::class)->newValue($lesson);
     }
 
     private function lessonOldValue(AgentLearningLesson $lesson): mixed
     {
-        $value = data_get($lesson->evidence, 'old_value', data_get($lesson->evidence, 'failure_signature.old_value'));
-
-        return is_array($value) && array_key_exists('value', $value) ? $value['value'] : $value;
-    }
-
-    private function same(mixed $left, mixed $right): bool
-    {
-        if (is_numeric($left) && is_numeric($right)) {
-            return abs((float) $left - (float) $right) < 0.000000001;
-        }
-
-        return json_encode($left, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)
-            === json_encode($right, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+        return app(CausalLessonAdmissionService::class)->oldValue($lesson);
     }
 }

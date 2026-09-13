@@ -523,6 +523,7 @@ class CanonicalLearningOutboxService
             && (int) $lesson->independent_window_count >= $required
             && in_array($protocol, [
                 'memory_guided_vs_blinded_vs_frozen_control_v1',
+                'hypothesis_guided_vs_blinded_vs_frozen_control_v1',
                 'repair_guided_vs_blinded_vs_frozen_control_v1',
                 'architecture_guided_vs_blinded_vs_frozen_control_v1',
                 'learning_lane_independent_skill_v1',

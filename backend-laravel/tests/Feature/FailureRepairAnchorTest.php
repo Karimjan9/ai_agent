@@ -84,6 +84,13 @@ class FailureRepairAnchorTest extends TestCase
         $this->assertSame($anchor->id, $retry?->id);
         $this->assertSame($snapshot, $retry?->fresh()->parameter_snapshot);
         $this->assertSame($fingerprint, $retry?->fresh()->parameter_fingerprint);
+        $lessonContract = (array) data_get($anchor->fresh()->evidence, 'failure_signature', []);
+        $this->assertSame(data_get($lessonContract, 'signature'), data_get($lessonContract, 'failure_fingerprint'));
+        $this->assertNotEmpty(data_get($lessonContract, 'root_cause_hypothesis.statement'));
+        $this->assertNotEmpty(data_get($lessonContract, 'gene_policy'));
+        $this->assertNotEmpty(data_get($lessonContract, 'context_scope'));
+        $this->assertSame('repair_or_deliberate_abstain', data_get($lessonContract, 'next_experiment.action'));
+        $this->assertSame('pending', data_get($lessonContract, 'consumption_receipt.status'));
 
         $technical = $service->recordForAgent(
             $agent->fresh(),
@@ -183,6 +190,11 @@ class FailureRepairAnchorTest extends TestCase
         $this->assertSame($anchor->id, (int) data_get($child->modelVersion->metadata, 'repair_anchor.id'));
         $this->assertTrue((bool) data_get($child->modelVersion->metadata, 'repair_anchor.snapshot_is_immutable'));
         $this->assertSame('repair_anchor_only', data_get($child->modelVersion->metadata, 'adaptive_parent_ecosystem.status'));
+        $this->assertSame('causal_repair_guided', data_get($child->modelVersion->metadata, 'causal_learning_intent.influence_type'));
+        $receipt = (array) data_get($anchor->fresh()->evidence, 'consumption_receipt', []);
+        $this->assertSame('bound_pending_outcome', data_get($receipt, 'status'));
+        $this->assertTrue((bool) data_get($receipt, 'sealed_before_execution'));
+        $this->assertSame($child->id, (int) data_get($receipt, 'lab_agent_id'));
 
         $diff = (array) $child->parameter_diff;
         $this->assertCount(1, $diff);
@@ -664,6 +676,62 @@ class FailureRepairAnchorTest extends TestCase
         $this->assertSame(3, $policy['parameter_attempts']);
         $this->assertSame(0, $policy['incomplete_cohorts']);
         $this->assertSame(0, $policy['target_improvements']);
+    }
+
+    public function test_two_independent_forward_failures_close_the_lesson_as_deliberate_abstain(): void
+    {
+        [$source, $parameters] = $this->sourceAgent();
+        $service = app(FailureRepairAnchorService::class);
+        $anchor = $service->recordForAgent(
+            $source,
+            'FAILED_PROFIT_FACTOR',
+            null,
+            ['screening_result' => ['profit_factor' => .8, 'total_trades' => 40]],
+            true,
+        );
+        $this->assertNotNull($anchor);
+        $children = collect(['primary_direction', 'reverse_direction'])->map(function (string $kind, int $index) use ($source, $anchor, $parameters): LabAgent {
+            $model = ModelVersion::create([
+                'name' => "repair-abstain-child-{$index}", 'strategy' => 'xauusd_differential_router',
+                'version' => "v2-{$index}", 'generation' => 2, 'status' => 'testing',
+                'parameters' => $parameters, 'metadata' => ['repair_anchor' => [
+                    'id' => $anchor->id, 'sibling_kind' => $kind,
+                ]], 'evidence_status' => 'valid',
+            ]);
+
+            return LabAgent::create([
+                'lab_generation_id' => $source->lab_generation_id, 'model_version_id' => $model->id,
+                'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'differential_router',
+                'origin' => 'targeted_failure_profile', 'lifecycle_status' => 'rejected',
+                'parameter_diff' => ['minimum_confidence' => ['old' => .9, 'new' => .8 - ($index / 10)]],
+            ]);
+        });
+        $evidence = (array) $anchor->evidence;
+        $evidence['consumption_receipts'] = $children->map(fn (LabAgent $child): array => [
+            'lab_agent_id' => $child->id,
+            'status' => 'bound_pending_outcome',
+            'result_link_pending' => true,
+            'promotion_evidence' => false,
+        ])->all();
+        $anchor->update(['evidence' => $evidence]);
+
+        foreach ($children as $index => $child) {
+            $service->recordRepairForwardOutcome(
+                $child->fresh('modelVersion'),
+                ['status' => 'not_confirmed', 'independent_forward_windows' => ['confirmed_windows' => 1]],
+                ['evidence_run_id' => "failed-forward-{$index}"],
+            );
+        }
+
+        $closed = $anchor->fresh();
+        $this->assertSame('quarantined', $closed->status);
+        $this->assertSame('quarantine', data_get($closed->evidence, 'latest_policy.action'));
+        $receipt = collect((array) data_get($closed->evidence, 'consumption_receipts'))
+            ->firstWhere('lab_agent_id', $children->last()->id);
+        $this->assertSame('deliberate_abstain', data_get($receipt, 'status'));
+        $this->assertSame('deliberate_abstain', data_get($receipt, 'resolution_action'));
+        $this->assertFalse((bool) data_get($receipt, 'result_link_pending', true));
+        $this->assertNotEmpty(data_get($receipt, 'closed_at'));
     }
 
     public function test_role_compatible_skill_mentor_is_applied_to_one_probe_without_becoming_parent(): void

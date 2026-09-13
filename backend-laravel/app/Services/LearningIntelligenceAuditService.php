@@ -159,7 +159,7 @@ class LearningIntelligenceAuditService
             ->pluck('model_version_id')->filter()->unique()->count();
         $performanceCredits = Schema::hasTable('lab_evolution_credit_events')
             ? DB::table('lab_evolution_credit_events')->where('symbol', $symbol)->where('timeframe', $timeframe)
-                ->where('event_type', 'performance')->where('amount', '>', 0)->count()
+                ->whereIn('event_type', ['performance_credit', 'performance'])->where('amount', '>', 0)->count()
             : 0;
         $descendantProven = Schema::hasTable('descendant_value_trials')
             ? DB::table('descendant_value_trials')->where('symbol', $symbol)->where('timeframe', $timeframe)
@@ -187,6 +187,18 @@ class LearningIntelligenceAuditService
                 : ($legacyOrGenericWinners->isNotEmpty()
                     ? 'legacy_or_generic_uplift_not_target_aligned'
                     : 'no_causal_positive_component_observed'));
+        $epochLinks = Schema::hasTable('learning_protocol_epoch_links')
+            ? DB::table('learning_protocol_epoch_links')->where('symbol', $symbol)->where('timeframe', $timeframe)
+                ->where('protocol_epoch', LearningProtocolEpochService::CURRENT_EPOCH)->get()
+            : collect();
+        $escrows = Schema::hasTable('causal_capability_escrows')
+            ? DB::table('causal_capability_escrows')->where('symbol', $symbol)->where('timeframe', $timeframe)->get()
+            : collect();
+        $bundleEffects = Schema::hasTable('contextual_instrument_bundle_effects')
+            ? DB::table('contextual_instrument_bundle_effects')->where('symbol', $symbol)->where('timeframe', $timeframe)->get()
+            : collect();
+        $goldenWorlds = app(CausalGoldenWorldHarnessService::class)->run();
+        $salvage = app(EvidenceSalvageConveyorService::class)->plan($symbol, $timeframe, 20);
 
         return [
             'protocol' => self::PROTOCOL,
@@ -212,6 +224,39 @@ class LearningIntelligenceAuditService
                 'legacy_or_unverified_confirmed_experiment_labels' => $falseConfirmedExperiments,
                 'confirmed_skill_lessons' => $confirmedSkills,
                 'confirmation_authority' => 'target_aligned_counterfactuals_plus_absolute_viability_plus_explicit_non_target_pass',
+            ],
+            'post_v2_truth_epoch' => [
+                'protocol' => LearningProtocolEpochService::PROTOCOL,
+                'epoch' => LearningProtocolEpochService::CURRENT_EPOCH,
+                'linked_entities' => $epochLinks->count(),
+                'verified_denominator_entities' => $epochLinks->where('eligible_for_v2_denominator', 1)->count(),
+                'legacy_rows_grandfathered' => false,
+                'full_chain_closure_requires' => ['generation', 'intent', 'experiment', 'pair', 'settlement', 'lesson', 'authority'],
+            ],
+            'causal_capability_lattice' => [
+                'protocol' => CausalCapabilityLatticeService::PROTOCOL,
+                'escrow_rows' => $escrows->count(),
+                'causally_confirmed_components' => $escrows->where('component_confirmed', 1)->count(),
+                'composition_eligible' => $escrows->where('composition_eligible', 1)->count(),
+                'organism_viable' => $escrows->where('organism_viable', 1)->count(),
+                'reproductive_authority' => $escrows->where('reproductive_authority', 1)->count(),
+                'absolute_viability_required_for_component' => false,
+                'absolute_viability_required_for_organism' => true,
+            ],
+            'contextual_instrument_bundle_graph' => [
+                'protocol' => ContextualInstrumentBundleGraphService::PROTOCOL,
+                'research_effect_rows' => $bundleEffects->count(),
+                'interaction_rows' => $bundleEffects->where('effect_type', 'interaction')->count(),
+                'leave_one_out_rows' => $bundleEffects->where('effect_type', 'leave_one_out')->count(),
+                'contraindications' => $bundleEffects->where('contraindicated', 1)->count(),
+                'global_inheritance_allowed' => false,
+            ],
+            'evidence_salvage_conveyor' => $salvage,
+            'golden_world_acceptance' => [
+                'protocol' => CausalGoldenWorldHarnessService::PROTOCOL,
+                'status' => $goldenWorlds['status'],
+                'worlds' => collect($goldenWorlds['worlds'])->map(fn (array $world): bool => (bool) $world['passed'])->all(),
+                'profit_guaranteed' => false,
             ],
             'knowledge_blocks' => [
                 'research_inbox' => [
@@ -285,13 +330,14 @@ class LearningIntelligenceAuditService
             ],
             'learning_status' => $status,
             'attention_required' => $status !== 'confirmed_compounding_learning_observed',
-            'next_required' => $ratchetEligible->isNotEmpty()
-                ? 'run_one_gene_repair_from_causal_positive_research_baseline'
-                : ($targetAlignedWinners->isNotEmpty()
-                    ? 'obtain_explicit_non_target_pass_then_open_research_ratchet'
-                    : ($legacyOrGenericWinners->isNotEmpty()
-                        ? 'rerun_legacy_uplift_with_declared_target_and_explicit_non_target_invariants'
-                        : 'create_a_control_paired_intervention_that_beats_control_and_blinded')),
+            'next_required' => data_get($salvage, 'selected.next_experiment')
+                ?: ($ratchetEligible->isNotEmpty()
+                    ? 'run_one_gene_repair_from_causal_positive_research_baseline'
+                    : ($targetAlignedWinners->isNotEmpty()
+                        ? 'obtain_explicit_non_target_pass_then_open_research_ratchet'
+                        : ($legacyOrGenericWinners->isNotEmpty()
+                            ? 'rerun_legacy_uplift_with_declared_target_and_explicit_non_target_invariants'
+                            : 'create_a_control_paired_intervention_that_beats_control_and_blinded'))),
             'governance' => [
                 'relative_uplift_is_not_absolute_viability' => true,
                 'research_ratchet_is_not_parent_authority' => true,

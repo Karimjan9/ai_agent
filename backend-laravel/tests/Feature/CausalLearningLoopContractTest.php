@@ -28,10 +28,12 @@ use App\Services\CausalLearningCohortPlannerService;
 use App\Services\CausalLearningCohortService;
 use App\Services\CausalLearningConfirmationService;
 use App\Services\CausalLearningMutationIntentService;
+use App\Services\CausalLessonAdmissionService;
 use App\Services\CausalParameterActivationService;
 use App\Services\CausalRepairFrontierService;
 use App\Services\CausalScreeningBehaviorPreflightService;
 use App\Services\DependencyAwareEdgeGenesisFoundryService;
+use App\Services\EvidenceSalvageConveyorService;
 use App\Services\FrozenControlScreeningAdmissionService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
@@ -41,6 +43,7 @@ use App\Services\LearningKernelService;
 use App\Services\LearningPulseService;
 use App\Services\LearningReceiptService;
 use App\Services\MarketChampionService;
+use App\Services\MultiModalLearningPortfolioService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use App\Services\TechnicalFailureClassifierService;
@@ -51,6 +54,99 @@ use Tests\TestCase;
 class CausalLearningLoopContractTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_pre_registered_learning_method_replaces_blind_independent_fallback_and_is_sealed(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $method = [
+            'protocol' => MultiModalLearningPortfolioService::PROTOCOL,
+            'learning_method' => 'bayesian_active_learning',
+            'requires_exact_frozen_control' => true,
+            'research_nursery_only' => true,
+            'source_reference_required' => false,
+            'source_reference' => null,
+            'selection_receipt' => [
+                'receipt_hash' => hash('sha256', 'bayesian-active-test'),
+                'selected_before_mutation' => true,
+                'promotion_evidence' => false,
+            ],
+            'promotion_evidence' => false,
+        ];
+        $diff = ['entry_threshold' => ['old' => 1, 'new' => 2]];
+        $service = app(CausalLearningMutationIntentService::class);
+        $plan = $service->plan(
+            $generation->fresh('laboratory'),
+            ['positive_lessons' => [], 'harmful_lessons' => [], 'uncertainty_lessons' => []],
+            'hybrid', 'profit_factor', ['entry_threshold' => 1], ['entry_threshold' => 2],
+            $diff, null, null, null, $method,
+        );
+
+        $this->assertSame('portfolio_bayesian_active_learning', $plan['influence_type']);
+        $this->assertSame('pre_sealed', data_get($plan, 'learning_method_contract.consumption_receipt.status'));
+        $this->assertTrue(data_get($plan, 'learning_method_contract.consumption_receipt.selected_before_mutation'));
+        $model = $this->model('portfolio-guided-child', ['entry_threshold' => 2]);
+        $intent = $service->seal($plan, $generation, $model);
+        $this->assertInstanceOf(AgentLearningMutationIntent::class, $intent);
+        $this->assertSame('portfolio_bayesian_active_learning', $intent->influence_type);
+        $this->assertSame(
+            $method['selection_receipt']['receipt_hash'],
+            data_get($intent->metadata, 'learning_method_contract.selection_receipt.receipt_hash'),
+        );
+        $candidate = $this->agent($generation, $model, $diff);
+        $service->bind($intent, $candidate);
+        app(LearningReceiptService::class)->issue($candidate->fresh('modelVersion'));
+        $controlModel = $this->model('portfolio-method-control', ['entry_threshold' => 1]);
+        $control = $this->agent($generation, $controlModel, []);
+        $pair = $this->pair($generation, $candidate, $control, .2, 'portfolio-method-settlement');
+        $settled = app(LearningReceiptService::class)->settle($candidate->fresh('modelVersion'), [
+            'evidence_run_id' => 'portfolio-method-run',
+            'mutation_observability' => [
+                'observable_effect' => true,
+                'target' => 'profit_factor',
+                'non_target_regression' => ['safe' => true, 'failed' => false],
+            ],
+        ], $pair);
+
+        $this->assertSame('provisional', $settled['status']);
+        $this->assertSame(
+            'settled_back_to_source_receipt',
+            data_get($settled, 'learning_method_settlement.status'),
+        );
+        $this->assertSame(
+            'settled',
+            data_get($intent->fresh()->metadata, 'learning_method_contract.consumption_receipt.status'),
+        );
+        $this->assertFalse(data_get($settled, 'learning_method_settlement.promotion_evidence'));
+    }
+
+    public function test_evidence_dependent_learning_method_fails_closed_without_source_reference(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $method = [
+            'protocol' => MultiModalLearningPortfolioService::PROTOCOL,
+            'learning_method' => 'positive_skill_replication',
+            'requires_exact_frozen_control' => true,
+            'research_nursery_only' => true,
+            'source_reference_required' => true,
+            'source_reference' => null,
+            'selection_receipt' => [
+                'receipt_hash' => hash('sha256', 'missing-positive-source'),
+                'selected_before_mutation' => true,
+            ],
+            'promotion_evidence' => false,
+        ];
+        $service = app(CausalLearningMutationIntentService::class);
+        $plan = $service->plan(
+            $generation->fresh('laboratory'), [], 'hybrid', 'profit_factor',
+            ['entry_threshold' => 1], ['entry_threshold' => 2],
+            ['entry_threshold' => ['old' => 1, 'new' => 2]], null, null, null, $method,
+        );
+        $blocked = $service->seal($plan, $generation, $this->model('missing-source-child', ['entry_threshold' => 2]));
+
+        $this->assertIsArray($blocked);
+        $this->assertSame('blocked', $blocked['status']);
+        $this->assertSame('LEARNING_METHOD_SOURCE_REFERENCE_MISSING', $blocked['reason']);
+    }
 
     public function test_causal_triplet_is_reserved_outside_the_seventeen_seat_discovery_diversity_budget(): void
     {
@@ -410,6 +506,130 @@ class CausalLearningLoopContractTest extends TestCase
         }
 
         $this->assertNull($planner->eligibleLesson('XAUUSD', 'H1', 'hybrid', $lesson->id));
+    }
+
+    public function test_legacy_positive_signal_opens_a_credit_free_post_v2_hypothesis_triplet(): void
+    {
+        [$generation, $lesson] = $this->canonicalSource();
+        $lesson->update([
+            'parameter_key' => 'high_volatility_risk_multiplier',
+            'evidence' => [...((array) $lesson->evidence),
+                'old_value' => ['value' => .5], 'new_value' => ['value' => .55],
+            ],
+        ]);
+        $pair = LabLearningLanePair::query()->findOrFail((int) data_get($lesson->evidence, 'pair_id'));
+        $pair->candidateAgent->update(['parameter_diff' => [
+            'high_volatility_risk_multiplier' => ['old' => .5, 'new' => .55],
+        ]]);
+        $pair->candidateAgent->modelVersion->update(['parameters' => ['high_volatility_risk_multiplier' => .55]]);
+        $pair->controlAgent->modelVersion->update(['parameters' => ['high_volatility_risk_multiplier' => .5]]);
+        $this->projectCartridgeForLesson($lesson->fresh());
+        $pair->update(['pair_integrity_status' => 'legacy_screen_paired']);
+        $lesson = $lesson->fresh();
+        $plan = collect(range(1, 4))->map(fn (int $slot): array => [
+            'family' => 'hybrid', 'origin' => 'test', 'target' => 'profit_factor',
+            'niche' => ['data_lane' => 'price', 'slot' => $slot],
+        ])->all();
+
+        $materialized = app(CausalLearningCohortPlannerService::class)->materialize(
+            $plan, 'XAUUSD', 'H1', $generation->id,
+        );
+
+        $this->assertSame('materialized', data_get($materialized, 'contract.status'));
+        $this->assertSame('hypothesis_guided', data_get($materialized, 'contract.guided_role'));
+        $this->assertSame('legacy_hypothesis_only', data_get($materialized, 'contract.source_authority'));
+        $this->assertFalse((bool) data_get($materialized, 'contract.legacy_hypothesis_grants_credit'));
+        $guided = collect($materialized['plan'])->first(
+            fn (array $slot): bool => data_get($slot, 'niche.causal_learning_cohort.role') === 'hypothesis_guided',
+        );
+        $this->assertNotNull($guided);
+        $this->assertSame(
+            'legacy_hypothesis_reproduction',
+            data_get($guided, 'niche.causal_learning_cohort.experiment_kind'),
+        );
+        $this->assertFalse((bool) data_get($guided, 'niche.learning_memory_required'));
+        $this->assertTrue((bool) data_get($guided, 'niche.legacy_hypothesis_reproduction'));
+
+        $intent = app(CausalLearningMutationIntentService::class)->plan(
+            $generation->fresh('laboratory'),
+            [
+                'positive_lessons' => [[
+                    'lesson_id' => $lesson->id,
+                    'parameter_key' => 'high_volatility_risk_multiplier',
+                    'provenance' => 'legacy_hypothesis_only',
+                    'match_level' => 'fresh_post_v2_reproduction_required',
+                ]],
+                'harmful_lessons' => [], 'uncertainty_lessons' => [],
+            ],
+            'hybrid', 'profit_factor',
+            ['high_volatility_risk_multiplier' => .5],
+            ['high_volatility_risk_multiplier' => .55],
+            ['high_volatility_risk_multiplier' => ['old' => .5, 'new' => .55]],
+            'hypothesis_guided',
+            (array) data_get($guided, 'niche.causal_learning_cohort.skill_cartridge'),
+        );
+        $this->assertSame('hypothesis_guided', $intent['influence_type']);
+        $this->assertSame([$lesson->id], $intent['selected_lesson_ids']);
+        $this->assertSame([], $intent['causally_applied_lesson_ids']);
+    }
+
+    public function test_salvage_and_planner_share_the_same_fail_closed_source_admission(): void
+    {
+        [, $lesson] = $this->canonicalSource();
+        $lesson->update([
+            'parameter_key' => 'high_volatility_risk_multiplier',
+            'evidence' => [...((array) $lesson->evidence),
+                'old_value' => ['value' => .5], 'new_value' => ['value' => .55],
+            ],
+        ]);
+        $pair = LabLearningLanePair::query()->findOrFail((int) data_get($lesson->evidence, 'pair_id'));
+        $pair->candidateAgent->update(['parameter_diff' => [
+            'high_volatility_risk_multiplier' => ['old' => .5, 'new' => .55],
+        ]]);
+        $pair->candidateAgent->modelVersion->update(['parameters' => ['high_volatility_risk_multiplier' => .55]]);
+        $pair->controlAgent->modelVersion->update(['parameters' => ['high_volatility_risk_multiplier' => .5]]);
+        $this->projectCartridgeForLesson($lesson->fresh());
+        $lesson = $lesson->fresh();
+
+        $admission = app(CausalLessonAdmissionService::class)->assess($lesson);
+        $ranked = app(EvidenceSalvageConveyorService::class)->rankLessons(collect([$lesson]));
+        $this->assertTrue($admission['source_ready']);
+        $this->assertTrue((bool) data_get($ranked->first(), 'contract_complete'));
+        $this->assertSame($lesson->id, app(CausalLearningCohortPlannerService::class)
+            ->eligibleLesson('XAUUSD', 'H1', 'hybrid', $lesson->id)?->id);
+
+        // A legacy-looking positive row must be demoted everywhere when its
+        // old control predates frozen_control_v2. It may buy one new proof,
+        // but the old row itself remains non-authoritative.
+        $pair->update(['pair_integrity_status' => 'legacy_screen_paired']);
+        $admission = app(CausalLessonAdmissionService::class)->assess($lesson);
+        $ranked = app(EvidenceSalvageConveyorService::class)->rankLessons(collect([$lesson]));
+        $this->assertTrue($admission['source_ready']);
+        $this->assertFalse($admission['canonical_source_ready']);
+        $this->assertSame('legacy_hypothesis_only', $admission['source_authority']);
+        $this->assertContains('verified_control_pair', $admission['authority_blockers']);
+        $this->assertArrayNotHasKey('verified_control_pair', $admission['reproduction_checks']);
+        $this->assertFalse($admission['authority_checks']['verified_control_pair']);
+        $this->assertTrue((bool) data_get($ranked->first(), 'contract_complete'));
+        $this->assertArrayNotHasKey('verified_control_pair', data_get($ranked->first(), 'contract_checks'));
+        $this->assertFalse((bool) data_get($ranked->first(), 'authority_checks.verified_control_pair'));
+        $this->assertSame('legacy_hypothesis_only', data_get($ranked->first(), 'source_authority'));
+        $this->assertSame($lesson->id, app(CausalLearningCohortPlannerService::class)
+            ->eligibleLesson('XAUUSD', 'H1', 'hybrid', $lesson->id)?->id);
+
+        // Reconstruction drift is different: if the historical baseline no
+        // longer matches the declared old value, even a research reproduction
+        // must fail closed.
+        $pair->controlAgent->modelVersion->update(['parameters' => [
+            'high_volatility_risk_multiplier' => .6,
+        ]]);
+        $admission = app(CausalLessonAdmissionService::class)->assess($lesson);
+        $ranked = app(EvidenceSalvageConveyorService::class)->rankLessons(collect([$lesson]));
+        $this->assertFalse($admission['source_ready']);
+        $this->assertContains('control_model_matches_old', $admission['blockers']);
+        $this->assertFalse((bool) data_get($ranked->first(), 'contract_complete'));
+        $this->assertNull(app(CausalLearningCohortPlannerService::class)
+            ->eligibleLesson('XAUUSD', 'H1', 'hybrid', $lesson->id));
     }
 
     public function test_planner_does_not_admit_a_descriptive_lesson_without_an_executable_cartridge(): void

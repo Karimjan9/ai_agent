@@ -35,6 +35,7 @@ class AutonomousLearningProgressDirectorService
         private EdgeHypothesisCompilerService $hypotheses,
         private CausalProgressRatchetGovernorService $ratchetGovernor,
         private AutonomousModeService $autonomy,
+        private EvidenceSalvageConveyorService $salvage,
     ) {}
 
     /** @return array<string,mixed> */
@@ -127,6 +128,10 @@ class AutonomousLearningProgressDirectorService
                 'legacy_control_debt' => $this->legacyDebt->reconcile($symbol, $timeframe),
             ] : ['status' => 'dry_run_not_mutated']),
             'causal_progress_governor' => $governor,
+            'causal_trial_terminalization' => $this->salvage->reconcileTerminalTrialOwnership(
+                $symbol, $timeframe, $apply,
+            ),
+            'evidence_salvage' => $this->salvage->planForLab($lab, 20),
         ];
 
         // Settlement and derived-projection reconciliation do not consume a

@@ -150,10 +150,10 @@ class CompositionAuthorityKernelService
             throw new \InvalidArgumentException('A frozen composition passport is required.');
         }
         $role = (string) ($experiment['role'] ?? '');
-        if (! in_array($role, ['memory_guided', 'repair_guided', 'blinded', 'frozen_control'], true)) {
+        if (! in_array($role, ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control'], true)) {
             return $passport;
         }
-        if (in_array($role, ['memory_guided', 'repair_guided'], true)
+        if (in_array($role, ['memory_guided', 'hypothesis_guided', 'repair_guided'], true)
             && (! filled($experiment['gene'] ?? null) || ! array_key_exists('value', $experiment))) {
             throw new \InvalidArgumentException('A memory-guided causal arm requires an exact gene and value.');
         }
@@ -171,10 +171,10 @@ class CompositionAuthorityKernelService
                 'experiment_key' => $experiment['experiment_key'] ?? null,
                 'role' => $role,
                 'source_lesson_id' => $experiment['source_lesson_id'] ?? null,
-                'gene' => in_array($role, ['memory_guided', 'repair_guided'], true)
+                'gene' => in_array($role, ['memory_guided', 'hypothesis_guided', 'repair_guided'], true)
                     ? ($experiment['gene'] ?? null)
                     : ($role === 'blinded' ? data_get($blindedSelector, 'gene') : null),
-                'value' => in_array($role, ['memory_guided', 'repair_guided'], true)
+                'value' => in_array($role, ['memory_guided', 'hypothesis_guided', 'repair_guided'], true)
                     ? ($experiment['value'] ?? null)
                     : ($role === 'blinded' ? data_get($blindedSelector, 'value') : null),
                 'selector_policy' => $role === 'blinded' ? 'cold_start_memory_blinded_selector' : null,
