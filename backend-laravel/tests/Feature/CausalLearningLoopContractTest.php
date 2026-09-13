@@ -1925,6 +1925,43 @@ class CausalLearningLoopContractTest extends TestCase
         ));
     }
 
+    public function test_runtime_schema_recovery_reads_specialist_contract_failure_from_immutable_run(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $agent = $this->agent($generation, $this->model('specialist-contract-schema-candidate', []), []);
+        $agent->update([
+            'lifecycle_status' => 'technical_quarantine',
+            'decision_reason' => 'Technical quarantine after bounded learning-lane transport failures; strategy verdict withheld.',
+        ]);
+        $run = LabEvaluationRun::create([
+            'run_id' => 'specialist-contract-schema-run',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id,
+            'phase' => 'screening',
+            'mode' => 'replay',
+            'status' => 'technical_error',
+            'started_at' => now()->subSecond(),
+            'finished_at' => now(),
+            'error_message' => '{"detail":[{"type":"dict_type","loc":["body","strategies",0,"specialist_context_contract"]}]}',
+        ]);
+        $method = new \ReflectionMethod(RecoverLabEvaluationErrors::class, 'isRuntimeSchemaRepairable');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke(
+            app(RecoverLabEvaluationErrors::class),
+            $agent->fresh(['generation', 'modelVersion']),
+            'screen',
+        ));
+
+        $run->update(['error_message' => '{"detail":[{"type":"dict_type","loc":["body","strategies",0,"unrelated_contract"]}]}']);
+        $this->assertFalse($method->invoke(
+            app(RecoverLabEvaluationErrors::class),
+            $agent->fresh(['generation', 'modelVersion']),
+            'screen',
+        ));
+    }
+
     public function test_causal_full_replay_admission_is_atomic_and_does_not_select_only_screen_winners(): void
     {
         [$generation] = $this->canonicalSource();

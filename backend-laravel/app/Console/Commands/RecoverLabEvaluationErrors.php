@@ -123,7 +123,7 @@ class RecoverLabEvaluationErrors extends Command
         }
 
         $agents = LabAgent::query()->with(['modelVersion', 'generation'])
-            ->whereIn('lifecycle_status', $afterCodeRepair || $afterTimeoutBudgetRepair || $afterRetryBudgetRepair || $afterDatasetContractRepair
+            ->whereIn('lifecycle_status', $afterCodeRepair || $afterRuntimeSchemaRepair || $afterTimeoutBudgetRepair || $afterRetryBudgetRepair || $afterDatasetContractRepair
                 ? ['evaluation_error', 'technical_quarantine']
                 : ['evaluation_error'])
             ->where('timeframe', $timeframe)
@@ -235,32 +235,7 @@ class RecoverLabEvaluationErrors extends Command
                             || $pythonVolumeMarkerRuntime)));
                 }
                 if ($afterRuntimeSchemaRepair) {
-                    $reason = strtolower((string) $agent->decision_reason);
-
-                    // A first-run request-schema rejection has no prior
-                    // recovery counter yet. It is still safe to retry once
-                    // under this explicit repair flag; the later
-                    // runtime_schema_recovery_attempts < 1 guard keeps it
-                    // bounded. Include FastAPI's literal_error form because
-                    // the error is a transport/runtime verdict, not strategy
-                    // evidence.
-                    // A replay may have reached the application successfully
-                    // but failed when a newly introduced evidence table was
-                    // absent from the live lab database. Once the additive
-                    // migration is applied, that historical 42S02 error is a
-                    // bounded runtime-schema recovery candidate, never a
-                    // strategy verdict.
-                    $missingRepairAnchorTable = str_contains($reason, 'lab_failure_repair_anchors')
-                        && (str_contains($reason, '42s02')
-                            || str_contains($reason, 'base table')
-                            || str_contains($reason, 'does not exist'));
-
-                    return str_contains($reason, 'unknown parameter')
-                        || str_contains($reason, 'noma\'lum parametr')
-                        || str_contains($reason, 'schema')
-                        || (str_contains($reason, 'literal_error') && str_contains($reason, 'target_direction'))
-                        || (str_contains($reason, 'dict_type') && str_contains($reason, 'volume_context'))
-                        || $missingRepairAnchorTable;
+                    return $this->isRuntimeSchemaRepairable($agent, $mode);
                 }
                 if ($afterIpcRepair) {
                     // The old bounded worker could block on a full stdout pipe
@@ -568,6 +543,46 @@ class RecoverLabEvaluationErrors extends Command
 
         return str_contains($reason, 'strategy verdict withheld')
             && (string) data_get($classification, 'reason_code') === 'REPLAY_RETRY_BUDGET_EXHAUSTED';
+    }
+
+    /**
+     * Match only a known request/runtime schema failure. The generation
+     * finalizer can replace the mutable decision reason with a generic
+     * technical-quarantine explanation, so the immutable phase run is also
+     * part of the recovery selector.
+     */
+    private function isRuntimeSchemaRepairable(LabAgent $agent, string $mode): bool
+    {
+        $latestRunReason = (string) LabEvaluationRun::query()
+            ->where('lab_agent_id', $agent->id)
+            ->where('phase', $mode === 'full' ? 'full_validation' : 'screening')
+            ->latest('id')
+            ->value('error_message');
+        $reason = strtolower(trim((string) $agent->decision_reason.' '.$latestRunReason));
+
+        // A first-run request-schema rejection has no prior recovery counter
+        // yet. The caller's runtime_schema_recovery_attempts < 1 guard keeps
+        // this explicit repair mode bounded. FastAPI request validation is a
+        // transport/runtime verdict, never strategy evidence.
+        $knownDictionaryMismatch = str_contains($reason, 'dict_type')
+            && (str_contains($reason, 'volume_context')
+                || str_contains($reason, 'specialist_context_contract'));
+
+        // A replay may have reached the application successfully but failed
+        // when a newly introduced evidence table was absent from the live lab
+        // database. Once the additive migration is applied, that historical
+        // 42S02 error is also a bounded runtime-schema recovery candidate.
+        $missingRepairAnchorTable = str_contains($reason, 'lab_failure_repair_anchors')
+            && (str_contains($reason, '42s02')
+                || str_contains($reason, 'base table')
+                || str_contains($reason, 'does not exist'));
+
+        return str_contains($reason, 'unknown parameter')
+            || str_contains($reason, 'noma\'lum parametr')
+            || str_contains($reason, 'schema')
+            || (str_contains($reason, 'literal_error') && str_contains($reason, 'target_direction'))
+            || $knownDictionaryMismatch
+            || $missingRepairAnchorTable;
     }
 
     private function hasQueuedJob(LabAgent $agent, string $mode): bool
