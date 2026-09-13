@@ -7,6 +7,7 @@ use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\ModelMarketPerformance;
+use App\Services\CanonicalSkillCartridgeService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabQueueJobInspector;
 use App\Services\LabReplayRecoveryService;
@@ -65,6 +66,11 @@ class RecoverLabFullEvaluationErrors extends Command
 
         if ((int) $afterServiceRepair + (int) $afterCodeRepair + (int) $afterProofRepair > 1) {
             $this->error('Choose only one bounded full-replay repair mode.');
+
+            return self::FAILURE;
+        }
+        if ($afterCodeRepair && $generationNumber === null) {
+            $this->error('--after-code-repair requires --generation so the repaired cohort is explicit.');
 
             return self::FAILURE;
         }
@@ -129,6 +135,7 @@ class RecoverLabFullEvaluationErrors extends Command
                     || ($afterCodeRepair && $this->isStaleTrainingWithoutEvidence($agent))
                     || ($afterProofRepair && $this->hasLegacyProofMismatch($agent)))
                 && ! $this->hasQueuedFullJob($agent)
+                && (! $afterCodeRepair || (int) data_get($agent->modelVersion?->metadata, 'full_code_repair_recovery_attempts', 0) < 1)
                 && ($afterCodeRepair || $afterProofRepair || (int) data_get($agent->modelVersion?->metadata, 'full_replay_recovery_attempts', 0) < 1)
             )
             ->take($limit)->values();
@@ -242,6 +249,9 @@ class RecoverLabFullEvaluationErrors extends Command
                 } else {
                     data_set($metadata, 'full_replay_recovery_attempts', (int) data_get($metadata, 'full_replay_recovery_attempts', 0) + 1);
                     data_set($metadata, 'last_full_replay_recovery_at', now()->utc()->toIso8601String());
+                    if ($afterCodeRepair) {
+                        data_set($metadata, 'full_code_repair_recovery_attempts', (int) data_get($metadata, 'full_code_repair_recovery_attempts', 0) + 1);
+                    }
                 }
                 // A timed-out cohort must not be reused by the repaired
                 // singleton portfolio replay path.
@@ -312,7 +322,12 @@ class RecoverLabFullEvaluationErrors extends Command
             return false;
         }
 
-        $reason = strtolower((string) $agent->decision_reason);
+        $latestRunReason = strtolower((string) LabEvaluationRun::query()
+            ->where('lab_agent_id', $agent->id)
+            ->where('phase', 'full_validation')
+            ->latest('id')
+            ->value('error_message'));
+        $reason = strtolower(trim((string) $agent->decision_reason.' '.$latestRunReason));
         $causalTransportQuarantine = $agent->generation?->trigger_type === 'learning_confirmation'
             && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
                 'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
@@ -320,8 +335,14 @@ class RecoverLabFullEvaluationErrors extends Command
             && (str_contains($reason, 'bounded learning-lane transport failures')
                 || str_contains($reason, 'bounded ai replay exceeded')
                 || str_contains($reason, 'causal confirmation fold'));
+        $legacyCartridgeFoldBudget = $agent->generation?->trigger_type === 'skill_cartridge_transplant'
+            && data_get($agent->modelVersion?->metadata, 'skill_cartridge_transplant.protocol') === CanonicalSkillCartridgeService::PROTOCOL
+            && str_contains($reason, 'causal confirmation fold')
+            && str_contains($reason, 'exceeded its 90s budget')
+            && str_contains($reason, 'no learning credit was emitted');
 
         return $causalTransportQuarantine
+            || $legacyCartridgeFoldBudget
             || str_contains($reason, 'full_replay_dataset_coverage_insufficient')
             || str_contains($reason, 'foundation_dataset_continuity_passport_invalid')
             || str_contains($reason, 'foundation training')

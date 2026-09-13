@@ -2261,6 +2261,43 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertTrue($quarantineMethod->invoke($command, $agent->fresh(['generation', 'modelVersion'])));
     }
 
+    public function test_only_legacy_ninety_second_cartridge_fold_timeout_is_code_repairable(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $generation->update(['trigger_type' => 'skill_cartridge_transplant']);
+        $model = $this->model('legacy-cartridge-timeout', [], [
+            'skill_cartridge_transplant' => [
+                'protocol' => CanonicalSkillCartridgeService::PROTOCOL,
+                'confirmation_contract' => ['protocol' => 'bounded_skill_cartridge_confirmation_v1'],
+            ],
+        ]);
+        $agent = $this->agent($generation, $model, []);
+        $agent->update([
+            'lifecycle_status' => 'technical_quarantine',
+            'decision_reason' => 'Technical quarantine after bounded learning-lane transport failures; strategy verdict withheld.',
+        ]);
+        $run = LabEvaluationRun::create([
+            'run_id' => 'legacy-cartridge-fold-timeout',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $model->id,
+            'phase' => 'full_validation',
+            'mode' => 'full',
+            'status' => 'technical_error',
+            'error_message' => 'TimeoutError: Causal confirmation fold 1 exceeded its 90s budget; remaining folds were not executed and no learning credit was emitted.',
+            'started_at' => now()->subMinute(),
+            'finished_at' => now(),
+        ]);
+        $method = new \ReflectionMethod(RecoverLabFullEvaluationErrors::class, 'isRepairableTechnicalQuarantine');
+        $method->setAccessible(true);
+        $command = app(RecoverLabFullEvaluationErrors::class);
+
+        $this->assertTrue($method->invoke($command, $agent->fresh(['generation', 'modelVersion'])));
+
+        $run->update(['error_message' => 'TimeoutError: Causal confirmation fold 1 exceeded its 240s budget; no learning credit was emitted.']);
+        $this->assertFalse($method->invoke($command, $agent->fresh(['generation', 'modelVersion'])));
+    }
+
     public function test_legacy_skill_cartridge_contract_receives_bounded_fold_budget_at_request_boundary(): void
     {
         [$generation] = $this->canonicalSource();
