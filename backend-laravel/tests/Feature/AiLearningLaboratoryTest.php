@@ -148,8 +148,7 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent): bool => filled(data_get($agent->modelVersion->metadata, 'specialist_council_membership.contextual_cell.cell_hash'))
             && filled(data_get($agent->modelVersion->metadata, 'specialist_council_membership.session_ownership.calendar_version'))
         ));
-        $this->assertTrue($xau->agents->every(fn (LabAgent $agent): bool =>
-            data_get($agent->modelVersion->metadata, 'population_group.search_mode') === 'dynamic_priority'
+        $this->assertTrue($xau->agents->every(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'population_group.search_mode') === 'dynamic_priority'
                 && filled(data_get($agent->modelVersion->metadata, 'cooperative_experiment_block.block_key'))
                 && filled(data_get($agent->modelVersion->metadata, 'cooperative_evolution_capsule.genome_hash'))
         ));
@@ -420,6 +419,7 @@ class AiLearningLaboratoryTest extends TestCase
             string $group,
         ) use ($seatCounts): bool {
             $blockType = str_replace('experiment_block:', '', $group);
+
             return data_get($checkpoint, 'protocol') === 'population_group_checkpoint_v1'
                 && data_get($checkpoint, 'checkpoint.singleton_forbidden') === true
                 && count((array) data_get($checkpoint, 'frontier_members')) === (int) ($seatCounts[$blockType] ?? 0);
@@ -780,6 +780,27 @@ class AiLearningLaboratoryTest extends TestCase
         $hybridOutput = $method->invoke($service, $hybridModel, $result, 'hybrid');
 
         $this->assertArrayNotHasKey('differential_no_regression', $hybridOutput);
+    }
+
+    public function test_empty_specialist_context_contract_serializes_as_json_object(): void
+    {
+        $service = app(LabAgentEvaluationService::class);
+        $method = new \ReflectionMethod($service, 'specialistContextContract');
+        $method->setAccessible(true);
+
+        $empty = $method->invoke($service, []);
+        $scoped = $method->invoke($service, ['target_venue_phase' => 'london_am_fix']);
+
+        $this->assertInstanceOf(\stdClass::class, $empty);
+        $this->assertSame(
+            '{"specialist_context_contract":{}}',
+            json_encode(['specialist_context_contract' => $empty], JSON_THROW_ON_ERROR),
+        );
+        $this->assertSame(['target_venue_phase' => 'london_am_fix'], $scoped);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('SPECIALIST_CONTEXT_CONTRACT_MUST_BE_OBJECT');
+        $method->invoke($service, ['london_am_fix']);
     }
 
     public function test_full_replay_projection_preserves_sealed_cohort_cache_metadata(): void

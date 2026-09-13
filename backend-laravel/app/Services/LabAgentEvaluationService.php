@@ -283,7 +283,9 @@ class LabAgentEvaluationService
                     'version' => $peer->modelVersion->version,
                     'parameters' => $peer->modelVersion->parameters ?? [],
                     'instrument_research_assignment' => $this->instrumentResearch->assignment($peer),
-                    'specialist_context_contract' => (array) data_get($peer->modelVersion->metadata, 'specialist_council_membership.contextual_cell', []),
+                    'specialist_context_contract' => $this->specialistContextContract(
+                        data_get($peer->modelVersion->metadata, 'specialist_council_membership.contextual_cell'),
+                    ),
                 ])->all(),
                 'initial_balance' => 10000, 'risk_per_trade' => 1, 'dataset_path' => $dataset,
                 'full_replay_runtime_policy' => $runtimePolicy,
@@ -452,7 +454,9 @@ class LabAgentEvaluationService
                     'target_volatility' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_volatility'), ['high_volatility', 'normal_volatility', 'low_volatility']),
                     'target_direction' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_direction'), ['BUY', 'SELL']),
                     'target_session' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_session'), ['asia', 'london', 'new_york', 'overlap']),
-                    'specialist_context_contract' => (array) data_get($peer->modelVersion->metadata, 'portfolio_research_contract.contextual_specialist_cell', []),
+                    'specialist_context_contract' => $this->specialistContextContract(
+                        data_get($peer->modelVersion->metadata, 'portfolio_research_contract.contextual_specialist_cell'),
+                    ),
                 ])->values()->all();
             }
             // M15 entries use the generation-frozen H1 regime. The Python
@@ -722,7 +726,9 @@ class LabAgentEvaluationService
                 'base_strategy' => $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $agent->strategy_family),
                 'version' => $model->version, 'parameters' => $model->parameters ?? [],
                 'instrument_research_assignment' => $this->instrumentResearch->assignment($agent),
-                'specialist_context_contract' => (array) data_get($model->metadata, 'specialist_council_membership.contextual_cell', []),
+                'specialist_context_contract' => $this->specialistContextContract(
+                    data_get($model->metadata, 'specialist_council_membership.contextual_cell'),
+                ),
             ]],
             'initial_balance' => 10000,
             // Immutable snapshot-path transport keeps the request/evidence
@@ -1865,6 +1871,23 @@ class LabAgentEvaluationService
         }
 
         return null;
+    }
+
+    /**
+     * Python's replay schema requires a JSON object for this contract. PHP's
+     * empty array otherwise serializes as `[]`, which is a different JSON
+     * type and can quarantine an otherwise valid generation before replay.
+     */
+    private function specialistContextContract(mixed $value): array|\stdClass
+    {
+        if ($value === null || $value === []) {
+            return new \stdClass;
+        }
+        if (! is_array($value) || array_is_list($value)) {
+            throw new RuntimeException('SPECIALIST_CONTEXT_CONTRACT_MUST_BE_OBJECT');
+        }
+
+        return $value;
     }
 
     /** A differential child may improve only its declared target lane. */
