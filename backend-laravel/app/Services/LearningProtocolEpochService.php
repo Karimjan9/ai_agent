@@ -49,6 +49,36 @@ class LearningProtocolEpochService
             : null;
     }
 
+    /**
+     * Seal the truth epoch at the constructor boundary of a newly inserted
+     * generation. The wasRecentlyCreated guard deliberately forbids using
+     * this method to backfill historical evidence after it has run.
+     *
+     * @return array<string,mixed>
+     */
+    public function openForNewGeneration(LabGeneration $generation, string $symbol, string $timeframe): array
+    {
+        if (! $generation->wasRecentlyCreated) {
+            throw new \RuntimeException('POST_V2_EPOCH_RETROACTIVE_BACKFILL_FORBIDDEN');
+        }
+
+        $contract = $this->generationContract();
+        $generation->update(['trigger_context' => [
+            ...((array) $generation->trigger_context),
+            'learning_protocol_epoch' => $contract,
+        ]]);
+        $link = $this->registerGeneration($generation->fresh(), $symbol, $timeframe);
+
+        return [
+            'protocol' => self::PROTOCOL,
+            'epoch' => self::CURRENT_EPOCH,
+            'generation_id' => (int) $generation->id,
+            'contract' => $contract,
+            'link' => $link,
+            'promotion_evidence' => false,
+        ];
+    }
+
     /** @return array<string,mixed> */
     public function registerGeneration(LabGeneration $generation, string $symbol, string $timeframe): array
     {

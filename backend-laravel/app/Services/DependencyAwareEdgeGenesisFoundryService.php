@@ -323,6 +323,7 @@ class DependencyAwareEdgeGenesisFoundryService
                     ...($canonicalDatasetSnapshots !== [] ? ['canonical_dataset_snapshots' => $canonicalDatasetSnapshots] : []),
                     'risk_mutation_budget' => 0, 'pre_2026_only' => true, 'research_only' => true, 'promotion_evidence' => false],
                 'data_fingerprint' => $dataHash, 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE, 'status' => 'queued', 'started_at' => now()]);
+            app(LearningProtocolEpochService::class)->openForNewGeneration($generation, $lab->symbol, $lab->timeframe);
             DB::table('edge_genesis_cohorts')->where('cohort_key', $cohortKey)->update([
                 'lab_generation_id' => $generation->id, 'status' => 'queued', 'updated_at' => now(),
             ]);
@@ -2034,6 +2035,7 @@ class DependencyAwareEdgeGenesisFoundryService
                     'canonical_dataset_snapshots' => data_get($sourceContext, 'canonical_dataset_snapshots'),
                     'risk_governor_frozen' => true, 'research_only' => true, 'promotion_evidence' => false],
                 'data_fingerprint' => $passport->data_hash, 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE, 'status' => 'queued', 'started_at' => now()]);
+            app(LearningProtocolEpochService::class)->openForNewGeneration($generation, $lab->symbol, $lab->timeframe);
             foreach ($arms as $index => $arm) {
                 $baseStrategy = (string) data_get($edgeAgent->modelVersion->metadata, 'base_strategy', 'confirmation_entry_mtf_v1');
                 $parameters = $this->attributionParameters($arm, (array) $edgeAgent->modelVersion->parameters, $baseStrategy);
@@ -4618,7 +4620,7 @@ class DependencyAwareEdgeGenesisFoundryService
             }
         }
 
-return $out;
+        return $out;
     }
 
     private function packets(): array

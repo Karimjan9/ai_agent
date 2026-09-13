@@ -115,6 +115,7 @@ class EvolutionaryAuthorityFoundryService
                     'data_hash' => $dataHash, 'execution_hash' => $executionHash, 'promotion_evidence' => false],
                 'data_fingerprint' => $dataHash, 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE, 'status' => 'queued', 'started_at' => now(),
             ]);
+            app(LearningProtocolEpochService::class)->openForNewGeneration($generation, $lab->symbol, $lab->timeframe);
             $agents = [];
             foreach (self::INCUBATOR_ARMS as $armIndex => $arm) {
                 $parameters = $this->parametersForArm($arm, $baseParameters, $skillParameters, $gene);
@@ -330,6 +331,7 @@ class EvolutionaryAuthorityFoundryService
                 'data_fingerprint' => $dataHash, 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE,
                 'status' => 'queued', 'started_at' => now(),
             ]);
+            app(LearningProtocolEpochService::class)->openForNewGeneration($generation, $lab->symbol, $lab->timeframe);
             $arms = ['mentor_control' => ['parameters' => $base, 'diff' => [], 'selection' => null], ...$selections];
             $agents = [];
             foreach ($arms as $arm => $definition) {

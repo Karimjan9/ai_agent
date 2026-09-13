@@ -62,6 +62,7 @@ class AcademyExperimentMaterializerService
                     'research_experiment_contract' => $researchContract,
                     'pre_2026_only' => true, 'research_only' => true, 'promotion_evidence' => false],
                 'data_fingerprint' => $identity['data_hash'], 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE, 'status' => 'queued', 'started_at' => now()]);
+            app(LearningProtocolEpochService::class)->openForNewGeneration($generation, $lab->symbol, $lab->timeframe);
             $agents = [];
             foreach ($compiled['arms'] as $index => $arm) {
                 $label = 'academy_t'.$trial->id.'_g'.$generation->generation.'_a'.($index + 1);
@@ -325,7 +326,7 @@ class AcademyExperimentMaterializerService
             }
         }
 
-return $out;
+        return $out;
     }
 
     private function hash(mixed $value): string
@@ -343,7 +344,7 @@ return $out;
             $value[$key] = $this->canonicalize($item);
         }
 
-return $value;
+        return $value;
     }
 
     private function blocked(string $reason): array

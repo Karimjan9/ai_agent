@@ -448,6 +448,7 @@ class CanonicalSkillCartridgeService
                     'transplant_retry' => array_intersect_key($context, array_flip(['transplant_retry_attempt', 'retry_of_generation_id', 'retry_reason'])),
                     'research_only' => true, 'promotion_evidence' => false],
                 'data_fingerprint' => $dataHash, 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE, 'status' => 'queued', 'started_at' => now()]);
+            app(LearningProtocolEpochService::class)->openForNewGeneration($generation, $lab->symbol, $lab->timeframe);
             $agents = [];
             foreach ($modes as $index => $mode) {
                 $parameters = $this->transplantParameters($mode, $base, $gene, $old, $tested, (string) $blindGene, $cartridge->strategy_family);
@@ -683,6 +684,7 @@ class CanonicalSkillCartridgeService
                     'canonical_dataset_snapshots' => data_get($baselineAgent->generation?->trigger_context, 'canonical_dataset_snapshots'),
                     'research_only' => true, 'promotion_evidence' => false], 'data_fingerprint' => $aData,
                 'population_size' => CausalCompoundingKernelService::POPULATION_SIZE, 'status' => 'queued', 'started_at' => now()]);
+            app(LearningProtocolEpochService::class)->openForNewGeneration($generation, $lab->symbol, $lab->timeframe);
             $agents = [];
             $armModels = [];
             foreach ($arms as $arm) {

@@ -68,6 +68,35 @@ class PostV2LearningProofTest extends TestCase
         $this->assertSame(1, LearningProtocolEpochLink::query()->where('eligible_for_v2_denominator', true)->count());
     }
 
+    public function test_direct_generation_constructor_opens_epoch_once_but_cannot_backfill_a_loaded_row(): void
+    {
+        [$lab] = $this->labAndGeneration([]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 2,
+            'trigger_type' => 'direct_test',
+            'trigger_context' => ['research_only' => true],
+            'population_size' => 20,
+            'status' => 'draft',
+        ]);
+        $epochs = app(LearningProtocolEpochService::class);
+
+        $opened = $epochs->openForNewGeneration($generation, 'XAUUSD', 'H1');
+
+        $this->assertSame(LearningProtocolEpochService::CURRENT_EPOCH, $opened['epoch']);
+        $this->assertSame(LearningProtocolEpochService::CURRENT_EPOCH, data_get($generation->fresh()->trigger_context, 'learning_protocol_epoch.epoch'));
+        $this->assertDatabaseHas('learning_protocol_epoch_links', [
+            'entity_type' => LabGeneration::class,
+            'entity_id' => $generation->id,
+            'protocol_epoch' => LearningProtocolEpochService::CURRENT_EPOCH,
+            'eligible_for_v2_denominator' => false,
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('POST_V2_EPOCH_RETROACTIVE_BACKFILL_FORBIDDEN');
+        $epochs->openForNewGeneration($generation->fresh(), 'XAUUSD', 'H1');
+    }
+
     public function test_component_credit_does_not_require_absolute_profit_or_grant_parent_authority(): void
     {
         $result = app(CausalCapabilityLatticeService::class)->evaluate([

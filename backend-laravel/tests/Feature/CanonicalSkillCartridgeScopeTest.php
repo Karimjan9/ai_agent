@@ -10,6 +10,7 @@ use App\Models\LabSkillZooEntry;
 use App\Models\ModelVersion;
 use App\Services\CanonicalSkillCartridgeService;
 use App\Services\CausalCompoundingKernelService;
+use App\Services\LearningProtocolEpochService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -78,6 +79,13 @@ class CanonicalSkillCartridgeScopeTest extends TestCase
                 && (int) data_get($agent->modelVersion->metadata, 'causal_baseline_model_version_id') === (int) $baseline->id,
         ));
         $this->assertSame(CausalCompoundingKernelService::PROTOCOL, data_get($proofGeneration->trigger_context, 'causal_compounding_kernel.protocol'));
+        $this->assertSame(LearningProtocolEpochService::CURRENT_EPOCH, data_get($proofGeneration->trigger_context, 'learning_protocol_epoch.epoch'));
+        $this->assertDatabaseHas('learning_protocol_epoch_links', [
+            'entity_type' => LabGeneration::class,
+            'entity_id' => $proofGeneration->id,
+            'protocol_epoch' => LearningProtocolEpochService::CURRENT_EPOCH,
+            'eligible_for_v2_denominator' => false,
+        ]);
         $this->assertSame(14, data_get($proofGeneration->trigger_context, 'causal_compounding_kernel.paired_discovery_seats'));
         $this->assertSame(1, data_get($proofGeneration->trigger_context, 'causal_compounding_kernel.uncertainty_abstain_seats'));
         Queue::assertPushed(EvaluateLabAgentJob::class, 20);
@@ -133,6 +141,7 @@ class CanonicalSkillCartridgeScopeTest extends TestCase
         $this->assertSame(5, $primary->pluck('modelVersion.strategy')->unique()->count());
         $this->assertTrue($generation->agents->every(fn (LabAgent $agent): bool => $agent->parent_a_model_version_id === null));
         $this->assertSame(CausalCompoundingKernelService::PROTOCOL, data_get($generation->trigger_context, 'causal_compounding_kernel.protocol'));
+        $this->assertSame(LearningProtocolEpochService::CURRENT_EPOCH, data_get($generation->trigger_context, 'learning_protocol_epoch.epoch'));
         Queue::assertPushed(EvaluateLabAgentJob::class, 20);
     }
 
