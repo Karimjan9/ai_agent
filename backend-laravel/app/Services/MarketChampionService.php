@@ -180,31 +180,25 @@ class MarketChampionService
                 );
             }
             if ($cartridgeTransplant) {
-                try {
-                    $result['skill_cartridge_transplant'] = app(CanonicalSkillCartridgeService::class)->settleTransplantOutcome(
-                        $agent->fresh(['modelVersion', 'generation.agents.modelVersion']),
-                    );
-                } catch (\Throwable $exception) {
-                    report($exception);
-                    $result['skill_cartridge_transplant'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
-                }
-
-                // Transplant outcomes are component evidence only.  They are
-                // intentionally barred from the ordinary paper/champion path.
-                return $this->recordCausalResearchObservation(
+                // The current arm must be visible to the cohort settler. If
+                // settlement runs first, the final arriving arm observes
+                // itself as pending and no later arm exists to close it.
+                return $this->recordThenSettleCausalResearchObservation(
                     $model, $agent, $family, $symbol, $timeframe, $fitness, $forward, $sampleCount,
-                    $observedForwardWindows, $wins, $result,
+                    $observedForwardWindows, $wins, $result, 'skill_cartridge_transplant',
+                    fn (): array => app(CanonicalSkillCartridgeService::class)->settleTransplantOutcome(
+                        $agent->fresh(['modelVersion', 'generation.agents.modelVersion']),
+                    ),
                 );
             }
             if ($cartridgeInteraction) {
-                try {
-                    $result['skill_cartridge_interaction'] = app(CanonicalSkillCartridgeService::class)->settleInteractionOutcome($agent->fresh(['modelVersion', 'generation.agents.modelVersion']));
-                } catch (\Throwable $exception) {
-                    report($exception);
-                    $result['skill_cartridge_interaction'] = ['status' => 'settlement_error', 'promotion_evidence' => false];
-                }
-
-                return $this->recordCausalResearchObservation($model, $agent, $family, $symbol, $timeframe, $fitness, $forward, $sampleCount, $observedForwardWindows, $wins, $result);
+                return $this->recordThenSettleCausalResearchObservation(
+                    $model, $agent, $family, $symbol, $timeframe, $fitness, $forward, $sampleCount,
+                    $observedForwardWindows, $wins, $result, 'skill_cartridge_interaction',
+                    fn (): array => app(CanonicalSkillCartridgeService::class)->settleInteractionOutcome(
+                        $agent->fresh(['modelVersion', 'generation.agents.modelVersion']),
+                    ),
+                );
             }
             if ($edgeGenesis) {
                 try {
@@ -1507,6 +1501,59 @@ class MarketChampionService
             ];
         }
         $performance->update(['metrics' => $result]);
+
+        return $performance->fresh();
+    }
+
+    /**
+     * Persist the arriving arm before asking a multi-arm research authority
+     * to settle its cohort. Ordinary models never enter this helper and keep
+     * the normal champion/paper evaluation pipeline unchanged.
+     *
+     * @param  callable(): array<string,mixed>  $settle
+     */
+    private function recordThenSettleCausalResearchObservation(
+        ModelVersion $model,
+        LabAgent $agent,
+        string $family,
+        string $symbol,
+        string $timeframe,
+        int $fitness,
+        float $forward,
+        int $sampleCount,
+        int $observedForwardWindows,
+        int $positiveForwardWindows,
+        array $result,
+        string $settlementMetric,
+        callable $settle,
+    ): ModelMarketPerformance {
+        // Transplant and interaction outcomes are component evidence only.
+        // They remain barred from ordinary paper/champion authority.
+        $performance = $this->recordCausalResearchObservation(
+            $model,
+            $agent,
+            $family,
+            $symbol,
+            $timeframe,
+            $fitness,
+            $forward,
+            $sampleCount,
+            $observedForwardWindows,
+            $positiveForwardWindows,
+            $result,
+        );
+
+        try {
+            $settlement = $settle();
+        } catch (\Throwable $exception) {
+            report($exception);
+            $settlement = ['status' => 'settlement_error', 'promotion_evidence' => false];
+        }
+
+        $performance->update(['metrics' => [
+            ...((array) $performance->metrics),
+            $settlementMetric => $settlement,
+        ]]);
 
         return $performance->fresh();
     }

@@ -2,10 +2,16 @@
 
 namespace Tests\Feature;
 
-use App\Models\EvolutionProposal;
+use App\Models\AiLaboratory;
 use App\Models\EconomicEvent;
+use App\Models\EvolutionProposal;
+use App\Models\LabAgent;
+use App\Models\LabGeneration;
+use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
+use App\Services\CanonicalSkillCartridgeService;
 use App\Services\EvolutionProposalApplicationService;
+use App\Services\ExecutionContractService;
 use App\Services\MarketChampionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -37,14 +43,14 @@ class ChampionChallengerCycleTest extends TestCase
         $this->assertSame('forward_validated', $first->status);
         $service->recordPaperResult($first, ['sample_count' => 50, 'profit_factor' => 1.3, 'max_drawdown' => 8, 'net_profit_percent' => 4]);
         $this->grantPaperAuthority($champion);
-        $service->finalizeHoldout($first, ['score'=>72,'result'=>['profit_factor'=>1.4,'max_drawdown_percent'=>9,'total_trades'=>40,'monte_carlo'=>['risk_of_ruin_percent'=>4]]]);
+        $service->finalizeHoldout($first, ['score' => 72, 'result' => ['profit_factor' => 1.4, 'max_drawdown_percent' => 9, 'total_trades' => 40, 'monte_carlo' => ['risk_of_ruin_percent' => 4]]]);
 
         $second = $service->evaluate('breakout_v2', 'XAUUSD', 'H1', 84, $this->resultMetrics(80, [80, 79, 81]));
         $this->assertSame('forward_validated', $second->status);
         $this->assertDatabaseHas('model_market_performance', ['model_version_id' => $champion->id, 'status' => 'champion']);
         $service->recordPaperResult($second, ['sample_count' => 55, 'profit_factor' => 1.3, 'max_drawdown' => 9, 'net_profit_percent' => 5]);
         $this->grantPaperAuthority($challenger);
-        $service->finalizeHoldout($second, ['score'=>82,'result'=>['profit_factor'=>1.5,'max_drawdown_percent'=>8,'total_trades'=>50,'monte_carlo'=>['risk_of_ruin_percent'=>3]]]);
+        $service->finalizeHoldout($second, ['score' => 82, 'result' => ['profit_factor' => 1.5, 'max_drawdown_percent' => 8, 'total_trades' => 50, 'monte_carlo' => ['risk_of_ruin_percent' => 3]]]);
 
         $this->assertDatabaseHas('model_market_performance', [
             'model_version_id' => $challenger->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'status' => 'champion',
@@ -137,6 +143,57 @@ class ChampionChallengerCycleTest extends TestCase
         ]);
     }
 
+    public function test_transplant_cohort_settles_only_after_the_arriving_arm_is_persisted(): void
+    {
+        $model = $this->researchCohortModel('skill_cartridge_transplant');
+        $mock = \Mockery::mock(CanonicalSkillCartridgeService::class);
+        $mock->shouldReceive('settleTransplantOutcome')->once()
+            ->andReturnUsing(function (LabAgent $agent) use ($model): array {
+                $this->assertTrue(ModelMarketPerformance::query()
+                    ->where('model_version_id', $model->id)
+                    ->where('symbol', 'XAUUSD')
+                    ->where('timeframe', 'H1')
+                    ->exists(), 'The arriving arm must be persisted before cohort settlement.');
+                $this->assertSame($model->id, $agent->model_version_id);
+
+                return ['status' => 'settled', 'pending_arms' => 0, 'promotion_evidence' => false];
+            });
+        $this->app->instance(CanonicalSkillCartridgeService::class, $mock);
+
+        $performance = app(MarketChampionService::class)->evaluate(
+            $model->strategy, 'XAUUSD', 'H1', 10, $this->resultMetrics(1, [1]), $model,
+        );
+
+        $this->assertSame('rejected', $performance->status);
+        $this->assertSame('settled', data_get($performance->metrics, 'skill_cartridge_transplant.status'));
+        $this->assertSame(0, data_get($performance->metrics, 'skill_cartridge_transplant.pending_arms'));
+    }
+
+    public function test_interaction_cohort_settles_only_after_the_arriving_arm_is_persisted(): void
+    {
+        $model = $this->researchCohortModel('skill_cartridge_interaction');
+        $mock = \Mockery::mock(CanonicalSkillCartridgeService::class);
+        $mock->shouldReceive('settleInteractionOutcome')->once()
+            ->andReturnUsing(function (LabAgent $agent) use ($model): array {
+                $this->assertTrue(ModelMarketPerformance::query()
+                    ->where('model_version_id', $model->id)
+                    ->where('symbol', 'XAUUSD')
+                    ->where('timeframe', 'H1')
+                    ->exists(), 'The arriving arm must be persisted before interaction settlement.');
+                $this->assertSame($model->id, $agent->model_version_id);
+
+                return ['status' => 'synergistic', 'promotion_evidence' => false];
+            });
+        $this->app->instance(CanonicalSkillCartridgeService::class, $mock);
+
+        $performance = app(MarketChampionService::class)->evaluate(
+            $model->strategy, 'XAUUSD', 'H1', 10, $this->resultMetrics(1, [1]), $model,
+        );
+
+        $this->assertSame('rejected', $performance->status);
+        $this->assertSame('synergistic', data_get($performance->metrics, 'skill_cartridge_interaction.status'));
+    }
+
     public function test_legacy_proposal_apply_is_disabled_without_creating_a_model_version(): void
     {
         $parent = ModelVersion::create($this->model('breakout_v1', 'v1'));
@@ -213,9 +270,52 @@ class ChampionChallengerCycleTest extends TestCase
         ];
     }
 
+    private function researchCohortModel(string $contract): ModelVersion
+    {
+        $laboratory = AiLaboratory::create([
+            'name' => 'Persist Before Settlement',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'],
+            'is_active' => true,
+            'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $laboratory->id,
+            'generation' => 1,
+            'trigger_type' => $contract,
+            'trigger_context' => [],
+            'population_size' => 1,
+            'status' => 'running',
+        ]);
+        $model = ModelVersion::create([
+            ...$this->model('hybrid', 'v1'),
+            'metadata' => [
+                'base_strategy' => 'hybrid',
+                $contract => [
+                    'protocol' => CanonicalSkillCartridgeService::PROTOCOL,
+                    'promotion_evidence' => false,
+                ],
+            ],
+            'evidence_status' => 'valid',
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $generation->id,
+            'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'origin' => $contract,
+            'lifecycle_status' => 'training',
+            'parameter_diff' => [],
+        ]);
+
+        return $model;
+    }
+
     private function resultMetrics(float $forward, array $windows): array
     {
-        $executionContract = app(\App\Services\ExecutionContractService::class)->for('XAUUSD', 'H1');
+        $executionContract = app(ExecutionContractService::class)->for('XAUUSD', 'H1');
 
         return [
             'forward_score' => $forward, 'forward_window_scores' => $windows,
