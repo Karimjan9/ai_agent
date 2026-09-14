@@ -1,6 +1,7 @@
 const php = process.env.PHP_BINARY || 'php';
 const python = process.env.PYTHON_BINARY || 'python';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const runtimeTokenFile = path.resolve(__dirname, '..', 'runtime', 'internal-api.token');
 const legacyTokenFile = path.join(__dirname, 'storage', 'app', 'secrets', 'internal-api.token');
@@ -43,6 +44,13 @@ const externalWebServer = process.env.WEB_SERVER_MODE === 'external' || process.
 // loaded by Node/PM2, so the fallback must not silently resurrect the slower
 // database queue when PM2 is started without an inherited environment.
 const queueConnection = process.env.QUEUE_CONNECTION || 'redis';
+const availableCpuCount = typeof os.availableParallelism === 'function'
+  ? os.availableParallelism()
+  : os.cpus().length;
+const configuredScreeningCapacity = String(sharedEnv.AI_SCREEN_REPLAY_CONCURRENCY).trim().toLowerCase();
+const screeningWorkerCount = configuredScreeningCapacity === 'auto' || configuredScreeningCapacity === ''
+  ? (availableCpuCount <= 4 ? 1 : 2)
+  : Math.max(1, Math.min(2, Number.parseInt(configuredScreeningCapacity, 10) || 1));
 
 // A sealed release is optional for local development and fail-closed when
 // explicitly enabled in production. The preflight covers every app in this
@@ -154,7 +162,9 @@ module.exports = {
     // so already-serialized jobs cannot be stranded after a deploy.
     worker('lab-replay', 'lab-full-validation,lab-frontier', 4200),
     worker('lab-screening-a', 'lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', 2400),
-    worker('lab-screening-b', 'lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', 2400),
+    ...(screeningWorkerCount > 1
+      ? [worker('lab-screening-b', 'lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', 2400)]
+      : []),
     worker('lab-learning', 'lab-learning', 900),
     // Large historical downloads/upserts are isolated from both scheduler
     // liveness and canonical learning settlement throughput.

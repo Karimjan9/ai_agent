@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Console\Commands\PromoteLabFrontier;
 use App\Jobs\EvaluateLabAgentJob;
+use App\Jobs\EvaluateLabScreeningBatchJob;
 use App\Jobs\Middleware\PreferFullValidationQueue;
 use App\Models\AgentLearningLesson;
 use App\Models\AiLaboratory;
@@ -1795,6 +1796,7 @@ class AiLearningLaboratoryTest extends TestCase
         $screen = new EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
         $full = new EvaluateLabAgentJob(1, 'XAUUSD', 'full');
         $frontier = new EvaluateLabAgentJob(1, 'XAUUSD', 'screen', null, 'lab-frontier');
+        $screenBatch = new EvaluateLabScreeningBatchJob([1], 'XAUUSD');
 
         $this->assertSame('lab-screening', $screen->queue);
         $this->assertSame('lab-full-validation', $full->queue);
@@ -1802,9 +1804,11 @@ class AiLearningLaboratoryTest extends TestCase
 
         $screenMiddleware = collect($screen->middleware());
         $fullMiddleware = collect($full->middleware());
+        $screenBatchMiddleware = collect($screenBatch->middleware());
 
         $this->assertInstanceOf(SkipIfBatchCancelled::class, $screenMiddleware->first());
         $this->assertInstanceOf(SkipIfBatchCancelled::class, $fullMiddleware->first());
+        $this->assertInstanceOf(SkipIfBatchCancelled::class, $screenBatchMiddleware->first());
         $this->assertTrue($screenMiddleware->contains(fn ($middleware): bool => $middleware instanceof PreferFullValidationQueue));
         $this->assertTrue($fullMiddleware->contains(fn ($middleware): bool => $middleware instanceof PreferFullValidationQueue));
     }

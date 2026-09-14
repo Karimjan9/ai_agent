@@ -839,6 +839,14 @@ class LabLifecycleOrchestrator
         }
 
         foreach ($generation->agents()->whereIn('lifecycle_status', ['draft', 'queued'])->cursor() as $agent) {
+            // Explicit technical recovery owns its frozen contract and queue
+            // batch. If that batch is cancelled or disappears, silently
+            // replacing it with an ordinary job would drop both the recovery
+            // contract and batch cancellation authority. Fail closed and let
+            // the bounded recovery/reconciliation path decide what happens.
+            if ($this->isExplicitTechnicalRecoveryDispatch($agent)) {
+                continue;
+            }
             if ($this->agentHasScreeningJob((int) $agent->id)) {
                 continue;
             } // idempotency
@@ -900,6 +908,27 @@ class LabLifecycleOrchestrator
     private function agentHasScreeningJob(int $agentId): bool
     {
         return $this->queueJobs->hasAgentJob($agentId, [(string) config('services.lab_queue.screening_queue', 'lab-screening')]);
+    }
+
+    private function isExplicitTechnicalRecoveryDispatch(LabAgent $agent): bool
+    {
+        $metadata = (array) ($agent->modelVersion?->metadata ?? []);
+        $attempts = (int) data_get($metadata, 'evaluator_recovery_attempts', 0);
+        $lastRecovery = data_get($metadata, 'last_evaluator_recovery_at');
+        if ($attempts < 1 || ! is_string($lastRecovery) || trim($lastRecovery) === '') {
+            return false;
+        }
+
+        try {
+            $recoveryAt = Carbon::parse($lastRecovery);
+        } catch (Throwable) {
+            return false;
+        }
+
+        // Model metadata can be cloned into a later descendant. Only a
+        // recovery recorded after this exact agent was created owns its queue
+        // admission; inherited history must not suppress ordinary screening.
+        return $agent->created_at !== null && $recoveryAt->greaterThanOrEqualTo($agent->created_at);
     }
 
     private function agentHasFullJob(int $agentId): bool

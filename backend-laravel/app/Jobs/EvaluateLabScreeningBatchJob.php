@@ -6,8 +6,8 @@ use App\Exceptions\ReplayLaneBusyException;
 use App\Jobs\Middleware\PreferFullValidationQueue;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
-use App\Services\LabAgentEvaluationService;
 use App\Services\FrozenControlScreeningAdmissionService;
+use App\Services\LabAgentEvaluationService;
 use App\Services\LearningTechnicalCircuitBreakerService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
@@ -15,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\SkipIfBatchCancelled;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Throwable;
@@ -29,8 +30,11 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
     use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 0;
+
     public int $maxExceptions = 3;
+
     public int $timeout = 2400;
+
     public int $uniqueFor = 21600;
 
     /** @var array<int, int> */
@@ -42,9 +46,8 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
         public ?int $screeningSlot = null,
         public ?int $labGenerationId = null,
         public string $timeframe = 'H1',
-    public string $jobSchemaVersion = 'lab_screening_batch_v2',
-    )
-    {
+        public string $jobSchemaVersion = 'lab_screening_batch_v2',
+    ) {
         $this->labAgentIds = array_values(array_unique(array_map('intval', $labAgentIds)));
         if (count($this->labAgentIds) < 1 || count($this->labAgentIds) > 6) {
             throw new \InvalidArgumentException('Screening batch 1–6 agent oralig‘ida bo‘lishi kerak.');
@@ -67,6 +70,10 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
     public function middleware(): array
     {
         return [
+            // A cancelled cohort must be consumed before fairness or replay
+            // mutex middleware can release it. Otherwise it may loop without
+            // ever reaching the handle()-level cancellation guard.
+            new SkipIfBatchCancelled,
             new PreferFullValidationQueue('screen'),
             (new WithoutOverlapping($this->screeningMutexKey()))
                 ->shared()
@@ -102,8 +109,7 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
         LabAgentEvaluationService $service,
         FrozenControlScreeningAdmissionService $controlAdmission,
         LearningTechnicalCircuitBreakerService $technicalBreaker,
-    ): void
-    {
+    ): void {
         if ($this->batch()?->cancelled()) {
             return;
         }
@@ -114,6 +120,7 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
             // screening slot can still dequeue a candidate first, so release
             // it without creating a strategy/technical verdict.
             $this->release(30);
+
             return;
         }
         if ($admission['status'] === 'blocked') {
@@ -124,6 +131,7 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
                     'lifecycle_status' => 'technical_quarantine',
                     'decision_reason' => 'Frozen control admission failed before screening; strategy verdict withheld: '.$reasons.'.',
                 ]);
+
             return;
         }
 
@@ -140,6 +148,7 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
             // deferred before opening evidence or sealed a retry_released run
             // for the narrow post-preflight race.
             $this->release(max(30, (int) config('services.lab_queue.screening_busy_release_seconds', 60)));
+
             return;
         }
 

@@ -84,6 +84,38 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->assertCount(1, LabGeneration::all());
     }
 
+    public function test_explicit_recovery_owns_its_screen_dispatch_without_blocking_ordinary_or_descendant_models(): void
+    {
+        $method = new \ReflectionMethod(LabLifecycleOrchestrator::class, 'isExplicitTechnicalRecoveryDispatch');
+        $method->setAccessible(true);
+        $orchestrator = app(LabLifecycleOrchestrator::class);
+
+        $ordinary = new LabAgent;
+        $ordinary->created_at = now()->subHour();
+        $ordinary->setRelation('modelVersion', new ModelVersion(['metadata' => []]));
+
+        $recovery = new LabAgent;
+        $recovery->created_at = now()->subHour();
+        $recovery->setRelation('modelVersion', new ModelVersion(['metadata' => [
+            'evaluator_recovery_attempts' => 1,
+            'last_evaluator_recovery_at' => now()->toIso8601String(),
+        ]]));
+
+        $descendant = new LabAgent;
+        $descendant->created_at = now();
+        $descendant->setRelation('modelVersion', new ModelVersion(['metadata' => [
+            'evaluator_recovery_attempts' => 1,
+            'last_evaluator_recovery_at' => now()->subDay()->toIso8601String(),
+        ]]));
+
+        $this->assertFalse($method->invoke($orchestrator, $ordinary));
+        $this->assertTrue($method->invoke($orchestrator, $recovery));
+        $this->assertFalse(
+            $method->invoke($orchestrator, $descendant),
+            'Inherited recovery history must not suppress an ordinary descendant model.',
+        );
+    }
+
     public function test_audited_terminal_generation_routes_the_successor_to_the_data_edge_root_portfolio(): void
     {
         $lab = $this->seedLaboratory();

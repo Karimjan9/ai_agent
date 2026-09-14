@@ -91,7 +91,9 @@ def _screen_replay_capacity(cpu_count: int | None = None) -> int:
     default = 1 if available_cpus <= 4 else 2
     configured_value = os.getenv("AI_SCREEN_REPLAY_CONCURRENCY", "auto").strip().lower()
     try:
-        configured = default if configured_value in {"", "auto"} else int(configured_value)
+        configured = (
+            default if configured_value in {"", "auto"} else int(configured_value)
+        )
     except ValueError:
         configured = default
     return max(1, configured)
@@ -928,6 +930,13 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     include_differential_pair=False,
                     lightweight=True,
                 ).model_dump()
+                _write_replay_checkpoint(
+                    str(checkpoint_key),
+                    "opportunity_replay_ready",
+                    resume_manifest,
+                    candidate=candidate_label,
+                    rows=len(opportunity_df),
+                )
                 # Tier 2 is the only screen allowed to make a survival claim.
                 # An archive shorter than 5k is an evidence gap, not failure.
                 if survival_df is not None:
@@ -946,7 +955,20 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                         survival_df,
                         prepared_snapshot=survival_signal,
                         lightweight=True,
+                        # Record views implement the same get/index/copy/items
+                        # contract used by the canonical pandas-Series path,
+                        # including complete decision-trace emission. On small
+                        # hosts repeated df.iloc access made one 5k screening
+                        # candidate exceed the bounded 780s deadline.
+                        fast_stateful=True,
                     ).model_dump()
+                    _write_replay_checkpoint(
+                        str(checkpoint_key),
+                        "primary_replay_ready",
+                        resume_manifest,
+                        candidate=candidate_label,
+                        rows=len(survival_df),
+                    )
                     admission = _screening_robustness_admission(incremental_result)
                     survival_started = time.perf_counter()
                     survival = (
@@ -1024,6 +1046,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "opportunity_view_rows": len(opportunity_df),
                     "signal_snapshot_per_candidate": True,
                     "primary_trace": bool(strategy_payload.emit_decision_trace),
+                    "primary_stateful_executor": "record_view_v2",
                     "opportunity_trace": False,
                     "stateful_subreplay_executor": "record_view_v2",
                     "stateful_subreplay_parity": "stateful_subreplay_parity_v1",
@@ -1523,10 +1546,11 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
     """Return a deadline that is shorter than the Laravel transport budget."""
     runtime_identifiers = [payload.strategy, payload.base_strategy, payload.version]
     for member in [*payload.strategies, *payload.portfolio_members]:
-        runtime_identifiers.extend([member.strategy, member.base_strategy, member.version])
+        runtime_identifiers.extend(
+            [member.strategy, member.base_strategy, member.version]
+        )
     is_differential = any(
-        "differential" in str(value).lower()
-        for value in runtime_identifiers
+        "differential" in str(value).lower() for value in runtime_identifiers
     )
 
     confirmation_contracts = (payload.policy_context or {}).get(

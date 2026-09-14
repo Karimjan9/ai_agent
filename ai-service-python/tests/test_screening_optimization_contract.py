@@ -13,7 +13,10 @@ from app.services.backtester import (
     run_simple_ema_rsi_backtest_on_dataframe,
     tail_feature_snapshot,
 )
-from app.services.market_adaptive_replay import MarketAdaptiveReplayService, _powered_survival_assessment
+from app.services.market_adaptive_replay import (
+    MarketAdaptiveReplayService,
+    _powered_survival_assessment,
+)
 from app.services.replay_parity import compare_stateful_replay
 
 
@@ -22,15 +25,17 @@ def _candles(count: int = 620) -> list[dict[str, object]]:
     rows = []
     for index in range(count):
         close = 100.0 + ((index % 37) * 0.08) + (index * 0.01)
-        rows.append({
-            "time": (start + timedelta(hours=index)).isoformat(),
-            "open": close - 0.03,
-            "high": close + 0.12,
-            "low": close - 0.12,
-            "close": close,
-            "volume": 1000 + index,
-            "volume_available": True,
-        })
+        rows.append(
+            {
+                "time": (start + timedelta(hours=index)).isoformat(),
+                "open": close - 0.03,
+                "high": close + 0.12,
+                "low": close - 0.12,
+                "close": close,
+                "volume": 1000 + index,
+                "volume_available": True,
+            }
+        )
     return rows
 
 
@@ -68,7 +73,9 @@ def test_historical_evolution_screen_rejects_2026_paper_candles():
     paper.loc[0, "time"] = "2026-01-01T00:00:00+00:00"
     try:
         _assert_historical_evolution_screen_source(payload, paper)
-        raise AssertionError("2026 paper candle historical evolution screeniga qabul qilindi.")
+        raise AssertionError(
+            "2026 paper candle historical evolution screeniga qabul qilindi."
+        )
     except ValueError as exception:
         assert "pre-2026 foundation" in str(exception)
 
@@ -83,7 +90,7 @@ def test_powered_survival_does_not_treat_one_losing_trade_as_a_temporal_failure(
         ],
         minimum_trades=5,
         minimum_powered_windows=3,
-        minimum_pass_ratio=.70,
+        minimum_pass_ratio=0.70,
     )
 
     assert assessment["status"] == "passed"
@@ -96,13 +103,16 @@ def test_powered_survival_keeps_repeatable_catastrophic_loss_as_hard_failure():
         [
             {"window": "chunk_1", "trades": 8, "profit_factor": 1.1},
             {
-                "window": "chunk_2", "trades": 8, "profit_factor": 0.3,
-                "net_profit_percent": -4.2, "max_drawdown_percent": 8.1,
+                "window": "chunk_2",
+                "trades": 8,
+                "profit_factor": 0.3,
+                "net_profit_percent": -4.2,
+                "max_drawdown_percent": 8.1,
             },
         ],
         minimum_trades=8,
         minimum_powered_windows=2,
-        minimum_pass_ratio=.67,
+        minimum_pass_ratio=0.67,
     )
 
     assert assessment["status"] == "catastrophic_failure"
@@ -116,13 +126,16 @@ def test_powered_low_pf_without_material_loss_is_not_a_catastrophic_verdict():
         [
             {"window": "chunk_1", "trades": 8, "profit_factor": 1.1},
             {
-                "window": "chunk_2", "trades": 8, "profit_factor": 0.3,
-                "net_profit_percent": -0.4, "max_drawdown_percent": 1.2,
+                "window": "chunk_2",
+                "trades": 8,
+                "profit_factor": 0.3,
+                "net_profit_percent": -0.4,
+                "max_drawdown_percent": 1.2,
             },
         ],
         minimum_trades=8,
         minimum_powered_windows=2,
-        minimum_pass_ratio=.67,
+        minimum_pass_ratio=0.67,
     )
 
     assert assessment["status"] == "failed"
@@ -136,15 +149,32 @@ def test_bounded_cohort_builds_features_once_and_keeps_primary_trace():
         evaluation_mode="incremental",
         candles=_candles(),
         strategies=[
-            {"strategy": "ema_rsi_v1", "base_strategy": "ema_rsi_v1", "version": "a", "parameters": {}},
-            {"strategy": "ema_rsi_v1", "base_strategy": "ema_rsi_v1", "version": "b", "parameters": {"ema_fast": 51}},
+            {
+                "strategy": "ema_rsi_v1",
+                "base_strategy": "ema_rsi_v1",
+                "version": "a",
+                "parameters": {},
+            },
+            {
+                "strategy": "ema_rsi_v1",
+                "base_strategy": "ema_rsi_v1",
+                "version": "b",
+                "parameters": {"ema_fast": 51},
+            },
         ],
         emit_decision_trace=True,
     )
 
-    with patch("app.main._load_immutable_replay_cache", return_value=None), \
-         patch("app.main._store_immutable_replay_cache"), \
-         patch("app.main.prepare_feature_snapshot", wraps=__import__("app.main", fromlist=["prepare_feature_snapshot"]).prepare_feature_snapshot) as feature_builder:
+    with (
+        patch("app.main._load_immutable_replay_cache", return_value=None),
+        patch("app.main._store_immutable_replay_cache"),
+        patch(
+            "app.main.prepare_feature_snapshot",
+            wraps=__import__(
+                "app.main", fromlist=["prepare_feature_snapshot"]
+            ).prepare_feature_snapshot,
+        ) as feature_builder,
+    ):
         result = _run_all_backtests_sync(payload)
 
     assert len(result["leaderboard"]) == 2
@@ -156,6 +186,7 @@ def test_bounded_cohort_builds_features_once_and_keeps_primary_trace():
         assert optimization["protocol"] == "shared_feature_snapshot_bounded_cohort_v1"
         assert optimization["feature_snapshot_builds"] == 1
         assert optimization["primary_trace"] is True
+        assert optimization["primary_stateful_executor"] == "record_view_v2"
         assert optimization["opportunity_trace"] is False
     assert feature_builder.call_count == 1
 
@@ -181,7 +212,9 @@ def test_cost_profiles_disable_trace_but_replay_stateful_execution():
         emitted.append(bool(args[0].emit_decision_trace))
         return original(*args, **kwargs)
 
-    with patch.object(replay_module, "_run_prepared_simple_backtest", side_effect=observed):
+    with patch.object(
+        replay_module, "_run_prepared_simple_backtest", side_effect=observed
+    ):
         cost = MarketAdaptiveReplayService._cost_profile_attribution(
             payload,
             frame,
@@ -207,7 +240,10 @@ def test_warmup_super_snapshot_slices_2k_view_without_rebuilding_features():
     assert len(prepared.frame) == 5200
     assert len(view.frame) == 2000
     assert view.frame.iloc[0]["time"] == prepared.frame.iloc[-2000]["time"]
-    assert view.frame.iloc[0]["_management_atr"] == prepared.frame.iloc[-2000]["_management_atr"]
+    assert (
+        view.frame.iloc[0]["_management_atr"]
+        == prepared.frame.iloc[-2000]["_management_atr"]
+    )
     assert view.frame.attrs["warmup_source_rows"] == 5200
 
 
@@ -218,6 +254,58 @@ def test_fast_stateful_subreplay_matches_reference_ledger_and_gates():
         timeframe="H1",
         candles=candles,
         emit_decision_trace=False,
+    )
+    frame = pd.DataFrame(candles)
+    features = prepare_feature_snapshot(payload, frame)
+    signal = prepare_signal_snapshot(payload, feature_snapshot=features)
+
+    parity = compare_stateful_replay(
+        payload,
+        frame,
+        prepared_snapshot=signal,
+        lightweight=True,
+    )
+
+    assert parity["passed"], parity["mismatches"]
+
+
+def test_fast_stateful_primary_screen_matches_reference_trace_and_event_identity():
+    candles = _candles(720)
+    payload = SimpleBacktestRequest(
+        symbol="XAUUSD",
+        timeframe="H1",
+        candles=candles,
+        emit_decision_trace=True,
+    )
+    frame = pd.DataFrame(candles)
+    features = prepare_feature_snapshot(payload, frame)
+    signal = prepare_signal_snapshot(payload, feature_snapshot=features)
+
+    parity = compare_stateful_replay(
+        payload,
+        frame,
+        prepared_snapshot=signal,
+        lightweight=True,
+    )
+
+    assert parity["passed"], parity["mismatches"]
+    assert "decision_trace" in parity["compared_fields"]
+    assert parity["optimized"]["decision_trace"]
+
+
+def test_fast_stateful_differential_screen_matches_reference_trace_and_gates():
+    candles = _candles(420)
+    payload = SimpleBacktestRequest(
+        symbol="XAUUSD",
+        timeframe="H1",
+        strategy="differential_router_v1",
+        base_strategy="differential_router_v1",
+        parameters={
+            "differential_target_regime": "trend_down",
+            "differential_router_version": "v2",
+        },
+        candles=candles,
+        emit_decision_trace=True,
     )
     frame = pd.DataFrame(candles)
     features = prepare_feature_snapshot(payload, frame)

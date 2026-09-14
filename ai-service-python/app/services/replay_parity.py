@@ -39,9 +39,10 @@ def compare_stateful_replay(
     ).model_dump(mode="json")
 
     # These fields cover both the stateful trade ledger and every gate-facing
-    # aggregate. Trace/diagnostic payloads are intentionally excluded because
-    # the optimized lane is only used without canonical trace emission.
-    fields = (
+    # aggregate. Screening also uses the record-view executor while emitting
+    # its immutable trace, so trace/event identities join the parity contract
+    # whenever the caller requested them.
+    fields = [
         "total_trades",
         "wins",
         "losses",
@@ -54,7 +55,17 @@ def compare_stateful_replay(
         "window_survival",
         "robustness_matrix",
         "data_quality",
-    )
+    ]
+    if payload.emit_decision_trace:
+        fields.extend(
+            [
+                "decision_trace",
+                "event_ledger_hash",
+                "event_ledger_count",
+                "signal_decision_hash",
+                "signal_decision_count",
+            ]
+        )
     mismatches = {
         field: {"reference": reference.get(field), "optimized": optimized.get(field)}
         for field in fields
@@ -64,7 +75,7 @@ def compare_stateful_replay(
     return {
         "protocol": "stateful_subreplay_parity_v1",
         "passed": mismatches == {},
-        "compared_fields": list(fields),
+        "compared_fields": fields,
         "mismatches": mismatches,
         "reference": reference,
         "optimized": optimized,
