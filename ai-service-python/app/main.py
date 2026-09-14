@@ -979,6 +979,11 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                             calculate_strategy_score,
                             feature_snapshot=survival_features,
                             signal_snapshot=survival_signal,
+                            # Parameter factorials are independent experiment
+                            # blocks. Running them inside every screening arm
+                            # duplicates the frozen candidate/control design
+                            # and can consume the whole queue deadline.
+                            run_parameter_perturbation=False,
                         )
                         if admission["passed"]
                         else _screening_insufficient_robustness_profile(
@@ -1010,6 +1015,10 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     strategy_payload,
                     ordered,
                     calculate_strategy_score,
+                    # This proof is mandatory for authority, but belongs to
+                    # a separately budgeted replication block. Screening
+                    # records the obligation without eight inline replays.
+                    execute_inline=False,
                 )
                 if stratified_evidence is not None:
                     survival["stratified_historical_windows"] = stratified_evidence

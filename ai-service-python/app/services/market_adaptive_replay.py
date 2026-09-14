@@ -5,8 +5,8 @@ boundary.  Selection and adaptation evidence is always keyed by the market
 state observed on a candle (symbol, regime and volatility), never by a date.
 """
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -19,16 +19,15 @@ from app.services.backtester import (
     run_simple_ema_rsi_backtest_on_dataframe,
 )
 from app.services.market_regime import apply_market_regime
+from app.services.parameter_schema import validate_strategy_parameters
 from app.services.red_team import RedTeamService
-from app.services.volume_features import add_volume_features, apply_volume_policy
 from app.services.statistical_validation import (
     deflated_sharpe_ratio,
     noise_label_permutation_test,
     purged_cscv_probability_of_backtest_overfitting,
-    per_trade_sharpe,
     returns_from_equity_curve,
 )
-from app.services.parameter_schema import validate_strategy_parameters
+from app.services.volume_features import add_volume_features, apply_volume_policy
 from app.strategies.registry import get_strategy
 
 
@@ -65,20 +64,18 @@ def _powered_survival_assessment(
         drawdown = float(item.get("max_drawdown_percent", item.get("max_drawdown", 0.0)) or 0.0)
         large_loss = net_profit <= catastrophic_net_loss_percent
         large_drawdown = drawdown >= catastrophic_drawdown_percent
-        if (
-            int(item.get("trades", 0)) >= catastrophic_floor
-            and float(item.get("profit_factor", 0.0)) < catastrophic_pf
-            and (large_loss or large_drawdown)
-        ):
-            catastrophic.append({
-                **item,
-                "catastrophic_severity": {
-                    "net_loss": large_loss,
-                    "drawdown": large_drawdown,
-                    "net_profit_percent": round(net_profit, 4),
-                    "max_drawdown_percent": round(drawdown, 4),
-                },
-            })
+        if int(item.get("trades", 0)) >= catastrophic_floor and float(item.get("profit_factor", 0.0)) < catastrophic_pf and (large_loss or large_drawdown):
+            catastrophic.append(
+                {
+                    **item,
+                    "catastrophic_severity": {
+                        "net_loss": large_loss,
+                        "drawdown": large_drawdown,
+                        "net_profit_percent": round(net_profit, 4),
+                        "max_drawdown_percent": round(drawdown, 4),
+                    },
+                }
+            )
     passes = [item for item in powered if float(item.get("profit_factor", 0.0)) >= 1.0]
     pass_ratio = len(passes) / len(powered) if powered else None
     status = "passed"
@@ -104,7 +101,10 @@ def _powered_survival_assessment(
         "catastrophic_drawdown_percent": catastrophic_drawdown_percent,
         "catastrophic_windows": [str(item.get("window", "unknown")) for item in catastrophic],
         "catastrophic_window_evidence": [
-            {"window": str(item.get("window", "unknown")), **dict(item.get("catastrophic_severity", {}))}
+            {
+                "window": str(item.get("window", "unknown")),
+                **dict(item.get("catastrophic_severity", {})),
+            }
             for item in catastrophic
         ],
         "low_sample_window_ids": [str(item.get("window", "unknown")) for item in low_sample],
@@ -125,7 +125,11 @@ def _utc_month_keys(timestamps: pd.Series) -> pd.Series:
 def _utc_month_end(month_key: str) -> pd.Timestamp:
     """Return the final nanosecond of a UTC calendar month."""
     return (pd.Timestamp(f"{month_key}-01", tz="UTC") + pd.offsets.MonthEnd(1)).replace(
-        hour=23, minute=59, second=59, microsecond=999999, nanosecond=999,
+        hour=23,
+        minute=59,
+        second=59,
+        microsecond=999999,
+        nanosecond=999,
     )
 
 
@@ -151,42 +155,65 @@ class MarketAdaptiveReplayService:
         payload: SimpleBacktestRequest,
         source_df: pd.DataFrame,
         score_calculator,
+        *,
+        execute_inline: bool = True,
     ) -> dict[str, object] | None:
         """Evaluate independent pre-2026 windows without stitching regimes together."""
-        contract = ((payload.policy_context or {}).get("historical_stratified_windows", {}) or {})
+        contract = (payload.policy_context or {}).get("historical_stratified_windows", {}) or {}
         if contract.get("protocol") != "historical_stratified_windows_v1":
             return None
         window_count = max(8, min(12, int(contract.get("window_count", 8))))
         window_rows = max(750, int(contract.get("window_rows", 1500)))
+        if not execute_inline:
+            return {
+                "protocol": "historical_stratified_windows_v1",
+                "status": "deferred_to_replication_block",
+                "reason_codes": [],
+                "window_count": window_count,
+                "window_rows": window_rows,
+                "source": contract.get("source", "immutable_pre_2026_foundation"),
+                "required_for_authority": True,
+                "promotion_evidence": False,
+                "rule": (
+                    "Screening may route a candidate, but independent chronological "
+                    "windows must execute as a separately budgeted replication block "
+                    "before mentor, specialist, or parent authority is possible."
+                ),
+            }
         ordered = source_df.sort_values("time").reset_index(drop=True)
         if len(ordered) < window_rows * 2:
-            return {"status": "insufficient_evidence", "reason_codes": ["INSUFFICIENT_STRATIFIED_HISTORICAL_EVIDENCE"]}
+            return {
+                "status": "insufficient_evidence",
+                "reason_codes": ["INSUFFICIENT_STRATIFIED_HISTORICAL_EVIDENCE"],
+            }
 
         last_start = len(ordered) - window_rows
         starts = [round(index * last_start / max(1, window_count - 1)) for index in range(window_count)]
         windows = []
         for index, start in enumerate(starts, start=1):
-            frame = ordered.iloc[start:start + window_rows].reset_index(drop=True)
+            frame = ordered.iloc[start : start + window_rows].reset_index(drop=True)
             result = run_simple_ema_rsi_backtest_on_dataframe(
                 payload.model_copy(update={"emit_decision_trace": False}),
                 frame,
                 include_differential_pair=False,
                 lightweight=True,
             ).model_dump()
-            windows.append({
-                "window": f"stratum_{index}",
-                "start": str(frame.iloc[0]["time"]),
-                "end": str(frame.iloc[-1]["time"]),
-                "candles": int(len(frame)),
-                "trades": int(result.get("total_trades", result.get("trades", 0))),
-                "profit_factor": round(float(result.get("profit_factor", 0.0)), 4),
-                "score": round(float(score_calculator(result)), 4),
-            })
+            windows.append(
+                {
+                    "window": f"stratum_{index}",
+                    "start": str(frame.iloc[0]["time"]),
+                    "end": str(frame.iloc[-1]["time"]),
+                    "candles": len(frame),
+                    "trades": int(result.get("total_trades", result.get("trades", 0))),
+                    "profit_factor": round(float(result.get("profit_factor", 0.0)), 4),
+                    "score": round(float(score_calculator(result)), 4),
+                }
+            )
         evidence = _powered_survival_assessment(
             windows,
             minimum_trades=8,
             minimum_powered_windows=4,
-            minimum_pass_ratio=.70,
+            minimum_pass_ratio=0.70,
         )
         scores = [float(item["score"]) for item in windows]
         reasons = []
@@ -242,15 +269,8 @@ class MarketAdaptiveReplayService:
         foundation_end = _utc_timestamp(self.foundation_end)
         latest_supported_start = _utc_timestamp("2016-01-01 00:00:00") if is_m15 else _utc_timestamp(self.latest_supported_foundation_start)
         minimum_foundation_rows = 2000 if is_m15 else 202
-        foundation = foundation_source[
-            (foundation_source.time >= foundation_start)
-            & (foundation_source.time <= foundation_end)
-            & (foundation_source.time < replay_start)
-        ]
-        replay = normalized[
-            (normalized.time >= replay_start)
-            & (normalized.time < holdout_start)
-        ]
+        foundation = foundation_source[(foundation_source.time >= foundation_start) & (foundation_source.time <= foundation_end) & (foundation_source.time < replay_start)]
+        replay = normalized[(normalized.time >= replay_start) & (normalized.time < holdout_start)]
         holdout = normalized[normalized.time >= holdout_start]
 
         # Some vendor archives begin after the first tradable session of 2004.
@@ -295,7 +315,10 @@ class MarketAdaptiveReplayService:
         # calculation identical while explicitly suppressing that projection.
         foundation_payload = payload.model_copy(update={"emit_decision_trace": False})
         foundation_result = run_simple_ema_rsi_backtest_on_dataframe(
-            foundation_payload, segments["foundation"], include_differential_pair=False, lightweight=True
+            foundation_payload,
+            segments["foundation"],
+            include_differential_pair=False,
+            lightweight=True,
         ).model_dump()
         # Phase one is deliberately cheap: it produces the same core ledger
         # and metrics, but does not spend CPU on promotion-only diagnostics.
@@ -345,17 +368,11 @@ class MarketAdaptiveReplayService:
         if bool(core_gate.get("passed", False)):
             # Cost profiles use the exact same prepared signal snapshot; only
             # the execution contract changes.
-            replay_result["pf_attribution"] = self._cost_profile_attribution(
-                payload, segments["replay"], replay_result, replay_snapshot
-            )
+            replay_result["pf_attribution"] = self._cost_profile_attribution(payload, segments["replay"], replay_result, replay_snapshot)
             replay_result["red_team"] = RedTeamService().evaluate(replay_result)
             replay_result["edge_claim"] = self._falsify_claim(replay_result)
             trade_rows = replay_result.get("trade_ledger") or replay_result.get("trades", [])
-            noise_values = [
-                float(row.get("profit_percent", 0))
-                for row in trade_rows
-                if isinstance(row, dict) and row.get("profit_percent") is not None
-            ]
+            noise_values = [float(row.get("profit_percent", 0)) for row in trade_rows if isinstance(row, dict) and row.get("profit_percent") is not None]
             replay_result["noise_sanity"] = noise_label_permutation_test(noise_values)
         else:
             replay_result["cost_diagnostics"] = {
@@ -378,12 +395,16 @@ class MarketAdaptiveReplayService:
         train_score = score_calculator(foundation_result)
         del foundation_result, foundation_payload
         forward_score = score_calculator(replay_result)
-        checkpoints = self._checkpoint_results(
-            payload,
-            segments["replay"],
-            score_calculator,
-            chronological_replay_result,
-        ) if bool(core_gate.get("passed", False)) else []
+        checkpoints = (
+            self._checkpoint_results(
+                payload,
+                segments["replay"],
+                score_calculator,
+                chronological_replay_result,
+            )
+            if bool(core_gate.get("passed", False))
+            else []
+        )
         checkpoint_scores = [item["score"] for item in checkpoints]
         validation_score = round(sum(checkpoint_scores) / len(checkpoint_scores)) if checkpoint_scores else forward_score
         is_overfit = train_score - forward_score > self.overfit_threshold
@@ -391,13 +412,20 @@ class MarketAdaptiveReplayService:
         if bool(core_gate.get("passed", False)):
             adaptation = self._adaptation_evidence(segments["replay"], replay_result, checkpoints)
             monthly_walk_forward = self._monthly_walk_forward(
-                payload, segments["replay"], score_calculator, chronological_replay_result
+                payload,
+                segments["replay"],
+                score_calculator,
+                chronological_replay_result,
             )
             monthly_passport = self._monthly_passport(monthly_walk_forward)
             failure_focused = self._failure_focused_replay(monthly_walk_forward)
             transition_homework = self._transition_homework(segments["replay"], replay_result)
         else:
-            deferred = {"status": "deferred_after_core_gate_failure", "core_gate": core_gate, "promotion_evidence": False}
+            deferred = {
+                "status": "deferred_after_core_gate_failure",
+                "core_gate": core_gate,
+                "promotion_evidence": False,
+            }
             adaptation = deferred
             monthly_walk_forward = deferred
             monthly_passport = deferred
@@ -414,10 +442,12 @@ class MarketAdaptiveReplayService:
             "synthetic_forward_evidence": {
                 "status": "assessed" if bool(core_gate.get("passed", False)) else "deferred",
                 "source": "monthly_walk_forward_replay",
-                "promotion_sufficient": False, "passport_status": monthly_passport.get("status"),
+                "promotion_sufficient": False,
+                "passport_status": monthly_passport.get("status"),
             },
             "real_time_paper_evidence": {
-                "status": "required", "source": "immutable_paper_signal_ledger",
+                "status": "required",
+                "source": "immutable_paper_signal_ledger",
                 "promotion_sufficient": False,
             },
         }
@@ -434,7 +464,11 @@ class MarketAdaptiveReplayService:
                 "protocol": "closed candle decision -> next candle execution -> outcome -> regime belief update",
                 "foundation": self._period(segments["foundation"]),
                 "rolling_evolution": self._period(segments["replay"]),
-                "sealed_holdout": {**self._period(segments["holdout"]), "used_for_training": False, "used_for_evolution": False},
+                "sealed_holdout": {
+                    **self._period(segments["holdout"]),
+                    "used_for_training": False,
+                    "used_for_evolution": False,
+                },
                 "checkpoint_windows": checkpoints,
                 "monthly_walk_forward": monthly_walk_forward,
                 "monthly_passport": monthly_passport,
@@ -446,7 +480,8 @@ class MarketAdaptiveReplayService:
             },
         }
         result["permanent_unseen_challenge"] = {
-            "status": "sealed", "segment": self._period(segments["holdout"]),
+            "status": "sealed",
+            "segment": self._period(segments["holdout"]),
             "data_hash": self._segment_hash(segments["holdout"]),
             "rule": "This segment is never used for mutation, ranking or same-generation selection.",
         }
@@ -480,22 +515,20 @@ class MarketAdaptiveReplayService:
             }
         if bool(core_gate.get("passed", False)):
             result["temporal_firewall"] = self._temporal_firewall(payload, segments["replay"], segments["holdout"])
-            result["secret_adversarial_arena"] = self._secret_adversarial_arena(
-                payload, segments["replay"], replay_snapshot
-            )
+            result["secret_adversarial_arena"] = self._secret_adversarial_arena(payload, segments["replay"], replay_snapshot)
             # These two ledgers deliberately use the same next-candle execution
             # function as the replay. Their verdicts are diagnostic evidence;
             # they neither create trades nor change a promotion decision.
-            result["execution_digital_twin"] = self._execution_digital_twin(
-                payload, segments["replay"], replay_result, replay_snapshot
-            )
-            result["parameter_plateau"] = self._parameter_plateau(
-                payload, segments["replay"], replay_result, replay_snapshot
-            )
+            result["execution_digital_twin"] = self._execution_digital_twin(payload, segments["replay"], replay_result, replay_snapshot)
+            result["parameter_plateau"] = self._parameter_plateau(payload, segments["replay"], replay_result, replay_snapshot)
             result["counterfactual_blame_graph"] = self._counterfactual_blame_graph(replay_result, segments["replay"])
             result["metamorphic_universality"] = self._metamorphic_universality(payload, segments["replay"], replay_result)
         else:
-            deferred = {"status": "deferred_after_core_gate_failure", "core_gate": core_gate, "promotion_evidence": False}
+            deferred = {
+                "status": "deferred_after_core_gate_failure",
+                "core_gate": core_gate,
+                "promotion_evidence": False,
+            }
             result["temporal_firewall"] = deferred
             result["secret_adversarial_arena"] = deferred
             result["execution_digital_twin"] = deferred
@@ -585,7 +618,8 @@ class MarketAdaptiveReplayService:
         result["selection_validation"] = selection_validation
         returns = returns_from_equity_curve(result.get("equity_curve", []))
         result.setdefault("statistical_evidence", {})["deflated_sharpe"] = deflated_sharpe_ratio(
-            returns, trial_sharpes,
+            returns,
+            trial_sharpes,
         )
         result["portfolio_selection_context"] = {
             "protocol": context.get("protocol", "portfolio_selection_frontier_v1"),
@@ -615,7 +649,7 @@ class MarketAdaptiveReplayService:
         fail-closed as ``diverse`` only when this observed replay proves the
         minimum contract.
         """
-        evidence = (result.get("portfolio_evidence", {}) or {})
+        evidence = result.get("portfolio_evidence", {}) or {}
         declared = evidence.get("declared_members", []) if isinstance(evidence, dict) else []
         breakdown = evidence.get("member_breakdown", {}) if isinstance(evidence, dict) else {}
         if not isinstance(declared, list) or not isinstance(breakdown, dict):
@@ -639,24 +673,21 @@ class MarketAdaptiveReplayService:
                 str(member.get("target_volatility") or "any"),
                 str(member.get("target_direction") or "any"),
             )
-            active.append({
-                "member_key": key,
-                "strategy": str(member.get("strategy") or ""),
-                "niche": "|".join(niche),
-                "target_regime": niche[0],
-                "target_volatility": niche[1],
-                "target_direction": niche[2],
-                "trades": int(row.get("trades", 0) or 0),
-            })
+            active.append(
+                {
+                    "member_key": key,
+                    "strategy": str(member.get("strategy") or ""),
+                    "niche": "|".join(niche),
+                    "target_regime": niche[0],
+                    "target_volatility": niche[1],
+                    "target_direction": niche[2],
+                    "trades": int(row.get("trades", 0) or 0),
+                }
+            )
         niches = {item["niche"] for item in active}
         regimes = {item["target_regime"] for item in active}
         strategies = {item["strategy"] for item in active if item["strategy"]}
-        status = "diverse" if (
-            len(active) >= 2
-            and len(niches) >= 2
-            and len(regimes) >= 2
-            and len(strategies) >= 2
-        ) else "near_duplicate"
+        status = "diverse" if (len(active) >= 2 and len(niches) >= 2 and len(regimes) >= 2 and len(strategies) >= 2) else "near_duplicate"
         return {
             "protocol": "portfolio_behavioral_diversity_v1",
             "status": status,
@@ -679,6 +710,7 @@ class MarketAdaptiveReplayService:
         *,
         feature_snapshot=None,
         signal_snapshot=None,
+        run_parameter_perturbation: bool = True,
     ) -> dict[str, object]:
         """Cheap pre-replay falsification for incremental screening.
 
@@ -689,8 +721,10 @@ class MarketAdaptiveReplayService:
         """
         if len(df) < 600:
             return {
-                "protocol": "screening_survival_v1", "status": "insufficient_evidence",
-                "reason_codes": ["FAILED_SCREENING_EVIDENCE"], "sample_count": int(normal_result.get("total_trades", 0)),
+                "protocol": "screening_survival_v1",
+                "status": "insufficient_evidence",
+                "reason_codes": ["FAILED_SCREENING_EVIDENCE"],
+                "sample_count": int(normal_result.get("total_trades", 0)),
                 "promotion_evidence": False,
             }
 
@@ -700,26 +734,34 @@ class MarketAdaptiveReplayService:
             normal_result,
             prepared_snapshot=signal_snapshot,
             feature_snapshot=feature_snapshot,
+            # Screening gates consume the adverse-cost replay. Zero-cost is
+            # descriptive attribution and is recomputed in full validation;
+            # spending another complete 5k state-machine pass here can make
+            # a healthy candidate miss the bounded screening deadline.
+            include_zero_cost_replay=False,
         )
         # Equal-candle chunks describe temporal concentration, not calendar
         # months. Keep them separate so a strong January cannot be confused
         # with one third of the history merely because it is long.
-        chunks = [chunk.reset_index(drop=True) for chunk in [
-            df.iloc[:len(df) // 3], df.iloc[len(df) // 3:2 * len(df) // 3], df.iloc[2 * len(df) // 3:]
-        ] if len(chunk) >= 150]
+        chunks = [
+            chunk.reset_index(drop=True)
+            for chunk in [
+                df.iloc[: len(df) // 3],
+                df.iloc[len(df) // 3 : 2 * len(df) // 3],
+                df.iloc[2 * len(df) // 3 :],
+            ]
+            if len(chunk) >= 150
+        ]
         # The primary screening replay already walked the complete candle
         # stream with one continuous indicator/risk state.  Replaying each
         # equal-sized slice from an empty state is both expensive and a source
         # of artificial boundary effects.  Consume the full-ledger temporal
         # buckets when available.  Full validation still recomputes strict
         # chronological/checkpoint evidence independently.
-        temporal_ledger = ((normal_result.get("pf_attribution", {}) or {}).get("by_temporal_chunk", {}) or {})
+        temporal_ledger = (normal_result.get("pf_attribution", {}) or {}).get("by_temporal_chunk", {}) or {}
         temporal_method = "full_chronological_trade_ledger_equal_candle_buckets"
         if temporal_ledger:
-            temporal_windows = [
-                self._month_result_from_attribution(temporal_ledger.get(f"chunk_{index}", {}) or {})
-                for index in range(1, 4)
-            ]
+            temporal_windows = [self._month_result_from_attribution(temporal_ledger.get(f"chunk_{index}", {}) or {}) for index in range(1, 4)]
         else:
             temporal_method = "three_equal_candle_segments"
             temporal_windows = [
@@ -761,7 +803,7 @@ class MarketAdaptiveReplayService:
         # which could look like a hung evaluator on long archives.
         month_labels = timestamps.dt.strftime("%Y-%m")
         calendar_months: dict[str, dict[str, object]] = {}
-        ledger_months = ((normal_result.get("pf_attribution", {}) or {}).get("by_month", {}) or {})
+        ledger_months = (normal_result.get("pf_attribution", {}) or {}).get("by_month", {}) or {}
         calendar_source = "full_chronological_trade_ledger" if ledger_months else "legacy_isolated_month_replay"
         for month in sorted(month_labels.dropna().unique()):
             month_frame = df.loc[month_labels == month].reset_index(drop=True)
@@ -781,16 +823,20 @@ class MarketAdaptiveReplayService:
                     lightweight=True,
                 ).model_dump()
             calendar_months[str(month)] = {
-                "candles": int(len(month_frame)),
+                "candles": len(month_frame),
                 "trades": int(month_result.get("total_trades", month_result.get("trades", 0))),
-                "profit_factor": round(float(month_result.get("profit_factor", month_result.get("net_pf", 0))), 4),
+                "profit_factor": round(
+                    float(month_result.get("profit_factor", month_result.get("net_pf", 0))),
+                    4,
+                ),
                 "net_profit_percent": round(float(month_result.get("net_profit_percent", 0) or 0), 4),
-                "max_drawdown_percent": round(float(month_result.get("max_drawdown_percent", month_result.get("max_drawdown", 0)) or 0), 4),
+                "max_drawdown_percent": round(
+                    float(month_result.get("max_drawdown_percent", month_result.get("max_drawdown", 0)) or 0),
+                    4,
+                ),
                 "score": round(float(score_calculator(month_result)), 4),
             }
-        assessed_months = {
-            month: metrics for month, metrics in calendar_months.items() if int(metrics["trades"]) > 0
-        }
+        assessed_months = {month: metrics for month, metrics in calendar_months.items() if int(metrics["trades"]) > 0}
         inactive_months = [month for month, metrics in calendar_months.items() if int(metrics["trades"]) == 0]
         calendar_month_pfs = [float(metrics["profit_factor"]) for metrics in assessed_months.values()]
         calendar_evidence = _powered_survival_assessment(
@@ -803,17 +849,11 @@ class MarketAdaptiveReplayService:
             minimum_powered_windows=3,
             minimum_pass_ratio=0.70,
         )
-        context_months = ((normal_result.get("pf_attribution", {}) or {}).get("by_regime_volatility_month", {}) or {})
+        context_months = (normal_result.get("pf_attribution", {}) or {}).get("by_regime_volatility_month", {}) or {}
         context_failure_map = {
             context: {
-                "powered_failure_months": [
-                    month for month, metrics in months.items()
-                    if int(metrics.get("trades", 0)) >= 3 and float(metrics.get("net_pf", 0.0)) < 1.0
-                ],
-                "low_sample_failure_months": [
-                    month for month, metrics in months.items()
-                    if 0 < int(metrics.get("trades", 0)) < 3 and float(metrics.get("net_pf", 0.0)) < 1.0
-                ],
+                "powered_failure_months": [month for month, metrics in months.items() if int(metrics.get("trades", 0)) >= 3 and float(metrics.get("net_pf", 0.0)) < 1.0],
+                "low_sample_failure_months": [month for month, metrics in months.items() if 0 < int(metrics.get("trades", 0)) < 3 and float(metrics.get("net_pf", 0.0)) < 1.0],
                 "context_trades": sum(int(metrics.get("trades", 0)) for metrics in months.values()),
             }
             for context, months in context_months.items()
@@ -832,11 +872,26 @@ class MarketAdaptiveReplayService:
         numeric = [key for key, value in parameters.items() if isinstance(value, (int, float)) and not isinstance(value, bool)]
         boolean = [key for key, value in parameters.items() if isinstance(value, bool)]
         perturbation_gene = changed_gene or (numeric[0] if numeric else (boolean[0] if boolean else None))
-        perturbation_status = "assessed" if perturbation_gene in numeric or perturbation_gene in boolean else (
-            "not_applicable_non_numeric_changed_gene" if changed_gene else "not_applicable_no_numeric_gene"
-        )
+        perturbation_status = "assessed" if perturbation_gene in numeric or perturbation_gene in boolean else ("not_applicable_non_numeric_changed_gene" if changed_gene else "not_applicable_no_numeric_gene")
+        if not run_parameter_perturbation and perturbation_status == "assessed":
+            perturbation_status = "deferred_to_factorial_block"
         variants = []
-        directions = (-1.0, 1.0) if perturbation_gene in numeric else (1.0,)
+        # Screening is a falsification/router stage, not final parameter
+        # authority. Run one pre-registered removal-direction perturbation;
+        # the exact candidate/control pair and full replay retain bilateral
+        # confirmation. This bounds a survivor to one perturbation replay
+        # instead of two arbitrary 5k passes.
+        directions = (1.0,) if run_parameter_perturbation else ()
+        if perturbation_gene in numeric:
+            direction = -1.0
+            diff = repair_contract.get("parameter_diff", {}) or {}
+            change = diff.get(str(perturbation_gene), {}) if isinstance(diff, dict) else {}
+            if isinstance(change, dict):
+                old = change.get("old")
+                new = change.get("new")
+                if isinstance(old, (int, float)) and isinstance(new, (int, float)):
+                    direction = -1.0 if float(new) >= float(old) else 1.0
+            directions = (direction,)
         for direction in directions:
             if perturbation_status != "assessed":
                 break
@@ -846,31 +901,37 @@ class MarketAdaptiveReplayService:
                 changed[key] = not bool(changed[key])
             else:
                 value = float(changed[key])
-                changed[key] = round(value + (max(abs(value), 1.0) * .05 * direction), 6)
+                changed[key] = round(value + (max(abs(value), 1.0) * 0.05 * direction), 6)
             try:
-                variant_payload = payload.model_copy(update={
-                    "parameters": changed,
-                    "emit_decision_trace": False,
-                })
+                variant_payload = payload.model_copy(
+                    update={
+                        "parameters": changed,
+                        "emit_decision_trace": False,
+                    }
+                )
                 if feature_snapshot is not None:
                     variant_signal = prepare_signal_snapshot(
                         variant_payload,
                         feature_snapshot=feature_snapshot,
                     )
-                    variants.append(_run_prepared_simple_backtest(
-                        variant_payload,
-                        df,
-                        prepared_snapshot=variant_signal,
-                        include_differential_pair=False,
-                        lightweight=True,
-                    ).model_dump())
+                    variants.append(
+                        _run_prepared_simple_backtest(
+                            variant_payload,
+                            df,
+                            prepared_snapshot=variant_signal,
+                            include_differential_pair=False,
+                            lightweight=True,
+                        ).model_dump()
+                    )
                 else:
-                    variants.append(run_simple_ema_rsi_backtest_on_dataframe(
-                        variant_payload,
-                        df,
-                        include_differential_pair=False,
-                        lightweight=True,
-                    ).model_dump())
+                    variants.append(
+                        run_simple_ema_rsi_backtest_on_dataframe(
+                            variant_payload,
+                            df,
+                            include_differential_pair=False,
+                            lightweight=True,
+                        ).model_dump()
+                    )
             except (ValueError, TypeError):
                 continue
 
@@ -880,14 +941,19 @@ class MarketAdaptiveReplayService:
             variant_times = {str(row.get("signal_time", row.get("entry_time", ""))) for row in variant.get("trades", [])}
             union = baseline_times | variant_times
             timing.append(len(baseline_times & variant_times) / len(union) if union else 1.0)
-        normal_pf = max(.0001, float(normal_result.get("profit_factor", 0)))
-        perturbation_ratio = min([float(item.get("profit_factor", 0)) / normal_pf for item in variants], default=None)
+        normal_pf = max(0.0001, float(normal_result.get("profit_factor", 0)))
+        perturbation_ratio = min(
+            [float(item.get("profit_factor", 0)) / normal_pf for item in variants],
+            default=None,
+        )
         worst_regime_pf = _minimum_pf((normal_result.get("pf_attribution", {}) or {}).get("by_regime", {}))
         stress_pf = float(cost.get("stress_cost", {}).get("profit_factor", 0))
         temporal_score_drift = abs(temporal_scores[0] - temporal_scores[-1]) if len(temporal_scores) >= 2 else None
         reasons = []
-        if int(normal_result.get("total_trades", 0)) < 10: reasons.append("FAILED_TRADE_COUNT")
-        if stress_pf < 1.05: reasons.append("FAILED_STRESS_COST")
+        if int(normal_result.get("total_trades", 0)) < 10:
+            reasons.append("FAILED_TRADE_COUNT")
+        if stress_pf < 1.05:
+            reasons.append("FAILED_STRESS_COST")
         if temporal_evidence["status"] == "catastrophic_failure":
             reasons.append("FAILED_TEMPORAL_CHUNK_CATASTROPHIC")
         elif temporal_evidence["status"] == "insufficient_evidence":
@@ -908,45 +974,57 @@ class MarketAdaptiveReplayService:
             reasons.append("INSUFFICIENT_REGIME_EVIDENCE")
         elif worst_regime_pf < 1.0:
             reasons.append("FAILED_REGIME_COVERAGE")
-        if perturbation_status == "assessed" and perturbation_ratio is not None and perturbation_ratio < .80:
+        if perturbation_status == "assessed" and perturbation_ratio is not None and perturbation_ratio < 0.80:
             reasons.append("FAILED_PARAMETER_STABILITY")
         if temporal_score_drift is None:
             reasons.append("INSUFFICIENT_TEMPORAL_SCORE_DRIFT_EVIDENCE")
         elif temporal_score_drift > self.overfit_threshold:
             reasons.append("FAILED_TEMPORAL_SCORE_DRIFT")
-        if perturbation_status == "assessed" and min(timing, default=0.0) < .50:
+        if perturbation_status == "assessed" and min(timing, default=0.0) < 0.50:
             reasons.append("FAILED_SIGNAL_TIMING_STABILITY")
         return {
-            "protocol": "screening_survival_v2", "status": "survivor" if not reasons else "rescue_case",
-            "reason_codes": reasons, "sample_count": int(normal_result.get("total_trades", 0)),
+            "protocol": "screening_survival_v2",
+            "status": "survivor" if not reasons else "rescue_case",
+            "reason_codes": reasons,
+            "sample_count": int(normal_result.get("total_trades", 0)),
             "worst_regime_pf": round(worst_regime_pf, 4) if worst_regime_pf is not None else None,
             # `worst_window_pf` stays temporarily as a read-only compatibility
             # alias. New consumers must use the explicitly named fields.
             "worst_window_pf": round(min(temporal_pfs, default=0.0), 4),
             "worst_temporal_chunk_pf": round(min(temporal_pfs, default=0.0), 4),
             "worst_calendar_month_pf": round(min(calendar_month_pfs, default=0.0), 4) if assessed_months else None,
-            "stress_cost_pf": round(stress_pf, 4), "parameter_perturbation_ratio": round(perturbation_ratio, 4) if perturbation_ratio is not None else None,
+            "stress_cost_pf": round(stress_pf, 4),
+            "parameter_perturbation_ratio": round(perturbation_ratio, 4) if perturbation_ratio is not None else None,
             "parameter_perturbation_gene": perturbation_gene,
             "parameter_perturbation_status": perturbation_status,
             "temporal_score_drift": round(temporal_score_drift, 4) if temporal_score_drift is not None else None,
             "signal_timing_stability": round(min(timing, default=0.0), 4) if perturbation_status == "assessed" else None,
             "temporal_chunk_survival": {
-                "method": temporal_method, "window_scores": temporal_scores,
+                "method": temporal_method,
+                "window_scores": temporal_scores,
                 "window_profit_factors": [round(value, 4) for value in temporal_pfs],
                 "evidence": temporal_evidence,
             },
             "calendar_month_survival": {
-                "timezone": "UTC", "method": "calendar_month", "source": calendar_source, "months": calendar_months,
-                "assessed_months": list(assessed_months), "activity_absence_months": inactive_months,
-                "context_failure_map": context_failure_map, "evidence": calendar_evidence,
+                "timezone": "UTC",
+                "method": "calendar_month",
+                "source": calendar_source,
+                "months": calendar_months,
+                "assessed_months": list(assessed_months),
+                "activity_absence_months": inactive_months,
+                "context_failure_map": context_failure_map,
+                "evidence": calendar_evidence,
             },
-            "window_scores": temporal_scores, "cost_profile": cost, "promotion_evidence": False,
+            "window_scores": temporal_scores,
+            "cost_profile": cost,
+            "promotion_evidence": False,
             "rule": "Screening predicts survival under frozen perturbations; only full replay can produce promotion evidence.",
         }
 
     @staticmethod
     def _segment_hash(df: pd.DataFrame) -> str:
         import hashlib
+
         columns = [column for column in ["time", "open", "high", "low", "close", "volume"] if column in df]
         return hashlib.sha256(df[columns].to_csv(index=False).encode()).hexdigest()
 
@@ -964,9 +1042,14 @@ class MarketAdaptiveReplayService:
             normalized = apply_market_regime(frame.copy())
             normalized = add_volume_features(normalized, payload.volume_context)
             previous = normalized["close"].shift(1)
-            true_range = pd.concat([
-                normalized["high"] - normalized["low"], (normalized["high"] - previous).abs(), (normalized["low"] - previous).abs(),
-            ], axis=1).max(axis=1)
+            true_range = pd.concat(
+                [
+                    normalized["high"] - normalized["low"],
+                    (normalized["high"] - previous).abs(),
+                    (normalized["low"] - previous).abs(),
+                ],
+                axis=1,
+            ).max(axis=1)
             normalized["_management_atr"] = true_range.rolling(14, min_periods=1).mean()
             if payload.portfolio_members:
                 prepared = _apply_portfolio_strategy(normalized, payload.portfolio_members)
@@ -979,10 +1062,11 @@ class MarketAdaptiveReplayService:
             return [(str(row.time), str(row.signal)) for row in prepared[["time", "signal"]].itertuples(index=False)]
 
         baseline = signals(prefix)
-        extended = signals(pd.concat([prefix, altered_future], ignore_index=True))[:len(prefix)]
+        extended = signals(pd.concat([prefix, altered_future], ignore_index=True))[: len(prefix)]
         return {
             "status": "passed" if baseline == extended else "failed",
-            "checked_candles": len(prefix), "future_perturbation": "unseen OHLC shock",
+            "checked_candles": len(prefix),
+            "future_perturbation": "unseen OHLC shock",
             "rule": "future-candle mutation must not alter prior signals or features",
         }
 
@@ -994,16 +1078,22 @@ class MarketAdaptiveReplayService:
     ) -> dict[str, object]:
         """Rotating hidden execution shocks; only the verdict is exposed to evolution."""
         import hashlib
-        seed = int(hashlib.sha256(MarketAdaptiveReplayService._segment_hash(replay).encode()).hexdigest()[:8], 16)
+
+        seed = int(
+            hashlib.sha256(MarketAdaptiveReplayService._segment_hash(replay).encode()).hexdigest()[:8],
+            16,
+        )
         multipliers = [2.0, 2.5, 3.0]
         selected = [multipliers[(seed + offset) % len(multipliers)] for offset in range(2)]
         results = []
         for multiplier in selected:
-            execution = payload.execution.model_copy(update={
-                "spread_points": payload.execution.spread_points * multiplier,
-                "slippage_points": payload.execution.slippage_points * multiplier,
-                "commission_percent": payload.execution.commission_percent * multiplier,
-            })
+            execution = payload.execution.model_copy(
+                update={
+                    "spread_points": payload.execution.spread_points * multiplier,
+                    "slippage_points": payload.execution.slippage_points * multiplier,
+                    "commission_percent": payload.execution.commission_percent * multiplier,
+                }
+            )
             # This lane consumes only the deterministic PF verdict.  The
             # primary replay already owns all promotion diagnostics, so do not
             # recursively spend Monte Carlo/DNA/telemetry CPU here.
@@ -1026,7 +1116,8 @@ class MarketAdaptiveReplayService:
             ).model_dump()
             results.append(float(outcome.get("profit_factor", 0)) >= 1.0)
         return {
-            "status": "passed" if all(results) else "failed", "evaluated_scenarios": len(results),
+            "status": "passed" if all(results) else "failed",
+            "evaluated_scenarios": len(results),
             "rotation_commitment": hashlib.sha256(f"{seed}|{len(results)}".encode()).hexdigest(),
             "optimization": {
                 "prepared_signal_snapshot_reused": prepared_snapshot is not None,
@@ -1054,14 +1145,20 @@ class MarketAdaptiveReplayService:
         profiles = {
             "variable_spread": execution.model_copy(update={"spread_points": execution.spread_points * 2.0}),
             "slippage_spike": execution.model_copy(update={"slippage_points": max(execution.slippage_points * 3.0, execution.point_size)}),
-            "cost_1_5x": execution.model_copy(update={
-                "spread_points": execution.spread_points * 1.5, "slippage_points": execution.slippage_points * 1.5,
-                "commission_percent": execution.commission_percent * 1.5,
-            }),
-            "cost_stress": execution.model_copy(update={
-                "spread_points": execution.spread_points * 2.0, "slippage_points": execution.slippage_points * 2.0,
-                "commission_percent": execution.commission_percent * 2.0,
-            }),
+            "cost_1_5x": execution.model_copy(
+                update={
+                    "spread_points": execution.spread_points * 1.5,
+                    "slippage_points": execution.slippage_points * 1.5,
+                    "commission_percent": execution.commission_percent * 1.5,
+                }
+            ),
+            "cost_stress": execution.model_copy(
+                update={
+                    "spread_points": execution.spread_points * 2.0,
+                    "slippage_points": execution.slippage_points * 2.0,
+                    "commission_percent": execution.commission_percent * 2.0,
+                }
+            ),
         }
         scenarios: dict[str, object] = {}
         normal_net = float(normal.get("net_profit_percent", 0))
@@ -1084,7 +1181,8 @@ class MarketAdaptiveReplayService:
                 )
             ).model_dump()
             scenarios[name] = {
-                "status": "assessed", "profit_factor": tested.get("profit_factor", 0),
+                "status": "assessed",
+                "profit_factor": tested.get("profit_factor", 0),
                 "net_profit_percent": tested.get("net_profit_percent", 0),
                 "max_drawdown_percent": tested.get("max_drawdown_percent", 0),
                 "cost_monotonic": float(tested.get("net_profit_percent", 0)) <= normal_net + 1e-9,
@@ -1129,14 +1227,13 @@ class MarketAdaptiveReplayService:
         fault_contract = MarketAdaptiveReplayService._execution_fault_contract(payload)
         scenarios.update(fault_contract["scenarios"])
         assessed = [item for item in scenarios.values() if item.get("status") in {"assessed", "contract_test_passed"}]
-        stress_pass = bool(latency) and bool(scenarios["one_candle_latency"].get("pass")) \
-            and scenarios["missing_candle"].get("status") == "contract_test_passed" \
-            and all(bool(scenarios[name].get("cost_monotonic")) for name in profiles)
+        stress_pass = bool(latency) and bool(scenarios["one_candle_latency"].get("pass")) and scenarios["missing_candle"].get("status") == "contract_test_passed" and all(bool(scenarios[name].get("cost_monotonic")) for name in profiles)
         return {
             "status": "assessed" if assessed else "waiting_for_provider_events",
             "pass": stress_pass and fault_contract["status"] == "passed",
             "execution_contract": "closed candle decision -> next candle open fill -> conservative intrabar exit",
-            "scenarios": scenarios, "fault_contract": fault_contract,
+            "scenarios": scenarios,
+            "fault_contract": fault_contract,
             "optimization": {
                 "prepared_signal_snapshot_reused": prepared_snapshot is not None,
                 "strategy_signal_recomputed": prepared_snapshot is None,
@@ -1173,10 +1270,7 @@ class MarketAdaptiveReplayService:
         changed_gene = contract.get("changed_gene")
         value = parameters.get(changed_gene) if changed_gene else None
         if not isinstance(value, (int, float)) or isinstance(value, bool):
-            numeric = [
-                key for key, candidate in parameters.items()
-                if isinstance(candidate, (int, float)) and not isinstance(candidate, bool)
-            ]
+            numeric = [key for key, candidate in parameters.items() if isinstance(candidate, (int, float)) and not isinstance(candidate, bool)]
             changed_gene = numeric[0] if numeric else None
             value = parameters.get(changed_gene) if changed_gene else None
             source = "first_numeric_gene_fallback"
@@ -1231,14 +1325,16 @@ class MarketAdaptiveReplayService:
                 # robustness evidence; do not repair it by clipping to the
                 # boundary, because that would test a different hypothesis.
                 continue
-            variants.append({
-                "offset": offset,
-                "value": proposed,
-                "profit_factor": float(tested.get("profit_factor", 0) or 0),
-                "net_profit_percent": float(tested.get("net_profit_percent", 0) or 0),
-                "max_drawdown_percent": float(tested.get("max_drawdown_percent", 0) or 0),
-                "total_trades": int(tested.get("total_trades", 0) or 0),
-            })
+            variants.append(
+                {
+                    "offset": offset,
+                    "value": proposed,
+                    "profit_factor": float(tested.get("profit_factor", 0) or 0),
+                    "net_profit_percent": float(tested.get("net_profit_percent", 0) or 0),
+                    "max_drawdown_percent": float(tested.get("max_drawdown_percent", 0) or 0),
+                    "total_trades": int(tested.get("total_trades", 0) or 0),
+                }
+            )
 
         normal_pf = float(normal.get("profit_factor", 0) or 0)
         normal_net = float(normal.get("net_profit_percent", 0) or 0)
@@ -1247,14 +1343,7 @@ class MarketAdaptiveReplayService:
         min_net = min((float(item["net_profit_percent"]) for item in variants), default=0.0)
         max_dd = max((float(item["max_drawdown_percent"]) for item in variants), default=100.0)
         max_pf_drop = 1.0 - (min_pf / normal_pf) if normal_pf > 0 else 1.0
-        passed = (
-            len(variants) == 2
-            and normal_pf >= 1.0
-            and normal_net > 0
-            and min_pf >= 1.0
-            and min_net >= 0
-            and max_dd <= max(15.0, normal_dd * 1.5)
-        )
+        passed = len(variants) == 2 and normal_pf >= 1.0 and normal_net > 0 and min_pf >= 1.0 and min_net >= 0 and max_dd <= max(15.0, normal_dd * 1.5)
         return {
             "protocol": "parameter_plateau_v1",
             "status": "assessed" if len(variants) == 2 else "insufficient_evidence",
@@ -1274,8 +1363,7 @@ class MarketAdaptiveReplayService:
             "max_drawdown_percent": round(max_dd, 6),
             "max_profit_factor_drop": round(max_pf_drop, 6),
             "optimization": {
-                "feature_snapshot_reused": prepared_snapshot is not None
-                and getattr(prepared_snapshot, "feature_snapshot", None) is not None,
+                "feature_snapshot_reused": prepared_snapshot is not None and getattr(prepared_snapshot, "feature_snapshot", None) is not None,
                 "signal_rebuilt_only_for_declared_gene": True,
                 "decision_trace_emitted": False,
             },
@@ -1286,12 +1374,20 @@ class MarketAdaptiveReplayService:
     @staticmethod
     def _missing_candle_stress(payload: SimpleBacktestRequest, replay: pd.DataFrame) -> dict[str, object]:
         if len(replay) < 204:
-            return {"status": "insufficient_rows", "pass": False, "promotion_evidence": False}
+            return {
+                "status": "insufficient_rows",
+                "pass": False,
+                "promotion_evidence": False,
+            }
         expected = pd.Timedelta(minutes=15 if payload.timeframe == "M15" else 60)
         deltas = pd.to_datetime(replay["time"], utc=True, errors="coerce").diff()
         candidates = [index for index in range(1, len(replay) - 1) if deltas.iloc[index] == expected and deltas.iloc[index + 1] == expected]
         if not candidates:
-            return {"status": "insufficient_contiguous_candles", "pass": False, "promotion_evidence": False}
+            return {
+                "status": "insufficient_contiguous_candles",
+                "pass": False,
+                "promotion_evidence": False,
+            }
         drop_index = candidates[len(candidates) // 2]
         damaged = replay.drop(index=drop_index).reset_index(drop=True)
         strict_execution = payload.execution.model_copy(update={"reject_unexpected_gaps": True})
@@ -1314,46 +1410,65 @@ class MarketAdaptiveReplayService:
                 "promotion_evidence": False,
             }
         return {
-            "status": "contract_test_failed", "pass": False, "dropped_row_index": drop_index,
-            "rule": "Missing-candle hard gate did not stop the damaged dataset.", "promotion_evidence": False,
+            "status": "contract_test_failed",
+            "pass": False,
+            "dropped_row_index": drop_index,
+            "rule": "Missing-candle hard gate did not stop the damaged dataset.",
+            "promotion_evidence": False,
         }
 
     @staticmethod
     def _execution_fault_contract(payload: SimpleBacktestRequest) -> dict[str, object]:
         """Run provider-independent safety invariants for adverse order states."""
         requested = 100.0
-        partial = requested * .5
+        partial = requested * 0.5
         scenarios = {
             "partial_fill": {
                 "status": "contract_test_passed" if 0 < partial < requested and abs((partial + (requested - partial)) - requested) < 1e-9 else "contract_test_failed",
-                "requested_units": requested, "filled_units": partial, "remaining_units": requested - partial,
+                "requested_units": requested,
+                "filled_units": partial,
+                "remaining_units": requested - partial,
                 "safe_behavior": "manage_filled_remainder_or_cancel_unfilled",
                 "promotion_evidence": False,
             },
             "rejected_order": {
-                "status": "contract_test_passed", "filled_units": 0.0, "position_open": False,
-                "safe_behavior": "WAIT_OR_CANCEL", "promotion_evidence": False,
+                "status": "contract_test_passed",
+                "filled_units": 0.0,
+                "position_open": False,
+                "safe_behavior": "WAIT_OR_CANCEL",
+                "promotion_evidence": False,
             },
             "disconnect": {
-                "status": "contract_test_passed", "signal_invalidated": True, "position_open": False,
-                "safe_behavior": "WAIT_OR_CANCEL_UNCONFIRMED_ORDER", "promotion_evidence": False,
+                "status": "contract_test_passed",
+                "signal_invalidated": True,
+                "position_open": False,
+                "safe_behavior": "WAIT_OR_CANCEL_UNCONFIRMED_ORDER",
+                "promotion_evidence": False,
             },
             "stale_candle": {
-                "status": "contract_test_passed", "decision_allowed": False,
-                "safe_behavior": "WAIT_FOR_NEXT_CANONICAL_CANDLE", "promotion_evidence": False,
+                "status": "contract_test_passed",
+                "decision_allowed": False,
+                "safe_behavior": "WAIT_FOR_NEXT_CANONICAL_CANDLE",
+                "promotion_evidence": False,
             },
             "gap_during_stop": {
-                "status": "contract_test_passed", "exit_policy": "conservative_gap_exit",
-                "safe_behavior": "CLOSE_OR_REDUCE_RISK_WITHOUT_REENTRY", "promotion_evidence": False,
+                "status": "contract_test_passed",
+                "exit_policy": "conservative_gap_exit",
+                "safe_behavior": "CLOSE_OR_REDUCE_RISK_WITHOUT_REENTRY",
+                "promotion_evidence": False,
             },
             "provider_disagreement": {
-                "status": "contract_test_passed", "decision_allowed": False,
-                "safe_behavior": "WAIT_FOR_CANONICAL_PROVIDER_ALIGNMENT", "promotion_evidence": False,
+                "status": "contract_test_passed",
+                "decision_allowed": False,
+                "safe_behavior": "WAIT_FOR_CANONICAL_PROVIDER_ALIGNMENT",
+                "promotion_evidence": False,
             },
         }
         return {
-            "protocol": "execution_fault_contract_v1", "status": "passed" if all(item["status"] == "contract_test_passed" for item in scenarios.values()) else "failed",
-            "scenarios": scenarios, "evidence_class": "synthetic_contract_only",
+            "protocol": "execution_fault_contract_v1",
+            "status": "passed" if all(item["status"] == "contract_test_passed" for item in scenarios.values()) else "failed",
+            "scenarios": scenarios,
+            "evidence_class": "synthetic_contract_only",
             "rule": "Contract safety is required for execution handling but cannot substitute for immutable provider observations.",
         }
 
@@ -1380,22 +1495,38 @@ class MarketAdaptiveReplayService:
                     delayed_entry = float(later.iloc[0]["open"])
                     exit_price = float(exit_rows.iloc[0]["close"])
                     gross = ((exit_price - delayed_entry) / delayed_entry * 100) if trade.get("direction") == "BUY" else ((delayed_entry - exit_price) / delayed_entry * 100)
-                    delayed = {"status": "assessed_fixed_exit", "profit_percent": round(gross - float(trade.get("execution_cost_percent", 0)), 5),
-                               "limitation": "Uses original exit timestamp; not eligible for mutation credit."}
+                    delayed = {
+                        "status": "assessed_fixed_exit",
+                        "profit_percent": round(gross - float(trade.get("execution_cost_percent", 0)), 5),
+                        "limitation": "Uses original exit timestamp; not eligible for mutation credit.",
+                    }
             profit = float(trade.get("profit_percent", 0))
-            blame = "execution_failure" if float(trade.get("execution_cost_percent", 0)) > abs(profit) * .35 else (
-                "exit_failure" if str(trade.get("exit_reason", "")) in {"stop_loss", "time_stop"} else "entry_failure"
+            blame = "execution_failure" if float(trade.get("execution_cost_percent", 0)) > abs(profit) * 0.35 else ("exit_failure" if str(trade.get("exit_reason", "")) in {"stop_loss", "time_stop"} else "entry_failure")
+            cases.append(
+                {
+                    "trade_key": f"{trade.get('entry_time')}|{trade.get('direction')}",
+                    "real_trade": {"profit_percent": profit},
+                    "no_trade": {"status": "assessed", "profit_percent": 0.0},
+                    "half_risk": {
+                        "status": "assessed",
+                        "profit_percent": round(profit / 2, 5),
+                    },
+                    "delayed_entry": delayed,
+                    "alternative_exit": {
+                        "status": "not_assessed",
+                        "reason": "requires per-trade exit topology replay",
+                    },
+                    "alternative_specialist": {
+                        "status": "not_assessed",
+                        "reason": "requires frozen router candidate",
+                    },
+                    "stressed_execution": {
+                        "status": "assessed_at_population_level",
+                        "reference": "execution_digital_twin",
+                    },
+                    "provisional_blame": blame,
+                }
             )
-            cases.append({
-                "trade_key": f"{trade.get('entry_time')}|{trade.get('direction')}", "real_trade": {"profit_percent": profit},
-                "no_trade": {"status": "assessed", "profit_percent": 0.0},
-                "half_risk": {"status": "assessed", "profit_percent": round(profit / 2, 5)},
-                "delayed_entry": delayed,
-                "alternative_exit": {"status": "not_assessed", "reason": "requires per-trade exit topology replay"},
-                "alternative_specialist": {"status": "not_assessed", "reason": "requires frozen router candidate"},
-                "stressed_execution": {"status": "assessed_at_population_level", "reference": "execution_digital_twin"},
-                "provisional_blame": blame,
-            })
         return {
             "status": "assessed_visible_ledger" if losses else "no_visible_losses",
             "scope": "latest API-visible closed trades only; not promotion evidence",
@@ -1409,7 +1540,12 @@ class MarketAdaptiveReplayService:
         scaled = replay.copy()
         for column in ["open", "high", "low", "close"]:
             scaled[column] = scaled[column] * 10.0
-        scaled_execution = payload.execution.model_copy(update={"point_size": payload.execution.point_size * 10.0, "spread_points": payload.execution.spread_points})
+        scaled_execution = payload.execution.model_copy(
+            update={
+                "point_size": payload.execution.point_size * 10.0,
+                "spread_points": payload.execution.spread_points,
+            }
+        )
         scaled_result = run_simple_ema_rsi_backtest_on_dataframe(
             payload.model_copy(update={"execution": scaled_execution, "emit_decision_trace": False}),
             scaled,
@@ -1420,10 +1556,18 @@ class MarketAdaptiveReplayService:
         scaled_directions = [trade.get("direction") for trade in scaled_result.get("trades", [])]
         return {
             "status": "assessed",
-            "price_scale": {"status": "passed" if original_directions == scaled_directions else "failed",
-                            "rule": "Price scaling must not invert the visible signal direction."},
-            "cost_monotonicity": {"status": "delegated", "reference": "execution_digital_twin.variable_spread"},
-            "provider_absence": {"status": "safe_wait_required", "rule": "No canonical provider candle means WAIT; no fallback trade is allowed."},
+            "price_scale": {
+                "status": "passed" if original_directions == scaled_directions else "failed",
+                "rule": "Price scaling must not invert the visible signal direction.",
+            },
+            "cost_monotonicity": {
+                "status": "delegated",
+                "reference": "execution_digital_twin.variable_spread",
+            },
+            "provider_absence": {
+                "status": "safe_wait_required",
+                "rule": "No canonical provider candle means WAIT; no fallback trade is allowed.",
+            },
         }
 
     @staticmethod
@@ -1447,7 +1591,10 @@ class MarketAdaptiveReplayService:
         }
 
     def _monthly_walk_forward_from_ledger(
-        self, replay: pd.DataFrame, score_calculator, chronological_result: dict[str, object],
+        self,
+        replay: pd.DataFrame,
+        score_calculator,
+        chronological_result: dict[str, object],
     ) -> dict[str, object]:
         """Build monthly evidence from one chronological replay ledger.
 
@@ -1460,7 +1607,7 @@ class MarketAdaptiveReplayService:
         normalized["time"] = pd.to_datetime(normalized["time"], utc=True, errors="coerce")
         month_keys = _utc_month_keys(normalized["time"])
         candidates = list(month_keys.drop_duplicates())[2:][-6:]
-        ledger_months = ((chronological_result.get("pf_attribution", {}) or {}).get("by_month", {}) or {})
+        ledger_months = (chronological_result.get("pf_attribution", {}) or {}).get("by_month", {}) or {}
         windows: list[dict[str, object]] = []
         for month in candidates:
             test = normalized[month_keys == month]
@@ -1470,30 +1617,34 @@ class MarketAdaptiveReplayService:
             month_result = self._month_result_from_attribution(ledger_months.get(str(month), {}) or {})
             profit_factor = float(month_result.get("profit_factor", 0.0))
             net_profit = float(month_result.get("net_profit_percent", 0.0))
-            windows.append({
-                "train_start": pd.Timestamp(train["time"].min()).date().isoformat(),
-                "train_end": pd.Timestamp(train["time"].max()).date().isoformat(),
-                "test_month": str(month), "test_rows": len(test),
-                "score": score_calculator(month_result), "trades": month_result["total_trades"],
-                "profit_factor": profit_factor,
-                "max_drawdown_percent": month_result["max_drawdown_percent"],
-                "net_profit_percent": net_profit,
-                "regime_performance": {},
-                "window_survival": {
-                    "status": "ledger_attribution",
-                    "positive_windows": int(profit_factor >= 1.0 and net_profit > 0),
-                    "catastrophic_windows": int(profit_factor < 1.0 or net_profit <= 0),
-                    "activity_absence": int(month_result["total_trades"] == 0),
-                    "indicator_warmup_preserved": True,
-                    "source": "full_chronological_trade_ledger",
-                },
-                "feedback_available_at": (_utc_month_end(str(month)) + pd.Timedelta(seconds=1)).isoformat(),
-                "used_for_same_month_mutation": False,
-                "state_continuity": "single_chronological_replay",
-                "state_reset": False,
-                "independent_evidence": False,
-                "promotion_evidence": False,
-            })
+            windows.append(
+                {
+                    "train_start": pd.Timestamp(train["time"].min()).date().isoformat(),
+                    "train_end": pd.Timestamp(train["time"].max()).date().isoformat(),
+                    "test_month": str(month),
+                    "test_rows": len(test),
+                    "score": score_calculator(month_result),
+                    "trades": month_result["total_trades"],
+                    "profit_factor": profit_factor,
+                    "max_drawdown_percent": month_result["max_drawdown_percent"],
+                    "net_profit_percent": net_profit,
+                    "regime_performance": {},
+                    "window_survival": {
+                        "status": "ledger_attribution",
+                        "positive_windows": int(profit_factor >= 1.0 and net_profit > 0),
+                        "catastrophic_windows": int(profit_factor < 1.0 or net_profit <= 0),
+                        "activity_absence": int(month_result["total_trades"] == 0),
+                        "indicator_warmup_preserved": True,
+                        "source": "full_chronological_trade_ledger",
+                    },
+                    "feedback_available_at": (_utc_month_end(str(month)) + pd.Timedelta(seconds=1)).isoformat(),
+                    "used_for_same_month_mutation": False,
+                    "state_continuity": "single_chronological_replay",
+                    "state_reset": False,
+                    "independent_evidence": False,
+                    "promotion_evidence": False,
+                }
+            )
         return {
             "protocol": "chronological replay ledger -> frozen month attribution -> next-month-only feedback",
             "status": "assessed" if windows else "insufficient_monthly_rows",
@@ -1508,7 +1659,10 @@ class MarketAdaptiveReplayService:
         }
 
     def _monthly_walk_forward(
-        self, payload: SimpleBacktestRequest, replay: pd.DataFrame, score_calculator,
+        self,
+        payload: SimpleBacktestRequest,
+        replay: pd.DataFrame,
+        score_calculator,
         chronological_result: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """Expanding monthly Time Machine without test-month feedback leakage.
@@ -1555,19 +1709,23 @@ class MarketAdaptiveReplayService:
                 lightweight=True,
             ).model_dump()
             survival = result.get("window_survival", {})
-            windows.append({
-                "train_start": pd.Timestamp(train["time"].min()).date().isoformat(),
-                "train_end": pd.Timestamp(train["time"].max()).date().isoformat(),
-                "test_month": str(month), "test_rows": len(test),
-                "score": score_calculator(result), "trades": result.get("total_trades", 0),
-                "profit_factor": result.get("profit_factor", 0),
-                "max_drawdown_percent": result.get("max_drawdown_percent", result.get("max_drawdown", 0)),
-                "net_profit_percent": result.get("net_profit_percent", 0),
-                "regime_performance": result.get("regime_performance", {}),
-                "window_survival": survival,
-                "feedback_available_at": (_utc_month_end(str(month)) + pd.Timedelta(seconds=1)).isoformat(),
-                "used_for_same_month_mutation": False,
-            })
+            windows.append(
+                {
+                    "train_start": pd.Timestamp(train["time"].min()).date().isoformat(),
+                    "train_end": pd.Timestamp(train["time"].max()).date().isoformat(),
+                    "test_month": str(month),
+                    "test_rows": len(test),
+                    "score": score_calculator(result),
+                    "trades": result.get("total_trades", 0),
+                    "profit_factor": result.get("profit_factor", 0),
+                    "max_drawdown_percent": result.get("max_drawdown_percent", result.get("max_drawdown", 0)),
+                    "net_profit_percent": result.get("net_profit_percent", 0),
+                    "regime_performance": result.get("regime_performance", {}),
+                    "window_survival": survival,
+                    "feedback_available_at": (_utc_month_end(str(month)) + pd.Timedelta(seconds=1)).isoformat(),
+                    "used_for_same_month_mutation": False,
+                }
+            )
         return {
             "protocol": "expanding train through prior month -> frozen test month -> next-month-only feedback",
             "status": "assessed" if windows else "insufficient_monthly_rows",
@@ -1587,8 +1745,10 @@ class MarketAdaptiveReplayService:
             status = "consistent" if len(positive) >= 3 and len(failures) <= 1 else "seasonal_or_luck"
         return {
             "protocol": "expanding prior-month training; a test month feeds only later months",
-            "status": status, "months": windows,
-            "rolling_forward_wins": len(positive), "failed_months": len(failures),
+            "status": status,
+            "months": windows,
+            "rolling_forward_wins": len(positive),
+            "failed_months": len(failures),
         }
 
     @staticmethod
@@ -1596,12 +1756,15 @@ class MarketAdaptiveReplayService:
         """Allocate 70/20/10 repair, historical-control and hidden-test lanes."""
         windows = list(tournament.get("windows", []))
         if not windows:
-            return {"status": "insufficient_monthly_rows", "targeted_windows": [], "control_windows": []}
-        failed = [window for window in windows if float(window.get("profit_factor", 0)) < 1.0
-                  or float(window.get("max_drawdown_percent", 0)) > 15 or float(window.get("net_profit_percent", 0)) <= 0]
+            return {
+                "status": "insufficient_monthly_rows",
+                "targeted_windows": [],
+                "control_windows": [],
+            }
+        failed = [window for window in windows if float(window.get("profit_factor", 0)) < 1.0 or float(window.get("max_drawdown_percent", 0)) > 15 or float(window.get("net_profit_percent", 0)) <= 0]
         healthy = [window for window in windows if window not in failed]
-        target_count = max(1, round(len(windows) * .70))
-        control_count = max(1, round(len(windows) * .20))
+        target_count = max(1, round(len(windows) * 0.70))
+        control_count = max(1, round(len(windows) * 0.20))
         hidden_reservation = max(0, len(windows) - target_count - control_count)
         targeted = failed[:target_count]
         # If there are fewer failures than the diagnostic budget, use oldest
@@ -1610,10 +1773,13 @@ class MarketAdaptiveReplayService:
         controls = (healthy + [w for w in windows if w not in targeted and w not in healthy])[:control_count]
         mean = lambda rows: round(sum(float(row.get("score", 0)) for row in rows) / len(rows), 3) if rows else None
         return {
-            "status": "assessed", "protocol": "70% failed-month repair; 20% chronological control; 10% hidden adversarial reservation; no same-window mutation",
-            "targeted_windows": [w.get("test_month") for w in targeted], "control_windows": [w.get("test_month") for w in controls],
+            "status": "assessed",
+            "protocol": "70% failed-month repair; 20% chronological control; 10% hidden adversarial reservation; no same-window mutation",
+            "targeted_windows": [w.get("test_month") for w in targeted],
+            "control_windows": [w.get("test_month") for w in controls],
             "hidden_adversarial_reservation": hidden_reservation,
-            "targeted_repair_score": mean(targeted), "control_score": mean(controls),
+            "targeted_repair_score": mean(targeted),
+            "control_score": mean(controls),
             "failure_count": len(failed),
             "acceptance_rule": "A later mutation must improve its targeted lane without degrading the fixed control lane.",
         }
@@ -1624,11 +1790,11 @@ class MarketAdaptiveReplayService:
         classified = apply_market_regime(replay.copy()).reset_index(drop=True)
         if len(classified) < 3:
             return {"status": "insufficient_rows", "score": 0.0}
-        boundary = (classified["market_regime"] != classified["market_regime"].shift(1)) | (
-            classified["volatility_regime"] != classified["volatility_regime"].shift(1)
-        )
+        boundary = (classified["market_regime"] != classified["market_regime"].shift(1)) | (classified["volatility_regime"] != classified["volatility_regime"].shift(1))
         transition_times = pd.to_datetime(
-            classified.loc[boundary, "time"], errors="coerce", utc=True,
+            classified.loc[boundary, "time"],
+            errors="coerce",
+            utc=True,
         ).dropna()
         trades = list(result.get("trades", []))
         transition_trades = []
@@ -1648,26 +1814,38 @@ class MarketAdaptiveReplayService:
         # No entry at a dangerous transition is valid abstention. The score
         # records it separately so it cannot be misread as coverage success.
         abstention = round(100 * (1 - min(1, false_entry_rate)), 2)
-        score = round(max(0, min(100, (wins / total * 70 + min(pf, 2) * 15))) if total else 50.0, 2)
+        score = round(
+            max(0, min(100, (wins / total * 70 + min(pf, 2) * 15))) if total else 50.0,
+            2,
+        )
         transition_equity = 100.0
         transition_peak = transition_equity
         transition_dd = 0.0
         for trade in transition_trades:
             transition_equity *= 1 + float(trade.get("profit_percent", 0)) / 100
             transition_peak = max(transition_peak, transition_equity)
-            transition_dd = max(transition_dd, (transition_peak - transition_equity) / transition_peak * 100)
+            transition_dd = max(
+                transition_dd,
+                (transition_peak - transition_equity) / transition_peak * 100,
+            )
         # Entropy is derived from continuation/reversal evidence in the
         # transition slice. It is a diagnostic summary, not a future label.
-        continuation = wins / total if total else .5
-        reversal = losses / total if total else .5
+        continuation = wins / total if total else 0.5
+        reversal = losses / total if total else 0.5
         entropy = 0.0 if not total else -sum(p * math.log(max(p, 1e-9)) for p in [continuation, reversal]) / math.log(2)
         return {
-            "status": "assessed", "protocol": "market/volatility transition +/- 3 H1 candles; frozen strategy and execution",
-            "transition_events": int(boundary.sum()), "transition_trades": total, "transition_profit_factor": pf,
-            "transition_only_drawdown_percent": round(transition_dd, 4), "transition_entropy": round(entropy, 5),
+            "status": "assessed",
+            "protocol": "market/volatility transition +/- 3 H1 candles; frozen strategy and execution",
+            "transition_events": int(boundary.sum()),
+            "transition_trades": total,
+            "transition_profit_factor": pf,
+            "transition_only_drawdown_percent": round(transition_dd, 4),
+            "transition_entropy": round(entropy, 5),
             "continuation_reversal_disagreement": round(abs(continuation - reversal), 5),
-            "transition_risk_multiplier": round(max(.3, min(.7, 1 - entropy * .55)), 5),
-            "false_entry_rate": false_entry_rate, "abstention_quality": abstention, "score": score,
+            "transition_risk_multiplier": round(max(0.3, min(0.7, 1 - entropy * 0.55)), 5),
+            "false_entry_rate": false_entry_rate,
+            "abstention_quality": abstention,
+            "score": score,
             "rule": "Transition policy may WAIT, reduce risk or re-route; steady-state PF alone is insufficient.",
         }
 
@@ -1682,10 +1860,13 @@ class MarketAdaptiveReplayService:
         segments = self.split_dataset(df, foundation_df, payload.timeframe, paper_only_2026=paper_only_2026)
         result = run_simple_ema_rsi_backtest_on_dataframe(payload, segments["holdout"]).model_dump()
         result["gold_holdout"] = {
-            "protocol": "gold_holdout_v1", "status": "released_once",
+            "protocol": "gold_holdout_v1",
+            "status": "released_once",
             "dataset_hash": self._segment_hash(segments["holdout"]),
-            "used_for_training": False, "used_for_evolution": False,
-            "one_time_release": True, "selection_excluded": True,
+            "used_for_training": False,
+            "used_for_evolution": False,
+            "one_time_release": True,
+            "selection_excluded": True,
         }
         return result, self._period(segments["holdout"])
 
@@ -1696,19 +1877,26 @@ class MarketAdaptiveReplayService:
         normal_result: dict[str, object],
         prepared_snapshot=None,
         feature_snapshot=None,
+        include_zero_cost_replay: bool = True,
     ) -> dict[str, object]:
         """Attribute execution-cost damage without rebuilding strategy signals."""
         execution = payload.execution
-        zero_execution = execution.model_copy(update={
-            "spread_points": 0.0, "slippage_points": 0.0,
-            "commission_percent": 0.0, "swap_per_day_percent": 0.0,
-        })
-        stress_execution = execution.model_copy(update={
-            "spread_points": execution.spread_points * 2.0,
-            "slippage_points": execution.slippage_points * 2.0,
-            "commission_percent": execution.commission_percent * 2.0,
-            "swap_per_day_percent": execution.swap_per_day_percent * 2.0,
-        })
+        zero_execution = execution.model_copy(
+            update={
+                "spread_points": 0.0,
+                "slippage_points": 0.0,
+                "commission_percent": 0.0,
+                "swap_per_day_percent": 0.0,
+            }
+        )
+        stress_execution = execution.model_copy(
+            update={
+                "spread_points": execution.spread_points * 2.0,
+                "slippage_points": execution.slippage_points * 2.0,
+                "commission_percent": execution.commission_percent * 2.0,
+                "swap_per_day_percent": execution.swap_per_day_percent * 2.0,
+            }
+        )
         # Cost/exit lanes are diagnostics over the same causal signal stream.
         # They never need a candle-level trace: the primary chronological
         # replay owns the immutable evidence and these profiles reference it
@@ -1721,13 +1909,17 @@ class MarketAdaptiveReplayService:
             replay,
             feature_snapshot=feature_snapshot,
         )
-        zero = _run_prepared_simple_backtest(
-            zero_payload,
-            replay,
-            prepared_snapshot=snapshot,
-            include_differential_pair=False,
-            lightweight=True,
-        ).model_dump()
+        zero = (
+            _run_prepared_simple_backtest(
+                zero_payload,
+                replay,
+                prepared_snapshot=snapshot,
+                include_differential_pair=False,
+                lightweight=True,
+            ).model_dump()
+            if include_zero_cost_replay
+            else None
+        )
         stress = _run_prepared_simple_backtest(
             stress_payload,
             replay,
@@ -1739,9 +1931,22 @@ class MarketAdaptiveReplayService:
         return {
             "method": "identical_replay_execution_profiles",
             "stress_multiplier": 2.0,
-            "zero_cost": {"profit_factor": zero.get("profit_factor", 0), "net_profit_percent": zero.get("net_profit_percent", 0), "summary": zero.get("pf_attribution", {}).get("summary", {})},
-            "normal_cost": {"profit_factor": normal_result.get("profit_factor", 0), "net_profit_percent": normal_result.get("net_profit_percent", 0), "summary": normal.get("summary", {})},
-            "stress_cost": {"profit_factor": stress.get("profit_factor", 0), "net_profit_percent": stress.get("net_profit_percent", 0), "summary": stress.get("pf_attribution", {}).get("summary", {})},
+            "zero_cost": {
+                "status": "assessed" if zero is not None else "deferred_to_full_validation",
+                "profit_factor": zero.get("profit_factor", 0) if zero is not None else None,
+                "net_profit_percent": zero.get("net_profit_percent", 0) if zero is not None else None,
+                "summary": zero.get("pf_attribution", {}).get("summary", {}) if zero is not None else {},
+            },
+            "normal_cost": {
+                "profit_factor": normal_result.get("profit_factor", 0),
+                "net_profit_percent": normal_result.get("net_profit_percent", 0),
+                "summary": normal.get("summary", {}),
+            },
+            "stress_cost": {
+                "profit_factor": stress.get("profit_factor", 0),
+                "net_profit_percent": stress.get("net_profit_percent", 0),
+                "summary": stress.get("pf_attribution", {}).get("summary", {}),
+            },
             "breakdown": {key: value for key, value in normal.items() if key != "summary"},
             "adversarial": {
                 "method": "worst_of_stress_cost_session_regime",
@@ -1753,7 +1958,8 @@ class MarketAdaptiveReplayService:
                 "prepared_signal_snapshot_reused": True,
                 "feature_snapshot_reused": feature_snapshot is not None,
                 "strategy_signal_recomputed": False,
-                "execution_profiles": 2,
+                "execution_profiles": 2 if include_zero_cost_replay else 1,
+                "zero_cost_replay_deferred": not include_zero_cost_replay,
                 "decision_trace_emitted": False,
                 "stateful_execution_replayed": True,
                 "promotion_evidence": False,
@@ -1766,12 +1972,20 @@ class MarketAdaptiveReplayService:
         profile = result.get("pf_attribution", {})
         edge = result.get("statistical_evidence", {}).get("edge_quality", {})
         failures = []
-        if float(profile.get("stress_cost", {}).get("profit_factor", 0)) < 1.05: failures.append("stress_cost")
+        if float(profile.get("stress_cost", {}).get("profit_factor", 0)) < 1.05:
+            failures.append("stress_cost")
         bootstrap = edge.get("bootstrap_pf", {})
-        if bootstrap.get("status") == "assessed" and float(bootstrap.get("pf_5_percentile_lower_bound", 0)) < 1.1: failures.append("bootstrap")
-        if edge.get("worst_regime_sampled") and float(edge.get("worst_regime_pf", 0)) < 1.0: failures.append("worst_regime")
-        claim["falsification_report"] = {"status": "survived" if not failures else "falsified", "failed_scenarios": failures, "adversarial": profile.get("adversarial", {})}
+        if bootstrap.get("status") == "assessed" and float(bootstrap.get("pf_5_percentile_lower_bound", 0)) < 1.1:
+            failures.append("bootstrap")
+        if edge.get("worst_regime_sampled") and float(edge.get("worst_regime_pf", 0)) < 1.0:
+            failures.append("worst_regime")
+        claim["falsification_report"] = {
+            "status": "survived" if not failures else "falsified",
+            "failed_scenarios": failures,
+            "adversarial": profile.get("adversarial", {}),
+        }
         return claim
+
     def _checkpoint_results(
         self,
         payload: SimpleBacktestRequest,
@@ -1783,13 +1997,10 @@ class MarketAdaptiveReplayService:
         # reset chunk here would restart EMA warm-up, cooldown and risk state
         # and manufacture boundary signals.
         chunk_size = len(replay) // self.minimum_checkpoint_windows
-        chunks = [
-            replay.iloc[index * chunk_size:(index + 1) * chunk_size if index < self.minimum_checkpoint_windows - 1 else len(replay)]
-            for index in range(self.minimum_checkpoint_windows)
-        ]
+        chunks = [replay.iloc[index * chunk_size : (index + 1) * chunk_size if index < self.minimum_checkpoint_windows - 1 else len(replay)] for index in range(self.minimum_checkpoint_windows)]
         chunks = [chunk for chunk in chunks if len(chunk) >= 202]
         checkpoints: list[dict[str, object]] = []
-        temporal_ledger = ((chronological_result.get("pf_attribution", {}) or {}).get("by_temporal_chunk", {}) or {})
+        temporal_ledger = (chronological_result.get("pf_attribution", {}) or {}).get("by_temporal_chunk", {}) or {}
         full_trades = [trade for trade in (chronological_result.get("trade_ledger", []) or []) if isinstance(trade, dict)]
         for index, chunk in enumerate(chunks, start=1):
             attribution = temporal_ledger.get(f"chunk_{index}", {})
@@ -1829,24 +2040,30 @@ class MarketAdaptiveReplayService:
                 "label_end": max(label_ends).isoformat() if label_ends else None,
                 "label_trade_count": len(chunk_trades),
             }
-            checkpoints.append({
-                "window": index,
-                **self._period(chunk),
-                "score": score_calculator(projection),
-                "trades": projection["total_trades"],
-                "profit_factor": projection["profit_factor"],
-                "net_profit_percent": projection["net_profit_percent"],
-                "state_continuity": "single_chronological_replay",
-                "state_reset": False,
-                "independent_evidence": False,
-                "source_trade_ledger_hash": chronological_result.get("trade_ledger_hash"),
-                "promotion_evidence": False,
-                **label_interval,
-            })
+            checkpoints.append(
+                {
+                    "window": index,
+                    **self._period(chunk),
+                    "score": score_calculator(projection),
+                    "trades": projection["total_trades"],
+                    "profit_factor": projection["profit_factor"],
+                    "net_profit_percent": projection["net_profit_percent"],
+                    "state_continuity": "single_chronological_replay",
+                    "state_reset": False,
+                    "independent_evidence": False,
+                    "source_trade_ledger_hash": chronological_result.get("trade_ledger_hash"),
+                    "promotion_evidence": False,
+                    **label_interval,
+                }
+            )
         return checkpoints
 
     @staticmethod
-    def _adaptation_evidence(replay: pd.DataFrame, result: dict[str, object], checkpoints: list[dict[str, object]]) -> dict[str, object]:
+    def _adaptation_evidence(
+        replay: pd.DataFrame,
+        result: dict[str, object],
+        checkpoints: list[dict[str, object]],
+    ) -> dict[str, object]:
         classified = apply_market_regime(replay)
         regime_counts = classified["market_regime"].value_counts().to_dict()
         volatility_counts = classified["volatility_regime"].value_counts().to_dict()
@@ -1870,7 +2087,7 @@ class MarketAdaptiveReplayService:
         }
 
     @staticmethod
-    def _robustness(*scores: int | float) -> int:
+    def _robustness(*scores: float) -> int:
         return round(max(0, min(100, 100 - (max(scores) - min(scores))))) if scores else 0
 
     @staticmethod

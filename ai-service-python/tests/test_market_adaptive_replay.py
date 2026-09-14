@@ -10,27 +10,37 @@ from app.strategies.laboratory import apply_hybrid_strategy
 
 class MarketAdaptiveReplayTest(unittest.TestCase):
     def setUp(self):
-        time = pd.DatetimeIndex([
-            *pd.date_range("2004-01-01", "2025-12-31", freq="D", tz="UTC"),
-            *pd.date_range("2026-01-01", "2026-07-17", freq="h", tz="UTC"),
-        ])
+        time = pd.DatetimeIndex(
+            [
+                *pd.date_range("2004-01-01", "2025-12-31", freq="D", tz="UTC"),
+                *pd.date_range("2026-01-01", "2026-07-17", freq="h", tz="UTC"),
+            ]
+        )
         close = pd.Series(range(len(time)), dtype=float).mod(37).add(100.0)
-        self.df = pd.DataFrame({
-            "time": time,
-            "open": close,
-            "high": close + 1,
-            "low": close - 1,
-            "close": close,
-            "volume": 1,
-        })
+        self.df = pd.DataFrame(
+            {
+                "time": time,
+                "open": close,
+                "high": close + 1,
+                "low": close - 1,
+                "close": close,
+                "volume": 1,
+            }
+        )
 
     def test_last_six_weeks_are_excluded_from_foundation_and_replay(self):
         parts = MarketAdaptiveReplayService().split_dataset(self.df)
 
-        self.assertLessEqual(parts["foundation"]["time"].max(), pd.Timestamp("2025-12-31 23:59:59", tz="UTC"))
+        self.assertLessEqual(
+            parts["foundation"]["time"].max(),
+            pd.Timestamp("2025-12-31 23:59:59", tz="UTC"),
+        )
         self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01", tz="UTC"))
         self.assertLess(parts["replay"]["time"].max(), parts["holdout"]["time"].min())
-        self.assertGreaterEqual(parts["holdout"]["time"].min(), self.df["time"].max() - pd.Timedelta(weeks=6))
+        self.assertGreaterEqual(
+            parts["holdout"]["time"].min(),
+            self.df["time"].max() - pd.Timedelta(weeks=6),
+        )
 
     def test_vendor_archive_starting_on_gbpusd_baseline_is_accepted(self):
         gbpusd_archive = self.df[self.df["time"] >= pd.Timestamp("2005-01-02", tz="UTC")]
@@ -45,7 +55,10 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
 
         parts = MarketAdaptiveReplayService().split_dataset(xau_archive)
 
-        self.assertEqual(parts["foundation"]["time"].min(), pd.Timestamp("2005-01-02 23:00", tz="UTC"))
+        self.assertEqual(
+            parts["foundation"]["time"].min(),
+            pd.Timestamp("2005-01-02 23:00", tz="UTC"),
+        )
 
     def test_timezone_aware_candles_are_normalized_before_boundary_comparisons(self):
         aware_archive = self.df.copy()
@@ -60,10 +73,12 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         service = MarketAdaptiveReplayService()
         replay = pd.DataFrame({"time": pd.date_range("2026-01-01", periods=808, freq="h", tz="UTC")})
         chronological = {
-            "trade_ledger": [{
-                "entry_time": "2026-01-02T00:00:00+00:00",
-                "exit_time": "2026-01-02T02:00:00+00:00",
-            }],
+            "trade_ledger": [
+                {
+                    "entry_time": "2026-01-02T00:00:00+00:00",
+                    "exit_time": "2026-01-02T02:00:00+00:00",
+                }
+            ],
             "pf_attribution": {},
         }
 
@@ -81,15 +96,17 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         service = MarketAdaptiveReplayService()
         replay = self.df[self.df["time"] >= pd.Timestamp("2026-01-01", tz="UTC")].head(808).reset_index(drop=True)
         result = {
-            "trades": [{
-                "signal_time": "2026-01-02T00:00:00+00:00",
-                "entry_time": "2026-01-02T01:00:00+00:00",
-                "exit_time": "2026-01-02T03:00:00+00:00",
-                "direction": "BUY",
-                "profit_percent": -1.0,
-                "execution_cost_percent": 0.1,
-                "exit_reason": "stop_loss",
-            }],
+            "trades": [
+                {
+                    "signal_time": "2026-01-02T00:00:00+00:00",
+                    "entry_time": "2026-01-02T01:00:00+00:00",
+                    "exit_time": "2026-01-02T03:00:00+00:00",
+                    "direction": "BUY",
+                    "profit_percent": -1.0,
+                    "execution_cost_percent": 0.1,
+                    "exit_reason": "stop_loss",
+                }
+            ],
         }
 
         transition = service._transition_homework(replay, result)
@@ -111,21 +128,26 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
     def test_m15_uses_its_own_pre_2026_foundation_contract(self):
         time = pd.date_range("2016-01-01", "2026-07-17 23:45:00", freq="15min", tz="UTC")
         close = pd.Series(range(len(time)), dtype=float).mod(41).add(100.0)
-        archive = pd.DataFrame({
-            "time": time,
-            "open": close,
-            "high": close + 1,
-            "low": close - 1,
-            "close": close,
-            "volume": 1,
-        })
+        archive = pd.DataFrame(
+            {
+                "time": time,
+                "open": close,
+                "high": close + 1,
+                "low": close - 1,
+                "close": close,
+                "volume": 1,
+            }
+        )
         foundation = archive[archive["time"] < pd.Timestamp("2026-01-01", tz="UTC")]
 
         parts = MarketAdaptiveReplayService().split_dataset(archive, foundation, "M15")
 
         self.assertGreaterEqual(len(parts["foundation"]), 2000)
         self.assertGreaterEqual(parts["foundation"]["time"].min(), pd.Timestamp("2016-01-01", tz="UTC"))
-        self.assertLessEqual(parts["foundation"]["time"].max(), pd.Timestamp("2025-12-31 23:59:59", tz="UTC"))
+        self.assertLessEqual(
+            parts["foundation"]["time"].max(),
+            pd.Timestamp("2025-12-31 23:59:59", tz="UTC"),
+        )
         self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01", tz="UTC"))
         self.assertTrue(parts["holdout"]["time"].min() > parts["replay"]["time"].max())
 
@@ -158,19 +180,28 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         pre_2026 = self.df[self.df["time"] < pd.Timestamp("2026-01-01", tz="UTC")]
         _, period = service.sealed_holdout(payload, pre_2026)
 
-        self.assertEqual(period["start"], service.split_dataset(pre_2026, paper_only_2026=True)["holdout"]["time"].min().isoformat())
+        self.assertEqual(
+            period["start"],
+            service.split_dataset(pre_2026, paper_only_2026=True)["holdout"]["time"].min().isoformat(),
+        )
 
     def test_monthly_passport_marks_one_good_month_as_seasonal_not_consistent(self):
-        passport = MarketAdaptiveReplayService._monthly_passport({"windows": [
-            {"profit_factor": 1.4, "net_profit_percent": 2},
-            {"profit_factor": .8, "net_profit_percent": -1},
-            {"profit_factor": .9, "net_profit_percent": -1},
-        ]})
+        passport = MarketAdaptiveReplayService._monthly_passport(
+            {
+                "windows": [
+                    {"profit_factor": 1.4, "net_profit_percent": 2},
+                    {"profit_factor": 0.8, "net_profit_percent": -1},
+                    {"profit_factor": 0.9, "net_profit_percent": -1},
+                ]
+            }
+        )
 
         self.assertEqual(passport["status"], "seasonal_or_luck")
         self.assertEqual(passport["rolling_forward_wins"], 1)
 
-    def test_execution_fault_contract_proves_safe_order_invariants_without_market_evidence(self):
+    def test_execution_fault_contract_proves_safe_order_invariants_without_market_evidence(
+        self,
+    ):
         payload = SimpleBacktestRequest(symbol="XAUUSD", timeframe="H1", strategy="trend_v1")
 
         contract = MarketAdaptiveReplayService._execution_fault_contract(payload)
@@ -183,18 +214,36 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
 
     def test_portfolio_statistics_fail_closed_without_frozen_selection_frontier(self):
         payload = SimpleBacktestRequest(
-            symbol="XAUUSD", timeframe="H1", strategy="portfolio_v1",
+            symbol="XAUUSD",
+            timeframe="H1",
+            strategy="portfolio_v1",
             portfolio_members=[
-                {"strategy": "trend_v1", "member_key": "performance:1", "target_regime": "trend_up"},
-                {"strategy": "range_v1", "member_key": "performance:2", "target_regime": "range"},
+                {
+                    "strategy": "trend_v1",
+                    "member_key": "performance:1",
+                    "target_regime": "trend_up",
+                },
+                {
+                    "strategy": "range_v1",
+                    "member_key": "performance:2",
+                    "target_regime": "range",
+                },
             ],
         )
         result = {
             "equity_curve": [10000 + index * 10 for index in range(20)],
             "portfolio_evidence": {
                 "declared_members": [
-                    {"member_key": "performance:1", "strategy": "trend_v1", "target_regime": "trend_up"},
-                    {"member_key": "performance:2", "strategy": "range_v1", "target_regime": "range"},
+                    {
+                        "member_key": "performance:1",
+                        "strategy": "trend_v1",
+                        "target_regime": "trend_up",
+                    },
+                    {
+                        "member_key": "performance:2",
+                        "strategy": "range_v1",
+                        "target_regime": "range",
+                    },
                 ],
                 "member_breakdown": {
                     "performance:1": {"trades": 10},
@@ -209,12 +258,24 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         self.assertFalse(result["selection_validation"]["promotion_evidence"])
         self.assertNotEqual(result["statistical_evidence"]["deflated_sharpe"]["status"], "assessed")
 
-    def test_portfolio_behavioral_diversity_requires_active_orthogonal_specialists(self):
+    def test_portfolio_behavioral_diversity_requires_active_orthogonal_specialists(
+        self,
+    ):
         result = {
             "portfolio_evidence": {
                 "declared_members": [
-                    {"member_key": "performance:1", "strategy": "trend_v1", "target_regime": "trend_up", "target_volatility": "normal_volatility"},
-                    {"member_key": "performance:2", "strategy": "range_v1", "target_regime": "range", "target_volatility": "low_volatility"},
+                    {
+                        "member_key": "performance:1",
+                        "strategy": "trend_v1",
+                        "target_regime": "trend_up",
+                        "target_volatility": "normal_volatility",
+                    },
+                    {
+                        "member_key": "performance:2",
+                        "strategy": "range_v1",
+                        "target_regime": "range",
+                        "target_volatility": "low_volatility",
+                    },
                 ],
                 "member_breakdown": {
                     "performance:1": {"trades": 10},
@@ -238,9 +299,19 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
             "trades": [],
             "pf_attribution": {"by_regime": {}},
         }
-        with patch.object(MarketAdaptiveReplayService, "_cost_profile_attribution", return_value={"stress_cost": {"profit_factor": 1.1}}), \
-             patch("app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe") as run:
-            run.return_value = type("Result", (), {"model_dump": lambda self: {"profit_factor": 1.1, "total_trades": 10}})()
+        with (
+            patch.object(
+                MarketAdaptiveReplayService,
+                "_cost_profile_attribution",
+                return_value={"stress_cost": {"profit_factor": 1.1}},
+            ),
+            patch("app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe") as run,
+        ):
+            run.return_value = type(
+                "Result",
+                (),
+                {"model_dump": lambda self: {"profit_factor": 1.1, "total_trades": 10}},
+            )()
             profile = service.screening_survival_profile(payload, self.df, normal_result, lambda item: item["profit_factor"])
 
         self.assertEqual(profile["worst_regime_pf"], None)
@@ -260,31 +331,52 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
                 "by_regime": {},
                 "by_month": {
                     "2026-01": {
-                        "trades": 4, "wins": 3, "losses": 1, "winrate": 75,
-                        "net_pf": 1.8, "net_profit_percent": 1.6,
+                        "trades": 4,
+                        "wins": 3,
+                        "losses": 1,
+                        "winrate": 75,
+                        "net_pf": 1.8,
+                        "net_profit_percent": 1.6,
                     },
                 },
             },
         }
-        with patch.object(MarketAdaptiveReplayService, "_cost_profile_attribution", return_value={"stress_cost": {"profit_factor": 1.1}}), \
-             patch("app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe") as run:
-            run.return_value = type("Result", (), {"model_dump": lambda self: {"profit_factor": 1.1, "total_trades": 10}})()
+        with (
+            patch.object(
+                MarketAdaptiveReplayService,
+                "_cost_profile_attribution",
+                return_value={"stress_cost": {"profit_factor": 1.1}},
+            ),
+            patch("app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe") as run,
+        ):
+            run.return_value = type(
+                "Result",
+                (),
+                {"model_dump": lambda self: {"profit_factor": 1.1, "total_trades": 10}},
+            )()
             profile = service.screening_survival_profile(payload, self.df, normal_result, lambda item: item["profit_factor"])
 
         month = profile["calendar_month_survival"]["months"]["2026-01"]
-        self.assertEqual(profile["calendar_month_survival"]["source"], "full_chronological_trade_ledger")
+        self.assertEqual(
+            profile["calendar_month_survival"]["source"],
+            "full_chronological_trade_ledger",
+        )
         self.assertEqual(month["trades"], 4)
         self.assertEqual(month["profit_factor"], 1.8)
 
     def test_parameter_perturbation_uses_the_declared_changed_gene(self):
         service = MarketAdaptiveReplayService()
         payload = SimpleBacktestRequest(
-            symbol="XAUUSD", timeframe="H1", strategy="trend_v1",
+            symbol="XAUUSD",
+            timeframe="H1",
+            strategy="trend_v1",
             parameters={"ema_fast": 20, "ema_slow": 55},
             policy_context={"repair_contract": {"changed_gene": "ema_slow"}},
         )
         normal_result = {
-            "total_trades": 20, "profit_factor": 1.2, "trades": [],
+            "total_trades": 20,
+            "profit_factor": 1.2,
+            "trades": [],
             "pf_attribution": {
                 "by_regime": {"trend_up": {"trades": 10, "net_pf": 1.2}},
                 "by_temporal_chunk": {
@@ -299,30 +391,112 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
 
         def fake_run(variant_payload, *_args, **_kwargs):
             observed_parameters.append(variant_payload.parameters)
-            return type("Result", (), {"model_dump": lambda self: {"profit_factor": 1.2, "total_trades": 10, "trades": []}})()
+            return type(
+                "Result",
+                (),
+                {
+                    "model_dump": lambda self: {
+                        "profit_factor": 1.2,
+                        "total_trades": 10,
+                        "trades": [],
+                    }
+                },
+            )()
 
-        with patch.object(MarketAdaptiveReplayService, "_cost_profile_attribution", return_value={"stress_cost": {"profit_factor": 1.1}}), \
-             patch("app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe", side_effect=fake_run):
+        with (
+            patch.object(
+                MarketAdaptiveReplayService,
+                "_cost_profile_attribution",
+                return_value={"stress_cost": {"profit_factor": 1.1}},
+            ) as cost_profile,
+            patch(
+                "app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe",
+                side_effect=fake_run,
+            ),
+        ):
             profile = service.screening_survival_profile(payload, self.df, normal_result, lambda item: item["profit_factor"])
 
         self.assertEqual("ema_slow", profile["parameter_perturbation_gene"])
         self.assertEqual("assessed", profile["parameter_perturbation_status"])
         self.assertEqual([], [item for item in observed_parameters if item["ema_fast"] != 20])
         self.assertEqual(
-            {52.25, 57.75},
+            {52.25},
             {item["ema_slow"] for item in observed_parameters if item["ema_slow"] != 55},
         )
+        self.assertFalse(cost_profile.call_args.kwargs["include_zero_cost_replay"])
+
+    def test_screening_can_defer_parameter_factorial_without_claiming_evidence(self):
+        service = MarketAdaptiveReplayService()
+        payload = SimpleBacktestRequest(
+            symbol="XAUUSD",
+            timeframe="H1",
+            strategy="trend_v1",
+            parameters={"ema_fast": 20, "ema_slow": 55},
+            policy_context={"repair_contract": {"changed_gene": "ema_slow"}},
+        )
+        normal_result = {
+            "total_trades": 20,
+            "profit_factor": 1.2,
+            "trades": [],
+            "pf_attribution": {
+                "by_regime": {"trend_up": {"trades": 10, "net_pf": 1.2}},
+                "by_temporal_chunk": {
+                    "chunk_1": {"trades": 10, "net_pf": 1.2},
+                    "chunk_2": {"trades": 10, "net_pf": 1.2},
+                    "chunk_3": {"trades": 10, "net_pf": 1.2},
+                },
+                # A non-empty chronological ledger keeps this unit focused
+                # on the factorial deferral instead of invoking the legacy
+                # isolated-month fallback.
+                "by_month": {"ledger_present": {}},
+            },
+        }
+        with (
+            patch.object(
+                MarketAdaptiveReplayService,
+                "_cost_profile_attribution",
+                return_value={"stress_cost": {"profit_factor": 1.1}},
+            ),
+            patch(
+                "app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe"
+            ) as run,
+        ):
+            profile = service.screening_survival_profile(
+                payload,
+                self.df,
+                normal_result,
+                lambda item: item["profit_factor"],
+                run_parameter_perturbation=False,
+            )
+
+        self.assertEqual(
+            "deferred_to_factorial_block",
+            profile["parameter_perturbation_status"],
+        )
+        self.assertIsNone(profile["parameter_perturbation_ratio"])
+        self.assertIsNone(profile["signal_timing_stability"])
+        run.assert_not_called()
 
     def test_stratified_history_uses_independent_windows_across_the_archive(self):
         service = MarketAdaptiveReplayService()
         payload = SimpleBacktestRequest(
-            symbol="XAUUSD", timeframe="H1", strategy="trend_v1",
-            policy_context={"historical_stratified_windows": {
-                "protocol": "historical_stratified_windows_v1", "window_count": 8, "window_rows": 1500,
-            }},
+            symbol="XAUUSD",
+            timeframe="H1",
+            strategy="trend_v1",
+            policy_context={
+                "historical_stratified_windows": {
+                    "protocol": "historical_stratified_windows_v1",
+                    "window_count": 8,
+                    "window_rows": 1500,
+                }
+            },
         )
         with patch("app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe") as run:
-            run.return_value = type("Result", (), {"model_dump": lambda self: {"profit_factor": 1.2, "total_trades": 10}})()
+            run.return_value = type(
+                "Result",
+                (),
+                {"model_dump": lambda self: {"profit_factor": 1.2, "total_trades": 10}},
+            )()
             evidence = service.stratified_historical_screening_evidence(payload, self.df, lambda item: item["profit_factor"])
 
         self.assertEqual("passed", evidence["status"])
@@ -330,14 +504,51 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         self.assertEqual(8, run.call_count)
         self.assertNotEqual(evidence["windows"][0]["start"], evidence["windows"][-1]["start"])
 
+    def test_screening_defers_stratified_history_to_replication_block(self):
+        service = MarketAdaptiveReplayService()
+        payload = SimpleBacktestRequest(
+            symbol="XAUUSD",
+            timeframe="H1",
+            strategy="trend_v1",
+            policy_context={
+                "historical_stratified_windows": {
+                    "protocol": "historical_stratified_windows_v1",
+                    "window_count": 8,
+                    "window_rows": 1500,
+                    "source": "immutable_pre_2026_foundation",
+                }
+            },
+        )
+        with patch(
+            "app.services.market_adaptive_replay.run_simple_ema_rsi_backtest_on_dataframe"
+        ) as run:
+            evidence = service.stratified_historical_screening_evidence(
+                payload,
+                self.df,
+                lambda item: item["profit_factor"],
+                execute_inline=False,
+            )
+
+        self.assertEqual("deferred_to_replication_block", evidence["status"])
+        self.assertTrue(evidence["required_for_authority"])
+        self.assertFalse(evidence["promotion_evidence"])
+        self.assertEqual([], evidence["reason_codes"])
+        run.assert_not_called()
+
 
 class HybridStrategyTest(unittest.TestCase):
     def test_high_volatility_is_wait_when_gene_enables_safety_filter(self):
-        df = pd.DataFrame({
-            "time": pd.date_range("2026-01-01", periods=250, freq="h"),
-            "open": range(100, 350), "high": range(101, 351), "low": range(99, 349), "close": range(100, 350),
-            "market_regime": "trend_up", "volatility_regime": "high_volatility",
-        })
+        df = pd.DataFrame(
+            {
+                "time": pd.date_range("2026-01-01", periods=250, freq="h"),
+                "open": range(100, 350),
+                "high": range(101, 351),
+                "low": range(99, 349),
+                "close": range(100, 350),
+                "market_regime": "trend_up",
+                "volatility_regime": "high_volatility",
+            }
+        )
 
         result = apply_hybrid_strategy(df, {"high_volatility_wait": True})
 
