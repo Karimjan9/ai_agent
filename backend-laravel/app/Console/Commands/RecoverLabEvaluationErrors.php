@@ -141,7 +141,19 @@ class RecoverLabEvaluationErrors extends Command
                     $query->whereIn('status', $statuses);
                 } else {
                     if ($afterRuntimeSchemaRepair) {
-                        $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
+                        // Dynamic experiment-block generations may contain
+                        // full-replay research arms beside screening pairs.
+                        // Once a full arm starts, the aggregate generation
+                        // phase becomes full_validation (and the finalizer can
+                        // later mark it completed) even though a schema-
+                        // quarantined screening arm is still unresolved. A
+                        // completed generation is reopenable only by explicit
+                        // generation ID; global recovery never scans it.
+                        $statuses = ['screening', 'screened', 'full_validation', 'technical_quarantine'];
+                        if ($generationNumber !== null) {
+                            $statuses[] = 'completed';
+                        }
+                        $query->whereIn('status', $statuses);
                     } elseif ($afterTimeoutBudgetRepair) {
                         $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
                     } elseif ($afterRetryBudgetRepair) {

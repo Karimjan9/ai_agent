@@ -39,6 +39,8 @@ use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
+use App\Services\LabQueueJobInspector;
+use App\Services\LabReplayRecoveryService;
 use App\Services\LearningKernelService;
 use App\Services\LearningPulseService;
 use App\Services\LearningReceiptService;
@@ -48,6 +50,8 @@ use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
 use App\Services\TechnicalFailureClassifierService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -1960,6 +1964,52 @@ class CausalLearningLoopContractTest extends TestCase
             $agent->fresh(['generation', 'modelVersion']),
             'screen',
         ));
+    }
+
+    public function test_explicit_runtime_schema_screen_recovery_reopens_an_unresolved_arm_after_mixed_generation_completion(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $generation->update(['status' => 'completed']);
+        $agent = $this->agent($generation, $this->model('mixed-phase-schema-candidate', []), []);
+        $agent->update([
+            'lifecycle_status' => 'technical_quarantine',
+            'decision_reason' => 'Technical quarantine after bounded learning-lane transport failures; strategy verdict withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'mixed-phase-specialist-contract-schema-run',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id,
+            'phase' => 'screening',
+            'mode' => 'screen',
+            'status' => 'technical_error',
+            'started_at' => now()->subSecond(),
+            'finished_at' => now(),
+            'error_message' => '{"detail":[{"type":"dict_type","loc":["body","strategies",0,"specialist_context_contract"]}]}',
+        ]);
+
+        Http::fake(['*' => Http::response(['strategies' => []])]);
+        $queue = \Mockery::mock(LabQueueJobInspector::class);
+        $queue->shouldReceive('labQueueBacklog')->once()->andReturn(['total' => 0, 'queues' => []]);
+        $queue->shouldReceive('hasAgentJob')->once()->with($agent->id, \Mockery::type('array'))->andReturnFalse();
+        $this->app->instance(LabQueueJobInspector::class, $queue);
+        $recovery = \Mockery::mock(LabReplayRecoveryService::class);
+        $recovery->shouldReceive('prepare')->once()
+            ->with(\Mockery::on(fn (LabAgent $row): bool => $row->is($agent)), 'screen', false)
+            ->andReturn(['protocol' => LabReplayRecoveryService::PROTOCOL]);
+        $this->app->instance(LabReplayRecoveryService::class, $recovery);
+
+        $exit = Artisan::call('trading:recover-lab-evaluation-errors', [
+            'symbol' => 'XAUUSD',
+            '--timeframe' => 'H1',
+            '--generation' => $generation->generation,
+            '--limit' => 1,
+            '--mode' => 'screen',
+            '--after-runtime-schema-repair' => true,
+        ]);
+
+        $this->assertSame(0, $exit);
+        $this->assertSame('technical_quarantine', $agent->fresh()->lifecycle_status);
     }
 
     public function test_causal_full_replay_admission_is_atomic_and_does_not_select_only_screen_winners(): void
