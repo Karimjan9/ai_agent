@@ -123,12 +123,12 @@ class RecoverLabEvaluationErrors extends Command
         }
 
         $agents = LabAgent::query()->with(['modelVersion', 'generation'])
-            ->whereIn('lifecycle_status', $afterCodeRepair || $afterRuntimeSchemaRepair || $afterTimeoutBudgetRepair || $afterRetryBudgetRepair || $afterDatasetContractRepair
+            ->whereIn('lifecycle_status', $afterServiceRepair || $afterIpcRepair || $afterCodeRepair || $afterRuntimeSchemaRepair || $afterTimeoutBudgetRepair || $afterRetryBudgetRepair || $afterDatasetContractRepair
                 ? ['evaluation_error', 'technical_quarantine']
                 : ['evaluation_error'])
             ->where('timeframe', $timeframe)
             ->when($symbol, fn ($query) => $query->where('symbol', $symbol))
-            ->whereHas('generation', function ($query) use ($afterRuntimeSchemaRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair, $generationNumber, $fullRecovery): void {
+            ->whereHas('generation', function ($query) use ($afterServiceRepair, $afterIpcRepair, $afterRuntimeSchemaRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair, $generationNumber, $fullRecovery): void {
                 if ($fullRecovery) {
                     // A full replay can finish the generation for its healthy
                     // peers while one candidate is quarantined as an
@@ -154,6 +154,8 @@ class RecoverLabEvaluationErrors extends Command
                             $statuses[] = 'completed';
                         }
                         $query->whereIn('status', $statuses);
+                    } elseif ($afterServiceRepair || $afterIpcRepair) {
+                        $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
                     } elseif ($afterTimeoutBudgetRepair) {
                         $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
                     } elseif ($afterRetryBudgetRepair) {
@@ -186,11 +188,20 @@ class RecoverLabEvaluationErrors extends Command
                 if ($this->hasQueuedJob($agent, $mode)) {
                     return false;
                 }
+                if (str_contains(strtolower((string) $agent->decision_reason), 'cancelled detached recovery job quarantined after bounded operational canary')) {
+                    return false;
+                }
                 if ($afterAuthRepair) {
                     return $attempts >= 1 && str_contains((string) $agent->decision_reason, 'Invalid internal API token');
                 }
                 if ($afterServiceRepair) {
                     $reason = strtolower((string) $agent->decision_reason);
+                    $latestRunReason = strtolower((string) LabEvaluationRun::query()
+                        ->where('lab_agent_id', $agent->id)
+                        ->where('phase', $mode === 'full' ? 'full_validation' : 'screening')
+                        ->latest('id')
+                        ->value('error_message'));
+                    $reason .= ' '.$latestRunReason;
                     $transportFailure = str_contains($reason, 'curl error')
                         || str_contains($reason, 'failed to connect')
                         || str_contains($reason, 'timed out')

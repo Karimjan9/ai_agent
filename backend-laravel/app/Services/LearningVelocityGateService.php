@@ -339,6 +339,13 @@ class LearningVelocityGateService
         if (! in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true)) {
             return false;
         }
+        $decisionReason = strtolower((string) $agent->decision_reason);
+        if (str_contains($decisionReason, 'cancelled detached recovery job quarantined after bounded operational canary')) {
+            // The operator canary deliberately stopped these detached jobs and
+            // sealed them as diagnostic-only. They have no strategy authority,
+            // but there is also no executable recovery debt left to satisfy.
+            return false;
+        }
         // GenerationConstructionReconciliationService has permanently
         // withheld this partial cohort. Its quarantined agents are immutable
         // diagnostics, not recoverable work; counting them here would keep
@@ -371,6 +378,10 @@ class LearningVelocityGateService
         }
         if ($reasonCode === 'REPLAY_TRANSPORT_TIMEOUT'
             && (int) data_get($agent->modelVersion?->metadata, 'timeout_budget_repair_recovery_attempts', 0) >= 1) {
+            return false;
+        }
+        if ($reasonCode === 'AI_SERVICE_UNAVAILABLE'
+            && (int) data_get($agent->modelVersion?->metadata, 'service_repair_recovery_attempts', 0) >= 1) {
             return false;
         }
 

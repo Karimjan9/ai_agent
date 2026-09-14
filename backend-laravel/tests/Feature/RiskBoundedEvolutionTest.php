@@ -178,6 +178,44 @@ class RiskBoundedEvolutionTest extends TestCase
         $this->assertSame('healthy', $terminal['status']);
     }
 
+    public function test_cancelled_operational_canary_is_terminal_diagnostic_history(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Cancelled canary terminal test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
+            'population_size' => 1, 'status' => 'screened', 'trigger_context' => [],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'cancelled-canary-terminal', 'strategy' => 'cancelled-canary-terminal', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => [], 'evidence_status' => 'valid',
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+            'decision_reason' => 'Cancelled detached recovery job quarantined after bounded operational canary; strategy verdict withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'cancelled-canary-terminal-run', 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id, 'model_version_id' => $model->id,
+            'phase' => 'screening', 'mode' => 'screen', 'status' => 'technical_error',
+            'error_class' => 'RuntimeException',
+            'error_message' => 'cURL error 56: Recv failure: Connection was reset',
+            'started_at' => now()->subMinute(), 'finished_at' => now(),
+        ]);
+
+        $result = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame(0, $result['technical_recovery_agents']);
+        $this->assertSame('healthy', $result['status']);
+    }
+
     public function test_closed_population_contract_quarantine_is_excluded_without_quality_credit(): void
     {
         $lab = AiLaboratory::create([

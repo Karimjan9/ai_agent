@@ -194,7 +194,20 @@ class DispatchControlledTargetedRescueCohort extends Command
             true,
         );
         if (! $generation) {
-            return $this->failCommand('Rescue generation safety/data gate sabab yaratilmadi.');
+            $outcome = $populations->lastBuildOutcome();
+            if ($this->option('json')) {
+                $this->line(json_encode([
+                    ...$summary,
+                    'action' => 'blocked',
+                    'build_outcome' => $outcome,
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            }
+
+            return $this->failCommand(sprintf(
+                'Rescue generation yaratilmadi: %s (retryable=%s).',
+                (string) data_get($outcome, 'reason_code', 'UNKNOWN_BUILD_BLOCK'),
+                (bool) data_get($outcome, 'retryable', false) ? 'true' : 'false',
+            ));
         }
 
         // A controlled rescue is valid only as the complete declared cohort.

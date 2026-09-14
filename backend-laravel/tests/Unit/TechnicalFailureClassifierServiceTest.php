@@ -27,4 +27,16 @@ class TechnicalFailureClassifierServiceTest extends TestCase
         $this->assertSame('IMMUTABLE_EXPERIMENT_TERMINAL', $result['reason_code']);
         $this->assertFalse($result['blocks_global_generation']);
     }
+
+    public function test_curl_connection_reset_is_a_typed_service_transport_failure(): void
+    {
+        $result = (new TechnicalFailureClassifierService)->classify(
+            'cURL error 56: Recv failure: Connection was reset',
+            'Illuminate\\Http\\Client\\ConnectionException',
+        );
+
+        $this->assertSame(TechnicalFailureClassifierService::TRANSIENT, $result['class']);
+        $this->assertSame('AI_SERVICE_UNAVAILABLE', $result['reason_code']);
+        $this->assertTrue($result['blocks_global_generation']);
+    }
 }
