@@ -46,9 +46,9 @@ class CandidateGateDecisionService
         $reasons = array_values(array_unique($reasons));
         $woundSet = app(FailureWoundSetService::class)->evaluateForScreening($agent, $result);
         if (($woundSet['blocking_failure_count'] ?? 0) > 0) {
-            $reasons[] = 'FAILED_WOUND_SET_REGRESSION';
+            $woundReasons = [];
             foreach ((array) data_get($woundSet, 'blocking_failures', []) as $failure) {
-                $reasons[] = match ((string) data_get($failure, 'target_key')) {
+                $woundReasons[] = match ((string) data_get($failure, 'target_key')) {
                     'temporal_chunk' => 'FAILED_WOUND_TEMPORAL_CHUNK',
                     'calendar_month' => 'FAILED_WOUND_CALENDAR_MONTH',
                     'train_forward_gap' => 'FAILED_WOUND_TRAIN_FORWARD_GAP',
@@ -56,6 +56,19 @@ class CandidateGateDecisionService
                     default => 'FAILED_WOUND_SET_REGRESSION',
                 };
             }
+            // The generic marker is only useful when the wound contract
+            // cannot name its failed cell. Emitting it beside exact wounds
+            // creates an unresolved duplicate fingerprint and can allocate
+            // an unrelated architecture mutation for a known cost/window
+            // regression.
+            $exactWoundReasons = array_values(array_filter(
+                $woundReasons,
+                static fn (string $reason): bool => $reason !== 'FAILED_WOUND_SET_REGRESSION',
+            ));
+            $reasons = [
+                ...$reasons,
+                ...($exactWoundReasons !== [] ? $exactWoundReasons : ['FAILED_WOUND_SET_REGRESSION']),
+            ];
         }
         $reasons = array_values(array_unique($reasons));
         // A parameter change is not learning evidence by itself. Compare the

@@ -97,6 +97,7 @@ class LabFailureStudyService
             $decision = $decisions->get($agent->id);
             if (! $decision) {
                 $technicalExcluded[] = (int) $agent->id;
+
                 continue;
             }
             $run = LabEvaluationRun::query()
@@ -107,6 +108,7 @@ class LabFailureStudyService
                     || (bool) data_get($run->metadata, 'historical', false));
             if ($legacy) {
                 $legacyExcluded[] = (int) $agent->id;
+
                 continue;
             }
             $eligible = $run ? $evidence->learningEligibility($run) : ['complete' => false];
@@ -114,6 +116,17 @@ class LabFailureStudyService
                 static fn (mixed $reason): string => strtoupper(trim((string) $reason)),
                 (array) $decision->reason_codes,
             ))));
+            // Older decisions emitted a generic wound marker together with
+            // one or more exact wound cells. Consume the exact fingerprints
+            // and suppress only that redundant meta marker; a generic-only
+            // wound remains visible for deliberate review/abstention.
+            if (in_array('FAILED_WOUND_SET_REGRESSION', $reasons, true)
+                && collect($reasons)->contains(
+                    static fn (string $reason): bool => str_starts_with($reason, 'FAILED_WOUND_')
+                        && $reason !== 'FAILED_WOUND_SET_REGRESSION'
+                )) {
+                $reasons = array_values(array_diff($reasons, ['FAILED_WOUND_SET_REGRESSION']));
+            }
             // ``insufficient_evidence`` is not automatically an infrastructure
             // failure.  A completed replay with a durable request/response,
             // trace, ledger and dataset hash may still lack the trade/sample
@@ -124,20 +137,27 @@ class LabFailureStudyService
                 || collect($reasons)->contains(fn (string $reason): bool => $this->isTechnicalReason($reason));
             if (! $eligible['complete'] || $technical) {
                 $technicalExcluded[] = (int) $agent->id;
+
                 continue;
             }
             if ((string) $decision->decision === 'insufficient_evidence') {
                 $evidenceCompleteInsufficient[] = (int) $agent->id;
+
                 continue;
             }
             if ((string) $decision->decision === 'passed') {
                 $passAgents[] = (int) $agent->id;
+
                 continue;
             }
-            if ((string) $decision->decision !== 'failed') continue;
+            if ((string) $decision->decision !== 'failed') {
+                continue;
+            }
 
             $actionableAgentIds[] = (int) $agent->id;
-            if ($reasons === []) $reasons = ['UNSPECIFIED_SCREENING_GATE'];
+            if ($reasons === []) {
+                $reasons = ['UNSPECIFIED_SCREENING_GATE'];
+            }
             foreach ($reasons as $reason) {
                 $target = $this->targetForReason($reason);
                 $group = $this->groupForTarget($target);
@@ -155,7 +175,9 @@ class LabFailureStudyService
                 ];
                 $failureGroups[$reason]['gate_hits']++;
                 $failureGroups[$reason]['agent_ids'][] = (int) $agent->id;
-                if ($target === null) continue;
+                if ($target === null) {
+                    continue;
+                }
                 $targetCells[$target] ??= [
                     'target' => $target,
                     'gate_hits' => 0,
@@ -183,10 +205,8 @@ class LabFailureStudyService
             unset($cell['agent_ids']);
         }
         unset($cell);
-        uasort($failureGroups, static fn (array $a, array $b): int =>
-            ($b['gate_hits'] <=> $a['gate_hits']) ?: ($b['distinct_agents'] <=> $a['distinct_agents']));
-        uasort($targetCells, static fn (array $a, array $b): int =>
-            ($b['gate_hits'] <=> $a['gate_hits']) ?: ($b['distinct_agents'] <=> $a['distinct_agents']));
+        uasort($failureGroups, static fn (array $a, array $b): int => ($b['gate_hits'] <=> $a['gate_hits']) ?: ($b['distinct_agents'] <=> $a['distinct_agents']));
+        uasort($targetCells, static fn (array $a, array $b): int => ($b['gate_hits'] <=> $a['gate_hits']) ?: ($b['distinct_agents'] <=> $a['distinct_agents']));
 
         $report = [
             'protocol' => self::PROTOCOL,
@@ -249,7 +269,7 @@ class LabFailureStudyService
      * coordinates only: this method never turns them into a mutation feature
      * or a gate override.
      *
-     * @param array<int, int>|null $onlyAgentIds
+     * @param  array<int, int>|null  $onlyAgentIds
      * @return array<string, mixed>
      */
     public function cellAnalysisForGeneration(LabGeneration $generation, ?array $onlyAgentIds = null): array
@@ -292,19 +312,27 @@ class LabFailureStudyService
 
         foreach ($agentIds as $agentId) {
             $decision = $decisions->get($agentId);
-            if (! $decision || (string) $decision->decision !== 'failed') continue;
+            if (! $decision || (string) $decision->decision !== 'failed') {
+                continue;
+            }
             $reasons = array_values(array_unique(array_map(
                 static fn (mixed $reason): string => strtoupper(trim((string) $reason)),
                 (array) $decision->reason_codes,
             )));
-            if (collect($reasons)->contains(fn (string $reason): bool => $this->isTechnicalReason($reason))) continue;
+            if (collect($reasons)->contains(fn (string $reason): bool => $this->isTechnicalReason($reason))) {
+                continue;
+            }
             $run = LabEvaluationRun::query()
                 ->where('lab_agent_id', $agentId)
                 ->where('phase', 'screening')
                 ->latest('id')->first();
-            if (! $run || ! $evidence->learningEligibility($run)['complete']) continue;
+            if (! $run || ! $evidence->learningEligibility($run)['complete']) {
+                continue;
+            }
             $payload = $evidence->latestArtifactPayload($run);
-            if (! is_array($payload)) continue;
+            if (! is_array($payload)) {
+                continue;
+            }
             $breakdown = (array) data_get(
                 $payload,
                 'pf_attribution.breakdown',
@@ -313,7 +341,9 @@ class LabFailureStudyService
             $cells = [];
             foreach ($dimensions as $dimension => $path) {
                 $cell = $this->weakestCell((array) data_get($breakdown, str_replace('pf_attribution.breakdown.', '', $path), []));
-                if ($cell === null) continue;
+                if ($cell === null) {
+                    continue;
+                }
                 $cells[$dimension] = $cell;
                 $key = (string) $cell['cell'];
                 $frequencies[$dimension][$key] ??= [
@@ -344,11 +374,12 @@ class LabFailureStudyService
                 unset($row['trade_counts']);
             }
             unset($row);
-            usort($rows, static fn (array $a, array $b): int =>
-                ((int) $b['agents'] <=> (int) $a['agents'])
+            usort($rows, static fn (array $a, array $b): int => ((int) $b['agents'] <=> (int) $a['agents'])
                 ?: ((float) $a['minimum_net_pf'] <=> (float) $b['minimum_net_pf']));
             $worstFrequency[$dimension] = $rows;
-            if ($rows !== []) $dominantCells[$dimension] = $rows[0];
+            if ($rows !== []) {
+                $dominantCells[$dimension] = $rows[0];
+            }
         }
 
         return [
@@ -369,14 +400,17 @@ class LabFailureStudyService
     {
         $candidates = [];
         foreach ($rows as $key => $row) {
-            if (! is_array($row)) continue;
+            if (! is_array($row)) {
+                continue;
+            }
             $trades = (int) data_get($row, 'trades', 0);
-            if ($trades < 3) continue;
+            if ($trades < 3) {
+                continue;
+            }
             $pf = (float) data_get($row, 'net_pf', data_get($row, 'profit_factor', 0));
             $candidates[] = ['cell' => (string) $key, 'net_pf' => $pf, 'trades' => $trades];
         }
-        usort($candidates, static fn (array $a, array $b): int =>
-            ((float) $a['net_pf'] <=> (float) $b['net_pf'])
+        usort($candidates, static fn (array $a, array $b): int => ((float) $a['net_pf'] <=> (float) $b['net_pf'])
             ?: ((int) $b['trades'] <=> (int) $a['trades']));
 
         return $candidates[0] ?? null;
@@ -393,10 +427,11 @@ class LabFailureStudyService
 
     private function targetForReason(string $reason): ?string
     {
-        return match ($reason) {
+        $legacyTarget = match ($reason) {
             'FAILED_PROFIT_FACTOR' => 'profit_factor',
             'FAILED_STRESS_COST' => 'stress_cost',
             'FAILED_TEMPORAL_CHUNK_SURVIVAL',
+            'FAILED_TEMPORAL_CHUNK_CATASTROPHIC',
             'FAILED_CALENDAR_MONTH_SURVIVAL',
             'FAILED_TRAIN_FORWARD_GAP',
             'FAILED_TEMPORAL_SCORE_DRIFT',
@@ -412,16 +447,21 @@ class LabFailureStudyService
             'FAILED_STATISTICAL' => 'architecture',
             default => null,
         };
+
+        return $legacyTarget
+            ?? app(GateContractService::class)->optimizationTargetForReason($reason);
     }
 
     private function groupForTarget(?string $target): ?string
     {
         return match ($target) {
             'profit_factor', 'stress_cost' => 'volatility_session_stability',
-            'temporal_stability' => 'monthly_survival',
+            'temporal_stability', 'calendar_stability', 'monthly_survival',
+            'train_forward_robustness', 'parameter_stability' => 'monthly_survival',
             'regime_coverage' => 'regime_coverage',
             'drawdown_risk' => 'exit_topology',
             'architecture' => 'portfolio_router',
+            'trade_frequency' => 'confirmation_entry',
             default => null,
         };
     }
@@ -430,10 +470,12 @@ class LabFailureStudyService
     {
         return match ($target) {
             'profit_factor', 'stress_cost' => 'pf_stress_cost',
-            'temporal_stability' => 'temporal_calendar_stability',
+            'temporal_stability', 'calendar_stability', 'monthly_survival' => 'temporal_calendar_stability',
+            'train_forward_robustness', 'parameter_stability' => 'robustness_split',
             'regime_coverage' => 'regime_specialist',
             'drawdown_risk' => 'non_target_regression',
             'architecture' => 'architecture_control',
+            'trade_frequency' => 'opportunity_recall',
             default => null,
         };
     }

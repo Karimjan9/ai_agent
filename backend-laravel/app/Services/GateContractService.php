@@ -15,6 +15,7 @@ class GateContractService
     /** @var array<string, array{optimization_target:string,gate:string,lane:string}> */
     private const CONTRACTS = [
         'FAILED_TEMPORAL_CHUNK_SURVIVAL' => ['optimization_target' => 'temporal_stability', 'gate' => 'temporal_stability', 'lane' => 'temporal_state'],
+        'FAILED_TEMPORAL_CHUNK_CATASTROPHIC' => ['optimization_target' => 'temporal_stability', 'gate' => 'temporal_stability', 'lane' => 'temporal_state'],
         'FAILED_CALENDAR_MONTH_SURVIVAL' => ['optimization_target' => 'calendar_stability', 'gate' => 'calendar_stability', 'lane' => 'calendar_session'],
         'FAILED_MONTHLY_SURVIVAL' => ['optimization_target' => 'monthly_survival', 'gate' => 'calendar_stability', 'lane' => 'calendar_session'],
         'FAILED_TRAIN_FORWARD_GAP' => ['optimization_target' => 'train_forward_robustness', 'gate' => 'train_forward_robustness', 'lane' => 'robustness_split'],
@@ -119,7 +120,9 @@ class GateContractService
         $reason = preg_replace('/^FAILED_RESCUE_/', 'FAILED_', $reason) ?: $reason;
 
         $contract = self::CONTRACTS[$reason] ?? null;
-        if ($contract === null) return null;
+        if ($contract === null) {
+            return null;
+        }
 
         $definition = self::GATE_DEFINITIONS[(string) data_get($contract, 'gate', '')] ?? null;
 
@@ -199,7 +202,9 @@ class GateContractService
         $rows = [];
         foreach (array_values(array_unique(array_map('strval', $reasons))) as $reason) {
             $contract = $this->forReason($reason);
-            if ($contract === null) continue;
+            if ($contract === null) {
+                continue;
+            }
             $rows[] = ['reason' => strtoupper($reason), ...$contract, 'protocol' => self::PROTOCOL];
         }
 

@@ -39,6 +39,26 @@ class FinalEvolutionContractsTest extends TestCase
         $this->assertFalse($health['promotion_evidence']);
     }
 
+    public function test_catastrophic_and_wound_failures_keep_exact_repair_targets(): void
+    {
+        $contracts = app(GateContractService::class)->contracts([
+            'FAILED_TEMPORAL_CHUNK_CATASTROPHIC',
+            'FAILED_WOUND_TEMPORAL_CHUNK',
+            'FAILED_WOUND_CALENDAR_MONTH',
+            'FAILED_WOUND_COST_EXIT_STRESS',
+        ]);
+
+        $this->assertSame([
+            'temporal_stability',
+            'temporal_stability',
+            'calendar_stability',
+            'stress_cost',
+        ], collect($contracts)->pluck('optimization_target')->all());
+        $this->assertTrue(collect($contracts)->every(
+            fn (array $contract): bool => $contract['contract_status'] === 'valid'
+        ));
+    }
+
     public function test_progress_ladder_stops_at_the_first_unproven_stage(): void
     {
         $ladder = app(ProgressLadderService::class)->assess([
