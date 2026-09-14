@@ -13,11 +13,19 @@ use App\Models\LabGeneration;
 class StructuralResearchCohortService
 {
     public const PROTOCOL = 'structural_causal_cohort_v1';
+
     public const HYPOTHESIS_PROTOCOL = 'regime_conditioned_entry_exit_state_machine_v1';
+
     public const CONTROL_PAIR_PROTOCOL = 'frozen_control_pair_v1';
+
     public const CAUSAL_PROBE_PROTOCOL = 'causal_micro_probe_v1';
+
     public const INDEPENDENT_EVIDENCE_PROTOCOL = 'independent_chronological_evidence_v1';
-    public const COHORT_MODE = 'structural_twenty_control_paired_v1';
+
+    public const COHORT_MODE = 'dynamic_twenty_experiment_block_v1';
+
+    public const LEGACY_COHORT_MODE = 'structural_twenty_control_paired_v1';
+
     public const POPULATION_SIZE = 20;
 
     /** @var array<string, int> */
@@ -32,23 +40,27 @@ class StructuralResearchCohortService
     public function isProfile(?array $profile): bool
     {
         return is_array($profile)
-            && ((string) data_get($profile, 'cohort_mode') === self::COHORT_MODE
+            && (in_array((string) data_get($profile, 'cohort_mode'), [self::COHORT_MODE, self::LEGACY_COHORT_MODE], true)
                 || (string) data_get($profile, 'structural_research_contract.protocol') === self::PROTOCOL);
     }
 
     public function isGeneration(?LabGeneration $generation): bool
     {
-        if (! $generation) return false;
+        if (! $generation) {
+            return false;
+        }
 
         $context = (array) $generation->trigger_context;
-        if ((string) data_get($context, 'targeted_failure_profile.cohort_mode') === self::COHORT_MODE
+        if (in_array((string) data_get($context, 'targeted_failure_profile.cohort_mode'), [self::COHORT_MODE, self::LEGACY_COHORT_MODE], true)
             || (string) data_get($context, 'structural_research_contract.protocol') === self::PROTOCOL
             || (string) data_get($context, 'targeted_failure_profile.structural_research_contract.protocol') === self::PROTOCOL) {
             return true;
         }
 
         foreach ((array) data_get($context, 'generation_plan', []) as $seat) {
-            if ((string) data_get($seat, 'niche.structural_cohort_protocol') === self::PROTOCOL) return true;
+            if ((string) data_get($seat, 'niche.structural_cohort_protocol') === self::PROTOCOL) {
+                return true;
+            }
         }
 
         return false;
@@ -73,10 +85,31 @@ class StructuralResearchCohortService
             'hypothesis_protocol' => self::HYPOTHESIS_PROTOCOL,
             'hypothesis' => 'Condition entry/exit topology and risk by closed H1 regime, transition quality, volume/session state, and directional asymmetry; scalar wait/EMA/ROC changes alone are not admissible.',
             'population_size' => self::POPULATION_SIZE,
-            'frozen_control_seats' => 5,
-            'candidate_seats' => 15,
+            'exact_control_pair_baselines' => 10,
+            'candidate_or_counterfactual_seats' => 10,
             'structural_families' => array_keys(self::FAMILY_SEATS),
-            'family_seats' => self::FAMILY_SEATS,
+            'permanent_semantic_group_quotas' => false,
+            'experiment_block_constitution' => [
+                'cold_start' => [
+                    'repair_pair' => 6,
+                    'novelty_pair' => 3,
+                    'continuity_adversarial_guard_pair' => 1,
+                ],
+                'positive_stepping_stone' => [
+                    'replication' => 1,
+                    'factorial' => 1,
+                    'transfer' => 1,
+                    'descendant' => 1,
+                    'repair_pair' => 1,
+                    'novelty_pair' => 1,
+                    'coverage_guard' => 1,
+                ],
+            ],
+            'legacy_five_by_four_fallback' => [
+                'cohort_mode' => self::LEGACY_COHORT_MODE,
+                'family_seats' => self::FAMILY_SEATS,
+                'authority' => 'fallback_or_shadow_only',
+            ],
             'control_pair' => [
                 'protocol' => self::CONTROL_PAIR_PROTOCOL,
                 'required_for_every_candidate' => true,
@@ -106,7 +139,7 @@ class StructuralResearchCohortService
                 'one_candle_is_insufficient' => true,
                 'promotion_evidence' => false,
             ],
-            'hybrid_evolution' => app(HybridEvolutionContractService::class)->allocation(self::POPULATION_SIZE, 2),
+            'hybrid_evolution' => app(HybridEvolutionContractService::class)->allocation(self::POPULATION_SIZE, 10),
             'promotion_evidence' => false,
             'source_generation_id' => data_get($profile, 'source_generation_id'),
         ];
@@ -116,35 +149,23 @@ class StructuralResearchCohortService
     public function groupPlan(): array
     {
         return [
-            'regime_coverage' => [
-                'rescue_objective' => 'regime_entry_exit_topology',
-                'specialist_role' => 'regime_coverage_specialist',
-                'structural_family' => 'regime_entry_exit_topology',
-                'targets' => array_fill(0, 4, 'regime_coverage'),
+            'failure_directed_repair_pairs' => [
+                'block_type' => 'repair_pair',
+                'pair_count' => 6,
+                'seats' => 12,
+                'allocation' => 'canonical_failure_priority',
             ],
-            'monthly_survival' => [
-                'rescue_objective' => 'transition_quality_state_machine',
-                'specialist_role' => 'temporal_calendar_specialist',
-                'structural_family' => 'transition_quality_state_machine',
-                'targets' => array_fill(0, 4, 'temporal_stability'),
+            'structural_novelty_pairs' => [
+                'block_type' => 'novelty_pair',
+                'pair_count' => 3,
+                'seats' => 6,
+                'allocation' => 'coverage_and_information_gain',
             ],
-            'volatility_session_stability' => [
-                'rescue_objective' => 'volume_session_m15',
-                'specialist_role' => 'volume_m15_specialist',
-                'structural_family' => 'volume_session_m15',
-                'targets' => array_fill(0, 4, 'stress_cost'),
-            ],
-            'exit_topology' => [
-                'rescue_objective' => 'risk_exit_lifecycle',
-                'specialist_role' => 'cost_stability_specialist',
-                'structural_family' => 'risk_exit_lifecycle',
-                'targets' => array_fill(0, 4, 'non_target_regression'),
-            ],
-            'portfolio_router' => [
-                'rescue_objective' => 'long_short_asymmetry',
-                'specialist_role' => 'regime_coverage_specialist',
-                'structural_family' => 'long_short_asymmetry',
-                'targets' => array_fill(0, 4, 'profit_factor'),
+            'continuity_adversarial_guard_pair' => [
+                'block_type' => 'adversarial_guard',
+                'pair_count' => 1,
+                'seats' => 2,
+                'allocation' => 'best_known_continuity_and_regression_guard',
             ],
         ];
     }
@@ -322,12 +343,21 @@ class StructuralResearchCohortService
     /** @return array{allowed: bool, reason: string, seats: int, families: array<string, int>} */
     public function validatePlan(array $plan): array
     {
+        if (collect($plan)->contains(fn (array $seat): bool => data_get($seat, 'niche.cooperative_experiment_block.protocol') === CooperativeContextualEvolutionCouncilService::PROTOCOL
+        )) {
+            return $this->validateDynamicPlan($plan);
+        }
+
         $families = [];
         $controls = 0;
         foreach ($plan as $seat) {
             $family = (string) data_get($seat, 'niche.structural_family', '');
-            if ($family !== '') $families[$family] = ($families[$family] ?? 0) + 1;
-            if ((bool) data_get($seat, 'niche.control_only', false)) $controls++;
+            if ($family !== '') {
+                $families[$family] = ($families[$family] ?? 0) + 1;
+            }
+            if ((bool) data_get($seat, 'niche.control_only', false)) {
+                $controls++;
+            }
         }
         $hybridAllocation = app(HybridEvolutionContractService::class)->allocation(count($plan), $controls);
         $hybridCounts = collect($plan)
@@ -358,6 +388,65 @@ class StructuralResearchCohortService
                 'promotion_evidence' => false,
             ],
             'families' => $families,
+            'causal_micro_probe_required_before_full_replay' => true,
+            'independent_chronological_evidence_required' => true,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function validateDynamicPlan(array $plan): array
+    {
+        $seats = collect(array_values($plan));
+        $protocolComplete = $seats->every(fn (array $seat): bool => data_get($seat, 'niche.cooperative_experiment_block.protocol') === CooperativeContextualEvolutionCouncilService::PROTOCOL
+        );
+        $pairs = $seats->groupBy(fn (array $seat): string => (string) data_get($seat, 'niche.control_pair_contract.pair_key', ''));
+        $pairIntegrity = ! $pairs->has('') && $pairs->count() === 10
+            && $pairs->every(function ($pair): bool {
+                $roles = $pair->pluck('niche.control_pair_contract.role')->sort()->values()->all();
+                $families = $pair->pluck('family')->unique();
+                $cells = $pair->pluck('niche.contextual_specialist_cell.cell_hash')->unique();
+
+                return $pair->count() === 2
+                    && $roles === ['candidate', 'control']
+                    && $families->count() === 1
+                    && $cells->count() === 1;
+            });
+        $blocks = $seats->groupBy(fn (array $seat): string => (string) data_get($seat, 'niche.cooperative_experiment_block.block_key', ''));
+        $blockIntegrity = ! $blocks->has('') && $blocks->every(fn ($block): bool => $block->count() === (int) data_get($block->first(), 'niche.cooperative_experiment_block.seat_count', 0)
+        );
+        $blockTypeSeats = $seats->countBy(fn (array $seat): string => (string) data_get($seat, 'niche.cooperative_experiment_block.block_type', 'unknown')
+        )->all();
+        $repairTargets = $seats
+            ->where('niche.cooperative_experiment_block.block_type', 'repair_pair')
+            ->countBy(fn (array $seat): string => (string) data_get($seat, 'target', ''))
+            ->map(fn (int $count): int => intdiv($count, 2))
+            ->all();
+        $coldStart = isset($blockTypeSeats['adversarial_guard']) && ! isset($blockTypeSeats['replication']);
+        $coldStartValid = ! $coldStart || (count($blockTypeSeats) === 3
+            && (int) ($blockTypeSeats['repair_pair'] ?? 0) === 12
+            && (int) ($blockTypeSeats['novelty_pair'] ?? 0) === 6
+            && (int) ($blockTypeSeats['adversarial_guard'] ?? 0) === 2);
+        $allowed = $seats->count() === self::POPULATION_SIZE
+            && $protocolComplete
+            && $pairIntegrity
+            && $blockIntegrity
+            && $coldStartValid;
+
+        return [
+            'protocol' => self::PROTOCOL,
+            'cohort_mode' => self::COHORT_MODE,
+            'allowed' => $allowed,
+            'reason' => $allowed ? 'DYNAMIC_EXPERIMENT_BLOCK_CONTRACT_VALID' : 'DYNAMIC_EXPERIMENT_BLOCK_CONTRACT_INVALID',
+            'seats' => $seats->count(),
+            'controls' => $pairs->count(),
+            'pair_count' => $pairs->count(),
+            'pair_integrity' => $pairIntegrity,
+            'block_integrity' => $blockIntegrity,
+            'block_count' => $blocks->count(),
+            'block_type_seats' => $blockTypeSeats,
+            'repair_pair_targets' => $repairTargets,
+            'permanent_semantic_group_quotas' => false,
             'causal_micro_probe_required_before_full_replay' => true,
             'independent_chronological_evidence_required' => true,
             'promotion_evidence' => false,

@@ -13,9 +13,13 @@ use Illuminate\Support\Facades\Schema;
 class LearningProtocolSafetyService
 {
     public const EXECUTION_CONTRACT = 'differential_paired_lane_v4_calendar_context_v1';
+
     public const CONTROLLED_RESCUE_PROTOCOL = 'controlled_targeted_rescue_v1';
+
     public const LIGHTHOUSE_SYMBOL = 'XAUUSD';
+
     public const LIGHTHOUSE_TIMEFRAME = 'H1';
+
     private const PAUSE_EVENT_KEY = 'learning_protocol:generation_creation_paused';
 
     public function generationCreationPaused(): bool
@@ -25,17 +29,18 @@ class LearningProtocolSafetyService
 
     /**
      * A paused laboratory may admit one explicitly audited rescue cohort.
-     * Legacy profiles retain the 20-seat five-by-four contract. The newer
-     * gate-margin profile is intentionally narrower: five seats for one
-     * immutable anchor (four bounded siblings plus one control).
+     * Legacy profiles retain the sealed five-by-four fallback. The active
+     * twenty-seat rescue constitution is ten dynamic exact-control pairs;
+     * the gate-margin pilot remains five seats around one immutable anchor.
      */
     public function controlledRescueAllowed(string $trigger, ?int $populationLimit, ?array $profile): bool
     {
         $groups = (array) data_get($profile, 'group_plan', []);
 
-        if ((string) data_get($profile, 'cohort_mode') === StructuralResearchCohortService::COHORT_MODE
-            || (string) data_get($profile, 'structural_research_contract.protocol') === StructuralResearchCohortService::PROTOCOL) {
+        if ((string) data_get($profile, 'cohort_mode') === StructuralResearchCohortService::COHORT_MODE) {
             $families = (array) data_get($profile, 'structural_research_contract.structural_families', []);
+            $plannedSeats = collect($groups)->sum(fn (mixed $group): int => (int) data_get($group, 'seats', 0));
+            $plannedPairs = collect($groups)->sum(fn (mixed $group): int => (int) data_get($group, 'pair_count', 0));
 
             return $trigger === 'candidate_handoff'
                 && (int) $populationLimit === StructuralResearchCohortService::POPULATION_SIZE
@@ -44,14 +49,29 @@ class LearningProtocolSafetyService
                 && (bool) data_get($profile, 'promotion_evidence', true) === false
                 && strtoupper((string) data_get($profile, 'symbol')) === self::LIGHTHOUSE_SYMBOL
                 && strtoupper((string) data_get($profile, 'timeframe')) === self::LIGHTHOUSE_TIMEFRAME
-                && count($groups) === 5
-                && collect($groups)->every(fn (mixed $group): bool => count((array) data_get($group, 'targets', [])) === 4)
+                && count($groups) === 3
+                && $plannedSeats === StructuralResearchCohortService::POPULATION_SIZE
+                && $plannedPairs === 10
                 && data_get($profile, 'structural_research_contract.protocol') === StructuralResearchCohortService::PROTOCOL
                 && (int) data_get($profile, 'structural_research_contract.population_size') === StructuralResearchCohortService::POPULATION_SIZE
+                && (bool) data_get($profile, 'structural_research_contract.permanent_semantic_group_quotas') === false
+                && (int) data_get($profile, 'structural_research_contract.exact_control_pair_baselines') === 10
                 && (bool) data_get($profile, 'structural_research_contract.control_pair.required_for_every_candidate')
                 && (bool) data_get($profile, 'structural_research_contract.causal_micro_probe.required_before_full_replay')
                 && (bool) data_get($profile, 'structural_research_contract.independent_evidence.non_overlap_required')
                 && count($families) >= 5;
+        }
+
+        if ((string) data_get($profile, 'cohort_mode') === StructuralResearchCohortService::LEGACY_COHORT_MODE) {
+            return $trigger === 'candidate_handoff'
+                && (int) $populationLimit === StructuralResearchCohortService::POPULATION_SIZE
+                && (string) data_get($profile, 'rescue_protocol') === self::CONTROLLED_RESCUE_PROTOCOL
+                && (bool) data_get($profile, 'temporary', false)
+                && (bool) data_get($profile, 'promotion_evidence', true) === false
+                && strtoupper((string) data_get($profile, 'symbol')) === self::LIGHTHOUSE_SYMBOL
+                && strtoupper((string) data_get($profile, 'timeframe')) === self::LIGHTHOUSE_TIMEFRAME
+                && count($groups) === 5
+                && collect($groups)->every(fn (mixed $group): bool => count((array) data_get($group, 'targets', [])) === 4);
         }
 
         if ((string) data_get($profile, 'cohort_mode') === 'four_siblings_plus_control_v1') {
@@ -245,7 +265,9 @@ class LearningProtocolSafetyService
             ->limit(3)
             ->with('agents:id,lab_generation_id,lifecycle_status')
             ->get();
-        if ($generations->count() < 3) return false;
+        if ($generations->count() < 3) {
+            return false;
+        }
 
         foreach ($generations as $generation) {
             $agents = $generation->agents;
@@ -261,7 +283,9 @@ class LearningProtocolSafetyService
                 ->where('stage', 'screening')
                 ->where('decision', 'passed')
                 ->exists();
-            if ($passes) return false;
+            if ($passes) {
+                return false;
+            }
         }
 
         return true;
@@ -283,7 +307,9 @@ class LearningProtocolSafetyService
             ->latest('generation')
             ->limit(4)
             ->pluck('id');
-        if ($latestGenerationIds->isEmpty()) return false;
+        if ($latestGenerationIds->isEmpty()) {
+            return false;
+        }
 
         $active = $lab->generations()
             ->whereIn('id', $latestGenerationIds)
@@ -291,7 +317,9 @@ class LearningProtocolSafetyService
                 'draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation',
             ]))
             ->exists();
-        if ($active) return false;
+        if ($active) {
+            return false;
+        }
 
         $settledPairIds = AgentLearningSettlement::query()
             ->where('source_type', LabLearningLanePair::class)
@@ -299,7 +327,9 @@ class LearningProtocolSafetyService
                 ->where('symbol', strtoupper((string) $lab->symbol))
                 ->where('timeframe', strtoupper((string) $lab->timeframe)))
             ->pluck('source_id');
-        if ($settledPairIds->isEmpty()) return false;
+        if ($settledPairIds->isEmpty()) {
+            return false;
+        }
 
         return LabLearningLanePair::query()
             ->with('controlResponseMap')

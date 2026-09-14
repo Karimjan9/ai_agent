@@ -4,9 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
-use App\Models\ContextualSpecialistCapsule;
 use App\Models\ContextualInstrumentBundleEffect;
+use App\Models\ContextualSpecialistCapsule;
 use App\Models\CooperativeExperimentSettlement;
+use App\Models\CooperativeModuleSpeciesMember;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
@@ -34,17 +35,14 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $this->assertSame(CooperativeContextualEvolutionCouncilService::PROTOCOL, $contract['protocol']);
         $this->assertCount(20, $allocation['plan']);
         $this->assertFalse($contract['permanent_semantic_group_quotas']);
-        $this->assertSame(9, $contract['block_count']);
-        $this->assertSame(8, data_get($contract, 'seat_counts.repair_pair'));
-        $this->assertSame(4, data_get($contract, 'seat_counts.novelty_pair'));
-        $this->assertSame(4, data_get($contract, 'seat_counts.factorial'));
-        $this->assertSame(2, data_get($contract, 'seat_counts.coverage_guard'));
+        $this->assertSame(10, $contract['block_count']);
+        $this->assertSame(12, data_get($contract, 'seat_counts.repair_pair'));
+        $this->assertSame(6, data_get($contract, 'seat_counts.novelty_pair'));
         $this->assertSame(2, data_get($contract, 'seat_counts.adversarial_guard'));
+        $this->assertNull(data_get($contract, 'seat_counts.factorial'));
+        $this->assertTrue(data_get($contract, 'cold_start_constitution.factorial_deferred_until_positive_stepping_stone'));
         $this->assertSame(CooperativeModuleSpeciesService::SPECIES, array_keys(data_get($contract, 'module_species.species')));
-        $factorial = collect($contract['experiment_blocks'])->firstWhere('block_type', 'factorial');
-        $this->assertSame(['control', 'a_only', 'b_only', 'a_plus_b'], $factorial['arms']);
-        $this->assertTrue(collect($contract['priority_ledger'])->every(fn (array $row): bool =>
-            array_key_exists('expected_information_gain', $row) && array_key_exists('overfit_risk', $row)
+        $this->assertTrue(collect($contract['priority_ledger'])->every(fn (array $row): bool => array_key_exists('expected_information_gain', $row) && array_key_exists('overfit_risk', $row)
         ));
 
         $paired = app(ResearchAllocationPolicyService::class)->materializeNormalControlPairing(
@@ -53,10 +51,8 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $this->assertTrue(data_get($paired, 'contract.allowed'));
         $this->assertSame('cooperative_experiment_blocks', data_get($paired, 'contract.mode'));
         $this->assertSame(10, data_get($paired, 'contract.pair_count'));
-        $factorialPairs = collect(data_get($paired, 'contract.materialized_controls'))->where('block_type', 'factorial')->values();
-        $this->assertCount(2, $factorialPairs);
-        $this->assertFalse($factorialPairs[0]['factorial_baseline_intervention']);
-        $this->assertTrue($factorialPairs[1]['factorial_baseline_intervention']);
+        $this->assertTrue(collect(data_get($paired, 'contract.materialized_controls'))
+            ->every(fn (array $pair): bool => ! $pair['factorial_baseline_intervention']));
     }
 
     public function test_ready_idea_is_compiled_into_a_novelty_block_but_gets_no_runtime_authority(): void
@@ -76,8 +72,7 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $entry = ResearchIdeaInboxEntry::query()->firstOrFail();
         $this->assertSame('assigned_to_frozen_experiment', $entry->status);
         $this->assertNotNull($entry->assigned_block_key);
-        $ideaSeats = collect($allocation['plan'])->filter(fn (array $slot): bool =>
-            data_get($slot, 'niche.cooperative_evolution_capsule.idea_reference.idea_key') === $entry->idea_key
+        $ideaSeats = collect($allocation['plan'])->filter(fn (array $slot): bool => data_get($slot, 'niche.cooperative_evolution_capsule.idea_reference.idea_key') === $entry->idea_key
         );
         $this->assertCount(2, $ideaSeats);
         $this->assertTrue($ideaSeats->every(fn (array $slot): bool => data_get($slot, 'niche.cooperative_evolution_capsule.promotion_evidence') === false));
@@ -94,7 +89,7 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $secondResult = app(ContextualCapsuleArchiveService::class)->recordScreening($second, $this->confirmedEvidence(1.2, .8, 12.0));
         $this->assertSame('challenger', $secondResult['status']);
         $this->assertSame($first->model_version_id, ContextualSpecialistCapsule::query()->where('status', 'elite')->value('model_version_id'));
-        $this->assertSame(14, \App\Models\CooperativeModuleSpeciesMember::query()->count());
+        $this->assertSame(14, CooperativeModuleSpeciesMember::query()->count());
     }
 
     public function test_factorial_settlement_records_marginal_interaction_and_whole_capsule_effects(): void
@@ -151,9 +146,12 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
     {
         $genes = ['lookback', 'minimum_signal_confidence', 'atr_stop_multiplier', 'time_stop_candles'];
         $plan = [];
-        for ($i = 0; $i < 20; $i++) $plan[] = ['origin' => 'g98_council', 'family' => 'hybrid', 'target' => 'bootstrap',
-            'niche' => ['declared_gene' => $genes[$i % 4], 'declared_value' => $i + 1,
-                'regime' => $i % 2 ? 'range' : 'trend_up', 'volatility' => 'normal_volatility']];
+        for ($i = 0; $i < 20; $i++) {
+            $plan[] = ['origin' => 'g98_council', 'family' => 'hybrid', 'target' => 'bootstrap',
+                'niche' => ['declared_gene' => $genes[$i % 4], 'declared_value' => $i + 1,
+                    'regime' => $i % 2 ? 'range' : 'trend_up', 'volatility' => 'normal_volatility']];
+        }
+
         return $plan;
     }
 
@@ -183,6 +181,7 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
             'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
             'origin' => 'test', 'lifecycle_status' => 'rejected', 'parameter_diff' => []]);
+
         return [$generation, $agent->fresh('modelVersion')];
     }
 

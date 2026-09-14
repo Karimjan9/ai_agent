@@ -1077,20 +1077,28 @@ class LabPopulationService
                         count($plan),
                     );
                 }
-                // A controlled rescue is an operator-approved five-by-four
-                // experiment, not an adaptive population. Recompile its final
-                // plan from the sealed curriculum after every generic planning
-                // step so a historical fallback cannot replace the declared
-                // causal gene or silently shrink the cohort.
+                $contextualCouncilAllocation = null;
+                // A controlled rescue is recompiled from its sealed research
+                // curriculum after generic planning. The current structural
+                // mode then allocates those templates into dynamic causal
+                // blocks; five-by-four survives only as an explicit legacy
+                // fallback and can never silently retake the active path.
                 if ($controlledRescue
                     && (string) data_get($targetedFailureProfile, 'protocol') === self::TARGETED_RESCUE_PROFILE_PROTOCOL) {
-                    // The ordinary v4 rescue remains five groups x four seats.
-                    // The gate-margin profile is deliberately narrower: one
-                    // selected near-miss, four one-gene siblings and one freshly
-                    // replayed frozen control.
                     $plan = match ((string) data_get($targetedFailureProfile, 'cohort_mode')) {
                         'four_siblings_plus_control_v1' => $this->anchorSiblingPlan($lockedLab, $targetedFailureProfile ?? [], $plannedPopulationSize),
-                        StructuralResearchCohortService::COHORT_MODE => app(StructuralResearchCohortService::class)->plan($lockedLab, $targetedFailureProfile ?? []),
+                        StructuralResearchCohortService::COHORT_MODE => (function () use ($lockedLab, $targetedFailureProfile, &$contextualCouncilAllocation, &$adaptiveEvolutionPolicy): array {
+                            $seedPlan = app(StructuralResearchCohortService::class)->plan($lockedLab, $targetedFailureProfile ?? []);
+                            $contextualCouncilAllocation = app(ContextualCouncilAllocatorService::class)->allocate(
+                                $seedPlan,
+                                $lockedLab,
+                                $targetedFailureProfile ?? [],
+                            );
+                            $adaptiveEvolutionPolicy['contextual_council_allocation'] = data_get($contextualCouncilAllocation, 'contract');
+
+                            return (array) data_get($contextualCouncilAllocation, 'plan', $seedPlan);
+                        })(),
+                        StructuralResearchCohortService::LEGACY_COHORT_MODE => app(StructuralResearchCohortService::class)->plan($lockedLab, $targetedFailureProfile ?? []),
                         default => $this->fiveByFourTargetedFailurePlan($lockedLab, $targetedFailureProfile ?? []),
                     };
                 }
@@ -1105,9 +1113,13 @@ class LabPopulationService
                     || $roleComplete
                     || $populationLimit !== null
                     || count($plan) !== 20;
+                $cooperativeExperimentPlan = collect($plan)->contains(fn (array $slot): bool => data_get($slot, 'niche.cooperative_experiment_block.protocol') === CooperativeContextualEvolutionCouncilService::PROTOCOL
+                );
                 $plan = (string) data_get($targetedFailureProfile, 'cohort_mode') === 'four_siblings_plus_control_v1'
                     ? $this->assignAnchorCohortSeats($plan)
-                    : ($specialPurposeAllocation ? $this->assignPopulationGroupSeats($plan) : array_values($plan));
+                    : ($specialPurposeAllocation && ! $cooperativeExperimentPlan
+                        ? $this->assignPopulationGroupSeats($plan)
+                        : array_values($plan));
                 $rootExperimentPortfolio = null;
                 if ($trigger === 'data_edge_audit'
                     && ! $shadowResearch
@@ -1216,8 +1228,8 @@ class LabPopulationService
                         ]);
                     }
                 }
-                $contextualCouncilAllocation = null;
-                if (! $controlledRescue
+                if ($contextualCouncilAllocation === null
+                    && ! $controlledRescue
                     && $rootExperimentPortfolio === null
                     && (string) data_get($targetedFailureProfile, 'cohort_mode') !== 'four_siblings_plus_control_v1'
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
@@ -1233,7 +1245,7 @@ class LabPopulationService
                     $adaptiveEvolutionPolicy['contextual_council_allocation'] = data_get($contextualCouncilAllocation, 'contract');
                 }
                 $normalControlPairing = null;
-                if (! $controlledRescue
+                if ((! $controlledRescue || $cooperativeExperimentPlan)
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
                     && ! $roleComplete
                     && count($plan) >= 2) {
@@ -11293,6 +11305,22 @@ class LabPopulationService
             $base[$key] = ! (bool) ($base[$key] ?? false);
 
             return $isolated ? $base : $this->applyBoundedBundle($schema, $base, $key, $target, $direction);
+        }
+        if ($type === 'string') {
+            $allowed = array_values(array_filter((array) $min, fn (mixed $value): bool => is_string($value)));
+            $alternatives = array_values(array_diff($allowed, [(string) ($base[$key] ?? '')]));
+            if ($alternatives === []) {
+                return $base;
+            }
+            $base[$key] = $alternatives[$seed % count($alternatives)];
+
+            // Enum/string genes are complete topology interventions. They are
+            // never followed by a numeric bundle, even in a broad discovery
+            // lane, because that would destroy single-gene attribution.
+            return $base;
+        }
+        if (! in_array($type, ['integer', 'numeric'], true) || ! is_numeric($min) || ! is_numeric($max)) {
+            return $base;
         }
         $current = (float) ($base[$key] ?? (($min + $max) / 2));
         $step = ($beneficial || $harmful) ? 0.05 : 0.1;

@@ -4,22 +4,25 @@ namespace App\Console\Commands;
 
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
+use App\Services\G62CausalContractService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
+use App\Services\LabQueueJobInspector;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\OperatorApprovalService;
 use App\Services\RescueCircuitBreakerService;
+use App\Services\StructuralResearchCohortService;
 use App\Services\TargetedRescueProfileService;
-use App\Services\LabQueueJobInspector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class DispatchControlledTargetedRescueCohort extends Command
 {
     protected $signature = 'trading:dispatch-controlled-targeted-rescue {symbol} {--timeframe=H1} {--source-generation=} {--apply : Create and dispatch one audited targeted rescue cohort} {--approved-by=} {--approval-reason=} {--json}';
+
     protected $description = 'Create one temporary targeted rescue cohort while normal generation creation stays paused';
 
     public function handle(
@@ -36,13 +39,17 @@ class DispatchControlledTargetedRescueCohort extends Command
             return $this->failCommand('Controlled rescue faqat XAUUSD H1 lighthouse uchun ruxsat etiladi; boshqa lablar research/shadow rejimida.');
         }
         $lab = AiLaboratory::query()->where('symbol', $symbol)->where('timeframe', $timeframe)->first();
-        if (! $lab) return $this->failCommand("{$symbol} {$timeframe}: laboratory topilmadi.");
+        if (! $lab) {
+            return $this->failCommand("{$symbol} {$timeframe}: laboratory topilmadi.");
+        }
 
         $source = $lab->generations()->with('agents')->when(
             $this->option('source-generation') !== null,
             fn ($query) => $query->where('generation', (int) $this->option('source-generation')),
         )->latest('generation')->first();
-        if (! $source) return $this->failCommand("{$symbol} {$timeframe}: source generation topilmadi.");
+        if (! $source) {
+            return $this->failCommand("{$symbol} {$timeframe}: source generation topilmadi.");
+        }
         if (! in_array((string) $source->status, ['screened', 'completed', 'technical_quarantine'], true)) {
             return $this->failCommand("{$symbol} {$timeframe} G{$source->generation}: source status {$source->status}; rescue faqat terminal cohort uchun.");
         }
@@ -60,7 +67,7 @@ class DispatchControlledTargetedRescueCohort extends Command
         $populationSize = max(1, (int) data_get($profile, 'population_size', 20));
         $causalRepair = null;
         if ((int) $source->generation === 62) {
-            $causalRepair = app(\App\Services\G62CausalContractService::class)->audit($source);
+            $causalRepair = app(G62CausalContractService::class)->audit($source);
             if (! (bool) data_get($causalRepair, 'corrected_contract.allowed', false)) {
                 return $this->failCommand('G62 causal contract repair is not valid; controlled rescue remains closed.');
             }
@@ -72,7 +79,7 @@ class DispatchControlledTargetedRescueCohort extends Command
             return $this->failCommand("{$symbol} {$timeframe} G{$source->generation}: actionable screening failure yo'q; technical/legacy evidence rescue mutationga kiritilmadi.");
         }
         $independentEvidence = null;
-        if (app(\App\Services\StructuralResearchCohortService::class)->isProfile($profile)) {
+        if (app(StructuralResearchCohortService::class)->isProfile($profile)) {
             $independentEvidence = $rescueCircuitBreaker->independentEvidenceAdmission(
                 $lab,
                 $source,
@@ -92,6 +99,7 @@ class DispatchControlledTargetedRescueCohort extends Command
                         'promotion_evidence' => false,
                     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
                 }
+
                 return $this->failCommand('Structural cohort uchun yangi non-overlap chronological evidence yoki sealed holdout hali tayyor emas.');
             }
         }
@@ -120,6 +128,7 @@ class DispatchControlledTargetedRescueCohort extends Command
         });
         $alreadyAdmitted = $priorRescues->contains(function (LabGeneration $generation): bool {
             $context = (array) $generation->trigger_context;
+
             // A constructor-aborted cohort never reached the queue and is not
             // an admitted rescue. It may be retried once after the compiler
             // is repaired; a dispatched/admitted cohort remains idempotently
@@ -147,8 +156,12 @@ class DispatchControlledTargetedRescueCohort extends Command
             'cohort_mode' => $profile['cohort_mode'] ?? null,
             'population_size' => $populationSize,
             'groups' => $profile['group_plan'],
+            'experiment_block_constitution' => data_get($profile, 'structural_research_contract.experiment_block_constitution'),
+            'legacy_five_by_four_fallback' => data_get($profile, 'structural_research_contract.legacy_five_by_four_fallback'),
             'reason_counts' => $profile['reason_counts'],
             'target_counts' => $profile['target_counts'],
+            'canonical_gate_contracts' => $profile['canonical_gate_contracts'] ?? [],
+            'targeted_repair_lanes' => $profile['targeted_repair_lanes'] ?? [],
             'temporal_mutation_hypothesis' => $profile['temporal_mutation_hypothesis'] ?? null,
             'temporal_edge_audit' => $profile['temporal_edge_audit'] ?? null,
             'structural_research_contract' => $profile['structural_research_contract'] ?? null,
@@ -180,7 +193,9 @@ class DispatchControlledTargetedRescueCohort extends Command
             $profile,
             true,
         );
-        if (! $generation) return $this->failCommand('Rescue generation safety/data gate sabab yaratilmadi.');
+        if (! $generation) {
+            return $this->failCommand('Rescue generation safety/data gate sabab yaratilmadi.');
+        }
 
         // A controlled rescue is valid only as the complete declared cohort.
         // A partial constructor result is technical evidence and must never
@@ -242,11 +257,15 @@ class DispatchControlledTargetedRescueCohort extends Command
         foreach ($generation->agents as $agent) {
             $decision = CandidateGateDecision::query()->where('lab_agent_id', $agent->id)
                 ->where('stage', 'screening')->latest('id')->first();
-            if (! $decision || $decision->decision !== 'passed') continue;
+            if (! $decision || $decision->decision !== 'passed') {
+                continue;
+            }
             $run = $agent->id
-                ? \App\Models\LabEvaluationRun::query()->where('lab_agent_id', $agent->id)->where('phase', 'screening')->latest('id')->first()
+                ? LabEvaluationRun::query()->where('lab_agent_id', $agent->id)->where('phase', 'screening')->latest('id')->first()
                 : null;
-            if ($run && $evidence->learningEligibility($run)['complete']) return true;
+            if ($run && $evidence->learningEligibility($run)['complete']) {
+                return true;
+            }
         }
 
         return false;
@@ -259,7 +278,9 @@ class DispatchControlledTargetedRescueCohort extends Command
         } else {
             $this->info(($payload['action'] ?? 'unknown').': '.($payload['symbol'] ?? '').' '.($payload['timeframe'] ?? '').' '.($payload['target_generation'] ?? '-'));
             $this->line('Declared rescue cohort seats = '.($payload['population_size'] ?? 20).'; promotion evidence=false.');
-            if (! empty($payload['dispatch_output'])) $this->line($payload['dispatch_output']);
+            if (! empty($payload['dispatch_output'])) {
+                $this->line($payload['dispatch_output']);
+            }
         }
 
         return self::SUCCESS;

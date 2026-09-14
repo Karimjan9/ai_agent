@@ -32,15 +32,14 @@ class TargetedRescueProfileService
         $nearMisses = [];
         $evidence = app(LabImmutableEvidenceService::class);
         foreach ($decisions as $decision) {
-            $reasons = array_values(array_unique(array_map('strtoupper', (array) $decision->reason_codes)));
+            $reasons = $this->canonicalReasons((array) $decision->reason_codes);
             $run = LabEvaluationRun::query()
                 ->where('lab_agent_id', $decision->lab_agent_id)
                 ->where('phase', 'screening')
                 ->latest('id')->first();
             $eligible = $run ? $evidence->learningEligibility($run) : ['complete' => false];
             $technical = ! $eligible['complete']
-                || collect($reasons)->contains(fn (string $reason): bool =>
-                    $reason !== 'INSUFFICIENT_SCREENING_EVIDENCE'
+                || collect($reasons)->contains(fn (string $reason): bool => $reason !== 'INSUFFICIENT_SCREENING_EVIDENCE'
                     && (str_contains($reason, 'EVIDENCE')
                         || str_contains($reason, 'TECHNICAL')
                         || str_contains($reason, 'SNAPSHOT')
@@ -49,17 +48,24 @@ class TargetedRescueProfileService
             if ($technical) {
                 $incompleteAgentIds[] = (int) $decision->lab_agent_id;
                 $technicalExcludedAgentIds[] = (int) $decision->lab_agent_id;
+
                 continue;
             }
             foreach ($reasons as $reason) {
-                if ($reason === '') continue;
+                if ($reason === '') {
+                    continue;
+                }
                 $reasonCounts[$reason] = ($reasonCounts[$reason] ?? 0) + 1;
                 $target = $this->targetForReason($reason);
-                if ($target !== null) $targetCounts[$target] = ($targetCounts[$target] ?? 0) + 1;
+                if ($target !== null) {
+                    $targetCounts[$target] = ($targetCounts[$target] ?? 0) + 1;
+                }
             }
             $decomposition = (array) data_get($decision->metrics, 'causal_funnel_attribution.failure_decomposition', []);
             $primaryMode = (string) data_get($decomposition, 'primary_failure_mode', '');
-            if ($primaryMode !== '') $decompositionCounts[$primaryMode] = ($decompositionCounts[$primaryMode] ?? 0) + 1;
+            if ($primaryMode !== '') {
+                $decompositionCounts[$primaryMode] = ($decompositionCounts[$primaryMode] ?? 0) + 1;
+            }
             $margin = (array) data_get($decision->metrics, 'gate_margin', []);
             if ($margin === []) {
                 $margin = app(GateMarginService::class)->screening((array) $decision->metrics, $reasons);
@@ -132,13 +138,14 @@ class TargetedRescueProfileService
                 ->all();
         }
         $selectedAnchor = collect($repairAnchors)->first(function (array $anchor) use ($nearMiss, $dominantTarget): bool {
-            if (! is_array($nearMiss)) return false;
+            if (! is_array($nearMiss)) {
+                return false;
+            }
 
             return (int) data_get($anchor, 'source_lab_agent_id') === (int) data_get($nearMiss, 'agent_id')
                 && ($dominantTarget === '' || (string) data_get($anchor, 'failure_target') === $dominantTarget);
         });
-        $selectedAnchor ??= collect($repairAnchors)->first(fn (array $anchor): bool =>
-            $dominantTarget === '' || (string) data_get($anchor, 'failure_target') === $dominantTarget
+        $selectedAnchor ??= collect($repairAnchors)->first(fn (array $anchor): bool => $dominantTarget === '' || (string) data_get($anchor, 'failure_target') === $dominantTarget
         );
         $anchorCohort = is_array($selectedAnchor) && filled(data_get($selectedAnchor, 'id'));
         // The next admitted research cohort is always the structural causal
@@ -187,13 +194,35 @@ class TargetedRescueProfileService
                 'split_contract' => 'immutable_same_train_forward_split',
                 'evaluation_contract_mutation' => false,
             ],
+            'calendar_stability' => [
+                'specialist_role' => 'calendar_session_specialist',
+                'genes' => [
+                    'transition_firewall_enabled', 'weak_regime_wait_candles',
+                    'loss_streak_wait_candles', 'max_loss_streak_before_wait',
+                ],
+                'calendar_contract_mutation' => false,
+                'session_local_only' => true,
+            ],
+            'temporal_score_drift' => [
+                'specialist_role' => 'temporal_drift_specialist',
+                'genes' => ['drift_abstention_enabled', 'adaptive_signal_expiry_enabled', 'weak_regime_wait_candles'],
+            ],
+            'parameter_stability' => [
+                'specialist_role' => 'parameter_robustness_specialist',
+                'genes' => ['confidence_calibration_min_samples', 'weak_regime_min_samples', 'meta_label_min_history'],
+            ],
             'stress_cost' => ['specialist_role' => 'cost_stability_specialist', 'genes' => ['atr_stop_multiplier', 'atr_target_multiplier', 'max_spread_atr_ratio', 'trailing_atr_multiplier']],
             'regime_coverage' => ['specialist_role' => 'regime_coverage_specialist', 'genes' => ['trend_up_strength_min', 'trend_down_strength_min', 'trend_up_roc_period', 'trend_down_roc_period']],
             'drawdown_risk' => ['specialist_role' => 'non_target_regression_specialist', 'genes' => ['time_stop_candles', 'partial_target_atr_multiplier', 'partial_take_profit_fraction', 'max_loss_streak_before_wait']],
+            'ruin_risk' => ['specialist_role' => 'ruin_risk_specialist', 'genes' => ['atr_stop_multiplier', 'max_loss_streak_before_wait', 'loss_streak_wait_candles']],
+            'trade_frequency' => ['specialist_role' => 'opportunity_recall_specialist', 'genes' => ['minimum_signal_confidence', 'weak_regime_min_samples', 'trend_up_strength_min', 'trend_down_strength_min']],
+            'architecture' => ['specialist_role' => 'structural_novelty_specialist', 'genes' => ['entry_topology_variant', 'state_machine_variant', 'regime_classifier_variant']],
             'profit_factor' => ['specialist_role' => 'edge_quality_specialist', 'genes' => ['minimum_signal_confidence', 'atr_stop_multiplier', 'atr_target_multiplier', 'trailing_atr_multiplier']],
         ];
         $selectedFailureLane = (string) data_get($nearMiss, 'failure_specific_lane', $dominantTarget);
-        if (! isset($failureSpecificPlan[$selectedFailureLane])) $selectedFailureLane = $dominantTarget;
+        if (! isset($failureSpecificPlan[$selectedFailureLane])) {
+            $selectedFailureLane = $dominantTarget;
+        }
         $selectedAnchors = $anchorCohort ? [$selectedAnchor] : $repairAnchors;
         $selectedTargets = $anchorCohort && $dominantTarget !== '' ? [$dominantTarget] : array_values(array_unique([
             ...array_keys($targetCounts), 'profit_factor', 'stress_cost', 'temporal_stability', 'regime_coverage',
@@ -235,48 +264,8 @@ class TargetedRescueProfileService
                 'hold_or_replicate',
             ),
             'targets' => $selectedTargets,
-            'targeted_repair_lanes' => [
-                [
-                    'lane' => 'profit_factor',
-                    'objective' => 'edge_quality',
-                    'target' => 'profit_factor',
-                    'control_pair_required' => true,
-                    'same_generation' => true,
-                    'stress_cost' => false,
-                ],
-                [
-                    'lane' => 'stress_cost',
-                    'objective' => 'cost_stability',
-                    'target' => 'stress_cost',
-                    'control_pair_required' => true,
-                    'same_generation' => true,
-                    'stress_cost' => true,
-                ],
-                [
-                    'lane' => 'temporal_survival',
-                    'objective' => 'temporal_survival',
-                    'target' => 'temporal_stability',
-                    'control_pair_required' => true,
-                    'same_generation' => true,
-                    'stress_cost' => false,
-                ],
-                [
-                    'lane' => 'regime_coverage',
-                    'objective' => 'regime_coverage',
-                    'target' => 'regime_coverage',
-                    'control_pair_required' => true,
-                    'same_generation' => true,
-                    'stress_cost' => false,
-                ],
-                [
-                    'lane' => 'non_target_regression',
-                    'objective' => 'protected_invariants',
-                    'target' => 'non_target_regression',
-                    'control_pair_required' => true,
-                    'same_generation' => true,
-                    'stress_cost' => false,
-                ],
-            ],
+            'targeted_repair_lanes' => $this->targetedRepairLanes($reasonCounts, $targetCounts),
+            'canonical_gate_contracts' => app(GateContractService::class)->contracts(array_keys($reasonCounts)),
             'incomplete_evidence_agent_ids' => array_values(array_unique($incompleteAgentIds)),
             'technical_excluded_agent_ids' => array_values(array_unique($technicalExcludedAgentIds)),
             'repair_anchors' => $selectedAnchors,
@@ -340,14 +329,18 @@ class TargetedRescueProfileService
             $ids = array_values(array_unique(array_filter($ids)));
             foreach ($generation->agents as $agent) {
                 $anchorId = (int) data_get($agent->modelVersion?->metadata, 'repair_anchor.id', 0);
-                if ($anchorId <= 0 || ! in_array($anchorId, $ids, true)) continue;
+                if ($anchorId <= 0 || ! in_array($anchorId, $ids, true)) {
+                    continue;
+                }
 
                 $decision = CandidateGateDecision::query()
                     ->where('lab_agent_id', $agent->id)
                     ->where('stage', 'screening')
                     ->latest('id')
                     ->first();
-                if (! $decision) continue;
+                if (! $decision) {
+                    continue;
+                }
 
                 $anchor = LabFailureRepairAnchor::query()->find($anchorId);
                 if (! $anchor || ! app(FailureRepairAnchorService::class)->snapshotMatches($anchor, (array) $decision->metrics)) {
@@ -365,20 +358,28 @@ class TargetedRescueProfileService
         $sourceGenerationId = (int) data_get($generation->trigger_context, 'targeted_failure_profile.source_generation_id', 0);
         $visited = [(int) $generation->id];
         for ($depth = 0; $depth < 4 && $sourceGenerationId > 0; $depth++) {
-            if (in_array($sourceGenerationId, $visited, true)) break;
+            if (in_array($sourceGenerationId, $visited, true)) {
+                break;
+            }
             $visited[] = $sourceGenerationId;
             $sourceGeneration = LabGeneration::query()->find($sourceGenerationId);
-            if (! $sourceGeneration) break;
+            if (! $sourceGeneration) {
+                break;
+            }
             $sourceIds = [];
             foreach ((array) data_get($sourceGeneration->trigger_context, 'targeted_failure_profile.repair_anchors', []) as $anchor) {
                 $anchorId = (int) data_get($anchor, 'id', 0);
-                if ($anchorId > 0) $sourceIds[] = $anchorId;
+                if ($anchorId > 0) {
+                    $sourceIds[] = $anchorId;
+                }
             }
             // The nearest source cohort owns the active bounded repair
             // lineage. Do not merge older historical anchors into the same
             // profile: that would make anchor selection non-deterministic and
             // could rewind the wrong attempt counter.
-            if ($sourceIds !== []) return array_values(array_unique(array_filter($sourceIds)));
+            if ($sourceIds !== []) {
+                return array_values(array_unique(array_filter($sourceIds)));
+            }
             $sourceGenerationId = (int) data_get($sourceGeneration->trigger_context, 'targeted_failure_profile.source_generation_id', 0);
         }
 
@@ -387,25 +388,73 @@ class TargetedRescueProfileService
 
     private function targetForReason(string $reason): ?string
     {
-        return app(FailureRepairAnchorService::class)->targetForReason($reason) ?? match ($reason) {
-            'FAILED_PROFIT_FACTOR' => 'profit_factor',
-            'FAILED_STRESS_COST' => 'stress_cost',
-            'FAILED_TEMPORAL_CHUNK_SURVIVAL',
-            'FAILED_CALENDAR_MONTH_SURVIVAL',
-            'FAILED_TRAIN_FORWARD_GAP',
-            'FAILED_TEMPORAL_SCORE_DRIFT',
-            'FAILED_PARAMETER_STABILITY',
-            'FAILED_SIGNAL_TIMING_STABILITY' => 'temporal_stability',
-            'FAILED_REGIME_COVERAGE',
-            'INSUFFICIENT_REGIME_EVIDENCE',
-            'FAILED_TRANSITION' => 'regime_coverage',
-            'FAILED_NON_TARGET_REGRESSION' => 'drawdown_risk',
-            'FAILED_DRAWDOWN',
-            'FAILED_RUIN' => 'drawdown_risk',
-            'FAILED_OVERFIT',
-            'FAILED_STATISTICAL' => 'architecture',
-            default => null,
-        };
+        return app(GateContractService::class)->optimizationTargetForReason($reason)
+            ?? app(FailureRepairAnchorService::class)->targetForReason($reason) ?? match ($reason) {
+                'FAILED_PROFIT_FACTOR' => 'profit_factor',
+                'FAILED_STRESS_COST' => 'stress_cost',
+                'FAILED_TEMPORAL_CHUNK_SURVIVAL',
+                'FAILED_CALENDAR_MONTH_SURVIVAL',
+                'FAILED_TRAIN_FORWARD_GAP',
+                'FAILED_TEMPORAL_SCORE_DRIFT',
+                'FAILED_PARAMETER_STABILITY',
+                'FAILED_SIGNAL_TIMING_STABILITY' => 'temporal_stability',
+                'FAILED_REGIME_COVERAGE',
+                'INSUFFICIENT_REGIME_EVIDENCE',
+                'FAILED_TRANSITION' => 'regime_coverage',
+                'FAILED_NON_TARGET_REGRESSION' => 'drawdown_risk',
+                'FAILED_DRAWDOWN',
+                'FAILED_RUIN' => 'drawdown_risk',
+                'FAILED_OVERFIT',
+                'FAILED_STATISTICAL' => 'architecture',
+                default => null,
+            };
+    }
+
+    /**
+     * Exact wound markers supersede the old aggregate marker. Keeping both
+     * would spend rescue priority twice on the same observation and would
+     * route the aggregate through a non-canonical fallback lane.
+     *
+     * @param  array<int, mixed>  $reasons
+     * @return array<int, string>
+     */
+    private function canonicalReasons(array $reasons): array
+    {
+        $reasons = array_values(array_unique(array_filter(array_map(
+            fn (mixed $reason): string => strtoupper(trim((string) $reason)),
+            $reasons,
+        ))));
+        $hasExactWound = collect($reasons)->contains(
+            fn (string $reason): bool => str_starts_with($reason, 'FAILED_WOUND_')
+                && $reason !== 'FAILED_WOUND_SET_REGRESSION',
+        );
+
+        return $hasExactWound
+            ? array_values(array_filter($reasons, fn (string $reason): bool => $reason !== 'FAILED_WOUND_SET_REGRESSION'))
+            : $reasons;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function targetedRepairLanes(array $reasonCounts, array $targetCounts): array
+    {
+        $contracts = collect(app(GateContractService::class)->contracts(array_keys($reasonCounts)))
+            ->keyBy('optimization_target');
+
+        return collect($targetCounts)->map(function (int $count, string $target) use ($contracts): array {
+            $contract = (array) $contracts->get($target, []);
+
+            return [
+                'lane' => (string) data_get($contract, 'lane', $target),
+                'objective' => (string) data_get($contract, 'gate', $target),
+                'target' => $target,
+                'observed_failure_count' => $count,
+                'control_pair_required' => true,
+                'same_generation' => true,
+                'same_context_required' => true,
+                'stress_cost' => $target === 'stress_cost',
+                'promotion_evidence' => false,
+            ];
+        })->values()->all();
     }
 
     /**
@@ -437,7 +486,8 @@ class TargetedRescueProfileService
             'FAILED_NON_POSITIVE_SCORE' => 'profit_factor',
         ];
         $candidates = collect($reasons)
-            ->map(fn (string $reason): ?string => $reasonGates[$reason] ?? null)
+            ->map(fn (string $reason): ?string => app(GateContractService::class)->optimizationTargetForReason($reason)
+                ?? ($reasonGates[$reason] ?? null))
             ->filter()
             ->unique()
             ->filter(fn (string $gate): bool => data_get($margin, 'gates.'.$gate.'.status') !== 'unknown')

@@ -171,6 +171,28 @@ class GateMarginAndControlParityTest extends TestCase
         $this->assertNotContains('train_forward_split', array_column($plan, 'gene'));
     }
 
+    public function test_exact_wounds_replace_the_legacy_aggregate_and_keep_canonical_targets(): void
+    {
+        $service = app(TargetedRescueProfileService::class);
+        $canonical = new \ReflectionMethod($service, 'canonicalReasons');
+        $canonical->setAccessible(true);
+        $target = new \ReflectionMethod($service, 'targetForReason');
+        $target->setAccessible(true);
+
+        $reasons = $canonical->invoke($service, [
+            'FAILED_WOUND_SET_REGRESSION',
+            'FAILED_WOUND_CALENDAR_MONTH',
+            'FAILED_WOUND_COST_EXIT_STRESS',
+            'FAILED_TEMPORAL_CHUNK_CATASTROPHIC',
+        ]);
+
+        $this->assertNotContains('FAILED_WOUND_SET_REGRESSION', $reasons);
+        $this->assertContains('FAILED_WOUND_CALENDAR_MONTH', $reasons);
+        $this->assertSame('calendar_stability', $target->invoke($service, 'FAILED_WOUND_CALENDAR_MONTH'));
+        $this->assertSame('stress_cost', $target->invoke($service, 'FAILED_WOUND_COST_EXIT_STRESS'));
+        $this->assertSame('temporal_stability', $target->invoke($service, 'FAILED_TEMPORAL_CHUNK_CATASTROPHIC'));
+    }
+
     public function test_special_replay_selector_fails_closed_until_control_parity_is_passed(): void
     {
         $method = new \ReflectionMethod(LabCandidateSelectionService::class, 'frozenControlParity');

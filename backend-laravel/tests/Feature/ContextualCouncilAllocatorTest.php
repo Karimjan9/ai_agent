@@ -11,6 +11,7 @@ use App\Models\ModelVersion;
 use App\Models\TradingInstrument;
 use App\Services\ContextualCouncilAllocatorService;
 use App\Services\ResearchAllocationPolicyService;
+use App\Services\StructuralResearchCohortService;
 use App\Services\TradingInstrumentOperatingSystemService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -44,15 +45,13 @@ class ContextualCouncilAllocatorTest extends TestCase
         $this->assertGreaterThanOrEqual(6, collect($contract['cells'])->pluck('venue_phase')->unique()->count());
         $authorityAllocation = (array) $contract['evolutionary_authority_allocation'];
         $this->assertSame('cold_start', $authorityAllocation['phase']);
-        $this->assertSame(8, data_get($authorityAllocation, 'seat_counts.repair_pair'));
-        $this->assertSame(4, data_get($authorityAllocation, 'seat_counts.novelty_pair'));
-        $this->assertSame(4, data_get($authorityAllocation, 'seat_counts.factorial'));
-        $this->assertSame(4, data_get($authorityAllocation, 'seat_counts.coverage_guard')
-            + data_get($authorityAllocation, 'seat_counts.adversarial_guard'));
+        $this->assertSame(12, data_get($authorityAllocation, 'seat_counts.repair_pair'));
+        $this->assertSame(6, data_get($authorityAllocation, 'seat_counts.novelty_pair'));
+        $this->assertNull(data_get($authorityAllocation, 'seat_counts.factorial'));
+        $this->assertSame(2, data_get($authorityAllocation, 'seat_counts.adversarial_guard'));
         $learningPortfolio = (array) $contract['multi_modal_learning_portfolio'];
-        $this->assertGreaterThanOrEqual(4, $learningPortfolio['method_diversity']);
+        $this->assertGreaterThanOrEqual(3, $learningPortfolio['method_diversity']);
         $this->assertContains('failure_directed_repair', $learningPortfolio['active_methods']);
-        $this->assertContains('bayesian_active_learning', $learningPortfolio['active_methods']);
         $this->assertContains('quality_diversity_novelty', $learningPortfolio['active_methods']);
         $this->assertContains('adversarial_robustness', $learningPortfolio['active_methods']);
         $this->assertGreaterThan(0, data_get($learningPortfolio, 'signals.posterior_entropy_mean'));
@@ -140,6 +139,58 @@ class ContextualCouncilAllocatorTest extends TestCase
             'venue_phase_coverage_rotation_then_contextual_ucb_with_local_success_failure_and_instrument_posterior',
             $contract['session_selection_policy'],
         );
+    }
+
+    public function test_controlled_rescue_routes_six_pairs_through_canonical_failure_targets(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Failure-directed rescue', 'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $snapshot = [
+            'reason_counts' => [
+                'FAILED_CALENDAR_MONTH_SURVIVAL' => 2,
+                'FAILED_STRESS_COST' => 2,
+                'FAILED_TEMPORAL_CHUNK_CATASTROPHIC' => 1,
+                'FAILED_REGIME_COVERAGE' => 1,
+            ],
+            'target_counts' => [
+                'calendar_stability' => 2,
+                'stress_cost' => 2,
+                'temporal_stability' => 1,
+                'regime_coverage' => 1,
+            ],
+            'canonical_gate_contracts' => [
+                ['optimization_target' => 'calendar_stability', 'gate' => 'calendar_stability', 'lane' => 'calendar_session'],
+                ['optimization_target' => 'stress_cost', 'gate' => 'stress_cost', 'lane' => 'cost_exit'],
+                ['optimization_target' => 'temporal_stability', 'gate' => 'temporal_stability', 'lane' => 'temporal_state'],
+                ['optimization_target' => 'regime_coverage', 'gate' => 'regime_coverage', 'lane' => 'regime_abstention'],
+            ],
+            'failure_specific_plan' => [
+                'calendar_stability' => ['genes' => ['transition_firewall_enabled']],
+                'stress_cost' => ['genes' => ['atr_stop_multiplier']],
+                'temporal_stability' => ['genes' => ['weak_regime_wait_candles']],
+                'regime_coverage' => ['genes' => ['trend_up_strength_min']],
+            ],
+        ];
+
+        $allocation = app(ContextualCouncilAllocatorService::class)->allocate($this->plan(), $lab, $snapshot);
+        $paired = app(ResearchAllocationPolicyService::class)->materializeNormalControlPairing(
+            $allocation['plan'], 'XAUUSD', 'H1', 7,
+        );
+        $repairPairs = collect(array_chunk($paired['plan'], 2))->filter(fn (array $pair): bool => data_get($pair[0], 'niche.cooperative_experiment_block.block_type') === 'repair_pair'
+        )->values();
+
+        $this->assertSame(
+            ['calendar_stability', 'stress_cost', 'temporal_stability', 'regime_coverage', 'calendar_stability', 'stress_cost'],
+            data_get($allocation, 'contract.failure_directed_allocation.repair_pair_targets'),
+        );
+        $this->assertCount(6, $repairPairs);
+        $this->assertTrue($repairPairs->every(fn (array $pair): bool => $pair[0]['target'] === $pair[1]['target']
+            && data_get($pair[1], 'niche.independent_exploration_forbidden') === true
+            && filled(data_get($pair[1], 'niche.canonical_gate_contract.gate'))
+        ));
+        $this->assertTrue(app(StructuralResearchCohortService::class)->validatePlan($paired['plan'])['allowed']);
     }
 
     public function test_early_credits_route_the_next_generation_and_causal_credit_changes_phase(): void

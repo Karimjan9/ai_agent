@@ -68,6 +68,24 @@ class StructuralCausalCohortTest extends TestCase
         $this->assertFalse($service->controlledRescueAllowed('candidate_handoff', 20, $profile));
     }
 
+    public function test_safety_service_accepts_the_dynamic_ten_pair_rescue_constitution(): void
+    {
+        $structural = app(StructuralResearchCohortService::class);
+        $profile = [
+            'cohort_mode' => StructuralResearchCohortService::COHORT_MODE,
+            'rescue_protocol' => LearningProtocolSafetyService::CONTROLLED_RESCUE_PROTOCOL,
+            'temporary' => true,
+            'promotion_evidence' => false,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'group_plan' => $structural->groupPlan(),
+            'structural_research_contract' => $structural->contract(),
+        ];
+
+        $this->assertTrue(app(LearningProtocolSafetyService::class)
+            ->controlledRescueAllowed('candidate_handoff', 20, $profile));
+    }
+
     public function test_micro_probe_rejects_parameter_hash_without_behavior_delta(): void
     {
         $lab = AiLaboratory::create([
