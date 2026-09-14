@@ -26,6 +26,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\SkipIfBatchCancelled;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Queue\SerializesModels;
@@ -144,6 +145,11 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     public function middleware(): array
     {
         return [
+            // Cancellation must be evaluated before fairness/mutex
+            // middleware can release the job. A late handle()-only check
+            // lets a cancelled contender loop without ever reaching that
+            // guard and can reopen technical recovery work.
+            new SkipIfBatchCancelled,
             // Once a sealed full-validation cohort is waiting, ordinary
             // screening must yield before it reaches the shared replay lock.
             new PreferFullValidationQueue($this->mode),

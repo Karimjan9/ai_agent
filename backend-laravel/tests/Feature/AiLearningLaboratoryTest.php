@@ -29,6 +29,7 @@ use App\Services\PaperTradingExecutionService;
 use App\Services\ScreeningLearningOutboxService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Queue\Middleware\SkipIfBatchCancelled;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -1802,6 +1803,8 @@ class AiLearningLaboratoryTest extends TestCase
         $screenMiddleware = collect($screen->middleware());
         $fullMiddleware = collect($full->middleware());
 
+        $this->assertInstanceOf(SkipIfBatchCancelled::class, $screenMiddleware->first());
+        $this->assertInstanceOf(SkipIfBatchCancelled::class, $fullMiddleware->first());
         $this->assertTrue($screenMiddleware->contains(fn ($middleware): bool => $middleware instanceof PreferFullValidationQueue));
         $this->assertTrue($fullMiddleware->contains(fn ($middleware): bool => $middleware instanceof PreferFullValidationQueue));
     }
