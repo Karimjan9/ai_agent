@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\AiLaboratory;
 use App\Console\Commands\BuildTemporalFoundationWindows;
+use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
@@ -15,10 +15,10 @@ use App\Services\LabPopulationService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\RescueCircuitBreakerService;
 use App\Services\StrategyParameterSchemaService;
+use App\Services\StructuralResearchCohortService;
 use App\Services\TemporalAblationProtocolService;
 use App\Services\TemporalAblationRunnerService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class RescueCircuitBreakerTest extends TestCase
@@ -103,7 +103,7 @@ class RescueCircuitBreakerTest extends TestCase
             'symbol' => 'XAUUSD',
             'timeframe' => 'H1',
             'protocol' => LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL,
-            'cohort_mode' => \App\Services\StructuralResearchCohortService::COHORT_MODE,
+            'cohort_mode' => StructuralResearchCohortService::COHORT_MODE,
         ];
 
         $decision = app(RescueCircuitBreakerService::class)->independentEvidenceAdmission(
@@ -129,7 +129,7 @@ class RescueCircuitBreakerTest extends TestCase
         $lab = $this->lab();
         $profile = [
             ...$this->profile(),
-            'cohort_mode' => \App\Services\StructuralResearchCohortService::COHORT_MODE,
+            'cohort_mode' => StructuralResearchCohortService::COHORT_MODE,
         ];
         $service = app(RescueCircuitBreakerService::class);
         $profile['hypothesis_hash'] = $service->hypothesisHash($profile);
@@ -151,6 +151,38 @@ class RescueCircuitBreakerTest extends TestCase
         $this->assertFalse($decision['allowed']);
         $this->assertSame(RescueCircuitBreakerService::BLOCKED_NEED_NEW_EVIDENCE, $decision['decision']);
         $this->assertTrue(data_get($decision, 'history.sealed_holdout_consumed_by_family'));
+    }
+
+    public function test_fresh_chronological_window_can_reopen_after_holdout_was_consumed(): void
+    {
+        $lab = $this->lab();
+        $profile = [
+            ...$this->profile(),
+            'cohort_mode' => StructuralResearchCohortService::COHORT_MODE,
+        ];
+        $service = app(RescueCircuitBreakerService::class);
+        $profile['hypothesis_hash'] = $service->hypothesisHash($profile);
+        $generation = $this->rescueGeneration($lab, 1, 'rolling-source', 6173, $profile);
+        $holdoutHash = 'd9622f339dbb6c99d89234fa45306550d08aa5eb2ad688d48e72760a3bf4ccd1';
+        $generation->update(['trigger_context' => [
+            ...$generation->trigger_context,
+            'independent_evidence_admission' => [
+                'sealed_holdout_evidence' => ['data_hash' => $holdoutHash],
+            ],
+        ]]);
+
+        $decision = $service->admission($lab, $profile, $generation->fresh(), [
+            'data_fingerprint' => 'rolling-source-new-window',
+            'data_count' => 6197,
+            'latest_candle' => '2026-08-19 00:00:00',
+        ]);
+
+        $this->assertTrue($decision['allowed']);
+        $this->assertSame(RescueCircuitBreakerService::ADMITTED, $decision['decision']);
+        $this->assertTrue(data_get($decision, 'history.sealed_holdout_consumed_by_family'));
+        $this->assertTrue(data_get($decision, 'history.chronological_new_evidence'));
+        $this->assertTrue(data_get($decision, 'history.independent_new_evidence'));
+        $this->assertSame(24, data_get($decision, 'history.fresh_candles'));
     }
 
     public function test_temporal_ablation_requires_paired_four_variants_and_three_windows(): void

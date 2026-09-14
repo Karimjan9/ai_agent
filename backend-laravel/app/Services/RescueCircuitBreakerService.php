@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\AiLaboratory;
-use App\Models\Candle;
 use App\Models\CandidateGateDecision;
+use App\Models\Candle;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\Symbol;
@@ -22,7 +22,9 @@ use Illuminate\Support\Collection;
 class RescueCircuitBreakerService
 {
     public const PROTOCOL = 'rescue_circuit_breaker_v1';
+
     public const BLOCKED_NEED_NEW_EVIDENCE = 'BLOCKED_NEED_NEW_EVIDENCE';
+
     public const ADMITTED = 'ADMITTED';
 
     /** @return array<string, mixed> */
@@ -73,17 +75,17 @@ class RescueCircuitBreakerService
         $holdout = (bool) data_get($holdoutEvidence, 'allowed', false);
         $minimumFreshCandles = $this->minimumFreshCandles((string) $lab->timeframe);
         $holdoutAlreadyConsumed = $holdout && $this->holdoutConsumedByFamily($family, $holdoutEvidence);
-        $independentNewEvidence = $holdout || (
-            $latestFamily !== null
+        $chronologicalNewEvidence = $latestFamily !== null
             && $freshCandles >= $minimumFreshCandles
-            && (string) data_get($snapshot, 'data_fingerprint', '') !== (string) data_get($latestFamilySnapshot, 'data_fingerprint', '')
+            && (string) data_get($snapshot, 'data_fingerprint', '') !== (string) data_get($latestFamilySnapshot, 'data_fingerprint', '');
+        $independentNewEvidence = ($holdout && ! $holdoutAlreadyConsumed) || (
+            $latestFamily !== null
+            && $chronologicalNewEvidence
         );
         // A sealed holdout is a finite independent evidence artifact.  Its
         // hash can admit a new rescue family once, but changing only a repair
-        // anchor must never make that same file appear new again.
-        if ($holdoutAlreadyConsumed) {
-            $independentNewEvidence = false;
-        }
+        // anchor must never make that same file appear new again. Consuming
+        // that file must not erase a genuinely new chronological window.
 
         $cohortCount = $cohortRows->count();
         $siblingCount = (int) $cohortRows->sum('sibling_count');
@@ -148,6 +150,7 @@ class RescueCircuitBreakerService
                 'meaningful_target_margin_progress' => $margin['meaningful_progress'],
                 'target_threshold_reached' => $margin['threshold_reached'],
                 'independent_new_evidence' => $independentNewEvidence,
+                'chronological_new_evidence' => $chronologicalNewEvidence,
                 'sealed_independent_holdout' => $holdout,
                 'sealed_holdout_evidence' => $holdoutEvidence,
                 'sealed_holdout_consumed_by_family' => $holdoutAlreadyConsumed,
@@ -177,7 +180,9 @@ class RescueCircuitBreakerService
 
     public function isRescueProfile(?array $profile, string $trigger = ''): bool
     {
-        if (! is_array($profile) || $profile === []) return false;
+        if (! is_array($profile) || $profile === []) {
+            return false;
+        }
 
         return (string) data_get($profile, 'protocol') === LabPopulationService::TARGETED_RESCUE_PROFILE_PROTOCOL
             && ((bool) data_get($profile, 'temporary', false)
@@ -192,7 +197,9 @@ class RescueCircuitBreakerService
             ->orderByDesc('generation')
             ->get()
             ->first(fn (LabGeneration $generation): bool => $this->isRescueGeneration($generation));
-        if (! $latest) return false;
+        if (! $latest) {
+            return false;
+        }
         $profile = $this->profile($latest);
 
         return ! (bool) data_get($this->admission($lab, $profile, $latest), 'allowed', false);
@@ -291,7 +298,9 @@ class RescueCircuitBreakerService
             ?: 'unknown'
         );
         $hypothesisHash = (string) data_get($profile, 'hypothesis_hash', '');
-        if ($hypothesisHash === '') $hypothesisHash = $this->hypothesisHash($profile);
+        if ($hypothesisHash === '') {
+            $hypothesisHash = $this->hypothesisHash($profile);
+        }
         $dataHash = (string) (
             data_get($snapshot, 'data_fingerprint')
             ?: $generation?->data_fingerprint
@@ -408,11 +417,17 @@ class RescueCircuitBreakerService
     private function identityMatches(array $left, array $right, bool $ignoreAnchor): bool
     {
         $keys = ['symbol', 'timeframe', 'failure_target', 'hypothesis_hash'];
-        if (! $ignoreAnchor) $keys[] = 'anchor_fingerprint';
-        if (! $ignoreAnchor) $keys[] = 'dataset_hash';
+        if (! $ignoreAnchor) {
+            $keys[] = 'anchor_fingerprint';
+        }
+        if (! $ignoreAnchor) {
+            $keys[] = 'dataset_hash';
+        }
 
         foreach ($keys as $key) {
-            if ((string) data_get($left, $key) !== (string) data_get($right, $key)) return false;
+            if ((string) data_get($left, $key) !== (string) data_get($right, $key)) {
+                return false;
+            }
         }
 
         return true;
@@ -466,7 +481,9 @@ class RescueCircuitBreakerService
     private function screeningOutcome(Collection $rows): array
     {
         $agentIds = $rows->flatMap(fn (array $row): array => $row['agent_ids'])->filter()->unique()->values()->all();
-        if ($agentIds === []) return ['pass_count' => 0, 'failed_count' => 0, 'decision_count' => 0];
+        if ($agentIds === []) {
+            return ['pass_count' => 0, 'failed_count' => 0, 'decision_count' => 0];
+        }
         $decisions = CandidateGateDecision::query()
             ->whereIn('lab_agent_id', $agentIds)
             ->where('stage', 'screening')
@@ -526,7 +543,9 @@ class RescueCircuitBreakerService
     private function minimumFreshCandles(string $timeframe): int
     {
         $configured = (int) config('services.rescue_circuit_breaker.minimum_fresh_candles', 24);
-        if ($configured > 0) return $timeframe === 'M15' ? $configured * 4 : $configured;
+        if ($configured > 0) {
+            return $timeframe === 'M15' ? $configured * 4 : $configured;
+        }
 
         return $timeframe === 'M15' ? 96 : 24;
     }
