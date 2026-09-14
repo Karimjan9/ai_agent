@@ -89,8 +89,9 @@ def _screen_replay_capacity(cpu_count: int | None = None) -> int:
     # Larger hosts retain the two-lane default; an explicit deployment value
     # remains authoritative for deliberately provisioned workers.
     default = 1 if available_cpus <= 4 else 2
+    configured_value = os.getenv("AI_SCREEN_REPLAY_CONCURRENCY", "auto").strip().lower()
     try:
-        configured = int(os.getenv("AI_SCREEN_REPLAY_CONCURRENCY", str(default)))
+        configured = default if configured_value in {"", "auto"} else int(configured_value)
     except ValueError:
         configured = default
     return max(1, configured)

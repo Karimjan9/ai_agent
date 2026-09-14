@@ -81,6 +81,9 @@ class ReplayCacheContractTest(unittest.TestCase):
         with patch.dict("os.environ", {"AI_SCREEN_REPLAY_CONCURRENCY": "3"}, clear=True):
             self.assertEqual(3, _screen_replay_capacity(4))
 
+        with patch.dict("os.environ", {"AI_SCREEN_REPLAY_CONCURRENCY": "auto"}, clear=True):
+            self.assertEqual(1, _screen_replay_capacity(4))
+
         with patch.dict("os.environ", {"AI_SCREEN_REPLAY_CONCURRENCY": "invalid"}, clear=True):
             self.assertEqual(1, _screen_replay_capacity(4))
 

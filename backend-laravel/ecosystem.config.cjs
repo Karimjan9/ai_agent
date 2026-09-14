@@ -12,9 +12,10 @@ if (!fs.existsSync(tokenFile)) {
 }
 const sharedEnv = {
   INTERNAL_API_TOKEN_FILE: tokenFile,
-  // Two bounded screening child slots; full validation remains exclusive in
-  // the Python lane admission guard.
-  AI_SCREEN_REPLAY_CONCURRENCY: process.env.AI_SCREEN_REPLAY_CONCURRENCY || '2',
+  // Python resolves `auto` from the available logical CPU count: small hosts
+  // serialize CPU-heavy screening while larger hosts retain two slots. An
+  // explicit operator value remains authoritative.
+  AI_SCREEN_REPLAY_CONCURRENCY: process.env.AI_SCREEN_REPLAY_CONCURRENCY || 'auto',
   // Replay cache is rebuildable operational state. Keep it bounded so legacy
   // JSON artifacts cannot consume the disk while immutable evidence remains
   // in Laravel's evidence disk.
