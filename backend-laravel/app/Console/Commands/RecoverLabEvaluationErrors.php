@@ -338,7 +338,9 @@ class RecoverLabEvaluationErrors extends Command
             })
             ->when($afterTimeoutBudgetRepair, function ($agents) {
                 return $agents->filter(function (LabAgent $agent): bool {
-                    return (int) data_get($agent->modelVersion?->metadata, 'timeout_budget_repair_recovery_attempts', 0) < 1;
+                    return (int) data_get($agent->modelVersion?->metadata, 'timeout_budget_repair_recovery_attempts', 0) < 1
+                        && (int) data_get($agent->modelVersion?->metadata, 'service_repair_recovery_attempts', 0) < 1
+                        && (int) data_get($agent->modelVersion?->metadata, 'ipc_repair_recovery_attempts', 0) < 1;
                 });
             })
             ->when($afterRetryBudgetRepair, function ($agents) {

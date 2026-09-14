@@ -216,6 +216,44 @@ class RiskBoundedEvolutionTest extends TestCase
         $this->assertSame('healthy', $result['status']);
     }
 
+    public function test_failed_service_repair_timeout_is_not_retried_under_another_transport_label(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Single transport repair test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
+            'population_size' => 1, 'status' => 'screened', 'trigger_context' => [],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'single-transport-repair', 'strategy' => 'single-transport-repair', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => ['service_repair_recovery_attempts' => 1], 'evidence_status' => 'valid',
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+            'decision_reason' => 'Technical quarantine after bounded evaluator recovery; strategy verdict remains withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'single-transport-repair-run', 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id, 'model_version_id' => $model->id,
+            'phase' => 'screening', 'mode' => 'screen', 'status' => 'technical_error',
+            'error_class' => 'RuntimeException',
+            'error_message' => '{"detail":"Bounded AI replay exceeded 780s; strategy verdict withheld."}',
+            'started_at' => now()->subMinute(), 'finished_at' => now(),
+        ]);
+
+        $result = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame(0, $result['technical_recovery_agents']);
+        $this->assertSame('healthy', $result['status']);
+    }
+
     public function test_closed_population_contract_quarantine_is_excluded_without_quality_credit(): void
     {
         $lab = AiLaboratory::create([

@@ -377,7 +377,12 @@ class LearningVelocityGateService
             return false;
         }
         if ($reasonCode === 'REPLAY_TRANSPORT_TIMEOUT'
-            && (int) data_get($agent->modelVersion?->metadata, 'timeout_budget_repair_recovery_attempts', 0) >= 1) {
+            && ((int) data_get($agent->modelVersion?->metadata, 'timeout_budget_repair_recovery_attempts', 0) >= 1
+                || (int) data_get($agent->modelVersion?->metadata, 'service_repair_recovery_attempts', 0) >= 1
+                || (int) data_get($agent->modelVersion?->metadata, 'ipc_repair_recovery_attempts', 0) >= 1)) {
+            // Repair labels are not separate retry budgets for the same
+            // transport fingerprint. One bounded post-repair replay is the
+            // entire allowance; a second label must not reopen it blindly.
             return false;
         }
         if ($reasonCode === 'AI_SERVICE_UNAVAILABLE'
