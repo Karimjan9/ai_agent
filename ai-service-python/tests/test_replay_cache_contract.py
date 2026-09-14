@@ -10,6 +10,7 @@ from app.main import (
     _dataset_dependency_manifest,
     _latest_replay_checkpoint,
     _run_all_backtests_sync,
+    _screen_replay_capacity,
     _write_replay_checkpoint,
 )
 from app.schemas import SimpleBacktestRequest
@@ -50,6 +51,38 @@ class ReplayCacheContractTest(unittest.TestCase):
 
         with patch.dict("os.environ", {"AI_REPLAY_SCREEN_HARD_TIMEOUT_SECONDS": "450"}, clear=False):
             self.assertEqual(450, _bounded_replay_seconds(payload, "run_all"))
+
+    def test_nested_base_strategy_selects_the_differential_child_deadline(self):
+        payload = SimpleBacktestRequest(
+            evaluation_mode="incremental",
+            strategies=[
+                {
+                    "strategy": "kernel_g218_s6_control",
+                    "base_strategy": "differential_router_v1",
+                    "version": "v216-kernel-218-6",
+                }
+            ],
+        )
+
+        with patch.dict(
+            "os.environ", {"AI_REPLAY_DIFFERENTIAL_SCREEN_HARD_TIMEOUT_SECONDS": "780"}, clear=False
+        ):
+            self.assertEqual(780, _bounded_replay_seconds(payload, "run_all"))
+        with patch.dict(
+            "os.environ", {"AI_REPLAY_DIFFERENTIAL_SCREEN_HARD_TIMEOUT_SECONDS": "999"}, clear=False
+        ):
+            self.assertEqual(840, _bounded_replay_seconds(payload, "run_all"))
+
+    def test_screen_capacity_defaults_to_one_on_small_hosts_and_keeps_an_explicit_override(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(1, _screen_replay_capacity(4))
+            self.assertEqual(2, _screen_replay_capacity(8))
+
+        with patch.dict("os.environ", {"AI_SCREEN_REPLAY_CONCURRENCY": "3"}, clear=True):
+            self.assertEqual(3, _screen_replay_capacity(4))
+
+        with patch.dict("os.environ", {"AI_SCREEN_REPLAY_CONCURRENCY": "invalid"}, clear=True):
+            self.assertEqual(1, _screen_replay_capacity(4))
 
     def test_causal_confirmation_has_a_separate_sub_hour_hard_ceiling(self):
         payload = SimpleBacktestRequest(

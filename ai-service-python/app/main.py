@@ -79,11 +79,28 @@ app = FastAPI(
 _replay_state_lock = Lock()
 _replay_lane_lock = Lock()
 _shadow_micro_probe_lock = Lock()
-# Screening is still bounded, but two independent child-process slots can
-# consume a shared immutable snapshot concurrently. Full validation remains a
-# single coordinator lane. The limit is deliberately environment-controlled
-# so a small machine can set it back to one without changing evidence logic.
-_screen_replay_concurrency = max(1, int(os.getenv("AI_SCREEN_REPLAY_CONCURRENCY", "2")))
+
+
+def _screen_replay_capacity(cpu_count: int | None = None) -> int:
+    """Keep ordinary screening usable on small hosts without operator tuning."""
+    available_cpus = max(1, cpu_count or os.cpu_count() or 1)
+    # Two CPU-heavy Python children on a two-core/four-thread host each miss
+    # the bounded replay deadline even though either finishes safely alone.
+    # Larger hosts retain the two-lane default; an explicit deployment value
+    # remains authoritative for deliberately provisioned workers.
+    default = 1 if available_cpus <= 4 else 2
+    try:
+        configured = int(os.getenv("AI_SCREEN_REPLAY_CONCURRENCY", str(default)))
+    except ValueError:
+        configured = default
+    return max(1, configured)
+
+
+# Screening is still bounded, but independent child-process slots may consume
+# a shared immutable snapshot concurrently. Full validation remains a single
+# coordinator lane. Capacity is hardware-aware and environment-controlled,
+# without changing evidence logic.
+_screen_replay_concurrency = _screen_replay_capacity()
 _screen_replay_slots = BoundedSemaphore(_screen_replay_concurrency)
 _active_replay_count = 0
 _active_screen_replay_count = 0
@@ -1503,11 +1520,12 @@ def _run_portfolio_backtest_sync(payload: SimpleBacktestRequest) -> dict[str, ob
 
 def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> int:
     """Return a deadline that is shorter than the Laravel transport budget."""
+    runtime_identifiers = [payload.strategy, payload.base_strategy, payload.version]
+    for member in [*payload.strategies, *payload.portfolio_members]:
+        runtime_identifiers.extend([member.strategy, member.base_strategy, member.version])
     is_differential = any(
         "differential" in str(value).lower()
-        for value in [payload.strategy, payload.base_strategy, payload.version]
-    ) or any(
-        "differential" in str(member.strategy).lower() for member in payload.strategies
+        for value in runtime_identifiers
     )
 
     confirmation_contracts = (payload.policy_context or {}).get(
