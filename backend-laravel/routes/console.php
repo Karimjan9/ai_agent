@@ -13,74 +13,9 @@ Artisan::command('inspire', function () {
 $scheduleArtisan = static function (string $command, array $arguments = []) {
     // The singleton owns cadence only. Every command runs under a unique,
     // bounded worker so a slow provider/audit cannot freeze the clock.
-    // Critical causal-loop dispatches get a private lane and therefore
-    // cannot be starved by unrelated operational work.
-    $critical = [
-        'trading:pump-learning-lane',
-        'trading:process-canonical-learning-outbox',
-        'trading:reconcile-screening-learning-projections',
-        'trading:reconcile-cooperative-settlements',
-        'trading:recover-lab-replay-mutex',
-        'trading:promote-lab-frontier',
-        'trading:dispatch-mtf-powered-prior-validation',
-    ];
-    // A full population constructor must not wait behind the general research
-    // compiler backlog. This lane is still single-concurrency and every entry
-    // point additionally shares the canonical population mutex.
-    $constructors = [
-        'trading:run-research-loop',
-        'trading:consume-research-work',
-        'trading:process-targeted-generations',
-        'trading:detect-drift',
-        'trading:lab-generation',
-        'trading:advance-learning-progress',
-        'trading:run-lifecycle-cycle',
-        // These commands may all enter LabPopulationService::build(). Keep
-        // every autonomous XAUUSD population writer on one worker, including
-        // normally read-mostly dispatch/recovery entry points.
-        'trading:dispatch-lab',
-        'trading:lab-incremental',
-        'trading:dispatch-controlled-targeted-rescue',
-        // Dataset sealing, consistency checks and candidate export regularly
-        // exceed the short critical budget. Serialize this heavy coordinator
-        // with generation construction so the two cannot race for snapshots.
-        'trading:dispatch-full-validation',
-    ];
-    $research = [
-        'market-data:backfill-intraday-shadow',
-        'market-data:repair-intraday-shadow-gaps',
-        'market-data:backfill-training',
-        'market-data:audit',
-        'meta:audit',
-        'causal:discover',
-        'theory:generate',
-        'reality:verify',
-        'trading:study-lab-failures',
-        'trading:compile-failure-signatures',
-        'trading:compile-causal-skills',
-        'trading:compile-strategic-research-plans',
-        'trading:prepare-gene-interactions',
-        // Scheduled direct generations are EURUSD/GBPUSD shadow research.
-        // Keep them off the XAUUSD constructor lane so the top-of-hour batch
-        // cannot delay the canonical organism lifecycle.
-        'trading:lab-generation',
-        'trading:lab-learn-from-history',
-        'trading:process-screening-learning-outbox',
-        'trading:process-dual-track-evidence',
-        'trading:mtf-ablation',
-        'trading:mtf-strategy-research',
-        'trading:dispatch-mtf-research-cycle',
-        'trading:mtf-research-report',
-        'trading:validate-elite-portfolios',
-        'trading:audit-agent-lifecycle',
-    ];
-    $shadowDirectGeneration = $command === 'trading:lab-generation'
-        && strtoupper((string) ($arguments[0] ?? 'XAUUSD')) !== 'XAUUSD';
-    $lane = in_array($command, $constructors, true) && ! $shadowDirectGeneration
-        ? 'scheduler-constructor'
-        : (in_array($command, $critical, true)
-            ? 'scheduler-critical'
-            : (in_array($command, $research, true) ? 'scheduler-research' : 'scheduler-ops'));
+    // The canonical XAUUSD constructor path is isolated from legacy shadow
+    // generation/validation work by one tested resolver.
+    $lane = RunScheduledArtisanCommandJob::scheduledLane($command, $arguments);
 
     return Schedule::job(
         new RunScheduledArtisanCommandJob($command, $arguments, $lane),
@@ -333,13 +268,9 @@ $scheduleStaggeredFive('trading:recover-lab-evaluation-errors', [], 3);
 // Scheduled ticks are dry-run only. Same-generation replay recovery is
 // dispatched only after an operator approval and an empty lab queue.
 $scheduleStaggeredFive('trading:recover-incomplete-lab-evidence', ['--limit' => 6, '--scheduled-sweep' => true], 4);
-// Only the unified XAUUSD organism may be proposed by the rescue scheduler;
-// H1 below is its legacy storage key, not its population or execution scope.
-// The tick is dry-run; creation still requires explicit operator approval.
-$scheduleStaggeredFive('trading:dispatch-controlled-targeted-rescue', [
-    'symbol' => 'XAUUSD',
-    '--timeframe' => 'H1',
-], 0);
+// Controlled rescue remains an explicit operator command. Autonomous
+// targeted handoffs are consumed only by the Research Loop Arbiter below;
+// a second dry-run ticker would still occupy the serialized constructor lane.
 // During the pause, retire only incomplete v1 handoffs that have no active
 // agent or queued job. Completed cohorts and controlled rescue are untouched.
 $scheduleStaggeredFive('trading:quarantine-stale-targeted-generations', ['--dry-run' => true], 1);

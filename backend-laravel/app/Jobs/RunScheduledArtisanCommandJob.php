@@ -32,6 +32,84 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
 
     public bool $failOnTimeout = true;
 
+    /**
+     * Resolve the queue lane used by routes/console.php.
+     *
+     * The constructor lane is the serialized progress path for the canonical
+     * XAUUSD organism. Legacy EURUSD/GBPUSD generation and validation work is
+     * intentionally isolated on the research lane so it cannot postpone an
+     * admitted XAUUSD generation's lifecycle tick.
+     *
+     * @param  array<string|int,mixed>  $arguments
+     */
+    public static function scheduledLane(string $command, array $arguments = []): string
+    {
+        $critical = [
+            'trading:pump-learning-lane',
+            'trading:process-canonical-learning-outbox',
+            'trading:reconcile-screening-learning-projections',
+            'trading:reconcile-cooperative-settlements',
+            'trading:recover-lab-replay-mutex',
+            'trading:promote-lab-frontier',
+            'trading:dispatch-mtf-powered-prior-validation',
+        ];
+        $constructors = [
+            'trading:run-research-loop',
+            'trading:consume-research-work',
+            'trading:process-targeted-generations',
+            'trading:lab-generation',
+            'trading:advance-learning-progress',
+            'trading:run-lifecycle-cycle',
+            'trading:dispatch-lab',
+            'trading:dispatch-controlled-targeted-rescue',
+            'trading:dispatch-full-validation',
+        ];
+        $research = [
+            'market-data:backfill-intraday-shadow',
+            'market-data:repair-intraday-shadow-gaps',
+            'market-data:backfill-training',
+            'market-data:audit',
+            'meta:audit',
+            'causal:discover',
+            'theory:generate',
+            'reality:verify',
+            'trading:detect-drift',
+            'trading:lab-incremental',
+            'trading:study-lab-failures',
+            'trading:compile-failure-signatures',
+            'trading:compile-causal-skills',
+            'trading:compile-strategic-research-plans',
+            'trading:prepare-gene-interactions',
+            'trading:lab-generation',
+            'trading:lab-learn-from-history',
+            'trading:process-screening-learning-outbox',
+            'trading:process-dual-track-evidence',
+            'trading:dispatch-full-validation',
+            'trading:mtf-ablation',
+            'trading:mtf-strategy-research',
+            'trading:dispatch-mtf-research-cycle',
+            'trading:mtf-research-report',
+            'trading:validate-elite-portfolios',
+            'trading:audit-agent-lifecycle',
+        ];
+        $symbol = strtoupper(str_replace(['/', '_', '-'], '', (string) (
+            $arguments['symbol'] ?? $arguments['--symbol'] ?? $arguments[0] ?? 'XAUUSD'
+        )));
+        $shadowPopulationWork = in_array($command, [
+            'trading:lab-generation',
+            'trading:dispatch-full-validation',
+        ], true) && $symbol !== 'XAUUSD';
+
+        if (in_array($command, $constructors, true) && ! $shadowPopulationWork) {
+            return 'scheduler-constructor';
+        }
+        if (in_array($command, $critical, true)) {
+            return 'scheduler-critical';
+        }
+
+        return in_array($command, $research, true) ? 'scheduler-research' : 'scheduler-ops';
+    }
+
     /** @param array<string,mixed> $arguments */
     public function __construct(
         public string $command,

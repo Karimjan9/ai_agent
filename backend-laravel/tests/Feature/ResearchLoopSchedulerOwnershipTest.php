@@ -22,6 +22,7 @@ class ResearchLoopSchedulerOwnershipTest extends TestCase
             'trading:pump-learning-lane',
             'trading:dispatch-portfolio-member-replay',
             'trading:validate-elite-portfolios',
+            'trading:dispatch-controlled-targeted-rescue',
         ] as $formerWriter) {
             $this->assertSame(0, substr_count($routes, "\$scheduleArtisan('{$formerWriter}'"), $formerWriter);
             $this->assertSame(0, substr_count($routes, "\$scheduleStaggeredFive('{$formerWriter}'"), $formerWriter);
@@ -30,5 +31,24 @@ class ResearchLoopSchedulerOwnershipTest extends TestCase
             (string) file_get_contents(app_path('Console/Commands/DetectMarketDrift.php')));
         $this->assertStringContainsString('generation selection delegated to Research Loop Arbiter',
             (string) file_get_contents(app_path('Console/Commands/EvaluateLabIncrementally.php')));
+    }
+
+    public function test_shadow_population_work_cannot_block_the_xauusd_constructor_lane(): void
+    {
+        $this->assertSame('scheduler-constructor', \App\Jobs\RunScheduledArtisanCommandJob::scheduledLane(
+            'trading:dispatch-full-validation', [0 => 'XAUUSD', '--timeframe' => 'H1']
+        ));
+        $this->assertSame('scheduler-research', \App\Jobs\RunScheduledArtisanCommandJob::scheduledLane(
+            'trading:dispatch-full-validation', [0 => 'GBPUSD', '--timeframe' => 'M15']
+        ));
+        $this->assertSame('scheduler-research', \App\Jobs\RunScheduledArtisanCommandJob::scheduledLane(
+            'trading:lab-generation', [0 => 'EURUSD']
+        ));
+        $this->assertSame('scheduler-research', \App\Jobs\RunScheduledArtisanCommandJob::scheduledLane(
+            'trading:detect-drift'
+        ));
+        $this->assertSame('scheduler-research', \App\Jobs\RunScheduledArtisanCommandJob::scheduledLane(
+            'trading:lab-incremental'
+        ));
     }
 }
