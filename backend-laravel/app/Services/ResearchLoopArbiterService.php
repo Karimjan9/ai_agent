@@ -158,6 +158,28 @@ class ResearchLoopArbiterService
                         ], $dryRun);
         }
 
+        // Generation admission gives a target-aligned causal lesson priority
+        // over drift/degradation exploration. Route that exact requirement
+        // through the lifecycle owner, which seals the guided/blinded/frozen
+        // control cohort. Previously the arbiter selected market drift first,
+        // the constructor correctly answered DISPATCH_LEARNING, and both
+        // services repeated that disagreement every three minutes forever.
+        $causalLesson = app(CausalLearningCohortPlannerService::class)->eligibleLesson($symbol, $timeframe);
+        if ($causalLesson) {
+            return $this->decide($symbol, $timeframe, 'OPEN_CAUSAL_LEARNING_CONFIRMATION', 92,
+                'trading:run-lifecycle-cycle', ['--symbol' => $symbol, '--json' => true],
+                'scheduler-constructor', ['TARGET_ALIGNED_CAUSAL_LESSON_HAS_GENERATION_PRIORITY'], [
+                    'generation' => $generation,
+                    'closure' => $this->compactClosure($closure),
+                    'lesson' => [
+                        'id' => (int) $causalLesson->id,
+                        'family' => (string) $causalLesson->strategy_family,
+                        'target' => (string) $causalLesson->failure_class,
+                        'gene_key' => (string) $causalLesson->parameter_key,
+                    ],
+                ], $dryRun);
+        }
+
         // Durable evidence-earned work outranks fresh exploration. Dry-run
         // may inspect but must never acquire a lease.
         $work = $dryRun ? null : collect($this->conversion->claimForOwner(self::OWNER, 1))->first();

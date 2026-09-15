@@ -17,6 +17,19 @@ class CandidateHandoffService
             'lab_generation_id' => $generation->id, 'lab_agent_id' => $agent?->id, 'stage' => $stage,
         ], ['status' => $status, 'terminal_reason' => $reason, 'payload' => $payload, 'recorded_at' => now()]);
 
+        // A generation-level targeted request has exactly one consumer. A
+        // later report/selector reconciliation may observe the same terminal
+        // failure again, but it may not resurrect a request that was already
+        // consumed, blocked or superseded. The durable failure case and repair
+        // anchors remain available to newer curricula without reopening this
+        // operational projection.
+        if (! $event->wasRecentlyCreated
+            && $stage === 'waiting_for_targeted_generation'
+            && $status === 'waiting'
+            && $event->status !== 'waiting') {
+            return $event;
+        }
+
         // The projection is idempotent, but a later selector retry can turn a
         // previously unselected candidate into a real full-replay handoff
         // (for example after a technical snapshot quarantine is repaired).
@@ -63,6 +76,7 @@ class CandidateHandoffService
         }
         $event = $this->record($generation, null, 'waiting_for_targeted_generation', 'waiting', $reason, $payload);
         $this->persistFailureCases($generation, $reason, $profile);
+
         return $event;
     }
 
@@ -91,6 +105,7 @@ class CandidateHandoffService
         }
         $event = $this->record($generation, null, 'waiting_for_targeted_generation', 'waiting', $reason, $payload);
         $this->persistFailureCases($generation, $reason, $profile);
+
         return $event;
     }
 
@@ -181,7 +196,9 @@ class CandidateHandoffService
 
         arsort($reasonCounts);
         arsort($familyCounts);
-        foreach ($familyReasons as &$reasons) arsort($reasons);
+        foreach ($familyReasons as &$reasons) {
+            arsort($reasons);
+        }
         unset($reasons);
 
         $targets = collect($reasonCounts)->mapWithKeys(function (int $count, string $reason): array {
@@ -230,7 +247,9 @@ class CandidateHandoffService
 
         arsort($reasonCounts);
         arsort($familyCounts);
-        foreach ($familyReasons as &$reasons) arsort($reasons);
+        foreach ($familyReasons as &$reasons) {
+            arsort($reasons);
+        }
         unset($reasons);
 
         $targets = collect($reasonCounts)->mapWithKeys(function (int $count, string $reason): array {

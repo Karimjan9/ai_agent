@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\RunScheduledArtisanCommandJob;
+use App\Models\AgentLearningLesson;
 use App\Models\AiLaboratory;
 use App\Models\CandidateHandoffEvent;
 use App\Models\LabGeneration;
@@ -10,6 +11,7 @@ use App\Models\ResearchExperimentWorkItem;
 use App\Models\ResearchLoopDecision;
 use App\Services\AutonomousLearningProgressDirectorService;
 use App\Services\AutonomousModeService;
+use App\Services\CausalLearningCohortPlannerService;
 use App\Services\LearningLaneService;
 use App\Services\MarketDriftDetectionService;
 use App\Services\MtfResearchCohortService;
@@ -200,6 +202,56 @@ class ResearchLoopArbiterTest extends TestCase
         } finally {
             CarbonImmutable::setTestNow();
         }
+    }
+
+    public function test_target_aligned_causal_lesson_outranks_market_drift_generation(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 1,
+            'trigger_type' => 'new_data',
+            'status' => 'screened',
+            'population_size' => 20,
+            'trigger_context' => [],
+            'completed_at' => now(),
+        ]);
+        app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
+        $lesson = new AgentLearningLesson([
+            'strategy_family' => 'trend',
+            'failure_class' => 'temporal_stability',
+            'parameter_key' => 'regime_classifier_variant',
+        ]);
+        $lesson->id = 77;
+        $planner = Mockery::mock(CausalLearningCohortPlannerService::class);
+        $planner->shouldReceive('eligibleLesson')->once()->with('XAUUSD', 'H1')->andReturn($lesson);
+        $this->app->instance(CausalLearningCohortPlannerService::class, $planner);
+        $director = Mockery::mock(AutonomousLearningProgressDirectorService::class);
+        $director->shouldReceive('advance')->never();
+        $cohorts = Mockery::mock(MtfResearchCohortService::class);
+        $cohorts->shouldReceive('candidate')->never();
+        $drift = Mockery::mock(MarketDriftDetectionService::class);
+        $drift->shouldReceive('confirmation')->never();
+        $arbiter = new ResearchLoopArbiterService(
+            app(AutonomousModeService::class),
+            app(ResearchClosureInvariantService::class),
+            app(ResearchExperimentConversionKernelService::class),
+            app(LearningLaneService::class),
+            $director,
+            $cohorts,
+            $drift,
+        );
+
+        $result = $arbiter->tick();
+
+        $this->assertSame('OPEN_CAUSAL_LEARNING_CONFIRMATION', $result['action']);
+        $this->assertSame(77, data_get($result, 'evidence_snapshot.lesson.id'));
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class,
+            fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:run-lifecycle-cycle');
+        Queue::assertNotPushed(RunScheduledArtisanCommandJob::class,
+            fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:lab-generation');
     }
 
     private function lab(): AiLaboratory

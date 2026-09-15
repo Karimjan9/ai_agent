@@ -254,6 +254,29 @@ class TargetedGenerationAdmissionTest extends TestCase
         $this->assertSame('continue_causal_director_or_data_edge_audit', data_get($waiting->fresh()->payload, 'next_action'));
     }
 
+    public function test_terminal_targeted_request_cannot_be_reopened_by_a_repeated_selector_observation(): void
+    {
+        $lab = $this->liveLab();
+        $source = $this->terminalGeneration($lab, 1);
+        $handoffs = app(CandidateHandoffService::class);
+        $waiting = $handoffs->record($source, null, 'waiting_for_targeted_generation', 'waiting', 'NO_ELIGIBLE_CANDIDATE', [
+            'handoff_profile_hash' => 'same-failure',
+        ]);
+        $handoffs->record($source, null, 'waiting_for_targeted_generation', 'completed', 'TARGETED_GENERATION_REQUEST_CONSUMED', [
+            'handoff_profile_hash' => 'same-failure',
+            'consumption_receipt' => 'receipt',
+        ]);
+
+        $observedAgain = $handoffs->record($source, null, 'waiting_for_targeted_generation', 'waiting', 'NO_ELIGIBLE_CANDIDATE', [
+            'handoff_profile_hash' => 'same-failure',
+        ]);
+
+        $this->assertSame($waiting->id, $observedAgain->id);
+        $this->assertSame('completed', $observedAgain->fresh()->status);
+        $this->assertSame('TARGETED_GENERATION_REQUEST_CONSUMED', $observedAgain->fresh()->terminal_reason);
+        $this->assertSame('receipt', data_get($observedAgain->fresh()->payload, 'consumption_receipt'));
+    }
+
     public function test_latest_incomplete_technical_quarantine_keeps_generation_ownership(): void
     {
         $lab = AiLaboratory::create([
