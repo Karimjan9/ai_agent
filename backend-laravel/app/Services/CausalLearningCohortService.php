@@ -27,14 +27,32 @@ class CausalLearningCohortService
         $agent->loadMissing('generation', 'modelVersion');
         $generation = $agent->generation;
         $contract = (array) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort', []);
-        $applicable = $generation?->trigger_type === 'learning_confirmation'
-            || $contract !== [];
+        $schemaAvailable = Schema::hasTable('agent_learning_causal_experiments');
+        $referencedExperiment = $schemaAvailable && $generation
+            ? AgentLearningCausalExperiment::query()
+                ->where('lab_generation_id', $generation->id)
+                ->where(function ($query) use ($agent): void {
+                    $query->where('guided_agent_id', $agent->id)
+                        ->orWhere('blinded_agent_id', $agent->id)
+                        ->orWhere('control_agent_id', $agent->id);
+                })
+                ->latest('id')
+                ->first()
+            : null;
+
+        // A learning-confirmation generation can also contain independent
+        // repair/control, novelty and continuity blocks. Membership in that
+        // generation must not turn every seat into a causal triplet arm: the
+        // triplet gate applies only to an explicitly contracted or durably
+        // referenced arm. A referenced arm whose metadata was lost remains
+        // applicable and therefore fails closed below.
+        $applicable = $contract !== [] || $referencedExperiment !== null;
         if (! $applicable) {
             return ['applicable' => false, 'allowed' => false, 'reason_codes' => [], 'experiment_id' => null];
         }
 
         $reasons = [];
-        if (! Schema::hasTable('agent_learning_causal_experiments')) {
+        if (! $schemaAvailable) {
             $reasons[] = 'CAUSAL_EXPERIMENT_SCHEMA_MISSING';
         }
         if (! $generation || $generation->trigger_type !== 'learning_confirmation') {
@@ -52,7 +70,7 @@ class CausalLearningCohortService
         }
 
         $experimentId = (int) data_get($contract, 'experiment_id', 0);
-        $experiment = Schema::hasTable('agent_learning_causal_experiments') && $experimentId > 0
+        $experiment = $schemaAvailable && $experimentId > 0
             ? AgentLearningCausalExperiment::query()->find($experimentId)
             : null;
         if (! $experiment || (int) $experiment->lab_generation_id !== (int) $generation?->id) {

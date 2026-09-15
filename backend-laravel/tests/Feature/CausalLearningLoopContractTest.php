@@ -2164,6 +2164,77 @@ class CausalLearningLoopContractTest extends TestCase
         }
     }
 
+    public function test_non_triplet_seat_in_learning_confirmation_generation_uses_its_own_replay_gate(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $generation->update([
+            'trigger_type' => 'learning_confirmation',
+            'trigger_context' => [
+                'adaptive_evolution_policy' => [
+                    'causal_learning_counterfactual_cohort' => ['status' => 'materialized'],
+                ],
+            ],
+        ]);
+        $guided = $this->agent($generation, $this->model('scope-guided', ['entry_threshold' => 2]), [
+            'entry_threshold' => ['old' => 1, 'new' => 2],
+        ]);
+        $blinded = $this->agent($generation, $this->model('scope-blinded', ['other_gene' => 2]), [
+            'other_gene' => ['old' => 1, 'new' => 2],
+        ]);
+        $control = $this->agent($generation, $this->model('scope-control', ['entry_threshold' => 1]), []);
+        $independentSeat = $this->agent(
+            $generation,
+            $this->model('scope-independent-seat', ['lookback' => 24]),
+            ['lookback' => ['old' => 20, 'new' => 24]],
+        );
+        $experiment = AgentLearningCausalExperiment::create([
+            'experiment_key' => str_repeat('b', 128),
+            'lab_generation_id' => $generation->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'target' => 'profit_factor',
+            'gene_key' => 'entry_threshold',
+            'guided_agent_id' => $guided->id,
+            'blinded_agent_id' => $blinded->id,
+            'control_agent_id' => $control->id,
+            'status' => 'ready_for_replay',
+            'evidence' => [
+                'construction_validation' => ['status' => 'ready_for_replay'],
+                'promotion_evidence' => false,
+            ],
+        ]);
+        $guided->modelVersion->update(['metadata' => [
+            'causal_learning_cohort' => [
+                'protocol' => CausalLearningCohortPlannerService::PROTOCOL,
+                'experiment_id' => $experiment->id,
+                'role' => 'memory_guided',
+                'status' => 'ready_for_replay',
+                'promotion_evidence' => false,
+            ],
+        ]]);
+
+        $service = app(CausalLearningCohortService::class);
+        $evidence = app(LabImmutableEvidenceService::class);
+        $independentAdmission = $service->fullReplayAdmission(
+            $independentSeat->fresh(['generation', 'modelVersion']),
+            $evidence,
+        );
+        $this->assertFalse($independentAdmission['applicable']);
+        $this->assertSame([], $independentAdmission['reason_codes']);
+
+        // Losing the contract on a durably referenced triplet arm is still a
+        // fail-closed integrity error; it must not be mistaken for a normal
+        // independent seat.
+        $blindedAdmission = $service->fullReplayAdmission(
+            $blinded->fresh(['generation', 'modelVersion']),
+            $evidence,
+        );
+        $this->assertTrue($blindedAdmission['applicable']);
+        $this->assertFalse($blindedAdmission['allowed']);
+        $this->assertContains('CAUSAL_COHORT_PROTOCOL_INVALID', $blindedAdmission['reason_codes']);
+    }
+
     public function test_bounded_batch_retry_exhaustion_is_a_retry_budget_failure_not_a_strategy_verdict(): void
     {
         [$generation] = $this->canonicalSource();
