@@ -946,7 +946,12 @@ class DispatchLabGeneration extends Command
             )
                 && $architectureVariant !== ''
                 && (string) data_get($metadata, 'strategy_architecture', '') === $architectureVariant
-                && (string) data_get($metadata, 'hypothesis_contract.changed_gene', '') === '__architecture';
+                && (
+                    (bool) data_get($metadata, 'portfolio_council_lane.architecture_experiment', false)
+                    || (string) data_get($metadata, 'hypothesis_contract.planner_declared_gene', '') === '__architecture'
+                    || (string) data_get($metadata, 'hypothesis_contract.changed_gene', '') === '__architecture'
+                    || (string) data_get($metadata, 'g98_council_lane.lane', '') === 'architecture'
+                );
             if (count($diff) === 0 && ($roleControl || $architectureChanged)) {
                 return $violations;
             }

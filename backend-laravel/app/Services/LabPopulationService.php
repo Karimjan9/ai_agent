@@ -7233,6 +7233,13 @@ class LabPopulationService
                     $architecture = $alternativeArchitectures[0];
                 }
             }
+            // The requested architecture can equal the frozen baseline. In
+            // that case the compiler selects a real alternate topology above;
+            // persist that executable choice back into the sealed lane rather
+            // than leaving downstream attribution pointed at the no-op request.
+            if (! $architectureControlOnly && ! $stateMachineEscape) {
+                $niche['architecture_variant'] = $architecture;
+            }
         }
         // Composition lanes choose an implemented runtime topology, not just
         // metadata. This happens after the ordinary architecture selection so

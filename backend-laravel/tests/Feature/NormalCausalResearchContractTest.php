@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Console\Commands\DispatchLabGeneration;
 use App\Models\AiLaboratory;
+use App\Models\LabAgent;
+use App\Models\ModelVersion;
 use App\Services\LabPopulationService;
 use App\Services\ResearchAllocationPolicyService;
 use App\Services\StrategyParameterSchemaService;
@@ -12,6 +14,53 @@ use Tests\TestCase;
 
 class NormalCausalResearchContractTest extends TestCase
 {
+    public function test_draft_integrity_accepts_a_sealed_architecture_only_candidate(): void
+    {
+        $schemas = app(StrategyParameterSchemaService::class);
+        $parameters = $schemas->defaults('session');
+        $identity = $schemas->canonicalizeForIdentity('session', $parameters);
+        $metadata = [
+            'strategy_architecture' => 'session_mean_reversion',
+            'parameter_fingerprint' => hash('sha256', 'session|'.json_encode($identity, JSON_PRESERVE_ZERO_FRACTION)),
+            'universal_genome' => ['local_adapter' => [
+                'parameters_hash' => hash('sha256', json_encode($identity, JSON_PRESERVE_ZERO_FRACTION)),
+            ]],
+            'mutation_constructor_invariant' => [
+                'status' => 'passed',
+                'control_only' => false,
+                'architecture_changed' => true,
+                'architecture_variant' => 'session_mean_reversion',
+            ],
+            'portfolio_council_lane' => [
+                'architecture_experiment' => true,
+                'architecture_variant' => 'session_mean_reversion',
+            ],
+            'hypothesis_contract' => [
+                // Scalar mutation truth stays empty for a topology-only arm.
+                'changed_gene' => null,
+                'planner_declared_gene' => '__architecture',
+                'architecture_changed' => true,
+                'architecture_variant' => 'session_mean_reversion',
+            ],
+        ];
+        $model = new ModelVersion(['parameters' => $parameters, 'metadata' => $metadata]);
+        $agent = new LabAgent([
+            'strategy_family' => 'session',
+            'origin' => 'g98_council',
+            'parameter_diff' => [],
+        ]);
+        $agent->setRelation('modelVersion', $model);
+
+        $command = app(DispatchLabGeneration::class);
+        $method = new \ReflectionMethod($command, 'draftIntegrityViolations');
+        $method->setAccessible(true);
+
+        $this->assertSame([], $method->invoke($command, $agent, $schemas));
+
+        $model->metadata = [...$metadata, 'strategy_architecture' => 'session_breakout'];
+        $this->assertContains('ISOLATED_ZERO_PARAMETER_DIFF', $method->invoke($command, $agent, $schemas));
+    }
+
     public function test_normal_plan_materializes_exact_controls_and_keeps_structural_candidate(): void
     {
         $plan = [
