@@ -64,6 +64,9 @@ class TechnicalFailureClassifierService
         }
 
         $reasonCode = match (true) {
+            str_contains($normalized, 'sqlstate[22001]'),
+            str_contains($normalized, 'string data, right truncated'),
+            str_contains($normalized, 'data too long for column') => 'DATABASE_SCHEMA_WIDTH_MISMATCH',
             str_contains($normalized, 'maxattemptsexceededexception'),
             str_contains($normalized, 'attempted too many times'),
             str_contains($normalized, 'bounded screening batch exhausted operational retries') => 'REPLAY_RETRY_BUDGET_EXHAUSTED',

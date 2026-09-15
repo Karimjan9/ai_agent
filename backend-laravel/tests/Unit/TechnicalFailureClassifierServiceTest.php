@@ -39,4 +39,16 @@ class TechnicalFailureClassifierServiceTest extends TestCase
         $this->assertSame('AI_SERVICE_UNAVAILABLE', $result['reason_code']);
         $this->assertTrue($result['blocks_global_generation']);
     }
+
+    public function test_database_column_width_mismatch_is_a_typed_runtime_schema_failure(): void
+    {
+        $result = (new TechnicalFailureClassifierService)->classify(
+            "SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'status' at row 1",
+            'Illuminate\\Database\\QueryException',
+        );
+
+        $this->assertSame(TechnicalFailureClassifierService::TRANSIENT, $result['class']);
+        $this->assertSame('DATABASE_SCHEMA_WIDTH_MISMATCH', $result['reason_code']);
+        $this->assertTrue($result['blocks_global_generation']);
+    }
 }

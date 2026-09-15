@@ -605,13 +605,17 @@ class RecoverLabEvaluationErrors extends Command
             && (str_contains($reason, '42s02')
                 || str_contains($reason, 'base table')
                 || str_contains($reason, 'does not exist'));
+        $classification = app(TechnicalFailureClassifierService::class)->forAgent($agent);
+        $schemaWidthMismatch = data_get($classification, 'class') === TechnicalFailureClassifierService::TRANSIENT
+            && data_get($classification, 'reason_code') === 'DATABASE_SCHEMA_WIDTH_MISMATCH';
 
         return str_contains($reason, 'unknown parameter')
             || str_contains($reason, 'noma\'lum parametr')
             || str_contains($reason, 'schema')
             || (str_contains($reason, 'literal_error') && str_contains($reason, 'target_direction'))
             || $knownDictionaryMismatch
-            || $missingRepairAnchorTable;
+            || $missingRepairAnchorTable
+            || $schemaWidthMismatch;
     }
 
     private function hasQueuedJob(LabAgent $agent, string $mode): bool

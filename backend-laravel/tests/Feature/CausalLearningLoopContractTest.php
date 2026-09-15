@@ -1964,6 +1964,16 @@ class CausalLearningLoopContractTest extends TestCase
             $agent->fresh(['generation', 'modelVersion']),
             'screen',
         ));
+
+        $run->update([
+            'error_class' => 'Illuminate\\Database\\QueryException',
+            'error_message' => "SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'cooperative_module_species_members.status' at row 1",
+        ]);
+        $this->assertTrue($method->invoke(
+            app(RecoverLabEvaluationErrors::class),
+            $agent->fresh(['generation', 'modelVersion']),
+            'screen',
+        ));
     }
 
     public function test_explicit_runtime_schema_screen_recovery_reopens_an_unresolved_arm_after_mixed_generation_completion(): void
