@@ -102,6 +102,16 @@ class AutonomousModeService
                 ->where('status', 'technical_error')
                 ->count()
             : 0;
+        $technicalLifecycleEventCount = $latest && Schema::hasTable('lab_lifecycle_events')
+            ? DB::table('lab_lifecycle_events')
+                ->where('lab_generation_id', $latest->id)
+                ->where(function ($query): void {
+                    $query->where('event_type', 'evaluation_technical_error')
+                        ->orWhere('event_type', 'like', '%technical_quarantine%')
+                        ->orWhere('event_type', 'like', '%integrity_quarantine%');
+                })
+                ->count()
+            : 0;
         $blockedCycleCount = $latest && Schema::hasTable('lab_lifecycle_cycles')
             ? LabLifecycleCycle::query()
                 ->where('symbol', $control['symbol'])
@@ -184,6 +194,9 @@ class AutonomousModeService
         if ($technicalRunCount > 0) {
             $acceptanceReasons[] = 'TECHNICAL_EVALUATION_RUN_RECORDED';
         }
+        if ($technicalLifecycleEventCount > 0) {
+            $acceptanceReasons[] = 'IMMUTABLE_TECHNICAL_LIFECYCLE_EVENT_RECORDED';
+        }
         if ($technicalAgents > 0) {
             $acceptanceReasons[] = 'TECHNICAL_AGENT_RECORDED';
         }
@@ -245,11 +258,12 @@ class AutonomousModeService
                     'terminal' => (bool) $terminalGeneration,
                     'terminal_agents' => (int) $terminalAgentCount,
                     'technical_evaluation_runs' => (int) $technicalRunCount,
+                    'technical_lifecycle_events' => (int) $technicalLifecycleEventCount,
                     'technical_agents' => $technicalAgents,
                     'blocked_lifecycle_cycles' => (int) $blockedCycleCount,
                     'manual_intervention_required' => $acceptanceState === 'failed',
                     'reason_codes' => array_values(array_unique($acceptanceReasons)),
-                    'pass_rule' => 'complete_population_and_all_agents_terminal_with_zero_technical_runs_agents_or_blocked_cycles',
+                    'pass_rule' => 'complete_population_and_all_agents_terminal_with_zero_technical_runs_events_agents_or_blocked_cycles',
                     'strategy_rejection_is_not_a_technical_failure' => true,
                 ],
             ] : null,

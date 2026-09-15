@@ -7,6 +7,7 @@ use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
+use App\Models\LabLifecycleEvent;
 use App\Models\ModelVersion;
 use App\Models\SystemEvent;
 use App\Services\AutonomousModeService;
@@ -151,7 +152,7 @@ class AutonomousModeControlTest extends TestCase
             'parameters' => [],
             'metadata' => [],
         ]);
-        LabAgent::query()->create([
+        $agent = LabAgent::query()->create([
             'lab_generation_id' => $generation->id,
             'model_version_id' => $model->id,
             'symbol' => 'XAUUSD',
@@ -160,6 +161,17 @@ class AutonomousModeControlTest extends TestCase
             'origin' => 'test',
             'lifecycle_status' => 'evaluation_error',
             'parameter_diff' => [],
+        ]);
+        LabLifecycleEvent::query()->create([
+            'event_id' => (string) \Illuminate\Support\Str::uuid(),
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'phase' => 'screening',
+            'event_type' => 'draft_integrity_quarantine',
+            'source' => 'test',
+            'reason_code' => 'TEST_TECHNICAL_QUARANTINE',
+            'payload' => ['promotion_evidence' => false],
+            'occurred_at' => now(),
         ]);
         Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinute());
 
@@ -176,8 +188,13 @@ class AutonomousModeControlTest extends TestCase
         );
         $this->assertSame('failed', data_get($status, 'monitor.generation.technical_process_acceptance.state'));
         $this->assertSame(1, data_get($status, 'monitor.generation.technical_process_acceptance.technical_agents'));
+        $this->assertSame(1, data_get($status, 'monitor.generation.technical_process_acceptance.technical_lifecycle_events'));
         $this->assertContains(
             'TECHNICAL_AGENT_RECORDED',
+            data_get($status, 'monitor.generation.technical_process_acceptance.reason_codes'),
+        );
+        $this->assertContains(
+            'IMMUTABLE_TECHNICAL_LIFECYCLE_EVENT_RECORDED',
             data_get($status, 'monitor.generation.technical_process_acceptance.reason_codes'),
         );
         $this->assertTrue(data_get($status, 'monitor.generation.technical_process_acceptance.manual_intervention_required'));
