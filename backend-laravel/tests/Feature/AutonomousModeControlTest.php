@@ -197,6 +197,7 @@ class AutonomousModeControlTest extends TestCase
             'IMMUTABLE_TECHNICAL_LIFECYCLE_EVENT_RECORDED',
             data_get($status, 'monitor.generation.technical_process_acceptance.reason_codes'),
         );
+        $this->assertFalse(data_get($status, 'monitor.generation.technical_process_acceptance.unattended_acceptance_eligible'));
         $this->assertTrue(data_get($status, 'monitor.generation.technical_process_acceptance.manual_intervention_required'));
         $this->assertArrayNotHasKey('supervision', $status['monitor']);
         $this->assertFalse(data_get($status, 'controller_contract.manual_generation_commands_allowed'));
@@ -238,6 +239,7 @@ class AutonomousModeControlTest extends TestCase
 
         $this->assertSame('running_clean', data_get($status, 'monitor.generation.technical_process_acceptance.state'));
         $this->assertSame(0, data_get($status, 'monitor.generation.technical_process_acceptance.technical_evaluation_runs'));
+        $this->assertTrue(data_get($status, 'monitor.generation.technical_process_acceptance.unattended_acceptance_eligible'));
         $this->assertFalse(data_get($status, 'monitor.generation.technical_process_acceptance.manual_intervention_required'));
     }
 

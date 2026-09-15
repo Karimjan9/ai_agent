@@ -219,6 +219,8 @@ class AutonomousModeService
                     && $terminalAgentCount === $actualPopulation
                         ? 'passed'
                         : 'running_clean'));
+        $manualInterventionRequiredNow = $technicalAgents > 0
+            || ($checkpoint && (string) $checkpoint->status === 'blocked');
         $loopDecision = Schema::hasTable('research_loop_decisions')
             ? ResearchLoopDecision::query()->where('symbol', $control['symbol'])
                 ->where('timeframe', $control['laboratory_storage_timeframe'])->latest('id')->first()
@@ -261,7 +263,8 @@ class AutonomousModeService
                     'technical_lifecycle_events' => (int) $technicalLifecycleEventCount,
                     'technical_agents' => $technicalAgents,
                     'blocked_lifecycle_cycles' => (int) $blockedCycleCount,
-                    'manual_intervention_required' => $acceptanceState === 'failed',
+                    'unattended_acceptance_eligible' => ! $technicalFailureObserved,
+                    'manual_intervention_required' => (bool) $manualInterventionRequiredNow,
                     'reason_codes' => array_values(array_unique($acceptanceReasons)),
                     'pass_rule' => 'complete_population_and_all_agents_terminal_with_zero_technical_runs_events_agents_or_blocked_cycles',
                     'strategy_rejection_is_not_a_technical_failure' => true,
