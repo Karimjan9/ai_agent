@@ -99,6 +99,22 @@ class ResearchIdeaInboxService
         ]);
     }
 
+    /** Return a hypothesis to the inbox when its assigned block had no valid causal evidence. */
+    public function invalidate(string $blockKey, array $receipt): void
+    {
+        if (! Schema::hasTable('research_idea_inbox_entries')) return;
+        ResearchIdeaInboxEntry::query()->where('assigned_block_key', $blockKey)->update([
+            'status' => 'ready_for_experiment',
+            'assigned_block_key' => null,
+            'evidence_receipt' => [
+                ...$receipt,
+                'status' => 'invalid_evidence_retry_required',
+                'direct_inheritance_allowed' => false,
+                'promotion_evidence' => false,
+            ],
+        ]);
+    }
+
     /** @return array<int,array<string,mixed>> */
     private function normalizeGenes(array $genes): array
     {

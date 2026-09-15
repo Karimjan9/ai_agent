@@ -804,6 +804,48 @@ class AiLearningLaboratoryTest extends TestCase
         $method->invoke($service, ['london_am_fix']);
     }
 
+    public function test_every_screening_transport_carries_the_same_specialist_context_contract(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Screen payload parity', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
+            'trigger_context' => [], 'population_size' => 1, 'status' => 'draft',
+        ]);
+        $context = [
+            'protocol' => 'cooperative_contextual_evolution_council_v1',
+            'venue_phase' => 'london_comex_overlap',
+            'session' => 'overlap',
+            'outside_scope_action' => 'WAIT',
+            'cell_hash' => hash('sha256', 'screen-payload-parity'),
+        ];
+        $model = ModelVersion::create([
+            'name' => 'screen-payload-parity', 'strategy' => 'trend_retest_v1', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => [
+                'base_strategy' => 'trend_retest_v1',
+                'specialist_council_membership' => ['contextual_cell' => $context],
+            ],
+            'evidence_status' => 'valid',
+        ]);
+        $agent = LabAgent::withoutEvents(fn (): LabAgent => LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'draft', 'parameter_diff' => [],
+        ]));
+        $method = new \ReflectionMethod(LabAgentEvaluationService::class, 'screeningStrategyPayload');
+        $method->setAccessible(true);
+
+        $payload = $method->invoke(app(LabAgentEvaluationService::class), $agent->fresh('modelVersion'));
+
+        $this->assertSame($agent->id, $payload['lab_agent_id']);
+        $this->assertSame($context, $payload['specialist_context_contract']);
+        $this->assertSame('WAIT', data_get($payload, 'specialist_context_contract.outside_scope_action'));
+    }
+
     public function test_full_replay_projection_preserves_sealed_cohort_cache_metadata(): void
     {
         $model = ModelVersion::create([

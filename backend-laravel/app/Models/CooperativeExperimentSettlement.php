@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CooperativeExperimentSettlement extends Model
 {
@@ -16,4 +17,9 @@ class CooperativeExperimentSettlement extends Model
         'arm_results' => 'array', 'component_effects' => 'array', 'pareto_vectors' => 'array',
         'evidence_complete' => 'boolean', 'promotion_evidence' => 'boolean',
     ];
+
+    public function generation(): BelongsTo
+    {
+        return $this->belongsTo(LabGeneration::class, 'lab_generation_id');
+    }
 }

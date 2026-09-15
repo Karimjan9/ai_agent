@@ -19,6 +19,7 @@ $scheduleArtisan = static function (string $command, array $arguments = []) {
         'trading:pump-learning-lane',
         'trading:process-canonical-learning-outbox',
         'trading:reconcile-screening-learning-projections',
+        'trading:reconcile-cooperative-settlements',
         'trading:recover-lab-replay-mutex',
         'trading:promote-lab-frontier',
         'trading:dispatch-mtf-powered-prior-validation',
@@ -257,6 +258,12 @@ foreach (['EURUSD', 'GBPUSD'] as $shadowSymbol) {
 // rescan the entire historical response-map plane every five minutes.
 // Exact-control learning pairs are a high-priority arbiter continuation.
 $scheduleArtisan('trading:process-canonical-learning-outbox', ['--limit' => 25])
+    ->everyMinute()
+    ->withoutOverlapping();
+// Block credit is derived only after every arm owns a completed immutable
+// response/trace/ledger and the exact contextual request contract. This
+// reconciler performs no replay and cannot create promotion evidence.
+$scheduleArtisan('trading:reconcile-cooperative-settlements', ['--limit' => 25])
     ->everyMinute()
     ->withoutOverlapping();
 // Turn one canonical provisional lesson at a time into a bounded causal

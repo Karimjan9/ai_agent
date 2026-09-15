@@ -10,6 +10,7 @@ use App\Services\AdversarialCoEvolutionService;
 use App\Services\AgentKnowledgeService;
 use App\Services\AgentProgressCardService;
 use App\Services\CausalEdgeAccountingService;
+use App\Services\CooperativeExperimentSettlementService;
 use App\Services\FailureRepairAnchorService;
 use App\Services\InstrumentInvocationLedgerService;
 use App\Services\LabImmutableEvidenceService;
@@ -95,6 +96,7 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         AdversarialCoEvolutionService $adversarialMarket,
         InstrumentInvocationLedgerService $instrumentInvocations,
         CausalEdgeAccountingService $edgeAccounting,
+        CooperativeExperimentSettlementService $cooperativeSettlements,
     ): void {
         $agent = LabAgent::with('modelVersion', 'generation')->find($this->labAgentId);
         $decision = CandidateGateDecision::find($this->decisionId);
@@ -108,6 +110,15 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
             // mutation/compiler lane. It remains recoverable evidence only.
             return;
         }
+
+        // Cooperative credit is a post-terminal projection. The synchronous
+        // gate path sees its own run as `running`, so it may only record a
+        // waiting state. Re-evaluate after the immutable response, trace and
+        // trade ledger are closed, then refresh the mutable decision view.
+        $cooperativeSettlement = $cooperativeSettlements->observe($agent);
+        $decisionMetrics = (array) $decision->metrics;
+        $decisionMetrics['cooperative_experiment_settlement'] = $cooperativeSettlement;
+        $decision->update(['metrics' => $decisionMetrics]);
 
         $result = [...$this->screenProjection, 'evidence_run_id' => $this->runId];
         // Catalogue selection alone is not an invocation. The ledger opens

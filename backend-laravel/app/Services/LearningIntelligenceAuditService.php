@@ -195,7 +195,8 @@ class LearningIntelligenceAuditService
             ? DB::table('causal_capability_escrows')->where('symbol', $symbol)->where('timeframe', $timeframe)->get()
             : collect();
         $bundleEffects = Schema::hasTable('contextual_instrument_bundle_effects')
-            ? DB::table('contextual_instrument_bundle_effects')->where('symbol', $symbol)->where('timeframe', $timeframe)->get()
+            ? DB::table('contextual_instrument_bundle_effects')->where('symbol', $symbol)->where('timeframe', $timeframe)
+                ->where('authority_level', '!=', 'invalid_evidence')->get()
             : collect();
         $goldenWorlds = app(CausalGoldenWorldHarnessService::class)->run();
         $salvage = app(EvidenceSalvageConveyorService::class)->plan($symbol, $timeframe, 20);

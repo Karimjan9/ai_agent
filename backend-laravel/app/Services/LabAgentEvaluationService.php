@@ -720,15 +720,7 @@ class LabAgentEvaluationService
         $request = [
             'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe,
             'strategy' => $model->strategy, 'evaluation_mode' => 'incremental',
-            'strategies' => [[
-                'strategy' => $model->strategy,
-                'base_strategy' => $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $agent->strategy_family),
-                'version' => $model->version, 'parameters' => $model->parameters ?? [],
-                'instrument_research_assignment' => $this->instrumentResearch->assignment($agent),
-                'specialist_context_contract' => $this->specialistContextContract(
-                    data_get($model->metadata, 'specialist_council_membership.contextual_cell'),
-                ),
-            ]],
+            'strategies' => [$this->screeningStrategyPayload($agent)],
             'initial_balance' => 10000,
             // Immutable snapshot-path transport keeps the request/evidence
             // contract intact while removing thousands of candle objects from
@@ -1152,18 +1144,7 @@ class LabAgentEvaluationService
         $repairContracts = [];
         foreach ($agents as $agent) {
             $model = $agent->modelVersion;
-            $strategies[] = [
-                'lab_agent_id' => (int) $agent->id,
-                'strategy' => $model->strategy,
-                'base_strategy' => $this->schemas->runtimeBaseStrategy(
-                    $model->strategy,
-                    data_get($model->metadata, 'base_strategy'),
-                    $agent->strategy_family,
-                ),
-                'version' => $model->version,
-                'parameters' => $model->parameters ?? [],
-                'instrument_research_assignment' => $this->instrumentResearch->assignment($agent),
-            ];
+            $strategies[] = $this->screeningStrategyPayload($agent);
             $repairContracts[(string) $agent->id] = [
                 'changed_gene' => count((array) $agent->parameter_diff) === 1
                     ? array_key_first((array) $agent->parameter_diff) : null,
@@ -1908,6 +1889,39 @@ class LabAgentEvaluationService
         }
 
         return $value;
+    }
+
+    /**
+     * Keep single-agent recovery and bounded batch screening on one exact
+     * strategy/context contract. A batch is only a feature-computation
+     * optimization; it must never remove the specialist activation scope or
+     * the out-of-scope WAIT rule carried by the same agent.
+     *
+     * @return array<string,mixed>
+     */
+    private function screeningStrategyPayload(LabAgent $agent): array
+    {
+        $agent->loadMissing('modelVersion');
+        $model = $agent->modelVersion;
+        if (! $model) {
+            throw new RuntimeException('SCREENING_MODEL_VERSION_REQUIRED');
+        }
+
+        return [
+            'lab_agent_id' => (int) $agent->id,
+            'strategy' => $model->strategy,
+            'base_strategy' => $this->schemas->runtimeBaseStrategy(
+                $model->strategy,
+                data_get($model->metadata, 'base_strategy'),
+                $agent->strategy_family,
+            ),
+            'version' => $model->version,
+            'parameters' => $model->parameters ?? [],
+            'instrument_research_assignment' => $this->instrumentResearch->assignment($agent),
+            'specialist_context_contract' => $this->specialistContextContract(
+                data_get($model->metadata, 'specialist_council_membership.contextual_cell'),
+            ),
+        ];
     }
 
     /** A differential child may improve only its declared target lane. */

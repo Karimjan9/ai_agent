@@ -6,6 +6,7 @@ use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\ContextualInstrumentBundleEffect;
 use App\Models\ContextualSpecialistCapsule;
+use App\Models\LabEvolutionArchiveEntry;
 use App\Models\CooperativeExperimentSettlement;
 use App\Models\CooperativeModuleSpeciesMember;
 use App\Models\LabAgent;
@@ -18,9 +19,11 @@ use App\Services\CandidateGateDecisionService;
 use App\Services\CooperativeContextualEvolutionCouncilService;
 use App\Services\CooperativeExperimentSettlementService;
 use App\Services\CooperativeModuleSpeciesService;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\ResearchAllocationPolicyService;
 use App\Services\ResearchIdeaInboxService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
 class CooperativeContextualEvolutionCouncilTest extends TestCase
@@ -100,6 +103,9 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
             'trigger_type' => 'test', 'trigger_context' => [], 'population_size' => 4, 'status' => 'screened']);
         $blockKey = hash('sha256', 'factorial-test');
         $values = ['control' => 1.0, 'a_only' => 1.3, 'b_only' => 1.2, 'a_plus_b' => 1.8];
+        $context = ['protocol' => CooperativeContextualEvolutionCouncilService::PROTOCOL,
+            'cell_hash' => 'cell-1', 'session_instance_id' => 'session-instance-1',
+            'outside_scope_action' => 'WAIT'];
         $last = null;
         foreach ($values as $index => $value) {
             $bundle = match ($index) {
@@ -113,13 +119,33 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
                 'metadata' => ['cooperative_experiment_block' => ['protocol' => CooperativeContextualEvolutionCouncilService::PROTOCOL,
                     'block_key' => $blockKey, 'block_type' => 'factorial', 'arm' => $index,
                     'required_arms' => array_keys($values), 'component_a' => 'atr_risk_envelope',
-                    'component_b' => 'cost_aware_exit'], 'cooperative_evolution_capsule' => [
+                    'component_b' => 'cost_aware_exit', 'context_cell_key' => 'cell-1'],
+                    'specialist_council_membership' => ['contextual_cell' => $context],
+                    'cooperative_evolution_capsule' => [
                         'context_cell_hash' => 'cell-1', 'components' => ['toolbox_instrument' => $bundle]]]]);
             $last = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
                 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
                 'origin' => 'test', 'lifecycle_status' => 'rejected', 'parameter_diff' => []]);
+            $dataHash = str_repeat('d', 64);
+            $run = app(LabImmutableEvidenceService::class)->beginRun($last, 'screening', 'incremental');
+            app(LabImmutableEvidenceService::class)->attachRequest($run, [
+                'strategies' => [[
+                    'lab_agent_id' => $last->id,
+                    'strategy' => $model->strategy,
+                    'specialist_context_contract' => $context,
+                ]],
+                'execution_contract' => ['execution_hash' => str_repeat('e', 64)],
+            ], ['data_hash' => $dataHash, 'dataset_manifest' => ['data_hash' => $dataHash]]);
+            app(LabImmutableEvidenceService::class)->finishRun($run, 'completed', [
+                'decision_trace' => [['event_type' => 'test', 'action' => 'WAIT']],
+                'data_quality' => ['decision_trace' => ['requested' => true, 'complete' => true, 'evaluated_candle_count' => 1]],
+                'trade_ledger' => [],
+                'trade_ledger_hash' => hash('sha256', json_encode([])),
+                'total_trades' => 0,
+                'displayed_trade_count' => 0,
+            ]);
             CandidateGateDecision::create(['lab_agent_id' => $last->id, 'stage' => 'screening', 'decision' => 'failed',
-                'reason_codes' => [], 'metrics' => ['after_cost_expectancy_r' => $value], 'evaluated_at' => now()]);
+                'reason_codes' => [], 'metrics' => ['after_cost_expectancy_r' => $value, 'evidence_run_id' => $run->run_id], 'evaluated_at' => now()]);
         }
         $settlement = app(CooperativeExperimentSettlementService::class)->observe($last->fresh(['generation', 'modelVersion']));
         $this->assertSame('settled_positive_signal', $settlement['status']);
@@ -134,6 +160,57 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $this->assertSame('research_only', $interaction->authority_level);
         $this->assertFalse((bool) data_get($interaction->evidence, 'global_inheritance_allowed'));
         $this->assertCount(2, ContextualInstrumentBundleEffect::query()->where('effect_type', 'leave_one_out')->get());
+
+        ContextualSpecialistCapsule::create([
+            'capsule_key' => hash('sha256', 'factorial-last-capsule'),
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'context_cell_key' => 'cell-1',
+            'model_version_id' => $last->model_version_id, 'lab_agent_id' => $last->id,
+            'identity' => ['venue_phase' => 'london_comex_overlap'],
+            'components' => ['toolbox_instrument' => ['atr_risk_envelope', 'cost_aware_exit']],
+            'activation_contract' => ['outside_scope_action' => 'WAIT'],
+            'pareto_vector' => ['after_cost_expectancy' => 1.8],
+            'evidence' => ['promotion_evidence' => false],
+            'authority_level' => 'research_only', 'status' => 'challenger',
+        ]);
+        LabEvolutionArchiveEntry::create([
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'island_key' => 'cell-1', 'archive_type' => 'contextual_capsule',
+            'model_version_id' => $last->model_version_id, 'lab_agent_id' => $last->id,
+            'lab_generation_id' => $generation->id, 'rank' => 0, 'novelty_score' => 1,
+            'metadata' => ['promotion_evidence' => false], 'status' => 'challenger',
+        ]);
+        $retryIdea = app(ResearchIdeaInboxService::class)->submit([
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'source_type' => 'agent',
+            'title' => 'Retry invalid factorial proof',
+            'hypothesis' => 'The bounded bundle should be retried only in a fresh exact block.',
+            'bounded_genes' => [['key' => 'time_stop_candles', 'minimum' => 3, 'maximum' => 12]],
+        ]);
+        app(ResearchIdeaInboxService::class)->assign((int) $retryIdea['entry_id'], $blockKey);
+
+        $decision = CandidateGateDecision::query()->where('lab_agent_id', $last->id)->firstOrFail();
+        $decision->update(['metrics' => ['after_cost_expectancy_r' => 1.8, 'evidence_run_id' => 'missing-run']]);
+        $invalid = app(CooperativeExperimentSettlementService::class)->observe($last->fresh(['generation', 'modelVersion']));
+
+        $this->assertSame('invalid_arm_evidence', $invalid['status']);
+        $this->assertFalse($invalid['evidence_complete']);
+        $this->assertSame(
+            ContextualInstrumentBundleEffect::query()->count(),
+            ContextualInstrumentBundleEffect::query()->where('authority_level', 'invalid_evidence')->count(),
+        );
+        $this->assertSame('invalid_evidence', ContextualSpecialistCapsule::query()
+            ->where('lab_agent_id', $last->id)->value('status'));
+        $this->assertSame('invalid_evidence', LabEvolutionArchiveEntry::query()
+            ->where('lab_agent_id', $last->id)->where('archive_type', 'contextual_capsule')->value('status'));
+        $idea = ResearchIdeaInboxEntry::query()->findOrFail((int) $retryIdea['entry_id']);
+        $this->assertSame('ready_for_experiment', $idea->status);
+        $this->assertNull($idea->assigned_block_key);
+        $this->assertSame('invalid_evidence_retry_required', data_get($idea->evidence_receipt, 'status'));
+
+        $this->assertSame(0, Artisan::call('trading:reconcile-cooperative-settlements', [
+            'symbol' => 'XAUUSD', '--timeframe' => 'H1', '--json' => true,
+        ]));
+        $scheduled = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame(0, $scheduled['scanned']);
     }
 
     public function test_derived_cooperative_projection_failure_cannot_invalidate_the_screening_gate(): void
