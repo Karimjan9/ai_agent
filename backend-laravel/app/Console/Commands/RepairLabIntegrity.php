@@ -7,6 +7,7 @@ use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
+use App\Models\LabLifecycleEvent;
 use App\Models\LabTrialLedger;
 use App\Models\ModelVersion;
 use App\Services\ControlRootCatalogueService;
@@ -133,7 +134,7 @@ class RepairLabIntegrity extends Command
             }
             foreach ($generation->agents as $agent) {
                 if ($this->option('apply') && $this->option('repair-architecture-escape-contract')) {
-                    $repair = $this->repairArchitectureEscapeContract($agent, $schemas);
+                    $repair = $this->repairArchitectureEscapeContract($agent, $schemas, $queueInspector);
                     if ($repair !== null) {
                         $architectureRepairs++;
                         $fromStatus = (string) $agent->lifecycle_status;
@@ -145,7 +146,7 @@ class RepairLabIntegrity extends Command
                         ]);
                         $freshAgent = $agent->fresh(['modelVersion']);
                         $evidence->recordLifecycle($freshAgent, 'architecture_escape_contract_repair', [
-                            'reason_code' => 'ARCHITECTURE_ESCAPE_SCALAR_LEAK_REMOVED',
+                            'reason_code' => $repair['reason_code'],
                             ...$repair,
                             'promotion_evidence' => false,
                         ], 'screening', null, null, self::class, null, $fromStatus, 'draft');
@@ -436,13 +437,16 @@ class RepairLabIntegrity extends Command
     }
 
     /**
-     * Repair only the known constructor defect where a topology-only escape
-     * inherited one stale scalar from the failed council attempt.  The
-     * immutable scalar diff itself identifies the exact value to restore; a
-     * multi-key or inconsistent row remains fail-closed and is not touched.
+     * Repair only known topology-only admission defects. A stale scalar is
+     * restored from its immutable diff; an already-correct empty-diff arm is
+     * reopened only when its own quarantine event proves the obsolete checker
+     * rejected it and no screen run or queue job exists.
      */
-    private function repairArchitectureEscapeContract(LabAgent $agent, StrategyParameterSchemaService $schemas): ?array
-    {
+    private function repairArchitectureEscapeContract(
+        LabAgent $agent,
+        StrategyParameterSchemaService $schemas,
+        LabQueueJobInspector $queue,
+    ): ?array {
         $model = $agent->modelVersion;
         if (! $model || $agent->origin !== 'g98_council') {
             return null;
@@ -450,6 +454,7 @@ class RepairLabIntegrity extends Command
 
         $metadata = (array) $model->metadata;
         $hypothesisGene = (string) data_get($metadata, 'hypothesis_contract.changed_gene', '');
+        $plannerGene = (string) data_get($metadata, 'hypothesis_contract.planner_declared_gene', '');
         $architectureChanged = (bool) data_get($metadata, 'mutation_constructor_invariant.architecture_changed', false);
         $architectureVariant = (string) data_get(
             $metadata,
@@ -457,7 +462,11 @@ class RepairLabIntegrity extends Command
             data_get($metadata, 'strategy_architecture', ''),
         );
         $strategyArchitecture = (string) data_get($metadata, 'strategy_architecture', '');
-        if ($hypothesisGene !== '__architecture'
+        $architectureIntent = (bool) data_get($metadata, 'portfolio_council_lane.architecture_experiment', false)
+            || $hypothesisGene === '__architecture'
+            || $plannerGene === '__architecture'
+            || (string) data_get($metadata, 'g98_council_lane.lane', '') === 'architecture';
+        if (! $architectureIntent
             || ! $architectureChanged
             || $architectureVariant === ''
             || $strategyArchitecture === ''
@@ -466,6 +475,48 @@ class RepairLabIntegrity extends Command
         }
 
         $diff = (array) $agent->parameter_diff;
+        if ($diff === []) {
+            if ((string) $agent->lifecycle_status !== 'technical_quarantine'
+                || LabEvaluationRun::query()->where('lab_agent_id', $agent->id)->where('phase', 'screening')->exists()
+                || $queue->hasAgentJob((int) $agent->id, $queue->labQueues())) {
+                return null;
+            }
+            $falseQuarantine = LabLifecycleEvent::query()
+                ->where('lab_agent_id', $agent->id)
+                ->where('event_type', 'draft_integrity_quarantine')
+                ->latest('id')
+                ->limit(20)
+                ->get()
+                ->first(fn (LabLifecycleEvent $event): bool => in_array(
+                    'ISOLATED_ZERO_PARAMETER_DIFF',
+                    (array) data_get($event->payload, 'violations', []),
+                    true,
+                ));
+            if (! $falseQuarantine) {
+                return null;
+            }
+
+            data_set($metadata, 'portfolio_council_lane.architecture_variant', $strategyArchitecture);
+            data_set($metadata, 'hypothesis_contract.planner_declared_gene', '__architecture');
+            data_set($metadata, 'hypothesis_contract.architecture_changed', true);
+            data_set($metadata, 'hypothesis_contract.architecture_variant', $strategyArchitecture);
+            $metadata['integrity_repair'] = [
+                ...(array) data_get($metadata, 'integrity_repair', []),
+                'protocol' => 'architecture_escape_contract_repair_v1',
+                'reason_code' => 'ARCHITECTURE_ONLY_FALSE_ZERO_DIFF_QUARANTINE_REVERSED',
+                'repaired_at' => now()->utc()->toIso8601String(),
+                'evidence_preserved' => true,
+                'promotion_evidence' => false,
+            ];
+            $model->update(['metadata' => $metadata]);
+
+            return [
+                'reason_code' => 'ARCHITECTURE_ONLY_FALSE_ZERO_DIFF_QUARANTINE_REVERSED',
+                'architecture' => $strategyArchitecture,
+                'parameter_vector_unchanged' => true,
+                'false_quarantine_event_id' => (int) $falseQuarantine->id,
+            ];
+        }
         if (count($diff) !== 1) {
             return null;
         }
@@ -545,6 +596,7 @@ class RepairLabIntegrity extends Command
         $model->update(['parameters' => $parameters, 'metadata' => $metadata]);
 
         return [
+            'reason_code' => 'ARCHITECTURE_ESCAPE_SCALAR_LEAK_REMOVED',
             'removed_scalar_gene' => $changedKey,
             'restored_value' => $change['old'],
             'architecture' => $strategyArchitecture,
