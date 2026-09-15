@@ -197,6 +197,50 @@ class NormalCausalResearchContractTest extends TestCase
         $this->assertTrue((bool) data_get($result, 'plan.19.niche.control_only'));
     }
 
+    public function test_legacy_core_fill_cannot_replace_a_seeded_causal_repair_triplet(): void
+    {
+        $roles = ['repair_guided', 'blinded', 'frozen_control'];
+        $plan = collect($roles)->map(fn (string $role, int $index): array => [
+            'family' => 'hybrid',
+            'origin' => 'causal_repair',
+            'target' => 'temporal_stability',
+            'evolution_mode' => $role === 'frozen_control' ? 'frozen_control' : 'causal_repair_counterfactual',
+            'niche' => [
+                'slot' => $index + 1,
+                'causal_repair_source_experiment_id' => 77,
+                'promotion_evidence' => false,
+            ],
+        ])->all();
+        $groupTargets = array_keys(LabPopulationService::POPULATION_GROUPS);
+        foreach (range(0, 16) as $index) {
+            $plan[] = [
+                'family' => 'hybrid',
+                'origin' => 'test_discovery',
+                'target' => $groupTargets[$index % count($groupTargets)],
+                'niche' => [],
+            ];
+        }
+
+        $lab = new AiLaboratory([
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'],
+        ]);
+        $method = new \ReflectionMethod(LabPopulationService::class, 'fillNormalCouncilCore');
+        $method->setAccessible(true);
+        $filled = $method->invoke(app(LabPopulationService::class), $plan, $lab, 20);
+
+        $this->assertCount(20, $filled);
+        $this->assertSame(
+            [77, 77, 77],
+            collect($filled)->take(3)->pluck('niche.causal_repair_source_experiment_id')->all(),
+        );
+        $this->assertSame(
+            ['causal_repair_counterfactual', 'causal_repair_counterfactual', 'frozen_control'],
+            collect($filled)->take(3)->pluck('evolution_mode')->all(),
+        );
+    }
+
     public function test_dispatch_admission_consumes_the_same_exact_pair_protocol_as_the_constructor(): void
     {
         $command = app(DispatchLabGeneration::class);

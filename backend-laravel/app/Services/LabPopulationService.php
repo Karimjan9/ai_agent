@@ -1228,6 +1228,9 @@ class LabPopulationService
                         ]);
                     }
                 }
+                $hasCausalLearningSeats = collect($plan)->contains(
+                    fn (array $slot): bool => $this->isCausalLearningSeat($slot),
+                );
                 if ($contextualCouncilAllocation === null
                     && ! $controlledRescue
                     && $rootExperimentPortfolio === null
@@ -1235,6 +1238,15 @@ class LabPopulationService
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
                     && ! $roleComplete
                     && $populationLimit === null
+                    // The cooperative allocator owns ordinary twenty-seat
+                    // discovery, but its arm compiler intentionally strips
+                    // causal metadata. A materialized guided/blinded/control
+                    // triplet is primary proof and must instead pass unchanged
+                    // to the normal pairing policy. That policy reserves the
+                    // three proof seats, uses sixteen of the remaining
+                    // seventeen seats for eight exact pairs and turns the final
+                    // odd seat into an explicit uncertainty abstention.
+                    && ! $hasCausalLearningSeats
                     && count($plan) === 20) {
                     $contextualCouncilAllocation = app(ContextualCouncilAllocatorService::class)->allocate(
                         $plan,
@@ -3713,6 +3725,15 @@ class LabPopulationService
         $kept = [];
         $replaceable = [];
         foreach (array_slice($plan, 0, $required) as $spec) {
+            // A causal confirmation or repair frontier is a reserved proof
+            // seat, not an unknown legacy council target. Keeping it here is
+            // what lets the downstream materializer bind the three arms to
+            // one source lesson/experiment and one frozen baseline.
+            if ($this->isCausalLearningSeat($spec)) {
+                $kept[] = $spec;
+
+                continue;
+            }
             $target = (string) ($spec['target'] ?? '');
             if (in_array($target, $groupKeys, true) && $counts[$target] < self::POPULATION_GROUP_SEATS) {
                 $kept[] = $spec;
@@ -3732,6 +3753,9 @@ class LabPopulationService
         }
 
         foreach ($missingTargets as $index => $target) {
+            if (count($kept) >= $required) {
+                break;
+            }
             $targetTemplate = collect($plan)->first(fn (array $spec): bool => ($spec['target'] ?? null) === $target);
             $template = $targetTemplate ?? ($replaceable[$index] ?? $fallback);
             $families = array_values($lab->strategy_families);
