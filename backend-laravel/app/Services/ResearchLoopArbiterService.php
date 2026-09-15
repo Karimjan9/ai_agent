@@ -6,6 +6,7 @@ use App\Jobs\RunScheduledArtisanCommandJob;
 use App\Models\CandidateHandoffEvent;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
+use App\Models\LabLearningLanePair;
 use App\Models\MarketDriftSnapshot;
 use App\Models\ModelMarketPerformance;
 use App\Models\MtfStrategyResearchRun;
@@ -26,6 +27,8 @@ class ResearchLoopArbiterService
     public const PROTOCOL = 'research_loop_arbiter_v1';
 
     public const OWNER = self::class;
+
+    private const HISTORICAL_LEARNING_MAINTENANCE_MINUTES = 30;
 
     private const ACTIVE_GENERATION_STATUSES = [
         'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation',
@@ -140,21 +143,20 @@ class ResearchLoopArbiterService
                     'controller_profile' => data_get($mode, 'controller_profile')], $dryRun);
         }
 
-        $priorityLearningPair = $this->learningLane->priorityResearchPair($symbol, $timeframe);
-        $pendingLearningPair = $priorityLearningPair
-            ?? $this->learningLane->pendingMicroPairs($symbol, $timeframe, null, 1)->first()
-            ?? $this->learningLane->frontier($symbol, $timeframe, null, 1, false)->first();
-        if ($pendingLearningPair) {
+        [$currentLearningPair, $historicalLearningPair, $priorityLearningPair] =
+            $this->learningCurriculum($symbol, $timeframe, $latest);
+        if ($currentLearningPair) {
             return $this->decide($symbol, $timeframe, 'PUMP_CANONICAL_LEARNING_PAIR', 93,
                 'trading:pump-learning-lane', [0 => $symbol, '--timeframe' => $timeframe,
-                    '--limit' => 1, '--pair-id' => (int) $pendingLearningPair->id, '--autonomous' => true],
-                'scheduler-critical', [$priorityLearningPair
+                    '--limit' => 1, '--pair-id' => (int) $currentLearningPair->id, '--autonomous' => true],
+                'scheduler-critical', [$priorityLearningPair?->is($currentLearningPair)
                         ? 'VERIFIED_POSITIVE_LEARNING_PAIR_READY'
-                        : 'EXACT_CONTROL_LEARNING_PAIR_READY'], [
+                        : 'CURRENT_GENERATION_EXACT_CONTROL_PAIR_READY'], [
                             'generation' => $generation, 'closure' => $this->compactClosure($closure),
-                            'pair_id' => (int) $pendingLearningPair->id,
-                            'candidate_agent_id' => (int) $pendingLearningPair->candidate_agent_id,
-                            'pair_status' => (string) $pendingLearningPair->status,
+                            'pair_id' => (int) $currentLearningPair->id,
+                            'candidate_agent_id' => (int) $currentLearningPair->candidate_agent_id,
+                            'pair_status' => (string) $currentLearningPair->status,
+                            'curriculum_scope' => 'latest_generation',
                         ], $dryRun);
         }
 
@@ -297,6 +299,27 @@ class ResearchLoopArbiterService
                 'scheduler-research', ['PORTFOLIO_INTERACTION_EVIDENCE_READY'], [
                     'generation' => $generation, 'closure' => $this->compactClosure($closure),
                     'candidate_count' => $portfolioCandidates,
+                ], $dryRun);
+        }
+
+        // Historical exact-control rows remain durable, but they are a
+        // maintenance curriculum rather than an admission barrier. Consume
+        // at most one every bounded window after current/frontier work. This
+        // prevents a large pre-v2 backlog from starving new 20-seat evidence
+        // forever while still closing old scientific obligations over time.
+        if ($historicalLearningPair
+            && ! $this->recentAction('PUMP_HISTORICAL_LEARNING_PAIR', self::HISTORICAL_LEARNING_MAINTENANCE_MINUTES, $symbol)) {
+            return $this->decide($symbol, $timeframe, 'PUMP_HISTORICAL_LEARNING_PAIR', 61,
+                'trading:pump-learning-lane', [0 => $symbol, '--timeframe' => $timeframe,
+                    '--limit' => 1, '--pair-id' => (int) $historicalLearningPair->id, '--autonomous' => true],
+                'scheduler-critical', ['BOUNDED_HISTORICAL_EXACT_CONTROL_MAINTENANCE'], [
+                    'generation' => $generation, 'closure' => $this->compactClosure($closure),
+                    'pair_id' => (int) $historicalLearningPair->id,
+                    'pair_generation_id' => (int) $historicalLearningPair->lab_generation_id,
+                    'candidate_agent_id' => (int) $historicalLearningPair->candidate_agent_id,
+                    'pair_status' => (string) $historicalLearningPair->status,
+                    'curriculum_scope' => 'historical_maintenance',
+                    'maintenance_window_minutes' => self::HISTORICAL_LEARNING_MAINTENANCE_MINUTES,
                 ], $dryRun);
         }
 
@@ -451,6 +474,30 @@ class ResearchLoopArbiterService
     {
         return ResearchLoopDecision::query()->where('symbol', $symbol)->where('action', $action)
             ->where('created_at', '>=', now()->subMinutes($minutes))->exists();
+    }
+
+    /**
+     * @return array{0:?LabLearningLanePair,1:?LabLearningLanePair,2:?LabLearningLanePair}
+     */
+    private function learningCurriculum(
+        string $symbol,
+        string $timeframe,
+        ?LabGeneration $latest,
+    ): array {
+        $priority = $this->learningLane->priorityResearchPair($symbol, $timeframe);
+        $pairs = collect([$priority])->filter()
+            ->concat($this->learningLane->pendingMicroPairs($symbol, $timeframe, null, 500))
+            ->concat($this->learningLane->frontier($symbol, $timeframe, null, 500, false))
+            ->unique(fn (LabLearningLanePair $pair): int => (int) $pair->id)
+            ->values();
+        $latestId = $latest ? (int) $latest->id : null;
+        $current = $latestId === null
+            ? null
+            : $pairs->first(fn (LabLearningLanePair $pair): bool => (int) $pair->lab_generation_id === $latestId);
+        $historical = $pairs->first(fn (LabLearningLanePair $pair): bool => $latestId === null
+            || (int) $pair->lab_generation_id !== $latestId);
+
+        return [$current, $historical, $priority];
     }
 
     /** @return array<string,mixed> */

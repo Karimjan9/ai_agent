@@ -7,6 +7,7 @@ use App\Models\AgentLearningLesson;
 use App\Models\AiLaboratory;
 use App\Models\CandidateHandoffEvent;
 use App\Models\LabGeneration;
+use App\Models\LabLearningLanePair;
 use App\Models\ResearchExperimentWorkItem;
 use App\Models\ResearchLoopDecision;
 use App\Services\AutonomousLearningProgressDirectorService;
@@ -174,6 +175,104 @@ class ResearchLoopArbiterTest extends TestCase
         }
     }
 
+    public function test_latest_generation_learning_pair_outranks_historical_positive_backlog(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        $latest = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 22,
+            'trigger_type' => 'scheduled',
+            'status' => 'screened',
+            'population_size' => 20,
+            'trigger_context' => [],
+            'completed_at' => now(),
+        ]);
+        app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
+        $historical = $this->learningPair(901, 777, 1901);
+        $current = $this->learningPair(902, (int) $latest->id, 1902);
+        $learning = Mockery::mock(LearningLaneService::class);
+        $learning->shouldReceive('priorityResearchPair')->once()->with('XAUUSD', 'H1')->andReturn($historical);
+        $learning->shouldReceive('pendingMicroPairs')->once()->with('XAUUSD', 'H1', null, 500)
+            ->andReturn(collect([$historical]));
+        $learning->shouldReceive('frontier')->once()->with('XAUUSD', 'H1', null, 500, false)
+            ->andReturn(collect([$current, $historical]));
+        $arbiter = new ResearchLoopArbiterService(
+            app(AutonomousModeService::class),
+            app(ResearchClosureInvariantService::class),
+            app(ResearchExperimentConversionKernelService::class),
+            $learning,
+            Mockery::mock(AutonomousLearningProgressDirectorService::class),
+            Mockery::mock(MtfResearchCohortService::class),
+            Mockery::mock(MarketDriftDetectionService::class),
+        );
+
+        $result = $arbiter->tick();
+
+        $this->assertSame('PUMP_CANONICAL_LEARNING_PAIR', $result['action']);
+        $this->assertSame(902, data_get($result, 'evidence_snapshot.pair_id'));
+        $this->assertSame('latest_generation', data_get($result, 'evidence_snapshot.curriculum_scope'));
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+    }
+
+    public function test_historical_learning_backlog_gets_one_maintenance_seat_without_starving_next_generation(): void
+    {
+        Queue::fake();
+        CarbonImmutable::setTestNow('2026-09-11 12:34:20 UTC');
+        try {
+            $lab = $this->lab();
+            LabGeneration::create([
+                'ai_laboratory_id' => $lab->id,
+                'generation' => 22,
+                'trigger_type' => 'scheduled',
+                'status' => 'screened',
+                'population_size' => 20,
+                'trigger_context' => [],
+                'completed_at' => now(),
+            ]);
+            app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
+            $historical = $this->learningPair(903, 777, 1903);
+            $learning = Mockery::mock(LearningLaneService::class);
+            $learning->shouldReceive('priorityResearchPair')->twice()->with('XAUUSD', 'H1')->andReturn($historical);
+            $learning->shouldReceive('pendingMicroPairs')->twice()->with('XAUUSD', 'H1', null, 500)
+                ->andReturn(collect([$historical]));
+            $learning->shouldReceive('frontier')->twice()->with('XAUUSD', 'H1', null, 500, false)
+                ->andReturn(collect([$historical]));
+            $planner = Mockery::mock(CausalLearningCohortPlannerService::class);
+            $planner->shouldReceive('eligibleLesson')->twice()->with('XAUUSD', 'H1')->andReturnNull();
+            $this->app->instance(CausalLearningCohortPlannerService::class, $planner);
+            $director = Mockery::mock(AutonomousLearningProgressDirectorService::class);
+            $director->shouldReceive('advance')->twice()->andReturn([
+                'protocol' => AutonomousLearningProgressDirectorService::PROTOCOL,
+                'status' => 'blocked', 'reason' => 'NO_CAUSAL_ACTION_READY',
+            ]);
+            $cohorts = Mockery::mock(MtfResearchCohortService::class);
+            $cohorts->shouldReceive('candidate')->twice()->andReturnNull();
+            $drift = Mockery::mock(MarketDriftDetectionService::class);
+            $drift->shouldReceive('confirmation')->twice()->andReturn(['status' => 'waiting']);
+            $arbiter = new ResearchLoopArbiterService(
+                app(AutonomousModeService::class),
+                app(ResearchClosureInvariantService::class),
+                app(ResearchExperimentConversionKernelService::class),
+                $learning,
+                $director,
+                $cohorts,
+                $drift,
+            );
+
+            $maintenance = $arbiter->tick();
+            CarbonImmutable::setTestNow('2026-09-11 12:35:20 UTC');
+            $progress = $arbiter->tick();
+
+            $this->assertSame('PUMP_HISTORICAL_LEARNING_PAIR', $maintenance['action']);
+            $this->assertSame('historical_maintenance', data_get($maintenance, 'evidence_snapshot.curriculum_scope'));
+            $this->assertSame('RUN_NORMAL_TWENTY_SEAT_LIFECYCLE', $progress['action']);
+            Queue::assertPushed(RunScheduledArtisanCommandJob::class, 2);
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
+    }
+
     public function test_deferred_targeted_handoff_does_not_monopolise_the_arbiter(): void
     {
         Queue::fake();
@@ -298,5 +397,18 @@ class ResearchLoopArbiterTest extends TestCase
             'arms' => [['role' => 'frozen_control'], ['role' => 'candidate']],
             'revisions' => ['subject' => 1, 'evidence' => 1],
         ];
+    }
+
+    private function learningPair(int $id, int $generationId, int $candidateAgentId): LabLearningLanePair
+    {
+        $pair = new LabLearningLanePair([
+            'lab_generation_id' => $generationId,
+            'candidate_agent_id' => $candidateAgentId,
+            'status' => 'screen_paired',
+        ]);
+        $pair->id = $id;
+        $pair->exists = true;
+
+        return $pair;
     }
 }
