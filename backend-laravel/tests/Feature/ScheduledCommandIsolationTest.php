@@ -139,6 +139,38 @@ class ScheduledCommandIsolationTest extends TestCase
         $job->handle(app(ScheduledCommandOutcomeClassifierService::class));
     }
 
+    public function test_transient_external_feed_outage_is_deferred_without_hiding_application_errors(): void
+    {
+        $classifier = app(ScheduledCommandOutcomeClassifierService::class);
+
+        $transient = $classifier->classify(
+            'market-data:sync-volume',
+            ['symbol' => 'XAUUSD'],
+            1,
+            'cURL error 6: Could not resolve host: upstream.example',
+        );
+        $this->assertSame('deferred_external_dependency', $transient['status']);
+        $this->assertFalse($transient['throw']);
+
+        $applicationFailure = $classifier->classify(
+            'market-data:sync-volume',
+            ['symbol' => 'XAUUSD'],
+            1,
+            'SQLSTATE[42S22]: Column not found',
+        );
+        $this->assertSame('technical_failure', $applicationFailure['status']);
+        $this->assertTrue($applicationFailure['throw']);
+
+        $unrelatedTimeout = $classifier->classify(
+            'trading:run-research-loop',
+            ['--symbol' => 'XAUUSD'],
+            124,
+            'Operation timed out',
+        );
+        $this->assertSame('technical_failure', $unrelatedTimeout['status']);
+        $this->assertTrue($unrelatedTimeout['throw']);
+    }
+
     public function test_argument_order_does_not_change_the_overlap_identity(): void
     {
         $left = new RunScheduledArtisanCommandJob('trading:test', ['--b' => 2, '--a' => 1]);
@@ -160,8 +192,8 @@ class ScheduledCommandIsolationTest extends TestCase
 
         $this->assertSame('scheduler-research', $job->queue);
         $this->assertSame('scheduler-research', $job->lane);
-        $this->assertSame(900, $job->timeout);
-        $this->assertSame(1200, $job->uniqueFor);
+        $this->assertSame(2400, $job->timeout);
+        $this->assertSame(2700, $job->uniqueFor);
     }
 
     public function test_lifecycle_scheduler_job_has_a_full_population_constructor_budget(): void

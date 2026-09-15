@@ -132,6 +132,11 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
             'trading:lab-generation',
             'trading:advance-learning-progress',
             'trading:dispatch-full-validation',
+            // A cold immutable-history refresh may aggregate the legacy
+            // candle plane once before its revision cache is warm. Keep that
+            // bounded scan below the research worker lease, not the generic
+            // 15-minute scheduler budget.
+            'trading:lab-learn-from-history',
         ], true) || ($this->command === 'trading:dispatch-lab'
             && (bool) ($this->arguments['--learning-confirmation'] ?? false));
         $this->timeout = $this->lane === 'scheduler-critical'

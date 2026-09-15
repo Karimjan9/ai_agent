@@ -40,7 +40,52 @@ class ScheduledCommandOutcomeClassifierService
             return $this->result('deferred', false, $exitCode, 'proposal_not_admitted');
         }
 
+        // Scheduled external feeds are optional inputs with independent
+        // freshness/quarantine gates. A transient DNS/TLS/timeout outage must
+        // keep that input unavailable, but it is not a broken queue job and
+        // must not poison the generation runtime circuit breaker. Normal
+        // cadence retries it; auth, schema and application errors still fail.
+        if ($this->isTransientExternalDependencyFailure($command, $normalized)) {
+            return $this->result('deferred_external_dependency', false, $exitCode, 'transient_external_dependency');
+        }
+
         return $this->result('technical_failure', true, $exitCode, 'nonzero_exit');
+    }
+
+    private function isTransientExternalDependencyFailure(string $command, string $normalizedOutput): bool
+    {
+        if (! in_array($command, [
+            'market-data:update',
+            'market-data:sync-volume',
+            'market-intelligence:sync-cot',
+            'trading:sync-economic-calendar',
+            'trading:sync-official-us-calendar',
+        ], true)) {
+            return false;
+        }
+
+        foreach ([
+            'curl error 6:',
+            'curl error 7:',
+            'curl error 28:',
+            'curl error 35:',
+            'curl error 52:',
+            'curl error 56:',
+            'could not resolve host',
+            'connection timed out',
+            'operation timed out',
+            'ssl_error_syscall',
+            'temporarily unavailable',
+            'service unavailable',
+            'bad gateway',
+            'gateway timeout',
+        ] as $signature) {
+            if (str_contains($normalizedOutput, $signature)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return array<string,mixed> */
