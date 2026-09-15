@@ -4,14 +4,15 @@ namespace Tests\Feature;
 
 use App\Jobs\RunScheduledArtisanCommandJob;
 use App\Models\AiLaboratory;
+use App\Models\CandidateHandoffEvent;
 use App\Models\LabGeneration;
 use App\Models\ResearchExperimentWorkItem;
 use App\Models\ResearchLoopDecision;
 use App\Services\AutonomousLearningProgressDirectorService;
 use App\Services\AutonomousModeService;
+use App\Services\LearningLaneService;
 use App\Services\MarketDriftDetectionService;
 use App\Services\MtfResearchCohortService;
-use App\Services\LearningLaneService;
 use App\Services\ResearchClosureInvariantService;
 use App\Services\ResearchExperimentConversionKernelService;
 use App\Services\ResearchLoopArbiterService;
@@ -140,6 +141,62 @@ class ResearchLoopArbiterTest extends TestCase
             $this->assertSame('RUN_NORMAL_TWENTY_SEAT_LIFECYCLE', $first['action']);
             $this->assertSame('duplicate_suppressed', $second['status']);
             Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
+    }
+
+    public function test_deferred_targeted_handoff_does_not_monopolise_the_arbiter(): void
+    {
+        Queue::fake();
+        CarbonImmutable::setTestNow('2026-09-11 12:34:20 UTC');
+        try {
+            $lab = $this->lab();
+            $generation = LabGeneration::create([
+                'ai_laboratory_id' => $lab->id,
+                'generation' => 1,
+                'trigger_type' => 'new_data',
+                'status' => 'screened',
+                'population_size' => 20,
+                'trigger_context' => [],
+                'completed_at' => now(),
+            ]);
+            CandidateHandoffEvent::create([
+                'lab_generation_id' => $generation->id,
+                'stage' => 'waiting_for_targeted_generation',
+                'status' => 'waiting',
+                'terminal_reason' => 'TARGETED_GENERATION_RETRY_DEFERRED',
+                'payload' => ['targeted_retry' => [
+                    'next_retry_at' => CarbonImmutable::now('UTC')->addHour()->toIso8601String(),
+                ]],
+                'recorded_at' => now(),
+            ]);
+            app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
+            $director = Mockery::mock(AutonomousLearningProgressDirectorService::class);
+            $director->shouldReceive('advance')->once()->andReturn([
+                'protocol' => AutonomousLearningProgressDirectorService::PROTOCOL,
+                'status' => 'blocked', 'reason' => 'NO_CAUSAL_ACTION_READY',
+            ]);
+            $cohorts = Mockery::mock(MtfResearchCohortService::class);
+            $cohorts->shouldReceive('candidate')->once()->andReturnNull();
+            $drift = Mockery::mock(MarketDriftDetectionService::class);
+            $drift->shouldReceive('confirmation')->once()->andReturn(['status' => 'waiting']);
+            $arbiter = new ResearchLoopArbiterService(
+                app(AutonomousModeService::class),
+                app(ResearchClosureInvariantService::class),
+                app(ResearchExperimentConversionKernelService::class),
+                app(LearningLaneService::class),
+                $director,
+                $cohorts,
+                $drift,
+            );
+
+            $result = $arbiter->tick();
+
+            $this->assertSame('RUN_NORMAL_TWENTY_SEAT_LIFECYCLE', $result['action']);
+            Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+            Queue::assertNotPushed(RunScheduledArtisanCommandJob::class,
+                fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:process-targeted-generations');
         } finally {
             CarbonImmutable::setTestNow();
         }

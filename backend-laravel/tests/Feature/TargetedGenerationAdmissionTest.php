@@ -127,10 +127,21 @@ class TargetedGenerationAdmissionTest extends TestCase
         $population->shouldReceive('build')->once()->withArgs(
             fn (...$arguments): bool => data_get($arguments, '8.source_generation_id') === $newer->id,
         )->andReturnNull();
+        $population->shouldReceive('lastBuildOutcome')->once()->andReturn([
+            'status' => 'blocked',
+            'reason_code' => 'INSUFFICIENT_FRESH_CANDLES',
+            'retryable' => true,
+            'context' => [],
+        ]);
         $profiles = m::mock(TargetedRescueProfileService::class);
         $profiles->shouldReceive('forGeneration')->once()->withArgs(
             fn (LabGeneration $generation): bool => $generation->is($newer),
-        )->andReturn([]);
+        )->andReturn([
+            'actionable_failure_count' => 1,
+            'target_counts' => ['profit_factor' => 1],
+            'targets' => ['profit_factor'],
+            'selected_near_miss' => ['agent_id' => 1],
+        ]);
         $queues = m::mock(LabQueueJobInspector::class);
         $queues->shouldReceive('queueSnapshot')->once()->andReturn(['available' => true, 'total' => 0]);
         $this->app->instance(LabQueueJobInspector::class, $queues);
@@ -147,6 +158,100 @@ class TargetedGenerationAdmissionTest extends TestCase
         );
 
         $this->assertSame(ProcessTargetedGenerationRequests::SUCCESS, $result);
+        $olderRequest = CandidateHandoffEvent::query()->where('lab_generation_id', $older->id)->sole();
+        $newerRequest = CandidateHandoffEvent::query()->where('lab_generation_id', $newer->id)->sole();
+        $this->assertSame('superseded', $olderRequest->status);
+        $this->assertSame('NEWER_TARGETED_HANDOFF_SUPERSEDES_REQUEST', $olderRequest->terminal_reason);
+        $this->assertSame('waiting', $newerRequest->status);
+        $this->assertSame('TARGETED_GENERATION_RETRY_DEFERRED', $newerRequest->terminal_reason);
+        $this->assertFalse($newerRequest->targetedGenerationRetryDue());
+    }
+
+    public function test_created_targeted_generation_consumes_the_waiting_request_once(): void
+    {
+        $lab = $this->liveLab();
+        $source = $this->terminalGeneration($lab, 1);
+        $waiting = $this->waitingHandoff($source);
+        $population = m::mock(LabPopulationService::class);
+        $population->shouldReceive('build')->once()->andReturnUsing(function () use ($lab): LabGeneration {
+            return LabGeneration::create([
+                'ai_laboratory_id' => $lab->id,
+                'generation' => 2,
+                'trigger_type' => 'candidate_handoff',
+                'population_size' => 20,
+                'status' => 'screening',
+                'trigger_context' => ['generation_protocol' => LabPopulationService::GENERATION_PROTOCOL],
+            ]);
+        });
+        $profiles = $this->actionableProfiles($source);
+        $this->bindHealthyQueueAndSafety();
+
+        $command = app(ProcessTargetedGenerationRequests::class);
+        $command->setOutput(new OutputStyle(new ArrayInput([]), new BufferedOutput));
+        $result = $command->handle($population, app(CandidateHandoffService::class), $profiles);
+
+        $this->assertSame(ProcessTargetedGenerationRequests::SUCCESS, $result);
+        $this->assertSame('completed', $waiting->fresh()->status);
+        $this->assertSame('TARGETED_GENERATION_REQUEST_CONSUMED', $waiting->fresh()->terminal_reason);
+        $this->assertNotEmpty(data_get($waiting->fresh()->payload, 'consumption_receipt'));
+        $this->assertSame(2, data_get($waiting->fresh()->payload, 'target_generation'));
+        $this->assertDatabaseHas('candidate_handoff_events', [
+            'lab_generation_id' => $source->id,
+            'stage' => 'targeted_generation_created',
+            'status' => 'completed',
+        ]);
+    }
+
+    public function test_non_retryable_constructor_block_terminally_closes_request(): void
+    {
+        $lab = $this->liveLab();
+        $source = $this->terminalGeneration($lab, 1);
+        $waiting = $this->waitingHandoff($source);
+        $population = m::mock(LabPopulationService::class);
+        $population->shouldReceive('build')->once()->andReturnNull();
+        $population->shouldReceive('lastBuildOutcome')->once()->andReturn([
+            'status' => 'blocked',
+            'reason_code' => 'DATA_EDGE_AUDIT_REQUIRED',
+            'retryable' => false,
+            'context' => ['fixture' => true],
+        ]);
+        $this->bindHealthyQueueAndSafety();
+
+        $command = app(ProcessTargetedGenerationRequests::class);
+        $command->setOutput(new OutputStyle(new ArrayInput([]), new BufferedOutput));
+        $command->handle($population, app(CandidateHandoffService::class), $this->actionableProfiles($source));
+
+        $this->assertSame('blocked', $waiting->fresh()->status);
+        $this->assertSame('DATA_EDGE_AUDIT_REQUIRED', $waiting->fresh()->terminal_reason);
+        $this->assertSame(true, data_get($waiting->fresh()->payload, 'build_outcome.context.fixture'));
+    }
+
+    public function test_evidence_free_failure_profile_is_closed_without_random_mutation(): void
+    {
+        $lab = $this->liveLab();
+        $source = $this->terminalGeneration($lab, 1);
+        $waiting = $this->waitingHandoff($source);
+        $population = m::mock(LabPopulationService::class);
+        $population->shouldReceive('build')->never();
+        $profiles = m::mock(TargetedRescueProfileService::class);
+        $profiles->shouldReceive('forGeneration')->once()->withArgs(
+            fn (LabGeneration $generation): bool => $generation->is($source),
+        )->andReturn([
+            'actionable_failure_count' => 0,
+            'target_counts' => [],
+            'targets' => ['profit_factor', 'stress_cost'],
+            'selected_near_miss' => null,
+            'technical_excluded_agent_ids' => [1, 2],
+        ]);
+        $this->bindHealthyQueueAndSafety();
+
+        $command = app(ProcessTargetedGenerationRequests::class);
+        $command->setOutput(new OutputStyle(new ArrayInput([]), new BufferedOutput));
+        $command->handle($population, app(CandidateHandoffService::class), $profiles);
+
+        $this->assertSame('blocked', $waiting->fresh()->status);
+        $this->assertSame('TARGETED_FAILURE_PROFILE_NOT_ACTIONABLE', $waiting->fresh()->terminal_reason);
+        $this->assertSame('continue_causal_director_or_data_edge_audit', data_get($waiting->fresh()->payload, 'next_action'));
     }
 
     public function test_latest_incomplete_technical_quarantine_keeps_generation_ownership(): void
@@ -240,5 +345,67 @@ class TargetedGenerationAdmissionTest extends TestCase
         $this->assertSame('LATEST_GENERATION_CONSTRUCTION_INCOMPLETE', $service->lastBuildOutcome()['reason_code']);
         $this->assertSame($partial->id, data_get($service->lastBuildOutcome(), 'context.generation_id'));
         $this->assertCount(1, $lab->generations()->get());
+    }
+
+    private function liveLab(): AiLaboratory
+    {
+        return AiLaboratory::create([
+            'symbol' => 'XAUUSD',
+            'name' => 'XAUUSD Unified MTF Organism',
+            'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'],
+            'is_active' => true,
+            'lifecycle_mode' => 'lighthouse',
+        ]);
+    }
+
+    private function terminalGeneration(AiLaboratory $lab, int $generation): LabGeneration
+    {
+        return LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => $generation,
+            'trigger_type' => 'new_data',
+            'population_size' => 20,
+            'status' => 'screened',
+            'trigger_context' => [],
+        ]);
+    }
+
+    private function waitingHandoff(LabGeneration $generation): CandidateHandoffEvent
+    {
+        return CandidateHandoffEvent::create([
+            'lab_generation_id' => $generation->id,
+            'stage' => 'waiting_for_targeted_generation',
+            'status' => 'waiting',
+            'terminal_reason' => 'NO_ELIGIBLE_CANDIDATE',
+            'payload' => ['handoff_profile_hash' => 'profile-'.$generation->id],
+            'recorded_at' => now(),
+        ]);
+    }
+
+    private function actionableProfiles(LabGeneration $source): TargetedRescueProfileService
+    {
+        $profiles = m::mock(TargetedRescueProfileService::class);
+        $profiles->shouldReceive('forGeneration')->once()->withArgs(
+            fn (LabGeneration $generation): bool => $generation->is($source),
+        )->andReturn([
+            'actionable_failure_count' => 1,
+            'target_counts' => ['profit_factor' => 1],
+            'targets' => ['profit_factor'],
+            'selected_near_miss' => ['agent_id' => 1],
+            'profile_hash' => 'actionable-profile',
+        ]);
+
+        return $profiles;
+    }
+
+    private function bindHealthyQueueAndSafety(): void
+    {
+        $queues = m::mock(LabQueueJobInspector::class);
+        $queues->shouldReceive('queueSnapshot')->once()->andReturn(['available' => true, 'total' => 0]);
+        $this->app->instance(LabQueueJobInspector::class, $queues);
+        $safety = m::mock(LearningProtocolSafetyService::class);
+        $safety->shouldReceive('generationCreationPaused')->once()->andReturnFalse();
+        $this->app->instance(LearningProtocolSafetyService::class, $safety);
     }
 }

@@ -180,7 +180,8 @@ class ResearchLoopArbiterService
             ->where('status', 'waiting')
             ->whereHas('generation.laboratory', fn ($query) => $query->where('symbol', $symbol)
                 ->where('timeframe', $timeframe)->where('is_active', true))
-            ->latest('id')->first();
+            ->latest('id')->get()
+            ->first(fn (CandidateHandoffEvent $event): bool => $event->targetedGenerationRetryDue());
         if ($targetedRequest) {
             return $this->decide($symbol, $timeframe, 'CONSUME_TARGETED_GENERATION_REQUEST', 89,
                 'trading:process-targeted-generations', [], 'scheduler-constructor',

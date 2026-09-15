@@ -76,31 +76,61 @@ class ProcessTargetedGenerationRequests extends Command
         foreach ($requests as $request) {
             $source = $request->generation;
             $lab = $source?->laboratory;
-            if (! $source || ! $lab || ($lab->is_active && (string) $lab->lifecycle_mode === 'lighthouse')) {
+            if (! $source || ! $lab) {
+                // A broken projection cannot be written to the immutable
+                // generation evidence plane because its owner is gone, but it
+                // also must not remain an immortal scheduler work item.
+                $request->update([
+                    'status' => 'blocked',
+                    'terminal_reason' => 'SOURCE_GENERATION_MISSING',
+                    'payload' => [
+                        ...((array) $request->payload),
+                        'closed_at' => now()->utc()->toIso8601String(),
+                        'next_action' => 'technical_evidence_reconciliation',
+                        'promotion_evidence' => false,
+                    ],
+                    'recorded_at' => now(),
+                ]);
+
                 continue;
             }
-            $handoffs->record(
-                $source,
-                null,
-                'waiting_for_targeted_generation',
-                'superseded',
-                'SOURCE_LAB_ARCHIVED',
-                [
-                    ...((array) $request->payload),
-                    'superseded_at' => now()->utc()->toIso8601String(),
-                    'next_action' => 'retain_as_historical_evidence_only',
-                    'promotion_evidence' => false,
-                ],
-            );
+            if ($lab->is_active && (string) $lab->lifecycle_mode === 'lighthouse') {
+                continue;
+            }
+            $this->closeRequest($handoffs, $request, 'superseded', 'SOURCE_LAB_ARCHIVED', [
+                'next_action' => 'retain_as_historical_evidence_only',
+            ]);
         }
-        // Process only the newest live request per laboratory. Falling through
-        // to an older request after the newest one is denied can bypass the
-        // current rescue circuit breaker and spend compute on stale evidence.
-        $requests = $requests
+        // A handoff is a single-consumer work projection, not a permanent
+        // memory queue. Failure cases/repair anchors retain old lessons. Keep
+        // only the newest live request for each laboratory and close every
+        // older projection with an immutable supersession receipt. Previously
+        // those rows stayed `waiting` forever and made the arbiter cycle over
+        // 167 historical requests.
+        $liveRequests = $requests
             ->filter(fn (CandidateHandoffEvent $request): bool => $request->generation?->laboratory?->is_active === true
                 && (string) $request->generation?->laboratory?->lifecycle_mode === 'lighthouse')
-            ->unique(fn (CandidateHandoffEvent $request): int => (int) $request->generation->ai_laboratory_id)
             ->values();
+        $requests = collect();
+        foreach ($liveRequests->groupBy(fn (CandidateHandoffEvent $request): int => (int) $request->generation->ai_laboratory_id) as $labRequests) {
+            /** @var CandidateHandoffEvent|null $newest */
+            $newest = $labRequests->first();
+            if (! $newest) {
+                continue;
+            }
+            foreach ($labRequests->skip(1) as $stale) {
+                $this->closeRequest($handoffs, $stale, 'superseded', 'NEWER_TARGETED_HANDOFF_SUPERSEDES_REQUEST', [
+                    'superseded_by_event_id' => (int) $newest->id,
+                    'superseded_by_source_generation_id' => (int) $newest->lab_generation_id,
+                    'next_action' => 'lesson_retained_in_failure_memory',
+                ]);
+            }
+            if ($newest->targetedGenerationRetryDue()) {
+                $requests->push($newest);
+            } else {
+                $this->info("{$newest->generation->laboratory->symbol}: targeted handoff retry is deferred until ".data_get($newest->payload, 'targeted_retry.next_retry_at').'.');
+            }
+        }
         foreach ($requests as $request) {
             $source = $request->generation;
             $lab = $source?->laboratory;
@@ -162,6 +192,13 @@ class ProcessTargetedGenerationRequests extends Command
                     $this->warn("{$lab->symbol}: targeted generation budget exhausted; data/edge audit required before further mutation.");
                 }
 
+                $this->closeRequest($handoffs, $request, 'blocked', 'TARGETED_GENERATION_BUDGET_EXHAUSTED', [
+                    'baseline_generation' => $baseline,
+                    'targeted_attempts' => $targetedAttempts,
+                    'targeted_attempt_limit' => $targetedAttemptLimit,
+                    'next_action' => 'data_edge_audit_required',
+                ]);
+
                 continue;
             }
             // Rebuild the profile from current immutable evidence instead of
@@ -169,6 +206,17 @@ class ProcessTargetedGenerationRequests extends Command
             // ranking selects one dominant failure and its five-seat control
             // cohort; legacy profiles still resolve to the five-by-four path.
             $currentProfile = $profiles->forGeneration($source);
+            if (! $this->profileIsActionable($currentProfile)) {
+                $this->closeRequest($handoffs, $request, 'blocked', 'TARGETED_FAILURE_PROFILE_NOT_ACTIONABLE', [
+                    'profile_hash' => data_get($currentProfile, 'profile_hash'),
+                    'actionable_failure_count' => (int) data_get($currentProfile, 'actionable_failure_count', 0),
+                    'technical_excluded_agent_ids' => (array) data_get($currentProfile, 'technical_excluded_agent_ids', []),
+                    'next_action' => 'continue_causal_director_or_data_edge_audit',
+                ]);
+                $this->warn("{$lab->symbol}: targeted handoff closed because no evidence-backed repair target exists.");
+
+                continue;
+            }
             $targetProfile = $this->targetProfile($source, $request, $currentProfile);
             $populationSize = max(1, (int) data_get($targetProfile, 'population_size', 20));
             $created = $populations->build(
@@ -183,6 +231,18 @@ class ProcessTargetedGenerationRequests extends Command
                 $targetProfile,
             );
             if ($created) {
+                $this->closeRequest($handoffs, $request, 'completed', 'TARGETED_GENERATION_REQUEST_CONSUMED', [
+                    'target_generation_id' => (int) $created->id,
+                    'target_generation' => (int) $created->generation,
+                    'consumption_receipt' => hash('sha256', implode('|', [
+                        'targeted_generation_request_consumed_v1',
+                        (int) $request->id,
+                        (int) $source->id,
+                        (int) $created->id,
+                        (string) data_get($targetProfile, 'profile_hash', ''),
+                    ])),
+                    'next_action' => 'settle_target_generation',
+                ]);
                 $handoffs->record($source, null, 'targeted_generation_created', 'completed', null, ['target_generation_id' => $created->id, 'generation' => $created->generation,
                     'targeted_failure_profile' => $targetProfile,
                     'rule' => data_get($targetProfile, 'cohort_mode') === 'four_siblings_plus_control_v1'
@@ -190,11 +250,80 @@ class ProcessTargetedGenerationRequests extends Command
                         : 'Five four-seat one-gene rescue groups are created from the immutable failure profile; no old screened candidate was force-replayed.']);
                 $this->info("{$lab->symbol}: targeted G{$created->generation} created.");
             } else {
-                $this->warn("{$lab->symbol}: targeted generation remains waiting for market-data readiness.");
+                $outcome = $populations->lastBuildOutcome();
+                if ((bool) data_get($outcome, 'retryable', false)) {
+                    $this->deferRetry($handoffs, $request, $outcome);
+                    $this->warn("{$lab->symbol}: targeted generation retry deferred after ".data_get($outcome, 'reason_code', 'UNKNOWN_BUILD_BLOCK').'.');
+                } else {
+                    $reason = (string) data_get($outcome, 'reason_code', 'TARGETED_GENERATION_BUILD_BLOCKED');
+                    $this->closeRequest($handoffs, $request, 'blocked', $reason, [
+                        'build_outcome' => $outcome,
+                        'next_action' => 'continue_causal_director_or_data_edge_audit',
+                    ]);
+                    $this->warn("{$lab->symbol}: targeted handoff terminally blocked by {$reason}; arbiter may select the next legal work.");
+                }
             }
         }
 
         return self::SUCCESS;
+    }
+
+    private function profileIsActionable(array $profile): bool
+    {
+        if ((int) data_get($profile, 'actionable_failure_count', 0) > 0) {
+            return true;
+        }
+        if (collect((array) data_get($profile, 'target_counts', []))->sum() > 0) {
+            return true;
+        }
+
+        return filled(data_get($profile, 'selected_near_miss.agent_id'))
+            && count((array) data_get($profile, 'targets', [])) > 0;
+    }
+
+    /** @param array<string, mixed> $extra */
+    private function closeRequest(CandidateHandoffService $handoffs, CandidateHandoffEvent $request, string $status, string $reason, array $extra = []): void
+    {
+        $source = $request->generation;
+        if (! $source) {
+            return;
+        }
+        $handoffs->record($source, null, 'waiting_for_targeted_generation', $status, $reason, [
+            ...((array) $request->payload),
+            'source_terminal_reason' => (string) ($request->terminal_reason ?: data_get($request->payload, 'source_terminal_reason', '')),
+            'request_lifecycle' => 'terminal',
+            'closed_at' => now()->utc()->toIso8601String(),
+            'promotion_evidence' => false,
+            ...$extra,
+        ]);
+    }
+
+    /** @param array<string, mixed> $outcome */
+    private function deferRetry(CandidateHandoffService $handoffs, CandidateHandoffEvent $request, array $outcome): void
+    {
+        $attempt = (int) data_get($request->payload, 'targeted_retry.attempt_count', 0) + 1;
+        $reason = (string) data_get($outcome, 'reason_code', 'TARGETED_GENERATION_RETRYABLE_BLOCK');
+        $minutes = match ($reason) {
+            'GENERATION_CONSTRUCTOR_ACTIVE', 'LATEST_GENERATION_ACTIVE', 'LATEST_GENERATION_CONSTRUCTION_INCOMPLETE' => 5,
+            'CAUSAL_REPAIR_FRONTIER_SOURCE_CHANGED', 'CAUSAL_LEARNING_CONFIRMATION_SOURCE_CHANGED' => 10,
+            'MARKET_DATA_CONTINUITY_NOT_READY', 'HISTORICAL_DATA_NOT_READY', 'CANONICAL_DATA_CONTRACT_NOT_READY', 'INSUFFICIENT_FRESH_CANDLES' => 60,
+            default => min(360, 15 * (2 ** min(4, max(0, $attempt - 1)))),
+        };
+        $handoffs->record($request->generation, null, 'waiting_for_targeted_generation', 'waiting', 'TARGETED_GENERATION_RETRY_DEFERRED', [
+            ...((array) $request->payload),
+            'source_terminal_reason' => (string) ($request->terminal_reason ?: data_get($request->payload, 'source_terminal_reason', '')),
+            'targeted_retry' => [
+                'protocol' => 'targeted_generation_retry_backoff_v1',
+                'attempt_count' => $attempt,
+                'last_attempt_at' => now()->utc()->toIso8601String(),
+                'next_retry_at' => now()->utc()->addMinutes($minutes)->toIso8601String(),
+                'backoff_minutes' => $minutes,
+                'build_outcome' => $outcome,
+                'promotion_evidence' => false,
+            ],
+            'next_action' => 'arbiter_may_run_other_work_until_retry_due',
+            'promotion_evidence' => false,
+        ]);
     }
 
     private function screeningBacklogIsHigh(): bool
