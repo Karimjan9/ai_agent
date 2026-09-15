@@ -84,6 +84,32 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->assertCount(1, LabGeneration::all());
     }
 
+    public function test_active_generation_resumes_without_recomputing_successor_admission(): void
+    {
+        $lab = $this->seedLaboratory();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 220,
+            'status' => 'screening',
+            'population_size' => 20,
+            'data_fingerprint' => 'active-generation-fast-path',
+            'trigger_type' => 'learning_confirmation',
+            'trigger_context' => [],
+        ]);
+        $this->bindPopulation(paused: false, expectBuild: false);
+
+        $admission = m::mock(GenerationAdmissionDecisionService::class);
+        $admission->shouldReceive('decide')->never();
+        app()->instance(GenerationAdmissionDecisionService::class, $admission);
+        app()->forgetInstance(LabLifecycleOrchestrator::class);
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-active-fast-path');
+
+        $this->assertSame('completed', $result['status']);
+        $this->assertSame($generation->id, data_get($result, 'data.generation_id'));
+        $this->assertCount(1, LabGeneration::all());
+    }
+
     public function test_explicit_recovery_owns_its_screen_dispatch_without_blocking_ordinary_or_descendant_models(): void
     {
         $method = new \ReflectionMethod(LabLifecycleOrchestrator::class, 'isExplicitTechnicalRecoveryDispatch');

@@ -340,7 +340,6 @@ class LabLifecycleOrchestrator
         if (! $lab) {
             return ['state' => 'blocked', 'reason' => 'LABORATORY_NOT_FOUND', 'actionable_pending_dojo' => 0];
         }
-        $pendingSuccessor = $this->successorRequestPending($symbol, $timeframe);
         $latest = $lab->generations()->latest('generation')->first();
 
         // A persisted immutable population plan has already passed generation
@@ -366,6 +365,29 @@ class LabLifecycleOrchestrator
                 ],
             ];
         }
+
+        // An admitted, fully-constructed cohort owns the runtime until it is
+        // terminal. Recomputing the next-generation learning/admission graph
+        // on every screening tick cannot change that fact and used to hold
+        // the serialized constructor worker for minutes. Technical retry
+        // signatures have already been intercepted before this method.
+        if ($latest && in_array((string) $latest->status, [
+            'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation',
+        ], true)) {
+            return [
+                'state' => 'open',
+                'reason' => 'ACTIVE_GENERATION_OWNS_RUNTIME',
+                'actionable_pending_dojo' => 0,
+                'consume_successor_request' => false,
+                'generation_admission' => [
+                    'decision' => 'RESUME_EXISTING_GENERATION',
+                    'latest_generation_id' => (int) $latest->id,
+                    'latest_generation_status' => (string) $latest->status,
+                ],
+            ];
+        }
+
+        $pendingSuccessor = $this->successorRequestPending($symbol, $timeframe);
 
         $decision = $this->admission->decide($lab, $latest, [
             'trigger' => ($startCycle || $pendingSuccessor) ? 'operator_successor' : 'new_data',
