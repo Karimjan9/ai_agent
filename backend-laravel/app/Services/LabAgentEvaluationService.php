@@ -696,6 +696,11 @@ class LabAgentEvaluationService
         $run ??= $this->evidence->beginRun($agent, 'screening', 'incremental', ['source' => 'direct_screen']);
         $agent->load('modelVersion', 'generation');
         $model = $agent->modelVersion;
+        if ($this->isUncertaintyAbstain($agent)) {
+            $this->completeUncertaintyAbstain($agent, $run);
+
+            return;
+        }
         $volumeEnabled = $this->volumeEnabled($model);
         // The inexpensive genetic screen is an evolution operation, not a
         // forward/paper observation.  Keep it entirely on the frozen
@@ -1019,31 +1024,7 @@ class LabAgentEvaluationService
             'evidence_run_id' => $run->run_id,
         ]);
 
-        $generation = $agent->generation()->with('agents')->first();
-        // An evaluator/transport failure is not a screen verdict. Keep the
-        // generation open until the failed agent is recovered or explicitly
-        // quarantined; otherwise the last successful peer could close an
-        // incomplete generation as if every candidate had evidence.
-        if ($generation->agents->whereIn('lifecycle_status', [
-            'draft', 'queued', 'screening', 'evaluation_error',
-            'full_queued', 'full_validation', 'training',
-        ])->isEmpty()) {
-            $this->generationContext->updateWithAttributes($generation, [
-                'status' => 'screened',
-                'completed_at' => now(),
-            ], function (array $context): array {
-                $context['screening_terminal'] = [
-                    'protocol' => 'generation_terminal_boundary_v1',
-                    'status' => 'screened',
-                    'completed_at' => now()->utc()->toIso8601String(),
-                    'all_agents_terminal' => true,
-                    'promotion_evidence' => false,
-                ];
-
-                return $context;
-            });
-            app(LabGenerationReportService::class)->record($generation->fresh(), 'screening_completed');
-        }
+        $this->closeScreeningGenerationIfTerminal($agent);
     }
 
     /**
@@ -1097,6 +1078,23 @@ class LabAgentEvaluationService
                 throw new RuntimeException("Screening batch model version topilmadi: agent {$agent->id}.");
             }
         }
+        // A guard seat is a pre-registered WAIT policy, not a strategy replay.
+        // Resolve it locally before snapshots, health admission and HTTP so it
+        // cannot occupy the scarce replay lane or become a transport failure.
+        $abstainAgents = $agents->filter(fn (LabAgent $agent): bool => $this->isUncertaintyAbstain($agent));
+        foreach ($abstainAgents as $abstainAgent) {
+            $abstainRun = $this->evidence->beginRun($abstainAgent, 'screening', 'policy_guard', [
+                'source' => 'bounded_screening_batch_local_abstention',
+                'replay_required' => false,
+            ]);
+            $this->completeUncertaintyAbstain($abstainAgent, $abstainRun);
+        }
+        $agents = $agents->reject(fn (LabAgent $agent): bool => $this->isUncertaintyAbstain($agent))->values();
+        if ($agents->isEmpty()) {
+            return;
+        }
+        $ids = $agents->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
+        $first = $agents->first();
         $generation = $first->generation;
         $datasetContracts = $agents
             ->map(fn (LabAgent $agent): string => $this->volumeEnabled($agent->modelVersion) ? 'volume' : 'price')
@@ -1435,6 +1433,150 @@ class LabAgentEvaluationService
             || data_get($model?->parameters, 'volume_lane', 'none') !== 'none';
     }
 
+    private function isUncertaintyAbstain(LabAgent $agent): bool
+    {
+        $metadata = (array) ($agent->modelVersion?->metadata ?? []);
+
+        return data_get($metadata, 'uncertainty_abstain_contract.protocol')
+                === CooperativeContextualEvolutionCouncilService::UNCERTAINTY_ABSTAIN_PROTOCOL
+            || ((string) data_get($metadata, 'generation_target') === 'uncertainty_abstain'
+                && data_get($metadata, 'mutation_constructor_invariant.control_only') === true
+                && count((array) $agent->parameter_diff) === 0);
+    }
+
+    private function completeUncertaintyAbstain(LabAgent $agent, LabEvaluationRun $run): void
+    {
+        $agent->loadMissing('modelVersion', 'generation');
+        $model = $agent->modelVersion;
+        if (! $model || ! $this->isUncertaintyAbstain($agent)) {
+            throw new RuntimeException('UNCERTAINTY_ABSTAIN_CONTRACT_REQUIRED');
+        }
+
+        $contract = (array) data_get($model->metadata, 'uncertainty_abstain_contract', []);
+        if ($contract === []) {
+            // Backward-compatible closure for a seat constructed before the
+            // explicit contract was introduced. Its immutable target and
+            // zero-diff constructor invariant are checked above.
+            $contract = [
+                'protocol' => CooperativeContextualEvolutionCouncilService::UNCERTAINTY_ABSTAIN_PROTOCOL,
+                'status' => 'sealed_legacy_projection',
+                'action' => 'WAIT',
+                'replay_required' => false,
+                'causal_credit_allowed' => false,
+                'economic_credit_allowed' => false,
+                'promotion_evidence' => false,
+            ];
+        }
+        $result = [
+            'protocol' => CooperativeContextualEvolutionCouncilService::UNCERTAINTY_ABSTAIN_PROTOCOL,
+            'status' => 'correctly_abstained',
+            'decision' => 'WAIT',
+            'reason_code' => 'UNCERTAINTY_GUARD_WAIT',
+            'replay_required' => false,
+            'replay_performed' => false,
+            'total_trades' => 0,
+            'instrument_activation_count' => 0,
+            'causal_credit_allowed' => false,
+            'economic_credit_allowed' => false,
+            'performance_credit' => 0,
+            'promotion_evidence' => false,
+            'evidence_run_id' => $run->run_id,
+            'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe),
+            'contract' => $contract,
+        ];
+        $request = [
+            'protocol' => CooperativeContextualEvolutionCouncilService::UNCERTAINTY_ABSTAIN_PROTOCOL,
+            'action' => 'WAIT',
+            'replay_required' => false,
+            'agent_id' => (int) $agent->id,
+            'generation_id' => (int) $agent->lab_generation_id,
+        ];
+        $this->evidence->attachRequest($run, $request, [
+            'request_id' => 'local-abstain-'.$agent->id.'-'.$run->attempt,
+            'data_hash' => hash('sha256', json_encode($request, JSON_UNESCAPED_SLASHES)),
+            'dataset_manifest' => ['protocol' => 'no_dataset_policy_guard_v1', 'replay_required' => false],
+        ]);
+        $projection = $this->evidence->projectionPayload($result);
+        $metadata = (array) $model->metadata;
+        $metadata['uncertainty_abstain_contract'] = [...$contract,
+            'terminal_status' => 'correctly_abstained',
+            'terminal_evidence_run_id' => $run->run_id,
+        ];
+        $metadata['last_screen_result'] = $projection;
+        $model->update(['metadata' => $metadata]);
+        $agent->update([
+            'lifecycle_status' => 'screened',
+            'train_score' => 0,
+            'validation_score' => 0,
+            'forward_score' => 0,
+            'sample_count' => 0,
+            'profit_factor' => 0,
+            'max_drawdown' => 0,
+            'risk_of_ruin' => 0,
+            'decision_reason' => 'Uncertainty guard correctly abstained locally; WAIT required and no replay or learning credit was created.',
+        ]);
+        $this->evidence->recordLifecycle($agent, 'uncertainty_guard_abstained', [
+            'reason_code' => 'UNCERTAINTY_GUARD_WAIT',
+            'replay_performed' => false,
+            'promotion_evidence' => false,
+        ], 'screening', $run->run_id, $run->attempt, self::class);
+        $this->evidence->finishRun($run, 'completed', $result, [
+            'decision' => 'WAIT',
+            'total_trades' => 0,
+            'instrument_activation_count' => 0,
+        ], [
+            'reason_code' => 'UNCERTAINTY_GUARD_WAIT',
+            'correctly_abstained' => true,
+            'replay_performed' => false,
+            'promotion_evidence' => false,
+        ]);
+        $this->handoffs->record($agent->generation, $agent->fresh(), 'screened', 'completed', 'UNCERTAINTY_GUARD_WAIT', [
+            'correctly_abstained' => true,
+            'decision' => 'WAIT',
+            'replay_performed' => false,
+            'evidence_run_id' => $run->run_id,
+            'promotion_evidence' => false,
+        ]);
+
+        $this->closeScreeningGenerationIfTerminal($agent);
+    }
+
+    private function closeScreeningGenerationIfTerminal(LabAgent $agent): void
+    {
+        $generation = $agent->generation()->with('agents')->first();
+        if (! $generation || $generation->agents->whereIn('lifecycle_status', [
+            'draft', 'queued', 'screening', 'evaluation_error',
+            'full_queued', 'full_validation', 'training',
+        ])->isNotEmpty()) {
+            return;
+        }
+        $technicalAgentIds = $generation->agents->filter(fn (LabAgent $member): bool => in_array(
+            (string) $member->lifecycle_status,
+            ['technical_quarantine', 'quarantined', 'legacy_quarantine', 'abandoned', 'failed'],
+            true,
+        ))->pluck('id')->values()->all();
+        $terminalStatus = $technicalAgentIds === [] ? 'screened' : 'technical_quarantine';
+        $this->generationContext->updateWithAttributes($generation, [
+            'status' => $terminalStatus,
+            'completed_at' => now(),
+        ], function (array $context) use ($terminalStatus, $technicalAgentIds): array {
+            $context['screening_terminal'] = [
+                'protocol' => 'generation_terminal_boundary_v1',
+                'status' => $terminalStatus,
+                'completed_at' => now()->utc()->toIso8601String(),
+                'all_agents_terminal' => true,
+                'technical_agent_ids' => $technicalAgentIds,
+                'promotion_evidence' => false,
+            ];
+
+            return $context;
+        });
+        app(LabGenerationReportService::class)->record(
+            $generation->fresh(),
+            $terminalStatus === 'screened' ? 'screening_completed' : 'screening_terminal_technical_quarantine',
+        );
+    }
+
     /**
      * Persist one item returned by a bounded cohort replay.
      *
@@ -1605,27 +1747,7 @@ class LabAgentEvaluationService
             'batch_protocol' => 'bounded_screening_batch_v1',
         ]);
 
-        $generation = $agent->generation()->with('agents')->first();
-        if ($generation->agents->whereIn('lifecycle_status', [
-            'draft', 'queued', 'screening', 'evaluation_error',
-            'full_queued', 'full_validation', 'training',
-        ])->isEmpty()) {
-            $this->generationContext->updateWithAttributes($generation, [
-                'status' => 'screened',
-                'completed_at' => now(),
-            ], function (array $context): array {
-                $context['screening_terminal'] = [
-                    'protocol' => 'generation_terminal_boundary_v1',
-                    'status' => 'screened',
-                    'completed_at' => now()->utc()->toIso8601String(),
-                    'all_agents_terminal' => true,
-                    'promotion_evidence' => false,
-                ];
-
-                return $context;
-            });
-            app(LabGenerationReportService::class)->record($generation->fresh(), 'screening_completed');
-        }
+        $this->closeScreeningGenerationIfTerminal($agent);
     }
 
     /**

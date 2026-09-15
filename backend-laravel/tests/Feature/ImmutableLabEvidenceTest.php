@@ -2,35 +2,153 @@
 
 namespace Tests\Feature;
 
-use App\Models\CandidateGateDecision;
-use App\Models\LabEvaluationRun;
-use App\Models\LabGateDecisionEvent;
-use App\Models\LabLifecycleEvent;
-use App\Models\LabCandleDecisionEvent;
-use App\Models\LabMutationCreditEvent;
-use App\Models\ModelMarketPerformance;
-use App\Models\MutationMemory;
-use App\Services\CandidateGateDecisionService;
-use App\Services\CandidateHandoffService;
-use App\Services\AgentConstitutionService;
-use App\Services\LabAgentEvaluationService;
-use App\Services\LabImmutableEvidenceService;
-use App\Services\LabPopulationService;
-use App\Services\IncompleteLabEvidenceRecoveryService;
-use App\Models\ModelVersion;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Jobs\Middleware\LabMutexEvidenceMiddleware;
 use App\Jobs\Middleware\LabQueueAttemptEvidenceMiddleware;
+use App\Models\AiLaboratory;
+use App\Models\CandidateGateDecision;
+use App\Models\CandidateHandoffEvent;
+use App\Models\InstrumentInvocationLedger;
+use App\Models\LabAgent;
+use App\Models\LabCandleDecisionEvent;
+use App\Models\LabEvaluationRun;
+use App\Models\LabGateDecisionEvent;
+use App\Models\LabGeneration;
+use App\Models\LabLifecycleEvent;
+use App\Models\LabMutationCreditEvent;
+use App\Models\ModelMarketPerformance;
+use App\Models\ModelVersion;
+use App\Models\MutationMemory;
+use App\Services\AgentConstitutionService;
+use App\Services\CandidateGateDecisionService;
+use App\Services\CandidateHandoffService;
+use App\Services\CausalMutationCreditService;
+use App\Services\CooperativeContextualEvolutionCouncilService;
+use App\Services\GenerationAutonomyAuditService;
+use App\Services\IncompleteLabEvidenceRecoveryService;
+use App\Services\LabAgentEvaluationService;
+use App\Services\LabHistoricalLearningService;
+use App\Services\LabImmutableEvidenceService;
+use App\Services\LabPopulationService;
+use App\Services\LabQueueJobInspector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Queue\MaxAttemptsExceededException;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Queue\MaxAttemptsExceededException;
 use Tests\TestCase;
 
 class ImmutableLabEvidenceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_uncertainty_abstain_is_a_local_wait_receipt_and_never_calls_replay(): void
+    {
+        Http::fake();
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Abstain guard test', 'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
+            'status' => 'screening', 'population_size' => 1, 'trigger_context' => [],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'uncertainty-abstain', 'strategy' => 'hybrid', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [],
+            'metadata' => [
+                'generation_target' => 'uncertainty_abstain',
+                'mutation_constructor_invariant' => ['control_only' => true],
+                'uncertainty_abstain_contract' => [
+                    'protocol' => CooperativeContextualEvolutionCouncilService::UNCERTAINTY_ABSTAIN_PROTOCOL,
+                    'status' => 'sealed', 'action' => 'WAIT', 'replay_required' => false,
+                    'causal_credit_allowed' => false, 'economic_credit_allowed' => false,
+                    'promotion_evidence' => false,
+                ],
+            ],
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'screening', 'parameter_diff' => [],
+        ]);
+
+        app(LabAgentEvaluationService::class)->screen($agent);
+
+        Http::assertNothingSent();
+        $this->assertSame('screened', $agent->fresh()->lifecycle_status);
+        $this->assertSame('screened', $generation->fresh()->status);
+        $run = LabEvaluationRun::query()->where('lab_agent_id', $agent->id)->firstOrFail();
+        $this->assertSame('completed', $run->status);
+        $this->assertSame('WAIT', data_get($run->metrics, 'decision'));
+        $this->assertFalse((bool) data_get($run->metadata, 'replay_performed', true));
+        $this->assertTrue((bool) data_get($run->metadata, 'correctly_abstained'));
+        $this->assertDatabaseCount('candidate_gate_decisions', 0);
+        $this->assertSame(0, InstrumentInvocationLedger::query()->where('lab_agent_id', $agent->id)->count());
+        $this->assertDatabaseHas('candidate_handoff_events', [
+            'lab_agent_id' => $agent->id,
+            'terminal_reason' => 'UNCERTAINTY_GUARD_WAIT',
+        ]);
+        $audit = app(GenerationAutonomyAuditService::class)->audit($generation->fresh());
+        $this->assertSame('passed', $audit['state']);
+        $this->assertTrue($audit['unattended_ready']);
+        $this->assertSame('passed', data_get($audit, 'checks.2.status'));
+        $this->assertSame('passed', data_get($audit, 'checks.4.status'));
+        Artisan::call('trading:lab-evidence-audit', [
+            'symbol' => 'XAUUSD', '--timeframe' => 'H1', '--generation' => 1, '--json' => true,
+        ]);
+        $historyAudit = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame(1, data_get($historyAudit, 'rows.0.local_policy_guard_run_count'));
+        $this->assertSame(0, data_get($historyAudit, 'rows.0.response_runs'));
+    }
+
+    public function test_last_wait_guard_cannot_mask_a_terminal_technical_peer(): void
+    {
+        Http::fake();
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Technical peer guard', 'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 2, 'trigger_type' => 'test',
+            'status' => 'screening', 'population_size' => 2, 'trigger_context' => [],
+        ]);
+        $technicalModel = ModelVersion::create([
+            'name' => 'technical-peer', 'strategy' => 'hybrid', 'version' => 'v2-technical',
+            'generation' => 2, 'status' => 'testing', 'parameters' => [], 'metadata' => [],
+        ]);
+        $technical = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $technicalModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+        ]);
+        $guardModel = ModelVersion::create([
+            'name' => 'last-wait-guard', 'strategy' => 'hybrid', 'version' => 'v2-guard',
+            'generation' => 2, 'status' => 'testing', 'parameters' => [],
+            'metadata' => [
+                'generation_target' => 'uncertainty_abstain',
+                'mutation_constructor_invariant' => ['control_only' => true],
+                'uncertainty_abstain_contract' => [
+                    'protocol' => CooperativeContextualEvolutionCouncilService::UNCERTAINTY_ABSTAIN_PROTOCOL,
+                    'status' => 'sealed', 'action' => 'WAIT', 'replay_required' => false,
+                    'promotion_evidence' => false,
+                ],
+            ],
+        ]);
+        $guard = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $guardModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'screening', 'parameter_diff' => [],
+        ]);
+
+        app(LabAgentEvaluationService::class)->screen($guard);
+
+        $this->assertSame('screened', $guard->fresh()->lifecycle_status);
+        $this->assertSame('technical_quarantine', $technical->fresh()->lifecycle_status);
+        $this->assertSame('technical_quarantine', $generation->fresh()->status);
+        $this->assertSame([$technical->id], data_get($generation->fresh()->trigger_context, 'screening_terminal.technical_agent_ids'));
+    }
 
     public function test_second_bounded_screen_failure_quarantines_only_the_current_agent_and_closes_generation(): void
     {
@@ -150,7 +268,7 @@ class ImmutableLabEvidenceTest extends TestCase
             'selection_lane' => 'volume_context',
         ]);
 
-        $projection = \App\Models\CandidateHandoffEvent::where('lab_generation_id', $generation->id)
+        $projection = CandidateHandoffEvent::where('lab_generation_id', $generation->id)
             ->where('lab_agent_id', $agent->id)->where('stage', 'selection_passed')->first();
         $this->assertSame('completed', $projection->status);
         $this->assertSame('volume_context', data_get($projection->payload, 'selection_lane'));
@@ -304,7 +422,7 @@ class ImmutableLabEvidenceTest extends TestCase
             'created_at' => now()->timestamp,
         ]);
 
-        $inspector = app(\App\Services\LabQueueJobInspector::class);
+        $inspector = app(LabQueueJobInspector::class);
         $ids = $inspector->queuedJobIdsForAgents([123], ['lab-frontier']);
 
         $this->assertContains($matchingId, $ids);
@@ -469,7 +587,7 @@ class ImmutableLabEvidenceTest extends TestCase
         $this->assertTrue($events->every(fn (LabMutationCreditEvent $event): bool => $event->outcome === 'beneficial'));
         $this->assertTrue($events->every(fn (LabMutationCreditEvent $event): bool => $event->parameter_key === $parameterKey));
 
-        $prior = app(\App\Services\LabHistoricalLearningService::class)
+        $prior = app(LabHistoricalLearningService::class)
             ->confirmedMutationPrior($agent->symbol, $agent->timeframe, $agent->strategy_family);
         $this->assertNotNull($prior);
         $this->assertSame(2, $prior['confirmation_count']);
@@ -524,7 +642,7 @@ class ImmutableLabEvidenceTest extends TestCase
             'metrics' => ['evidence_run_id' => $runOne->run_id],
         ]);
 
-        $reconciler = app(\App\Services\CausalMutationCreditService::class);
+        $reconciler = app(CausalMutationCreditService::class);
         $reconciler->reconcileGeneration($generation->id);
         $reconciler->reconcileGeneration($generation->id);
         $this->assertSame(1, LabMutationCreditEvent::where('mutation_memory_id', $memory->id)->count());

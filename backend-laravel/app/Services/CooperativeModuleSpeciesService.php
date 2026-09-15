@@ -16,6 +16,35 @@ class CooperativeModuleSpeciesService
         'risk', 'trade_management', 'activation_router',
     ];
 
+    public function speciesForGene(?string $gene): ?string
+    {
+        $gene = strtolower(trim((string) $gene));
+        if ($gene === '') {
+            return null;
+        }
+
+        return match (true) {
+            str_contains($gene, 'instrument'), str_contains($gene, 'toolbox'),
+            str_contains($gene, 'volume_confirmation') => 'toolbox_instrument',
+            str_contains($gene, 'regime'), str_contains($gene, 'classifier'),
+            str_contains($gene, 'architecture'), str_contains($gene, 'state_machine') => 'model_regime_router',
+            str_contains($gene, 'risk'), str_contains($gene, 'stop_loss'),
+            str_contains($gene, 'atr_stop'), str_contains($gene, 'drawdown'),
+            str_contains($gene, 'position_size'), str_contains($gene, 'spread_limit') => 'risk',
+            str_contains($gene, 'take_profit'), str_contains($gene, 'trailing'),
+            str_contains($gene, 'time_stop'), str_contains($gene, 'partial_exit'),
+            str_contains($gene, 'exit_') => 'trade_management',
+            str_contains($gene, 'activation'), str_contains($gene, 'session'),
+            str_contains($gene, 'transition'), str_contains($gene, 'confidence'),
+            str_contains($gene, 'abstain') => 'activation_router',
+            str_contains($gene, 'entry'), str_contains($gene, 'lookback'),
+            str_contains($gene, 'ema'), str_contains($gene, 'rsi'),
+            str_contains($gene, 'roc'), str_contains($gene, 'breakout'),
+            str_contains($gene, 'pullback'), str_contains($gene, 'compression') => 'tactic',
+            default => 'strategy',
+        };
+    }
+
     /** @return array<string,mixed> */
     public function assemble(array $slot, array $cell, array $arm = [], ?array $idea = null): array
     {
@@ -71,6 +100,7 @@ class CooperativeModuleSpeciesService
                 ->unique()->values();
             $populations[$species] = ['member_count' => $values->count(), 'members' => $values->map(fn (string $value): mixed => json_decode($value, true))->all()];
         }
+
         return ['protocol' => self::PROTOCOL, 'species' => $populations,
             'organism_rule' => 'An agent is a temporary context-bound composition assembled from all seven species.',
             'global_winner_required' => false, 'promotion_evidence' => false];
@@ -78,7 +108,9 @@ class CooperativeModuleSpeciesService
 
     public function recordMembers(LabAgent $agent, array $capsule, array $evidence = []): void
     {
-        if (! Schema::hasTable('cooperative_module_species_members')) return;
+        if (! Schema::hasTable('cooperative_module_species_members')) {
+            return;
+        }
         $cellKey = (string) data_get($capsule, 'context_cell_hash', '');
         foreach (self::SPECIES as $species) {
             $component = data_get($capsule, "components.{$species}");

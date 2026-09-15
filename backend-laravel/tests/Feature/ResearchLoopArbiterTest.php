@@ -18,8 +18,10 @@ use App\Services\MtfResearchCohortService;
 use App\Services\ResearchClosureInvariantService;
 use App\Services\ResearchExperimentConversionKernelService;
 use App\Services\ResearchLoopArbiterService;
+use App\Services\ScheduledCommandOutcomeClassifierService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\TestCase;
@@ -44,6 +46,30 @@ class ResearchLoopArbiterTest extends TestCase
         Queue::assertPushed(RunScheduledArtisanCommandJob::class,
             fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:run-lifecycle-cycle');
         $this->assertDatabaseCount('research_loop_decisions', 1);
+    }
+
+    public function test_dispatched_arbiter_decision_is_closed_by_its_child_command_outcome(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'new_data', 'status' => 'screening', 'population_size' => 20,
+            'trigger_context' => [], 'started_at' => now()]);
+        app(AutonomousModeService::class)->stop('XAUUSD', 'H1', 'test', 'drain');
+
+        $result = app(ResearchLoopArbiterService::class)->tick();
+        $decision = ResearchLoopDecision::query()->findOrFail($result['decision_id']);
+        /** @var RunScheduledArtisanCommandJob $job */
+        $job = Queue::pushed(RunScheduledArtisanCommandJob::class)->first();
+        $this->assertSame($decision->id, $job->researchLoopDecisionId);
+        Artisan::shouldReceive('call')->once()->with($job->command, $job->arguments)->andReturn(0);
+        Artisan::shouldReceive('output')->once()->andReturn('generation drained');
+
+        $job->handle(app(ScheduledCommandOutcomeClassifierService::class));
+
+        $decision->refresh();
+        $this->assertSame('completed', $decision->status);
+        $this->assertNotNull($decision->completed_at);
     }
 
     public function test_stop_drains_an_incomplete_quarantined_constructor_but_not_a_terminal_quarantine(): void

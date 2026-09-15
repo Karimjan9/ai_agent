@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\InstrumentInvocationLedger;
 use App\Models\LabAgent;
 use App\Models\LabLearningLanePair;
@@ -195,13 +196,15 @@ class InstrumentInvocationLedgerService
             return 0;
         }
         $assignment = (array) data_get($agent->modelVersion?->metadata, 'instrument_research_assignment', []);
-        $reservationValid = (string) data_get($assignment, 'pair_reservation.status') === 'reserved'
+        $ordinaryReservationValid = (string) data_get($assignment, 'pair_reservation.status') === 'reserved'
             && filled(data_get($assignment, 'pair_reservation.pair_key'))
             && hash_equals(
                 (string) $pair->pair_key,
                 (string) data_get($assignment, 'pair_reservation.pair_key'),
             )
             && (int) data_get($assignment, 'pair_reservation.control_agent_id') === (int) $pair->control_agent_id;
+        $reservationValid = $ordinaryReservationValid
+            || $this->causalTripletReservationMatchesPair($assignment, $pair);
         if (! $pair->isVerifiedControlPair() || ! $reservationValid) {
             $rows->each(function (InstrumentInvocationLedger $row) use ($pair, $reservationValid): void {
                 $metadata = (array) $row->metadata;
@@ -333,6 +336,34 @@ class InstrumentInvocationLedgerService
         }
 
         return $settled;
+    }
+
+    private function causalTripletReservationMatchesPair(array $assignment, LabLearningLanePair $pair): bool
+    {
+        $reservation = (array) data_get($assignment, 'pair_reservation', []);
+        if ((string) data_get($reservation, 'protocol') !== 'causal_triplet_instrument_reservation_v1'
+            || (string) data_get($reservation, 'status') !== 'reserved'
+            || (int) data_get($reservation, 'candidate_agent_id') !== (int) $pair->candidate_agent_id
+            || (int) data_get($reservation, 'control_agent_id') !== (int) $pair->control_agent_id) {
+            return false;
+        }
+        $experiment = AgentLearningCausalExperiment::query()->find(
+            (int) data_get($reservation, 'causal_experiment_id', 0)
+        );
+        if (! $experiment
+            || (int) $experiment->lab_generation_id !== (int) $pair->lab_generation_id
+            || (int) $experiment->control_agent_id !== (int) $pair->control_agent_id
+            || ! hash_equals(
+                (string) $experiment->experiment_key,
+                (string) data_get($reservation, 'experiment_key', ''),
+            )) {
+            return false;
+        }
+
+        return in_array((int) $pair->candidate_agent_id, array_values(array_filter([
+            (int) $experiment->guided_agent_id,
+            (int) $experiment->blinded_agent_id,
+        ])), true);
     }
 
     /**

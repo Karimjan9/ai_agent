@@ -8,6 +8,7 @@ use App\Models\ContextualInstrumentBundleEffect;
 use App\Models\ContextualSpecialistCapsule;
 use App\Models\CooperativeExperimentSettlement;
 use App\Models\CooperativeModuleSpeciesMember;
+use App\Models\InstrumentInvocationLedger;
 use App\Models\LabAgent;
 use App\Models\LabEvolutionArchiveEntry;
 use App\Models\LabGeneration;
@@ -16,6 +17,7 @@ use App\Models\ResearchIdeaInboxEntry;
 use App\Services\CandidateGateDecisionService;
 use App\Services\ContextualCapsuleArchiveService;
 use App\Services\ContextualCouncilAllocatorService;
+use App\Services\ContextualInstrumentBundleGraphService;
 use App\Services\CooperativeContextualEvolutionCouncilService;
 use App\Services\CooperativeExperimentSettlementService;
 use App\Services\CooperativeModuleSpeciesService;
@@ -163,13 +165,43 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
                 'metadata' => ['cooperative_experiment_block' => ['protocol' => CooperativeContextualEvolutionCouncilService::PROTOCOL,
                     'block_key' => $blockKey, 'block_type' => 'factorial', 'arm' => $index,
                     'required_arms' => array_keys($values), 'component_a' => 'atr_risk_envelope',
-                    'component_b' => 'cost_aware_exit', 'context_cell_key' => 'cell-1'],
+                    'component_b' => 'cost_aware_exit', 'context_cell_key' => 'cell-1',
+                    'changed_species' => in_array($index, ['a_only', 'b_only'], true) ? 'toolbox_instrument' : null],
                     'specialist_council_membership' => ['contextual_cell' => $context],
                     'cooperative_evolution_capsule' => [
                         'context_cell_hash' => 'cell-1', 'components' => ['toolbox_instrument' => $bundle]]]]);
             $last = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
                 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
                 'origin' => 'test', 'lifecycle_status' => 'rejected', 'parameter_diff' => []]);
+            app(CooperativeModuleSpeciesService::class)->recordMembers(
+                $last,
+                (array) data_get($model->metadata, 'cooperative_evolution_capsule'),
+            );
+            foreach ($bundle as $instrumentKey) {
+                InstrumentInvocationLedger::create([
+                    'invocation_key' => hash('sha256', implode('|', ['factorial-runtime', $last->id, $instrumentKey])),
+                    'lab_agent_id' => $last->id,
+                    'lab_generation_id' => $generation->id,
+                    'instrument_key' => $instrumentKey,
+                    'symbol' => 'XAUUSD',
+                    'timeframe' => 'H1',
+                    'state_key' => 'cell-1',
+                    'input_hash' => str_repeat('i', 64),
+                    'output_hash' => str_repeat('o', 64),
+                    'used_in_decision' => true,
+                    'used_in_execution' => false,
+                    'verdict' => 'awaiting_paired_control',
+                    'metadata' => [
+                        'declaration' => ['causal_candidate' => true],
+                        'runtime_trace' => [
+                            'status' => 'consumed',
+                            'decision_path_activated' => true,
+                        ],
+                        'promotion_evidence' => false,
+                    ],
+                    'invoked_at' => now(),
+                ]);
+            }
             $dataHash = str_repeat('d', 64);
             $run = app(LabImmutableEvidenceService::class)->beginRun($last, 'screening', 'incremental');
             app(LabImmutableEvidenceService::class)->attachRequest($run, [
@@ -204,6 +236,10 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $this->assertSame('research_only', $interaction->authority_level);
         $this->assertFalse((bool) data_get($interaction->evidence, 'global_inheritance_allowed'));
         $this->assertCount(2, ContextualInstrumentBundleEffect::query()->where('effect_type', 'leave_one_out')->get());
+        $this->assertSame(2, CooperativeModuleSpeciesMember::query()->where('authority_level', 'repair_credit')->count());
+        $this->assertSame(26, CooperativeModuleSpeciesMember::query()->where('authority_level', 'hypothesis')->count());
+        $this->assertTrue(CooperativeModuleSpeciesMember::query()->where('authority_level', 'repair_credit')->get()
+            ->every(fn (CooperativeModuleSpeciesMember $member): bool => $member->species === 'toolbox_instrument'));
 
         ContextualSpecialistCapsule::create([
             'capsule_key' => hash('sha256', 'factorial-last-capsule'),
@@ -255,6 +291,102 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         ]));
         $scheduled = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         $this->assertSame(0, $scheduled['scanned']);
+    }
+
+    public function test_planned_bundle_without_runtime_activation_receives_no_effect_credit(): void
+    {
+        $lab = $this->lab();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 2,
+            'trigger_type' => 'test',
+            'trigger_context' => [],
+            'population_size' => 2,
+            'status' => 'screened',
+        ]);
+        $blockKey = hash('sha256', 'planned-without-runtime-activation');
+        $agents = collect();
+
+        foreach (['control', 'candidate'] as $arm) {
+            $model = ModelVersion::create([
+                'name' => 'planned-only-'.$arm,
+                'strategy' => 'hybrid',
+                'version' => 'v2',
+                'generation' => 2,
+                'status' => 'testing',
+                'parameters' => [],
+                'evidence_status' => 'valid',
+                'metadata' => [
+                    'cooperative_experiment_block' => [
+                        'protocol' => CooperativeContextualEvolutionCouncilService::PROTOCOL,
+                        'block_key' => $blockKey,
+                        'block_type' => 'pair',
+                        'arm' => $arm,
+                        'required_arms' => ['control', 'candidate'],
+                        'changed_species' => $arm === 'candidate' ? 'toolbox_instrument' : null,
+                    ],
+                    'cooperative_evolution_capsule' => [
+                        'context_cell_hash' => 'cell-planned-only',
+                        'components' => [
+                            'toolbox_instrument' => $arm === 'candidate'
+                                ? ['atr_risk_envelope', 'cost_aware_exit']
+                                : [],
+                        ],
+                    ],
+                ],
+            ]);
+            $agents->push(LabAgent::create([
+                'lab_generation_id' => $generation->id,
+                'model_version_id' => $model->id,
+                'symbol' => 'XAUUSD',
+                'timeframe' => 'H1',
+                'strategy_family' => 'hybrid',
+                'origin' => 'test',
+                'lifecycle_status' => 'rejected',
+                'parameter_diff' => [],
+            ]));
+            app(CooperativeModuleSpeciesService::class)->recordMembers(
+                $agents->last(),
+                (array) data_get($model->metadata, 'cooperative_evolution_capsule'),
+            );
+        }
+
+        $settlement = CooperativeExperimentSettlement::create([
+            'settlement_key' => hash('sha256', 'planned-only-settlement'),
+            'block_key' => $blockKey,
+            'lab_generation_id' => $generation->id,
+            'block_type' => 'pair',
+            'context_cell_key' => 'cell-planned-only',
+            'arm_results' => [],
+            'component_effects' => ['candidate_delta' => 0.5],
+            'pareto_vectors' => [],
+            'outcome_status' => 'settled_positive_signal',
+            'evidence_complete' => true,
+            'promotion_evidence' => false,
+        ]);
+
+        $result = app(ContextualInstrumentBundleGraphService::class)->record(
+            $settlement,
+            $agents,
+            ['candidate_delta' => 0.5],
+        );
+
+        $this->assertSame('no_runtime_activation_no_credit', $result['status']);
+        $this->assertSame(0, $result['recorded']);
+        $this->assertFalse($result['promotion_evidence']);
+        $this->assertSame(0, ContextualInstrumentBundleEffect::query()->count());
+
+        $method = new \ReflectionMethod(CooperativeExperimentSettlementService::class, 'settleModuleSpecies');
+        $method->setAccessible(true);
+        $method->invoke(
+            app(CooperativeExperimentSettlementService::class),
+            $agents,
+            'pair',
+            ['candidate_delta' => 0.5],
+            $settlement->id,
+        );
+        $this->assertSame(14, CooperativeModuleSpeciesMember::query()->where('authority_level', 'hypothesis')->count());
+        $this->assertSame(0, CooperativeModuleSpeciesMember::query()->where('authority_level', '!=', 'hypothesis')->count());
     }
 
     public function test_derived_cooperative_projection_failure_cannot_invalidate_the_screening_gate(): void

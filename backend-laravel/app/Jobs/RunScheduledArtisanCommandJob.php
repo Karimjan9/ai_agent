@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\ResearchLoopDecision;
 use App\Services\CanonicalResearchLanePriorityService;
 use App\Services\ScheduledArtisanProcessRunnerService;
 use App\Services\ScheduledCommandOutcomeClassifierService;
@@ -115,6 +116,7 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
         public string $command,
         public array $arguments = [],
         public string $lane = 'scheduler-ops',
+        public ?int $researchLoopDecisionId = null,
     ) {
         $this->lane = in_array($lane, ['scheduler-critical', 'scheduler-constructor', 'scheduler-research'], true)
             ? $lane
@@ -167,6 +169,7 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
         $started = microtime(true);
         $key = 'system:scheduled-command:'.$this->uniqueId();
         Cache::put($key, $this->status('running', $started), now()->addDay());
+        $this->transitionResearchLoopDecision('running');
 
         try {
             // Database-heavy research compilers and ordinary lifecycle work
@@ -201,6 +204,7 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
                         'ownership' => $ownership,
                         'promotion_evidence' => false,
                     ]);
+                    $this->transitionResearchLoopDecision('deferred');
 
                     return;
                 }
@@ -226,6 +230,9 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
                 throw new RuntimeException("Scheduled command {$this->command} returned exit code {$exitCode}: ".substr($output, 0, 1000));
             }
             Cache::put($key, $this->status((string) $outcome['status'], $started, $output, $outcome), now()->addDay());
+            $this->transitionResearchLoopDecision(
+                (string) ($outcome['status'] ?? '') === 'completed' ? 'completed' : 'deferred'
+            );
             if ($exitCode !== 0) {
                 Log::notice('Isolated scheduled Artisan command reached an expected fail-closed outcome.', [
                     'command' => $this->command,
@@ -237,6 +244,7 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
             }
         } catch (\Throwable $exception) {
             Cache::put($key, $this->status('failed', $started, $exception->getMessage()), now()->addDay());
+            $this->transitionResearchLoopDecision('failed');
             Log::error('Isolated scheduled Artisan command failed.', [
                 'command' => $this->command,
                 'arguments' => $this->arguments,
@@ -246,6 +254,31 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
 
             throw $exception;
         }
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        $this->transitionResearchLoopDecision('failed');
+    }
+
+    private function transitionResearchLoopDecision(string $status): void
+    {
+        if (! $this->researchLoopDecisionId) {
+            return;
+        }
+
+        $decision = ResearchLoopDecision::query()->find($this->researchLoopDecisionId);
+        if (! $decision
+            || (string) $decision->command !== $this->command
+            || (string) $decision->queue !== $this->lane
+            || ! in_array((string) $decision->status, ['selected', 'dispatched', 'running'], true)) {
+            return;
+        }
+        $terminal = in_array($status, ['completed', 'deferred', 'failed'], true);
+        $decision->update([
+            'status' => $status,
+            'completed_at' => $terminal ? now() : null,
+        ]);
     }
 
     /** @return array<string,mixed> */

@@ -8523,6 +8523,7 @@ class LabPopulationService
                 ) : null,
                 'cooperative_evolution_capsule' => data_get($niche, 'cooperative_evolution_capsule'),
                 'cooperative_experiment_block' => data_get($niche, 'cooperative_experiment_block'),
+                'uncertainty_abstain_contract' => data_get($niche, 'uncertainty_abstain_contract'),
                 'specialist_council_membership' => [
                     'protocol' => self::SPECIALIST_COUNCIL_PROTOCOL,
                     'group_key' => $researchGroup,

@@ -375,8 +375,13 @@ class ResearchLoopArbiterService
             return [...$payload, 'status' => 'duplicate_suppressed', 'decision_id' => (int) $decision->id];
         }
         if ($command !== null && $queue !== null) {
-            RunScheduledArtisanCommandJob::dispatch($command, $arguments, $queue);
             $decision->update(['status' => 'dispatched', 'dispatched_at' => now()]);
+            try {
+                RunScheduledArtisanCommandJob::dispatch($command, $arguments, $queue, (int) $decision->id);
+            } catch (Throwable $exception) {
+                $decision->update(['status' => 'failed', 'completed_at' => now()]);
+                throw $exception;
+            }
 
             return [...$payload, 'status' => 'dispatched', 'decision_id' => (int) $decision->id];
         }

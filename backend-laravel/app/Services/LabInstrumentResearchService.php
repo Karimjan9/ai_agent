@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\InstrumentValuePosterior;
 use App\Models\LabAgent;
 use App\Models\PlaybookComposition;
@@ -602,6 +603,10 @@ class LabInstrumentResearchService
         if ($inherited !== null && (string) data_get($inherited, 'status') !== 'reserved') {
             return $inherited;
         }
+        $causalTriplet = $this->causalTripletReservation($agent, $role);
+        if ($causalTriplet !== null) {
+            return $causalTriplet;
+        }
         if ($role !== 'candidate') {
             return [
                 'status' => $role === 'frozen_control' ? 'control_role' : 'not_required',
@@ -656,6 +661,61 @@ class LabInstrumentResearchService
             'exact_parameter_baseline' => true,
             'trait_capsule' => data_get($inherited, 'trait_capsule'),
             'capsule_hash_valid' => data_get($inherited, 'capsule_hash_valid'),
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** @return array<string,mixed>|null */
+    private function causalTripletReservation(LabAgent $agent, string $role): ?array
+    {
+        $contract = (array) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort', []);
+        if ((string) data_get($contract, 'protocol') !== CausalLearningCohortPlannerService::PROTOCOL) {
+            return null;
+        }
+        $armRole = (string) data_get($contract, 'role', '');
+        if ($role !== 'candidate' || ! in_array($armRole, ['memory_guided', 'hypothesis_guided', 'blinded'], true)) {
+            return null;
+        }
+        $experimentKey = (string) data_get($contract, 'experiment_key', '');
+        $experiment = $experimentKey !== ''
+            ? AgentLearningCausalExperiment::query()->where('experiment_key', $experimentKey)->first()
+            : null;
+        $candidateField = $armRole === 'blinded' ? 'blinded_agent_id' : 'guided_agent_id';
+        $identityValid = $experiment
+            && (int) $experiment->lab_generation_id === (int) $agent->lab_generation_id
+            && (int) $experiment->{$candidateField} === (int) $agent->id;
+        $control = $identityValid
+            ? $agent->generation?->agents()->with('modelVersion')->find((int) $experiment->control_agent_id)
+            : null;
+        $exact = $control && $this->baselines->matches($agent, $control);
+        if (! $identityValid || ! $exact) {
+            return [
+                'protocol' => 'causal_triplet_instrument_reservation_v1',
+                'status' => 'missing',
+                'required' => true,
+                'reason_code' => ! $identityValid
+                    ? 'CAUSAL_TRIPLET_ARM_IDENTITY_MISMATCH'
+                    : 'CAUSAL_TRIPLET_EXACT_CONTROL_MISMATCH',
+                'causal_experiment_id' => $experiment?->id,
+                'experiment_key' => $experimentKey ?: null,
+                'arm_role' => $armRole,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        return [
+            'protocol' => 'causal_triplet_instrument_reservation_v1',
+            'status' => 'reserved',
+            'required' => true,
+            'causal_experiment_id' => (int) $experiment->id,
+            'experiment_key' => (string) $experiment->experiment_key,
+            'arm_role' => $armRole,
+            'candidate_agent_id' => (int) $agent->id,
+            'control_agent_id' => (int) $control->id,
+            'same_generation' => true,
+            'single_intervention' => count((array) $agent->parameter_diff) === 1,
+            'exact_parameter_baseline' => true,
+            'runtime_activation_required' => true,
             'promotion_evidence' => false,
         ];
     }

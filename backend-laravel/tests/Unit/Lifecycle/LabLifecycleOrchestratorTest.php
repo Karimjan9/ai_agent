@@ -481,8 +481,12 @@ class LabLifecycleOrchestratorTest extends TestCase
     {
         $this->seedLaboratory();
         $this->bindPopulation($paused = false, expectBuild: false);
-        // No internal token -> AI probe fails closed (runtime outage).
+        // Both the protected probe and its narrow local fallback are down.
         config(['services.internal_api.token' => '']);
+        Http::fake([
+            '*/api/replay-status' => Http::response([], 503),
+            '*/health' => Http::response([], 503),
+        ]);
 
         $orchestrator = app(LabLifecycleOrchestrator::class);
         $result = $orchestrator->run('XAUUSD', 'H1', 'tc-004');
@@ -490,6 +494,25 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->assertSame('blocked', $result['status']);
         $this->assertStringContainsStringIgnoringCase('runtime', (string) $result['summary']);
         $this->assertCount(0, LabGeneration::all());
+    }
+
+    public function test_active_replay_is_runtime_liveness_not_an_outage(): void
+    {
+        $this->seedLaboratory();
+        $this->bindPopulation($paused = false);
+        Http::fake([
+            '*/api/replay-status' => Http::response([
+                'protocol' => 'replay_liveness_probe_v1',
+                'active_requests' => 1,
+                'screening_active' => 1,
+                'screening_capacity' => 1,
+            ], 200),
+        ]);
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-active-replay');
+
+        $this->assertSame('completed', $result['status'], json_encode($result, JSON_PRETTY_PRINT));
+        $this->assertCount(1, LabGeneration::all());
     }
 
     public function test_durably_contained_failed_evaluation_does_not_deadlock_its_own_recovery(): void

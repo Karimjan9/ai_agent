@@ -144,6 +144,24 @@ cold boot, start Redis with `scripts/start-redis.ps1`; never delete a stranded
 payload. Requeue only the exact reservation after idle evaluator and dead-owner
 proof, then run the normal PM2 sync after the reserved count reaches zero.
 
+### Unattended generation acceptance
+
+After a generation reaches a terminal state, run:
+
+    php artisan trading:audit-autonomous-generation XAUUSD --timeframe=H1 --generation=N --strict
+
+The command is read-only. It accepts scientific rejection and a zero-pass
+generation, but fails for an incomplete 20-seat population, any technical
+run/event/agent or blocked lifecycle cycle, missing immutable replay evidence,
+broken candidate/control session parity, incomplete cooperative or causal
+settlement, instrument credit without a consumed runtime activation, leaked
+context authority, or an arbiter child that never reached a terminal status.
+Use `--json` for a lightweight monitor. A correct uncertainty guard is sealed
+locally as `WAIT`, creates immutable policy evidence, consumes no replay, and
+is exempt only from replay-specific artifacts. Do not declare a cohort safe
+for unattended monitoring until this command returns zero with
+`unattended_ready=true` on a fresh post-change generation.
+
 ## Backup and restore drill
 
 - `php artisan ops:backup-database` creates an atomic SQL file and full SHA-256 manifest only under `DATABASE_BACKUP_PATH` (default `G:/NeuroTrader/backups`). It refuses C: and fails loudly if G: is unavailable or unwritable.

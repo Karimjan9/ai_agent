@@ -2,20 +2,20 @@
 
 namespace App\Console\Commands;
 
-use App\Models\AiLaboratory;
 use App\Models\LabEvaluationRun;
 use App\Models\LabEvidenceArtifact;
 use App\Models\LabGateDecisionEvent;
 use App\Models\LabGeneration;
-use App\Models\LabLifecycleEvent;
 use App\Models\LabLearningConsumptionEvent;
 use App\Models\LabLearningInsight;
+use App\Models\LabLifecycleEvent;
 use App\Models\LabMutationCreditEvent;
 use Illuminate\Console\Command;
 
 class LabEvidenceAudit extends Command
 {
     protected $signature = 'trading:lab-evidence-audit {symbol?} {--timeframe=} {--generation=} {--json}';
+
     protected $description = 'Audit immutable laboratory history completeness without changing gates or dispatching work';
 
     public function handle(): int
@@ -27,14 +27,21 @@ class LabEvidenceAudit extends Command
         if ($timeframe = $this->option('timeframe')) {
             $query->whereHas('laboratory', fn ($q) => $q->where('timeframe', strtoupper((string) $timeframe)));
         }
-        if ($generation = $this->option('generation')) $query->where('generation', (int) $generation);
+        if ($generation = $this->option('generation')) {
+            $query->where('generation', (int) $generation);
+        }
 
         $rows = $query->orderByDesc('id')->get()->map(fn (LabGeneration $generation): array => $this->auditGeneration($generation))->values()->all();
         if ($this->option('json')) {
             $this->line(json_encode(['protocol' => 'lab_immutable_evidence_audit_v1', 'rows' => $rows], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
             return self::SUCCESS;
         }
-        if ($rows === []) { $this->warn('Audit uchun generation topilmadi.'); return self::SUCCESS; }
+        if ($rows === []) {
+            $this->warn('Audit uchun generation topilmadi.');
+
+            return self::SUCCESS;
+        }
         $this->table(['Market', 'G', 'Status', 'Agents', 'Exact create %', 'Any event %', 'Runs', 'Terminal %', 'Gate events', 'Trace complete', 'Verdict'], array_map(fn (array $row): array => [
             $row['symbol'], $row['generation'], $row['status'], $row['agent_count'],
             $row['exact_creation_coverage_percent'], $row['agent_event_coverage_percent'],
@@ -42,6 +49,7 @@ class LabEvidenceAudit extends Command
             $row['gate_decision_event_count'], $row['decision_trace_complete_runs'].'/'.$row['response_runs'],
             $row['history_verdict'],
         ], $rows));
+
         return self::SUCCESS;
     }
 
@@ -68,8 +76,14 @@ class LabEvidenceAudit extends Command
             && data_get($run->metadata, 'projection_only') === true
             && data_get($run->metadata, 'reason_code') === 'SCREEN_RESULT_ALREADY_PERSISTED')
             ->pluck('run_id')->filter()->unique();
+        $policyGuardRuns = $runs->filter(fn (LabEvaluationRun $run): bool => data_get($run->metadata, 'correctly_abstained') === true
+            && data_get($run->metadata, 'reason_code') === 'UNCERTAINTY_GUARD_WAIT'
+            && data_get($run->metadata, 'replay_performed') === false
+        );
+        $policyGuardRunIds = $policyGuardRuns->pluck('run_id')->filter()->unique();
         $replayRuns = $runs->reject(fn (LabEvaluationRun $run): bool => $queueDeferredRunIds->contains($run->run_id)
-            || $projectionOnlyRunIds->contains($run->run_id));
+            || $projectionOnlyRunIds->contains($run->run_id)
+            || $policyGuardRunIds->contains($run->run_id));
 
         // A same-generation recovery appends a new immutable run. The old
         // technical/incomplete attempt remains valuable audit history, but it
@@ -83,8 +97,13 @@ class LabEvidenceAudit extends Command
                 : 'run:'.$run->run_id)
             ->map(fn ($agentRuns) => $agentRuns->last())
             ->values();
-        $currentRunIds = $currentReplayRuns->pluck('run_id')->filter()->unique();
-        $replayTerminalRuns = $currentReplayRuns->whereIn('status', ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot']);
+        $currentPolicyGuardRuns = $policyGuardRuns->sortBy('id')
+            ->groupBy(fn (LabEvaluationRun $run): string => 'agent:'.$run->lab_agent_id)
+            ->map(fn ($agentRuns) => $agentRuns->last())
+            ->values();
+        $currentBoundaryRuns = $currentReplayRuns->concat($currentPolicyGuardRuns)->values();
+        $currentRunIds = $currentBoundaryRuns->pluck('run_id')->filter()->unique();
+        $replayTerminalRuns = $currentBoundaryRuns->whereIn('status', ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot']);
         $completedReplayRuns = $currentReplayRuns->where('status', 'completed');
         $responseRunIds = $completedReplayRuns->filter(fn (LabEvaluationRun $run): bool => $run->response_hash !== null)->pluck('run_id')->filter()->unique();
         $responseRuns = $responseRunIds->count();
@@ -114,14 +133,16 @@ class LabEvidenceAudit extends Command
             && $responseRunIds->diff($traceCompleteRunIds)->isEmpty()
             && $responseRunIds->diff($ledgerCompleteRunIds)->isEmpty();
         $replayAgentIds = $replayRuns->pluck('lab_agent_id')->filter()->unique();
+        $evidencedAgentIds = $replayAgentIds->merge($currentPolicyGuardRuns->pluck('lab_agent_id'))->filter()->unique();
         $complete = $agents->count() > 0 && $createdAgents === $agents->count()
-            && $currentReplayRuns->count() > 0 && $replayAgentIds->count() >= $agents->count()
-            && $replayTerminalRuns->count() === $currentReplayRuns->count()
-            && $completedReplayRuns->count() > 0
-            && $runIdsWithLifecycle->count() >= $currentReplayRuns->count()
+            && $currentBoundaryRuns->count() > 0 && $evidencedAgentIds->count() >= $agents->count()
+            && $replayTerminalRuns->count() === $currentBoundaryRuns->count()
+            && ($completedReplayRuns->count() > 0 || $currentPolicyGuardRuns->where('status', 'completed')->isNotEmpty())
+            && $runIdsWithLifecycle->count() >= $currentBoundaryRuns->count()
             && (! $strictTraceRequired || ($traceComplete >= $responseRuns && $strictResponseEvidence))
             && $orphanArtifactCount === 0
             && $legacy === 0;
+
         return [
             'generation_id' => $generation->id, 'symbol' => $generation->laboratory?->symbol,
             'timeframe' => $generation->laboratory?->timeframe, 'generation' => $generation->generation,
@@ -130,9 +151,10 @@ class LabEvidenceAudit extends Command
             'agent_event_coverage_percent' => $eventCoverage,
             'missing_agent_ids' => $agents->reject(fn ($agent) => $events->where('lab_agent_id', $agent->id)->isNotEmpty())->pluck('id')->values()->all(),
             'evaluation_run_count' => $runs->count(), 'replay_run_count' => $replayRuns->count(),
-            'current_evidence_run_count' => $currentReplayRuns->count(),
+            'current_evidence_run_count' => $currentBoundaryRuns->count(),
             'superseded_replay_run_count' => max(0, $replayRuns->count() - $currentReplayRuns->count()),
             'projection_only_run_count' => $projectionOnlyRunIds->count(),
+            'local_policy_guard_run_count' => $currentPolicyGuardRuns->count(),
             'completed_replay_count' => $completedReplayRuns->count(),
             'queue_deferred_run_count' => $queueDeferredRunIds->count(),
             'terminal_run_count' => $terminalRuns,
@@ -142,7 +164,7 @@ class LabEvidenceAudit extends Command
             // denominator must exclude superseded immutable attempts, or a
             // successful same-generation recovery will appear incomplete
             // merely because its old technical run has no closing event.
-            'run_lifecycle_coverage_percent' => $currentReplayRuns->count() === 0 ? 0 : round(($runIdsWithLifecycle->count() / $currentReplayRuns->count()) * 100, 1),
+            'run_lifecycle_coverage_percent' => $currentBoundaryRuns->count() === 0 ? 0 : round(($runIdsWithLifecycle->count() / $currentBoundaryRuns->count()) * 100, 1),
             'request_artifact_runs' => $requestRunIds->count(),
             'ledger_complete_runs' => $ledgerCompleteRunIds->count(),
             'queue_attempt_count' => $queueAttempts,

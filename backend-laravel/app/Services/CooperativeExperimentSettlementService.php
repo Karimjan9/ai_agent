@@ -3,10 +3,11 @@
 namespace App\Services;
 
 use App\Models\CandidateGateDecision;
-use App\Models\CooperativeExperimentSettlement;
-use App\Models\CooperativeModuleSpeciesMember;
 use App\Models\ContextualInstrumentBundleEffect;
 use App\Models\ContextualSpecialistCapsule;
+use App\Models\CooperativeExperimentSettlement;
+use App\Models\CooperativeModuleSpeciesMember;
+use App\Models\InstrumentInvocationLedger;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabEvolutionArchiveEntry;
@@ -27,8 +28,7 @@ class CooperativeExperimentSettlementService
         if ($blockKey === '' || ! Schema::hasTable('cooperative_experiment_settlements')) {
             return ['protocol' => self::PROTOCOL, 'status' => $blockKey === '' ? 'not_applicable' : 'migration_pending'];
         }
-        $agents = $agent->generation->agents()->with('modelVersion')->get()->filter(fn (LabAgent $row): bool =>
-            (string) data_get($row->modelVersion?->metadata, 'cooperative_experiment_block.block_key', '') === $blockKey
+        $agents = $agent->generation->agents()->with('modelVersion')->get()->filter(fn (LabAgent $row): bool => (string) data_get($row->modelVersion?->metadata, 'cooperative_experiment_block.block_key', '') === $blockKey
         );
         $armResults = [];
         $eligibleArmResults = [];
@@ -36,7 +36,9 @@ class CooperativeExperimentSettlementService
         foreach ($agents as $row) {
             $arm = (string) data_get($row->modelVersion?->metadata, 'cooperative_experiment_block.arm', '');
             $decision = CandidateGateDecision::query()->where('lab_agent_id', $row->id)->where('stage', 'screening')->latest('id')->first();
-            if ($arm === '' || ! $decision) continue;
+            if ($arm === '' || ! $decision) {
+                continue;
+            }
             $metrics = (array) $decision->metrics;
             $armEvidence = $this->armEvidence($row, $decision, $blockKey);
             $armResults[$arm] = [
@@ -96,6 +98,7 @@ class CooperativeExperimentSettlementService
                 'invalidated_at' => now()->utc()->toIso8601String(),
             ]);
         }
+
         return ['protocol' => self::PROTOCOL, 'status' => $status, 'settlement_id' => $row->id,
             'evidence_complete' => $complete, 'component_effects' => $effects,
             'invalid_arms' => $invalidArms,
@@ -134,7 +137,9 @@ class CooperativeExperimentSettlementService
 
         $strategyPayload = collect((array) data_get($run->request_meta, 'payload.strategies', []))
             ->first(function (mixed $strategy) use ($agent): bool {
-                if (! is_array($strategy)) return false;
+                if (! is_array($strategy)) {
+                    return false;
+                }
                 $payloadAgentId = data_get($strategy, 'lab_agent_id');
 
                 return ($payloadAgentId !== null && (int) $payloadAgentId === (int) $agent->id)
@@ -237,7 +242,11 @@ class CooperativeExperimentSettlementService
     {
         $v = fn (string $arm): ?float => isset($arms[$arm]) ? (float) $arms[$arm]['after_cost_value'] : null;
         if ($type === 'factorial') {
-            $control = $v('control'); $a = $v('a_only'); $b = $v('b_only'); $ab = $v('a_plus_b');
+            $control = $v('control');
+            $a = $v('a_only');
+            $b = $v('b_only');
+            $ab = $v('a_plus_b');
+
             return ['component_a_marginal_effect' => $this->delta($a, $control),
                 'component_b_marginal_effect' => $this->delta($b, $control),
                 'interaction_effect' => in_array(null, [$control, $a, $b, $ab], true) ? null : round($ab - $a - $b + $control, 6),
@@ -257,6 +266,7 @@ class CooperativeExperimentSettlementService
         }
         $control = $v('exact_frozen_control');
         $candidate = $v('candidate') ?? $v('guard_challenge');
+
         return ['candidate_delta' => $this->delta($candidate, $control), 'whole_capsule_effect' => $this->delta($candidate, $control)];
     }
 
@@ -272,13 +282,14 @@ class CooperativeExperimentSettlementService
 
     private function settleModuleSpecies($agents, string $type, array $effects, int $settlementId): void
     {
-        if (! Schema::hasTable('cooperative_module_species_members')) return;
+        if (! Schema::hasTable('cooperative_module_species_members')) {
+            return;
+        }
         foreach ($agents as $agent) {
             $arm = (string) data_get($agent->modelVersion?->metadata, 'cooperative_experiment_block.arm', '');
             $delta = match (true) {
                 $type === 'factorial' && $arm === 'a_only' => data_get($effects, 'component_a_marginal_effect'),
                 $type === 'factorial' && $arm === 'b_only' => data_get($effects, 'component_b_marginal_effect'),
-                $type === 'factorial' && $arm === 'a_plus_b' => data_get($effects, 'whole_capsule_effect'),
                 $type === 'transfer' && str_starts_with($arm, 'source_candidate') => data_get($effects, 'source_context_effect'),
                 $type === 'transfer' && str_starts_with($arm, 'target_candidate') => data_get($effects, 'target_context_effect'),
                 $type === 'descendant' && $arm === 'parent_reference' => data_get($effects, 'parent_effect'),
@@ -286,22 +297,58 @@ class CooperativeExperimentSettlementService
                 in_array($arm, ['candidate', 'guard_challenge'], true) => data_get($effects, 'candidate_delta'),
                 default => null,
             };
-            if ($delta === null) continue;
+            if ($delta === null) {
+                continue;
+            }
+            $changedSpecies = (string) data_get(
+                $agent->modelVersion?->metadata,
+                'cooperative_experiment_block.changed_species',
+                '',
+            );
+            if ($changedSpecies === '' || ! in_array($changedSpecies, CooperativeModuleSpeciesService::SPECIES, true)) {
+                continue;
+            }
+            // Toolbox assignment is a research hypothesis, not evidence that
+            // the instrument participated in the decision.  A toolbox member
+            // may receive local credit only when the immutable runtime ledger
+            // attests a consumed causal-candidate activation for this arm.
+            if ($changedSpecies === 'toolbox_instrument' && ! $this->hasActivatedCausalInstrument($agent)) {
+                continue;
+            }
             $authority = (float) $delta > 0 ? 'repair_credit' : 'information_credit';
             $status = (float) $delta > 0 ? 'beneficial_local_observation' : ((float) $delta < 0 ? 'harmful_local_observation' : 'neutral_local_observation');
-            CooperativeModuleSpeciesMember::query()->where('lab_agent_id', $agent->id)->get()->each(function (CooperativeModuleSpeciesMember $member) use ($settlementId, $delta, $authority, $status): void {
-                $evidence = (array) $member->evidence;
-                unset($evidence['invalidated_settlement']);
-                $member->update(['evidence' => [...$evidence,
-                    'latest_block_settlement_id' => $settlementId, 'local_control_relative_delta' => $delta,
-                    'global_inheritance_allowed' => false, 'promotion_evidence' => false],
-                    'authority_level' => $authority, 'status' => $status]);
-            });
+            CooperativeModuleSpeciesMember::query()
+                ->where('lab_agent_id', $agent->id)
+                ->where('species', $changedSpecies)
+                ->get()
+                ->each(function (CooperativeModuleSpeciesMember $member) use ($settlementId, $delta, $authority, $status, $changedSpecies): void {
+                    $evidence = (array) $member->evidence;
+                    unset($evidence['invalidated_settlement']);
+                    $member->update(['evidence' => [...$evidence,
+                        'latest_block_settlement_id' => $settlementId, 'local_control_relative_delta' => $delta,
+                        'credited_species' => $changedSpecies,
+                        'supporting_species_credit_suppressed' => true,
+                        'global_inheritance_allowed' => false, 'promotion_evidence' => false],
+                        'authority_level' => $authority, 'status' => $status]);
+                });
             if ((float) $delta < 0 && Schema::hasTable('contextual_specialist_capsules')) {
                 ContextualSpecialistCapsule::query()->where('lab_agent_id', $agent->id)
                     ->where('status', '!=', 'elite')->update(['status' => 'anti_skill']);
             }
         }
+    }
+
+    private function hasActivatedCausalInstrument(LabAgent $agent): bool
+    {
+        return InstrumentInvocationLedger::query()
+            ->where('lab_agent_id', $agent->id)
+            ->whereNull('paper_signal_id')
+            ->where('used_in_decision', true)
+            ->get()
+            ->contains(fn (InstrumentInvocationLedger $row): bool => data_get($row->metadata, 'declaration.causal_candidate') === true
+                && data_get($row->metadata, 'runtime_trace.decision_path_activated') === true
+                && (string) data_get($row->metadata, 'runtime_trace.status') === 'consumed'
+            );
     }
 
     private function retractInvalidSettlement($agents, int $settlementId, array $invalidArms): void

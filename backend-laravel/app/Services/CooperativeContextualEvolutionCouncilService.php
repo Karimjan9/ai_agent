@@ -15,6 +15,8 @@ class CooperativeContextualEvolutionCouncilService
 {
     public const PROTOCOL = 'cooperative_contextual_evolution_council_v1';
 
+    public const UNCERTAINTY_ABSTAIN_PROTOCOL = 'uncertainty_abstain_guard_v1';
+
     private const BLOCK_SEATS = [
         'repair_pair' => 2, 'novelty_pair' => 2, 'replication' => 2,
         'factorial' => 4, 'transfer' => 4, 'descendant' => 4,
@@ -286,6 +288,15 @@ class CooperativeContextualEvolutionCouncilService
         $niche = [...$niche,
             'control_only' => true,
             'uncertainty_abstain' => true,
+            'uncertainty_abstain_contract' => [
+                'protocol' => self::UNCERTAINTY_ABSTAIN_PROTOCOL,
+                'status' => 'sealed',
+                'action' => 'WAIT',
+                'replay_required' => false,
+                'causal_credit_allowed' => false,
+                'economic_credit_allowed' => false,
+                'promotion_evidence' => false,
+            ],
             'contextual_specialist_cell' => $cell,
             'outside_scope_action' => 'WAIT',
         ];
@@ -431,6 +442,10 @@ class CooperativeContextualEvolutionCouncilService
             'required_arms' => array_column($arms, 'role'),
             'pair_baseline_intervention' => (bool) ($arm['pair_baseline_intervention'] ?? false),
             'baseline_arm' => $arm['baseline_arm'] ?? null, 'priority' => $priority,
+            'intervention' => $intervention !== [] ? $intervention : null,
+            'changed_species' => $this->species->speciesForGene(
+                $intervention !== [] ? (string) data_get($intervention, 'gene') : null
+            ),
             'candidate_control_same_context_required' => $blockType !== 'transfer',
             'settlement_required' => true, 'research_nursery_only' => true, 'promotion_evidence' => false,
         ];

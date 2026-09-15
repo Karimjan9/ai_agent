@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ContextualInstrumentBundleEffect;
 use App\Models\CooperativeExperimentSettlement;
+use App\Models\InstrumentInvocationLedger;
 use App\Models\LabAgent;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
@@ -37,7 +38,10 @@ class ContextualInstrumentBundleGraphService
             'cooperative_experiment_block.arm',
             '',
         ));
-        $bundles = $byArm->map(fn (LabAgent $agent): array => $this->bundle($agent));
+        // Planned assignment is only a hypothesis. Attribution begins only
+        // after Python attests a real decision-path activation and the runtime
+        // invocation ledger has persisted that receipt.
+        $bundles = $byArm->map(fn (LabAgent $agent): array => $this->activatedCausalBundle($agent));
         $block = (array) data_get($first->modelVersion?->metadata, 'cooperative_experiment_block', []);
         $context = (string) ($settlement->context_cell_key ?: 'unknown_context_quarantine');
         $rows = [];
@@ -47,10 +51,20 @@ class ContextualInstrumentBundleGraphService
             $aBundle = (array) $bundles->get('a_only', []);
             $bBundle = (array) $bundles->get('b_only', []);
             $abBundle = (array) $bundles->get('a_plus_b', []);
+            if ($aBundle === [] || $bBundle === [] || $abBundle === []) {
+                return ['protocol' => self::PROTOCOL, 'status' => 'no_runtime_activation_no_credit',
+                    'recorded' => 0, 'promotion_evidence' => false];
+            }
             $instrumentA = $this->introduced($aBundle, $control)
                 ?: $this->componentName(data_get($block, 'component_a'), 'component_a');
             $instrumentB = $this->introduced($bBundle, $control)
                 ?: $this->componentName(data_get($block, 'component_b'), 'component_b');
+            if ($instrumentA === $instrumentB
+                || ! in_array($instrumentA, $abBundle, true)
+                || ! in_array($instrumentB, $abBundle, true)) {
+                return ['protocol' => self::PROTOCOL, 'status' => 'factorial_activation_identity_incomplete',
+                    'recorded' => 0, 'promotion_evidence' => false];
+            }
             $a = $this->number(data_get($effects, 'component_a_marginal_effect'));
             $b = $this->number(data_get($effects, 'component_b_marginal_effect'));
             $interaction = $this->number(data_get($effects, 'interaction_effect'));
@@ -79,6 +93,10 @@ class ContextualInstrumentBundleGraphService
             $candidateArm = $byArm->has('candidate') ? 'candidate' : ($byArm->has('guard_challenge') ? 'guard_challenge' : null);
             if ($candidateArm !== null) {
                 $bundle = (array) $bundles->get($candidateArm, []);
+                if ($bundle === []) {
+                    return ['protocol' => self::PROTOCOL, 'status' => 'no_runtime_activation_no_credit',
+                        'recorded' => 0, 'promotion_evidence' => false];
+                }
                 $rows[] = $this->row('bundle_marginal', $bundle[0] ?? 'bundle_unresolved', null, $bundle,
                     $this->number(data_get($effects, 'candidate_delta', data_get($effects, 'whole_capsule_effect'))), null, null);
             }
@@ -126,12 +144,19 @@ class ContextualInstrumentBundleGraphService
     }
 
     /** @return array<int,string> */
-    private function bundle(LabAgent $agent): array
+    private function activatedCausalBundle(LabAgent $agent): array
     {
-        $value = data_get($agent->modelVersion?->metadata, 'cooperative_evolution_capsule.components.toolbox_instrument', []);
-        $values = is_array($value) ? $value : [$value];
-
-        return collect($values)->flatten()->map(fn ($item): string => trim((string) $item))
+        return InstrumentInvocationLedger::query()
+            ->where('lab_agent_id', $agent->id)
+            ->whereNull('paper_signal_id')
+            ->where('used_in_decision', true)
+            ->get()
+            ->filter(fn (InstrumentInvocationLedger $row): bool => data_get($row->metadata, 'declaration.causal_candidate') === true
+                && data_get($row->metadata, 'runtime_trace.decision_path_activated') === true
+                && (string) data_get($row->metadata, 'runtime_trace.status') === 'consumed'
+            )
+            ->pluck('instrument_key')
+            ->map(fn ($item): string => trim((string) $item))
             ->filter()->unique()->sort()->values()->all();
     }
 

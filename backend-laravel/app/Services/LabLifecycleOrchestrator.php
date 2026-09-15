@@ -15,7 +15,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
@@ -85,6 +84,7 @@ class LabLifecycleOrchestrator
         private readonly GenerationConstructionReconciliationService $constructionReconciliation,
         private readonly LabGenerationTerminalBoundaryService $terminalBoundaries,
         private readonly LabDataEdgeAuditService $dataEdgeAudits,
+        private readonly ReplayLivenessProbeService $replayLiveness,
     ) {
         $this->errors = new LabLifecycleErrorLogger;
     }
@@ -960,25 +960,12 @@ class LabLifecycleOrchestrator
 
     private function aiServiceHealthy(): bool
     {
-        $url = rtrim((string) config('services.ai_service.url'), '/').'/api/replay-status';
-        $token = (string) config('services.internal_api.token');
-        if ($url === '/api/replay-status' || $token === '') {
-            return false;
-        }
+        $probe = $this->replayLiveness->probe();
 
-        try {
-            $response = Http::connectTimeout(2)->timeout(4)
-                ->withHeaders(['X-Internal-Token' => $token])->get($url);
-            if ($response->failed()) {
-                return false;
-            }
-            $body = $response->json();
-
-            return (string) data_get($body, 'protocol', '') !== ''
-                && (int) data_get($body, 'active_requests', -1) >= 0;
-        } catch (Throwable) {
-            return false;
-        }
+        // A replay already holding the protected lane proves that the AI
+        // runtime is alive. Admission is still owned by the queue mutex; the
+        // lifecycle preflight must not turn legitimate work into an outage.
+        return in_array((string) ($probe['status'] ?? 'unknown'), ['ok', 'active'], true);
     }
 
     private function schedulerHeartbeatFresh(): bool

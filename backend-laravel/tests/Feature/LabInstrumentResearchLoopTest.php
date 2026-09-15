@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\AiLaboratory;
 use App\Models\InstrumentInvocationLedger;
 use App\Models\InstrumentValuePosterior;
@@ -13,6 +14,7 @@ use App\Models\ModelVersion;
 use App\Models\PlaybookComposition;
 use App\Models\PlaybookValuePosterior;
 use App\Models\TradingInstrument;
+use App\Services\CausalLearningCohortPlannerService;
 use App\Services\InstrumentInvocationLedgerService;
 use App\Services\LabInstrumentResearchService;
 use App\Services\StrategyParameterSchemaService;
@@ -103,6 +105,96 @@ class LabInstrumentResearchLoopTest extends TestCase
             $this->attestedResult($assignment, 'must-not-run'),
         ));
         $this->assertDatabaseCount('instrument_invocation_ledger', 0);
+    }
+
+    public function test_causal_triplet_arm_reserves_its_experiment_control_and_settles_against_the_later_pair(): void
+    {
+        [$candidate, $control, $generation] = $this->pairAgents();
+        $experimentKey = hash('sha256', 'causal-instrument-triplet');
+        foreach ([$candidate, $control] as $agent) {
+            $model = $agent->modelVersion;
+            $metadata = (array) $model->metadata;
+            unset($metadata['control_pair_contract']);
+            if ((int) $agent->id === (int) $candidate->id) {
+                $metadata['causal_learning_cohort'] = [
+                    'protocol' => CausalLearningCohortPlannerService::PROTOCOL,
+                    'experiment_key' => $experimentKey,
+                    'role' => 'hypothesis_guided',
+                    'promotion_evidence' => false,
+                ];
+            }
+            $model->update(['metadata' => $metadata]);
+        }
+        $experiment = AgentLearningCausalExperiment::create([
+            'experiment_key' => $experimentKey,
+            'lab_generation_id' => $generation->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'target' => 'instrument_triplet', 'gene_key' => 'volume_lane',
+            'guided_agent_id' => $candidate->id, 'control_agent_id' => $control->id,
+            'status' => 'ready_for_replay', 'evidence' => [],
+        ]);
+
+        $assignment = app(LabInstrumentResearchService::class)->assignment(
+            $candidate->fresh(['modelVersion', 'generation'])
+        );
+
+        $this->assertSame('assigned', $assignment['status']);
+        $this->assertSame('reserved', data_get($assignment, 'pair_reservation.status'));
+        $this->assertSame('causal_triplet_instrument_reservation_v1', data_get($assignment, 'pair_reservation.protocol'));
+        $this->assertSame($experiment->id, data_get($assignment, 'pair_reservation.causal_experiment_id'));
+
+        $ledger = app(InstrumentInvocationLedgerService::class);
+        $ledger->recordResearchObservation(
+            $candidate->fresh(['modelVersion']),
+            $this->attestedResult($assignment, 'causal-candidate-screen-run'),
+        );
+        $dataHash = str_repeat('a', 64);
+        $executionHash = str_repeat('b', 64);
+        $controlMap = LabMutationResponseMap::create([
+            'response_key' => hash('sha256', 'causal-triplet-control-map'),
+            'stage' => 'screening', 'status' => 'control',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'lab_agent_id' => $control->id, 'model_version_id' => $control->model_version_id,
+            'evidence_run_id' => 'causal-control-screen-run',
+            'observed_metrics' => [],
+            'metadata' => ['control_contract' => [
+                'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
+                'generation_id' => $generation->id, 'data_hash' => $dataHash,
+                'execution_hash' => $executionHash,
+            ]],
+        ]);
+        $pair = LabLearningLanePair::create([
+            'pair_key' => hash('sha256', 'causal-triplet-later-pair'),
+            'lab_generation_id' => $generation->id,
+            'candidate_agent_id' => $candidate->id, 'control_agent_id' => $control->id,
+            'control_response_map_id' => $controlMap->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'baseline_source' => 'control', 'status' => 'screen_paired',
+            'candidate_evidence_run_id' => 'causal-candidate-screen-run',
+            'control_evidence_run_id' => 'causal-control-screen-run',
+            'candidate_data_hash' => $dataHash, 'control_data_hash' => $dataHash,
+            'candidate_execution_hash' => $executionHash, 'control_execution_hash' => $executionHash,
+            'pair_integrity_status' => 'verified', 'same_generation' => true,
+            'candidate_metrics' => [
+                'net_profit_percent' => 3.0, 'profit_factor' => 1.2,
+                'max_drawdown_percent' => 5.0, 'total_trades' => 42,
+                'instrument_research_trace' => $this->contextTrace(1.2, 4.0, 5.0, 21),
+            ],
+            'control_metrics' => [
+                'net_profit_percent' => 1.0, 'profit_factor' => 1.05,
+                'max_drawdown_percent' => 6.0, 'total_trades' => 40,
+                'instrument_research_trace' => $this->contextTrace(1.05, 1.0, 6.0, 20),
+            ],
+            'metadata' => ['promotion_evidence' => false],
+        ]);
+
+        $this->assertTrue($pair->isVerifiedControlPair());
+        $this->assertSame(1, $ledger->settleResearchPair($pair->fresh()));
+        $this->assertDatabaseHas('instrument_invocation_ledger', [
+            'lab_agent_id' => $candidate->id,
+            'instrument_key' => 'volume_confirmation',
+            'verdict' => 'helped',
+        ]);
     }
 
     public function test_inventory_and_parameter_binding_without_runtime_activation_open_no_invocation(): void
