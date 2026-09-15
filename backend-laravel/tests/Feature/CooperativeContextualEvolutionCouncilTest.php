@@ -14,6 +14,7 @@ use App\Models\ModelVersion;
 use App\Models\ResearchIdeaInboxEntry;
 use App\Services\ContextualCapsuleArchiveService;
 use App\Services\ContextualCouncilAllocatorService;
+use App\Services\CandidateGateDecisionService;
 use App\Services\CooperativeContextualEvolutionCouncilService;
 use App\Services\CooperativeExperimentSettlementService;
 use App\Services\CooperativeModuleSpeciesService;
@@ -133,6 +134,24 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $this->assertSame('research_only', $interaction->authority_level);
         $this->assertFalse((bool) data_get($interaction->evidence, 'global_inheritance_allowed'));
         $this->assertCount(2, ContextualInstrumentBundleEffect::query()->where('effect_type', 'leave_one_out')->get());
+    }
+
+    public function test_derived_cooperative_projection_failure_cannot_invalidate_the_screening_gate(): void
+    {
+        [, $agent] = $this->agentWithCapsule('projection-isolation', 1);
+        $this->mock(CooperativeExperimentSettlementService::class, function ($mock): void {
+            $mock->shouldReceive('observe')->once()->andThrow(new \RuntimeException('derived projection failed'));
+        });
+        $method = new \ReflectionMethod(CandidateGateDecisionService::class, 'cooperativeSettlement');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(app(CandidateGateDecisionService::class), $agent);
+
+        $this->assertSame(CooperativeExperimentSettlementService::PROTOCOL, $result['protocol']);
+        $this->assertSame('projection_deferred', $result['status']);
+        $this->assertSame('reconcile_cooperative_experiment_settlement', $result['retry_action']);
+        $this->assertFalse($result['promotion_evidence']);
+        $this->assertNotEmpty($result['error_fingerprint']);
     }
 
     private function lab(): AiLaboratory

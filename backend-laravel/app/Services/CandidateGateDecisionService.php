@@ -26,7 +26,7 @@ class CandidateGateDecisionService
             $result['decision'] = 'insufficient_evidence';
             $result['contextual_capsule_archive'] = app(ContextualCapsuleArchiveService::class)->recordScreening($agent, $result);
             $row = $this->store(null, $agent, 'screening', 'insufficient_evidence', ['INSUFFICIENT_SCREENING_EVIDENCE'], $result);
-            $result['cooperative_experiment_settlement'] = app(CooperativeExperimentSettlementService::class)->observe($agent);
+            $result['cooperative_experiment_settlement'] = $this->cooperativeSettlement($agent);
             $row->update(['metrics' => $result]);
 
             return $row->fresh();
@@ -113,7 +113,7 @@ class CandidateGateDecisionService
                 ->sealFromScreening($agent, $result, $reasons);
         }
         $decisionRow = $this->store(null, $agent, 'screening', $decision, $reasons, $result);
-        $result['cooperative_experiment_settlement'] = app(CooperativeExperimentSettlementService::class)->observe($agent);
+        $result['cooperative_experiment_settlement'] = $this->cooperativeSettlement($agent);
         $decisionRow->update(['metrics' => $result]);
 
         // A complete strategy failure becomes an immutable repair anchor. It
@@ -157,6 +157,30 @@ class CandidateGateDecisionService
         }
 
         return $decisionRow->fresh();
+    }
+
+    /** @return array<string, mixed> */
+    private function cooperativeSettlement(LabAgent $agent): array
+    {
+        try {
+            return app(CooperativeExperimentSettlementService::class)->observe($agent);
+        } catch (\Throwable $exception) {
+            // The gate row is the immutable screening verdict. Cooperative
+            // settlement is a derived, idempotent learning projection and may
+            // never turn an already-computed replay into a technical strategy
+            // failure. Persist a retryable debt on the decision instead; no
+            // authority or promotion evidence is granted by this fallback.
+            report($exception);
+
+            return [
+                'protocol' => CooperativeExperimentSettlementService::PROTOCOL,
+                'status' => 'projection_deferred',
+                'error_class' => $exception::class,
+                'error_fingerprint' => hash('sha256', $exception::class.'|'.$exception->getMessage()),
+                'retry_action' => 'reconcile_cooperative_experiment_settlement',
+                'promotion_evidence' => false,
+            ];
+        }
     }
 
     public function recordForward(ModelMarketPerformance $performance, array $result): CandidateGateDecision
