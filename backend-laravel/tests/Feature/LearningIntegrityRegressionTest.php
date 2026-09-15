@@ -225,6 +225,41 @@ class LearningIntegrityRegressionTest extends TestCase
         $this->assertSame('regime_coverage', data_get($decision, 'causal_confirmation_priority.target'));
     }
 
+    public function test_executable_technical_recovery_preempts_a_durable_causal_lesson(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $lesson = new AgentLearningLesson([
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'failure_class' => 'regime_coverage',
+            'parameter_key' => 'state_machine_variant',
+        ]);
+        $lesson->id = 78;
+        $this->mock(CausalLearningCohortPlannerService::class, function ($mock) use ($lesson): void {
+            $mock->shouldReceive('eligibleLesson')->once()->with('XAUUSD', 'H1')->andReturn($lesson);
+        });
+        $this->mock(LearningVelocityGateService::class, function ($mock): void {
+            $mock->shouldReceive('inspect')->once()->andReturn([
+                'allowed' => false,
+                'status' => 'blocked_technical_recovery',
+                'learning_starvation' => ['actionable_pending_dojo' => 0, 'active_dispatches' => 0],
+                'observations' => [],
+            ]);
+        });
+
+        $decision = app(GenerationAdmissionDecisionService::class)->decide(
+            $lab,
+            $generation,
+            ['trigger' => 'candidate_handoff'],
+            false,
+        );
+
+        $this->assertFalse($decision['allowed']);
+        $this->assertSame(GenerationAdmissionDecisionService::RECOVER_TECHNICAL, $decision['decision']);
+        $this->assertContains('TRANSIENT_TECHNICAL_RECOVERY_REQUIRED', $decision['reason_codes']);
+        $this->assertSame(78, data_get($decision, 'causal_confirmation_priority.lesson_id'));
+    }
+
     public function test_verified_positive_pair_preempts_even_an_operator_successor(): void
     {
         [$lab, $generation] = $this->scope();

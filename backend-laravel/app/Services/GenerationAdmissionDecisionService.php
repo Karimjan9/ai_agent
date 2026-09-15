@@ -101,6 +101,16 @@ class GenerationAdmissionDecisionService
             $decision = self::BLOCK_HARD;
             $allowed = false;
             $reasons[] = 'AUTONOMOUS_MODE_STOPPED';
+        } elseif ((string) data_get($velocity, 'status') === 'blocked_technical_recovery') {
+            // Infrastructure recovery is a hard ordering boundary. A valid
+            // causal lesson or positive pair remains durable, but neither may
+            // open a new cohort while the latest generation still contains
+            // one executable technical repair. Previously the outer lifecycle
+            // selected the lesson, while the inner constructor selected this
+            // recovery, producing an endless admit/block retry loop.
+            $decision = self::RECOVER_TECHNICAL;
+            $allowed = false;
+            $reasons[] = 'TRANSIENT_TECHNICAL_RECOVERY_REQUIRED';
         } elseif ($priorityLearningPair !== null) {
             $decision = self::DISPATCH_LEARNING;
             $allowed = false;
