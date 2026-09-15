@@ -174,8 +174,54 @@ class AutonomousModeControlTest extends TestCase
             'ACTIVE_GENERATION_HAS_TERMINAL_TECHNICAL_AGENTS_WITHOUT_QUEUED_RECOVERY',
             data_get($status, 'monitor.runtime_attention_reasons'),
         );
+        $this->assertSame('failed', data_get($status, 'monitor.generation.technical_process_acceptance.state'));
+        $this->assertSame(1, data_get($status, 'monitor.generation.technical_process_acceptance.technical_agents'));
+        $this->assertContains(
+            'TECHNICAL_AGENT_RECORDED',
+            data_get($status, 'monitor.generation.technical_process_acceptance.reason_codes'),
+        );
+        $this->assertTrue(data_get($status, 'monitor.generation.technical_process_acceptance.manual_intervention_required'));
         $this->assertArrayNotHasKey('supervision', $status['monitor']);
         $this->assertFalse(data_get($status, 'controller_contract.manual_generation_commands_allowed'));
+    }
+
+    public function test_lightweight_monitor_marks_a_complete_active_population_as_running_clean(): void
+    {
+        $lab = $this->laboratory();
+        $generation = LabGeneration::query()->create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 214,
+            'trigger_type' => 'new_data',
+            'population_size' => 1,
+            'status' => 'screening',
+            'trigger_context' => [],
+        ]);
+        $model = ModelVersion::query()->create([
+            'name' => 'clean-running-model',
+            'strategy' => 'hybrid',
+            'version' => 'v214',
+            'generation' => 214,
+            'status' => 'testing',
+            'parameters' => [],
+            'metadata' => [],
+        ]);
+        LabAgent::query()->create([
+            'lab_generation_id' => $generation->id,
+            'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'origin' => 'test',
+            'lifecycle_status' => 'queued',
+            'parameter_diff' => [],
+        ]);
+        Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinute());
+
+        $status = app(AutonomousModeService::class)->monitor('XAUUSD', 'H1', 'lightweight');
+
+        $this->assertSame('running_clean', data_get($status, 'monitor.generation.technical_process_acceptance.state'));
+        $this->assertSame(0, data_get($status, 'monitor.generation.technical_process_acceptance.technical_evaluation_runs'));
+        $this->assertFalse(data_get($status, 'monitor.generation.technical_process_acceptance.manual_intervention_required'));
     }
 
     public function test_lightweight_monitor_uses_immutable_generation_plan_for_incomplete_population_truth(): void

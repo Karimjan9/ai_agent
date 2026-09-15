@@ -86,6 +86,30 @@ class AutonomousModeService
             : [];
         $actualPopulation = array_sum($agentCounts);
         $plannedPopulation = $latest ? $this->plannedPopulation($latest) : null;
+        $terminalGeneration = $latest && in_array((string) $latest->status, [
+            'screened', 'completed', 'technical_quarantine', 'abandoned', 'failed',
+        ], true);
+        $terminalAgentStatuses = [
+            'screened', 'completed', 'technical_quarantine', 'quarantined',
+            'legacy_quarantine', 'abandoned', 'failed',
+        ];
+        $terminalAgentCount = collect($agentCounts)
+            ->only($terminalAgentStatuses)
+            ->sum();
+        $technicalRunCount = $latest && Schema::hasTable('lab_evaluation_runs')
+            ? DB::table('lab_evaluation_runs')
+                ->where('lab_generation_id', $latest->id)
+                ->where('status', 'technical_error')
+                ->count()
+            : 0;
+        $blockedCycleCount = $latest && Schema::hasTable('lab_lifecycle_cycles')
+            ? LabLifecycleCycle::query()
+                ->where('symbol', $control['symbol'])
+                ->where('timeframe', $control['laboratory_storage_timeframe'])
+                ->where('started_at', '>=', $latest->created_at)
+                ->where('status', 'blocked')
+                ->count()
+            : 0;
         $attentionReasons = [];
         try {
             $constructor = app(LabPopulationService::class)->constructorStatus(
@@ -153,6 +177,35 @@ class AutonomousModeService
         if (LabPopulationService::constructionIncomplete($latest)) {
             $attentionReasons[] = 'GENERATION_CONSTRUCTION_INCOMPLETE';
         }
+        $acceptanceReasons = [];
+        if ($plannedPopulation === null || $plannedPopulation !== $actualPopulation) {
+            $acceptanceReasons[] = 'POPULATION_NOT_COMPLETE';
+        }
+        if ($technicalRunCount > 0) {
+            $acceptanceReasons[] = 'TECHNICAL_EVALUATION_RUN_RECORDED';
+        }
+        if ($technicalAgents > 0) {
+            $acceptanceReasons[] = 'TECHNICAL_AGENT_RECORDED';
+        }
+        if ($blockedCycleCount > 0) {
+            $acceptanceReasons[] = 'BLOCKED_LIFECYCLE_CYCLE_RECORDED';
+        }
+        if ($latest && in_array((string) $latest->status, ['technical_quarantine', 'abandoned', 'failed'], true)) {
+            $acceptanceReasons[] = 'GENERATION_TERMINATED_TECHNICALLY';
+        }
+        $technicalFailureObserved = collect($acceptanceReasons)->contains(
+            fn (string $reason): bool => $reason !== 'POPULATION_NOT_COMPLETE',
+        );
+        $acceptanceState = ! $latest
+            ? 'not_started'
+            : ($technicalFailureObserved
+                ? 'failed'
+                : ($terminalGeneration
+                    && $plannedPopulation !== null
+                    && $plannedPopulation === $actualPopulation
+                    && $terminalAgentCount === $actualPopulation
+                        ? 'passed'
+                        : 'running_clean'));
         $loopDecision = Schema::hasTable('research_loop_decisions')
             ? ResearchLoopDecision::query()->where('symbol', $control['symbol'])
                 ->where('timeframe', $control['laboratory_storage_timeframe'])->latest('id')->first()
@@ -186,6 +239,19 @@ class AutonomousModeService
                 'population_complete' => $plannedPopulation !== null && $plannedPopulation === $actualPopulation,
                 'agent_statuses' => $agentCounts,
                 'construction' => $constructor,
+                'technical_process_acceptance' => [
+                    'protocol' => 'generation_unattended_acceptance_v1',
+                    'state' => $acceptanceState,
+                    'terminal' => (bool) $terminalGeneration,
+                    'terminal_agents' => (int) $terminalAgentCount,
+                    'technical_evaluation_runs' => (int) $technicalRunCount,
+                    'technical_agents' => $technicalAgents,
+                    'blocked_lifecycle_cycles' => (int) $blockedCycleCount,
+                    'manual_intervention_required' => $acceptanceState === 'failed',
+                    'reason_codes' => array_values(array_unique($acceptanceReasons)),
+                    'pass_rule' => 'complete_population_and_all_agents_terminal_with_zero_technical_runs_agents_or_blocked_cycles',
+                    'strategy_rejection_is_not_a_technical_failure' => true,
+                ],
             ] : null,
             'queue' => $queue,
             'instrument_learning' => app(InstrumentLearningMonitorService::class)->snapshot($control['symbol']),
