@@ -1228,9 +1228,6 @@ class LabPopulationService
                         ]);
                     }
                 }
-                $hasCausalLearningSeats = collect($plan)->contains(
-                    fn (array $slot): bool => $this->isCausalLearningSeat($slot),
-                );
                 if ($contextualCouncilAllocation === null
                     && ! $controlledRescue
                     && $rootExperimentPortfolio === null
@@ -1238,15 +1235,13 @@ class LabPopulationService
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
                     && ! $roleComplete
                     && $populationLimit === null
-                    // The cooperative allocator owns ordinary twenty-seat
-                    // discovery, but its arm compiler intentionally strips
-                    // causal metadata. A materialized guided/blinded/control
-                    // triplet is primary proof and must instead pass unchanged
-                    // to the normal pairing policy. That policy reserves the
-                    // three proof seats, uses sixteen of the remaining
-                    // seventeen seats for eight exact pairs and turns the final
-                    // odd seat into an explicit uncertainty abstention.
-                    && ! $hasCausalLearningSeats
+                    // The cooperative allocator preserves a pre-registered
+                    // causal trio verbatim, compiles sixteen of the remaining
+                    // seats into eight contextual blocks and turns the final
+                    // odd seat into explicit uncertainty abstention. Causal
+                    // proof and contextual discovery therefore coexist in one
+                    // twenty-seat organism instead of falling back to generic
+                    // non-contextual pairing.
                     && count($plan) === 20) {
                     $contextualCouncilAllocation = app(ContextualCouncilAllocatorService::class)->allocate(
                         $plan,

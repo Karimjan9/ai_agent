@@ -39,14 +39,42 @@ class CooperativeContextualEvolutionCouncilService
             ]];
         }
 
+        $protectedIndexes = collect($plan)->keys()->filter(fn (int $index): bool => filled(
+            data_get($plan[$index], 'niche.causal_learning_cohort.role'),
+        ))->values()->all();
+        if ($protectedIndexes !== [] && count($protectedIndexes) !== 3) {
+            return ['plan' => $plan, 'contract' => [
+                'protocol' => self::PROTOCOL,
+                'status' => 'not_applicable_incomplete_causal_proof_set',
+                'planned_population' => count($plan),
+                'protected_causal_proof_slots' => array_map(fn (int $index): int => $index + 1, $protectedIndexes),
+                'dynamic' => false,
+                'promotion_evidence' => false,
+            ]];
+        }
+        $freeIndexes = collect(array_keys($plan))->reject(
+            fn (int $index): bool => in_array($index, $protectedIndexes, true),
+        )->values()->all();
+        $abstainIndex = $protectedIndexes !== [] && count($freeIndexes) % 2 === 1
+            ? array_pop($freeIndexes)
+            : null;
+        $workingPlan = collect($freeIndexes)->map(fn (int $index): array => (array) $plan[$index])->values()->all();
+        if ($workingPlan === [] || count($workingPlan) % 2 !== 0) {
+            return ['plan' => $plan, 'contract' => [
+                'protocol' => self::PROTOCOL,
+                'status' => 'not_applicable_unpairable_free_seats',
+                'planned_population' => count($plan),
+                'protected_causal_proof_slots' => array_map(fn (int $index): int => $index + 1, $protectedIndexes),
+                'dynamic' => false,
+                'promotion_evidence' => false,
+            ]];
+        }
+
         $evidence = $this->evidence($lab);
         $salvage = $this->salvage->planForLab($lab, 20);
         $steppingStone = $this->steppingStoneAvailable($lab);
         $phase = $steppingStone ? 'causal_compounding' : 'cold_start';
-        $types = $steppingStone
-            ? ['replication', 'factorial', 'transfer', 'descendant', 'repair_pair', 'novelty_pair', 'coverage_guard']
-            : ['repair_pair', 'repair_pair', 'repair_pair', 'repair_pair', 'repair_pair', 'repair_pair',
-                'novelty_pair', 'novelty_pair', 'novelty_pair', 'adversarial_guard'];
+        $types = $this->blockTypes($steppingStone, count($workingPlan));
         $legacyLearning = app(MultiModalLearningPortfolioService::class)->planForLab(
             $lab,
             app(EvolutionaryAuthorityLadderService::class)->experimentBlocks($steppingStone),
@@ -61,23 +89,24 @@ class CooperativeContextualEvolutionCouncilService
         $blockRows = [];
         $capsules = [];
         $priorityLedger = [];
-        $familyTemplates = collect($plan)->groupBy(fn (array $slot): string => (string) data_get($slot, 'family', 'hybrid'));
+        $familyTemplates = collect($workingPlan)->groupBy(fn (array $slot): string => (string) data_get($slot, 'family', 'hybrid'));
         $families = $familyTemplates->keys()->values();
-        $repairTargets = $this->orderedRepairTargets($governorSnapshot, 6);
+        $repairPairCount = collect($types)->filter(fn (string $type): bool => $type === 'repair_pair')->count();
+        $repairTargets = $this->orderedRepairTargets($governorSnapshot, $repairPairCount);
         $repairCursor = 0;
 
         foreach ($types as $blockIndex => $blockType) {
             $seatCount = self::BLOCK_SEATS[$blockType];
             if ($blockType === 'repair_pair' && $repairTargets !== []) {
                 $repairTarget = $repairTargets[$repairCursor++ % count($repairTargets)];
-                $template = $this->templateForRepairTarget($plan, $repairTarget, $blockIndex, $governorSnapshot);
+                $template = $this->templateForRepairTarget($workingPlan, $repairTarget, $blockIndex, $governorSnapshot);
                 $family = (string) data_get($template, 'family', 'hybrid');
             } else {
                 $family = (string) $families[$blockIndex % max(1, $families->count())];
                 $bucket = $familyTemplates->get($family, collect($plan))->values();
                 $template = (array) $bucket[intdiv($blockIndex, max(1, $families->count())) % max(1, $bucket->count())];
             }
-            $other = $this->differentGeneTemplate($plan, $template, $blockIndex + 1);
+            $other = $this->differentGeneTemplate($workingPlan, $template, $blockIndex + 1);
             $sourcePhase = $this->selectPhase($blockType, $blockIndex, $generationCursor, $evidence, $allocations);
             $causalSourceScope = (array) data_get($legacyLearning, 'source_references.causal_skill.context_scope', []);
             if ($steppingStone && in_array($blockType, ['replication', 'factorial', 'transfer', 'descendant'], true)) {
@@ -128,8 +157,23 @@ class CooperativeContextualEvolutionCouncilService
             ];
         }
 
-        if (count($allocated) !== 20) {
-            throw new \LogicException('Cooperative council must allocate exactly twenty seats.');
+        if (count($allocated) !== count($workingPlan)) {
+            throw new \LogicException('Cooperative council must fill every allocatable seat.');
+        }
+        $finalPlan = $allocated;
+        $abstainSlots = [];
+        if ($protectedIndexes !== []) {
+            $finalPlan = $plan;
+            foreach ($freeIndexes as $cursor => $index) {
+                $finalPlan[$index] = $allocated[$cursor];
+            }
+            if ($abstainIndex !== null) {
+                $abstainCell = $this->cell((array) $plan[$abstainIndex], 'comex_maintenance', $reference);
+                $finalPlan[$abstainIndex] = $this->uncertaintyAbstainSpec((array) $plan[$abstainIndex], $abstainCell);
+                $abstainSlots[] = $abstainIndex + 1;
+            }
+            ksort($finalPlan);
+            $finalPlan = array_values($finalPlan);
         }
         $seatCounts = collect($blockRows)->groupBy('block_type')->map(fn ($rows): int => $rows->sum('seat_count'))->all();
         $pairQuotas = collect($blockRows)->groupBy('block_type')->map(fn ($rows): int => intdiv($rows->sum('seat_count'), 2))->all();
@@ -152,12 +196,17 @@ class CooperativeContextualEvolutionCouncilService
             ];
         })->all();
 
-        return ['plan' => $allocated, 'contract' => [
+        return ['plan' => $finalPlan, 'contract' => [
             'protocol' => self::PROTOCOL, 'status' => 'allocated', 'phase' => $phase,
             'planned_population' => 20, 'dynamic' => true,
             'permanent_semantic_group_quotas' => false, 'fixed_equal_quota_forbidden' => true,
             'experiment_blocks' => $blockRows, 'block_count' => count($blockRows),
-            'seat_counts' => $seatCounts, 'pair_quotas' => $pairQuotas, 'pair_budget' => 10,
+            'seat_counts' => $seatCounts, 'pair_quotas' => $pairQuotas,
+            'pair_budget' => intdiv(count($allocated), 2),
+            'cooperative_seats' => count($allocated),
+            'protected_causal_proof_slots' => array_map(fn (int $index): int => $index + 1, $protectedIndexes),
+            'protected_causal_proof_seats' => count($protectedIndexes),
+            'uncertainty_abstain_slots' => $abstainSlots,
             'pair_integrity' => collect($blockRows)->every(fn (array $row): bool => $row['seat_count'] % 2 === 0),
             'cells' => $pairCells,
             'session_pair_counts' => collect($allocated)->countBy(fn (array $slot): string => (string) data_get($slot, 'niche.contextual_specialist_cell.session'))->map(fn (int $seats): int => intdiv($seats, 2))->all(),
@@ -186,9 +235,12 @@ class CooperativeContextualEvolutionCouncilService
             'evidence_salvage_conveyor' => $salvage,
             'multi_modal_learning_portfolio' => $legacyLearning,
             'cold_start_constitution' => [
-                'repair_pairs' => 6, 'structural_novelty_pairs' => 3, 'continuity_adversarial_guard_pairs' => 1,
-                'repair_seats' => 12, 'structural_novelty_seats' => 6,
-                'continuity_adversarial_guard_seats' => 2,
+                'repair_pairs' => (int) ($pairQuotas['repair_pair'] ?? 0),
+                'structural_novelty_pairs' => (int) ($pairQuotas['novelty_pair'] ?? 0),
+                'continuity_adversarial_guard_pairs' => (int) (($pairQuotas['adversarial_guard'] ?? 0) + ($pairQuotas['coverage_guard'] ?? 0)),
+                'repair_seats' => (int) ($seatCounts['repair_pair'] ?? 0),
+                'structural_novelty_seats' => (int) ($seatCounts['novelty_pair'] ?? 0),
+                'continuity_adversarial_guard_seats' => (int) (($seatCounts['adversarial_guard'] ?? 0) + ($seatCounts['coverage_guard'] ?? 0)),
                 'factorial_deferred_until_positive_stepping_stone' => true,
             ],
             'council_router' => [
@@ -201,6 +253,52 @@ class CooperativeContextualEvolutionCouncilService
                 'direct_install_or_inheritance_forbidden' => true],
             'promotion_evidence' => false,
         ]];
+    }
+
+    /** @return array<int,string> */
+    private function blockTypes(bool $steppingStone, int $seatBudget): array
+    {
+        if ($seatBudget === 20) {
+            return $steppingStone
+                ? ['replication', 'factorial', 'transfer', 'descendant', 'repair_pair', 'novelty_pair', 'coverage_guard']
+                : ['repair_pair', 'repair_pair', 'repair_pair', 'repair_pair', 'repair_pair', 'repair_pair',
+                    'novelty_pair', 'novelty_pair', 'novelty_pair', 'adversarial_guard'];
+        }
+        if ($seatBudget === 16) {
+            return $steppingStone
+                ? ['replication', 'factorial', 'descendant', 'repair_pair', 'novelty_pair', 'coverage_guard']
+                : ['repair_pair', 'repair_pair', 'repair_pair', 'repair_pair', 'repair_pair',
+                    'novelty_pair', 'novelty_pair', 'adversarial_guard'];
+        }
+
+        return array_fill(0, intdiv($seatBudget, 2), $steppingStone ? 'replication' : 'repair_pair');
+    }
+
+    /** @return array<string,mixed> */
+    private function uncertaintyAbstainSpec(array $template, array $cell): array
+    {
+        $niche = (array) data_get($template, 'niche', []);
+        unset(
+            $niche['declared_gene'], $niche['declared_value'], $niche['declared_values'],
+            $niche['learning_evolution'], $niche['control_pair_contract'],
+            $niche['cooperative_experiment_block'], $niche['learning_method_contract']
+        );
+        $niche = [...$niche,
+            'control_only' => true,
+            'uncertainty_abstain' => true,
+            'contextual_specialist_cell' => $cell,
+            'outside_scope_action' => 'WAIT',
+        ];
+
+        return [...$template,
+            'target' => 'uncertainty_abstain',
+            'evolution_mode' => 'uncertainty_abstain',
+            'research_group' => 'uncertainty_abstain',
+            'group_axis' => 'cooperative_causal_block',
+            'group_search_mode' => 'fail_closed',
+            'group_search_role' => 'uncertainty_abstain',
+            'niche' => $niche,
+        ];
     }
 
     /** @return array<int, string> */

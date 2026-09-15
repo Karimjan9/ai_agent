@@ -6,16 +6,16 @@ use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\ContextualInstrumentBundleEffect;
 use App\Models\ContextualSpecialistCapsule;
-use App\Models\LabEvolutionArchiveEntry;
 use App\Models\CooperativeExperimentSettlement;
 use App\Models\CooperativeModuleSpeciesMember;
 use App\Models\LabAgent;
+use App\Models\LabEvolutionArchiveEntry;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use App\Models\ResearchIdeaInboxEntry;
+use App\Services\CandidateGateDecisionService;
 use App\Services\ContextualCapsuleArchiveService;
 use App\Services\ContextualCouncilAllocatorService;
-use App\Services\CandidateGateDecisionService;
 use App\Services\CooperativeContextualEvolutionCouncilService;
 use App\Services\CooperativeExperimentSettlementService;
 use App\Services\CooperativeModuleSpeciesService;
@@ -57,6 +57,50 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $this->assertSame(10, data_get($paired, 'contract.pair_count'));
         $this->assertTrue(collect(data_get($paired, 'contract.materialized_controls'))
             ->every(fn (array $pair): bool => ! $pair['factorial_baseline_intervention']));
+    }
+
+    public function test_causal_triplet_and_contextual_blocks_share_one_twenty_seat_generation(): void
+    {
+        $lab = $this->lab();
+        $plan = $this->plan();
+        foreach (['hypothesis_guided', 'blinded', 'frozen_control'] as $offset => $role) {
+            data_set($plan[$offset + 3], 'niche.causal_learning_cohort', [
+                'protocol' => 'causal_learning_counterfactual_cohort_v1',
+                'experiment_id' => 77,
+                'role' => $role,
+                'promotion_evidence' => false,
+            ]);
+        }
+
+        $allocation = app(ContextualCouncilAllocatorService::class)->allocate($plan, $lab);
+
+        $this->assertCount(20, $allocation['plan']);
+        $this->assertSame([4, 5, 6], data_get($allocation, 'contract.protected_causal_proof_slots'));
+        $this->assertSame(16, data_get($allocation, 'contract.cooperative_seats'));
+        $this->assertSame(8, data_get($allocation, 'contract.pair_budget'));
+        $this->assertSame([20], data_get($allocation, 'contract.uncertainty_abstain_slots'));
+        $this->assertSame(
+            ['hypothesis_guided', 'blinded', 'frozen_control'],
+            collect($allocation['plan'])->pluck('niche.causal_learning_cohort.role')->filter()->values()->all(),
+        );
+        $this->assertSame(16, collect($allocation['plan'])->filter(fn (array $slot): bool => data_get($slot, 'niche.cooperative_experiment_block.protocol') === CooperativeContextualEvolutionCouncilService::PROTOCOL
+        )->count());
+        $this->assertSame('WAIT', data_get($allocation, 'plan.19.niche.outside_scope_action'));
+        $this->assertTrue((bool) data_get($allocation, 'plan.19.niche.uncertainty_abstain'));
+
+        $paired = app(ResearchAllocationPolicyService::class)->materializeNormalControlPairing(
+            $allocation['plan'], 'XAUUSD', 'H1', 77,
+        );
+
+        $this->assertTrue((bool) data_get($paired, 'contract.allowed'));
+        $this->assertSame('cooperative_experiment_blocks', data_get($paired, 'contract.mode'));
+        $this->assertSame([4, 5, 6], data_get($paired, 'contract.primary_proof_slots'));
+        $this->assertSame(8, data_get($paired, 'contract.pair_count'));
+        $this->assertSame([20], data_get($paired, 'contract.uncertainty_abstain_slots'));
+        $this->assertSame(
+            ['hypothesis_guided', 'blinded', 'frozen_control'],
+            collect($paired['plan'])->pluck('niche.causal_learning_cohort.role')->filter()->values()->all(),
+        );
     }
 
     public function test_ready_idea_is_compiled_into_a_novelty_block_but_gets_no_runtime_authority(): void
