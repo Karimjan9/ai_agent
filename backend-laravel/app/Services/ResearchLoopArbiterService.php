@@ -181,7 +181,7 @@ class ResearchLoopArbiterService
                     '--timeframe' => $timeframe,
                     '--causal-experiment-id' => (int) $openCausal->id,
                 ],
-                'scheduler-research', ['UNSETTLED_CAUSAL_CONFIRMATION_OWNS_RESEARCH_RUNTIME'], [
+                'scheduler-constructor', ['UNSETTLED_CAUSAL_CONFIRMATION_OWNS_RESEARCH_RUNTIME'], [
                     'generation' => $generation,
                     'causal_experiment_id' => (int) $openCausal->id,
                     'causal_generation_id' => (int) $openCausal->lab_generation_id,

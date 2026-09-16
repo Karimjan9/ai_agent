@@ -182,6 +182,7 @@ class ResearchLoopArbiterTest extends TestCase
         Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
         Queue::assertPushed(RunScheduledArtisanCommandJob::class,
             fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:dispatch-full-validation'
+                && $job->lane === 'scheduler-constructor'
                 && $job->arguments === [
                     0 => 'XAUUSD',
                     '--timeframe' => 'H1',
@@ -249,7 +250,8 @@ class ResearchLoopArbiterTest extends TestCase
         $this->assertNotSame($historical->id, data_get($result, 'evidence_snapshot.causal_experiment_id'));
         $this->assertSame($current->id, data_get($result, 'evidence_snapshot.causal_experiment_id'));
         Queue::assertPushed(RunScheduledArtisanCommandJob::class,
-            fn (RunScheduledArtisanCommandJob $job): bool => $job->arguments['--causal-experiment-id'] === $current->id);
+            fn (RunScheduledArtisanCommandJob $job): bool => $job->lane === 'scheduler-constructor'
+                && $job->arguments['--causal-experiment-id'] === $current->id);
     }
 
     public function test_terminal_causal_technical_arm_is_settled_without_replay_or_authority(): void
