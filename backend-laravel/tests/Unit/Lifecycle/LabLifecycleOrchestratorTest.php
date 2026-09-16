@@ -12,6 +12,7 @@ use App\Models\ModelVersion;
 use App\Services\GenerationAdmissionDecisionService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
+use App\Services\LabGenerationTerminalBoundaryService;
 use App\Services\LabLifecycleErrorLogger;
 use App\Services\LabLifecycleOrchestrator;
 use App\Services\LabPopulationService;
@@ -107,6 +108,43 @@ class LabLifecycleOrchestratorTest extends TestCase
 
         $this->assertSame('completed', $result['status']);
         $this->assertSame($generation->id, data_get($result, 'data.generation_id'));
+        $this->assertCount(1, LabGeneration::all());
+    }
+
+    public function test_terminal_close_exhausts_the_cycle_without_admitting_a_successor(): void
+    {
+        $lab = $this->seedLaboratory();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 221,
+            'status' => 'screening',
+            'population_size' => 20,
+            'data_fingerprint' => 'terminal-boundary-reselection',
+            'trigger_type' => 'learning_confirmation',
+            'trigger_context' => [],
+        ]);
+        $this->bindPopulation(paused: false, expectBuild: false);
+
+        $boundary = m::mock(LabGenerationTerminalBoundaryService::class);
+        $boundary->shouldReceive('closeLatest')->once()->with('XAUUSD', 'H1')->andReturn([
+            'closed' => true,
+            'reason_code' => 'TERMINAL_SCREENING_BOUNDARY_REPAIRED',
+            'generation_id' => $generation->id,
+            'status' => 'screened',
+            'promotion_evidence' => false,
+        ]);
+        app()->instance(LabGenerationTerminalBoundaryService::class, $boundary);
+        app()->forgetInstance(LabLifecycleOrchestrator::class);
+
+        $result = app(LabLifecycleOrchestrator::class)->run(
+            'XAUUSD',
+            'H1',
+            'tc-terminal-boundary-reselection',
+        );
+
+        $this->assertSame(LabLifecycleOrchestrator::STATUS_PAUSED, $result['status']);
+        $this->assertSame('research_loop_arbiter_reselect', data_get($result, 'data.next_action'));
+        $this->assertSame($generation->id, data_get($result, 'data.terminal_boundary.generation_id'));
         $this->assertCount(1, LabGeneration::all());
     }
 

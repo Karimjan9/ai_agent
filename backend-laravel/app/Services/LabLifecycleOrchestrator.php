@@ -175,7 +175,27 @@ class LabLifecycleOrchestrator
             // screening even after a later bounded attempt made every agent
             // terminal. Repair only when agent, immutable-run, and queue
             // ownership all prove that no work remains.
-            $this->terminalBoundaries->closeLatest($symbol, $timeframe);
+            $terminalBoundary = $this->terminalBoundaries->closeLatest($symbol, $timeframe);
+            if (($terminalBoundary['closed'] ?? false) === true) {
+                // This cycle was authorized to settle the generation that was
+                // active when the arbiter froze its decision. Closing that
+                // generation exhausts the authorization. Continuing here can
+                // admit a successor in the same child process before the
+                // arbiter has a chance to rank causal replay, durable learning
+                // or other higher-value work against a fresh snapshot.
+                return $this->summarize(
+                    $cycleId,
+                    $symbol,
+                    $timeframe,
+                    self::STATUS_PAUSED,
+                    'Terminal generation closed; research-loop arbiter must reselect the next action.',
+                    $stage,
+                    [
+                        'terminal_boundary' => $terminalBoundary,
+                        'next_action' => 'research_loop_arbiter_reselect',
+                    ],
+                );
+            }
 
             // A partial population is resumable only while no screening run
             // exists. Once evaluation has started, completing the remaining
