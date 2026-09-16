@@ -91,7 +91,14 @@ class LabLifecycleOrchestrator
         $this->errors = new LabLifecycleErrorLogger;
     }
 
-    public function run(string $symbol, string $timeframe = 'H1', ?string $cycleId = null, bool $startCycle = false): array
+    public function run(
+        string $symbol,
+        string $timeframe = 'H1',
+        ?string $cycleId = null,
+        bool $startCycle = false,
+        ?int $expectedGenerationId = null,
+        bool $settleOnly = false,
+    ): array
     {
         $symbol = strtoupper($symbol);
         $timeframe = $this->canonicalLaboratoryTimeframe($symbol, $timeframe);
@@ -175,7 +182,55 @@ class LabLifecycleOrchestrator
             // screening even after a later bounded attempt made every agent
             // terminal. Repair only when agent, immutable-run, and queue
             // ownership all prove that no work remains.
-            $terminalBoundary = $this->terminalBoundaries->closeLatest($symbol, $timeframe);
+            $settlementGeneration = null;
+            if ($settleOnly) {
+                $settlementGeneration = $expectedGenerationId
+                    ? LabGeneration::query()
+                        ->whereKey($expectedGenerationId)
+                        ->whereHas('laboratory', fn ($query) => $query
+                            ->where('symbol', $symbol)->where('timeframe', $timeframe))
+                        ->first()
+                    : null;
+                $latestGenerationId = LabGeneration::query()
+                    ->whereHas('laboratory', fn ($query) => $query
+                        ->where('symbol', $symbol)->where('timeframe', $timeframe))
+                    ->orderByDesc('generation')->orderByDesc('id')->value('id');
+                if (! $settlementGeneration || (int) $latestGenerationId !== (int) $settlementGeneration->id) {
+                    return $this->summarize(
+                        $cycleId,
+                        $symbol,
+                        $timeframe,
+                        self::STATUS_PAUSED,
+                        'Frozen settlement authority is stale; research-loop arbiter must reselect.',
+                        $stage,
+                        [
+                            'reason_code' => 'SETTLEMENT_AUTHORITY_STALE',
+                            'expected_generation_id' => $expectedGenerationId,
+                            'latest_generation_id' => $latestGenerationId ? (int) $latestGenerationId : null,
+                            'next_action' => 'research_loop_arbiter_reselect',
+                        ],
+                    );
+                }
+                if (! $this->generationStillOwnsSettlement($settlementGeneration)) {
+                    return $this->summarize(
+                        $cycleId,
+                        $symbol,
+                        $timeframe,
+                        self::STATUS_PAUSED,
+                        'Frozen generation is already terminal; research-loop arbiter must reselect.',
+                        $stage,
+                        [
+                            'reason_code' => 'EXPECTED_GENERATION_ALREADY_TERMINAL',
+                            'expected_generation_id' => (int) $settlementGeneration->id,
+                            'next_action' => 'research_loop_arbiter_reselect',
+                        ],
+                    );
+                }
+            }
+
+            $terminalBoundary = $settlementGeneration
+                ? $this->terminalBoundaries->closeIfTerminal($settlementGeneration)
+                : $this->terminalBoundaries->closeLatest($symbol, $timeframe);
             if (($terminalBoundary['closed'] ?? false) === true) {
                 // This cycle was authorized to settle the generation that was
                 // active when the arbiter froze its decision. Closing that
@@ -192,6 +247,21 @@ class LabLifecycleOrchestrator
                     $stage,
                     [
                         'terminal_boundary' => $terminalBoundary,
+                        'next_action' => 'research_loop_arbiter_reselect',
+                    ],
+                );
+            }
+            if ($settleOnly && ! $this->generationStillOwnsSettlement($settlementGeneration->fresh())) {
+                return $this->summarize(
+                    $cycleId,
+                    $symbol,
+                    $timeframe,
+                    self::STATUS_PAUSED,
+                    'Frozen generation became terminal; research-loop arbiter must reselect.',
+                    $stage,
+                    [
+                        'reason_code' => 'EXPECTED_GENERATION_BECAME_TERMINAL',
+                        'expected_generation_id' => (int) $settlementGeneration->id,
                         'next_action' => 'research_loop_arbiter_reselect',
                     ],
                 );
@@ -341,6 +411,16 @@ class LabLifecycleOrchestrator
                 Cache::forget($this->ownerKey($symbol, $timeframe));
             }
         }
+    }
+
+    private function generationStillOwnsSettlement(?LabGeneration $generation): bool
+    {
+        return $generation !== null && (
+            in_array((string) $generation->status, [
+                'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation',
+            ], true)
+            || LabPopulationService::constructionIncomplete($generation)
+        );
     }
 
     /**

@@ -19,6 +19,8 @@ class RunLifecycleCycle extends Command
             ['timeframe', null, InputOption::VALUE_OPTIONAL, 'Internal laboratory storage key; XAUUSD is always routed to its organism anchor', null],
             ['cycle-id', null, InputOption::VALUE_OPTIONAL, 'Explicit cycle ID for resumption', null],
             ['start-cycle', null, InputOption::VALUE_NONE, 'Explicitly start one successor cycle despite a learning pause; promotion gates remain active'],
+            ['expected-generation-id', null, InputOption::VALUE_OPTIONAL, 'Frozen generation authorized by the research-loop arbiter', null],
+            ['settle-only', null, InputOption::VALUE_NONE, 'Drain only the frozen generation; never admit a successor in this invocation'],
             ['json', null, InputOption::VALUE_NONE, 'Output machine-readable JSON'],
         ];
     }
@@ -28,6 +30,9 @@ class RunLifecycleCycle extends Command
         $symbol = $this->option('symbol') ?? config('services.lighthouse.symbol', 'XAUUSD');
         $timeframe = (string) ($this->option('timeframe') ?: config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'));
         $cycleId = $this->option('cycle-id') ? (string) $this->option('cycle-id') : null;
+        $expectedGenerationId = $this->option('expected-generation-id') !== null
+            ? (int) $this->option('expected-generation-id')
+            : null;
 
         if (! (bool) config('services.lifecycle_orchestrator.enabled', true)) {
             $this->warn('Lifecycle orchestrator is disabled (NEUROTRADER_LIFECYCLE_ENABLED=false).');
@@ -35,7 +40,14 @@ class RunLifecycleCycle extends Command
             return 1;
         }
 
-        $result = $orchestrator->run((string) $symbol, $timeframe, $cycleId, (bool) $this->option('start-cycle'));
+        $result = $orchestrator->run(
+            (string) $symbol,
+            $timeframe,
+            $cycleId,
+            (bool) $this->option('start-cycle'),
+            $expectedGenerationId,
+            (bool) $this->option('settle-only'),
+        );
 
         if ($this->option('json')) {
             $this->line(json_encode($result, JSON_UNESCAPED_SLASHES));

@@ -122,7 +122,12 @@ class ResearchLoopArbiterService
         if ($latest && (in_array((string) $latest->status, self::ACTIVE_GENERATION_STATUSES, true)
             || LabPopulationService::constructionIncomplete($latest))) {
             return $this->decide($symbol, $timeframe, 'SETTLE_EXISTING_GENERATION', 100,
-                'trading:run-lifecycle-cycle', ['--symbol' => $symbol, '--json' => true],
+                'trading:run-lifecycle-cycle', [
+                    '--symbol' => $symbol,
+                    '--expected-generation-id' => (int) $latest->id,
+                    '--settle-only' => true,
+                    '--json' => true,
+                ],
                 'scheduler-constructor', ['EXISTING_GENERATION_OWNS_RESEARCH_RUNTIME'],
                 ['generation' => $generation], $dryRun);
         }

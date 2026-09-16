@@ -148,6 +148,41 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->assertCount(1, LabGeneration::all());
     }
 
+    public function test_settlement_retry_cannot_admit_a_successor_after_its_frozen_generation_is_terminal(): void
+    {
+        $lab = $this->seedLaboratory();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 222,
+            'status' => 'screened',
+            'population_size' => 20,
+            'data_fingerprint' => 'terminal-settlement-retry',
+            'trigger_type' => 'learning_confirmation',
+            'trigger_context' => [],
+        ]);
+        $this->bindPopulation(paused: false, expectBuild: false);
+
+        $boundary = m::mock(LabGenerationTerminalBoundaryService::class);
+        $boundary->shouldReceive('closeIfTerminal')->never();
+        $boundary->shouldReceive('closeLatest')->never();
+        app()->instance(LabGenerationTerminalBoundaryService::class, $boundary);
+        app()->forgetInstance(LabLifecycleOrchestrator::class);
+
+        $result = app(LabLifecycleOrchestrator::class)->run(
+            'XAUUSD',
+            'H1',
+            'tc-terminal-settlement-retry',
+            false,
+            (int) $generation->id,
+            true,
+        );
+
+        $this->assertSame(LabLifecycleOrchestrator::STATUS_PAUSED, $result['status']);
+        $this->assertSame('EXPECTED_GENERATION_ALREADY_TERMINAL', data_get($result, 'data.reason_code'));
+        $this->assertSame('research_loop_arbiter_reselect', data_get($result, 'data.next_action'));
+        $this->assertCount(1, LabGeneration::all());
+    }
+
     public function test_explicit_recovery_owns_its_screen_dispatch_without_blocking_ordinary_or_descendant_models(): void
     {
         $method = new \ReflectionMethod(LabLifecycleOrchestrator::class, 'isExplicitTechnicalRecoveryDispatch');
