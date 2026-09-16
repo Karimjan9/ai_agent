@@ -8,6 +8,7 @@ use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /** Binds constructed agents to the pre-registered counterfactual triplet. */
@@ -44,6 +45,131 @@ class CausalLearningCohortService
             ->values();
 
         return $guided->count() === 1 ? (string) $guided->first() : null;
+    }
+
+    /**
+     * Close an irrecoverably incomplete triplet as technical evidence only.
+     * This never creates a strategy verdict, causal credit or reproduction
+     * authority. A non-technical arm must already have a completed full run;
+     * the quarantined arm must carry an immutable technical full-run receipt.
+     *
+     * @return array<string,mixed>
+     */
+    public function technicalTerminalDisposition(
+        AgentLearningCausalExperiment $experiment,
+        bool $apply = false,
+    ): array {
+        $experiment = $experiment->fresh();
+        if (! $experiment) {
+            return ['eligible' => false, 'status' => 'missing', 'reason_codes' => ['CAUSAL_EXPERIMENT_MISSING'], 'promotion_evidence' => false];
+        }
+        if (! in_array((string) $experiment->status, ['ready_for_replay', 'outcomes_pending'], true)) {
+            return [
+                'eligible' => false,
+                'status' => (string) $experiment->status,
+                'reason_codes' => ['CAUSAL_EXPERIMENT_NOT_OPEN'],
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $armIds = collect([
+            $experiment->guided_agent_id,
+            $experiment->blinded_agent_id,
+            $experiment->control_agent_id,
+        ])->map(fn (mixed $id): int => (int) $id)->filter()->unique()->values();
+        $agents = LabAgent::query()->whereIn('id', $armIds)->get()->keyBy('id');
+        $reasons = [];
+        if ($armIds->count() !== 3 || $agents->count() !== 3) {
+            $reasons[] = 'CAUSAL_TRIPLET_ARMS_INCOMPLETE';
+        }
+        $technicalIds = $agents->filter(fn (LabAgent $agent): bool => in_array(
+            (string) $agent->lifecycle_status,
+            ['technical_quarantine', 'quarantined', 'legacy_quarantine', 'abandoned', 'failed'],
+            true,
+        ))->keys()->map(fn (mixed $id): int => (int) $id)->values();
+        if ($technicalIds->isEmpty()) {
+            $reasons[] = 'CAUSAL_TECHNICAL_ARM_MISSING';
+        }
+        $openIds = $agents->filter(fn (LabAgent $agent): bool => in_array(
+            (string) $agent->lifecycle_status,
+            ['draft', 'queued', 'screening', 'training', 'evaluation_error', 'full_queued', 'full_validation'],
+            true,
+        ))->keys()->map(fn (mixed $id): int => (int) $id)->values();
+        if ($openIds->isNotEmpty()) {
+            $reasons[] = 'CAUSAL_ARM_WORK_REMAINS';
+        }
+
+        $runStatus = [];
+        foreach ($agents as $agent) {
+            $run = LabEvaluationRun::query()
+                ->where('lab_agent_id', $agent->id)
+                ->where('phase', 'full_validation')
+                ->latest('id')
+                ->first();
+            $runStatus[(int) $agent->id] = $run ? [
+                'run_id' => (string) $run->run_id,
+                'status' => (string) $run->status,
+            ] : null;
+            $technical = $technicalIds->contains((int) $agent->id);
+            if (! $run || ($technical
+                ? (string) $run->status !== 'technical_error'
+                : (string) $run->status !== 'completed')) {
+                $reasons[] = $technical
+                    ? 'CAUSAL_TECHNICAL_RUN_MISSING'
+                    : 'CAUSAL_NON_TECHNICAL_FULL_RUN_MISSING';
+            }
+        }
+        $reasons = array_values(array_unique($reasons));
+        if ($reasons !== [] || ! $apply) {
+            return [
+                'eligible' => $reasons === [],
+                'status' => $reasons === [] ? 'would_settle_technical_quarantine' : 'blocked',
+                'reason_codes' => $reasons,
+                'experiment_id' => (int) $experiment->id,
+                'technical_agent_ids' => $technicalIds->all(),
+                'run_status' => $runStatus,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        return DB::transaction(function () use ($experiment, $technicalIds, $runStatus): array {
+            $locked = AgentLearningCausalExperiment::query()->lockForUpdate()->find($experiment->id);
+            if (! $locked || ! in_array((string) $locked->status, ['ready_for_replay', 'outcomes_pending'], true)) {
+                return [
+                    'eligible' => false,
+                    'status' => (string) ($locked?->status ?? 'missing'),
+                    'reason_codes' => ['CAUSAL_EXPERIMENT_NOT_OPEN'],
+                    'promotion_evidence' => false,
+                ];
+            }
+            $evidence = (array) $locked->evidence;
+            $evidence['terminal_disposition'] = [
+                'protocol' => 'causal_technical_terminal_settlement_v1',
+                'status' => 'technical_quarantine',
+                'reason_code' => 'COUNTERFACTUAL_ARM_TECHNICAL_FAILURE',
+                'technical_agent_ids' => $technicalIds->all(),
+                'run_status' => $runStatus,
+                'settled_at' => now()->utc()->toIso8601String(),
+                'causal_credit' => false,
+                'performance_credit' => false,
+                'inheritance_credit' => false,
+                'promotion_evidence' => false,
+            ];
+            $locked->update([
+                'status' => 'technical_quarantine',
+                'evidence' => $evidence,
+                'confirmed_at' => null,
+            ]);
+
+            return [
+                'eligible' => true,
+                'status' => 'technical_quarantine',
+                'reason_codes' => ['COUNTERFACTUAL_ARM_TECHNICAL_FAILURE'],
+                'experiment_id' => (int) $locked->id,
+                'technical_agent_ids' => $technicalIds->all(),
+                'promotion_evidence' => false,
+            ];
+        });
     }
 
     /**

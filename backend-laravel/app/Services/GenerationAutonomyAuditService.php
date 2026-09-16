@@ -428,7 +428,7 @@ class GenerationAutonomyAuditService
             return $this->check('causal_learning_closure', 'not_applicable', [], []);
         }
         $experiments = AgentLearningCausalExperiment::query()->where('lab_generation_id', $generation->id)->get();
-        $terminalStatuses = ['provisional', 'confirmed'];
+        $terminalStatuses = ['provisional', 'confirmed', 'technical_quarantine'];
         $open = $experiments->reject(fn (AgentLearningCausalExperiment $row): bool => in_array((string) $row->status, $terminalStatuses, true));
         $ids = $causalAgents->pluck('id')->map(fn ($id): int => (int) $id)->sort()->values()->all();
         $badIdentity = $experiments->filter(function (AgentLearningCausalExperiment $row) use ($ids): bool {

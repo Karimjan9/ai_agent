@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\EvaluateLabAgentJob;
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabEvaluationRun;
@@ -26,7 +27,7 @@ use Illuminate\Support\Facades\Bus;
 
 class DispatchFullLabValidation extends Command
 {
-    protected $signature = 'trading:dispatch-full-validation {symbol?} {--timeframe=H1}';
+    protected $signature = 'trading:dispatch-full-validation {symbol?} {--timeframe=H1} {--causal-experiment-id=}';
 
     protected $description = 'Select the strongest screened agents from every pair and serialize full walk-forward validation';
 
@@ -45,6 +46,7 @@ class DispatchFullLabValidation extends Command
         $queuedAgents = [];
 
         $timeframe = strtoupper((string) $this->option('timeframe'));
+        $causalExperimentId = max(0, (int) $this->option('causal-experiment-id'));
         foreach ($symbols as $symbol) {
             $lab = AiLaboratory::where('symbol', $symbol)->where('timeframe', $timeframe)->first();
             if (! $lab || (string) $lab->lifecycle_mode !== 'lighthouse') {
@@ -58,6 +60,20 @@ class DispatchFullLabValidation extends Command
             // only valid when all four roles have screened evidence; it never
             // opens combined council replay.
             $roleFirstReplay = false;
+            $targetedCausalExperiment = $causalExperimentId > 0
+                ? AgentLearningCausalExperiment::query()
+                    ->with('generation.agents.modelVersion')
+                    ->whereKey($causalExperimentId)
+                    ->where('symbol', $symbol)
+                    ->where('timeframe', $timeframe)
+                    ->first()
+                : null;
+            if ($causalExperimentId > 0 && ! $targetedCausalExperiment) {
+                $this->warn("{$symbol}: requested causal experiment {$causalExperimentId} was not found in scope.");
+
+                continue;
+            }
+            $generation = $targetedCausalExperiment?->generation;
             $roleCandidate = $lab?->generations()
                 ->with('agents.modelVersion')
                 ->where('status', 'screening')
@@ -73,8 +89,7 @@ class DispatchFullLabValidation extends Command
                 && (bool) data_get($terminalBoundaries->closeIfTerminal($roleCandidate), 'closed', false)) {
                 $roleCandidate = $roleCandidate->fresh(['agents.modelVersion']);
             }
-            $generation = null;
-            if ($roleCandidate && $this->roleCompleteReplayReady($roleCandidate)) {
+            if (! $generation && $roleCandidate && $this->roleCompleteReplayReady($roleCandidate)) {
                 $generation = $roleCandidate;
                 $roleFirstReplay = true;
             }
@@ -132,7 +147,7 @@ class DispatchFullLabValidation extends Command
             // screening job finishes. A completed generation with remaining
             // screened council children is a valid second research wave; do
             // not leave those targeted lanes stranded until a manual retry.
-            if ($generation->status !== 'screened' && ! $hasScreenedFollowUp && ! $roleFirstReplay) {
+            if ($generation->status !== 'screened' && ! $hasScreenedFollowUp && ! $roleFirstReplay && ! $targetedCausalExperiment) {
                 $this->info("{$symbol} {$timeframe}: screening hali yakunlanmagan.");
 
                 continue;
@@ -175,8 +190,15 @@ class DispatchFullLabValidation extends Command
             $generation = $generation->fresh(['agents.modelVersion']);
             $learningConfirmation = (string) $generation->trigger_type === 'learning_confirmation'
                 && (string) data_get($generation->trigger_context, 'adaptive_evolution_policy.causal_learning_counterfactual_cohort.status') === 'materialized';
+            $targetArmIds = $targetedCausalExperiment
+                ? collect([
+                    $targetedCausalExperiment->guided_agent_id,
+                    $targetedCausalExperiment->blinded_agent_id,
+                    $targetedCausalExperiment->control_agent_id,
+                ])->map(fn (mixed $id): int => (int) $id)->all()
+                : [];
             $screened = $learningConfirmation
-                ? $generation->agents->filter(fn ($agent): bool => in_array(
+                ? $generation->agents->filter(fn ($agent): bool => ($targetArmIds === [] || in_array((int) $agent->id, $targetArmIds, true)) && in_array(
                     (string) $agent->lifecycle_status,
                     ['screened', 'rejected', 'stagnated', 'challenger'],
                     true,

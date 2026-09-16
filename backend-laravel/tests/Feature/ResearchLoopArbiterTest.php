@@ -8,6 +8,7 @@ use App\Models\AgentLearningLesson;
 use App\Models\AiLaboratory;
 use App\Models\CandidateHandoffEvent;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\ModelVersion;
@@ -15,6 +16,7 @@ use App\Models\ResearchExperimentWorkItem;
 use App\Models\ResearchLoopDecision;
 use App\Services\AutonomousLearningProgressDirectorService;
 use App\Services\AutonomousModeService;
+use App\Services\CausalLearningCohortService;
 use App\Services\CausalLearningCohortPlannerService;
 use App\Services\LearningLaneService;
 use App\Services\MarketDriftDetectionService;
@@ -180,7 +182,86 @@ class ResearchLoopArbiterTest extends TestCase
         Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
         Queue::assertPushed(RunScheduledArtisanCommandJob::class,
             fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:dispatch-full-validation'
-                && $job->arguments === [0 => 'XAUUSD', '--timeframe' => 'H1']);
+                && $job->arguments === [
+                    0 => 'XAUUSD',
+                    '--timeframe' => 'H1',
+                    '--causal-experiment-id' => $experiment->id,
+                ]);
+    }
+
+    public function test_terminal_causal_technical_arm_is_settled_without_replay_or_authority(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 222,
+            'trigger_type' => 'learning_confirmation',
+            'status' => 'technical_quarantine',
+            'population_size' => 3,
+            'trigger_context' => [],
+            'completed_at' => now(),
+        ]);
+        $agents = collect(['repair_guided', 'blinded', 'frozen_control'])->map(function (string $role, int $index) use ($generation): LabAgent {
+            $model = ModelVersion::create([
+                'name' => 'technical-causal-'.$role,
+                'strategy' => 'hybrid',
+                'version' => 'v'.($index + 1),
+                'generation' => 222,
+                'status' => 'testing',
+                'parameters' => [],
+                'metadata' => ['causal_learning_cohort' => ['role' => $role]],
+            ]);
+
+            return LabAgent::create([
+                'lab_generation_id' => $generation->id,
+                'model_version_id' => $model->id,
+                'symbol' => 'XAUUSD',
+                'timeframe' => 'H1',
+                'strategy_family' => 'hybrid',
+                'origin' => 'causal_confirm',
+                'lifecycle_status' => $index === 1 ? 'technical_quarantine' : 'rejected',
+                'parameter_diff' => [],
+            ]);
+        });
+        foreach ($agents as $index => $agent) {
+            LabEvaluationRun::create([
+                'run_id' => 'arbiter-technical-'.$agent->id,
+                'lab_generation_id' => $generation->id,
+                'lab_agent_id' => $agent->id,
+                'model_version_id' => $agent->model_version_id,
+                'phase' => 'full_validation',
+                'mode' => 'replay',
+                'status' => $index === 1 ? 'technical_error' : 'completed',
+                'started_at' => now()->subSecond(),
+                'finished_at' => now(),
+            ]);
+        }
+        $experiment = AgentLearningCausalExperiment::create([
+            'experiment_key' => hash('sha256', 'arbiter-technical-terminal'),
+            'lab_generation_id' => $generation->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'target' => 'profit_factor',
+            'gene_key' => 'entry_threshold',
+            'guided_agent_id' => $agents[0]->id,
+            'blinded_agent_id' => $agents[1]->id,
+            'control_agent_id' => $agents[2]->id,
+            'status' => 'outcomes_pending',
+            'evidence' => ['construction_validation' => ['status' => 'ready_for_replay']],
+        ]);
+
+        $result = app(ResearchLoopArbiterService::class)->tick();
+
+        $this->assertSame('FINALIZE_CAUSAL_TECHNICAL_QUARANTINE', $result['action']);
+        $this->assertSame($experiment->id, data_get($result, 'evidence_snapshot.causal_experiment_id'));
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class,
+            fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:settle-causal-technical-quarantine'
+                && $job->arguments === [0 => $experiment->id, '--json' => true]);
+        Queue::assertNotPushed(RunScheduledArtisanCommandJob::class,
+            fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:dispatch-full-validation');
     }
 
     public function test_owned_durable_work_is_leased_and_is_the_only_dispatched_action(): void
@@ -227,6 +308,7 @@ class ResearchLoopArbiterTest extends TestCase
                 $director,
                 $cohorts,
                 $drift,
+                app(CausalLearningCohortService::class),
             );
 
             $first = $arbiter->tick();
@@ -325,6 +407,7 @@ class ResearchLoopArbiterTest extends TestCase
             Mockery::mock(AutonomousLearningProgressDirectorService::class),
             Mockery::mock(MtfResearchCohortService::class),
             Mockery::mock(MarketDriftDetectionService::class),
+            app(CausalLearningCohortService::class),
         );
 
         $result = $arbiter->tick();
@@ -378,6 +461,7 @@ class ResearchLoopArbiterTest extends TestCase
                 $director,
                 $cohorts,
                 $drift,
+                app(CausalLearningCohortService::class),
             );
 
             $maintenance = $arbiter->tick();
@@ -436,6 +520,7 @@ class ResearchLoopArbiterTest extends TestCase
                 $director,
                 $cohorts,
                 $drift,
+                app(CausalLearningCohortService::class),
             );
 
             $result = $arbiter->tick();
@@ -486,6 +571,7 @@ class ResearchLoopArbiterTest extends TestCase
             $director,
             $cohorts,
             $drift,
+            app(CausalLearningCohortService::class),
         );
 
         $result = $arbiter->tick();

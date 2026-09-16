@@ -60,6 +60,66 @@ class CausalLearningLoopContractTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_terminal_technical_arm_closes_triplet_without_causal_or_performance_authority(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $generation->update(['trigger_type' => 'learning_confirmation', 'status' => 'technical_quarantine']);
+        $guided = $this->agent($generation, $this->model('technical-guided', []), []);
+        $blinded = $this->agent($generation, $this->model('technical-blinded', []), []);
+        $control = $this->agent($generation, $this->model('technical-control', []), []);
+        $guided->update(['lifecycle_status' => 'rejected']);
+        $blinded->update(['lifecycle_status' => 'technical_quarantine']);
+        $control->update(['lifecycle_status' => 'rejected']);
+        $this->terminalRun($guided, 'technical-guided-full', 'full_validation');
+        LabEvaluationRun::create([
+            'run_id' => 'technical-blinded-full',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $blinded->id,
+            'model_version_id' => $blinded->model_version_id,
+            'phase' => 'full_validation',
+            'mode' => 'replay',
+            'status' => 'technical_error',
+            'started_at' => now()->subSecond(),
+            'finished_at' => now(),
+            'error_message' => 'Bounded evaluator transport failure; strategy verdict withheld.',
+        ]);
+        $this->terminalRun($control, 'technical-control-full', 'full_validation');
+        $experiment = AgentLearningCausalExperiment::create([
+            'experiment_key' => hash('sha512', 'terminal-technical-triplet'),
+            'lab_generation_id' => $generation->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'target' => 'profit_factor',
+            'gene_key' => 'entry_threshold',
+            'guided_agent_id' => $guided->id,
+            'blinded_agent_id' => $blinded->id,
+            'control_agent_id' => $control->id,
+            'status' => 'outcomes_pending',
+            'evidence' => [
+                'construction_validation' => ['status' => 'ready_for_replay'],
+                'promotion_evidence' => false,
+            ],
+        ]);
+
+        $service = app(CausalLearningCohortService::class);
+        $preview = $service->technicalTerminalDisposition($experiment);
+        $settled = $service->technicalTerminalDisposition($experiment, true);
+
+        $this->assertTrue($preview['eligible']);
+        $this->assertSame('would_settle_technical_quarantine', $preview['status']);
+        $this->assertSame('technical_quarantine', $settled['status']);
+        $this->assertSame('technical_quarantine', $experiment->fresh()->status);
+        $this->assertSame(
+            'COUNTERFACTUAL_ARM_TECHNICAL_FAILURE',
+            data_get($experiment->fresh()->evidence, 'terminal_disposition.reason_code'),
+        );
+        $this->assertFalse((bool) data_get($experiment->fresh()->evidence, 'terminal_disposition.causal_credit', true));
+        $this->assertFalse((bool) data_get($experiment->fresh()->evidence, 'terminal_disposition.performance_credit', true));
+        $this->assertFalse((bool) data_get($experiment->fresh()->evidence, 'terminal_disposition.inheritance_credit', true));
+        $this->assertNull($experiment->fresh()->confirmed_at);
+    }
+
     public function test_hypothesis_is_a_first_class_guided_replay_role_but_malformed_multiple_guides_fail_closed(): void
     {
         $service = app(CausalLearningCohortService::class);

@@ -58,6 +58,7 @@ class ResearchLoopArbiterService
         private AutonomousLearningProgressDirectorService $director,
         private MtfResearchCohortService $mtfCohorts,
         private MarketDriftDetectionService $drift,
+        private CausalLearningCohortService $causalCohorts,
     ) {}
 
     /** @return array<string,mixed> */
@@ -158,8 +159,28 @@ class ResearchLoopArbiterService
                     ], $dryRun);
             }
 
+            $technicalDisposition = $this->causalCohorts->technicalTerminalDisposition($openCausal);
+            if (($technicalDisposition['eligible'] ?? false) === true) {
+                return $this->decide($symbol, $timeframe, 'FINALIZE_CAUSAL_TECHNICAL_QUARANTINE', 99,
+                    'trading:settle-causal-technical-quarantine', [
+                        0 => (int) $openCausal->id,
+                        '--json' => true,
+                    ], 'scheduler-critical', ['CAUSAL_TECHNICAL_ARM_REQUIRES_TERMINAL_DISPOSITION'], [
+                        'generation' => $generation,
+                        'causal_experiment_id' => (int) $openCausal->id,
+                        'causal_generation_id' => (int) $openCausal->lab_generation_id,
+                        'causal_status' => (string) $openCausal->status,
+                        'arm_agent_ids' => $armIds,
+                        'technical_disposition' => $technicalDisposition,
+                    ], $dryRun);
+            }
+
             return $this->decide($symbol, $timeframe, 'SETTLE_CAUSAL_CONFIRMATION_REPLAY', 99,
-                'trading:dispatch-full-validation', [0 => $symbol, '--timeframe' => $timeframe],
+                'trading:dispatch-full-validation', [
+                    0 => $symbol,
+                    '--timeframe' => $timeframe,
+                    '--causal-experiment-id' => (int) $openCausal->id,
+                ],
                 'scheduler-research', ['UNSETTLED_CAUSAL_CONFIRMATION_OWNS_RESEARCH_RUNTIME'], [
                     'generation' => $generation,
                     'causal_experiment_id' => (int) $openCausal->id,
@@ -395,7 +416,7 @@ class ResearchLoopArbiterService
             ->whereIn('status', ['ready_for_replay', 'outcomes_pending'])
             ->where('evidence->construction_validation->status', 'ready_for_replay')
             ->whereHas('generation', fn ($query) => $query
-                ->whereIn('status', ['screened', 'completed', 'full_queued', 'full_validation'])
+                ->whereIn('status', ['screened', 'completed', 'technical_quarantine', 'full_queued', 'full_validation'])
                 ->whereHas('laboratory', fn ($lab) => $lab
                     ->where('symbol', $symbol)
                     ->where('timeframe', $timeframe)))
