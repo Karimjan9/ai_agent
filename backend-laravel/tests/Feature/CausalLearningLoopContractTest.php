@@ -2633,6 +2633,21 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertTrue($quarantineMethod->invoke($command, $agent->fresh(['generation', 'modelVersion'])));
     }
 
+    public function test_causal_replay_budgets_leave_fold_and_transport_headroom(): void
+    {
+        $service = app(LabAgentEvaluationService::class);
+        $method = new \ReflectionMethod($service, 'causalPerFoldBudgetSeconds');
+        $method->setAccessible(true);
+
+        $this->assertSame(180, $method->invoke($service));
+        $this->assertSame(900, config('services.lab_selection.causal_replay_hard_timeout_seconds'));
+        $this->assertSame(960, config('services.lab_selection.causal_replay_timeout_seconds'));
+        $this->assertGreaterThan(
+            config('services.lab_selection.causal_replay_hard_timeout_seconds'),
+            config('services.lab_selection.causal_replay_timeout_seconds'),
+        );
+    }
+
     public function test_only_legacy_ninety_second_cartridge_fold_timeout_is_code_repairable(): void
     {
         [$generation] = $this->canonicalSource();

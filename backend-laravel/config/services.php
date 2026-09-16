@@ -497,8 +497,12 @@ return [
         // Causal learning confirmation runs exactly three atomic forward folds.
         // Its AI child stops at 720s and Laravel stops waiting 60s later, so a
         // broken fold can never occupy the learning lane for an hour.
-        'causal_replay_hard_timeout_seconds' => max(90, min(900, (int) env('LAB_CAUSAL_REPLAY_HARD_TIMEOUT_SECONDS', 720))),
-        'causal_replay_timeout_seconds' => max(120, min(960, (int) env('LAB_CAUSAL_REPLAY_TIMEOUT_SECONDS', 780))),
+        // The Python causal child is bounded to 900s in ecosystem.config.cjs.
+        // Keep Laravel's immutable policy equal to that child boundary and
+        // retain a 60s HTTP transport margin; a shorter caller timeout would
+        // abandon healthy fold evidence while the single replay mutex stays busy.
+        'causal_replay_hard_timeout_seconds' => max(90, min(900, (int) env('LAB_CAUSAL_REPLAY_HARD_TIMEOUT_SECONDS', 900))),
+        'causal_replay_timeout_seconds' => max(120, min(960, (int) env('LAB_CAUSAL_REPLAY_TIMEOUT_SECONDS', 960))),
         'portfolio_replay_timeout_seconds' => (int) env('LAB_PORTFOLIO_REPLAY_TIMEOUT_SECONDS', 3900),
         // The Python request can finish before Laravel persists the immutable
         // response, forward-gate projection and lifecycle close. Stale replay
@@ -765,6 +769,7 @@ return [
         'confirmation_maximum_holding_bars' => max(24, (int) env('LAB_LEARNING_CONFIRMATION_MAXIMUM_HOLDING_BARS', 240)),
         'causal_fold_count' => max(6, min(12, (int) env('LAB_LEARNING_CAUSAL_FOLD_COUNT', 9))),
         'causal_max_rows_per_fold' => max(2048, min(8192, (int) env('LAB_LEARNING_CAUSAL_MAX_ROWS_PER_FOLD', 4096))),
+        'causal_per_fold_budget_seconds' => max(45, min(240, (int) env('LAB_LEARNING_CAUSAL_PER_FOLD_BUDGET_SECONDS', 180))),
         'causal_audit_trace_rows' => max(128, min(1024, (int) env('LAB_LEARNING_CAUSAL_AUDIT_TRACE_ROWS', 512))),
         'causal_minimum_trades_per_window' => max(1, (int) env('LAB_LEARNING_CAUSAL_MIN_TRADES_PER_WINDOW', 8)),
         'causal_minimum_powered_windows' => max(3, min(9, (int) env('LAB_LEARNING_CAUSAL_MIN_POWERED_WINDOWS', 6))),

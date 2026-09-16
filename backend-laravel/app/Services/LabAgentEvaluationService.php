@@ -218,16 +218,16 @@ class LabAgentEvaluationService
                         : 'FOUNDATION_REPLAY_RUNTIME_BUDGET')
                     : 'NO_RUNTIME_CAP_REQUIRED',
                 'hard_timeout_seconds' => $this->isCausalLearningConfirmation($agent)
-                    ? (int) config('services.lab_selection.causal_replay_hard_timeout_seconds', 720)
+                    ? (int) config('services.lab_selection.causal_replay_hard_timeout_seconds', 900)
                     : 3600,
                 'transport_timeout_seconds' => $this->isCausalLearningConfirmation($agent)
-                    ? (int) config('services.lab_selection.causal_replay_timeout_seconds', 780)
+                    ? (int) config('services.lab_selection.causal_replay_timeout_seconds', 960)
                     : (int) config('services.lab_selection.full_replay_timeout_seconds', 3900),
                 'fold_budget' => $this->isCausalLearningConfirmation($agent)
                     ? [
                         'folds' => (int) config('services.learning_lane.causal_fold_count', 9),
                         'max_rows_per_fold' => (int) config('services.learning_lane.causal_max_rows_per_fold', 4096),
-                        'per_fold_seconds' => 90,
+                        'per_fold_seconds' => $this->causalPerFoldBudgetSeconds(),
                         'audit_trace_rows' => (int) config('services.learning_lane.causal_audit_trace_rows', 512),
                         'fail_fast' => true,
                         'checkpoint_each_fold' => true,
@@ -344,6 +344,7 @@ class LabAgentEvaluationService
                             'embargo_bars' => 1,
                             'fold_count' => (int) config('services.learning_lane.causal_fold_count', 9),
                             'max_rows_per_fold' => (int) config('services.learning_lane.causal_max_rows_per_fold', 4096),
+                            'per_fold_budget_seconds' => $this->causalPerFoldBudgetSeconds(),
                             'audit_trace_rows' => (int) config('services.learning_lane.causal_audit_trace_rows', 512),
                             'minimum_trades_per_window' => (int) config('services.learning_lane.causal_minimum_trades_per_window', 8),
                             'minimum_powered_windows' => (int) config('services.learning_lane.causal_minimum_powered_windows', 6),
@@ -465,7 +466,7 @@ class LabAgentEvaluationService
                 $request['regime_dataset_path'] = $regimeSnapshot['path'];
             }
             $timeout = $this->isCausalLearningConfirmation($agent)
-                ? min(960, max(120, (int) config('services.lab_selection.causal_replay_timeout_seconds', 780)))
+                ? min(960, max(120, (int) config('services.lab_selection.causal_replay_timeout_seconds', 960)))
                 : min(3900, max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900)));
             $requestId = 'full-'.$agent->id.'-'.bin2hex(random_bytes(6));
             $this->evidence->attachRequest($run, $request, [
@@ -1771,6 +1772,14 @@ class LabAgentEvaluationService
             && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
                 'memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control',
             ], true);
+    }
+
+    private function causalPerFoldBudgetSeconds(): int
+    {
+        return max(45, min(
+            240,
+            (int) config('services.learning_lane.causal_per_fold_budget_seconds', 180),
+        ));
     }
 
     /** @return array<string,mixed>|null */

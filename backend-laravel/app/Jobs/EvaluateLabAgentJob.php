@@ -131,7 +131,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                 // Includes snapshot validation plus the bounded AI child and
                 // a projection margin. A causal research job can therefore
                 // never occupy the worker for the legacy 70-minute budget.
-                ? max(900, min(1500, (int) config('services.lab_selection.causal_replay_timeout_seconds', 780) + 300))
+                ? max(900, min(1500, (int) config('services.lab_selection.causal_replay_timeout_seconds', 960) + 300))
                 : 4200);
         // Screening is serialized through one AI lane per process. A 20
         // minute deadline can starve the tail of a 20-agent generation while
