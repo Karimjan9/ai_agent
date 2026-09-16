@@ -16,6 +16,7 @@ use App\Models\LabCandleDecisionEvent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGateDecisionEvent;
 use App\Models\LabGeneration;
+use App\Models\LabLifecycleCycle;
 use App\Models\LabLifecycleEvent;
 use App\Models\LabMutationCreditEvent;
 use App\Models\ModelMarketPerformance;
@@ -116,9 +117,25 @@ class ImmutableLabEvidenceTest extends TestCase
             'lab_agent_id' => $agent->id,
             'terminal_reason' => 'UNCERTAINTY_GUARD_WAIT',
         ]);
+        $blockedAt = $generation->created_at->copy()->addSecond();
+        LabLifecycleCycle::query()->create([
+            'cycle_id' => 'audit-recovered-block', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'status' => 'blocked', 'stage' => 'preflight', 'summary' => 'runtime_unhealthy',
+            'context' => [], 'started_at' => $blockedAt, 'heartbeat_at' => $blockedAt, 'finished_at' => $blockedAt,
+        ]);
+        LabLifecycleCycle::query()->create([
+            'cycle_id' => 'audit-recovery-receipt', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'status' => 'completed', 'stage' => 'forward', 'summary' => 'recovered',
+            'context' => [], 'started_at' => $blockedAt->copy()->addSecond(),
+            'heartbeat_at' => $blockedAt->copy()->addSecond(), 'finished_at' => $blockedAt->copy()->addSecond(),
+        ]);
+        $generation->update(['completed_at' => $blockedAt->copy()->addSeconds(2)]);
         $audit = app(GenerationAutonomyAuditService::class)->audit($generation->fresh());
         $this->assertSame('passed', $audit['state']);
         $this->assertTrue($audit['unattended_ready']);
+        $technical = collect($audit['checks'])->firstWhere('name', 'technical_integrity');
+        $this->assertSame(['audit-recovered-block'], $technical['metrics']['recovered_blocked_cycle_ids']);
+        $this->assertSame([], $technical['metrics']['unrecovered_blocked_cycle_ids']);
         $this->assertSame('passed', data_get($audit, 'checks.2.status'));
         $this->assertSame('passed', data_get($audit, 'checks.4.status'));
         Artisan::call('trading:lab-evidence-audit', [
@@ -127,6 +144,19 @@ class ImmutableLabEvidenceTest extends TestCase
         $historyAudit = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         $this->assertSame(1, data_get($historyAudit, 'rows.0.local_policy_guard_run_count'));
         $this->assertSame(0, data_get($historyAudit, 'rows.0.response_runs'));
+
+        $unrecoveredAt = $generation->fresh()->completed_at->copy()->addSecond();
+        LabLifecycleCycle::query()->create([
+            'cycle_id' => 'audit-unrecovered-block', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'status' => 'blocked', 'stage' => 'preflight', 'summary' => 'runtime_unhealthy',
+            'context' => [], 'started_at' => $unrecoveredAt, 'heartbeat_at' => $unrecoveredAt,
+            'finished_at' => $unrecoveredAt,
+        ]);
+        $generation->update(['completed_at' => $unrecoveredAt->copy()->addSecond()]);
+        $failedAudit = app(GenerationAutonomyAuditService::class)->audit($generation->fresh());
+        $failedTechnical = collect($failedAudit['checks'])->firstWhere('name', 'technical_integrity');
+        $this->assertSame('failed', $failedTechnical['status']);
+        $this->assertSame(['audit-unrecovered-block'], $failedTechnical['metrics']['unrecovered_blocked_cycle_ids']);
     }
 
     public function test_last_wait_guard_cannot_mask_a_terminal_technical_peer(): void

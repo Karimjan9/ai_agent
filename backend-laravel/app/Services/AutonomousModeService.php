@@ -112,14 +112,24 @@ class AutonomousModeService
                 })
                 ->count()
             : 0;
-        $blockedCycleCount = $latest && Schema::hasTable('lab_lifecycle_cycles')
+        $blockedCycles = $latest && Schema::hasTable('lab_lifecycle_cycles')
             ? LabLifecycleCycle::query()
                 ->where('symbol', $control['symbol'])
                 ->where('timeframe', $control['laboratory_storage_timeframe'])
                 ->where('started_at', '>=', $latest->created_at)
+                ->when($latest->completed_at, fn ($query) => $query->where('started_at', '<=', $latest->completed_at))
                 ->where('status', 'blocked')
-                ->count()
-            : 0;
+                ->get()
+            : collect();
+        $recoveredBlockedCycles = $blockedCycles->filter(fn (LabLifecycleCycle $blocked): bool => LabLifecycleCycle::query()
+            ->where('symbol', (string) $blocked->symbol)
+            ->where('timeframe', (string) $blocked->timeframe)
+            ->where('started_at', '>', $blocked->started_at)
+            ->when($latest?->completed_at, fn ($query) => $query->where('started_at', '<=', $latest->completed_at))
+            ->where('status', 'completed')
+            ->exists()
+        );
+        $unrecoveredBlockedCycles = $blockedCycles->whereNotIn('id', $recoveredBlockedCycles->pluck('id'));
         $attentionReasons = [];
         try {
             $constructor = app(LabPopulationService::class)->constructorStatus(
@@ -200,7 +210,7 @@ class AutonomousModeService
         if ($technicalAgents > 0) {
             $acceptanceReasons[] = 'TECHNICAL_AGENT_RECORDED';
         }
-        if ($blockedCycleCount > 0) {
+        if ($unrecoveredBlockedCycles->isNotEmpty()) {
             $acceptanceReasons[] = 'BLOCKED_LIFECYCLE_CYCLE_RECORDED';
         }
         if ($latest && in_array((string) $latest->status, ['technical_quarantine', 'abandoned', 'failed'], true)) {
@@ -262,11 +272,15 @@ class AutonomousModeService
                     'technical_evaluation_runs' => (int) $technicalRunCount,
                     'technical_lifecycle_events' => (int) $technicalLifecycleEventCount,
                     'technical_agents' => $technicalAgents,
-                    'blocked_lifecycle_cycles' => (int) $blockedCycleCount,
+                    'blocked_lifecycle_cycles' => $blockedCycles->count(),
+                    'recovered_blocked_lifecycle_cycles' => $recoveredBlockedCycles->count(),
+                    'unrecovered_blocked_lifecycle_cycles' => $unrecoveredBlockedCycles->count(),
+                    'recovered_blocked_cycle_ids' => $recoveredBlockedCycles->pluck('cycle_id')->values()->all(),
+                    'unrecovered_blocked_cycle_ids' => $unrecoveredBlockedCycles->pluck('cycle_id')->values()->all(),
                     'unattended_acceptance_eligible' => ! $technicalFailureObserved,
                     'manual_intervention_required' => (bool) $manualInterventionRequiredNow,
                     'reason_codes' => array_values(array_unique($acceptanceReasons)),
-                    'pass_rule' => 'complete_population_and_all_agents_terminal_with_zero_technical_runs_events_agents_or_blocked_cycles',
+                    'pass_rule' => 'complete_population_and_all_agents_terminal_with_zero_technical_runs_events_agents_or_unrecovered_blocked_cycles',
                     'strategy_rejection_is_not_a_technical_failure' => true,
                 ],
             ] : null,

@@ -189,6 +189,69 @@ class ResearchLoopArbiterTest extends TestCase
                 ]);
     }
 
+    public function test_latest_generation_causal_closure_outranks_historical_causal_backlog(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        $makeExperiment = function (int $generationNumber) use ($lab): AgentLearningCausalExperiment {
+            $generation = LabGeneration::create([
+                'ai_laboratory_id' => $lab->id,
+                'generation' => $generationNumber,
+                'trigger_type' => 'learning_confirmation',
+                'status' => 'screened',
+                'population_size' => 3,
+                'trigger_context' => [],
+                'completed_at' => now(),
+            ]);
+            $agents = collect(['hypothesis_guided', 'blinded', 'frozen_control'])->map(function (string $role, int $index) use ($generation, $generationNumber): LabAgent {
+                $model = ModelVersion::create([
+                    'name' => "causal-priority-{$generationNumber}-{$role}",
+                    'strategy' => 'hybrid',
+                    'version' => "v{$generationNumber}-".($index + 1),
+                    'generation' => $generationNumber,
+                    'status' => 'testing',
+                    'parameters' => [],
+                    'metadata' => ['causal_learning_cohort' => ['role' => $role]],
+                ]);
+
+                return LabAgent::create([
+                    'lab_generation_id' => $generation->id,
+                    'model_version_id' => $model->id,
+                    'symbol' => 'XAUUSD',
+                    'timeframe' => 'H1',
+                    'strategy_family' => 'hybrid',
+                    'origin' => 'causal_confirm',
+                    'lifecycle_status' => 'screened',
+                    'parameter_diff' => [],
+                ]);
+            });
+
+            return AgentLearningCausalExperiment::create([
+                'experiment_key' => hash('sha256', 'causal-priority-'.$generationNumber),
+                'lab_generation_id' => $generation->id,
+                'symbol' => 'XAUUSD',
+                'timeframe' => 'H1',
+                'strategy_family' => 'hybrid',
+                'target' => 'profit_factor',
+                'gene_key' => 'entry_threshold',
+                'guided_agent_id' => $agents[0]->id,
+                'blinded_agent_id' => $agents[1]->id,
+                'control_agent_id' => $agents[2]->id,
+                'status' => 'ready_for_replay',
+                'evidence' => ['construction_validation' => ['status' => 'ready_for_replay']],
+            ]);
+        };
+        $historical = $makeExperiment(222);
+        $current = $makeExperiment(223);
+
+        $result = app(ResearchLoopArbiterService::class)->tick();
+
+        $this->assertNotSame($historical->id, data_get($result, 'evidence_snapshot.causal_experiment_id'));
+        $this->assertSame($current->id, data_get($result, 'evidence_snapshot.causal_experiment_id'));
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class,
+            fn (RunScheduledArtisanCommandJob $job): bool => $job->arguments['--causal-experiment-id'] === $current->id);
+    }
+
     public function test_terminal_causal_technical_arm_is_settled_without_replay_or_authority(): void
     {
         Queue::fake();

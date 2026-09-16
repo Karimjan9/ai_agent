@@ -140,6 +140,15 @@ class GenerationAutonomyAuditService
                 ->where('started_at', '<=', $generation->completed_at ?: $generation->updated_at)
                 ->where('status', 'blocked')->get()
             : collect();
+        $recoveredBlockedCycles = $blockedCycles->filter(fn (LabLifecycleCycle $blocked): bool => LabLifecycleCycle::query()
+            ->where('symbol', (string) $blocked->symbol)
+            ->where('timeframe', (string) $blocked->timeframe)
+            ->where('started_at', '>', $blocked->started_at)
+            ->where('started_at', '<=', $generation->completed_at ?: $generation->updated_at)
+            ->where('status', 'completed')
+            ->exists()
+        );
+        $unrecoveredBlockedCycles = $blockedCycles->whereNotIn('id', $recoveredBlockedCycles->pluck('id'));
         $technicalAgents = $generation->agents->filter(fn ($agent): bool => in_array(
             (string) $agent->lifecycle_status,
             ['evaluation_error', 'technical_quarantine', 'quarantined', 'legacy_quarantine', 'abandoned', 'failed'],
@@ -155,7 +164,7 @@ class GenerationAutonomyAuditService
         if ($technicalAgents->isNotEmpty()) {
             $reasons[] = 'TECHNICAL_AGENT_RECORDED';
         }
-        if ($blockedCycles->isNotEmpty()) {
+        if ($unrecoveredBlockedCycles->isNotEmpty()) {
             $reasons[] = 'BLOCKED_LIFECYCLE_CYCLE_RECORDED';
         }
 
@@ -164,6 +173,8 @@ class GenerationAutonomyAuditService
             'technical_event_ids' => $technicalEvents->pluck('id')->values()->all(),
             'technical_agent_ids' => $technicalAgents->pluck('id')->values()->all(),
             'blocked_cycle_ids' => $blockedCycles->pluck('cycle_id')->values()->all(),
+            'recovered_blocked_cycle_ids' => $recoveredBlockedCycles->pluck('cycle_id')->values()->all(),
+            'unrecovered_blocked_cycle_ids' => $unrecoveredBlockedCycles->pluck('cycle_id')->values()->all(),
         ]);
     }
 

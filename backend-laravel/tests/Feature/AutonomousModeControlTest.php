@@ -7,6 +7,7 @@ use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
+use App\Models\LabLifecycleCycle;
 use App\Models\LabLifecycleEvent;
 use App\Models\ModelVersion;
 use App\Models\SystemEvent;
@@ -233,12 +234,40 @@ class AutonomousModeControlTest extends TestCase
             'lifecycle_status' => 'queued',
             'parameter_diff' => [],
         ]);
+        $blockedAt = $generation->created_at->copy()->addSecond();
+        LabLifecycleCycle::query()->create([
+            'cycle_id' => 'recovered-monitor-cycle',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'status' => 'blocked',
+            'stage' => 'preflight',
+            'summary' => 'runtime_unhealthy',
+            'context' => [],
+            'started_at' => $blockedAt,
+            'heartbeat_at' => $blockedAt,
+            'finished_at' => $blockedAt,
+        ]);
+        LabLifecycleCycle::query()->create([
+            'cycle_id' => 'monitor-cycle-recovery-receipt',
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'status' => 'completed',
+            'stage' => 'forward',
+            'summary' => 'recovered',
+            'context' => [],
+            'started_at' => $blockedAt->copy()->addSecond(),
+            'heartbeat_at' => $blockedAt->copy()->addSecond(),
+            'finished_at' => $blockedAt->copy()->addSecond(),
+        ]);
         Cache::put('system:scheduler-heartbeat', now()->toIso8601String(), now()->addMinute());
 
         $status = app(AutonomousModeService::class)->monitor('XAUUSD', 'H1', 'lightweight');
 
         $this->assertSame('running_clean', data_get($status, 'monitor.generation.technical_process_acceptance.state'));
         $this->assertSame(0, data_get($status, 'monitor.generation.technical_process_acceptance.technical_evaluation_runs'));
+        $this->assertSame(1, data_get($status, 'monitor.generation.technical_process_acceptance.blocked_lifecycle_cycles'));
+        $this->assertSame(1, data_get($status, 'monitor.generation.technical_process_acceptance.recovered_blocked_lifecycle_cycles'));
+        $this->assertSame(0, data_get($status, 'monitor.generation.technical_process_acceptance.unrecovered_blocked_lifecycle_cycles'));
         $this->assertTrue(data_get($status, 'monitor.generation.technical_process_acceptance.unattended_acceptance_eligible'));
         $this->assertFalse(data_get($status, 'monitor.generation.technical_process_acceptance.manual_intervention_required'));
     }

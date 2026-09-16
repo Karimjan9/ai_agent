@@ -138,7 +138,7 @@ class ResearchLoopArbiterService
         // before another generation can spend the twenty-seat budget. This
         // also repairs an older terminal cohort if a newer active generation
         // was already admitted before this invariant existed.
-        $openCausal = $this->openCausalReplay($symbol, $timeframe);
+        $openCausal = $this->openCausalReplay($symbol, $timeframe, $latest?->id);
         if ($openCausal) {
             $armIds = array_values(array_filter([
                 $openCausal->guided_agent_id,
@@ -404,13 +404,13 @@ class ResearchLoopArbiterService
             ], $dryRun);
     }
 
-    private function openCausalReplay(string $symbol, string $timeframe): ?AgentLearningCausalExperiment
+    private function openCausalReplay(string $symbol, string $timeframe, ?int $latestGenerationId): ?AgentLearningCausalExperiment
     {
         if (! Schema::hasTable('agent_learning_causal_experiments')) {
             return null;
         }
 
-        return AgentLearningCausalExperiment::query()
+        $query = AgentLearningCausalExperiment::query()
             ->where('symbol', $symbol)
             ->where('timeframe', $timeframe)
             ->whereIn('status', ['ready_for_replay', 'outcomes_pending'])
@@ -419,8 +419,12 @@ class ResearchLoopArbiterService
                 ->whereIn('status', ['screened', 'completed', 'technical_quarantine', 'full_queued', 'full_validation'])
                 ->whereHas('laboratory', fn ($lab) => $lab
                     ->where('symbol', $symbol)
-                    ->where('timeframe', $timeframe)))
-            ->oldest('id')
+                    ->where('timeframe', $timeframe)));
+        if ($latestGenerationId !== null) {
+            $query->orderByRaw('CASE WHEN lab_generation_id = ? THEN 0 ELSE 1 END', [$latestGenerationId]);
+        }
+
+        return $query->oldest('id')
             ->first();
     }
 
