@@ -8,6 +8,7 @@ use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\ModelMarketPerformance;
 use App\Services\CanonicalSkillCartridgeService;
+use App\Services\CausalLearningCohortService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabQueueJobInspector;
 use App\Services\LabReplayRecoveryService;
@@ -329,9 +330,11 @@ class RecoverLabFullEvaluationErrors extends Command
             ->value('error_message'));
         $reason = strtolower(trim((string) $agent->decision_reason.' '.$latestRunReason));
         $causalTransportQuarantine = $agent->generation?->trigger_type === 'learning_confirmation'
-            && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
-                'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
-            ], true)
+            && in_array(
+                (string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'),
+                CausalLearningCohortService::COUNTERFACTUAL_ROLES,
+                true,
+            )
             && (str_contains($reason, 'bounded learning-lane transport failures')
                 || str_contains($reason, 'bounded ai replay exceeded')
                 || str_contains($reason, 'causal confirmation fold'));

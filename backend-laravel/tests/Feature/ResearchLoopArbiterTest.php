@@ -3,11 +3,14 @@
 namespace Tests\Feature;
 
 use App\Jobs\RunScheduledArtisanCommandJob;
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\AgentLearningLesson;
 use App\Models\AiLaboratory;
 use App\Models\CandidateHandoffEvent;
+use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
+use App\Models\ModelVersion;
 use App\Models\ResearchExperimentWorkItem;
 use App\Models\ResearchLoopDecision;
 use App\Services\AutonomousLearningProgressDirectorService;
@@ -117,6 +120,67 @@ class ResearchLoopArbiterTest extends TestCase
         $this->assertSame('duplicate_suppressed', $second['status']);
         Queue::assertNothingPushed();
         $this->assertDatabaseCount('research_loop_decisions', 1);
+    }
+
+    public function test_terminal_unsettled_hypothesis_triplet_dispatches_full_replay_before_new_work(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 223,
+            'trigger_type' => 'learning_confirmation',
+            'status' => 'completed',
+            'population_size' => 20,
+            'trigger_context' => [],
+            'completed_at' => now(),
+        ]);
+        $agents = collect(['hypothesis_guided', 'blinded', 'frozen_control'])->map(function (string $role, int $index) use ($generation): LabAgent {
+            $model = ModelVersion::create([
+                'name' => 'causal-'.$role,
+                'strategy' => 'hybrid',
+                'version' => 'v'.($index + 1),
+                'generation' => 223,
+                'status' => 'testing',
+                'parameters' => [],
+                'metadata' => ['causal_learning_cohort' => ['role' => $role]],
+            ]);
+
+            return LabAgent::create([
+                'lab_generation_id' => $generation->id,
+                'model_version_id' => $model->id,
+                'symbol' => 'XAUUSD',
+                'timeframe' => 'H1',
+                'strategy_family' => 'hybrid',
+                'origin' => 'causal_confirm',
+                'lifecycle_status' => 'screened',
+                'parameter_diff' => [],
+            ]);
+        });
+        $experiment = AgentLearningCausalExperiment::create([
+            'experiment_key' => hash('sha256', 'arbiter-hypothesis-replay'),
+            'lab_generation_id' => $generation->id,
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_family' => 'hybrid',
+            'target' => 'profit_factor',
+            'gene_key' => 'entry_threshold',
+            'guided_agent_id' => $agents[0]->id,
+            'blinded_agent_id' => $agents[1]->id,
+            'control_agent_id' => $agents[2]->id,
+            'status' => 'ready_for_replay',
+            'evidence' => ['construction_validation' => ['status' => 'ready_for_replay']],
+        ]);
+        app(AutonomousModeService::class)->stop('XAUUSD', 'H1', 'test', 'causal-drain-first');
+
+        $result = app(ResearchLoopArbiterService::class)->tick();
+
+        $this->assertSame('SETTLE_CAUSAL_CONFIRMATION_REPLAY', $result['action']);
+        $this->assertSame($experiment->id, data_get($result, 'evidence_snapshot.causal_experiment_id'));
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class,
+            fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:dispatch-full-validation'
+                && $job->arguments === [0 => 'XAUUSD', '--timeframe' => 'H1']);
     }
 
     public function test_owned_durable_work_is_leased_and_is_the_only_dispatched_action(): void

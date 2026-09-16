@@ -13,6 +13,39 @@ use Illuminate\Support\Facades\Schema;
 /** Binds constructed agents to the pre-registered counterfactual triplet. */
 class CausalLearningCohortService
 {
+    /** The single intervention arm in a causal counterfactual triplet. */
+    public const GUIDED_ROLES = [
+        'memory_guided',
+        'hypothesis_guided',
+        'repair_guided',
+    ];
+
+    /** Every role that must receive the same serialized full replay. */
+    public const COUNTERFACTUAL_ROLES = [
+        ...self::GUIDED_ROLES,
+        'blinded',
+        'frozen_control',
+    ];
+
+    /**
+     * Resolve exactly one guided role and fail closed if a malformed cohort
+     * declares none or more than one. The hypothesis arm is first-class: it
+     * earns no inherited authority, but it still requires the same replay as
+     * memory- and repair-guided interventions.
+     *
+     * @param  iterable<int|string,string>  $roles
+     */
+    public function resolveGuidedRole(iterable $roles): ?string
+    {
+        $guided = collect($roles)
+            ->map(fn (mixed $role): string => (string) $role)
+            ->filter(fn (string $role): bool => in_array($role, self::GUIDED_ROLES, true))
+            ->unique()
+            ->values();
+
+        return $guided->count() === 1 ? (string) $guided->first() : null;
+    }
+
     /**
      * Canonical admission for the expensive counterfactual replay.  A causal
      * confirmation deliberately replays all three arms even when their
@@ -65,7 +98,7 @@ class CausalLearningCohortService
             $reasons[] = 'CAUSAL_COHORT_PROTOCOL_INVALID';
         }
         $role = (string) data_get($contract, 'role');
-        if (! in_array($role, ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control'], true)) {
+        if (! in_array($role, self::COUNTERFACTUAL_ROLES, true)) {
             $reasons[] = 'CAUSAL_COHORT_ROLE_INVALID';
         }
 

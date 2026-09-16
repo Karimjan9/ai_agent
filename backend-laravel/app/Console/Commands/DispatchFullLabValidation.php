@@ -87,7 +87,11 @@ class DispatchFullLabValidation extends Command
                     ->limit(3)
                     ->get()
                     ->first(fn ($candidate): bool => $candidate->agents->contains(function ($agent): bool {
-                        if (! in_array(data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), ['memory_guided', 'repair_guided'], true)) {
+                        if (! in_array(
+                            data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'),
+                            CausalLearningCohortService::COUNTERFACTUAL_ROLES,
+                            true,
+                        )) {
                             return false;
                         }
 
@@ -176,9 +180,11 @@ class DispatchFullLabValidation extends Command
                     (string) $agent->lifecycle_status,
                     ['screened', 'rejected', 'stagnated', 'challenger'],
                     true,
-                ) && in_array((string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'), [
-                    'memory_guided', 'repair_guided', 'blinded', 'frozen_control',
-                ], true))->values()
+                ) && in_array(
+                    (string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role'),
+                    CausalLearningCohortService::COUNTERFACTUAL_ROLES,
+                    true,
+                ))->values()
                 : $generation->agents->where('lifecycle_status', 'screened')->values();
             $screened = $this->enforceGenerationDatasetConsistency($generation, $screened);
             if ($timeframe === 'M15') {
@@ -244,9 +250,10 @@ class DispatchFullLabValidation extends Command
                     $agent->modelVersion?->metadata,
                     'causal_learning_cohort.role',
                 ));
-                $guidedRole = $byRole->has('repair_guided') ? 'repair_guided' : 'memory_guided';
-                $requiredRoles = [$guidedRole, 'blinded', 'frozen_control'];
-                $complete = collect($requiredRoles)->every(fn (string $role): bool => $byRole->has($role));
+                $guidedRole = $causalCohorts->resolveGuidedRole($byRole->keys());
+                $requiredRoles = $guidedRole !== null ? [$guidedRole, 'blinded', 'frozen_control'] : [];
+                $complete = $guidedRole !== null
+                    && collect($requiredRoles)->every(fn (string $role): bool => $byRole->has($role));
                 $confirmationAgents = $complete
                     ? collect($requiredRoles)->map(fn (string $role) => $byRole->get($role))->values()
                     : collect();

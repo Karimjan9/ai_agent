@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\RunScheduledArtisanCommandJob;
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\CandidateHandoffEvent;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
@@ -124,6 +125,43 @@ class ResearchLoopArbiterService
                 'trading:run-lifecycle-cycle', ['--symbol' => $symbol, '--json' => true],
                 'scheduler-constructor', ['EXISTING_GENERATION_OWNS_RESEARCH_RUNTIME'],
                 ['generation' => $generation], $dryRun);
+        }
+
+        // A screened causal triplet is admitted work, not historical
+        // backlog. It must receive its serialized full replay and settle
+        // before another generation can spend the twenty-seat budget. This
+        // also repairs an older terminal cohort if a newer active generation
+        // was already admitted before this invariant existed.
+        $openCausal = $this->openCausalReplay($symbol, $timeframe);
+        if ($openCausal) {
+            $armIds = array_values(array_filter([
+                $openCausal->guided_agent_id,
+                $openCausal->blinded_agent_id,
+                $openCausal->control_agent_id,
+            ], fn (mixed $id): bool => (int) $id > 0));
+            $replayActive = LabAgent::query()->whereIn('id', $armIds)
+                ->whereIn('lifecycle_status', ['full_queued', 'full_validation', 'training'])
+                ->exists();
+            if ($replayActive) {
+                return $this->decide($symbol, $timeframe, 'WAIT_CAUSAL_CONFIRMATION_REPLAY', 99,
+                    null, [], null, ['CAUSAL_CONFIRMATION_REPLAY_IN_FLIGHT'], [
+                        'generation' => $generation,
+                        'causal_experiment_id' => (int) $openCausal->id,
+                        'causal_generation_id' => (int) $openCausal->lab_generation_id,
+                        'causal_status' => (string) $openCausal->status,
+                        'arm_agent_ids' => $armIds,
+                    ], $dryRun);
+            }
+
+            return $this->decide($symbol, $timeframe, 'SETTLE_CAUSAL_CONFIRMATION_REPLAY', 99,
+                'trading:dispatch-full-validation', [0 => $symbol, '--timeframe' => $timeframe],
+                'scheduler-research', ['UNSETTLED_CAUSAL_CONFIRMATION_OWNS_RESEARCH_RUNTIME'], [
+                    'generation' => $generation,
+                    'causal_experiment_id' => (int) $openCausal->id,
+                    'causal_generation_id' => (int) $openCausal->lab_generation_id,
+                    'causal_status' => (string) $openCausal->status,
+                    'arm_agent_ids' => $armIds,
+                ], $dryRun);
         }
 
         $closure = $this->closure->inspect($symbol, $timeframe, ! $dryRun);
@@ -338,6 +376,26 @@ class ResearchLoopArbiterService
                 'generation' => $generation, 'closure' => $this->compactClosure($closure),
                 'director' => $this->compactDirector($director), 'mtf' => $mtf,
             ], $dryRun);
+    }
+
+    private function openCausalReplay(string $symbol, string $timeframe): ?AgentLearningCausalExperiment
+    {
+        if (! Schema::hasTable('agent_learning_causal_experiments')) {
+            return null;
+        }
+
+        return AgentLearningCausalExperiment::query()
+            ->where('symbol', $symbol)
+            ->where('timeframe', $timeframe)
+            ->whereIn('status', ['ready_for_replay', 'outcomes_pending'])
+            ->where('evidence->construction_validation->status', 'ready_for_replay')
+            ->whereHas('generation', fn ($query) => $query
+                ->whereIn('status', ['screened', 'completed', 'full_queued', 'full_validation'])
+                ->whereHas('laboratory', fn ($lab) => $lab
+                    ->where('symbol', $symbol)
+                    ->where('timeframe', $timeframe)))
+            ->oldest('id')
+            ->first();
     }
 
     /** @return array<string,mixed> */

@@ -6,8 +6,9 @@ use App\Jobs\EvaluateLabAgentJob;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\SystemEvent;
-use App\Services\LabQueueJobInspector;
+use App\Services\CausalLearningCohortService;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\LabQueueJobInspector;
 use App\Services\LabReplayRecoveryService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\OperatorApprovalService;
@@ -839,7 +840,10 @@ class RecoverLabEvaluationErrors extends Command
         }
 
         $role = (string) data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.role');
-        if (! in_array($role, ['memory_guided', 'repair_guided', 'blinded'], true)) {
+        if (! in_array($role, [
+            ...CausalLearningCohortService::GUIDED_ROLES,
+            'blinded',
+        ], true)) {
             return false;
         }
 

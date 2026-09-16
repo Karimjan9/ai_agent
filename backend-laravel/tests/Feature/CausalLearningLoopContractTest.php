@@ -60,6 +60,20 @@ class CausalLearningLoopContractTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_hypothesis_is_a_first_class_guided_replay_role_but_malformed_multiple_guides_fail_closed(): void
+    {
+        $service = app(CausalLearningCohortService::class);
+
+        $this->assertContains('hypothesis_guided', CausalLearningCohortService::GUIDED_ROLES);
+        $this->assertContains('hypothesis_guided', CausalLearningCohortService::COUNTERFACTUAL_ROLES);
+        $this->assertSame(
+            'hypothesis_guided',
+            $service->resolveGuidedRole(['hypothesis_guided', 'blinded', 'frozen_control']),
+        );
+        $this->assertNull($service->resolveGuidedRole(['memory_guided', 'hypothesis_guided', 'blinded', 'frozen_control']));
+        $this->assertNull($service->resolveGuidedRole(['blinded', 'frozen_control']));
+    }
+
     public function test_pre_registered_learning_method_replaces_blind_independent_fallback_and_is_sealed(): void
     {
         [$generation] = $this->canonicalSource();
