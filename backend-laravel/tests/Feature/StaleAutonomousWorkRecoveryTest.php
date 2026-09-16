@@ -6,6 +6,7 @@ use App\Jobs\RunScheduledArtisanCommandJob;
 use App\Models\LabLifecycleCycle;
 use App\Models\ResearchLoopDecision;
 use App\Services\LabPopulationService;
+use App\Services\LabLifecycleOrchestrator;
 use App\Services\StaleAutonomousWorkRecoveryService;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -92,6 +93,62 @@ class StaleAutonomousWorkRecoveryTest extends TestCase
         $this->assertSame('owner_process_running', data_get($result, 'constructor.status'));
         $this->assertTrue(app(LabPopulationService::class)->constructorIsActive('XAUUSD', 'H1'));
         $constructorLock->release();
+        Cache::forget($ownerKey);
+    }
+
+    public function test_legacy_ownerless_lifecycle_lock_uses_dead_constructor_receipt(): void
+    {
+        $lockKey = 'lifecycle-cycle:XAUUSD:H1';
+        $lifecycleLock = Cache::lock($lockKey, LabLifecycleOrchestrator::LOCK_TTL_SECONDS);
+        $this->assertTrue($lifecycleLock->get());
+        LabLifecycleCycle::create([
+            'cycle_id' => 'legacy-ownerless-lifecycle-cycle',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'status' => 'interrupted', 'stage' => 'preflight',
+            'summary' => 'Dead constructor recovered.',
+            'context' => [
+                'protocol' => StaleAutonomousWorkRecoveryService::PROTOCOL,
+                'reason_code' => 'DEAD_LOCAL_CONSTRUCTOR_OWNER_RECOVERED',
+                'promotion_evidence' => false,
+            ],
+            'started_at' => now()->subMinutes(10),
+            'heartbeat_at' => now()->subMinute(),
+            'finished_at' => now()->subMinute(),
+        ]);
+
+        $result = app(LabLifecycleOrchestrator::class)
+            ->recoverStaleLifecycleLease('XAUUSD', 'H1');
+
+        $this->assertSame('recovered_legacy_dead_constructor_receipt', $result['status']);
+        $this->assertTrue($result['recovered']);
+        $probe = Cache::lock($lockKey, 5);
+        $this->assertTrue($probe->get());
+        $probe->release();
+    }
+
+    public function test_live_lifecycle_owner_is_never_preempted(): void
+    {
+        $lockKey = 'lifecycle-cycle:XAUUSD:H1';
+        $ownerKey = $lockKey.':owner';
+        $lifecycleLock = Cache::lock($lockKey, LabLifecycleOrchestrator::LOCK_TTL_SECONDS);
+        $this->assertTrue($lifecycleLock->get());
+        Cache::put($ownerKey, [
+            'protocol' => 'lab_lifecycle_owner_v1',
+            'cycle_id' => 'live-lifecycle-owner',
+            'command' => base_path('artisan').' trading:run-lifecycle-cycle --symbol=XAUUSD',
+            'pid' => getmypid(), 'hostname' => (string) (gethostname() ?: php_uname('n')),
+            'acquired_at' => now()->subMinutes(10)->toIso8601String(),
+            'heartbeat_at' => now()->subMinutes(10)->toIso8601String(),
+        ], now()->addHour());
+
+        $result = app(LabLifecycleOrchestrator::class)
+            ->recoverStaleLifecycleLease('XAUUSD', 'H1');
+
+        $this->assertSame('owner_process_running', $result['status']);
+        $this->assertFalse($result['recovered']);
+        $probe = Cache::lock($lockKey, 5);
+        $this->assertFalse($probe->get());
+        $lifecycleLock->release();
         Cache::forget($ownerKey);
     }
 }

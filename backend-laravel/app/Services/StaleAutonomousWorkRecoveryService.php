@@ -19,20 +19,24 @@ class StaleAutonomousWorkRecoveryService
     /** @return array<string,mixed> */
     public function reconcile(string $symbol, string $timeframe): array
     {
+        $lifecycle = app(LabLifecycleOrchestrator::class)
+            ->recoverStaleLifecycleLease($symbol, $timeframe);
         $constructor = app(LabPopulationService::class)
             ->recoverStaleConstructorLease($symbol, $timeframe);
-        if (($constructor['recovered'] ?? false) !== true) {
+        if (($constructor['recovered'] ?? false) !== true
+            && ($lifecycle['recovered'] ?? false) !== true) {
             return [
                 'protocol' => self::PROTOCOL,
                 'status' => 'no_recovery',
                 'constructor' => $constructor,
+                'lifecycle' => $lifecycle,
                 'decisions_reconciled' => 0,
                 'cycles_reconciled' => 0,
                 'promotion_evidence' => false,
             ];
         }
 
-        $owner = (array) ($constructor['owner'] ?? []);
+        $owner = (array) ($constructor['owner'] ?? $lifecycle['owner'] ?? []);
         $ownerCommand = (string) ($owner['command'] ?? '');
         $ownerHeartbeat = (string) ($owner['heartbeat_at'] ?? $owner['acquired_at'] ?? '');
         try {
@@ -110,6 +114,7 @@ class StaleAutonomousWorkRecoveryService
             'protocol' => self::PROTOCOL,
             'status' => 'recovered',
             'constructor' => $constructor,
+            'lifecycle' => $lifecycle,
             'decisions_reconciled' => $decisions->count(),
             'cycles_reconciled' => $cycles,
             'released_unique_job_ids' => $uniqueIds,

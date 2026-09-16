@@ -15,7 +15,9 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 /**
@@ -94,6 +96,7 @@ class LabLifecycleOrchestrator
         $symbol = strtoupper($symbol);
         $timeframe = $this->canonicalLaboratoryTimeframe($symbol, $timeframe);
         $cycleId = $cycleId ?? $this->generateCycleId();
+        $this->recoverStaleLifecycleLease($symbol, $timeframe);
         $lock = Cache::lock($this->lockKey($symbol, $timeframe), $this->lockTtl());
         $acquired = false;
         $stage = self::PHASE_PREFLIGHT;
@@ -105,6 +108,17 @@ class LabLifecycleOrchestrator
                     'Another cycle is already running for this symbol/timeframe.',
                     $stage, ['locked' => true]);
             }
+
+            Cache::put($this->ownerKey($symbol, $timeframe), [
+                'protocol' => 'lab_lifecycle_owner_v1',
+                'cycle_id' => $cycleId,
+                'command' => app()->runningInConsole() ? implode(' ', array_slice($_SERVER['argv'] ?? [], 0, 4)) : 'non_console',
+                'pid' => getmypid(),
+                'hostname' => $this->hostname(),
+                'acquired_at' => now()->utc()->toIso8601String(),
+                'heartbeat_at' => now()->utc()->toIso8601String(),
+                'promotion_evidence' => false,
+            ], now()->addSeconds($this->lockTtl()));
 
             $this->touchCycle($cycleId);
             $checkpoint = $this->beginCheckpoint($cycleId, $symbol, $timeframe, $stage);
@@ -304,8 +318,106 @@ class LabLifecycleOrchestrator
             }
             if ($acquired) {
                 $lock->release();
+                Cache::forget($this->ownerKey($symbol, $timeframe));
             }
         }
+    }
+
+    /**
+     * Recover a lifecycle lease only from a dead local owner. The legacy
+     * branch consumes the durable interruption receipt emitted when the same
+     * dead process's constructor lease was already proven and recovered.
+     *
+     * @return array<string,mixed>
+     */
+    public function recoverStaleLifecycleLease(string $symbol, string $timeframe): array
+    {
+        $symbol = strtoupper($symbol);
+        $timeframe = $this->canonicalLaboratoryTimeframe($symbol, $timeframe);
+        $lock = Cache::lock($this->lockKey($symbol, $timeframe), 5);
+        if ($lock->get()) {
+            $lock->release();
+
+            return ['status' => 'not_active', 'recovered' => false, 'promotion_evidence' => false];
+        }
+
+        $owner = Cache::get($this->ownerKey($symbol, $timeframe));
+        if (! is_array($owner)) {
+            $interrupted = Schema::hasTable('lab_lifecycle_cycles')
+                ? LabLifecycleCycle::query()
+                    ->where('symbol', $symbol)->where('timeframe', $timeframe)
+                    ->where('status', 'interrupted')
+                    ->where('finished_at', '>=', now()->subSeconds($this->lockTtl()))
+                    ->latest('id')->first()
+                : null;
+            if (data_get($interrupted?->context, 'protocol') !== StaleAutonomousWorkRecoveryService::PROTOCOL
+                || data_get($interrupted?->context, 'reason_code') !== 'DEAD_LOCAL_CONSTRUCTOR_OWNER_RECOVERED') {
+                return ['status' => 'owner_unknown', 'recovered' => false, 'promotion_evidence' => false];
+            }
+            $lock->forceRelease();
+            Log::warning('Recovered legacy lifecycle lease using durable dead-constructor receipt.', [
+                'symbol' => $symbol, 'timeframe' => $timeframe,
+                'cycle_id' => $interrupted->cycle_id,
+            ]);
+
+            return [
+                'status' => 'recovered_legacy_dead_constructor_receipt',
+                'recovered' => true,
+                'owner' => (array) $interrupted->context,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $heartbeatAt = (string) ($owner['heartbeat_at'] ?? $owner['acquired_at'] ?? '');
+        try {
+            $ageSeconds = $heartbeatAt === '' ? 0 : max(
+                0,
+                now()->utc()->timestamp - Carbon::parse($heartbeatAt)->utc()->timestamp,
+            );
+        } catch (Throwable) {
+            return ['status' => 'heartbeat_invalid', 'recovered' => false, 'promotion_evidence' => false];
+        }
+        $staleAfter = max(120, (int) config(
+            'services.lifecycle_orchestrator.lifecycle_stale_heartbeat_seconds',
+            180,
+        ));
+        $pid = (int) ($owner['pid'] ?? 0);
+        $ownerHost = trim((string) ($owner['hostname'] ?? ''));
+        $localOwner = $ownerHost !== '' && hash_equals(strtolower($this->hostname()), strtolower($ownerHost));
+        if ($ageSeconds < $staleAfter || $pid <= 0 || ! $localOwner) {
+            return [
+                'status' => 'active_or_unverifiable', 'recovered' => false,
+                'stale_age_seconds' => $ageSeconds, 'owner' => $owner,
+                'promotion_evidence' => false,
+            ];
+        }
+        $running = $this->localProcessIsRunning($pid);
+        if ($running !== false) {
+            return [
+                'status' => $running ? 'owner_process_running' : 'owner_process_unknown',
+                'recovered' => false, 'stale_age_seconds' => $ageSeconds,
+                'owner' => $owner, 'promotion_evidence' => false,
+            ];
+        }
+        $currentOwner = Cache::get($this->ownerKey($symbol, $timeframe));
+        if (! is_array($currentOwner)
+            || (int) ($currentOwner['pid'] ?? 0) !== $pid
+            || (string) ($currentOwner['heartbeat_at'] ?? '') !== (string) ($owner['heartbeat_at'] ?? '')) {
+            return ['status' => 'owner_changed', 'recovered' => false, 'promotion_evidence' => false];
+        }
+
+        $lock->forceRelease();
+        Cache::forget($this->ownerKey($symbol, $timeframe));
+        Log::warning('Recovered stale lifecycle lease from dead local process.', [
+            'symbol' => $symbol, 'timeframe' => $timeframe,
+            'stale_pid' => $pid, 'stale_age_seconds' => $ageSeconds,
+        ]);
+
+        return [
+            'status' => 'recovered_dead_local_owner', 'recovered' => true,
+            'stale_age_seconds' => $ageSeconds, 'owner' => $owner,
+            'promotion_evidence' => false,
+        ];
     }
 
     private function preflight(string $symbol, string $timeframe): array
@@ -996,6 +1108,44 @@ class LabLifecycleOrchestrator
     private function lockKey(string $symbol, string $timeframe): string
     {
         return 'lifecycle-cycle:'.strtoupper($symbol).':'.$timeframe;
+    }
+
+    private function ownerKey(string $symbol, string $timeframe): string
+    {
+        return $this->lockKey($symbol, $timeframe).':owner';
+    }
+
+    private function hostname(): string
+    {
+        return (string) (gethostname() ?: php_uname('n'));
+    }
+
+    /** Null means the platform could not prove either process state. */
+    private function localProcessIsRunning(int $pid): ?bool
+    {
+        if ($pid <= 0) {
+            return false;
+        }
+        if (PHP_OS_FAMILY !== 'Windows') {
+            if (function_exists('posix_kill')) {
+                return @posix_kill($pid, 0);
+            }
+
+            return is_dir('/proc/'.$pid) ? true : null;
+        }
+
+        $process = new Process(['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH']);
+        $process->run();
+        if (! $process->isSuccessful()) {
+            return null;
+        }
+        foreach (preg_split('/\R/', $process->getOutput()) ?: [] as $line) {
+            if (preg_match('/^"[^"]+","'.preg_quote((string) $pid, '/').'",/i', trim((string) $line)) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function lockTtl(): int
