@@ -471,6 +471,12 @@ class DispatchLabGeneration extends Command
                     );
                     $generation->update(['trigger_context' => $context]);
                 }
+                // Draft preflight may repair a derived execution coordinate
+                // and refresh the model row. Reload the complete population
+                // before deciding which dataset contracts must be frozen;
+                // otherwise a newly materialized volume specialist can be
+                // queued with only the price snapshot.
+                $generation = $generation->fresh(['agents.modelVersion']);
                 $draftAgents = $generation->agents
                     ->where('lifecycle_status', 'draft')
                     // A fresh repair control is the first observation for the

@@ -1550,31 +1550,13 @@ class LabAgentEvaluationService
         ])->isNotEmpty()) {
             return;
         }
-        $technicalAgentIds = $generation->agents->filter(fn (LabAgent $member): bool => in_array(
-            (string) $member->lifecycle_status,
-            ['technical_quarantine', 'quarantined', 'legacy_quarantine', 'abandoned', 'failed'],
-            true,
-        ))->pluck('id')->values()->all();
-        $terminalStatus = $technicalAgentIds === [] ? 'screened' : 'technical_quarantine';
-        $this->generationContext->updateWithAttributes($generation, [
-            'status' => $terminalStatus,
-            'completed_at' => now(),
-        ], function (array $context) use ($terminalStatus, $technicalAgentIds): array {
-            $context['screening_terminal'] = [
-                'protocol' => 'generation_terminal_boundary_v1',
-                'status' => $terminalStatus,
-                'completed_at' => now()->utc()->toIso8601String(),
-                'all_agents_terminal' => true,
-                'technical_agent_ids' => $technicalAgentIds,
-                'promotion_evidence' => false,
-            ];
 
-            return $context;
-        });
-        app(LabGenerationReportService::class)->record(
-            $generation->fresh(),
-            $terminalStatus === 'screened' ? 'screening_completed' : 'screening_terminal_technical_quarantine',
-        );
+        // Agent terminality only opens the close attempt. The generation is
+        // terminal after its current queue reservation, post-screen learning
+        // projection and settlement watermark are all terminal. Closing here
+        // directly used to make `completed_at` precede the evidence that the
+        // generation was supposed to have learned from.
+        app(LabGenerationTerminalBoundaryService::class)->closeIfTerminal($generation);
     }
 
     /**

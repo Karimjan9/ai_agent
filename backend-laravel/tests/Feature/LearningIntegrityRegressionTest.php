@@ -332,7 +332,7 @@ class LearningIntegrityRegressionTest extends TestCase
         $result = app(LabGenerationTerminalBoundaryService::class)->closeIfTerminal($generation);
 
         $this->assertTrue($result['closed']);
-        $this->assertSame('screened', $generation->fresh()->status);
+        $this->assertSame('technical_quarantine', $generation->fresh()->status);
         $this->assertNotNull($generation->fresh()->completed_at);
         $this->assertSame(
             LabGenerationTerminalBoundaryService::PROTOCOL,
@@ -361,6 +361,40 @@ class LearningIntegrityRegressionTest extends TestCase
 
         $this->assertFalse($result['closed']);
         $this->assertSame('OPEN_EVIDENCE_RUNS_REMAIN', $result['reason_code']);
+        $this->assertSame('screening', $generation->fresh()->status);
+        $this->assertNull($generation->fresh()->completed_at);
+    }
+
+    public function test_terminal_screening_boundary_waits_for_generation_owned_learning_projection(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $generation->update(['status' => 'screening', 'completed_at' => null]);
+        $model = ModelVersion::create([
+            'name' => 'boundary-learning-projection', 'strategy' => 'boundary-learning-projection',
+            'version' => 'v1', 'generation' => 1, 'status' => 'testing',
+            'parameters' => [], 'metadata' => [],
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => [],
+        ]);
+
+        $this->mock(LabQueueJobInspector::class, function ($mock) use ($agent): void {
+            $mock->shouldReceive('generationQueueBacklog')->once()
+                ->withArgs(function (array $agentIds, array $queues) use ($agent): bool {
+                    return $agentIds === [$agent->id] && in_array('lab-learning', $queues, true);
+                })
+                ->andReturn([
+                    'backend' => 'redis', 'available' => true, 'total' => 1,
+                    'queues' => ['lab-learning' => 1], 'rows' => [['id' => 'learning-projection']],
+                ]);
+        });
+
+        $result = app(LabGenerationTerminalBoundaryService::class)->closeIfTerminal($generation);
+
+        $this->assertFalse($result['closed']);
+        $this->assertSame('GENERATION_QUEUE_WORK_REMAINS', $result['reason_code']);
         $this->assertSame('screening', $generation->fresh()->status);
         $this->assertNull($generation->fresh()->completed_at);
     }

@@ -36,9 +36,15 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 {
     use Batchable,Dispatchable,InteractsWithQueue,Queueable,SerializesModels;
 
-    private const SCREEN_RETRY_WINDOW_MINUTES = 360;
+    // Queue admission is a durability window, not an evaluator runtime
+    // budget. Windows suspend/hibernate pauses workers while wall-clock time
+    // keeps advancing; a six-hour deadline therefore quarantined untouched
+    // FIFO jobs after an overnight resume. Individual HTTP, worker and mutex
+    // leases remain bounded below. Keep sealed queue ownership durable across
+    // a weekend without allowing a replay itself to run unbounded.
+    private const SCREEN_RETRY_WINDOW_MINUTES = 4320;
     private const LEGACY_SCREEN_RETRY_WINDOW_MINUTES = 90;
-    private const FULL_RETRY_WINDOW_MINUTES = 180;
+    private const FULL_RETRY_WINDOW_MINUTES = 2880;
     private const UNIQUE_WINDOW_SECONDS = self::SCREEN_RETRY_WINDOW_MINUTES * 60;
 
     public int $timeout = 360;
@@ -523,6 +529,28 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                 );
             }
         } catch (Throwable $error) {
+            // The Windows host can suspend while cURL owns a bounded request.
+            // On resume libcurl reports the whole wall-clock sleep as a
+            // timeout, even though neither Python nor PHP consumed that time.
+            // Preserve the sealed request as retry telemetry and let the same
+            // queue job run again; this is not a strategy verdict or a real
+            // evaluator failure.
+            if ($this->isHostSuspendOrLongStall($error, $run)) {
+                $agent->update([
+                    'lifecycle_status' => $this->mode === 'screen' ? 'queued' : 'full_queued',
+                    'decision_reason' => 'Host suspend or abnormal wall-clock stall detected; sealed replay released for retry.',
+                ]);
+                $evidence->finishRun($run, 'retry_released', null, [], [
+                    'reason_code' => 'HOST_SUSPEND_OR_LONG_STALL',
+                    'elapsed_seconds' => $run->started_at?->diffInSeconds(now()),
+                    'job_timeout_seconds' => $this->timeout,
+                    'strategy_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ]);
+                $this->release(30);
+
+                return;
+            }
             // A direct portfolio command and a queued full replay share one
             // serialized AI lane. Contention is transient operational state,
             // not an evaluator failure and never a strategy verdict. Release
@@ -745,6 +773,21 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         return str_contains($message, 'ai replay lane is busy')
             || str_contains($message, 'ai replay lane band')
             || str_contains($message, 'http 429');
+    }
+
+    private function isHostSuspendOrLongStall(Throwable $error, ?LabEvaluationRun $run): bool
+    {
+        if (! $error instanceof \Illuminate\Http\Client\ConnectionException
+            || ! str_contains(strtolower($error->getMessage()), 'curl error 28')
+            || ! $run?->started_at) {
+            return false;
+        }
+
+        // Normal transport timeout must still become bounded technical
+        // recovery. Only a wall-clock duration well beyond the queue worker's
+        // own hard limit proves that the host/process clock was suspended or
+        // stalled outside the evaluator budget.
+        return $run->started_at->diffInSeconds(now()) > ($this->timeout + 300);
     }
 
     /** @return array{allowed: bool, reason_codes: array<int, string>} */

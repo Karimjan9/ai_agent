@@ -73,7 +73,21 @@ class LabGenerationTerminalBoundaryService
             return $this->blocked('OPEN_EVIDENCE_RUNS_REMAIN', $generation, ['open_runs' => $openRuns]);
         }
 
-        $backlog = $this->queueJobs->generationQueueBacklog($agentIds);
+        // A screening response is not the end of a generation. Its
+        // generation-owned learning projection closes cooperative blocks,
+        // causal outcomes and episode settlements after the immutable replay
+        // has been sealed. Keep the mutable generation open while either the
+        // replay job or that exact post-screen projection still owns a queue
+        // row. The global replay allocator intentionally ignores the
+        // research queue; this stricter queue set is local to terminality.
+        $terminalQueues = array_values(array_unique(array_filter([
+            (string) config('services.lab_queue.screening_queue', 'lab-screening'),
+            (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
+            (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
+            ...((array) config('services.lab_queue.legacy_screening_queues', [])),
+            (string) config('services.lab_queue.learning_queue', 'lab-learning'),
+        ])));
+        $backlog = $this->queueJobs->generationQueueBacklog($agentIds, $terminalQueues);
         if (($backlog['available'] ?? true) === false || ($backlog['total'] ?? null) === null) {
             return $this->blocked('QUEUE_STATE_UNKNOWN', $generation);
         }
@@ -91,14 +105,19 @@ class LabGenerationTerminalBoundaryService
             return $this->blocked('SETTLEMENT_WATERMARK_NOT_TERMINAL', $generation, ['settlement_watermark' => $watermark]);
         }
 
-        $screened = $agents->where('lifecycle_status', 'screened')->isNotEmpty();
+        $technicalAgentIds = $agents->filter(fn ($agent): bool => in_array(
+            (string) $agent->lifecycle_status,
+            ['technical_quarantine', 'quarantined', 'legacy_quarantine', 'abandoned', 'failed'],
+            true,
+        ))->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all();
+        $screened = $technicalAgentIds === [] && $agents->where('lifecycle_status', 'screened')->isNotEmpty();
         $status = $screened ? 'screened' : 'technical_quarantine';
         $fromStatus = (string) $generation->status;
         $this->contexts->updateWithAttributes($generation, [
             'status' => $status,
             'completed_at' => now(),
-        ], function (array $context) use ($fromStatus, $status, $watermark): array {
-            $context['screening_terminal_recovery'] = [
+        ], function (array $context) use ($fromStatus, $status, $watermark, $technicalAgentIds): array {
+            $receipt = [
                 'protocol' => self::PROTOCOL,
                 'recovered_from_status' => $fromStatus,
                 'status' => $status,
@@ -107,9 +126,15 @@ class LabGenerationTerminalBoundaryService
                 'open_evidence_runs' => 0,
                 'generation_queue_total' => 0,
                 'settlement_watermark' => $watermark,
+                'technical_agent_ids' => $technicalAgentIds,
                 'quality_verdict' => 'unchanged',
                 'promotion_evidence' => false,
             ];
+            $context['screening_terminal_recovery'] = $receipt;
+            // Keep the original public projection key readable for reports
+            // and operators while its protocol identifies the stricter v2
+            // boundary.
+            $context['screening_terminal'] = $receipt;
 
             return $context;
         });

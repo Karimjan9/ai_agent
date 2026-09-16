@@ -7,6 +7,7 @@ use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\SystemEvent;
 use App\Services\LabQueueJobInspector;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\LabReplayRecoveryService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\OperatorApprovalService;
@@ -159,7 +160,14 @@ class RecoverLabEvaluationErrors extends Command
                     } elseif ($afterTimeoutBudgetRepair) {
                         $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
                     } elseif ($afterRetryBudgetRepair) {
-                        $query->whereIn('status', ['screening', 'screened']);
+                        // The generation boundary deliberately becomes
+                        // technical_quarantine as soon as one immutable run
+                        // exhausts its queue retry budget.  Keep that exact
+                        // terminal state visible to this named, one-shot
+                        // recovery mode; otherwise the first bounded recovery
+                        // batch hides every remaining affected agent from the
+                        // next autonomous lifecycle cycle.
+                        $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
                     } elseif ($afterDatasetContractRepair) {
                         $query->whereIn('status', ['screening', 'screened', 'technical_quarantine']);
                     } else {
@@ -375,18 +383,68 @@ class RecoverLabEvaluationErrors extends Command
         // A hash mismatch is an infrastructure block, not a strategy failure;
         // leave the agent untouched and dispatch no replay for that row.
         $recoveryContracts = [];
-        $recoverable = $agents->filter(function (LabAgent $agent) use ($recovery, $mode, $afterDatasetContractRepair, &$recoveryContracts): bool {
+        $terminallyReconciled = [];
+        $blockedRecoveryContracts = [];
+        $recoverable = $agents->filter(function (LabAgent $agent) use (
+            $recovery,
+            $mode,
+            $afterDatasetContractRepair,
+            $afterTimeoutBudgetRepair,
+            $afterRetryBudgetRepair,
+            $apply,
+            $autonomous,
+            &$recoveryContracts,
+            &$terminallyReconciled,
+            &$blockedRecoveryContracts,
+        ): bool {
             try {
                 $recoveryContracts[$agent->id] = $recovery->prepare($agent, $mode, $afterDatasetContractRepair);
 
                 return true;
             } catch (\Throwable $exception) {
-                $this->warn("A{$agent->id} G{$agent->lab_generation_id}: recovery snapshot/hash verification blocked replay: ".substr($exception->getMessage(), 0, 300));
+                $blockedRecoveryContracts[] = [
+                    'agent_id' => (int) $agent->id,
+                    'generation_id' => (int) $agent->lab_generation_id,
+                    'error' => substr($exception->getMessage(), 0, 300),
+                ];
+                if (! (bool) $this->option('json')) {
+                    $this->warn("A{$agent->id} G{$agent->lab_generation_id}: recovery snapshot/hash verification blocked replay: ".substr($exception->getMessage(), 0, 300));
+                }
+                if ($apply
+                    && $autonomous
+                    && ($afterTimeoutBudgetRepair || $afterRetryBudgetRepair)
+                    && $this->isUnrecoverableFrozenContractFailure($exception)) {
+                    $this->sealUnrecoverableFrozenContract(
+                        $agent,
+                        $mode,
+                        $exception,
+                        $afterRetryBudgetRepair ? 'retry_budget' : 'timeout_budget',
+                    );
+                    $terminallyReconciled[] = (int) $agent->id;
+                }
 
                 return false;
             }
         })->values();
         if ($recoverable->isEmpty()) {
+            if ($terminallyReconciled !== []) {
+                $result = [
+                    'protocol' => 'autonomous_technical_recovery_v1',
+                    'dispatched' => 0,
+                    'terminally_reconciled_agent_ids' => $terminallyReconciled,
+                    'blocked_recovery_contracts' => $blockedRecoveryContracts,
+                    'terminal_reason' => 'FROZEN_RECOVERY_CONTRACT_UNAVAILABLE',
+                    'generation' => $generationNumber,
+                    'promotion_evidence' => false,
+                ];
+                if ((bool) $this->option('json')) {
+                    $this->line(json_encode($result, JSON_UNESCAPED_SLASHES));
+                } else {
+                    $this->warn('No replay was dispatched; unrecoverable frozen-contract rows were sealed as terminal technical history.');
+                }
+
+                return self::SUCCESS;
+            }
             $this->warn('No evaluator recovery was dispatched because no same-generation dataset contract passed.');
 
             return self::FAILURE;
@@ -554,6 +612,8 @@ class RecoverLabEvaluationErrors extends Command
             'batch_ids' => $batches,
             'mode' => $mode,
             'generation' => $generationNumber,
+            'terminally_reconciled_agent_ids' => $terminallyReconciled,
+            'blocked_recovery_contracts' => $blockedRecoveryContracts,
             'promotion_evidence' => false,
         ];
         if ((bool) $this->option('json')) {
@@ -572,6 +632,95 @@ class RecoverLabEvaluationErrors extends Command
 
         return str_contains($reason, 'strategy verdict withheld')
             && (string) data_get($classification, 'reason_code') === 'REPLAY_RETRY_BUDGET_EXHAUSTED';
+    }
+
+    private function isUnrecoverableFrozenContractFailure(\Throwable $exception): bool
+    {
+        $message = strtoupper($exception->getMessage());
+
+        return str_starts_with($message, 'RECOVERY_DATASET_SNAPSHOT_MISSING_OR_HASH_MISMATCH:')
+            || str_starts_with($message, 'RECOVERY_DATASET_SNAPSHOT_HASH_MISMATCH:');
+    }
+
+    /**
+     * A missing/tampered generation snapshot cannot be repaired without
+     * changing the experiment's data. Consume the single operational repair
+     * allowance as a terminal technical disposition so autonomous admission
+     * can move to a fresh generation without inventing strategy evidence.
+     */
+    private function sealUnrecoverableFrozenContract(
+        LabAgent $agent,
+        string $mode,
+        \Throwable $exception,
+        string $repairMode,
+    ): void {
+        DB::transaction(function () use ($agent, $mode, $exception, $repairMode): void {
+            $agent->loadMissing(['modelVersion', 'generation']);
+            $model = $agent->modelVersion?->fresh();
+            if (! $model) {
+                throw new RuntimeException('Recovery terminal disposition requires a model version.');
+            }
+            $metadata = (array) $model->metadata;
+            $counter = $repairMode === 'retry_budget'
+                ? 'retry_budget_repair_recovery_attempts'
+                : 'timeout_budget_repair_recovery_attempts';
+            data_set($metadata, $counter, max(1, (int) data_get($metadata, $counter, 0)));
+            data_set($metadata, 'technical_recovery_terminal_disposition', [
+                'protocol' => 'frozen_recovery_contract_terminal_v1',
+                'reason_code' => 'FROZEN_RECOVERY_CONTRACT_UNAVAILABLE',
+                'repair_mode' => $repairMode,
+                'phase' => $mode === 'full' ? 'full_validation' : 'screening',
+                'error' => substr($exception->getMessage(), 0, 500),
+                'sealed_at' => now()->utc()->toIso8601String(),
+                'strategy_verdict' => 'withheld',
+                'promotion_evidence' => false,
+            ]);
+            $model->update(['metadata' => $metadata]);
+            $agent->update([
+                'lifecycle_status' => 'technical_quarantine',
+                'decision_reason' => 'Frozen same-generation recovery contract is unavailable; replay is impossible without changing data. Strategy verdict withheld; terminal technical history.',
+            ]);
+
+            SystemEvent::create([
+                'event_type' => 'lab_autonomous_recovery_terminal_disposition',
+                'event_key' => 'lab:recovery-terminal:'.hash('sha256', implode('|', [
+                    (string) $agent->id,
+                    $repairMode,
+                    $exception->getMessage(),
+                ])),
+                'agent' => 'lifecycle-orchestrator',
+                'severity' => 'warning',
+                'summary' => 'Frozen same-generation recovery contract was unavailable; replay remained fail-closed.',
+                'payload' => [
+                    'protocol' => 'frozen_recovery_contract_terminal_v1',
+                    'lab_generation_id' => (int) $agent->lab_generation_id,
+                    'lab_agent_id' => (int) $agent->id,
+                    'repair_mode' => $repairMode,
+                    'error' => substr($exception->getMessage(), 0, 500),
+                    'strategy_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ],
+                'occurred_at' => now(),
+            ]);
+            app(LabImmutableEvidenceService::class)->recordLifecycle(
+                $agent->fresh(['modelVersion', 'generation']),
+                'technical_recovery_terminal_disposition',
+                [
+                    'reason_code' => 'FROZEN_RECOVERY_CONTRACT_UNAVAILABLE',
+                    'repair_mode' => $repairMode,
+                    'error' => substr($exception->getMessage(), 0, 500),
+                    'strategy_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ],
+                $mode === 'full' ? 'full_validation' : 'screening',
+                null,
+                null,
+                self::class,
+                $exception,
+                'technical_quarantine',
+                'technical_quarantine',
+            );
+        });
     }
 
     /**

@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\AgentLearningCausalExperiment;
+use App\Models\AgentLearningEpisode;
+use App\Models\AgentLearningSettlement;
 use App\Models\AgentLearningMutationIntent;
 use App\Models\CandidateGateDecision;
 use App\Models\ContextualInstrumentBundleEffect;
@@ -49,6 +51,7 @@ class GenerationAutonomyAuditService
             $this->cooperativeSettlement($generation, $terminal),
             $this->instrumentAttribution($generation),
             $this->causalLearningClosure($generation, $terminal),
+            $this->terminalLearningOrder($generation, $terminal),
             $this->authorityContainment($generation),
             $this->researchLoopClosure($generation, $terminal),
         ]);
@@ -481,6 +484,60 @@ class GenerationAutonomyAuditService
             'confirmed_capsule_count' => $capsules->whereIn('status', ['elite', 'contextually_confirmed_specialist'])->count(),
             'false_authority_capsule_ids' => $falseAuthority->pluck('id')->values()->all(),
             'scope_leak_capsule_ids' => $scopeLeaks->pluck('id')->values()->all(),
+        ]);
+    }
+
+    /** @return array<string,mixed> */
+    private function terminalLearningOrder(LabGeneration $generation, bool $terminal): array
+    {
+        $agentIds = $generation->agents->pluck('id');
+        $episodes = AgentLearningEpisode::query()
+            ->whereIn('lab_agent_id', $agentIds)
+            ->with('settlement')
+            ->get();
+        $openEpisodes = $episodes->filter(fn (AgentLearningEpisode $episode): bool => ! $episode->settlement
+            && ! in_array((string) $episode->status, ['technical_quarantine'], true));
+        $episodeIds = $episodes->pluck('id');
+        $latestLearningSettlement = $episodeIds->isEmpty()
+            ? null
+            : AgentLearningSettlement::query()->whereIn('episode_id', $episodeIds)->max('settled_at');
+        $latestCooperativeSettlement = CooperativeExperimentSettlement::query()
+            ->where('lab_generation_id', $generation->id)->max('updated_at');
+        $latestCausalSettlement = AgentLearningCausalExperiment::query()
+            ->where('lab_generation_id', $generation->id)->max('updated_at');
+
+        $completedAt = $generation->completed_at;
+        $settlementTimes = collect([
+            'learning' => $latestLearningSettlement,
+            'cooperative' => $latestCooperativeSettlement,
+            'causal' => $latestCausalSettlement,
+        ])->filter();
+        $lateKinds = $completedAt
+            ? $settlementTimes->filter(fn (mixed $at): bool => \Illuminate\Support\Carbon::parse($at)->gt($completedAt))->keys()->values()
+            : collect();
+        $reasons = [];
+        if ($episodes->isNotEmpty() && $openEpisodes->isNotEmpty()) {
+            $reasons[] = 'GENERATION_LEARNING_EPISODES_NOT_TERMINAL';
+        }
+        if ($terminal && ! $completedAt) {
+            $reasons[] = 'GENERATION_COMPLETED_AT_MISSING';
+        }
+        if ($lateKinds->isNotEmpty()) {
+            $reasons[] = 'GENERATION_CLOSED_BEFORE_LEARNING_SETTLEMENT';
+        }
+        $status = $reasons === []
+            ? ($terminal ? 'passed' : 'running')
+            : ($terminal ? 'failed' : 'running');
+
+        return $this->check('terminal_learning_order', $status, $reasons, [
+            'episode_count' => $episodes->count(),
+            'terminal_episode_count' => $episodes->count() - $openEpisodes->count(),
+            'open_episode_ids' => $openEpisodes->pluck('id')->values()->all(),
+            'generation_completed_at' => $completedAt?->toIso8601String(),
+            'latest_learning_settlement_at' => $latestLearningSettlement,
+            'latest_cooperative_settlement_at' => $latestCooperativeSettlement,
+            'latest_causal_settlement_at' => $latestCausalSettlement,
+            'settlements_after_generation_close' => $lateKinds->all(),
         ]);
     }
 

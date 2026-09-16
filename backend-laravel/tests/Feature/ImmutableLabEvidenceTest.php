@@ -6,6 +6,8 @@ use App\Jobs\EvaluateLabAgentJob;
 use App\Jobs\Middleware\LabMutexEvidenceMiddleware;
 use App\Jobs\Middleware\LabQueueAttemptEvidenceMiddleware;
 use App\Models\AiLaboratory;
+use App\Models\AgentLearningEpisode;
+use App\Models\AgentLearningSettlement;
 use App\Models\CandidateGateDecision;
 use App\Models\CandidateHandoffEvent;
 use App\Models\InstrumentInvocationLedger;
@@ -150,6 +152,50 @@ class ImmutableLabEvidenceTest extends TestCase
         $this->assertSame([$technical->id], data_get($generation->fresh()->trigger_context, 'screening_terminal.technical_agent_ids'));
     }
 
+    public function test_autonomy_audit_rejects_generation_closed_before_learning_settlement(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Terminal ordering audit', 'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 3, 'trigger_type' => 'test',
+            'status' => 'screened', 'population_size' => 1, 'trigger_context' => [],
+            'completed_at' => now()->subMinute(),
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'terminal-ordering', 'strategy' => 'hybrid', 'version' => 'v3',
+            'generation' => 3, 'status' => 'testing', 'parameters' => [], 'metadata' => [],
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => [],
+        ]);
+        $episode = AgentLearningEpisode::create([
+            'episode_id' => (string) \Illuminate\Support\Str::uuid(),
+            'decision_key' => 'terminal-ordering-episode', 'lab_agent_id' => $agent->id,
+            'model_version_id' => $model->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'strategy_family' => 'hybrid', 'stage' => 'screening', 'status' => 'settled',
+            'decision' => 'CONTROL', 'context_hash' => str_repeat('c', 64),
+            'decision_context' => [], 'observations' => [],
+            'opened_at' => now()->subMinutes(2), 'settled_at' => now(),
+        ]);
+        AgentLearningSettlement::create([
+            'settlement_id' => (string) \Illuminate\Support\Str::uuid(),
+            'episode_id' => $episode->id, 'source_key' => 'terminal-ordering-source',
+            'outcome_status' => 'settled', 'evidence_state' => 'negative',
+            'hard_failure' => false, 'outcome' => [], 'settled_at' => now(),
+        ]);
+
+        $audit = app(GenerationAutonomyAuditService::class)->audit($generation->fresh());
+        $check = collect($audit['checks'])->firstWhere('name', 'terminal_learning_order');
+
+        $this->assertSame('failed', $check['status']);
+        $this->assertContains('GENERATION_CLOSED_BEFORE_LEARNING_SETTLEMENT', $check['reason_codes']);
+        $this->assertSame(['learning'], $check['metrics']['settlements_after_generation_close']);
+    }
+
     public function test_second_bounded_screen_failure_quarantines_only_the_current_agent_and_closes_generation(): void
     {
         $generation = app(LabPopulationService::class)->build('XAUUSD', 'bounded_timeout_quarantine', true, 'H1');
@@ -174,6 +220,23 @@ class ImmutableLabEvidenceTest extends TestCase
             'lab_agent_id' => $agent->id,
             'stage' => 'evaluation_error_quarantined',
         ]);
+    }
+
+    public function test_host_suspend_timeout_is_retryable_queue_telemetry_not_a_technical_verdict(): void
+    {
+        $job = new EvaluateLabAgentJob(1, 'XAUUSD', 'screen');
+        $run = new LabEvaluationRun(['started_at' => now()->subHour()]);
+        $error = new \Illuminate\Http\Client\ConnectionException(
+            'cURL error 28: Operation timed out after 3600000 milliseconds with 0 bytes received'
+        );
+        $method = new \ReflectionMethod($job, 'isHostSuspendOrLongStall');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($job, $error, $run));
+
+        $run->started_at = now()->subMinutes(10);
+        $this->assertFalse($method->invoke($job, $error, $run));
+        $this->assertFalse($method->invoke($job, new \RuntimeException('ordinary error'), $run));
     }
 
     public function test_constitution_hash_survives_json_numeric_round_trip_and_separates_falsification(): void

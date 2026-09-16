@@ -22,6 +22,7 @@ use App\Models\LabSkillZooEntry;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use App\Models\MutationMemory;
+use App\Models\SystemEvent;
 use App\Services\CanonicalSkillCartridgeService;
 use App\Services\CausalBlindedMutationSelectorService;
 use App\Services\CausalLearningCohortPlannerService;
@@ -2279,6 +2280,124 @@ class CausalLearningLoopContractTest extends TestCase
             app(RecoverLabEvaluationErrors::class),
             $agent->fresh(['generation', 'modelVersion']),
         ));
+    }
+
+    public function test_retry_budget_recovery_keeps_remaining_agents_visible_after_generation_quarantine(): void
+    {
+        [$generation] = $this->canonicalSource();
+        $generation->update([
+            'trigger_type' => 'learning_confirmation',
+            'status' => 'technical_quarantine',
+        ]);
+        $agent = $this->agent($generation, $this->model('retry-budget-quarantine-candidate', []), []);
+        $agent->update([
+            'lifecycle_status' => 'technical_quarantine',
+            'decision_reason' => 'Technical quarantine after bounded learning-lane transport failures; strategy verdict withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'retry-budget-quarantine-immutable-run',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id,
+            'phase' => 'screening',
+            'mode' => 'screen',
+            'status' => 'technical_error',
+            'error_class' => 'Illuminate\\Queue\\MaxAttemptsExceededException',
+            'error_message' => 'App\\Jobs\\EvaluateLabAgentJob has been attempted too many times.',
+            'started_at' => now()->subMinute(),
+            'finished_at' => now(),
+        ]);
+
+        Http::fake(['*' => Http::response(['strategies' => []])]);
+        $queue = \Mockery::mock(LabQueueJobInspector::class);
+        $queue->shouldReceive('labQueueBacklog')->once()->andReturn(['total' => 0, 'queues' => []]);
+        $queue->shouldReceive('hasAgentJob')->once()->with($agent->id, \Mockery::type('array'))->andReturnFalse();
+        $this->app->instance(LabQueueJobInspector::class, $queue);
+        $recovery = \Mockery::mock(LabReplayRecoveryService::class);
+        $recovery->shouldReceive('prepare')->once()
+            ->with(\Mockery::on(fn (LabAgent $row): bool => $row->is($agent)), 'screen', false)
+            ->andReturn(['protocol' => LabReplayRecoveryService::PROTOCOL]);
+        $this->app->instance(LabReplayRecoveryService::class, $recovery);
+
+        $exit = Artisan::call('trading:recover-lab-evaluation-errors', [
+            'symbol' => 'XAUUSD',
+            '--timeframe' => 'H1',
+            '--generation' => $generation->generation,
+            '--limit' => 1,
+            '--mode' => 'screen',
+            '--after-retry-budget-repair' => true,
+        ]);
+
+        $this->assertSame(0, $exit);
+        $this->assertStringContainsString((string) $agent->id, Artisan::output());
+        $this->assertSame('technical_quarantine', $agent->fresh()->lifecycle_status);
+    }
+
+    public function test_autonomous_recovery_seals_missing_frozen_snapshot_as_terminal_technical_history(): void
+    {
+        config()->set('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', true);
+        [$generation] = $this->canonicalSource();
+        $generation->update([
+            'trigger_type' => 'learning_confirmation',
+            'status' => 'technical_quarantine',
+        ]);
+        $agent = $this->agent($generation, $this->model('retry-budget-missing-snapshot', []), []);
+        $agent->update([
+            'lifecycle_status' => 'technical_quarantine',
+            'decision_reason' => 'Technical quarantine after bounded learning-lane transport failures; strategy verdict withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'retry-budget-missing-snapshot-run',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id,
+            'phase' => 'screening',
+            'mode' => 'screen',
+            'status' => 'technical_error',
+            'error_class' => 'Illuminate\\Queue\\MaxAttemptsExceededException',
+            'error_message' => 'App\\Jobs\\EvaluateLabAgentJob has been attempted too many times.',
+            'started_at' => now()->subMinute(),
+            'finished_at' => now(),
+        ]);
+
+        Http::fake(['*' => Http::response(['strategies' => []])]);
+        $queue = \Mockery::mock(LabQueueJobInspector::class);
+        $queue->shouldReceive('labQueueBacklog')->once()->andReturn(['total' => 0, 'queues' => []]);
+        $queue->shouldReceive('hasAgentJob')->once()->with($agent->id, \Mockery::type('array'))->andReturnFalse();
+        $this->app->instance(LabQueueJobInspector::class, $queue);
+        $recovery = \Mockery::mock(LabReplayRecoveryService::class);
+        $recovery->shouldReceive('prepare')->once()
+            ->with(\Mockery::on(fn (LabAgent $row): bool => $row->is($agent)), 'screen', false)
+            ->andThrow(new \RuntimeException('RECOVERY_DATASET_SNAPSHOT_MISSING_OR_HASH_MISMATCH:volume'));
+        $this->app->instance(LabReplayRecoveryService::class, $recovery);
+
+        $exit = Artisan::call('trading:recover-lab-evaluation-errors', [
+            'symbol' => 'XAUUSD',
+            '--timeframe' => 'H1',
+            '--generation' => $generation->generation,
+            '--limit' => 1,
+            '--mode' => 'screen',
+            '--after-retry-budget-repair' => true,
+            '--apply' => true,
+            '--autonomous' => true,
+            '--json' => true,
+        ]);
+
+        $this->assertSame(0, $exit);
+        $output = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame([$agent->id], $output['terminally_reconciled_agent_ids']);
+        $this->assertSame(0, $output['dispatched']);
+        $this->assertSame(1, (int) data_get(
+            $agent->modelVersion->fresh()->metadata,
+            'retry_budget_repair_recovery_attempts',
+        ));
+        $this->assertSame(
+            'FROZEN_RECOVERY_CONTRACT_UNAVAILABLE',
+            data_get($agent->modelVersion->fresh()->metadata, 'technical_recovery_terminal_disposition.reason_code'),
+        );
+        $this->assertDatabaseHas('system_events', [
+            'event_type' => 'lab_autonomous_recovery_terminal_disposition',
+        ]);
     }
 
     public function test_causal_arm_cannot_write_ordinary_mutation_credit_before_triplet_settlement(): void

@@ -1959,10 +1959,10 @@ class AiLearningLaboratoryTest extends TestCase
         $full = new EvaluateLabAgentJob(1, 'XAUUSD', 'full');
 
         $this->assertSame(
-            360 * 60,
+            4320 * 60,
             $screen->retryUntil()->getTimestamp() - $screen->screenQueuedAt->getTimestamp(),
         );
-        $this->assertSame(360 * 60, $screen->uniqueFor);
+        $this->assertSame(4320 * 60, $screen->uniqueFor);
         $this->assertLessThan(
             $screen->retryUntil()->getTimestamp(),
             $full->retryUntil()->getTimestamp(),
@@ -1973,7 +1973,7 @@ class AiLearningLaboratoryTest extends TestCase
         unset($legacy->screenQueuedAt);
 
         $this->assertEqualsWithDelta(
-            360 * 60,
+            4320 * 60,
             $legacy->retryUntil()->getTimestamp() - now()->getTimestamp(),
             2,
         );

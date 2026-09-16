@@ -14,6 +14,7 @@ use App\Services\FailureDojoService;
 use App\Services\FrozenControlScreeningAdmissionService;
 use App\Services\GenerationSnapshotAdmissionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 class LearningDeadlockPreventionTest extends TestCase
@@ -75,6 +76,38 @@ class LearningDeadlockPreventionTest extends TestCase
         $this->assertFalse($result['allowed']);
         $this->assertContains('GENERATION_PRICE_SNAPSHOT_PATH_MISSING', $result['reasons']);
         $this->assertContains('GENERATION_PRICE_SNAPSHOT_HASH_MISSING', $result['reasons']);
+    }
+
+    public function test_volume_specialist_cannot_enter_queue_without_frozen_volume_snapshot(): void
+    {
+        [$control, $candidate] = $this->agents();
+        $candidate->modelVersion->update([
+            'parameters' => ['volume_lane' => 'breakout_volume_confirmation'],
+        ]);
+        $path = storage_path('app/snapshot-admission-'.uniqid('', true).'.csv');
+        File::put($path, "time,open,high,low,close,volume\n2025-01-01T00:00:00Z,1,1,1,1,0\n");
+        $hash = hash_file('sha256', $path);
+        $generation = $control->generation;
+        $generation->update(['trigger_context' => [
+            'canonical_dataset_snapshots' => [
+                'price' => [
+                    'path' => $path,
+                    'sha256' => $hash,
+                    'manifest' => ['snapshot_sha256' => $hash],
+                ],
+            ],
+        ]]);
+
+        try {
+            $result = app(GenerationSnapshotAdmissionService::class)
+                ->inspect($generation->fresh(['agents.modelVersion']));
+
+            $this->assertFalse($result['allowed']);
+            $this->assertContains('GENERATION_VOLUME_SNAPSHOT_PATH_MISSING', $result['reasons']);
+            $this->assertContains('GENERATION_VOLUME_SNAPSHOT_HASH_MISSING', $result['reasons']);
+        } finally {
+            File::delete($path);
+        }
     }
 
     /** @return array{0:LabAgent,1:LabAgent} */
