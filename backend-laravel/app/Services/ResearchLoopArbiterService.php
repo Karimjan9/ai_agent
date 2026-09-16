@@ -86,7 +86,13 @@ class ResearchLoopArbiterService
             return $this->blocked('RESEARCH_LOOP_LOCK_UNAVAILABLE', ['error_class' => $exception::class]);
         }
         try {
-            return $this->tickLocked($symbol, $timeframe, $dryRun);
+            $recovery = app(StaleAutonomousWorkRecoveryService::class)
+                ->reconcile($symbol, $timeframe);
+            $result = $this->tickLocked($symbol, $timeframe, $dryRun);
+
+            return ($recovery['status'] ?? null) === 'recovered'
+                ? [...$result, 'stale_work_recovery' => $recovery]
+                : $result;
         } finally {
             try {
                 $lock->release();
@@ -386,6 +392,25 @@ class ResearchLoopArbiterService
             return $payload;
         }
 
+        $sameMinute = ResearchLoopDecision::query()->where('decision_key', $decisionKey)->first();
+        if ($sameMinute) {
+            return [...$payload, 'status' => 'duplicate_suppressed', 'decision_id' => (int) $sameMinute->id];
+        }
+        if ($command !== null && $queue !== null) {
+            $canonicalArguments = $this->canonicalArguments($arguments);
+            $inFlight = ResearchLoopDecision::query()
+                ->where('symbol', $symbol)->where('timeframe', $timeframe)
+                ->where('command', $command)->where('queue', $queue)
+                ->whereIn('status', ['selected', 'dispatched', 'running'])
+                ->latest('id')->get()
+                ->first(fn (ResearchLoopDecision $decision): bool => $this->canonicalArguments(
+                    (array) $decision->arguments,
+                ) === $canonicalArguments);
+            if ($inFlight) {
+                return [...$payload, 'status' => 'in_flight_suppressed', 'decision_id' => (int) $inFlight->id];
+            }
+        }
+
         $decision = ResearchLoopDecision::query()->firstOrCreate(['decision_key' => $decisionKey], [
             'symbol' => $symbol, 'timeframe' => $timeframe, 'action' => $action,
             'status' => $command === null ? 'deferred' : 'selected', 'priority' => $priority,
@@ -410,6 +435,13 @@ class ResearchLoopArbiterService
         }
 
         return [...$payload, 'decision_id' => (int) $decision->id];
+    }
+
+    private function canonicalArguments(array $arguments): string
+    {
+        ksort($arguments);
+
+        return (string) json_encode($arguments, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
     }
 
     /** @return array<string,mixed> */

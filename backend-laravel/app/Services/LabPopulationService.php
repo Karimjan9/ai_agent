@@ -20,10 +20,13 @@ use App\Models\MutationMemory;
 use App\Models\Symbol;
 use App\Services\MarketData\HistoricalDataQualityService;
 use App\Services\MarketData\MarketDataContinuityService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 class LabPopulationService
 {
@@ -579,6 +582,7 @@ class LabPopulationService
         // command and recovery) converges here. Command-specific mutexes do
         // not protect these paths from each other, so own one symbol-scoped
         // constructor lease for the entire expensive 20-seat compilation.
+        $this->recoverStaleConstructorLease($symbol, $timeframe);
         $constructorLock = Cache::lock(
             $this->constructorLockKey($symbol, $timeframe),
             self::CONSTRUCTOR_LOCK_TTL_SECONDS,
@@ -1654,6 +1658,10 @@ class LabPopulationService
                 'failures' => [],
             ];
         }
+        $this->recoverStaleConstructorLease(
+            (string) $generation->laboratory->symbol,
+            (string) $generation->laboratory->timeframe,
+        );
         $constructorLock = Cache::lock(
             $this->constructorLockKey((string) $generation->laboratory->symbol, (string) $generation->laboratory->timeframe),
             self::CONSTRUCTOR_LOCK_TTL_SECONDS,
@@ -2142,6 +2150,93 @@ class LabPopulationService
             'active' => $this->constructorIsActive($symbol, $timeframe),
             'owner' => is_array($owner) ? $owner : null,
             'observed_at' => now()->utc()->toIso8601String(),
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /**
+     * Recover only a stale constructor whose recorded process is provably
+     * dead on this host. A live or unverifiable owner is never pre-empted.
+     *
+     * @return array<string,mixed>
+     */
+    public function recoverStaleConstructorLease(string $symbol, string $timeframe = 'H1'): array
+    {
+        $symbol = strtoupper($symbol);
+        if ($symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
+            $timeframe = (string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1');
+        }
+        $timeframe = strtoupper($timeframe);
+        $lockKey = $this->constructorLockKey($symbol, $timeframe);
+        $ownerKey = $this->constructorOwnerKey($symbol, $timeframe);
+        $lock = Cache::lock($lockKey, 5);
+        if ($lock->get()) {
+            $lock->release();
+
+            return ['status' => 'not_active', 'recovered' => false, 'promotion_evidence' => false];
+        }
+
+        $owner = Cache::get($ownerKey);
+        if (! is_array($owner)) {
+            return ['status' => 'owner_unknown', 'recovered' => false, 'promotion_evidence' => false];
+        }
+        $heartbeatAt = (string) ($owner['heartbeat_at'] ?? $owner['acquired_at'] ?? '');
+        try {
+            $ageSeconds = $heartbeatAt === '' ? 0 : max(
+                0,
+                now()->utc()->timestamp - CarbonImmutable::parse($heartbeatAt)->utc()->timestamp,
+            );
+        } catch (\Throwable) {
+            return ['status' => 'heartbeat_invalid', 'recovered' => false, 'promotion_evidence' => false];
+        }
+        $staleAfter = max(120, (int) config(
+            'services.lifecycle_orchestrator.constructor_stale_heartbeat_seconds',
+            180,
+        ));
+        $pid = (int) ($owner['pid'] ?? 0);
+        $ownerHost = trim((string) ($owner['hostname'] ?? ''));
+        $localHost = $this->constructorHostname();
+        $command = str_replace('/', DIRECTORY_SEPARATOR, (string) ($owner['command'] ?? ''));
+        $legacyLocalCommand = $ownerHost === ''
+            && str_contains(strtolower($command), strtolower(str_replace('/', DIRECTORY_SEPARATOR, base_path('artisan'))));
+        $localOwner = ($ownerHost !== '' && hash_equals(strtolower($localHost), strtolower($ownerHost)))
+            || $legacyLocalCommand;
+        if ($ageSeconds < $staleAfter || $pid <= 0 || ! $localOwner) {
+            return [
+                'status' => 'active_or_unverifiable', 'recovered' => false,
+                'stale_age_seconds' => $ageSeconds, 'owner' => $owner,
+                'promotion_evidence' => false,
+            ];
+        }
+        $running = $this->localConstructorProcessIsRunning($pid);
+        if ($running !== false) {
+            return [
+                'status' => $running ? 'owner_process_running' : 'owner_process_unknown',
+                'recovered' => false, 'stale_age_seconds' => $ageSeconds,
+                'owner' => $owner, 'promotion_evidence' => false,
+            ];
+        }
+
+        // Fence against a heartbeat/process-owner change between the proof
+        // above and forceRelease().
+        $currentOwner = Cache::get($ownerKey);
+        if (! is_array($currentOwner)
+            || (int) ($currentOwner['pid'] ?? 0) !== $pid
+            || (string) ($currentOwner['heartbeat_at'] ?? '') !== (string) ($owner['heartbeat_at'] ?? '')) {
+            return ['status' => 'owner_changed', 'recovered' => false, 'promotion_evidence' => false];
+        }
+
+        $lock->forceRelease();
+        Cache::forget($ownerKey);
+        Log::warning('Recovered stale population constructor lease from dead local process.', [
+            'symbol' => $symbol, 'timeframe' => $timeframe,
+            'stale_pid' => $pid, 'stale_age_seconds' => $ageSeconds,
+            'replacement_pid' => getmypid(), 'owner' => $owner,
+        ]);
+
+        return [
+            'status' => 'recovered_dead_local_owner', 'recovered' => true,
+            'stale_age_seconds' => $ageSeconds, 'owner' => $owner,
             'promotion_evidence' => false,
         ];
     }
@@ -2837,10 +2932,44 @@ class LabPopulationService
             'generation_id' => $generationId,
             'command' => app()->runningInConsole() ? implode(' ', array_slice($_SERVER['argv'] ?? [], 0, 4)) : 'non_console',
             'pid' => getmypid(),
+            'hostname' => $this->constructorHostname(),
             'acquired_at' => now()->utc()->toIso8601String(),
             'heartbeat_at' => now()->utc()->toIso8601String(),
             'promotion_evidence' => false,
         ];
+    }
+
+    private function constructorHostname(): string
+    {
+        return (string) (gethostname() ?: php_uname('n'));
+    }
+
+    /** Null means the platform could not prove either process state. */
+    private function localConstructorProcessIsRunning(int $pid): ?bool
+    {
+        if ($pid <= 0) {
+            return false;
+        }
+        if (PHP_OS_FAMILY !== 'Windows') {
+            if (function_exists('posix_kill')) {
+                return @posix_kill($pid, 0);
+            }
+
+            return is_dir('/proc/'.$pid) ? true : null;
+        }
+
+        $process = new Process(['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH']);
+        $process->run();
+        if (! $process->isSuccessful()) {
+            return null;
+        }
+        foreach (preg_split('/\R/', $process->getOutput()) ?: [] as $line) {
+            if (preg_match('/^"[^"]+","'.preg_quote((string) $pid, '/').'",/i', trim((string) $line)) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function publishConstructorProgress(

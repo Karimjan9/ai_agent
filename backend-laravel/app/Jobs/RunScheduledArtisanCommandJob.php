@@ -167,7 +167,16 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
         $priority ??= app(CanonicalResearchLanePriorityService::class);
         $processRunner ??= app(ScheduledArtisanProcessRunnerService::class);
         $started = microtime(true);
-        $key = 'system:scheduled-command:'.$this->uniqueId();
+        $key = $this->statusCacheKey();
+        if ($this->researchLoopDecisionIsTerminal()) {
+            // A Redis-reserved delivery may return long after its dead worker
+            // was reconciled. Its immutable decision has been fenced as
+            // failed/deferred, so executing the old command would create
+            // unowned work. Complete this transport retry as an explicit no-op.
+            Cache::put($key, $this->status('skipped_terminal_decision', $started, 'Stale delivery fenced by terminal research-loop decision.'), now()->addDay());
+
+            return;
+        }
         Cache::put($key, $this->status('running', $started), now()->addDay());
         $this->transitionResearchLoopDecision('running');
 
@@ -289,12 +298,29 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
             'command' => $this->command,
             'lane' => $this->lane,
             'status' => $status,
+            'pid' => getmypid(),
+            'hostname' => (string) (gethostname() ?: php_uname('n')),
             'updated_at' => now()->toIso8601String(),
             'duration_ms' => (int) round((microtime(true) - $started) * 1000),
             'detail' => substr($detail, 0, 1500),
             'outcome' => $outcome,
             'promotion_evidence' => false,
         ];
+    }
+
+    public function statusCacheKey(): string
+    {
+        return 'system:scheduled-command:'.$this->uniqueId();
+    }
+
+    private function researchLoopDecisionIsTerminal(): bool
+    {
+        if (! $this->researchLoopDecisionId) {
+            return false;
+        }
+        $decision = ResearchLoopDecision::query()->find($this->researchLoopDecisionId);
+
+        return ! $decision || in_array((string) $decision->status, ['completed', 'deferred', 'failed'], true);
     }
 
     private function canonicalArguments(): string

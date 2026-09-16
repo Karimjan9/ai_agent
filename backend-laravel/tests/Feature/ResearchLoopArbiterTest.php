@@ -23,6 +23,7 @@ use App\Services\ScheduledCommandOutcomeClassifierService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\TestCase;
@@ -173,6 +174,61 @@ class ResearchLoopArbiterTest extends TestCase
         } finally {
             CarbonImmutable::setTestNow();
         }
+    }
+
+    public function test_next_minute_suppresses_the_same_in_flight_child_decision(): void
+    {
+        Queue::fake();
+        CarbonImmutable::setTestNow('2026-09-11 12:34:20 UTC');
+        try {
+            $lab = $this->lab();
+            LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
+                'trigger_type' => 'new_data', 'status' => 'screening', 'population_size' => 20,
+                'trigger_context' => [], 'started_at' => now()]);
+            app(AutonomousModeService::class)->stop('XAUUSD', 'H1', 'test', 'drain');
+
+            $first = app(ResearchLoopArbiterService::class)->tick();
+            CarbonImmutable::setTestNow('2026-09-11 12:35:20 UTC');
+            $second = app(ResearchLoopArbiterService::class)->tick();
+
+            $this->assertSame('dispatched', $first['status']);
+            $this->assertSame('in_flight_suppressed', $second['status']);
+            $this->assertSame($first['decision_id'], $second['decision_id']);
+            $this->assertDatabaseCount('research_loop_decisions', 1);
+            Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
+    }
+
+    public function test_reconciled_terminal_child_delivery_is_an_explicit_noop(): void
+    {
+        $decision = ResearchLoopDecision::create([
+            'decision_key' => hash('sha256', 'terminal-child-delivery'),
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'action' => 'OPEN_CAUSAL_LEARNING_CONFIRMATION',
+            'status' => 'failed', 'priority' => 92,
+            'evidence_hash' => hash('sha256', 'terminal-child-evidence'),
+            'command' => 'trading:run-lifecycle-cycle', 'queue' => 'scheduler-constructor',
+            'arguments' => ['--symbol' => 'XAUUSD', '--json' => true],
+            'reason_codes' => ['RECOVERED_DEAD_OWNER'],
+            'evidence_snapshot' => [], 'contract' => [], 'completed_at' => now(),
+        ]);
+        $job = new RunScheduledArtisanCommandJob(
+            (string) $decision->command,
+            (array) $decision->arguments,
+            (string) $decision->queue,
+            (int) $decision->id,
+        );
+        Artisan::shouldReceive('call')->never();
+
+        $job->handle(app(ScheduledCommandOutcomeClassifierService::class));
+
+        $this->assertSame('failed', $decision->fresh()->status);
+        $this->assertSame(
+            'skipped_terminal_decision',
+            data_get(Cache::get($job->statusCacheKey()), 'status'),
+        );
     }
 
     public function test_latest_generation_learning_pair_outranks_historical_positive_backlog(): void
