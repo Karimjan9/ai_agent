@@ -1530,6 +1530,12 @@ class LabAgentEvaluationService
             'replay_performed' => false,
             'promotion_evidence' => false,
         ]);
+        // WAIT is terminal for this guard. Settle its canonical learning
+        // episode with an explicit zero-credit receipt so the generation is
+        // not held open by a decision that intentionally has no replay.
+        app(UncertaintyAbstentionSettlementService::class)->settle(
+            $agent->fresh(['modelVersion']),
+        );
         $this->handoffs->record($agent->generation, $agent->fresh(), 'screened', 'completed', 'UNCERTAINTY_GUARD_WAIT', [
             'correctly_abstained' => true,
             'decision' => 'WAIT',

@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\AiLaboratory;
 use App\Models\AgentLearningEpisode;
+use App\Models\AgentLearningSettlement;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use App\Services\LabGenerationContextService;
@@ -59,6 +61,72 @@ class EvidenceLifecycleContractTest extends TestCase
             'lab_generation_id' => $generation->id,
             'disposition' => 'technical_quarantine', 'terminal' => true,
         ]);
+    }
+
+    public function test_watermark_reconciles_completed_uncertainty_wait_as_one_zero_credit_settlement(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Abstain watermark', 'timeframe' => 'H1',
+            'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 2, 'trigger_type' => 'learning_confirmation',
+            'population_size' => 1, 'status' => 'screening', 'trigger_context' => [],
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'completed-abstain-watermark', 'strategy' => 'hybrid', 'version' => 'v2',
+            'generation' => 2, 'status' => 'testing', 'parameters' => [],
+            'metadata' => [],
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'learning_trigger', 'lifecycle_status' => 'screened',
+            'parameter_diff' => [],
+        ]);
+        $episode = AgentLearningEpisode::create([
+            'episode_id' => (string) \Illuminate\Support\Str::uuid(),
+            'decision_key' => 'completed-abstain-watermark-episode',
+            'lab_agent_id' => $agent->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'stage' => 'screening', 'status' => 'open', 'decision' => 'WAIT',
+            'context_hash' => str_repeat('w', 64),
+            'decision_context' => ['action' => 'WAIT'], 'observations' => [],
+            'opened_at' => now()->subMinutes(10),
+        ]);
+        $runId = (string) \Illuminate\Support\Str::uuid();
+        LabEvaluationRun::create([
+            'run_id' => $runId, 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id, 'model_version_id' => $model->id,
+            'phase' => 'screening', 'mode' => 'screening', 'attempt' => 1,
+            'status' => 'completed', 'started_at' => now()->subMinute(), 'finished_at' => now(),
+            'metrics' => ['decision' => 'WAIT', 'total_trades' => 0],
+            'metadata' => ['correctly_abstained' => true, 'replay_performed' => false],
+        ]);
+        $model->update(['metadata' => [
+            'uncertainty_abstain_contract' => [
+                'protocol' => \App\Services\CooperativeContextualEvolutionCouncilService::UNCERTAINTY_ABSTAIN_PROTOCOL,
+                'terminal_status' => 'correctly_abstained',
+                'terminal_evidence_run_id' => $runId,
+            ],
+            'learning_decision' => ['episode_id' => $episode->id, 'decision' => 'WAIT'],
+        ]]);
+
+        $watermark = app(SettlementWatermarkService::class)
+            ->reconcile('XAUUSD', 'H1', $generation->fresh('agents'));
+        $second = app(SettlementWatermarkService::class)
+            ->reconcile('XAUUSD', 'H1', $generation->fresh('agents'));
+
+        $this->assertTrue($watermark['generation_close_allowed']);
+        $this->assertTrue($second['generation_close_allowed']);
+        $this->assertSame(1, $watermark['terminal']);
+        $this->assertSame('settled', $episode->fresh()->status);
+        $this->assertSame(1, AgentLearningSettlement::query()->where('episode_id', $episode->id)->count());
+        $settlement = AgentLearningSettlement::query()->where('episode_id', $episode->id)->firstOrFail();
+        $this->assertSame('abstained', $settlement->outcome_status);
+        $this->assertSame(0.0, $settlement->selection_reward);
+        $this->assertFalse($settlement->hard_failure);
+        $this->assertFalse((bool) data_get($settlement->outcome, 'promotion_evidence', true));
     }
 
     public function test_generation_queue_backlog_ignores_jobs_owned_by_another_generation(): void

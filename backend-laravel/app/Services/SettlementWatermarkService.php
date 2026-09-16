@@ -13,15 +13,24 @@ class SettlementWatermarkService
     public const PROTOCOL = 'settlement_watermark_v1';
     public const TERMINAL = ['settled', 'technical_quarantine', 'irrecoverable_legacy'];
 
+    public function __construct(private UncertaintyAbstentionSettlementService $abstentions) {}
+
     /** @return array<string,mixed> */
     public function reconcile(string $symbol, string $timeframe, ?LabGeneration $generation = null): array
     {
         if (! Schema::hasTable('settlement_watermarks')) return ['available' => false];
         $episodes = AgentLearningEpisode::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
             ->when($generation, fn ($q) => $q->whereIn('lab_agent_id', $generation->agents()->pluck('id')))
-            ->with(['settlement', 'labAgent'])->get();
+            ->with(['settlement', 'labAgent.modelVersion'])->get();
         $counts = [];
         foreach ($episodes as $episode) {
+            // Reconcile guards completed before the zero-credit settlement
+            // contract existed (or interrupted between evidence close and
+            // settlement). This is evidence-gated and idempotent.
+            $abstentionReconciliation = $episode->labAgent
+                ? $this->abstentions->settle($episode->labAgent, $episode)
+                : ['status' => 'not_applicable', 'promotion_evidence' => false];
+            $episode->refresh()->load(['settlement', 'labAgent.modelVersion']);
             $disposition = $this->classify($episode);
             $counts[$disposition] = ($counts[$disposition] ?? 0) + 1;
             DB::table('settlement_watermarks')->updateOrInsert(['watermark_key' => hash('sha256', self::PROTOCOL.'|'.$episode->id)], [
@@ -30,7 +39,9 @@ class SettlementWatermarkService
                 'execution_hash' => $episode->execution_hash, 'evidence' => json_encode(['protocol' => self::PROTOCOL, 'episode_status' => $episode->status,
                     'agent_lifecycle_status' => $episode->labAgent?->lifecycle_status,
                     'has_settlement' => $episode->settlement !== null, 'control_hash' => data_get($episode->decision_context, 'control_hash'),
-                    'composition_hash' => data_get($episode->decision_context, 'composition_hash'), 'promotion_evidence' => false]),
+                    'composition_hash' => data_get($episode->decision_context, 'composition_hash'),
+                    'abstention_reconciliation' => $abstentionReconciliation,
+                    'promotion_evidence' => false]),
                 'observed_at' => now(), 'updated_at' => now(), 'created_at' => now(),
             ]);
         }

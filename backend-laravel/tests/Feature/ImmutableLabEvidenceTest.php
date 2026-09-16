@@ -75,6 +75,19 @@ class ImmutableLabEvidenceTest extends TestCase
             'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
             'origin' => 'test', 'lifecycle_status' => 'screening', 'parameter_diff' => [],
         ]);
+        $episode = AgentLearningEpisode::create([
+            'episode_id' => (string) \Illuminate\Support\Str::uuid(),
+            'decision_key' => 'uncertainty-abstain-learning-episode',
+            'lab_agent_id' => $agent->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'stage' => 'screening', 'status' => 'open', 'decision' => 'WAIT',
+            'context_hash' => str_repeat('u', 64),
+            'decision_context' => ['action' => 'WAIT'], 'observations' => [],
+            'opened_at' => now(),
+        ]);
+        $metadata = (array) $model->metadata;
+        $metadata['learning_decision'] = ['episode_id' => $episode->id, 'decision' => 'WAIT'];
+        $model->update(['metadata' => $metadata]);
 
         app(LabAgentEvaluationService::class)->screen($agent);
 
@@ -86,6 +99,17 @@ class ImmutableLabEvidenceTest extends TestCase
         $this->assertSame('WAIT', data_get($run->metrics, 'decision'));
         $this->assertFalse((bool) data_get($run->metadata, 'replay_performed', true));
         $this->assertTrue((bool) data_get($run->metadata, 'correctly_abstained'));
+        $settlement = AgentLearningSettlement::query()->where('episode_id', $episode->id)->firstOrFail();
+        $this->assertSame('settled', $episode->fresh()->status);
+        $this->assertSame('abstained', $settlement->outcome_status);
+        $this->assertSame('neutral', $settlement->evidence_state);
+        $this->assertSame(0.0, $settlement->selection_reward);
+        $this->assertFalse($settlement->hard_failure);
+        $this->assertFalse((bool) data_get($settlement->outcome, 'promotion_evidence', true));
+        $this->assertSame(
+            'deliberate_abstain_settled',
+            data_get($model->fresh()->metadata, 'learning_decision.outcome_status'),
+        );
         $this->assertDatabaseCount('candidate_gate_decisions', 0);
         $this->assertSame(0, InstrumentInvocationLedger::query()->where('lab_agent_id', $agent->id)->count());
         $this->assertDatabaseHas('candidate_handoff_events', [
