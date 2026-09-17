@@ -46,6 +46,40 @@ class ImmutableLabEvidenceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_autonomy_audit_treats_scientific_rejection_as_a_clean_terminal_disposition(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Scientific rejection terminal test',
+            'timeframe' => 'H1', 'strategy_families' => ['hybrid'],
+            'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'test', 'status' => 'completed',
+            'population_size' => 1, 'trigger_context' => [],
+            'completed_at' => now(),
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'scientifically-rejected', 'strategy' => 'hybrid',
+            'version' => 'v1-rejected', 'generation' => 1,
+            'status' => 'testing', 'parameters' => [], 'metadata' => [],
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id,
+            'model_version_id' => $model->id, 'symbol' => 'XAUUSD',
+            'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'rejected',
+            'parameter_diff' => [],
+        ]);
+
+        $audit = app(GenerationAutonomyAuditService::class)->audit($generation->fresh());
+        $population = collect($audit['checks'])->firstWhere('name', 'population_terminal');
+
+        $this->assertSame('passed', $population['status']);
+        $this->assertSame(1, $population['metrics']['terminal_agents']);
+        $this->assertSame([], $population['metrics']['non_terminal_or_technical_agent_ids']);
+    }
+
     public function test_uncertainty_abstain_is_a_local_wait_receipt_and_never_calls_replay(): void
     {
         Http::fake();

@@ -35,7 +35,11 @@ class GenerationAutonomyAuditService
 
     private const TERMINAL_GENERATIONS = ['screened', 'completed'];
 
-    private const TERMINAL_AGENTS = ['screened', 'completed'];
+    // A scientifically rejected candidate has reached a clean terminal
+    // disposition. It must not make a completed zero-edge generation look
+    // operationally broken; technical quarantine remains deliberately
+    // excluded and is enforced by the technical-integrity check below.
+    private const TERMINAL_AGENTS = ['screened', 'completed', 'rejected'];
 
     /** @return array<string,mixed> */
     public function audit(LabGeneration $generation): array
