@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/project-map/project-map.mjs",
+  "generator_digest": "5e3498ce579265a81dc03c17970e0f3ff7be935b657ee7f6e9aab0a863ae6762",
+  "generated_at": "2026-09-26T17:30:50.184Z",
+  "source_digest": "1f612b3f350728963367ba99e61f8e4430e448e51b310bdf17f4bc0cde0173d2",
+  "source_file_count": 1364,
+  "git_head": "c47c026e454e780e818232cbb0f9cfd03a21debb",
+  "authority": "Navigation facts only. Real source code and tests remain authoritative.",
+  "documented_contracts": [
+    "docs/ai-service-contract.md",
+    ".project-map/shared/integrations.md"
+  ],
+  "endpoints": [
+    {
+      "runtime": "fastapi",
+      "method": "GET",
+      "path": "/",
+      "source": "ai-service-python/app/main.py",
+      "line": 459
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/backtest/aggregate-causal-folds",
+      "source": "ai-service-python/app/main.py",
+      "line": 533
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/backtest/mtf-ablation",
+      "source": "ai-service-python/app/main.py",
+      "line": 3864
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/backtest/mtf-council",
+      "source": "ai-service-python/app/main.py",
+      "line": 4182
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/backtest/mtf-hypothesis-batch",
+      "source": "ai-service-python/app/main.py",
+      "line": 4015
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/backtest/mtf-targeted-validation",
+      "source": "ai-service-python/app/main.py",
+      "line": 3949
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/backtest/run-all",
+      "source": "ai-service-python/app/main.py",
+      "line": 519
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/backtest/run",
+      "source": "ai-service-python/app/main.py",
+      "line": 496
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/holdout/run",
+      "source": "ai-service-python/app/routers/holdouts.py",
+      "line": 19
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/paper/advance-contract",
+      "source": "ai-service-python/app/main.py",
+      "line": 3238
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/paper/execution-contract",
+      "source": "ai-service-python/app/main.py",
+      "line": 3117
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/paper/signal",
+      "source": "ai-service-python/app/main.py",
+      "line": 2644
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/paper/twin/{lane}",
+      "source": "ai-service-python/app/main.py",
+      "line": 2911
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/paper/twin/ablation",
+      "source": "ai-service-python/app/main.py",
+      "line": 3059
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/paper/twin/red-team",
+      "source": "ai-service-python/app/main.py",
+      "line": 2991
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/api/portfolio/backtest",
+      "source": "ai-service-python/app/main.py",
+      "line": 1622
+    },
+    {
+      "runtime": "fastapi",
+      "method": "GET",
+      "path": "/api/replay-status",
+      "source": "ai-service-python/app/main.py",
+      "line": 475
+    },
+    {
+      "runtime": "fastapi",
+      "method": "GET",
+      "path": "/api/strategies",
+      "source": "ai-service-python/app/main.py",
+      "line": 467
+    },
+    {
+      "runtime": "fastapi",
+      "method": "GET",
+      "path": "/health",
+      "source": "ai-service-python/app/main.py",
+      "line": 436
+    },
+    {
+      "runtime": "fastapi",
+      "method": "POST",
+      "path": "/run",
+      "source": "ai-service-python/app/routers/backtests.py",
+      "line": 9
+    }
+  ],
+  "outbound_calls": [],
+  "limitations": "Static discovery only. Container bindings, queues, events and environment-resolved URLs require source and tests for confirmation."
+}

@@ -17,6 +17,7 @@ use App\Models\TradingInstrument;
 use App\Services\CausalLearningCohortPlannerService;
 use App\Services\InstrumentInvocationLedgerService;
 use App\Services\LabInstrumentResearchService;
+use App\Services\LearningLaneService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\TradingInstrumentOperatingSystemService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -86,6 +87,68 @@ class LabInstrumentResearchLoopTest extends TestCase
         $this->assertSame(count($assignment['selected']), InstrumentInvocationLedger::query()->count());
     }
 
+    public function test_cached_assignment_rebinds_to_current_frozen_component_identity(): void
+    {
+        [$candidate] = $this->pairAgents();
+        $model = $candidate->modelVersion;
+        $metadata = (array) $model->metadata;
+        $metadata['smart_composition'] = [
+            'strategy_library_id' => 'stale-strategy',
+            'tactic_library_key' => 'stale-tactic',
+            'risk_library_id' => 'stale-risk',
+            'composition_passport' => [
+                'composition_id' => 'frozen-composition-test',
+                'components' => [
+                    'strategy_id' => 'str_001_ema_adx_pullback',
+                    'tactic_id' => 'trend_pullback',
+                    'risk_id' => 'atr_risk_envelope',
+                    'management_id' => 'balanced_professional',
+                ],
+            ],
+        ];
+        $model->update(['metadata' => $metadata]);
+        $service = app(LabInstrumentResearchService::class);
+        $first = $service->assignment($candidate->fresh(['modelVersion', 'generation']));
+        $this->assertSame('str_001_ema_adx_pullback', data_get($first, 'source_components.strategy_library_id'));
+        $this->assertSame('trend_pullback', data_get($first, 'source_components.tactic_library_key'));
+
+        $metadata = (array) $model->fresh()->metadata;
+        $metadata['smart_composition']['composition_passport']['components']['tactic_id'] = 'trend_breakout_retest';
+        $model->update(['metadata' => $metadata]);
+        $second = $service->assignment($candidate->fresh(['modelVersion', 'generation']));
+
+        $this->assertSame('trend_breakout_retest', data_get($second, 'source_components.tactic_library_key'));
+        $this->assertNotSame($first['assignment_hash'], $second['assignment_hash']);
+    }
+
+    public function test_historical_transition_homework_is_not_a_live_instrument_scope(): void
+    {
+        [, $control] = $this->pairAgents();
+        $model = $control->modelVersion;
+        $model->update(['metadata' => [
+            ...((array) $model->metadata),
+            'semantic_group' => [
+                'regime' => 'trend_up', 'volatility' => 'normal_volatility',
+            ],
+            'portfolio_council_lane' => [
+                'regime' => 'trend_up', 'volatility' => 'normal_volatility',
+                'transition_state' => 'transition_observed',
+            ],
+        ]]);
+
+        $assignment = app(LabInstrumentResearchService::class)
+            ->assignment($control->fresh(['modelVersion', 'generation']));
+
+        $this->assertSame('assigned', $assignment['status']);
+        $this->assertNotEmpty($assignment['selected']);
+        foreach ($assignment['selected'] as $instrument) {
+            $declared = (array) data_get($instrument, 'activation_contract.context.declared_context', []);
+            $this->assertSame('trend_up', $declared['regime'] ?? null);
+            $this->assertSame('normal', $declared['volatility'] ?? null);
+            $this->assertArrayNotHasKey('transition_state', $declared);
+        }
+    }
+
     public function test_one_gene_candidate_without_exact_pair_is_blocked_before_replay(): void
     {
         [$candidate] = $this->pairAgents();
@@ -107,6 +170,50 @@ class LabInstrumentResearchLoopTest extends TestCase
         $this->assertDatabaseCount('instrument_invocation_ledger', 0);
     }
 
+    public function test_effectful_runtime_veto_is_recorded_as_research_decision_not_paper_execution(): void
+    {
+        [$candidate] = $this->pairAgents();
+        $assignment = app(LabInstrumentResearchService::class)->assignment($candidate);
+        $result = $this->attestedResult($assignment, 'veto-screen-run');
+        $result['instrument_research_trace']['status'] = 'decision_observed';
+        $result['instrument_research_trace']['bundle_fully_activated'] = false;
+        $result['instrument_research_trace']['bundle_activation_context_keys'] = [];
+        foreach ($result['instrument_research_trace']['instruments'] as &$runtime) {
+            $runtime['status'] = 'evaluated_veto';
+            $runtime['decision_path_activated'] = false;
+            $runtime['used_in_decision'] = true;
+            $runtime['runtime_disposition'] = 'evaluated_veto';
+            $runtime['decision_effect_counts'] = ['VETO' => 1];
+            $runtime['evaluation_count'] = 1;
+            $runtime['veto_count'] = 1;
+            $runtime['abstain_count'] = 0;
+            $runtime['activated_context_keys'] = [];
+            $runtime['out_of_scope_context_keys'] = ['trend_up|normal_volatility|asia|BUY'];
+        }
+        unset($runtime);
+
+        $count = app(InstrumentInvocationLedgerService::class)->recordResearchObservation(
+            $candidate->fresh(['modelVersion']),
+            $result,
+        );
+
+        $this->assertSame(count($assignment['selected']), $count);
+        $this->assertDatabaseHas('instrument_invocation_ledger', [
+            'lab_agent_id' => $candidate->id,
+            'instrument_key' => 'volume_confirmation',
+            'used_in_decision' => true,
+            'used_in_execution' => false,
+            'verdict' => 'evaluated_veto_research_only',
+        ]);
+        $row = InstrumentInvocationLedger::query()
+            ->where('lab_agent_id', $candidate->id)
+            ->where('instrument_key', 'volume_confirmation')
+            ->firstOrFail();
+        $this->assertSame('VETO', data_get($row->metadata, 'decision_effect'));
+        $this->assertFalse((bool) data_get($row->metadata, 'paper_execution_authority'));
+        $this->assertFalse((bool) data_get($row->metadata, 'promotion_evidence'));
+    }
+
     public function test_causal_triplet_arm_reserves_its_experiment_control_and_settles_against_the_later_pair(): void
     {
         [$candidate, $control, $generation] = $this->pairAgents();
@@ -115,14 +222,12 @@ class LabInstrumentResearchLoopTest extends TestCase
             $model = $agent->modelVersion;
             $metadata = (array) $model->metadata;
             unset($metadata['control_pair_contract']);
-            if ((int) $agent->id === (int) $candidate->id) {
-                $metadata['causal_learning_cohort'] = [
-                    'protocol' => CausalLearningCohortPlannerService::PROTOCOL,
-                    'experiment_key' => $experimentKey,
-                    'role' => 'hypothesis_guided',
-                    'promotion_evidence' => false,
-                ];
-            }
+            $metadata['causal_learning_cohort'] = [
+                'protocol' => CausalLearningCohortPlannerService::PROTOCOL,
+                'experiment_key' => $experimentKey,
+                'role' => (int) $agent->id === (int) $candidate->id ? 'hypothesis_guided' : 'frozen_control',
+                'promotion_evidence' => false,
+            ];
             $model->update(['metadata' => $metadata]);
         }
         $experiment = AgentLearningCausalExperiment::create([
@@ -142,6 +247,18 @@ class LabInstrumentResearchLoopTest extends TestCase
         $this->assertSame('reserved', data_get($assignment, 'pair_reservation.status'));
         $this->assertSame('causal_triplet_instrument_reservation_v1', data_get($assignment, 'pair_reservation.protocol'));
         $this->assertSame($experiment->id, data_get($assignment, 'pair_reservation.causal_experiment_id'));
+        $controlAssignment = app(LabInstrumentResearchService::class)->assignment(
+            $control->fresh(['modelVersion', 'generation'])
+        );
+        $this->assertSame('assigned', $controlAssignment['status']);
+        $this->assertSame($assignment['selected_keys'], $controlAssignment['selected_keys']);
+        $this->assertSame($assignment['instrument_key_role_hash'], $controlAssignment['instrument_key_role_hash']);
+        $this->assertSame($assignment['activation_context_hash'], $controlAssignment['activation_context_hash']);
+        $this->assertSame('volume_lane', $controlAssignment['sealed_treatment_gene']);
+        $this->assertSame('frozen_treatment_surface', data_get(
+            collect($controlAssignment['selected'])->firstWhere('instrument_key', 'volume_confirmation'),
+            'selection_reason',
+        ));
 
         $ledger = app(InstrumentInvocationLedgerService::class);
         $ledger->recordResearchObservation(
@@ -256,41 +373,64 @@ class LabInstrumentResearchLoopTest extends TestCase
                 'execution_hash' => $executionHash,
             ]],
         ]);
-        $pair = LabLearningLanePair::create([
-            'pair_key' => str_repeat('d', 64),
-            'lab_generation_id' => $generation->id,
-            'candidate_agent_id' => $candidate->id,
-            'control_agent_id' => $control->id,
-            'control_response_map_id' => $controlMap->id,
+        $candidateMap = LabMutationResponseMap::create([
+            'response_key' => hash('sha256', 'instrument-candidate-screen-map'),
+            'stage' => 'screening', 'status' => 'screen_observed',
             'symbol' => 'XAUUSD',
             'timeframe' => 'H1',
             'strategy_family' => 'hybrid',
-            'baseline_source' => 'control',
-            'status' => 'screen_paired',
-            'candidate_evidence_run_id' => 'candidate-screen-run',
-            'control_evidence_run_id' => 'control-screen-run',
-            'candidate_data_hash' => $dataHash,
-            'control_data_hash' => $dataHash,
-            'candidate_execution_hash' => $executionHash,
-            'control_execution_hash' => $executionHash,
-            'pair_integrity_status' => 'verified',
-            'same_generation' => true,
-            'candidate_metrics' => [
+            'target' => 'profit_factor', 'parameter_key' => 'volume_lane',
+            'lab_agent_id' => $candidate->id,
+            'model_version_id' => $candidate->model_version_id,
+            'evidence_run_id' => 'candidate-screen-run',
+            'old_value' => ['value' => 'none'],
+            'new_value' => ['value' => 'breakout_volume_confirmation'],
+            'observed_metrics' => [
                 'net_profit_percent' => 3.0,
                 'profit_factor' => 1.20,
                 'max_drawdown_percent' => 5.0,
                 'total_trades' => 42,
                 'instrument_research_trace' => $this->contextTrace(1.2, 4.0, 5.0, 21),
             ],
-            'control_metrics' => [
-                'net_profit_percent' => 1.0,
-                'profit_factor' => 1.05,
-                'max_drawdown_percent' => 6.0,
-                'total_trades' => 40,
-                'instrument_research_trace' => $this->contextTrace(1.05, 1.0, 6.0, 20),
+            'metadata' => [
+                'screening_decision' => 'failed',
+                'data_manifest_hash' => $dataHash,
+                'execution_hash' => $executionHash,
             ],
-            'metadata' => ['promotion_evidence' => false],
         ]);
+        $controlMap->update(['observed_metrics' => [
+            ...(array) $controlMap->observed_metrics,
+            'instrument_research_trace' => $this->contextTrace(1.05, 1.0, 6.0, 20),
+        ]]);
+        $createdPair = app(LearningLaneService::class)->pairScreeningObservation(
+            $candidate->fresh(['modelVersion', 'generation']),
+            ['evidence_run_id' => 'candidate-screen-run'],
+            $candidateMap->toArray(),
+        );
+        $this->assertNotNull($createdPair);
+        $pair = LabLearningLanePair::query()->findOrFail($createdPair['id']);
+        $this->assertTrue($pair->isVerifiedControlPair());
+        $this->assertNotSame(
+            data_get($assignment, 'pair_reservation.pair_key'),
+            $pair->pair_key,
+            'A learning observation has a distinct key from the constructor reservation.',
+        );
+
+        // A real learning-lane pair must still belong to the exact frozen
+        // candidate and to the assignment attested by the replay receipt.
+        $candidateMap->update(['lab_agent_id' => $control->id]);
+        $this->assertSame(0, $ledger->settleResearchPair($pair->fresh()));
+        $candidateMap->update(['lab_agent_id' => $candidate->id]);
+        $invocation = InstrumentInvocationLedger::query()
+            ->where('lab_agent_id', $candidate->id)
+            ->where('instrument_key', 'volume_confirmation')
+            ->firstOrFail();
+        $originalMetadata = (array) $invocation->metadata;
+        $invocation->update(['metadata' => [...$originalMetadata, 'assignment_hash' => str_repeat('f', 64)]]);
+        $this->assertSame(0, $ledger->settleResearchPair($pair->fresh()));
+        $this->assertFalse((bool) data_get($invocation->fresh()->metadata, 'paired_control_rejection.attested_assignment_valid'));
+        $this->assertDatabaseCount('instrument_value_posteriors', 0);
+        $invocation->update(['metadata' => $originalMetadata]);
 
         $candidateMetrics = (array) $pair->candidate_metrics;
         $controlMetrics = (array) $pair->control_metrics;

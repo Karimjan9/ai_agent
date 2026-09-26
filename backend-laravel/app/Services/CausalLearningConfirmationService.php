@@ -280,10 +280,22 @@ class CausalLearningConfirmationService
         // an already persisted outcome, but it can never reopen or downgrade
         // a confirmed causal skill.
         if ((string) $experiment->status === 'confirmed') {
+            $credit = app(CausalSkillCreditBridgeService::class)->settle($experiment);
+            $guided = (array) data_get($experiment->evidence, 'outcomes.'.$this->guidedRole($experiment), []);
+            $mentor = data_get($credit, 'status') === 'credited'
+                ? $this->projectConfirmedGuidedMentor(
+                    LabAgent::query()->with('modelVersion')->find($experiment->guided_agent_id),
+                    $guided,
+                    max(3, (int) config('services.learning_lane.independent_confirmations_required', 3)),
+                )
+                : null;
+
             return [
                 'status' => 'confirmed',
                 'confirmed' => true,
                 'experiment_id' => (int) $experiment->id,
+                'causal_skill_credit' => $credit,
+                'mentor' => $mentor,
                 'promotion_evidence' => false,
             ];
         }
@@ -417,6 +429,7 @@ class CausalLearningConfirmationService
             : null;
         $nonTargetSafe = $this->nonTargetSafe($guidedPair);
         $reasons = [];
+        $economicBlockers = [];
         if ((string) $experiment->status === 'invalid_counterfactual_contract'
             || data_get($experiment->evidence, 'construction_validation.status') !== 'ready_for_replay') {
             $reasons[] = 'COUNTERFACTUAL_CONSTRUCTION_INVALID';
@@ -445,7 +458,11 @@ class CausalLearningConfirmationService
         if (! $guidedPair || ! $latestCanonicalSettlement) {
             $reasons[] = 'GUIDED_CANONICAL_SETTLEMENT_MISSING';
         } elseif (! $canonicalSettlement) {
-            $reasons[] = 'GUIDED_ABSOLUTE_VIABILITY_FAILED';
+            // Absolute profitability belongs to the Economic Parent gate. A
+            // replicated, safe relative repair is still a causal component
+            // and may become a local Research Mentor; it receives no paper,
+            // performance or reproductive authority here.
+            $economicBlockers[] = 'GUIDED_ABSOLUTE_VIABILITY_FAILED';
         }
         if (! $nonTargetSafe) {
             $reasons[] = 'NON_TARGET_REGRESSION_UNSAFE';
@@ -479,6 +496,36 @@ class CausalLearningConfirmationService
             || (int) data_get($componentEffect, 'common_window_count', 0) < (int) data_get($componentEffect, 'required_common_windows', $required)
             || (int) data_get($componentEffect, 'positive_delta_windows', 0) < (int) data_get($componentEffect, 'required_positive_windows', $positiveRequired)) {
             $reasons[] = 'INDEPENDENT_WINDOWS_INSUFFICIENT';
+        }
+        $unpowered = (int) data_get($componentEffect, 'common_window_count', 0)
+                < (int) data_get($componentEffect, 'required_common_windows', $required)
+            || (int) data_get($selectorEffect, 'common_window_count', 0)
+                < (int) data_get($selectorEffect, 'required_common_windows', $required)
+            || (string) data_get($componentTargetEffect, 'status') === 'incomplete'
+            || (string) data_get($selectorTargetEffect, 'status') === 'incomplete';
+        $confirmedLattice = null;
+        if ($reasons === [] && app(LearningProtocolEpochService::class)->epochFor($experiment->generation) !== null) {
+            // The post-v2 component lattice is part of confirmation, not a
+            // later advisory projection. A risk or context veto must not
+            // leave an experiment labelled confirmed with credit withheld.
+            $confirmedLattice = app(CausalCapabilityLatticeService::class)->projectExperiment(
+                $experiment,
+                $guidedPair,
+                $latestCanonicalSettlement,
+                $componentEffect,
+                $selectorEffect,
+                [],
+                $receiptValid,
+                $nonTargetSafe,
+            );
+            if (data_get($confirmedLattice, 'composition_eligible') !== true) {
+                $reasons = collect((array) data_get($confirmedLattice, 'failed_component_checks', []))
+                    ->map(fn (string $check): string => 'CAPABILITY_'.strtoupper($check).'_FAILED')
+                    ->all();
+                if ($reasons === []) {
+                    $reasons[] = 'CAPABILITY_PROOF_NOT_CARRIED';
+                }
+            }
         }
         if ($reasons !== []) {
             $repairDepth = (int) data_get($experiment->evidence, 'repair_lineage.depth', 0);
@@ -521,6 +568,15 @@ class CausalLearningConfirmationService
                     'protocol_epoch' => data_get($capabilityLattice, 'protocol_epoch_link.epoch'),
                     'capability_lattice' => $capabilityLattice,
                     'confirmation_blockers' => $reasons,
+                    'economic_authority_blockers' => $economicBlockers,
+                    'causal_power' => [
+                        'status' => $unpowered ? 'unpowered_control' : 'powered',
+                        'component_common_windows' => (int) data_get($componentEffect, 'common_window_count', 0),
+                        'selector_common_windows' => (int) data_get($selectorEffect, 'common_window_count', 0),
+                        'reschedule_required' => $unpowered,
+                        'negative_evidence_allowed' => ! $unpowered,
+                        'promotion_evidence' => false,
+                    ],
                     'absolute_viability' => [
                         'status' => $canonicalSettlement ? 'passed' : ($latestCanonicalSettlement ? 'failed' : 'missing'),
                         'settlement_id' => $latestCanonicalSettlement?->id,
@@ -531,13 +587,15 @@ class CausalLearningConfirmationService
                         'promotion_evidence' => false,
                     ],
                     'repair_frontier' => [
-                        'status' => ! $latestCanonicalSettlement
+                        'status' => $unpowered
+                            ? 'reschedule_powered_exact_control'
+                            : (! $latestCanonicalSettlement
                             ? 'awaiting_settlement'
                             : ($interactionExperiment
                                 ? 'architecture_portfolio_exhausted'
                                 : ($architectureExperiment
                                 ? ($architectureBudgetExhausted ? 'architecture_portfolio_required' : 'architecture_escape_retry_required')
-                                : ($scalarBudgetExhausted ? 'architecture_escape_required' : 'bounded_repair_required'))),
+                                : ($scalarBudgetExhausted ? 'architecture_escape_required' : 'bounded_repair_required')))),
                         'preserve_as_observation_only' => (bool) data_get($componentEffect, 'passed', false),
                         // A causally positive but still absolutely losing
                         // model is never a production parent. When all
@@ -551,7 +609,9 @@ class CausalLearningConfirmationService
                         'research_ratchet' => $researchRatchet,
                         'inherit_gene' => false,
                         'target' => (string) ($latestCanonicalSettlement?->failure_class ?: 'evidence_completion'),
-                        'next_experiment' => $interactionExperiment
+                        'next_experiment' => $unpowered
+                            ? 'repeat_same_sealed_treatment_with_powered_control'
+                            : ($interactionExperiment
                             ? 'manual_architecture_redesign_required'
                             : ($scalarBudgetExhausted
                                 ? 'architecture_hypothesis_paired_replay'
@@ -559,7 +619,7 @@ class CausalLearningConfirmationService
                                 ? ($architectureBudgetExhausted
                                     ? 'bounded_architecture_interaction_paired_replay'
                                     : 'one_gene_structural_paired_replay')
-                                : 'one_gene_paired_replay')),
+                                : 'one_gene_paired_replay'))),
                         'scalar_repair_depth' => $repairDepth,
                         'scalar_repair_budget' => 3,
                         'architecture_escape_depth' => $architectureDepth,
@@ -571,13 +631,13 @@ class CausalLearningConfirmationService
                 ],
             ]);
 
-            return ['status' => 'provisional', 'confirmed' => false, 'reason_codes' => $reasons,
+            return ['status' => $unpowered ? 'unpowered_control' : 'provisional', 'confirmed' => false, 'reason_codes' => $reasons,
                 'capability_lattice' => $capabilityLattice, 'promotion_evidence' => false];
         }
-        $capabilityLattice = app(CausalCapabilityLatticeService::class)->projectExperiment(
+        $capabilityLattice = $confirmedLattice ?? app(CausalCapabilityLatticeService::class)->projectExperiment(
             $experiment,
             $guidedPair,
-            $canonicalSettlement,
+            $latestCanonicalSettlement,
             $componentEffect,
             $selectorEffect,
             [],
@@ -598,6 +658,16 @@ class CausalLearningConfirmationService
                 'protocol_epoch' => data_get($capabilityLattice, 'protocol_epoch_link.epoch'),
                 'capability_lattice' => $capabilityLattice,
                 'confirmation_blockers' => [],
+                'economic_authority_blockers' => $economicBlockers,
+                'absolute_viability' => [
+                    'status' => $canonicalSettlement ? 'passed' : 'failed',
+                    'settlement_id' => $latestCanonicalSettlement?->id,
+                    'evidence_state' => $latestCanonicalSettlement?->evidence_state,
+                    'hard_failure' => $latestCanonicalSettlement?->hard_failure,
+                    'required_for_component' => false,
+                    'required_for_economic_parent' => true,
+                    'promotion_evidence' => false,
+                ],
                 'promotion_evidence' => false,
             ],
         ]);
@@ -621,14 +691,14 @@ class CausalLearningConfirmationService
             'expires_at' => null,
         ]);
         if ($guidedPairId > 0) {
-            if ($guidedPair && $canonicalSettlement) {
+            if ($guidedPair && $latestCanonicalSettlement) {
                 app(LearningCompilerService::class)->compileCanonical([
                     // Upgrade the provisional receipt produced by the
                     // canonical outbox instead of creating a parallel memory
                     // row for the same replay evidence.
                     'source_key' => 'canonical-pair:'.$guidedPair->id.':'.(string) data_get($guided, 'evidence_run_id', 'none'),
                     'pair_id' => $guidedPair->id,
-                    'settlement_id' => $canonicalSettlement->id,
+                    'settlement_id' => $latestCanonicalSettlement->id,
                     'causal_experiment_id' => $experiment->id,
                     'lab_agent_id' => $guidedPair->candidate_agent_id,
                     'lab_generation_id' => $experiment->lab_generation_id,
@@ -693,15 +763,18 @@ class CausalLearningConfirmationService
             ];
             $guidedAgent->modelVersion->update(['metadata' => $guidedMetadata]);
         }
-        $mentor = $this->projectConfirmedGuidedMentor(
-            $guidedAgent,
-            [
-                ...$guided,
-                'independent_window_count' => $confirmedWindowCount,
-                'positive_windows' => $causalPositiveWindows,
-            ],
-            $required,
-        );
+        $credit = app(CausalSkillCreditBridgeService::class)->settle($experiment->fresh());
+        $mentor = data_get($credit, 'status') === 'credited'
+            ? $this->projectConfirmedGuidedMentor(
+                $guidedAgent,
+                [
+                    ...$guided,
+                    'independent_window_count' => $confirmedWindowCount,
+                    'positive_windows' => $causalPositiveWindows,
+                ],
+                $required,
+            )
+            : null;
         if ($mentor !== null) {
             $experiment->update(['evidence' => [
                 ...((array) $experiment->fresh()->evidence),
@@ -741,6 +814,7 @@ class CausalLearningConfirmationService
             'guided_lesson_id' => $guidedLesson?->id,
             'policy_id' => $policy instanceof AgentLearningPolicy ? (int) $policy->id : null,
             'mentor' => $mentor,
+            'causal_skill_credit' => $credit,
             'capability_lattice' => $capabilityLattice,
             'promotion_evidence' => false,
         ];

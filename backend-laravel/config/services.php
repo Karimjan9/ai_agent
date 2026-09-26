@@ -494,15 +494,17 @@ return [
         // The Python child is bounded at 3600 seconds; leave a transport
         // margin so a completed evidence response is not cut off by Laravel.
         'full_replay_timeout_seconds' => (int) env('LAB_FULL_REPLAY_TIMEOUT_SECONDS', 3900),
-        // Causal learning confirmation runs exactly three atomic forward folds.
-        // Its AI child stops at 720s and Laravel stops waiting 60s later, so a
-        // broken fold can never occupy the learning lane for an hour.
-        // The Python causal child is bounded to 900s in ecosystem.config.cjs.
-        // Keep Laravel's immutable policy equal to that child boundary and
-        // retain a 60s HTTP transport margin; a shorter caller timeout would
-        // abandon healthy fold evidence while the single replay mutex stays busy.
+        // Legacy causal confirmations may still enter through the bounded
+        // monolithic adapter. New autonomous confirmations execute one of the
+        // nine registered folds per durable job and aggregate only 9/9 sealed
+        // receipts. Keep this legacy ceiling for backwards-compatible replay.
         'causal_replay_hard_timeout_seconds' => max(90, min(900, (int) env('LAB_CAUSAL_REPLAY_HARD_TIMEOUT_SECONDS', 900))),
         'causal_replay_timeout_seconds' => max(120, min(960, (int) env('LAB_CAUSAL_REPLAY_TIMEOUT_SECONDS', 960))),
+        // A single durable fold runs all three bounded causal arms (up to
+        // 3 x 180s by default, up to 3 x 240s), plus shared feature
+        // preparation. Python bounds that child at 720-900s; transport stays
+        // above the maximum while retries remain scoped to the one fold.
+        'causal_fold_transport_timeout_seconds' => max(960, min(1200, (int) env('LAB_CAUSAL_FOLD_TRANSPORT_TIMEOUT_SECONDS', 960))),
         'portfolio_replay_timeout_seconds' => (int) env('LAB_PORTFOLIO_REPLAY_TIMEOUT_SECONDS', 3900),
         // The Python request can finish before Laravel persists the immutable
         // response, forward-gate projection and lifecycle close. Stale replay
@@ -770,6 +772,7 @@ return [
         'causal_fold_count' => max(6, min(12, (int) env('LAB_LEARNING_CAUSAL_FOLD_COUNT', 9))),
         'causal_max_rows_per_fold' => max(2048, min(8192, (int) env('LAB_LEARNING_CAUSAL_MAX_ROWS_PER_FOLD', 4096))),
         'causal_per_fold_budget_seconds' => max(45, min(240, (int) env('LAB_LEARNING_CAUSAL_PER_FOLD_BUDGET_SECONDS', 180))),
+        'causal_fold_job_attempts' => max(1, min(5, (int) env('LAB_LEARNING_CAUSAL_FOLD_JOB_ATTEMPTS', 3))),
         'causal_audit_trace_rows' => max(128, min(1024, (int) env('LAB_LEARNING_CAUSAL_AUDIT_TRACE_ROWS', 512))),
         'causal_minimum_trades_per_window' => max(1, (int) env('LAB_LEARNING_CAUSAL_MIN_TRADES_PER_WINDOW', 8)),
         'causal_minimum_powered_windows' => max(3, min(9, (int) env('LAB_LEARNING_CAUSAL_MIN_POWERED_WINDOWS', 6))),

@@ -24,11 +24,12 @@ class StrategyTacticRiskCompositionPlannerService
     /**
      * Freeze the composition used by a bounded causal confirmation cohort.
      *
-     * Historical learning pairs predate composition passports.  Requiring a
+     * Historical learning pairs predate composition passports. Requiring a
      * twenty-seat portfolio merely to re-test one already settled gene would
-     * strand that memory forever, so the confirmation lane freezes the
-     * canonical family fallback and records the source baseline separately.
-     * This passport is research-only and grants no parent/promotion authority.
+     * strand that memory forever, so the confirmation lane freezes an exact
+     * family runtime adapter and records the source baseline separately. When
+     * the source names an architecture/tactic, those identities must also be
+     * exact. This passport is research-only and grants no promotion authority.
      *
      * @return array<string, mixed>
      */
@@ -37,9 +38,50 @@ class StrategyTacticRiskCompositionPlannerService
         string $timeframe,
         string $dataHash = '',
         string $executionHash = '',
+        ?string $sourceArchitecture = null,
+        ?string $sourceTactic = null,
+        array $existingPassport = [],
     ): array {
-        $strategyId = $this->fallbackStrategyId($family);
-        $tacticId = $this->fallbackTacticId($family);
+        $family = trim($family);
+        $sourceArchitecture = trim((string) $sourceArchitecture);
+        $sourceTactic = trim((string) $sourceTactic);
+        if (in_array(strtolower($sourceArchitecture), ['', 'unknown', '*'], true)) {
+            $sourceArchitecture = '';
+        }
+        if (in_array(strtolower($sourceTactic), ['', 'unknown', '*'], true)) {
+            $sourceTactic = '';
+        }
+        if ($this->confirmationPassportMatches(
+            $existingPassport,
+            $family,
+            $sourceArchitecture,
+            $sourceTactic,
+            $dataHash,
+            $executionHash,
+        )) {
+            return $existingPassport;
+        }
+
+        $strategy = collect($this->strategies->library())
+            ->map(fn (array $spec): array => [
+                'id' => (string) $spec['id'],
+                'runtime' => $this->strategies->runtime((string) $spec['id']),
+            ])
+            ->first(fn (array $entry): bool => is_array($entry['runtime'])
+                && (string) data_get($entry, 'runtime.family') === $family
+                && ($sourceArchitecture === ''
+                    || (string) data_get($entry, 'runtime.architecture') === $sourceArchitecture));
+        if (! is_array($strategy)) {
+            // A causal control may never be coerced into another executable
+            // family merely because the composition library lacks its exact
+            // adapter. The caller must withhold the cohort before construction.
+            return [];
+        }
+        $runtimeArchitecture = (string) data_get($strategy, 'runtime.architecture', '');
+        $strategyId = (string) $strategy['id'];
+        $tacticId = $sourceTactic !== ''
+            ? $sourceTactic
+            : $this->fallbackTacticId($family, $runtimeArchitecture);
 
         return $this->authority->freeze([
             'symbol' => 'XAUUSD',
@@ -57,7 +99,38 @@ class StrategyTacticRiskCompositionPlannerService
     }
 
     /**
-     * @param array<int, array<string, mixed>> $plan
+     * A historical passport is reusable only when it identifies the exact
+     * source control that the causal triplet promises to replay.
+     */
+    private function confirmationPassportMatches(
+        array $passport,
+        string $family,
+        string $architecture,
+        string $tactic,
+        string $dataHash,
+        string $executionHash,
+    ): bool {
+        if ((string) data_get($passport, 'protocol') !== CompositionAuthorityKernelService::PROTOCOL) {
+            return false;
+        }
+        $strategyId = (string) data_get($passport, 'components.strategy_id', '');
+        $runtime = $strategyId !== '' ? $this->strategies->runtime($strategyId) : null;
+        if (! is_array($runtime)
+            || (string) data_get($runtime, 'family') !== $family
+            || ($architecture !== '' && (string) data_get($runtime, 'architecture') !== $architecture)
+            || ($tactic !== '' && (string) data_get($passport, 'components.tactic_id') !== $tactic)) {
+            return false;
+        }
+        if ($dataHash !== '' && (string) data_get($passport, 'provenance.data_hash', '') !== $dataHash) {
+            return false;
+        }
+
+        return $executionHash === ''
+            || (string) data_get($passport, 'provenance.execution_hash', '') === $executionHash;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $plan
      * @return array{plan: array<int, array<string, mixed>>, contract: array<string, mixed>}
      */
     public function materialize(
@@ -65,8 +138,7 @@ class StrategyTacticRiskCompositionPlannerService
         int $generation = 0,
         array $enabledFamilies = [],
         array $lineageFamilies = [],
-    ): array
-    {
+    ): array {
         // The contract is meaningful only for a normal full cohort. Smaller
         // recovery and operator-approved rescue cohorts retain their sealed
         // curriculum rather than being silently repurposed.
@@ -82,7 +154,6 @@ class StrategyTacticRiskCompositionPlannerService
         $strategyRuntimes = collect($this->strategies->library())
             ->map(fn (array $spec): array => ['id' => $spec['id'], 'runtime' => $this->strategies->runtime($spec['id'])])
             ->filter(fn (array $entry): bool => $entry['runtime'] !== null)
-            ->filter(fn (array $entry): bool => $enabledFamilies === [] || in_array($entry['runtime']['family'], $enabledFamilies, true))
             ->values()->all();
         $riskProfiles = $this->risks->library();
         $tacticKeys = ['trend_pullback', 'breakout_retest', 'volatility_compression_expansion', 'session_breakout', 'range_mean_reversion'];
@@ -101,11 +172,12 @@ class StrategyTacticRiskCompositionPlannerService
             ->unique()->values();
         $lineageSeats = collect();
         foreach ($lineageFamilies as $family) {
-            $templateIndex = $available->first(fn (int $index): bool =>
-                (string) data_get($plan[$index], 'family', '') === $family
+            $templateIndex = $available->first(fn (int $index): bool => (string) data_get($plan[$index], 'family', '') === $family
                 && ! $lineageSeats->contains($index)
             );
-            if ($templateIndex === null) continue;
+            if ($templateIndex === null) {
+                continue;
+            }
 
             // Learning credit requires an exact same-generation frozen
             // control. Reserve a pair, not a lone child: one of these seats
@@ -119,7 +191,9 @@ class StrategyTacticRiskCompositionPlannerService
                 ->filter(fn (int $index): bool => (int) $familyCounts->get((string) data_get($plan[$index], 'family', ''), 0) >= 3)
                 ->sortByDesc(fn (int $index): int => (int) $familyCounts->get((string) data_get($plan[$index], 'family', ''), 0))
                 ->first();
-            if ($donorIndex === null) continue;
+            if ($donorIndex === null) {
+                continue;
+            }
             $lineageSeats->push($templateIndex, $donorIndex);
             $plan[$donorIndex]['family'] = $family;
             $templateNiche = (array) data_get($plan[$templateIndex], 'niche', []);
@@ -132,7 +206,9 @@ class StrategyTacticRiskCompositionPlannerService
                 }
             }
             $plan[$donorIndex]['niche'] = $donorNiche;
-            if ($lineageSeats->count() >= 4) break;
+            if ($lineageSeats->count() >= 4) {
+                break;
+            }
         }
         $strategySeats = $lineageSeats
             ->concat($available->reject(fn (int $index): bool => $lineageSeats->contains($index)))
@@ -157,7 +233,11 @@ class StrategyTacticRiskCompositionPlannerService
         // control. The sixth seat rotates through all executable specs, so
         // the library is explored across generations without leaving a lone
         // family that cannot receive its required frozen paired baseline.
-        $anchorIds = ['str_001_ema_adx_pullback', 'str_003_donchian_breakout', 'str_010_bollinger_squeeze', 'str_020_bb_rsi_reversion', 'str_040_asia_london_breakout'];
+        // The tactic/structural lanes already guarantee the canonical trend
+        // pullback. Anchor the strategy lane on the second executable trend
+        // topology so exact-control pairing cannot collapse the final cohort
+        // back to one trend architecture.
+        $anchorIds = ['str_031_bos_retest', 'str_003_donchian_breakout', 'str_010_bollinger_squeeze', 'str_020_bb_rsi_reversion', 'str_040_asia_london_breakout'];
         $byId = collect($strategyRuntimes)->keyBy('id');
         $nonLineageStrategySeats = collect($strategySeats)
             ->reject(fn (int $index): bool => $lineageSeats->contains($index))
@@ -175,7 +255,23 @@ class StrategyTacticRiskCompositionPlannerService
                 array_search($entry['id'], $anchorIds, true),
             ])
             ->values();
-        $rotating = $strategyRuntimes[$generation % count($strategyRuntimes)];
+        $anchoredArchitectures = $anchorSelection
+            ->map(fn (array $entry): string => (string) data_get($entry, 'runtime.family').'|'.(string) data_get($entry, 'runtime.architecture'))
+            ->all();
+        $rotationPool = collect($strategyRuntimes)
+            ->reject(fn (array $entry): bool => in_array(
+                (string) data_get($entry, 'runtime.family').'|'.(string) data_get($entry, 'runtime.architecture'),
+                $anchoredArchitectures,
+                true,
+            ))
+            ->values();
+        if ($rotationPool->isEmpty()) {
+            $rotationPool = collect($strategyRuntimes)->values();
+        }
+        // Spend the rotating seat on an architecture the five family anchors
+        // do not already execute. This preserves topology diversity while the
+        // passport remains the sole runtime owner.
+        $rotating = $rotationPool[$generation % $rotationPool->count()];
         $strategySelection = $anchorSelection
             ->push($rotating)
             ->concat($strategyRuntimes)
@@ -190,6 +286,7 @@ class StrategyTacticRiskCompositionPlannerService
                     'lineage_family' => (string) data_get($plan[$index], 'family'),
                     'validated_parent_required' => true,
                 ];
+
                 continue;
             }
             $entry = $strategySelection[$libraryOffset++];
@@ -251,7 +348,21 @@ class StrategyTacticRiskCompositionPlannerService
             foreach ($indices as $armOffset => $index) {
                 $niche = (array) data_get($plan[$index], 'niche', []);
                 $family = (string) data_get($plan[$index], 'family', 'hybrid');
-                $strategyId = (string) data_get($niche, 'strategy_library_id', $this->fallbackStrategyId($family));
+                $strategyId = (string) data_get($niche, 'strategy_library_id', '');
+                if ($strategyId === '') {
+                    $desiredArchitecture = (string) (data_get($niche, 'composition_architecture')
+                        ?: data_get($niche, 'architecture_variant', ''));
+                    $architectureOwner = collect($strategyRuntimes)->first(
+                        fn (array $entry): bool => $desiredArchitecture !== ''
+                            && (string) data_get($entry, 'runtime.family') === $family
+                            && (string) data_get($entry, 'runtime.architecture') === $desiredArchitecture,
+                    );
+                    $strategyId = (string) data_get(
+                        $architectureOwner,
+                        'id',
+                        $this->fallbackStrategyId($family),
+                    );
+                }
                 $tacticId = (string) data_get($niche, 'tactic_library_key', $this->fallbackTacticId($family));
                 $riskId = (string) data_get($niche, 'risk_library_id', $riskProfiles[$packetOffset % count($riskProfiles)]['id']);
                 $managementId = $this->managementProfileFor($tacticId);
@@ -316,20 +427,95 @@ class StrategyTacticRiskCompositionPlannerService
         ]];
     }
 
+    /**
+     * Re-assert frozen composition ownership after contextual allocation and
+     * control pairing have copied/reordered seats. The passport is not
+     * rewritten: its strategy/tactic identities become the final constructor
+     * inputs. An unknown or non-executable strategy fails the cohort closed.
+     *
+     * @param  array<int,array<string,mixed>>  $plan
+     * @return array{plan:array<int,array<string,mixed>>,contract:array<string,mixed>}
+     */
+    public function bindRuntimeOwnership(array $plan): array
+    {
+        $bound = [];
+        $failures = [];
+        foreach (array_values($plan) as $index => $slot) {
+            $passport = (array) data_get($slot, 'niche.composition_passport', []);
+            if ($passport === []) {
+                $bound[] = $slot;
+
+                continue;
+            }
+            $strategyId = (string) data_get($passport, 'components.strategy_id', '');
+            $tacticId = (string) data_get($passport, 'components.tactic_id', '');
+            $runtime = $strategyId !== '' ? $this->strategies->runtime($strategyId) : null;
+            if ((string) data_get($passport, 'protocol') !== CompositionAuthorityKernelService::PROTOCOL
+                || ! is_array($runtime)
+                || $tacticId === '') {
+                $failures[] = [
+                    'slot' => $index + 1,
+                    'strategy_id' => $strategyId,
+                    'tactic_id' => $tacticId,
+                    'reason' => 'passport_runtime_identity_not_executable',
+                ];
+                $bound[] = $slot;
+
+                continue;
+            }
+
+            $niche = (array) data_get($slot, 'niche', []);
+            $niche['strategy_library_id'] = $strategyId;
+            $niche['strategy_library_contract'] = $this->strategies->compile($strategyId);
+            $niche['composition_architecture'] = (string) $runtime['architecture'];
+            $niche['tactic_library_key'] = $tacticId;
+            $niche['composition_runtime_owner'] = [
+                'protocol' => 'composition_constructor_binding_v1',
+                'composition_id' => (string) data_get($passport, 'composition_id', ''),
+                'family' => (string) $runtime['family'],
+                'architecture' => (string) $runtime['architecture'],
+                'tactic' => $tacticId,
+                'status' => 'bound',
+                'promotion_evidence' => false,
+            ];
+            $slot['family'] = (string) $runtime['family'];
+            $slot['niche'] = $niche;
+            $bound[] = $slot;
+        }
+
+        return ['plan' => $bound, 'contract' => [
+            'protocol' => 'composition_constructor_binding_v1',
+            'status' => $failures === [] ? 'bound' : 'not_admitted',
+            'passport_seats' => collect($bound)->filter(
+                fn (array $slot): bool => filled(data_get($slot, 'niche.composition_passport.composition_id')),
+            )->count(),
+            'failures' => $failures,
+            'passport_owns_family_architecture_and_tactic' => true,
+            'promotion_evidence' => false,
+        ]];
+    }
+
     private function fallbackStrategyId(string $family): string
     {
         return match ($family) {
             'trend' => 'str_001_ema_adx_pullback', 'breakout' => 'str_003_donchian_breakout',
             'volatility' => 'str_010_bollinger_squeeze', 'mean_reversion' => 'str_020_bb_rsi_reversion',
-            'session' => 'str_040_asia_london_breakout', default => 'mix_001_trend_beast',
+            'session' => 'str_040_asia_london_breakout',
+            'regime_ensemble' => 'mix_010_regime_ensemble',
+            'differential_router' => 'mix_011_differential_router',
+            default => 'mix_001_trend_beast',
         };
     }
 
-    private function fallbackTacticId(string $family): string
+    private function fallbackTacticId(string $family, string $architecture = ''): string
     {
         return match ($family) {
             'breakout' => 'breakout_retest', 'volatility' => 'volatility_compression_expansion',
-            'mean_reversion' => 'range_mean_reversion', 'session' => 'session_breakout', default => 'trend_pullback',
+            'mean_reversion' => 'range_mean_reversion', 'session' => 'session_breakout',
+            'regime_ensemble' => 'frozen_regime_specialist_ensemble',
+            'differential_router' => 'frozen_parent_differential_router',
+            'hybrid' => $architecture !== '' ? $architecture : 'trend_pullback',
+            default => 'trend_pullback',
         };
     }
 

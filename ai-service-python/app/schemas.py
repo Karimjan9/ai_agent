@@ -40,6 +40,10 @@ class BacktestRequest(BaseModel):
     from_date: date | None = None
     to_date: date | None = None
     dataset_path: str | None = None
+    # Cross-runtime content identity of the exact replay input. For the
+    # autonomous M5 organism this is the frozen H4/H1/M15/M5 bundle hash.
+    # A declared composition must bind this value before replay starts.
+    replay_dataset_hash: str | None = None
     candles: list[Candle] | None = None
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
 
@@ -81,6 +85,9 @@ class StrategyRuntimeConfig(BaseModel):
     # only bindings it actually received and consumed; the declaration grants
     # neither paper authority nor promotion evidence.
     instrument_research_assignment: dict[str, Any] = Field(default_factory=dict)
+    # Frozen Laravel composition declaration. Runtime consumption is reported
+    # separately; receiving this contract grants no component credit.
+    composition_runtime_contract: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExecutionConfig(BaseModel):
@@ -113,6 +120,9 @@ class SimpleBacktestRequest(BaseModel):
     from_date: date | None = None
     to_date: date | None = None
     dataset_path: str | None = None
+    # Exact replay identity sealed by Laravel. For the autonomous organism it
+    # is the content-addressed H4/H1/M15/M5 bundle hash.
+    replay_dataset_hash: str | None = None
     # Immutable snapshot transport: Laravel sends a sealed CSV/Parquet path
     # plus its manifest instead of serialising thousands of candles into the
     # HTTP body.  The tail is applied before normalisation so it is equivalent
@@ -164,6 +174,7 @@ class SimpleBacktestRequest(BaseModel):
     # Candidate-specific assignment copied from StrategyRuntimeConfig while a
     # cohort is replayed. It is part of the immutable candidate cache key.
     instrument_research_assignment: dict[str, Any] = Field(default_factory=dict)
+    composition_runtime_contract: dict[str, Any] = Field(default_factory=dict)
     # A contextual specialist must abstain outside this pre-registered cell.
     # It is routing scope only and cannot create promotion evidence.
     specialist_context_contract: dict[str, Any] = Field(default_factory=dict)
@@ -358,6 +369,9 @@ class SimpleBacktestResponse(BaseModel):
     # realized-R capture without pretending that bar-level path order is
     # known, and it never authorizes promotion by itself.
     management_evidence: dict[str, Any] = Field(default_factory=dict)
+    # Emitted inside the execution loop boundary. The outer composition trace
+    # may attest this receipt but may not reconstruct node use post hoc.
+    composition_runtime_receipt: dict[str, Any] = Field(default_factory=dict)
     # Post-replay Academy telemetry: it is forbidden from runtime inference,
     # ranking, and promotion, and unavailable oracle inputs stay unavailable.
     edge_formation_academy_diagnostic: dict[str, Any] = Field(default_factory=dict)

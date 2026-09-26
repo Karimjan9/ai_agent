@@ -1,0 +1,45 @@
+module: confirmation-entry
+title: Closed multi-timeframe confirmation and entry
+purpose: Compiles closed H4/H1/M15/M5 evidence into an explicit signal or WAIT decision with entry geometry and re-admission checks.
+aliases:
+  - mtf
+  - confirmation
+  - entry
+  - trigger
+  - wait
+  - execution-geometry
+paths:
+  - ai-service-python/app/strategies/confirmation_entry.py
+  - ai-service-python/app/services/multitimeframe_stack.py
+  - ai-service-python/app/services/backtester.py
+  - backend-laravel/app/Services/ConfirmationEntryContractService.php
+  - backend-laravel/app/Services/MtfPlaybookFrozenControlService.php
+  - backend-laravel/app/Services/MultiTimeframePilotService.php
+entry_points:
+  - confirmation_entry_mtf_v1
+  - prepare_signal_snapshot
+  - ConfirmationEntryContractService
+  - PaperTradingExecutionService
+data_tables:
+  - paper_signal_passports
+  - paper_mtf_shadow_observations
+dependencies:
+  - market-data
+  - laravel-python-contract
+invariants:
+  - Context, setup, confirmation and trigger are distinct gates.
+  - Missing or invalid closed-stream evidence resolves to WAIT.
+  - Fill-time admission rechecks executable geometry.
+flows:
+  - flows/entry-decision.md
+docs:
+  - idea.md
+  - states.md
+  - history.md
+tests:
+  - backend-laravel/tests/Feature/MtfPilotContractTest.php
+  - backend-laravel/tests/Feature/MtfPlaybookFrozenControlServiceTest.php
+  - backend-laravel/tests/Unit/ConfirmationEntryContractServiceTest.php
+  - ai-service-python/tests/test_confirmation_entry_contract.py
+  - ai-service-python/tests/test_closed_mtf_stack.py
+  - ai-service-python/tests/test_backtester_execution.py

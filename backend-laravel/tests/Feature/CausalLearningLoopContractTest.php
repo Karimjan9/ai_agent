@@ -15,6 +15,7 @@ use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use App\Models\LabEvolutionCreditEvent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
@@ -22,7 +23,6 @@ use App\Models\LabSkillZooEntry;
 use App\Models\ModelMarketPerformance;
 use App\Models\ModelVersion;
 use App\Models\MutationMemory;
-use App\Models\SystemEvent;
 use App\Services\CanonicalSkillCartridgeService;
 use App\Services\CausalBlindedMutationSelectorService;
 use App\Services\CausalLearningCohortPlannerService;
@@ -33,6 +33,7 @@ use App\Services\CausalLessonAdmissionService;
 use App\Services\CausalParameterActivationService;
 use App\Services\CausalRepairFrontierService;
 use App\Services\CausalScreeningBehaviorPreflightService;
+use App\Services\CompositionAuthorityKernelService;
 use App\Services\DependencyAwareEdgeGenesisFoundryService;
 use App\Services\EvidenceSalvageConveyorService;
 use App\Services\FrozenControlScreeningAdmissionService;
@@ -43,17 +44,20 @@ use App\Services\LabPopulationService;
 use App\Services\LabQueueJobInspector;
 use App\Services\LabReplayRecoveryService;
 use App\Services\LearningKernelService;
+use App\Services\LearningProtocolEpochService;
 use App\Services\LearningPulseService;
 use App\Services\LearningReceiptService;
 use App\Services\MarketChampionService;
 use App\Services\MultiModalLearningPortfolioService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\StrategySemanticGroupService;
+use App\Services\StrategyTacticRiskCompositionPlannerService;
 use App\Services\TechnicalFailureClassifierService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class CausalLearningLoopContractTest extends TestCase
@@ -1626,7 +1630,7 @@ class CausalLearningLoopContractTest extends TestCase
 
     public function test_memory_confirmation_requires_guided_to_beat_blinded_and_frozen_control(): void
     {
-        [$generation, $sourceLesson] = $this->canonicalSource();
+        [$generation, $sourceLesson] = $this->canonicalSource(true);
         $controlModel = $this->model('cohort-control', ['entry_threshold' => 1]);
         $guidedModel = $this->model('cohort-guided', ['entry_threshold' => 2], $this->validReceiptMetadata());
         $blindedModel = $this->model('cohort-blinded', ['entry_threshold' => 2], $this->validReceiptMetadata());
@@ -1643,11 +1647,22 @@ class CausalLearningLoopContractTest extends TestCase
             'target' => 'profit_factor', 'gene_key' => 'entry_threshold', 'source_lesson_id' => $sourceLesson->id,
             'guided_agent_id' => $guided->id, 'blinded_agent_id' => $blinded->id, 'control_agent_id' => $control->id,
             'status' => 'ready_for_replay', 'evidence' => [
-                'construction_validation' => ['status' => 'ready_for_replay'], 'promotion_evidence' => false,
+                'construction_validation' => ['status' => 'ready_for_replay'],
+                'source_context_scope' => ['regime' => 'trend_up', 'volatility' => 'normal'],
+                'promotion_evidence' => false,
             ],
         ]);
         [$guidedPair, $guidedLesson] = $this->outcomePair($generation, $guided, $control, .20, 'g');
         [$blindedPair] = $this->outcomePair($generation, $blinded, $control, -.05, 'b');
+        $guidedPair->update(['metadata' => [
+            'context_scope' => ['regime' => 'trend_up', 'volatility' => 'normal'],
+        ]]);
+        $guidedPerformance = ModelMarketPerformance::create([
+            'model_version_id' => $guided->model_version_id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'status' => 'rejected', 'sample_count' => 3, 'rolling_windows_count' => 3,
+            'metrics' => [], 'evidence_status' => 'valid',
+        ]);
         $guidedEpisode = app(LearningKernelService::class)->openEpisode($guided, [
             'decision_key' => 'causal-confirmation-guided-settlement',
             'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
@@ -1712,14 +1727,24 @@ class CausalLearningLoopContractTest extends TestCase
             ],
         ];
         $service = app(CausalLearningConfirmationService::class);
-        $first = $service->recordOutcome($guided->fresh(['modelVersion']), $guidedPair, $result([10, 12, 5]), ['delta' => .20, 'improved' => true], $guidedLesson);
+        $first = $service->recordOutcome($guided->fresh(['modelVersion']), $guidedPair, $result([10, 12, 5]), ['delta' => .20, 'improved' => true], $guidedLesson, $guidedPerformance);
         $this->assertFalse($first['confirmed']);
         $second = $service->recordOutcome($blinded->fresh(['modelVersion']), $blindedPair, $result([5, 4, 6]), ['delta' => -.05, 'improved' => false]);
         $this->assertFalse($second['confirmed']);
+        $this->assertSame(0, LabEvolutionCreditEvent::query()->where('event_type', 'repair_credit')->count());
+        $this->assertSame(0, LabEvolutionCreditEvent::query()->where('event_type', 'causal_skill_credit')->count());
         $confirmed = $service->recordOutcome($control->fresh(['modelVersion']), $guidedPair, $result([2, 3, 4]), ['delta' => 0, 'improved' => false]);
 
         $this->assertTrue($confirmed['confirmed']);
         $this->assertSame('confirmed', $experiment->fresh()->status);
+        $this->assertSame('credited', data_get($confirmed, 'causal_skill_credit.status'));
+        $this->assertSame(1, LabEvolutionCreditEvent::query()->where('event_type', 'repair_credit')->count());
+        $this->assertSame(1, LabEvolutionCreditEvent::query()->where('event_type', 'causal_skill_credit')->count());
+        $this->assertSame('causal_capsule_pending', data_get($confirmed, 'mentor.status'));
+        $this->assertSame('none', data_get($confirmed, 'mentor.evolutionary_authority.authority_tier'));
+        $this->assertDatabaseHas('evolutionary_authority_ledgers', [
+            'model_version_id' => $guidedModel->id, 'status' => 'withheld',
+        ]);
         $this->assertSame('confirmed', $guidedLesson->fresh()->status);
         $this->assertSame('skill_confirmed', $guidedPair->fresh()->status);
         $this->assertSame('settled', $guidedIntent->fresh()->status);
@@ -1752,6 +1777,8 @@ class CausalLearningLoopContractTest extends TestCase
         );
         $this->assertTrue($duplicate['confirmed']);
         $this->assertSame('confirmed', $experiment->fresh()->status);
+        $this->assertSame(1, LabEvolutionCreditEvent::query()->where('event_type', 'repair_credit')->count());
+        $this->assertSame(1, LabEvolutionCreditEvent::query()->where('event_type', 'causal_skill_credit')->count());
     }
 
     public function test_declared_target_and_non_target_evidence_are_fail_closed(): void
@@ -2157,13 +2184,13 @@ class CausalLearningLoopContractTest extends TestCase
                 ],
             ],
         ]);
-        $guided = $this->agent($generation, $this->model('admission-guided', ['entry_threshold' => 2]), [
+        $guided = $this->agent($generation, $this->model('admission-guided', ['entry_threshold' => 2, 'other_gene' => 1]), [
             'entry_threshold' => ['old' => 1, 'new' => 2],
         ]);
-        $blinded = $this->agent($generation, $this->model('admission-blinded', ['other_gene' => 2]), [
+        $blinded = $this->agent($generation, $this->model('admission-blinded', ['entry_threshold' => 1, 'other_gene' => 2]), [
             'other_gene' => ['old' => 1, 'new' => 2],
         ]);
-        $control = $this->agent($generation, $this->model('admission-control', ['entry_threshold' => 1]), []);
+        $control = $this->agent($generation, $this->model('admission-control', ['entry_threshold' => 1, 'other_gene' => 1]), []);
         $experiment = AgentLearningCausalExperiment::create([
             'experiment_key' => str_repeat('a', 128),
             'lab_generation_id' => $generation->id,
@@ -2190,6 +2217,7 @@ class CausalLearningLoopContractTest extends TestCase
                 'causal_learning_cohort' => [
                     'protocol' => CausalLearningCohortPlannerService::PROTOCOL,
                     'experiment_id' => $experiment->id,
+                    'experiment_key' => $experiment->experiment_key,
                     'role' => $role,
                     'status' => 'ready_for_replay',
                     'promotion_evidence' => false,
@@ -2230,13 +2258,97 @@ class CausalLearningLoopContractTest extends TestCase
             $this->assertTrue($admission['allowed']);
 
             $job = new EvaluateLabAgentJob($fresh->id, $fresh->symbol, 'full');
-            $this->assertLessThanOrEqual(1080, $job->timeout);
+            $this->assertLessThanOrEqual(1260, $job->timeout);
             $method = new \ReflectionMethod($job, 'fullValidationAdmission');
             $method->setAccessible(true);
             $workerAdmission = $method->invoke($job, $fresh, $evidence);
             $this->assertTrue($workerAdmission['allowed']);
             $this->assertNotContains('SCREENING_NOT_PASSED', $workerAdmission['reason_codes']);
         }
+    }
+
+    public function test_planner_reconciles_a_stale_cross_family_passport_to_the_causal_source(): void
+    {
+        [$generation, $lesson] = $this->canonicalSource();
+        $pair = LabLearningLanePair::query()
+            ->with(['candidateAgent.modelVersion', 'controlAgent.modelVersion', 'candidateResponseMap', 'controlResponseMap'])
+            ->findOrFail((int) data_get($lesson->evidence, 'pair_id'));
+        $family = 'differential_router';
+        $architecture = 'frozen_parent_differential_router';
+        $gene = 'differential_target_min_signal_confidence';
+        $old = .34;
+        $new = .40;
+        $stalePassport = app(CompositionAuthorityKernelService::class)->freeze([
+            'symbol' => 'XAUUSD',
+            'timeframe' => 'H1',
+            'strategy_id' => 'mix_001_trend_beast',
+            'tactic_id' => 'trend_pullback',
+            'risk_id' => 'atr_risk_envelope',
+            'management_id' => 'balanced_professional',
+            'data_hash' => (string) $pair->control_data_hash,
+            'execution_hash' => (string) $pair->control_execution_hash,
+        ]);
+
+        $lesson->update([
+            'strategy_family' => $family,
+            'parameter_key' => $gene,
+            'evidence' => [
+                ...((array) $lesson->evidence),
+                'old_value' => ['value' => $old],
+                'new_value' => ['value' => $new],
+            ],
+        ]);
+        $pair->update(['strategy_family' => $family]);
+        $pair->candidateResponseMap->update(['strategy_family' => $family]);
+        $pair->controlResponseMap->update(['strategy_family' => $family]);
+        $pair->candidateAgent->update([
+            'strategy_family' => $family,
+            'parameter_diff' => [$gene => ['old' => $old, 'new' => $new]],
+        ]);
+        $pair->candidateAgent->modelVersion->update([
+            'parameters' => [$gene => $new],
+            'metadata' => [
+                'strategy_architecture' => $architecture,
+                'tactic_contract' => ['architecture' => $architecture],
+            ],
+        ]);
+        $pair->controlAgent->update(['strategy_family' => $family]);
+        $pair->controlAgent->modelVersion->update([
+            'parameters' => [$gene => $old],
+            'metadata' => [
+                'strategy_architecture' => $architecture,
+                'tactic_contract' => ['architecture' => $architecture],
+                'smart_composition' => ['composition_passport' => $stalePassport],
+            ],
+        ]);
+        $this->projectCartridgeForLesson($lesson->fresh());
+
+        $plan = collect(range(1, 4))->map(fn (int $slot): array => [
+            'family' => $family,
+            'origin' => 'test',
+            'target' => 'profit_factor',
+            'niche' => ['data_lane' => 'price', 'slot' => $slot],
+        ])->all();
+        $materialized = app(CausalLearningCohortPlannerService::class)->materialize(
+            $plan,
+            'XAUUSD',
+            'H1',
+            $generation->id,
+        );
+
+        $this->assertSame('materialized', data_get($materialized, 'contract.status'));
+        $passport = (array) data_get($materialized, 'plan.0.niche.composition_passport');
+        $this->assertNotSame($stalePassport['composition_id'], data_get($passport, 'composition_id'));
+        $this->assertSame('mix_011_differential_router', data_get($passport, 'components.strategy_id'));
+        $this->assertSame($architecture, data_get($passport, 'components.tactic_id'));
+
+        $bound = app(StrategyTacticRiskCompositionPlannerService::class)
+            ->bindRuntimeOwnership($materialized['plan']);
+        $this->assertSame('bound', data_get($bound, 'contract.status'));
+        $this->assertSame(
+            [$family, $family, $family],
+            collect($bound['plan'])->take(3)->pluck('family')->values()->all(),
+        );
     }
 
     public function test_non_triplet_seat_in_learning_confirmation_generation_uses_its_own_replay_gate(): void
@@ -2407,7 +2519,8 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertSame('technical_quarantine', $agent->fresh()->lifecycle_status);
     }
 
-    public function test_autonomous_recovery_seals_missing_frozen_snapshot_as_terminal_technical_history(): void
+    #[DataProvider('unrecoverableFrozenRecoveryErrors')]
+    public function test_autonomous_recovery_seals_missing_frozen_snapshot_as_terminal_technical_history(string $frozenError): void
     {
         config()->set('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', true);
         [$generation] = $this->canonicalSource();
@@ -2442,7 +2555,7 @@ class CausalLearningLoopContractTest extends TestCase
         $recovery = \Mockery::mock(LabReplayRecoveryService::class);
         $recovery->shouldReceive('prepare')->once()
             ->with(\Mockery::on(fn (LabAgent $row): bool => $row->is($agent)), 'screen', false)
-            ->andThrow(new \RuntimeException('RECOVERY_DATASET_SNAPSHOT_MISSING_OR_HASH_MISMATCH:volume'));
+            ->andThrow(new \RuntimeException($frozenError));
         $this->app->instance(LabReplayRecoveryService::class, $recovery);
 
         $exit = Artisan::call('trading:recover-lab-evaluation-errors', [
@@ -2472,6 +2585,14 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertDatabaseHas('system_events', [
             'event_type' => 'lab_autonomous_recovery_terminal_disposition',
         ]);
+    }
+
+    public static function unrecoverableFrozenRecoveryErrors(): array
+    {
+        return [
+            'snapshot missing' => ['RECOVERY_DATASET_SNAPSHOT_MISSING_OR_HASH_MISMATCH:volume'],
+            'prior run hash drift' => ['RECOVERY_PRIOR_DATASET_HASH_MISMATCH:foundation'],
+        ];
     }
 
     public function test_causal_arm_cannot_write_ordinary_mutation_credit_before_triplet_settlement(): void
@@ -2790,7 +2911,7 @@ class CausalLearningLoopContractTest extends TestCase
     }
 
     /** @return array{0: LabGeneration, 1: AgentLearningLesson} */
-    private function canonicalSource(): array
+    private function canonicalSource(bool $postV2 = false): array
     {
         $lab = AiLaboratory::create([
             'symbol' => 'XAUUSD', 'name' => 'Causal lab', 'timeframe' => 'H1',
@@ -2798,7 +2919,10 @@ class CausalLearningLoopContractTest extends TestCase
         ]);
         $generation = LabGeneration::create([
             'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test',
-            'population_size' => 2, 'status' => 'completed', 'data_fingerprint' => str_repeat('d', 64), 'trigger_context' => [],
+            'population_size' => 2, 'status' => 'completed', 'data_fingerprint' => str_repeat('d', 64),
+            'trigger_context' => $postV2
+                ? ['learning_protocol_epoch' => app(LearningProtocolEpochService::class)->generationContract()]
+                : [],
         ]);
         $sourceModel = $this->model('source-candidate', ['entry_threshold' => 2]);
         $controlModel = $this->model('source-control', ['entry_threshold' => 1]);

@@ -13,6 +13,7 @@ use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
 use App\Services\CandidateHandoffService;
 use App\Services\CausalLearningCohortService;
+use App\Services\FrozenControlScreeningAdmissionService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabGenerationContextService;
@@ -386,6 +387,50 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             ]);
 
             return;
+        }
+        // Batch screening already checks frozen controls, but a single-agent
+        // technical recovery enters this job directly. It may not replay a
+        // dependent after its exact control failed or while the control's
+        // learning projection is still pending. Keep the attempt terminal and
+        // non-scientific instead of letting a valid HTTP result become an
+        // unpaired screening observation.
+        if ($this->mode === 'screen') {
+            $agent->loadMissing('modelVersion');
+            $metadata = (array) ($agent->modelVersion?->metadata ?? []);
+            $declaredControl = (int) data_get($metadata, 'control_pair_contract.control_agent_id', 0) > 0
+                || (int) data_get($metadata, 'learning_receipt.control_agent_id', 0) > 0
+                || in_array((string) data_get($metadata, 'causal_learning_cohort.role'), [
+                    'memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded',
+                ], true);
+            if ($declaredControl) {
+                $controlAdmission = app(FrozenControlScreeningAdmissionService::class)->admission($agent);
+                if ((string) ($controlAdmission['status'] ?? '') === 'waiting') {
+                    $evidence->finishIfOpen($run, 'retry_released', null, [], [
+                        'reason_code' => (string) ($controlAdmission['reason'] ?? 'FROZEN_CONTROL_PENDING'),
+                        'control_agent_id' => $controlAdmission['control_agent_id'] ?? null,
+                        'quality_verdict' => 'withheld', 'promotion_evidence' => false,
+                    ]);
+                    if ($this->job) {
+                        $this->release(30);
+                    }
+
+                    return;
+                }
+                if ((string) ($controlAdmission['status'] ?? '') !== 'ready') {
+                    $reason = (string) ($controlAdmission['reason'] ?? 'FROZEN_CONTROL_ADMISSION_INVALID');
+                    $evidence->finishIfOpen($run, 'skipped', null, [], [
+                        'reason_code' => $reason,
+                        'control_agent_id' => $controlAdmission['control_agent_id'] ?? null,
+                        'quality_verdict' => 'withheld', 'promotion_evidence' => false,
+                    ]);
+                    $agent->update([
+                        'lifecycle_status' => 'technical_quarantine',
+                        'decision_reason' => 'Frozen control admission failed before screening; strategy verdict withheld: '.$reason.'.',
+                    ]);
+
+                    return;
+                }
+            }
         }
         // Queue rows can outlive a lineage repair or a deployment restart.
         // Revalidate immediately before touching lifecycle state so an old

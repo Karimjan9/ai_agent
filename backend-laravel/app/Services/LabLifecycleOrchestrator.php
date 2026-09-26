@@ -98,8 +98,8 @@ class LabLifecycleOrchestrator
         bool $startCycle = false,
         ?int $expectedGenerationId = null,
         bool $settleOnly = false,
-    ): array
-    {
+        bool $learningConfirmation = false,
+    ): array {
         $symbol = strtoupper($symbol);
         $timeframe = $this->canonicalLaboratoryTimeframe($symbol, $timeframe);
         $cycleId = $cycleId ?? $this->generateCycleId();
@@ -160,7 +160,7 @@ class LabLifecycleOrchestrator
                 ->latest('id')
                 ->get()
                 ->first(fn (LabAgent $agent): bool => $this->isRetryBudgetRecoveryPending($agent));
-            if (! $startCycle && $retryAgent?->generation) {
+            if (! $startCycle && ! $learningConfirmation && $retryAgent?->generation) {
                 $recovered = $this->technicalRecovery($symbol, $timeframe, $cycleId, [
                     'state' => 'recovery_required',
                     'reason' => GenerationAdmissionDecisionService::RECOVER_TECHNICAL,
@@ -283,7 +283,12 @@ class LabLifecycleOrchestrator
 
             // Strategy gate / deadlock guard: never create a normal generation
             // while locked by the strategy gate. Bounded recovery is allowed.
-            $strategy = $this->strategyGateState($symbol, $timeframe, $startCycle);
+            $strategy = $this->strategyGateState(
+                $symbol,
+                $timeframe,
+                $startCycle,
+                $learningConfirmation ? 'learning_confirmation' : null,
+            );
             if ($strategy['state'] === 'recovery_required') {
                 // Explicit cycle start prioritizes healthy strategy evolution.
                 // Recovery backlog remains recorded for a later maintenance
@@ -372,8 +377,21 @@ class LabLifecycleOrchestrator
             }
             $stage = self::PHASE_GENERATION;
 
-            // 2. Screening step.
-            $this->dispatchScreening($generation, $cycleId, $stage);
+            // 2. Screening step. The lifecycle must enter through the same
+            // immutable snapshot + closed-MTF admission authority as every
+            // other generation dispatcher. Directly queueing evaluator jobs
+            // here used to bypass sealing and produced a complete population
+            // whose every replay failed with AUTONOMOUS_MTF_BUNDLE_MISSING.
+            $screeningAdmission = $this->dispatchScreening($generation, $cycleId, $stage);
+            if (! (bool) ($screeningAdmission['admitted'] ?? false)) {
+                return $this->summarize($cycleId, $symbol, $timeframe, self::STATUS_PAUSED,
+                    'Generation screening admission failed closed before evaluator dispatch.',
+                    $stage, [
+                        'generation_id' => (int) $generation->id,
+                        'screening_admission' => $screeningAdmission,
+                        'next_action' => 'repair_snapshot_or_mtf_admission_then_resume_same_generation',
+                    ]);
+            }
             $stage = self::PHASE_SCREENING;
 
             // 3. Full validation step.
@@ -546,8 +564,12 @@ class LabLifecycleOrchestrator
         return ['healthy' => true, 'reason' => 'ok', 'queue' => $queueSnapshot];
     }
 
-    private function strategyGateState(string $symbol, string $timeframe, bool $startCycle = false): array
-    {
+    private function strategyGateState(
+        string $symbol,
+        string $timeframe,
+        bool $startCycle = false,
+        ?string $admissionTrigger = null,
+    ): array {
         $lab = AiLaboratory::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))->first();
         if (! $lab) {
             return ['state' => 'blocked', 'reason' => 'LABORATORY_NOT_FOUND', 'actionable_pending_dojo' => 0];
@@ -601,11 +623,17 @@ class LabLifecycleOrchestrator
 
         $pendingSuccessor = $this->successorRequestPending($symbol, $timeframe);
 
+        $learningConfirmation = $admissionTrigger === 'learning_confirmation';
         $decision = $this->admission->decide($lab, $latest, [
-            'trigger' => ($startCycle || $pendingSuccessor) ? 'operator_successor' : 'new_data',
+            'trigger' => $learningConfirmation
+                ? 'learning_confirmation'
+                : (($startCycle || $pendingSuccessor) ? 'operator_successor' : 'new_data'),
             'operator_approved_successor' => $startCycle || $pendingSuccessor,
+            'learning_confirmation' => $learningConfirmation,
             'force' => $startCycle,
-            'source' => 'lifecycle_orchestrator',
+            'source' => $learningConfirmation
+                ? 'research_loop_arbiter'
+                : 'lifecycle_orchestrator',
         ]);
         $actionable = (int) data_get($decision, 'learning_velocity.learning_starvation.actionable_pending_dojo', 0);
         $consume = $pendingSuccessor && $latest && in_array((string) $latest->status, [
@@ -992,8 +1020,7 @@ class LabLifecycleOrchestrator
                 ? 'learning_confirmation'
                 : (($startCycle || $this->successorRequestPending($symbol, $timeframe))
                     ? 'operator_successor'
-                    : ((string) data_get($latest?->trigger_context, 'data_edge_audit.protocol') === LabDataEdgeAuditService::PROTOCOL
-                        && (string) data_get($latest?->trigger_context, 'latest_generation_report.next_action') === 'data_edge_audit_completed'
+                    : ($this->dataEdgeAudits->opensSuccessor($latest)
                             ? 'data_edge_audit'
                             : 'new_data'));
             $generation = $this->population->build($symbol, $trigger, $trigger === 'operator_successor', $timeframe);
@@ -1057,40 +1084,57 @@ class LabLifecycleOrchestrator
             && (string) data_get($classification, 'reason_code') === 'REPLAY_RETRY_BUDGET_EXHAUSTED';
     }
 
-    private function dispatchScreening(LabGeneration $generation, string $cycleId, string $stage): void
+    /**
+     * Route screening through DispatchLabGeneration, which is the sole owner
+     * of dataset export, immutable snapshot sealing, closed-MTF bundle
+     * sealing, integrity preflight and queue admission.
+     *
+     * @return array{admitted:bool,exit_code:int,generation_status:string,output:string}
+     */
+    private function dispatchScreening(LabGeneration $generation, string $cycleId, string $stage): array
     {
-        if ($generation->status === 'draft') {
-            try {
-                LabGeneration::query()->where('id', (int) $generation->id)
-                    ->update(['status' => 'queued']);
-                $generation->status = 'queued';
-            } catch (Throwable $e) {
-                $this->errors->record($cycleId, (string) $generation->laboratory->symbol,
-                    (string) $generation->laboratory->timeframe, $stage, $e, (int) $generation->id);
-
-                return;
-            }
+        $generation->loadMissing('laboratory');
+        $arguments = [
+            'symbol' => strtoupper((string) $generation->laboratory?->symbol),
+            '--timeframe' => strtoupper((string) $generation->laboratory?->timeframe),
+            '--resume-draft-agents' => true,
+        ];
+        if ((string) $generation->trigger_type === 'learning_confirmation') {
+            $arguments['--learning-confirmation'] = true;
         }
 
-        foreach ($generation->agents()->whereIn('lifecycle_status', ['draft', 'queued'])->cursor() as $agent) {
-            // Explicit technical recovery owns its frozen contract and queue
-            // batch. If that batch is cancelled or disappears, silently
-            // replacing it with an ordinary job would drop both the recovery
-            // contract and batch cancellation authority. Fail closed and let
-            // the bounded recovery/reconciliation path decide what happens.
-            if ($this->isExplicitTechnicalRecoveryDispatch($agent)) {
-                continue;
-            }
-            if ($this->agentHasScreeningJob((int) $agent->id)) {
-                continue;
-            } // idempotency
+        try {
+            $exitCode = Artisan::call('trading:dispatch-lab', $arguments);
+            $output = trim(Artisan::output());
+            $fresh = $generation->fresh();
+            $status = (string) ($fresh?->status ?? 'missing');
+            $admitted = $exitCode === 0 && in_array($status, [
+                'queued', 'training', 'screening', 'full_queued',
+                'full_validation', 'screened', 'completed',
+            ], true);
 
-            try {
-                EvaluateLabAgentJob::dispatch((int) $agent->id, $agent->symbol, 'screen');
-            } catch (Throwable $e) {
-                $this->errors->record($cycleId, (string) $agent->symbol, (string) $agent->timeframe,
-                    $stage, $e, (int) $generation->id, (int) $agent->id);
-            }
+            return [
+                'admitted' => $admitted,
+                'exit_code' => $exitCode,
+                'generation_status' => $status,
+                'output' => mb_substr($output, 0, 2000),
+            ];
+        } catch (Throwable $e) {
+            $this->errors->record(
+                $cycleId,
+                (string) $generation->laboratory?->symbol,
+                (string) $generation->laboratory?->timeframe,
+                $stage,
+                $e,
+                (int) $generation->id,
+            );
+
+            return [
+                'admitted' => false,
+                'exit_code' => 1,
+                'generation_status' => (string) $generation->fresh()?->status,
+                'output' => 'SCREENING_DISPATCH_AUTHORITY_FAILED',
+            ];
         }
     }
 
@@ -1137,11 +1181,6 @@ class LabLifecycleOrchestrator
                 'screened_agents' => $screened,
                 'forward_validated' => $forward,
             ], 'info', 'lifecycle_orchestrator', $stage, 'forward');
-    }
-
-    private function agentHasScreeningJob(int $agentId): bool
-    {
-        return $this->queueJobs->hasAgentJob($agentId, [(string) config('services.lab_queue.screening_queue', 'lab-screening')]);
     }
 
     private function isExplicitTechnicalRecoveryDispatch(LabAgent $agent): bool

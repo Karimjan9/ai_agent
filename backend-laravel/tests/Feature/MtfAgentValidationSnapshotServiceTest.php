@@ -69,6 +69,11 @@ class MtfAgentValidationSnapshotServiceTest extends TestCase
             $this->assertSame('agent_owned_mtf_foundation_bundle_v1', data_get($bundle, 'manifest.validation_bundle_protocol'));
             $this->assertSame('pre_2026_foundation_training_only', data_get($bundle, 'manifest.data_role'));
             $this->assertSame(count($m5), data_get($bundle, 'manifest.streams.M5.row_count'));
+            $this->assertSame('passed', data_get($bundle, 'manifest.volume_provenance.status'));
+            $this->assertFalse((bool) data_get($bundle, 'manifest.volume_provenance.live_coverage_inherited'));
+            $this->assertSame('passed', data_get($bundle, 'manifest.streams.M5.volume_quality.status'));
+            $entryHeader = str_getcsv((string) strtok((string) File::get((string) $bundle['entry_dataset_path']), "\n"));
+            $this->assertContains('volume_available', $entryHeader);
             $this->assertTrue((bool) data_get($bundle, 'manifest.bounded_cost_contract.full_live_export_forbidden'));
             $this->assertTrue((bool) data_get($bundle, 'manifest.post_selection_historical_evidence'));
             $this->assertFalse((bool) data_get($bundle, 'manifest.promotion_evidence'));

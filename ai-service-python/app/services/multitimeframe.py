@@ -21,7 +21,6 @@ import pandas as pd
 
 from app.services.market_regime import apply_market_regime
 
-
 PROTOCOL = "xauusd_h1_m15_mtf_v1"
 DEFAULT_PILOT_ID = "xauusd_h1_m15_v1"
 
@@ -70,7 +69,12 @@ def pilot_enabled(pilot: dict[str, Any] | None, symbol: object, timeframe: objec
         return False
     if _normalise_symbol(symbol) != _normalise_symbol(contract.get("symbol", "XAUUSD")):
         return False
-    if str(timeframe or "").upper() != str(contract.get("entry_timeframe", "M15")).upper():
+    runtime = str(timeframe or "").upper()
+    allowed_timeframes = {
+        str(contract.get("entry_timeframe", "M15")).upper(),
+        str(contract.get("execution_timeframe", "M5")).upper(),
+    }
+    if runtime not in allowed_timeframes:
         return False
     return str(contract.get("mode", "h1_veto_m15_risk")) != "m15_only"
 
@@ -79,6 +83,15 @@ def _direction_for_regime(regime: str) -> str | None:
     if regime == "trend_up":
         return "BUY"
     if regime == "trend_down":
+        return "SELL"
+    return None
+
+
+def _direction_for_structure(direction: object) -> str | None:
+    value = str(direction or "").strip().lower()
+    if value in {"bullish", "up", "trend_up", "long", "buy"}:
+        return "BUY"
+    if value in {"bearish", "down", "trend_down", "short", "sell"}:
         return "SELL"
     return None
 
@@ -100,11 +113,34 @@ def _permission_for_regime(regime: str, volatility: str, pilot: dict[str, Any]) 
 
 
 def _context_from_row(row: Any, pilot: dict[str, Any], decision_time: object | None = None) -> dict[str, Any]:
-    h1_closed_at = row.get("_h1_closed_at") if hasattr(row, "get") else None
-    context_hash = row.get("_h1_context_hash") if hasattr(row, "get") else None
-    h1_open_at = row.get("_h1_open_at") if hasattr(row, "get") else None
-    regime = str(row.get("market_regime", "unknown") or "unknown") if hasattr(row, "get") else "unknown"
+    runtime = str(pilot.get("requested_timeframe") or pilot.get("entry_timeframe", "M15")).upper()
+    closed_key = "h1_available_at" if runtime == str(pilot.get("execution_timeframe", "M5")).upper() else "_h1_closed_at"
+    hash_key = "h1_context_hash" if closed_key == "h1_available_at" else "_h1_context_hash"
+    open_key = "h1_time" if closed_key == "h1_available_at" else "_h1_open_at"
+    h1_closed_at = row.get(closed_key) if hasattr(row, "get") else None
+    context_hash = row.get(hash_key) if hasattr(row, "get") else None
+    h1_open_at = row.get(open_key) if hasattr(row, "get") else None
+    regime = str(
+        row.get("h1_structure_regime", row.get("market_regime", "unknown")) or "unknown"
+    ) if hasattr(row, "get") else "unknown"
     volatility = str(row.get("volatility_regime", "normal_volatility") or "normal_volatility") if hasattr(row, "get") else "normal_volatility"
+    structure_direction = row.get("h1_structure_direction") if hasattr(row, "get") else None
+    h1_direction = _direction_for_structure(structure_direction) or _direction_for_regime(regime)
+    if closed_key == "h1_available_at" and str(row.get("mtf_stack_status", "")) != "ready":
+        return {
+            "protocol": PROTOCOL,
+            "pilot_id": str(pilot.get("pilot_id", DEFAULT_PILOT_ID)),
+            "status": "blocked",
+            "permission": "WAIT",
+            "risk_multiplier": 0.0,
+            "reason": str(row.get("mtf_stack_reason", "CLOSED_MTF_STACK_NOT_READY")),
+            "h1_regime": regime,
+            "h1_volatility_regime": volatility,
+            "h1_direction": h1_direction,
+            "h1_open_at": _iso(h1_open_at),
+            "h1_closed_at": _iso(h1_closed_at),
+            "h1_context_hash": context_hash,
+        }
     missing_closed_at = h1_closed_at is None or (not isinstance(h1_closed_at, (list, tuple, dict)) and bool(pd.isna(h1_closed_at)))
     missing_context_hash = context_hash is None or (not isinstance(context_hash, (list, tuple, dict)) and bool(pd.isna(context_hash)))
     if missing_closed_at or missing_context_hash or str(context_hash) == "":
@@ -117,7 +153,7 @@ def _context_from_row(row: Any, pilot: dict[str, Any], decision_time: object | N
             "reason": "H1_CONTEXT_MISSING_OR_NOT_CLOSED",
             "h1_regime": regime,
             "h1_volatility_regime": volatility,
-            "h1_direction": _direction_for_regime(regime),
+            "h1_direction": h1_direction,
             "h1_open_at": _iso(h1_open_at),
             "h1_closed_at": _iso(h1_closed_at),
             "h1_context_hash": context_hash,
@@ -142,7 +178,7 @@ def _context_from_row(row: Any, pilot: dict[str, Any], decision_time: object | N
         "reason": reason,
         "h1_regime": regime,
         "h1_volatility_regime": volatility,
-        "h1_direction": _direction_for_regime(regime),
+        "h1_direction": h1_direction,
         "h1_open_at": _iso(h1_open_at),
         "h1_closed_at": _iso(h1_closed_at),
         "h1_age_seconds": round(age_seconds, 3),
@@ -152,10 +188,10 @@ def _context_from_row(row: Any, pilot: dict[str, Any], decision_time: object | N
 
 def context_for_row(row: Any, pilot: dict[str, Any] | None, decision_time: object | None = None) -> dict[str, Any]:
     contract = pilot or {}
+    runtime = str(contract.get("requested_timeframe") or contract.get("entry_timeframe", "M15")).upper()
     if (
-        not pilot_enabled(contract, "XAUUSD", "M15")
+        not pilot_enabled(contract, "XAUUSD", runtime)
         or _normalise_symbol(contract.get("symbol", "XAUUSD")) != "XAUUSD"
-        or str(contract.get("entry_timeframe", "M15")).upper() != "M15"
     ):
         return {
             "protocol": PROTOCOL,

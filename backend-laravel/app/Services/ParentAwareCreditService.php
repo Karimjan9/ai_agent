@@ -147,7 +147,6 @@ class ParentAwareCreditService
         $broker = (array) data_get($agent->modelVersion?->metadata, 'parent_mentor_broker', []);
         $context = $this->contextFromAgent($agent, $broker);
         $events = [];
-        $forwardPassed = data_get($forwardDecision, 'decision') === 'passed';
         if ($this->repairCreditEligible($result)) {
             $events[] = $this->credit($agent, 'repair_credit', 1.0, 'frozen_control_target_improved', $context, $result);
         }
@@ -155,9 +154,9 @@ class ParentAwareCreditService
             || data_get($result, 'repair_anchor_verification.status') === 'confirmed') {
             $events[] = $this->credit($agent, 'causal_skill_credit', 1.0, 'independently_replicated_causal_skill', $context, $result);
         }
-        if ($forwardPassed && $this->positiveAbsoluteSettlement($result)) {
-            $events[] = $this->credit($agent, 'performance_credit', 1.0, 'positive_absolute_forward_settlement', $context, $result);
-        }
+        // Historical/full replay and its forward gate are research evidence.
+        // Performance credit is issued only after an immutable E3 candidate
+        // produces positive prospective evidence inside paper_2026.
         if (data_get($result, 'failure_signature') !== null
             || data_get($result, 'learning_lane_projection') !== null
             || $this->discoveryLane($agent)
@@ -204,6 +203,42 @@ class ParentAwareCreditService
             'parent_incremental_value' => data_get($counterfactual, 'parent_incremental_value'),
             'promotion_evidence' => false,
         ];
+    }
+
+    /** @return array<string,mixed> */
+    public function recordPaperPerformance(
+        LabAgent $agent,
+        ModelMarketPerformance $performance,
+        array $metrics,
+        array $paperAuthority,
+    ): array {
+        if (! $this->available()
+            || data_get($paperAuthority, 'status') !== 'e4_evidence_ready'
+            || (float) data_get($metrics, 'net_profit_percent', 0) <= 0
+            || (int) data_get($metrics, 'sample_count', 0) <= 0) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'performance_credit_withheld', 'promotion_evidence' => false];
+        }
+        $agent->loadMissing('modelVersion');
+        $context = $this->contextFromAgent($agent);
+        $evidence = [
+            ...$metrics,
+            'evidence_run_id' => (string) data_get($metrics, 'evidence_run_id', implode(':', [
+                'paper-e4', $performance->id, (int) data_get($metrics, 'sample_count', 0),
+                (int) collect((array) data_get($metrics, 'order_ids', []))->max(),
+            ])),
+            'paper_authority' => $paperAuthority,
+            'paper_epoch_contract' => data_get($metrics, 'paper_window.epoch_contract'),
+            'promotion_evidence' => false,
+        ];
+
+        return $this->credit(
+            $agent,
+            'performance_credit',
+            1.0,
+            'positive_absolute_2026_paper_settlement',
+            $context,
+            $evidence,
+        );
     }
 
     /** @return array<string, mixed> */

@@ -21,6 +21,7 @@ class RunLifecycleCycle extends Command
             ['start-cycle', null, InputOption::VALUE_NONE, 'Explicitly start one successor cycle despite a learning pause; promotion gates remain active'],
             ['expected-generation-id', null, InputOption::VALUE_OPTIONAL, 'Frozen generation authorized by the research-loop arbiter', null],
             ['settle-only', null, InputOption::VALUE_NONE, 'Drain only the frozen generation; never admit a successor in this invocation'],
+            ['learning-confirmation', null, InputOption::VALUE_NONE, 'Open the exact causal learning-confirmation generation selected by the research-loop arbiter'],
             ['json', null, InputOption::VALUE_NONE, 'Output machine-readable JSON'],
         ];
     }
@@ -47,6 +48,7 @@ class RunLifecycleCycle extends Command
             (bool) $this->option('start-cycle'),
             $expectedGenerationId,
             (bool) $this->option('settle-only'),
+            (bool) $this->option('learning-confirmation'),
         );
 
         if ($this->option('json')) {

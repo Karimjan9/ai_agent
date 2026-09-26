@@ -79,20 +79,48 @@ def build_instrument_research_trace(
             and activation["contract_valid"]
             and activation["decision_path_activated"]
         )
+        veto_observed = (
+            assignment_hash_valid
+            and parameter_hash_valid
+            and runtime_observed
+            and binding_match
+            and activation["contract_valid"]
+            and activation["runtime_observation_valid"]
+            and activation["runtime_disposition"] == "evaluated_veto"
+        )
+        abstain_observed = (
+            assignment_hash_valid
+            and parameter_hash_valid
+            and runtime_observed
+            and binding_match
+            and activation["contract_valid"]
+            and activation["runtime_observation_valid"]
+            and activation["runtime_disposition"] == "evaluated_abstain"
+        )
         traces.append(
             {
                 "instrument_key": str(selected.get("instrument_key") or ""),
                 "role": str(selected.get("role") or ""),
-                "status": "consumed"
-                if consumed
-                else (
-                    "not_activated"
-                    if assignment_hash_valid
-                    and parameter_hash_valid
-                    and runtime_observed
-                    and binding_match
-                    and activation["contract_valid"]
-                    else "not_attested"
+                "status": (
+                    "consumed"
+                    if consumed
+                    else (
+                        "evaluated_veto"
+                        if veto_observed
+                        else (
+                            "evaluated_abstain"
+                            if abstain_observed
+                            else (
+                                "not_activated"
+                                if assignment_hash_valid
+                                and parameter_hash_valid
+                                and runtime_observed
+                                and binding_match
+                                and activation["contract_valid"]
+                                else "not_attested"
+                            )
+                        )
+                    )
                 ),
                 "causal_candidate": bool(selected.get("causal_candidate", False)),
                 "parameter_bindings": bindings,
@@ -105,6 +133,12 @@ def build_instrument_research_trace(
                 "runtime_observation_valid": activation["runtime_observation_valid"],
                 "runtime_receipt_consistent": activation["runtime_receipt_consistent"],
                 "decision_path_activated": activation["decision_path_activated"],
+                "used_in_decision": consumed or veto_observed,
+                "runtime_disposition": activation["runtime_disposition"],
+                "decision_effect_counts": activation["decision_effect_counts"],
+                "evaluation_count": activation["evaluation_count"],
+                "veto_count": activation["veto_count"],
+                "abstain_count": activation["abstain_count"],
                 "matched_activation_signals": activation["matched_signals"],
                 "observed_activation_signals": activation["observed_signals"],
                 "activated_context_keys": activation["activated_context_keys"],
@@ -125,10 +159,15 @@ def build_instrument_research_trace(
         )
 
     consumed_count = sum(1 for item in traces if item["status"] == "consumed")
+    decision_effect_count = sum(
+        1 for item in traces if item["status"] in {"consumed", "evaluated_veto"}
+    )
     bundle_contexts = _bundle_activation_contexts(traces)
     return {
         "protocol": TRACE_PROTOCOL,
-        "status": "consumed" if consumed_count > 0 else "incomplete",
+        "status": "consumed"
+        if consumed_count > 0
+        else ("decision_observed" if decision_effect_count > 0 else "incomplete"),
         "assignment_protocol": ASSIGNMENT_PROTOCOL,
         "activation_protocol": ACTIVATION_PROTOCOL,
         "assignment_hash": declared_hash,
@@ -144,6 +183,13 @@ def build_instrument_research_trace(
         "runtime_observed": runtime_observed,
         "selected_count": len(traces),
         "consumed_count": consumed_count,
+        "decision_effect_count": decision_effect_count,
+        "evaluated_veto_count": sum(
+            1 for item in traces if item["status"] == "evaluated_veto"
+        ),
+        "evaluated_abstain_count": sum(
+            1 for item in traces if item["status"] == "evaluated_abstain"
+        ),
         "not_activated_count": sum(
             1 for item in traces if item["status"] == "not_activated"
         ),
@@ -287,6 +333,9 @@ def _activation_evidence(
     if not isinstance(context_event_counts, dict):
         context_event_counts = {}
     reported_count = int(instrument.get("activation_count", 0) or 0)
+    evaluation_count = int(instrument.get("evaluation_count", 0) or 0)
+    veto_count = int(instrument.get("veto_count", 0) or 0)
+    abstain_count = int(instrument.get("abstain_count", 0) or 0)
     source_count = sum(int(count or 0) for count in event_sources.values())
     allowed_source_count = sum(
         int(count or 0)
@@ -294,11 +343,22 @@ def _activation_evidence(
         if _runtime_event_allowed(required_events, str(source))
     )
     context_count = sum(int(count or 0) for count in context_event_counts.values())
+    abstention_counts = instrument.get("abstention_context_counts") or {}
+    if not isinstance(abstention_counts, dict):
+        abstention_counts = {}
+    abstention_total = sum(int(count or 0) for count in abstention_counts.values())
+    effects = instrument.get("decision_effect_counts") or {}
+    if not isinstance(effects, dict):
+        effects = {}
+    effect_total = sum(int(count or 0) for count in effects.values())
     receipt_consistent = (
         reported_count >= 0
         and reported_count == source_count == allowed_source_count == context_count
         and bool(instrument.get("decision_path_activated", False))
         == (reported_count > 0)
+        and evaluation_count == reported_count + abstention_total
+        and abstention_total == veto_count + abstain_count
+        and effect_total == evaluation_count
     )
     declared_activated = {
         str(context_key)
@@ -352,6 +412,13 @@ def _activation_evidence(
         "runtime_observation_valid": runtime_valid and receipt_consistent,
         "runtime_receipt_consistent": receipt_consistent,
         "decision_path_activated": activated,
+        "runtime_disposition": str(instrument.get("status") or "not_reached"),
+        "decision_effect_counts": {
+            str(key): int(value or 0) for key, value in effects.items()
+        },
+        "evaluation_count": evaluation_count,
+        "veto_count": veto_count,
+        "abstain_count": abstain_count,
         "matched_signals": matched,
         "observed_signals": observed,
         "activated_context_keys": activated_context_keys if activated else [],
@@ -434,6 +501,12 @@ def _canonical_context_value(axis: str, value: Any) -> str:
             "london_new_york_overlap": "overlap",
             "london_comex_overlap": "overlap",
             "asian": "asia",
+        }.get(normalized, normalized)
+    if axis == "volatility":
+        return {
+            "low_volatility": "low",
+            "normal_volatility": "normal",
+            "high_volatility": "high",
         }.get(normalized, normalized)
     return normalized
 

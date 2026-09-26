@@ -405,6 +405,11 @@ class CanonicalLearningOutboxService
                     'paired_control' => $pair->isVerifiedControlPair(),
                     'independent_confirmation' => $this->lessonIsIndependentlyConfirmed($lesson),
                     'confirmation_protocol' => data_get($lesson->evidence, 'confirmation_protocol'),
+                    'composition_runtime_trace' => data_get(
+                        $candidate->modelVersion?->metadata,
+                        'last_screen_result.composition_runtime_trace',
+                        [],
+                    ),
                 ]);
             }
         }

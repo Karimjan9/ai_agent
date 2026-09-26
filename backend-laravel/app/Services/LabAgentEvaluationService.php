@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\ReplayLaneBusyException;
 use App\Jobs\ProcessLabScreeningLearningProjection;
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\ModelVersion;
@@ -12,6 +13,7 @@ use App\Services\MarketData\MarketVolumeService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Http\Client\ConnectionException;
 use RuntimeException;
 
 class LabAgentEvaluationService
@@ -24,6 +26,12 @@ class LabAgentEvaluationService
         $agent->load('modelVersion', 'generation');
         $model = $agent->modelVersion;
         $edgeGenesisReplay = data_get($model->metadata, 'edge_genesis.protocol') === DependencyAwareEdgeGenesisFoundryService::PROTOCOL;
+        $runtimeTimeframe = $this->replayTimeframe($agent);
+        $mtfBundle = $this->replayMtfBundle($agent, $edgeGenesisReplay);
+        $modelVolumeEnabled = $this->volumeEnabled($model);
+        $foundationSnapshotKey = $modelVolumeEnabled && $mtfBundle === null
+            ? 'foundation_volume'
+            : 'foundation';
         $edgeGenesisPreflight = app(DependencyAwareEdgeGenesisFoundryService::class)->preflight($agent);
         if (! (bool) data_get($edgeGenesisPreflight, 'allowed', true)) {
             $agent->update(['lifecycle_status' => 'technical_quarantine', 'decision_reason' => 'Edge Genesis preflight failed: INVALID_EDGE_OBSERVABILITY.']);
@@ -51,7 +59,7 @@ class LabAgentEvaluationService
         );
         $currentFoundationHash = (string) data_get(
             $agent->generation?->trigger_context,
-            'canonical_dataset_snapshots.foundation.sha256',
+            "canonical_dataset_snapshots.{$foundationSnapshotKey}.sha256",
             ''
         );
         $currentSnapshotPath = (string) data_get(
@@ -61,12 +69,12 @@ class LabAgentEvaluationService
         );
         $currentFoundationPath = (string) data_get(
             $agent->generation?->trigger_context,
-            'canonical_dataset_snapshots.foundation.path',
+            "canonical_dataset_snapshots.{$foundationSnapshotKey}.path",
             '',
         );
         $currentFoundationRowCount = (int) data_get(
             $agent->generation?->trigger_context,
-            'canonical_dataset_snapshots.foundation.manifest.row_count',
+            "canonical_dataset_snapshots.{$foundationSnapshotKey}.manifest.row_count",
             0,
         );
         $currentRegimeHash = (string) data_get(
@@ -82,10 +90,15 @@ class LabAgentEvaluationService
         $currentSnapshotFileHash = is_file($currentSnapshotPath) ? hash_file('sha256', $currentSnapshotPath) : null;
         $currentFoundationFileHash = is_file($currentFoundationPath) ? hash_file('sha256', $currentFoundationPath) : null;
         $currentRegimeFileHash = is_file($currentRegimePath) ? hash_file('sha256', $currentRegimePath) : null;
+        $currentMtfBundleHash = (string) data_get($mtfBundle, 'bundle_hash', '');
         // Full replay is research/training evidence. Its primary dataset is
         // the immutable pre-2026 foundation, never the paper snapshot.
-        $currentReplayHash = $currentFoundationHash !== '' ? $currentFoundationHash : $currentSnapshotHash;
-        $currentReplayPath = $currentFoundationPath !== '' ? $currentFoundationPath : $currentSnapshotPath;
+        $currentReplayHash = $currentMtfBundleHash !== ''
+            ? $currentMtfBundleHash
+            : ($currentFoundationHash !== '' ? $currentFoundationHash : $currentSnapshotHash);
+        $currentReplayPath = $currentMtfBundleHash !== ''
+            ? (string) data_get($mtfBundle, 'entry_dataset_path', '')
+            : ($currentFoundationPath !== '' ? $currentFoundationPath : $currentSnapshotPath);
         $currentReplayFileHash = is_file($currentReplayPath) ? hash_file('sha256', $currentReplayPath) : null;
         $cached = data_get($model->metadata, 'full_validation_batch');
         $cachedRuntimePolicy = (array) data_get($cached, 'full_replay_runtime_policy', []);
@@ -105,8 +118,9 @@ class LabAgentEvaluationService
             && hash_equals($currentParameterHash, (string) data_get($cached, 'parameter_hash', ''))
             && $currentReplayHash !== ''
             && hash_equals($currentReplayHash, (string) data_get($cached, 'data_hash', ''))
-            && is_string($currentReplayFileHash)
-            && hash_equals($currentReplayHash, $currentReplayFileHash)
+            && ($currentMtfBundleHash !== ''
+                ? hash_equals($currentMtfBundleHash, (string) data_get($cached, 'mtf_bundle_hash', ''))
+                : (is_string($currentReplayFileHash) && hash_equals($currentReplayHash, $currentReplayFileHash)))
             && $currentFoundationHash !== ''
             && hash_equals($currentFoundationHash, (string) data_get($cached, 'foundation_data_hash', ''))
             && is_string($currentFoundationFileHash)
@@ -169,20 +183,18 @@ class LabAgentEvaluationService
             // budget. The rolling snapshot is exported only after the final
             // cohort is known, so a removed volume specialist cannot force a
             // different expensive dataset contract by accident.
-            $foundationSnapshot = $this->datasets->ensureGenerationFoundationSnapshot($agent->generation);
-            $regimeSnapshot = $isM15
+            $volumeEnabled = $cohort->contains(fn (LabAgent $peer): bool => $this->volumeEnabled($peer->modelVersion));
+            $foundationSnapshot = $this->datasets->ensureGenerationFoundationSnapshot(
+                $agent->generation,
+                $volumeEnabled && $mtfBundle === null,
+            );
+            $regimeSnapshot = $mtfBundle === null && $isM15
                 ? $this->datasets->ensureGenerationRegimeSnapshot($agent->generation)
                 : null;
             $foundationRowCount = (int) data_get($foundationSnapshot, 'manifest.row_count', 0);
             $boundedThreshold = max(1, (int) config('services.lab_selection.full_replay_bounded_cohort_foundation_rows', 100000));
             $maxCohortSize = $this->fullReplayMaxCohortSize($agent);
-            $volumeEnabled = $cohort->contains(fn (LabAgent $peer): bool => $this->volumeEnabled($peer->modelVersion));
             $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
-            $edgeMtfBundle = $edgeGenesisReplay
-                ? app(MultiTimeframeSnapshotService::class)->restoreAgentOwnedConfirmationValidationBundle(
-                    (array) data_get($model->metadata, 'edge_genesis.mtf_bundle_manifest', []),
-                )
-                : null;
             if (! $portfolioMemberOnly) {
                 // A previous cohort can finish before a sibling times out. Keep
                 // its sealed item eligible for the next bounded cohort so the
@@ -193,7 +205,7 @@ class LabAgentEvaluationService
                     $cohort,
                     $agent->lab_generation_id,
                     $currentCodeHash,
-                    (string) ($foundationSnapshot['sha256'] ?? ''),
+                    $currentReplayHash,
                     (string) ($foundationSnapshot['sha256'] ?? ''),
                     $foundationRowCount,
                     $boundedThreshold,
@@ -255,42 +267,50 @@ class LabAgentEvaluationService
             $selectedVolumeEnabled = $cohort->contains(fn (LabAgent $peer): bool => $this->volumeEnabled($peer->modelVersion));
             if ($selectedVolumeEnabled !== $volumeEnabled) {
                 $volumeEnabled = $selectedVolumeEnabled;
+                $foundationSnapshot = $this->datasets->ensureGenerationFoundationSnapshot(
+                    $agent->generation,
+                    $volumeEnabled && $mtfBundle === null,
+                );
                 $datasetSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
             }
             // The paper snapshot is retained in the generation context for
             // the paper lane, but it is never sent as full-replay input.
-            $dataset = $edgeMtfBundle !== null
-                ? (string) $edgeMtfBundle['entry_dataset_path']
+            $dataset = $mtfBundle !== null
+                ? (string) $mtfBundle['entry_dataset_path']
                 : $foundationSnapshot['path'];
             $manifest = (array) ($foundationSnapshot['manifest'] ?? []);
             $manifest['paper'] = $datasetSnapshot['manifest'];
-            if ($edgeMtfBundle !== null) {
-                $manifest['mtf_foundation_bundle'] = (array) $edgeMtfBundle['manifest'];
-                $manifest['mtf_bundle_hash'] = (string) $edgeMtfBundle['bundle_hash'];
-                $manifest['mtf_execution_timeframe'] = DependencyAwareEdgeGenesisFoundryService::EXECUTION_TIMEFRAME;
+            if ($mtfBundle !== null) {
+                $manifest['mtf_foundation_bundle'] = (array) $mtfBundle['manifest'];
+                $manifest['mtf_bundle_hash'] = (string) $mtfBundle['bundle_hash'];
+                $manifest['mtf_execution_timeframe'] = $runtimeTimeframe;
+                $manifest['snapshot_sha256'] = (string) $mtfBundle['bundle_hash'];
             }
             if ($regimeSnapshot !== null) {
                 $manifest['regime'] = $regimeSnapshot['manifest'];
             }
+            $replayDatasetHash = $mtfBundle !== null
+                ? (string) $mtfBundle['bundle_hash']
+                : (string) $foundationSnapshot['sha256'];
             $request = [
                 'symbol' => $agent->symbol,
-                'timeframe' => $edgeGenesisReplay ? DependencyAwareEdgeGenesisFoundryService::EXECUTION_TIMEFRAME : $agent->timeframe,
+                'timeframe' => $runtimeTimeframe,
                 'strategy' => 'all', 'evaluation_mode' => 'replay',
-                'strategies' => $cohort->map(fn (LabAgent $peer) => [
-                    'lab_agent_id' => (int) $peer->id,
-                    'strategy' => $peer->modelVersion->strategy,
-                    'base_strategy' => $this->schemas->runtimeBaseStrategy($peer->modelVersion->strategy, data_get($peer->modelVersion->metadata, 'base_strategy'), $peer->strategy_family),
-                    'version' => $peer->modelVersion->version,
-                    'parameters' => $peer->modelVersion->parameters ?? [],
-                    'instrument_research_assignment' => $this->instrumentResearch->assignment($peer),
-                    'specialist_context_contract' => $this->specialistContextContract(
-                        data_get($peer->modelVersion->metadata, 'specialist_council_membership.contextual_cell'),
-                    ),
-                ])->all(),
+                'strategies' => $cohort->map(fn (LabAgent $peer): array => $this->screeningStrategyPayload(
+                    $peer,
+                    $runtimeTimeframe,
+                    $mtfBundle,
+                    $replayDatasetHash,
+                ))->all(),
                 'initial_balance' => 10000, 'risk_per_trade' => 1, 'dataset_path' => $dataset,
+                'replay_dataset_hash' => $replayDatasetHash,
                 'full_replay_runtime_policy' => $runtimePolicy,
                 'volume_context' => $volumeEnabled
-                    ? (array) data_get($manifest, 'volume_quality', [])
+                    ? $this->volumeContextOrFail(
+                        $agent->symbol,
+                        $runtimeTimeframe,
+                        $mtfBundle ?? $foundationSnapshot,
+                    )
                     : $this->disabledVolumeContext(),
                 'policy_context' => [
                     'trial_ledger' => app(LabTrialLedgerService::class)->selectionContext($agent->symbol, $agent->timeframe),
@@ -310,7 +330,7 @@ class LabAgentEvaluationService
                         $diff = (array) $peer->parameter_diff;
                         $changedGene = count($diff) === 1 ? array_key_first($diff) : null;
 
-                        return [$peer->modelVersion->strategy => [
+                        return [(string) $peer->id => [
                             'changed_gene' => $changedGene,
                             'repair_attempt' => (int) data_get($peer->modelVersion->metadata, 'repair_lineage.attempt', 0),
                             'parent_model_version_id' => $peer->parent_a_model_version_id ?: $peer->parent_b_model_version_id,
@@ -334,7 +354,7 @@ class LabAgentEvaluationService
                         }
                         $holding = max(1, (int) config('services.learning_lane.confirmation_maximum_holding_bars', 240));
 
-                        return [$peer->modelVersion->strategy => [
+                        return [(string) $peer->id => [
                             'protocol' => 'bounded_cold_start_learning_confirmation_v1',
                             'role' => $role,
                             'cohort_role' => $cohortRole,
@@ -414,24 +434,20 @@ class LabAgentEvaluationService
                 'execution' => $this->executionAssumptions($agent->symbol),
                 'execution_contract' => app(ExecutionContractService::class)->for(
                     $agent->symbol,
-                    $edgeGenesisReplay ? DependencyAwareEdgeGenesisFoundryService::EXECUTION_TIMEFRAME : $agent->timeframe,
+                    $runtimeTimeframe,
                 ),
                 'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
                     $agent->symbol,
-                    $agent->timeframe,
+                    $runtimeTimeframe,
                     $model->strategy,
-                    $currentRegimeHash ?: null,
+                    $currentMtfBundleHash ?: ($currentRegimeHash ?: null),
                 ),
                 'emit_decision_trace' => true,
             ];
-            if (! $edgeGenesisReplay) {
+            if ($mtfBundle === null) {
                 $request['foundation_dataset_path'] = $foundationSnapshot['path'];
             }
-            if ($edgeMtfBundle !== null) {
-                $request['mtf_dataset_paths'] = (array) $edgeMtfBundle['context_dataset_paths'];
-                $request['related_mtf_dataset_paths'] = (object) [];
-                $request['mtf_snapshot_manifest'] = (array) $edgeMtfBundle['manifest'];
-            }
+            $request = $this->applyMtfReplayBundle($request, $mtfBundle);
             // A council seat is not only a label on the model version.  Its
             // standalone passport must be replayed inside the sealed niche
             // it owns, otherwise a trend-up child can borrow range/trend-down
@@ -444,6 +460,12 @@ class LabAgentEvaluationService
             );
             if ($researchMembers->isNotEmpty()) {
                 $request['portfolio_members'] = $researchMembers->map(fn (LabAgent $peer): array => [
+                    ...$this->screeningStrategyPayload(
+                        $peer,
+                        $runtimeTimeframe,
+                        $mtfBundle,
+                        $replayDatasetHash,
+                    ),
                     'strategy' => $peer->modelVersion->strategy,
                     'base_strategy' => $this->schemas->runtimeBaseStrategy($peer->modelVersion->strategy, data_get($peer->modelVersion->metadata, 'base_strategy'), $peer->strategy_family),
                     'version' => $peer->modelVersion->version,
@@ -454,6 +476,14 @@ class LabAgentEvaluationService
                     'target_volatility' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_volatility'), ['high_volatility', 'normal_volatility', 'low_volatility']),
                     'target_direction' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_direction'), ['BUY', 'SELL']),
                     'target_session' => $this->normalizeCouncilTarget(data_get($peer->modelVersion->metadata, 'portfolio_research_contract.target_session'), ['asia', 'london', 'new_york', 'overlap']),
+                    'target_venue_phase' => $this->normalizeCouncilTarget(
+                        data_get(
+                            $peer->modelVersion->metadata,
+                            'portfolio_research_contract.target_venue_phase',
+                            data_get($peer->modelVersion->metadata, 'specialist_council_membership.contextual_cell.venue_phase'),
+                        ),
+                        app(MarketSessionCalendarService::class)->researchPhases(),
+                    ),
                     'specialist_context_contract' => $this->specialistContextContract(
                         data_get($peer->modelVersion->metadata, 'portfolio_research_contract.contextual_specialist_cell'),
                     ),
@@ -475,7 +505,7 @@ class LabAgentEvaluationService
                 // The Edge passport deliberately owns the immutable H1
                 // archive identity while M5/M15/H1/H4 are its temporal
                 // execution bundle. Both identities remain in the manifest.
-                'data_hash' => $edgeGenesisReplay ? (string) ($foundationSnapshot['sha256'] ?? '') : null,
+                'data_hash' => $mtfBundle !== null ? (string) $mtfBundle['bundle_hash'] : null,
             ]);
             $this->assertAiReplayHealthy($requestId, $run);
             $response = Http::connectTimeout(15)->timeout($timeout)->withOptions([
@@ -527,9 +557,10 @@ class LabAgentEvaluationService
                     'item' => $peerItem,
                     'code_hash' => $currentCodeHash,
                     'parameter_hash' => $this->evidence->parameterHash($peer),
-                    'data_hash' => (string) ($manifest['snapshot_sha256'] ?? $manifest['sha256'] ?? ''),
+                    'data_hash' => $currentReplayHash,
                     'foundation_data_hash' => (string) ($foundationSnapshot['sha256'] ?? ''),
                     'regime_data_hash' => (string) ($regimeSnapshot['sha256'] ?? ''),
+                    'mtf_bundle_hash' => $currentMtfBundleHash,
                     'request_manifest' => $request,
                     'full_replay_runtime_policy' => $runtimePolicy,
                 ]])]);
@@ -544,7 +575,7 @@ class LabAgentEvaluationService
         // the contract or silently changed spread/gap policy.
         $returnedExecutionContract = data_get($item, 'result.execution_contract', data_get($item, 'execution_contract'));
         if (! is_array($returnedExecutionContract)
-            || ! app(ExecutionContractService::class)->matches($returnedExecutionContract, $agent->symbol, $agent->timeframe)) {
+            || ! app(ExecutionContractService::class)->matches($returnedExecutionContract, $agent->symbol, $this->replayTimeframe($agent))) {
             throw new RuntimeException('FULL_REPLAY_EXECUTION_CONTRACT_MISSING_OR_MISMATCH');
         }
         $fullEvidence = $this->evidence->replayEvidenceCompleteness($run, (array) ($item['result'] ?? []));
@@ -691,6 +722,269 @@ class LabAgentEvaluationService
         }
     }
 
+    /**
+     * Build one immutable causal fold request containing all three arms.
+     * Laravel owns fold durability; Python owns candle replay and metrics.
+     *
+     * @return array{request:array<string,mixed>,manifest:array<string,mixed>,dataset_hash:string,execution_hash:string,fold_count:int}
+     */
+    public function causalFoldEnvelope(AgentLearningCausalExperiment $experiment, int $foldIndex): array
+    {
+        $foldCount = max(1, min(12, (int) config('services.learning_lane.causal_fold_count', 9)));
+        if ($foldIndex < 1 || $foldIndex > $foldCount) {
+            throw new RuntimeException('CAUSAL_FOLD_INDEX_OUT_OF_RANGE');
+        }
+        $experiment->loadMissing('generation.agents.modelVersion');
+        $generation = $experiment->generation;
+        if (! $generation || (int) $generation->id !== (int) $experiment->lab_generation_id) {
+            throw new RuntimeException('CAUSAL_FOLD_GENERATION_MISSING');
+        }
+        $armIds = collect([
+            $experiment->guided_agent_id,
+            $experiment->blinded_agent_id,
+            $experiment->control_agent_id,
+        ])->map(fn (mixed $id): int => (int) $id)->filter()->unique()->values();
+        $arms = $generation->agents->whereIn('id', $armIds)->sortBy('id')->values();
+        if ($armIds->count() !== 3 || $arms->count() !== 3) {
+            throw new RuntimeException('CAUSAL_FOLD_THREE_ARM_CONTRACT_INCOMPLETE');
+        }
+        $representative = $arms->first();
+        $runtimeTimeframe = $this->replayTimeframe($representative);
+        $mtfBundle = $this->replayMtfBundle($representative);
+        $volumeEnabled = $arms->contains(fn (LabAgent $arm): bool => $this->volumeEnabled($arm->modelVersion));
+        $foundationSnapshot = $this->datasets->ensureGenerationFoundationSnapshot(
+            $generation,
+            $volumeEnabled && $mtfBundle === null,
+        );
+        $paperSnapshot = $this->datasets->ensureGenerationSnapshot($generation, $volumeEnabled);
+        $dataset = $mtfBundle !== null
+            ? (string) $mtfBundle['entry_dataset_path']
+            : (string) $foundationSnapshot['path'];
+        $datasetHash = $mtfBundle !== null
+            ? (string) $mtfBundle['bundle_hash']
+            : (string) $foundationSnapshot['sha256'];
+        $manifest = (array) ($foundationSnapshot['manifest'] ?? []);
+        $manifest['paper'] = (array) ($paperSnapshot['manifest'] ?? []);
+        if ($mtfBundle !== null) {
+            $manifest['mtf_foundation_bundle'] = (array) $mtfBundle['manifest'];
+            $manifest['mtf_bundle_hash'] = (string) $mtfBundle['bundle_hash'];
+            $manifest['mtf_execution_timeframe'] = $runtimeTimeframe;
+            $manifest['snapshot_sha256'] = (string) $mtfBundle['bundle_hash'];
+        }
+
+        $contracts = $arms->mapWithKeys(function (LabAgent $arm) use ($foldIndex, $foldCount): array {
+            $receipt = (array) data_get($arm->modelVersion?->metadata, 'learning_receipt', []);
+            $role = (string) data_get($receipt, 'causal_influence', '');
+            $cohortRole = (string) data_get($arm->modelVersion?->metadata, 'causal_learning_cohort.role', '');
+            if (! in_array($role, ['memory_guided', 'hypothesis_guided', 'causal_repair_guided', 'blinded_counterfactual', 'frozen_control'], true)
+                || ! in_array($cohortRole, ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control'], true)
+                || data_get($receipt, 'integrity.valid') !== true) {
+                throw new RuntimeException('CAUSAL_FOLD_ARM_RECEIPT_INVALID:'.$arm->id);
+            }
+            $holding = max(1, (int) config('services.learning_lane.confirmation_maximum_holding_bars', 240));
+
+            return [(string) $arm->id => [
+                'protocol' => 'bounded_cold_start_learning_confirmation_v1',
+                'execution_mode' => 'durable_single_fold_job',
+                'role' => $role,
+                'cohort_role' => $cohortRole,
+                'causal_intent_id' => data_get($receipt, 'causal_intent_id'),
+                'maximum_holding_bars' => $holding,
+                'purge_bars' => $holding,
+                'embargo_bars' => 1,
+                'fold_count' => 1,
+                'fold_offset' => $foldIndex - 1,
+                'fold_universe_count' => $foldCount,
+                'max_rows_per_fold' => (int) config('services.learning_lane.causal_max_rows_per_fold', 4096),
+                'per_fold_budget_seconds' => $this->causalPerFoldBudgetSeconds(),
+                'audit_trace_rows' => (int) config('services.learning_lane.causal_audit_trace_rows', 512),
+                'minimum_trades_per_window' => (int) config('services.learning_lane.causal_minimum_trades_per_window', 8),
+                'minimum_powered_windows' => (int) config('services.learning_lane.causal_minimum_powered_windows', 6),
+                'minimum_positive_windows' => (int) config('services.learning_lane.causal_minimum_positive_windows', 4),
+                'declared_time_stop_candles' => max(0, (int) data_get($arm->modelVersion?->parameters, 'time_stop_candles', 0)),
+                'execution_overlay' => 'shared_confirmation_maximum_holding_horizon',
+                'admitted' => true,
+                'blocker' => null,
+                'promotion_evidence' => false,
+            ]];
+        })->all();
+        $executionContract = app(ExecutionContractService::class)->for(
+            (string) $experiment->symbol,
+            $runtimeTimeframe,
+        );
+        $request = [
+            'symbol' => (string) $experiment->symbol,
+            'timeframe' => $runtimeTimeframe,
+            'strategy' => 'all',
+            'evaluation_mode' => 'replay',
+            'strategies' => $arms->map(fn (LabAgent $arm): array => $this->screeningStrategyPayload(
+                $arm,
+                $runtimeTimeframe,
+                $mtfBundle,
+                $datasetHash,
+            ))->all(),
+            'initial_balance' => 10000,
+            'risk_per_trade' => 1,
+            'dataset_path' => $dataset,
+            'replay_dataset_hash' => $datasetHash,
+            'volume_context' => $volumeEnabled
+                ? $this->volumeContextOrFail((string) $experiment->symbol, $runtimeTimeframe, $mtfBundle ?? $foundationSnapshot)
+                : $this->disabledVolumeContext(),
+            'policy_context' => [
+                'learning_confirmation_contracts' => $contracts,
+                'causal_fold_job' => [
+                    'protocol' => 'durable_causal_fold_job_v1',
+                    'experiment_id' => (int) $experiment->id,
+                    'fold_index' => $foldIndex,
+                    'fold_count' => $foldCount,
+                    'all_three_arms_required' => true,
+                    'dataset_manifest' => $manifest,
+                    'promotion_evidence' => false,
+                ],
+                'data_boundary' => [
+                    'protocol' => 'pre_2026_training_paper_only_v1',
+                    'training_end_exclusive' => '2026-01-01T00:00:00Z',
+                    'paper_allowed_for_replay' => false,
+                    'paper_allowed_for_mutation' => false,
+                    'promotion_evidence' => false,
+                ],
+            ],
+            'execution' => $this->executionAssumptions((string) $experiment->symbol),
+            'execution_contract' => $executionContract,
+            'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
+                (string) $experiment->symbol,
+                $runtimeTimeframe,
+                (string) $representative->modelVersion->strategy,
+                $datasetHash,
+            ),
+            'emit_decision_trace' => true,
+        ];
+        if ($mtfBundle === null) {
+            $request['foundation_dataset_path'] = (string) $foundationSnapshot['path'];
+        }
+        $request = $this->applyMtfReplayBundle($request, $mtfBundle);
+
+        return [
+            'request' => $request,
+            'manifest' => $manifest,
+            'dataset_hash' => $datasetHash,
+            'execution_hash' => (string) data_get($executionContract, 'execution_hash', ''),
+            'fold_count' => $foldCount,
+        ];
+    }
+
+    /**
+     * Project a Python-aggregated causal arm through the ordinary immutable
+     * full-replay settlement boundary. No market data is replayed here.
+     *
+     * @param  array<string,mixed>  $item
+     * @param  array<string,mixed>  $aggregateResponse
+     * @param  array<string,mixed>  $request
+     * @param  array<string,mixed>  $manifest
+     */
+    public function projectCausalFoldAggregate(
+        LabAgent $agent,
+        array $item,
+        array $aggregateResponse,
+        array $request,
+        array $manifest,
+    ): LabEvaluationRun {
+        $agent->loadMissing('modelVersion', 'generation');
+        $model = $agent->modelVersion;
+        if (! $model || (int) data_get($item, 'lab_agent_id', 0) !== (int) $agent->id) {
+            throw new RuntimeException('CAUSAL_FOLD_AGGREGATE_AGENT_IDENTITY_MISMATCH');
+        }
+        $run = $this->evidence->beginRun($agent, 'full_validation', 'full', [
+            'source' => 'causal_fold_aggregate',
+            'fold_receipts' => (int) data_get($aggregateResponse, 'received_fold_count', 0),
+            'promotion_evidence' => false,
+        ]);
+        $this->evidence->attachRequest($run, $request, [
+            'request_id' => 'causal-fold-aggregate-'.$agent->id.'-'.$run->run_id,
+            'dataset_manifest' => $manifest,
+            'data_hash' => (string) data_get($request, 'replay_dataset_hash', ''),
+            'aggregate_only' => true,
+        ]);
+        $item['result'] = array_merge((array) data_get($item, 'result', []), [
+            'data_manifest' => $manifest,
+            'full_replay_runtime_policy' => [
+                'protocol' => 'durable_causal_fold_jobs_v1',
+                'fold_count' => (int) data_get($aggregateResponse, 'expected_fold_count', 0),
+                'atomic_settlement' => true,
+                'promotion_evidence' => false,
+            ],
+        ]);
+        $returnedExecutionContract = data_get($item, 'result.execution_contract');
+        if (! is_array($returnedExecutionContract)
+            || ! app(ExecutionContractService::class)->matches(
+                $returnedExecutionContract,
+                (string) $agent->symbol,
+                $this->replayTimeframe($agent),
+            )) {
+            throw new RuntimeException('CAUSAL_FOLD_AGGREGATE_EXECUTION_CONTRACT_MISMATCH');
+        }
+        $fullEvidence = $this->evidence->replayEvidenceCompleteness($run, (array) $item['result']);
+        if (! $fullEvidence['complete']) {
+            $this->evidence->finishRun($run, 'technical_error', (array) $item['result'], [], [
+                'reason_code' => 'INCOMPLETE_CAUSAL_FOLD_AGGREGATE_EVIDENCE',
+                'evidence_quality' => $fullEvidence,
+                'promotion_evidence' => false,
+            ]);
+            throw new RuntimeException('CAUSAL_FOLD_AGGREGATE_EVIDENCE_INCOMPLETE:'.implode(',', $fullEvidence['reason_codes']));
+        }
+        $this->evidence->recordArtifact($run, 'cohort_response', $aggregateResponse, [
+            'cohort_result_count' => 3,
+            'source' => 'causal_fold_aggregate',
+            'promotion_evidence' => false,
+        ]);
+        $this->evidence->finishRun($run, 'completed', (array) $item['result'], [
+            'agent_result' => (array) $item['result'],
+            'cache_hit' => false,
+            'cohort_result_count' => 3,
+            'causal_fold_aggregate' => true,
+        ], ['cohort_generation_id' => $agent->lab_generation_id, 'promotion_evidence' => false]);
+
+        DB::transaction(function () use ($agent, $model, $item, $run): void {
+            $model->refresh();
+            $fullResult = (array) $item['result'];
+            $fullResult['evidence_run_id'] = $run->run_id;
+            $fullResult['forward_score'] = $item['forward_score'] ?? 0;
+            $fullResult['forward_window_scores'] = $item['forward_window_scores'] ?? [];
+            $fullResult['rolling_windows_count'] = $item['rolling_windows_count'] ?? 0;
+            $fullResult['train_score'] = $item['train_score'] ?? 0;
+            $fullResult['validation_score'] = $item['validation_score'] ?? 0;
+            $fullResult['is_overfit'] = $item['is_overfit'] ?? false;
+            $result = $this->evidence->projectionPayload($fullResult);
+            $model->update([
+                'best_score' => max((float) $model->best_score, (float) ($item['score'] ?? 0)),
+                'best_winrate' => $result['winrate'] ?? 0,
+                'best_profit' => $result['net_profit_percent'] ?? 0,
+                'best_drawdown' => $result['max_drawdown_percent'] ?? 0,
+                'metadata' => $this->mergeRefreshedModelMetadata($model, ['last_result' => $result]),
+            ]);
+            $this->shadowVetoLedger->record($agent, $result, 'full_replay');
+            $performance = $this->champions->evaluate(
+                (string) $model->strategy,
+                (string) $agent->symbol,
+                (string) $agent->timeframe,
+                (int) ($item['score'] ?? 0),
+                $result,
+                $model,
+            );
+            if ((int) $performance->model_version_id !== (int) $model->getKey()) {
+                throw new RuntimeException('Causal fold aggregate attribution mismatch.');
+            }
+            $this->handoffs->record($agent->generation, $agent, 'full_validation_completed', 'completed', null, [
+                'performance_id' => $performance->id,
+                'result_hash' => hash('sha256', (string) json_encode($result, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)),
+                'evidence_run_id' => $run->run_id,
+                'causal_fold_aggregate' => true,
+            ]);
+        });
+
+        return $run->fresh();
+    }
+
     /** Fast, pair-local filter. Promotion never happens from this result. */
     public function screen(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
@@ -702,6 +996,8 @@ class LabAgentEvaluationService
 
             return;
         }
+        $runtimeTimeframe = $this->replayTimeframe($agent);
+        $mtfBundle = $this->replayMtfBundle($agent);
         $volumeEnabled = $this->volumeEnabled($model);
         // The inexpensive genetic screen is an evolution operation, not a
         // forward/paper observation.  Keep it entirely on the frozen
@@ -709,47 +1005,65 @@ class LabAgentEvaluationService
         // frozen and recorded here so the later replay can use 2026 only as
         // its independent paper/forward lane.
         $paperSnapshot = $this->datasets->ensureGenerationSnapshot($agent->generation, $volumeEnabled);
-        $datasetSnapshot = $this->datasets->ensureGenerationFoundationSnapshot($agent->generation);
+        $datasetSnapshot = $this->datasets->ensureGenerationFoundationSnapshot(
+            $agent->generation,
+            $volumeEnabled && $mtfBundle === null,
+        );
         $microProbe = data_get($agent->generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
         $screenRows = $microProbe
             ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
             : 5000;
         $stratifiedHistorical = ! $microProbe;
-        $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], $screenRows);
+        $primaryDatasetPath = $mtfBundle !== null
+            ? (string) $mtfBundle['entry_dataset_path']
+            : (string) $datasetSnapshot['path'];
+        $replayDatasetHash = $mtfBundle !== null
+            ? (string) $mtfBundle['bundle_hash']
+            : (string) $datasetSnapshot['sha256'];
+        $rows = $this->datasets->rowsFromSnapshot($primaryDatasetPath, $screenRows);
         if (count($rows) < 500) {
             throw new RuntimeException('Screening uchun yetarli recent candle topilmadi.');
         }
-        $regimeSnapshot = strtoupper((string) $agent->timeframe) === 'M15'
+        $regimeSnapshot = $mtfBundle === null && $runtimeTimeframe === 'M15'
             ? $this->datasets->ensureGenerationRegimeSnapshot($agent->generation)
             : null;
-
         $request = [
-            'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe,
+            'symbol' => $agent->symbol, 'timeframe' => $runtimeTimeframe,
             'strategy' => $model->strategy, 'evaluation_mode' => 'incremental',
-            'strategies' => [$this->screeningStrategyPayload($agent)],
+            'strategies' => [$this->screeningStrategyPayload(
+                $agent,
+                $runtimeTimeframe,
+                $mtfBundle,
+                $replayDatasetHash,
+            )],
             'initial_balance' => 10000,
             // Immutable snapshot-path transport keeps the request/evidence
             // contract intact while removing thousands of candle objects from
             // HTTP JSON. This path is deliberately pre-2026 training data;
             // the 2026 generation snapshot is never a screening input.
-            'dataset_path' => $datasetSnapshot['path'],
+            'dataset_path' => $primaryDatasetPath,
+            'replay_dataset_hash' => $replayDatasetHash,
             // Normal evolution samples immutable windows across 2005–2025.
             // Micro probes remain deliberately tail-bounded for their strict
             // operational budget.
             'dataset_tail_rows' => $stratifiedHistorical ? null : $screenRows,
             'volume_context' => $volumeEnabled
-                ? $this->volumeContextOrFail($agent->symbol, $agent->timeframe)
+                ? $this->volumeContextOrFail(
+                    $agent->symbol,
+                    $runtimeTimeframe,
+                    $mtfBundle ?? $datasetSnapshot,
+                )
                 : $this->disabledVolumeContext(),
             // Screening must rank candidates after the same normal execution
             // costs as full replay; otherwise cheap-turnover strategies are
             // incorrectly promoted into the scarce full-validation cohort.
             'execution' => $this->executionAssumptions($agent->symbol),
-            'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe),
+            'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $runtimeTimeframe),
             'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
                 $agent->symbol,
-                $agent->timeframe,
+                $runtimeTimeframe,
                 $model->strategy,
-                $regimeSnapshot['sha256'] ?? null,
+                $mtfBundle['bundle_hash'] ?? ($regimeSnapshot['sha256'] ?? null),
             ),
             'policy_context' => [
                 'shadow_micro_probe' => $microProbe,
@@ -791,6 +1105,7 @@ class LabAgentEvaluationService
             // sealed in the immutable evidence plane.
             'emit_decision_trace' => ! $microProbe,
         ];
+        $request = $this->applyMtfReplayBundle($request, $mtfBundle);
         if ($regimeSnapshot !== null) {
             // Screening and full replay consume the same generation-frozen
             // H1 context. Only the latest bounded tail is sent to screening.
@@ -817,9 +1132,9 @@ class LabAgentEvaluationService
         $requestId = 'screen-'.$agent->id.'-'.bin2hex(random_bytes(6));
         $manifest = [
             'candle_count' => count($rows),
-            'data_hash' => $this->evidence->hash($rows),
-            'snapshot_sha256' => $datasetSnapshot['sha256'],
-            'snapshot_protocol' => $datasetSnapshot['protocol'],
+            'data_hash' => $mtfBundle !== null ? (string) $mtfBundle['bundle_hash'] : $this->evidence->hash($rows),
+            'snapshot_sha256' => $mtfBundle !== null ? (string) $mtfBundle['bundle_hash'] : $datasetSnapshot['sha256'],
+            'snapshot_protocol' => $mtfBundle !== null ? MultiTimeframeSnapshotService::PROTOCOL : $datasetSnapshot['protocol'],
             'snapshot_generation_id' => $agent->lab_generation_id,
             'data_partition' => [
                 'protocol' => 'historical_evolution_paper_forward_split_v1',
@@ -832,6 +1147,11 @@ class LabAgentEvaluationService
                 'paper_snapshot_sha256' => $paperSnapshot['sha256'],
             ],
         ];
+        if ($mtfBundle !== null) {
+            $manifest['mtf_bundle_hash'] = (string) $mtfBundle['bundle_hash'];
+            $manifest['mtf_bundle_manifest'] = (array) $mtfBundle['manifest'];
+            $manifest['execution_timeframe'] = $runtimeTimeframe;
+        }
         if ($regimeSnapshot !== null) {
             $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
             $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
@@ -870,6 +1190,10 @@ class LabAgentEvaluationService
             'evidence_run_id' => $run->run_id,
             'data_manifest' => $manifest,
         ]);
+        if (filled($manifest['mtf_bundle_hash'] ?? null)) {
+            $screenResult['mtf_bundle_hash'] = (string) $manifest['mtf_bundle_hash'];
+            $screenResult['mtf_snapshot_manifest'] = (array) ($manifest['mtf_bundle_manifest'] ?? []);
+        }
         if ($regimeSnapshot !== null) {
             // Keep the frozen H1 dependency in the bounded screen projection
             // as well as in immutable request metadata. Full selection can
@@ -880,7 +1204,7 @@ class LabAgentEvaluationService
         }
         $screenResult['execution_contract'] = is_array(data_get($result, 'execution_contract'))
             ? (array) data_get($result, 'execution_contract')
-            : app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe);
+            : app(ExecutionContractService::class)->for($agent->symbol, $runtimeTimeframe);
         $screenEvidence = $this->evidence->replayEvidenceCompleteness($run, $screenResult);
         if (! $screenEvidence['complete']) {
             $this->evidence->finishRun($run, 'technical_error', $screenResult, [], [
@@ -1097,6 +1421,8 @@ class LabAgentEvaluationService
         $ids = $agents->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
         $first = $agents->first();
         $generation = $first->generation;
+        $runtimeTimeframe = $this->replayTimeframe($first);
+        $mtfBundle = $this->replayMtfBundle($first);
         $datasetContracts = $agents
             ->map(fn (LabAgent $agent): string => $this->volumeEnabled($agent->modelVersion) ? 'volume' : 'price')
             ->unique()
@@ -1121,17 +1447,26 @@ class LabAgentEvaluationService
         // the canonical generation snapshot as a separately sealed paper
         // reference for the later full replay.
         $paperSnapshot = $this->datasets->ensureGenerationSnapshot($generation, $volumeEnabled);
-        $datasetSnapshot = $this->datasets->ensureGenerationFoundationSnapshot($generation);
+        $datasetSnapshot = $this->datasets->ensureGenerationFoundationSnapshot(
+            $generation,
+            $volumeEnabled && $mtfBundle === null,
+        );
         $microProbe = data_get($generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
         $screenRows = $microProbe
             ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
             : 5000;
         $stratifiedHistorical = ! $microProbe;
-        $rows = $this->datasets->rowsFromSnapshot($datasetSnapshot['path'], $screenRows);
+        $primaryDatasetPath = $mtfBundle !== null
+            ? (string) $mtfBundle['entry_dataset_path']
+            : (string) $datasetSnapshot['path'];
+        $replayDatasetHash = $mtfBundle !== null
+            ? (string) $mtfBundle['bundle_hash']
+            : (string) $datasetSnapshot['sha256'];
+        $rows = $this->datasets->rowsFromSnapshot($primaryDatasetPath, $screenRows);
         if (count($rows) < 500) {
             throw new RuntimeException('Screening batch uchun yetarli recent candle topilmadi.');
         }
-        $regimeSnapshot = strtoupper((string) $first->timeframe) === 'M15'
+        $regimeSnapshot = $mtfBundle === null && $runtimeTimeframe === 'M15'
             ? $this->datasets->ensureGenerationRegimeSnapshot($generation)
             : null;
         $baseStrategy = $this->schemas->runtimeBaseStrategy(
@@ -1143,7 +1478,12 @@ class LabAgentEvaluationService
         $repairContracts = [];
         foreach ($agents as $agent) {
             $model = $agent->modelVersion;
-            $strategies[] = $this->screeningStrategyPayload($agent);
+            $strategies[] = $this->screeningStrategyPayload(
+                $agent,
+                $runtimeTimeframe,
+                $mtfBundle,
+                $replayDatasetHash,
+            );
             $repairContracts[(string) $agent->id] = [
                 'changed_gene' => count((array) $agent->parameter_diff) === 1
                     ? array_key_first((array) $agent->parameter_diff) : null,
@@ -1155,24 +1495,29 @@ class LabAgentEvaluationService
         }
         $request = [
             'symbol' => $first->symbol,
-            'timeframe' => $first->timeframe,
+            'timeframe' => $runtimeTimeframe,
             'strategy' => $first->modelVersion->strategy,
             'evaluation_mode' => 'incremental',
             'strategies' => $strategies,
             'initial_balance' => 10000,
             'risk_per_trade' => 1,
-            'dataset_path' => $datasetSnapshot['path'],
+            'dataset_path' => $primaryDatasetPath,
+            'replay_dataset_hash' => $replayDatasetHash,
             'dataset_tail_rows' => $stratifiedHistorical ? null : $screenRows,
             'volume_context' => $volumeEnabled
-                ? $this->volumeContextOrFail($first->symbol, $first->timeframe)
+                ? $this->volumeContextOrFail(
+                    $first->symbol,
+                    $runtimeTimeframe,
+                    $mtfBundle ?? $datasetSnapshot,
+                )
                 : $this->disabledVolumeContext(),
             'execution' => $this->executionAssumptions($first->symbol),
-            'execution_contract' => app(ExecutionContractService::class)->for($first->symbol, $first->timeframe),
+            'execution_contract' => app(ExecutionContractService::class)->for($first->symbol, $runtimeTimeframe),
             'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload(
                 $first->symbol,
-                $first->timeframe,
+                $runtimeTimeframe,
                 $first->modelVersion->strategy,
-                $regimeSnapshot['sha256'] ?? null,
+                $mtfBundle['bundle_hash'] ?? ($regimeSnapshot['sha256'] ?? null),
             ),
             'policy_context' => [
                 'shadow_micro_probe' => $microProbe,
@@ -1205,6 +1550,7 @@ class LabAgentEvaluationService
             // trace. Cost/mutation projections turn this off in Python.
             'emit_decision_trace' => ! $microProbe,
         ];
+        $request = $this->applyMtfReplayBundle($request, $mtfBundle);
         if ($regimeSnapshot !== null) {
             $request['regime_dataset_path'] = $regimeSnapshot['path'];
             $request['regime_dataset_tail_rows'] = 2000;
@@ -1228,10 +1574,10 @@ class LabAgentEvaluationService
 
         $manifest = [
             'candle_count' => count($rows),
-            'data_hash' => $this->evidence->hash($rows),
+            'data_hash' => $mtfBundle !== null ? (string) $mtfBundle['bundle_hash'] : $this->evidence->hash($rows),
             'dataset_contract' => $volumeEnabled ? 'volume' : 'price',
-            'snapshot_sha256' => $datasetSnapshot['sha256'],
-            'snapshot_protocol' => $datasetSnapshot['protocol'],
+            'snapshot_sha256' => $mtfBundle !== null ? (string) $mtfBundle['bundle_hash'] : $datasetSnapshot['sha256'],
+            'snapshot_protocol' => $mtfBundle !== null ? MultiTimeframeSnapshotService::PROTOCOL : $datasetSnapshot['protocol'],
             'snapshot_generation_id' => $first->lab_generation_id,
             'data_partition' => [
                 'protocol' => 'historical_evolution_paper_forward_split_v1',
@@ -1246,6 +1592,11 @@ class LabAgentEvaluationService
             'batch_protocol' => 'bounded_screening_batch_v1',
             'batch_size' => count($agents),
         ];
+        if ($mtfBundle !== null) {
+            $manifest['mtf_bundle_hash'] = (string) $mtfBundle['bundle_hash'];
+            $manifest['mtf_bundle_manifest'] = (array) $mtfBundle['manifest'];
+            $manifest['execution_timeframe'] = $runtimeTimeframe;
+        }
         if ($regimeSnapshot !== null) {
             $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
             $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
@@ -1310,6 +1661,25 @@ class LabAgentEvaluationService
 
             throw $exception;
         } catch (\Throwable $exception) {
+            if ($this->batchInterruptedByHostSuspend($exception, collect($runs), $screenTimeout)) {
+                foreach ($runs as $agentId => $run) {
+                    $this->evidence->finishRun($run, 'retry_released', null, [], [
+                        'reason_code' => 'HOST_SUSPEND_OR_LONG_STALL',
+                        'elapsed_seconds' => $run->started_at?->diffInSeconds(now()),
+                        'transport_timeout_seconds' => $screenTimeout,
+                        'batch_protocol' => 'bounded_screening_batch_v1',
+                        'strategy_verdict' => 'withheld',
+                        'promotion_evidence' => false,
+                    ]);
+                    LabAgent::query()->whereKey($agentId)->where('lifecycle_status', 'screening')
+                        ->update([
+                            'lifecycle_status' => 'queued',
+                            'decision_reason' => 'Host suspend or abnormal wall-clock stall detected; sealed batch replay released for retry.',
+                        ]);
+                }
+
+                throw new ReplayLaneBusyException('Host suspend interrupted the bounded screening batch; released for retry.', 0, $exception);
+            }
             foreach ($runs as $agentId => $run) {
                 $this->evidence->finishRun($run, 'technical_error', null, [], [
                     'reason_code' => 'BATCH_REPLAY_TRANSPORT_FAILURE',
@@ -1384,6 +1754,22 @@ class LabAgentEvaluationService
                 report($exception);
             }
         }
+    }
+
+    private function batchInterruptedByHostSuspend(
+        \Throwable $exception,
+        Collection $runs,
+        int $transportTimeoutSeconds,
+    ): bool {
+        if (! $exception instanceof ConnectionException
+            || ! str_contains(strtolower($exception->getMessage()), 'curl error 28')) {
+            return false;
+        }
+
+        $startedAt = $runs->pluck('started_at')->filter()->min();
+
+        return $startedAt !== null
+            && $startedAt->diffInSeconds(now()) > (max(60, $transportTimeoutSeconds) + 300);
     }
 
     /**
@@ -1482,7 +1868,7 @@ class LabAgentEvaluationService
             'performance_credit' => 0,
             'promotion_evidence' => false,
             'evidence_run_id' => $run->run_id,
-            'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe),
+            'execution_contract' => app(ExecutionContractService::class)->for($agent->symbol, $this->replayTimeframe($agent)),
             'contract' => $contract,
         ];
         $request = [
@@ -1599,13 +1985,17 @@ class LabAgentEvaluationService
             'evidence_run_id' => $run->run_id,
             'data_manifest' => $manifest,
         ]);
+        if (filled($manifest['mtf_bundle_hash'] ?? null)) {
+            $screenResult['mtf_bundle_hash'] = (string) $manifest['mtf_bundle_hash'];
+            $screenResult['mtf_snapshot_manifest'] = (array) ($manifest['mtf_bundle_manifest'] ?? []);
+        }
         if ($regimeSnapshot !== null) {
             $screenResult['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
             $screenResult['regime_snapshot_protocol'] = $regimeSnapshot['protocol'];
         }
         $screenResult['execution_contract'] = is_array(data_get($result, 'execution_contract'))
             ? (array) data_get($result, 'execution_contract')
-            : app(ExecutionContractService::class)->for($agent->symbol, $agent->timeframe);
+            : app(ExecutionContractService::class)->for($agent->symbol, $this->replayTimeframe($agent));
         $screenEvidence = $this->evidence->replayEvidenceCompleteness($run, $screenResult);
         if (! $screenEvidence['complete']) {
             $this->evidence->finishRun($run, 'technical_error', $screenResult, [], [
@@ -1866,14 +2256,114 @@ class LabAgentEvaluationService
         return $cohort->concat($peers)->unique(fn (LabAgent $peer): int => (int) $peer->getKey())->sortBy('id')->values();
     }
 
-    private function volumeContextOrFail(string $symbol, string $timeframe): array
+    /**
+     * Build the replay volume context from the replay snapshot itself. Live
+     * rolling coverage is a different population and may never attest a
+     * pre-2026 historical CSV.
+     *
+     * @param  array<string,mixed>  $replaySnapshot
+     */
+    private function volumeContextOrFail(string $symbol, string $timeframe, array $replaySnapshot): array
     {
-        $quality = $this->volumes->inspect($symbol, $timeframe);
-        if (data_get($quality, 'status') !== 'passed') {
-            throw new RuntimeException("{$symbol} {$timeframe} canonical volume quality gate failed.");
+        $manifest = (array) ($replaySnapshot['manifest'] ?? []);
+        $provenance = (array) data_get($manifest, 'volume_provenance', []);
+        if (data_get($provenance, 'status') !== 'passed') {
+            throw new RuntimeException("{$symbol} {$timeframe} historical replay volume provenance gate failed.");
         }
 
-        return $quality;
+        $streamQuality = (array) data_get($provenance, 'streams.'.strtoupper($timeframe), []);
+        if ($streamQuality !== [] && data_get($streamQuality, 'status') !== 'passed') {
+            throw new RuntimeException("{$symbol} {$timeframe} historical replay volume quality gate failed.");
+        }
+        $snapshotHash = (string) ($replaySnapshot['bundle_hash']
+            ?? data_get($manifest, 'snapshot_sha256')
+            ?? ($replaySnapshot['sha256'] ?? ''));
+        if ($snapshotHash === '') {
+            throw new RuntimeException("{$symbol} {$timeframe} historical replay volume snapshot hash missing.");
+        }
+
+        $contract = $this->volumes->contract();
+
+        return [
+            ...$provenance,
+            'protocol' => 'relative_volume_session_v2',
+            'status' => 'passed',
+            'enabled' => true,
+            'requested' => true,
+            'symbol' => strtoupper($symbol),
+            'timeframe' => strtoupper($timeframe),
+            'source_contract' => (string) data_get(
+                $provenance,
+                'source_contract',
+                MarketVolumeService::HISTORICAL_SOURCE_CONTRACT,
+            ),
+            'provider' => (string) data_get($provenance, 'provider', 'dukascopy'),
+            'transport' => (string) data_get($provenance, 'transport', 'frozen_archive'),
+            'unit' => MarketVolumeService::UNIT,
+            'semantic' => MarketVolumeService::SEMANTIC,
+            'session' => 'UTC',
+            'snapshot_sha256' => $snapshotHash,
+            'snapshot_quality' => $streamQuality !== [] ? $streamQuality : (array) data_get($manifest, 'volume_quality', []),
+            'normalization' => (array) data_get($contract, 'normalization', []),
+            'coverage_scope' => 'frozen_historical_replay_snapshot',
+            'live_coverage_inherited' => false,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    private function replayTimeframe(LabAgent $agent): string
+    {
+        return app(MultiTimeframePilotService::class)
+            ->replayTimeframe((string) $agent->symbol, (string) $agent->timeframe);
+    }
+
+    /** @return array<string,mixed>|null */
+    private function replayMtfBundle(LabAgent $agent, bool $edgeGenesisReplay = false): ?array
+    {
+        $runtimeTimeframe = $this->replayTimeframe($agent);
+        if (! $edgeGenesisReplay && $runtimeTimeframe === strtoupper((string) $agent->timeframe)) {
+            return null;
+        }
+        $manifest = $edgeGenesisReplay
+            ? (array) data_get($agent->modelVersion?->metadata, 'edge_genesis.mtf_bundle_manifest', [])
+            : (array) data_get($agent->generation?->trigger_context, 'mtf_bundle_manifest', []);
+        if ($manifest === []) {
+            throw new RuntimeException('AUTONOMOUS_MTF_BUNDLE_MISSING');
+        }
+        $bundle = app(MultiTimeframeSnapshotService::class)
+            ->restoreAgentOwnedConfirmationValidationBundle($manifest);
+        $expectedHash = $edgeGenesisReplay
+            ? (string) data_get($agent->modelVersion?->metadata, 'edge_genesis.mtf_bundle_hash', '')
+            : (string) data_get($agent->generation?->trigger_context, 'mtf_bundle_hash', '');
+        if ($expectedHash === '' || ! hash_equals($expectedHash, (string) $bundle['bundle_hash'])) {
+            throw new RuntimeException('AUTONOMOUS_MTF_BUNDLE_IDENTITY_MISMATCH');
+        }
+
+        return $bundle;
+    }
+
+    /** @param array<string,mixed> $request @param array<string,mixed>|null $bundle @return array<string,mixed> */
+    private function applyMtfReplayBundle(array $request, ?array $bundle): array
+    {
+        if ($bundle === null) {
+            return $request;
+        }
+        $request['dataset_path'] = (string) $bundle['entry_dataset_path'];
+        $request['mtf_dataset_paths'] = (array) $bundle['context_dataset_paths'];
+        $request['related_mtf_dataset_paths'] = (object) [];
+        $request['mtf_snapshot_manifest'] = (array) $bundle['manifest'];
+        data_set($request, 'policy_context.snapshot_transport.training_dataset_path', (string) $bundle['entry_dataset_path']);
+        data_set($request, 'policy_context.snapshot_transport.training_dataset_manifest_path', (string) $bundle['manifest_path']);
+        data_set(
+            $request,
+            'policy_context.snapshot_transport.training_dataset_sha256',
+            (string) data_get($bundle, 'manifest.streams.M5.sha256', ''),
+        );
+        data_set($request, 'policy_context.snapshot_transport.execution_timeframe', (string) config('services.xauusd_organism.execution_timeframe', 'M5'));
+        data_set($request, 'policy_context.snapshot_transport.mtf_dataset_paths', (array) $bundle['context_dataset_paths']);
+        data_set($request, 'policy_context.snapshot_transport.mtf_bundle_hash', (string) $bundle['bundle_hash']);
+
+        return $request;
     }
 
     /** Keep the optional no-volume control contract JSON-object shaped. */
@@ -2011,6 +2501,246 @@ class LabAgentEvaluationService
     }
 
     /**
+     * Carry a frozen composition across the actual replay boundary. The
+     * passport itself is only a declaration; Python must return an exact
+     * consumption trace before any component/composition can receive credit.
+     *
+     * @return array<string,mixed>|\stdClass
+     */
+    private function compositionRuntimeContract(
+        LabAgent $agent,
+        ?array $instrumentAssignment = null,
+        ?string $runtimeTimeframe = null,
+        ?array $mtfBundle = null,
+        ?string $replayDatasetHash = null,
+    ): array|\stdClass {
+        $agent->loadMissing('modelVersion');
+        $model = $agent->modelVersion;
+        $passport = (array) data_get($model?->metadata, 'smart_composition.composition_passport', []);
+        if (! $model
+            || (string) data_get($passport, 'protocol') !== CompositionAuthorityKernelService::PROTOCOL
+            || ! filled(data_get($passport, 'composition_id'))) {
+            return new \stdClass;
+        }
+
+        $components = (array) data_get($passport, 'components', []);
+        $strategyId = (string) ($components['strategy_id'] ?? '');
+        $strategyRuntime = $strategyId !== ''
+            ? app(StrategyLibraryCompilerService::class)->runtime($strategyId)
+            : null;
+        $riskGene = (string) data_get($passport, 'risk_contract.profile.gene', '');
+        $parameters = (array) $model->parameters;
+        $actualArchitecture = (string) data_get($model->metadata, 'strategy_architecture', '');
+        $actualTactic = (string) data_get($model->metadata, 'tactic_contract.architecture', '');
+        $declaredTactic = (string) ($components['tactic_id'] ?? '');
+        $actualBaseStrategy = $this->schemas->runtimeBaseStrategy(
+            (string) $model->strategy,
+            data_get($model->metadata, 'base_strategy'),
+            (string) $agent->strategy_family,
+        );
+        $frozenStrategyScope = (array) data_get($passport, 'strategy_signal_scope', []);
+        $actualStrategyScope = app(StrategyLibraryCompilerService::class)
+            ->signalScope($actualBaseStrategy);
+        $strategyScopeBound = $frozenStrategyScope !== []
+            && $frozenStrategyScope === $actualStrategyScope;
+        $managementProfile = (string) ($components['management_id'] ?? '');
+        $managementContract = (array) data_get($passport, 'management_contract', []);
+        $managementAdapter = $managementProfile !== ''
+            ? app(TradeManagementLibraryService::class)->runtimeAdapter($managementProfile)
+            : null;
+        $managementBound = $managementProfile !== ''
+            && (string) data_get($managementContract, 'protocol') === TradeManagementLibraryService::PROTOCOL
+            && (string) data_get($managementContract, 'profile') === $managementProfile
+            && is_array($managementAdapter)
+            && (string) data_get($managementAdapter, 'profile') === $managementProfile;
+        $instrumentAssignment ??= $this->instrumentResearch->assignment($agent);
+        $runtimeTimeframe = strtoupper((string) ($runtimeTimeframe
+            ?: data_get($passport, 'execution_timeframe', $agent->timeframe)));
+        $replayDatasetHash = (string) ($replayDatasetHash ?: data_get($mtfBundle, 'bundle_hash', ''));
+        $executionContract = app(ExecutionContractService::class)->for(
+            (string) $agent->symbol,
+            $runtimeTimeframe,
+        );
+        $compositionId = (string) $passport['composition_id'];
+        $instrumentHash = (string) data_get($instrumentAssignment, 'assignment_hash', '');
+        $instrumentHashPayload = $instrumentAssignment;
+        unset($instrumentHashPayload['assignment_hash']);
+        $instrumentBound = (string) data_get($instrumentAssignment, 'protocol') === LabInstrumentResearchService::PROTOCOL
+            && (string) data_get($instrumentAssignment, 'hash_protocol') === LabInstrumentResearchService::HASH_PROTOCOL
+            && $instrumentHash !== ''
+            && hash_equals($instrumentHash, $this->numericCanonicalHash($instrumentHashPayload))
+            && (string) data_get($instrumentAssignment, 'source_components.composition_id') === $compositionId
+            && collect([
+                'strategy_library_id' => 'strategy_id',
+                'tactic_library_key' => 'tactic_id',
+                'risk_library_id' => 'risk_id',
+                'management_id' => 'management_id',
+            ])->every(fn (string $componentKey, string $sourceKey): bool =>
+                (string) data_get($instrumentAssignment, 'source_components.'.$sourceKey)
+                === (string) ($components[$componentKey] ?? '')
+            );
+        $mtfRequired = $runtimeTimeframe === strtoupper((string) config('services.xauusd_organism.execution_timeframe', 'M5'));
+        $mtfManifest = (array) data_get($mtfBundle, 'manifest', []);
+        $mtfStreamHashes = collect((array) data_get($mtfManifest, 'streams', []))
+            ->filter(fn ($stream): bool => is_array($stream))
+            ->mapWithKeys(fn (array $stream, string $timeframe): array => [
+                strtoupper($timeframe) => (string) ($stream['sha256'] ?? ''),
+            ])->all();
+        $mtfBound = ! $mtfRequired || (
+            (string) data_get($mtfManifest, 'protocol') === MultiTimeframeSnapshotService::PROTOCOL
+            && filled(data_get($mtfBundle, 'bundle_hash'))
+            && collect(['M5', 'M15', 'H1', 'H4'])->every(
+                fn (string $timeframe): bool => filled($mtfStreamHashes[$timeframe] ?? null),
+            )
+        );
+
+        $contract = [
+            'protocol' => 'xauusd_composition_runtime_contract_v3',
+            'hash_protocol' => LabInstrumentResearchService::HASH_PROTOCOL,
+            'composition_id' => $compositionId,
+            'typed_program_id' => (string) data_get($passport, 'typed_program.program_id', ''),
+            'typed_program_protocol' => (string) data_get($passport, 'typed_program.runtime_protocol', ''),
+            'components' => [
+                'strategy_id' => $strategyId,
+                'tactic_id' => $declaredTactic,
+                'risk_id' => (string) ($components['risk_id'] ?? ''),
+                'management_id' => (string) ($components['management_id'] ?? ''),
+            ],
+            'runtime_bindings' => [
+                'strategy' => [
+                    'expected_family' => (string) data_get($strategyRuntime, 'family', ''),
+                    'expected_architecture' => (string) data_get($strategyRuntime, 'architecture', ''),
+                    'actual_family' => (string) $agent->strategy_family,
+                    'actual_architecture' => $actualArchitecture,
+                    'base_strategy' => $actualBaseStrategy,
+                    'signal_scope_bound' => $strategyScopeBound,
+                    'bound' => is_array($strategyRuntime)
+                        && (string) data_get($strategyRuntime, 'family') === (string) $agent->strategy_family
+                        && (string) data_get($strategyRuntime, 'architecture') === $actualArchitecture
+                        && $strategyScopeBound,
+                ],
+                'tactic' => [
+                    'declared' => $declaredTactic,
+                    'actual_architecture' => $actualTactic,
+                    'bound' => $declaredTactic !== '' && $declaredTactic === $actualTactic,
+                ],
+                'risk' => [
+                    'gene' => $riskGene,
+                    'value' => $riskGene !== '' && array_key_exists($riskGene, $parameters)
+                        ? $parameters[$riskGene]
+                        : null,
+                    'bound' => $riskGene !== '' && array_key_exists($riskGene, $parameters),
+                ],
+                'management' => [
+                    'profile' => $managementProfile,
+                    'bound' => $managementBound,
+                    'adapter' => $managementAdapter,
+                    'reason' => $managementBound
+                        ? 'exact_runtime_profile_adapter_bound'
+                        : 'management_contract_or_runtime_adapter_missing',
+                ],
+            ],
+            'execution_timeframe' => $runtimeTimeframe,
+            'laboratory_storage_timeframe' => (string) data_get($passport, 'laboratory_storage_timeframe', ''),
+            'strategy_contract' => (array) data_get($passport, 'strategy_contract', []),
+            'strategy_signal_scope' => $frozenStrategyScope,
+            'strategy_scope_binding' => [
+                'expected_runtime' => (string) data_get($frozenStrategyScope, 'runtime', ''),
+                'actual_runtime' => $actualBaseStrategy,
+                'expected_regimes' => (array) data_get($frozenStrategyScope, 'regimes', []),
+                'actual_regimes' => (array) data_get($actualStrategyScope, 'regimes', []),
+                'bound' => $strategyScopeBound,
+            ],
+            'tactic_contract' => (array) data_get($model->metadata, 'tactic_contract', []),
+            'risk_contract' => (array) data_get($passport, 'risk_contract', []),
+            'management_contract' => $managementContract,
+            'typed_program_nodes' => collect((array) data_get($passport, 'typed_program.nodes', []))
+                ->filter(fn ($node): bool => is_array($node) && filled($node['module'] ?? null))
+                ->map(fn (array $node): array => $node)
+                ->values()->all(),
+            'decision_tools' => array_values(array_filter(
+                (array) data_get($passport, 'decision_tools', []),
+                'is_string',
+            )),
+            'execution_authority' => [
+                'protocol' => 'composition_execution_authority_v1',
+                'symbol' => strtoupper(str_replace(['/', '_', '-'], '', (string) $agent->symbol)),
+                'execution_timeframe' => $runtimeTimeframe,
+                'dataset' => [
+                    'replay_dataset_hash' => $replayDatasetHash,
+                    'bound' => $replayDatasetHash !== '',
+                ],
+                'execution' => [
+                    'protocol' => (string) data_get($executionContract, 'protocol', ''),
+                    'execution_hash' => (string) data_get($executionContract, 'execution_hash', ''),
+                    'bound' => filled(data_get($executionContract, 'execution_hash')),
+                ],
+                'instrument' => [
+                    'protocol' => (string) data_get($instrumentAssignment, 'protocol', ''),
+                    'assignment_hash' => $instrumentHash,
+                    'selected_keys' => array_values(array_filter(
+                        (array) data_get($instrumentAssignment, 'selected_keys', []),
+                        'is_string',
+                    )),
+                    'bound' => $instrumentBound,
+                ],
+                'mtf' => [
+                    'required' => $mtfRequired,
+                    'protocol' => (string) data_get($mtfManifest, 'protocol', ''),
+                    'bundle_hash' => (string) data_get($mtfBundle, 'bundle_hash', ''),
+                    'stream_hashes' => $mtfStreamHashes,
+                    'bound' => $mtfBound,
+                ],
+                'runtime' => [
+                    'nodes' => [
+                        [
+                            'module' => 'instrument_context_gate',
+                            'provides' => 'InstrumentContextReceipt',
+                        ],
+                        [
+                            'module' => 'mtf_permission_gate',
+                            'provides' => 'MtfPermissionReceipt',
+                        ],
+                    ],
+                ],
+            ],
+            'paper_execution_authority' => false,
+            'promotion_evidence' => false,
+        ];
+        $contract['contract_hash'] = $this->numericCanonicalHash($contract);
+
+        return $contract;
+    }
+
+    private function numericCanonicalHash(mixed $value): string
+    {
+        return hash('sha256', json_encode(
+            $this->numericCanonicalize($value),
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR,
+        ));
+    }
+
+    private function numericCanonicalize(mixed $value): mixed
+    {
+        if (is_int($value) || is_float($value)) {
+            $number = rtrim(rtrim(sprintf('%.14F', (float) $value), '0'), '.');
+
+            return 'number:'.($number === '-0' || $number === '' ? '0' : $number);
+        }
+        if (! is_array($value)) {
+            return $value;
+        }
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->numericCanonicalize($item);
+        }
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        return $value;
+    }
+
+    /**
      * Keep single-agent recovery and bounded batch screening on one exact
      * strategy/context contract. A batch is only a feature-computation
      * optimization; it must never remove the specialist activation scope or
@@ -2018,13 +2748,19 @@ class LabAgentEvaluationService
      *
      * @return array<string,mixed>
      */
-    private function screeningStrategyPayload(LabAgent $agent): array
-    {
+    private function screeningStrategyPayload(
+        LabAgent $agent,
+        string $runtimeTimeframe,
+        ?array $mtfBundle,
+        string $replayDatasetHash,
+    ): array {
         $agent->loadMissing('modelVersion');
         $model = $agent->modelVersion;
         if (! $model) {
             throw new RuntimeException('SCREENING_MODEL_VERSION_REQUIRED');
         }
+
+        $instrumentAssignment = $this->instrumentResearch->assignment($agent);
 
         return [
             'lab_agent_id' => (int) $agent->id,
@@ -2036,7 +2772,14 @@ class LabAgentEvaluationService
             ),
             'version' => $model->version,
             'parameters' => $model->parameters ?? [],
-            'instrument_research_assignment' => $this->instrumentResearch->assignment($agent),
+            'instrument_research_assignment' => $instrumentAssignment,
+            'composition_runtime_contract' => $this->compositionRuntimeContract(
+                $agent,
+                $instrumentAssignment,
+                $runtimeTimeframe,
+                $mtfBundle,
+                $replayDatasetHash,
+            ),
             'specialist_context_contract' => $this->specialistContextContract(
                 data_get($model->metadata, 'specialist_council_membership.contextual_cell'),
             ),

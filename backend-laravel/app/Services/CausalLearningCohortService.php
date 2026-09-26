@@ -265,6 +265,15 @@ class CausalLearningCohortService
             if (count(array_unique(array_map('intval', $tripletIds))) !== 3) {
                 $reasons[] = 'CAUSAL_COHORT_TRIPLET_INCOMPLETE';
             } else {
+                $parity = app(CausalArmParityService::class)->assess($experiment);
+                $experiment->update(['evidence' => [
+                    ...((array) $experiment->evidence),
+                    'causal_arm_parity' => $parity,
+                    'promotion_evidence' => false,
+                ]]);
+                if (data_get($parity, 'passed') !== true) {
+                    $reasons = [...$reasons, ...(array) data_get($parity, 'reason_codes', ['CAUSAL_ARM_PARITY_FAILED'])];
+                }
                 foreach ($tripletIds as $tripletId) {
                     $screeningRun = LabEvaluationRun::query()
                         ->where('lab_generation_id', $generation?->id)
@@ -294,6 +303,7 @@ class CausalLearningCohortService
             'reason_codes' => array_values(array_unique($reasons)),
             'experiment_id' => $experiment?->id,
             'screening_behavior_preflight' => $behaviorPreflight ?? null,
+            'causal_arm_parity' => $parity ?? null,
         ];
     }
 
@@ -358,6 +368,119 @@ class CausalLearningCohortService
         return $experiments->count();
     }
 
+    /**
+     * Close a causal experiment whose screening boundary became terminal
+     * without three immutable completed screening receipts. Such a cohort
+     * can never become eligible for full replay; leaving it ready_for_replay
+     * makes the arbiter dispatch the same no-op settlement forever.
+     *
+     * @return array<string,mixed>
+     */
+    public function terminalScreeningDisposition(
+        AgentLearningCausalExperiment $experiment,
+        bool $apply = false,
+    ): array {
+        $experiment = $experiment->fresh(['generation.agents']);
+        if (! $experiment || ! in_array((string) $experiment->status, [
+            'awaiting_counterfactuals', 'ready_for_replay',
+        ], true)) {
+            return [
+                'eligible' => false,
+                'status' => (string) ($experiment?->status ?? 'missing'),
+                'reason_codes' => ['CAUSAL_EXPERIMENT_NOT_PRE_REPLAY_OPEN'],
+                'promotion_evidence' => false,
+            ];
+        }
+        $generation = $experiment->generation;
+        if (! $generation) {
+            return [
+                'eligible' => true,
+                'status' => 'generation_missing',
+                'reason_codes' => ['CAUSAL_GENERATION_MISSING'],
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $armIds = collect([
+            $experiment->guided_agent_id,
+            $experiment->blinded_agent_id,
+            $experiment->control_agent_id,
+        ])->map(fn (mixed $id): int => (int) $id)->filter()->unique()->values();
+        $agents = $generation->agents->whereIn('id', $armIds)->keyBy('id');
+        $activeStatuses = [
+            'draft', 'queued', 'screening', 'training', 'evaluation_error',
+            'full_queued', 'full_validation',
+        ];
+        $activeArmIds = $agents
+            ->filter(fn (LabAgent $agent): bool => in_array(
+                (string) $agent->lifecycle_status,
+                $activeStatuses,
+                true,
+            ))
+            ->keys()->map('intval')->values();
+        if ($activeArmIds->isNotEmpty()) {
+            return [
+                'eligible' => false,
+                'status' => 'screening_in_flight',
+                'reason_codes' => ['CAUSAL_ARM_WORK_REMAINS'],
+                'active_agent_ids' => $activeArmIds->all(),
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $completedRunIds = [];
+        foreach ($armIds as $armId) {
+            $run = LabEvaluationRun::query()
+                ->where('lab_agent_id', $armId)
+                ->where('phase', 'screening')
+                ->where('status', 'completed')
+                ->latest('id')
+                ->first();
+            if ($run) {
+                $completedRunIds[(int) $armId] = (string) $run->run_id;
+            }
+        }
+        $complete = $armIds->count() === 3
+            && $agents->count() === 3
+            && count($completedRunIds) === 3;
+        if ($complete) {
+            return [
+                'eligible' => false,
+                'status' => 'screening_evidence_complete',
+                'reason_codes' => [],
+                'completed_screening_run_ids' => $completedRunIds,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $reasonCodes = [
+            'CAUSAL_PRE_REPLAY_SCREENING_TERMINAL',
+            'CAUSAL_COHORT_SCREENING_EVIDENCE_INCOMPLETE',
+        ];
+        if (! $apply) {
+            return [
+                'eligible' => true,
+                'status' => 'would_invalidate_counterfactual_contract',
+                'reason_codes' => $reasonCodes,
+                'arm_agent_ids' => $armIds->all(),
+                'completed_screening_run_ids' => $completedRunIds,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        $invalidated = $this->invalidateGeneration($generation, $reasonCodes);
+
+        return [
+            'eligible' => true,
+            'status' => $invalidated > 0 ? 'invalid_counterfactual_contract' : 'not_updated',
+            'reason_codes' => $reasonCodes,
+            'invalidated_experiments' => $invalidated,
+            'arm_agent_ids' => $armIds->all(),
+            'completed_screening_run_ids' => $completedRunIds,
+            'promotion_evidence' => false,
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function enroll(LabAgent $agent, AgentLearningMutationIntent|array $intent, ?array $niche): array
     {
@@ -415,6 +538,8 @@ class CausalLearningCohortService
                     'source_pair_id' => (int) data_get($contract, 'source_pair_id', 0),
                     'source_authority' => (string) data_get($contract, 'source_authority', 'canonical_causal_source'),
                     'source_authority_blockers' => (array) data_get($contract, 'source_authority_blockers', []),
+                    'source_context_scope' => (array) data_get($contract, 'source_context_scope', []),
+                    'source_context_hash' => data_get($contract, 'source_context_hash'),
                     'legacy_hypothesis_grants_credit' => false,
                     'root_source_pair_id' => (int) data_get($contract, 'root_source_pair_id', data_get($contract, 'source_pair_id', 0)),
                     'source_control_agent_id' => (int) data_get($contract, 'source_control_agent_id', 0),

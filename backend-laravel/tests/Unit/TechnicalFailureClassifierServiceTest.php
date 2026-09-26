@@ -19,9 +19,44 @@ class TechnicalFailureClassifierServiceTest extends TestCase
         $this->assertTrue($result['blocks_global_generation']);
     }
 
+    public function test_causal_fold_budget_timeout_uses_the_same_bounded_transport_recovery_lane(): void
+    {
+        $result = (new TechnicalFailureClassifierService)->classify(
+            'RuntimeException {"detail":"TimeoutError: causal confirmation fold 6 exceeded its 180s budget; remaining folds were not executed and no learning credit was emitted."}',
+        );
+
+        $this->assertSame(TechnicalFailureClassifierService::TRANSIENT, $result['class']);
+        $this->assertSame('REPLAY_TRANSPORT_TIMEOUT', $result['reason_code']);
+        $this->assertTrue($result['blocks_global_generation']);
+    }
+
     public function test_constructor_failure_remains_terminal_and_non_replayable(): void
     {
         $result = (new TechnicalFailureClassifierService)->classify('ONE_GENE_INVARIANT_FAILED constructor contract');
+
+        $this->assertSame(TechnicalFailureClassifierService::TERMINAL, $result['class']);
+        $this->assertSame('IMMUTABLE_EXPERIMENT_TERMINAL', $result['reason_code']);
+        $this->assertFalse($result['blocks_global_generation']);
+    }
+
+    public function test_missing_autonomous_mtf_bundle_is_terminal_construction_history(): void
+    {
+        $result = (new TechnicalFailureClassifierService)->classify(
+            'RuntimeException AUTONOMOUS_MTF_BUNDLE_MISSING',
+        );
+
+        $this->assertSame(TechnicalFailureClassifierService::TERMINAL, $result['class']);
+        $this->assertSame('IMMUTABLE_MTF_ADMISSION_CONTRACT_MISSING', $result['reason_code']);
+        $this->assertFalse($result['blocks_global_generation']);
+        $this->assertSame('TERMINAL_DIAGNOSTIC', $result['action']);
+    }
+
+    public function test_composition_authority_mismatch_is_terminal_not_retried_as_transport(): void
+    {
+        $result = (new TechnicalFailureClassifierService)->classify(
+            'COMPOSITION_INSTRUMENT_NOT_BOUND',
+            'App\\Services\\CompositionRuntimeContractError',
+        );
 
         $this->assertSame(TechnicalFailureClassifierService::TERMINAL, $result['class']);
         $this->assertSame('IMMUTABLE_EXPERIMENT_TERMINAL', $result['reason_code']);

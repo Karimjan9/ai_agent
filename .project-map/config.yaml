@@ -1,0 +1,23 @@
+schema_version: 1
+generator:
+  command: node scripts/project-map/project-map.mjs generate
+  check_command: node scripts/project-map/project-map.mjs check
+  generated_directory: .project-map/generated
+  source_roots:
+    - backend-laravel/app
+    - backend-laravel/routes
+    - backend-laravel/database/migrations
+    - backend-laravel/tests
+    - ai-service-python/app
+    - ai-service-python/tests
+
+authority:
+  navigation: .project-map
+  executable_truth: source code, migrations, runtime configuration and tests
+  generated_indexes: factual navigation only, never implementation authority
+
+maintenance:
+  update_in_same_commit: true
+  ci_requires_fresh_generated_indexes: true
+  history_is_task_log: false
+  adr_threshold: durable architectural tradeoff

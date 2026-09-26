@@ -1,0 +1,3482 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/project-map/project-map.mjs",
+  "generator_digest": "5e3498ce579265a81dc03c17970e0f3ff7be935b657ee7f6e9aab0a863ae6762",
+  "generated_at": "2026-09-26T17:30:50.184Z",
+  "source_digest": "1f612b3f350728963367ba99e61f8e4430e448e51b310bdf17f4bc0cde0173d2",
+  "source_file_count": 1364,
+  "git_head": "c47c026e454e780e818232cbb0f9cfd03a21debb",
+  "authority": "Navigation facts only. Real source code and tests remain authoritative.",
+  "tables": [
+    {
+      "table": "adversarial_validator_epochs",
+      "migration": "backend-laravel/database/migrations/2026_07_29_140000_create_elite_ecosystem_evidence_tables.php",
+      "line": 34
+    },
+    {
+      "table": "adversarial_validator_findings",
+      "migration": "backend-laravel/database/migrations/2026_07_29_140000_create_elite_ecosystem_evidence_tables.php",
+      "line": 38
+    },
+    {
+      "table": "agent_beliefs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_150000_create_ai_trading_scientist_tables.php",
+      "line": 37
+    },
+    {
+      "table": "agent_competency_tensor_cells",
+      "migration": "backend-laravel/database/migrations/2026_09_07_140000_create_agent_competency_tensor_cells.php",
+      "line": 11
+    },
+    {
+      "table": "agent_diagnoses",
+      "migration": "backend-laravel/database/migrations/2026_07_11_020000_complete_ai_learning_loop.php",
+      "line": 35
+    },
+    {
+      "table": "agent_failure_cases",
+      "migration": "backend-laravel/database/migrations/2026_07_29_140000_create_elite_ecosystem_evidence_tables.php",
+      "line": 24
+    },
+    {
+      "table": "agent_failure_cases",
+      "migration": "backend-laravel/database/migrations/2026_07_29_160000_create_p0_handoff_blame_execution_tables.php",
+      "line": 40
+    },
+    {
+      "table": "agent_failure_cases",
+      "migration": "backend-laravel/database/migrations/2026_07_29_160000_create_p0_handoff_blame_execution_tables.php",
+      "line": 48
+    },
+    {
+      "table": "agent_hypotheses",
+      "migration": "backend-laravel/database/migrations/2026_06_24_150000_create_ai_trading_scientist_tables.php",
+      "line": 11
+    },
+    {
+      "table": "agent_inheritance_manifests",
+      "migration": "backend-laravel/database/migrations/2026_08_25_120000_create_learning_evolution_bridge_tables.php",
+      "line": 22
+    },
+    {
+      "table": "agent_knowledge_cards",
+      "migration": "backend-laravel/database/migrations/2026_08_08_120000_create_agent_knowledge_cards_and_lessons_tables.php",
+      "line": 16
+    },
+    {
+      "table": "agent_learning_causal_experiments",
+      "migration": "backend-laravel/database/migrations/2026_08_24_120000_create_causal_learning_contract_tables.php",
+      "line": 52
+    },
+    {
+      "table": "agent_learning_episodes",
+      "migration": "backend-laravel/database/migrations/2026_08_20_100000_create_learning_kernel_tables.php",
+      "line": 16
+    },
+    {
+      "table": "agent_learning_lessons",
+      "migration": "backend-laravel/database/migrations/2026_08_08_120000_create_agent_knowledge_cards_and_lessons_tables.php",
+      "line": 50
+    },
+    {
+      "table": "agent_learning_mutation_intents",
+      "migration": "backend-laravel/database/migrations/2026_08_24_120000_create_causal_learning_contract_tables.php",
+      "line": 11
+    },
+    {
+      "table": "agent_learning_policies",
+      "migration": "backend-laravel/database/migrations/2026_08_20_100000_create_learning_kernel_tables.php",
+      "line": 86
+    },
+    {
+      "table": "agent_learning_retrievals",
+      "migration": "backend-laravel/database/migrations/2026_08_20_100000_create_learning_kernel_tables.php",
+      "line": 63
+    },
+    {
+      "table": "agent_learning_settlements",
+      "migration": "backend-laravel/database/migrations/2026_08_20_100000_create_learning_kernel_tables.php",
+      "line": 43
+    },
+    {
+      "table": "agent_memories",
+      "migration": "backend-laravel/database/migrations/2026_06_24_160000_create_agent_mind_tables.php",
+      "line": 46
+    },
+    {
+      "table": "agent_memories",
+      "migration": "backend-laravel/database/migrations/2026_06_24_291000_create_phase_two_foundation_tables.php",
+      "line": 89
+    },
+    {
+      "table": "agent_memories",
+      "migration": "backend-laravel/database/migrations/2026_06_24_291000_create_phase_two_foundation_tables.php",
+      "line": 112
+    },
+    {
+      "table": "agent_memory_matches",
+      "migration": "backend-laravel/database/migrations/2026_06_24_291000_create_phase_two_foundation_tables.php",
+      "line": 73
+    },
+    {
+      "table": "agent_professional_exams",
+      "migration": "backend-laravel/database/migrations/2026_08_08_140000_create_agent_professional_exams_table.php",
+      "line": 16
+    },
+    {
+      "table": "agent_progress_cards",
+      "migration": "backend-laravel/database/migrations/2026_08_08_150000_create_agent_progress_cards_table.php",
+      "line": 20
+    },
+    {
+      "table": "agent_progress_cards",
+      "migration": "backend-laravel/database/migrations/2026_08_08_160000_add_tactic_contract_to_agent_progress_cards.php",
+      "line": 11
+    },
+    {
+      "table": "agent_progress_cards",
+      "migration": "backend-laravel/database/migrations/2026_08_08_160000_add_tactic_contract_to_agent_progress_cards.php",
+      "line": 20
+    },
+    {
+      "table": "agent_psychology_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_06_24_160000_create_agent_mind_tables.php",
+      "line": 11
+    },
+    {
+      "table": "agent_reputations",
+      "migration": "backend-laravel/database/migrations/2026_06_24_160000_create_agent_mind_tables.php",
+      "line": 91
+    },
+    {
+      "table": "agent_self_reflections",
+      "migration": "backend-laravel/database/migrations/2026_06_24_160000_create_agent_mind_tables.php",
+      "line": 30
+    },
+    {
+      "table": "agent_skill_atlas_entries",
+      "migration": "backend-laravel/database/migrations/2026_07_29_140000_create_elite_ecosystem_evidence_tables.php",
+      "line": 10
+    },
+    {
+      "table": "ai_laboratories",
+      "migration": "backend-laravel/database/migrations/2026_07_11_010000_create_ai_learning_laboratory_tables.php",
+      "line": 11
+    },
+    {
+      "table": "ai_laboratories",
+      "migration": "backend-laravel/database/migrations/2026_07_24_190000_make_laboratories_timeframe_scoped.php",
+      "line": 11
+    },
+    {
+      "table": "ai_laboratories",
+      "migration": "backend-laravel/database/migrations/2026_07_24_190000_make_laboratories_timeframe_scoped.php",
+      "line": 19
+    },
+    {
+      "table": "ai_laboratories",
+      "migration": "backend-laravel/database/migrations/2026_08_11_090000_add_lifecycle_mode_to_ai_laboratories.php",
+      "line": 14
+    },
+    {
+      "table": "ai_laboratories",
+      "migration": "backend-laravel/database/migrations/2026_08_11_090000_add_lifecycle_mode_to_ai_laboratories.php",
+      "line": 30
+    },
+    {
+      "table": "backtest_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_02_000000_create_neurotrader_mvp_tables.php",
+      "line": 62
+    },
+    {
+      "table": "backtest_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_04_000000_add_stage_three_training_fields.php",
+      "line": 12
+    },
+    {
+      "table": "backtest_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_09_100100_add_async_backtest_fields.php",
+      "line": 15
+    },
+    {
+      "table": "backtest_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_09_100100_add_async_backtest_fields.php",
+      "line": 41
+    },
+    {
+      "table": "belief_decay_events",
+      "migration": "backend-laravel/database/migrations/2026_06_24_210000_create_meta_intelligence_tables.php",
+      "line": 44
+    },
+    {
+      "table": "blind_spots",
+      "migration": "backend-laravel/database/migrations/2026_06_24_210000_create_meta_intelligence_tables.php",
+      "line": 89
+    },
+    {
+      "table": "cache",
+      "migration": "backend-laravel/database/migrations/0001_01_01_000001_create_cache_table.php",
+      "line": 14
+    },
+    {
+      "table": "cache_locks",
+      "migration": "backend-laravel/database/migrations/0001_01_01_000001_create_cache_table.php",
+      "line": 20
+    },
+    {
+      "table": "candidate_gate_decisions",
+      "migration": "backend-laravel/database/migrations/2026_07_27_130000_create_candidate_gate_decisions_table.php",
+      "line": 11
+    },
+    {
+      "table": "candidate_gate_decisions",
+      "migration": "backend-laravel/database/migrations/2026_07_29_180000_harden_forward_attribution.php",
+      "line": 12
+    },
+    {
+      "table": "candidate_gate_decisions",
+      "migration": "backend-laravel/database/migrations/2026_07_29_180000_harden_forward_attribution.php",
+      "line": 24
+    },
+    {
+      "table": "candidate_gate_decisions",
+      "migration": "backend-laravel/database/migrations/2026_08_11_010000_expand_candidate_gate_decision_length.php",
+      "line": 18
+    },
+    {
+      "table": "candidate_gate_decisions",
+      "migration": "backend-laravel/database/migrations/2026_08_11_010000_expand_candidate_gate_decision_length.php",
+      "line": 27
+    },
+    {
+      "table": "candidate_handoff_events",
+      "migration": "backend-laravel/database/migrations/2026_07_29_160000_create_p0_handoff_blame_execution_tables.php",
+      "line": 10
+    },
+    {
+      "table": "candles",
+      "migration": "backend-laravel/database/migrations/2026_06_02_000000_create_neurotrader_mvp_tables.php",
+      "line": 20
+    },
+    {
+      "table": "candles",
+      "migration": "backend-laravel/database/migrations/2026_06_08_020000_add_provider_to_candles_table.php",
+      "line": 11
+    },
+    {
+      "table": "candles",
+      "migration": "backend-laravel/database/migrations/2026_06_08_020000_add_provider_to_candles_table.php",
+      "line": 20
+    },
+    {
+      "table": "canonical_learning_outbox",
+      "migration": "backend-laravel/database/migrations/2026_08_20_200000_create_canonical_learning_outbox.php",
+      "line": 11
+    },
+    {
+      "table": "capability_anti_skill_cemetery",
+      "migration": "backend-laravel/database/migrations/2026_08_20_194000_create_capability_organism_tables.php",
+      "line": 65
+    },
+    {
+      "table": "capability_causal_attributions",
+      "migration": "backend-laravel/database/migrations/2026_08_20_194000_create_capability_organism_tables.php",
+      "line": 11
+    },
+    {
+      "table": "capability_cells",
+      "migration": "backend-laravel/database/migrations/2026_08_20_196000_create_capability_cell_lifecycle_tables.php",
+      "line": 11
+    },
+    {
+      "table": "capability_experiment_decisions",
+      "migration": "backend-laravel/database/migrations/2026_08_20_194000_create_capability_organism_tables.php",
+      "line": 26
+    },
+    {
+      "table": "capability_progress_scoreboards",
+      "migration": "backend-laravel/database/migrations/2026_08_20_194000_create_capability_organism_tables.php",
+      "line": 82
+    },
+    {
+      "table": "capability_skills",
+      "migration": "backend-laravel/database/migrations/2026_08_20_194000_create_capability_organism_tables.php",
+      "line": 43
+    },
+    {
+      "table": "capability_skills",
+      "migration": "backend-laravel/database/migrations/2026_08_20_196000_create_capability_cell_lifecycle_tables.php",
+      "line": 29
+    },
+    {
+      "table": "capability_skills",
+      "migration": "backend-laravel/database/migrations/2026_08_20_196000_create_capability_cell_lifecycle_tables.php",
+      "line": 44
+    },
+    {
+      "table": "causal_axis_retirements",
+      "migration": "backend-laravel/database/migrations/2026_09_02_110000_create_causal_progress_ratchet_governor_tables.php",
+      "line": 32
+    },
+    {
+      "table": "causal_capability_escrows",
+      "migration": "backend-laravel/database/migrations/2026_09_13_140000_create_post_v2_learning_proof_tables.php",
+      "line": 32
+    },
+    {
+      "table": "causal_counterfactuals",
+      "migration": "backend-laravel/database/migrations/2026_06_24_240000_create_causal_intelligence_tables.php",
+      "line": 71
+    },
+    {
+      "table": "causal_discovery_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_240000_create_causal_intelligence_tables.php",
+      "line": 11
+    },
+    {
+      "table": "causal_edges",
+      "migration": "backend-laravel/database/migrations/2026_06_24_240000_create_causal_intelligence_tables.php",
+      "line": 36
+    },
+    {
+      "table": "causal_effect_estimates",
+      "migration": "backend-laravel/database/migrations/2026_06_24_240000_create_causal_intelligence_tables.php",
+      "line": 57
+    },
+    {
+      "table": "causal_experiments",
+      "migration": "backend-laravel/database/migrations/2026_06_24_240000_create_causal_intelligence_tables.php",
+      "line": 99
+    },
+    {
+      "table": "causal_fold_receipts",
+      "migration": "backend-laravel/database/migrations/2026_09_22_120000_create_durable_causal_fold_and_autonomy_receipts.php",
+      "line": 11
+    },
+    {
+      "table": "causal_governor_allocations",
+      "migration": "backend-laravel/database/migrations/2026_09_02_110000_create_causal_progress_ratchet_governor_tables.php",
+      "line": 47
+    },
+    {
+      "table": "causal_governor_debt_ledgers",
+      "migration": "backend-laravel/database/migrations/2026_09_02_110000_create_causal_progress_ratchet_governor_tables.php",
+      "line": 41
+    },
+    {
+      "table": "causal_interventions",
+      "migration": "backend-laravel/database/migrations/2026_06_24_240000_create_causal_intelligence_tables.php",
+      "line": 84
+    },
+    {
+      "table": "causal_nodes",
+      "migration": "backend-laravel/database/migrations/2026_06_24_240000_create_causal_intelligence_tables.php",
+      "line": 25
+    },
+    {
+      "table": "causal_progress_ratchets",
+      "migration": "backend-laravel/database/migrations/2026_09_02_110000_create_causal_progress_ratchet_governor_tables.php",
+      "line": 11
+    },
+    {
+      "table": "causal_progress_states",
+      "migration": "backend-laravel/database/migrations/2026_09_02_110000_create_causal_progress_ratchet_governor_tables.php",
+      "line": 24
+    },
+    {
+      "table": "causal_root_causes",
+      "migration": "backend-laravel/database/migrations/2026_06_24_240000_create_causal_intelligence_tables.php",
+      "line": 114
+    },
+    {
+      "table": "causal_stage_mastery_assessments",
+      "migration": "backend-laravel/database/migrations/2026_09_02_100000_create_causal_stage_mastery_tables.php",
+      "line": 11
+    },
+    {
+      "table": "certified_knowledge_items",
+      "migration": "backend-laravel/database/migrations/2026_06_24_280000_create_reality_verification_tables.php",
+      "line": 115
+    },
+    {
+      "table": "civilization_agents",
+      "migration": "backend-laravel/database/migrations/2026_06_24_220000_create_ai_civilization_tables.php",
+      "line": 11
+    },
+    {
+      "table": "civilization_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_06_24_220000_create_ai_civilization_tables.php",
+      "line": 34
+    },
+    {
+      "table": "civilization_goals",
+      "migration": "backend-laravel/database/migrations/2026_06_24_220000_create_ai_civilization_tables.php",
+      "line": 122
+    },
+    {
+      "table": "civilization_memories",
+      "migration": "backend-laravel/database/migrations/2026_06_24_220000_create_ai_civilization_tables.php",
+      "line": 84
+    },
+    {
+      "table": "composition_component_posteriors",
+      "migration": "backend-laravel/database/migrations/2026_08_25_130000_create_foundry_settlement_and_emitter_ledgers.php",
+      "line": 11
+    },
+    {
+      "table": "composition_settlements",
+      "migration": "backend-laravel/database/migrations/2026_08_25_100000_create_sovereign_composition_foundry_tables.php",
+      "line": 31
+    },
+    {
+      "table": "contextual_instrument_bundle_effects",
+      "migration": "backend-laravel/database/migrations/2026_09_13_140000_create_post_v2_learning_proof_tables.php",
+      "line": 64
+    },
+    {
+      "table": "contextual_specialist_capsules",
+      "migration": "backend-laravel/database/migrations/2026_09_13_130000_create_cooperative_contextual_evolution_tables.php",
+      "line": 51
+    },
+    {
+      "table": "cooperative_experiment_settlements",
+      "migration": "backend-laravel/database/migrations/2026_09_13_130000_create_cooperative_contextual_evolution_tables.php",
+      "line": 74
+    },
+    {
+      "table": "cooperative_module_species_members",
+      "migration": "backend-laravel/database/migrations/2026_09_13_130000_create_cooperative_contextual_evolution_tables.php",
+      "line": 31
+    },
+    {
+      "table": "cooperative_module_species_members",
+      "migration": "backend-laravel/database/migrations/2026_09_15_060000_expand_cooperative_module_species_member_status.php",
+      "line": 15
+    },
+    {
+      "table": "cot_feature_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_07_13_000000_create_cot_market_intelligence_tables.php",
+      "line": 37
+    },
+    {
+      "table": "cot_reports",
+      "migration": "backend-laravel/database/migrations/2026_07_13_000000_create_cot_market_intelligence_tables.php",
+      "line": 11
+    },
+    {
+      "table": "council_counterfactual_cases",
+      "migration": "backend-laravel/database/migrations/2026_08_30_120000_create_evolutionary_authority_foundry_tables.php",
+      "line": 68
+    },
+    {
+      "table": "council_decisions",
+      "migration": "backend-laravel/database/migrations/2026_06_24_220000_create_ai_civilization_tables.php",
+      "line": 49
+    },
+    {
+      "table": "council_votes",
+      "migration": "backend-laravel/database/migrations/2026_06_24_220000_create_ai_civilization_tables.php",
+      "line": 69
+    },
+    {
+      "table": "counterfactual_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_150000_create_ai_trading_scientist_tables.php",
+      "line": 91
+    },
+    {
+      "table": "daily_reports",
+      "migration": "backend-laravel/database/migrations/2026_06_02_000000_create_neurotrader_mvp_tables.php",
+      "line": 115
+    },
+    {
+      "table": "daily_reports",
+      "migration": "backend-laravel/database/migrations/2026_06_04_000000_add_stage_three_training_fields.php",
+      "line": 87
+    },
+    {
+      "table": "daily_reports",
+      "migration": "backend-laravel/database/migrations/2026_08_09_100000_add_canonical_source_to_daily_reports.php",
+      "line": 15
+    },
+    {
+      "table": "daily_reports",
+      "migration": "backend-laravel/database/migrations/2026_08_09_100000_add_canonical_source_to_daily_reports.php",
+      "line": 32
+    },
+    {
+      "table": "debate_arguments",
+      "migration": "backend-laravel/database/migrations/2026_06_24_160000_create_agent_mind_tables.php",
+      "line": 78
+    },
+    {
+      "table": "decision_counterfactual_edges",
+      "migration": "backend-laravel/database/migrations/2026_07_29_160000_create_p0_handoff_blame_execution_tables.php",
+      "line": 18
+    },
+    {
+      "table": "descendant_value_trials",
+      "migration": "backend-laravel/database/migrations/2026_08_30_120000_create_evolutionary_authority_foundry_tables.php",
+      "line": 40
+    },
+    {
+      "table": "discovery_quality_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_24_240000_create_causal_intelligence_tables.php",
+      "line": 130
+    },
+    {
+      "table": "dual_track_cell_policies",
+      "migration": "backend-laravel/database/migrations/2026_08_19_110000_create_dual_track_evolution_tables.php",
+      "line": 40
+    },
+    {
+      "table": "dual_track_cell_statistics",
+      "migration": "backend-laravel/database/migrations/2026_08_19_150000_create_dual_track_evolution_runtime_tables.php",
+      "line": 43
+    },
+    {
+      "table": "dual_track_diversity_metrics",
+      "migration": "backend-laravel/database/migrations/2026_08_19_120000_create_twin_intelligence_tables.php",
+      "line": 52
+    },
+    {
+      "table": "dual_track_drift_states",
+      "migration": "backend-laravel/database/migrations/2026_08_19_150000_create_dual_track_evolution_runtime_tables.php",
+      "line": 64
+    },
+    {
+      "table": "dual_track_evaluator_calibrations",
+      "migration": "backend-laravel/database/migrations/2026_08_19_110000_create_dual_track_evolution_tables.php",
+      "line": 67
+    },
+    {
+      "table": "dual_track_evidence_work_items",
+      "migration": "backend-laravel/database/migrations/2026_08_19_150000_create_dual_track_evolution_runtime_tables.php",
+      "line": 11
+    },
+    {
+      "table": "dual_track_evidence_work_items",
+      "migration": "backend-laravel/database/migrations/2026_09_07_120000_add_fencing_to_dual_track_evidence_work_items.php",
+      "line": 11
+    },
+    {
+      "table": "dual_track_evidence_work_items",
+      "migration": "backend-laravel/database/migrations/2026_09_07_120000_add_fencing_to_dual_track_evidence_work_items.php",
+      "line": 22
+    },
+    {
+      "table": "dual_track_evolution_events",
+      "migration": "backend-laravel/database/migrations/2026_08_19_110000_create_dual_track_evolution_tables.php",
+      "line": 114
+    },
+    {
+      "table": "dual_track_exchange_packets",
+      "migration": "backend-laravel/database/migrations/2026_08_19_120000_create_twin_intelligence_tables.php",
+      "line": 11
+    },
+    {
+      "table": "dual_track_exchange_packets",
+      "migration": "backend-laravel/database/migrations/2026_08_19_140000_create_evidence_control_plane_tables.php",
+      "line": 85
+    },
+    {
+      "table": "dual_track_exchange_packets",
+      "migration": "backend-laravel/database/migrations/2026_08_19_140000_create_evidence_control_plane_tables.php",
+      "line": 95
+    },
+    {
+      "table": "dual_track_gene_cemeteries",
+      "migration": "backend-laravel/database/migrations/2026_08_19_130000_create_twin_evolution_evidence_tables.php",
+      "line": 81
+    },
+    {
+      "table": "dual_track_gene_proofs",
+      "migration": "backend-laravel/database/migrations/2026_08_19_150000_create_dual_track_evolution_runtime_tables.php",
+      "line": 106
+    },
+    {
+      "table": "dual_track_genome_archive_events",
+      "migration": "backend-laravel/database/migrations/2026_08_19_140000_create_evidence_control_plane_tables.php",
+      "line": 65
+    },
+    {
+      "table": "dual_track_genome_archives",
+      "migration": "backend-laravel/database/migrations/2026_08_19_130000_create_twin_evolution_evidence_tables.php",
+      "line": 57
+    },
+    {
+      "table": "dual_track_inference_observations",
+      "migration": "backend-laravel/database/migrations/2026_08_19_130000_create_twin_evolution_evidence_tables.php",
+      "line": 11
+    },
+    {
+      "table": "dual_track_lane_credits",
+      "migration": "backend-laravel/database/migrations/2026_08_19_120000_create_twin_intelligence_tables.php",
+      "line": 32
+    },
+    {
+      "table": "dual_track_member_credits",
+      "migration": "backend-laravel/database/migrations/2026_08_19_130000_create_twin_evolution_evidence_tables.php",
+      "line": 35
+    },
+    {
+      "table": "dual_track_memory_lessons",
+      "migration": "backend-laravel/database/migrations/2026_08_19_110000_create_dual_track_evolution_tables.php",
+      "line": 89
+    },
+    {
+      "table": "dual_track_memory_lessons",
+      "migration": "backend-laravel/database/migrations/2026_08_19_121000_add_lane_contract_fields_to_dual_track_memory_lessons.php",
+      "line": 11
+    },
+    {
+      "table": "dual_track_memory_lessons",
+      "migration": "backend-laravel/database/migrations/2026_08_19_121000_add_lane_contract_fields_to_dual_track_memory_lessons.php",
+      "line": 23
+    },
+    {
+      "table": "dual_track_memory_replay_queue",
+      "migration": "backend-laravel/database/migrations/2026_08_19_150000_create_dual_track_evolution_runtime_tables.php",
+      "line": 85
+    },
+    {
+      "table": "dual_track_organism_health_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_08_19_130000_create_twin_evolution_evidence_tables.php",
+      "line": 100
+    },
+    {
+      "table": "dual_track_outcomes",
+      "migration": "backend-laravel/database/migrations/2026_08_19_110000_create_dual_track_evolution_tables.php",
+      "line": 11
+    },
+    {
+      "table": "dual_track_promotion_decisions",
+      "migration": "backend-laravel/database/migrations/2026_08_19_140000_create_evidence_control_plane_tables.php",
+      "line": 29
+    },
+    {
+      "table": "dual_track_red_team_trials",
+      "migration": "backend-laravel/database/migrations/2026_08_19_130000_create_twin_evolution_evidence_tables.php",
+      "line": 135
+    },
+    {
+      "table": "dual_track_reflection_lessons",
+      "migration": "backend-laravel/database/migrations/2026_08_19_130000_create_twin_evolution_evidence_tables.php",
+      "line": 117
+    },
+    {
+      "table": "dual_track_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_19_100000_create_dual_track_runs_table.php",
+      "line": 11
+    },
+    {
+      "table": "dual_track_settlement_states",
+      "migration": "backend-laravel/database/migrations/2026_08_19_140000_create_evidence_control_plane_tables.php",
+      "line": 47
+    },
+    {
+      "table": "dual_track_snapshot_manifests",
+      "migration": "backend-laravel/database/migrations/2026_08_19_140000_create_evidence_control_plane_tables.php",
+      "line": 11
+    },
+    {
+      "table": "dual_track_statistic_events",
+      "migration": "backend-laravel/database/migrations/2026_08_19_150000_create_dual_track_evolution_runtime_tables.php",
+      "line": 34
+    },
+    {
+      "table": "economic_events",
+      "migration": "backend-laravel/database/migrations/2026_07_24_160000_add_evolution_feedback_and_economic_events.php",
+      "line": 11
+    },
+    {
+      "table": "edge_academy_beams",
+      "migration": "backend-laravel/database/migrations/2026_09_05_120000_create_edge_formation_academy_tables.php",
+      "line": 37
+    },
+    {
+      "table": "edge_academy_oracle_gaps",
+      "migration": "backend-laravel/database/migrations/2026_09_05_120000_create_edge_formation_academy_tables.php",
+      "line": 27
+    },
+    {
+      "table": "edge_academy_passports",
+      "migration": "backend-laravel/database/migrations/2026_09_05_120000_create_edge_formation_academy_tables.php",
+      "line": 11
+    },
+    {
+      "table": "edge_academy_trials",
+      "migration": "backend-laravel/database/migrations/2026_09_05_120000_create_edge_formation_academy_tables.php",
+      "line": 47
+    },
+    {
+      "table": "edge_genesis_cohorts",
+      "migration": "backend-laravel/database/migrations/2026_09_01_120000_create_edge_director_v2_tables.php",
+      "line": 34
+    },
+    {
+      "table": "edge_genesis_component_attributions",
+      "migration": "backend-laravel/database/migrations/2026_08_30_140000_create_dependency_aware_edge_genesis_tables.php",
+      "line": 31
+    },
+    {
+      "table": "edge_genesis_compute_ledgers",
+      "migration": "backend-laravel/database/migrations/2026_08_30_140000_create_dependency_aware_edge_genesis_tables.php",
+      "line": 37
+    },
+    {
+      "table": "edge_genesis_passports",
+      "migration": "backend-laravel/database/migrations/2026_08_30_140000_create_dependency_aware_edge_genesis_tables.php",
+      "line": 11
+    },
+    {
+      "table": "edge_genesis_trials",
+      "migration": "backend-laravel/database/migrations/2026_08_30_140000_create_dependency_aware_edge_genesis_tables.php",
+      "line": 21
+    },
+    {
+      "table": "edge_hypothesis_packets",
+      "migration": "backend-laravel/database/migrations/2026_09_01_120000_create_edge_director_v2_tables.php",
+      "line": 11
+    },
+    {
+      "table": "elite_agent_portfolio_members",
+      "migration": "backend-laravel/database/migrations/2026_07_31_140000_create_elite_agent_portfolios_tables.php",
+      "line": 29
+    },
+    {
+      "table": "elite_agent_portfolio_members",
+      "migration": "backend-laravel/database/migrations/2026_08_02_120000_add_target_direction_to_portfolio_members.php",
+      "line": 10
+    },
+    {
+      "table": "elite_agent_portfolio_members",
+      "migration": "backend-laravel/database/migrations/2026_08_02_120000_add_target_direction_to_portfolio_members.php",
+      "line": 21
+    },
+    {
+      "table": "elite_agent_portfolio_members",
+      "migration": "backend-laravel/database/migrations/2026_09_12_150000_add_target_session_to_portfolio_members.php",
+      "line": 11
+    },
+    {
+      "table": "elite_agent_portfolio_members",
+      "migration": "backend-laravel/database/migrations/2026_09_12_150000_add_target_session_to_portfolio_members.php",
+      "line": 22
+    },
+    {
+      "table": "elite_agent_portfolio_members",
+      "migration": "backend-laravel/database/migrations/2026_09_13_120000_add_target_venue_phase_to_portfolio_members.php",
+      "line": 11
+    },
+    {
+      "table": "elite_agent_portfolio_members",
+      "migration": "backend-laravel/database/migrations/2026_09_13_120000_add_target_venue_phase_to_portfolio_members.php",
+      "line": 22
+    },
+    {
+      "table": "elite_agent_portfolios",
+      "migration": "backend-laravel/database/migrations/2026_07_31_140000_create_elite_agent_portfolios_tables.php",
+      "line": 10
+    },
+    {
+      "table": "evaluator_reputations",
+      "migration": "backend-laravel/database/migrations/2026_07_29_150000_create_adaptive_policy_research_tables.php",
+      "line": 36
+    },
+    {
+      "table": "evolution_generations",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 83
+    },
+    {
+      "table": "evolution_learning_receipts",
+      "migration": "backend-laravel/database/migrations/2026_08_25_120000_create_learning_evolution_bridge_tables.php",
+      "line": 11
+    },
+    {
+      "table": "evolution_proposals",
+      "migration": "backend-laravel/database/migrations/2026_06_07_000000_create_evolution_proposals_table.php",
+      "line": 15
+    },
+    {
+      "table": "evolution_proposals",
+      "migration": "backend-laravel/database/migrations/2026_07_11_000000_add_market_champion_evolution_controls.php",
+      "line": 35
+    },
+    {
+      "table": "evolution_proposals",
+      "migration": "backend-laravel/database/migrations/2026_07_11_000000_add_market_champion_evolution_controls.php",
+      "line": 45
+    },
+    {
+      "table": "evolution_proposals",
+      "migration": "backend-laravel/database/migrations/2026_07_15_130000_scope_evolution_proposals_by_market.php",
+      "line": 12
+    },
+    {
+      "table": "evolution_proposals",
+      "migration": "backend-laravel/database/migrations/2026_07_15_130000_scope_evolution_proposals_by_market.php",
+      "line": 22
+    },
+    {
+      "table": "evolution_proposals",
+      "migration": "backend-laravel/database/migrations/2026_07_15_130000_scope_evolution_proposals_by_market.php",
+      "line": 26
+    },
+    {
+      "table": "evolution_proposals",
+      "migration": "backend-laravel/database/migrations/2026_07_15_130000_scope_evolution_proposals_by_market.php",
+      "line": 35
+    },
+    {
+      "table": "evolution_triggers",
+      "migration": "backend-laravel/database/migrations/2026_06_24_160000_create_agent_mind_tables.php",
+      "line": 107
+    },
+    {
+      "table": "evolutionary_authority_ledgers",
+      "migration": "backend-laravel/database/migrations/2026_08_30_120000_create_evolutionary_authority_foundry_tables.php",
+      "line": 16
+    },
+    {
+      "table": "execution_tactic_posteriors",
+      "migration": "backend-laravel/database/migrations/2026_08_20_192000_create_execution_tactic_and_risk_sentinel_tables.php",
+      "line": 11
+    },
+    {
+      "table": "extinction_events",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 119
+    },
+    {
+      "table": "failed_jobs",
+      "migration": "backend-laravel/database/migrations/0001_01_01_000002_create_jobs_table.php",
+      "line": 37
+    },
+    {
+      "table": "failure_case_runs",
+      "migration": "backend-laravel/database/migrations/2026_07_29_170000_create_failure_case_runs_table.php",
+      "line": 5
+    },
+    {
+      "table": "feature_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_08_20_195000_create_feature_value_operating_system_tables.php",
+      "line": 22
+    },
+    {
+      "table": "feature_value_catalog",
+      "migration": "backend-laravel/database/migrations/2026_08_20_195000_create_feature_value_operating_system_tables.php",
+      "line": 11
+    },
+    {
+      "table": "fitness_evaluations",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 96
+    },
+    {
+      "table": "foundry_emitter_rewards",
+      "migration": "backend-laravel/database/migrations/2026_08_25_130000_create_foundry_settlement_and_emitter_ledgers.php",
+      "line": 14
+    },
+    {
+      "table": "foundry_multiple_testing_ledgers",
+      "migration": "backend-laravel/database/migrations/2026_08_25_130000_create_foundry_settlement_and_emitter_ledgers.php",
+      "line": 17
+    },
+    {
+      "table": "frozen_paper_windows",
+      "migration": "backend-laravel/database/migrations/2026_08_19_090000_create_frozen_paper_windows_table.php",
+      "line": 11
+    },
+    {
+      "table": "frozen_paper_windows",
+      "migration": "backend-laravel/database/migrations/2026_08_19_110000_add_window_key_to_frozen_paper_windows.php",
+      "line": 11
+    },
+    {
+      "table": "frozen_paper_windows",
+      "migration": "backend-laravel/database/migrations/2026_08_19_110000_add_window_key_to_frozen_paper_windows.php",
+      "line": 15
+    },
+    {
+      "table": "frozen_paper_windows",
+      "migration": "backend-laravel/database/migrations/2026_08_19_110000_add_window_key_to_frozen_paper_windows.php",
+      "line": 26
+    },
+    {
+      "table": "full_stack_playbook_passports",
+      "migration": "backend-laravel/database/migrations/2026_08_30_150000_create_full_stack_playbook_mastery_tables.php",
+      "line": 11
+    },
+    {
+      "table": "future_discoveries",
+      "migration": "backend-laravel/database/migrations/2026_06_24_200000_create_future_simulation_tables.php",
+      "line": 111
+    },
+    {
+      "table": "future_probability_nodes",
+      "migration": "backend-laravel/database/migrations/2026_06_24_200000_create_future_simulation_tables.php",
+      "line": 50
+    },
+    {
+      "table": "future_scenarios",
+      "migration": "backend-laravel/database/migrations/2026_06_24_200000_create_future_simulation_tables.php",
+      "line": 33
+    },
+    {
+      "table": "future_simulation_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_200000_create_future_simulation_tables.php",
+      "line": 11
+    },
+    {
+      "table": "future_stress_tests",
+      "migration": "backend-laravel/database/migrations/2026_06_24_200000_create_future_simulation_tables.php",
+      "line": 97
+    },
+    {
+      "table": "future_timeline_forecasts",
+      "migration": "backend-laravel/database/migrations/2026_06_24_200000_create_future_simulation_tables.php",
+      "line": 65
+    },
+    {
+      "table": "generation_admission_decisions",
+      "migration": "backend-laravel/database/migrations/2026_08_24_120000_create_causal_learning_contract_tables.php",
+      "line": 75
+    },
+    {
+      "table": "generation_autonomy_receipts",
+      "migration": "backend-laravel/database/migrations/2026_09_22_120000_create_durable_causal_fold_and_autonomy_receipts.php",
+      "line": 45
+    },
+    {
+      "table": "generation_closed_loop_audits",
+      "migration": "backend-laravel/database/migrations/2026_08_25_120000_create_learning_evolution_bridge_tables.php",
+      "line": 28
+    },
+    {
+      "table": "genome_crossovers",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 69
+    },
+    {
+      "table": "genome_discoveries",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 130
+    },
+    {
+      "table": "genome_genes",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 35
+    },
+    {
+      "table": "genome_lineages",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 47
+    },
+    {
+      "table": "genome_mutations",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 58
+    },
+    {
+      "table": "institutional_knowledge",
+      "migration": "backend-laravel/database/migrations/2026_06_24_220000_create_ai_civilization_tables.php",
+      "line": 102
+    },
+    {
+      "table": "instrument_contracts",
+      "migration": "backend-laravel/database/migrations/2026_08_20_190000_create_trading_instrument_operating_system_tables.php",
+      "line": 24
+    },
+    {
+      "table": "instrument_evidence",
+      "migration": "backend-laravel/database/migrations/2026_08_20_190000_create_trading_instrument_operating_system_tables.php",
+      "line": 69
+    },
+    {
+      "table": "instrument_invocation_ledger",
+      "migration": "backend-laravel/database/migrations/2026_08_20_202000_create_instrument_invocation_ledger.php",
+      "line": 11
+    },
+    {
+      "table": "instrument_value_posteriors",
+      "migration": "backend-laravel/database/migrations/2026_08_20_190000_create_trading_instrument_operating_system_tables.php",
+      "line": 38
+    },
+    {
+      "table": "internal_debates",
+      "migration": "backend-laravel/database/migrations/2026_06_24_160000_create_agent_mind_tables.php",
+      "line": 65
+    },
+    {
+      "table": "job_batches",
+      "migration": "backend-laravel/database/migrations/0001_01_01_000002_create_jobs_table.php",
+      "line": 24
+    },
+    {
+      "table": "jobs",
+      "migration": "backend-laravel/database/migrations/0001_01_01_000002_create_jobs_table.php",
+      "line": 14
+    },
+    {
+      "table": "jobs",
+      "migration": "backend-laravel/database/migrations/2026_08_01_120000_expand_queue_attempts.php",
+      "line": 17
+    },
+    {
+      "table": "jobs",
+      "migration": "backend-laravel/database/migrations/2026_08_01_120000_expand_queue_attempts.php",
+      "line": 24
+    },
+    {
+      "table": "knowledge_audits",
+      "migration": "backend-laravel/database/migrations/2026_06_24_210000_create_meta_intelligence_tables.php",
+      "line": 27
+    },
+    {
+      "table": "knowledge_cemetery_entries",
+      "migration": "backend-laravel/database/migrations/2026_06_24_280000_create_reality_verification_tables.php",
+      "line": 84
+    },
+    {
+      "table": "knowledge_claims",
+      "migration": "backend-laravel/database/migrations/2026_06_24_190000_create_universal_knowledge_graph_tables.php",
+      "line": 47
+    },
+    {
+      "table": "knowledge_contradictions",
+      "migration": "backend-laravel/database/migrations/2026_06_24_210000_create_meta_intelligence_tables.php",
+      "line": 59
+    },
+    {
+      "table": "knowledge_evidence",
+      "migration": "backend-laravel/database/migrations/2026_06_24_190000_create_universal_knowledge_graph_tables.php",
+      "line": 64
+    },
+    {
+      "table": "knowledge_facts",
+      "migration": "backend-laravel/database/migrations/2026_06_24_150000_create_ai_trading_scientist_tables.php",
+      "line": 72
+    },
+    {
+      "table": "knowledge_graph_edges",
+      "migration": "backend-laravel/database/migrations/2026_06_24_190000_create_universal_knowledge_graph_tables.php",
+      "line": 29
+    },
+    {
+      "table": "knowledge_graph_nodes",
+      "migration": "backend-laravel/database/migrations/2026_06_24_190000_create_universal_knowledge_graph_tables.php",
+      "line": 11
+    },
+    {
+      "table": "knowledge_health_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_24_210000_create_meta_intelligence_tables.php",
+      "line": 104
+    },
+    {
+      "table": "knowledge_mining_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_190000_create_universal_knowledge_graph_tables.php",
+      "line": 94
+    },
+    {
+      "table": "knowledge_priors",
+      "migration": "backend-laravel/database/migrations/2026_08_25_100000_create_sovereign_composition_foundry_tables.php",
+      "line": 11
+    },
+    {
+      "table": "knowledge_queries",
+      "migration": "backend-laravel/database/migrations/2026_06_24_190000_create_universal_knowledge_graph_tables.php",
+      "line": 82
+    },
+    {
+      "table": "lab_adversarial_scenarios",
+      "migration": "backend-laravel/database/migrations/2026_08_21_090000_create_quality_diversity_evolution_tables.php",
+      "line": 36
+    },
+    {
+      "table": "lab_agent_inheritance_audits",
+      "migration": "backend-laravel/database/migrations/2026_08_09_180000_create_lab_agent_inheritance_audits_table.php",
+      "line": 12
+    },
+    {
+      "table": "lab_agent_parent_links",
+      "migration": "backend-laravel/database/migrations/2026_08_09_170000_create_lab_agent_parent_links_table.php",
+      "line": 12
+    },
+    {
+      "table": "lab_agents",
+      "migration": "backend-laravel/database/migrations/2026_07_11_010000_create_ai_learning_laboratory_tables.php",
+      "line": 36
+    },
+    {
+      "table": "lab_agents",
+      "migration": "backend-laravel/database/migrations/2026_09_06_120000_expand_lab_agent_origin_for_research_provenance.php",
+      "line": 16
+    },
+    {
+      "table": "lab_agents",
+      "migration": "backend-laravel/database/migrations/2026_09_06_120000_expand_lab_agent_origin_for_research_provenance.php",
+      "line": 23
+    },
+    {
+      "table": "lab_candle_decision_events",
+      "migration": "backend-laravel/database/migrations/2026_08_04_200000_create_immutable_lab_evidence_tables.php",
+      "line": 136
+    },
+    {
+      "table": "lab_candle_decision_rollups",
+      "migration": "backend-laravel/database/migrations/2026_08_14_210000_create_compact_lab_decision_rollups.php",
+      "line": 11
+    },
+    {
+      "table": "lab_causal_control_plans",
+      "migration": "backend-laravel/database/migrations/2026_08_18_120000_create_lab_causal_control_plans_table.php",
+      "line": 11
+    },
+    {
+      "table": "lab_council_ablation_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_14_100000_create_parent_aware_evolution_tables.php",
+      "line": 96
+    },
+    {
+      "table": "lab_council_adjudications",
+      "migration": "backend-laravel/database/migrations/2026_08_18_121000_create_lab_council_adjudications_table.php",
+      "line": 11
+    },
+    {
+      "table": "lab_council_disagreements",
+      "migration": "backend-laravel/database/migrations/2026_08_13_140000_create_learning_evolution_tables.php",
+      "line": 66
+    },
+    {
+      "table": "lab_evaluation_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_04_200000_create_immutable_lab_evidence_tables.php",
+      "line": 17
+    },
+    {
+      "table": "lab_evidence_artifacts",
+      "migration": "backend-laravel/database/migrations/2026_08_04_200000_create_immutable_lab_evidence_tables.php",
+      "line": 117
+    },
+    {
+      "table": "lab_evolution_archive_entries",
+      "migration": "backend-laravel/database/migrations/2026_08_09_190000_create_adaptive_evolution_tables.php",
+      "line": 29
+    },
+    {
+      "table": "lab_evolution_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_08_14_100000_create_parent_aware_evolution_tables.php",
+      "line": 76
+    },
+    {
+      "table": "lab_evolution_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_09_24_130000_expand_evolution_credit_status_for_compounding.php",
+      "line": 14
+    },
+    {
+      "table": "lab_evolution_directors",
+      "migration": "backend-laravel/database/migrations/2026_08_21_090000_create_quality_diversity_evolution_tables.php",
+      "line": 47
+    },
+    {
+      "table": "lab_evolution_extinction_plans",
+      "migration": "backend-laravel/database/migrations/2026_08_21_090000_create_quality_diversity_evolution_tables.php",
+      "line": 56
+    },
+    {
+      "table": "lab_evolution_islands",
+      "migration": "backend-laravel/database/migrations/2026_08_09_190000_create_adaptive_evolution_tables.php",
+      "line": 11
+    },
+    {
+      "table": "lab_failure_dojo_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_13_140000_create_learning_evolution_tables.php",
+      "line": 41
+    },
+    {
+      "table": "lab_failure_dojo_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_18_130000_add_council_readiness_indexes.php",
+      "line": 18
+    },
+    {
+      "table": "lab_failure_dojo_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_18_130000_add_council_readiness_indexes.php",
+      "line": 33
+    },
+    {
+      "table": "lab_failure_repair_anchors",
+      "migration": "backend-laravel/database/migrations/2026_08_12_110000_create_lab_failure_repair_anchors_table.php",
+      "line": 11
+    },
+    {
+      "table": "lab_gate_decision_events",
+      "migration": "backend-laravel/database/migrations/2026_08_04_200000_create_immutable_lab_evidence_tables.php",
+      "line": 76
+    },
+    {
+      "table": "lab_gene_interactions",
+      "migration": "backend-laravel/database/migrations/2026_08_13_140000_create_learning_evolution_tables.php",
+      "line": 91
+    },
+    {
+      "table": "lab_generations",
+      "migration": "backend-laravel/database/migrations/2026_07_11_010000_create_ai_learning_laboratory_tables.php",
+      "line": 21
+    },
+    {
+      "table": "lab_learning_consumption_events",
+      "migration": "backend-laravel/database/migrations/2026_08_04_210000_create_lab_learning_insights_tables.php",
+      "line": 43
+    },
+    {
+      "table": "lab_learning_insights",
+      "migration": "backend-laravel/database/migrations/2026_08_04_210000_create_lab_learning_insights_tables.php",
+      "line": 16
+    },
+    {
+      "table": "lab_learning_lane_dispatches",
+      "migration": "backend-laravel/database/migrations/2026_08_13_110000_create_lab_learning_lane_tables.php",
+      "line": 50
+    },
+    {
+      "table": "lab_learning_lane_dispatches",
+      "migration": "backend-laravel/database/migrations/2026_08_13_140000_create_learning_evolution_tables.php",
+      "line": 116
+    },
+    {
+      "table": "lab_learning_lane_dispatches",
+      "migration": "backend-laravel/database/migrations/2026_08_13_140000_create_learning_evolution_tables.php",
+      "line": 139
+    },
+    {
+      "table": "lab_learning_lane_pairs",
+      "migration": "backend-laravel/database/migrations/2026_08_13_110000_create_lab_learning_lane_tables.php",
+      "line": 17
+    },
+    {
+      "table": "lab_learning_lane_pairs",
+      "migration": "backend-laravel/database/migrations/2026_08_18_130000_add_council_readiness_indexes.php",
+      "line": 12
+    },
+    {
+      "table": "lab_learning_lane_pairs",
+      "migration": "backend-laravel/database/migrations/2026_08_18_130000_add_council_readiness_indexes.php",
+      "line": 27
+    },
+    {
+      "table": "lab_learning_lane_pairs",
+      "migration": "backend-laravel/database/migrations/2026_08_20_180000_harden_learning_pair_integrity.php",
+      "line": 15
+    },
+    {
+      "table": "lab_learning_lane_pairs",
+      "migration": "backend-laravel/database/migrations/2026_08_20_180000_harden_learning_pair_integrity.php",
+      "line": 45
+    },
+    {
+      "table": "lab_learning_memories",
+      "migration": "backend-laravel/database/migrations/2026_08_13_140000_create_learning_evolution_tables.php",
+      "line": 12
+    },
+    {
+      "table": "lab_lifecycle_cycles",
+      "migration": "backend-laravel/database/migrations/2026_08_21_100000_create_lab_lifecycle_cycles_table.php",
+      "line": 11
+    },
+    {
+      "table": "lab_lifecycle_events",
+      "migration": "backend-laravel/database/migrations/2026_08_04_200000_create_immutable_lab_evidence_tables.php",
+      "line": 53
+    },
+    {
+      "table": "lab_mutation_actions",
+      "migration": "backend-laravel/database/migrations/2026_08_21_090000_create_quality_diversity_evolution_tables.php",
+      "line": 24
+    },
+    {
+      "table": "lab_mutation_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_08_04_200000_create_immutable_lab_evidence_tables.php",
+      "line": 96
+    },
+    {
+      "table": "lab_mutation_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_08_11_020000_add_mutation_credit_evidence_fingerprint.php",
+      "line": 12
+    },
+    {
+      "table": "lab_mutation_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_08_11_020000_add_mutation_credit_evidence_fingerprint.php",
+      "line": 31
+    },
+    {
+      "table": "lab_mutation_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_08_11_020000_add_mutation_credit_evidence_fingerprint.php",
+      "line": 38
+    },
+    {
+      "table": "lab_mutation_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_08_11_030000_add_reconciliation_identity_to_mutation_credit_events.php",
+      "line": 12
+    },
+    {
+      "table": "lab_mutation_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_08_11_030000_add_reconciliation_identity_to_mutation_credit_events.php",
+      "line": 49
+    },
+    {
+      "table": "lab_mutation_credit_events",
+      "migration": "backend-laravel/database/migrations/2026_08_11_030000_add_reconciliation_identity_to_mutation_credit_events.php",
+      "line": 57
+    },
+    {
+      "table": "lab_mutation_response_maps",
+      "migration": "backend-laravel/database/migrations/2026_08_13_100000_create_lab_mutation_response_maps_table.php",
+      "line": 11
+    },
+    {
+      "table": "lab_parent_candidate_preparations",
+      "migration": "backend-laravel/database/migrations/2026_08_18_123000_create_parent_candidate_preparations_table.php",
+      "line": 11
+    },
+    {
+      "table": "lab_parent_context_scores",
+      "migration": "backend-laravel/database/migrations/2026_08_14_100000_create_parent_aware_evolution_tables.php",
+      "line": 20
+    },
+    {
+      "table": "lab_parent_counterfactuals",
+      "migration": "backend-laravel/database/migrations/2026_08_14_100000_create_parent_aware_evolution_tables.php",
+      "line": 49
+    },
+    {
+      "table": "lab_parent_selection_decisions",
+      "migration": "backend-laravel/database/migrations/2026_08_09_190000_create_adaptive_evolution_tables.php",
+      "line": 51
+    },
+    {
+      "table": "lab_skill_zoo_entries",
+      "migration": "backend-laravel/database/migrations/2026_08_21_090000_create_quality_diversity_evolution_tables.php",
+      "line": 11
+    },
+    {
+      "table": "lab_skill_zoo_entries",
+      "migration": "backend-laravel/database/migrations/2026_08_30_130000_create_canonical_skill_cartridge_pipeline_tables.php",
+      "line": 17
+    },
+    {
+      "table": "lab_skill_zoo_entries",
+      "migration": "backend-laravel/database/migrations/2026_08_30_130000_create_canonical_skill_cartridge_pipeline_tables.php",
+      "line": 27
+    },
+    {
+      "table": "lab_skill_zoo_entries",
+      "migration": "backend-laravel/database/migrations/2026_08_30_130000_create_canonical_skill_cartridge_pipeline_tables.php",
+      "line": 63
+    },
+    {
+      "table": "lab_temporal_ablation_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_15_120000_create_lab_temporal_ablation_runs_table.php",
+      "line": 13
+    },
+    {
+      "table": "lab_trial_ledger",
+      "migration": "backend-laravel/database/migrations/2026_08_08_130000_create_lab_trial_ledger_table.php",
+      "line": 11
+    },
+    {
+      "table": "lab_trial_ledger",
+      "migration": "backend-laravel/database/migrations/2026_08_09_120000_expand_lab_trial_ledger_status.php",
+      "line": 15
+    },
+    {
+      "table": "lab_trial_ledger",
+      "migration": "backend-laravel/database/migrations/2026_08_09_120000_expand_lab_trial_ledger_status.php",
+      "line": 29
+    },
+    {
+      "table": "lab_trial_ledger",
+      "migration": "backend-laravel/database/migrations/2026_08_11_080000_harden_lab_trial_identity.php",
+      "line": 18
+    },
+    {
+      "table": "lab_trial_ledger",
+      "migration": "backend-laravel/database/migrations/2026_08_11_080000_harden_lab_trial_identity.php",
+      "line": 23
+    },
+    {
+      "table": "lab_trial_ledger",
+      "migration": "backend-laravel/database/migrations/2026_08_11_080000_harden_lab_trial_identity.php",
+      "line": 86
+    },
+    {
+      "table": "lab_trial_ledger",
+      "migration": "backend-laravel/database/migrations/2026_08_11_080000_harden_lab_trial_identity.php",
+      "line": 96
+    },
+    {
+      "table": "learning_protocol_baselines",
+      "migration": "backend-laravel/database/migrations/2026_07_31_120000_create_learning_protocol_baselines_table.php",
+      "line": 11
+    },
+    {
+      "table": "learning_protocol_epoch_links",
+      "migration": "backend-laravel/database/migrations/2026_09_13_140000_create_post_v2_learning_proof_tables.php",
+      "line": 11
+    },
+    {
+      "table": "learning_recovery_events",
+      "migration": "backend-laravel/database/migrations/2026_08_20_181000_create_learning_recovery_events.php",
+      "line": 11
+    },
+    {
+      "table": "learning_technical_failures",
+      "migration": "backend-laravel/database/migrations/2026_08_20_201000_create_learning_technical_failures.php",
+      "line": 11
+    },
+    {
+      "table": "legacy_control_debts",
+      "migration": "backend-laravel/database/migrations/2026_08_30_120000_create_evolutionary_authority_foundry_tables.php",
+      "line": 60
+    },
+    {
+      "table": "lighthouse_vertical_loop_monitor_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_11_100000_create_lighthouse_vertical_loop_monitor_runs.php",
+      "line": 15
+    },
+    {
+      "table": "location_atlas_entries",
+      "migration": "backend-laravel/database/migrations/2026_08_25_110000_create_causal_edge_accounting_tables.php",
+      "line": 21
+    },
+    {
+      "table": "market_candle_observations",
+      "migration": "backend-laravel/database/migrations/2026_07_16_080000_create_market_candle_observations_table.php",
+      "line": 11
+    },
+    {
+      "table": "market_data_sync_states",
+      "migration": "backend-laravel/database/migrations/2026_07_12_030000_create_market_data_sync_states_table.php",
+      "line": 11
+    },
+    {
+      "table": "market_discoveries",
+      "migration": "backend-laravel/database/migrations/2026_06_24_180000_create_market_reality_tables.php",
+      "line": 124
+    },
+    {
+      "table": "market_drift_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_07_11_020000_complete_ai_learning_loop.php",
+      "line": 43
+    },
+    {
+      "table": "market_drift_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_08_08_160000_harden_canonical_drift_evidence.php",
+      "line": 17
+    },
+    {
+      "table": "market_drift_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_08_08_160000_harden_canonical_drift_evidence.php",
+      "line": 28
+    },
+    {
+      "table": "market_drift_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_08_08_160000_harden_canonical_drift_evidence.php",
+      "line": 37
+    },
+    {
+      "table": "market_genomes",
+      "migration": "backend-laravel/database/migrations/2026_06_24_180000_create_market_reality_tables.php",
+      "line": 76
+    },
+    {
+      "table": "market_health_samples",
+      "migration": "backend-laravel/database/migrations/2026_07_16_140000_create_immutable_paper_signal_ledger.php",
+      "line": 51
+    },
+    {
+      "table": "market_memories",
+      "migration": "backend-laravel/database/migrations/2026_06_24_180000_create_market_reality_tables.php",
+      "line": 95
+    },
+    {
+      "table": "market_provider_health",
+      "migration": "backend-laravel/database/migrations/2026_06_24_293000_create_market_health_tables.php",
+      "line": 11
+    },
+    {
+      "table": "market_similarity_matches",
+      "migration": "backend-laravel/database/migrations/2026_06_24_180000_create_market_reality_tables.php",
+      "line": 112
+    },
+    {
+      "table": "market_species",
+      "migration": "backend-laravel/database/migrations/2026_06_24_180000_create_market_reality_tables.php",
+      "line": 11
+    },
+    {
+      "table": "market_species_versions",
+      "migration": "backend-laravel/database/migrations/2026_06_24_180000_create_market_reality_tables.php",
+      "line": 23
+    },
+    {
+      "table": "market_state_probabilities",
+      "migration": "backend-laravel/database/migrations/2026_06_24_180000_create_market_reality_tables.php",
+      "line": 66
+    },
+    {
+      "table": "market_state_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_06_24_180000_create_market_reality_tables.php",
+      "line": 35
+    },
+    {
+      "table": "market_state_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_07_16_061500_make_market_snapshot_time_immutable.php",
+      "line": 11
+    },
+    {
+      "table": "market_state_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_07_16_061500_make_market_snapshot_time_immutable.php",
+      "line": 20
+    },
+    {
+      "table": "market_symbols",
+      "migration": "backend-laravel/database/migrations/2026_06_08_010000_create_market_symbols_table.php",
+      "line": 15
+    },
+    {
+      "table": "market_symbols",
+      "migration": "backend-laravel/database/migrations/2026_06_24_292000_create_symbol_profiles_table.php",
+      "line": 12
+    },
+    {
+      "table": "market_symbols",
+      "migration": "backend-laravel/database/migrations/2026_06_24_292000_create_symbol_profiles_table.php",
+      "line": 61
+    },
+    {
+      "table": "market_training_archives",
+      "migration": "backend-laravel/database/migrations/2026_08_13_120000_create_market_training_archive_tables.php",
+      "line": 11
+    },
+    {
+      "table": "market_training_candles",
+      "migration": "backend-laravel/database/migrations/2026_08_13_120000_create_market_training_archive_tables.php",
+      "line": 42
+    },
+    {
+      "table": "market_volume_observations",
+      "migration": "backend-laravel/database/migrations/2026_08_05_090000_create_market_volume_observations_table.php",
+      "line": 11
+    },
+    {
+      "table": "meta_audit_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_210000_create_meta_intelligence_tables.php",
+      "line": 11
+    },
+    {
+      "table": "mistakes",
+      "migration": "backend-laravel/database/migrations/2026_06_02_000000_create_neurotrader_mvp_tables.php",
+      "line": 104
+    },
+    {
+      "table": "mistakes",
+      "migration": "backend-laravel/database/migrations/2026_06_04_000000_add_stage_three_training_fields.php",
+      "line": 76
+    },
+    {
+      "table": "model_market_performance",
+      "migration": "backend-laravel/database/migrations/2026_07_11_000000_add_market_champion_evolution_controls.php",
+      "line": 11
+    },
+    {
+      "table": "model_market_performance",
+      "migration": "backend-laravel/database/migrations/2026_07_11_010000_create_ai_learning_laboratory_tables.php",
+      "line": 95
+    },
+    {
+      "table": "model_market_performance",
+      "migration": "backend-laravel/database/migrations/2026_07_11_010000_create_ai_learning_laboratory_tables.php",
+      "line": 105
+    },
+    {
+      "table": "model_market_performance",
+      "migration": "backend-laravel/database/migrations/2026_07_11_020000_complete_ai_learning_loop.php",
+      "line": 59
+    },
+    {
+      "table": "model_market_performance",
+      "migration": "backend-laravel/database/migrations/2026_07_11_020000_complete_ai_learning_loop.php",
+      "line": 67
+    },
+    {
+      "table": "model_versions",
+      "migration": "backend-laravel/database/migrations/2026_06_02_000000_create_neurotrader_mvp_tables.php",
+      "line": 43
+    },
+    {
+      "table": "model_versions",
+      "migration": "backend-laravel/database/migrations/2026_06_05_000000_add_stage_five_training_session_fields.php",
+      "line": 59
+    },
+    {
+      "table": "mtf_ablation_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_11_060000_create_mtf_pilot_monitoring_tables.php",
+      "line": 33
+    },
+    {
+      "table": "mtf_ablation_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_12_100000_add_snapshot_reference_to_mtf_ablation_runs.php",
+      "line": 12
+    },
+    {
+      "table": "mtf_ablation_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_12_100000_add_snapshot_reference_to_mtf_ablation_runs.php",
+      "line": 21
+    },
+    {
+      "table": "mtf_agent_validation_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_29_100000_create_mtf_agent_validation_runs_table.php",
+      "line": 15
+    },
+    {
+      "table": "mtf_pilot_monitor_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_11_060000_create_mtf_pilot_monitoring_tables.php",
+      "line": 12
+    },
+    {
+      "table": "mtf_playbook_frozen_control_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_27_130000_create_mtf_playbook_frozen_control_runs_table.php",
+      "line": 13
+    },
+    {
+      "table": "mtf_strategy_research_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_11_070000_create_mtf_strategy_research_runs.php",
+      "line": 15
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_11_010000_create_ai_learning_laboratory_tables.php",
+      "line": 63
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_27_120000_add_gate_transitions_to_mutation_memories.php",
+      "line": 11
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_27_120000_add_gate_transitions_to_mutation_memories.php",
+      "line": 18
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_27_140000_add_behavioral_effect_to_mutation_memories.php",
+      "line": 9
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_27_140000_add_behavioral_effect_to_mutation_memories.php",
+      "line": 10
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_30_080000_harden_screening_learning_outbox.php",
+      "line": 10
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_30_080000_harden_screening_learning_outbox.php",
+      "line": 32
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_30_120000_scope_mutation_memory_to_execution_context.php",
+      "line": 10
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_30_120000_scope_mutation_memory_to_execution_context.php",
+      "line": 21
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_31_130000_harden_mutation_evidence_scope.php",
+      "line": 11
+    },
+    {
+      "table": "mutation_memories",
+      "migration": "backend-laravel/database/migrations/2026_07_31_130000_harden_mutation_evidence_scope.php",
+      "line": 20
+    },
+    {
+      "table": "opportunity_funnel_entries",
+      "migration": "backend-laravel/database/migrations/2026_08_25_110000_create_causal_edge_accounting_tables.php",
+      "line": 11
+    },
+    {
+      "table": "paper_authority_admissions",
+      "migration": "backend-laravel/database/migrations/2026_08_30_120000_create_evolutionary_authority_foundry_tables.php",
+      "line": 75
+    },
+    {
+      "table": "paper_confidence_calibrations",
+      "migration": "backend-laravel/database/migrations/2026_07_24_160000_add_evolution_feedback_and_economic_events.php",
+      "line": 30
+    },
+    {
+      "table": "paper_confidence_calibrations",
+      "migration": "backend-laravel/database/migrations/2026_07_24_161000_add_paper_calibration_performance_fk.php",
+      "line": 24
+    },
+    {
+      "table": "paper_confidence_calibrations",
+      "migration": "backend-laravel/database/migrations/2026_07_24_161000_add_paper_calibration_performance_fk.php",
+      "line": 33
+    },
+    {
+      "table": "paper_execution_events",
+      "migration": "backend-laravel/database/migrations/2026_07_29_160000_create_p0_handoff_blame_execution_tables.php",
+      "line": 29
+    },
+    {
+      "table": "paper_fills",
+      "migration": "backend-laravel/database/migrations/2026_07_11_020000_complete_ai_learning_loop.php",
+      "line": 28
+    },
+    {
+      "table": "paper_mtf_shadow_observations",
+      "migration": "backend-laravel/database/migrations/2026_08_11_050000_create_mtf_pilot_ledgers.php",
+      "line": 50
+    },
+    {
+      "table": "paper_mtf_shadow_observations",
+      "migration": "backend-laravel/database/migrations/2026_08_11_050000_create_mtf_pilot_ledgers.php",
+      "line": 102
+    },
+    {
+      "table": "paper_mtf_shadow_observations",
+      "migration": "backend-laravel/database/migrations/2026_08_11_050000_create_mtf_pilot_ledgers.php",
+      "line": 108
+    },
+    {
+      "table": "paper_mtf_shadow_observations",
+      "migration": "backend-laravel/database/migrations/2026_08_11_050000_create_mtf_pilot_ledgers.php",
+      "line": 114
+    },
+    {
+      "table": "paper_mtf_shadow_observations",
+      "migration": "backend-laravel/database/migrations/2026_08_11_050000_create_mtf_pilot_ledgers.php",
+      "line": 119
+    },
+    {
+      "table": "paper_mtf_shadow_observations",
+      "migration": "backend-laravel/database/migrations/2026_08_11_050000_create_mtf_pilot_ledgers.php",
+      "line": 124
+    },
+    {
+      "table": "paper_orders",
+      "migration": "backend-laravel/database/migrations/2026_07_11_020000_complete_ai_learning_loop.php",
+      "line": 11
+    },
+    {
+      "table": "paper_orders",
+      "migration": "backend-laravel/database/migrations/2026_07_16_140000_create_immutable_paper_signal_ledger.php",
+      "line": 34
+    },
+    {
+      "table": "paper_orders",
+      "migration": "backend-laravel/database/migrations/2026_07_16_140000_create_immutable_paper_signal_ledger.php",
+      "line": 68
+    },
+    {
+      "table": "paper_sequential_evidences",
+      "migration": "backend-laravel/database/migrations/2026_07_29_140000_create_elite_ecosystem_evidence_tables.php",
+      "line": 45
+    },
+    {
+      "table": "paper_signal_outcomes",
+      "migration": "backend-laravel/database/migrations/2026_07_16_140000_create_immutable_paper_signal_ledger.php",
+      "line": 39
+    },
+    {
+      "table": "paper_signal_passports",
+      "migration": "backend-laravel/database/migrations/2026_08_11_050000_create_mtf_pilot_ledgers.php",
+      "line": 13
+    },
+    {
+      "table": "paper_signals",
+      "migration": "backend-laravel/database/migrations/2026_07_16_140000_create_immutable_paper_signal_ledger.php",
+      "line": 11
+    },
+    {
+      "table": "paper_trading_evaluations",
+      "migration": "backend-laravel/database/migrations/2026_07_11_010000_create_ai_learning_laboratory_tables.php",
+      "line": 81
+    },
+    {
+      "table": "password_reset_tokens",
+      "migration": "backend-laravel/database/migrations/0001_01_01_000000_create_users_table.php",
+      "line": 24
+    },
+    {
+      "table": "playbook_compositions",
+      "migration": "backend-laravel/database/migrations/2026_08_20_190000_create_trading_instrument_operating_system_tables.php",
+      "line": 55
+    },
+    {
+      "table": "playbook_mastery_ledger_entries",
+      "migration": "backend-laravel/database/migrations/2026_08_30_150000_create_full_stack_playbook_mastery_tables.php",
+      "line": 37
+    },
+    {
+      "table": "playbook_value_posteriors",
+      "migration": "backend-laravel/database/migrations/2026_08_20_191000_add_strategy_curriculum_and_playbook_learning_tables.php",
+      "line": 11
+    },
+    {
+      "table": "quant_law_candidates",
+      "migration": "backend-laravel/database/migrations/2026_06_24_230000_create_quant_laws_tables.php",
+      "line": 24
+    },
+    {
+      "table": "quant_law_conflicts",
+      "migration": "backend-laravel/database/migrations/2026_06_24_230000_create_quant_laws_tables.php",
+      "line": 112
+    },
+    {
+      "table": "quant_law_discovery_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_230000_create_quant_laws_tables.php",
+      "line": 11
+    },
+    {
+      "table": "quant_law_evidences",
+      "migration": "backend-laravel/database/migrations/2026_06_24_230000_create_quant_laws_tables.php",
+      "line": 75
+    },
+    {
+      "table": "quant_law_evolution_events",
+      "migration": "backend-laravel/database/migrations/2026_06_24_230000_create_quant_laws_tables.php",
+      "line": 126
+    },
+    {
+      "table": "quant_law_graph_edges",
+      "migration": "backend-laravel/database/migrations/2026_06_24_230000_create_quant_laws_tables.php",
+      "line": 97
+    },
+    {
+      "table": "quant_laws",
+      "migration": "backend-laravel/database/migrations/2026_06_24_230000_create_quant_laws_tables.php",
+      "line": 49
+    },
+    {
+      "table": "quant_theories",
+      "migration": "backend-laravel/database/migrations/2026_06_24_250000_create_autonomous_theory_generation_tables.php",
+      "line": 25
+    },
+    {
+      "table": "reality_experiments",
+      "migration": "backend-laravel/database/migrations/2026_06_24_280000_create_reality_verification_tables.php",
+      "line": 65
+    },
+    {
+      "table": "reality_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_24_280000_create_reality_verification_tables.php",
+      "line": 26
+    },
+    {
+      "table": "reality_validation_events",
+      "migration": "backend-laravel/database/migrations/2026_06_24_280000_create_reality_verification_tables.php",
+      "line": 52
+    },
+    {
+      "table": "reality_verification_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_280000_create_reality_verification_tables.php",
+      "line": 11
+    },
+    {
+      "table": "regime_reservoir_entries",
+      "migration": "backend-laravel/database/migrations/2026_07_29_150000_create_adaptive_policy_research_tables.php",
+      "line": 27
+    },
+    {
+      "table": "research_challenge_archive",
+      "migration": "backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php",
+      "line": 124
+    },
+    {
+      "table": "research_compounding_benchmarks",
+      "migration": "backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php",
+      "line": 91
+    },
+    {
+      "table": "research_emitter_credit_profiles",
+      "migration": "backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php",
+      "line": 72
+    },
+    {
+      "table": "research_experiment_receipts",
+      "migration": "backend-laravel/database/migrations/2026_09_07_130000_create_research_experiment_conversion_tables.php",
+      "line": 14
+    },
+    {
+      "table": "research_experiment_work_items",
+      "migration": "backend-laravel/database/migrations/2026_09_07_130000_create_research_experiment_conversion_tables.php",
+      "line": 39
+    },
+    {
+      "table": "research_experiment_work_items",
+      "migration": "backend-laravel/database/migrations/2026_09_07_130000_create_research_experiment_conversion_tables.php",
+      "line": 66
+    },
+    {
+      "table": "research_idea_inbox_entries",
+      "migration": "backend-laravel/database/migrations/2026_09_13_130000_create_cooperative_contextual_evolution_tables.php",
+      "line": 11
+    },
+    {
+      "table": "research_instrument_programs",
+      "migration": "backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php",
+      "line": 54
+    },
+    {
+      "table": "research_knowledge_entries",
+      "migration": "backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php",
+      "line": 12
+    },
+    {
+      "table": "research_loop_decisions",
+      "migration": "backend-laravel/database/migrations/2026_09_11_160000_create_research_loop_decisions_table.php",
+      "line": 15
+    },
+    {
+      "table": "research_skill_portfolio_entries",
+      "migration": "backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php",
+      "line": 35
+    },
+    {
+      "table": "research_specialist_league_entries",
+      "migration": "backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php",
+      "line": 107
+    },
+    {
+      "table": "risk_hysteresis_states",
+      "migration": "backend-laravel/database/migrations/2026_08_25_110000_create_causal_edge_accounting_tables.php",
+      "line": 33
+    },
+    {
+      "table": "risk_sentinel_decisions",
+      "migration": "backend-laravel/database/migrations/2026_08_20_192000_create_execution_tactic_and_risk_sentinel_tables.php",
+      "line": 27
+    },
+    {
+      "table": "router_decisions",
+      "migration": "backend-laravel/database/migrations/2026_08_20_190000_create_trading_instrument_operating_system_tables.php",
+      "line": 87
+    },
+    {
+      "table": "scientist_journals",
+      "migration": "backend-laravel/database/migrations/2026_06_24_150000_create_ai_trading_scientist_tables.php",
+      "line": 58
+    },
+    {
+      "table": "screening_learning_outbox",
+      "migration": "backend-laravel/database/migrations/2026_07_30_080000_harden_screening_learning_outbox.php",
+      "line": 13
+    },
+    {
+      "table": "sealed_holdout_releases",
+      "migration": "backend-laravel/database/migrations/2026_07_11_020000_complete_ai_learning_loop.php",
+      "line": 51
+    },
+    {
+      "table": "selection_events",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 109
+    },
+    {
+      "table": "self_critiques",
+      "migration": "backend-laravel/database/migrations/2026_06_24_210000_create_meta_intelligence_tables.php",
+      "line": 117
+    },
+    {
+      "table": "service_health_checks",
+      "migration": "backend-laravel/database/migrations/2026_06_24_291000_create_phase_two_foundation_tables.php",
+      "line": 32
+    },
+    {
+      "table": "sessions",
+      "migration": "backend-laravel/database/migrations/0001_01_01_000000_create_users_table.php",
+      "line": 30
+    },
+    {
+      "table": "settlement_watermarks",
+      "migration": "backend-laravel/database/migrations/2026_08_30_120000_create_evolutionary_authority_foundry_tables.php",
+      "line": 50
+    },
+    {
+      "table": "shadow_veto_observations",
+      "migration": "backend-laravel/database/migrations/2026_07_28_110000_create_shadow_veto_observations_table.php",
+      "line": 11
+    },
+    {
+      "table": "shadow_veto_observations",
+      "migration": "backend-laravel/database/migrations/2026_07_29_150000_create_adaptive_policy_research_tables.php",
+      "line": 10
+    },
+    {
+      "table": "shadow_veto_observations",
+      "migration": "backend-laravel/database/migrations/2026_07_29_150000_create_adaptive_policy_research_tables.php",
+      "line": 56
+    },
+    {
+      "table": "signal_market_snapshots",
+      "migration": "backend-laravel/database/migrations/2026_06_24_291000_create_phase_two_foundation_tables.php",
+      "line": 49
+    },
+    {
+      "table": "skeptic_reports",
+      "migration": "backend-laravel/database/migrations/2026_06_24_280000_create_reality_verification_tables.php",
+      "line": 101
+    },
+    {
+      "table": "skill_cartridge_interactions",
+      "migration": "backend-laravel/database/migrations/2026_08_30_130000_create_canonical_skill_cartridge_pipeline_tables.php",
+      "line": 52
+    },
+    {
+      "table": "skill_cartridge_observations",
+      "migration": "backend-laravel/database/migrations/2026_08_30_130000_create_canonical_skill_cartridge_pipeline_tables.php",
+      "line": 29
+    },
+    {
+      "table": "skill_cartridge_revisions",
+      "migration": "backend-laravel/database/migrations/2026_08_30_160000_create_skill_cartridge_revisions_table.php",
+      "line": 11
+    },
+    {
+      "table": "skill_cartridge_transplant_trials",
+      "migration": "backend-laravel/database/migrations/2026_08_30_130000_create_canonical_skill_cartridge_pipeline_tables.php",
+      "line": 42
+    },
+    {
+      "table": "skill_incubation_trials",
+      "migration": "backend-laravel/database/migrations/2026_08_30_120000_create_evolutionary_authority_foundry_tables.php",
+      "line": 28
+    },
+    {
+      "table": "smart_discipline_decisions",
+      "migration": "backend-laravel/database/migrations/2026_08_27_060000_create_smart_discipline_decisions_table.php",
+      "line": 11
+    },
+    {
+      "table": "strategies",
+      "migration": "backend-laravel/database/migrations/2026_06_02_000000_create_neurotrader_mvp_tables.php",
+      "line": 34
+    },
+    {
+      "table": "strategy_curriculum_contracts",
+      "migration": "backend-laravel/database/migrations/2026_08_20_191000_add_strategy_curriculum_and_playbook_learning_tables.php",
+      "line": 27
+    },
+    {
+      "table": "strategy_curriculum_contracts",
+      "migration": "backend-laravel/database/migrations/2026_08_20_193000_add_tactic_mastery_to_strategy_curricula.php",
+      "line": 11
+    },
+    {
+      "table": "strategy_curriculum_contracts",
+      "migration": "backend-laravel/database/migrations/2026_08_20_193000_add_tactic_mastery_to_strategy_curricula.php",
+      "line": 24
+    },
+    {
+      "table": "strategy_dna_profiles",
+      "migration": "backend-laravel/database/migrations/2026_06_17_150000_create_strategy_dna_profiles_table.php",
+      "line": 15
+    },
+    {
+      "table": "strategy_genomes",
+      "migration": "backend-laravel/database/migrations/2026_06_24_170000_create_evolution_genome_tables.php",
+      "line": 11
+    },
+    {
+      "table": "strategy_innovation_trials",
+      "migration": "backend-laravel/database/migrations/2026_08_20_191000_add_strategy_curriculum_and_playbook_learning_tables.php",
+      "line": 61
+    },
+    {
+      "table": "strategy_master_passports",
+      "migration": "backend-laravel/database/migrations/2026_08_20_191000_add_strategy_curriculum_and_playbook_learning_tables.php",
+      "line": 47
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_04_010000_create_strategy_scores_table.php",
+      "line": 15
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_05_000000_add_stage_five_training_session_fields.php",
+      "line": 97
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_07_010000_add_parameters_to_strategy_scores_table.php",
+      "line": 15
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_07_010000_add_parameters_to_strategy_scores_table.php",
+      "line": 26
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_07_020000_add_risk_metrics_to_strategy_scores_table.php",
+      "line": 15
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_07_020000_add_risk_metrics_to_strategy_scores_table.php",
+      "line": 43
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_07_040000_add_regime_analytics_to_strategy_scores_table.php",
+      "line": 11
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_07_040000_add_regime_analytics_to_strategy_scores_table.php",
+      "line": 24
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_17_130000_add_walk_forward_columns_to_strategy_scores_table.php",
+      "line": 15
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_17_130000_add_walk_forward_columns_to_strategy_scores_table.php",
+      "line": 44
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_17_140000_add_monte_carlo_columns_to_strategy_scores_table.php",
+      "line": 15
+    },
+    {
+      "table": "strategy_scores",
+      "migration": "backend-laravel/database/migrations/2026_06_17_140000_add_monte_carlo_columns_to_strategy_scores_table.php",
+      "line": 56
+    },
+    {
+      "table": "strategy_species_performance",
+      "migration": "backend-laravel/database/migrations/2026_06_24_180000_create_market_reality_tables.php",
+      "line": 139
+    },
+    {
+      "table": "strategy_survival_forecasts",
+      "migration": "backend-laravel/database/migrations/2026_06_24_200000_create_future_simulation_tables.php",
+      "line": 80
+    },
+    {
+      "table": "symbol_profiles",
+      "migration": "backend-laravel/database/migrations/2026_06_24_292000_create_symbol_profiles_table.php",
+      "line": 25
+    },
+    {
+      "table": "symbols",
+      "migration": "backend-laravel/database/migrations/2026_06_02_000000_create_neurotrader_mvp_tables.php",
+      "line": 11
+    },
+    {
+      "table": "system_events",
+      "migration": "backend-laravel/database/migrations/2026_06_24_291000_create_phase_two_foundation_tables.php",
+      "line": 11
+    },
+    {
+      "table": "system_logs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_293000_create_market_health_tables.php",
+      "line": 34
+    },
+    {
+      "table": "theory_battles",
+      "migration": "backend-laravel/database/migrations/2026_06_24_250000_create_autonomous_theory_generation_tables.php",
+      "line": 62
+    },
+    {
+      "table": "theory_components",
+      "migration": "backend-laravel/database/migrations/2026_06_24_250000_create_autonomous_theory_generation_tables.php",
+      "line": 47
+    },
+    {
+      "table": "theory_evolution_events",
+      "migration": "backend-laravel/database/migrations/2026_06_24_250000_create_autonomous_theory_generation_tables.php",
+      "line": 91
+    },
+    {
+      "table": "theory_generation_runs",
+      "migration": "backend-laravel/database/migrations/2026_06_24_250000_create_autonomous_theory_generation_tables.php",
+      "line": 11
+    },
+    {
+      "table": "theory_predictions",
+      "migration": "backend-laravel/database/migrations/2026_06_24_250000_create_autonomous_theory_generation_tables.php",
+      "line": 75
+    },
+    {
+      "table": "trade_path_laboratory_runs",
+      "migration": "backend-laravel/database/migrations/2026_08_25_110000_create_causal_edge_accounting_tables.php",
+      "line": 28
+    },
+    {
+      "table": "trades",
+      "migration": "backend-laravel/database/migrations/2026_06_02_000000_create_neurotrader_mvp_tables.php",
+      "line": 83
+    },
+    {
+      "table": "trades",
+      "migration": "backend-laravel/database/migrations/2026_06_04_000000_add_stage_three_training_fields.php",
+      "line": 62
+    },
+    {
+      "table": "trades",
+      "migration": "backend-laravel/database/migrations/2026_06_07_050000_add_regime_columns_to_trades_table.php",
+      "line": 11
+    },
+    {
+      "table": "trades",
+      "migration": "backend-laravel/database/migrations/2026_06_07_050000_add_regime_columns_to_trades_table.php",
+      "line": 24
+    },
+    {
+      "table": "trading_instruments",
+      "migration": "backend-laravel/database/migrations/2026_08_20_190000_create_trading_instrument_operating_system_tables.php",
+      "line": 11
+    },
+    {
+      "table": "training_logs",
+      "migration": "backend-laravel/database/migrations/2026_06_08_000000_create_training_logs_table.php",
+      "line": 15
+    },
+    {
+      "table": "training_sessions",
+      "migration": "backend-laravel/database/migrations/2026_06_02_000000_create_neurotrader_mvp_tables.php",
+      "line": 51
+    },
+    {
+      "table": "training_sessions",
+      "migration": "backend-laravel/database/migrations/2026_06_05_000000_add_stage_five_training_session_fields.php",
+      "line": 12
+    },
+    {
+      "table": "training_sessions",
+      "migration": "backend-laravel/database/migrations/2026_06_07_030000_add_risk_metrics_to_training_sessions_table.php",
+      "line": 15
+    },
+    {
+      "table": "training_sessions",
+      "migration": "backend-laravel/database/migrations/2026_06_07_030000_add_risk_metrics_to_training_sessions_table.php",
+      "line": 34
+    },
+    {
+      "table": "transfer_matrix_entries",
+      "migration": "backend-laravel/database/migrations/2026_07_29_150000_create_adaptive_policy_research_tables.php",
+      "line": 42
+    },
+    {
+      "table": "unified_quant_models",
+      "migration": "backend-laravel/database/migrations/2026_06_24_250000_create_autonomous_theory_generation_tables.php",
+      "line": 104
+    },
+    {
+      "table": "universal_driver_rankings",
+      "migration": "backend-laravel/database/migrations/2026_06_24_230000_create_quant_laws_tables.php",
+      "line": 138
+    },
+    {
+      "table": "unknown_zones",
+      "migration": "backend-laravel/database/migrations/2026_06_24_210000_create_meta_intelligence_tables.php",
+      "line": 74
+    },
+    {
+      "table": "users",
+      "migration": "backend-laravel/database/migrations/0001_01_01_000000_create_users_table.php",
+      "line": 14
+    },
+    {
+      "table": "users",
+      "migration": "backend-laravel/database/migrations/2026_07_16_150000_add_rbac_to_users.php",
+      "line": 11
+    },
+    {
+      "table": "users",
+      "migration": "backend-laravel/database/migrations/2026_07_16_150000_add_rbac_to_users.php",
+      "line": 19
+    },
+    {
+      "table": "veto_policy_evaluations",
+      "migration": "backend-laravel/database/migrations/2026_07_29_150000_create_adaptive_policy_research_tables.php",
+      "line": 16
+    },
+    {
+      "table": "volume_shadow_experiments",
+      "migration": "backend-laravel/database/migrations/2026_08_05_090100_create_volume_shadow_experiments_table.php",
+      "line": 11
+    },
+    {
+      "table": "winner_only_pyramiding_ledger_entries",
+      "migration": "backend-laravel/database/migrations/2026_08_25_110000_create_causal_edge_accounting_tables.php",
+      "line": 37
+    }
+  ],
+  "models": [
+    {
+      "model": "AdversarialValidatorEpoch",
+      "path": "backend-laravel/app/Models/AdversarialValidatorEpoch.php"
+    },
+    {
+      "model": "AdversarialValidatorFinding",
+      "path": "backend-laravel/app/Models/AdversarialValidatorFinding.php"
+    },
+    {
+      "model": "AgentBelief",
+      "path": "backend-laravel/app/Models/AgentBelief.php"
+    },
+    {
+      "model": "AgentDiagnosis",
+      "path": "backend-laravel/app/Models/AgentDiagnosis.php"
+    },
+    {
+      "model": "AgentFailureCase",
+      "path": "backend-laravel/app/Models/AgentFailureCase.php"
+    },
+    {
+      "model": "AgentHypothesis",
+      "path": "backend-laravel/app/Models/AgentHypothesis.php"
+    },
+    {
+      "model": "AgentInheritanceManifest",
+      "path": "backend-laravel/app/Models/AgentInheritanceManifest.php"
+    },
+    {
+      "model": "AgentKnowledgeCard",
+      "path": "backend-laravel/app/Models/AgentKnowledgeCard.php"
+    },
+    {
+      "model": "AgentLearningCausalExperiment",
+      "path": "backend-laravel/app/Models/AgentLearningCausalExperiment.php"
+    },
+    {
+      "model": "AgentLearningEpisode",
+      "path": "backend-laravel/app/Models/AgentLearningEpisode.php"
+    },
+    {
+      "model": "AgentLearningLesson",
+      "path": "backend-laravel/app/Models/AgentLearningLesson.php"
+    },
+    {
+      "model": "AgentLearningMutationIntent",
+      "path": "backend-laravel/app/Models/AgentLearningMutationIntent.php"
+    },
+    {
+      "model": "AgentLearningPolicy",
+      "path": "backend-laravel/app/Models/AgentLearningPolicy.php"
+    },
+    {
+      "model": "AgentLearningRetrieval",
+      "path": "backend-laravel/app/Models/AgentLearningRetrieval.php"
+    },
+    {
+      "model": "AgentLearningSettlement",
+      "path": "backend-laravel/app/Models/AgentLearningSettlement.php"
+    },
+    {
+      "model": "AgentMemory",
+      "path": "backend-laravel/app/Models/AgentMemory.php"
+    },
+    {
+      "model": "AgentMemoryMatch",
+      "path": "backend-laravel/app/Models/AgentMemoryMatch.php"
+    },
+    {
+      "model": "AgentProfessionalExam",
+      "path": "backend-laravel/app/Models/AgentProfessionalExam.php"
+    },
+    {
+      "model": "AgentProgressCard",
+      "path": "backend-laravel/app/Models/AgentProgressCard.php"
+    },
+    {
+      "model": "AgentPsychologySnapshot",
+      "path": "backend-laravel/app/Models/AgentPsychologySnapshot.php"
+    },
+    {
+      "model": "AgentReputation",
+      "path": "backend-laravel/app/Models/AgentReputation.php"
+    },
+    {
+      "model": "AgentSelfReflection",
+      "path": "backend-laravel/app/Models/AgentSelfReflection.php"
+    },
+    {
+      "model": "AgentSkillAtlasEntry",
+      "path": "backend-laravel/app/Models/AgentSkillAtlasEntry.php"
+    },
+    {
+      "model": "AiLaboratory",
+      "path": "backend-laravel/app/Models/AiLaboratory.php"
+    },
+    {
+      "model": "BacktestRun",
+      "path": "backend-laravel/app/Models/BacktestRun.php"
+    },
+    {
+      "model": "BeliefDecayEvent",
+      "path": "backend-laravel/app/Models/BeliefDecayEvent.php"
+    },
+    {
+      "model": "BlindSpot",
+      "path": "backend-laravel/app/Models/BlindSpot.php"
+    },
+    {
+      "model": "CandidateGateDecision",
+      "path": "backend-laravel/app/Models/CandidateGateDecision.php"
+    },
+    {
+      "model": "CandidateHandoffEvent",
+      "path": "backend-laravel/app/Models/CandidateHandoffEvent.php"
+    },
+    {
+      "model": "Candle",
+      "path": "backend-laravel/app/Models/Candle.php"
+    },
+    {
+      "model": "CanonicalLearningOutbox",
+      "path": "backend-laravel/app/Models/CanonicalLearningOutbox.php"
+    },
+    {
+      "model": "CapabilityAntiSkillCemetery",
+      "path": "backend-laravel/app/Models/CapabilityAntiSkillCemetery.php"
+    },
+    {
+      "model": "CapabilityCausalAttribution",
+      "path": "backend-laravel/app/Models/CapabilityCausalAttribution.php"
+    },
+    {
+      "model": "CapabilityCell",
+      "path": "backend-laravel/app/Models/CapabilityCell.php"
+    },
+    {
+      "model": "CapabilityExperimentDecision",
+      "path": "backend-laravel/app/Models/CapabilityExperimentDecision.php"
+    },
+    {
+      "model": "CapabilityProgressScoreboard",
+      "path": "backend-laravel/app/Models/CapabilityProgressScoreboard.php"
+    },
+    {
+      "model": "CapabilitySkill",
+      "path": "backend-laravel/app/Models/CapabilitySkill.php"
+    },
+    {
+      "model": "CausalCapabilityEscrow",
+      "path": "backend-laravel/app/Models/CausalCapabilityEscrow.php"
+    },
+    {
+      "model": "CausalCounterfactual",
+      "path": "backend-laravel/app/Models/CausalCounterfactual.php"
+    },
+    {
+      "model": "CausalDiscoveryRun",
+      "path": "backend-laravel/app/Models/CausalDiscoveryRun.php"
+    },
+    {
+      "model": "CausalEdge",
+      "path": "backend-laravel/app/Models/CausalEdge.php"
+    },
+    {
+      "model": "CausalEffectEstimate",
+      "path": "backend-laravel/app/Models/CausalEffectEstimate.php"
+    },
+    {
+      "model": "CausalExperiment",
+      "path": "backend-laravel/app/Models/CausalExperiment.php"
+    },
+    {
+      "model": "CausalFoldReceipt",
+      "path": "backend-laravel/app/Models/CausalFoldReceipt.php"
+    },
+    {
+      "model": "CausalIntervention",
+      "path": "backend-laravel/app/Models/CausalIntervention.php"
+    },
+    {
+      "model": "CausalNode",
+      "path": "backend-laravel/app/Models/CausalNode.php"
+    },
+    {
+      "model": "CausalRootCause",
+      "path": "backend-laravel/app/Models/CausalRootCause.php"
+    },
+    {
+      "model": "CertifiedKnowledgeItem",
+      "path": "backend-laravel/app/Models/CertifiedKnowledgeItem.php"
+    },
+    {
+      "model": "CivilizationAgent",
+      "path": "backend-laravel/app/Models/CivilizationAgent.php"
+    },
+    {
+      "model": "CivilizationCreditEvent",
+      "path": "backend-laravel/app/Models/CivilizationCreditEvent.php"
+    },
+    {
+      "model": "CivilizationGoal",
+      "path": "backend-laravel/app/Models/CivilizationGoal.php"
+    },
+    {
+      "model": "CivilizationMemory",
+      "path": "backend-laravel/app/Models/CivilizationMemory.php"
+    },
+    {
+      "model": "CompositionComponentPosterior",
+      "path": "backend-laravel/app/Models/CompositionComponentPosterior.php"
+    },
+    {
+      "model": "CompositionSettlement",
+      "path": "backend-laravel/app/Models/CompositionSettlement.php"
+    },
+    {
+      "model": "ContextualInstrumentBundleEffect",
+      "path": "backend-laravel/app/Models/ContextualInstrumentBundleEffect.php"
+    },
+    {
+      "model": "ContextualSpecialistCapsule",
+      "path": "backend-laravel/app/Models/ContextualSpecialistCapsule.php"
+    },
+    {
+      "model": "CooperativeExperimentSettlement",
+      "path": "backend-laravel/app/Models/CooperativeExperimentSettlement.php"
+    },
+    {
+      "model": "CooperativeModuleSpeciesMember",
+      "path": "backend-laravel/app/Models/CooperativeModuleSpeciesMember.php"
+    },
+    {
+      "model": "CotFeatureSnapshot",
+      "path": "backend-laravel/app/Models/CotFeatureSnapshot.php"
+    },
+    {
+      "model": "CotReport",
+      "path": "backend-laravel/app/Models/CotReport.php"
+    },
+    {
+      "model": "CouncilDecision",
+      "path": "backend-laravel/app/Models/CouncilDecision.php"
+    },
+    {
+      "model": "CouncilVote",
+      "path": "backend-laravel/app/Models/CouncilVote.php"
+    },
+    {
+      "model": "CounterfactualRun",
+      "path": "backend-laravel/app/Models/CounterfactualRun.php"
+    },
+    {
+      "model": "DailyReport",
+      "path": "backend-laravel/app/Models/DailyReport.php"
+    },
+    {
+      "model": "DebateArgument",
+      "path": "backend-laravel/app/Models/DebateArgument.php"
+    },
+    {
+      "model": "DecisionCounterfactualEdge",
+      "path": "backend-laravel/app/Models/DecisionCounterfactualEdge.php"
+    },
+    {
+      "model": "DiscoveryQualityScore",
+      "path": "backend-laravel/app/Models/DiscoveryQualityScore.php"
+    },
+    {
+      "model": "DualTrackCellPolicy",
+      "path": "backend-laravel/app/Models/DualTrackCellPolicy.php"
+    },
+    {
+      "model": "DualTrackCellStatistic",
+      "path": "backend-laravel/app/Models/DualTrackCellStatistic.php"
+    },
+    {
+      "model": "DualTrackDiversityMetric",
+      "path": "backend-laravel/app/Models/DualTrackDiversityMetric.php"
+    },
+    {
+      "model": "DualTrackDriftState",
+      "path": "backend-laravel/app/Models/DualTrackDriftState.php"
+    },
+    {
+      "model": "DualTrackEvaluatorCalibration",
+      "path": "backend-laravel/app/Models/DualTrackEvaluatorCalibration.php"
+    },
+    {
+      "model": "DualTrackEvidenceWorkItem",
+      "path": "backend-laravel/app/Models/DualTrackEvidenceWorkItem.php"
+    },
+    {
+      "model": "DualTrackEvolutionEvent",
+      "path": "backend-laravel/app/Models/DualTrackEvolutionEvent.php"
+    },
+    {
+      "model": "DualTrackExchangePacket",
+      "path": "backend-laravel/app/Models/DualTrackExchangePacket.php"
+    },
+    {
+      "model": "DualTrackGeneCemetery",
+      "path": "backend-laravel/app/Models/DualTrackGeneCemetery.php"
+    },
+    {
+      "model": "DualTrackGeneProof",
+      "path": "backend-laravel/app/Models/DualTrackGeneProof.php"
+    },
+    {
+      "model": "DualTrackGenomeArchive",
+      "path": "backend-laravel/app/Models/DualTrackGenomeArchive.php"
+    },
+    {
+      "model": "DualTrackGenomeArchiveEvent",
+      "path": "backend-laravel/app/Models/DualTrackGenomeArchiveEvent.php"
+    },
+    {
+      "model": "DualTrackInferenceObservation",
+      "path": "backend-laravel/app/Models/DualTrackInferenceObservation.php"
+    },
+    {
+      "model": "DualTrackLaneCredit",
+      "path": "backend-laravel/app/Models/DualTrackLaneCredit.php"
+    },
+    {
+      "model": "DualTrackMemberCredit",
+      "path": "backend-laravel/app/Models/DualTrackMemberCredit.php"
+    },
+    {
+      "model": "DualTrackMemoryLesson",
+      "path": "backend-laravel/app/Models/DualTrackMemoryLesson.php"
+    },
+    {
+      "model": "DualTrackMemoryReplay",
+      "path": "backend-laravel/app/Models/DualTrackMemoryReplay.php"
+    },
+    {
+      "model": "DualTrackOrganismHealthSnapshot",
+      "path": "backend-laravel/app/Models/DualTrackOrganismHealthSnapshot.php"
+    },
+    {
+      "model": "DualTrackOutcome",
+      "path": "backend-laravel/app/Models/DualTrackOutcome.php"
+    },
+    {
+      "model": "DualTrackPromotionDecision",
+      "path": "backend-laravel/app/Models/DualTrackPromotionDecision.php"
+    },
+    {
+      "model": "DualTrackRedTeamTrial",
+      "path": "backend-laravel/app/Models/DualTrackRedTeamTrial.php"
+    },
+    {
+      "model": "DualTrackReflectionLesson",
+      "path": "backend-laravel/app/Models/DualTrackReflectionLesson.php"
+    },
+    {
+      "model": "DualTrackRun",
+      "path": "backend-laravel/app/Models/DualTrackRun.php"
+    },
+    {
+      "model": "DualTrackSettlementState",
+      "path": "backend-laravel/app/Models/DualTrackSettlementState.php"
+    },
+    {
+      "model": "DualTrackSnapshotManifest",
+      "path": "backend-laravel/app/Models/DualTrackSnapshotManifest.php"
+    },
+    {
+      "model": "DualTrackStatisticEvent",
+      "path": "backend-laravel/app/Models/DualTrackStatisticEvent.php"
+    },
+    {
+      "model": "EconomicEvent",
+      "path": "backend-laravel/app/Models/EconomicEvent.php"
+    },
+    {
+      "model": "EliteAgentPortfolio",
+      "path": "backend-laravel/app/Models/EliteAgentPortfolio.php"
+    },
+    {
+      "model": "EliteAgentPortfolioMember",
+      "path": "backend-laravel/app/Models/EliteAgentPortfolioMember.php"
+    },
+    {
+      "model": "EvaluatorReputation",
+      "path": "backend-laravel/app/Models/EvaluatorReputation.php"
+    },
+    {
+      "model": "EvolutionGeneration",
+      "path": "backend-laravel/app/Models/EvolutionGeneration.php"
+    },
+    {
+      "model": "EvolutionLearningReceipt",
+      "path": "backend-laravel/app/Models/EvolutionLearningReceipt.php"
+    },
+    {
+      "model": "EvolutionProposal",
+      "path": "backend-laravel/app/Models/EvolutionProposal.php"
+    },
+    {
+      "model": "EvolutionTrigger",
+      "path": "backend-laravel/app/Models/EvolutionTrigger.php"
+    },
+    {
+      "model": "ExecutionTacticPosterior",
+      "path": "backend-laravel/app/Models/ExecutionTacticPosterior.php"
+    },
+    {
+      "model": "ExtinctionEvent",
+      "path": "backend-laravel/app/Models/ExtinctionEvent.php"
+    },
+    {
+      "model": "FailureCaseRun",
+      "path": "backend-laravel/app/Models/FailureCaseRun.php"
+    },
+    {
+      "model": "FeatureSnapshot",
+      "path": "backend-laravel/app/Models/FeatureSnapshot.php"
+    },
+    {
+      "model": "FeatureValueCatalog",
+      "path": "backend-laravel/app/Models/FeatureValueCatalog.php"
+    },
+    {
+      "model": "FitnessEvaluation",
+      "path": "backend-laravel/app/Models/FitnessEvaluation.php"
+    },
+    {
+      "model": "FoundryEmitterReward",
+      "path": "backend-laravel/app/Models/FoundryEmitterReward.php"
+    },
+    {
+      "model": "FoundryMultipleTestingLedger",
+      "path": "backend-laravel/app/Models/FoundryMultipleTestingLedger.php"
+    },
+    {
+      "model": "FrozenPaperWindow",
+      "path": "backend-laravel/app/Models/FrozenPaperWindow.php"
+    },
+    {
+      "model": "FullStackPlaybookPassport",
+      "path": "backend-laravel/app/Models/FullStackPlaybookPassport.php"
+    },
+    {
+      "model": "FutureDiscovery",
+      "path": "backend-laravel/app/Models/FutureDiscovery.php"
+    },
+    {
+      "model": "FutureProbabilityNode",
+      "path": "backend-laravel/app/Models/FutureProbabilityNode.php"
+    },
+    {
+      "model": "FutureScenario",
+      "path": "backend-laravel/app/Models/FutureScenario.php"
+    },
+    {
+      "model": "FutureSimulationRun",
+      "path": "backend-laravel/app/Models/FutureSimulationRun.php"
+    },
+    {
+      "model": "FutureStressTest",
+      "path": "backend-laravel/app/Models/FutureStressTest.php"
+    },
+    {
+      "model": "FutureTimelineForecast",
+      "path": "backend-laravel/app/Models/FutureTimelineForecast.php"
+    },
+    {
+      "model": "GenerationAdmissionDecision",
+      "path": "backend-laravel/app/Models/GenerationAdmissionDecision.php"
+    },
+    {
+      "model": "GenerationAutonomyReceipt",
+      "path": "backend-laravel/app/Models/GenerationAutonomyReceipt.php"
+    },
+    {
+      "model": "GenerationClosedLoopAudit",
+      "path": "backend-laravel/app/Models/GenerationClosedLoopAudit.php"
+    },
+    {
+      "model": "GenomeCrossover",
+      "path": "backend-laravel/app/Models/GenomeCrossover.php"
+    },
+    {
+      "model": "GenomeDiscovery",
+      "path": "backend-laravel/app/Models/GenomeDiscovery.php"
+    },
+    {
+      "model": "GenomeGene",
+      "path": "backend-laravel/app/Models/GenomeGene.php"
+    },
+    {
+      "model": "GenomeLineage",
+      "path": "backend-laravel/app/Models/GenomeLineage.php"
+    },
+    {
+      "model": "GenomeMutation",
+      "path": "backend-laravel/app/Models/GenomeMutation.php"
+    },
+    {
+      "model": "InstitutionalKnowledge",
+      "path": "backend-laravel/app/Models/InstitutionalKnowledge.php"
+    },
+    {
+      "model": "InstrumentContract",
+      "path": "backend-laravel/app/Models/InstrumentContract.php"
+    },
+    {
+      "model": "InstrumentEvidence",
+      "path": "backend-laravel/app/Models/InstrumentEvidence.php"
+    },
+    {
+      "model": "InstrumentInvocationLedger",
+      "path": "backend-laravel/app/Models/InstrumentInvocationLedger.php"
+    },
+    {
+      "model": "InstrumentValuePosterior",
+      "path": "backend-laravel/app/Models/InstrumentValuePosterior.php"
+    },
+    {
+      "model": "InternalDebate",
+      "path": "backend-laravel/app/Models/InternalDebate.php"
+    },
+    {
+      "model": "KnowledgeAudit",
+      "path": "backend-laravel/app/Models/KnowledgeAudit.php"
+    },
+    {
+      "model": "KnowledgeCemeteryEntry",
+      "path": "backend-laravel/app/Models/KnowledgeCemeteryEntry.php"
+    },
+    {
+      "model": "KnowledgeClaim",
+      "path": "backend-laravel/app/Models/KnowledgeClaim.php"
+    },
+    {
+      "model": "KnowledgeContradiction",
+      "path": "backend-laravel/app/Models/KnowledgeContradiction.php"
+    },
+    {
+      "model": "KnowledgeEvidence",
+      "path": "backend-laravel/app/Models/KnowledgeEvidence.php"
+    },
+    {
+      "model": "KnowledgeFact",
+      "path": "backend-laravel/app/Models/KnowledgeFact.php"
+    },
+    {
+      "model": "KnowledgeGraphEdge",
+      "path": "backend-laravel/app/Models/KnowledgeGraphEdge.php"
+    },
+    {
+      "model": "KnowledgeGraphNode",
+      "path": "backend-laravel/app/Models/KnowledgeGraphNode.php"
+    },
+    {
+      "model": "KnowledgeHealthScore",
+      "path": "backend-laravel/app/Models/KnowledgeHealthScore.php"
+    },
+    {
+      "model": "KnowledgeMiningRun",
+      "path": "backend-laravel/app/Models/KnowledgeMiningRun.php"
+    },
+    {
+      "model": "KnowledgePrior",
+      "path": "backend-laravel/app/Models/KnowledgePrior.php"
+    },
+    {
+      "model": "KnowledgeQuery",
+      "path": "backend-laravel/app/Models/KnowledgeQuery.php"
+    },
+    {
+      "model": "LabAdversarialScenario",
+      "path": "backend-laravel/app/Models/LabAdversarialScenario.php"
+    },
+    {
+      "model": "LabAgent",
+      "path": "backend-laravel/app/Models/LabAgent.php"
+    },
+    {
+      "model": "LabAgentInheritanceAudit",
+      "path": "backend-laravel/app/Models/LabAgentInheritanceAudit.php"
+    },
+    {
+      "model": "LabAgentParentLink",
+      "path": "backend-laravel/app/Models/LabAgentParentLink.php"
+    },
+    {
+      "model": "LabCandleDecisionEvent",
+      "path": "backend-laravel/app/Models/LabCandleDecisionEvent.php"
+    },
+    {
+      "model": "LabCausalControlPlan",
+      "path": "backend-laravel/app/Models/LabCausalControlPlan.php"
+    },
+    {
+      "model": "LabCouncilAblationRun",
+      "path": "backend-laravel/app/Models/LabCouncilAblationRun.php"
+    },
+    {
+      "model": "LabCouncilAdjudication",
+      "path": "backend-laravel/app/Models/LabCouncilAdjudication.php"
+    },
+    {
+      "model": "LabCouncilDisagreement",
+      "path": "backend-laravel/app/Models/LabCouncilDisagreement.php"
+    },
+    {
+      "model": "LabEvaluationRun",
+      "path": "backend-laravel/app/Models/LabEvaluationRun.php"
+    },
+    {
+      "model": "LabEvidenceArtifact",
+      "path": "backend-laravel/app/Models/LabEvidenceArtifact.php"
+    },
+    {
+      "model": "LabEvolutionArchiveEntry",
+      "path": "backend-laravel/app/Models/LabEvolutionArchiveEntry.php"
+    },
+    {
+      "model": "LabEvolutionCreditEvent",
+      "path": "backend-laravel/app/Models/LabEvolutionCreditEvent.php"
+    },
+    {
+      "model": "LabEvolutionDirector",
+      "path": "backend-laravel/app/Models/LabEvolutionDirector.php"
+    },
+    {
+      "model": "LabEvolutionExtinctionPlan",
+      "path": "backend-laravel/app/Models/LabEvolutionExtinctionPlan.php"
+    },
+    {
+      "model": "LabEvolutionIsland",
+      "path": "backend-laravel/app/Models/LabEvolutionIsland.php"
+    },
+    {
+      "model": "LabFailureDojoRun",
+      "path": "backend-laravel/app/Models/LabFailureDojoRun.php"
+    },
+    {
+      "model": "LabFailureRepairAnchor",
+      "path": "backend-laravel/app/Models/LabFailureRepairAnchor.php"
+    },
+    {
+      "model": "LabGateDecisionEvent",
+      "path": "backend-laravel/app/Models/LabGateDecisionEvent.php"
+    },
+    {
+      "model": "LabGeneInteraction",
+      "path": "backend-laravel/app/Models/LabGeneInteraction.php"
+    },
+    {
+      "model": "LabGeneration",
+      "path": "backend-laravel/app/Models/LabGeneration.php"
+    },
+    {
+      "model": "LabLearningConsumptionEvent",
+      "path": "backend-laravel/app/Models/LabLearningConsumptionEvent.php"
+    },
+    {
+      "model": "LabLearningInsight",
+      "path": "backend-laravel/app/Models/LabLearningInsight.php"
+    },
+    {
+      "model": "LabLearningLaneDispatch",
+      "path": "backend-laravel/app/Models/LabLearningLaneDispatch.php"
+    },
+    {
+      "model": "LabLearningLanePair",
+      "path": "backend-laravel/app/Models/LabLearningLanePair.php"
+    },
+    {
+      "model": "LabLearningMemory",
+      "path": "backend-laravel/app/Models/LabLearningMemory.php"
+    },
+    {
+      "model": "LabLifecycleCycle",
+      "path": "backend-laravel/app/Models/LabLifecycleCycle.php"
+    },
+    {
+      "model": "LabLifecycleEvent",
+      "path": "backend-laravel/app/Models/LabLifecycleEvent.php"
+    },
+    {
+      "model": "LabMutationAction",
+      "path": "backend-laravel/app/Models/LabMutationAction.php"
+    },
+    {
+      "model": "LabMutationCreditEvent",
+      "path": "backend-laravel/app/Models/LabMutationCreditEvent.php"
+    },
+    {
+      "model": "LabMutationResponseMap",
+      "path": "backend-laravel/app/Models/LabMutationResponseMap.php"
+    },
+    {
+      "model": "LabParentContextScore",
+      "path": "backend-laravel/app/Models/LabParentContextScore.php"
+    },
+    {
+      "model": "LabParentCounterfactual",
+      "path": "backend-laravel/app/Models/LabParentCounterfactual.php"
+    },
+    {
+      "model": "LabParentSelectionDecision",
+      "path": "backend-laravel/app/Models/LabParentSelectionDecision.php"
+    },
+    {
+      "model": "LabSkillZooEntry",
+      "path": "backend-laravel/app/Models/LabSkillZooEntry.php"
+    },
+    {
+      "model": "LabTemporalAblationRun",
+      "path": "backend-laravel/app/Models/LabTemporalAblationRun.php"
+    },
+    {
+      "model": "LabTrialLedger",
+      "path": "backend-laravel/app/Models/LabTrialLedger.php"
+    },
+    {
+      "model": "LearningProtocolBaseline",
+      "path": "backend-laravel/app/Models/LearningProtocolBaseline.php"
+    },
+    {
+      "model": "LearningProtocolEpochLink",
+      "path": "backend-laravel/app/Models/LearningProtocolEpochLink.php"
+    },
+    {
+      "model": "LearningRecoveryEvent",
+      "path": "backend-laravel/app/Models/LearningRecoveryEvent.php"
+    },
+    {
+      "model": "LighthouseVerticalLoopMonitorRun",
+      "path": "backend-laravel/app/Models/LighthouseVerticalLoopMonitorRun.php"
+    },
+    {
+      "model": "LocationAtlasEntry",
+      "path": "backend-laravel/app/Models/LocationAtlasEntry.php"
+    },
+    {
+      "model": "MarketCandleObservation",
+      "path": "backend-laravel/app/Models/MarketCandleObservation.php"
+    },
+    {
+      "model": "MarketDataSyncState",
+      "path": "backend-laravel/app/Models/MarketDataSyncState.php"
+    },
+    {
+      "model": "MarketDiscovery",
+      "path": "backend-laravel/app/Models/MarketDiscovery.php"
+    },
+    {
+      "model": "MarketDriftSnapshot",
+      "path": "backend-laravel/app/Models/MarketDriftSnapshot.php"
+    },
+    {
+      "model": "MarketGenome",
+      "path": "backend-laravel/app/Models/MarketGenome.php"
+    },
+    {
+      "model": "MarketHealthSample",
+      "path": "backend-laravel/app/Models/MarketHealthSample.php"
+    },
+    {
+      "model": "MarketMemory",
+      "path": "backend-laravel/app/Models/MarketMemory.php"
+    },
+    {
+      "model": "MarketProviderHealth",
+      "path": "backend-laravel/app/Models/MarketProviderHealth.php"
+    },
+    {
+      "model": "MarketSimilarityMatch",
+      "path": "backend-laravel/app/Models/MarketSimilarityMatch.php"
+    },
+    {
+      "model": "MarketSpecies",
+      "path": "backend-laravel/app/Models/MarketSpecies.php"
+    },
+    {
+      "model": "MarketSpeciesVersion",
+      "path": "backend-laravel/app/Models/MarketSpeciesVersion.php"
+    },
+    {
+      "model": "MarketStateProbability",
+      "path": "backend-laravel/app/Models/MarketStateProbability.php"
+    },
+    {
+      "model": "MarketStateSnapshot",
+      "path": "backend-laravel/app/Models/MarketStateSnapshot.php"
+    },
+    {
+      "model": "MarketSymbol",
+      "path": "backend-laravel/app/Models/MarketSymbol.php"
+    },
+    {
+      "model": "MarketTrainingArchive",
+      "path": "backend-laravel/app/Models/MarketTrainingArchive.php"
+    },
+    {
+      "model": "MarketTrainingCandle",
+      "path": "backend-laravel/app/Models/MarketTrainingCandle.php"
+    },
+    {
+      "model": "MarketVolumeObservation",
+      "path": "backend-laravel/app/Models/MarketVolumeObservation.php"
+    },
+    {
+      "model": "MetaAuditRun",
+      "path": "backend-laravel/app/Models/MetaAuditRun.php"
+    },
+    {
+      "model": "Mistake",
+      "path": "backend-laravel/app/Models/Mistake.php"
+    },
+    {
+      "model": "ModelMarketPerformance",
+      "path": "backend-laravel/app/Models/ModelMarketPerformance.php"
+    },
+    {
+      "model": "ModelVersion",
+      "path": "backend-laravel/app/Models/ModelVersion.php"
+    },
+    {
+      "model": "MtfAblationRun",
+      "path": "backend-laravel/app/Models/MtfAblationRun.php"
+    },
+    {
+      "model": "MtfAgentValidationRun",
+      "path": "backend-laravel/app/Models/MtfAgentValidationRun.php"
+    },
+    {
+      "model": "MtfPilotMonitorRun",
+      "path": "backend-laravel/app/Models/MtfPilotMonitorRun.php"
+    },
+    {
+      "model": "MtfPlaybookFrozenControlRun",
+      "path": "backend-laravel/app/Models/MtfPlaybookFrozenControlRun.php"
+    },
+    {
+      "model": "MtfStrategyResearchRun",
+      "path": "backend-laravel/app/Models/MtfStrategyResearchRun.php"
+    },
+    {
+      "model": "MutationMemory",
+      "path": "backend-laravel/app/Models/MutationMemory.php"
+    },
+    {
+      "model": "OpportunityFunnelEntry",
+      "path": "backend-laravel/app/Models/OpportunityFunnelEntry.php"
+    },
+    {
+      "model": "PaperConfidenceCalibration",
+      "path": "backend-laravel/app/Models/PaperConfidenceCalibration.php"
+    },
+    {
+      "model": "PaperExecutionEvent",
+      "path": "backend-laravel/app/Models/PaperExecutionEvent.php"
+    },
+    {
+      "model": "PaperFill",
+      "path": "backend-laravel/app/Models/PaperFill.php"
+    },
+    {
+      "model": "PaperMtfShadowObservation",
+      "path": "backend-laravel/app/Models/PaperMtfShadowObservation.php"
+    },
+    {
+      "model": "PaperOrder",
+      "path": "backend-laravel/app/Models/PaperOrder.php"
+    },
+    {
+      "model": "PaperSequentialEvidence",
+      "path": "backend-laravel/app/Models/PaperSequentialEvidence.php"
+    },
+    {
+      "model": "PaperSignal",
+      "path": "backend-laravel/app/Models/PaperSignal.php"
+    },
+    {
+      "model": "PaperSignalOutcome",
+      "path": "backend-laravel/app/Models/PaperSignalOutcome.php"
+    },
+    {
+      "model": "PaperSignalPassport",
+      "path": "backend-laravel/app/Models/PaperSignalPassport.php"
+    },
+    {
+      "model": "PaperTradingEvaluation",
+      "path": "backend-laravel/app/Models/PaperTradingEvaluation.php"
+    },
+    {
+      "model": "ParentCandidatePreparation",
+      "path": "backend-laravel/app/Models/ParentCandidatePreparation.php"
+    },
+    {
+      "model": "PlaybookComposition",
+      "path": "backend-laravel/app/Models/PlaybookComposition.php"
+    },
+    {
+      "model": "PlaybookMasteryLedgerEntry",
+      "path": "backend-laravel/app/Models/PlaybookMasteryLedgerEntry.php"
+    },
+    {
+      "model": "PlaybookValuePosterior",
+      "path": "backend-laravel/app/Models/PlaybookValuePosterior.php"
+    },
+    {
+      "model": "QuantLaw",
+      "path": "backend-laravel/app/Models/QuantLaw.php"
+    },
+    {
+      "model": "QuantLawCandidate",
+      "path": "backend-laravel/app/Models/QuantLawCandidate.php"
+    },
+    {
+      "model": "QuantLawConflict",
+      "path": "backend-laravel/app/Models/QuantLawConflict.php"
+    },
+    {
+      "model": "QuantLawDiscoveryRun",
+      "path": "backend-laravel/app/Models/QuantLawDiscoveryRun.php"
+    },
+    {
+      "model": "QuantLawEvidence",
+      "path": "backend-laravel/app/Models/QuantLawEvidence.php"
+    },
+    {
+      "model": "QuantLawEvolutionEvent",
+      "path": "backend-laravel/app/Models/QuantLawEvolutionEvent.php"
+    },
+    {
+      "model": "QuantLawGraphEdge",
+      "path": "backend-laravel/app/Models/QuantLawGraphEdge.php"
+    },
+    {
+      "model": "QuantTheory",
+      "path": "backend-laravel/app/Models/QuantTheory.php"
+    },
+    {
+      "model": "RealityExperiment",
+      "path": "backend-laravel/app/Models/RealityExperiment.php"
+    },
+    {
+      "model": "RealityScore",
+      "path": "backend-laravel/app/Models/RealityScore.php"
+    },
+    {
+      "model": "RealityValidationEvent",
+      "path": "backend-laravel/app/Models/RealityValidationEvent.php"
+    },
+    {
+      "model": "RealityVerificationRun",
+      "path": "backend-laravel/app/Models/RealityVerificationRun.php"
+    },
+    {
+      "model": "RegimeReservoirEntry",
+      "path": "backend-laravel/app/Models/RegimeReservoirEntry.php"
+    },
+    {
+      "model": "ResearchExperimentReceipt",
+      "path": "backend-laravel/app/Models/ResearchExperimentReceipt.php"
+    },
+    {
+      "model": "ResearchExperimentWorkItem",
+      "path": "backend-laravel/app/Models/ResearchExperimentWorkItem.php"
+    },
+    {
+      "model": "ResearchIdeaInboxEntry",
+      "path": "backend-laravel/app/Models/ResearchIdeaInboxEntry.php"
+    },
+    {
+      "model": "ResearchLoopDecision",
+      "path": "backend-laravel/app/Models/ResearchLoopDecision.php"
+    },
+    {
+      "model": "RiskHysteresisState",
+      "path": "backend-laravel/app/Models/RiskHysteresisState.php"
+    },
+    {
+      "model": "RiskSentinelDecision",
+      "path": "backend-laravel/app/Models/RiskSentinelDecision.php"
+    },
+    {
+      "model": "RouterDecision",
+      "path": "backend-laravel/app/Models/RouterDecision.php"
+    },
+    {
+      "model": "ScientistJournal",
+      "path": "backend-laravel/app/Models/ScientistJournal.php"
+    },
+    {
+      "model": "ScreeningLearningOutbox",
+      "path": "backend-laravel/app/Models/ScreeningLearningOutbox.php"
+    },
+    {
+      "model": "SealedHoldoutRelease",
+      "path": "backend-laravel/app/Models/SealedHoldoutRelease.php"
+    },
+    {
+      "model": "SelectionEvent",
+      "path": "backend-laravel/app/Models/SelectionEvent.php"
+    },
+    {
+      "model": "SelfCritique",
+      "path": "backend-laravel/app/Models/SelfCritique.php"
+    },
+    {
+      "model": "ServiceHealthCheck",
+      "path": "backend-laravel/app/Models/ServiceHealthCheck.php"
+    },
+    {
+      "model": "ShadowVetoObservation",
+      "path": "backend-laravel/app/Models/ShadowVetoObservation.php"
+    },
+    {
+      "model": "SignalMarketSnapshot",
+      "path": "backend-laravel/app/Models/SignalMarketSnapshot.php"
+    },
+    {
+      "model": "SkepticReport",
+      "path": "backend-laravel/app/Models/SkepticReport.php"
+    },
+    {
+      "model": "SmartDisciplineDecision",
+      "path": "backend-laravel/app/Models/SmartDisciplineDecision.php"
+    },
+    {
+      "model": "StrategyCurriculumContract",
+      "path": "backend-laravel/app/Models/StrategyCurriculumContract.php"
+    },
+    {
+      "model": "StrategyDnaProfile",
+      "path": "backend-laravel/app/Models/StrategyDnaProfile.php"
+    },
+    {
+      "model": "StrategyGenome",
+      "path": "backend-laravel/app/Models/StrategyGenome.php"
+    },
+    {
+      "model": "StrategyInnovationTrial",
+      "path": "backend-laravel/app/Models/StrategyInnovationTrial.php"
+    },
+    {
+      "model": "StrategyMasterPassport",
+      "path": "backend-laravel/app/Models/StrategyMasterPassport.php"
+    },
+    {
+      "model": "StrategyScore",
+      "path": "backend-laravel/app/Models/StrategyScore.php"
+    },
+    {
+      "model": "StrategySpeciesPerformance",
+      "path": "backend-laravel/app/Models/StrategySpeciesPerformance.php"
+    },
+    {
+      "model": "StrategySurvivalForecast",
+      "path": "backend-laravel/app/Models/StrategySurvivalForecast.php"
+    },
+    {
+      "model": "Symbol",
+      "path": "backend-laravel/app/Models/Symbol.php"
+    },
+    {
+      "model": "SymbolProfile",
+      "path": "backend-laravel/app/Models/SymbolProfile.php"
+    },
+    {
+      "model": "SystemEvent",
+      "path": "backend-laravel/app/Models/SystemEvent.php"
+    },
+    {
+      "model": "SystemLog",
+      "path": "backend-laravel/app/Models/SystemLog.php"
+    },
+    {
+      "model": "TheoryBattle",
+      "path": "backend-laravel/app/Models/TheoryBattle.php"
+    },
+    {
+      "model": "TheoryComponent",
+      "path": "backend-laravel/app/Models/TheoryComponent.php"
+    },
+    {
+      "model": "TheoryEvolutionEvent",
+      "path": "backend-laravel/app/Models/TheoryEvolutionEvent.php"
+    },
+    {
+      "model": "TheoryGenerationRun",
+      "path": "backend-laravel/app/Models/TheoryGenerationRun.php"
+    },
+    {
+      "model": "TheoryPrediction",
+      "path": "backend-laravel/app/Models/TheoryPrediction.php"
+    },
+    {
+      "model": "Trade",
+      "path": "backend-laravel/app/Models/Trade.php"
+    },
+    {
+      "model": "TradePathLaboratoryRun",
+      "path": "backend-laravel/app/Models/TradePathLaboratoryRun.php"
+    },
+    {
+      "model": "TradingInstrument",
+      "path": "backend-laravel/app/Models/TradingInstrument.php"
+    },
+    {
+      "model": "TrainingLog",
+      "path": "backend-laravel/app/Models/TrainingLog.php"
+    },
+    {
+      "model": "TrainingSession",
+      "path": "backend-laravel/app/Models/TrainingSession.php"
+    },
+    {
+      "model": "TransferMatrixEntry",
+      "path": "backend-laravel/app/Models/TransferMatrixEntry.php"
+    },
+    {
+      "model": "UnifiedQuantModel",
+      "path": "backend-laravel/app/Models/UnifiedQuantModel.php"
+    },
+    {
+      "model": "UniversalDriverRanking",
+      "path": "backend-laravel/app/Models/UniversalDriverRanking.php"
+    },
+    {
+      "model": "UnknownZone",
+      "path": "backend-laravel/app/Models/UnknownZone.php"
+    },
+    {
+      "model": "User",
+      "path": "backend-laravel/app/Models/User.php"
+    },
+    {
+      "model": "VetoPolicyEvaluation",
+      "path": "backend-laravel/app/Models/VetoPolicyEvaluation.php"
+    },
+    {
+      "model": "VolumeShadowExperiment",
+      "path": "backend-laravel/app/Models/VolumeShadowExperiment.php"
+    },
+    {
+      "model": "WinnerOnlyPyramidingLedgerEntry",
+      "path": "backend-laravel/app/Models/WinnerOnlyPyramidingLedgerEntry.php"
+    }
+  ]
+}

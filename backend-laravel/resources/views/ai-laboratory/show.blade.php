@@ -20,6 +20,19 @@
     </section>
 
     <article class="card" style="margin-top:14px;">
+        <h2 class="section-title">Autonomous generation proof</h2>
+        <table class="table"><tbody>
+            <tr><th>Current generation status</th><td><code>{{ $generation?->status ?? '-' }}</code></td></tr>
+            <tr><th>Live autonomy audit</th><td><strong>{{ strtoupper(data_get($autonomyAudit, 'state', 'unavailable')) }}</strong></td></tr>
+            <tr><th>Audit observed at</th><td>{{ data_get($autonomyAudit, 'observed_at', '-') }}</td></tr>
+            <tr><th>Latest sealed generation</th><td>{{ $latestAutonomyReceipt ? 'G'.$latestAutonomyReceipt->generation?->generation.' / '.strtoupper($latestAutonomyReceipt->state) : 'NONE' }}</td></tr>
+            <tr><th>Consecutive clean proof</th><td><strong>{{ strtoupper(data_get($autonomyStreak, 'status', 'unavailable')) }}</strong> ({{ data_get($autonomyStreak, 'observed', 0) }}/{{ data_get($autonomyStreak, 'required', 2) }})</td></tr>
+            <tr><th>Generation report snapshot</th><td>{{ $generationSnapshotStale ? 'STALE — current DB state changed after the report' : 'CURRENT' }}</td></tr>
+            <tr><th>Immutable autonomy receipt</th><td>{{ $autonomyReceipt ? strtoupper($autonomyReceipt->state).' / '.$autonomyReceipt->receipt_hash : 'NOT SEALED — successor proof or clean audit is still missing' }}</td></tr>
+        </tbody></table>
+    </article>
+
+    <article class="card" style="margin-top:14px;">
         <h2 class="section-title">Full replay funnel</h2>
         <table class="table"><thead><tr>
             @foreach(['generated', 'screened', 'diagnostic_replay', 'full_replay_eligible', 'full_evaluated', 'forward_validated', 'paper_eligible', 'paper_signals', 'closed_outcomes', 'calibrated', 'holdout_passed', 'champion'] as $stage)

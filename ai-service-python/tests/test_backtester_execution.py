@@ -9,9 +9,10 @@ from app.services.backtester import (
     _edge_context_admission,
     _edge_formation_academy_diagnostic,
     _entry_eligibility,
+    _instrument_contract_context_matches,
+    _instrument_owner_scope_allows,
     _instrument_runtime_report,
     _instrument_runtime_state,
-    _instrument_owner_scope_allows,
     _management_evidence_report,
     _proof_carrying_replay,
     _record_strategy_instrument_events,
@@ -103,6 +104,26 @@ def differential_identity_strategy(
 
 
 class BacktesterExecutionRegressionTest(unittest.TestCase):
+    def test_laravel_normal_volatility_scope_matches_runtime_label(self) -> None:
+        contract = {
+            "protocol": "instrument_runtime_activation_contract_v1",
+            "context": {
+                "compatible_regimes": [],
+                "forbidden_regimes": [],
+                "declared_context": {"regime": "trend_up", "volatility": "normal"},
+            },
+        }
+        self.assertTrue(
+            _instrument_contract_context_matches(
+                contract, {"regime": "trend_up", "volatility": "normal_volatility"}
+            )
+        )
+        self.assertFalse(
+            _instrument_contract_context_matches(
+                contract, {"regime": "trend_up", "volatility": "high_volatility"}
+            )
+        )
+
     def instrument_assignment(self, keys: list[str]) -> dict:
         return {
             "protocol": "lab_instrument_research_assignment_v2",
@@ -159,6 +180,13 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         observation = report["instruments"]["trend_pullback"]
 
         self.assertEqual(1, observation["activation_count"])
+        self.assertEqual(2, observation["evaluation_count"])
+        self.assertEqual(1, observation["abstain_count"])
+        self.assertEqual(0, observation["veto_count"])
+        self.assertEqual(
+            {"ABSTAIN": 1, "ALLOW_OR_MODIFY": 1},
+            observation["decision_effect_counts"],
+        )
         self.assertEqual(
             ["trend_up|normal_volatility|london|BUY"],
             observation["activated_context_keys"],
@@ -217,10 +245,70 @@ class BacktesterExecutionRegressionTest(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertEqual(["trend_pullback"], blocked)
         self.assertEqual(0, observation["activation_count"])
+        self.assertEqual("evaluated_veto", observation["status"])
+        self.assertEqual(1, observation["evaluation_count"])
+        self.assertEqual(1, observation["veto_count"])
+        self.assertTrue(observation["used_in_decision"])
+        self.assertEqual({"VETO": 1}, observation["decision_effect_counts"])
         self.assertEqual(
             ["trend_up|normal_volatility|asia|BUY"],
             observation["abstained_context_keys"],
         )
+
+    def test_tactic_owner_matches_the_exact_runtime_venue_phase(self) -> None:
+        assignment = self.instrument_assignment(["trend_pullback"])
+        assignment["strategy_family"] = "trend"
+        assignment["selected"][0]["activation_contract"]["context"][
+            "declared_context"
+        ] = {"session": "london", "venue_phase": "london_am_fix"}
+        exact = pd.Series(
+            {
+                "time": "2026-01-05T10:31:00Z",
+                "market_regime": "trend_up",
+                "volatility_regime": "normal_volatility",
+                "selected_specialist": "parent",
+            }
+        )
+
+        allowed, blocked = _instrument_owner_scope_allows(
+            _instrument_runtime_state(assignment), exact, "BUY", "parent"
+        )
+
+        self.assertTrue(allowed)
+        self.assertEqual([], blocked)
+
+        outside = exact.copy()
+        outside["time"] = "2026-01-05T11:00:00Z"
+        allowed, blocked = _instrument_owner_scope_allows(
+            _instrument_runtime_state(assignment), outside, "BUY", "parent"
+        )
+        self.assertFalse(allowed)
+        self.assertEqual(["trend_pullback"], blocked)
+
+    def test_placeholder_context_is_unresolved_not_an_executable_scope(self) -> None:
+        assignment = self.instrument_assignment(["trend_pullback"])
+        assignment["selected"][0]["activation_contract"]["context"][
+            "declared_context"
+        ] = {"session": "-", "volatility": "historical_mixed"}
+        state = _instrument_runtime_state(assignment)
+        row = pd.Series(
+            {
+                "time": "2026-06-02 02:00:00+00:00",
+                "market_regime": "trend_up",
+                "volatility_regime": "normal_volatility",
+                "selected_specialist": "parent",
+            }
+        )
+
+        allowed, blocked = _instrument_owner_scope_allows(state, row, "BUY", "parent")
+
+        self.assertTrue(allowed)
+        self.assertEqual([], blocked)
+        observation = _instrument_runtime_report(state)["instruments"][
+            "trend_pullback"
+        ]
+        self.assertEqual("not_reached", observation["status"])
+        self.assertEqual(0, observation["evaluation_count"])
 
     @patch("app.services.backtester.get_strategy", return_value=golden_strategy)
     def test_replay_emits_risk_and_exit_instrument_receipts_only_on_real_paths(

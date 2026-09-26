@@ -1,0 +1,534 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/project-map/project-map.mjs",
+  "generator_digest": "5e3498ce579265a81dc03c17970e0f3ff7be935b657ee7f6e9aab0a863ae6762",
+  "generated_at": "2026-09-26T17:30:50.184Z",
+  "source_digest": "1f612b3f350728963367ba99e61f8e4430e448e51b310bdf17f4bc0cde0173d2",
+  "source_file_count": 1364,
+  "git_head": "c47c026e454e780e818232cbb0f9cfd03a21debb",
+  "authority": "Navigation facts only. Real source code and tests remain authoritative.",
+  "modules": [
+    {
+      "id": "causal-learning",
+      "title": "Causal learning, conversion and composition settlement",
+      "purpose": "Turns bounded counterfactual research evidence into explicit causal classifications, immutable receipts and next-work decisions without confusing research signals with authority.",
+      "aliases": [
+        "causal",
+        "learning-loop",
+        "counterfactual",
+        "conversion",
+        "academy",
+        "composition",
+        "research-paper-epoch"
+      ],
+      "paths": [
+        "backend-laravel/app/Console/Commands/RunCausalGoldenWorldAcceptance.php",
+        "backend-laravel/app/Services/CanonicalLearningOutboxService.php",
+        "backend-laravel/app/Services/CausalArmParityService.php",
+        "backend-laravel/app/Services/CausalCapabilityLatticeService.php",
+        "backend-laravel/app/Services/CausalGoldenWorldHarnessService.php",
+        "backend-laravel/app/Services/CausalLearningCohortPlannerService.php",
+        "backend-laravel/app/Services/CausalLearningCohortService.php",
+        "backend-laravel/app/Services/CausalLearningConfirmationService.php",
+        "backend-laravel/app/Services/CausalFoldExecutionService.php",
+        "backend-laravel/app/Services/CausalRepairFrontierService.php",
+        "backend-laravel/app/Services/CausalSkillCreditBridgeService.php",
+        "backend-laravel/app/Services/CompositionLibrarySettlementService.php",
+        "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
+        "backend-laravel/app/Services/CompositionSettlementFanoutService.php",
+        "backend-laravel/app/Services/ContextContractV2Service.php",
+        "backend-laravel/app/Services/InstrumentInvocationLedgerService.php",
+        "backend-laravel/app/Services/FrozenControlScreeningAdmissionService.php",
+        "backend-laravel/app/Services/LabAgentEvaluationService.php",
+        "backend-laravel/app/Services/LabInstrumentResearchService.php",
+        "backend-laravel/app/Services/MutationResponseMapService.php",
+        "backend-laravel/app/Services/ParentAwareCreditService.php",
+        "backend-laravel/app/Services/ProfessionalTradingProgramCompilerService.php",
+        "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+        "backend-laravel/app/Services/ResearchPaperEpochContractService.php",
+        "backend-laravel/app/Services/CooperativeExperimentSettlementService.php",
+        "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
+        "backend-laravel/app/Services/ResearchKnowledgePortfolioService.php",
+        "backend-laravel/app/Services/SkillMentorService.php",
+        "backend-laravel/app/Jobs/RunCausalExperimentFoldJob.php",
+        "backend-laravel/app/Models/CausalFoldReceipt.php",
+        "backend-laravel/app/Models/LabLearningLanePair.php",
+        "backend-laravel/database/migrations/2026_09_22_120000_create_durable_causal_fold_and_autonomy_receipts.php",
+        "backend-laravel/database/migrations/2026_09_24_130000_expand_evolution_credit_status_for_compounding.php",
+        "ai-service-python/app/main.py",
+        "ai-service-python/app/services/walk_forward.py",
+        "ai-service-python/app/services/composition_runtime.py",
+        "ai-service-python/app/services/instrument_research.py"
+      ],
+      "entry_points": [
+        "CausalLearningCohortPlannerService",
+        "CausalLearningConfirmationService",
+        "CausalFoldExecutionService",
+        "CausalSkillCreditBridgeService",
+        "CanonicalLearningOutboxService",
+        "ResearchPaperEpochContractService",
+        "trading:causal-golden-worlds"
+      ],
+      "data_tables": [
+        "agent_learning_causal_experiments",
+        "causal_capability_escrows",
+        "causal_fold_receipts",
+        "lab_evolution_credit_events",
+        "lab_mutation_response_maps",
+        "canonical_learning_outbox",
+        "composition_settlements",
+        "composition_component_posteriors"
+      ],
+      "dependencies": [
+        "laboratory",
+        "confirmation-entry",
+        "laravel-python-contract",
+        "paper-execution"
+      ],
+      "invariants": [
+        "Work lifecycle, evidence validity, causal claim and authority are distinct dimensions.",
+        "Counterfactual arms retain frozen control, data and execution identity.",
+        "A causal confirmation passport resolves to the frozen control's exact executable family and any declared architecture and tactic before construction.",
+        "Terminal scientific uncertainty is classified explicitly rather than fabricated as success or causal rejection.",
+        "A receipt and next durable action are recorded atomically or not at all.",
+        "Autonomous causal confirmation executes one three-arm fold per retryable job; only a complete 9-of-9 receipt set may cross the aggregate settlement boundary.",
+        "A terminal triplet without three completed immutable screening receipts is invalidated before fold dispatch and grants no causal credit.",
+        "Composition credit requires explicit independently attested component evidence.",
+        "Post-v2 repair and causal-skill credits are issued atomically and idempotently only after the confirmed three-arm experiment, component escrow, exact pair and settlement agree; they grant no paper or parent authority.",
+        "An instrument assignment may be reused or credited only when its source strategy, tactic, risk and management still match the frozen composition passport.",
+        "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt; independent validation stays blocked without a fresh preregistered window."
+      ],
+      "tests": [
+        "backend-laravel/tests/Feature/CausalLearningLoopContractTest.php",
+        "backend-laravel/tests/Feature/MutationObservabilityTest.php",
+        "backend-laravel/tests/Feature/DurableAutonomyProofTest.php",
+        "backend-laravel/tests/Feature/FailureRepairAnchorTest.php",
+        "backend-laravel/tests/Feature/PostV2LearningProofTest.php",
+        "backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php",
+        "backend-laravel/tests/Feature/ProofFrontierActivationTest.php",
+        "ai-service-python/tests/test_composition_runtime.py",
+        "backend-laravel/tests/Feature/StrategyTacticRiskCompositionPlannerTest.php",
+        "backend-laravel/tests/Feature/LabInstrumentResearchLoopTest.php",
+        "ai-service-python/tests/test_composition_runtime.py",
+        "ai-service-python/tests/test_instrument_research.py",
+        "ai-service-python/tests/test_walk_forward.py",
+        "ai-service-python/tests/test_replay_cache_contract.py"
+      ],
+      "flows": [
+        ".project-map/modules/causal-learning/flows/causal-conversion.md"
+      ],
+      "source_file_count": 37,
+      "map": ".project-map/modules/causal-learning/module.yaml"
+    },
+    {
+      "id": "confirmation-entry",
+      "title": "Closed multi-timeframe confirmation and entry",
+      "purpose": "Compiles closed H4/H1/M15/M5 evidence into an explicit signal or WAIT decision with entry geometry and re-admission checks.",
+      "aliases": [
+        "mtf",
+        "confirmation",
+        "entry",
+        "trigger",
+        "wait",
+        "execution-geometry"
+      ],
+      "paths": [
+        "ai-service-python/app/strategies/confirmation_entry.py",
+        "ai-service-python/app/services/multitimeframe_stack.py",
+        "ai-service-python/app/services/backtester.py",
+        "backend-laravel/app/Services/ConfirmationEntryContractService.php",
+        "backend-laravel/app/Services/MtfPlaybookFrozenControlService.php",
+        "backend-laravel/app/Services/MultiTimeframePilotService.php"
+      ],
+      "entry_points": [
+        "confirmation_entry_mtf_v1",
+        "prepare_signal_snapshot",
+        "ConfirmationEntryContractService",
+        "PaperTradingExecutionService"
+      ],
+      "data_tables": [
+        "paper_signal_passports",
+        "paper_mtf_shadow_observations"
+      ],
+      "dependencies": [
+        "market-data",
+        "laravel-python-contract"
+      ],
+      "invariants": [
+        "Context, setup, confirmation and trigger are distinct gates.",
+        "Missing or invalid closed-stream evidence resolves to WAIT.",
+        "Fill-time admission rechecks executable geometry."
+      ],
+      "tests": [
+        "backend-laravel/tests/Feature/MtfPilotContractTest.php",
+        "backend-laravel/tests/Feature/MtfPlaybookFrozenControlServiceTest.php",
+        "backend-laravel/tests/Unit/ConfirmationEntryContractServiceTest.php",
+        "ai-service-python/tests/test_confirmation_entry_contract.py",
+        "ai-service-python/tests/test_closed_mtf_stack.py",
+        "ai-service-python/tests/test_backtester_execution.py"
+      ],
+      "flows": [
+        ".project-map/modules/confirmation-entry/flows/entry-decision.md"
+      ],
+      "source_file_count": 6,
+      "map": ".project-map/modules/confirmation-entry/module.yaml"
+    },
+    {
+      "id": "laboratory",
+      "title": "AI Laboratory and adaptive evolution",
+      "purpose": "Creates bounded research cohorts, evaluates evidence and governs candidate learning without granting unearned trading authority.",
+      "aliases": [
+        "research-evolution",
+        "lab",
+        "population",
+        "cohort",
+        "mutation"
+      ],
+      "paths": [
+        "backend-laravel/app/Domains/Laboratory",
+        "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
+        "backend-laravel/app/Console/Commands/DispatchFullLabValidation.php",
+        "backend-laravel/app/Http/Controllers/EvolutionLabController.php",
+        "backend-laravel/app/Services/LabPopulationService.php",
+        "backend-laravel/app/Services/LabAgentEvaluationService.php",
+        "backend-laravel/app/Services/StrategyTacticRiskCompositionPlannerService.php",
+        "backend-laravel/app/Services/TradeManagementLibraryService.php",
+        "backend-laravel/app/Services/LabLifecycleOrchestrator.php",
+        "backend-laravel/app/Services/LabDataEdgeAuditService.php",
+        "backend-laravel/app/Console/Commands/RecoverLabEvaluationErrors.php",
+        "backend-laravel/app/Services/GenerationAdmissionDecisionService.php",
+        "backend-laravel/app/Services/StrategyLibraryCompilerService.php",
+        "backend-laravel/app/Console/Commands/Trading/RunLifecycleCycle.php",
+        "backend-laravel/app/Services/LabGenerationTerminalBoundaryService.php",
+        "backend-laravel/app/Services/GenerationAutonomyAuditService.php",
+        "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+        "backend-laravel/app/Services/GenerationSnapshotAdmissionService.php",
+        "backend-laravel/app/Services/ProofFrontierService.php",
+        "backend-laravel/app/Services/ActivationFactorialContractService.php",
+        "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
+        "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+        "backend-laravel/app/Services/EvolutionGovernorService.php",
+        "backend-laravel/app/Services/AdaptiveParentFrontierService.php",
+        "backend-laravel/app/Services/MarketChampionService.php",
+        "backend-laravel/app/Services/LabAgentPreflightService.php",
+        "backend-laravel/app/Services/LearningVelocityGateService.php",
+        "backend-laravel/app/Jobs/EvaluateLabAgentJob.php",
+        "backend-laravel/app/Models/GenerationAutonomyReceipt.php",
+        "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
+        "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php"
+      ],
+      "entry_points": [
+        "LabPopulationService",
+        "LabLifecycleOrchestrator",
+        "EvaluateLabAgentJob",
+        "EvolutionGovernorService",
+        "trading:build-lab-generation",
+        "trading:dispatch-lab",
+        "trading:run-lifecycle-cycle",
+        "trading:audit-autonomy-streak"
+      ],
+      "data_tables": [
+        "ai_laboratories",
+        "lab_generations",
+        "lab_agents",
+        "lab_evaluation_runs",
+        "lab_lifecycle_events",
+        "lab_trial_ledger",
+        "lab_agent_parent_links",
+        "generation_autonomy_receipts"
+      ],
+      "dependencies": [
+        "market-data",
+        "laravel-python-contract"
+      ],
+      "invariants": [
+        "Construction and control identities remain attributable.",
+        "A frozen composition passport owns the final constructor family, architecture and tactic.",
+        "A cached instrument assignment is reusable only while every source component still equals the frozen passport; the composition ID alone is insufficient.",
+        "Causal source control and composition passport identities agree before arm construction; stale dependencies degrade only to non-credit diagnostic controls.",
+        "Ordinary XAUUSD cohorts retain H1 as storage identity but use a frozen M5/H4/H1/M15 replay bundle.",
+        "Autonomous lifecycle screening delegates to the canonical lab dispatcher; no direct evaluator queue path may bypass immutable snapshot and MTF admission.",
+        "Missing gate evidence cannot pass a lifecycle boundary.",
+        "Failed evidence is retained for diagnosis but is not promotion evidence.",
+        "Append-only failed queue rows block admission only while their agents belong to the current recovery lookback or active lineage head; older quarantines remain historical evidence and cannot starve every successor.",
+        "A clean generation becomes an autonomy proof only after an arbiter-owned successor is linked by an immutable receipt; acceptance requires two consecutive linked receipts.",
+        "A single-agent screening recovery rechecks the exact frozen-control admission before evaluator execution; an incomplete control can never yield an unpaired candidate screen result.",
+        "A data-edge audit authorizes at most its own immediate successor; inherited audit context is provenance, not repeatable generation admission.",
+        "A research-only activation factorial consumes four seats only when a terminal immutable source has a bounded strategy-to-tactic gap and two legal distinct interventions; its control is the source executable vector and prequeue admission attests C/A/B/A+B exact deltas."
+      ],
+      "tests": [
+        "backend-laravel/tests/Feature/AiLearningLaboratoryTest.php",
+        "backend-laravel/tests/Feature/CausalLearningLoopContractTest.php",
+        "backend-laravel/tests/Feature/ParentAwareEvolutionTest.php",
+        "backend-laravel/tests/Feature/LearningIntegrityRegressionTest.php",
+        "backend-laravel/tests/Feature/ImmutableLabEvidenceTest.php",
+        "backend-laravel/tests/Feature/DurableAutonomyProofTest.php",
+        "backend-laravel/tests/Feature/LearningDeadlockPreventionTest.php",
+        "backend-laravel/tests/Feature/StrategyTacticRiskCompositionPlannerTest.php",
+        "backend-laravel/tests/Feature/LabReplayRecoveryContractTest.php",
+        "backend-laravel/tests/Feature/RiskBoundedEvolutionTest.php",
+        "backend-laravel/tests/Feature/ProofFrontierActivationTest.php",
+        "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php"
+      ],
+      "flows": [
+        ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
+      ],
+      "source_file_count": 31,
+      "map": ".project-map/modules/laboratory/module.yaml"
+    },
+    {
+      "id": "laravel-python-contract",
+      "title": "Laravel and Python execution contract",
+      "purpose": "Preserves the versioned, canonical request, response and hash boundary between Laravel authority/persistence and FastAPI deterministic computation.",
+      "aliases": [
+        "fastapi",
+        "api-contract",
+        "execution-contract",
+        "replay-contract",
+        "hash",
+        "attestation"
+      ],
+      "paths": [
+        "backend-laravel/app/Services/LabAgentEvaluationService.php",
+        "backend-laravel/app/Services/ExecutionContractService.php",
+        "backend-laravel/app/Services/ConfirmationEntryContractService.php",
+        "backend-laravel/app/Services/MultiTimeframePilotService.php",
+        "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+        "ai-service-python/app/main.py",
+        "ai-service-python/app/schemas.py",
+        "ai-service-python/app/routers",
+        "ai-service-python/app/services/execution_contract.py",
+        "ai-service-python/app/services/composition_runtime.py",
+        "ai-service-python/app/services/market_adaptive_replay.py",
+        "ai-service-python/app/services/multitimeframe.py",
+        "ai-service-python/app/services/backtester.py",
+        "ai-service-python/app/services/volume_features.py",
+        "docs/ai-service-contract.md"
+      ],
+      "entry_points": [
+        "ExecutionContractService",
+        "ConfirmationEntryContractService",
+        "FastAPI /health",
+        "FastAPI /api/backtest/run",
+        "validate_composition_runtime_contract"
+      ],
+      "data_tables": [
+        "backtest_runs",
+        "paper_signals"
+      ],
+      "dependencies": [],
+      "invariants": [
+        "Laravel and Python must agree on required protocol and sealed identity fields.",
+        "HTTP success alone is never evidence attestation.",
+        "A mismatched hash fails at the owning boundary.",
+        "A declared composition must bind strategy, tactic, risk and management before replay starts.",
+        "One composition execution authority must also bind symbol, execution timeframe, dataset or MTF bundle, execution assumptions and the exact instrument assignment.",
+        "Instrument assignment source strategy, tactic, risk and management must equal the frozen passport, even if a stale assignment is internally hash-valid.",
+        "bound flags are not self-attesting; Python rechecks component identities, required typed nodes and aggregate hashes before replay.",
+        "consumed requires hash-valid in-loop receipts for every required node and one decision-ID witness spanning entry, MTF permission, risk, fill and managed trade close.",
+        "Typed pre-entry stage receipts are emitted where the signal is admitted or vetoed; final trace assembly may not reconstruct their predicates post hoc.",
+        "Legacy typed-program protocols cannot silently execute under a changed graph.",
+        "XAUUSD H1 is a laboratory storage identity; autonomous replay executes on M5 with one frozen H4/H1/M15 context bundle.",
+        "Historical volume context must come from the exact replay snapshot provenance, never from rolling/live coverage.",
+        "volume_lane=none crosses the boundary as not_requested and non-blocking."
+      ],
+      "tests": [
+        "backend-laravel/tests/Feature/MtfPilotContractTest.php",
+        "backend-laravel/tests/Unit/PaperConfirmationEntryTransportTest.php",
+        "backend-laravel/tests/Unit/ConfirmationEntryContractServiceTest.php",
+        "ai-service-python/tests/test_execution_contract.py",
+        "ai-service-python/tests/test_replay_cache_contract.py",
+        "ai-service-python/tests/test_backtester_execution.py",
+        "ai-service-python/tests/test_composition_runtime.py",
+        "ai-service-python/tests/test_multitimeframe.py",
+        "ai-service-python/tests/test_volume_features.py",
+        "backend-laravel/tests/Feature/HistoricalVolumeReplayContractTest.php"
+      ],
+      "flows": [
+        ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
+      ],
+      "source_file_count": 16,
+      "map": ".project-map/modules/laravel-python-contract/module.yaml"
+    },
+    {
+      "id": "market-data",
+      "title": "Market data continuity and canonical candles",
+      "purpose": "Owns canonical provider selection, candle persistence, gap detection and recovery state for research-safe market data.",
+      "aliases": [
+        "candles",
+        "provider",
+        "dukascopy",
+        "twelve-data",
+        "continuity",
+        "gap-recovery"
+      ],
+      "paths": [
+        "backend-laravel/app/Services/MarketData",
+        "backend-laravel/app/Services/LabDatasetExportService.php",
+        "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+        "backend-laravel/app/Services/MarketSessionCalendarService.php",
+        "backend-laravel/app/Models/MarketTrainingArchive.php",
+        "backend-laravel/app/Models/MarketTrainingCandle.php",
+        "backend-laravel/app/Models/MarketDataSyncState.php",
+        "backend-laravel/app/Models/Candle.php",
+        "ai-service-python/app/services/volume_features.py"
+      ],
+      "entry_points": [
+        "MarketDataContinuityService",
+        "MarketDataService",
+        "MarketDataController",
+        "trading:market-data-audit",
+        "LabDatasetExportService::ensureFoundationVolumeDataset",
+        "MultiTimeframeSnapshotService::forAgentOwnedConfirmationValidation"
+      ],
+      "data_tables": [
+        "candles",
+        "market_data_sync_states",
+        "market_training_archives",
+        "market_training_candles"
+      ],
+      "dependencies": [],
+      "invariants": [
+        "Only the configured canonical provider repairs canonical continuity.",
+        "Scheduled market closures are interpreted through the shared session calendar.",
+        "Incomplete continuity blocks affected new research construction.",
+        "Rolling/live volume coverage never attests a historical replay snapshot.",
+        "A volume-dependent historical replay requires a hash-bound provenance receipt and an explicit volume_available column in every consumed stream.",
+        "A no-volume lane is not a failed volume capability and reports not_requested."
+      ],
+      "tests": [
+        "backend-laravel/tests/Feature/MarketDataContinuityTest.php",
+        "backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php",
+        "backend-laravel/tests/Feature/TwelveDataMarketDataProviderTest.php",
+        "backend-laravel/tests/Feature/MarketSessionCalendarTest.php",
+        "backend-laravel/tests/Feature/HistoricalVolumeReplayContractTest.php",
+        "backend-laravel/tests/Feature/MtfAgentValidationSnapshotServiceTest.php"
+      ],
+      "flows": [
+        ".project-map/modules/market-data/flows/continuity-recovery.md"
+      ],
+      "source_file_count": 21,
+      "map": ".project-map/modules/market-data/module.yaml"
+    },
+    {
+      "id": "operations",
+      "title": "Runtime operations, scheduler and recovery",
+      "purpose": "Owns health observation, scheduler/queue recovery boundaries, operational readiness and safe runbook-guided remediation.",
+      "aliases": [
+        "scheduler",
+        "queue",
+        "health",
+        "redis",
+        "backup",
+        "recovery"
+      ],
+      "paths": [
+        "backend-laravel/app/Services/RuntimeMonitoringService.php",
+        "backend-laravel/app/Services/MarketHealthService.php",
+        "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+        "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
+        "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+        "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+        "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
+        "backend-laravel/app/Console/Commands/RunSystemHealthCheck.php",
+        "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+        "backend-laravel/app/Console/Commands/CheckMarketHealth.php",
+        "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
+        "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
+        "backend-laravel/scripts/install-autonomous-runtime-task.ps1",
+        "backend-laravel/scripts/supervise-laravel-runtime.ps1",
+        "backend-laravel/scripts/run-laravel-workers-hidden.ps1",
+        "docs/operations"
+      ],
+      "entry_points": [
+        "RunSystemHealthCheck",
+        "RunHeadlessScheduler",
+        "CheckMarketHealth",
+        "system:runtime-monitor",
+        "trading:run-research-loop",
+        "trading:audit-autonomy-streak"
+      ],
+      "data_tables": [
+        "research_loop_decisions",
+        "generation_autonomy_receipts"
+      ],
+      "dependencies": [],
+      "invariants": [
+        "A policy pause is reported distinctly from an operational failure.",
+        "Recovery cannot manufacture research, paper or promotion evidence.",
+        "Strict verification decides health after remediation.",
+        "An unchanged operational state hash cannot enqueue another arbiter child merely because the scheduler minute or the selected scheduler job's own queue residency changed.",
+        "An in-flight research-loop decision suppresses a successor only while the matching scheduled command's unique queue lock is live; a stale database status without that lock is fenced and cannot own work.",
+        "Actionable technical recovery at the terminal lineage head precedes drift or fresh-data generation writers; an exit-zero blocked generation command is not a completed writer."
+      ],
+      "tests": [
+        "backend-laravel/tests/Feature/RunHeadlessSchedulerTest.php",
+        "backend-laravel/tests/Feature/RuntimeMonitorTest.php",
+        "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+        "backend-laravel/tests/Feature/MarketHealthEngineTest.php",
+        "backend-laravel/tests/Feature/ResearchLoopArbiterTest.php",
+        "backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php"
+      ],
+      "flows": [
+        ".project-map/modules/operations/flows/health-and-recovery.md"
+      ],
+      "source_file_count": 12,
+      "map": ".project-map/modules/operations/module.yaml"
+    },
+    {
+      "id": "paper-execution",
+      "title": "Paper execution and process integrity",
+      "purpose": "Records paper signals, orders, fills and outcomes while enforcing risk and process gates without granting live-trading authority.",
+      "aliases": [
+        "paper-trading",
+        "paper-order",
+        "paper-signal",
+        "fill",
+        "smart-discipline",
+        "risk-sentinel"
+      ],
+      "paths": [
+        "backend-laravel/app/Services/PaperTradingExecutionService.php",
+        "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
+        "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+        "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+        "backend-laravel/app/Console/Commands/MonitorPaperTrading.php"
+      ],
+      "entry_points": [
+        "PaperTradingExecutionService",
+        "PaperExecutionStateMachineService",
+        "SmartDisciplineEngineService",
+        "trading:monitor-paper-trading"
+      ],
+      "data_tables": [
+        "paper_signals",
+        "paper_orders",
+        "paper_fills",
+        "paper_signal_outcomes",
+        "paper_execution_events",
+        "paper_authority_admissions"
+      ],
+      "dependencies": [
+        "confirmation-entry",
+        "laravel-python-contract",
+        "market-data"
+      ],
+      "invariants": [
+        "A changed or missing sealed contract cannot create a paper order.",
+        "NO_TRADE decisions are persisted evidence, not implicit errors.",
+        "Invalid process outcomes are quarantined from learning."
+      ],
+      "tests": [
+        "backend-laravel/tests/Feature/SmartDisciplineEngineTest.php",
+        "backend-laravel/tests/Feature/PaperConfidenceCalibrationTest.php",
+        "backend-laravel/tests/Feature/ExecutionRiskSentinelServiceTest.php",
+        "backend-laravel/tests/Unit/PaperConfirmationEntryTransportTest.php"
+      ],
+      "flows": [
+        ".project-map/modules/paper-execution/flows/paper-order-lifecycle.md"
+      ],
+      "source_file_count": 5,
+      "map": ".project-map/modules/paper-execution/module.yaml"
+    }
+  ]
+}

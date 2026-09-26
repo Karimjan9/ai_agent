@@ -161,6 +161,85 @@ class LearningIntegrityRegressionTest extends TestCase
         $this->assertTrue($status['allowed']);
     }
 
+    public function test_failed_job_from_generation_outside_recovery_lookback_is_historical_not_live_backlog(): void
+    {
+        [$lab, $historical] = $this->scope();
+        $model = ModelVersion::create([
+            'name' => 'historical-quarantine-job', 'strategy' => 'historical-quarantine-job',
+            'version' => 'v1', 'generation' => 1, 'status' => 'testing',
+            'parameters' => [], 'metadata' => [],
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $historical->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+        ]);
+        DB::table('failed_jobs')->insert([
+            'uuid' => 'historical-quarantine-job', 'connection' => 'redis', 'queue' => 'lab-screening',
+            'payload' => json_encode(['data' => ['command' => 's:10:"labAgentId";i:'.$agent->id.';']]),
+            'exception' => 'retry budget exhausted in historical generation', 'failed_at' => now(),
+        ]);
+        foreach ([2, 3, 4] as $number) {
+            LabGeneration::create([
+                'ai_laboratory_id' => $lab->id, 'generation' => $number, 'trigger_type' => 'test',
+                'population_size' => 1, 'status' => 'completed', 'trigger_context' => [],
+            ]);
+        }
+
+        $status = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertSame(0, data_get($status, 'learning_starvation.failed_lab_jobs'));
+        $this->assertNotContains($historical->id, data_get($status, 'learning_starvation.failed_job_generation_scope'));
+        $this->assertSame(1, DB::table('failed_jobs')->where('uuid', 'historical-quarantine-job')->count());
+        $this->assertFalse(data_get($status, 'health_layers.live_learning_backlog.active'));
+        $this->assertTrue($status['allowed']);
+
+        $admission = app(GenerationAdmissionDecisionService::class)->decide(
+            $lab,
+            LabGeneration::query()->where('ai_laboratory_id', $lab->id)->where('generation', 4)->firstOrFail(),
+            ['trigger' => 'market_drift'],
+            false,
+        );
+        $this->assertSame(GenerationAdmissionDecisionService::OPEN_NORMAL_GENERATION, $admission['decision']);
+        $this->assertTrue($admission['allowed']);
+    }
+
+    public function test_missing_generation_mtf_bundle_is_terminal_history_not_replay_recovery_debt(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $generation->update(['status' => 'technical_quarantine', 'completed_at' => now()]);
+        $model = ModelVersion::create([
+            'name' => 'mtf-admission-history', 'strategy' => 'mtf-admission-history',
+            'version' => 'v1', 'generation' => 1, 'status' => 'testing',
+            'parameters' => [], 'metadata' => [],
+        ]);
+        $agent = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine',
+            'decision_reason' => 'Strategy verdict withheld.', 'parameter_diff' => [],
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'missing-mtf-admission-run',
+            'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $model->id,
+            'phase' => 'screening',
+            'mode' => 'screen',
+            'status' => 'technical_error',
+            'error_class' => 'RuntimeException',
+            'error_message' => 'AUTONOMOUS_MTF_BUNDLE_MISSING',
+            'started_at' => now()->subSecond(),
+            'finished_at' => now(),
+        ]);
+
+        $status = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertSame(0, $status['technical_recovery_agents']);
+        $this->assertNotSame('blocked_technical_recovery', $status['status']);
+        $this->assertSame(0, data_get($status, 'observations.0.technical_agents'));
+    }
+
     public function test_learning_confirmation_consumes_dispatch_learning_without_bypassing_other_blocks(): void
     {
         [$lab, $generation] = $this->scope();
@@ -363,6 +442,57 @@ class LearningIntegrityRegressionTest extends TestCase
         $this->assertSame('OPEN_EVIDENCE_RUNS_REMAIN', $result['reason_code']);
         $this->assertSame('screening', $generation->fresh()->status);
         $this->assertNull($generation->fresh()->completed_at);
+    }
+
+    public function test_terminal_full_validation_boundary_closes_with_an_honest_technical_disposition(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $generation->update(['status' => 'full_validation', 'completed_at' => null]);
+        $screenedModel = ModelVersion::create(['name' => 'full-boundary-screened', 'strategy' => 'full-boundary-screened', 'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+        $technicalModel = ModelVersion::create(['name' => 'full-boundary-technical', 'strategy' => 'full-boundary-technical', 'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+        LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $screenedModel->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => []]);
+        $technical = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $technicalModel->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => []]);
+
+        $this->mock(LabQueueJobInspector::class, function ($mock): void {
+            $mock->shouldReceive('generationQueueBacklog')->andReturn([
+                'backend' => 'redis', 'available' => true, 'total' => 0, 'queues' => [], 'rows' => [],
+            ]);
+        });
+
+        $result = app(LabGenerationTerminalBoundaryService::class)->closeIfTerminal($generation);
+        $fresh = $generation->fresh();
+
+        $this->assertTrue($result['closed']);
+        $this->assertSame('TERMINAL_FULL_VALIDATION_BOUNDARY_REPAIRED', $result['reason_code']);
+        $this->assertSame('technical_quarantine', $fresh->status);
+        $this->assertNotNull($fresh->completed_at);
+        $this->assertSame([$technical->id], data_get($fresh->trigger_context, 'full_validation_terminal.technical_agent_ids'));
+        $this->assertSame('full_validation', data_get($fresh->trigger_context, 'generation_terminal_recovery.recovered_from_status'));
+        $this->assertFalse((bool) data_get($fresh->trigger_context, 'generation_terminal_recovery.promotion_evidence', true));
+    }
+
+    public function test_terminal_full_validation_boundary_closes_clean_terminal_work_as_completed(): void
+    {
+        [$lab, $generation] = $this->scope();
+        $generation->update(['status' => 'full_validation', 'completed_at' => null]);
+        $model = ModelVersion::create(['name' => 'full-boundary-clean', 'strategy' => 'full-boundary-clean', 'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+        LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => []]);
+
+        $this->mock(LabQueueJobInspector::class, function ($mock): void {
+            $mock->shouldReceive('generationQueueBacklog')->andReturn([
+                'backend' => 'redis', 'available' => true, 'total' => 0, 'queues' => [], 'rows' => [],
+            ]);
+        });
+
+        $result = app(LabGenerationTerminalBoundaryService::class)->closeIfTerminal($generation);
+        $fresh = $generation->fresh();
+
+        $this->assertTrue($result['closed']);
+        $this->assertSame('TERMINAL_FULL_VALIDATION_BOUNDARY_REPAIRED', $result['reason_code']);
+        $this->assertSame('completed', $fresh->status);
+        $this->assertNotNull($fresh->completed_at);
+        $this->assertSame([], data_get($fresh->trigger_context, 'full_validation_terminal.technical_agent_ids'));
+        $this->assertFalse((bool) data_get($fresh->trigger_context, 'full_validation_terminal.promotion_evidence', true));
     }
 
     public function test_terminal_screening_boundary_waits_for_generation_owned_learning_projection(): void

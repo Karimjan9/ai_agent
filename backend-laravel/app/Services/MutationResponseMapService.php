@@ -467,7 +467,7 @@ class MutationResponseMapService
             'screening_survival', 'window_survival', 'monthly_passport', 'pf_attribution',
             'stress_test', 'opportunity_recall', 'opportunity_metrics',
             'regime_performance', 'robustness_matrix', 'certified_coverage_passport',
-            'instrument_research_trace', 'statistical_evidence',
+            'instrument_research_trace', 'composition_runtime_trace', 'statistical_evidence',
             'monte_carlo', 'data_manifest', 'execution_contract',
         ])->all();
 

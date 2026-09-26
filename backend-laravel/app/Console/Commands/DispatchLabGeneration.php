@@ -6,6 +6,7 @@ use App\Jobs\EvaluateLabScreeningBatchJob;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use App\Models\LabGeneration;
 use App\Services\CandidateHandoffService;
 use App\Services\CausalLearningCohortService;
 use App\Services\FrozenControlScreeningAdmissionService;
@@ -21,6 +22,7 @@ use App\Services\LearningEvidenceGate;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\LearningTechnicalCircuitBreakerService;
 use App\Services\MarketData\MarketDataContinuityService;
+use App\Services\MultiTimeframeSnapshotService;
 use App\Services\ResearchAllocationPolicyService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Console\Command;
@@ -33,7 +35,7 @@ class DispatchLabGeneration extends Command
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
-    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LearningTechnicalCircuitBreakerService $technicalBreaker, LearningEvidenceGate $evidenceGate, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext, GenerationSnapshotAdmissionService $snapshotAdmission, GenerationConstructionAdmissionService $constructionAdmission): int
+    public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MultiTimeframeSnapshotService $mtfSnapshots, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LearningTechnicalCircuitBreakerService $technicalBreaker, LearningEvidenceGate $evidenceGate, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext, GenerationSnapshotAdmissionService $snapshotAdmission, GenerationConstructionAdmissionService $constructionAdmission): int
     {
         $populations->ensureLaboratories();
         $controlledRescue = (bool) $this->option('controlled-rescue');
@@ -531,7 +533,15 @@ class DispatchLabGeneration extends Command
                 // A failed check leaves the generation draft/blocked instead of
                 // allowing a paper candle to influence evolutionary screening.
                 $datasets->assertGenerationDataPartition($generation, $foundationSnapshot, $rollingSnapshot);
-                if ($timeframe === 'M15') {
+                if ($symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
+                    && $timeframe === strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'))) {
+                    $generation = $this->sealAutonomousMtfRuntime(
+                        $generation,
+                        $symbol,
+                        $mtfSnapshots,
+                        $generationContext,
+                    );
+                } elseif ($timeframe === 'M15') {
                     // M15 entries are evaluated against one immutable H1 regime
                     // snapshot whose last candle is already closed. This keeps
                     // screening reproducible and prevents a later open H1 candle
@@ -655,6 +665,47 @@ class DispatchLabGeneration extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * H1 is only the laboratory identity. Freeze the executable organism
+     * before the first queue job so screening and full replay consume the
+     * same M5 stream and the same closed H4/H1/M15 context files.
+     */
+    private function sealAutonomousMtfRuntime(
+        LabGeneration $generation,
+        string $symbol,
+        MultiTimeframeSnapshotService $mtfSnapshots,
+        LabGenerationContextService $generationContext,
+    ): LabGeneration {
+        $existingManifest = (array) data_get($generation->trigger_context, 'mtf_bundle_manifest', []);
+        $bundle = $existingManifest !== []
+            ? $mtfSnapshots->restoreAgentOwnedConfirmationValidationBundle($existingManifest)
+            : $mtfSnapshots->forAgentOwnedConfirmationValidation($symbol);
+
+        return $generationContext->update(
+            $generation,
+            function (array $context) use ($bundle): array {
+                $existingHash = (string) data_get($context, 'mtf_bundle_hash', '');
+                if ($existingHash !== '' && ! hash_equals($existingHash, (string) $bundle['bundle_hash'])) {
+                    throw new \RuntimeException('Generation MTF bundle identity changed before dispatch.');
+                }
+
+                $context['mtf_bundle_hash'] = (string) $bundle['bundle_hash'];
+                $context['mtf_bundle_manifest'] = (array) $bundle['manifest'];
+                $context['mtf_runtime_contract'] = [
+                    'protocol' => 'autonomous_generation_closed_mtf_v1',
+                    'laboratory_storage_timeframe' => strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1')),
+                    'execution_timeframe' => strtoupper((string) config('services.xauusd_organism.execution_timeframe', 'M5')),
+                    'context_timeframes' => ['H4', 'H1', 'M15'],
+                    'bundle_hash' => (string) $bundle['bundle_hash'],
+                    'status' => 'sealed',
+                    'promotion_evidence' => false,
+                ];
+
+                return $context;
+            },
+        );
     }
 
     private function screeningDatasetContract(LabAgent $agent): string

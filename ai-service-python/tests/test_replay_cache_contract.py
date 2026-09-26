@@ -7,6 +7,7 @@ from unittest.mock import patch
 from app.main import (
     _bounded_replay_seconds,
     _candidate_cache_payload,
+    _candidate_scoped_contract,
     _dataset_dependency_manifest,
     _latest_replay_checkpoint,
     _run_all_backtests_sync,
@@ -18,6 +19,26 @@ from app.services.execution_contract import execution_contract_metadata
 
 
 class ReplayCacheContractTest(unittest.TestCase):
+    def test_candidate_contract_prefers_lab_agent_identity_when_strategy_labels_collide(self):
+        contracts = {
+            "41": {"role": "memory_guided"},
+            "42": {"role": "blinded_counterfactual"},
+            "shared-strategy": {"role": "legacy-fallback"},
+        }
+
+        self.assertEqual(
+            "memory_guided",
+            _candidate_scoped_contract(contracts, "41", "shared-strategy")["role"],
+        )
+        self.assertEqual(
+            "blinded_counterfactual",
+            _candidate_scoped_contract(contracts, "42", "shared-strategy")["role"],
+        )
+        self.assertEqual(
+            "legacy-fallback",
+            _candidate_scoped_contract(contracts, "99", "shared-strategy")["role"],
+        )
+
     def test_checkpoint_is_atomic_small_and_marks_no_promotion_evidence(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             "os.environ", {"AI_REPLAY_CHECKPOINT_DIR": directory}, clear=False
@@ -105,6 +126,30 @@ class ReplayCacheContractTest(unittest.TestCase):
             self.assertEqual(900, _bounded_replay_seconds(payload, "run_all"))
         with patch.dict("os.environ", {"AI_REPLAY_CAUSAL_HARD_TIMEOUT_SECONDS": "360"}, clear=False):
             self.assertEqual(360, _bounded_replay_seconds(payload, "run_all"))
+
+    def test_durable_causal_fold_budget_covers_three_bounded_arms(self):
+        payload = SimpleBacktestRequest(
+            evaluation_mode="replay",
+            policy_context={
+                "learning_confirmation_contracts": {
+                    "guided": {
+                        "protocol": "bounded_cold_start_learning_confirmation_v1",
+                        "execution_mode": "durable_single_fold_job",
+                        "per_fold_budget_seconds": 180,
+                        "admitted": True,
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(720, _bounded_replay_seconds(payload, "run_all"))
+        with patch.dict("os.environ", {"AI_REPLAY_CAUSAL_FOLD_HARD_TIMEOUT_SECONDS": "5000"}, clear=False):
+            self.assertEqual(900, _bounded_replay_seconds(payload, "run_all"))
+        with patch.dict("os.environ", {"AI_REPLAY_CAUSAL_FOLD_HARD_TIMEOUT_SECONDS": "240"}, clear=False):
+            self.assertEqual(720, _bounded_replay_seconds(payload, "run_all"))
+
+        payload.policy_context["learning_confirmation_contracts"]["guided"]["per_fold_budget_seconds"] = 240
+        self.assertEqual(900, _bounded_replay_seconds(payload, "run_all"))
 
     def test_skill_cartridge_confirmation_uses_the_same_bounded_research_lane(self):
         payload = SimpleBacktestRequest(

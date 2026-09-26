@@ -64,6 +64,26 @@ class LabLearningLanePair extends Model
      */
     public function isVerifiedControlPair(): bool
     {
+        // Reject legacy/unsealed rows before hydrating two agents and their
+        // large model metadata graphs. LearningVelocityGate evaluates this
+        // predicate across historical pairs; loading relations first turned
+        // an indexed structural rejection into thousands of N+1 queries and
+        // could hold the autonomous arbiter for several minutes.
+        if ((string) $this->pair_integrity_status !== 'verified'
+            || ! (bool) $this->same_generation
+            || (string) $this->baseline_source !== 'control'
+            || (int) $this->lab_generation_id <= 0
+            || (int) $this->control_agent_id <= 0
+            || (int) $this->control_response_map_id <= 0
+            || ! filled($this->candidate_data_hash)
+            || ! filled($this->control_data_hash)
+            || ! filled($this->candidate_execution_hash)
+            || ! filled($this->control_execution_hash)
+            || ! hash_equals((string) $this->candidate_data_hash, (string) $this->control_data_hash)
+            || ! hash_equals((string) $this->candidate_execution_hash, (string) $this->control_execution_hash)) {
+            return false;
+        }
+
         $this->loadMissing([
             'controlResponseMap',
             'candidateAgent.modelVersion',
@@ -72,24 +92,12 @@ class LabLearningLanePair extends Model
         $control = $this->controlResponseMap;
         $contract = (array) data_get($control?->metadata, 'control_contract', []);
 
-        return (string) $this->pair_integrity_status === 'verified'
-            && (bool) $this->same_generation
-            && (string) $this->baseline_source === 'control'
-            && (int) $this->lab_generation_id > 0
-            && (int) $this->control_agent_id > 0
-            && (int) $this->control_response_map_id > 0
-            && $control !== null
+        return $control !== null
             && (string) $control->status === 'control'
             && (string) data_get($contract, 'protocol') === 'frozen_control_v2'
             && data_get($contract, 'control_only') === true
             && (string) data_get($contract, 'role') === 'control'
             && (int) data_get($contract, 'generation_id') === (int) $this->lab_generation_id
-            && filled($this->candidate_data_hash)
-            && filled($this->control_data_hash)
-            && filled($this->candidate_execution_hash)
-            && filled($this->control_execution_hash)
-            && hash_equals((string) $this->candidate_data_hash, (string) $this->control_data_hash)
-            && hash_equals((string) $this->candidate_execution_hash, (string) $this->control_execution_hash)
             && hash_equals((string) $this->control_data_hash, (string) data_get($contract, 'data_hash'))
             && hash_equals((string) $this->control_execution_hash, (string) data_get($contract, 'execution_hash'))
             && $this->candidateAgent !== null

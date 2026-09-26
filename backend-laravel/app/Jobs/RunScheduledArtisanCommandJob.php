@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\ResearchLoopDecision;
 use App\Services\CanonicalResearchLanePriorityService;
+use App\Services\GenerationAutonomyReceiptService;
 use App\Services\ScheduledArtisanProcessRunnerService;
 use App\Services\ScheduledCommandOutcomeClassifierService;
 use Illuminate\Bus\Queueable;
@@ -239,9 +240,28 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
                 throw new RuntimeException("Scheduled command {$this->command} returned exit code {$exitCode}: ".substr($output, 0, 1000));
             }
             Cache::put($key, $this->status((string) $outcome['status'], $started, $output, $outcome), now()->addDay());
-            $this->transitionResearchLoopDecision(
-                (string) ($outcome['status'] ?? '') === 'completed' ? 'completed' : 'deferred'
-            );
+            $decisionStatus = (string) ($outcome['status'] ?? '') === 'completed' ? 'completed' : 'deferred';
+            $this->transitionResearchLoopDecision($decisionStatus);
+            if ($decisionStatus === 'completed' && $this->researchLoopDecisionId) {
+                try {
+                    $decision = ResearchLoopDecision::query()->find($this->researchLoopDecisionId);
+                    if ($decision) {
+                        app(GenerationAutonomyReceiptService::class)
+                            ->recordSuccessorDecision($decision);
+                    }
+                } catch (\Throwable $receiptError) {
+                    // The command outcome remains authoritative. A failed
+                    // autonomy seal is independently retried and must not
+                    // rewrite or re-run a completed constructor decision.
+                    report($receiptError);
+                    try {
+                        SealGenerationAutonomyReceiptJob::dispatch((int) $this->researchLoopDecisionId)
+                            ->delay(now()->addSeconds(15));
+                    } catch (\Throwable $dispatchError) {
+                        report($dispatchError);
+                    }
+                }
+            }
             if ($exitCode !== 0) {
                 Log::notice('Isolated scheduled Artisan command reached an expected fail-closed outcome.', [
                     'command' => $this->command,

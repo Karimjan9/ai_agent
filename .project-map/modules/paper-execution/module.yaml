@@ -1,0 +1,47 @@
+module: paper-execution
+title: Paper execution and process integrity
+purpose: Records paper signals, orders, fills and outcomes while enforcing risk and process gates without granting live-trading authority.
+aliases:
+  - paper-trading
+  - paper-order
+  - paper-signal
+  - fill
+  - smart-discipline
+  - risk-sentinel
+paths:
+  - backend-laravel/app/Services/PaperTradingExecutionService.php
+  - backend-laravel/app/Services/PaperExecutionStateMachineService.php
+  - backend-laravel/app/Services/SmartDisciplineEngineService.php
+  - backend-laravel/app/Services/ExecutionRiskSentinelService.php
+  - backend-laravel/app/Console/Commands/MonitorPaperTrading.php
+entry_points:
+  - PaperTradingExecutionService
+  - PaperExecutionStateMachineService
+  - SmartDisciplineEngineService
+  - trading:monitor-paper-trading
+data_tables:
+  - paper_signals
+  - paper_orders
+  - paper_fills
+  - paper_signal_outcomes
+  - paper_execution_events
+  - paper_authority_admissions
+dependencies:
+  - confirmation-entry
+  - laravel-python-contract
+  - market-data
+invariants:
+  - A changed or missing sealed contract cannot create a paper order.
+  - NO_TRADE decisions are persisted evidence, not implicit errors.
+  - Invalid process outcomes are quarantined from learning.
+flows:
+  - flows/paper-order-lifecycle.md
+docs:
+  - idea.md
+  - states.md
+  - history.md
+tests:
+  - backend-laravel/tests/Feature/SmartDisciplineEngineTest.php
+  - backend-laravel/tests/Feature/PaperConfidenceCalibrationTest.php
+  - backend-laravel/tests/Feature/ExecutionRiskSentinelServiceTest.php
+  - backend-laravel/tests/Unit/PaperConfirmationEntryTransportTest.php

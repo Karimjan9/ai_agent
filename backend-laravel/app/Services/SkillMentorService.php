@@ -58,15 +58,31 @@ class SkillMentorService
         $changedGenes = array_keys((array) $agent->parameter_diff);
         $singleGeneCredit = count($changedGenes) === 1;
         $verification = (array) data_get($result, 'verified_mutation_skill', []);
+        $previousMentor = (array) data_get($metadata, 'skill_mentor', []);
+        // A later economic/forward receipt is not required to repeat the
+        // already sealed causal-window counts. Preserve the strongest
+        // verified mentor evidence instead of demoting accumulated knowledge
+        // when the new receipt only reports the confirmation status.
         $mentorContract = app(CausalSkillCompilerService::class)->mentorContract([
-            'independent_windows' => data_get($verification, 'independent_forward_windows.independent_windows', data_get($verification, 'required_windows', 0)),
-            'positive_windows' => data_get($verification, 'independent_forward_windows.positive_windows', data_get($verification, 'minimum_positive_windows', 0)),
+            'independent_windows' => max(
+                (int) data_get($verification, 'independent_forward_windows.independent_windows', data_get($verification, 'required_windows', 0)),
+                (int) data_get($previousMentor, 'mentor_contract.independent_windows', 0),
+            ),
+            'positive_windows' => max(
+                (int) data_get($verification, 'independent_forward_windows.positive_windows', data_get($verification, 'minimum_positive_windows', 0)),
+                (int) data_get($previousMentor, 'mentor_contract.positive_windows', 0),
+            ),
         ]);
         $skillConfirmed = $singleGeneCredit
             && data_get($verification, 'status') === 'confirmed'
             && data_get($mentorContract, 'status') === 'confirmed_shadow_mentor';
         $researchOnly = in_array((string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', '')), ['frozen_control', 'architecture_escape'], true);
         $decisionPassed = $forwardDecision && data_get($forwardDecision, 'decision') === 'passed';
+        $prospectivePaperPassed = app(PaperAuthorityAdmissionService::class)->championEligible(
+            $agent->modelVersion,
+            $performance->symbol,
+            $performance->timeframe,
+        );
         $economicRequirements = [
             // Reaching this normal full-replay settlement is itself downstream
             // of screening. Learning-lane projections remain explicit because
@@ -78,13 +94,14 @@ class SkillMentorService
                 && filled(data_get($result, 'evidence_run_id'))
                 && ! (bool) data_get($result, 'is_overfit', true),
             'positive_absolute_settlement' => $this->positiveAbsoluteSettlement($result),
-            'forward_or_paper_evidence' => $decisionPassed
-                || in_array((string) $performance->status, ['forward_validated', 'paper', 'champion'], true),
-            'source' => 'immutable_full_replay_and_forward_gate',
+            'forward_or_paper_evidence' => $prospectivePaperPassed,
+            'source' => $prospectivePaperPassed
+                ? 'immutable_2026_paper_epoch'
+                : 'immutable_full_replay_awaiting_2026_paper',
             'promotion_evidence' => false,
         ];
         $learningParentEligible = ! $learningLane || $this->learningParentEligible($metadata, $verification);
-        $fullParent = ! $control && $decisionPassed && $learningParentEligible
+        $fullParent = ! $control && $decisionPassed && $prospectivePaperPassed && $learningParentEligible
             && $this->fullParentPassport($agent, $performance, $result);
         $stage = $researchOnly
             ? ((string) data_get($metadata, 'repair_anchor.sibling_kind', data_get($metadata, 'repair_anchor_sibling.kind', '')) === 'architecture_escape'
@@ -183,6 +200,49 @@ class SkillMentorService
         );
 
         return $mentor;
+    }
+
+    /** Finalize the economic rung only after canonical 2026 paper evidence. */
+    public function recordPaperOutcome(ModelMarketPerformance $performance, array $metrics, array $paperAuthority): array
+    {
+        if (data_get($paperAuthority, 'status') !== 'e4_evidence_ready') {
+            return ['protocol' => self::PROTOCOL, 'status' => 'paper_authority_withheld', 'promotion_evidence' => false];
+        }
+        $agent = LabAgent::query()->with(['modelVersion', 'generation'])
+            ->where('model_version_id', $performance->model_version_id)->latest('id')->first();
+        if (! $agent || ! $agent->modelVersion) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'paper_agent_missing', 'promotion_evidence' => false];
+        }
+        $credit = app(ParentAwareCreditService::class)->recordPaperPerformance(
+            $agent,
+            $performance,
+            $metrics,
+            $paperAuthority,
+        );
+        if (data_get($credit, 'event_type') !== 'performance_credit') {
+            return ['protocol' => self::PROTOCOL, 'status' => 'paper_performance_credit_withheld',
+                'credit' => $credit, 'promotion_evidence' => false];
+        }
+        $metadata = (array) $agent->modelVersion->metadata;
+        $requirements = (array) data_get($metadata, 'skill_mentor.economic_parent_requirements', []);
+        $requirements['forward_or_paper_evidence'] = true;
+        $requirements['source'] = 'immutable_2026_paper_epoch';
+        data_set($metadata, 'skill_mentor.economic_parent_requirements', $requirements);
+        data_set($metadata, 'skill_mentor.paper_authority', $paperAuthority);
+        $agent->modelVersion->update(['metadata' => $metadata]);
+        $authority = app(EvolutionaryAuthorityFoundryService::class)->refreshAuthority(
+            $agent->modelVersion->fresh(),
+            $agent->fresh(['modelVersion', 'generation']),
+            [
+                'passed' => true,
+                'elite_passport' => 'passed',
+                'economic_parent_requirements' => $requirements,
+                'paper_authority' => $paperAuthority,
+            ],
+        );
+
+        return ['protocol' => self::PROTOCOL, 'status' => 'paper_performance_recorded',
+            'credit' => $credit, 'evolutionary_authority' => $authority, 'promotion_evidence' => false];
     }
 
     /** @return array<string, mixed>|null */

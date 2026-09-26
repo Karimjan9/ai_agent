@@ -1,7 +1,20 @@
 import hashlib
 import json
 
-from app.services.instrument_research import build_instrument_research_trace
+from app.services.instrument_research import (
+    _context_matches,
+    build_instrument_research_trace,
+)
+
+
+def test_snapshot_volatility_label_matches_runtime_volatility_without_widening_scope():
+    boundary = {"declared_context": {"regime": "trend_up", "volatility": "normal"}}
+    assert _context_matches(
+        boundary, {"regime": "trend_up", "volatility": "normal_volatility"}
+    )
+    assert not _context_matches(
+        boundary, {"regime": "trend_up", "volatility": "high_volatility"}
+    )
 
 
 def _hash(value):
@@ -46,16 +59,30 @@ def _activation(
     }
 
 
-def _runtime(assignment, activated=None, abstained=None):
+def _runtime(assignment, activated=None, abstained=None, vetoed=None):
     activated = dict(activated or {})
     abstained = dict(abstained or {})
+    vetoed = dict(vetoed or {})
     instruments = {}
     for selected in assignment.get("selected", []):
         key = selected["instrument_key"]
         contexts = list(activated.get(key, []))
+        abstained_contexts = list(abstained.get(key, []))
+        vetoed_contexts = list(vetoed.get(key, []))
+        evaluated_contexts = contexts + abstained_contexts + vetoed_contexts
+        status = (
+            "activated"
+            if contexts
+            else ("evaluated_veto" if vetoed_contexts else (
+                "evaluated_abstain" if abstained_contexts else "not_reached"
+            ))
+        )
         instruments[key] = {
-            "status": "activated" if contexts else "not_activated",
+            "status": status,
             "activation_count": len(contexts),
+            "evaluation_count": len(evaluated_contexts),
+            "veto_count": len(vetoed_contexts),
+            "abstain_count": len(abstained_contexts),
             "event_sources": {"exact_runtime_event": len(contexts)} if contexts else {},
             "activated_context_keys": contexts,
             "context_event_counts": {context_key: 1 for context_key in contexts},
@@ -68,8 +95,30 @@ def _runtime(assignment, activated=None, abstained=None):
                 }
                 for context_key in contexts
             },
-            "abstained_context_keys": list(abstained.get(key, [])),
+            "evaluated_contexts": {
+                context_key: {
+                    "regime": context_key.split("|")[0],
+                    "volatility": context_key.split("|")[1],
+                    "session": context_key.split("|")[2],
+                    "direction": context_key.split("|")[3],
+                }
+                for context_key in evaluated_contexts
+            },
+            "decision_effect_counts": {
+                effect: count
+                for effect, count in {
+                    "ALLOW_OR_MODIFY": len(contexts),
+                    "ABSTAIN": len(abstained_contexts),
+                    "VETO": len(vetoed_contexts),
+                }.items()
+                if count > 0
+            },
+            "abstained_context_keys": abstained_contexts + vetoed_contexts,
+            "abstention_context_counts": {
+                context_key: 1 for context_key in abstained_contexts + vetoed_contexts
+            },
             "decision_path_activated": bool(contexts),
+            "used_in_decision": bool(contexts or vetoed_contexts),
         }
     return {
         "protocol": "instrument_runtime_observations_v1",
@@ -77,6 +126,49 @@ def _runtime(assignment, activated=None, abstained=None):
         "selected_keys": list(instruments),
         "instruments": instruments,
     }
+
+
+def test_effectful_veto_is_a_research_decision_but_not_execution_or_promotion():
+    parameters = {"pullback_atr_fraction": 0.75}
+    assignment = {
+        "protocol": "lab_instrument_research_assignment_v2",
+        "hash_protocol": "numeric_canonical_json_v1",
+        "parameter_hash": _hash(parameters),
+        "activation_policy": {"protocol": "instrument_runtime_activation_contract_v1"},
+        "selected": [
+            {
+                "instrument_key": "trend_pullback",
+                "role": "tactic",
+                "parameter_bindings": parameters,
+                "activation_contract": _activation(
+                    "exact_runtime_event", declared_context={"session": "london"}
+                ),
+            }
+        ],
+    }
+    assignment["assignment_hash"] = _hash(assignment)
+
+    trace = build_instrument_research_trace(
+        assignment,
+        parameters,
+        {
+            "execution_contract": {"status": "matched"},
+            "total_trades": 0,
+            "instrument_runtime_observations": _runtime(
+                assignment,
+                vetoed={"trend_pullback": ["trend_up|normal_volatility|asia|BUY"]},
+            ),
+        },
+    )
+
+    instrument = trace["instruments"][0]
+    assert trace["status"] == "decision_observed"
+    assert trace["consumed_count"] == 0
+    assert trace["evaluated_veto_count"] == 1
+    assert instrument["status"] == "evaluated_veto"
+    assert instrument["used_in_decision"] is True
+    assert instrument["decision_path_activated"] is False
+    assert instrument["promotion_evidence"] is False
 
 
 def test_pre_registered_runtime_bindings_are_attested_without_promotion():

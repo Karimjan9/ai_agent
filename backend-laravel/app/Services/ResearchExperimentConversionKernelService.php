@@ -23,7 +23,7 @@ class ResearchExperimentConversionKernelService
     public const CONTRACT_VERSION = 'research_experiment_v1';
     public const RULE_VERSION = 'research_conversion_rules_v1';
     private const LEASE_SECONDS = 900;
-    private const CLASSIFICATIONS = ['POSITIVE_CANDIDATE', 'INCONCLUSIVE', 'UNDERPOWERED', 'UNREACHABLE', 'TECHNICAL_QUARANTINE', 'BUDGET_EXHAUSTED', 'HARMFUL'];
+    private const CLASSIFICATIONS = ['POSITIVE_CANDIDATE', 'BEHAVIORAL_ACTIVATION_HYPOTHESIS', 'INCONCLUSIVE', 'UNDERPOWERED', 'UNREACHABLE', 'TECHNICAL_QUARANTINE', 'BUDGET_EXHAUSTED', 'HARMFUL'];
 
     /** @return array<string,mixed> */
     public function record(array $contract, array $evidence, string $classification, array $nextWork = [], array $terminalReason = []): array
@@ -252,14 +252,19 @@ class ResearchExperimentConversionKernelService
             'academy_power_extension' => [false, 'NEW_INDEPENDENT_POWERED_WINDOW_REQUIRED', 1],
             'academy_technical_quarantine' => [false, 'TECHNICAL_ROOT_CAUSE_REPAIR_REQUIRED', 1],
             'academy_adversarial_ablation' => [false, 'VERSIONED_ABLATION_CONTRACT_REQUIRED', 1],
+            'activation_independent_validation' => [false, 'NEW_PREREGISTERED_INDEPENDENT_WINDOW_REQUIRED', 1],
+            'activation_new_opportunity_window' => [false, 'NEW_PREREGISTERED_INDEPENDENT_WINDOW_REQUIRED', 1],
         ];
         [$executable, $retryCode, $maxExperiments] = $profiles[$type] ?? [true, 'OWNER_RETRY_ADMISSION', 1];
+        $activationRequiresWindow = in_array($type, [
+            'activation_independent_validation', 'activation_new_opportunity_window',
+        ], true);
 
         return [
             ...$nextWork,
             'owner' => (string) ($nextWork['owner'] ?? ResearchLoopArbiterService::class),
             'executor' => (string) ($nextWork['executor'] ?? ResearchExperimentWorkConsumerService::class),
-            'executable' => (bool) ($nextWork['executable'] ?? $executable),
+            'executable' => $activationRequiresWindow ? false : (bool) ($nextWork['executable'] ?? $executable),
             'retry_condition' => (array) ($nextWork['retry_condition'] ?? [
                 'code' => $retryCode,
                 'max_experiments' => $maxExperiments,

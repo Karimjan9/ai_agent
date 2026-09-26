@@ -1,0 +1,104 @@
+module: causal-learning
+title: Causal learning, conversion and composition settlement
+purpose: Turns bounded counterfactual research evidence into explicit causal classifications, immutable receipts and next-work decisions without confusing research signals with authority.
+aliases:
+  - causal
+  - learning-loop
+  - counterfactual
+  - conversion
+  - academy
+  - composition
+  - research-paper-epoch
+paths:
+  - backend-laravel/app/Console/Commands/RunCausalGoldenWorldAcceptance.php
+  - backend-laravel/app/Services/CanonicalLearningOutboxService.php
+  - backend-laravel/app/Services/CausalArmParityService.php
+  - backend-laravel/app/Services/CausalCapabilityLatticeService.php
+  - backend-laravel/app/Services/CausalGoldenWorldHarnessService.php
+  - backend-laravel/app/Services/CausalLearningCohortPlannerService.php
+  - backend-laravel/app/Services/CausalLearningCohortService.php
+  - backend-laravel/app/Services/CausalLearningConfirmationService.php
+  - backend-laravel/app/Services/CausalFoldExecutionService.php
+  - backend-laravel/app/Services/CausalRepairFrontierService.php
+  - backend-laravel/app/Services/CausalSkillCreditBridgeService.php
+  - backend-laravel/app/Services/CompositionLibrarySettlementService.php
+  - backend-laravel/app/Services/CompositionAuthorityKernelService.php
+  - backend-laravel/app/Services/CompositionSettlementFanoutService.php
+  - backend-laravel/app/Services/ContextContractV2Service.php
+  - backend-laravel/app/Services/InstrumentInvocationLedgerService.php
+  - backend-laravel/app/Services/FrozenControlScreeningAdmissionService.php
+  - backend-laravel/app/Services/LabAgentEvaluationService.php
+  - backend-laravel/app/Services/LabInstrumentResearchService.php
+  - backend-laravel/app/Services/MutationResponseMapService.php
+  - backend-laravel/app/Services/ParentAwareCreditService.php
+  - backend-laravel/app/Services/ProfessionalTradingProgramCompilerService.php
+  - backend-laravel/app/Services/PaperAuthorityAdmissionService.php
+  - backend-laravel/app/Services/ResearchPaperEpochContractService.php
+  - backend-laravel/app/Services/CooperativeExperimentSettlementService.php
+  - backend-laravel/app/Services/ResearchExperimentConversionKernelService.php
+  - backend-laravel/app/Services/ResearchKnowledgePortfolioService.php
+  - backend-laravel/app/Services/SkillMentorService.php
+  - backend-laravel/app/Jobs/RunCausalExperimentFoldJob.php
+  - backend-laravel/app/Models/CausalFoldReceipt.php
+  - backend-laravel/app/Models/LabLearningLanePair.php
+  - backend-laravel/database/migrations/2026_09_22_120000_create_durable_causal_fold_and_autonomy_receipts.php
+  - backend-laravel/database/migrations/2026_09_24_130000_expand_evolution_credit_status_for_compounding.php
+  - ai-service-python/app/main.py
+  - ai-service-python/app/services/walk_forward.py
+  - ai-service-python/app/services/composition_runtime.py
+  - ai-service-python/app/services/instrument_research.py
+entry_points:
+  - CausalLearningCohortPlannerService
+  - CausalLearningConfirmationService
+  - CausalFoldExecutionService
+  - CausalSkillCreditBridgeService
+  - CanonicalLearningOutboxService
+  - ResearchPaperEpochContractService
+  - trading:causal-golden-worlds
+data_tables:
+  - agent_learning_causal_experiments
+  - causal_capability_escrows
+  - causal_fold_receipts
+  - lab_evolution_credit_events
+  - lab_mutation_response_maps
+  - canonical_learning_outbox
+  - composition_settlements
+  - composition_component_posteriors
+dependencies:
+  - laboratory
+  - confirmation-entry
+  - laravel-python-contract
+  - paper-execution
+invariants:
+  - Work lifecycle, evidence validity, causal claim and authority are distinct dimensions.
+  - Counterfactual arms retain frozen control, data and execution identity.
+  - A causal confirmation passport resolves to the frozen control's exact executable family and any declared architecture and tactic before construction.
+  - Terminal scientific uncertainty is classified explicitly rather than fabricated as success or causal rejection.
+  - A receipt and next durable action are recorded atomically or not at all.
+  - Autonomous causal confirmation executes one three-arm fold per retryable job; only a complete 9-of-9 receipt set may cross the aggregate settlement boundary.
+  - A terminal triplet without three completed immutable screening receipts is invalidated before fold dispatch and grants no causal credit.
+  - Composition credit requires explicit independently attested component evidence.
+  - Post-v2 repair and causal-skill credits are issued atomically and idempotently only after the confirmed three-arm experiment, component escrow, exact pair and settlement agree; they grant no paper or parent authority.
+  - An instrument assignment may be reused or credited only when its source strategy, tactic, risk and management still match the frozen composition passport.
+  - A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt; independent validation stays blocked without a fresh preregistered window.
+flows:
+  - flows/causal-conversion.md
+docs:
+  - idea.md
+  - states.md
+  - history.md
+tests:
+  - backend-laravel/tests/Feature/CausalLearningLoopContractTest.php
+  - backend-laravel/tests/Feature/MutationObservabilityTest.php
+  - backend-laravel/tests/Feature/DurableAutonomyProofTest.php
+  - backend-laravel/tests/Feature/FailureRepairAnchorTest.php
+  - backend-laravel/tests/Feature/PostV2LearningProofTest.php
+  - backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php
+  - backend-laravel/tests/Feature/ProofFrontierActivationTest.php
+  - ai-service-python/tests/test_composition_runtime.py
+  - backend-laravel/tests/Feature/StrategyTacticRiskCompositionPlannerTest.php
+  - backend-laravel/tests/Feature/LabInstrumentResearchLoopTest.php
+  - ai-service-python/tests/test_composition_runtime.py
+  - ai-service-python/tests/test_instrument_research.py
+  - ai-service-python/tests/test_walk_forward.py
+  - ai-service-python/tests/test_replay_cache_contract.py

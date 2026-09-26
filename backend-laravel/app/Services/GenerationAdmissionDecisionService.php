@@ -70,8 +70,7 @@ class GenerationAdmissionDecisionService
         // first; the dedicated learning-confirmation trigger below is the
         // sole consumer and still passes every ordinary safety boundary.
         $causalLesson = null;
-        if (! $learningConfirmation
-            && strtoupper((string) $lab->symbol) === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
+        if (strtoupper((string) $lab->symbol) === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
             && strtoupper((string) $lab->timeframe) === LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME) {
             $causalLesson = app(CausalLearningCohortPlannerService::class)->eligibleLesson(
                 (string) $lab->symbol,
@@ -115,7 +114,7 @@ class GenerationAdmissionDecisionService
             $decision = self::DISPATCH_LEARNING;
             $allowed = false;
             $reasons[] = 'VERIFIED_POSITIVE_LEARNING_PAIR_HAS_REPLAY_PRIORITY';
-        } elseif ($causalLesson !== null) {
+        } elseif (! $learningConfirmation && $causalLesson !== null) {
             $decision = self::DISPATCH_LEARNING;
             $allowed = false;
             $reasons[] = 'TARGET_ALIGNED_CAUSAL_LESSON_HAS_GENERATION_PRIORITY';

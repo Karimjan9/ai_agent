@@ -69,6 +69,18 @@ idle Python lane alone is not proof that Laravel has finished sealing evidence.
 
 Install Node 22 (the repository has `.nvmrc` and an engine constraint), then run `npm ci`. On this Windows host the verified portable runtime is `../.runtime/node-v22.23.1-win-x64`; the process scripts explicitly use it so PM2 does not fall back to the system Node 18 installation. Set `PHP_BINARY` and `PYTHON_BINARY` when they are not on `PATH`. Use `npm run process:start`, `npm run process:status`, and `npm run process:stop`. Persist PM2 with the platform-specific startup integration after verifying every process is healthy.
 
+For the local Windows autonomous profile, install the per-user logon recovery
+task once after the managed runtime has passed its health check:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-autonomous-runtime-task.ps1 -StartNow
+
+The task launches the duplicate-safe hidden supervisor. It does not create a
+second runtime while PM2 owns the project; if the managed processes are absent
+after a logon, it restores Redis, the AI service, scheduler and every required
+queue lane. On four-core hosts the fallback uses one screening worker, matching
+the Python replay capacity and the PM2 topology. Remove it explicitly with the
+same script's `-Remove` switch.
+
 Laravel logs use the daily channel with 14-day retention. `pm2-logrotate` caps process logs at 20 MB, retains 14 compressed rotations, and must remain online. PM2 restarts the Python service, scheduler, and queue workers on failure; the ecosystem filters `OPENAI_`, `CODEX_`, and inline internal-token values from child environments. The five-minute health check and one-minute feed check send rate-limited Telegram critical alerts when Telegram is configured. Market Reality analysis is a separate Phase 2 foundation flow (`MARKET_REALITY_ENABLED=true` by default); its 7,200-second H1 freshness window should be reviewed alongside `php artisan market:health --strict`.
 
 Never run PHPUnit with the production configuration cache. The repository test configuration forces SQLite memory storage and `tests/TestCase.php` fails closed before `RefreshDatabase` if that invariant is broken.

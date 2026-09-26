@@ -44,6 +44,10 @@ from app.services.backtester import (
     prepare_signal_snapshot,
     tail_feature_snapshot,
 )
+from app.services.composition_runtime import (
+    build_composition_runtime_trace,
+    validate_composition_runtime_contract,
+)
 from app.services.execution_contract import (
     enforce_policy_boundary,
     execution_contract_metadata,
@@ -329,6 +333,27 @@ def _candidate_cache_payload(
     )
 
 
+def _candidate_scoped_contract(
+    contracts: object,
+    candidate_label: str,
+    strategy_name: str,
+) -> dict[str, object]:
+    """Resolve agent-owned contracts before the legacy strategy label.
+
+    Causal candidate, blinded and frozen-control arms may deliberately share
+    one executable strategy label.  Their LabAgent ids are the immutable
+    ownership boundary; strategy-key fallback is retained only for older
+    non-cohort requests.
+    """
+    if not isinstance(contracts, dict):
+        return {}
+    candidate = contracts.get(candidate_label)
+    if isinstance(candidate, dict):
+        return candidate
+    legacy = contracts.get(strategy_name)
+    return legacy if isinstance(legacy, dict) else {}
+
+
 def _candidate_cache_contract_is_current(
     cached_item: object,
     payload: SimpleBacktestRequest,
@@ -505,6 +530,48 @@ def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
     return _run_bounded_replay("run_all", payload)
 
 
+@app.post("/api/backtest/aggregate-causal-folds")
+def aggregate_causal_folds(payload: dict[str, object]) -> dict[str, object]:
+    """Aggregate immutable single-fold results without touching market data."""
+    expected = int(payload.get("expected_fold_count", 0) or 0)
+    receipts = payload.get("fold_receipts", []) or []
+    if not isinstance(receipts, list) or expected < 1:
+        raise HTTPException(status_code=400, detail="Invalid causal fold aggregate contract.")
+    by_agent: dict[str, list[dict[str, object]]] = {}
+    for receipt in receipts:
+        if not isinstance(receipt, dict):
+            raise HTTPException(status_code=400, detail="Invalid causal fold receipt.")
+        leaderboard = receipt.get("leaderboard", []) or []
+        if not isinstance(leaderboard, list):
+            raise HTTPException(status_code=400, detail="Invalid causal fold leaderboard.")
+        for item in leaderboard:
+            if not isinstance(item, dict):
+                raise HTTPException(status_code=400, detail="Invalid causal fold candidate item.")
+            agent_id = str(item.get("lab_agent_id") or "")
+            if not agent_id:
+                raise HTTPException(status_code=400, detail="Causal fold candidate is missing lab_agent_id.")
+            by_agent.setdefault(agent_id, []).append(item)
+    if len(receipts) != expected or len(by_agent) != 3:
+        raise HTTPException(
+            status_code=400,
+            detail="Causal fold aggregate requires every fold and exactly three causal arms.",
+        )
+    try:
+        leaderboard = [
+            WalkForwardService.aggregate_causal_fold_items(items, expected_fold_count=expected)
+            for _, items in sorted(by_agent.items(), key=lambda entry: int(entry[0]))
+        ]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "protocol": "causal_fold_aggregate_response_v1",
+        "expected_fold_count": expected,
+        "received_fold_count": len(receipts),
+        "leaderboard": leaderboard,
+        "promotion_evidence": False,
+    }
+
+
 def _screening_robustness_admission(result: dict[str, object]) -> dict[str, object]:
     """Decide whether expensive screening robustness work can add signal.
 
@@ -673,6 +740,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
         source_df = None
         foundation_df = None
         walk_forward = WalkForwardService()
+        causal_context_cache = {}
 
         # One generation request is a bounded cohort. Feature construction is
         # independent of the candidate's strategy parameters, so cache it by
@@ -764,6 +832,32 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     config.get("base_strategy"),
                 )
             )
+            composition_runtime_contract = dict(
+                config.get("composition_runtime_contract") or {}
+            )
+            # A passport is executable authority, not post-hoc metadata. Any
+            # declared but unbound component quarantines the candidate before
+            # feature construction or replay can produce misleading evidence.
+            validate_composition_runtime_contract(
+                composition_runtime_contract,
+                base_strategy=config.get("base_strategy"),
+                parameters=parameters,
+                execution_timeframe=payload.timeframe,
+                runtime_authority={
+                    "symbol": payload.symbol,
+                    "execution_timeframe": payload.timeframe,
+                    "replay_dataset_hash": payload.replay_dataset_hash,
+                    "execution_hash": execution_contract_metadata(payload).get(
+                        "execution_hash"
+                    ),
+                    "instrument_assignment": dict(
+                        config.get("instrument_research_assignment") or {}
+                    ),
+                    "mtf_snapshot_manifest": dict(
+                        payload.mtf_snapshot_manifest or {}
+                    ),
+                },
+            )
             candidate_policy = dict(payload.policy_context or {})
             repair_contracts = candidate_policy.get("repair_contracts")
             if isinstance(repair_contracts, dict):
@@ -782,6 +876,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "instrument_research_assignment": dict(
                         config.get("instrument_research_assignment") or {}
                     ),
+                    "composition_runtime_contract": composition_runtime_contract,
                     "specialist_context_contract": dict(
                         config.get("specialist_context_contract") or {}
                     ),
@@ -1120,18 +1215,18 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 confirmation_contracts = (payload.policy_context or {}).get(
                     "learning_confirmation_contracts", {}
                 )
-                learning_confirmation_contract = (
-                    confirmation_contracts.get(strategy_name, {})
-                    if isinstance(confirmation_contracts, dict)
-                    else {}
+                learning_confirmation_contract = _candidate_scoped_contract(
+                    confirmation_contracts,
+                    candidate_label,
+                    strategy_name,
                 )
                 edge_contracts = (payload.policy_context or {}).get(
                     "edge_genesis_contracts", {}
                 )
-                edge_contract = (
-                    edge_contracts.get(strategy_name, {})
-                    if isinstance(edge_contracts, dict)
-                    else {}
+                edge_contract = _candidate_scoped_contract(
+                    edge_contracts,
+                    candidate_label,
+                    strategy_name,
                 )
                 is_edge_genesis = (
                     isinstance(edge_contract, dict)
@@ -1141,10 +1236,10 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 cartridge_contracts = (payload.policy_context or {}).get(
                     "skill_cartridge_confirmation_contracts", {}
                 )
-                cartridge_contract = (
-                    cartridge_contracts.get(strategy_name, {})
-                    if isinstance(cartridge_contracts, dict)
-                    else {}
+                cartridge_contract = _candidate_scoped_contract(
+                    cartridge_contracts,
+                    candidate_label,
+                    strategy_name,
                 )
                 is_cartridge_confirmation = (
                     isinstance(cartridge_contract, dict)
@@ -1159,6 +1254,11 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                         if is_cartridge_confirmation
                         else learning_confirmation_contract
                     )
+                )
+                durable_single_fold = (
+                    isinstance(confirmation_contract, dict)
+                    and confirmation_contract.get("execution_mode")
+                    == "durable_single_fold_job"
                 )
                 if isinstance(confirmation_contract, dict) and confirmation_contract:
                     confirmation_evidence = {
@@ -1213,9 +1313,13 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                                 2
                                 if is_edge_genesis
                                 else (3 if is_cartridge_confirmation else 9),
-                                2
-                                if is_edge_genesis
-                                else (2 if is_cartridge_confirmation else 6),
+                                1
+                                if durable_single_fold
+                                else (
+                                    2
+                                    if is_edge_genesis
+                                    else (2 if is_cartridge_confirmation else 6)
+                                ),
                                 9
                                 if is_edge_genesis
                                 else (9 if is_cartridge_confirmation else 12),
@@ -1270,6 +1374,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                                     **details,
                                 )
                             ),
+                            context_cache=causal_context_cache if durable_single_fold else None,
                         )
                         cold_result = analysis.get("result", {})
                         if isinstance(cold_result, dict):
@@ -1343,6 +1448,26 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 parameters,
                 result_data,
                 dict(config.get("parameters") or {}),
+            )
+            result_data["composition_runtime_trace"] = build_composition_runtime_trace(
+                strategy_payload.composition_runtime_contract,
+                base_strategy=strategy_payload.base_strategy,
+                parameters=parameters,
+                result=result_data,
+                runtime_authority={
+                    "symbol": strategy_payload.symbol,
+                    "execution_timeframe": strategy_payload.timeframe,
+                    "replay_dataset_hash": strategy_payload.replay_dataset_hash,
+                    "execution_hash": execution_contract_metadata(
+                        strategy_payload
+                    ).get("execution_hash"),
+                    "instrument_assignment": dict(
+                        strategy_payload.instrument_research_assignment or {}
+                    ),
+                    "mtf_snapshot_manifest": dict(
+                        strategy_payload.mtf_snapshot_manifest or {}
+                    ),
+                },
             )
             # Fitness is a ranking aid, not a promotion decision. Expose the
             # evidence components so Laravel can explain why a candidate was
@@ -1576,6 +1701,11 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
             for contract in confirmation_contracts.values()
         )
     )
+    durable_causal_fold = causal_confirmation and any(
+        isinstance(contract, dict)
+        and contract.get("execution_mode") == "durable_single_fold_job"
+        for contract in confirmation_contracts.values()
+    )
     edge_contracts = (payload.policy_context or {}).get("edge_genesis_contracts", {})
     edge_genesis_replay = (
         payload.evaluation_mode == "replay"
@@ -1621,6 +1751,12 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
         # the historical one-hour replay. Twenty minutes is the default hard
         # boundary; 25 minutes is the absolute operator-configurable ceiling.
         env_name, default, ceiling = "AI_REPLAY_EDGE_HARD_TIMEOUT_SECONDS", 1200, 1500
+    elif durable_causal_fold:
+        # One durable fold still executes all three causal arms. Each arm may
+        # legitimately use its 180s per-fold budget; the old 240s process
+        # ceiling killed the cohort before the third arm could run. Bound the
+        # one-fold process independently of the other eight fold jobs.
+        env_name, default, ceiling = "AI_REPLAY_CAUSAL_FOLD_HARD_TIMEOUT_SECONDS", 720, 900
     elif causal_confirmation or cartridge_confirmation:
         # Confirmation is an atomic three-forward-fold research experiment,
         # not a promotion replay. A one-hour budget hides a stalled fold and
@@ -1664,6 +1800,22 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
         configured = int(os.getenv(env_name, str(default)))
     except ValueError:
         configured = default
+    if durable_causal_fold and operation == "run_all":
+        # The HTTP child owns three sequential arms, not one. Never let an
+        # operator's stale 240s override undercut the registered per-arm
+        # budgets; Laravel's 960s transport remains above this 900s ceiling.
+        per_arm_budgets = []
+        for contract in confirmation_contracts.values():
+            if not isinstance(contract, dict):
+                continue
+            try:
+                per_arm_budgets.append(
+                    max(45, min(240, int(contract.get("per_fold_budget_seconds", 180) or 180)))
+                )
+            except (TypeError, ValueError):
+                per_arm_budgets.append(180)
+        minimum = min(900, max(720, 3 * max(per_arm_budgets or [180]) + 180))
+        return max(minimum, min(configured, ceiling))
     return max(30, min(configured, ceiling))
 
 
@@ -3009,7 +3161,17 @@ def paper_execution_contract(body: dict[str, object]) -> dict[str, object]:
             .mean()
         )
         prepared = (
-            _apply_portfolio_strategy(df, payload.portfolio_members)
+            _apply_portfolio_strategy(
+                df,
+                payload.portfolio_members,
+                execution_timeframe=payload.timeframe,
+                symbol=payload.symbol,
+                replay_dataset_hash=payload.replay_dataset_hash,
+                execution_hash=execution_contract_metadata(payload).get(
+                    "execution_hash"
+                ),
+                mtf_snapshot_manifest=payload.mtf_snapshot_manifest,
+            )
             if payload.portfolio_members
             else apply_volume_policy(
                 get_strategy(payload.strategy, payload.base_strategy)(
@@ -4080,6 +4242,9 @@ def run_mtf_council(body: dict[str, object]) -> dict[str, object]:
                     "base_strategy": member.base_strategy,
                     "version": member.version,
                     "parameters": dict(member.parameters or {}),
+                    "composition_runtime_contract": dict(
+                        member.composition_runtime_contract or {}
+                    ),
                     "portfolio_members": [],
                 }
             )
@@ -4122,6 +4287,13 @@ def run_mtf_council(body: dict[str, object]) -> dict[str, object]:
             council_feature_snapshot.frame.copy(),
             council_payload.portfolio_members,
             prepared_member_frames=prepared_member_frames,
+            execution_timeframe=council_payload.timeframe,
+            symbol=council_payload.symbol,
+            replay_dataset_hash=council_payload.replay_dataset_hash,
+            execution_hash=execution_contract_metadata(council_payload).get(
+                "execution_hash"
+            ),
+            mtf_snapshot_manifest=council_payload.mtf_snapshot_manifest,
         )
         routed = _apply_signal_delay(routed, council_payload.signal_delay_candles)
         council_signal_snapshot = PreparedSignalSnapshot(

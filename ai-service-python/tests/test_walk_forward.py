@@ -4,6 +4,7 @@ import pandas as pd
 from unittest.mock import patch
 
 from app.schemas import SimpleBacktestRequest
+from app.services.backtester import prepare_replay_feature_context
 from app.services.walk_forward import (
     WalkForwardService,
     calculate_robustness_score,
@@ -314,6 +315,81 @@ class WalkForwardSplitTest(unittest.TestCase):
         self.assertEqual(3, discovery_replay.call_count)
         self.assertEqual(2, discovery_protocol["observed_windows"])
         self.assertEqual(2, discovery["result"]["statistical_evidence"]["edge_quality"]["fold_count"])
+
+        # Durable execution may run each registered fold in an independent
+        # queue job. Aggregation must recover the same nine-window scientific
+        # boundary without replaying an already completed fold.
+        singles = []
+        shared_contexts = {}
+        with patch.object(WalkForwardService, "_run_segment", side_effect=segment_result), patch(
+            "app.services.walk_forward.prepare_replay_feature_context",
+            wraps=prepare_replay_feature_context,
+        ) as prepare_context:
+            for offset in range(9):
+                single = WalkForwardService().run_causal_confirmation(
+                    payload,
+                    frame,
+                    lambda result: 10,
+                    maximum_holding_bars=240,
+                    purge_bars=240,
+                    embargo_bars=1,
+                    fold_count=1,
+                    fold_offset=offset,
+                    fold_universe_count=9,
+                    total_budget_seconds=240,
+                    per_fold_budget_seconds=180,
+                    context_cache=shared_contexts,
+                )
+                single["result"]["learning_confirmation"] = {
+                    "protocol": "bounded_cold_start_learning_confirmation_v1",
+                    "fold_count": 1,
+                    "fold_offset": offset,
+                    "fold_universe_count": 9,
+                }
+                single["result"]["execution_contract"] = {"execution_hash": "sealed-execution"}
+                singles.append({
+                    "strategy": "test_strategy",
+                    "base_strategy": "ema_rsi_v1",
+                    "version": "v1",
+                    "lab_agent_id": 11,
+                    "score": 10,
+                    **single,
+                })
+        self.assertEqual(1, prepare_context.call_count)
+
+        base = SimpleBacktestRequest(parameters={
+            "swing_lookback": 40,
+            "state_machine_variant": "none",
+            "minimum_signal_confidence": 0.35,
+        })
+        changed_decision_only = base.model_copy(update={"parameters": {
+            **base.parameters,
+            "state_machine_variant": "neutral_transition_cooldown_reentry_v1",
+            "minimum_signal_confidence": 0.4,
+        }})
+        changed_context = base.model_copy(update={"parameters": {
+            **base.parameters,
+            "swing_lookback": 50,
+        }})
+        self.assertEqual(
+            WalkForwardService._causal_context_cache_key(base),
+            WalkForwardService._causal_context_cache_key(changed_decision_only),
+        )
+        self.assertNotEqual(
+            WalkForwardService._causal_context_cache_key(base),
+            WalkForwardService._causal_context_cache_key(changed_context),
+        )
+
+        aggregate = WalkForwardService.aggregate_causal_fold_items(
+            singles,
+            expected_fold_count=9,
+        )
+        self.assertEqual(9, aggregate["rolling_windows_count"])
+        self.assertEqual(9, len(aggregate["forward_window_scores"]))
+        self.assertEqual(90, aggregate["result"]["total_trades"])
+        self.assertEqual(9, aggregate["result"]["fold_aggregate_receipt"]["fold_count"])
+        self.assertTrue(aggregate["result"]["fold_aggregate_receipt"]["identity_verified"])
+        self.assertTrue(aggregate["result"]["walk_forward"]["forward_window_protocol"]["independence_verified"])
 
 
 class OverfitDetectionTest(unittest.TestCase):

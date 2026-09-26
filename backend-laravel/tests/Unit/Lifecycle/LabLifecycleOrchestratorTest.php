@@ -226,7 +226,7 @@ class LabLifecycleOrchestratorTest extends TestCase
             'data_fingerprint' => 'audited-terminal-generation',
             'trigger_type' => 'new_data',
             'trigger_context' => [
-                'data_edge_audit' => ['protocol' => 'data_edge_audit_v1'],
+                'data_edge_audit' => ['protocol' => 'data_edge_audit_v1', 'generation' => 210],
                 'latest_generation_report' => ['next_action' => 'data_edge_audit_completed'],
             ],
         ]);
@@ -237,6 +237,29 @@ class LabLifecycleOrchestratorTest extends TestCase
         $this->assertSame('completed', $result['status'], json_encode($result, JSON_PRETTY_PRINT));
         $this->assertSame('data_edge_audit', LabGeneration::query()->latest('generation')->value('trigger_type'));
         $this->assertCount(2, LabGeneration::all());
+    }
+
+    public function test_inherited_audit_does_not_route_a_second_successor_to_data_edge(): void
+    {
+        $lab = $this->seedLaboratory();
+        LabGeneration::create([
+            'ai_laboratory_id' => $lab->id,
+            'generation' => 211,
+            'status' => 'screened',
+            'population_size' => 20,
+            'data_fingerprint' => 'inherited-audit-generation',
+            'trigger_type' => 'data_edge_audit',
+            'trigger_context' => [
+                'data_edge_audit' => ['protocol' => 'data_edge_audit_v1', 'generation' => 210],
+                'latest_generation_report' => ['next_action' => 'data_edge_audit_completed'],
+            ],
+        ]);
+        $this->bindPopulation(paused: false, expectedTrigger: 'new_data');
+
+        $result = app(LabLifecycleOrchestrator::class)->run('XAUUSD', 'H1', 'tc-inherited-data-edge');
+
+        $this->assertSame('completed', $result['status'], json_encode($result, JSON_PRETTY_PRINT));
+        $this->assertSame('new_data', LabGeneration::query()->latest('generation')->value('trigger_type'));
     }
 
     public function test_fresh_incomplete_draft_is_not_concurrently_resumed_by_a_scheduler_tick(): void
@@ -466,6 +489,7 @@ class LabLifecycleOrchestratorTest extends TestCase
 
         $this->assertSame('completed', $result['status'], json_encode($result, JSON_PRETTY_PRINT));
         $this->assertSame('learning_confirmation', LabGeneration::query()->latest('generation')->value('trigger_type'));
+        $this->assertSame('screening', LabGeneration::query()->latest('generation')->value('status'));
         $this->assertSame(LabLifecycleOrchestrator::PHASE_FORWARD, $result['stage']);
     }
 
@@ -815,6 +839,30 @@ class LabLifecycleOrchestratorTest extends TestCase
 
         $preflight = m::mock(LabAgentPreflightService::class);
         $preflight->shouldReceive('admit')->andReturn(true);
+
+        // Screening is owned by the canonical dispatcher so the autonomous
+        // lifecycle cannot bypass immutable snapshot/closed-MTF sealing. The
+        // unit boundary projects the command's successful status transition;
+        // dispatcher feature tests cover the actual export and queue batch.
+        Artisan::shouldReceive('call')
+            ->zeroOrMoreTimes()
+            ->with(
+                m::on(fn ($cmd) => $cmd === 'trading:dispatch-lab'),
+                m::on(fn ($arguments) => is_array($arguments)
+                    && ($arguments['symbol'] ?? null) === 'XAUUSD'
+                    && ($arguments['--timeframe'] ?? null) === 'H1'
+                    && ($arguments['--resume-draft-agents'] ?? false) === true
+                    && ($expectedTrigger !== 'learning_confirmation'
+                        || ($arguments['--learning-confirmation'] ?? false) === true)),
+            )
+            ->andReturnUsing(function (): int {
+                $generation = LabGeneration::query()->latest('generation')->first();
+                if ($generation && (string) $generation->status === 'draft') {
+                    $generation->update(['status' => 'screening']);
+                }
+
+                return 0;
+            });
 
         // Recovery path invokes trade:reconcile-learning-recovery via Artisan::call.
         // Fake the artisan call/output so no real command runs in unit tests.

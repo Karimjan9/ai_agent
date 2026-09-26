@@ -1,5 +1,6 @@
 import pandas as pd
 
+from app.services.backtester import _volume_policy_report
 from app.services.volume_features import (
     add_volume_features,
     apply_volume_policy,
@@ -55,6 +56,24 @@ def test_missing_source_marker_is_unavailable_not_low_volume():
     assert policy.iloc[-1]["signal"] == "BUY"
     assert policy.iloc[-1]["volume_regime"] == "unavailable"
     assert policy.iloc[-1]["volume_risk_multiplier"] == 1.0
+
+
+def test_no_volume_lane_reports_not_requested_instead_of_unavailable():
+    frame = _frame().drop(columns=["volume_available"])
+    prepared = add_volume_features(frame, {"status": "not_requested"})
+    policy = apply_volume_policy(prepared, {"volume_lane": "none"}, "hybrid_v1")
+    quality = dict(policy.attrs["volume_quality"])
+    report = _volume_policy_report(policy, {"volume_lane": "none"}, quality)
+
+    assert quality["status"] == "not_requested"
+    assert quality["blocking"] is False
+    assert quality["source_contract"] is None
+    assert quality["source_observed"] is False
+    assert report["status"] == "not_requested"
+    assert report["quality_status"] == "not_requested"
+    assert report["blocking"] is False
+    assert report["unavailable_actionable"] == 0
+    assert policy.iloc[-1]["signal"] == "BUY"
 
 
 def test_relative_volume_does_not_change_when_only_future_volume_changes():

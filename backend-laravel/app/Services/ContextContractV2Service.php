@@ -97,6 +97,31 @@ class ContextContractV2Service
         ];
     }
 
+    /**
+     * Canonicalize an explicitly declared specialist/instrument boundary.
+     *
+     * Runtime declarations are stricter than observed market context: legacy
+     * placeholders (for example "-", "unknown" or "both") are absence, not
+     * wildcard authority.  Callers may therefore safely omit unresolved axes
+     * instead of accidentally creating a scope which rejects every real
+     * candle.
+     *
+     * @return array<string,string>
+     */
+    public function canonicalDeclaredAxes(array $state): array
+    {
+        $axes = $this->canonicalAxes($state);
+
+        return array_filter(
+            array_intersect_key($axes, array_flip([
+                'regime', 'session', 'venue_phase', 'volatility',
+                'spread_liquidity_state', 'transition_state', 'direction',
+                'session_instance_id', 'calendar_version',
+            ])),
+            static fn (mixed $value): bool => is_string($value) && $value !== '',
+        );
+    }
+
     /** @return array<string,mixed> */
     private function rawAxes(array $state): array
     {
@@ -230,7 +255,10 @@ class ContextContractV2Service
             return null;
         }
         $text = trim((string) $value);
-        if ($text === '' || in_array(strtolower($text), ['unknown', 'missing', 'mixed', 'historical_mixed', 'stratified_replay'], true)) {
+        if ($text === '' || in_array(strtolower($text), [
+            '-', '*', 'n/a', 'na', 'none', 'null', 'unknown', 'missing',
+            'mixed', 'both', 'historical_mixed', 'stratified_replay',
+        ], true)) {
             return null;
         }
 

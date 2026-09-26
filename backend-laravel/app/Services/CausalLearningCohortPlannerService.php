@@ -197,14 +197,40 @@ class CausalLearningCohortPlannerService
             if (! $pair || ! $pair->controlAgent?->modelVersion) {
                 continue;
             }
-            $passport = (array) data_get($pair->controlAgent->modelVersion->metadata, 'smart_composition.composition_passport', []);
+            $sourceControl = $pair->controlAgent;
+            if ((string) $sourceControl->symbol !== strtoupper($symbol)
+                || (string) $sourceControl->timeframe !== strtoupper($timeframe)
+                || (string) $sourceControl->strategy_family !== $family) {
+                // The lesson, pair and frozen control must name one executable
+                // identity before a composition passport can be issued.
+                continue;
+            }
+            $sourceContext = $this->sourceContext($lesson, $pair, $skillCartridge);
+            $sourceContextHash = $sourceContext === [] ? null : hash('sha256', json_encode(
+                $sourceContext,
+                JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION,
+            ));
+            $sourceModel = $pair->controlAgent->modelVersion;
+            $sourceArchitecture = (string) data_get(
+                $sourceModel->metadata,
+                'strategy_architecture',
+                data_get($sourceModel->metadata, 'semantic_group.architecture', ''),
+            );
+            $sourceTactic = (string) data_get($sourceModel->metadata, 'tactic_contract.architecture', $sourceArchitecture);
+            $passport = app(StrategyTacticRiskCompositionPlannerService::class)->freezeConfirmationBaseline(
+                $family,
+                $timeframe,
+                (string) $pair->control_data_hash,
+                (string) $pair->control_execution_hash,
+                $sourceArchitecture,
+                $sourceTactic,
+                (array) data_get($sourceModel->metadata, 'smart_composition.composition_passport', []),
+            );
             if ($passport === []) {
-                $passport = app(StrategyTacticRiskCompositionPlannerService::class)->freezeConfirmationBaseline(
-                    $family,
-                    $timeframe,
-                    (string) $pair->control_data_hash,
-                    (string) $pair->control_execution_hash,
-                );
+                // The exact source runtime has no composition adapter. Keep
+                // searching for another eligible family; a requested learning
+                // confirmation will fail planning before any agent is created.
+                continue;
             }
             $baselineSemanticGroup = (array) data_get(
                 $pair->controlAgent->modelVersion->metadata,
@@ -288,6 +314,8 @@ class CausalLearningCohortPlannerService
                         'source_control_agent_id' => (int) $pair->control_agent_id,
                         'source_authority' => (string) data_get($sourceAdmission, 'source_authority'),
                         'source_authority_blockers' => (array) data_get($sourceAdmission, 'authority_blockers', []),
+                        'source_context_scope' => $sourceContext,
+                        'source_context_hash' => $sourceContextHash,
                         'legacy_hypothesis_grants_credit' => false,
                         'baseline_model_version_id' => (int) $pair->controlAgent->model_version_id,
                         'baseline_old_value' => $this->lessonOldValue($lesson),
@@ -355,6 +383,8 @@ class CausalLearningCohortPlannerService
                 'source_pair_id' => (int) $pair->id,
                 'guided_role' => $guidedRole,
                 'source_authority' => (string) data_get($sourceAdmission, 'source_authority'),
+                'source_context_scope' => $sourceContext,
+                'source_context_hash' => $sourceContextHash,
                 'legacy_hypothesis_grants_credit' => false,
                 'skill_cartridge_id' => (int) data_get($skillCartridge, 'cartridge_id'),
                 'baseline_model_version_id' => (int) $pair->controlAgent->model_version_id,
@@ -366,6 +396,26 @@ class CausalLearningCohortPlannerService
         }
 
         return ['plan' => array_values($plan), 'contract' => $base];
+    }
+
+    /** @return array<string,string> */
+    private function sourceContext(
+        AgentLearningLesson $lesson,
+        LabLearningLanePair $pair,
+        array $skillCartridge,
+    ): array {
+        $raw = (array) data_get($skillCartridge, 'trait_capsule.activation_context.predicate', []);
+        if ($raw === []) {
+            $raw = (array) data_get($skillCartridge, 'context', []);
+        }
+        if ($raw === []) {
+            $raw = (array) data_get($lesson->evidence, 'context_scope', []);
+        }
+        if ($raw === []) {
+            $raw = (array) data_get($pair->metadata, 'context_scope', data_get($pair->failure_signature, 'state', []));
+        }
+
+        return app(ContextContractV2Service::class)->canonicalDeclaredAxes($raw);
     }
 
     /**

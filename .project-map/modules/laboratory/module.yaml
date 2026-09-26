@@ -1,0 +1,95 @@
+module: laboratory
+title: AI Laboratory and adaptive evolution
+purpose: Creates bounded research cohorts, evaluates evidence and governs candidate learning without granting unearned trading authority.
+aliases:
+  - research-evolution
+  - lab
+  - population
+  - cohort
+  - mutation
+paths:
+  - backend-laravel/app/Domains/Laboratory
+  - backend-laravel/app/Console/Commands/DispatchLabGeneration.php
+  - backend-laravel/app/Console/Commands/DispatchFullLabValidation.php
+  - backend-laravel/app/Http/Controllers/EvolutionLabController.php
+  - backend-laravel/app/Services/LabPopulationService.php
+  - backend-laravel/app/Services/LabAgentEvaluationService.php
+  - backend-laravel/app/Services/StrategyTacticRiskCompositionPlannerService.php
+  - backend-laravel/app/Services/TradeManagementLibraryService.php
+  - backend-laravel/app/Services/LabLifecycleOrchestrator.php
+  - backend-laravel/app/Services/LabDataEdgeAuditService.php
+  - backend-laravel/app/Console/Commands/RecoverLabEvaluationErrors.php
+  - backend-laravel/app/Services/GenerationAdmissionDecisionService.php
+  - backend-laravel/app/Services/StrategyLibraryCompilerService.php
+  - backend-laravel/app/Console/Commands/Trading/RunLifecycleCycle.php
+  - backend-laravel/app/Services/LabGenerationTerminalBoundaryService.php
+  - backend-laravel/app/Services/GenerationAutonomyAuditService.php
+  - backend-laravel/app/Services/GenerationAutonomyReceiptService.php
+  - backend-laravel/app/Services/GenerationSnapshotAdmissionService.php
+  - backend-laravel/app/Services/ProofFrontierService.php
+  - backend-laravel/app/Services/ActivationFactorialContractService.php
+  - backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php
+  - backend-laravel/app/Services/MultiTimeframeSnapshotService.php
+  - backend-laravel/app/Services/EvolutionGovernorService.php
+  - backend-laravel/app/Services/AdaptiveParentFrontierService.php
+  - backend-laravel/app/Services/MarketChampionService.php
+  - backend-laravel/app/Services/LabAgentPreflightService.php
+  - backend-laravel/app/Services/LearningVelocityGateService.php
+  - backend-laravel/app/Jobs/EvaluateLabAgentJob.php
+  - backend-laravel/app/Models/GenerationAutonomyReceipt.php
+  - backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php
+  - backend-laravel/app/Console/Commands/AuditAutonomyStreak.php
+entry_points:
+  - LabPopulationService
+  - LabLifecycleOrchestrator
+  - EvaluateLabAgentJob
+  - EvolutionGovernorService
+  - trading:build-lab-generation
+  - trading:dispatch-lab
+  - trading:run-lifecycle-cycle
+  - trading:audit-autonomy-streak
+data_tables:
+  - ai_laboratories
+  - lab_generations
+  - lab_agents
+  - lab_evaluation_runs
+  - lab_lifecycle_events
+  - lab_trial_ledger
+  - lab_agent_parent_links
+  - generation_autonomy_receipts
+dependencies:
+  - market-data
+  - laravel-python-contract
+invariants:
+  - Construction and control identities remain attributable.
+  - A frozen composition passport owns the final constructor family, architecture and tactic.
+  - A cached instrument assignment is reusable only while every source component still equals the frozen passport; the composition ID alone is insufficient.
+  - Causal source control and composition passport identities agree before arm construction; stale dependencies degrade only to non-credit diagnostic controls.
+  - Ordinary XAUUSD cohorts retain H1 as storage identity but use a frozen M5/H4/H1/M15 replay bundle.
+  - Autonomous lifecycle screening delegates to the canonical lab dispatcher; no direct evaluator queue path may bypass immutable snapshot and MTF admission.
+  - Missing gate evidence cannot pass a lifecycle boundary.
+  - Failed evidence is retained for diagnosis but is not promotion evidence.
+  - Append-only failed queue rows block admission only while their agents belong to the current recovery lookback or active lineage head; older quarantines remain historical evidence and cannot starve every successor.
+  - A clean generation becomes an autonomy proof only after an arbiter-owned successor is linked by an immutable receipt; acceptance requires two consecutive linked receipts.
+  - A single-agent screening recovery rechecks the exact frozen-control admission before evaluator execution; an incomplete control can never yield an unpaired candidate screen result.
+  - A data-edge audit authorizes at most its own immediate successor; inherited audit context is provenance, not repeatable generation admission.
+  - A research-only activation factorial consumes four seats only when a terminal immutable source has a bounded strategy-to-tactic gap and two legal distinct interventions; its control is the source executable vector and prequeue admission attests C/A/B/A+B exact deltas.
+flows:
+  - flows/cohort-lifecycle.md
+docs:
+  - idea.md
+  - states.md
+  - history.md
+tests:
+  - backend-laravel/tests/Feature/AiLearningLaboratoryTest.php
+  - backend-laravel/tests/Feature/CausalLearningLoopContractTest.php
+  - backend-laravel/tests/Feature/ParentAwareEvolutionTest.php
+  - backend-laravel/tests/Feature/LearningIntegrityRegressionTest.php
+  - backend-laravel/tests/Feature/ImmutableLabEvidenceTest.php
+  - backend-laravel/tests/Feature/DurableAutonomyProofTest.php
+  - backend-laravel/tests/Feature/LearningDeadlockPreventionTest.php
+  - backend-laravel/tests/Feature/StrategyTacticRiskCompositionPlannerTest.php
+  - backend-laravel/tests/Feature/LabReplayRecoveryContractTest.php
+  - backend-laravel/tests/Feature/RiskBoundedEvolutionTest.php
+  - backend-laravel/tests/Feature/ProofFrontierActivationTest.php
+  - backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php

@@ -656,7 +656,7 @@ class MarketChampionService
                 'paper_profit_factor' => $profitFactor, 'paper_max_drawdown' => $drawdown,
                 'status' => $passed ? 'paper' : ($status === 'failed' ? 'rejected' : 'forward_validated'),
             ]);
-            $metrics['evolutionary_authority'] = app(PaperAuthorityAdmissionService::class)->recordProspectiveOutcome(
+            $metrics['paper_authority'] = app(PaperAuthorityAdmissionService::class)->recordProspectiveOutcome(
                 $performance->modelVersion,
                 $performance->symbol,
                 $performance->timeframe,
@@ -664,10 +664,26 @@ class MarketChampionService
                     'prospective_after_freeze' => (bool) data_get($metrics, 'paper_window.prospective_after_freeze', false),
                     'parameter_hash_matches_passport' => (bool) data_get($metrics, 'paper_window.parameter_hash_matches_passport', false),
                     'discipline_audit_passed' => (bool) data_get($metrics, 'discipline_audit.passed', false),
+                    'paper_window_key' => data_get($metrics, 'paper_window.paper_window_key'),
+                    'paper_observation_times' => (array) data_get($metrics, 'paper_window.paper_observation_times', []),
+                    'paper_used_for_screening' => data_get($metrics, 'paper_window.paper_used_for_screening'),
+                    'paper_used_for_mutation' => data_get($metrics, 'paper_window.paper_used_for_mutation'),
+                    'paper_used_for_selection' => data_get($metrics, 'paper_window.paper_used_for_selection'),
+                    'paper_used_for_posterior_update' => data_get($metrics, 'paper_window.paper_used_for_posterior_update'),
+                    'epoch_contract' => (array) data_get($metrics, 'paper_window.epoch_contract', []),
                     'paper_gate_passed' => $passed,
                 ],
             );
-            $performance->update(['metrics' => [...((array) $performance->metrics), 'paper_authority' => $metrics['evolutionary_authority']]]);
+            $metrics['evolutionary_authority'] = app(SkillMentorService::class)->recordPaperOutcome(
+                $performance->fresh(),
+                $metrics,
+                $metrics['paper_authority'],
+            );
+            $performance->update(['metrics' => [
+                ...((array) $performance->metrics),
+                'paper_authority' => $metrics['paper_authority'],
+                'paper_evolutionary_authority' => $metrics['evolutionary_authority'],
+            ]]);
             PaperTradingEvaluation::updateOrCreate(
                 ['model_market_performance_id' => $performance->id, 'status' => $status],
                 ['sample_count' => $sampleCount, 'profit_factor' => $profitFactor, 'max_drawdown' => $drawdown,

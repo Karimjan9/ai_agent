@@ -32,6 +32,8 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: backend-laravel/package-lock.json
+      - name: Project Map freshness
+        run: node scripts/project-map/project-map.mjs check
       - name: Laravel dependencies
         working-directory: backend-laravel
         run: composer install --no-interaction --prefer-dist

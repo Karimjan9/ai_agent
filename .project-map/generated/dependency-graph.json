@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/project-map/project-map.mjs",
+  "generator_digest": "5e3498ce579265a81dc03c17970e0f3ff7be935b657ee7f6e9aab0a863ae6762",
+  "generated_at": "2026-09-26T17:30:50.184Z",
+  "source_digest": "1f612b3f350728963367ba99e61f8e4430e448e51b310bdf17f4bc0cde0173d2",
+  "source_file_count": 1364,
+  "git_head": "c47c026e454e780e818232cbb0f9cfd03a21debb",
+  "authority": "Navigation facts only. Real source code and tests remain authoritative.",
+  "nodes": [
+    {
+      "id": "causal-learning",
+      "title": "Causal learning, conversion and composition settlement"
+    },
+    {
+      "id": "confirmation-entry",
+      "title": "Closed multi-timeframe confirmation and entry"
+    },
+    {
+      "id": "laboratory",
+      "title": "AI Laboratory and adaptive evolution"
+    },
+    {
+      "id": "laravel-python-contract",
+      "title": "Laravel and Python execution contract"
+    },
+    {
+      "id": "market-data",
+      "title": "Market data continuity and canonical candles"
+    },
+    {
+      "id": "operations",
+      "title": "Runtime operations, scheduler and recovery"
+    },
+    {
+      "id": "paper-execution",
+      "title": "Paper execution and process integrity"
+    }
+  ],
+  "edges": [
+    {
+      "from": "causal-learning",
+      "to": "laboratory"
+    },
+    {
+      "from": "causal-learning",
+      "to": "confirmation-entry"
+    },
+    {
+      "from": "causal-learning",
+      "to": "laravel-python-contract"
+    },
+    {
+      "from": "causal-learning",
+      "to": "paper-execution"
+    },
+    {
+      "from": "confirmation-entry",
+      "to": "market-data"
+    },
+    {
+      "from": "confirmation-entry",
+      "to": "laravel-python-contract"
+    },
+    {
+      "from": "laboratory",
+      "to": "market-data"
+    },
+    {
+      "from": "laboratory",
+      "to": "laravel-python-contract"
+    },
+    {
+      "from": "paper-execution",
+      "to": "confirmation-entry"
+    },
+    {
+      "from": "paper-execution",
+      "to": "laravel-python-contract"
+    },
+    {
+      "from": "paper-execution",
+      "to": "market-data"
+    }
+  ]
+}

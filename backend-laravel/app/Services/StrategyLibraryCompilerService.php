@@ -50,6 +50,12 @@ class StrategyLibraryCompilerService
             $this->spec('mix_002_breakout_beast', 'hybrid', 'breakout_compression', ['ema_alignment'], ['bb_compression', 'donchian_previous_break'], ['closed_candle_break'], ['adx_strength', 'atr_expansion'], ['lookback', 'bb_width_percentile']),
             $this->spec('mix_003_smc_trend_pullback', 'hybrid', 'trend', ['structure_direction', 'discount_zone'], ['liquidity_sweep', 'fvg_retest'], ['choch_event'], ['displacement'], ['swing_lookback', 'equal_level_atr_fraction']),
             $this->spec('mix_006_range_killer', 'hybrid', 'range', ['ema_slope_flat'], ['bollinger_extreme', 'zscore_extreme'], ['reentry_close'], ['rsi_zone', 'adx_weak'], ['zscore_threshold', 'adx_max']),
+            // These two specialist runtimes already exist in the laboratory
+            // and Python replay registry. They must also have first-class
+            // composition identities: mapping either family to the generic
+            // hybrid fallback rewrites a frozen causal control before replay.
+            $this->spec('mix_010_regime_ensemble', 'regime_ensemble', 'any', ['regime_classifier'], ['specialist_ownership'], ['closed_candle_router'], ['regime_confidence'], ['minimum_confidence', 'high_volatility_wait']),
+            $this->spec('mix_011_differential_router', 'differential_router', 'any', ['frozen_parent_router'], ['target_regime_specialist'], ['closed_candle_router'], ['non_target_parent_freeze'], ['differential_target_min_signal_confidence', 'trend_up_strength_min', 'trend_down_strength_min', 'differential_router_version', 'range_deviation']),
             $this->spec('str_050_macro_bias', 'macro_fundamental', 'any', ['macro_bias'], ['technical_setup'], ['closed_candle_confirmation'], ['news_safe'], [], 'shadow_only'),
             $this->spec('str_060_cot_filter', 'positioning', 'any', ['cot_bias'], ['technical_setup'], ['closed_candle_confirmation'], ['cot_available_at'], [], 'shadow_only'),
         ];
@@ -89,6 +95,57 @@ class StrategyLibraryCompilerService
             'str_040_asia_london_breakout' => ['family' => 'session', 'architecture' => 'session_breakout'],
             'mix_001_trend_beast', 'mix_002_breakout_beast', 'mix_003_smc_trend_pullback' => ['family' => 'hybrid', 'architecture' => 'regime_router'],
             'mix_006_range_killer' => ['family' => 'hybrid', 'architecture' => 'regime_consensus'],
+            'mix_010_regime_ensemble' => ['family' => 'regime_ensemble', 'architecture' => 'frozen_regime_specialist_ensemble'],
+            'mix_011_differential_router' => ['family' => 'differential_router', 'architecture' => 'frozen_parent_differential_router'],
+            default => null,
+        };
+    }
+
+    /**
+     * Declare the closed-regime envelope the selected Python strategy runtime
+     * can emit into. This is capability metadata only; it does not make a
+     * signal more permissive or claim that any historical candle activated.
+     * An unknown runtime has no provable scope and must not be composed.
+     *
+     * @return array{protocol:string,runtime:string,regimes:array<int,string>}
+     */
+    public function signalScope(string $baseStrategy): array
+    {
+        $runtime = strtolower(trim($baseStrategy));
+        $regimes = match ($runtime) {
+            'trend_v1', 'trend_pullback_v1', 'trend_retest_v1', 'trend_breakout_retest_v1',
+            'momentum_v1', 'momentum_pullback_v1' => ['trend_up', 'trend_down'],
+            'breakout_v1', 'breakout_continuation_v1', 'volatility_v1',
+            'volatility_breakout_v1', 'session_v1' => ['trend_up', 'trend_down', 'high_volatility'],
+            'mean_reversion_v1', 'range_rsi_reversion_v1', 'session_mean_reversion_v1' => ['range', 'low_volatility'],
+            'hybrid_v1', 'regime_consensus_v1' => ['trend_up', 'trend_down', 'range', 'unknown', 'transition', 'high_volatility'],
+            'differential_router_v1' => ['trend_up', 'trend_down', 'range'],
+            'regime_ensemble_v1' => ['trend_up', 'trend_down', 'range', 'high_volatility'],
+            default => [],
+        };
+
+        return [
+            'protocol' => 'strategy_signal_scope_v1',
+            'runtime' => $baseStrategy,
+            'regimes' => $regimes,
+        ];
+    }
+
+    /** @return string|null The concrete registry key owned by this library strategy. */
+    public function runtimeBaseStrategy(string $id): ?string
+    {
+        return match ($id) {
+            'str_001_ema_adx_pullback' => 'trend_v1',
+            'str_031_bos_retest', 'str_037_fvg_retest' => 'trend_retest_v1',
+            'str_003_donchian_breakout' => 'breakout_v1',
+            'str_010_bollinger_squeeze' => 'volatility_v1',
+            'str_020_bb_rsi_reversion' => 'mean_reversion_v1',
+            'str_022_zscore_reversion' => 'range_rsi_reversion_v1',
+            'str_032_choch_reversal', 'mix_006_range_killer' => 'regime_consensus_v1',
+            'str_040_asia_london_breakout' => 'session_v1',
+            'mix_001_trend_beast', 'mix_002_breakout_beast', 'mix_003_smc_trend_pullback' => 'hybrid_v1',
+            'mix_010_regime_ensemble' => 'regime_ensemble_v1',
+            'mix_011_differential_router' => 'differential_router_v1',
             default => null,
         };
     }

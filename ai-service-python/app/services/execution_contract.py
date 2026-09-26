@@ -8,6 +8,7 @@ import math
 from typing import Any
 
 from app.schemas import SimpleBacktestRequest
+from app.services.composition_runtime import effective_management_parameters
 
 
 PROTOCOL = "canonical_market_execution_v1"
@@ -105,7 +106,9 @@ def management_contract_metadata(payload: SimpleBacktestRequest) -> dict[str, An
     hash owns only post-entry behavior so partials, trailing and time stops
     cannot drift between replay and a later paper reconciliation request.
     """
-    parameters = payload.parameters or {}
+    parameters = effective_management_parameters(
+        payload.composition_runtime_contract, payload.parameters
+    )
     management_parameters = {
         "partial_take_profit_fraction": float(parameters.get("partial_take_profit_fraction", 0) or 0),
         "partial_target_atr_multiplier": float(parameters.get("partial_target_atr_multiplier", 1.0) or 1.0),

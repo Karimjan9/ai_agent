@@ -1,0 +1,2595 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/project-map/project-map.mjs",
+  "generator_digest": "5e3498ce579265a81dc03c17970e0f3ff7be935b657ee7f6e9aab0a863ae6762",
+  "generated_at": "2026-09-26T17:30:50.184Z",
+  "source_digest": "1f612b3f350728963367ba99e61f8e4430e448e51b310bdf17f4bc0cde0173d2",
+  "source_file_count": 1364,
+  "git_head": "c47c026e454e780e818232cbb0f9cfd03a21debb",
+  "authority": "Navigation facts only. Real source code and tests remain authoritative.",
+  "tests": [
+    {
+      "path": "ai-service-python/tests/test_backtester_execution.py",
+      "tests": [
+        "test_laravel_normal_volatility_scope_matches_runtime_label",
+        "test_instrument_runtime_ledger_records_exact_event_and_context_abstention",
+        "test_legacy_family_signal_still_produces_a_specific_tactic_receipt",
+        "test_tactic_owner_fails_closed_outside_its_pre_registered_context",
+        "test_tactic_owner_matches_the_exact_runtime_venue_phase",
+        "test_placeholder_context_is_unresolved_not_an_executable_scope",
+        "test_replay_emits_risk_and_exit_instrument_receipts_only_on_real_paths",
+        "test_confirmation_ablation_requires_the_sealed_attribution_arm",
+        "test_edge_context_firewall_converts_out_of_scope_signals_to_wait",
+        "test_edge_context_control_is_observational_and_transition_is_closed_state",
+        "test_edge_context_direction_is_a_pre_entry_specialist_boundary",
+        "test_h1_regime_is_available_only_after_that_h1_candle_closes",
+        "test_signal_close_enters_next_open_and_checks_first_candle",
+        "test_management_evidence_requires_trade_and_winner_path_power",
+        "test_academy_diagnostic_is_hindsight_only_and_does_not_fabricate_an_oracle",
+        "test_post_entry_gap_fills_at_open_not_stop_price",
+        "test_unexpected_weekday_gap_hard_blocks_backtest",
+        "test_entry_funnel_records_execution_filter_rejections",
+        "test_differential_recall_threshold_is_target_lane_only",
+        "test_adaptive_signal_expiry_abstains_on_stale_signal",
+        "test_drift_abstention_uses_spread_drift_and_loss_state",
+        "test_temporal_survival_report_is_emitted_by_replay",
+        "test_frozen_control_collects_temporal_telemetry_without_veto",
+        "test_opt_in_decision_trace_carries_features_and_rejections",
+        "test_shadow_veto_ledger_measures_a_cooldown_rejection_without_opening_a_real_trade",
+        "test_loss_streak_wait_expires_and_recovery_probe_returns_to_normal_risk",
+        "test_cooldown_two_and_three_change_accepted_trade_timing",
+        "test_loss_cooldown_is_scoped_to_the_risk_context",
+        "test_global_confidence_fallback_is_not_a_hard_veto_for_a_new_context",
+        "test_weak_regime_veto_is_context_local_finite_and_recovers_with_a_probe",
+        "test_confidence_calibration_uses_only_closed_history_and_rejects_negative_lower_ev",
+        "test_differential_lane_selector_uses_parent_and_child_ledgers_separately",
+        "test_differential_identity_normalizes_equally_missing_non_target_values",
+        "test_proof_replay_uses_compounded_net_return_and_canonical_pf_rounding",
+        "test_proof_replay_does_not_double_round_profit_factor",
+        "test_proof_replay_still_fails_on_real_ledger_mismatch",
+        "test_lightweight_differential_replay_keeps_paired_identity_evidence",
+        "test_window_survival_keeps_activity_absence_separate_from_edge_failure",
+        "test_xau_us_holiday_closure_is_not_a_hard_gap",
+        "test_fx_christmas_closure_is_not_a_hard_gap",
+        "test_xau_maundy_thursday_closure_is_not_a_hard_gap",
+        "test_pf_attribution_uses_full_trade_ledger",
+        "test_cost_profiles_replay_identical_candles",
+        "test_compact_event_digest_is_emitted_without_full_decision_trace",
+        "test_shadow_state_machine_is_explicit_and_finite",
+        "test_architecture_interaction_activates_auditable_classifier_state_coherence"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_closed_mtf_stack.py",
+      "tests": [
+        "test_higher_timeframe_context_is_unavailable_until_its_candle_closes",
+        "test_missing_context_fails_closed_and_cannot_create_a_trade_signal",
+        "test_invalid_higher_timeframe_ohlc_fails_the_whole_context_stream_closed",
+        "test_precompiled_context_is_byte_equivalent_across_independent_entry_folds",
+        "test_liquidity_trap_mtf_parameter_contract_matches_the_research_modes",
+        "test_catalogue_playbook_and_control_use_closed_context_and_smt_fails_closed_without_related_market",
+        "test_catalogue_playbook_parameter_contract_accepts_only_declared_model_ids"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_composition_runtime.py",
+      "tests": [
+        "test_complete_bound_program_returns_consumption_receipt",
+        "test_legacy_program_protocol_cannot_own_the_new_runtime_graph",
+        "test_unbound_management_fails_before_replay",
+        "test_risk_binding_requires_the_exact_runtime_parameter_value",
+        "test_tampered_contract_fails_hash_attestation",
+        "test_declared_composition_execution_timeframe_is_fail_closed",
+        "test_bound_flag_cannot_hide_strategy_identity_drift",
+        "test_required_typed_node_cannot_be_removed_from_sealed_organism",
+        "test_executable_program_rejects_a_port_drift_before_replay",
+        "test_executable_program_rejects_execution_node_timeframe_drift",
+        "test_empty_strategy_tactic_scope_is_a_pre_replay_compile_failure",
+        "test_m5_contract_cannot_disable_closed_mtf_authority",
+        "test_aggregate_execution_authority_rejects_identity_drift",
+        "test_aggregate_execution_authority_rejects_tampered_instrument_assignment",
+        "test_rehashed_stale_instrument_source_cannot_bind_to_frozen_composition",
+        "test_mtf_bundle_identity_is_part_of_the_same_execution_authority",
+        "test_management_node_is_not_claimed_when_no_trade_reached_it",
+        "test_strategy_signal_is_exposed_as_typed_contract_without_signal_creation",
+        "test_explicit_unknown_regime_is_context_when_frozen_tactic_allows_it",
+        "test_opportunity_receipt_names_the_first_tactic_veto",
+        "test_paired_opportunity_universe_includes_implicit_no_signal_candles",
+        "test_preentry_receipt_is_emitted_at_gate_and_not_reconstructed_after_replay",
+        "test_every_signal_gets_manifest_bound_first_veto_and_ordered_stage_receipt",
+        "test_typed_pipeline_vetoes_raw_signal_before_risk_when_location_is_invalid",
+        "test_management_adapter_owns_exit_parameters_without_mutating_risk_gene",
+        "test_backtester_emits_runtime_receipt_from_real_decision_path",
+        "test_sealed_m5_mtf_organism_reaches_trade_management",
+        "test_execution_counterfactual_gets_derived_non_promotable_authority",
+        "test_tampered_node_receipt_cannot_be_reported_as_partially_observed",
+        "test_aggregate_node_totals_cannot_replace_one_managed_decision_witness",
+        "test_resealed_management_receipt_without_trade_close_is_invalid",
+        "test_tampered_signal_receipt_cannot_hide_behind_an_unchanged_digest",
+        "test_portfolio_selected_member_keeps_its_composition_management_owner"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_confirmation_entry_contract.py",
+      "tests": [
+        "test_balanced_contract_separates_setup_confirmation_trigger_and_entry",
+        "test_topology_genomes_change_the_executable_confirmation_entry_contract",
+        "test_right_direction_is_still_skipped_when_target_space_is_too_small",
+        "test_breakout_requires_close_then_hold_retest_not_a_wick_only_event",
+        "test_breakout_close_does_not_count_as_an_independent_reaction_family",
+        "test_breakout_temporal_role_binder_keeps_h1_bias_but_can_use_m15_setup_level",
+        "test_later_weak_structure_event_cannot_inherit_old_displacement_proof",
+        "test_fill_revalidates_reward_space_chase_and_structural_target",
+        "test_unknown_model_or_mode_fails_closed_in_direct_compiler_calls",
+        "test_invalid_m5_ohlc_invalidates_the_whole_entry_stream",
+        "test_missing_closed_mtf_context_fails_closed",
+        "test_parameter_contract_declares_models_modes_and_confirmation_cost_gates",
+        "test_paper_signal_uses_same_mtf_compiler_and_fails_closed_without_context_streams",
+        "test_confirmation_entry_contract_is_m5_only_even_when_context_is_requested_elsewhere"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_coverage_passport.py",
+      "tests": [
+        "test_sparse_fine_cells_backoff_to_an_evidence_backed_regime",
+        "test_under_sampled_envelopes_do_not_pass"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_dual_track_confidence.py",
+      "tests": [
+        "test_council_confidence_uses_all_votes_in_entropy",
+        "test_dedicated_lane_endpoint_returns_only_selected_output",
+        "test_ablation_endpoint_produces_distinct_full_and_ablated_hashes"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_execution_contract.py",
+      "tests": [
+        "test_fx_point_size_hash_matches_laravel_canonical_json"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_fitness_scoring.py",
+      "tests": [
+        "test_fitness_prefers_monthly_survival_over_same_global_profit",
+        "test_fitness_penalizes_execution_cost_stress"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_research.py",
+      "tests": [
+        "test_snapshot_volatility_label_matches_runtime_volatility_without_widening_scope",
+        "test_effectful_veto_is_a_research_decision_but_not_execution_or_promotion",
+        "test_pre_registered_runtime_bindings_are_attested_without_promotion",
+        "test_post_hoc_or_changed_assignment_is_not_attested",
+        "test_raw_parameter_seal_and_normalized_runtime_bindings_are_distinct",
+        "test_assignment_seal_survives_json_integer_float_round_trip",
+        "test_trace_exports_only_entry_time_context_slices_for_paired_settlement",
+        "test_matching_binding_without_a_decision_event_is_not_an_invocation",
+        "test_aggregate_signal_cannot_replace_an_instrument_specific_runtime_receipt",
+        "test_tampered_runtime_receipt_counts_are_rejected",
+        "test_bundle_has_no_authority_when_components_activated_in_different_contexts",
+        "test_activation_is_scoped_and_the_instrument_abstains_outside_its_contract"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_market_adaptive_replay.py",
+      "tests": [
+        "test_last_six_weeks_are_excluded_from_foundation_and_replay",
+        "test_vendor_archive_starting_on_gbpusd_baseline_is_accepted",
+        "test_xau_sunday_open_delay_is_accepted",
+        "test_timezone_aware_candles_are_normalized_before_boundary_comparisons",
+        "test_checkpoint_ledger_accepts_timezone_aware_trade_timestamps",
+        "test_transition_and_blame_ledgers_accept_timezone_aware_trade_timestamps",
+        "test_separate_foundation_archive_can_back_the_canonical_rolling_stream",
+        "test_m15_uses_its_own_pre_2026_foundation_contract",
+        "test_paper_only_boundary_replays_historical_rows_without_2026",
+        "test_paper_only_boundary_rejects_a_2026_research_candle",
+        "test_holdout_runner_receives_only_the_sealed_tail",
+        "test_monthly_passport_marks_one_good_month_as_seasonal_not_consistent",
+        "test_execution_fault_contract_proves_safe_order_invariants_without_market_evidence",
+        "test_portfolio_statistics_fail_closed_without_frozen_selection_frontier",
+        "test_portfolio_behavioral_diversity_requires_active_orthogonal_specialists",
+        "test_screening_missing_regime_bucket_is_a_rescue_case_not_a_500",
+        "test_screening_calendar_uses_full_chronological_month_ledger",
+        "test_parameter_perturbation_uses_the_declared_changed_gene",
+        "test_screening_can_defer_parameter_factorial_without_claiming_evidence",
+        "test_stratified_history_uses_independent_windows_across_the_archive",
+        "test_screening_defers_stratified_history_to_replication_block",
+        "test_high_volatility_is_wait_when_gene_enables_safety_filter"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_market_sessions.py",
+      "tests": [
+        "test_iana_dst_changes_session_membership_and_overlap_without_fixed_utc_hours",
+        "test_specialist_abstains_outside_owned_session_and_keeps_overlap_mask",
+        "test_detailed_sge_lbma_comex_phases_and_coordinates_are_preserved",
+        "test_sge_pre_holiday_night_is_closed_and_exact_phase_scope_waits_elsewhere",
+        "test_portfolio_council_routes_on_exact_venue_phase_not_coarse_london_label",
+        "test_calendar_coverage_hashes_every_candle_and_has_no_silent_unknown_state",
+        "test_h1_candle_preserves_fix_phases_crossed_inside_its_closed_interval",
+        "test_specialist_runtime_enforces_liquidity_transition_and_maintenance_abstention"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_monte_carlo.py",
+      "tests": [
+        "test_monte_carlo_returns_expected_keys",
+        "test_monte_carlo_empty_trades",
+        "test_monte_carlo_risk_of_ruin_detects_bad_paths",
+        "test_same_seed_is_reproducible"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_mtf_replay_optimization.py",
+      "tests": [
+        "test_mtf_cost_and_exit_profiles_reuse_features_and_signals",
+        "test_hypothesis_batch_uses_one_shared_feature_snapshot"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_multitimeframe.py",
+      "tests": [
+        "test_buy_is_allowed_by_closed_h1_trend_up",
+        "test_sell_is_vetoed_by_closed_h1_trend_up",
+        "test_missing_h1_context_fails_closed",
+        "test_nan_h1_context_fails_closed",
+        "test_range_context_allows_reduced_risk_instead_of_direction_vote",
+        "test_m15_only_ablation_bypasses_h1_veto_but_remains_explicit",
+        "test_m5_execution_uses_the_closed_h1_context_from_the_full_stack",
+        "test_autonomous_m5_replay_accepts_one_exact_closed_mtf_manifest"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_paper_coverage_policy.py",
+      "tests": [
+        "test_certified_trade_scope_allows_signal",
+        "test_aggregate_scope_and_abstain_permission_are_respected"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_paper_management_contract.py",
+      "tests": [
+        "test_management_contract_detects_post_entry_parameter_drift",
+        "test_paper_advance_executes_partial_then_final_target_and_emits_r_audit"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_parameter_schema.py",
+      "tests": [
+        "test_breakout_accepts_only_runtime_parameters_in_range",
+        "test_shared_execution_gene_is_accepted",
+        "test_breakout_setup_timeframe_is_a_bounded_temporal_role_gene",
+        "test_causal_topology_genomes_are_runtime_validated",
+        "test_unknown_evolution_parameter_is_rejected",
+        "test_temporal_survival_genes_are_explicit_and_bounded",
+        "test_out_of_range_parameter_is_rejected",
+        "test_hybrid_range_adapter_genes_are_runtime_validated",
+        "test_specialized_runtime_identity_overrides_stale_parent_base",
+        "test_regime_ensemble_identity_overrides_stale_parent_base",
+        "test_structural_entry_topology_changes_signal_surface",
+        "test_architecture_interaction_is_a_bounded_shared_macro_gene"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_red_team.py",
+      "tests": [
+        "test_cost_stress_failure_produces_bounded_risk_exit_recommendation"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_regime_classifier.py",
+      "tests": [
+        "test_regime_classifier_variants_are_executable_and_auditable",
+        "test_regime_classifier_gene_is_schema_valid"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_regime_ensemble.py",
+      "tests": [
+        "test_differential_v2_trend_down_roc_threshold_changes_target_lane_signal",
+        "test_mean_reversion_inverse_extreme_is_an_executable_one_gene_topology",
+        "test_hybrid_forwards_range_signal_topology_to_its_range_specialist",
+        "test_portfolio_evidence_preserves_member_context_and_month_intersection",
+        "test_router_has_one_predeclared_specialist_per_candle",
+        "test_router_is_fail_closed_for_unseen_regime_even_when_session_has_signal",
+        "test_differential_router_keeps_parent_signal_and_confidence_outside_trend_down",
+        "test_differential_router_v2_reuses_parent_momentum_topology",
+        "test_differential_router_can_target_the_observed_range_lane",
+        "test_range_inverse_extreme_is_explicitly_scoped_to_the_range_lane",
+        "test_portfolio_binds_selected_member_execution_and_keeps_global_policy",
+        "test_portfolio_attribution_keeps_same_role_members_distinct",
+        "test_portfolio_generic_member_cannot_trade_unknown_regime",
+        "test_portfolio_same_niche_binds_highest_current_confidence_execution",
+        "test_council_opposite_specialists_force_wait_and_record_reason",
+        "test_council_low_confidence_consensus_forces_wait",
+        "test_router_objective_excludes_profit_factor",
+        "test_pf_attribution_persists_regime_volatility_intersection"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_replay_cache_contract.py",
+      "tests": [
+        "test_candidate_contract_prefers_lab_agent_identity_when_strategy_labels_collide",
+        "test_checkpoint_is_atomic_small_and_marks_no_promotion_evidence",
+        "test_incremental_screen_timeout_is_bounded_with_operational_margin",
+        "test_nested_base_strategy_selects_the_differential_child_deadline",
+        "test_screen_capacity_defaults_to_one_on_small_hosts_and_keeps_an_explicit_override",
+        "test_causal_confirmation_has_a_separate_sub_hour_hard_ceiling",
+        "test_durable_causal_fold_budget_covers_three_bounded_arms",
+        "test_skill_cartridge_confirmation_uses_the_same_bounded_research_lane",
+        "test_simple_toolbox_replay_has_a_five_minute_default_and_six_minute_ceiling",
+        "test_candidate_cache_identity_is_independent_of_sibling_contracts",
+        "test_candidate_cache_identity_does_not_change_with_trial_statistics",
+        "test_all_candidate_cache_hits_skip_sealed_dataset_loading",
+        "test_foundation_dataset_participates_in_immutable_cache_identity",
+        "test_php_execution_contract_hash_preserves_small_float_format",
+        "test_sealed_execution_contract_fails_closed_when_parameters_drift"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_robustness_protocol.py",
+      "tests": [
+        "test_noise_null_is_assessed_only_after_thirty_trades",
+        "test_signal_delay_moves_only_signal_columns",
+        "test_missing_internal_candle_is_hard_blocked"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_screening_cascade.py",
+      "tests": [
+        "test_screening_robustness_is_deferred_for_a_core_failure",
+        "test_screening_robustness_admits_candidates_that_can_reach_full_replay"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_screening_optimization_contract.py",
+      "tests": [
+        "test_snapshot_path_tail_is_bounded_before_replay",
+        "test_historical_evolution_screen_rejects_2026_paper_candles",
+        "test_powered_survival_does_not_treat_one_losing_trade_as_a_temporal_failure",
+        "test_powered_survival_keeps_repeatable_catastrophic_loss_as_hard_failure",
+        "test_powered_low_pf_without_material_loss_is_not_a_catastrophic_verdict",
+        "test_bounded_cohort_builds_features_once_and_keeps_primary_trace",
+        "test_cost_profiles_disable_trace_but_replay_stateful_execution",
+        "test_warmup_super_snapshot_slices_2k_view_without_rebuilding_features",
+        "test_fast_stateful_subreplay_matches_reference_ledger_and_gates",
+        "test_fast_stateful_primary_screen_matches_reference_trace_and_event_identity",
+        "test_fast_stateful_differential_screen_matches_reference_trace_and_gates"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_statistical_validation.py",
+      "tests": [
+        "test_cscv_reports_pbo_for_four_replay_checkpoints",
+        "test_cscv_refuses_odd_or_insufficient_checkpoint_windows",
+        "test_purged_cscv_refuses_a_single_candidate",
+        "test_deflated_sharpe_accounts_for_multiple_trials",
+        "test_deflated_sharpe_uses_raw_kurtosis_equivalent_denominator"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_strategy_dna.py",
+      "tests": [
+        "test_strategy_dna_returns_expected_keys",
+        "test_trend_dependency_uses_positive_trend_profit_share"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_structure_instruments.py",
+      "tests": [
+        "test_structure_instruments_are_causal_and_return_a_value_vector",
+        "test_structure_playbooks_are_registered_and_executable",
+        "test_execution_tactic_contract_forbids_martingale_and_full_kelly"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_tactic_runtime.py",
+      "tests": [
+        "test_architecture_aliases_resolve_to_distinct_tactic_functions",
+        "test_tactic_functions_return_closed_candle_signal_contract"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_volume_features.py",
+      "tests": [
+        "test_missing_source_marker_is_unavailable_not_low_volume",
+        "test_no_volume_lane_reports_not_requested_instead_of_unavailable",
+        "test_relative_volume_does_not_change_when_only_future_volume_changes",
+        "test_low_volume_firewall_is_bounded_to_available_rows",
+        "test_shadow_report_is_observational_and_has_decile_evidence",
+        "test_m15_uses_weekday_slot_and_effort_result_stays_shadow_only"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_walk_forward.py",
+      "tests": [
+        "test_split_dataset_uses_70_15_15_ratios",
+        "test_rolling_windows_reserve_final_two_years",
+        "test_sparse_history_uses_three_chronological_row_windows_before_holdout",
+        "test_confirmation_protocol_requires_and_reports_bounded_horizon_purge",
+        "test_confirmation_run_applies_same_bounded_execution_overlay_to_unbounded_genome",
+        "test_edge_context_authority_aggregates_all_folds_and_rejects_trade_telemetry_contradiction",
+        "test_edge_two_three_nine_stages_use_disjoint_frozen_universe_partitions",
+        "test_causal_confirmation_executes_nine_bounded_folds_plus_audit_trace",
+        "test_train_forward_gap_over_threshold_is_overfit",
+        "test_robustness_score_uses_score_range"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AcademyExperimentMaterializerServiceTest.php",
+      "tests": [
+        "test_it_only_admits_a_compiled_pre2026_academy_cohort",
+        "test_full_cohort_settles_only_after_every_arm_has_matching_evidence",
+        "test_cohort_power_cannot_be_created_by_summing_underpowered_arms",
+        "test_hash_mismatch_is_quarantined_with_a_receipt_and_repair_work"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AccessControlTest.php",
+      "tests": [
+        "setUp",
+        "test_dashboard_requires_login_and_viewer_cannot_mutate",
+        "test_internal_api_requires_shared_token",
+        "test_login_is_rate_limited_and_responses_include_security_headers"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AdaptiveParentEcosystemTest.php",
+      "tests": [
+        "test_robust_lane_can_use_multiple_diverse_parents_while_causal_lane_stays_single_parent",
+        "test_unproven_research_seed_cannot_become_a_genetic_parent",
+        "test_exact_cell_frontier_is_not_silently_truncated_before_dynamic_selection",
+        "test_new_execution_gene_receives_extension_module_provenance",
+        "test_regime_ensemble_targeted_repair_keeps_causal_policy_identity",
+        "test_disabling_adaptive_scoring_does_not_break_causal_single_parent_attribution",
+        "test_configured_population_budget_adds_real_exploration_seats",
+        "test_confirmed_mentor_becomes_selectable_after_foundry_grants_parent_authority",
+        "test_architecture_lane_uses_dynamic_capability_parents_with_gene_hashes",
+        "test_archive_preserves_failure_evidence_but_never_reintroduces_failure_as_parent",
+        "test_runtime_policy_waits_on_unknown_or_disagreeing_regimes",
+        "test_population_constructor_persists_dynamic_parent_decision_and_graph",
+        "test_governor_expands_later_generation_budget_without_erasing_causal_floor",
+        "makeModel",
+        "makePerformance",
+        "attachContextualMentorAuthority",
+        "canonicalHash"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentCompetencyTensorServiceTest.php",
+      "tests": [
+        "test_tensor_projects_contextual_evidence_and_never_grants_runtime_permission",
+        "test_contraindicated_context_requires_abstention_not_confident_trading"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentDiagnosisServiceTest.php",
+      "tests": [
+        "test_signal_starvation_becomes_targeted_mutation_advice"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentLifecycleAuditTest.php",
+      "tests": [
+        "test_explicit_parentless_root_is_not_reported_as_a_lineage_failure",
+        "test_active_population_contract_drift_is_blocked_without_rewriting_agents",
+        "test_architecture_only_zero_parameter_diff_is_not_a_constructor_failure",
+        "test_technical_zero_diff_quarantine_does_not_block_the_active_laboratory",
+        "test_m15_requires_a_frozen_closed_h1_regime_snapshot",
+        "test_forward_and_elite_monitor_waits_without_manufacturing_promotion",
+        "test_forward_candidate_without_auditable_gate_is_blocked",
+        "test_failed_elite_portfolio_is_reported_without_being_repaired",
+        "fakeReplayStatus",
+        "generation",
+        "agent",
+        "check"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentMindTest.php",
+      "tests": [
+        "test_run_all_dispatches_canonical_lab_without_agent_mind_artifacts",
+        "test_agent_mind_dashboard_renders"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentProgressCardTest.php",
+      "tests": [
+        "test_agent_moves_through_bounded_progress_stages_and_keeps_failure_context"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentResearchPlaybookToolboxServiceTest.php",
+      "tests": [
+        "test_every_agent_receives_the_full_library_but_studies_only_a_bounded_named_subset",
+        "test_completed_frozen_replay_is_visible_as_prior_but_not_as_agent_owned_promotion_evidence",
+        "test_historical_zero_trade_prior_is_projected_as_insufficient_without_rewriting_it",
+        "test_next_trial_rotates_through_missing_priors_without_claiming_learning",
+        "test_completed_prior_from_an_old_runtime_is_scheduled_again",
+        "test_toolbox_projects_only_the_latest_current_run_for_each_model",
+        "test_confirmation_models_can_receive_bounded_first_research_priority",
+        "test_promising_but_underpowered_prior_is_preserved_for_agent_owned_independent_windows",
+        "test_toolbox_consumes_terminal_agent_owned_portability_learning_instead_of_reusing_paper_success"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AiLearningLaboratoryTest.php",
+      "tests": [
+        "test_xauusd_timeframe_alias_cannot_open_a_second_population",
+        "test_each_pair_gets_a_bounded_owned_twenty_agent_population",
+        "test_generation_is_not_repeated_without_enough_new_data",
+        "test_single_hour_drift_does_not_create_a_generation_storm",
+        "test_force_cannot_create_a_second_generation_while_the_current_one_is_active",
+        "test_dispatcher_does_not_reexport_an_already_screening_generation",
+        "test_candidate_handoff_can_create_targeted_generation_after_screening_finishes",
+        "test_data_edge_audit_trigger_requires_durable_audit_evidence",
+        "test_inherited_data_edge_audit_cannot_reopen_another_root_portfolio",
+        "test_root_data_edge_portfolio_keeps_every_declared_mutation_type_and_value",
+        "test_data_edge_audit_can_unlock_a_completed_screened_generation",
+        "test_clean_final_report_can_record_an_idempotent_autonomous_data_edge_audit",
+        "test_forward_gate_failure_opens_a_targeted_evolution_handoff",
+        "test_generation_report_is_durable_and_contains_required_kpis",
+        "test_current_kpis_refreshes_legacy_generation_reports",
+        "test_pair_laboratory_dashboard_renders_learning_evidence",
+        "test_low_quality_challenger_is_never_used_as_a_parent",
+        "test_laboratory_dashboard_explains_a_candidate_forward_gate_failure",
+        "test_strategy_architecture_is_a_dynamic_gene_not_just_a_parameter_label",
+        "test_dynamic_frontier_does_not_spend_full_replay_on_two_trade_luck",
+        "test_bounded_root_recovery_reaches_full_replay_without_a_forward_score",
+        "test_recall_research_reserves_each_regime_before_global_dominance",
+        "test_causal_probe_lane_can_replay_a_near_miss_without_promotion",
+        "test_causal_probe_bundle_adds_a_same_family_control",
+        "test_strong_calendar_near_miss_can_enter_sealed_portfolio_research_lane",
+        "test_directional_temporal_rescue_is_research_only_and_keeps_side_evidence",
+        "test_non_differential_agent_does_not_receive_a_paired_regression_failure",
+        "test_empty_specialist_context_contract_serializes_as_json_object",
+        "test_every_screening_transport_carries_the_same_specialist_context_contract",
+        "test_full_replay_projection_preserves_sealed_cohort_cache_metadata",
+        "test_generated_trend_parameters_preserve_indicator_relationships",
+        "test_trend_up_council_uses_directional_single_gene_rescue_variants",
+        "test_state_cluster_uses_context_evidence_and_excludes_calendar_months",
+        "test_state_cluster_monthly_mutation_is_one_bounded_context_gene",
+        "test_agent_knowledge_card_records_lessons_skills_and_child_contract",
+        "test_council_sequence_requires_specialists_then_router_before_combined_replay",
+        "test_professional_exam_ledger_records_hidden_router_and_learning_contracts",
+        "test_teacher_student_shadow_detects_capability_retention_without_using_pf",
+        "test_drift_expires_skill_and_mutation_budget_blocks_harmful_direction",
+        "test_council_selection_includes_the_passed_router_in_combined_replay",
+        "test_council_members_cannot_start_individual_paper_track",
+        "test_historical_novelty_cannot_add_a_second_gene_to_an_isolated_child",
+        "test_historical_novelty_cache_is_scoped_to_each_generation",
+        "test_historical_novelty_snapshot_keeps_computed_and_legacy_fingerprints_without_full_model_hydration",
+        "test_unavailable_causal_or_repair_dependencies_become_non_credit_controls_instead_of_shrinking_population",
+        "test_parameter_fingerprint_is_stable_across_numeric_round_trip_types",
+        "test_targeted_final_novelty_probe_preserves_a_single_declared_gene",
+        "test_historical_novelty_expands_bounded_probe_when_local_ring_is_exhausted",
+        "test_historical_novelty_expands_integer_ring_past_failed_values",
+        "test_historical_novelty_reports_a_fully_exhausted_boolean_lane",
+        "test_council_objectives_select_distinct_range_topologies",
+        "test_role_complete_council_uses_safe_owner_mutations_and_wait_invariants",
+        "test_role_mutation_firewall_never_falls_back_to_another_owner_gene",
+        "test_full_validation_fairness_middleware_is_wired_into_evaluator_jobs",
+        "test_fresh_role_complete_cohort_is_classified_as_frontier_priority",
+        "test_frontier_promotion_is_dry_run_by_default",
+        "test_targeted_failure_profile_plan_uses_four_distinct_repair_dimensions",
+        "test_controlled_rescue_plan_is_five_by_four_and_pause_stays_fail_closed",
+        "test_screen_retry_window_can_wait_behind_a_long_full_validation_lane",
+        "test_screen_fairness_ignores_a_delayed_full_validation_job",
+        "test_screening_curriculum_keeps_ranked_bottlenecks_for_generation_planning",
+        "test_screen_learning_outbox_keeps_temporal_screen_failure_inconclusive_and_non_blocking",
+        "test_screen_learning_outbox_blocks_missing_evidence_instead_of_teaching_from_it",
+        "completeEvidenceRun"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AiTradingScientistTest.php",
+      "tests": [
+        "test_run_all_dispatches_canonical_lab_without_scientist_artifacts",
+        "test_ai_scientist_dashboard_renders_scientific_memory"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AutonomousLearningProgressDirectorTest.php",
+      "tests": [
+        "test_it_opens_exactly_one_pre2026_edge_cohort_and_then_waits_idempotently"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AutonomousModeControlTest.php",
+      "tests": [
+        "test_start_stop_and_status_are_persistent_idempotent_and_xauusd_canonical",
+        "test_strong_and_lightweight_are_monitoring_profiles_over_the_same_governed_engine",
+        "test_invalid_controller_profile_is_rejected_without_changing_autonomy",
+        "test_lightweight_monitor_exposes_a_stranded_technical_generation_without_granting_recovery_authority",
+        "test_lightweight_monitor_marks_a_complete_active_population_as_running_clean",
+        "test_lightweight_monitor_uses_immutable_generation_plan_for_incomplete_population_truth",
+        "test_monitor_degrades_to_explicit_unknown_state_when_runtime_backends_are_unavailable",
+        "test_stop_blocks_new_terminal_admission_until_start",
+        "test_enabled_mode_can_accumulate_a_zero_pass_observation_on_fresh_data",
+        "test_stop_prevents_a_scheduled_mtf_research_job_from_being_queued",
+        "laboratory"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AutonomousTheoryGenerationEngineTest.php",
+      "tests": [
+        "test_theory_generation_creates_theories_battles_predictions_and_unified_models",
+        "test_theory_lab_dashboard_and_manual_generation_work",
+        "test_theory_generation_command_runs",
+        "seedTheoryEvidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AutoTrainingWorkflowTest.php",
+      "tests": [
+        "test_training_logs_index_and_show_pages_are_visible",
+        "test_auto_train_is_only_a_canonical_dispatch_alias",
+        "test_market_data_update_command_stores_csv_candles_without_duplicates",
+        "test_daily_workflow_calls_canonical_lab_and_not_legacy_training",
+        "writeMarketDataCsv"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/BacktestRunApiTest.php",
+      "tests": [
+        "test_backtest_run_endpoint_returns_summary_metrics",
+        "test_idempotency_key_returns_the_same_run_for_the_same_payload",
+        "test_idempotency_key_cannot_be_reused_for_a_different_payload"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/BacktestWebFlowTest.php",
+      "tests": [
+        "test_backtests_page_is_visible",
+        "test_backtest_run_posts_to_python_service_and_renders_result",
+        "test_daily_report_command_stores_training_report"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/BehavioralMapElitesArchiveTest.php",
+      "tests": [
+        "test_repeated_behavior_is_detected_even_when_the_model_is_new",
+        "agent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/BottleneckControlAndCouncilTest.php",
+      "tests": [
+        "test_control_planner_records_exact_contract_without_pairing",
+        "test_council_adjudication_resolves_disputed_row_only_to_wait",
+        "agent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CandidateGateDecisionServiceTest.php",
+      "tests": [
+        "test_forward_and_paper_stages_store_actionable_reason_codes",
+        "test_attached_parent_cannot_open_forward_gate_without_benefit_proof",
+        "test_sealed_portfolio_forward_handoff_is_attributed_before_paper",
+        "test_insufficient_evidence_decision_fits_the_gate_projection"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CanonicalSkillCartridgeScopeTest.php",
+      "tests": [
+        "test_provisional_transplant_materializes_one_closed_proof_inside_a_twenty_seat_population",
+        "test_component_interaction_is_a_five_arm_proof_inside_one_twenty_seat_population",
+        "test_retrieval_abstains_when_a_frozen_scope_field_is_missing_or_mismatched",
+        "test_categorical_provisional_confirmation_has_a_real_five_arm_plan",
+        "test_retry_attempt_has_a_distinct_immutable_trial_identity",
+        "test_existing_two_positive_provisional_cartridge_gets_an_exactly_once_next_action"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CapabilityOrganismServiceTest.php",
+      "tests": [
+        "test_skill_requires_every_causal_confirmation_before_it_can_route_capital",
+        "test_router_observes_unknown_state_but_trades_only_a_confirmed_capability",
+        "test_cemetery_forbids_repeated_or_hard_risk_failures_and_governor_stays_shadow_only",
+        "test_scoreboard_reports_capability_progress_not_pnl"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CausalEdgeAccountingTest.php",
+      "tests": [
+        "test_rejected_opportunities_are_retained_and_filter_quality_is_measurable",
+        "test_only_independent_information_families_count_as_confluence",
+        "test_passport_freezes_causal_ownership_models_and_fail_closed_location_contract",
+        "test_news_reentry_risk_hysteresis_and_winner_only_adds_are_constrained",
+        "test_trade_path_lab_separates_management_value_from_entry_baseline",
+        "test_unknown_invalidation_or_target_is_never_silently_substituted",
+        "test_typed_program_rejects_strategy_risk_override_before_a_replay_exists",
+        "test_foundry_composition_cannot_trigger_without_a_location_thesis"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CausalFunnelAttributionServiceTest.php",
+      "tests": [
+        "test_confidence_bottleneck_routes_to_a_confidence_ablation",
+        "test_stress_failure_routes_to_exit_cost_instead_of_a_generic_repair"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CausalIntelligenceEngineTest.php",
+      "tests": [
+        "test_causal_discovery_creates_graph_counterfactuals_interventions_experiments_and_quality_scores",
+        "test_causal_intelligence_dashboard_and_manual_discovery_work",
+        "test_causal_discovery_command_runs",
+        "createQuantLaw"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CausalLearningLoopContractTest.php",
+      "tests": [
+        "test_terminal_technical_arm_closes_triplet_without_causal_or_performance_authority",
+        "test_hypothesis_is_a_first_class_guided_replay_role_but_malformed_multiple_guides_fail_closed",
+        "test_pre_registered_learning_method_replaces_blind_independent_fallback_and_is_sealed",
+        "test_evidence_dependent_learning_method_fails_closed_without_source_reference",
+        "test_causal_triplet_is_reserved_outside_the_seventeen_seat_discovery_diversity_budget",
+        "test_post_materialization_repair_uses_the_real_thirteen_seat_learning_budget",
+        "test_canonical_memory_is_sealed_before_agent_persistence_and_receipt_reports_only_truthful_use",
+        "test_family_prior_cannot_be_upgraded_post_hoc_into_memory_guided_mutation",
+        "test_receipt_gene_mismatch_is_invalid_and_cannot_settle_provisional",
+        "test_planner_materializes_guided_blinded_and_frozen_control_triplet",
+        "test_legacy_attempts_cannot_exhaust_target_aligned_confirmation_budget",
+        "test_legacy_positive_signal_opens_a_credit_free_post_v2_hypothesis_triplet",
+        "test_salvage_and_planner_share_the_same_fail_closed_source_admission",
+        "test_planner_does_not_admit_a_descriptive_lesson_without_an_executable_cartridge",
+        "test_falsified_confirmation_becomes_bounded_one_gene_repair_without_inheriting_failed_gene",
+        "test_causal_positive_absolute_negative_step_is_retained_only_as_next_research_baseline",
+        "test_research_ratchet_requires_explicit_non_target_evidence",
+        "test_repair_frontier_skips_a_gene_whose_required_context_never_activated",
+        "test_memory_blinded_selector_uses_the_same_non_credit_activation_mask",
+        "test_memory_blinded_selector_exhausts_target_genes_before_schema_fallback",
+        "test_blinded_selector_skips_runtime_semantic_aliases",
+        "test_blinded_selector_cannot_spend_replay_on_a_disabled_dependent_gene",
+        "test_interrupted_causal_constructor_with_superseded_selector_is_closed_before_more_seats_exist",
+        "test_causal_screening_behavior_preflight_rejects_parameter_only_arm",
+        "test_repair_replay_admission_rejects_a_legacy_blinded_selector_without_feasibility_proof",
+        "test_exhausted_scalar_repairs_become_one_gene_architecture_escape_from_original_control",
+        "test_invalid_architecture_construction_reopens_same_frontier_without_consuming_gene",
+        "test_exhausted_architecture_portfolio_materializes_one_bounded_interaction",
+        "test_pre_registered_causal_retrieval_returns_only_the_exact_canonical_source",
+        "test_memory_confirmation_requires_guided_to_beat_blinded_and_frozen_control",
+        "test_declared_target_and_non_target_evidence_are_fail_closed",
+        "test_volume_quality_failure_is_capability_isolation_not_global_recovery",
+        "test_immutable_constructor_invariant_failure_is_terminal_diagnostic",
+        "test_agent_preflight_error_code_cannot_hide_terminal_constructor_reason",
+        "test_causal_parent_lock_is_authoritative_when_planner_preserves_g98_origin",
+        "test_causal_frozen_control_identity_is_shared_with_screening_scheduler",
+        "test_completed_control_waits_for_learning_projection_instead_of_quarantining_candidate",
+        "test_only_exact_causal_projection_race_is_code_repair_recoverable",
+        "test_runtime_schema_recovery_reads_specialist_contract_failure_from_immutable_run",
+        "test_explicit_runtime_schema_screen_recovery_reopens_an_unresolved_arm_after_mixed_generation_completion",
+        "test_post_service_repair_preview_includes_quarantined_connection_reset_on_terminal_generation",
+        "test_causal_full_replay_admission_is_atomic_and_does_not_select_only_screen_winners",
+        "test_planner_reconciles_a_stale_cross_family_passport_to_the_causal_source",
+        "test_non_triplet_seat_in_learning_confirmation_generation_uses_its_own_replay_gate",
+        "test_bounded_batch_retry_exhaustion_is_a_retry_budget_failure_not_a_strategy_verdict",
+        "test_retry_budget_recovery_keeps_remaining_agents_visible_after_generation_quarantine",
+        "test_autonomous_recovery_seals_missing_frozen_snapshot_as_terminal_technical_history",
+        "unrecoverableFrozenRecoveryErrors",
+        "test_causal_arm_cannot_write_ordinary_mutation_credit_before_triplet_settlement",
+        "test_canonical_pair_reconciliation_requires_and_binds_terminal_full_runs",
+        "test_bounded_causal_timeout_is_recognized_as_repairable_full_queue_evidence",
+        "test_causal_replay_budgets_leave_fold_and_transport_headroom",
+        "test_only_legacy_ninety_second_cartridge_fold_timeout_is_code_repairable",
+        "test_legacy_skill_cartridge_contract_receives_bounded_fold_budget_at_request_boundary",
+        "test_expired_full_replay_job_is_recoverable_after_service_repair_even_when_breaker_hid_the_reason",
+        "test_memory_first_selector_builds_the_exact_retrieved_cartridge_intervention",
+        "test_learning_pulse_counts_decision_packets_instead_of_prompt_rows",
+        "canonicalSource",
+        "projectCartridgeForLesson",
+        "outcomePair",
+        "pair",
+        "intent",
+        "model",
+        "agent",
+        "validReceiptMetadata",
+        "validReceipt",
+        "completeScreeningEvidence",
+        "terminalRun",
+        "performance"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CausalProgressRatchetGovernorServiceTest.php",
+      "tests": [
+        "test_trigger_scaffold_advances_once_and_a_later_noop_cannot_reduce_depth",
+        "test_unreachable_axis_pivots_upstream_instead_of_being_retired_and_progress_is_exactly_once",
+        "test_all_debt_closed_keeps_topology_and_adversarial_lanes_nonzero",
+        "test_high_value_debt_blocks_new_scalar_search_but_keeps_a_topology_pivot_admissible",
+        "test_consolidation_plan_is_idempotent_settlement_work_not_new_cohort_creation",
+        "test_only_a_powered_safe_positive_after_cost_replay_opens_risk_shaping",
+        "test_scaffold_ablation_revokes_a_scaffold_that_has_no_causal_effect",
+        "test_governor_command_is_read_only_unless_a_write_option_is_explicit"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CausalSkillCompilerTest.php",
+      "tests": [
+        "test_compiler_requires_causal_artifacts_and_never_grants_promotion",
+        "test_structural_escape_freezes_repeated_scalar_search_and_router_waits",
+        "test_mentor_and_interaction_contracts_are_strict",
+        "test_strategic_director_selects_a_research_action_and_keeps_all_gates_closed",
+        "test_strategic_prediction_score_is_diagnostic_only",
+        "test_repeated_unobserved_hypothesis_is_frozen_until_new_evidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ChampionChallengerCycleTest.php",
+      "tests": [
+        "test_challenger_replaces_only_the_same_market_champion_after_all_gates",
+        "grantPaperAuthority",
+        "test_champion_promotion_is_frozen_while_evidence_pipeline_is_repaired",
+        "test_evaluation_can_pin_duplicate_runtime_strategy_to_the_exact_model_version",
+        "test_transplant_cohort_settles_only_after_the_arriving_arm_is_persisted",
+        "test_interaction_cohort_settles_only_after_the_arriving_arm_is_persisted",
+        "test_legacy_proposal_apply_is_disabled_without_creating_a_model_version",
+        "test_candidate_needs_three_rolling_forward_wins_before_paper_trading",
+        "test_low_profit_factor_candidate_never_enters_paper_trading",
+        "test_statistically_overfit_batch_candidate_never_enters_paper_trading",
+        "model",
+        "researchCohortModel",
+        "resultMetrics"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ContextualCausalTraitCapsuleTest.php",
+      "tests": [
+        "test_three_independent_context_attested_replications_form_one_durable_capsule",
+        "test_positive_rows_without_powered_context_cannot_create_a_confirmed_capsule",
+        "replication",
+        "attestedResult"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ContextualCouncilAllocatorTest.php",
+      "tests": [
+        "test_twenty_seats_are_dynamic_contextual_exact_pair_hosts",
+        "test_session_budget_exploits_local_instrument_value_without_losing_coverage_floor",
+        "test_controlled_rescue_routes_six_pairs_through_canonical_failure_targets",
+        "test_early_credits_route_the_next_generation_and_causal_credit_changes_phase",
+        "test_bayesian_acquisition_reads_global_session_evidence_instead_of_permanent_zero_counts",
+        "plan"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ContextualSpecialistAuthorityTest.php",
+      "tests": [
+        "test_only_complete_local_causal_evidence_confirms_a_specialist",
+        "test_router_uses_exact_context_lcb_then_baseline_or_wait",
+        "evidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ContextualSpecialistEvidenceTest.php",
+      "tests": [
+        "test_persisted_pair_replays_materialize_confirmed_local_authority",
+        "pair"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ControlRootInheritanceTest.php",
+      "tests": [
+        "test_parentless_first_generation_is_explicitly_marked_without_a_parent",
+        "test_legacy_parentless_metadata_is_reported_as_no_parent_not_quarantined",
+        "test_control_root_seed_handoff_is_explicit_and_auditable",
+        "test_tampered_control_root_handoff_is_rejected_before_replay",
+        "grantParentAuthority"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CooperativeContextualEvolutionCouncilTest.php",
+      "tests": [
+        "test_cold_start_is_twenty_seats_of_dynamic_scientific_blocks_and_seven_species",
+        "test_causal_triplet_and_contextual_blocks_share_one_twenty_seat_generation",
+        "test_ready_idea_is_compiled_into_a_novelty_block_but_gets_no_runtime_authority",
+        "test_confirmed_local_elite_is_not_replaced_by_a_non_dominating_capsule",
+        "test_factorial_settlement_records_marginal_interaction_and_whole_capsule_effects",
+        "test_planned_bundle_without_runtime_activation_receives_no_effect_credit",
+        "test_derived_cooperative_projection_failure_cannot_invalidate_the_screening_gate",
+        "lab",
+        "plan",
+        "agentWithCapsule",
+        "confirmedEvidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CotMarketIntelligenceTest.php",
+      "tests": [
+        "test_official_cot_rows_are_immutably_imported_and_featured",
+        "test_cot_dashboard_is_read_only_and_command_can_sync",
+        "row"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CoverageRescueAuditTest.php",
+      "tests": [
+        "test_audit_falls_back_to_newest_completed_generation_with_eligible_sparse_coverage",
+        "test_council_keeps_a_rejected_failure_source_as_context_but_uses_a_validated_family_parent",
+        "test_eligible_coverage_rescue_can_open_at_the_screened_handoff_boundary",
+        "grantParentAuthority"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DailyReportPagesTest.php",
+      "tests": [
+        "test_daily_reports_index_lists_reports",
+        "test_daily_report_show_displays_report_details"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DecisionLearningServiceTest.php",
+      "tests": [
+        "test_failed_entry_and_stop_decisions_become_next_generation_advice"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DependencyAwareEdgeGenesisFoundryTest.php",
+      "tests": [
+        "test_dashboard_transplant_metric_is_scope_bound_and_does_not_claim_confirmed_transfer",
+        "test_edge_model_identity_is_deterministic_and_fits_the_production_name_column",
+        "test_axis_behavior_credit_requires_a_real_control_relative_trace_change",
+        "test_compiled_child_inherits_the_full_source_composition_except_its_declared_axis",
+        "test_parameter_identity_treats_integer_and_float_representations_as_the_same_numeric_value",
+        "test_compiled_control_numeric_representation_quarantine_has_a_bounded_audited_recovery",
+        "test_compiled_direct_source_parameter_map_is_reduced_to_one_canonical_audit_hash",
+        "test_risk_mutation_is_locked_until_a_confirmed_and_attributed_edge_exists",
+        "test_genesis_creates_four_packets_times_five_frozen_risk_arms_and_advances_only_with_edge_contract",
+        "test_partial_discovery_cohort_is_rebound_to_one_frozen_mtf_bundle_without_reusing_old_authority",
+        "test_a_legacy_trade_less_cohort_opens_one_causal_confirmation_breadth_repair_wave",
+        "canonicalCoverageFixture"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DispatchMtfPlaybookPriorTest.php",
+      "tests": [
+        "test_command_queues_one_confirmation_first_job_on_the_frontier_lane",
+        "test_job_reselects_at_execution_and_runs_only_one_prior",
+        "test_autonomous_dispatch_is_fail_closed_outside_xauusd",
+        "test_pending_evolution_waits_for_the_next_scheduler_tick_without_releasing_the_same_job"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DualTrackEvidenceWorkItemServiceTest.php",
+      "tests": [
+        "test_expired_lease_is_reclaimed_and_stale_worker_is_fenced"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DualTrackEvolutionContractTest.php",
+      "tests": [
+        "test_cell_policy_learns_a_conservative_recommendation_from_settled_outcomes",
+        "test_active_router_cannot_use_a_certified_cell_without_explicit_activation",
+        "test_risk_shield_blocks_active_lane_without_calibrated_confidence",
+        "test_one_lane_luck_cannot_certify_a_dual_track_cell",
+        "test_evaluator_calibration_and_layered_memory_are_not_promotion_shortcuts"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DualTrackLedgerTest.php",
+      "tests": [
+        "test_signal_observation_persists_both_lanes_and_keeps_shadow_incumbent",
+        "test_same_event_is_idempotent",
+        "test_monitor_projects_cell_and_disagreement_statistics"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php",
+      "tests": [
+        "test_windows_uses_the_http_m15_adapter_without_a_node_child_process",
+        "test_it_decodes_jettas_h1_history_without_a_child_process",
+        "test_it_rebuilds_a_sparse_h1_archive_hour_from_ticks",
+        "test_it_aggregates_jettas_minute_history_into_m15_tick_volume",
+        "test_it_exposes_m1_and_derives_m5_and_m30_from_the_same_minute_archive",
+        "test_it_uses_timestamp_history_directly_for_the_open_month"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DurableAutonomyProofTest.php",
+      "tests": [
+        "test_terminal_screening_triplet_is_invalidated_instead_of_remaining_ready_forever",
+        "test_causal_fold_job_delegates_exactly_one_durable_fold",
+        "test_fold_receipts_are_idempotent_and_terminal_exhaustion_grants_no_partial_credit",
+        "test_autonomy_audit_requires_every_durable_fold_and_atomic_settlement",
+        "test_successful_fold_retry_does_not_hide_historical_technical_timeout_from_clean_audit",
+        "test_two_linked_clean_receipts_form_the_required_autonomy_streak",
+        "test_autonomy_streak_rejects_a_tampered_receipt_payload",
+        "test_completed_fold_and_autonomy_receipts_are_immutable",
+        "test_successor_decision_seals_the_clean_predecessor_and_writes_provenance",
+        "test_failed_predecessor_audit_does_not_erase_successor_creation_provenance",
+        "test_clean_receipt_rejects_a_source_without_arbiter_creation_provenance",
+        "causalTriplet",
+        "completedReceiptAttributes",
+        "lab",
+        "generation",
+        "decision",
+        "autonomyReceipt",
+        "seedCreationProvenance"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/EconomicCalendarServiceTest.php",
+      "tests": [
+        "test_fmp_economic_calendar_is_parsed_and_uses_fmp_authorization",
+        "test_fmp_calendar_uses_secondary_key_after_primary_quota_refusal",
+        "test_failed_external_calendar_sync_fails_closed_instead_of_reporting_clear",
+        "test_official_bls_provider_syncs_without_api_key_and_vetoes_release_window",
+        "test_alpha_vantage_macro_headline_becomes_short_lived_usd_execution_veto",
+        "test_currents_macro_headline_becomes_short_lived_execution_veto",
+        "test_external_headline_title_is_bounded_while_payload_keeps_original_text",
+        "test_replay_calendar_alignment_fails_closed_without_historical_official_events",
+        "test_replay_calendar_alignment_accepts_an_official_event_when_the_strategy_abstains",
+        "test_official_usd_backfill_is_idempotent_and_preserves_release_timezone_provenance"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/EdgeExperimentSettlementReconcilerServiceTest.php",
+      "tests": [
+        "test_terminal_edge_passport_gets_one_research_only_receipt_without_replaying"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/EdgeToMasteryAdmissionServiceTest.php",
+      "tests": [
+        "tearDown",
+        "test_delayed_job_alone_is_not_a_retry_storm_and_idle_runtime_is_admitted",
+        "test_warning_runtime_busy_ai_and_repeated_reserved_job_fail_closed",
+        "test_two_idle_observations_separated_by_ten_seconds_are_stable",
+        "test_rapid_matching_probe_does_not_move_the_idle_stability_window",
+        "mockRuntime",
+        "mockQueues",
+        "mockDojo"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/EvidenceLifecycleContractTest.php",
+      "tests": [
+        "test_terminal_agent_quarantine_is_an_explicit_terminal_watermark_not_missing_control_debt",
+        "test_watermark_reconciles_completed_uncertainty_wait_as_one_zero_credit_settlement",
+        "test_generation_queue_backlog_ignores_jobs_owned_by_another_generation",
+        "test_generation_queue_backlog_recognizes_screening_batch_agent_arrays",
+        "test_research_lane_yields_only_to_runnable_evolution_replays",
+        "test_delayed_evolution_replay_does_not_starve_research_lane",
+        "test_delayed_research_work_does_not_starve_edge_director_but_runnable_work_does",
+        "test_reload_preflight_counts_only_reserved_worker_ownership_as_interruptible",
+        "test_priority_validation_does_not_deadlock_on_its_own_full_queue_payload",
+        "test_priority_validation_still_yields_to_a_canonical_full_replay",
+        "test_active_generation_reserves_replay_priority_before_its_queue_jobs_exist",
+        "test_fresh_screened_generation_reserves_priority_until_full_dispatch",
+        "test_old_screened_generation_cannot_reclaim_priority_after_a_newer_terminal_generation",
+        "test_generation_context_update_preserves_concurrent_context_keys"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/EvolutionaryAuthorityFoundryTest.php",
+      "tests": [
+        "test_parentless_confirmed_mentor_uses_verified_causal_control_for_incubator",
+        "test_genetic_parent_without_verified_control_cannot_fake_an_incubator_baseline",
+        "test_confirmed_label_without_causal_skill_credit_cannot_open_incubator",
+        "test_kernel_candidate_can_only_pair_with_its_exact_declared_control",
+        "test_director_skips_newer_unverifiable_mentor_instead_of_starving_valid_one",
+        "test_descendant_settlement_preserves_passport_and_unlocks_eligible_parent",
+        "test_foundry_scores_the_declared_gate_and_protects_other_gate_margins",
+        "test_descendant_search_is_bounded_and_never_retests_a_gene",
+        "confirmedMentorWithVerifiedControl",
+        "passingMetrics",
+        "recordPassedIncubator",
+        "attestedInstrumentResult"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/EvolutionaryAuthorityLadderTest.php",
+      "tests": [
+        "test_research_mentor_is_local_and_does_not_require_profitability",
+        "test_economic_parent_requires_every_economic_and_reproductive_gate",
+        "test_twenty_seat_cold_start_and_compounding_allocations_are_explicit"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/EvolutionGenomeTest.php",
+      "tests": [
+        "test_strategy_lab_run_all_does_not_create_legacy_genome_records",
+        "test_legacy_proposal_apply_is_gone_and_does_not_create_a_child_genome",
+        "test_evolution_lab_is_a_canonical_laboratory_redirect"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/EvolutionProposalPagesTest.php",
+      "tests": [
+        "test_evolution_proposals_index_lists_historical_proposals",
+        "test_historical_proposal_show_page_is_read_only",
+        "test_evolution_proposal_mutations_are_gone"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ExampleTest.php",
+      "tests": [
+        "test_the_application_returns_a_successful_response"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ExecutionRiskSentinelServiceTest.php",
+      "tests": [
+        "test_sentinel_uses_capped_fractional_sizing_and_never_martingale",
+        "test_sentinel_has_final_veto_for_risk_of_ruin",
+        "test_in_trade_and_portfolio_layers_never_expand_exposure"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/FailureRepairAnchorTest.php",
+      "tests": [
+        "test_numeric_type_only_change_cannot_satisfy_a_one_gene_constructor",
+        "test_complete_strategy_failure_creates_an_immutable_anchor_and_technical_failure_does_not",
+        "test_stale_repair_anchor_rebases_without_rewriting_the_old_snapshot",
+        "test_repair_child_uses_anchor_snapshot_and_changes_exactly_one_declared_gene_without_a_parent",
+        "test_forced_fresh_generation_can_accumulate_the_next_zero_pass_observation",
+        "test_strategy_failure_aliases_compile_to_a_causal_target_but_evidence_failures_do_not",
+        "test_anchor_compiles_exactly_four_bounded_siblings_and_frozen_control_is_immutable",
+        "test_gate_margin_cohort_compiles_four_one_gene_siblings_plus_one_frozen_control",
+        "test_temporal_state_persistence_hypothesis_replaces_repeated_indicator_window_mutations",
+        "test_temporal_gate_movement_opens_one_shadow_state_machine_escape_seat",
+        "test_mixed_temporal_profile_reserves_one_train_forward_robustness_seat",
+        "test_screen_pass_creates_seed_stage_and_response_map_without_parent_credit",
+        "test_failed_repair_sibling_stays_on_original_anchor_and_does_not_fork_a_cold_restart",
+        "test_anchor_escape_requires_three_complete_four_member_cohorts",
+        "test_two_independent_forward_failures_close_the_lesson_as_deliberate_abstain",
+        "test_role_compatible_skill_mentor_is_applied_to_one_probe_without_becoming_parent",
+        "test_seed_keeps_mentor_evidence_after_forward_but_waits_for_sealed_paper_authority",
+        "sourceAgent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/FailureWoundSetTest.php",
+      "tests": [
+        "test_g44_wound_is_sealed_and_same_target_is_required_to_improve",
+        "test_wound_does_not_block_a_different_window_protocol",
+        "agents",
+        "woundResult"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/FeatureValueOperatingSystemTest.php",
+      "tests": [
+        "test_catalog_snapshot_and_strategy_bundle_keep_feature_provenance",
+        "test_validator_rejects_lookahead_or_missing_metadata"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/FinalEvolutionContractsTest.php",
+      "tests": [
+        "test_calendar_and_train_forward_failures_have_distinct_canonical_gates",
+        "test_gate_contract_self_check_is_healthy_before_full_dispatch",
+        "test_catastrophic_and_wound_failures_keep_exact_repair_targets",
+        "test_progress_ladder_stops_at_the_first_unproven_stage",
+        "test_contextual_bandit_keys_keep_regime_and_volume_cells_separate",
+        "test_shadow_escape_allocation_has_one_authoritative_source"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/FoundationValidationReceiptTest.php",
+      "tests": [
+        "test_persistent_receipt_is_content_addressed_and_changed_bytes_force_full_validation",
+        "manifest",
+        "cacheKey"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/FrozenPaperWindowTest.php",
+      "tests": [
+        "test_it_seals_all_available_2026_as_paper_and_excludes_it_from_training_payloads",
+        "test_existing_window_is_not_moved_when_time_passes",
+        "test_annual_paper_policy_can_reserve_all_of_2026_and_moves_training_cutoff_to_january",
+        "test_it_rejects_a_rolling_2026_start_that_would_leak_paper_into_training",
+        "candle",
+        "paperCandles"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/FullStackPlaybookMasteryServiceTest.php",
+      "tests": [
+        "test_evidence_compiled_causal_roles_are_explicit_mastery_arms",
+        "test_full_stack_passport_requires_observed_procedure_and_keeps_mastery_separate_from_edge"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/FutureSimulationEngineTest.php",
+      "tests": [
+        "test_future_simulation_creates_scenarios_timeline_survival_stress_and_discoveries",
+        "test_future_intelligence_dashboard_and_manual_simulation_work",
+        "test_future_simulation_command_runs",
+        "createFutureEvidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/GateMarginAndControlParityTest.php",
+      "tests": [
+        "test_gate_margin_preserves_strict_failure_but_ranks_the_nearest_target",
+        "test_semantic_learning_targets_use_their_canonical_gate_metrics",
+        "test_control_parity_is_not_applicable_for_an_ordinary_generation",
+        "test_paused_protocol_accepts_only_the_declared_five_seat_anchor_cohort",
+        "test_train_forward_gap_uses_robustness_lane_without_mutating_the_split",
+        "test_exact_wounds_replace_the_legacy_aggregate_and_keep_canonical_targets",
+        "test_special_replay_selector_fails_closed_until_control_parity_is_passed"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/GenerationConstructionAdmissionServiceTest.php",
+      "tests": [
+        "test_incomplete_quarantined_population_cannot_enter_screening",
+        "test_complete_population_with_lineage_contract_is_dispatchable",
+        "test_completed_shadow_continuation_clears_abort_before_reopening_generation",
+        "test_clean_incomplete_population_remains_resumable",
+        "test_screened_incomplete_population_is_abandoned_and_learning_is_diagnostic_only",
+        "generation",
+        "agent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/GenerationLearningConsumptionReconciliationServiceTest.php",
+      "tests": [
+        "test_it_appends_post_hoc_provenance_without_claiming_consumption_or_changing_the_mutation",
+        "model",
+        "agent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/HistoricalVolumeReplayContractTest.php",
+      "tests": [
+        "test_foundation_volume_view_is_hash_bound_and_writes_explicit_availability",
+        "test_legacy_self_sealed_zero_repair_foundation_can_be_re_attested_without_live_coverage",
+        "test_numeric_volume_without_canonical_source_manifest_is_rejected"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/HybridEvolutionContractTest.php",
+      "tests": [
+        "test_twenty_seat_cohort_reserves_controls_and_uses_exact_research_budget",
+        "test_structural_cohort_gets_deterministic_lanes_and_multi_gene_contracts",
+        "test_failure_policy_converts_repeat_failure_to_direction_closing_escape",
+        "test_real_structural_rescue_plan_contains_executable_multi_gene_hypotheses"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ImmutableGenerationContractTest.php",
+      "tests": [
+        "test_sealed_complete_plan_is_admitted_and_nested_post_seal_rewrite_is_rejected"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ImmutableLabEvidenceTest.php",
+      "tests": [
+        "test_autonomy_audit_treats_scientific_rejection_as_a_clean_terminal_disposition",
+        "test_autonomy_audit_reports_a_technical_quarantine_as_terminal_but_not_technically_clean",
+        "test_uncertainty_abstain_is_a_local_wait_receipt_and_never_calls_replay",
+        "test_last_wait_guard_cannot_mask_a_terminal_technical_peer",
+        "test_autonomy_audit_rejects_generation_closed_before_learning_settlement",
+        "test_second_bounded_screen_failure_quarantines_only_the_current_agent_and_closes_generation",
+        "test_host_suspend_timeout_is_retryable_queue_telemetry_not_a_technical_verdict",
+        "test_batched_screening_detects_host_suspend_before_writing_technical_evidence",
+        "test_constitution_hash_survives_json_numeric_round_trip_and_separates_falsification",
+        "test_agent_creation_is_recorded_without_replacing_the_projection",
+        "test_repeated_gate_checks_create_revisions_while_projection_remains_one_row",
+        "test_handoff_retries_are_not_collapsed_in_the_evidence_plane",
+        "test_stable_waiting_handoff_poll_is_deduplicated_but_keeps_projection",
+        "test_selection_handoff_projection_refreshes_after_a_retry",
+        "test_evaluation_run_keeps_terminal_artifact_and_candle_trace",
+        "test_compact_projection_keeps_high_value_rows_and_rolls_up_wait_noise",
+        "test_projection_is_bounded_and_terminal_run_cannot_be_rewritten",
+        "test_terminal_replay_requires_dataset_hash_and_error_envelope_stays_ineligible",
+        "test_failed_screen_projection_with_incomplete_run_is_recovery_candidate",
+        "test_queue_inspector_respects_serialized_agent_id_boundary",
+        "test_full_admission_block_closes_the_middleware_run_as_skipped",
+        "test_full_replay_recovery_waits_for_laravel_post_processing_grace",
+        "test_stale_mutex_owner_is_requeued_even_when_a_recent_contender_is_reserved",
+        "test_mutation_credit_reconciliation_is_idempotent_and_requires_distinct_replay_runs",
+        "test_repeated_reconcile_generation_is_idempotent_and_requires_new_run",
+        "completeExactRun"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/IndependentProviderExportAttestationTest.php",
+      "tests": [
+        "test_it_attests_an_external_pre_2026_export_without_touching_training_or_canonical_tables",
+        "test_it_rejects_a_2026_candle_from_the_independent_export"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/InstrumentIntelligenceTest.php",
+      "tests": [
+        "test_instrument_profiles_are_created_for_xauusd_and_eurusd",
+        "test_market_profiles_dashboard_manual_refresh_and_command_work",
+        "seedSymbolsAndEvidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/InstrumentInvocationLedgerTest.php",
+      "tests": [
+        "test_policy_exposes_a_sparse_bundle_and_complete_tool_cards",
+        "test_selected_instruments_are_immutably_ledgered_and_settled_against_control"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/IntradayTrainingMaintenanceIsolationTest.php",
+      "tests": [
+        "test_intraday_archive_checkpoint_is_unique_bounded_and_isolated_from_learning",
+        "test_completed_immutable_archive_does_not_repeat_full_coverage_scans"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LabHistoricalLearningTest.php",
+      "tests": [
+        "test_immutable_failures_become_a_bounded_learning_target",
+        "test_generation_records_which_history_insights_it_consumed",
+        "test_compact_rollup_replaces_its_same_run_raw_subset_without_double_counting"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LabIncrementalEvaluationTest.php",
+      "tests": [
+        "test_incremental_health_check_yields_to_waiting_full_validation",
+        "test_deferred_incremental_command_does_not_build_degradation_generation"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LabInstrumentResearchLoopTest.php",
+      "tests": [
+        "test_assignment_is_sealed_and_only_runtime_attestation_opens_invocations",
+        "test_cached_assignment_rebinds_to_current_frozen_component_identity",
+        "test_historical_transition_homework_is_not_a_live_instrument_scope",
+        "test_one_gene_candidate_without_exact_pair_is_blocked_before_replay",
+        "test_effectful_runtime_veto_is_recorded_as_research_decision_not_paper_execution",
+        "test_causal_triplet_arm_reserves_its_experiment_control_and_settles_against_the_later_pair",
+        "test_inventory_and_parameter_binding_without_runtime_activation_open_no_invocation",
+        "test_verified_frozen_pair_moves_only_changed_instrument_into_value_block",
+        "test_unscoped_family_prior_opens_research_but_cannot_directly_mutate",
+        "test_instrument_policy_keeps_london_value_out_of_asia_and_global_scope",
+        "test_laravel_and_python_share_the_same_assignment_protocol",
+        "pairAgents",
+        "researchBundle",
+        "model",
+        "attestedResult",
+        "contextTrace",
+        "posteriorVector"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LabLifecycleWatchdogTest.php",
+      "tests": [
+        "test_watchdog_surfaces_active_portfolio_contract_drift_without_rewriting_evidence",
+        "test_watchdog_finalizes_a_terminal_full_boundary_without_waiting_an_hour"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LabReplayRecoveryContractTest.php",
+      "tests": [
+        "test_single_agent_screen_recovery_cannot_bypass_failed_frozen_control",
+        "test_recovery_contract_rejects_tampered_snapshot_and_wrong_generation",
+        "test_recovery_job_quarantines_when_generation_identity_changes",
+        "test_recovery_does_not_create_a_new_snapshot_for_a_missing_original",
+        "test_stale_run_is_closed_without_overwriting_a_later_terminal_agent_attempt"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LabTrialLedgerTest.php",
+      "tests": [
+        "test_every_run_is_counted_and_prior_sharpes_are_returned_without_holdout",
+        "test_replayed_full_identity_is_idempotent_across_new_run_ids",
+        "test_same_run_id_cannot_be_reused_for_a_different_replay_identity",
+        "test_hot_path_trial_counts_never_scan_large_model_metadata_json"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningDeadlockPreventionTest.php",
+      "tests": [
+        "test_invalid_pair_creates_diagnostic_dojo_not_actionable_backlog",
+        "test_candidate_waits_for_completed_frozen_control_then_becomes_admissible",
+        "test_candidate_uses_its_sealed_control_id_when_family_has_multiple_controls",
+        "test_generation_without_price_snapshot_is_fail_closed_at_admission",
+        "test_volume_specialist_cannot_enter_queue_without_frozen_volume_snapshot",
+        "test_xauusd_generation_is_admitted_only_with_the_complete_frozen_mtf_bundle",
+        "agents"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningEvolutionBridgeTest.php",
+      "tests": [
+        "test_raw_trade_path_and_wait_observations_become_non_promotable_receipts",
+        "test_confirmed_contextual_receipt_changes_director_from_explore_to_exploit",
+        "test_negative_receipt_schedules_inverse_repair_instead_of_repeating_harmful_value",
+        "test_unattested_array_cannot_manufacture_a_confirmed_receipt",
+        "test_inheritance_manifest_is_sealed_and_generation_cannot_close_before_evidence_loop",
+        "test_full_replay_coverage_comes_from_immutable_run_not_stale_screening_receipt_binding",
+        "confirmedReceipt"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningEvolutionChainAcceptanceTest.php",
+      "tests": [
+        "test_later_parent_artifacts_cannot_hide_a_missing_bundle_and_complete_chain_is_observable",
+        "verifiedPair",
+        "model",
+        "posteriorVector"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningEvolutionTest.php",
+      "tests": [
+        "test_drawdown_learning_memory_uses_negative_delta_as_positive_utility",
+        "test_micro_replay_requires_three_windows_and_blocks_hard_failure",
+        "test_micro_failure_is_recorded_as_negative_learning_evidence",
+        "agentAndMap"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningFirstArchitectureTest.php",
+      "tests": [
+        "test_evolution_child_carries_an_immutable_learning_receipt",
+        "test_trait_ledger_preserves_local_benefit_without_promotion_credit",
+        "test_failure_curriculum_freezes_repeated_harmful_direction",
+        "test_descendant_trait_credit_waits_for_forward_confirmation",
+        "test_velocity_measures_knowledge_and_behavior_without_promotion_credit",
+        "test_governor_excludes_legacy_confirmed_lesson_labels_from_skill_authority",
+        "agent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningIntegrityRegressionTest.php",
+      "tests": [
+        "test_constructor_control_only_always_records_control_response_map",
+        "test_old_pair_without_exact_hash_contract_is_not_learning_paired",
+        "test_monitor_percentages_expose_scope_period_and_denominators_without_false_birth_rates",
+        "test_three_consecutive_zero_pass_generations_open_strategy_deadlock_not_learning_starvation",
+        "test_terminal_failed_job_audit_does_not_become_live_learning_backlog",
+        "test_failed_job_from_generation_outside_recovery_lookback_is_historical_not_live_backlog",
+        "test_missing_generation_mtf_bundle_is_terminal_history_not_replay_recovery_debt",
+        "test_learning_confirmation_consumes_dispatch_learning_without_bypassing_other_blocks",
+        "test_target_aligned_lesson_preempts_a_generic_generation_constructor",
+        "test_executable_technical_recovery_preempts_a_durable_causal_lesson",
+        "test_verified_positive_pair_preempts_even_an_operator_successor",
+        "test_model_version_status_follows_agent_lifecycle",
+        "test_terminal_screening_boundary_closes_only_after_agent_run_and_queue_ownership_are_clear",
+        "test_terminal_screening_boundary_fails_closed_while_an_immutable_run_is_open",
+        "test_terminal_full_validation_boundary_closes_with_an_honest_technical_disposition",
+        "test_terminal_full_validation_boundary_closes_clean_terminal_work_as_completed",
+        "test_terminal_screening_boundary_waits_for_generation_owned_learning_projection",
+        "scope"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningIntelligenceAuditTest.php",
+      "tests": [
+        "test_it_separates_screening_diagnostics_from_canonical_and_causal_learning",
+        "episode"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningKernelServiceTest.php",
+      "tests": [
+        "test_episode_settlement_applies_hard_safety_veto_and_keeps_promotion_separate",
+        "test_contextual_retrieval_is_consumed_and_linked_to_the_settled_episode",
+        "test_contextual_retrieval_handles_structured_runtime_context_without_casting_error",
+        "test_pulse_does_not_turn_legacy_confirmed_lessons_into_learning_velocity",
+        "test_policy_versions_are_immutable_and_activation_requires_external_approval"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningLaneTest.php",
+      "tests": [
+        "test_screen_observation_is_paired_with_same_generation_control_without_promotion_credit",
+        "test_control_that_finishes_later_reconciles_an_existing_missing_control_pair",
+        "test_micro_replay_recovers_parameter_identity_from_the_sealed_model",
+        "test_only_a_causal_two_of_three_result_is_a_contextual_near_pass",
+        "test_provisional_skill_is_role_scoped_and_can_be_used_only_as_one_research_probe",
+        "test_baseline_without_contract_matched_control_stays_missing_control",
+        "test_verified_pair_with_an_incomplete_target_delta_still_reaches_the_micro_frontier",
+        "agents"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningProtocolSafetyServiceTest.php",
+      "tests": [
+        "test_canonical_repair_bootstrap_is_auditable_without_falsifying_full_funnel_checks",
+        "model",
+        "agent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningTechnicalCircuitBreakerTest.php",
+      "tests": [
+        "tearDown",
+        "test_quarantine_cools_down_to_one_half_open_probe_and_recovers_from_immutable_success",
+        "test_failed_half_open_probe_returns_to_quarantine_and_expired_lease_can_rearm",
+        "test_population_admission_failure_releases_only_the_probe_acquired_by_this_instance",
+        "test_existing_confirmation_draft_can_adopt_and_release_its_live_probe"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LearningTruthProtocolTest.php",
+      "tests": [
+        "test_partial_screening_reward_is_informative_but_never_absolute_positive",
+        "test_invalid_pair_is_diagnostic_only_and_cannot_create_a_canonical_outbox_item",
+        "test_canonical_settlement_completes_dispatch_and_zero_trades_remain_insufficient_evidence",
+        "test_missing_metrics_are_insufficient_evidence_not_zero_loss",
+        "test_positive_canonical_settlement_preserves_pair_and_executed_gene_in_learning_projections",
+        "test_relative_uplift_with_absolute_safety_failure_is_observation_not_preference",
+        "test_unexecuted_response_map_cannot_enter_canonical_or_cartridge_paths",
+        "test_distinct_observed_genes_cannot_collapse_into_the_same_claim",
+        "test_typed_mutation_scope_cannot_leak_into_the_wrong_context_axis",
+        "test_repeat_failure_fingerprint_is_bound_to_the_exact_causal_baseline",
+        "test_rich_replay_is_projected_into_measured_causal_edge_components",
+        "test_missing_non_target_evidence_cannot_create_screen_level_reward",
+        "pair"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/LighthouseVerticalLoopMonitoringTest.php",
+      "tests": [
+        "test_monitor_is_fail_closed_outside_the_lighthouse_scope",
+        "test_monitor_records_the_first_missing_milestone_without_mutating_strategy_state",
+        "test_monitor_defers_disposable_persistence_while_population_constructor_owns_generation"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MarketDataContinuityTest.php",
+      "tests": [
+        "test_offline_failure_persists_a_retryable_pending_interval",
+        "test_complete_recovery_marks_sync_healthy_but_open_hour_gap_stays_pending",
+        "test_m15_recovery_detects_a_missing_quarter_hour",
+        "test_fx_christmas_closure_does_not_remain_catching_up",
+        "test_closed_weekend_failure_does_not_mark_the_feed_offline",
+        "test_audit_uses_the_canonical_holiday_aware_quality_gate",
+        "candle"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MarketDataPagesTest.php",
+      "tests": [
+        "setUp",
+        "test_market_data_index_shows_symbol_status",
+        "test_market_data_update_posts_to_command_and_stores_candles",
+        "writeMarketDataCsv"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MarketHealthEngineTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_market_health_marks_fresh_mt5_feed_as_ok",
+        "test_market_health_alerts_and_logs_lost_mt5_feed",
+        "test_market_health_command_runs",
+        "test_fallback_provider_cannot_mask_the_configured_provider_outage",
+        "test_market_health_defers_freshness_during_a_closed_weekend_session",
+        "createCandle"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MarketRealityEngineTest.php",
+      "tests": [
+        "test_market_reality_analyzes_candles_into_species_genomes_memories_and_discoveries",
+        "test_training_session_records_strategy_performance_by_market_species",
+        "test_reanalysis_keeps_snapshot_observation_times_immutable",
+        "test_market_intelligence_dashboard_renders_reality_layers",
+        "createMarketCandles"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MarketSessionCalendarTest.php",
+      "tests": [
+        "test_london_and_comex_offsets_follow_iana_dst_rules",
+        "test_every_timestamp_is_classified_or_explicitly_quarantined_with_complete_coordinates",
+        "test_sge_night_day_and_pre_holiday_night_closure_are_distinct",
+        "test_lbma_fixes_comex_settlement_maintenance_and_overlap_remain_separate",
+        "test_higher_timeframe_candle_keeps_every_phase_crossed_by_its_closed_interval",
+        "test_local_holiday_does_not_leak_global_authority"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MarketTrainingDataServiceTest.php",
+      "tests": [
+        "test_csv_import_is_idempotent_and_keeps_training_data_out_of_canonical_candles",
+        "test_invalid_ohlc_rows_are_not_written",
+        "test_training_lane_rejects_paper_year_candles",
+        "test_agent_payload_is_explicitly_read_from_the_training_lane",
+        "test_bounded_agent_payload_returns_the_exact_chronological_tail"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MetaIntelligenceEngineTest.php",
+      "tests": [
+        "test_meta_audit_creates_health_audits_decay_contradictions_unknowns_and_self_critique",
+        "test_meta_intelligence_dashboard_and_manual_audit_work",
+        "test_meta_audit_command_runs",
+        "createMetaEvidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ModelVersionPagesTest.php",
+      "tests": [
+        "test_model_versions_index_lists_versions"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MtfAgentValidationSnapshotServiceTest.php",
+      "tests": [
+        "test_agent_validation_freezes_bounded_training_store_without_live_export",
+        "rows"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MtfAutonomousResearchDispatchTest.php",
+      "tests": [
+        "test_stop_mode_never_opens_mtf_research_work",
+        "test_current_cohort_seals_control_before_any_hypothesis",
+        "test_verified_control_dispatches_only_bounded_high_information_frontier",
+        "candidate",
+        "cohort"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MtfPilotContractTest.php",
+      "tests": [
+        "test_ordinary_replay_envelope_uses_m5_and_all_closed_context_streams",
+        "test_ordinary_generation_dispatch_seals_the_bundle_consumed_by_the_m5_replay_request",
+        "test_m5_replay_uses_frozen_bundle_volume_provenance_instead_of_live_coverage",
+        "test_h1_storage_identity_binds_to_m15_entry_without_becoming_a_second_population",
+        "test_missing_python_mtf_context_is_blocked_at_laravel_paper_boundary",
+        "test_passport_and_shadow_twin_are_idempotent_and_immutable"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MtfPilotMonitoringTest.php",
+      "tests": [
+        "test_monitor_records_closed_alignment_and_health_snapshot",
+        "test_monitor_fails_closed_for_future_h1_context",
+        "seedCandles"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MtfPlaybookFrozenControlServiceTest.php",
+      "tests": [
+        "test_runner_identity_uses_an_explicit_semantic_seal_instead_of_php_file_bytes",
+        "test_candidate_and_control_share_the_same_immutable_m5_bundle_and_execution_contract",
+        "test_smt_without_an_explicit_related_market_is_recorded_as_blocked_not_replayed_as_primary_market",
+        "catalogue",
+        "test_liquidity_trap_catalogue_model_uses_its_dedicated_mtf_candidate",
+        "test_all_seventeen_models_run_as_separate_frozen_control_pairs",
+        "test_technical_error_is_retried_but_completed_run_is_reused",
+        "test_busy_candidate_is_deferred_and_resumes_without_replaying_completed_control",
+        "test_evolution_that_appears_during_preflight_preempts_the_candidate_leg",
+        "test_confirmation_funnel_creates_one_audited_single_gene_repair_variant",
+        "test_promising_underpowered_prior_expands_data_without_reusing_control_or_relaxing_parameters",
+        "idleQueues"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MtfPlaybookLearningDirectorServiceTest.php",
+      "tests": [
+        "test_promising_small_sample_gets_more_data_before_any_gate_relaxation",
+        "test_measured_confirmation_bottleneck_yields_one_single_gene_repair_then_advances",
+        "runRow"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MtfPoweredPriorValidationServiceTest.php",
+      "tests": [
+        "test_powered_prior_becomes_model_owned_nine_fold_settlement_without_promotion",
+        "test_underpowered_history_expands_once_then_stops_at_the_sealed_maximum",
+        "test_retry_selects_the_same_sealed_budget_manifest_instead_of_fresh_archive_bytes",
+        "test_max_breadth_activity_collapse_becomes_a_bounded_portability_directive",
+        "foldResult",
+        "parameterHash"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MtfStrategyResearchTest.php",
+      "tests": [
+        "test_catalog_is_bounded_and_declares_distinct_failure_targets",
+        "test_default_candidate_comes_from_unified_organism_not_legacy_m15_population",
+        "test_challenger_frontier_rotates_unseen_families_without_replacing_the_frozen_control",
+        "test_volume_research_requires_fresh_entry_and_regime_context",
+        "test_targeted_validation_uses_the_declared_gate_and_council_has_a_separate_proxy_gate",
+        "test_control_replacement_is_blocked_without_official_paper_evidence",
+        "test_latest_historical_control_is_never_mislabeled_as_current_cohort",
+        "test_report_classifies_entry_starvation_and_applies_family_budget_without_mutating_gates",
+        "test_council_research_is_lighthouse_only",
+        "test_mtf_snapshot_is_immutable_and_integrity_checked"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php",
+      "tests": [
+        "test_cold_start_uses_four_learning_sources_without_weakening_exact_pairs",
+        "test_positive_evidence_moves_compute_to_replication_factorial_transfer_and_rehearsal"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MutationObservabilityTest.php",
+      "tests": [
+        "test_exhausted_gene_gets_a_same_target_replacement_before_architecture_escape",
+        "test_dependency_blocked_targeted_seat_is_replaced_by_an_edge_prerequisite",
+        "test_failed_shadow_experiment_becomes_an_explicit_frozen_control",
+        "test_dependency_blocked_shadow_seat_uses_the_same_non_promoting_control_fallback",
+        "test_blocked_targeted_allocation_is_executable_and_reports_zero_targeted_seats",
+        "test_population_build_defers_while_another_entry_point_owns_the_constructor",
+        "test_interrupted_constructor_cannot_modify_an_older_generation",
+        "test_parameter_change_without_signal_or_ledger_change_is_not_observable",
+        "test_expected_invariants_do_not_count_as_a_behavioral_effect",
+        "test_exit_mutation_is_checked_against_its_declared_exit_plane",
+        "test_structural_claim_without_its_declared_plane_is_evidence_incomplete_not_generic_success",
+        "test_exit_claim_is_contradicted_when_it_materially_changes_entry_count",
+        "test_non_directional_veto_claim_matches_when_the_veto_opens",
+        "test_changed_signal_and_ledger_are_learning_observable_but_not_promotion_evidence",
+        "test_event_digest_is_required_for_final_observability_classification",
+        "test_shadow_mutation_contract_blocks_a_parameter_only_probe",
+        "test_data_edge_root_cohort_is_not_failed_for_missing_parent_control_pair",
+        "test_root_portfolio_intervention_requires_its_declared_control_pair",
+        "test_reconciliation_never_upgrades_a_failed_gate_projection",
+        "childAndCandidate"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MutationSkillVerificationTest.php",
+      "tests": [
+        "test_legacy_parent_is_not_a_genetic_parent",
+        "test_overlapping_forward_windows_do_not_create_two_skill_confirmations",
+        "test_skill_evidence_requires_three_independent_windows_but_only_two_positive_windows",
+        "test_constructor_skips_a_zero_diff_repair_when_all_genes_are_blocked"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/NormalCausalResearchContractTest.php",
+      "tests": [
+        "test_draft_integrity_accepts_a_sealed_architecture_only_candidate",
+        "test_normal_plan_materializes_exact_controls_and_keeps_structural_candidate",
+        "test_structural_genes_are_schema_and_tactic_declared",
+        "test_normal_structural_compiler_reserves_executable_hypotheses",
+        "test_lone_volume_lane_is_materialized_as_a_control_candidate_pair",
+        "test_volume_repair_preserves_the_source_price_family_pair",
+        "test_three_proof_seats_leave_eight_exact_pairs_and_one_explicit_abstention",
+        "test_legacy_core_fill_cannot_replace_a_seeded_causal_repair_triplet",
+        "test_dispatch_admission_consumes_the_same_exact_pair_protocol_as_the_constructor"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/P0EvidenceControlsTest.php",
+      "tests": [
+        "test_full_dataset_export_has_exact_row_count_and_sha256_manifest",
+        "test_full_replay_coverage_is_stricter_than_recent_screening_readiness",
+        "test_full_replay_accepts_a_sealed_foundation_archive_with_a_recent_rolling_snapshot",
+        "test_m15_full_replay_uses_an_independent_pre_2026_foundation_contract",
+        "test_m15_legacy_foundation_manifest_boundaries_are_read_from_its_continuity_passport",
+        "test_foundation_csv_continuity_passport_rejects_unexpected_weekday_gap",
+        "test_full_replay_mutex_uses_the_shared_recovery_key",
+        "test_sealed_holdout_fails_closed_without_a_paper_lifecycle_and_passport",
+        "test_weekday_gap_is_a_hard_gate",
+        "test_m15_weekday_gap_is_a_hard_gate",
+        "test_new_year_archive_closure_is_not_counted_as_a_data_gap",
+        "test_fx_christmas_eve_archive_closure_is_not_counted_as_a_data_gap",
+        "test_xau_holiday_weekend_is_not_counted_as_a_data_gap",
+        "test_xau_maundy_thursday_closure_is_not_counted_as_a_data_gap",
+        "test_xau_new_york_maintenance_hour_is_not_counted_as_a_data_gap",
+        "test_xau_new_years_eve_early_close_is_not_counted_as_a_data_gap",
+        "test_paper_signal_and_outcome_evidence_starts_blocked_and_signal_is_immutable",
+        "test_missing_signal_is_a_warning_until_a_valid_paper_candidate_exists",
+        "test_paper_feed_uptime_uses_only_the_active_provider",
+        "insertCandles"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/PaperConfidenceCalibrationTest.php",
+      "tests": [
+        "test_unproven_paper_scope_preserves_raw_confidence",
+        "test_calibrated_scope_uses_observed_bin_probability"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ParentAwareEvolutionTest.php",
+      "tests": [
+        "test_parent_is_a_contextual_mentor_and_not_a_parameter_vector_copy",
+        "test_parent_credit_requires_autonomous_mentored_and_ablated_branches",
+        "test_council_ablation_is_planned_for_every_declared_member"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ParentCandidatePreparationTest.php",
+      "tests": [
+        "test_only_strict_council_pre_pass_candidates_receive_bounded_ideas",
+        "test_non_council_or_weak_agent_is_not_prepared",
+        "candidate"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "tests": [
+        "test_foundation_records_events_snapshots_and_agent_memory_matches",
+        "test_health_center_dashboard_manual_check_and_command_work",
+        "test_scheduler_health_requires_a_fresh_runtime_heartbeat",
+        "test_access_control_health_requires_an_active_admin",
+        "test_reality_loop_marks_p0_freeze_as_intentional_policy_state",
+        "test_lab_pipeline_health_rejects_an_active_generation_with_a_terminal_timestamp",
+        "test_lab_pipeline_health_tracks_active_work_without_calling_it_promotion_evidence",
+        "test_lab_pipeline_health_blocks_full_validation_without_foundation_coverage",
+        "test_market_feed_health_rejects_a_stale_confirmed_candle",
+        "test_global_health_projects_monitor_runs_without_recursively_nesting_owned_health_rows"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/PostV2LearningProofTest.php",
+      "tests": [
+        "test_golden_worlds_prove_positive_chain_and_reject_null_poison_and_context_leakage",
+        "test_golden_world_command_depth_exercises_persistence_and_rolls_synthetic_rows_back",
+        "test_post_v2_epoch_is_non_retroactive_and_requires_an_exact_linked_chain",
+        "test_direct_generation_constructor_opens_epoch_once_but_cannot_backfill_a_loaded_row",
+        "test_component_credit_does_not_require_absolute_profit_or_grant_parent_authority",
+        "test_post_v2_relative_win_is_persisted_in_research_escrow_without_parent_authority",
+        "test_component_credit_fails_closed_when_replay_context_differs_from_sealed_source",
+        "test_salvage_conveyor_prioritizes_closest_signal_but_forces_fresh_v2_reproduction",
+        "test_terminal_generation_cannot_permanently_own_a_ready_causal_trial",
+        "labAndGeneration",
+        "agent",
+        "lesson"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/PriorKnowledgeVaultTest.php",
+      "tests": [
+        "test_priors_are_seeded_as_proposal_only_and_decay_with_local_evidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ProgressiveInheritanceTest.php",
+      "tests": [
+        "test_parent_frontier_prefers_progress_in_the_active_repair_lane",
+        "test_resumable_constructor_finalizes_the_mandatory_lineage_contract",
+        "test_child_carries_parent_parameters_lineage_and_confirmed_traits",
+        "test_parent_frontier_rejects_a_foreign_semantic_council_role"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ProofFrontierActivationTest.php",
+      "tests": [
+        "test_real_constructor_materializes_the_sealed_four_arm_genomes",
+        "test_a_verified_source_opens_one_research_only_four_arm_block_and_never_economic_credit",
+        "test_same_discovery_hypothesis_is_not_replayed_on_the_same_frozen_data",
+        "test_planned_activation_cannot_disappear_during_constructor_recovery",
+        "source",
+        "plan",
+        "screen"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/QualityDiversityEvolutionOperatingSystemTest.php",
+      "tests": [
+        "test_skill_zoo_and_mutation_brain_keep_research_credit_separate_from_promotion",
+        "test_adversary_is_historically_bounded_and_cannot_complete_without_sealed_replay",
+        "test_pareto_minimal_criterion_multi_fidelity_directors_and_extinction_are_bounded",
+        "test_operating_system_exposes_full_contract_without_runtime_action",
+        "test_surrogate_ranks_only_after_sealed_observations_and_never_replaces_replay",
+        "test_historical_causal_reconciliation_creates_a_new_projection_without_replaying_or_rewriting_evidence",
+        "agent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/QuantCivilizationEngineTest.php",
+      "tests": [
+        "test_civilization_sync_creates_agents_credits_council_memory_knowledge_and_goals",
+        "test_ai_civilization_dashboard_and_manual_sync_work",
+        "test_civilization_sync_command_runs",
+        "createCivilizationEvidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RealityVerificationEngineTest.php",
+      "tests": [
+        "test_reality_verification_certifies_supported_knowledge",
+        "test_failed_high_confidence_knowledge_goes_to_cemetery_and_skeptic_report",
+        "test_reality_center_dashboard_manual_verification_and_command_work",
+        "createQuantLaw",
+        "createQuantTheory",
+        "createPaperScores"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ReleaseSealTest.php",
+      "tests": [
+        "test_missing_release_manifest_fails_closed",
+        "test_release_scope_attests_the_python_replay_runtime"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RepairArchitectureEscapeAdmissionTest.php",
+      "tests": [
+        "test_false_zero_diff_quarantine_is_returned_to_same_generation_recovery"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RescueCircuitBreakerTest.php",
+      "tests": [
+        "test_three_same_temporal_cohorts_and_twelve_siblings_are_blocked",
+        "test_one_rescue_cannot_reopen_on_the_same_dataset_but_a_closed_day_tail_can",
+        "test_temporal_window_builder_uses_the_actual_screening_period_not_the_full_foundation_manifest",
+        "test_valid_sealed_temporal_holdout_manifest_admits_structural_evidence_without_fresh_tail",
+        "test_a_sealed_holdout_hash_cannot_reopen_the_same_rescue_family",
+        "test_fresh_chronological_window_can_reopen_after_holdout_was_consumed",
+        "test_temporal_ablation_requires_paired_four_variants_and_three_windows",
+        "test_clean_temporal_ablation_without_sealed_windows_is_persistently_blocked",
+        "test_same_temporal_ablation_identity_cannot_be_replanned_after_block",
+        "test_temporal_ablation_audit_projection_refreshes_stale_reason_codes",
+        "test_challenger_reason_codes_keep_low_pf_and_pending_forward_out_of_parent_frontier",
+        "lab",
+        "profile",
+        "rescueGeneration"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ResearchExperimentConversionKernelServiceTest.php",
+      "tests": [
+        "contract",
+        "test_terminal_receipt_and_next_work_are_idempotent_and_stale_completion_is_fenced",
+        "test_terminal_closure_requires_exactly_one_next_work_or_reason",
+        "test_next_work_is_owned_retry_bounded_and_visible_to_closure_truth",
+        "test_owner_claim_cannot_be_starved_by_another_owners_priority_rows"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ResearchKnowledgePortfolioServiceTest.php",
+      "tests": [
+        "contract",
+        "test_terminal_receipt_projects_into_research_only_civilization_memory",
+        "test_portfolio_recommendations_require_confirmed_cartridge_and_never_enable_live_routing"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ResearchLoopArbiterTest.php",
+      "tests": [
+        "test_stop_denies_new_work_but_an_active_generation_is_drained_first",
+        "test_dispatched_arbiter_decision_is_closed_by_its_child_command_outcome",
+        "test_exit_zero_lifecycle_pause_is_deferred_not_a_completed_transition",
+        "test_exit_zero_technical_recovery_dispatch_does_not_complete_successor_decision",
+        "test_exit_zero_generation_admission_refusal_is_not_a_completed_writer",
+        "test_terminal_technical_recovery_preempts_a_new_data_writer",
+        "test_completed_child_schedules_receipt_only_retry_when_autonomy_seal_throws",
+        "test_stop_drains_an_incomplete_quarantined_constructor_but_not_a_terminal_quarantine",
+        "test_stopped_idle_loop_records_one_stable_defer_and_dispatches_nothing",
+        "test_terminal_unsettled_hypothesis_triplet_dispatches_full_replay_before_new_work",
+        "test_latest_generation_causal_closure_outranks_historical_causal_backlog",
+        "test_terminal_causal_technical_arm_preempts_generic_active_generation_settlement",
+        "test_owned_durable_work_is_leased_and_is_the_only_dispatched_action",
+        "test_normal_lifecycle_is_fallback_and_duplicate_tick_cannot_double_dispatch",
+        "test_confirmed_market_drift_after_zero_pass_uses_fresh_data_admission",
+        "test_final_zero_pass_report_routes_through_lifecycle_audit_then_reselects_data_edge_root",
+        "test_next_minute_suppresses_the_same_unchanged_state_decision",
+        "test_inherited_data_edge_audit_does_not_suppress_a_new_final_report_audit",
+        "test_frozen_recovery_terminal_disposition_changes_successor_state_watermark",
+        "test_fresh_data_retry_watermark_changes_only_after_admission_window_is_met",
+        "test_running_lifecycle_child_fences_a_second_lifecycle_action_with_different_arguments",
+        "test_reconciled_terminal_child_delivery_is_an_explicit_noop",
+        "test_latest_generation_learning_pair_outranks_historical_positive_backlog",
+        "test_historical_learning_backlog_gets_one_maintenance_seat_without_starving_next_generation",
+        "test_deferred_targeted_handoff_does_not_monopolise_the_arbiter",
+        "test_historical_dispatched_targeted_decision_without_a_live_queue_lock_does_not_block_successor_selection",
+        "test_target_aligned_causal_lesson_outranks_market_drift_generation",
+        "lab",
+        "contract",
+        "learningPair"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ResearchLoopSchedulerOwnershipTest.php",
+      "tests": [
+        "test_only_research_loop_arbiter_is_scheduled_to_select_new_xauusd_work",
+        "test_shadow_population_work_cannot_block_the_xauusd_constructor_lane"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php",
+      "tests": [
+        "test_2026_is_paper_only_and_outside_dates_are_rejected",
+        "test_pre_paper_candidate_freezes_once_and_only_valid_2026_evidence_opens_e4",
+        "test_invalid_epoch_cannot_become_forward_or_parent_evidence",
+        "model",
+        "prePaperAuthority",
+        "passport"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RiskBoundedEvolutionTest.php",
+      "tests": [
+        "test_governor_emits_controlled_exploration_modes_after_history_exists",
+        "test_learning_velocity_blocks_screen_pass_without_replay",
+        "test_zero_diff_constructor_quarantine_is_reconciled_not_recovery_blocking",
+        "test_candidate_blocked_by_terminal_frozen_control_has_no_independent_recovery_debt",
+        "test_unreplayed_candidate_does_not_keep_recovery_blocked_after_its_control_completes",
+        "test_unreplayed_candidate_waits_for_control_repair_without_spending_its_timeout_budget",
+        "test_exhausted_retry_budget_quarantine_is_terminal_history_not_a_generation_deadlock",
+        "test_cancelled_operational_canary_is_terminal_diagnostic_history",
+        "test_failed_service_repair_timeout_is_not_retried_under_another_transport_label",
+        "test_closed_population_contract_quarantine_is_excluded_without_quality_credit",
+        "test_closed_audited_generation_contract_quarantine_is_excluded_without_reopening_learning",
+        "test_closed_constructor_abort_is_excluded_without_an_integrity_repair_projection",
+        "test_superseded_causal_selector_quarantine_is_terminal_history_not_recovery_work",
+        "test_shadow_council_is_explicitly_research_only",
+        "test_outcome_policy_separates_recovery_failure_and_confirmed_exploration"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RunHeadlessSchedulerTest.php",
+      "tests": [
+        "test_scheduler_claims_a_minute_once_across_a_process_restart",
+        "test_runtime_monitor_reports_the_real_age_of_a_stale_scheduler_heartbeat",
+        "test_scheduler_can_recover_a_stale_lease_from_a_dead_process_on_the_same_host",
+        "test_scheduler_runs_each_tick_in_an_isolated_child_process",
+        "test_lease_refresh_preserves_the_original_process_start_time",
+        "refresh"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RuntimeEnsemblePolicyTest.php",
+      "tests": [
+        "test_raw_genetic_parent_policy_can_never_activate_runtime_members",
+        "test_independent_member_flag_cannot_bypass_combined_portfolio_replay",
+        "test_sealed_portfolio_requires_independent_member_passports_and_exact_specs",
+        "test_passed_combined_portfolio_activates_only_matching_independent_members",
+        "model",
+        "performanceWithPassport",
+        "parameterHash"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RuntimeMonitorTest.php",
+      "tests": [
+        "test_runtime_monitor_persists_a_safe_testing_snapshot"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+      "tests": [
+        "test_delayed_research_is_visible_but_does_not_block_an_idle_reload",
+        "test_runnable_job_or_active_generation_refuses_reload"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "tests": [
+        "test_cross_platform_runner_builds_a_shell_free_artisan_command_line",
+        "test_windows_console_process_group_is_not_created_by_php",
+        "test_scheduled_process_runner_executes_artisan_without_a_shell_contract",
+        "test_windows_native_runner_enforces_its_hard_timeout_without_blocking_on_output",
+        "test_learning_dispatch_uses_a_short_private_unique_worker_contract",
+        "test_expected_lifecycle_block_is_not_recorded_as_a_failed_job",
+        "test_proposal_only_rescue_deferral_is_not_a_failed_job",
+        "test_unknown_nonzero_exit_remains_a_technical_failure",
+        "test_transient_external_feed_outage_is_deferred_without_hiding_application_errors",
+        "test_argument_order_does_not_change_the_overlap_identity",
+        "test_memory_heavy_research_has_a_separate_serial_lane",
+        "test_lifecycle_scheduler_job_has_a_full_population_constructor_budget",
+        "test_redis_uniqueness_outlives_visibility_timeout_and_allows_one_transport_retry"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScreeningLearningProjectionReconciliationTest.php",
+      "tests": [
+        "test_completed_run_with_lost_projection_is_redispatched_without_replay",
+        "test_existing_response_map_makes_reconciliation_idempotent",
+        "screenedAgent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SemanticGroupIsolationTest.php",
+      "tests": [
+        "test_parent_compatibility_rejects_a_foreign_strategy_family",
+        "test_group_champion_does_not_cross_a_council_role_boundary",
+        "test_genome_crossover_rejects_a_foreign_role_inside_the_same_family"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SessionSpecialistAdmissionTest.php",
+      "tests": [
+        "test_portfolio_admission_rejects_a_session_specialist_without_cross_dst_evidence",
+        "candidate"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ShadowResearchGovernorTest.php",
+      "tests": [
+        "test_smart_courage_uses_the_declared_twenty_seat_budget",
+        "test_rescue_blocked_shadow_escape_uses_one_six_five_four_three_one_without_targeted_repair",
+        "test_shadow_allocation_materializes_controls_per_execution_lane",
+        "test_rescue_blocked_shadow_regime_slots_become_temporal_survival_probes",
+        "test_mixed_family_and_volume_lanes_receive_exact_frozen_controls",
+        "test_complete_control_failure_opens_shadow_but_incomplete_control_does_not"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SmartDisciplineEngineTest.php",
+      "tests": [
+        "setUp",
+        "test_clean_entry_is_approved_and_written_to_an_immutable_ledger",
+        "test_recent_four_loss_streak_triggers_a_temporary_hard_lock",
+        "test_directional_late_chase_is_vetoed_in_stop_distance_units",
+        "test_account_loss_and_trade_frequency_limits_are_hard_gates",
+        "test_external_risk_veto_is_part_of_the_same_no_trade_receipt_without_becoming_a_process_violation",
+        "test_disabling_discipline_rules_never_disables_the_higher_risk_authority",
+        "test_authorized_contract_seals_the_actual_risk_reduced_size_used_by_paper_pnl",
+        "test_risk_hysteresis_requires_new_settled_evidence_and_can_recover_from_caution",
+        "test_post_trade_review_separates_good_loss_from_bad_win",
+        "test_stop_widening_turns_a_profitable_outcome_into_a_quarantined_bad_win",
+        "test_operator_report_command_supports_json_output",
+        "candidateAndSignal",
+        "signal",
+        "contract",
+        "executionSignal",
+        "closedOrder",
+        "reviewableOrder",
+        "managementAudit"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SourceGenerationAuditServiceTest.php",
+      "tests": [
+        "test_audit_uses_primary_key_and_reports_arms_controls_and_replay_identity_read_only",
+        "test_edge_progressing_is_a_stage_result_and_not_a_terminal_trial"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistLeagueChallengeServiceTest.php",
+      "tests": [
+        "test_league_admission_requires_independent_and_counterfactual_council_gates",
+        "test_open_ended_challenges_are_sealed_pre2026_and_record_transfer_solution_only_as_research"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
+      "tests": [
+        "test_dead_local_constructor_releases_fenced_leases_and_closes_orphaned_work",
+        "test_live_constructor_owner_is_never_preempted",
+        "test_legacy_ownerless_lifecycle_lock_uses_dead_constructor_receipt",
+        "test_live_lifecycle_owner_is_never_preempted"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/StrategyCurriculumServiceTest.php",
+      "tests": [
+        "test_strategy_agents_receive_a_bounded_mastery_contract_and_only_full_stack_masters_can_innovate"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/StrategyDnaLaboratoryTest.php",
+      "tests": [
+        "test_strategy_dna_profiles_table_exists",
+        "test_dna_laboratory_page_redirects_to_canonical_laboratory",
+        "test_legacy_evolution_service_is_read_only"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/StrategyLabRunAllTest.php",
+      "tests": [
+        "test_strategy_and_evolution_lab_urls_redirect_to_canonical_laboratory",
+        "test_strategy_lab_run_all_dispatches_only_the_canonical_lab_command",
+        "test_evolve_alias_is_a_safe_noop"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/StrategyLibraryCompilerTest.php",
+      "tests": [
+        "test_compiler_keeps_strategy_composition_bounded_and_risk_owned_by_sentinel",
+        "test_liquidity_trap_mtf_is_a_closed_candle_shadow_research_contract"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/StrategyResearchCatalogueTest.php",
+      "tests": [
+        "test_catalogue_separates_seventeen_playbooks_from_reusable_modules",
+        "test_cross_market_and_adaptive_models_have_explicit_data_requirements"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/StrategyScoreMonteCarloMigrationTest.php",
+      "tests": [
+        "test_strategy_scores_table_has_monte_carlo_columns"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/StrategyTacticRiskCompositionPlannerTest.php",
+      "tests": [
+        "test_full_cohort_receives_four_auditable_causal_packets_with_frozen_passports",
+        "test_freeze_rejects_an_empty_strategy_tactic_activation_scope",
+        "test_recovery_cohort_is_not_silently_rewritten_as_a_full_composition_cohort",
+        "test_frozen_passport_reclaims_final_constructor_identity_after_plan_copying",
+        "test_causal_confirmation_reissues_a_cross_family_passport_for_the_exact_source_runtime",
+        "test_causal_confirmation_fails_planning_when_no_exact_family_adapter_exists",
+        "test_structural_architecture_is_frozen_into_its_matching_strategy_passport",
+        "test_management_library_compiles_an_executable_profile_adapter",
+        "test_replay_contract_binds_management_and_carries_executable_tactic",
+        "test_composition_settlement_fails_closed_without_explicit_independent_control_proof",
+        "test_component_fanout_credits_only_explicit_paired_ablation_and_is_idempotent",
+        "test_combination_synergy_uses_factorial_interaction_not_ab_beating_one_arm"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/StructuralCausalCohortTest.php",
+      "tests": [
+        "test_structural_cohort_has_twenty_control_paired_diverse_seats",
+        "test_safety_service_rejects_a_non_structural_twenty_seat_shape",
+        "test_safety_service_accepts_the_dynamic_ten_pair_rescue_constitution",
+        "test_micro_probe_rejects_parameter_hash_without_behavior_delta",
+        "test_screening_response_maps_preserve_causal_payload_through_pair_and_micro_replay"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TacticCatalogueTest.php",
+      "tests": [
+        "test_popular_tactic_is_a_research_contract_with_one_gene_repair_rules",
+        "test_unknown_tactic_cannot_claim_single_gene_alignment",
+        "test_differential_child_inherits_parent_architecture_but_keeps_differential_contract",
+        "test_shadow_architecture_temporal_and_volume_genes_are_declared"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TargetedGenerationAdmissionTest.php",
+      "tests": [
+        "test_stopped_autonomy_defers_targeted_builder_before_any_constructor_work",
+        "test_inactive_archive_handoff_cannot_open_a_unified_population",
+        "test_only_the_newest_waiting_handoff_per_live_laboratory_is_considered",
+        "test_created_targeted_generation_consumes_the_waiting_request_once",
+        "test_non_retryable_constructor_block_terminally_closes_request",
+        "test_evidence_free_failure_profile_is_closed_without_random_mutation",
+        "test_terminal_targeted_request_cannot_be_reopened_by_a_repeated_selector_observation",
+        "test_latest_incomplete_technical_quarantine_keeps_generation_ownership",
+        "test_population_builder_cannot_supersede_an_incomplete_lineage_head",
+        "liveLab",
+        "terminalGeneration",
+        "waitingHandoff",
+        "actionableProfiles",
+        "bindHealthyQueueAndSafety"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TerminalEdgePassportReconciliationTest.php",
+      "tests": [
+        "test_terminal_compiled_arms_close_only_the_stale_passport_projection"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TradingCognitiveStackTest.php",
+      "tests": [
+        "test_stack_routes_a_trade_through_all_brains_and_keeps_learning_separate",
+        "test_stack_abstains_on_hazard_and_never_lets_innovation_bypass_it",
+        "test_brain_contract_has_explicit_authority_order_and_data_boundary",
+        "test_setup_does_not_execute_when_confirmation_entry_contract_has_no_trigger",
+        "test_required_entry_contract_cannot_fall_back_to_legacy_route",
+        "test_fill_time_reward_veto_is_visible_in_the_cognitive_funnel"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TradingInstrumentOperatingSystemTest.php",
+      "tests": [
+        "test_registry_creates_executable_xauusd_playbooks_and_contracts",
+        "test_router_prefers_a_risk_abstention_in_high_volatility",
+        "test_router_fails_closed_when_cost_context_is_missing",
+        "test_xauusd_storage_timeframe_routes_into_one_m15_instrument_decision_layer",
+        "test_router_selects_a_conditional_playbook_and_learning_updates_its_posterior",
+        "test_paper_router_requires_an_exact_confirmed_bundle_and_emits_audit_receipt",
+        "test_hierarchical_context_is_a_research_prior_not_paper_authority",
+        "test_status_only_confirmed_bundle_is_quarantined_from_paper_selection"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TrainingSessionPagesTest.php",
+      "tests": [
+        "test_training_sessions_index_lists_sessions",
+        "test_training_session_show_displays_session_scores"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TwelveDataMarketDataProviderTest.php",
+      "tests": [
+        "test_it_normalizes_twelve_data_utc_candles",
+        "test_it_requests_m1_for_audited_intraday_gap_repair"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TwinIntelligenceOrganismTest.php",
+      "tests": [
+        "test_champion_and_council_have_different_operating_systems",
+        "test_same_market_outcome_produces_lane_specific_reward_semantics",
+        "test_runtime_records_typed_exchange_and_diversity_without_promotion",
+        "test_counterfactual_credit_is_lane_scoped",
+        "test_evolution_evidence_plane_records_independent_members_genomes_health_reflection_and_red_team",
+        "test_active_router_cannot_bypass_the_promotion_authority",
+        "test_missing_risk_evidence_can_never_certify_a_cell",
+        "test_materialized_statistics_drift_and_priority_replay_are_idempotent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TypedInstrumentFoundryServiceTest.php",
+      "tests": [
+        "ast",
+        "test_foundry_requires_academy_gates_and_rejects_semantic_duplicates",
+        "test_emitter_credit_and_compounding_benchmark_remain_settled_research_contracts"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/UniversalKnowledgeGraphTest.php",
+      "tests": [
+        "test_training_session_builds_universal_knowledge_graph",
+        "test_research_assistant_answers_from_graph_and_dashboard_renders",
+        "test_knowledge_mining_command_runs",
+        "createGraphEvidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/UniversalQuantLawsEngineTest.php",
+      "tests": [
+        "test_law_discovery_creates_candidates_laws_evidence_graph_conflicts_and_drivers",
+        "test_quant_laws_dashboard_and_manual_discovery_work",
+        "test_law_discovery_command_runs",
+        "createLawEvidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/XauusdEdgeFormationAcademyServiceTest.php",
+      "tests": [
+        "passport",
+        "test_oracle_is_diagnostic_only_and_routes_the_dominant_mastery_problem",
+        "test_curriculum_freezes_unowned_axes_and_registers_exact_five_arm_experiments",
+        "test_replanning_a_settled_trial_preserves_its_immutable_terminal_state",
+        "test_beam_archive_retains_three_per_stage_and_density_has_distinct_no_power_outcomes",
+        "test_recomposition_needs_powered_negative_entry_evidence_and_one_categorical_axis",
+        "test_roles_rewards_and_regime_specialism_are_research_only",
+        "test_oracle_routes_one_legal_next_experiment_and_confirmation_uses_marginal_inequality"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/TestCase.php",
+      "tests": [
+        "setUpTraits"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/AcademyExperimentContractCompilerServiceTest.php",
+      "tests": [
+        "baseline",
+        "test_planner_controls_resolve_to_exact_baseline_without_leaking_markers_to_runtime",
+        "test_unrepresentable_planner_operator_fails_closed"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/CanonicalLaboratoryScopeTest.php",
+      "tests": [
+        "test_xauusd_sensor_timeframes_resolve_to_the_single_organism_lab",
+        "resolve"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/CausalStageMasteryDirectorServiceTest.php",
+      "tests": [
+        "test_declared_topology_must_change_its_owned_transition_without_disturbing_upstream",
+        "test_noop_or_multi_axis_intervention_cannot_receive_causal_credit"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ChampionCouncilArchitectureTest.php",
+      "tests": [
+        "test_compatibility_requires_two_regimes_and_a_router",
+        "test_compatibility_rejects_hidden_behavioral_clones",
+        "test_curriculum_turns_repeat_failure_into_architecture_escape",
+        "test_passport_is_evidence_projection_and_not_a_promotion_shortcut",
+        "test_transition_protects_incumbent_until_council_proves_parity_and_anchor_independence",
+        "test_transition_rolls_back_when_drift_or_catastrophic_regression_appears",
+        "test_canary_assignment_is_deterministic_and_fail_closed"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ConfirmationEntryCapabilityEvidenceServiceTest.php",
+      "tests": [
+        "test_observed_funnel_is_process_evidence_not_rule_authority",
+        "test_paired_oos_ablation_powers_dimensions_without_granting_promotion",
+        "replayResult"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ConfirmationEntryContractServiceTest.php",
+      "tests": [
+        "test_ready_contract_keeps_independent_evidence_and_redundancy_separate",
+        "test_setup_cannot_execute_when_exact_trigger_or_reward_space_is_missing",
+        "test_missing_contract_is_explicit_legacy_projection_not_new_evidence",
+        "test_required_contract_never_falls_back_to_legacy_route_execution",
+        "test_tampered_geometry_or_confirmation_counts_fail_closed",
+        "test_unattested_ready_contract_fails_closed"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ContextContractV2ServiceTest.php",
+      "tests": [
+        "test_it_normalizes_legacy_axis_aliases_without_cross_axis_poisoning",
+        "test_it_rejects_cross_axis_values_instead_of_registering_them_as_sessions",
+        "test_detailed_session_coordinates_participate_in_exact_identity",
+        "test_candle_timestamp_is_automatically_resolved_into_detailed_session_coordinates"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/DualTrackDecisionServiceTest.php",
+      "tests": [
+        "test_opposite_action_is_fail_closed_to_wait",
+        "test_agreement_records_hybrid_complementarity_without_promoting",
+        "test_failed_constitution_blocks_both_lanes",
+        "test_missing_lane_output_is_fail_closed",
+        "test_cell_router_is_incumbent_owned_in_shadow_mode"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/EdgeCohortIdentityServiceTest.php",
+      "tests": [
+        "test_identity_is_canonical_and_window_stages_are_disjoint"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/EdgeHypothesisCompilerServiceTest.php",
+      "tests": [
+        "test_every_compiled_arm_value_is_distinct_and_inside_runtime_schema",
+        "test_semantic_axis_debt_survives_new_generation_and_compiled_packet_names",
+        "test_compiler_reads_the_exact_entry_funnel_bottleneck_before_selecting_an_axis",
+        "test_losing_entry_path_is_kept_as_a_research_stepping_stone_over_zero_trade_abstention",
+        "test_raw_signal_count_growth_cannot_displace_an_equivalent_frozen_control",
+        "test_axis_epoch_budget_is_stable_across_descendant_parameter_hashes",
+        "test_compiled_registry_budget_is_scoped_to_the_professional_island",
+        "test_terminal_no_edge_baseline_gets_exactly_one_policy_only_topology_pivot"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/EvolvingTraderFitnessServiceTest.php",
+      "tests": [
+        "test_all_fifteen_powered_dimensions_produce_bottleneck_penalized_fitness",
+        "test_missing_capability_evidence_is_a_research_task_not_a_zero_score",
+        "test_powered_weakest_dimension_drives_one_axis_learning_reflection",
+        "test_unpowered_fitness_cannot_override_measured_operating_system_target"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ExampleTest.php",
+      "tests": [
+        "test_that_true_is_true"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/LabGenerationEvidenceContractServiceTest.php",
+      "tests": [
+        "test_direct_replay_generations_require_terminal_evaluations_not_screening_rows",
+        "test_ordinary_generations_still_require_screening_evidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_xauusd_timeframe_alias_routes_to_one_organism_and_creates_exactly_one_generation",
+        "test_repeated_cycle_does_not_duplicate_anything",
+        "test_active_generation_resumes_without_recomputing_successor_admission",
+        "test_terminal_close_exhausts_the_cycle_without_admitting_a_successor",
+        "test_settlement_retry_cannot_admit_a_successor_after_its_frozen_generation_is_terminal",
+        "test_explicit_recovery_owns_its_screen_dispatch_without_blocking_ordinary_or_descendant_models",
+        "test_audited_terminal_generation_routes_the_successor_to_the_data_edge_root_portfolio",
+        "test_inherited_audit_does_not_route_a_second_successor_to_data_edge",
+        "test_fresh_incomplete_draft_is_not_concurrently_resumed_by_a_scheduler_tick",
+        "test_fresh_incomplete_draft_without_a_constructor_lease_is_resumed",
+        "test_incomplete_quarantined_plan_owns_constructor_before_new_learning_admission",
+        "test_older_incomplete_quarantine_cannot_hide_the_newer_active_generation",
+        "test_strategy_deadlock_blocks_normal_generation_and_uses_recovery_path",
+        "test_daily_budget_blocks_new_allocation_but_not_an_existing_retry_seat",
+        "test_normal_replays_do_not_consume_the_learning_recovery_budget",
+        "test_target_aligned_lesson_opens_causal_generation_instead_of_empty_dojo_recovery",
+        "test_typed_transport_timeout_uses_separate_bounded_technical_recovery",
+        "test_exact_retry_budget_exhaustion_uses_one_shot_autonomous_recovery",
+        "test_runtime_outage_fails_closed",
+        "test_active_replay_is_runtime_liveness_not_an_outage",
+        "test_durably_contained_failed_evaluation_does_not_deadlock_its_own_recovery",
+        "test_failed_build_writes_an_error_jsonl_entry",
+        "test_concurrent_cycle_lock_prevents_double_run",
+        "test_error_logs_never_include_secrets",
+        "seedLaboratory",
+        "bindPopulation",
+        "fakeAiIdle",
+        "errorLogExists",
+        "cleanLogDir"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/LiquidityTrapBacktestExecutionTest.php",
+      "tests": [
+        "test_shadow_liquidity_trap_replay_uses_one_m5_execution_bundle_with_h4_h1_m15_context"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/MultiTimeframeSnapshotServiceTest.php",
+      "tests": [
+        "test_h4_is_formed_only_from_four_complete_utc_h1_candles",
+        "test_d1_is_formed_only_from_twenty_four_complete_utc_h1_candles"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/OverfitDetectionTest.php",
+      "tests": [
+        "test_train_forward_gap_over_25_is_overfit"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/PaperConfirmationEntryTransportTest.php",
+      "tests": [
+        "test_paper_transport_requires_exact_top_level_and_sealed_entry_contract_parity",
+        "test_confirmation_entry_paper_request_receives_all_closed_context_streams",
+        "canonicalHash"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ProcessOutcomeAuditServiceTest.php",
+      "tests": [
+        "test_good_loss_preserves_process_and_routes_the_slow_loop_to_edge_research",
+        "test_bad_win_is_a_hard_learning_veto_even_when_financial_result_is_positive",
+        "test_hard_discipline_violation_overrides_a_perfect_reported_process_score",
+        "test_missing_process_or_financial_evidence_stays_unresolved",
+        "project"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ResearchPlaybookConflictResolutionServiceTest.php",
+      "tests": [
+        "test_opposite_playbook_directions_fail_closed_to_wait",
+        "test_same_direction_from_multiple_models_is_not_an_implicit_ensemble",
+        "test_one_prerouted_playbook_can_create_only_a_candidate_setup",
+        "test_outputs_with_different_frozen_inputs_are_not_comparable",
+        "service",
+        "proposal"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/SpecialistPassportSessionTest.php",
+      "tests": [
+        "london_specialist_requires_two_profitable_dst_offset_states",
+        "one_offset_or_a_harmful_offset_cannot_certify_a_london_specialist",
+        "candidate"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
+      "tests": [
+        "test_composite_runtime_keeps_its_identity_when_parent_metadata_is_stale",
+        "test_liquidity_trap_mtf_has_a_bounded_shared_schema_and_defaults",
+        "test_confirmation_entry_matrix_has_bounded_model_mode_and_admission_gates",
+        "test_architecture_interaction_is_an_explicit_bounded_macro_gene"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php",
+      "tests": [
+        "test_curl_operation_timeout_is_a_typed_recoverable_replay_timeout",
+        "test_causal_fold_budget_timeout_uses_the_same_bounded_transport_recovery_lane",
+        "test_constructor_failure_remains_terminal_and_non_replayable",
+        "test_missing_autonomous_mtf_bundle_is_terminal_construction_history",
+        "test_composition_authority_mismatch_is_terminal_not_retried_as_transport",
+        "test_curl_connection_reset_is_a_typed_service_transport_failure",
+        "test_database_column_width_mismatch_is_a_typed_runtime_schema_failure"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/TradingOperatingSystemScorecardServiceTest.php",
+      "tests": [
+        "test_missing_management_and_independent_windows_are_evidence_tasks_not_zero_scores",
+        "test_all_powered_blocks_produce_multiplicative_grade_and_measured_repair_target",
+        "test_replay_management_power_contract_overrides_total_trade_count",
+        "test_selection_funnel_scope_mismatch_cannot_be_powered",
+        "test_incomplete_scorecard_routes_to_evidence_completion_not_a_false_component_cause",
+        "test_complete_powered_attribution_uses_measured_deficits_instead_of_fixed_weights",
+        "test_learning_reflection_routes_only_a_fully_measured_bottleneck",
+        "replay"
+      ]
+    }
+  ]
+}

@@ -18,6 +18,8 @@ from app.services.backtester import (
     prepare_signal_snapshot,
     run_simple_ema_rsi_backtest_on_dataframe,
 )
+from app.services.composition_runtime import bind_diagnostic_execution_contract
+from app.services.execution_contract import execution_contract_metadata
 from app.services.market_regime import apply_market_regime
 from app.services.parameter_schema import validate_strategy_parameters
 from app.services.red_team import RedTeamService
@@ -29,6 +31,26 @@ from app.services.statistical_validation import (
 )
 from app.services.volume_features import add_volume_features, apply_volume_policy
 from app.strategies.registry import get_strategy
+
+
+def _diagnostic_execution_payload(
+    payload: SimpleBacktestRequest,
+    execution: object,
+    lane: str,
+) -> SimpleBacktestRequest:
+    """Bind a counterfactual execution profile to diagnostic-only authority."""
+
+    candidate = payload.model_copy(
+        update={"execution": execution, "emit_decision_trace": False}
+    )
+    contract = bind_diagnostic_execution_contract(
+        payload.composition_runtime_contract,
+        execution_hash=str(
+            execution_contract_metadata(candidate).get("execution_hash") or ""
+        ),
+        diagnostic_lane=lane,
+    )
+    return candidate.model_copy(update={"composition_runtime_contract": contract})
 
 
 def _powered_survival_assessment(
@@ -1052,7 +1074,17 @@ class MarketAdaptiveReplayService:
             ).max(axis=1)
             normalized["_management_atr"] = true_range.rolling(14, min_periods=1).mean()
             if payload.portfolio_members:
-                prepared = _apply_portfolio_strategy(normalized, payload.portfolio_members)
+                prepared = _apply_portfolio_strategy(
+                    normalized,
+                    payload.portfolio_members,
+                    execution_timeframe=payload.timeframe,
+                    symbol=payload.symbol,
+                    replay_dataset_hash=payload.replay_dataset_hash,
+                    execution_hash=execution_contract_metadata(payload).get(
+                        "execution_hash"
+                    ),
+                    mtf_snapshot_manifest=payload.mtf_snapshot_manifest,
+                )
             else:
                 prepared = apply_volume_policy(
                     get_strategy(payload.strategy, payload.base_strategy)(normalized, payload.parameters),
@@ -1097,7 +1129,11 @@ class MarketAdaptiveReplayService:
             # This lane consumes only the deterministic PF verdict.  The
             # primary replay already owns all promotion diagnostics, so do not
             # recursively spend Monte Carlo/DNA/telemetry CPU here.
-            diagnostic_payload = payload.model_copy(update={"execution": execution, "emit_decision_trace": False})
+            diagnostic_payload = _diagnostic_execution_payload(
+                payload,
+                execution,
+                "secret_adversarial_arena",
+            )
             outcome = (
                 _run_prepared_simple_backtest(
                     diagnostic_payload,
@@ -1163,7 +1199,11 @@ class MarketAdaptiveReplayService:
         scenarios: dict[str, object] = {}
         normal_net = float(normal.get("net_profit_percent", 0))
         for name, profile in profiles.items():
-            diagnostic_payload = payload.model_copy(update={"execution": profile, "emit_decision_trace": False})
+            diagnostic_payload = _diagnostic_execution_payload(
+                payload,
+                profile,
+                f"execution_digital_twin:{name}",
+            )
             tested = (
                 _run_prepared_simple_backtest(
                     diagnostic_payload,
@@ -1393,7 +1433,11 @@ class MarketAdaptiveReplayService:
         strict_execution = payload.execution.model_copy(update={"reject_unexpected_gaps": True})
         try:
             run_simple_ema_rsi_backtest_on_dataframe(
-                payload.model_copy(update={"execution": strict_execution, "emit_decision_trace": False}),
+                _diagnostic_execution_payload(
+                    payload,
+                    strict_execution,
+                    "missing_candle_stress",
+                ),
                 damaged,
                 include_differential_pair=False,
                 lightweight=True,
@@ -1547,7 +1591,11 @@ class MarketAdaptiveReplayService:
             }
         )
         scaled_result = run_simple_ema_rsi_backtest_on_dataframe(
-            payload.model_copy(update={"execution": scaled_execution, "emit_decision_trace": False}),
+            _diagnostic_execution_payload(
+                payload,
+                scaled_execution,
+                "metamorphic_price_scale",
+            ),
             scaled,
             include_differential_pair=False,
             lightweight=True,
@@ -1902,8 +1950,16 @@ class MarketAdaptiveReplayService:
         # replay owns the immutable evidence and these profiles reference it
         # through the shared snapshot protocol below.
         diagnostic_payload = payload.model_copy(update={"emit_decision_trace": False})
-        zero_payload = diagnostic_payload.model_copy(update={"execution": zero_execution})
-        stress_payload = diagnostic_payload.model_copy(update={"execution": stress_execution})
+        zero_payload = _diagnostic_execution_payload(
+            payload,
+            zero_execution,
+            "cost_profile:zero_cost",
+        )
+        stress_payload = _diagnostic_execution_payload(
+            payload,
+            stress_execution,
+            "cost_profile:stress_cost",
+        )
         snapshot = prepared_snapshot or prepare_signal_snapshot(
             diagnostic_payload,
             replay,

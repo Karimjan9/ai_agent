@@ -1,0 +1,466 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/project-map/project-map.mjs",
+  "generator_digest": "5e3498ce579265a81dc03c17970e0f3ff7be935b657ee7f6e9aab0a863ae6762",
+  "generated_at": "2026-09-26T17:30:50.184Z",
+  "source_digest": "1f612b3f350728963367ba99e61f8e4430e448e51b310bdf17f4bc0cde0173d2",
+  "source_file_count": 1364,
+  "git_head": "c47c026e454e780e818232cbb0f9cfd03a21debb",
+  "authority": "Navigation facts only. Real source code and tests remain authoritative.",
+  "module": "paper-execution",
+  "paths": [
+    "backend-laravel/app/Services/PaperTradingExecutionService.php",
+    "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
+    "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+    "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+    "backend-laravel/app/Console/Commands/MonitorPaperTrading.php"
+  ],
+  "source_files": [
+    "backend-laravel/app/Console/Commands/MonitorPaperTrading.php",
+    "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+    "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
+    "backend-laravel/app/Services/PaperTradingExecutionService.php",
+    "backend-laravel/app/Services/SmartDisciplineEngineService.php"
+  ],
+  "symbols": [
+    {
+      "symbol": "MonitorPaperTrading",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/MonitorPaperTrading.php",
+      "line": 10
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/MonitorPaperTrading.php",
+      "line": 16
+    },
+    {
+      "symbol": "explainNoPaperCandidate",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/MonitorPaperTrading.php",
+      "line": 33
+    },
+    {
+      "symbol": "drawdown",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+      "line": 103
+    },
+    {
+      "symbol": "ExecutionRiskSentinelService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+      "line": 11
+    },
+    {
+      "symbol": "veto",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+      "line": 117
+    },
+    {
+      "symbol": "exposureGroup",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+      "line": 122
+    },
+    {
+      "symbol": "assess",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+      "line": 16
+    },
+    {
+      "symbol": "record",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+      "line": 58
+    },
+    {
+      "symbol": "assessInTrade",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+      "line": 68
+    },
+    {
+      "symbol": "assessPortfolio",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+      "line": 82
+    },
+    {
+      "symbol": "equity",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+      "line": 93
+    },
+    {
+      "symbol": "PaperExecutionStateMachineService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
+      "line": 11
+    },
+    {
+      "symbol": "record",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
+      "line": 15
+    },
+    {
+      "symbol": "signalInvalidatedByDisconnect",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
+      "line": 29
+    },
+    {
+      "symbol": "transition",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
+      "line": 36
+    },
+    {
+      "symbol": "confirmationEntryHashValid",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1004
+    },
+    {
+      "symbol": "confirmationEntryMtfStreams",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1020
+    },
+    {
+      "symbol": "aiRequest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1033
+    },
+    {
+      "symbol": "paperTrackAllowed",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 108
+    },
+    {
+      "symbol": "captureLatestSignal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 151
+    },
+    {
+      "symbol": "PaperTradingExecutionService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 19
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 21
+    },
+    {
+      "symbol": "executePendingSignal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 452
+    },
+    {
+      "symbol": "run",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 57
+    },
+    {
+      "symbol": "runtimePortfolioAllowed",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 696
+    },
+    {
+      "symbol": "instrumentVolatility",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 715
+    },
+    {
+      "symbol": "instrumentSession",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 728
+    },
+    {
+      "symbol": "instrumentSessionContext",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 734
+    },
+    {
+      "symbol": "portfolioTransition",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 744
+    },
+    {
+      "symbol": "reconcile",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 758
+    },
+    {
+      "symbol": "simulatedExit",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 838
+    },
+    {
+      "symbol": "score",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 865
+    },
+    {
+      "symbol": "recordClosedOrderMemory",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 899
+    },
+    {
+      "symbol": "selfAudit",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 920
+    },
+    {
+      "symbol": "canonicalize",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 954
+    },
+    {
+      "symbol": "confirmationEntryTransport",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 969
+    },
+    {
+      "symbol": "SmartDisciplineEngineService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 22
+    },
+    {
+      "symbol": "authorizeExecutionContract",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 237
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 28
+    },
+    {
+      "symbol": "reviewOutcome",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 281
+    },
+    {
+      "symbol": "assessEntry",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 31
+    },
+    {
+      "symbol": "summary",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 403
+    },
+    {
+      "symbol": "storeEntry",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 459
+    },
+    {
+      "symbol": "contract",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 494
+    },
+    {
+      "symbol": "policyContract",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 516
+    },
+    {
+      "symbol": "policyHash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 543
+    },
+    {
+      "symbol": "gate",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 549
+    },
+    {
+      "symbol": "setupQualityScore",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 561
+    },
+    {
+      "symbol": "hasAny",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 580
+    },
+    {
+      "symbol": "hysteresisMetrics",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 593
+    },
+    {
+      "symbol": "sessionWindow",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 614
+    },
+    {
+      "symbol": "closedProfitBetween",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 628
+    },
+    {
+      "symbol": "tradeCountBetween",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 638
+    },
+    {
+      "symbol": "closedOrdersAt",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 648
+    },
+    {
+      "symbol": "consecutiveLosses",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 659
+    },
+    {
+      "symbol": "samePrice",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 672
+    },
+    {
+      "symbol": "applyReportFilters",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 677
+    },
+    {
+      "symbol": "average",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 690
+    },
+    {
+      "symbol": "averageMetric",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 697
+    },
+    {
+      "symbol": "percent",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 705
+    },
+    {
+      "symbol": "canonicalNoTradeCode",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 710
+    },
+    {
+      "symbol": "processErrorTaxonomy",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 722
+    },
+    {
+      "symbol": "hash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 738
+    },
+    {
+      "symbol": "canonicalize",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+      "line": 745
+    }
+  ],
+  "tests": [
+    {
+      "path": "backend-laravel/tests/Feature/ExecutionRiskSentinelServiceTest.php",
+      "tests": [
+        "test_sentinel_uses_capped_fractional_sizing_and_never_martingale",
+        "test_sentinel_has_final_veto_for_risk_of_ruin",
+        "test_in_trade_and_portfolio_layers_never_expand_exposure"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/PaperConfidenceCalibrationTest.php",
+      "tests": [
+        "test_unproven_paper_scope_preserves_raw_confidence",
+        "test_calibrated_scope_uses_observed_bin_probability"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SmartDisciplineEngineTest.php",
+      "tests": [
+        "setUp",
+        "test_clean_entry_is_approved_and_written_to_an_immutable_ledger",
+        "test_recent_four_loss_streak_triggers_a_temporary_hard_lock",
+        "test_directional_late_chase_is_vetoed_in_stop_distance_units",
+        "test_account_loss_and_trade_frequency_limits_are_hard_gates",
+        "test_external_risk_veto_is_part_of_the_same_no_trade_receipt_without_becoming_a_process_violation",
+        "test_disabling_discipline_rules_never_disables_the_higher_risk_authority",
+        "test_authorized_contract_seals_the_actual_risk_reduced_size_used_by_paper_pnl",
+        "test_risk_hysteresis_requires_new_settled_evidence_and_can_recover_from_caution",
+        "test_post_trade_review_separates_good_loss_from_bad_win",
+        "test_stop_widening_turns_a_profitable_outcome_into_a_quarantined_bad_win",
+        "test_operator_report_command_supports_json_output",
+        "candidateAndSignal",
+        "signal",
+        "contract",
+        "executionSignal",
+        "closedOrder",
+        "reviewableOrder",
+        "managementAudit"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/PaperConfirmationEntryTransportTest.php",
+      "tests": [
+        "test_paper_transport_requires_exact_top_level_and_sealed_entry_contract_parity",
+        "test_confirmation_entry_paper_request_receives_all_closed_context_streams",
+        "canonicalHash"
+      ]
+    }
+  ]
+}

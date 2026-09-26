@@ -8,6 +8,7 @@ use App\Models\LabGeneration;
 use App\Models\LabEvolutionCreditEvent;
 use App\Models\LabParentContextScore;
 use App\Models\ModelVersion;
+use App\Models\ModelMarketPerformance;
 use App\Services\CouncilAblationService;
 use App\Services\ParentAwareCreditService;
 use App\Services\ParentMentorBrokerService;
@@ -134,8 +135,30 @@ class ParentAwareEvolutionTest extends TestCase
         $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'information_credit')->count());
         $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'repair_credit')->count());
         $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'causal_skill_credit')->count());
-        $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'performance_credit')->count());
+        $this->assertSame(0, LabEvolutionCreditEvent::where('event_type', 'performance_credit')->count());
         $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'inheritance_credit')->count());
+
+        $performance = ModelMarketPerformance::create([
+            'model_version_id' => $candidate->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'status' => 'paper', 'paper_status' => 'passed', 'holdout_status' => 'sealed',
+            'sample_count' => 50, 'rolling_windows_count' => 3, 'rolling_forward_wins' => 3,
+            'metrics' => [], 'evidence_status' => 'valid',
+        ]);
+        $paperCredit = app(ParentAwareCreditService::class)->recordPaperPerformance(
+            $agent->fresh(['modelVersion']),
+            $performance,
+            [
+                'evidence_run_id' => 'paper-e4-parent-credit',
+                'sample_count' => 50,
+                'net_profit_percent' => 2.0,
+                'order_ids' => range(1, 50),
+                'paper_window' => ['epoch_contract' => ['protocol' => 'research_paper_epoch_contract_v2']],
+            ],
+            ['status' => 'e4_evidence_ready'],
+        );
+        $this->assertSame('performance_credit', data_get($paperCredit, 'event_type'));
+        $this->assertSame(1, LabEvolutionCreditEvent::where('event_type', 'performance_credit')->count());
 
         app(ParentAwareCreditService::class)->recordFullReplay(
             $agent->fresh(['modelVersion']),

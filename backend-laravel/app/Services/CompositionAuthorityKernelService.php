@@ -13,6 +13,7 @@ class CompositionAuthorityKernelService
 
     public function __construct(
         private StrategyLibraryCompilerService $strategies,
+        private TacticCatalogueService $tactics,
         private RiskManagementLibraryService $risks,
         private TradeManagementLibraryService $management,
         private TemporalRoleBinderService $temporalRoles,
@@ -46,6 +47,21 @@ class CompositionAuthorityKernelService
         $riskId = (string) ($proposal['risk_id'] ?? 'atr_risk_envelope');
         $managementId = (string) ($proposal['management_id'] ?? 'balanced_professional');
         $strategy = $this->strategies->compile($strategyId);
+        $runtimeBaseStrategy = $this->strategies->runtimeBaseStrategy($strategyId);
+        if (! is_string($runtimeBaseStrategy) || $runtimeBaseStrategy === '') {
+            throw new \InvalidArgumentException('COMPOSITION_ACTIVATION_SCOPE_UNPROVEN');
+        }
+        $strategySignalScope = $this->strategies->signalScope($runtimeBaseStrategy);
+        $tacticRuntime = $this->tactics->for(
+            (string) data_get($strategy, 'strategy_spec.family', ''),
+            $tacticId,
+        );
+        if (array_intersect(
+            (array) data_get($strategySignalScope, 'regimes', []),
+            (array) data_get($tacticRuntime, 'target_regimes', []),
+        ) === []) {
+            throw new \InvalidArgumentException('COMPOSITION_ACTIVATION_SCOPE_EMPTY');
+        }
         $risk = $this->risks->compile($riskId);
         $temporal = $this->temporalRoles->bind((array) data_get($strategy, 'temporal_role_contract.required_roles', []), (array) ($proposal['data_contract'] ?? []));
         $management = $this->management->compile($managementId, (string) data_get($strategy, 'strategy_spec.regime.allowed.0', 'trend'));
@@ -77,6 +93,8 @@ class CompositionAuthorityKernelService
         $payload = $this->canonicalize([
             'protocol' => self::PROTOCOL, 'symbol' => $symbol, 'timeframe' => $storageTimeframe,
             'components' => $components, 'state' => $state, 'prior_ids' => $priorIds,
+            'strategy_signal_scope' => $strategySignalScope,
+            'typed_program_id' => (string) data_get($typedProgram, 'program_id', ''),
             'learning_receipt_ids' => (array) ($learningDirective['consumed_receipt_ids'] ?? []),
             'data_hash' => (string) ($proposal['data_hash'] ?? ''), 'execution_hash' => (string) ($proposal['execution_hash'] ?? ''),
         ]);
@@ -95,6 +113,7 @@ class CompositionAuthorityKernelService
             'market_state' => $state,
             'components' => $components,
             'strategy_contract' => $strategy,
+            'strategy_signal_scope' => $strategySignalScope,
             'risk_governor' => $risk['central_risk_governor'],
             'risk_contract' => $risk,
             'management_contract' => $management,

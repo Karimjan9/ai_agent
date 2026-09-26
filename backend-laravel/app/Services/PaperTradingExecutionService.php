@@ -158,7 +158,8 @@ class PaperTradingExecutionService
             return 0;
         }
 
-        $rows = $this->candles->candlesForBacktest($candidate->symbol, $candidate->timeframe, 1000);
+        $decisionTimeframe = $this->mtfPilot->decisionTimeframe($candidate);
+        $rows = $this->candles->candlesForBacktest($candidate->symbol, $decisionTimeframe, 1000);
         if (count($rows) < 200) {
             $this->gateDecisions->recordPaperCapture($candidate, 'NO_SIGNAL_OPPORTUNITY', ['available_candles' => count($rows)]);
 
@@ -167,7 +168,7 @@ class PaperTradingExecutionService
         $transition = $this->portfolioTransition($candidate);
         if ($transition !== []) {
             $last = $rows[count($rows) - 1] ?? [];
-            $eventKey = implode('|', [$candidate->symbol, $candidate->timeframe, $candidate->id, data_get($last, 'time', data_get($last, 'timestamp', 'latest'))]);
+            $eventKey = implode('|', [$candidate->symbol, $decisionTimeframe, $candidate->id, data_get($last, 'time', data_get($last, 'timestamp', 'latest'))]);
             $canary = $this->canaryRouter->decide($transition, $eventKey);
             if ($canary['route'] !== 'council') {
                 $this->gateDecisions->recordPaperCapture($candidate, 'COUNCIL_CANARY_INCUMBENT_FALLBACK', ['canary' => $canary]);
@@ -401,7 +402,7 @@ class PaperTradingExecutionService
         if (! $candleTime || PaperSignal::query()
             ->where('model_market_performance_id', $candidate->id)
             ->where('symbol', $candidate->symbol)
-            ->where('timeframe', $candidate->timeframe)
+            ->where('timeframe', $decisionTimeframe)
             ->where('candle_time', $candleTime)
             ->exists()) {
             return 0;
@@ -412,7 +413,7 @@ class PaperTradingExecutionService
             'signal_key' => "paper:{$candidate->id}:{$candleTime}",
             'strategy' => $model->strategy,
             'symbol' => $candidate->symbol,
-            'timeframe' => $candidate->timeframe,
+            'timeframe' => $decisionTimeframe,
             'signal' => $signal['signal'] ?? 'WAIT',
             'confidence' => round($rawConfidence * 100, 2),
             'hypothesis' => 'Forward-validated candidate emitted an immutable paper signal.',
@@ -423,7 +424,7 @@ class PaperTradingExecutionService
             'model_version_id' => $model->id,
             'signal_market_snapshot_id' => $signalSnapshot?->id,
             'symbol' => $candidate->symbol,
-            'timeframe' => $candidate->timeframe,
+            'timeframe' => $decisionTimeframe,
             'candle_time' => $candleTime,
             'decision' => $signal['signal'] ?? 'WAIT',
             'price' => $signal['price'] ?? 0,
@@ -479,7 +480,7 @@ class PaperTradingExecutionService
             return 0;
         }
 
-        $rows = $this->candles->candlesForBacktest($candidate->symbol, $candidate->timeframe, 1000);
+        $rows = $this->candles->candlesForBacktest($candidate->symbol, $signal->timeframe, 1000);
         $contractResponse = Http::timeout(120)->acceptJson()
             ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])->post(
                 rtrim(config('services.ai_service.url'), '/').'/api/paper/execution-contract',
@@ -493,7 +494,7 @@ class PaperTradingExecutionService
             return 0;
         }
         $contract = (array) $contractResponse->json();
-        $expectedExecution = app(ExecutionContractService::class)->for($candidate->symbol, $candidate->timeframe);
+        $expectedExecution = app(ExecutionContractService::class)->for($candidate->symbol, $signal->timeframe);
         if (! app(ExecutionContractService::class)->matches(
             (array) data_get($contract, 'execution_contract', []),
             $candidate->symbol,
@@ -878,12 +879,20 @@ class PaperTradingExecutionService
             $peak = max($peak, $balance);
             $drawdown = max($drawdown, ($peak - $balance) / $peak * 100);
         }
+        $paperContract = $this->authorityAdmissions->prospectiveOutcomeContract(
+            $candidate->modelVersion,
+            $candidate->symbol,
+            $candidate->timeframe,
+            $orders,
+        );
         $this->champions->recordPaperResult($candidate, [
             'sample_count' => $orders->count(),
             'profit_factor' => $loss > 0 ? $wins / $loss : ($wins > 0 ? 99 : 0),
             'max_drawdown' => round($drawdown, 2),
             'net_profit_percent' => round(($balance - 10000) / 100, 2),
             'order_ids' => $orders->pluck('id')->all(),
+            'paper_window' => $paperContract,
+            'discipline_audit' => ['passed' => (bool) data_get($paperContract, 'discipline_audit_passed', false)],
         ]);
     }
 
@@ -1024,13 +1033,14 @@ class PaperTradingExecutionService
     private function aiRequest(ModelMarketPerformance $candidate, array $rows): array
     {
         $model = $candidate->modelVersion;
-        $executionContract = app(ExecutionContractService::class)->for($candidate->symbol, $candidate->timeframe);
+        $decisionTimeframe = $this->mtfPilot->decisionTimeframe($candidate);
+        $executionContract = app(ExecutionContractService::class)->for($candidate->symbol, $decisionTimeframe);
         $runtime = $this->runtimeEnsembles->requestPayload($candidate);
         $portfolioMembers = (array) data_get($runtime, 'portfolio_members', []);
         $isPortfolio = count($portfolioMembers) >= 2;
 
         return [
-            'symbol' => $candidate->symbol, 'timeframe' => $candidate->timeframe,
+            'symbol' => $candidate->symbol, 'timeframe' => $decisionTimeframe,
             'strategy' => $isPortfolio ? 'portfolio_v1' : $model->strategy,
             'base_strategy' => $isPortfolio ? 'portfolio' : $this->schemas->runtimeBaseStrategy($model->strategy, data_get($model->metadata, 'base_strategy'), $candidate->strategy_family),
             'parameters' => $isPortfolio ? (array) data_get($runtime, 'parameters', []) : ($model->parameters ?? []), 'candles' => $rows,
@@ -1039,7 +1049,7 @@ class PaperTradingExecutionService
             // with screening and full replay by supplying the latest H1
             // candles; Python exposes only the last CLOSED H1 state to each
             // M15 decision, so an open H1 bar cannot leak forward.
-            'regime_candles' => strtoupper((string) $candidate->timeframe) === 'M15'
+            'regime_candles' => $decisionTimeframe === 'M15'
                 ? $this->candles->candlesForBacktest($candidate->symbol, 'H1', 2000)
                 : [],
             'portfolio_members' => $portfolioMembers,
@@ -1058,7 +1068,7 @@ class PaperTradingExecutionService
             'execution_contract' => $executionContract,
             'mtf_pilot' => $this->mtfPilot->requestPayload(
                 $candidate->symbol,
-                $candidate->timeframe,
+                $decisionTimeframe,
                 $model->strategy,
             ),
         ];

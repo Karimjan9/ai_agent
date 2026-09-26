@@ -1,5 +1,9 @@
 # NeuroTrader Lab
 
+> Kod navigatsiyasi uchun `.project-map/project.yaml`dan boshlang. U taskni
+> modul, flow, state va real source/test indexiga olib boradi; source va testlar
+> har doim authoritative bo‘lib qoladi.
+
 NeuroTrader Lab — Laravel boshqaruv qatlami va FastAPI replay qatlami orqali
 AI trading research, evidence lifecycle, MTF pilot va paper-trading
 kuzatuvini yuritadigan tizim.
@@ -43,4 +47,7 @@ php artisan system:redis-recovery --strict
 
 cd ..\ai-service-python
 python -m compileall app
+
+cd ..
+node scripts/project-map/project-map.mjs check
 ```

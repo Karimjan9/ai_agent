@@ -1,0 +1,53 @@
+module: market-data
+title: Market data continuity and canonical candles
+purpose: Owns canonical provider selection, candle persistence, gap detection and recovery state for research-safe market data.
+aliases:
+  - candles
+  - provider
+  - dukascopy
+  - twelve-data
+  - continuity
+  - gap-recovery
+paths:
+  - backend-laravel/app/Services/MarketData
+  - backend-laravel/app/Services/LabDatasetExportService.php
+  - backend-laravel/app/Services/MultiTimeframeSnapshotService.php
+  - backend-laravel/app/Services/MarketSessionCalendarService.php
+  - backend-laravel/app/Models/MarketTrainingArchive.php
+  - backend-laravel/app/Models/MarketTrainingCandle.php
+  - backend-laravel/app/Models/MarketDataSyncState.php
+  - backend-laravel/app/Models/Candle.php
+  - ai-service-python/app/services/volume_features.py
+entry_points:
+  - MarketDataContinuityService
+  - MarketDataService
+  - MarketDataController
+  - trading:market-data-audit
+  - LabDatasetExportService::ensureFoundationVolumeDataset
+  - MultiTimeframeSnapshotService::forAgentOwnedConfirmationValidation
+data_tables:
+  - candles
+  - market_data_sync_states
+  - market_training_archives
+  - market_training_candles
+dependencies:
+invariants:
+  - Only the configured canonical provider repairs canonical continuity.
+  - Scheduled market closures are interpreted through the shared session calendar.
+  - Incomplete continuity blocks affected new research construction.
+  - Rolling/live volume coverage never attests a historical replay snapshot.
+  - A volume-dependent historical replay requires a hash-bound provenance receipt and an explicit volume_available column in every consumed stream.
+  - A no-volume lane is not a failed volume capability and reports not_requested.
+flows:
+  - flows/continuity-recovery.md
+docs:
+  - idea.md
+  - states.md
+  - history.md
+tests:
+  - backend-laravel/tests/Feature/MarketDataContinuityTest.php
+  - backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php
+  - backend-laravel/tests/Feature/TwelveDataMarketDataProviderTest.php
+  - backend-laravel/tests/Feature/MarketSessionCalendarTest.php
+  - backend-laravel/tests/Feature/HistoricalVolumeReplayContractTest.php
+  - backend-laravel/tests/Feature/MtfAgentValidationSnapshotServiceTest.php

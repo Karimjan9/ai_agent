@@ -12,7 +12,7 @@ class GenerationSnapshotAdmissionService
     /** @return array{allowed:bool,reasons:array<int,string>,promotion_evidence:bool} */
     public function inspect(LabGeneration $generation): array
     {
-        $generation->loadMissing('agents.modelVersion');
+        $generation->loadMissing('agents.modelVersion', 'laboratory');
         $reasons = $this->snapshotReasons(
             (array) data_get($generation->trigger_context, 'canonical_dataset_snapshots.price', []),
             'PRICE',
@@ -26,12 +26,20 @@ class GenerationSnapshotAdmissionService
                 'VOLUME',
             ));
         }
+        if ($this->requiresClosedMtfBundle($generation)) {
+            $reasons = array_merge($reasons, $this->mtfBundleReasons(
+                (string) data_get($generation->trigger_context, 'mtf_bundle_hash', ''),
+                (array) data_get($generation->trigger_context, 'mtf_bundle_manifest', []),
+            ));
+        }
         foreach ($generation->agents as $agent) {
             $execution = data_get($agent->modelVersion?->metadata, 'execution_contract');
             if (! is_array($execution) || $execution === []) {
                 $reasons[] = 'AGENT_EXECUTION_CONTRACT_MISSING:'.$agent->id;
             }
         }
+        $reasons = array_merge($reasons,
+            app(ActivationFactorialContractService::class)->reasons($generation));
 
         return [
             'protocol' => self::PROTOCOL,
@@ -40,6 +48,48 @@ class GenerationSnapshotAdmissionService
             'generation_id' => $generation->id,
             'promotion_evidence' => false,
         ];
+    }
+
+    /** @return array<int, string> */
+    private function mtfBundleReasons(string $bundleHash, array $manifest): array
+    {
+        $reasons = [];
+        if ($bundleHash === '' || strlen($bundleHash) !== 64) {
+            $reasons[] = 'GENERATION_MTF_BUNDLE_HASH_MISSING';
+        }
+        if ($manifest === []) {
+            return [...$reasons, 'GENERATION_MTF_BUNDLE_MANIFEST_MISSING'];
+        }
+        if ((string) data_get($manifest, 'protocol') !== MultiTimeframeSnapshotService::PROTOCOL
+            || (string) data_get($manifest, 'validation_bundle_protocol') !== 'agent_owned_mtf_foundation_bundle_v1') {
+            $reasons[] = 'GENERATION_MTF_BUNDLE_PROTOCOL_INVALID';
+        }
+        if ($bundleHash !== '' && ! hash_equals($bundleHash, (string) data_get($manifest, 'bundle_hash', ''))) {
+            $reasons[] = 'GENERATION_MTF_BUNDLE_IDENTITY_MISMATCH';
+        }
+        foreach (['M5', 'H4', 'H1', 'M15'] as $timeframe) {
+            $path = (string) data_get($manifest, "streams.{$timeframe}.path", '');
+            $hash = (string) data_get($manifest, "streams.{$timeframe}.sha256", '');
+            if ($path === '' || ! is_file($path)) {
+                $reasons[] = "GENERATION_MTF_{$timeframe}_PATH_MISSING";
+
+                continue;
+            }
+            $actual = hash_file('sha256', $path);
+            if ($hash === '' || ! is_string($actual) || ! hash_equals($hash, $actual)) {
+                $reasons[] = "GENERATION_MTF_{$timeframe}_HASH_INVALID";
+            }
+        }
+
+        return $reasons;
+    }
+
+    private function requiresClosedMtfBundle(LabGeneration $generation): bool
+    {
+        return strtoupper((string) $generation->laboratory?->symbol)
+                === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
+            && strtoupper((string) $generation->laboratory?->timeframe)
+                === strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'));
     }
 
     /** @return array<int, string> */

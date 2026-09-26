@@ -4,9 +4,10 @@ namespace App\Services;
 
 use App\Models\AgentLearningCausalExperiment;
 use App\Models\AgentLearningEpisode;
-use App\Models\AgentLearningSettlement;
 use App\Models\AgentLearningMutationIntent;
+use App\Models\AgentLearningSettlement;
 use App\Models\CandidateGateDecision;
+use App\Models\CausalFoldReceipt;
 use App\Models\ContextualInstrumentBundleEffect;
 use App\Models\ContextualSpecialistCapsule;
 use App\Models\CooperativeExperimentSettlement;
@@ -19,6 +20,7 @@ use App\Models\LabGeneration;
 use App\Models\LabLifecycleCycle;
 use App\Models\LabLifecycleEvent;
 use App\Models\ResearchLoopDecision;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -33,13 +35,21 @@ class GenerationAutonomyAuditService
 
     private const CAUSAL_COHORT_PROTOCOL = 'causal_learning_counterfactual_cohort_v1';
 
-    private const TERMINAL_GENERATIONS = ['screened', 'completed'];
+    private const TERMINAL_GENERATIONS = [
+        'screened', 'completed', 'technical_quarantine', 'abandoned', 'failed',
+    ];
 
-    // A scientifically rejected candidate has reached a clean terminal
-    // disposition. It must not make a completed zero-edge generation look
-    // operationally broken; technical quarantine remains deliberately
-    // excluded and is enforced by the technical-integrity check below.
-    private const TERMINAL_AGENTS = ['screened', 'completed', 'rejected'];
+    // Operational terminality and technical integrity are separate facts. A
+    // quarantined child is no longer running work, but it still fails the
+    // dedicated technical-integrity check below. Keeping these dimensions
+    // separate prevents a closed technical generation from being reported as
+    // an endlessly active cohort while preserving the honest failed verdict.
+    private const TERMINAL_AGENTS = [
+        'screened', 'completed', 'rejected', 'overfit', 'stagnated',
+        'challenger', 'forward_validated', 'paper', 'promoted', 'champion',
+        'active', 'elite', 'archived', 'technical_quarantine', 'quarantined',
+        'legacy_quarantine', 'abandoned', 'failed',
+    ];
 
     /** @return array<string,mixed> */
     public function audit(LabGeneration $generation): array
@@ -48,6 +58,7 @@ class GenerationAutonomyAuditService
         $terminal = in_array((string) $generation->status, self::TERMINAL_GENERATIONS, true);
         $checks = collect([
             $this->populationAndTerminal($generation, $terminal),
+            $this->snapshotAdmission($generation, $terminal),
             $this->technicalIntegrity($generation),
             $this->immutableEvidence($generation, $terminal),
             $this->dynamicCouncil($generation, $terminal),
@@ -127,6 +138,30 @@ class GenerationAutonomyAuditService
     }
 
     /** @return array<string,mixed> */
+    private function snapshotAdmission(LabGeneration $generation, bool $terminal): array
+    {
+        $contract = (array) data_get($generation->trigger_context, 'mtf_runtime_contract', []);
+        if (data_get($contract, 'protocol') !== 'autonomous_generation_closed_mtf_v1') {
+            return $this->check('snapshot_admission', 'not_applicable', [], [
+                'reason' => 'legacy_generation_predates_closed_mtf_admission',
+                'mtf_bundle_valid' => false,
+            ]);
+        }
+        $inspection = app(GenerationSnapshotAdmissionService::class)->inspect($generation);
+        $reasons = (array) ($inspection['reasons'] ?? []);
+
+        return $this->check(
+            'snapshot_admission',
+            ($inspection['allowed'] ?? false) === true ? 'passed' : ($terminal ? 'failed' : 'running'),
+            $reasons,
+            [
+                'mtf_bundle_valid' => ($inspection['allowed'] ?? false) === true,
+                'mtf_bundle_hash' => data_get($generation->trigger_context, 'mtf_bundle_hash'),
+            ],
+        );
+    }
+
+    /** @return array<string,mixed> */
     private function technicalIntegrity(LabGeneration $generation): array
     {
         $runs = LabEvaluationRun::query()->where('lab_generation_id', $generation->id)->get();
@@ -158,6 +193,16 @@ class GenerationAutonomyAuditService
             ['evaluation_error', 'technical_quarantine', 'quarantined', 'legacy_quarantine', 'abandoned', 'failed'],
             true,
         ));
+        // A later successful retry cannot erase a bounded fold timeout from
+        // strict unattended proof. The completed receipt retains its attempt
+        // count even after its mutable retry error is cleared.
+        $technicalFolds = Schema::hasTable('causal_fold_receipts')
+            ? CausalFoldReceipt::query()->where('lab_generation_id', $generation->id)
+                ->where(function ($query): void {
+                    $query->where('attempt_count', '>', 1)
+                        ->orWhereIn('status', ['retry_ready', 'technical_error']);
+                })->get()
+            : collect();
         $reasons = [];
         if ($technicalRuns->isNotEmpty()) {
             $reasons[] = 'TECHNICAL_EVALUATION_RUN_RECORDED';
@@ -168,6 +213,9 @@ class GenerationAutonomyAuditService
         if ($technicalAgents->isNotEmpty()) {
             $reasons[] = 'TECHNICAL_AGENT_RECORDED';
         }
+        if ($technicalFolds->isNotEmpty()) {
+            $reasons[] = 'CAUSAL_FOLD_TECHNICAL_ATTEMPT_RECORDED';
+        }
         if ($unrecoveredBlockedCycles->isNotEmpty()) {
             $reasons[] = 'BLOCKED_LIFECYCLE_CYCLE_RECORDED';
         }
@@ -176,6 +224,10 @@ class GenerationAutonomyAuditService
             'technical_run_ids' => $technicalRuns->pluck('run_id')->values()->all(),
             'technical_event_ids' => $technicalEvents->pluck('id')->values()->all(),
             'technical_agent_ids' => $technicalAgents->pluck('id')->values()->all(),
+            'technical_fold_receipt_ids' => $technicalFolds->pluck('id')->values()->all(),
+            'technical_fold_attempts' => $technicalFolds->mapWithKeys(
+                fn (CausalFoldReceipt $receipt): array => [(int) $receipt->fold_index => (int) $receipt->attempt_count],
+            )->all(),
             'blocked_cycle_ids' => $blockedCycles->pluck('cycle_id')->values()->all(),
             'recovered_blocked_cycle_ids' => $recoveredBlockedCycles->pluck('cycle_id')->values()->all(),
             'unrecovered_blocked_cycle_ids' => $unrecoveredBlockedCycles->pluck('cycle_id')->values()->all(),
@@ -453,6 +505,50 @@ class GenerationAutonomyAuditService
         });
         $intents = AgentLearningMutationIntent::query()->where('lab_generation_id', $generation->id)->whereIn('lab_agent_id', $causalAgents->pluck('id'))->get();
         $unsealed = $intents->filter(fn (AgentLearningMutationIntent $intent): bool => ! $intent->sealed_at || ! $intent->bound_at || $intent->invalidated_at !== null);
+        $durableFoldMetrics = [];
+        $incompleteDurableExperiments = [];
+        if (Schema::hasTable('causal_fold_receipts')) {
+            foreach ($experiments as $experiment) {
+                $receipts = CausalFoldReceipt::query()
+                    ->where('agent_learning_causal_experiment_id', $experiment->id)
+                    ->orderBy('fold_index')->get();
+                $durable = $receipts->isNotEmpty()
+                    || data_get($experiment->evidence, 'fold_execution.protocol') === CausalFoldExecutionService::PROTOCOL;
+                if (! $durable) {
+                    continue;
+                }
+                $required = max(1, (int) data_get(
+                    $experiment->evidence,
+                    'fold_execution.required_fold_count',
+                    config('services.learning_lane.causal_fold_count', 9),
+                ));
+                $completed = $receipts->where('status', 'completed');
+                $indexes = $completed->pluck('fold_index')->map('intval')->sort()->values()->all();
+                $expectedIndexes = range(1, $required);
+                $settled = data_get($experiment->evidence, 'fold_execution.settlement.status') === 'completed';
+                $identityComplete = $completed->every(fn (CausalFoldReceipt $receipt): bool => filled($receipt->request_hash)
+                    && filled($receipt->response_hash)
+                    && filled($receipt->dataset_hash)
+                    && filled($receipt->execution_hash)
+                );
+                $valid = $receipts->count() === $required
+                    && $completed->count() === $required
+                    && $indexes === $expectedIndexes
+                    && $identityComplete
+                    && $settled;
+                $durableFoldMetrics[(int) $experiment->id] = [
+                    'required' => $required,
+                    'receipt_count' => $receipts->count(),
+                    'completed' => $completed->count(),
+                    'completed_indexes' => $indexes,
+                    'identity_complete' => $identityComplete,
+                    'atomic_settlement_complete' => $settled,
+                ];
+                if (! $valid) {
+                    $incompleteDurableExperiments[] = (int) $experiment->id;
+                }
+            }
+        }
         $reasons = [];
         if ($experiments->count() !== 1) {
             $reasons[] = 'EXACTLY_ONE_CAUSAL_EXPERIMENT_REQUIRED';
@@ -466,6 +562,9 @@ class GenerationAutonomyAuditService
         if ($intents->count() < 2 || $unsealed->isNotEmpty()) {
             $reasons[] = 'CAUSAL_MUTATION_INTENT_NOT_SEALED_AND_BOUND';
         }
+        if ($incompleteDurableExperiments !== []) {
+            $reasons[] = 'CAUSAL_DURABLE_FOLD_RECEIPTS_INCOMPLETE';
+        }
         $status = $reasons === [] ? 'passed' : ($terminal ? 'failed' : 'running');
 
         return $this->check('causal_learning_closure', $status, $reasons, [
@@ -474,6 +573,8 @@ class GenerationAutonomyAuditService
             'experiment_statuses' => $experiments->pluck('status', 'id')->all(),
             'intent_count' => $intents->count(),
             'unsealed_or_invalid_intent_ids' => $unsealed->pluck('id')->values()->all(),
+            'durable_fold_experiments' => $durableFoldMetrics,
+            'incomplete_durable_experiment_ids' => $incompleteDurableExperiments,
         ]);
     }
 
@@ -528,7 +629,7 @@ class GenerationAutonomyAuditService
             'causal' => $latestCausalSettlement,
         ])->filter();
         $lateKinds = $completedAt
-            ? $settlementTimes->filter(fn (mixed $at): bool => \Illuminate\Support\Carbon::parse($at)->gt($completedAt))->keys()->values()
+            ? $settlementTimes->filter(fn (mixed $at): bool => Carbon::parse($at)->gt($completedAt))->keys()->values()
             : collect();
         $reasons = [];
         if ($episodes->isNotEmpty() && $openEpisodes->isNotEmpty()) {

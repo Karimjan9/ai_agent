@@ -1,0 +1,659 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/project-map/project-map.mjs",
+  "generator_digest": "5e3498ce579265a81dc03c17970e0f3ff7be935b657ee7f6e9aab0a863ae6762",
+  "generated_at": "2026-09-26T17:30:50.184Z",
+  "source_digest": "1f612b3f350728963367ba99e61f8e4430e448e51b310bdf17f4bc0cde0173d2",
+  "source_file_count": 1364,
+  "git_head": "c47c026e454e780e818232cbb0f9cfd03a21debb",
+  "authority": "Navigation facts only. Real source code and tests remain authoritative.",
+  "module": "operations",
+  "paths": [
+    "backend-laravel/app/Services/RuntimeMonitoringService.php",
+    "backend-laravel/app/Services/MarketHealthService.php",
+    "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+    "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
+    "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+    "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+    "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
+    "backend-laravel/app/Console/Commands/RunSystemHealthCheck.php",
+    "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+    "backend-laravel/app/Console/Commands/CheckMarketHealth.php",
+    "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
+    "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
+    "backend-laravel/scripts/install-autonomous-runtime-task.ps1",
+    "backend-laravel/scripts/supervise-laravel-runtime.ps1",
+    "backend-laravel/scripts/run-laravel-workers-hidden.ps1",
+    "docs/operations"
+  ],
+  "source_files": [
+    "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
+    "backend-laravel/app/Console/Commands/CheckMarketHealth.php",
+    "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+    "backend-laravel/app/Console/Commands/RunSystemHealthCheck.php",
+    "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+    "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
+    "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+    "backend-laravel/app/Services/MarketHealthService.php",
+    "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+    "backend-laravel/app/Services/RuntimeMonitoringService.php",
+    "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
+    "backend-laravel/app/Services/TechnicalFailureClassifierService.php"
+  ],
+  "symbols": [
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
+      "line": 19
+    },
+    {
+      "symbol": "AuditAutonomyStreak",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
+      "line": 8
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/CheckMarketHealth.php",
+      "line": 14
+    },
+    {
+      "symbol": "CheckMarketHealth",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/CheckMarketHealth.php",
+      "line": 8
+    },
+    {
+      "symbol": "RunHeadlessScheduler",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 13
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 19
+    },
+    {
+      "symbol": "refreshLease",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 202
+    },
+    {
+      "symbol": "scheduleProcess",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 243
+    },
+    {
+      "symbol": "runScheduleTickInProcess",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 252
+    },
+    {
+      "symbol": "recoverStaleLocalLease",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 261
+    },
+    {
+      "symbol": "hostname",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 298
+    },
+    {
+      "symbol": "localProcessIsRunning",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 306
+    },
+    {
+      "symbol": "claimMinute",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 338
+    },
+    {
+      "symbol": "RunSystemHealthCheck",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/RunSystemHealthCheck.php",
+      "line": 10
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunSystemHealthCheck.php",
+      "line": 16
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 116
+    },
+    {
+      "symbol": "uniqueId",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 158
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 163
+    },
+    {
+      "symbol": "RunScheduledArtisanCommandJob",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 22
+    },
+    {
+      "symbol": "failed",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 288
+    },
+    {
+      "symbol": "transitionResearchLoopDecision",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 293
+    },
+    {
+      "symbol": "status",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 314
+    },
+    {
+      "symbol": "statusCacheKey",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 331
+    },
+    {
+      "symbol": "researchLoopDecisionIsTerminal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 336
+    },
+    {
+      "symbol": "canonicalArguments",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 346
+    },
+    {
+      "symbol": "scheduledLane",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+      "line": 47
+    },
+    {
+      "symbol": "SealGenerationAutonomyReceiptJob",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
+      "line": 15
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
+      "line": 25
+    },
+    {
+      "symbol": "uniqueId",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
+      "line": 31
+    },
+    {
+      "symbol": "backoff",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
+      "line": 37
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
+      "line": 42
+    },
+    {
+      "symbol": "GenerationAutonomyReceiptService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+      "line": 11
+    },
+    {
+      "symbol": "writeSuccessorProvenance",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+      "line": 161
+    },
+    {
+      "symbol": "verifiedCreationDecision",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+      "line": 188
+    },
+    {
+      "symbol": "consecutiveProof",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+      "line": 216
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+      "line": 23
+    },
+    {
+      "symbol": "hash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+      "line": 284
+    },
+    {
+      "symbol": "canonicalize",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+      "line": 289
+    },
+    {
+      "symbol": "recordSuccessorDecision",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+      "line": 30
+    },
+    {
+      "symbol": "latestCandle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 111
+    },
+    {
+      "symbol": "statusForAge",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 134
+    },
+    {
+      "symbol": "syncServiceHealth",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 155
+    },
+    {
+      "symbol": "MarketHealthService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 17
+    },
+    {
+      "symbol": "writeStateEvents",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 182
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 19
+    },
+    {
+      "symbol": "alertLostFeed",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 228
+    },
+    {
+      "symbol": "attemptRecovery",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 256
+    },
+    {
+      "symbol": "check",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 27
+    },
+    {
+      "symbol": "configuredSymbols",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 296
+    },
+    {
+      "symbol": "configuredTimeframes",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 301
+    },
+    {
+      "symbol": "checkOne",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketHealthService.php",
+      "line": 47
+    },
+    {
+      "symbol": "tickLocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 119
+    },
+    {
+      "symbol": "ResearchLoopArbiterService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 30
+    },
+    {
+      "symbol": "openCausalReplay",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 500
+    },
+    {
+      "symbol": "decide",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 525
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 63
+    },
+    {
+      "symbol": "hasLiveScheduledCommandLock",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 650
+    },
+    {
+      "symbol": "canonicalArguments",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 676
+    },
+    {
+      "symbol": "operationalStateSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 691
+    },
+    {
+      "symbol": "tick",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 75
+    },
+    {
+      "symbol": "mtfAllocation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 832
+    },
+    {
+      "symbol": "driftAlreadyConsumed",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 864
+    },
+    {
+      "symbol": "latestHasZeroPassScreening",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 877
+    },
+    {
+      "symbol": "latestCanAutonomouslyRecordDataEdgeAudit",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 895
+    },
+    {
+      "symbol": "directorPriority",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 908
+    },
+    {
+      "symbol": "recentAction",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 920
+    },
+    {
+      "symbol": "learningCurriculum",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 929
+    },
+    {
+      "symbol": "compactClosure",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 951
+    },
+    {
+      "symbol": "compactDirector",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 961
+    },
+    {
+      "symbol": "blocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 975
+    },
+    {
+      "symbol": "hash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 981
+    },
+    {
+      "symbol": "canonicalize",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 986
+    },
+    {
+      "symbol": "queueCheck",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/RuntimeMonitoringService.php",
+      "line": 166
+    },
+    {
+      "symbol": "RuntimeMonitoringService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/RuntimeMonitoringService.php",
+      "line": 24
+    },
+    {
+      "symbol": "aiServiceCheck",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/RuntimeMonitoringService.php",
+      "line": 245
+    },
+    {
+      "symbol": "inspect",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/RuntimeMonitoringService.php",
+      "line": 29
+    },
+    {
+      "symbol": "schedulerCheck",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/RuntimeMonitoringService.php",
+      "line": 310
+    },
+    {
+      "symbol": "agentCheck",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/RuntimeMonitoringService.php",
+      "line": 367
+    },
+    {
+      "symbol": "persistChecks",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/RuntimeMonitoringService.php",
+      "line": 475
+    },
+    {
+      "symbol": "safeError",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/RuntimeMonitoringService.php",
+      "line": 504
+    },
+    {
+      "symbol": "redisCheck",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/RuntimeMonitoringService.php",
+      "line": 60
+    },
+    {
+      "symbol": "ScheduledCommandOutcomeClassifierService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
+      "line": 11
+    },
+    {
+      "symbol": "result",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
+      "line": 122
+    },
+    {
+      "symbol": "classify",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
+      "line": 16
+    },
+    {
+      "symbol": "isTransientExternalDependencyFailure",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
+      "line": 85
+    },
+    {
+      "symbol": "TechnicalFailureClassifierService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
+      "line": 10
+    },
+    {
+      "symbol": "classify",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
+      "line": 127
+    },
+    {
+      "symbol": "forAgent",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
+      "line": 19
+    }
+  ],
+  "tests": [
+    {
+      "path": "backend-laravel/tests/Feature/MarketHealthEngineTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_market_health_marks_fresh_mt5_feed_as_ok",
+        "test_market_health_alerts_and_logs_lost_mt5_feed",
+        "test_market_health_command_runs",
+        "test_fallback_provider_cannot_mask_the_configured_provider_outage",
+        "test_market_health_defers_freshness_during_a_closed_weekend_session",
+        "createCandle"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ResearchLoopArbiterTest.php",
+      "tests": [
+        "test_stop_denies_new_work_but_an_active_generation_is_drained_first",
+        "test_dispatched_arbiter_decision_is_closed_by_its_child_command_outcome",
+        "test_exit_zero_lifecycle_pause_is_deferred_not_a_completed_transition",
+        "test_exit_zero_technical_recovery_dispatch_does_not_complete_successor_decision",
+        "test_exit_zero_generation_admission_refusal_is_not_a_completed_writer",
+        "test_terminal_technical_recovery_preempts_a_new_data_writer",
+        "test_completed_child_schedules_receipt_only_retry_when_autonomy_seal_throws",
+        "test_stop_drains_an_incomplete_quarantined_constructor_but_not_a_terminal_quarantine",
+        "test_stopped_idle_loop_records_one_stable_defer_and_dispatches_nothing",
+        "test_terminal_unsettled_hypothesis_triplet_dispatches_full_replay_before_new_work",
+        "test_latest_generation_causal_closure_outranks_historical_causal_backlog",
+        "test_terminal_causal_technical_arm_preempts_generic_active_generation_settlement",
+        "test_owned_durable_work_is_leased_and_is_the_only_dispatched_action",
+        "test_normal_lifecycle_is_fallback_and_duplicate_tick_cannot_double_dispatch",
+        "test_confirmed_market_drift_after_zero_pass_uses_fresh_data_admission",
+        "test_final_zero_pass_report_routes_through_lifecycle_audit_then_reselects_data_edge_root",
+        "test_next_minute_suppresses_the_same_unchanged_state_decision",
+        "test_inherited_data_edge_audit_does_not_suppress_a_new_final_report_audit",
+        "test_frozen_recovery_terminal_disposition_changes_successor_state_watermark",
+        "test_fresh_data_retry_watermark_changes_only_after_admission_window_is_met",
+        "test_running_lifecycle_child_fences_a_second_lifecycle_action_with_different_arguments",
+        "test_reconciled_terminal_child_delivery_is_an_explicit_noop",
+        "test_latest_generation_learning_pair_outranks_historical_positive_backlog",
+        "test_historical_learning_backlog_gets_one_maintenance_seat_without_starving_next_generation",
+        "test_deferred_targeted_handoff_does_not_monopolise_the_arbiter",
+        "test_historical_dispatched_targeted_decision_without_a_live_queue_lock_does_not_block_successor_selection",
+        "test_target_aligned_causal_lesson_outranks_market_drift_generation",
+        "lab",
+        "contract",
+        "learningPair"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RunHeadlessSchedulerTest.php",
+      "tests": [
+        "test_scheduler_claims_a_minute_once_across_a_process_restart",
+        "test_runtime_monitor_reports_the_real_age_of_a_stale_scheduler_heartbeat",
+        "test_scheduler_can_recover_a_stale_lease_from_a_dead_process_on_the_same_host",
+        "test_scheduler_runs_each_tick_in_an_isolated_child_process",
+        "test_lease_refresh_preserves_the_original_process_start_time",
+        "refresh"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RuntimeMonitorTest.php",
+      "tests": [
+        "test_runtime_monitor_persists_a_safe_testing_snapshot"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+      "tests": [
+        "test_delayed_research_is_visible_but_does_not_block_an_idle_reload",
+        "test_runnable_job_or_active_generation_refuses_reload"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php",
+      "tests": [
+        "test_curl_operation_timeout_is_a_typed_recoverable_replay_timeout",
+        "test_causal_fold_budget_timeout_uses_the_same_bounded_transport_recovery_lane",
+        "test_constructor_failure_remains_terminal_and_non_replayable",
+        "test_missing_autonomous_mtf_bundle_is_terminal_construction_history",
+        "test_composition_authority_mismatch_is_terminal_not_retried_as_transport",
+        "test_curl_connection_reset_is_a_typed_service_transport_failure",
+        "test_database_column_width_mismatch_is_a_typed_runtime_schema_failure"
+      ]
+    }
+  ]
+}

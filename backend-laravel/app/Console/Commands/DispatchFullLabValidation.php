@@ -3,23 +3,26 @@
 namespace App\Console\Commands;
 
 use App\Jobs\EvaluateLabAgentJob;
+use App\Jobs\RunCausalExperimentFoldJob;
 use App\Models\AgentLearningCausalExperiment;
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabEvaluationRun;
 use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
+use App\Services\CausalFoldExecutionService;
 use App\Services\CausalLearningCohortService;
 use App\Services\GateContractService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabCandidateSelectionService;
 use App\Services\LabDatasetExportService;
-use App\Services\LabImmutableEvidenceService;
-use App\Services\LabGenerationReportService;
 use App\Services\LabGenerationContextService;
+use App\Services\LabGenerationReportService;
 use App\Services\LabGenerationTerminalBoundaryService;
-use App\Services\MarketData\MarketDataContinuityService;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\MarketData\HistoricalDataQualityService;
+use App\Services\MarketData\MarketDataContinuityService;
+use App\Services\ShadowResearchGovernorService;
 use App\Services\SystemLogService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -31,7 +34,7 @@ class DispatchFullLabValidation extends Command
 
     protected $description = 'Select the strongest screened agents from every pair and serialize full walk-forward validation';
 
-    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, HistoricalDataQualityService $quality, LabCandidateSelectionService $selection, CandidateGateDecisionService $decisions, SystemLogService $logs, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LabImmutableEvidenceService $evidence, GateContractService $gateContracts, LabGenerationTerminalBoundaryService $terminalBoundaries, CausalLearningCohortService $causalCohorts): int
+    public function handle(LabDatasetExportService $datasets, MarketDataContinuityService $continuity, HistoricalDataQualityService $quality, LabCandidateSelectionService $selection, CandidateGateDecisionService $decisions, SystemLogService $logs, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LabImmutableEvidenceService $evidence, GateContractService $gateContracts, LabGenerationTerminalBoundaryService $terminalBoundaries, CausalLearningCohortService $causalCohorts, CausalFoldExecutionService $causalFolds): int
     {
         $contractHealth = $gateContracts->health();
         if (! ($contractHealth['healthy'] ?? false)) {
@@ -131,6 +134,31 @@ class DispatchFullLabValidation extends Command
                 $this->warn("{$symbol}: generation topilmadi.");
 
                 continue;
+            }
+            if ($targetedCausalExperiment) {
+                $terminalScreening = $causalCohorts->terminalScreeningDisposition(
+                    $targetedCausalExperiment,
+                    true,
+                );
+                if ((string) ($terminalScreening['status'] ?? '') === 'invalid_counterfactual_contract') {
+                    app(LabGenerationReportService::class)->record(
+                        $generation->fresh(),
+                        'causal_screening_terminal_quarantine',
+                    );
+                    $this->warn(sprintf(
+                        '%s: causal experiment %d terminal screening evidence incomplete; contract invalidated without full replay (%s).',
+                        $symbol,
+                        (int) $targetedCausalExperiment->id,
+                        implode(',', (array) ($terminalScreening['reason_codes'] ?? [])),
+                    ));
+
+                    continue;
+                }
+                if ((string) ($terminalScreening['status'] ?? '') === 'screening_in_flight') {
+                    $this->info("{$symbol}: causal experiment {$targetedCausalExperiment->id} screening hali terminal emas.");
+
+                    continue;
+                }
             }
             $replayActivation = $generation->trigger_type === 'protocol_activation';
             if ((string) config('services.market_data.provider', 'csv') !== 'csv'
@@ -292,7 +320,7 @@ class DispatchFullLabValidation extends Command
             // role-complete generation is the explicit exception: its four
             // complementary roles are the experiment, and each still enters
             // the same serialized full-replay queue and unchanged passport.
-            $shadowResearch = data_get($generation->trigger_context, 'shadow_research_lane.protocol') === \App\Services\ShadowResearchGovernorService::PROTOCOL
+            $shadowResearch = data_get($generation->trigger_context, 'shadow_research_lane.protocol') === ShadowResearchGovernorService::PROTOCOL
                 && (bool) data_get($generation->trigger_context, 'shadow_research_lane.shadow_only', false);
             if (! $learningConfirmation
                 && ! (bool) data_get($generation->trigger_context, 'role_complete_council', false)
@@ -421,13 +449,57 @@ class DispatchFullLabValidation extends Command
                 'symbol' => $symbol, 'timeframe' => $lab->timeframe, 'generation' => $generation->generation,
                 'screened_count' => $screened->count(), 'selected_count' => $agents->count(), 'selection_lanes' => $lanes,
             ], 'info', 'lab_validation', 'candidate_selection', 'completed');
+            $causalFoldExperiment = null;
+            if ($learningConfirmation && $agents->count() === 3) {
+                $selectedIds = $agents->pluck('id')->map('intval')->sort()->values()->all();
+                $candidateExperiments = $targetedCausalExperiment
+                    ? collect([$targetedCausalExperiment])
+                    : AgentLearningCausalExperiment::query()
+                        ->where('lab_generation_id', $generation->id)
+                        ->whereIn('status', ['ready_for_replay', 'outcomes_pending'])
+                        ->latest('id')->get();
+                $causalFoldExperiment = $candidateExperiments->first(function (AgentLearningCausalExperiment $experiment) use ($selectedIds): bool {
+                    $armIds = collect([$experiment->guided_agent_id, $experiment->blinded_agent_id, $experiment->control_agent_id])
+                        ->map('intval')->sort()->values()->all();
+
+                    return $armIds === $selectedIds;
+                });
+                if (! $causalFoldExperiment) {
+                    $this->warn("{$symbol}: selected causal triplet has no exact experiment owner; fold dispatch blocked.");
+
+                    continue;
+                }
+            }
             foreach ($agents as $rank => $agent) {
                 $agent->update(['lifecycle_status' => 'full_queued', 'decision_reason' => 'Dynamic evidence-frontier candidate #'.($rank + 1).'; queued for serialized full validation.']);
                 $handoffs->record($generation, $agent, 'queued', 'completed', null, ['rank' => $rank + 1, 'selection_decision_id' => $selectionIds[$agent->id] ?? null,
                     'selection_lane' => $lanes[$agent->id] ?? 'unknown',
                     'idempotency_key' => hash('sha256', "{$generation->id}|{$agent->id}|full")]);
-                $rounds[$rank][] = new EvaluateLabAgentJob($agent->id, $symbol, 'full');
                 $queuedAgents[] = ['generation' => $generation, 'agent' => $agent, 'selection_decision_id' => $selectionIds[$agent->id] ?? null];
+            }
+            if ($causalFoldExperiment) {
+                $foldCount = max(1, min(12, (int) config('services.learning_lane.causal_fold_count', 9)));
+                $queuedFoldCount = 0;
+                foreach (range(1, $foldCount) as $foldIndex) {
+                    $receipt = $causalFolds->ensureReceipt($causalFoldExperiment, $foldIndex);
+                    if ((string) $receipt->status !== 'completed') {
+                        $rounds[$foldIndex - 1][] = new RunCausalExperimentFoldJob(
+                            (int) $causalFoldExperiment->id,
+                            $foldIndex,
+                        );
+                        $queuedFoldCount++;
+                    }
+                }
+                if ($queuedFoldCount === 0) {
+                    $rounds[0][] = new RunCausalExperimentFoldJob(
+                        (int) $causalFoldExperiment->id,
+                        1,
+                    );
+                }
+            } else {
+                foreach ($agents as $rank => $agent) {
+                    $rounds[$rank][] = new EvaluateLabAgentJob($agent->id, $symbol, 'full');
+                }
             }
             // A screened generation's completed_at belongs to the screening
             // boundary.  Full validation reopens the lifecycle and must clear
@@ -446,7 +518,9 @@ class DispatchFullLabValidation extends Command
         $batch = Bus::batch($jobs)->name('Global full validation')->onConnection((string) config('queue.default', 'redis'))->onQueue('lab-full-validation')->dispatch();
         foreach ($queuedAgents as $queued) {
             $queuedGeneration = $queued['generation']->fresh();
-            if (! $queuedGeneration) continue;
+            if (! $queuedGeneration) {
+                continue;
+            }
             $queuedGeneration->update(['trigger_context' => [
                 ...((array) $queuedGeneration->trigger_context),
                 'queue_batches' => [
@@ -700,5 +774,4 @@ class DispatchFullLabValidation extends Command
 
         return $screened->reject(fn ($agent): bool => $stale->contains('id', $agent->id))->values();
     }
-
 }

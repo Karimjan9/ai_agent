@@ -123,6 +123,28 @@ Response:
 }
 ```
 
+### Durable causal fold aggregation
+
+Autonomous causal confirmation sends one global fold at a time to
+`POST /api/backtest/run-all`. The request contains all three causal arms and
+keys `learning_confirmation_contracts` by `lab_agent_id`, so equal strategy
+labels cannot exchange guided, blinded or frozen-control ownership. Each arm's
+contract declares `execution_mode=durable_single_fold_job`, `fold_count=1`,
+`fold_offset` and the frozen `fold_universe_count`.
+
+Laravel persists the complete response and its request/data/execution hashes.
+Only after every configured fold is complete does it call:
+
+```http
+POST /api/backtest/aggregate-causal-folds
+```
+
+The aggregate endpoint reads no market data and runs no strategy replay. It
+requires exactly three arms and the complete unique fold index set, validates
+window independence and complete trade ledgers, and returns one aggregate
+leaderboard. Missing or duplicate folds fail closed; partial folds never create
+learning or promotion evidence.
+
 ## Paper execution and immutable management
 
 `POST /api/paper/execution-contract` returns the strategy-owned entry contract.
@@ -161,6 +183,65 @@ execution or management hash is rejected. A closed response includes:
 Legacy contracts without `management_contract` may be settled but are marked
 unattested; Laravel quarantines them from calibration and promotion evidence.
 
+## Executable composition organism
+
+A candidate with a frozen composition passport crosses the replay boundary as
+`xauusd_composition_runtime_contract_v3`. The contract is one aggregate
+execution authority: it seals the strategy/tactic/risk/management identities,
+instrument assignment hash, replay dataset or MTF bundle hash, canonical
+execution hash, symbol and execution timeframe under one contract hash.
+
+Python compiles the frozen typed nodes into
+`xauusd_executable_composition_program_v2` before replay. A `bound=true` flag is
+not sufficient by itself: expected and actual strategy/tactic identities, the
+risk gene and value, executable management adapter, exact node ports and
+topological order, non-empty strategy/tactic scope intersection, instrument
+assignment hash and its frozen source strategy/tactic/risk/management keys, and
+M5 H4/H1/M15 context hashes must agree. A rehashed but stale assignment is not
+valid for a different passport. Any drift is a technical compile failure and
+replay does not start.
+
+For a valid contract the executable order is:
+
+```text
+frozen aggregate authority
+  -> instrument/context receipts
+  -> regime evidence
+  -> strategy signal intent
+  -> tactic decision
+  -> typed context/location/setup/confirmation/entry/invalidation pipeline
+  -> instrument-context admission
+  -> MTF permission decision
+  -> central risk governor
+  -> order/fill receipt
+  -> position management state machine
+  -> hash-bound per-node and per-decision receipts
+```
+
+The typed pipeline owns the final signal. A raw strategy signal that does not
+pass every pre-risk node becomes `WAIT` and cannot reach the risk governor.
+Replay fills use the prior closed candle, so `entry_contract_funnel` counts the
+same decision rows the execution loop consumed rather than the later fill rows.
+
+Each emitted strategy opportunity carries the same decision ID through its
+candle, program hash and first-veto reason. The typed gate emits and hashes
+its ordered pre-entry stage chain when it admits or vetoes the opportunity;
+the later trace consumes that chain instead of recomputing predicates from
+the final frame. The backtester emits
+`xauusd_composition_execution_receipt_v3`; the outer
+`xauusd_composition_runtime_trace_v3` verifies the compiled program, per-node
+hashes and the full decision-receipt ledger (with a bounded inspection sample).
+`consumed` requires all four component bindings, all aggregate authority
+bindings, every required node, and one complete decision-ID witness from
+strategy intent through MTF permission, risk, fill and managed trade close.
+Aggregate counters from unrelated decisions cannot satisfy that witness.
+Outcomes otherwise distinguish
+`compile_failed`, `valid_unactivated`, `rejected_at_node`, `entry_authorized`
+and `position_managed`. Only `consumed` can enter composition settlement.
+Classified `unknown` may be a valid regime when the closed classifier emitted
+it; missing classifier data remains context-not-ready, and the selected tactic
+scope remains an independent veto.
+
 ## Confirmation and entry contract
 
 `confirmation_entry_mtf_v1` is M5-only and accepts sealed M5 candles plus
@@ -190,6 +271,19 @@ separate context, location, setup, confirmation, trigger, invalidation,
 reward-space, chase and event checks. A missing/stale MTF stream returns WAIT.
 Invalid OHLC geometry or negative volume invalidates the entire M5 entry stream
 or affected context stream.
+
+### Historical volume evidence
+
+`volume_lane=none` is a price-only control. Its response reports
+`volume_quality.status=not_requested`, `volume_policy.status=not_requested` and
+`blocking=false`; the absence of a historical volume marker is not a failure in
+that lane.
+
+A volume-dependent historical replay is admitted only when the exact frozen
+CSV contains `volume_available` and its manifest contains a passed
+`historical_volume_snapshot_provenance_v1` receipt bound to the snapshot
+SHA-256. Laravel builds `volume_context` from this frozen receipt. Rolling/live
+coverage is not inherited by an older replay window.
 
 The projection additionally exposes `reference_price`, `invalidation_price`,
 `target_reference_price`, `trigger_anchor_price`, `structure_atr`,

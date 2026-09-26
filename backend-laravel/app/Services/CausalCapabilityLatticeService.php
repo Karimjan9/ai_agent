@@ -33,6 +33,16 @@ class CausalCapabilityLatticeService
             'non_target_corridor_safe' => data_get($facts, 'non_target_corridor_safe') === true,
             'intent_run_outcome_linked' => data_get($facts, 'intent_run_outcome_linked') === true,
             'context_and_gene_scoped' => data_get($facts, 'context_and_gene_scoped') === true,
+            'context_scope_bound' => data_get(
+                $facts,
+                'context_scope_bound',
+                data_get($facts, 'context_and_gene_scoped'),
+            ) === true,
+            'source_replay_context_match' => data_get(
+                $facts,
+                'source_replay_context_match',
+                data_get($facts, 'context_and_gene_scoped'),
+            ) === true,
         ];
         $componentConfirmed = ! in_array(false, $componentChecks, true);
         $proofCarried = data_get($facts, 'proof_carried') === true;
@@ -97,7 +107,25 @@ class CausalCapabilityLatticeService
         $epoch = app(LearningProtocolEpochService::class)->epochFor($generation);
         $dataHash = trim((string) ($pair?->candidate_data_hash ?: $pair?->control_data_hash));
         $executionHash = trim((string) ($pair?->candidate_execution_hash ?: $pair?->control_execution_hash));
-        $context = (array) data_get($pair?->metadata, 'context_scope', data_get($experiment->evidence, 'context_scope', []));
+        $observedContext = (array) data_get(
+            $pair?->metadata,
+            'context_scope',
+            data_get($pair?->failure_signature, 'state', data_get($experiment->evidence, 'context_scope', [])),
+        );
+        $sourceContext = (array) data_get(
+            $experiment->evidence,
+            'source_context_scope',
+            data_get($experiment->evidence, 'context_scope', $observedContext),
+        );
+        $contextContract = app(ContextContractV2Service::class);
+        $observedAxes = $contextContract->canonicalDeclaredAxes($observedContext);
+        $sourceAxes = $contextContract->canonicalDeclaredAxes($sourceContext);
+        $sourceReplayContextMatch = $sourceAxes !== [] && $observedAxes !== []
+            && collect($sourceAxes)->every(
+                fn (string $value, string $axis): bool => array_key_exists($axis, $observedAxes)
+                    && hash_equals($value, (string) $observedAxes[$axis]),
+            );
+        $context = $observedAxes;
         $riskVetoes = collect((array) data_get($settlement?->reward_components, 'vetoes', []))
             ->map(fn ($reason): string => strtoupper(is_array($reason) ? (string) data_get($reason, 'code', '') : (string) $reason));
         $hardRiskSafe = ! $riskVetoes->contains(fn (string $reason): bool => str_contains($reason, 'DRAWDOWN')
@@ -119,7 +147,9 @@ class CausalCapabilityLatticeService
             'hard_risk_safe' => $hardRiskSafe,
             'non_target_corridor_safe' => $nonTargetSafe,
             'intent_run_outcome_linked' => $linked,
-            'context_and_gene_scoped' => trim((string) $experiment->gene_key) !== '' && ($context !== [] || filled($experiment->strategy_family)),
+            'context_and_gene_scoped' => trim((string) $experiment->gene_key) !== '' && $observedAxes !== [],
+            'context_scope_bound' => $sourceAxes !== [] && $observedAxes !== [],
+            'source_replay_context_match' => $sourceReplayContextMatch,
             'proof_carried' => $linked && $receiptValid,
             // A single-gene confirmation never self-declares a viable organism.
             'composition_screening_passed' => false,
@@ -140,6 +170,8 @@ class CausalCapabilityLatticeService
                 'evaluation' => $evaluation,
                 'gene_or_program_hash' => hash('sha256', (string) $experiment->gene_key),
                 'context_predicate' => $context,
+                'source_context_predicate' => $sourceAxes,
+                'source_replay_context_match' => $sourceReplayContextMatch,
                 'data_hash' => $dataHash,
                 'execution_hash' => $executionHash,
                 'contraindications' => $riskVetoes->values()->all(),

@@ -23,6 +23,9 @@ class MarketVolumeService
 
     public const SOURCE_CONTRACT = 'dukascopy_jetta_bid_tick_volume_millions_v1';
 
+    /** Historical replay provenance is sealed independently from live sync. */
+    public const HISTORICAL_SOURCE_CONTRACT = 'dukascopy_frozen_historical_tick_volume_millions_v1';
+
     public const SEMANTIC = 'tick_volume';
 
     public const UNIT = 'millions';

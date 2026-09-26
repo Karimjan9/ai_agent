@@ -6,6 +6,8 @@ $phpBinary = 'C:\x_programs\xamp\php\php.exe'
 $pythonBinary = (Get-Command python.exe -ErrorAction Stop).Source
 $artisanPath = Join-Path $backendRoot 'artisan'
 $aiServiceScript = Join-Path $scriptDirectory 'run-ai-service.py'
+$logicalProcessorCount = [int](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).NumberOfLogicalProcessors
+$screeningWorkerCount = if ($logicalProcessorCount -le 4) { 1 } else { 2 }
 
 & powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File (Join-Path $scriptDirectory 'start-redis.ps1')
 if ($LASTEXITCODE -ne 0) {
@@ -37,7 +39,10 @@ $projectProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinu
 $specifications = @(
     @{ Name = 'scheduler'; Pattern = 'schedule:headless-work'; Instances = 1; Arguments = @('artisan', 'schedule:headless-work') },
     @{ Name = 'replay'; Pattern = 'queue:work.*lab-full-validation,lab-frontier'; Instances = 1; Arguments = @('artisan', 'queue:work', 'redis', '--queue=lab-full-validation,lab-frontier', '--sleep=1', '--tries=0', '--timeout=4200', '--memory=2048', '--max-time=6000') },
-    @{ Name = 'screening'; Pattern = 'queue:work.*lab-screening'; Instances = 2; Arguments = @('artisan', 'queue:work', 'redis', '--queue=lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', '--sleep=1', '--tries=0', '--timeout=2400', '--memory=2048', '--max-time=4200') },
+    # Match ecosystem.config.cjs: a four-core host has one CPU-heavy replay
+    # slot, so a second PHP consumer would only reserve work that Python
+    # cannot execute concurrently and create avoidable retry/release churn.
+    @{ Name = 'screening'; Pattern = 'queue:work.*lab-screening'; Instances = $screeningWorkerCount; Arguments = @('artisan', 'queue:work', 'redis', '--queue=lab-screening,lab-xauusd,lab-eurusd,lab-gbpusd', '--sleep=1', '--tries=0', '--timeout=2400', '--memory=2048', '--max-time=4200') },
     @{ Name = 'learning'; Pattern = 'queue:work.*lab-learning'; Instances = 1; Arguments = @('artisan', 'queue:work', 'redis', '--queue=lab-learning', '--sleep=1', '--tries=0', '--timeout=900', '--memory=1024', '--max-time=3600') },
     # Keep the fallback topology aligned with ecosystem.config.cjs. Without
     # these lanes the headless scheduler can enqueue durable work forever

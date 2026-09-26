@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabMutationResponseMap;
@@ -45,13 +46,28 @@ class FrozenControlScreeningAdmissionService
             return ['agent_id' => $agent->id, 'status' => 'ready', 'reason' => 'CONTROL_SELF'];
         }
 
+        $controlId = $this->declaredControlAgentId($agent);
         $controls = LabAgent::query()->with('modelVersion')
             ->where('lab_generation_id', $agent->lab_generation_id)
             ->where('strategy_family', $agent->strategy_family)
+            ->when($controlId > 0, fn ($query) => $query->whereKey($controlId))
             ->get()
             ->filter(fn (LabAgent $row): bool => $this->isControl($row));
         if ($controls->isEmpty()) {
-            return ['agent_id' => $agent->id, 'status' => 'blocked', 'reason' => 'FROZEN_CONTROL_MISSING'];
+            return [
+                'agent_id' => $agent->id,
+                'status' => 'blocked',
+                'reason' => $controlId > 0 ? 'FROZEN_CONTROL_IDENTITY_MISMATCH' : 'FROZEN_CONTROL_MISSING',
+                'control_agent_id' => $controlId > 0 ? $controlId : null,
+            ];
+        }
+        if ($controlId <= 0 && $controls->count() > 1) {
+            return [
+                'agent_id' => $agent->id,
+                'status' => 'blocked',
+                'reason' => 'FROZEN_CONTROL_AMBIGUOUS',
+                'control_agent_ids' => $controls->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+            ];
         }
 
         foreach ($controls as $control) {
@@ -83,6 +99,30 @@ class FrozenControlScreeningAdmissionService
         }
 
         return ['agent_id' => $agent->id, 'status' => 'ready', 'reason' => 'FROZEN_CONTROL_REPLAY_COMPLETED'];
+    }
+
+    /** Resolve the pre-registered pair owner before considering family peers. */
+    private function declaredControlAgentId(LabAgent $agent): int
+    {
+        foreach ([
+            'control_pair_contract.control_agent_id',
+            'learning_receipt.control_agent_id',
+        ] as $path) {
+            $id = (int) data_get($agent->modelVersion?->metadata, $path, 0);
+            if ($id > 0) {
+                return $id;
+            }
+        }
+
+        $experiment = AgentLearningCausalExperiment::query()
+            ->where('lab_generation_id', $agent->lab_generation_id)
+            ->where(fn ($query) => $query
+                ->where('guided_agent_id', $agent->id)
+                ->orWhere('blinded_agent_id', $agent->id))
+            ->latest('id')
+            ->first(['control_agent_id']);
+
+        return (int) ($experiment?->control_agent_id ?? 0);
     }
 
     /** Canonical control identity shared by admission and queue scheduling. */

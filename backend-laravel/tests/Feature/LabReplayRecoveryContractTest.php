@@ -3,7 +3,11 @@
 namespace Tests\Feature;
 
 use App\Jobs\EvaluateLabAgentJob;
+use App\Models\AiLaboratory;
+use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use App\Models\LabGeneration;
+use App\Models\ModelVersion;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabImmutableEvidenceService;
@@ -20,6 +24,64 @@ use RuntimeException;
 class LabReplayRecoveryContractTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_single_agent_screen_recovery_cannot_bypass_failed_frozen_control(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Recovery control admission', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'new_data',
+            'population_size' => 2, 'status' => 'screening', 'trigger_context' => [],
+        ]);
+        $controlModel = ModelVersion::create([
+            'name' => 'failed-control', 'strategy' => 'trend', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [],
+            'metadata' => ['control_contract' => [
+                'protocol' => 'frozen_control_v2', 'control_only' => true,
+                'role' => 'control', 'generation_id' => $generation->id,
+            ]],
+        ]);
+        $control = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $controlModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine',
+            'parameter_diff' => [], 'decision_reason' => 'Control replay timed out.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'failed-control-run', 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $control->id, 'model_version_id' => $controlModel->id,
+            'phase' => 'screening', 'mode' => 'screen', 'status' => 'technical_error',
+            'error_class' => 'RuntimeException', 'error_message' => 'Bounded replay timeout',
+            'started_at' => now()->subMinute(), 'finished_at' => now(),
+        ]);
+        $candidateModel = ModelVersion::create([
+            'name' => 'dependent-candidate', 'strategy' => 'trend', 'version' => 'v2',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [],
+            'metadata' => ['control_pair_contract' => ['control_agent_id' => $control->id]],
+        ]);
+        $candidate = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $candidateModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'queued', 'parameter_diff' => [],
+        ]);
+
+        $job = new EvaluateLabAgentJob($candidate->id, 'XAUUSD', 'screen');
+        $job->handle(
+            app(LabAgentEvaluationService::class),
+            app(CandidateHandoffService::class),
+            app(LabImmutableEvidenceService::class),
+            app(LabAgentPreflightService::class),
+            app(LabReplayRecoveryService::class),
+        );
+
+        $this->assertSame('technical_quarantine', $candidate->fresh()->lifecycle_status);
+        $run = LabEvaluationRun::query()->where('lab_agent_id', $candidate->id)->latest('id')->first();
+        $this->assertSame('skipped', $run?->status);
+        $this->assertSame('FROZEN_CONTROL_REPLAY_INCOMPLETE', data_get($run?->metadata, 'reason_code'));
+        $this->assertNull(data_get($candidate->modelVersion->fresh()->metadata, 'last_screen_result'));
+    }
 
     public function test_recovery_contract_rejects_tampered_snapshot_and_wrong_generation(): void
     {

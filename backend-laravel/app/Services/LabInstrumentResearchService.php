@@ -46,6 +46,15 @@ class LabInstrumentResearchService
 
         $parameters = (array) ($model->parameters ?? []);
         $parameterHash = $this->hash($parameters);
+        $passportComponents = (array) data_get($model->metadata, 'smart_composition.composition_passport.components', []);
+        $sourceComponents = [
+            'strategy_library_id' => $passportComponents['strategy_id'] ?? data_get($model->metadata, 'smart_composition.strategy_library_id'),
+            'tactic_library_key' => $passportComponents['tactic_id'] ?? data_get($model->metadata, 'smart_composition.tactic_library_key'),
+            'risk_library_id' => $passportComponents['risk_id'] ?? data_get($model->metadata, 'smart_composition.risk_library_id'),
+            'management_id' => $passportComponents['management_id'] ?? null,
+            'tactic_contract_id' => data_get($model->metadata, 'tactic_contract.tactic_id'),
+            'composition_id' => data_get($model->metadata, 'smart_composition.composition_passport.composition_id'),
+        ];
         $existing = (array) data_get($model->metadata, 'instrument_research_assignment', []);
         $existingWithoutHash = $existing;
         unset($existingWithoutHash['assignment_hash']);
@@ -54,6 +63,10 @@ class LabInstrumentResearchService
             && (string) data_get($existing, 'activation_policy.protocol') === self::ACTIVATION_PROTOCOL
             && (string) data_get($existing, 'decision_doctrine.protocol') === self::DECISION_DOCTRINE_PROTOCOL
             && (string) data_get($existing, 'parameter_hash') === $parameterHash
+            && filled(data_get($existing, 'instrument_key_role_hash'))
+            && filled(data_get($existing, 'activation_context_hash'))
+            && (array) data_get($existing, 'source_components', []) === $sourceComponents
+            && array_key_exists('sealed_treatment_gene', $existing)
             && filled(data_get($existing, 'assignment_hash'))
             && hash_equals((string) data_get($existing, 'assignment_hash'), $this->hash($existingWithoutHash))) {
             return $existing;
@@ -65,6 +78,15 @@ class LabInstrumentResearchService
             : null;
         $experimentRole = $this->experimentRole($agent, $changedGene);
         $pairReservation = $this->pairReservation($agent, $experimentRole);
+        // A frozen control has no parameter_diff by design.  Its treatment
+        // surface must nevertheless be the same surface pre-registered for
+        // the guided/blinded arms; otherwise a family fallback instrument can
+        // silently turn an exact control into a different policy.
+        $tripletGene = (string) data_get($pairReservation, 'protocol') === 'causal_triplet_instrument_reservation_v1'
+            ? (string) data_get($pairReservation, 'gene_key', '')
+            : '';
+        $treatmentGene = $tripletGene !== '' ? $tripletGene : ($changedGene ?: (string) data_get($pairReservation, 'gene_key', ''));
+        $treatmentGene = $treatmentGene !== '' ? $treatmentGene : null;
         // A one-gene instrument candidate without its already-persisted exact
         // control must not even reach Python. This prevents an ever-growing
         // awaiting_paired_control vitrine from masquerading as learning.
@@ -75,7 +97,7 @@ class LabInstrumentResearchService
             (array) data_get($pairReservation, 'trait_capsule.instrument_bundle.instrument_keys', []),
         ))));
         $keys = $pairReady
-            ? ($capsuleKeys !== [] ? $capsuleKeys : $this->instrumentKeys($agent, $changedGene))
+            ? ($capsuleKeys !== [] ? $capsuleKeys : $this->instrumentKeys($agent, $treatmentGene))
             : [];
         $records = TradingInstrument::query()->with('contract')
             ->whereIn('instrument_key', $keys)
@@ -103,9 +125,9 @@ class LabInstrumentResearchService
                     : 'curated_registry',
                 'promotion_state' => (string) $instrument->promotion_state,
                 'parameter_bindings' => $bindings,
-                'causal_candidate' => $changedGene !== null && in_array($changedGene, $allowed, true),
-                'selection_reason' => $changedGene !== null && in_array($changedGene, $allowed, true)
-                    ? 'changed_gene_causal_surface'
+                'causal_candidate' => $treatmentGene !== null && in_array($treatmentGene, $allowed, true),
+                'selection_reason' => $treatmentGene !== null && in_array($treatmentGene, $allowed, true)
+                    ? ($changedGene !== null ? 'changed_gene_causal_surface' : 'frozen_treatment_surface')
                     : ($experimentRole === 'frozen_control' ? 'frozen_control_observation' : 'frozen_support_component'),
                 'learning_authority' => $changedGene !== null && in_array($changedGene, $allowed, true)
                     ? 'eligible_for_local_paired_delta_only_after_runtime_activation'
@@ -153,6 +175,7 @@ class LabInstrumentResearchService
             'strategy' => (string) $model->strategy,
             'parameter_hash' => $parameterHash,
             'changed_gene' => $changedGene,
+            'sealed_treatment_gene' => $treatmentGene,
             'experiment_role' => $experimentRole,
             'pair_reservation' => $pairReservation,
             'selection_mode' => $changedGene ? 'causal_changed_surface_plus_frozen_support' : 'frozen_baseline_bundle',
@@ -198,14 +221,16 @@ class LabInstrumentResearchService
             ] : null,
             'selected' => $selected,
             'selected_keys' => array_values(array_column($selected, 'instrument_key')),
-            'source_components' => [
-                'strategy_library_id' => data_get($model->metadata, 'smart_composition.strategy_library_id'),
-                'tactic_library_key' => data_get($model->metadata, 'smart_composition.tactic_library_key'),
-                'risk_library_id' => data_get($model->metadata, 'smart_composition.risk_library_id'),
-                'management_id' => data_get($model->metadata, 'smart_composition.composition_passport.components.management_id'),
-                'tactic_contract_id' => data_get($model->metadata, 'tactic_contract.tactic_id'),
-                'composition_id' => data_get($model->metadata, 'smart_composition.composition_passport.composition_id'),
-            ],
+            'instrument_key_role_hash' => $this->hash(collect($selected)
+                ->map(fn (array $item): array => [
+                    'instrument_key' => (string) ($item['instrument_key'] ?? ''),
+                    'role' => (string) ($item['role'] ?? ''),
+                ])->values()->all()),
+            'activation_context_hash' => $this->hash(collect($selected)
+                ->mapWithKeys(fn (array $item): array => [
+                    (string) ($item['instrument_key'] ?? '') => (array) data_get($item, 'activation_contract.context', []),
+                ])->all()),
+            'source_components' => $sourceComponents,
             'prior_value' => $posterior ? [
                 'observations' => (int) $posterior->observations,
                 'net_value' => (float) $posterior->net_value,
@@ -517,14 +542,25 @@ class LabInstrumentResearchService
             'specialist_council_membership.contextual_cell',
             [],
         );
-        $declaredContext = array_filter([
+        $rawDeclaredContext = [
             'regime' => data_get($capsuleContext, 'regime', data_get($specialistCell, 'regime', data_get($semantic, 'regime', data_get($lane, 'regime')))),
             'session' => data_get($capsuleContext, 'session', data_get($specialistCell, 'session', data_get($lane, 'session', data_get($lane, 'owner_context.session')))),
+            'venue_phase' => data_get($capsuleContext, 'venue_phase', data_get($specialistCell, 'venue_phase', data_get($lane, 'venue_phase'))),
             'volatility' => data_get($capsuleContext, 'volatility', data_get($specialistCell, 'volatility', data_get($semantic, 'volatility', data_get($lane, 'volatility')))),
             'spread_liquidity_state' => data_get($capsuleContext, 'spread_liquidity_state', data_get($specialistCell, 'spread_liquidity_state', data_get($lane, 'spread_liquidity_state'))),
-            'transition_state' => data_get($capsuleContext, 'transition_state', data_get($specialistCell, 'transition_state', data_get($lane, 'transition_state'))),
+            // The portfolio lane's transition_state is a historical state-
+            // cluster/homework label (e.g. transition_observed), not a
+            // pre-registered condition of every future entry. Copying it
+            // beside a trend_up semantic regime creates an impossible scope:
+            // runtime transition_state is transition only in a transition
+            // regime. Only an explicit capsule or specialist cell may own a
+            // live activation boundary on this axis.
+            'transition_state' => data_get($capsuleContext, 'transition_state', data_get($specialistCell, 'transition_state')),
             'direction' => data_get($capsuleContext, 'direction', data_get($specialistCell, 'direction', data_get($semantic, 'direction', data_get($lane, 'direction')))),
-        ], static fn ($value): bool => ! in_array($value, [null, '', '*', 'both', 'unknown'], true));
+            'session_instance_id' => data_get($capsuleContext, 'session_instance_id', data_get($specialistCell, 'session_instance_id')),
+            'calendar_version' => data_get($capsuleContext, 'calendar_version', data_get($specialistCell, 'calendar_version')),
+        ];
+        $declaredContext = app(ContextContractV2Service::class)->canonicalDeclaredAxes($rawDeclaredContext);
 
         return [
             'protocol' => self::ACTIVATION_PROTOCOL,
@@ -673,21 +709,30 @@ class LabInstrumentResearchService
             return null;
         }
         $armRole = (string) data_get($contract, 'role', '');
-        if ($role !== 'candidate' || ! in_array($armRole, ['memory_guided', 'hypothesis_guided', 'blinded'], true)) {
+        if (! in_array($armRole, [
+            'memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control',
+        ], true)) {
             return null;
         }
         $experimentKey = (string) data_get($contract, 'experiment_key', '');
         $experiment = $experimentKey !== ''
             ? AgentLearningCausalExperiment::query()->where('experiment_key', $experimentKey)->first()
             : null;
-        $candidateField = $armRole === 'blinded' ? 'blinded_agent_id' : 'guided_agent_id';
+        $candidateField = match ($armRole) {
+            'blinded' => 'blinded_agent_id',
+            'frozen_control' => 'control_agent_id',
+            default => 'guided_agent_id',
+        };
         $identityValid = $experiment
             && (int) $experiment->lab_generation_id === (int) $agent->lab_generation_id
             && (int) $experiment->{$candidateField} === (int) $agent->id;
         $control = $identityValid
             ? $agent->generation?->agents()->with('modelVersion')->find((int) $experiment->control_agent_id)
             : null;
-        $exact = $control && $this->baselines->matches($agent, $control);
+        $treatment = $armRole === 'frozen_control' && $identityValid
+            ? $agent->generation?->agents()->with('modelVersion')->find((int) $experiment->guided_agent_id)
+            : $agent;
+        $exact = $control && $treatment && $this->baselines->matches($treatment, $control);
         if (! $identityValid || ! $exact) {
             return [
                 'protocol' => 'causal_triplet_instrument_reservation_v1',
@@ -710,10 +755,11 @@ class LabInstrumentResearchService
             'causal_experiment_id' => (int) $experiment->id,
             'experiment_key' => (string) $experiment->experiment_key,
             'arm_role' => $armRole,
-            'candidate_agent_id' => (int) $agent->id,
+            'candidate_agent_id' => (int) $treatment->id,
             'control_agent_id' => (int) $control->id,
+            'gene_key' => (string) $experiment->gene_key,
             'same_generation' => true,
-            'single_intervention' => count((array) $agent->parameter_diff) === 1,
+            'single_intervention' => count((array) $treatment->parameter_diff) === 1,
             'exact_parameter_baseline' => true,
             'runtime_activation_required' => true,
             'promotion_evidence' => false,

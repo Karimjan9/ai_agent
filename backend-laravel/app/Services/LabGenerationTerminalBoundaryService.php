@@ -6,9 +6,10 @@ use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 
 /**
- * Repairs only the mutable generation projection after all screening work is
- * provably terminal. Strategy, promotion, and learning evidence remain
- * untouched; open agents, runs, or queue ownership make the repair fail closed.
+ * Repairs only the mutable generation projection after all generation-owned
+ * work is provably terminal. Strategy, promotion, and learning evidence remain
+ * untouched; open agents, runs, queue ownership, or settlement work make the
+ * repair fail closed.
  */
 class LabGenerationTerminalBoundaryService
 {
@@ -46,7 +47,7 @@ class LabGenerationTerminalBoundaryService
         if (! $generation) {
             return $this->blocked('GENERATION_NOT_FOUND');
         }
-        if (! in_array((string) $generation->status, ['queued', 'screening'], true)) {
+        if (! in_array((string) $generation->status, ['queued', 'screening', 'full_validation'], true)) {
             return $this->blocked('GENERATION_ALREADY_TERMINAL', $generation);
         }
 
@@ -110,13 +111,18 @@ class LabGenerationTerminalBoundaryService
             ['technical_quarantine', 'quarantined', 'legacy_quarantine', 'abandoned', 'failed'],
             true,
         ))->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all();
-        $screened = $technicalAgentIds === [] && $agents->where('lifecycle_status', 'screened')->isNotEmpty();
-        $status = $screened ? 'screened' : 'technical_quarantine';
         $fromStatus = (string) $generation->status;
+        $fullValidationBoundary = $fromStatus === 'full_validation';
+        $screened = ! $fullValidationBoundary
+            && $technicalAgentIds === []
+            && $agents->where('lifecycle_status', 'screened')->isNotEmpty();
+        $status = $technicalAgentIds !== []
+            ? 'technical_quarantine'
+            : ($fullValidationBoundary ? 'completed' : ($screened ? 'screened' : 'technical_quarantine'));
         $this->contexts->updateWithAttributes($generation, [
             'status' => $status,
             'completed_at' => now(),
-        ], function (array $context) use ($fromStatus, $status, $watermark, $technicalAgentIds): array {
+        ], function (array $context) use ($fromStatus, $status, $watermark, $technicalAgentIds, $fullValidationBoundary): array {
             $receipt = [
                 'protocol' => self::PROTOCOL,
                 'recovered_from_status' => $fromStatus,
@@ -130,23 +136,35 @@ class LabGenerationTerminalBoundaryService
                 'quality_verdict' => 'unchanged',
                 'promotion_evidence' => false,
             ];
-            $context['screening_terminal_recovery'] = $receipt;
-            // Keep the original public projection key readable for reports
-            // and operators while its protocol identifies the stricter v2
-            // boundary.
-            $context['screening_terminal'] = $receipt;
+            $context['generation_terminal_recovery'] = $receipt;
+            if ($fullValidationBoundary) {
+                $context['full_validation_terminal'] = $receipt;
+            } else {
+                $context['screening_terminal_recovery'] = $receipt;
+                // Keep the original public projection key readable for reports
+                // and operators while its protocol identifies the stricter v2
+                // boundary.
+                $context['screening_terminal'] = $receipt;
+            }
 
             return $context;
         });
+        $reportReason = $fullValidationBoundary
+            ? ($status === 'completed'
+                ? 'full_validation_completed_recovered'
+                : 'full_validation_technical_quarantine_recovered')
+            : ($screened ? 'screening_completed_recovered' : 'screening_technical_quarantine_recovered');
         $this->reports->record(
             $generation->fresh(['agents']),
-            $screened ? 'screening_completed_recovered' : 'screening_technical_quarantine_recovered',
+            $reportReason,
         );
 
         return [
             'protocol' => self::PROTOCOL,
             'closed' => true,
-            'reason_code' => 'TERMINAL_SCREENING_BOUNDARY_REPAIRED',
+            'reason_code' => $fullValidationBoundary
+                ? 'TERMINAL_FULL_VALIDATION_BOUNDARY_REPAIRED'
+                : 'TERMINAL_SCREENING_BOUNDARY_REPAIRED',
             'generation_id' => (int) $generation->id,
             'from_status' => $fromStatus,
             'status' => $status,

@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\AgentLearningCausalExperiment;
 use App\Models\AgentLearningLesson;
+use App\Models\AgentLearningSettlement;
 use App\Models\AiLaboratory;
 use App\Models\CausalCapabilityEscrow;
 use App\Models\LabAgent;
+use App\Models\LabEvolutionCreditEvent;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
@@ -14,7 +16,9 @@ use App\Models\LearningProtocolEpochLink;
 use App\Models\ModelVersion;
 use App\Services\CausalCapabilityLatticeService;
 use App\Services\CausalGoldenWorldHarnessService;
+use App\Services\CausalSkillCreditBridgeService;
 use App\Services\EvidenceSalvageConveyorService;
+use App\Services\LearningKernelService;
 use App\Services\LearningProtocolEpochService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -38,6 +42,29 @@ class PostV2LearningProofTest extends TestCase
         $this->assertFalse(data_get($result, 'worlds.poisoned.result.component_confirmed'));
         $this->assertSame('abstain', data_get($result, 'worlds.context_switch.asia_action'));
         $this->assertFalse(data_get($result, 'worlds.context_switch.global_inheritance_allowed'));
+        $this->assertSame('constitutional_service_logic_only', $result['proof_depth']);
+        $this->assertFalse($result['wiring_and_false_authority_guards_proven']);
+    }
+
+    public function test_golden_world_command_depth_exercises_persistence_and_rolls_synthetic_rows_back(): void
+    {
+        $before = [
+            'labs' => AiLaboratory::query()->count(),
+            'escrows' => CausalCapabilityEscrow::query()->count(),
+            'credits' => LabEvolutionCreditEvent::query()->count(),
+        ];
+
+        $result = app(CausalGoldenWorldHarnessService::class)->run(true);
+
+        $this->assertTrue($result['passed'], json_encode($result['persistence_wiring']));
+        $this->assertSame('service_logic_plus_transactional_persistence', $result['proof_depth']);
+        $this->assertTrue($result['wiring_and_false_authority_guards_proven']);
+        $this->assertTrue(data_get($result, 'persistence_wiring.checks.positive_component_persisted'));
+        $this->assertTrue(data_get($result, 'persistence_wiring.checks.cross_context_rejected'));
+        $this->assertTrue(data_get($result, 'persistence_wiring.checks.causal_credit_bridge_persisted_once'));
+        $this->assertSame($before['labs'], AiLaboratory::query()->count());
+        $this->assertSame($before['escrows'], CausalCapabilityEscrow::query()->count());
+        $this->assertSame($before['credits'], LabEvolutionCreditEvent::query()->count());
     }
 
     public function test_post_v2_epoch_is_non_retroactive_and_requires_an_exact_linked_chain(): void
@@ -175,6 +202,109 @@ class PostV2LearningProofTest extends TestCase
         $this->assertSame('contextual_shadow_capability', $escrow->lattice_state);
         $this->assertFalse($escrow->reproductive_authority);
         $this->assertContains('settlement', data_get($result, 'protocol_epoch_link.missing_or_unverified_roles'));
+
+        // A confirmed flag and positive component escrow alone cannot mint
+        // credit: the exact canonical settlement must also be linked.
+        $experiment->update([
+            'status' => 'confirmed', 'confirmed_at' => now(),
+            'independent_window_count' => 3,
+            'guided_beats_control' => true, 'guided_beats_blinded' => true,
+            'evidence' => [...((array) $experiment->evidence),
+                'component_effect' => ['passed' => true],
+                'selector_effect' => ['passed' => true],
+                'confirmation_blockers' => [],
+                'outcomes' => ['memory_guided' => ['pair_id' => $pair->id]],
+            ],
+        ]);
+        $bridge = app(CausalSkillCreditBridgeService::class);
+        $this->assertSame('CAUSAL_EVIDENCE_IDENTITY_MISMATCH', data_get(
+            $bridge->settle($experiment->fresh()), 'reason_code',
+        ));
+
+        $episode = app(LearningKernelService::class)->openEpisode($candidate, [
+            'decision_key' => 'poisoned-credit-bridge', 'symbol' => 'XAUUSD',
+            'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'context' => [],
+        ]);
+        $settlement = AgentLearningSettlement::create([
+            'settlement_id' => (string) Str::uuid(), 'episode_id' => $episode->id,
+            'source_key' => 'poisoned-credit-bridge', 'source_type' => LabLearningLanePair::class,
+            'source_id' => $pair->id, 'outcome_status' => 'settled',
+            'evidence_state' => 'negative', 'selection_reward' => -1,
+            'hard_failure' => true, 'outcome' => [],
+            'reward_components' => ['vetoes' => ['RISK_OF_RUIN_LIMIT']], 'settled_at' => now(),
+        ]);
+        app(CausalCapabilityLatticeService::class)->projectExperiment(
+            $experiment->fresh(), $pair->fresh(), $settlement, $effect, $effect, [], true, true,
+        );
+        $this->assertSame('COMPONENT_ESCROW_NOT_CONFIRMED', data_get(
+            $bridge->settle($experiment->fresh()), 'reason_code',
+        ));
+        $settlement->update(['reward_components' => ['vetoes' => []]]);
+        $pair->update(['metadata' => ['context_scope' => [
+            'regime' => 'trend_down', 'venue_phase' => 'london_comex_overlap',
+        ]]]);
+        app(CausalCapabilityLatticeService::class)->projectExperiment(
+            $experiment->fresh(), $pair->fresh(), $settlement->fresh(), $effect, $effect, [], true, true,
+        );
+        $this->assertSame('COMPONENT_ESCROW_NOT_CONFIRMED', data_get(
+            $bridge->settle($experiment->fresh()), 'reason_code',
+        ));
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_component_credit_fails_closed_when_replay_context_differs_from_sealed_source(): void
+    {
+        [$lab, $generation] = $this->labAndGeneration([
+            'learning_protocol_epoch' => app(LearningProtocolEpochService::class)->generationContract(),
+        ]);
+        $controlModel = ModelVersion::create(['name' => 'context-control', 'strategy' => 'hybrid', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing', 'parameters' => ['entry_threshold' => 1],
+            'evidence_status' => 'valid', 'metadata' => []]);
+        $candidateModel = ModelVersion::create(['name' => 'context-candidate', 'strategy' => 'hybrid', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing', 'parameters' => ['entry_threshold' => 2],
+            'evidence_status' => 'valid', 'metadata' => []]);
+        $control = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $controlModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test',
+            'lifecycle_status' => 'rejected', 'parameter_diff' => []]);
+        $candidate = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $candidateModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test',
+            'lifecycle_status' => 'rejected', 'parameter_diff' => ['entry_threshold' => ['old' => 1, 'new' => 2]]]);
+        $dataHash = str_repeat('a', 64);
+        $executionHash = str_repeat('b', 64);
+        $controlMap = LabMutationResponseMap::create(['response_key' => hash('sha256', 'context-control-map'),
+            'stage' => 'screening', 'status' => 'control', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'strategy_family' => 'hybrid', 'target' => 'profit_factor', 'lab_agent_id' => $control->id,
+            'metadata' => ['control_contract' => ['protocol' => 'frozen_control_v2', 'control_only' => true,
+                'role' => 'control', 'generation_id' => $generation->id, 'data_hash' => $dataHash,
+                'execution_hash' => $executionHash]]]);
+        $candidateMap = LabMutationResponseMap::create(['response_key' => hash('sha256', 'context-candidate-map'),
+            'stage' => 'screening', 'status' => 'screen_observed', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'strategy_family' => 'hybrid', 'target' => 'profit_factor', 'lab_agent_id' => $candidate->id]);
+        $pair = LabLearningLanePair::create(['pair_key' => hash('sha256', 'context-pair'),
+            'lab_generation_id' => $generation->id, 'candidate_agent_id' => $candidate->id,
+            'control_agent_id' => $control->id, 'candidate_response_map_id' => $candidateMap->id,
+            'control_response_map_id' => $controlMap->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'strategy_family' => 'hybrid', 'target' => 'profit_factor', 'baseline_source' => 'control',
+            'status' => 'lesson_compiled', 'candidate_data_hash' => $dataHash, 'control_data_hash' => $dataHash,
+            'candidate_execution_hash' => $executionHash, 'control_execution_hash' => $executionHash,
+            'pair_integrity_status' => 'verified', 'same_generation' => true,
+            'metadata' => ['context_scope' => ['regime' => 'trend_up', 'venue_phase' => 'asia_sge_day']]]);
+        $experiment = AgentLearningCausalExperiment::create(['experiment_key' => hash('sha256', 'context-experiment'),
+            'lab_generation_id' => $generation->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'strategy_family' => 'hybrid', 'target' => 'profit_factor', 'gene_key' => 'entry_threshold',
+            'guided_agent_id' => $candidate->id, 'control_agent_id' => $control->id, 'status' => 'provisional',
+            'evidence' => ['source_context_scope' => ['regime' => 'trend_up', 'venue_phase' => 'london_comex_overlap']]]);
+        $effect = ['passed' => true, 'common_window_count' => 3, 'positive_delta_windows' => 2,
+            'target_effect' => ['passed' => true]];
+
+        $result = app(CausalCapabilityLatticeService::class)->projectExperiment(
+            $experiment, $pair, null, $effect, $effect, [], true, true,
+        );
+
+        $this->assertFalse($result['component_confirmed']);
+        $this->assertFalse(data_get($result, 'component_checks.source_replay_context_match'));
+        $this->assertContains('source_replay_context_match', $result['failed_component_checks']);
+        $this->assertSame('research_inbox', CausalCapabilityEscrow::query()->firstOrFail()->lattice_state);
     }
 
     public function test_salvage_conveyor_prioritizes_closest_signal_but_forces_fresh_v2_reproduction(): void

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AgentLearningCausalExperiment;
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
@@ -12,6 +13,7 @@ use App\Services\EvolutionGovernorService;
 use App\Services\LearningVelocityGateService;
 use App\Services\MtfShadowCouncilSandboxService;
 use App\Services\StrategyParameterSchemaService;
+use App\Services\TechnicalFailureClassifierService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -131,6 +133,167 @@ class RiskBoundedEvolutionTest extends TestCase
         $this->assertTrue($result['allowed']);
         $this->assertSame('healthy', $result['status']);
         $this->assertSame(0, $result['technical_recovery_agents']);
+    }
+
+    public function test_candidate_blocked_by_terminal_frozen_control_has_no_independent_recovery_debt(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Frozen control terminal projection test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'learning_confirmation',
+            'population_size' => 2, 'status' => 'technical_quarantine', 'trigger_context' => [],
+        ]);
+        $controlModel = ModelVersion::create([
+            'name' => 'terminal-frozen-control', 'strategy' => 'terminal-frozen-control', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => [], 'evidence_status' => 'valid',
+        ]);
+        $control = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $controlModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+            'decision_reason' => 'Technical quarantine: evaluator error isolated; strategy verdict withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'terminal-frozen-control-run', 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $control->id, 'model_version_id' => $controlModel->id,
+            'phase' => 'screening', 'mode' => 'screen', 'status' => 'technical_error',
+            'error_class' => 'RuntimeException',
+            'error_message' => '{"detail":"COMPOSITION_DATASET_NOT_BOUND"}',
+            'started_at' => now()->subMinute(), 'finished_at' => now(),
+        ]);
+        $candidateModel = ModelVersion::create([
+            'name' => 'blocked-frozen-candidate', 'strategy' => 'blocked-frozen-candidate', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('trend'),
+            'metadata' => [],
+            'evidence_status' => 'valid',
+        ]);
+        $candidate = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $candidateModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+            'decision_reason' => 'Frozen control admission failed before screening; strategy verdict withheld: FROZEN_CONTROL_REPLAY_INCOMPLETE.',
+        ]);
+        AgentLearningCausalExperiment::create([
+            'experiment_key' => hash('sha256', 'terminal-control-projection'),
+            'lab_generation_id' => $generation->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'target' => 'regime_coverage', 'gene_key' => 'minimum_signal_confidence',
+            'guided_agent_id' => $candidate->id, 'control_agent_id' => $control->id,
+            'status' => 'invalid_counterfactual_contract', 'evidence' => [],
+        ]);
+
+        $result = app(LearningVelocityGateService::class)->inspect($lab);
+
+        $this->assertTrue($result['allowed']);
+        $this->assertSame(0, $result['technical_recovery_agents']);
+        $this->assertSame('healthy', $result['status']);
+    }
+
+    public function test_unreplayed_candidate_does_not_keep_recovery_blocked_after_its_control_completes(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Recovered frozen control test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'new_data',
+            'population_size' => 2, 'status' => 'technical_quarantine', 'trigger_context' => [],
+        ]);
+        $controlModel = ModelVersion::create([
+            'name' => 'recovered-control', 'strategy' => 'trend', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => [],
+        ]);
+        $control = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $controlModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => [],
+            'decision_reason' => 'Incremental screening batch completed; awaiting global full-validation selection.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'recovered-control-run', 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $control->id, 'model_version_id' => $controlModel->id,
+            'phase' => 'screening', 'mode' => 'screen', 'status' => 'completed',
+            'started_at' => now()->subMinute(), 'finished_at' => now(),
+        ]);
+        $candidateModel = ModelVersion::create([
+            'name' => 'unreplayed-dependent', 'strategy' => 'trend', 'version' => 'v2',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [],
+            'metadata' => ['control_pair_contract' => ['control_agent_id' => $control->id]],
+        ]);
+        $candidate = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $candidateModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+            'decision_reason' => 'Frozen control admission failed before screening; strategy verdict withheld: FROZEN_CONTROL_REPLAY_INCOMPLETE.',
+        ]);
+
+        $classification = app(TechnicalFailureClassifierService::class)->forAgent($candidate);
+
+        $this->assertSame(TechnicalFailureClassifierService::TERMINAL, $classification['class']);
+        $this->assertSame('UPSTREAM_FROZEN_CONTROL_COMPLETED_CANDIDATE_UNREPLAYED', $classification['reason_code']);
+        $this->assertFalse($classification['blocks_global_generation']);
+        $this->assertSame(0, app(LearningVelocityGateService::class)->inspect($lab)['technical_recovery_agents']);
+        $this->assertSame('technical_quarantine', $candidate->fresh()->lifecycle_status);
+    }
+
+    public function test_unreplayed_candidate_waits_for_control_repair_without_spending_its_timeout_budget(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'name' => 'Pending frozen control test', 'timeframe' => 'H1',
+            'strategy_families' => ['trend'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'new_data',
+            'population_size' => 2, 'status' => 'technical_quarantine', 'trigger_context' => [],
+        ]);
+        $controlModel = ModelVersion::create([
+            'name' => 'pending-control', 'strategy' => 'trend', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => [],
+        ]);
+        $control = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $controlModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+            'decision_reason' => 'Bounded AI replay exceeded 780s; strategy verdict withheld.',
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'pending-control-run', 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $control->id, 'model_version_id' => $controlModel->id,
+            'phase' => 'screening', 'mode' => 'screen', 'status' => 'technical_error',
+            'error_class' => 'RuntimeException',
+            'error_message' => '{"detail":"Bounded AI replay exceeded 780s; strategy verdict withheld."}',
+            'started_at' => now()->subMinute(), 'finished_at' => now(),
+        ]);
+        $candidateModel = ModelVersion::create([
+            'name' => 'pending-dependent', 'strategy' => 'trend', 'version' => 'v2',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [],
+            'metadata' => ['control_pair_contract' => ['control_agent_id' => $control->id]],
+        ]);
+        $candidate = LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $candidateModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'trend',
+            'origin' => 'test', 'lifecycle_status' => 'technical_quarantine', 'parameter_diff' => [],
+            'decision_reason' => 'Frozen control admission failed before screening; strategy verdict withheld: FROZEN_CONTROL_REPLAY_INCOMPLETE.',
+        ]);
+
+        $pending = app(TechnicalFailureClassifierService::class)->forAgent($candidate);
+        $this->assertSame('FROZEN_CONTROL_UPSTREAM_REPAIR_PENDING', $pending['reason_code']);
+        $this->assertTrue($pending['blocks_global_generation']);
+
+        $controlModel->update(['metadata' => ['technical_recovery_terminal_disposition' => [
+            'protocol' => 'frozen_recovery_contract_terminal_v1',
+            'reason_code' => 'FROZEN_RECOVERY_CONTRACT_UNAVAILABLE',
+            'strategy_verdict' => 'withheld',
+        ]]]);
+        $sealed = app(TechnicalFailureClassifierService::class)->forAgent($candidate->fresh(['modelVersion', 'generation']));
+        $this->assertSame(TechnicalFailureClassifierService::TERMINAL, $sealed['class']);
+        $this->assertSame('UPSTREAM_FROZEN_CONTROL_TERMINAL', $sealed['reason_code']);
+        $this->assertSame(0, app(LearningVelocityGateService::class)->inspect($lab)['technical_recovery_agents']);
     }
 
     public function test_exhausted_retry_budget_quarantine_is_terminal_history_not_a_generation_deadlock(): void

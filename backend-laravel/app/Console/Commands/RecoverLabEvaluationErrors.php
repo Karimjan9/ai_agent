@@ -640,7 +640,11 @@ class RecoverLabEvaluationErrors extends Command
         $message = strtoupper($exception->getMessage());
 
         return str_starts_with($message, 'RECOVERY_DATASET_SNAPSHOT_MISSING_OR_HASH_MISMATCH:')
-            || str_starts_with($message, 'RECOVERY_DATASET_SNAPSHOT_HASH_MISMATCH:');
+            || str_starts_with($message, 'RECOVERY_DATASET_SNAPSHOT_HASH_MISMATCH:')
+            // A prior immutable run already used a different dataset. An
+            // autonomous timeout retry cannot turn that into the same
+            // experiment by silently accepting today's frozen hash.
+            || str_starts_with($message, 'RECOVERY_PRIOR_DATASET_HASH_MISMATCH:');
     }
 
     /**

@@ -134,6 +134,29 @@ class MutationObservabilityTest extends TestCase
             'niche.replacement_contract.replacement_mode',
         ));
         $this->assertFalse((bool) data_get($blindedControl, 'promotion_evidence', false));
+
+        $frozenCausalControl = [
+            ...$learningSpec,
+            'niche' => [
+                ...$learningSpec['niche'],
+                'control_only' => true,
+                'causal_learning_cohort' => [
+                    'role' => 'frozen_control',
+                    'source_lesson_id' => 2365,
+                    'source_control_agent_id' => 1731,
+                    'baseline_model_version_id' => 1767,
+                ],
+            ],
+        ];
+        $baselineMissing = 'CAUSAL_LEARNING_SOURCE_BASELINE_MISSING';
+        $this->assertTrue($replaceable->invoke($service, $frozenCausalControl, $baselineMissing));
+        $safeControl = $preemptive->invoke($service, [$frozenCausalControl], 0, $frozenCausalControl, [
+            ['slot' => 1, 'reason' => $baselineMissing],
+        ]);
+        $this->assertSame('dependency_control', data_get($safeControl, 'origin'));
+        $this->assertNull(data_get($safeControl, 'niche.causal_learning_cohort'));
+        $this->assertTrue((bool) data_get($safeControl, 'niche.replacement_contract.causal_experiment_removed'));
+        $this->assertFalse((bool) data_get($safeControl, 'niche.replacement_contract.promotion_evidence'));
     }
 
     public function test_failed_shadow_experiment_becomes_an_explicit_frozen_control(): void

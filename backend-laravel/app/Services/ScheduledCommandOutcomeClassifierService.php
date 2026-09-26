@@ -16,6 +16,36 @@ class ScheduledCommandOutcomeClassifierService
     public function classify(string $command, array $arguments, int $exitCode, string $output): array
     {
         if ($exitCode === 0) {
+            // The generation builder deliberately exits zero for a typed
+            // admission refusal. Delivery succeeded, but no successor was
+            // created; recording the arbiter writer as completed would make
+            // a blocked constructor look like lifecycle progress.
+            if ($command === 'trading:lab-generation'
+                && str_contains(strtolower($output), 'generation blocked (')) {
+                return $this->result('safety_blocked', false, $exitCode, 'generation_admission_withheld');
+            }
+            // Lifecycle commands are deliberately fail-closed and report a
+            // typed JSON pause with exit 0. Process success is not the same
+            // as achieving the arbiter's requested state transition. Calling
+            // this `completed` permanently deduplicates the unchanged state
+            // and can strand an autonomous successor behind a no-op command.
+            if ($command === 'trading:run-lifecycle-cycle') {
+                $payload = json_decode(trim($output), true);
+                $status = is_array($payload) ? strtolower((string) ($payload['status'] ?? '')) : '';
+                // A recovery dispatch is reported as `running` with exit 0,
+                // but it has not performed the arbiter's requested successor
+                // transition. Treat it like a pause so a later tick can
+                // reselect after the recovered agent reaches a terminal state.
+                if (in_array($status, ['running', 'paused', 'blocked', 'deferred'], true)) {
+                    return $this->result(
+                        $status === 'blocked' ? 'safety_blocked' : 'deferred',
+                        false,
+                        $exitCode,
+                        'lifecycle_transition_not_achieved',
+                    );
+                }
+            }
+
             return $this->result('completed', false, $exitCode);
         }
 

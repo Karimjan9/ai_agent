@@ -14,12 +14,25 @@ class LabDataEdgeAuditService
 {
     public const PROTOCOL = 'data_edge_audit_v1';
 
+    public function ownsAudit(?LabGeneration $generation): bool
+    {
+        return $generation !== null
+            && (string) data_get($generation->trigger_context, 'data_edge_audit.protocol') === self::PROTOCOL
+            && (int) data_get($generation->trigger_context, 'data_edge_audit.generation', 0) === (int) $generation->generation;
+    }
+
+    public function opensSuccessor(?LabGeneration $generation): bool
+    {
+        return $this->ownsAudit($generation)
+            && (string) data_get($generation->trigger_context, 'latest_generation_report.next_action') === 'data_edge_audit_completed';
+    }
+
     /** @return array<string, mixed> */
     public function recordFromFinalReport(LabGeneration $generation): array
     {
         $generation = $generation->fresh() ?? $generation;
         $existing = (array) data_get($generation->trigger_context, 'data_edge_audit', []);
-        if ((string) data_get($existing, 'protocol') === self::PROTOCOL) {
+        if ($this->ownsAudit($generation)) {
             return ['status' => 'already_recorded', 'reason_code' => 'AUDIT_ALREADY_RECORDED', 'audit' => $existing];
         }
         $report = (array) data_get($generation->trigger_context, 'latest_generation_report', []);
@@ -82,7 +95,7 @@ class LabDataEdgeAuditService
             }
             $context = (array) $locked->trigger_context;
             $existing = (array) data_get($context, 'data_edge_audit', []);
-            if ((string) data_get($existing, 'protocol') === self::PROTOCOL) {
+            if ($this->ownsAudit($locked)) {
                 return ['status' => 'already_recorded', 'reason_code' => 'AUDIT_ALREADY_RECORDED', 'audit' => $existing];
             }
 

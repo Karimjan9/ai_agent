@@ -1,0 +1,58 @@
+module: operations
+title: Runtime operations, scheduler and recovery
+purpose: Owns health observation, scheduler/queue recovery boundaries, operational readiness and safe runbook-guided remediation.
+aliases:
+  - scheduler
+  - queue
+  - health
+  - redis
+  - backup
+  - recovery
+paths:
+  - backend-laravel/app/Services/RuntimeMonitoringService.php
+  - backend-laravel/app/Services/MarketHealthService.php
+  - backend-laravel/app/Services/ResearchLoopArbiterService.php
+  - backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php
+  - backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php
+  - backend-laravel/app/Services/GenerationAutonomyReceiptService.php
+  - backend-laravel/app/Services/TechnicalFailureClassifierService.php
+  - backend-laravel/app/Console/Commands/RunSystemHealthCheck.php
+  - backend-laravel/app/Console/Commands/RunHeadlessScheduler.php
+  - backend-laravel/app/Console/Commands/CheckMarketHealth.php
+  - backend-laravel/app/Console/Commands/AuditAutonomyStreak.php
+  - backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php
+  - backend-laravel/scripts/install-autonomous-runtime-task.ps1
+  - backend-laravel/scripts/supervise-laravel-runtime.ps1
+  - backend-laravel/scripts/run-laravel-workers-hidden.ps1
+  - docs/operations
+entry_points:
+  - RunSystemHealthCheck
+  - RunHeadlessScheduler
+  - CheckMarketHealth
+  - system:runtime-monitor
+  - trading:run-research-loop
+  - trading:audit-autonomy-streak
+data_tables:
+  - research_loop_decisions
+  - generation_autonomy_receipts
+dependencies:
+invariants:
+  - A policy pause is reported distinctly from an operational failure.
+  - Recovery cannot manufacture research, paper or promotion evidence.
+  - Strict verification decides health after remediation.
+  - An unchanged operational state hash cannot enqueue another arbiter child merely because the scheduler minute or the selected scheduler job's own queue residency changed.
+  - An in-flight research-loop decision suppresses a successor only while the matching scheduled command's unique queue lock is live; a stale database status without that lock is fenced and cannot own work.
+  - Actionable technical recovery at the terminal lineage head precedes drift or fresh-data generation writers; an exit-zero blocked generation command is not a completed writer.
+flows:
+  - flows/health-and-recovery.md
+docs:
+  - idea.md
+  - states.md
+  - history.md
+tests:
+  - backend-laravel/tests/Feature/RunHeadlessSchedulerTest.php
+  - backend-laravel/tests/Feature/RuntimeMonitorTest.php
+  - backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php
+  - backend-laravel/tests/Feature/MarketHealthEngineTest.php
+  - backend-laravel/tests/Feature/ResearchLoopArbiterTest.php
+  - backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php

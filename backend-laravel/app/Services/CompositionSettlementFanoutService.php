@@ -38,6 +38,7 @@ class CompositionSettlementFanoutService
                     && data_get($effect, 'same_data_hash') === true
                     && data_get($effect, 'same_execution_hash') === true
                     && data_get($effect, 'non_target_safe') === true
+                    && data_get($effect, 'runtime_attested') === true
                     && is_numeric(data_get($effect, 'incremental_after_cost_r'));
                 if (! $causal) {
                     continue;

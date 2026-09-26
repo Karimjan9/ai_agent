@@ -75,7 +75,7 @@ class InstrumentInvocationLedgerService
         if ((string) data_get($assignment, 'protocol') !== LabInstrumentResearchService::PROTOCOL
             || (string) data_get($assignment, 'status') !== 'assigned'
             || (string) data_get($trace, 'protocol') !== LabInstrumentResearchService::RUNTIME_TRACE_PROTOCOL
-            || (string) data_get($trace, 'status') !== 'consumed'
+            || ! in_array((string) data_get($trace, 'status'), ['consumed', 'decision_observed'], true)
             || data_get($trace, 'assignment_hash_valid') !== true
             || data_get($trace, 'parameter_hash_valid') !== true
             || data_get($trace, 'runtime_bindings_valid') !== true
@@ -107,9 +107,9 @@ class InstrumentInvocationLedgerService
         ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         $count = 0;
         foreach ((array) data_get($trace, 'instruments', []) as $runtime) {
+            $runtimeStatus = is_array($runtime) ? (string) ($runtime['status'] ?? '') : '';
             if (! is_array($runtime)
-                || ($runtime['status'] ?? null) !== 'consumed'
-                || data_get($runtime, 'decision_path_activated') !== true
+                || ! in_array($runtimeStatus, ['consumed', 'evaluated_veto', 'evaluated_abstain'], true)
                 || data_get($runtime, 'runtime_observation_valid') !== true
                 || data_get($runtime, 'runtime_receipt_consistent') !== true
                 || (string) data_get($runtime, 'activation_contract_protocol') !== LabInstrumentResearchService::ACTIVATION_PROTOCOL) {
@@ -138,11 +138,15 @@ class InstrumentInvocationLedgerService
                 'state_key' => 'historical_mixed|stratified_replay',
                 'input_hash' => $inputHash,
                 'output_hash' => $outputHash,
-                'used_in_decision' => true,
+                'used_in_decision' => in_array($runtimeStatus, ['consumed', 'evaluated_veto'], true),
                 // This column denotes paper/live execution. The replay was
                 // genuinely executed but remains research-only metadata.
                 'used_in_execution' => false,
-                'verdict' => 'awaiting_paired_control',
+                'verdict' => match ($runtimeStatus) {
+                    'evaluated_veto' => 'evaluated_veto_research_only',
+                    'evaluated_abstain' => 'evaluated_abstain_research_only',
+                    default => 'awaiting_paired_control',
+                },
                 'causal_contribution' => null,
                 'control_delta' => null,
                 'metadata' => [
@@ -159,6 +163,10 @@ class InstrumentInvocationLedgerService
                     'pair_reservation' => data_get($assignment, 'pair_reservation'),
                     'declaration' => $declaration,
                     'runtime_trace' => $runtime,
+                    'runtime_disposition' => $runtimeStatus,
+                    'decision_effect' => $runtimeStatus === 'evaluated_veto'
+                        ? 'VETO'
+                        : ($runtimeStatus === 'consumed' ? 'ALLOW_OR_MODIFY' : 'NO_EFFECT'),
                     'research_replay_executed' => true,
                     'paper_execution_authority' => false,
                     'promotion_evidence' => false,
@@ -181,7 +189,12 @@ class InstrumentInvocationLedgerService
         if (! $pair) {
             return 0;
         }
-        $pair->loadMissing('candidateAgent.modelVersion', 'controlResponseMap');
+        $pair->loadMissing(
+            'candidateAgent.modelVersion',
+            'controlAgent.modelVersion',
+            'candidateResponseMap',
+            'controlResponseMap',
+        );
         $agent = $pair->candidateAgent;
         if (! $agent) {
             return 0;
@@ -196,23 +209,25 @@ class InstrumentInvocationLedgerService
             return 0;
         }
         $assignment = (array) data_get($agent->modelVersion?->metadata, 'instrument_research_assignment', []);
-        $ordinaryReservationValid = (string) data_get($assignment, 'pair_reservation.status') === 'reserved'
-            && filled(data_get($assignment, 'pair_reservation.pair_key'))
-            && hash_equals(
-                (string) $pair->pair_key,
-                (string) data_get($assignment, 'pair_reservation.pair_key'),
-            )
-            && (int) data_get($assignment, 'pair_reservation.control_agent_id') === (int) $pair->control_agent_id;
+        $ordinaryReservationValid = $this->ordinaryReservationMatchesPair($assignment, $pair);
         $reservationValid = $ordinaryReservationValid
             || $this->causalTripletReservationMatchesPair($assignment, $pair);
-        if (! $pair->isVerifiedControlPair() || ! $reservationValid) {
-            $rows->each(function (InstrumentInvocationLedger $row) use ($pair, $reservationValid): void {
+        $assignmentHash = (string) data_get($assignment, 'assignment_hash', '');
+        $attestedAssignmentValid = $assignmentHash !== '' && $rows->every(
+            fn (InstrumentInvocationLedger $row): bool => hash_equals(
+                $assignmentHash,
+                (string) data_get($row->metadata, 'assignment_hash', ''),
+            ),
+        );
+        if (! $pair->isVerifiedControlPair() || ! $reservationValid || ! $attestedAssignmentValid) {
+            $rows->each(function (InstrumentInvocationLedger $row) use ($pair, $reservationValid, $attestedAssignmentValid): void {
                 $metadata = (array) $row->metadata;
                 $metadata['paired_control_rejection'] = [
                     'pair_id' => (int) $pair->id,
                     'pair_key' => (string) $pair->pair_key,
                     'pair_integrity_status' => (string) $pair->pair_integrity_status,
                     'reservation_valid' => $reservationValid,
+                    'attested_assignment_valid' => $attestedAssignmentValid,
                     'promotion_evidence' => false,
                 ];
                 $row->update([
@@ -336,6 +351,53 @@ class InstrumentInvocationLedgerService
         }
 
         return $settled;
+    }
+
+    /**
+     * A constructor pair key seals candidate/control identity. The learning
+     * lane pair key identifies a later screening observation and is expected
+     * to differ, so never compare those two unrelated hashes.
+     */
+    private function ordinaryReservationMatchesPair(array $assignment, LabLearningLanePair $pair): bool
+    {
+        $reservation = (array) data_get($assignment, 'pair_reservation', []);
+        $constructorKey = (string) data_get($reservation, 'pair_key', '');
+        $candidate = $pair->candidateAgent;
+        $control = $pair->controlAgent;
+        if ((string) data_get($reservation, 'protocol') !== 'instrument_exact_pair_reservation_v1'
+            || (string) data_get($reservation, 'status') !== 'reserved'
+            || $constructorKey === ''
+            || ! $candidate || ! $control
+            || (int) data_get($assignment, 'lab_agent_id') !== (int) $candidate->id
+            || (int) data_get($assignment, 'model_version_id') !== (int) $candidate->model_version_id
+            || (int) data_get($assignment, 'lab_generation_id') !== (int) $pair->lab_generation_id
+            || (int) $candidate->lab_generation_id !== (int) $pair->lab_generation_id
+            || (int) $control->lab_generation_id !== (int) $pair->lab_generation_id
+            || (int) data_get($reservation, 'candidate_agent_id') !== (int) $candidate->id
+            || (int) data_get($reservation, 'control_agent_id') !== (int) $control->id
+            || data_get($reservation, 'same_generation') !== true
+            || data_get($reservation, 'single_intervention') !== true
+            || data_get($reservation, 'exact_parameter_baseline') !== true
+            || (int) $pair->controlResponseMap?->lab_agent_id !== (int) $control->id
+            || (int) $pair->controlResponseMap?->model_version_id !== (int) $control->model_version_id
+            || (string) $pair->controlResponseMap?->evidence_run_id !== (string) $pair->control_evidence_run_id
+            || (int) $pair->candidateResponseMap?->lab_agent_id !== (int) $candidate->id
+            || (int) $pair->candidateResponseMap?->model_version_id !== (int) $candidate->model_version_id
+            || (string) $pair->candidateResponseMap?->evidence_run_id !== (string) $pair->candidate_evidence_run_id) {
+            return false;
+        }
+
+        $candidateContract = (array) data_get($candidate->modelVersion?->metadata, 'control_pair_contract', []);
+        $controlContract = (array) data_get($control->modelVersion?->metadata, 'control_pair_contract', []);
+
+        return (string) data_get($candidateContract, 'protocol') === 'exact_frozen_control_pair_v2'
+            && (string) data_get($controlContract, 'protocol') === 'exact_frozen_control_pair_v2'
+            && (string) data_get($candidateContract, 'role') === 'candidate'
+            && (string) data_get($controlContract, 'role') === 'control'
+            && hash_equals($constructorKey, (string) data_get($candidateContract, 'pair_key', ''))
+            && hash_equals($constructorKey, (string) data_get($controlContract, 'pair_key', ''))
+            && ((int) data_get($candidateContract, 'control_agent_id', 0) === 0
+                || (int) data_get($candidateContract, 'control_agent_id') === (int) $control->id);
     }
 
     private function causalTripletReservationMatchesPair(array $assignment, LabLearningLanePair $pair): bool

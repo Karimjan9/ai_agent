@@ -702,6 +702,268 @@ class LabDatasetExportService
     }
 
     /**
+     * Materialize a volume-capable view without mutating the immutable price
+     * foundation used by older generations.  Numeric legacy volume is not
+     * trusted by itself: the source manifest must resolve to the direct
+     * Dukascopy archive, and the derived CSV receives both an explicit
+     * volume_available marker and a hash-bound provenance receipt.
+     *
+     * @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string}
+     */
+    public function ensureFoundationVolumeDataset(string $symbol, string $timeframe = 'H1'): array
+    {
+        return $this->materializeFoundationVolumeDataset(
+            $this->ensureFoundationDataset($symbol, $timeframe),
+        );
+    }
+
+    /**
+     * @param array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string} $source
+     * @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string}
+     */
+    private function materializeFoundationVolumeDataset(array $source): array
+    {
+        $sourcePath = (string) ($source['path'] ?? '');
+        $sourceSha = (string) ($source['sha256'] ?? '');
+        $sourceManifest = (array) ($source['manifest'] ?? []);
+        $actualSourceSha = $sourcePath !== '' && is_file($sourcePath) ? hash_file('sha256', $sourcePath) : false;
+        if ($sourcePath === '' || $sourceSha === '' || ! is_string($actualSourceSha)
+            || ! hash_equals($sourceSha, $actualSourceSha)) {
+            throw new RuntimeException('Historical volume foundation source hash invalid.');
+        }
+
+        $sourceProvenance = $this->foundationVolumeSourceProvenance($sourcePath, $sourceManifest, $sourceSha);
+        if ($sourceProvenance === null) {
+            throw new RuntimeException('Historical volume foundation canonical provenance topilmadi.');
+        }
+
+        $stem = str_ends_with(strtolower($sourcePath), '.csv')
+            ? substr($sourcePath, 0, -4)
+            : $sourcePath;
+        $path = $stem.'_volume-v1_'.substr($sourceSha, 0, 16).'.csv';
+        $manifestPath = $path.'.manifest.json';
+        if ($existing = $this->validFoundationSnapshot($path, $manifestPath)) {
+            if (data_get($existing, 'manifest.volume_provenance.status') === 'passed'
+                && hash_equals($sourceSha, (string) data_get($existing, 'manifest.volume_provenance.source_snapshot_sha256', ''))) {
+                return $existing;
+            }
+        }
+
+        $lock = fopen($path.'.lock', 'c');
+        if ($lock === false || ! flock($lock, LOCK_EX)) {
+            if ($lock !== false) {
+                fclose($lock);
+            }
+            throw new RuntimeException('Historical volume foundation lock olinmadi.');
+        }
+
+        $temporary = tempnam(dirname($path), '.foundation_volume_');
+        if ($temporary === false) {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            throw new RuntimeException('Historical volume foundation temporary fayli yaratilmadi.');
+        }
+
+        try {
+            if ($existing = $this->validFoundationSnapshot($path, $manifestPath)) {
+                if (data_get($existing, 'manifest.volume_provenance.status') === 'passed'
+                    && hash_equals($sourceSha, (string) data_get($existing, 'manifest.volume_provenance.source_snapshot_sha256', ''))) {
+                    return $existing;
+                }
+            }
+
+            $input = fopen($sourcePath, 'rb');
+            $output = fopen($temporary, 'wb');
+            if ($input === false || $output === false) {
+                if (is_resource($input)) fclose($input);
+                if (is_resource($output)) fclose($output);
+                throw new RuntimeException('Historical volume foundation CSV ochilmadi.');
+            }
+
+            $rows = 0;
+            $availableRows = 0;
+            $usableRows = 0;
+            try {
+                $headers = fgetcsv($input);
+                if (! is_array($headers)) {
+                    throw new RuntimeException('Historical volume foundation header topilmadi.');
+                }
+                $normalizedHeaders = array_map(static fn ($value): string => strtolower(trim((string) $value)), $headers);
+                $volumeIndex = array_search('volume', $normalizedHeaders, true);
+                if ($volumeIndex === false) {
+                    throw new RuntimeException('Historical volume foundation volume ustuniga ega emas.');
+                }
+                $availabilityIndex = array_search('volume_available', $normalizedHeaders, true);
+                if ($availabilityIndex === false) {
+                    $headers[] = 'volume_available';
+                }
+                fputcsv($output, $headers);
+
+                while (($values = fgetcsv($input)) !== false) {
+                    if (count($values) !== count($normalizedHeaders)) {
+                        continue;
+                    }
+                    $volume = is_numeric($values[$volumeIndex] ?? null)
+                        ? (float) $values[$volumeIndex]
+                        : NAN;
+                    $available = is_finite($volume) && $volume > 0;
+                    if ($availabilityIndex === false) {
+                        $values[] = $available ? 1 : 0;
+                    } else {
+                        $values[$availabilityIndex] = $available ? 1 : 0;
+                    }
+                    fputcsv($output, $values);
+                    $rows++;
+                    if ($available) {
+                        $availableRows++;
+                        $usableRows++;
+                    }
+                }
+            } finally {
+                fclose($input);
+                fclose($output);
+            }
+
+            $minimumRows = strtoupper((string) data_get($sourceManifest, 'timeframe', 'H1')) === 'M15'
+                ? max(1, (int) config('services.lab_selection.m15_foundation_minimum_rows', 2000))
+                : 202;
+            $coverage = $rows > 0 ? $availableRows / $rows : 0.0;
+            $usableRatio = $rows > 0 ? $usableRows / $rows : 0.0;
+            $minimumCoverage = (float) config('services.market_volume.minimum_coverage', 0.95);
+            $minimumUsableRatio = (float) config('services.market_volume.minimum_usable_ratio', 0.95);
+            if ($rows < $minimumRows || $coverage < $minimumCoverage || $usableRatio < $minimumUsableRatio) {
+                throw new RuntimeException(sprintf(
+                    'Historical volume foundation quality gate failed: rows=%d coverage=%.6f usable=%.6f.',
+                    $rows,
+                    $coverage,
+                    $usableRatio,
+                ));
+            }
+            if (! copy($temporary, $path)) {
+                throw new RuntimeException("Historical volume foundation publish qilinmadi: {$path}");
+            }
+
+            $sha256 = hash_file('sha256', $path);
+            $historicalSourceContract = (string) ($sourceProvenance['source_contract']
+                ?? MarketVolumeService::HISTORICAL_SOURCE_CONTRACT);
+            $historicalProvider = (string) ($sourceProvenance['provider'] ?? 'dukascopy');
+            $historicalTransport = (string) ($sourceProvenance['transport'] ?? 'frozen_archive');
+            $quality = [
+                'protocol' => 'relative_volume_session_v2',
+                'status' => 'passed',
+                'reason' => 'historical_snapshot_quality_gate_passed',
+                'source_contract' => $historicalSourceContract,
+                'provider' => $historicalProvider,
+                'transport' => $historicalTransport,
+                'price_side' => 'BID',
+                'semantic' => MarketVolumeService::SEMANTIC,
+                'unit' => MarketVolumeService::UNIT,
+                'session' => 'UTC',
+                'rows' => $rows,
+                'available_rows' => $availableRows,
+                'usable_rows' => $usableRows,
+                'zero_rows' => $rows - $usableRows,
+                'coverage' => round($coverage, 6),
+                'usable_ratio' => round($usableRatio, 6),
+                'minimum_coverage' => $minimumCoverage,
+                'minimum_usable_ratio' => $minimumUsableRatio,
+                'promotion_evidence' => false,
+            ];
+            $manifest = [
+                ...$sourceManifest,
+                'source_archive_path' => $sourcePath,
+                'source_archive_sha256' => $sourceSha,
+                'row_count' => $rows,
+                'sha256' => $sha256,
+                'volume_quality' => $quality,
+                'volume_provenance' => [
+                    ...$quality,
+                    ...$sourceProvenance,
+                    'protocol' => 'historical_volume_snapshot_provenance_v1',
+                    'source_snapshot_path' => $sourcePath,
+                    'source_snapshot_sha256' => $sourceSha,
+                    'snapshot_sha256' => $sha256,
+                    'volume_column' => 'volume',
+                    'availability_column' => 'volume_available',
+                    'attestation_scope' => 'this_frozen_historical_snapshot_only',
+                    'live_coverage_inherited' => false,
+                ],
+                'rule' => 'Historical volume is admitted only from this hash-bound Dukascopy foundation snapshot; rolling/live coverage is never inherited.',
+                'generated_at' => now()->utc()->toIso8601String(),
+                'promotion_evidence' => false,
+            ];
+            File::put($manifestPath, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+
+            return [
+                'path' => $path,
+                'manifest' => $manifest,
+                'sha256' => $sha256,
+                'protocol' => 'foundation_training_archive_v1',
+            ];
+        } finally {
+            File::delete($temporary);
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    /** @return array<string,mixed>|null */
+    private function foundationVolumeSourceProvenance(string $path, array $manifest, string $sha256): ?array
+    {
+        if (strtolower((string) data_get($manifest, 'source_provider', '')) === 'dukascopy') {
+            return [
+                'attestation_basis' => 'immutable_manifest_provider_identity_and_row_audit',
+                'source_contract' => MarketVolumeService::HISTORICAL_SOURCE_CONTRACT,
+                'provider' => 'dukascopy',
+                'transport' => (string) data_get($manifest, 'source_transport', 'frozen_archive'),
+                'provider_manifest_sha256' => is_file($path.'.manifest.json')
+                    ? hash_file('sha256', $path.'.manifest.json')
+                    : null,
+            ];
+        }
+
+        $sourcePath = (string) data_get($manifest, 'source_archive_path', '');
+        $declaredSha = (string) data_get($manifest, 'source_archive_sha256', '');
+        $actualSha = $sourcePath !== '' && is_file($sourcePath) ? hash_file('sha256', $sourcePath) : false;
+        $sameSnapshot = $sourcePath !== ''
+            && realpath($sourcePath) !== false
+            && realpath($path) !== false
+            && realpath($sourcePath) === realpath($path);
+        if ($sameSnapshot
+            && $declaredSha !== ''
+            && hash_equals($sha256, $declaredSha)
+            && data_get($manifest, 'reuse_protocol') === 'immutable_generation_archive_foundation_reuse_v1'
+            && (int) data_get($manifest, 'ohlc_quality.source_invalid_rows_repaired', 0) === 0
+            && (int) data_get($manifest, 'gap_quality.source_missing_rows', 0) === 0
+            && (int) data_get($manifest, 'gap_quality.repaired_rows', 0) === 0
+            && (int) data_get($manifest, 'gap_quality.unresolved_rows', 0) === 0) {
+            return [
+                'attestation_basis' => 'legacy_self_sealed_foundation_receipt_and_frozen_row_audit',
+                'source_contract' => MarketVolumeService::HISTORICAL_SOURCE_CONTRACT,
+                'provider' => 'historical_generation_snapshot',
+                'transport' => 'immutable_foundation_archive',
+                'legacy_source_identity_recovered' => true,
+                'provider_manifest_sha256' => is_file($path.'.manifest.json')
+                    ? hash_file('sha256', $path.'.manifest.json')
+                    : null,
+            ];
+        }
+        if ($sourcePath === '' || $declaredSha === '' || ! is_string($actualSha)
+            || ! hash_equals($declaredSha, $actualSha) || hash_equals($sha256, $declaredSha)) {
+            return null;
+        }
+        $sourceManifestPath = $sourcePath.'.manifest.json';
+        $sourceManifest = is_file($sourceManifestPath)
+            ? json_decode((string) File::get($sourceManifestPath), true)
+            : null;
+        if (! is_array($sourceManifest)) {
+            return null;
+        }
+
+        return $this->foundationVolumeSourceProvenance($sourcePath, $sourceManifest, $declaredSha);
+    }
+
+    /**
      * Build the M15 foundation from the immutable 2016-2025 price archive
      * before the independent 2026 rolling stream. M15 never borrows H1
      * prices as a foundation; H1 is supplied separately as a closed regime
@@ -1106,7 +1368,7 @@ class LabDatasetExportService
     }
 
     /** @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string} */
-    public function ensureGenerationFoundationSnapshot(LabGeneration $generation): array
+    public function ensureGenerationFoundationSnapshot(LabGeneration $generation, bool $includeVolume = false): array
     {
         $symbol = strtoupper((string) ($generation->laboratory?->symbol ?? ''));
         $timeframe = strtoupper((string) ($generation->laboratory?->timeframe ?? 'H1'));
@@ -1115,7 +1377,8 @@ class LabDatasetExportService
         }
 
         $context = (array) $generation->trigger_context;
-        $existing = (array) data_get($context, 'canonical_dataset_snapshots.foundation', []);
+        $snapshotKey = $includeVolume ? 'foundation_volume' : 'foundation';
+        $existing = (array) data_get($context, "canonical_dataset_snapshots.{$snapshotKey}", []);
         $existingPath = (string) data_get($existing, 'path', '');
         $existingSha = (string) data_get($existing, 'sha256', '');
         if (is_file($existingPath) && $existingSha !== '') {
@@ -1137,7 +1400,7 @@ class LabDatasetExportService
             // generation context with the canonical manifest so admission
             // reads the same continuity evidence that validFoundationSnapshot
             // just verified, rather than a stale pre-passport projection.
-            $foundationContext = (array) data_get($context, 'canonical_dataset_snapshots.foundation', []);
+            $foundationContext = (array) data_get($context, "canonical_dataset_snapshots.{$snapshotKey}", []);
             $foundationContext['protocol'] = $validated['protocol'] ?? 'foundation_training_archive_v1';
             $foundationContext['manifest'] = $validated['manifest'] ?? [];
             $foundationContext['manifest_path'] = $existingManifestPath;
@@ -1151,19 +1414,22 @@ class LabDatasetExportService
                     'reconciled_at' => now()->utc()->toIso8601String(),
                 ];
             }
-            data_set($context, 'canonical_dataset_snapshots.foundation', $foundationContext);
+            data_set($context, "canonical_dataset_snapshots.{$snapshotKey}", $foundationContext);
             $generation->update(['trigger_context' => $context]);
 
             return $validated;
         }
 
-        $snapshot = $this->ensureFoundationDataset($symbol, $timeframe);
-        data_set($context, 'canonical_dataset_snapshots.foundation', [
+        $snapshot = $includeVolume
+            ? $this->ensureFoundationVolumeDataset($symbol, $timeframe)
+            : $this->ensureFoundationDataset($symbol, $timeframe);
+        data_set($context, "canonical_dataset_snapshots.{$snapshotKey}", [
             'protocol' => $snapshot['protocol'],
             'generation_id' => $generation->id,
             'generation' => $generation->generation,
             'symbol' => $symbol,
             'timeframe' => $timeframe,
+            'include_volume' => $includeVolume,
             'path' => $snapshot['path'],
             'manifest' => $snapshot['manifest'],
             'sha256' => $snapshot['sha256'],

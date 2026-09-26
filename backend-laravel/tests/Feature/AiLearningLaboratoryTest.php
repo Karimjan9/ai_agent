@@ -148,6 +148,8 @@ class AiLearningLaboratoryTest extends TestCase
         )->every(fn ($members): bool => $members->count() === 4));
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent): bool => filled(data_get($agent->modelVersion->metadata, 'specialist_council_membership.contextual_cell.cell_hash'))
             && filled(data_get($agent->modelVersion->metadata, 'specialist_council_membership.session_ownership.calendar_version'))
+            && filled(data_get($agent->modelVersion->metadata, 'portfolio_research_contract.target_session'))
+            && filled(data_get($agent->modelVersion->metadata, 'portfolio_research_contract.target_venue_phase'))
         ));
         $this->assertTrue($xau->agents->every(fn (LabAgent $agent): bool => data_get($agent->modelVersion->metadata, 'population_group.search_mode') === 'dynamic_priority'
                 && filled(data_get($agent->modelVersion->metadata, 'cooperative_experiment_block.block_key'))
@@ -241,8 +243,10 @@ class AiLearningLaboratoryTest extends TestCase
 
         $generation->update(['trigger_context' => [
             ...($generation->trigger_context ?? []),
+            'latest_generation_report' => ['next_action' => 'data_edge_audit_completed'],
             'data_edge_audit' => [
                 'protocol' => 'data_edge_audit_v1',
+                'generation' => (int) $generation->generation,
                 'finding' => 'regime and session edge audit completed',
             ],
         ]]);
@@ -250,6 +254,36 @@ class AiLearningLaboratoryTest extends TestCase
         $successor = $service->build('XAUUSD', 'new_data', true);
         $this->assertNotNull($successor);
         $this->assertSame('data_edge_audit', $successor->trigger_type);
+    }
+
+    public function test_inherited_data_edge_audit_cannot_reopen_another_root_portfolio(): void
+    {
+        $service = app(LabPopulationService::class);
+        $source = $service->build('XAUUSD', 'new_data', true);
+        $source->update(['status' => 'completed', 'trigger_context' => [
+            ...($source->trigger_context ?? []),
+            'latest_generation_report' => ['next_action' => 'data_edge_audit_completed'],
+            'data_edge_audit' => [
+                'protocol' => LabDataEdgeAuditService::PROTOCOL,
+                'generation' => (int) $source->generation,
+                'finding' => 'A sealed one-use audit.',
+            ],
+        ]]);
+
+        $successor = $service->build('XAUUSD', 'data_edge_audit', true);
+        $this->assertNotNull($successor, json_encode($service->lastBuildOutcome()));
+        $successor->update(['status' => 'completed', 'trigger_context' => [
+            ...($successor->trigger_context ?? []),
+            'latest_generation_report' => ['next_action' => 'data_edge_audit_completed'],
+        ]]);
+        $successor->agents()->update(['lifecycle_status' => 'screened']);
+
+        $this->assertFalse(app(LabDataEdgeAuditService::class)->opensSuccessor($successor->fresh()));
+        $this->assertNull($service->build('XAUUSD', 'data_edge_audit', true));
+        $this->assertSame('DATA_EDGE_AUDIT_REQUIRED', $service->lastBuildOutcome()['reason_code']);
+        $next = $service->build('XAUUSD', 'new_data', true);
+        $this->assertNotNull($next, json_encode($service->lastBuildOutcome()));
+        $this->assertNotSame('data_edge_audit', $next->trigger_type);
     }
 
     public function test_root_data_edge_portfolio_keeps_every_declared_mutation_type_and_value(): void
@@ -356,6 +390,11 @@ class AiLearningLaboratoryTest extends TestCase
             'status' => 'screened',
             'trigger_context' => [
                 ...($generation->trigger_context ?? []),
+                'data_edge_audit' => [
+                    'protocol' => LabDataEdgeAuditService::PROTOCOL,
+                    'generation' => 0,
+                    'source' => 'inherited_predecessor',
+                ],
                 'latest_generation_report' => [
                     'protocol' => LabGenerationReportService::PROTOCOL,
                     'report_state' => 'FINAL',
@@ -381,6 +420,7 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertSame('recorded', $first['status']);
         $this->assertSame('already_recorded', $second['status']);
         $this->assertSame('autonomous_final_report', data_get($generation->fresh()->trigger_context, 'data_edge_audit.source'));
+        $this->assertSame((int) $generation->generation, data_get($generation->fresh()->trigger_context, 'data_edge_audit.generation'));
         $this->assertSame('data_edge_audit_completed', data_get($generation->fresh()->trigger_context, 'latest_generation_report.next_action'));
         $this->assertFalse((bool) data_get($generation->fresh()->trigger_context, 'data_edge_audit.promotion_evidence'));
     }
@@ -839,7 +879,13 @@ class AiLearningLaboratoryTest extends TestCase
         $method = new \ReflectionMethod(LabAgentEvaluationService::class, 'screeningStrategyPayload');
         $method->setAccessible(true);
 
-        $payload = $method->invoke(app(LabAgentEvaluationService::class), $agent->fresh('modelVersion'));
+        $payload = $method->invoke(
+            app(LabAgentEvaluationService::class),
+            $agent->fresh('modelVersion'),
+            'H1',
+            null,
+            str_repeat('d', 64),
+        );
 
         $this->assertSame($agent->id, $payload['lab_agent_id']);
         $this->assertSame($context, $payload['specialist_context_contract']);

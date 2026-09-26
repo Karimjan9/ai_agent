@@ -210,19 +210,39 @@ class CausalRepairFrontierService
         /** @var LabAgent|null $sourceControl */
         $sourceControl = LabAgent::query()->with('modelVersion')->find((int) $frontier['source_control_agent_id']);
         $sourceModel = $sourceControl?->modelVersion;
-        if (! $sourceModel || (int) $sourceModel->id !== (int) $frontier['baseline_model_version_id']) {
+        if (! $sourceModel
+            || (int) $sourceModel->id !== (int) $frontier['baseline_model_version_id']
+            || (string) $sourceControl->symbol !== strtoupper($symbol)
+            || (string) $sourceControl->timeframe !== strtoupper($timeframe)
+            || (string) $sourceControl->strategy_family !== $family) {
             return ['plan' => array_values($plan), 'contract' => [...$base, 'status' => 'frozen_baseline_missing']];
         }
-        $passport = (array) data_get($sourceModel->metadata, 'smart_composition.composition_passport', []);
+        $sourceArchitecture = (string) data_get(
+            $sourceModel->metadata,
+            'strategy_architecture',
+            data_get($sourceModel->metadata, 'semantic_group.architecture', ''),
+        );
+        $sourceTactic = (string) data_get($sourceModel->metadata, 'tactic_contract.architecture', $sourceArchitecture);
+        $passport = app(StrategyTacticRiskCompositionPlannerService::class)->freezeConfirmationBaseline(
+            $family,
+            $timeframe,
+            (string) data_get($frontier, 'data_hash', ''),
+            (string) data_get($frontier, 'execution_hash', ''),
+            $sourceArchitecture,
+            $sourceTactic,
+            (array) data_get($sourceModel->metadata, 'smart_composition.composition_passport', []),
+        );
         if ($passport === []) {
-            $passport = app(StrategyTacticRiskCompositionPlannerService::class)->freezeConfirmationBaseline(
-                $family,
-                $timeframe,
-                (string) data_get($frontier, 'data_hash', ''),
-                (string) data_get($frontier, 'execution_hash', ''),
-            );
+            return ['plan' => array_values($plan), 'contract' => [
+                ...$base,
+                'status' => 'source_composition_identity_unavailable',
+                'source_family' => $family,
+                'source_architecture' => $sourceArchitecture,
+            ]];
         }
         $semantic = (array) data_get($sourceModel->metadata, 'semantic_group', []);
+        $sourceContext = (array) data_get($frontier, 'source_context_scope', []);
+        $sourceContextHash = data_get($frontier, 'source_context_hash');
         $frontierProtocol = $protocol;
         $experimentKey = hash('sha512', json_encode([
             $frontierProtocol,
@@ -281,6 +301,8 @@ class CausalRepairFrontierService
                 'structural_operation' => data_get($frontier, 'structural_operation'),
                 'activation_screen' => (array) data_get($frontier, 'activation_screen', []),
                 'research_ratchet' => (array) data_get($frontier, 'research_ratchet', []),
+                'source_context_scope' => $sourceContext,
+                'source_context_hash' => $sourceContextHash,
                 'construction_protocol' => self::CONSTRUCTION_PROTOCOL,
                 'blinded_selector' => $blindedMutation,
                 'same_parent_required' => true,
@@ -361,6 +383,8 @@ class CausalRepairFrontierService
             'structural_operation' => data_get($frontier, 'structural_operation'),
             'activation_screen' => (array) data_get($frontier, 'activation_screen', []),
             'research_ratchet' => (array) data_get($frontier, 'research_ratchet', []),
+            'source_context_scope' => $sourceContext,
+            'source_context_hash' => $sourceContextHash,
             'construction_protocol' => self::CONSTRUCTION_PROTOCOL,
             'blinded_selector' => $blindedMutation,
             'baseline_model_version_id' => (int) $frontier['baseline_model_version_id'],
@@ -652,6 +676,12 @@ class CausalRepairFrontierService
             ? self::ARCHITECTURE_INTERACTION_PROTOCOL
             : ($architecture ? self::ARCHITECTURE_PROTOCOL : self::PROTOCOL);
 
+        $sourceContext = app(ContextContractV2Service::class)->canonicalDeclaredAxes((array) data_get(
+            $experiment->evidence,
+            'source_context_scope',
+            data_get($baselineSourcePair->metadata, 'context_scope', data_get($baselineSourcePair->failure_signature, 'state', [])),
+        ));
+
         return [
             'protocol' => $protocol,
             'experiment_kind' => $experimentKind,
@@ -671,6 +701,11 @@ class CausalRepairFrontierService
                 'production_parent_allowed' => false,
                 'promotion_evidence' => false,
             ],
+            'source_context_scope' => $sourceContext,
+            'source_context_hash' => $sourceContext === [] ? null : hash('sha256', json_encode(
+                $sourceContext,
+                JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION,
+            )),
             'strategy_family' => (string) $experiment->strategy_family,
             'target' => $target,
             'gene' => $mutation['gene'],

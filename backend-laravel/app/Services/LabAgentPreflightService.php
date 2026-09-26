@@ -302,13 +302,14 @@ class LabAgentPreflightService
             $errors[] = 'LEGACY_PARENT_GENETIC_MATERIAL_FORBIDDEN';
         }
 
-        $expectedContract = $this->executionContracts->for($agent->symbol, $agent->timeframe);
+        $runtimeTimeframe = $this->replayTimeframe($agent);
+        $expectedContract = $this->executionContracts->for($agent->symbol, $runtimeTimeframe);
         $observedContract = $this->latestExecutionContract($agent);
-        if ($observedContract !== null && ! $this->executionContracts->matches($observedContract, $agent->symbol, $agent->timeframe)) {
+        if ($observedContract !== null && ! $this->executionContracts->matches($observedContract, $agent->symbol, $runtimeTimeframe)) {
             $errors[] = 'EXECUTION_CONTRACT_MISMATCH';
         }
         if (in_array(strtolower($stage), ['full', 'full_validation', 'promotion'], true)) {
-            if ($observedContract === null || ! $this->executionContracts->matches($observedContract, $agent->symbol, $agent->timeframe)) {
+            if ($observedContract === null || ! $this->executionContracts->matches($observedContract, $agent->symbol, $runtimeTimeframe)) {
                 $errors[] = 'FULL_REPLAY_EXECUTION_HASH_MISSING_OR_INVALID';
             }
             $rollingManifest = data_get($generation?->trigger_context, 'canonical_dataset_snapshots.price.manifest');
@@ -328,6 +329,25 @@ class LabAgentPreflightService
                     $errors[] = 'FOUNDATION_DATASET_CONTINUITY_PASSPORT_INVALID';
                 } else {
                     $errors[] = 'FULL_REPLAY_DATASET_COVERAGE_INSUFFICIENT';
+                }
+            }
+            if ($runtimeTimeframe === strtoupper((string) config('services.xauusd_organism.execution_timeframe', 'M5'))
+                && strtoupper((string) $agent->symbol) === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
+                $bundleHash = (string) data_get($generation?->trigger_context, 'mtf_bundle_hash', '');
+                $screenBundleHash = (string) data_get($model?->metadata, 'last_screen_result.mtf_bundle_hash', '');
+                try {
+                    $bundle = app(MultiTimeframeSnapshotService::class)
+                        ->restoreAgentOwnedConfirmationValidationBundle(
+                            (array) data_get($generation?->trigger_context, 'mtf_bundle_manifest', []),
+                        );
+                    if ($bundleHash === '' || ! hash_equals($bundleHash, (string) data_get($bundle, 'bundle_hash', ''))) {
+                        $errors[] = 'AUTONOMOUS_MTF_BUNDLE_MISSING_OR_INVALID';
+                    }
+                } catch (\Throwable) {
+                    $errors[] = 'AUTONOMOUS_MTF_BUNDLE_MISSING_OR_INVALID';
+                }
+                if ($screenBundleHash === '' || $bundleHash === '' || ! hash_equals($bundleHash, $screenBundleHash)) {
+                    $errors[] = 'AUTONOMOUS_MTF_SCREEN_EVIDENCE_MISSING_OR_STALE';
                 }
             }
             if (strtoupper((string) $agent->timeframe) === 'M15') {
@@ -420,7 +440,7 @@ class LabAgentPreflightService
             return [];
         }
 
-        $expected = $this->executionContracts->for($agent->symbol, $agent->timeframe);
+        $expected = $this->executionContracts->for($agent->symbol, $this->replayTimeframe($agent));
         $metadata = (array) $model->metadata;
         $paths = [
             'execution_contract',
@@ -557,7 +577,15 @@ class LabAgentPreflightService
                 'FOUNDATION_DATASET_CONTINUITY_PASSPORT_INVALID',
                 'M15_H1_REGIME_SNAPSHOT_MISSING_OR_INVALID',
                 'M15_SCREEN_H1_REGIME_EVIDENCE_MISSING_OR_STALE',
+                'AUTONOMOUS_MTF_BUNDLE_MISSING_OR_INVALID',
+                'AUTONOMOUS_MTF_SCREEN_EVIDENCE_MISSING_OR_STALE',
             ]) === [];
+    }
+
+    private function replayTimeframe(LabAgent $agent): string
+    {
+        return app(MultiTimeframePilotService::class)
+            ->replayTimeframe((string) $agent->symbol, (string) $agent->timeframe);
     }
 
     /** @return array<string, mixed>|null */

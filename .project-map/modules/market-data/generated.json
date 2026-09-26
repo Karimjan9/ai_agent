@@ -1,0 +1,1359 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/project-map/project-map.mjs",
+  "generator_digest": "5e3498ce579265a81dc03c17970e0f3ff7be935b657ee7f6e9aab0a863ae6762",
+  "generated_at": "2026-09-26T17:30:50.184Z",
+  "source_digest": "1f612b3f350728963367ba99e61f8e4430e448e51b310bdf17f4bc0cde0173d2",
+  "source_file_count": 1364,
+  "git_head": "c47c026e454e780e818232cbb0f9cfd03a21debb",
+  "authority": "Navigation facts only. Real source code and tests remain authoritative.",
+  "module": "market-data",
+  "paths": [
+    "backend-laravel/app/Services/MarketData",
+    "backend-laravel/app/Services/LabDatasetExportService.php",
+    "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+    "backend-laravel/app/Services/MarketSessionCalendarService.php",
+    "backend-laravel/app/Models/MarketTrainingArchive.php",
+    "backend-laravel/app/Models/MarketTrainingCandle.php",
+    "backend-laravel/app/Models/MarketDataSyncState.php",
+    "backend-laravel/app/Models/Candle.php",
+    "ai-service-python/app/services/volume_features.py"
+  ],
+  "source_files": [
+    "ai-service-python/app/services/volume_features.py",
+    "backend-laravel/app/Models/Candle.php",
+    "backend-laravel/app/Models/MarketDataSyncState.php",
+    "backend-laravel/app/Models/MarketTrainingArchive.php",
+    "backend-laravel/app/Models/MarketTrainingCandle.php",
+    "backend-laravel/app/Services/LabDatasetExportService.php",
+    "backend-laravel/app/Services/MarketData/CandlePayloadService.php",
+    "backend-laravel/app/Services/MarketData/CsvMarketDataProvider.php",
+    "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+    "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+    "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+    "backend-laravel/app/Services/MarketData/MarketDataAuditService.php",
+    "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+    "backend-laravel/app/Services/MarketData/MarketDataProviderInterface.php",
+    "backend-laravel/app/Services/MarketData/MarketDataService.php",
+    "backend-laravel/app/Services/MarketData/MarketReadinessService.php",
+    "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+    "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+    "backend-laravel/app/Services/MarketData/TwelveDataMarketDataProvider.php",
+    "backend-laravel/app/Services/MarketSessionCalendarService.php",
+    "backend-laravel/app/Services/MultiTimeframeSnapshotService.php"
+  ],
+  "symbols": [
+    {
+      "symbol": "_causal_baselines",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/volume_features.py",
+      "line": 104
+    },
+    {
+      "symbol": "volume_quality_gate",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/volume_features.py",
+      "line": 128
+    },
+    {
+      "symbol": "add_volume_features",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/volume_features.py",
+      "line": 233
+    },
+    {
+      "symbol": "_utc_timestamp",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/volume_features.py",
+      "line": 27
+    },
+    {
+      "symbol": "_normalization_context",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/volume_features.py",
+      "line": 32
+    },
+    {
+      "symbol": "apply_volume_policy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/volume_features.py",
+      "line": 334
+    },
+    {
+      "symbol": "volume_shadow_report",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/volume_features.py",
+      "line": 433
+    },
+    {
+      "symbol": "_seasonality_bucket",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/volume_features.py",
+      "line": 61
+    },
+    {
+      "symbol": "_expected_market_rows",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/volume_features.py",
+      "line": 73
+    },
+    {
+      "symbol": "symbol",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/Candle.php",
+      "line": 26
+    },
+    {
+      "symbol": "Candle",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Models/Candle.php",
+      "line": 8
+    },
+    {
+      "symbol": "MarketDataSyncState",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Models/MarketDataSyncState.php",
+      "line": 7
+    },
+    {
+      "symbol": "MarketTrainingArchive",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Models/MarketTrainingArchive.php",
+      "line": 7
+    },
+    {
+      "symbol": "MarketTrainingCandle",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Models/MarketTrainingCandle.php",
+      "line": 7
+    },
+    {
+      "symbol": "findReusableM15TrainingArchive",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 1149
+    },
+    {
+      "symbol": "materializeM15FoundationFromArchive",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 1196
+    },
+    {
+      "symbol": "ensureGenerationFoundationSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 1371
+    },
+    {
+      "symbol": "assertGenerationDataPartition",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 1454
+    },
+    {
+      "symbol": "LabDatasetExportService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 15
+    },
+    {
+      "symbol": "validFoundationSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 1521
+    },
+    {
+      "symbol": "findReusableFoundationArchive",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 1647
+    },
+    {
+      "symbol": "materializeFoundationFromArchive",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 1698
+    },
+    {
+      "symbol": "foundationRowsWithGapRepair",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 1794
+    },
+    {
+      "symbol": "ensureGenerationSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 194
+    },
+    {
+      "symbol": "writeFoundationRowsCsv",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 2039
+    },
+    {
+      "symbol": "summarizeFoundationRows",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 2056
+    },
+    {
+      "symbol": "rowsFromSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 2078
+    },
+    {
+      "symbol": "normalizeFoundationOhlcValues",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 2124
+    },
+    {
+      "symbol": "foundationOhlcQuality",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 2151
+    },
+    {
+      "symbol": "foundationContinuityException",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 2193
+    },
+    {
+      "symbol": "ensureGenerationRegimeSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 272
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 31
+    },
+    {
+      "symbol": "materializeGenerationRegimeSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 322
+    },
+    {
+      "symbol": "trainingCutoff",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 37
+    },
+    {
+      "symbol": "export",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 45
+    },
+    {
+      "symbol": "ensureFoundationDataset",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 459
+    },
+    {
+      "symbol": "exportPaper",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 55
+    },
+    {
+      "symbol": "exportSlice",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 60
+    },
+    {
+      "symbol": "ensureFoundationVolumeDataset",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 713
+    },
+    {
+      "symbol": "materializeFoundationVolumeDataset",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 724
+    },
+    {
+      "symbol": "foundationVolumeSourceProvenance",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 911
+    },
+    {
+      "symbol": "ensureM15FoundationDataset",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabDatasetExportService.php",
+      "line": 974
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/CandlePayloadService.php",
+      "line": 10
+    },
+    {
+      "symbol": "candlesForBacktest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/CandlePayloadService.php",
+      "line": 16
+    },
+    {
+      "symbol": "candlesForTraining",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/CandlePayloadService.php",
+      "line": 74
+    },
+    {
+      "symbol": "CandlePayloadService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/CandlePayloadService.php",
+      "line": 8
+    },
+    {
+      "symbol": "fetchCandles",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/CsvMarketDataProvider.php",
+      "line": 10
+    },
+    {
+      "symbol": "normalizeTime",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/CsvMarketDataProvider.php",
+      "line": 103
+    },
+    {
+      "symbol": "CsvMarketDataProvider",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/CsvMarketDataProvider.php",
+      "line": 8
+    },
+    {
+      "symbol": "resolvePath",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/CsvMarketDataProvider.php",
+      "line": 83
+    },
+    {
+      "symbol": "DukascopyMarketDataProvider",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 12
+    },
+    {
+      "symbol": "fetchJettaM15Chunk",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 124
+    },
+    {
+      "symbol": "fetchJettaMinuteAggregateChunk",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 139
+    },
+    {
+      "symbol": "fetchCandles",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 14
+    },
+    {
+      "symbol": "minuteInterval",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 209
+    },
+    {
+      "symbol": "fetchJettaM15NodeChunk",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 227
+    },
+    {
+      "symbol": "decodeJettaMinutePayload",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 273
+    },
+    {
+      "symbol": "fetchJettaChunk",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 331
+    },
+    {
+      "symbol": "requestJettaJson",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 457
+    },
+    {
+      "symbol": "fetchJettaTickCandle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 484
+    },
+    {
+      "symbol": "isExpectedMarketHour",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 552
+    },
+    {
+      "symbol": "candleKey",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 568
+    },
+    {
+      "symbol": "applyJettaDelta",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 573
+    },
+    {
+      "symbol": "fetchLegacyChunk",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 581
+    },
+    {
+      "symbol": "runNodeProcess",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 662
+    },
+    {
+      "symbol": "instrument",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 709
+    },
+    {
+      "symbol": "fetchChunk",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/DukascopyMarketDataProvider.php",
+      "line": 71
+    },
+    {
+      "symbol": "active",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 159
+    },
+    {
+      "symbol": "FrozenPaperWindowService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 17
+    },
+    {
+      "symbol": "trainingEnd",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 173
+    },
+    {
+      "symbol": "snapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 185
+    },
+    {
+      "symbol": "assertSnapshotIntact",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 193
+    },
+    {
+      "symbol": "assertTemporalAuthority",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 201
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 21
+    },
+    {
+      "symbol": "closedBoundary",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 217
+    },
+    {
+      "symbol": "nextBoundary",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 226
+    },
+    {
+      "symbol": "freeze",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/FrozenPaperWindowService.php",
+      "line": 23
+    },
+    {
+      "symbol": "ready",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 106
+    },
+    {
+      "symbol": "HistoricalDataQualityService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 11
+    },
+    {
+      "symbol": "fullReplayCoverage",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 126
+    },
+    {
+      "symbol": "inspect",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 16
+    },
+    {
+      "symbol": "inspectCsvContinuity",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 311
+    },
+    {
+      "symbol": "gapCandidates",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 463
+    },
+    {
+      "symbol": "missingOpenCandles",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 490
+    },
+    {
+      "symbol": "isExpectedMarketOpen",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 506
+    },
+    {
+      "symbol": "isContinuityMarketOpen",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 544
+    },
+    {
+      "symbol": "isScheduledClosure",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 569
+    },
+    {
+      "symbol": "crossesFxChristmasClosure",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 621
+    },
+    {
+      "symbol": "crossesXauMarketHoliday",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 636
+    },
+    {
+      "symbol": "isXauMarketHoliday",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 647
+    },
+    {
+      "symbol": "intervalMinutes",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 670
+    },
+    {
+      "symbol": "alignToInterval",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 682
+    },
+    {
+      "symbol": "observedFixedHoliday",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 687
+    },
+    {
+      "symbol": "nthWeekdayOfMonth",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 698
+    },
+    {
+      "symbol": "lastWeekdayOfMonth",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 706
+    },
+    {
+      "symbol": "emptyResult",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/HistoricalDataQualityService.php",
+      "line": 715
+    },
+    {
+      "symbol": "closeDiscrepancyBps",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataAuditService.php",
+      "line": 110
+    },
+    {
+      "symbol": "MarketDataAuditService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataAuditService.php",
+      "line": 12
+    },
+    {
+      "symbol": "backfillCanonicalObservations",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataAuditService.php",
+      "line": 121
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataAuditService.php",
+      "line": 14
+    },
+    {
+      "symbol": "audit",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataAuditService.php",
+      "line": 19
+    },
+    {
+      "symbol": "unexpectedGaps",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataAuditService.php",
+      "line": 65
+    },
+    {
+      "symbol": "hasUnexpectedGap",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataAuditService.php",
+      "line": 81
+    },
+    {
+      "symbol": "isExpectedMarketOpen",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataAuditService.php",
+      "line": 96
+    },
+    {
+      "symbol": "MarketDataContinuityService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 10
+    },
+    {
+      "symbol": "isReady",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 107
+    },
+    {
+      "symbol": "markHealthy",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 116
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 12
+    },
+    {
+      "symbol": "recoveryStart",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 14
+    },
+    {
+      "symbol": "state",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 140
+    },
+    {
+      "symbol": "firstMissingOpenCandle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 148
+    },
+    {
+      "symbol": "containsOpenInterval",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 178
+    },
+    {
+      "symbol": "lastClosedBoundary",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 194
+    },
+    {
+      "symbol": "intervalMinutes",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 199
+    },
+    {
+      "symbol": "alignToInterval",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 211
+    },
+    {
+      "symbol": "recordFailure",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 25
+    },
+    {
+      "symbol": "recordResult",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataContinuityService.php",
+      "line": 69
+    },
+    {
+      "symbol": "MarketDataProviderInterface",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataProviderInterface.php",
+      "line": 5
+    },
+    {
+      "symbol": "fetchCandles",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataProviderInterface.php",
+      "line": 7
+    },
+    {
+      "symbol": "MarketDataService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataService.php",
+      "line": 15
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataService.php",
+      "line": 17
+    },
+    {
+      "symbol": "fetchWithFallback",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataService.php",
+      "line": 176
+    },
+    {
+      "symbol": "resolveProvider",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataService.php",
+      "line": 220
+    },
+    {
+      "symbol": "usesContinuity",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataService.php",
+      "line": 232
+    },
+    {
+      "symbol": "currentIntervalBoundary",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataService.php",
+      "line": 237
+    },
+    {
+      "symbol": "updateCandles",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketDataService.php",
+      "line": 25
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketReadinessService.php",
+      "line": 10
+    },
+    {
+      "symbol": "promotionReady",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketReadinessService.php",
+      "line": 17
+    },
+    {
+      "symbol": "ready",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketReadinessService.php",
+      "line": 36
+    },
+    {
+      "symbol": "blockedMarkets",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketReadinessService.php",
+      "line": 51
+    },
+    {
+      "symbol": "MarketReadinessService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/MarketReadinessService.php",
+      "line": 8
+    },
+    {
+      "symbol": "MarketTrainingDataService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 11
+    },
+    {
+      "symbol": "importCsv",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 138
+    },
+    {
+      "symbol": "trainingCutoff",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 17
+    },
+    {
+      "symbol": "candlesForAgent",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 252
+    },
+    {
+      "symbol": "query",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 296
+    },
+    {
+      "symbol": "ensureArchive",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 30
+    },
+    {
+      "symbol": "refreshCoverage",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 307
+    },
+    {
+      "symbol": "normaliseTime",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 326
+    },
+    {
+      "symbol": "validOhlc",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 343
+    },
+    {
+      "symbol": "upsertCandles",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 75
+    },
+    {
+      "symbol": "sync",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 104
+    },
+    {
+      "symbol": "MarketVolumeService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 20
+    },
+    {
+      "symbol": "syncTail",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 203
+    },
+    {
+      "symbol": "inspect",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 231
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 33
+    },
+    {
+      "symbol": "forDataset",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 351
+    },
+    {
+      "symbol": "contract",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 36
+    },
+    {
+      "symbol": "assertCanonicalTransport",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 367
+    },
+    {
+      "symbol": "priceStart",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 382
+    },
+    {
+      "symbol": "priceEnd",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 390
+    },
+    {
+      "symbol": "timeKey",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 402
+    },
+    {
+      "symbol": "snapshotHash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 407
+    },
+    {
+      "symbol": "isExpectedVolumeCandle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 426
+    },
+    {
+      "symbol": "mtfContext",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketVolumeService.php",
+      "line": 72
+    },
+    {
+      "symbol": "fetchCandles",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/TwelveDataMarketDataProvider.php",
+      "line": 11
+    },
+    {
+      "symbol": "interval",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/TwelveDataMarketDataProvider.php",
+      "line": 60
+    },
+    {
+      "symbol": "instrument",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/TwelveDataMarketDataProvider.php",
+      "line": 68
+    },
+    {
+      "symbol": "TwelveDataMarketDataProvider",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketData/TwelveDataMarketDataProvider.php",
+      "line": 9
+    },
+    {
+      "symbol": "MarketSessionCalendarService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 10
+    },
+    {
+      "symbol": "specialistOwnership",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 107
+    },
+    {
+      "symbol": "researchPhases",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 15
+    },
+    {
+      "symbol": "legacySessionForPhase",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 173
+    },
+    {
+      "symbol": "definitions",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 179
+    },
+    {
+      "symbol": "phaseAt",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 185
+    },
+    {
+      "symbol": "candidateInstances",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 222
+    },
+    {
+      "symbol": "instanceForReference",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 232
+    },
+    {
+      "symbol": "instanceForAnchor",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 246
+    },
+    {
+      "symbol": "resolve",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 26
+    },
+    {
+      "symbol": "derivedOverlap",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 288
+    },
+    {
+      "symbol": "referenceVenueState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 359
+    },
+    {
+      "symbol": "localTimes",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 373
+    },
+    {
+      "symbol": "dstOffsets",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 383
+    },
+    {
+      "symbol": "eventDistances",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 390
+    },
+    {
+      "symbol": "holidayMaintenanceState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 405
+    },
+    {
+      "symbol": "candleInterval",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 418
+    },
+    {
+      "symbol": "liquidityState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 433
+    },
+    {
+      "symbol": "holidays",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 448
+    },
+    {
+      "symbol": "holidayExport",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 463
+    },
+    {
+      "symbol": "noNightDates",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 471
+    },
+    {
+      "symbol": "nearestResearchDay",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 476
+    },
+    {
+      "symbol": "ownershipPhases",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 489
+    },
+    {
+      "symbol": "legacySession",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 501
+    },
+    {
+      "symbol": "primaryPhase",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 520
+    },
+    {
+      "symbol": "venueForPhase",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 531
+    },
+    {
+      "symbol": "normalizePhase",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 542
+    },
+    {
+      "symbol": "utc",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 551
+    },
+    {
+      "symbol": "quarantine",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 561
+    },
+    {
+      "symbol": "version",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketSessionCalendarService.php",
+      "line": 574
+    },
+    {
+      "symbol": "forAgentOwnedConfirmationValidation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 128
+    },
+    {
+      "symbol": "MultiTimeframeSnapshotService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 20
+    },
+    {
+      "symbol": "forLiquidityTrapReplay",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 248
+    },
+    {
+      "symbol": "forResearchPlaybookReplay",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 333
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 39
+    },
+    {
+      "symbol": "restoreResearchPlaybookBundle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 474
+    },
+    {
+      "symbol": "restoreAgentOwnedConfirmationValidationBundle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 512
+    },
+    {
+      "symbol": "agentValidationReadiness",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 54
+    },
+    {
+      "symbol": "result",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 551
+    },
+    {
+      "symbol": "researchResult",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 568
+    },
+    {
+      "symbol": "commonClosedCutoff",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 591
+    },
+    {
+      "symbol": "closedRows",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 607
+    },
+    {
+      "symbol": "aggregateH4",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 621
+    },
+    {
+      "symbol": "aggregateD1",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 627
+    },
+    {
+      "symbol": "aggregateH1",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 633
+    },
+    {
+      "symbol": "streamManifest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 668
+    },
+    {
+      "symbol": "rowContentHash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 700
+    },
+    {
+      "symbol": "writeCsv",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 719
+    },
+    {
+      "symbol": "attestHistoricalVolumeStreams",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 762
+    },
+    {
+      "symbol": "validBundle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 829
+    }
+  ],
+  "tests": [
+    {
+      "path": "backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php",
+      "tests": [
+        "test_windows_uses_the_http_m15_adapter_without_a_node_child_process",
+        "test_it_decodes_jettas_h1_history_without_a_child_process",
+        "test_it_rebuilds_a_sparse_h1_archive_hour_from_ticks",
+        "test_it_aggregates_jettas_minute_history_into_m15_tick_volume",
+        "test_it_exposes_m1_and_derives_m5_and_m30_from_the_same_minute_archive",
+        "test_it_uses_timestamp_history_directly_for_the_open_month"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/HistoricalVolumeReplayContractTest.php",
+      "tests": [
+        "test_foundation_volume_view_is_hash_bound_and_writes_explicit_availability",
+        "test_legacy_self_sealed_zero_repair_foundation_can_be_re_attested_without_live_coverage",
+        "test_numeric_volume_without_canonical_source_manifest_is_rejected"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MarketDataContinuityTest.php",
+      "tests": [
+        "test_offline_failure_persists_a_retryable_pending_interval",
+        "test_complete_recovery_marks_sync_healthy_but_open_hour_gap_stays_pending",
+        "test_m15_recovery_detects_a_missing_quarter_hour",
+        "test_fx_christmas_closure_does_not_remain_catching_up",
+        "test_closed_weekend_failure_does_not_mark_the_feed_offline",
+        "test_audit_uses_the_canonical_holiday_aware_quality_gate",
+        "candle"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MarketSessionCalendarTest.php",
+      "tests": [
+        "test_london_and_comex_offsets_follow_iana_dst_rules",
+        "test_every_timestamp_is_classified_or_explicitly_quarantined_with_complete_coordinates",
+        "test_sge_night_day_and_pre_holiday_night_closure_are_distinct",
+        "test_lbma_fixes_comex_settlement_maintenance_and_overlap_remain_separate",
+        "test_higher_timeframe_candle_keeps_every_phase_crossed_by_its_closed_interval",
+        "test_local_holiday_does_not_leak_global_authority"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/MtfAgentValidationSnapshotServiceTest.php",
+      "tests": [
+        "test_agent_validation_freezes_bounded_training_store_without_live_export",
+        "rows"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TwelveDataMarketDataProviderTest.php",
+      "tests": [
+        "test_it_normalizes_twelve_data_utc_candles",
+        "test_it_requests_m1_for_audited_intraday_gap_repair"
+      ]
+    }
+  ]
+}

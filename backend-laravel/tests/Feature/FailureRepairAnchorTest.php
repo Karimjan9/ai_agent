@@ -789,7 +789,7 @@ class FailureRepairAnchorTest extends TestCase
         ));
     }
 
-    public function test_seed_becomes_skill_mentor_then_full_parent_only_after_forward_passport(): void
+    public function test_seed_keeps_mentor_evidence_after_forward_but_waits_for_sealed_paper_authority(): void
     {
         [$source] = $this->sourceAgent();
         $model = ModelVersion::create([
@@ -899,11 +899,17 @@ class FailureRepairAnchorTest extends TestCase
             (object) ['decision' => 'passed'],
         );
 
-        $this->assertSame('full_parent', $parent['stage']);
-        $this->assertTrue($parent['parent_eligible']);
-        $this->assertSame('full_parent', data_get($agent->fresh('modelVersion')->modelVersion->metadata, 'evolution_stage.stage'));
-        $this->assertSame('eligible_parent', data_get($parent, 'parent_foundry.status'));
+        $this->assertSame('skill_confirmed_capsule_pending', $parent['stage']);
+        $this->assertFalse($parent['parent_eligible']);
+        $this->assertSame('skill_confirmed_capsule_pending', data_get($agent->fresh('modelVersion')->modelVersion->metadata, 'evolution_stage.stage'));
+        $this->assertFalse((bool) data_get($parent, 'economic_parent_requirements.forward_or_paper_evidence'));
+        $this->assertSame('immutable_full_replay_awaiting_2026_paper', data_get($parent, 'economic_parent_requirements.source'));
+        $this->assertNotSame('eligible_parent', data_get($parent, 'parent_foundry.status'));
         $this->assertDatabaseHas('lab_parent_candidate_preparations', [
+            'model_version_id' => $model->id,
+            'idea_type' => 'parent_foundry_funnel',
+        ]);
+        $this->assertDatabaseMissing('lab_parent_candidate_preparations', [
             'model_version_id' => $model->id,
             'idea_type' => 'parent_foundry_funnel',
             'status' => 'eligible_parent',

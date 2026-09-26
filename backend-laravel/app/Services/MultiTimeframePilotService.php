@@ -25,19 +25,34 @@ class MultiTimeframePilotService
         ?string $contextSnapshotHash = null,
     ): array {
         $config = (array) config('services.mtf_pilot', []);
+        $organism = (array) config('services.xauusd_organism', []);
         $symbol = $this->normalizeSymbol($symbol);
         $timeframe = strtoupper($timeframe);
+        $storageTimeframe = strtoupper((string) ($organism['laboratory_storage_timeframe'] ?? 'H1'));
+        $entryTimeframe = strtoupper((string) ($config['entry_timeframe'] ?? 'M15'));
+        $executionTimeframe = strtoupper((string) ($organism['execution_timeframe'] ?? 'M5'));
+        $organismSymbol = $this->normalizeSymbol((string) ($organism['symbol'] ?? 'XAUUSD'));
+        $storageEligible = $symbol === $organismSymbol && $timeframe === $storageTimeframe;
         $enabled = (bool) ($config['enabled'] ?? false)
             && $symbol === $this->normalizeSymbol((string) ($config['symbol'] ?? 'XAUUSD'))
-            && $timeframe === strtoupper((string) ($config['entry_timeframe'] ?? 'M15'));
+            && in_array($timeframe, [$entryTimeframe, $executionTimeframe], true);
 
         $payload = [
             'protocol' => self::PROTOCOL,
             'enabled' => $enabled,
             'pilot_id' => (string) ($config['pilot_id'] ?? 'xauusd_h1_m15_v1'),
             'symbol' => $symbol,
+            'requested_timeframe' => $timeframe,
+            'laboratory_storage_timeframe' => $storageTimeframe,
             'regime_timeframe' => strtoupper((string) ($config['regime_timeframe'] ?? 'H1')),
-            'entry_timeframe' => strtoupper((string) ($config['entry_timeframe'] ?? 'M15')),
+            'entry_timeframe' => $entryTimeframe,
+            'execution_timeframe' => $executionTimeframe,
+            'storage_candidate_eligible' => $storageEligible,
+            'activation_status' => $enabled
+                ? ($timeframe === $executionTimeframe ? 'execution_stream_bound' : 'entry_stream_bound')
+                : ($storageEligible ? 'storage_identity_requires_entry_stream' : 'out_of_scope'),
+            'timeframe_roles' => (array) ($organism['timeframe_roles'] ?? []),
+            'decision_roles' => (array) ($organism['decision_roles'] ?? []),
             'mode' => (string) ($config['mode'] ?? 'h1_veto_m15_risk'),
             'entry_strategy' => $strategy,
             'max_h1_staleness_seconds' => (int) ($config['max_h1_staleness_seconds'] ?? 7200),
@@ -63,7 +78,32 @@ class MultiTimeframePilotService
 
     public function isPilotCandidate(ModelMarketPerformance $candidate): bool
     {
-        return (bool) data_get($this->requestPayload($candidate->symbol, $candidate->timeframe), 'enabled', false);
+        $contract = $this->requestPayload($candidate->symbol, $candidate->timeframe);
+
+        return (bool) data_get($contract, 'enabled', false)
+            || (bool) data_get($contract, 'storage_candidate_eligible', false);
+    }
+
+    public function decisionTimeframe(ModelMarketPerformance $candidate): string
+    {
+        $contract = $this->requestPayload($candidate->symbol, $candidate->timeframe);
+
+        return $this->isPilotCandidate($candidate)
+            ? (string) data_get($contract, 'entry_timeframe', 'M15')
+            : strtoupper((string) $candidate->timeframe);
+    }
+
+    /**
+     * Laboratory rows keep H1 as their storage/lineage key. Replay decisions
+     * for that one XAUUSD organism are nevertheless executed on M5.
+     */
+    public function replayTimeframe(string $symbol, string $timeframe): string
+    {
+        $contract = $this->requestPayload($symbol, $timeframe);
+
+        return (bool) data_get($contract, 'storage_candidate_eligible', false)
+            ? (string) data_get($contract, 'execution_timeframe', 'M5')
+            : strtoupper($timeframe);
     }
 
     /**
@@ -76,7 +116,11 @@ class MultiTimeframePilotService
      */
     public function enforcePaperResponse(ModelMarketPerformance $candidate, array $signal): array
     {
-        $contract = $this->requestPayload($candidate->symbol, $candidate->timeframe, $candidate->modelVersion?->strategy);
+        $contract = $this->requestPayload(
+            $candidate->symbol,
+            $this->decisionTimeframe($candidate),
+            $candidate->modelVersion?->strategy,
+        );
         if (! (bool) ($contract['enabled'] ?? false)) {
             return $signal;
         }

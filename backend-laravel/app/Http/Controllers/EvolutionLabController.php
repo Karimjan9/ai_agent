@@ -3,25 +3,51 @@
 namespace App\Http\Controllers;
 
 use App\Models\AiLaboratory;
+use App\Models\CandidateGateDecision;
+use App\Models\GenerationAutonomyReceipt;
+use App\Models\LabAgent;
 use App\Models\ModelMarketPerformance;
 use App\Models\MutationMemory;
-use App\Models\CandidateGateDecision;
-use App\Models\LabAgent;
 use App\Models\PaperConfidenceCalibration;
 use App\Models\PaperSignal;
 use App\Models\PaperSignalOutcome;
+use App\Services\GenerationAutonomyAuditService;
+use App\Services\GenerationAutonomyReceiptService;
 use App\Services\LabPopulationService;
+use App\Services\PaperEvidenceReadinessService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 class EvolutionLabController extends Controller
 {
-    public function laboratory(string $symbol = 'XAUUSD', LabPopulationService $populations): View
-    {
+    public function laboratory(
+        string $symbol,
+        LabPopulationService $populations,
+        GenerationAutonomyAuditService $autonomyAudits,
+        GenerationAutonomyReceiptService $autonomyReceipts,
+    ): View {
         $populations->ensureLaboratories();
         $lab = AiLaboratory::where('symbol', strtoupper($symbol))->firstOrFail();
         $generation = $lab->generations()->with(['agents.modelVersion', 'agents.parentA', 'agents.parentB', 'agents.progressCard'])->latest('generation')->first();
         $generationReport = (array) data_get($generation?->trigger_context, 'latest_generation_report', []);
+        $autonomyAudit = $generation ? $autonomyAudits->audit($generation) : [];
+        $autonomyReceipt = $generation && Schema::hasTable('generation_autonomy_receipts')
+            ? GenerationAutonomyReceipt::query()->where('lab_generation_id', $generation->id)->first()
+            : null;
+        $latestAutonomyReceipt = Schema::hasTable('generation_autonomy_receipts')
+            ? GenerationAutonomyReceipt::query()->with('generation')->whereHas(
+                'generation',
+                fn ($query) => $query->where('ai_laboratory_id', $lab->id),
+            )->latest('observed_at')->first()
+            : null;
+        $autonomyStreak = $autonomyReceipts->consecutiveProof($lab->symbol, $lab->timeframe, 2);
+        $reportObservedAt = data_get($generationReport, 'recorded_at');
+        $generationSnapshotStale = $generation !== null && (
+            ! $reportObservedAt
+            || Carbon::parse($reportObservedAt)->lt($generation->updated_at)
+        );
         $champions = ModelMarketPerformance::with('modelVersion')->where('symbol', $lab->symbol)
             ->where('timeframe', $lab->timeframe)->where('status', 'champion')->orderBy('strategy_family')->get();
         $candidates = ModelMarketPerformance::with('modelVersion')->where('symbol', $lab->symbol)
@@ -55,14 +81,15 @@ class EvolutionLabController extends Controller
             'holdout_passed' => (clone $performances)->where('holdout_status', 'passed')->count(),
             'champion' => (clone $performances)->where('status', 'champion')->count(),
         ];
-        $paperReadiness = app(\App\Services\PaperEvidenceReadinessService::class)->inspect();
+        $paperReadiness = app(PaperEvidenceReadinessService::class)->inspect();
         $generationPerformance = $lab->generations()->with('agents')->orderBy('generation')->get()->map(fn ($item) => [
             'generation' => $item->generation,
             'forward' => round((float) $item->agents->whereNotNull('forward_score')->avg('forward_score'), 2),
             'best' => round((float) $item->agents->max('forward_score'), 2),
         ]);
         $labs = AiLaboratory::orderBy('symbol')->get();
-        return view('ai-laboratory.show', compact('lab', 'labs', 'generation', 'generationReport', 'champions', 'challengers', 'gateDiagnostics', 'memories', 'gateDecisions', 'funnel', 'paperReadiness', 'generationPerformance'));
+
+        return view('ai-laboratory.show', compact('lab', 'labs', 'generation', 'generationReport', 'autonomyAudit', 'autonomyReceipt', 'latestAutonomyReceipt', 'autonomyStreak', 'generationSnapshotStale', 'champions', 'challengers', 'gateDiagnostics', 'memories', 'gateDecisions', 'funnel', 'paperReadiness', 'generationPerformance'));
     }
 
     private function forwardGateDiagnostic(ModelMarketPerformance $candidate, $champions): array
@@ -93,7 +120,9 @@ class EvolutionLabController extends Controller
             $gates['Worst-regime PF >= 1.00'] = [$worst >= 1.0, number_format($worst, 2)];
         }
         $diversity = data_get($metrics, 'behavioral_diversity.status');
-        if ($diversity) $gates['Behavioural diversity'] = [$diversity !== 'near_duplicate', $diversity];
+        if ($diversity) {
+            $gates['Behavioural diversity'] = [$diversity !== 'near_duplicate', $diversity];
+        }
         $pboStatus = data_get($metrics, 'selection_validation.status');
         if ($pboStatus === 'assessed') {
             $pbo = (float) data_get($metrics, 'selection_validation.probability_of_backtest_overfitting', 1);

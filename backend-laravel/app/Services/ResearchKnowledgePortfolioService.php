@@ -23,6 +23,7 @@ class ResearchKnowledgePortfolioService
         $classification = (string) $receipt->classification;
         $type = match ($classification) {
             'POSITIVE_CANDIDATE' => 'CAUSAL',
+            'BEHAVIORAL_ACTIVATION_HYPOTHESIS' => 'SEMANTIC',
             'HARMFUL', 'UNDERPOWERED', 'INCONCLUSIVE' => 'NEGATIVE',
             'TECHNICAL_QUARANTINE' => 'COUNTERFACTUAL',
             default => 'EPISODIC',

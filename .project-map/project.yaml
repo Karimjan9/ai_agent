@@ -1,0 +1,34 @@
+schema_version: 1
+project:
+  name: NeuroTrader Lab
+  purpose: Safe AI trading research, deterministic replay and paper-trading observation.
+  canonical_navigation: .project-map/project.yaml
+  authoritative_runtime: source code, migrations, runtime configuration and tests
+
+modules:
+  - laboratory
+  - causal-learning
+  - market-data
+  - paper-execution
+  - confirmation-entry
+  - laravel-python-contract
+  - operations
+
+cross_module_flows:
+  - flows/research-cohort-lifecycle.md
+  - flows/causal-learning-loop.md
+  - flows/market-data-recovery.md
+  - flows/paper-trade-lifecycle.md
+  - flows/confirmed-entry-signal.md
+
+shared_references:
+  - shared/architecture.md
+  - shared/global-rules.md
+  - shared/integrations.md
+  - shared/conventions.md
+
+legacy_detail_references:
+  - docs/CANONICAL_INDEX.md
+  - docs/project-memory/ai-learning-laboratory.md
+  - docs/project-memory/market-data-continuity.md
+  - docs/ai-service-contract.md

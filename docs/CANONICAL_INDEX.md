@@ -1,5 +1,27 @@
 # NeuroTrader Lab canonical index
 
+> **Navigation authority:** `.project-map/project.yaml` loyiha navigatsiyasining
+> yagona entry pointi. Ushbu dokument detailed policy, contract va operational
+> reference manbalarini tartiblaydi. Quyidagi eski module-index prioriteti shu
+> Project Map tomonidan almashtirilgan.
+
+## Effective navigation and documentation order
+
+1. Migrations, testlar va runtime konfiguratsiyasi — amaldagi bajariladigan haqiqat.
+2. `.project-map/` — canonical module/flow/state navigation va Map Impact Check.
+3. `docs/project-memory/ai-learning-laboratory.md` va tegishli project-memory fayllari — batafsil lifecycle/policy.
+4. `docs/operations/` — operator recovery/deployment qoidalari.
+5. `docs/architecture/`, `docs/ai-service-contract.md`, `docs/ENVIRONMENT.md` — architecture, contract va konfiguratsion reference.
+6. `PROJECT_CONTEXT.md` — tarixiy qarorlar; eski test sonlari current status emas.
+
+Project Map o‘zgargan source bilan bir commitda yangilanadi. Avval
+`.project-map/README.md`dagi Map Impact Check bajariladi, keyin:
+
+```powershell
+node scripts/project-map/project-map.mjs generate
+node scripts/project-map/project-map.mjs check
+```
+
 Bu fayl loyiha holatini topish uchun yagona kirish nuqtasi. Bir-biriga zid
 yozuvlar uchrasa, quyidagi ustuvorlik tartibi qo‘llanadi.
 
@@ -16,6 +38,7 @@ yozuvlar uchrasa, quyidagi ustuvorlik tartibi qo‘llanadi.
 | Qism | Canonical manba | Owner chegarasi |
 | --- | --- | --- |
 | AI Laboratory va evolution | `docs/project-memory/ai-learning-laboratory.md` | Laravel evidence/gate; Python deterministic replay |
+| Causal learning va conversion | `.project-map/modules/causal-learning/module.yaml` | Counterfactual receipt, next-work va composition settlement navigation |
 | Adaptive evolution | `docs/project-memory/adaptive-evolution.md` | Laboratoriya population va mutation siyosati |
 | Market data | `docs/project-memory/market-data-continuity.md` | Provider, continuity va immutable data evidence |
 | Smart Discipline / process integrity | `docs/architecture/smart-discipline-engine.md` | Paper entry veto/shrink, immutable process review va learning quarantine |

@@ -22,6 +22,15 @@ from app.schemas import (
     SimpleTrade,
     Trade,
 )
+from app.services.composition_runtime import (
+    ENTRY_PROTOCOL,
+    apply_composition_entry_contract,
+    build_composition_decision_receipts,
+    build_composition_execution_receipt,
+    compile_composition_program,
+    effective_management_parameters,
+    validate_composition_runtime_contract,
+)
 from app.services.control_roots import control_root_for
 from app.services.data_loader import load_candles
 from app.services.execution_contract import (
@@ -92,6 +101,19 @@ class PreparedReplayFeatureContext:
     mtf_context: PreparedClosedMtfContext | None
 
 
+def _composition_runtime_authority(payload: SimpleBacktestRequest) -> dict[str, object]:
+    """Exact request-side identities checked against a frozen composition."""
+
+    return {
+        "symbol": payload.symbol,
+        "execution_timeframe": payload.timeframe,
+        "replay_dataset_hash": payload.replay_dataset_hash,
+        "execution_hash": execution_contract_metadata(payload).get("execution_hash"),
+        "instrument_assignment": dict(payload.instrument_research_assignment or {}),
+        "mtf_snapshot_manifest": dict(payload.mtf_snapshot_manifest or {}),
+    }
+
+
 def prepare_replay_feature_context(
     payload: SimpleBacktestRequest,
 ) -> PreparedReplayFeatureContext:
@@ -112,10 +134,71 @@ def prepare_replay_feature_context(
         if mtf_streams
         else None
     )
+    _assert_closed_mtf_runtime(payload, mtf_context)
     return PreparedReplayFeatureContext(
         regime_source=regime_source,
         mtf_context=mtf_context,
     )
+
+
+def _assert_closed_mtf_runtime(
+    payload: SimpleBacktestRequest,
+    mtf_context: PreparedClosedMtfContext | None,
+) -> None:
+    """Fail before replay when an autonomous M5 organism lost its bundle."""
+
+    def file_sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    pilot = dict(payload.mtf_pilot or {})
+    if not (
+        bool(pilot.get("enabled", False))
+        and str(pilot.get("activation_status") or "") == "execution_stream_bound"
+    ):
+        return
+    if str(payload.timeframe).upper() != str(
+        pilot.get("execution_timeframe", "M5")
+    ).upper():
+        raise ValueError("AUTONOMOUS_MTF_EXECUTION_TIMEFRAME_MISMATCH")
+    if mtf_context is None or mtf_context.status != "ready":
+        raise ValueError("AUTONOMOUS_MTF_CONTEXT_INCOMPLETE")
+
+    manifest = dict(payload.mtf_snapshot_manifest or {})
+    bundle_hash = str(manifest.get("bundle_hash") or "")
+    if (
+        manifest.get("protocol") != "closed_h4_h1_m15_m5_snapshot_v1"
+        or manifest.get("validation_bundle_protocol")
+        != "agent_owned_mtf_foundation_bundle_v1"
+        or len(bundle_hash) != 64
+    ):
+        raise ValueError("AUTONOMOUS_MTF_MANIFEST_INVALID")
+    declared_streams = manifest.get("streams") or {}
+    if not isinstance(declared_streams, dict):
+        raise TypeError("AUTONOMOUS_MTF_MANIFEST_INVALID")
+    requested_paths = {
+        "M5": payload.dataset_path,
+        **{str(key).upper(): value for key, value in dict(payload.mtf_dataset_paths or {}).items()},
+    }
+    for timeframe in ("M5", "H4", "H1", "M15"):
+        stream = declared_streams.get(timeframe) or {}
+        if not isinstance(stream, dict):
+            raise TypeError(f"AUTONOMOUS_MTF_{timeframe}_MANIFEST_MISSING")
+        declared_path = str(stream.get("path") or "")
+        requested_path = str(requested_paths.get(timeframe) or "")
+        declared_hash = str(stream.get("sha256") or "")
+        if not declared_path or not requested_path or not declared_hash:
+            raise ValueError(f"AUTONOMOUS_MTF_{timeframe}_MANIFEST_MISSING")
+        resolved_declared = _resolve_dataset_path(declared_path).resolve()
+        resolved_requested = _resolve_dataset_path(requested_path).resolve()
+        if resolved_declared != resolved_requested:
+            raise ValueError(f"AUTONOMOUS_MTF_{timeframe}_PATH_MISMATCH")
+        digest = file_sha256(resolved_requested)
+        if digest != declared_hash:
+            raise ValueError(f"AUTONOMOUS_MTF_{timeframe}_HASH_MISMATCH")
 
 
 def core_replay_gate(result: dict[str, object]) -> dict[str, object]:
@@ -314,6 +397,13 @@ def prepare_feature_snapshot(
     prepared.attrs["execution_timeframe"] = str(payload.timeframe).upper()
     mtf_context = replay_context.mtf_context if replay_context is not None else None
     mtf_streams = {} if mtf_context is not None else _load_mtf_streams(payload)
+    if mtf_context is None and mtf_streams:
+        mtf_context = prepare_closed_mtf_context(
+            mtf_streams,
+            payload.parameters,
+            _load_related_mtf_streams(payload),
+        )
+    _assert_closed_mtf_runtime(payload, mtf_context)
     if mtf_context is not None or mtf_streams:
         prepared = apply_closed_mtf_context(
             prepared,
@@ -410,6 +500,11 @@ def prepare_signal_snapshot(
             prepared,
             payload.portfolio_members,
             candle_duration_minutes=_timeframe_duration_minutes(payload.timeframe),
+            execution_timeframe=payload.timeframe,
+            symbol=payload.symbol,
+            replay_dataset_hash=payload.replay_dataset_hash,
+            execution_hash=execution_contract_metadata(payload).get("execution_hash"),
+            mtf_snapshot_manifest=payload.mtf_snapshot_manifest,
         )
     else:
         strategy_function = get_strategy(payload.strategy, payload.base_strategy)
@@ -425,6 +520,9 @@ def prepare_signal_snapshot(
             payload.specialist_context_contract,
             _timeframe_duration_minutes(payload.timeframe),
         )
+    prepared = apply_composition_entry_contract(
+        prepared, payload.composition_runtime_contract
+    )
     prepared = _apply_signal_delay(prepared, payload.signal_delay_candles)
     prepared.attrs["unexpected_gap_count"] = features.unexpected_gap_count
     prepared.attrs["data_quality"] = dict(features.data_quality)
@@ -631,6 +729,13 @@ def _run_prepared_simple_backtest(
     prepared_snapshot: PreparedSignalSnapshot | None = None,
     fast_stateful: bool | None = None,
 ) -> SimpleBacktestResponse:
+    validate_composition_runtime_contract(
+        payload.composition_runtime_contract,
+        base_strategy=payload.base_strategy,
+        parameters=payload.parameters,
+        execution_timeframe=payload.timeframe,
+        runtime_authority=_composition_runtime_authority(payload),
+    )
     policy_boundary = enforce_policy_boundary(payload)
     snapshot = prepared_snapshot or prepare_signal_snapshot(payload, df)
     source_df = snapshot.source_frame.copy()
@@ -723,6 +828,14 @@ def _run_prepared_simple_backtest(
     signal_decision_hasher = hashlib.sha256()
     signal_decision_count = 0
     signal_decision_categories: Counter[str] = Counter()
+    signal_decision_samples: list[dict[str, object]] = []
+    composition_execution_outcomes: dict[str, list[dict[str, object]]] = {}
+    composition_contract = dict(payload.composition_runtime_contract or {})
+    composition_program = (
+        compile_composition_program(composition_contract)
+        if composition_contract
+        else {}
+    )
     mtf_vetoes = 0
     mtf_contexts: Counter[str] = Counter()
     edge_contracts = (payload.policy_context or {}).get("edge_genesis_contracts", {})
@@ -748,6 +861,50 @@ def _run_prepared_simple_backtest(
     edge_context_matches = 0
     edge_context_rejections: Counter[str] = Counter()
     entry_funnel["raw_strategy_signals"] = _count_lane_signals(df, differential_lane)
+    if differential_lane is None and "composition_strategy_signal" in df.columns:
+        entry_funnel["strategy_runtime_evaluations"] = int(len(df))
+        entry_funnel["mtf_context_gate_evaluations"] = int(len(df))
+        composition_decision_start = min(199, len(df))
+        composition_decision_stop = max(composition_decision_start, len(df) - 1)
+        composition_decision_scope = df.iloc[
+            composition_decision_start:composition_decision_stop
+        ]
+        entry_funnel["composition_strategy_signals_before_tactic"] = int(
+            composition_decision_scope["composition_strategy_signal"]
+            .astype(str)
+            .str.upper()
+            .isin(["BUY", "SELL"])
+            .sum()
+        )
+        tactic_rejections = int(
+            composition_decision_scope.get(
+                "composition_tactic_rejection",
+                pd.Series("", index=composition_decision_scope.index),
+            )
+            .astype(str)
+            .eq("tactic_context_outside_scope")
+            .sum()
+        )
+        if tactic_rejections > 0:
+            entry_funnel["rejected_composition_tactic_context"] = tactic_rejections
+        entry_funnel["composition_tactic_evaluations"] = int(
+            composition_decision_scope.get(
+                "composition_tactic_evaluated",
+                pd.Series(False, index=composition_decision_scope.index),
+            )
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
+        entry_funnel["composition_tactic_acceptances"] = int(
+            composition_decision_scope.get(
+                "composition_tactic_accepted",
+                pd.Series(False, index=composition_decision_scope.index),
+            )
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
     instrument_runtime = _instrument_runtime_state(
         payload.instrument_research_assignment
     )
@@ -767,8 +924,21 @@ def _run_prepared_simple_backtest(
     ) -> None:
         """Stream a deterministic policy-decision identity in bounded memory."""
         nonlocal signal_decision_count
+        decision_row = row_at(index - 1) if index > 0 else {}
+        decision_id = str(decision_row.get("composition_decision_id", "") or "")
+        decision_candle = str(decision_row.get("time", "") or "")
         token = json.dumps(
-            [index, phase, action, accepted, reason, context],
+            [
+                index,
+                decision_id,
+                decision_candle,
+                str(composition_program.get("program_hash") or ""),
+                phase,
+                action,
+                accepted,
+                reason,
+                context,
+            ],
             ensure_ascii=False,
             separators=(",", ":"),
             default=str,
@@ -781,6 +951,58 @@ def _run_prepared_simple_backtest(
         signal_decision_categories[
             f"{phase}:{'accepted' if accepted else reason or 'observed'}"
         ] += 1
+        if decision_id and len(signal_decision_samples) < 32:
+            signal_decision_samples.append(
+                {
+                    "decision_id": decision_id,
+                    "decision_candle": decision_candle,
+                    "manifest_hash": str(
+                        composition_program.get("manifest_hash") or ""
+                    ),
+                    "program_hash": str(composition_program.get("program_hash") or ""),
+                    "phase": phase,
+                    "action": action,
+                    "accepted": bool(accepted),
+                    "reason": reason,
+                    "context": context,
+                }
+            )
+
+    def record_composition_stage(
+        signal_row: object,
+        module: str,
+        accepted: bool,
+        reason: str = "",
+        *,
+        decision_id: str | None = None,
+        decision_candle: str | None = None,
+        evidence: dict[str, object] | None = None,
+    ) -> None:
+        if not composition_program:
+            return
+        resolved_id = str(
+            decision_id or signal_row.get("composition_decision_id", "") or ""
+        )
+        if len(resolved_id) != 64:
+            return
+        candle_id = str(
+            decision_candle or signal_row.get("time", "") or ""
+        )
+        stage: dict[str, object] = {
+            "module": module,
+            "decision_id": resolved_id,
+            "status": "accepted" if accepted else "rejected",
+            "reason": "" if accepted else (reason or "runtime_gate_rejected"),
+            "candle": candle_id,
+            "manifest_hash": str(composition_program.get("manifest_hash") or ""),
+            "program_hash": str(composition_program.get("program_hash") or ""),
+        }
+        if evidence:
+            stage.update(evidence)
+        stages = composition_execution_outcomes.setdefault(resolved_id, [])
+        if stages and str(stages[-1].get("module") or "") == module:
+            return
+        stages.append(stage)
 
     # A signal is only knowable after its candle closes. Execute it at the
     # following candle's open, then include that same candle in exit checks.
@@ -914,6 +1136,16 @@ def _run_prepared_simple_backtest(
                 "position_open",
                 str(position.get("risk_context", "")),
             )
+            if (
+                str(signal_row.get("composition_decision_id", "") or "")
+                and bool(signal_row.get("composition_decision_accepted", False))
+            ):
+                record_composition_stage(
+                    signal_row,
+                    "entry_model",
+                    False,
+                    "position_already_open",
+                )
 
         # A completed wait earns exactly one reduced-risk probe.  This is
         # evaluated even when there is no signal so expiry is driven by time,
@@ -967,12 +1199,23 @@ def _run_prepared_simple_backtest(
                 signal_row["signal"] = signal
                 signal_row["signal_confidence"] = lane_confidence
                 signal_row["selected_specialist"] = lane_specialist
+            if signal in {"BUY", "SELL"}:
+                entry_funnel["instrument_context_gate_evaluations"] += 1
             owner_scope_allowed, blocked_instrument_owners = (
                 _instrument_owner_scope_allows(
                     instrument_runtime, signal_row, signal, lane_specialist
                 )
             )
+            if signal in {"BUY", "SELL"}:
+                record_composition_stage(
+                    signal_row,
+                    "instrument_context_gate",
+                    owner_scope_allowed,
+                    "instrument_context_outside_scope",
+                )
             if owner_scope_allowed:
+                if signal in {"BUY", "SELL"}:
+                    entry_funnel["instrument_context_gate_acceptances"] += 1
                 _record_strategy_instrument_events(
                     instrument_runtime,
                     signal_row,
@@ -980,6 +1223,7 @@ def _run_prepared_simple_backtest(
                     lane_specialist,
                 )
             else:
+                entry_funnel["instrument_context_gate_rejections"] += 1
                 entry_funnel["rejected_instrument_context_outside_scope"] += 1
                 signal_row = signal_row.copy()
                 signal_row["instrument_scope_raw_signal"] = signal
@@ -993,13 +1237,28 @@ def _run_prepared_simple_backtest(
                 signal_row["signal_confidence"] = 0.0
                 signal = "WAIT"
                 lane_confidence = 0.0
+            mtf_candidate = signal in {"BUY", "SELL"}
             mtf_policy = apply_signal_policy(
                 signal,
                 signal_row,
                 payload.mtf_pilot,
-                signal_row.get("time"),
+                signal_row.get("decision_at", signal_row.get("time")),
             )
             mtf_context = dict(mtf_policy.get("context", {}))
+            if mtf_candidate:
+                mtf_accepted = mtf_policy.get("decision") == signal
+                entry_funnel["mtf_permission_gate_evaluations"] += 1
+                entry_funnel[
+                    "mtf_permission_gate_acceptances"
+                    if mtf_accepted
+                    else "mtf_permission_gate_rejections"
+                ] += 1
+                record_composition_stage(
+                    signal_row,
+                    "mtf_permission_gate",
+                    mtf_accepted,
+                    str(mtf_policy.get("reason") or "mtf_permission_rejected"),
+                )
             if emit_decision_trace:
                 signal_row = signal_row.copy()
                 signal_row["h1_context_hash"] = mtf_context.get("h1_context_hash")
@@ -1045,6 +1304,8 @@ def _run_prepared_simple_backtest(
                     signal_row.get("mtf_veto_reason", "")
                     or signal_row.get("instrument_scope_rejection", "")
                     or policy_rejection
+                    or signal_row.get("composition_decision_reason", "")
+                    or signal_row.get("entry_contract_status", "")
                     or "no_signal"
                 )
                 signal_context = "|".join(
@@ -1204,6 +1465,7 @@ def _run_prepared_simple_backtest(
             _temporal_register_signal(
                 temporal_state, signal_row, signal, index, execution_payload
             )
+            entry_funnel["risk_governor_evaluations"] += 1
             liquid, rejection_reason = _entry_eligibility(
                 candle,
                 execution_payload,
@@ -1224,6 +1486,16 @@ def _run_prepared_simple_backtest(
             }:
                 liquid = False
                 rejection_reason = f"state_machine_{state_machine_state}"
+            if liquid:
+                entry_funnel["risk_governor_approvals"] += 1
+            else:
+                entry_funnel["risk_governor_rejections"] += 1
+            record_composition_stage(
+                signal_row,
+                "central_risk_governor",
+                bool(liquid),
+                str(rejection_reason or "risk_rejected"),
+            )
             if (
                 _entry_gate_reached(rejection_reason, "temporal")
                 and str(temporal_assessment.get("status", "disabled")) != "disabled"
@@ -1453,9 +1725,26 @@ def _run_prepared_simple_backtest(
                 "weak_regime_probe": weak_regime_probe,
                 "entry_index": index,
                 "execution_parameters": dict(execution_payload.parameters),
+                "execution_composition_runtime_contract": dict(
+                    execution_payload.composition_runtime_contract or {}
+                ),
+                "execution_instrument_research_assignment": dict(
+                    execution_payload.instrument_research_assignment or {}
+                ),
+                "execution_base_strategy": execution_payload.base_strategy,
+                "composition_decision_id": str(
+                    signal_row.get("composition_decision_id", "") or ""
+                ),
+                "composition_decision_candle": str(
+                    signal_row.get("time", "") or ""
+                ),
+                "composition_management_observed": False,
                 "partial_closed": False,
                 "partial_fraction": float(
-                    execution_payload.parameters.get("partial_take_profit_fraction", 0)
+                    effective_management_parameters(
+                        execution_payload.composition_runtime_contract,
+                        execution_payload.parameters,
+                    ).get("partial_take_profit_fraction", 0)
                     or 0
                 ),
                 "partial_exit_price": None,
@@ -1464,6 +1753,12 @@ def _run_prepared_simple_backtest(
                 "maximum_favorable_excursion": 0.0,
                 "maximum_adverse_excursion": 0.0,
             }
+            record_composition_stage(
+                signal_row,
+                "order_execution",
+                True,
+                "",
+            )
             if emit_decision_trace:
                 decision_trace.append(
                     _decision_trace_event(
@@ -1492,6 +1787,7 @@ def _run_prepared_simple_backtest(
                 )
 
         direction = str(position["direction"])
+        entry_funnel["management_policy_evaluations"] += 1
         position_payload = _payload_for_position(payload, position)
         favorable_before_exit_bar = float(
             position.get("maximum_favorable_excursion", 0) or 0
@@ -1501,7 +1797,11 @@ def _run_prepared_simple_backtest(
         )
         _update_position_excursions(position, candle)
         _advance_trailing_stop(position, row_at(index - 1), position_payload)
-        time_stop = int(position_payload.parameters.get("time_stop_candles", 0) or 0)
+        management_parameters = effective_management_parameters(
+            position_payload.composition_runtime_contract,
+            position_payload.parameters,
+        )
+        time_stop = int(management_parameters.get("time_stop_candles", 0) or 0)
         if time_stop and index - int(position["entry_index"]) >= time_stop:
             exit_price, exit_reason = (
                 _exit_price(float(candle["open"]), direction, position_payload),
@@ -1853,6 +2153,19 @@ def _run_prepared_simple_backtest(
                 else None,
             )
         )
+        record_composition_stage(
+            signal_row,
+            "management_policy",
+            True,
+            "",
+            decision_id=str(position.get("composition_decision_id") or ""),
+            decision_candle=str(position.get("composition_decision_candle") or ""),
+            evidence={
+                "closed_at": str(candle["time"]),
+                "exit_reason": str(exit_reason),
+                "trade_result": str(result),
+            },
+        )
         if emit_decision_trace:
             decision_trace.append(
                 _decision_trace_event(
@@ -1968,8 +2281,53 @@ def _run_prepared_simple_backtest(
     pf_attribution = _pf_attribution(trades, df)
     entry_funnel_report = _entry_funnel_report(entry_funnel)
     entry_contract_funnel = _entry_contract_funnel_report(df)
+    # Differential parent/child lanes are counterfactual ledgers inside the
+    # primary replay, not independently passported organisms. Never let their
+    # lane-specific signal substitution mint a composition consumption proof.
+    receipt_contract = (
+        payload.composition_runtime_contract if differential_lane is None else None
+    )
+    decision_receipts = (
+        build_composition_decision_receipts(
+            df,
+            receipt_contract,
+            execution_outcomes=composition_execution_outcomes,
+        )
+        if receipt_contract
+        else {}
+    )
+    if decision_receipts:
+        decision_receipts["execution_ledger"] = {
+            "protocol": "composition_execution_decision_ledger_v1",
+            "composition_id": str(receipt_contract.get("composition_id") or ""),
+            "contract_hash": str(receipt_contract.get("contract_hash") or ""),
+            "manifest_hash": str(composition_program.get("manifest_hash") or ""),
+            "program_hash": str(composition_program.get("program_hash") or ""),
+            "count": int(signal_decision_count),
+            "digest": signal_decision_hasher.hexdigest()
+            if signal_decision_count > 0
+            else "",
+            "categories": {
+                str(key): int(value)
+                for key, value in sorted(signal_decision_categories.items())
+            },
+            "samples": signal_decision_samples,
+            "ordered": True,
+            "promotion_evidence": False,
+        }
     instrument_runtime_observations = _instrument_runtime_report(instrument_runtime)
     management_evidence = _management_evidence_report(trades)
+    composition_runtime_receipt = build_composition_execution_receipt(
+        receipt_contract,
+        base_strategy=payload.base_strategy,
+        parameters=payload.parameters,
+        rows=len(df),
+        entry_funnel=entry_funnel_report,
+        entry_contract_funnel=entry_contract_funnel,
+        management_evidence=management_evidence,
+        runtime_authority=_composition_runtime_authority(payload),
+        decision_receipts=decision_receipts,
+    )
     edge_formation_academy_diagnostic = _edge_formation_academy_diagnostic(
         df,
         entry_contract_funnel,
@@ -2099,6 +2457,7 @@ def _run_prepared_simple_backtest(
         else _edge_claim(payload, pf_attribution, statistical_evidence["edge_quality"])
     )
     volume_quality = dict(df.attrs.get("volume_quality") or {})
+    volume_lane = str((payload.parameters or {}).get("volume_lane", "none") or "none")
     volume_shadow = (
         {
             "status": "deferred_screening_subreplay",
@@ -2106,6 +2465,18 @@ def _run_prepared_simple_backtest(
             "quality": volume_quality,
         }
         if lightweight
+        else {
+            "status": "not_requested",
+            "reason": "volume_lane_none",
+            "promotion_evidence": False,
+            "quality": volume_quality,
+            "deciles": [],
+            "trade_deciles": [],
+            "trade_decile_summary": [],
+            "signal_deciles": [],
+            "effort_result_summary": [],
+        }
+        if volume_lane == "none"
         else volume_shadow_report(
             df, [trade.model_dump() for trade in trades], payload.volume_context
         )
@@ -2257,6 +2628,7 @@ def _run_prepared_simple_backtest(
         forbidden_risk_bypass=forbidden_risk_bypass,
         after_cost_expectancy_r=after_cost_expectancy_r,
         management_evidence=management_evidence,
+        composition_runtime_receipt=composition_runtime_receipt,
         edge_formation_academy_diagnostic=edge_formation_academy_diagnostic,
         behavioral_signature=behavioral_signature,
         diagnostic_telemetry=diagnostic_telemetry,
@@ -2476,6 +2848,9 @@ def _apply_signal_delay(df: pd.DataFrame, delay: int) -> pd.DataFrame:
             "target_signal",
             "pre_volume_signal",
             "selected_specialist",
+            "portfolio_execution_parameters",
+            "portfolio_composition_runtime_contract",
+            "portfolio_member_base_strategy",
         }
         or column.endswith(("_signal", "_specialist", "_signal_confidence"))
         or column
@@ -2498,7 +2873,7 @@ def _apply_signal_delay(df: pd.DataFrame, delay: int) -> pd.DataFrame:
             delayed[column] = pd.to_numeric(shifted, errors="coerce")
         elif column.endswith("target") or column == "differential_target":
             delayed[column] = shifted.fillna(False).astype(bool)
-        elif "specialist" in column:
+        elif "specialist" in column or column.startswith("portfolio_"):
             delayed[column] = shifted.where(shifted.notna(), None)
         else:
             delayed[column] = shifted.fillna("WAIT")
@@ -2513,6 +2888,11 @@ def _apply_portfolio_strategy(
     *,
     prepared_member_frames: list[pd.DataFrame] | None = None,
     candle_duration_minutes: int = 0,
+    execution_timeframe: str | None = None,
+    symbol: str | None = None,
+    replay_dataset_hash: str | None = None,
+    execution_hash: str | None = None,
+    mtf_snapshot_manifest: dict[str, object] | None = None,
 ) -> pd.DataFrame:
     """Apply a sealed complementary-member router to one candle stream.
 
@@ -2531,10 +2911,42 @@ def _apply_portfolio_strategy(
             )
         for raw, member in zip(members, prepared_member_frames):
             config = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+            validate_composition_runtime_contract(
+                config.get("composition_runtime_contract"),
+                base_strategy=config.get("base_strategy"),
+                parameters=dict(config.get("parameters") or {}),
+                execution_timeframe=execution_timeframe,
+                runtime_authority={
+                    "symbol": symbol,
+                    "execution_timeframe": execution_timeframe,
+                    "replay_dataset_hash": replay_dataset_hash,
+                    "execution_hash": execution_hash,
+                    "instrument_assignment": dict(
+                        config.get("instrument_research_assignment") or {}
+                    ),
+                    "mtf_snapshot_manifest": dict(mtf_snapshot_manifest or {}),
+                },
+            )
             member_frames.append((config, member.copy()))
     else:
         for raw in members:
             config = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+            validate_composition_runtime_contract(
+                config.get("composition_runtime_contract"),
+                base_strategy=config.get("base_strategy"),
+                parameters=dict(config.get("parameters") or {}),
+                execution_timeframe=execution_timeframe,
+                runtime_authority={
+                    "symbol": symbol,
+                    "execution_timeframe": execution_timeframe,
+                    "replay_dataset_hash": replay_dataset_hash,
+                    "execution_hash": execution_hash,
+                    "instrument_assignment": dict(
+                        config.get("instrument_research_assignment") or {}
+                    ),
+                    "mtf_snapshot_manifest": dict(mtf_snapshot_manifest or {}),
+                },
+            )
             function = get_strategy(
                 str(config["strategy"]), config.get("base_strategy")
             )
@@ -2543,6 +2955,9 @@ def _apply_portfolio_strategy(
                 member,
                 dict(config.get("parameters") or {}),
                 str(config.get("base_strategy") or config.get("strategy") or ""),
+            )
+            member = apply_composition_entry_contract(
+                member, config.get("composition_runtime_contract")
             )
             member_frames.append((config, member))
 
@@ -2788,6 +3203,15 @@ def _apply_portfolio_strategy_vectorized(
     prepared["portfolio_execution_parameters"] = pd.Series(
         [None] * len(index), index=index, dtype=object
     )
+    prepared["portfolio_composition_runtime_contract"] = pd.Series(
+        [None] * len(index), index=index, dtype=object
+    )
+    prepared["portfolio_member_base_strategy"] = pd.Series(
+        [None] * len(index), index=index, dtype=object
+    )
+    prepared["portfolio_instrument_research_assignment"] = pd.Series(
+        [None] * len(index), index=index, dtype=object
+    )
     prepared["volume_risk_multiplier"] = 1.0
     prepared["volume_policy_rejection"] = ""
     if not member_frames:
@@ -2858,6 +3282,9 @@ def _apply_portfolio_strategy_vectorized(
     # object columns once instead of issuing one pandas .at write per candle.
     selected_specialists = ["portfolio_wait"] * len(index)
     execution_parameters: list[object] = [None] * len(index)
+    composition_contracts: list[object] = [None] * len(index)
+    member_base_strategies: list[object] = [None] * len(index)
+    instrument_assignments: list[object] = [None] * len(index)
     index_positions = {label: position for position, label in enumerate(index)}
     for label, member_index in selected_index.items():
         if not normal_action.loc[label] or int(member_index) < 0:
@@ -2866,6 +3293,13 @@ def _apply_portfolio_strategy_vectorized(
         selected_config = member_frames[int(member_index)][0]
         selected_specialists[position] = member_keys[int(member_index)]
         execution_parameters[position] = dict(selected_config.get("parameters") or {})
+        composition_contracts[position] = dict(
+            selected_config.get("composition_runtime_contract") or {}
+        )
+        member_base_strategies[position] = selected_config.get("base_strategy")
+        instrument_assignments[position] = dict(
+            selected_config.get("instrument_research_assignment") or {}
+        )
         prepared.at[label, "volume_risk_multiplier"] = float(
             volume_risk_series[int(member_index)].loc[label]
         )
@@ -2877,6 +3311,15 @@ def _apply_portfolio_strategy_vectorized(
     )
     prepared["portfolio_execution_parameters"] = pd.Series(
         execution_parameters, index=index, dtype=object
+    )
+    prepared["portfolio_composition_runtime_contract"] = pd.Series(
+        composition_contracts, index=index, dtype=object
+    )
+    prepared["portfolio_member_base_strategy"] = pd.Series(
+        member_base_strategies, index=index, dtype=object
+    )
+    prepared["portfolio_instrument_research_assignment"] = pd.Series(
+        instrument_assignments, index=index, dtype=object
     )
     return prepared
 
@@ -2919,6 +3362,11 @@ def _portfolio_payload_for_signal(
     if not isinstance(member_parameters, dict) or not member_parameters:
         return payload
     merged = {**member_parameters, **dict(payload.parameters or {})}
+    composition_contract = signal_row.get("portfolio_composition_runtime_contract")
+    member_base_strategy = signal_row.get("portfolio_member_base_strategy")
+    instrument_assignment = signal_row.get(
+        "portfolio_instrument_research_assignment"
+    )
     # These are portfolio-owned controls and must never be overridden by a
     # member's local experiment.
     for key in (
@@ -2928,7 +3376,28 @@ def _portfolio_payload_for_signal(
     ):
         if key in payload.parameters:
             merged[key] = payload.parameters[key]
-    return payload.model_copy(update={"parameters": merged})
+    selected_payload = payload.model_copy(
+        update={
+            "parameters": merged,
+            "base_strategy": str(member_base_strategy)
+            if member_base_strategy
+            else payload.base_strategy,
+            "composition_runtime_contract": dict(composition_contract)
+            if isinstance(composition_contract, dict)
+            else {},
+            "instrument_research_assignment": dict(instrument_assignment)
+            if isinstance(instrument_assignment, dict)
+            else {},
+        }
+    )
+    validate_composition_runtime_contract(
+        selected_payload.composition_runtime_contract,
+        base_strategy=selected_payload.base_strategy,
+        parameters=selected_payload.parameters,
+        execution_timeframe=selected_payload.timeframe,
+        runtime_authority=_composition_runtime_authority(selected_payload),
+    )
+    return selected_payload
 
 
 def _payload_for_position(
@@ -2938,7 +3407,21 @@ def _payload_for_position(
     parameters = position.get("execution_parameters")
     if not isinstance(parameters, dict) or not parameters:
         return payload
-    return payload.model_copy(update={"parameters": dict(parameters)})
+    composition_contract = position.get("execution_composition_runtime_contract")
+    instrument_assignment = position.get("execution_instrument_research_assignment")
+    return payload.model_copy(
+        update={
+            "parameters": dict(parameters),
+            "composition_runtime_contract": dict(composition_contract)
+            if isinstance(composition_contract, dict)
+            else payload.composition_runtime_contract,
+            "instrument_research_assignment": dict(instrument_assignment)
+            if isinstance(instrument_assignment, dict)
+            else payload.instrument_research_assignment,
+            "base_strategy": position.get("execution_base_strategy")
+            or payload.base_strategy,
+        }
+    )
 
 
 def _portfolio_evidence(
@@ -3347,9 +3830,14 @@ def _instrument_runtime_state(
                 "contract": contract,
                 "role": str(selected.get("role") or ""),
                 "activation_count": 0,
+                "evaluation_count": 0,
+                "veto_count": 0,
+                "abstain_count": 0,
                 "event_sources": Counter(),
                 "context_event_counts": Counter(),
                 "activated_contexts": {},
+                "evaluated_contexts": {},
+                "decision_effect_counts": Counter(),
                 "abstention_context_counts": Counter(),
             }
     return {
@@ -3369,6 +3857,7 @@ def _record_instrument_runtime_event(
     source: str,
     *,
     context_overrides: dict[str, str] | None = None,
+    outside_scope_effect: str = "ABSTAIN",
 ) -> None:
     instruments = state.get("instruments") or {}
     if not bool(state.get("enabled")) or not isinstance(instruments, dict):
@@ -3386,14 +3875,31 @@ def _record_instrument_runtime_event(
         ]
     )
     contract = observation.get("contract") or {}
-    if (
-        not isinstance(contract, dict)
-        or not _instrument_runtime_event_allowed(contract, source)
-        or not _instrument_contract_context_matches(contract, context)
+    if not isinstance(contract, dict) or not _instrument_runtime_event_allowed(
+        contract, source
     ):
+        return
+    observation["evaluation_count"] = (
+        int(observation.get("evaluation_count", 0) or 0) + 1
+    )
+    evaluated = observation.get("evaluated_contexts")
+    if isinstance(evaluated, dict):
+        evaluated[context_key] = dict(context)
+    if not _instrument_contract_context_matches(contract, context):
         abstentions = observation.get("abstention_context_counts")
         if isinstance(abstentions, Counter):
             abstentions[context_key] += 1
+        effect = str(outside_scope_effect or "ABSTAIN").upper()
+        if effect == "VETO":
+            observation["veto_count"] = int(observation.get("veto_count", 0) or 0) + 1
+        else:
+            effect = "ABSTAIN"
+            observation["abstain_count"] = int(
+                observation.get("abstain_count", 0) or 0
+            ) + 1
+        effects = observation.get("decision_effect_counts")
+        if isinstance(effects, Counter):
+            effects[effect] += 1
         return
     observation["activation_count"] = (
         int(observation.get("activation_count", 0) or 0) + 1
@@ -3404,6 +3910,9 @@ def _record_instrument_runtime_event(
         sources[source] += 1
     if isinstance(contexts, Counter):
         contexts[context_key] += 1
+    effects = observation.get("decision_effect_counts")
+    if isinstance(effects, Counter):
+        effects["ALLOW_OR_MODIFY"] += 1
     definitions = observation.get("activated_contexts")
     if isinstance(definitions, dict):
         definitions[context_key] = dict(context)
@@ -3559,7 +4068,14 @@ def _instrument_owner_scope_allows(
         contract = observation.get("contract") or {}
         if isinstance(contract, dict) and _instrument_contract_context_matches(contract, context):
             continue
-        _record_instrument_runtime_event(state, key, signal_row, direction, source)
+        _record_instrument_runtime_event(
+            state,
+            key,
+            signal_row,
+            direction,
+            source,
+            outside_scope_effect="VETO",
+        )
         blocked.append(key)
     return blocked == [], sorted(blocked)
 
@@ -3577,6 +4093,13 @@ def _instrument_runtime_context(
         except (TypeError, ValueError, OverflowError):
             session = "unknown"
     session = _canonical_instrument_context_value("session", session)
+    venue_phase = str(signal_row.get("market_venue_phase", "") or "")
+    if not venue_phase:
+        try:
+            venue_phase = _edge_market_venue_phase(timestamp)
+        except (TypeError, ValueError, OverflowError):
+            venue_phase = "unknown"
+    venue_phase = _canonical_instrument_context_value("venue_phase", venue_phase)
     volatility = str(
         signal_row.get("volatility_regime", "normal_volatility") or "normal_volatility"
     )
@@ -3584,6 +4107,7 @@ def _instrument_runtime_context(
         "regime": str(signal_row.get("market_regime", "unknown") or "unknown"),
         "volatility": volatility,
         "session": session,
+        "venue_phase": venue_phase,
         "direction": direction if direction in {"BUY", "SELL"} else "WAIT",
         "transition_state": "stable",
     }
@@ -3684,11 +4208,32 @@ def _entry_gate_reached(rejection_reason: str | None, gate: str) -> bool:
 
 def _canonical_instrument_context_value(axis: str, value: object) -> str:
     normalized = str(value or "").strip().lower()
+    if normalized in {
+        "-",
+        "*",
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "unknown",
+        "missing",
+        "mixed",
+        "both",
+        "historical_mixed",
+        "stratified_replay",
+    }:
+        return ""
     if axis == "session":
         return {
             "london_new_york_overlap": "overlap",
             "london_comex_overlap": "overlap",
             "asian": "asia",
+        }.get(normalized, normalized)
+    if axis == "volatility":
+        return {
+            "low_volatility": "low",
+            "normal_volatility": "normal",
+            "high_volatility": "high",
         }.get(normalized, normalized)
     return normalized
 
@@ -3701,13 +4246,26 @@ def _instrument_runtime_report(state: dict[str, object]) -> dict[str, object]:
             if not isinstance(raw, dict):
                 continue
             count = int(raw.get("activation_count", 0) or 0)
+            evaluations = int(raw.get("evaluation_count", 0) or 0)
+            vetoes = int(raw.get("veto_count", 0) or 0)
+            abstain_count = int(raw.get("abstain_count", 0) or 0)
             sources = raw.get("event_sources") or Counter()
             contexts = raw.get("context_event_counts") or Counter()
             abstentions = raw.get("abstention_context_counts") or Counter()
             definitions = raw.get("activated_contexts") or {}
+            evaluated_definitions = raw.get("evaluated_contexts") or {}
+            effects = raw.get("decision_effect_counts") or Counter()
+            disposition = (
+                "activated"
+                if count > 0
+                else ("evaluated_veto" if vetoes > 0 else ("evaluated_abstain" if abstain_count > 0 else "not_reached"))
+            )
             rows[str(key)] = {
-                "status": "activated" if count > 0 else "not_activated",
+                "status": disposition,
                 "activation_count": count,
+                "evaluation_count": evaluations,
+                "veto_count": vetoes,
+                "abstain_count": abstain_count,
                 "event_sources": {
                     str(name): int(value)
                     for name, value in sorted(dict(sources).items())
@@ -3722,6 +4280,15 @@ def _instrument_runtime_report(state: dict[str, object]) -> dict[str, object]:
                     for name, value in sorted(dict(definitions).items())
                     if isinstance(value, dict)
                 },
+                "evaluated_contexts": {
+                    str(name): dict(value)
+                    for name, value in sorted(dict(evaluated_definitions).items())
+                    if isinstance(value, dict)
+                },
+                "decision_effect_counts": {
+                    str(name): int(value)
+                    for name, value in sorted(dict(effects).items())
+                },
                 "abstained_context_keys": sorted(
                     str(name) for name in dict(abstentions)
                 ),
@@ -3730,6 +4297,7 @@ def _instrument_runtime_report(state: dict[str, object]) -> dict[str, object]:
                     for name, value in sorted(dict(abstentions).items())
                 },
                 "decision_path_activated": count > 0,
+                "used_in_decision": count > 0 or vetoes > 0,
                 "promotion_evidence": False,
             }
     return {
@@ -4006,13 +4574,16 @@ def _volume_policy_report(
     quality_status = str(
         quality.get("status", "volume_unavailable") or "volume_unavailable"
     )
+    if lane == "none":
+        quality_status = "not_requested"
     return {
         "protocol": "volume_policy_telemetry_v1",
         "lane": lane,
-        "status": "control"
+        "status": "not_requested"
         if lane == "none"
         else ("applied" if quality_status == "passed" else "volume_unavailable"),
         "quality_status": quality_status,
+        "blocking": lane != "none" and quality_status != "passed",
         "rows_evaluated": len(observed),
         "feature_available_rows": int(observed_available.sum()),
         "feature_coverage": round(float(observed_available.mean()), 6)
@@ -4021,9 +4592,9 @@ def _volume_policy_report(
         "pre_volume_actionable": int(observed_actionable.sum()),
         "post_volume_actionable": int(observed_accepted.sum()),
         "volume_vetoes": int((observed_actionable & ~observed_accepted).sum()),
-        "unavailable_actionable": int(
-            (observed_actionable & ~observed_available).sum()
-        ),
+        "unavailable_actionable": 0
+        if lane == "none"
+        else int((observed_actionable & ~observed_available).sum()),
         "reduced_risk_rows": int((observed_actionable & observed_risk.lt(1.0)).sum()),
         "rejection_counts": {str(key): int(value) for key, value in counts.items()},
         "selected_specialist_counts": {
@@ -4541,6 +5112,17 @@ def _exit_distances(
         )
         if math.isfinite(target_price) and structural_target > 0:
             target = structural_target
+    management_parameters = effective_management_parameters(
+        payload.composition_runtime_contract, payload.parameters
+    )
+    final_target_r = management_parameters.get("composition_final_target_r")
+    if (
+        str(signal_row.get("entry_contract_protocol", ""))
+        == ENTRY_PROTOCOL
+        and final_target_r is not None
+        and float(final_target_r) > 0
+    ):
+        target = stop * float(final_target_r)
     return max(stop, market_price * 0.00001), max(target, market_price * 0.00001)
 
 
@@ -5011,7 +5593,10 @@ def _advance_trailing_stop(
     previous_candle: pd.Series,
     payload: SimpleBacktestRequest,
 ) -> None:
-    multiplier = float(payload.parameters.get("trailing_atr_multiplier", 0) or 0)
+    management_parameters = effective_management_parameters(
+        payload.composition_runtime_contract, payload.parameters
+    )
+    multiplier = float(management_parameters.get("trailing_atr_multiplier", 0) or 0)
     atr = float(previous_candle.get("_management_atr", 0) or 0)
     if multiplier <= 0 or atr <= 0:
         return
@@ -5140,10 +5725,10 @@ def _entry_eligibility(
         expected_target = atr * float(
             payload.parameters.get("atr_target_multiplier", 0) or 0
         )
-        if (
-            str(signal_row.get("entry_contract_protocol", ""))
-            == "confirmation_entry_contract_v1"
-        ):
+        if str(signal_row.get("entry_contract_protocol", "")) in {
+            "confirmation_entry_contract_v1",
+            ENTRY_PROTOCOL,
+        }:
             expected_target = _exit_distances(float(row["open"]), signal_row, payload)[
                 1
             ]
@@ -5168,10 +5753,8 @@ def _confirmation_fill_admission(
     valid setup into a chased or sub-minimum-R trade, so the execution boundary
     must fail closed without rewriting the original signal evidence.
     """
-    if (
-        str(signal_row.get("entry_contract_protocol", ""))
-        != "confirmation_entry_contract_v1"
-    ):
+    entry_protocol = str(signal_row.get("entry_contract_protocol", ""))
+    if entry_protocol not in {"confirmation_entry_contract_v1", ENTRY_PROTOCOL}:
         return {
             "allowed": True,
             "status": "not_applicable",
@@ -5575,7 +6158,10 @@ def _open_shadow_position(
         "execution_parameters": dict(payload.parameters),
         "partial_closed": False,
         "partial_fraction": float(
-            payload.parameters.get("partial_take_profit_fraction", 0) or 0
+            effective_management_parameters(
+                payload.composition_runtime_contract, payload.parameters
+            ).get("partial_take_profit_fraction", 0)
+            or 0
         ),
         "partial_exit_price": None,
     }
@@ -5615,7 +6201,10 @@ def _advance_shadow_position(
 ) -> dict[str, object] | None:
     direction = str(position["direction"])
     _advance_trailing_stop(position, previous_candle, payload)
-    time_stop = int(payload.parameters.get("time_stop_candles", 0) or 0)
+    management_parameters = effective_management_parameters(
+        payload.composition_runtime_contract, payload.parameters
+    )
+    time_stop = int(management_parameters.get("time_stop_candles", 0) or 0)
     if time_stop and index - int(position["entry_index"]) >= time_stop:
         exit_price, exit_reason = (
             _exit_price(float(candle["open"]), direction, payload),
@@ -6147,6 +6736,45 @@ def _entry_funnel_report(funnel: Counter[str]) -> dict[str, object]:
     }
     return {
         "raw_strategy_signals": raw,
+        "composition_strategy_signals_before_tactic": int(
+            funnel.get("composition_strategy_signals_before_tactic", raw)
+        ),
+        "composition_tactic_evaluations": int(
+            funnel.get("composition_tactic_evaluations", 0)
+        ),
+        "composition_tactic_acceptances": int(
+            funnel.get("composition_tactic_acceptances", 0)
+        ),
+        "instrument_context_gate_evaluations": int(
+            funnel.get("instrument_context_gate_evaluations", 0)
+        ),
+        "instrument_context_gate_acceptances": int(
+            funnel.get("instrument_context_gate_acceptances", 0)
+        ),
+        "instrument_context_gate_rejections": int(
+            funnel.get("instrument_context_gate_rejections", 0)
+        ),
+        "mtf_permission_gate_evaluations": int(
+            funnel.get("mtf_permission_gate_evaluations", 0)
+        ),
+        "mtf_permission_gate_acceptances": int(
+            funnel.get("mtf_permission_gate_acceptances", 0)
+        ),
+        "mtf_permission_gate_rejections": int(
+            funnel.get("mtf_permission_gate_rejections", 0)
+        ),
+        "risk_governor_evaluations": int(
+            funnel.get("risk_governor_evaluations", 0)
+        ),
+        "risk_governor_approvals": int(
+            funnel.get("risk_governor_approvals", 0)
+        ),
+        "risk_governor_rejections": int(
+            funnel.get("risk_governor_rejections", 0)
+        ),
+        "management_policy_evaluations": int(
+            funnel.get("management_policy_evaluations", 0)
+        ),
         "flat_signal_opportunities": flat,
         "accepted_entries": accepted,
         "occupied_or_superseded_signals": max(0, raw - flat),
@@ -6186,7 +6814,14 @@ def _entry_contract_funnel_report(
         }
 
     start = max(0, min(len(df), int(warmup_rows)))
-    scope = df.iloc[start:].copy()
+    if start > 0:
+        # Replay fills candle `index` from the signal closed at `index - 1`.
+        # Report exactly those decision rows: include the last warmup candle
+        # and exclude the final candle, whose signal is never executable.
+        scope = df.iloc[start - 1 : max(start - 1, len(df) - 1)].copy()
+    else:
+        # Standalone funnel callers inspect a complete already-decided frame.
+        scope = df.copy()
     if scope.empty:
         scope = df.iloc[0:0].copy()
 
@@ -6763,7 +7398,12 @@ def _take_partial_profit(
     if atr <= 0:
         return False
     entry = float(position["market_entry_price"])
-    distance = atr * float(payload.parameters.get("partial_target_atr_multiplier", 1.0))
+    management_parameters = effective_management_parameters(
+        payload.composition_runtime_contract, payload.parameters
+    )
+    distance = atr * float(
+        management_parameters.get("partial_target_atr_multiplier", 1.0)
+    )
     target = (
         entry + distance if str(position["direction"]) == "BUY" else entry - distance
     )
@@ -7066,7 +7706,7 @@ def _market_session_calendar_coverage(
         "protocol": "market_session_calendar_coverage_v1",
         "calendar_protocol": "market_session_calendar_v2",
         "calendar_version": calendar_version,
-        "total_candles": int(len(memberships)),
+        "total_candles": len(memberships),
         "classified_count": int(status.eq("classified").sum()),
         "quarantined_count": int(status.str.startswith("quarantined_").sum()),
         "unknown_count": int((~classified_or_quarantined).sum()),

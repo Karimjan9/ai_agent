@@ -361,6 +361,22 @@ def apply_volume_policy(
         out["volume_risk_multiplier"] = 1.0
 
     if lane == "none":
+        # A price-only control did not ask the replay to establish a volume
+        # capability.  Preserve that distinction in the aggregate receipt:
+        # a legacy CSV without the canonical marker is not a failed volume
+        # dependency when no volume dependency exists in the first place.
+        source_quality = dict(out.attrs.get("volume_quality") or {})
+        out.attrs["volume_quality"] = {
+            "status": "not_requested",
+            "reason": "volume_lane_none",
+            "requested": False,
+            "blocking": False,
+            "protocol": str(source_quality.get("protocol") or VOLUME_PROTOCOL),
+            "source_contract": None,
+            "source_observed": False,
+            "rows": int(len(out)),
+            "promotion_evidence": False,
+        }
         return out
 
     available = out["volume_feature_available"].fillna(False).astype(bool)

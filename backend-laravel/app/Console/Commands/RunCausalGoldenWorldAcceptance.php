@@ -13,7 +13,7 @@ class RunCausalGoldenWorldAcceptance extends Command
 
     public function handle(CausalGoldenWorldHarnessService $harness): int
     {
-        $result = $harness->run();
+        $result = $harness->run(true);
         if ($this->option('json')) {
             $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         } else {

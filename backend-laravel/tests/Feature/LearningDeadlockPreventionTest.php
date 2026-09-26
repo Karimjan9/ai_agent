@@ -13,6 +13,7 @@ use App\Models\ModelVersion;
 use App\Services\FailureDojoService;
 use App\Services\FrozenControlScreeningAdmissionService;
 use App\Services\GenerationSnapshotAdmissionService;
+use App\Services\MultiTimeframeSnapshotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
@@ -67,6 +68,53 @@ class LearningDeadlockPreventionTest extends TestCase
         $this->assertSame('ready', $admission->admission($candidate)['status']);
     }
 
+    public function test_candidate_uses_its_sealed_control_id_when_family_has_multiple_controls(): void
+    {
+        [$control, $candidate] = $this->agents();
+        $metadata = (array) $candidate->modelVersion->metadata;
+        $metadata['control_pair_contract'] = [
+            'protocol' => 'exact_frozen_control_pair_v2',
+            'control_agent_id' => $control->id,
+        ];
+        $candidate->modelVersion->update(['metadata' => $metadata]);
+
+        $decoyModel = ModelVersion::create([
+            'name' => 'decoy-control', 'strategy' => 'hybrid', 'version' => 'v1', 'generation' => 1,
+            'status' => 'testing', 'parameters' => [], 'metadata' => [
+                'control_contract' => [
+                    'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
+                    'generation_id' => $control->lab_generation_id,
+                ],
+            ],
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $control->lab_generation_id, 'model_version_id' => $decoyModel->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'queued', 'parameter_diff' => [],
+        ]);
+        LabEvaluationRun::create([
+            'run_id' => 'exact-control-screen-run', 'lab_generation_id' => $control->lab_generation_id,
+            'lab_agent_id' => $control->id, 'model_version_id' => $control->model_version_id,
+            'phase' => 'screening', 'mode' => 'screen', 'status' => 'completed',
+        ]);
+        LabMutationResponseMap::create([
+            'response_key' => 'exact-control-screen-map', 'stage' => 'screening', 'status' => 'control',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'lab_agent_id' => $control->id, 'observed_metrics' => ['profit_factor' => 1],
+            'metadata' => ['control_contract' => [
+                'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
+                'generation_id' => $control->lab_generation_id,
+                'data_hash' => str_repeat('a', 64), 'execution_hash' => str_repeat('b', 64),
+            ]],
+        ]);
+
+        $result = app(FrozenControlScreeningAdmissionService::class)
+            ->admission($candidate->fresh('modelVersion'));
+
+        $this->assertSame('ready', $result['status']);
+        $this->assertSame('FROZEN_CONTROL_REPLAY_COMPLETED', $result['reason']);
+    }
+
     public function test_generation_without_price_snapshot_is_fail_closed_at_admission(): void
     {
         [$control] = $this->agents();
@@ -107,6 +155,51 @@ class LearningDeadlockPreventionTest extends TestCase
             $this->assertContains('GENERATION_VOLUME_SNAPSHOT_HASH_MISSING', $result['reasons']);
         } finally {
             File::delete($path);
+        }
+    }
+
+    public function test_xauusd_generation_is_admitted_only_with_the_complete_frozen_mtf_bundle(): void
+    {
+        [$control] = $this->agents();
+        $paths = [];
+        foreach (['PRICE', 'M5', 'H4', 'H1', 'M15'] as $timeframe) {
+            $path = storage_path('app/mtf-admission-'.strtolower($timeframe).'-'.uniqid('', true).'.csv');
+            File::put($path, "time,open,high,low,close,volume\n2025-01-01T00:00:00Z,1,2,0,1,10\n");
+            $paths[$timeframe] = $path;
+        }
+        $priceHash = hash_file('sha256', $paths['PRICE']);
+        $bundleHash = str_repeat('c', 64);
+        $streams = [];
+        foreach (['M5', 'H4', 'H1', 'M15'] as $timeframe) {
+            $streams[$timeframe] = [
+                'path' => $paths[$timeframe],
+                'sha256' => hash_file('sha256', $paths[$timeframe]),
+            ];
+        }
+        $generation = $control->generation;
+        $generation->update(['trigger_context' => [
+            'canonical_dataset_snapshots' => [
+                'price' => [
+                    'path' => $paths['PRICE'], 'sha256' => $priceHash,
+                    'manifest' => ['snapshot_sha256' => $priceHash],
+                ],
+            ],
+            'mtf_bundle_hash' => $bundleHash,
+            'mtf_bundle_manifest' => [
+                'protocol' => MultiTimeframeSnapshotService::PROTOCOL,
+                'validation_bundle_protocol' => 'agent_owned_mtf_foundation_bundle_v1',
+                'bundle_hash' => $bundleHash,
+                'streams' => $streams,
+            ],
+        ]]);
+
+        try {
+            $result = app(GenerationSnapshotAdmissionService::class)
+                ->inspect($generation->fresh(['agents.modelVersion', 'laboratory']));
+
+            $this->assertTrue($result['allowed'], implode(',', $result['reasons']));
+        } finally {
+            File::delete(array_values($paths));
         }
     }
 

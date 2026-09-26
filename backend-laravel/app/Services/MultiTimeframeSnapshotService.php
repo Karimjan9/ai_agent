@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\MarketTrainingArchive;
 use App\Services\MarketData\MarketTrainingDataService;
+use App\Services\MarketData\MarketVolumeService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
@@ -173,6 +174,12 @@ class MultiTimeframeSnapshotService
             }
         }
 
+        // The rolling/live volume audit is intentionally not consulted here.
+        // This receipt is scoped to the exact pre-2026 rows that will be
+        // frozen below, and the marker is written into those CSVs themselves.
+        $volumeAttestation = $this->attestHistoricalVolumeStreams($streams, $provider);
+        $streams = $volumeAttestation['streams'];
+
         $sourceHashes = [];
         foreach ($streams as $timeframe => $rows) {
             $sourceHashes[$timeframe] = $this->rowContentHash($rows);
@@ -190,6 +197,10 @@ class MultiTimeframeSnapshotService
             'closed_cutoff' => $exclusiveCutoff->toIso8601String(),
             'context_warmup_days' => 90,
             'stream_content_sha256' => $sourceHashes,
+            'volume_provenance' => [
+                ...$volumeAttestation['provenance'],
+                'stream_content_sha256' => $sourceHashes,
+            ],
             'aggregation' => ['H4' => 'four_complete_UTC_H1_candles'],
             'bounded_cost_contract' => [
                 'maximum_m5_rows' => $maxM5Rows,
@@ -656,7 +667,7 @@ class MultiTimeframeSnapshotService
     /** @param array<int,array<string,mixed>> $rows @return array<string,mixed> */
     private function streamManifest(string $path, array $rows, string $timeframe): array
     {
-        return [
+        $manifest = [
             'path' => $path,
             'sha256' => hash_file('sha256', $path),
             'row_count' => count($rows),
@@ -664,6 +675,25 @@ class MultiTimeframeSnapshotService
             'last_candle_at' => $rows[array_key_last($rows)]['time'],
             'available_after_seconds' => self::DURATIONS[$timeframe] * 60,
         ];
+        if (array_key_exists('volume_available', $rows[0] ?? [])) {
+            $available = count(array_filter(
+                $rows,
+                static fn (array $row): bool => (bool) ($row['volume_available'] ?? false),
+            ));
+            $coverage = count($rows) > 0 ? $available / count($rows) : 0.0;
+            $minimumCoverage = (float) config('services.market_volume.minimum_coverage', 0.95);
+            $manifest['volume_quality'] = [
+                'status' => $coverage >= $minimumCoverage ? 'passed' : 'volume_unavailable',
+                'rows' => count($rows),
+                'available_rows' => $available,
+                'coverage' => round($coverage, 6),
+                'minimum_coverage' => $minimumCoverage,
+                'source_contract' => MarketVolumeService::HISTORICAL_SOURCE_CONTRACT,
+                'promotion_evidence' => false,
+            ];
+        }
+
+        return $manifest;
     }
 
     /** @param array<int,array<string,mixed>> $rows */
@@ -678,6 +708,7 @@ class MultiTimeframeSnapshotService
                 sprintf('%.10F', (float) ($row['low'] ?? 0)),
                 sprintf('%.10F', (float) ($row['close'] ?? 0)),
                 sprintf('%.10F', (float) ($row['volume'] ?? 0)),
+                (bool) ($row['volume_available'] ?? false) ? '1' : '0',
             ])."\n");
         }
 
@@ -696,9 +727,20 @@ class MultiTimeframeSnapshotService
             if ($handle === false) {
                 throw new RuntimeException("MTF temporary snapshot ochilmadi: {$path}");
             }
-            fputcsv($handle, ['time', 'open', 'high', 'low', 'close', 'volume']);
+            $includeVolumeMarker = collect($rows)->contains(
+                static fn (array $row): bool => array_key_exists('volume_available', $row),
+            );
+            $headers = ['time', 'open', 'high', 'low', 'close', 'volume'];
+            if ($includeVolumeMarker) {
+                $headers[] = 'volume_available';
+            }
+            fputcsv($handle, $headers);
             foreach ($rows as $row) {
-                fputcsv($handle, [$row['time'], $row['open'], $row['high'], $row['low'], $row['close'], $row['volume'] ?? 0]);
+                $values = [$row['time'], $row['open'], $row['high'], $row['low'], $row['close'], $row['volume'] ?? 0];
+                if ($includeVolumeMarker) {
+                    $values[] = (bool) ($row['volume_available'] ?? false) ? 1 : 0;
+                }
+                fputcsv($handle, $values);
             }
             fclose($handle);
             if (! copy($temporary, $path)) {
@@ -707,6 +749,80 @@ class MultiTimeframeSnapshotService
         } finally {
             File::delete($temporary);
         }
+    }
+
+    /**
+     * Audit and mark the exact historical streams being frozen. Provider
+     * identity is part of the training-store key; the resulting receipt is
+     * additionally bound to each stream's content hash by the caller.
+     *
+     * @param array<string,array<int,array<string,mixed>>> $streams
+     * @return array{streams: array<string,array<int,array<string,mixed>>>, provenance: array<string,mixed>}
+     */
+    private function attestHistoricalVolumeStreams(array $streams, string $provider): array
+    {
+        $minimumCoverage = (float) config('services.market_volume.minimum_coverage', 0.95);
+        $minimumUsableRatio = (float) config('services.market_volume.minimum_usable_ratio', 0.95);
+        $providerIsCanonical = strtolower($provider) === 'dukascopy';
+        $quality = [];
+        $allPassed = $providerIsCanonical;
+
+        foreach ($streams as $timeframe => &$rows) {
+            $available = 0;
+            $usable = 0;
+            foreach ($rows as &$row) {
+                $volume = is_numeric($row['volume'] ?? null) ? (float) $row['volume'] : NAN;
+                $rowAvailable = $providerIsCanonical && is_finite($volume) && $volume > 0;
+                $row['volume_available'] = $rowAvailable;
+                if ($rowAvailable) {
+                    $available++;
+                    $usable++;
+                }
+            }
+            unset($row);
+            $count = count($rows);
+            $coverage = $count > 0 ? $available / $count : 0.0;
+            $usableRatio = $count > 0 ? $usable / $count : 0.0;
+            $passed = $providerIsCanonical
+                && $coverage >= $minimumCoverage
+                && $usableRatio >= $minimumUsableRatio;
+            $allPassed = $allPassed && $passed;
+            $quality[$timeframe] = [
+                'status' => $passed ? 'passed' : 'volume_unavailable',
+                'rows' => $count,
+                'available_rows' => $available,
+                'usable_rows' => $usable,
+                'coverage' => round($coverage, 6),
+                'usable_ratio' => round($usableRatio, 6),
+            ];
+        }
+        unset($rows);
+
+        return [
+            'streams' => $streams,
+            'provenance' => [
+                'protocol' => 'historical_volume_snapshot_provenance_v1',
+                'status' => $allPassed ? 'passed' : 'volume_unavailable',
+                'reason' => $allPassed
+                    ? 'frozen_historical_stream_quality_gate_passed'
+                    : ($providerIsCanonical ? 'historical_stream_quality_gate_failed' : 'non_canonical_provider'),
+                'provider' => strtolower($provider),
+                'transport' => 'frozen_training_archive',
+                'price_side' => 'BID',
+                'semantic' => MarketVolumeService::SEMANTIC,
+                'unit' => MarketVolumeService::UNIT,
+                'session' => 'UTC',
+                'source_contract' => MarketVolumeService::HISTORICAL_SOURCE_CONTRACT,
+                'availability_column' => 'volume_available',
+                'minimum_coverage' => $minimumCoverage,
+                'minimum_usable_ratio' => $minimumUsableRatio,
+                'streams' => $quality,
+                'attestation_basis' => 'training_archive_provider_identity_and_frozen_row_audit',
+                'attestation_scope' => 'this_frozen_historical_bundle_only',
+                'live_coverage_inherited' => false,
+                'promotion_evidence' => false,
+            ],
+        ];
     }
 
     /** @param array<string,mixed> $manifest */
