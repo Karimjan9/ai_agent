@@ -678,7 +678,7 @@ class AcademyExperimentMaterializerService
             // quoted bundle. Wait for the canonical snapshot owner to freeze
             // the selected dataset; never copy or relabel its old sidecar.
             $repair = (array) ($mtf['prospective_m5_repair'] ?? []);
-            if (in_array($repair['protocol'] ?? null, ['frozen_m5_gap_recovery_v1', 'frozen_m5_gap_recovery_v2'], true)
+            if (in_array($repair['protocol'] ?? null, ['frozen_m5_gap_recovery_v1', 'frozen_m5_gap_recovery_v2', 'frozen_m5_gap_recovery_v3'], true)
                 && ($repair['verified'] ?? false) === true
                 && data_get($manifest, 'datasets.M5') !== ($repair['dataset_key'] ?? null)) continue;
             if (! filled($manifest['bundle_hash'] ?? null) || ! filled($manifest['entry_last_candle_at'] ?? null)
@@ -1908,9 +1908,27 @@ class AcademyExperimentMaterializerService
     private function dependencyBudgetScope(string $symbol, string $timeframe, array $dependencies): string
     {
         $discovery = (array) ($dependencies['discovery_scope'] ?? []);
-        if ($discovery !== []) return $this->hash(['prospective_academy_physical_discovery_budget_v1', $symbol, $timeframe,
-            $dependencies['foundation_sha256'], $discovery['parent_fork_price_sha256'],
-            $discovery['parent_economic_rows_sha256'], $dependencies['execution_hash']]);
+        if ($discovery !== []) {
+            $budgetSource = $discovery;
+            $anchor = (array) ($discovery['original_budget_scope_anchor'] ?? []);
+            if ($anchor !== []) {
+                // cleanDiscoveryDependencies has already verified this sealed
+                // scope through the MTF owner, including the native anchor.
+                // A provider repair cannot renew the original question cap.
+                $manifestScope = (array) data_get($dependencies, 'discovery_bundle_manifest.discovery_scope', []);
+                if (($anchor['protocol'] ?? null) !== 'native_discovery_budget_anchor_v1'
+                    || $this->hash($manifestScope) !== $this->hash($discovery)
+                    || preg_match('/^[a-f0-9]{64}$/D', (string) ($anchor['original_bundle_hash'] ?? '')) !== 1
+                    || preg_match('/^[a-f0-9]{64}$/D', (string) ($anchor['parent_fork_price_sha256'] ?? '')) !== 1
+                    || preg_match('/^[a-f0-9]{64}$/D', (string) ($anchor['parent_economic_rows_sha256'] ?? '')) !== 1) {
+                    throw new RuntimeException('ACADEMY_SECONDARY_DISCOVERY_BUDGET_ANCHOR_INVALID');
+                }
+                $budgetSource = $anchor;
+            }
+            return $this->hash(['prospective_academy_physical_discovery_budget_v1', $symbol, $timeframe,
+                $dependencies['foundation_sha256'], $budgetSource['parent_fork_price_sha256'],
+                $budgetSource['parent_economic_rows_sha256'], $dependencies['execution_hash']]);
+        }
         return $this->coldStartBudgetScope($symbol, $timeframe, $dependencies['foundation_sha256'],
             $dependencies['mtf_source_sha256'], $dependencies['execution_hash']);
     }

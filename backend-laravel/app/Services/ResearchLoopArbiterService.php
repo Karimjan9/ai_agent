@@ -741,7 +741,7 @@ class ResearchLoopArbiterService
         $newPath = (string) ($repair['prospective_m5_source_path'] ?? '');
         $newSha = (string) ($repair['prospective_m5_source_sha256'] ?? '');
         if (($current['ready'] ?? false) === true
-            && in_array($repair['protocol'] ?? null, ['frozen_m5_gap_recovery_v1', 'frozen_m5_gap_recovery_v2'], true)
+            && in_array($repair['protocol'] ?? null, ['frozen_m5_gap_recovery_v1', 'frozen_m5_gap_recovery_v2', 'frozen_m5_gap_recovery_v3'], true)
             && ($repair['verified'] ?? false) === true
             && ($repair['original_bad_m5_sha256'] ?? null) === $sha
             && preg_match('/^[a-f0-9]{64}$/D', (string) ($repair['repair_hash'] ?? '')) === 1

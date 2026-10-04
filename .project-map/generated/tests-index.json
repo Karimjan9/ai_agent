@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T19:13:52.015Z",
-  "source_digest": "25db5c425e1221253402ba188a938d1033f08809d2e8eaa4d36c64d56dc2d117",
-  "source_file_count": 1487,
-  "git_head": "d914e86960d8ddbdf0fbb1e0bd190b296dd1964b",
+  "generated_at": "2026-10-04T19:24:31.337Z",
+  "source_digest": "8152bb473c95f67ab53f0e40f7242955d8a62e64d7f359a77c3774aa8b7d36b2",
+  "source_file_count": 1492,
+  "git_head": "5432809687dc6fa4686f229255e0748a5fcd670f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -1657,6 +1657,18 @@
       "path": "backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php",
       "tests": [
         "setUp",
+        "tearDown",
+        "rawTickProofFixture",
+        "rawSparseTickProofFixture",
+        "test_raw_sparse_bi5_recovery_requires_matching_actual_native_minutes_and_preserves_unobserved_clock_minutes",
+        "test_raw_sparse_bi5_recovery_refuses_absent_extra_or_conflicting_native_minute_evidence",
+        "test_raw_tick_recovery_uses_omitted_actual_minutes_and_treats_sparse_native_m5_as_diagnostic",
+        "test_raw_tick_recovery_refuses_native_volume_disagreement_and_missing_minute_attestation",
+        "test_hash_bound_raw_tick_recovery_rejects_malformed_columns_crossed_quotes_and_source_drift",
+        "test_bi5_ticks_supply_all_actual_minutes_when_native_candle_endpoint_is_empty",
+        "test_raw_supplement_manifest_requires_source_and_byte_hashes_and_bounded_unique_targets",
+        "test_raw_decoder_failure_remains_a_typed_dependency_in_a_verifiable_partial_fork",
+        "test_v3_raw_resume_reopens_exact_evidence_and_v2_cannot_accept_relabelled_raw_proof",
         "proof",
         "test_observed_sparse_reopen_is_explicit_not_complete_and_preserves_original_rows",
         "test_tick_or_provider_mismatch_cannot_make_a_recovery",
@@ -2961,6 +2973,17 @@
         "test_completed_run_with_lost_projection_is_redispatched_without_replay",
         "test_existing_response_map_makes_reconciliation_idempotent",
         "screenedAgent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SecondaryM5ResearchRecoveryTest.php",
+      "tests": [
+        "tearDown",
+        "test_actual_secondary_observations_close_only_the_separate_archive_and_preserve_typed_research_budget",
+        "test_partial_minutes_require_the_actual_matching_provider_m5_and_never_become_complete_minutes",
+        "test_rehashed_foreign_provider_timezone_bad_request_bounds_and_misaligned_bars_are_refused",
+        "fixture",
+        "assertPythonSourceAndPricePreparation"
       ]
     },
     {

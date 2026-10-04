@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T19:13:52.015Z",
-  "source_digest": "25db5c425e1221253402ba188a938d1033f08809d2e8eaa4d36c64d56dc2d117",
-  "source_file_count": 1487,
-  "git_head": "d914e86960d8ddbdf0fbb1e0bd190b296dd1964b",
+  "generated_at": "2026-10-04T19:24:31.337Z",
+  "source_digest": "8152bb473c95f67ab53f0e40f7242955d8a62e64d7f359a77c3774aa8b7d36b2",
+  "source_file_count": 1492,
+  "git_head": "5432809687dc6fa4686f229255e0748a5fcd670f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -1555,19 +1555,19 @@
       "symbol": "hypothesisRuntimeMetadata",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AcademyExperimentMaterializerService.php",
-      "line": 1919
+      "line": 1937
     },
     {
       "symbol": "canonicalize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AcademyExperimentMaterializerService.php",
-      "line": 1930
+      "line": 1948
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AcademyExperimentMaterializerService.php",
-      "line": 1943
+      "line": 1961
     },
     {
       "symbol": "AcademyExperimentMaterializerService",
@@ -9536,6 +9536,17 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php",
+      "tests": [
+        "recoveryProtocols",
+        "test_native_verified_fork_releases_ordinary_freeze_but_never_relabels_old_academy_bundle",
+        "archive",
+        "rows",
+        "row",
+        "nativeProviderFixture"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ProspectiveRepairExperimentTest.php",
       "tests": [
         "test_exact_context_quotes_require_the_consumed_window_and_original_scope_not_global_coverage",
@@ -9662,6 +9673,17 @@
         "test_operator_command_prints_dependency_and_rejects_half_interval_without_writes",
         "test_invalid_calendar_date_and_implicit_timezone_are_not_accepted_as_utc_candidates",
         "test_a_different_instrument_at_the_same_time_is_not_a_known_xauusd_event_overlap"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SecondaryM5ResearchRecoveryTest.php",
+      "tests": [
+        "tearDown",
+        "test_actual_secondary_observations_close_only_the_separate_archive_and_preserve_typed_research_budget",
+        "test_partial_minutes_require_the_actual_matching_provider_m5_and_never_become_complete_minutes",
+        "test_rehashed_foreign_provider_timezone_bad_request_bounds_and_misaligned_bars_are_refused",
+        "fixture",
+        "assertPythonSourceAndPricePreparation"
       ]
     },
     {

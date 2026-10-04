@@ -192,6 +192,14 @@ release drift requires trait revalidation. Legacy `paper_2026` is unchanged.
 
 ## Market data providers
 
+Historical v3 native recovery crosses a bounded PHP/Python decoder boundary:
+the PHP owner passes exact raw BI5 path, SHA and UTC hour to
+`decode-dukascopy-tick-hour.py`, then validates synchronized quote arrays,
+observed M1 and the complete derived proof. The receipt binds decoder code
+and schema hashes, and MTF readiness/resume revalidates the actual evidence.
+Jetta JSON uses the same quote checks without the BI5 subprocess. This offline
+operation changes no live provider, old generation or research authority.
+
 Laravel owns provider selection, canonical-data continuity and recovery state.
 Twelve Data is the current canonical promotion-evidence provider; Dukascopy is
 secondary archive/discrepancy evidence. Read
@@ -367,3 +375,11 @@ benchmark, not a strategy signal, trading receipt or measured synthesis benefit.
 Original request/model/response hashes are reverified at Foundry consumption.
 Fidelity audits, measurement value and policy challengers remain research-only;
 2026 paper data and old archives do not become independent validation.
+
+Explicit secondary historical recovery consumes hash-bound Twelve Data
+responses as a separate mixed price archive. The MTF clean-discovery owner
+seals per-row provider, price basis and response attribution into the CSV that
+Python verifies in full. Ordinary native full-validation and execution-cost
+boundaries remain unchanged; absent quote fields are omitted and volume stays
+unavailable. The original verified native discovery bundle anchors the
+Academy question budget (ADR-027).

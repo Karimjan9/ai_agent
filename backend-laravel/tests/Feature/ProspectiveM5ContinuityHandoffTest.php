@@ -31,12 +31,15 @@ class ProspectiveM5ContinuityHandoffTest extends TestCase
 
     public static function recoveryProtocols(): array
     {
-        return ['single_native_v1' => [false, false], 'bounded_native_batch_v2' => [true, false],
-            'native_batch_with_unresolved_outside_screening_tail' => [true, true]];
+        return ['single_native_v1' => [false, false, false], 'bounded_native_batch_v2' => [true, false, false],
+            'native_batch_with_unresolved_outside_screening_tail' => [true, true, false],
+            'raw_native_tick_batch_v3' => [true, false, true],
+            'raw_native_tick_batch_with_residual_gaps' => [true, true, true],
+            'sparse_raw_native_tick_batch_v3' => [true, false, true, true]];
     }
 
     #[DataProvider('recoveryProtocols')]
-    public function test_native_verified_fork_releases_ordinary_freeze_but_never_relabels_old_academy_bundle(bool $batch, bool $residual): void
+    public function test_native_verified_fork_releases_ordinary_freeze_but_never_relabels_old_academy_bundle(bool $batch, bool $residual, bool $rawTicks, bool $sparseRaw = false): void
     {
         if (! class_exists(\FrozenM5GapRecoveryOperation::class, false)) require_once base_path('scripts/recover-frozen-m5-gap.php');
         Queue::fake();
@@ -84,10 +87,18 @@ class ProspectiveM5ContinuityHandoffTest extends TestCase
         $recovered = ['2025-12-17T23:00:00+00:00'];
         $remaining = $residual ? [str_replace(' ', 'T', $residualTime).'+00:00'] : [];
         $missing = [...$remaining, ...$recovered];
+        $rawEvidencePath = null;
         if ($batch) {
             if (! class_exists(FrozenM5GapRecoveryTest::class, false)) require_once base_path('tests/Feature/FrozenM5GapRecoveryTest.php');
-            [$m1, $m5, $ticks] = (new FrozenM5GapRecoveryTest('fixture'))->batchProofFixture();
-            $proof = \FrozenM5GapRecoveryOperation::batchProof('2025-12-17 23:00:00', $m1, $m5, $ticks);
+            $fixture = new FrozenM5GapRecoveryTest('fixture');
+            if ($rawTicks) {
+                [$m1, $m5, $ticks] = $sparseRaw ? $fixture->rawSparseTickProofFixture('2025-12-17 23:00:00') : $fixture->rawTickProofFixture();
+                $rawEvidencePath = $ticks['raw_path'];
+                $proof = \FrozenM5GapRecoveryOperation::rawTickProof('2025-12-17 23:00:00', $m1, $m5, $ticks);
+            } else {
+                [$m1, $m5, $ticks] = $fixture->batchProofFixture();
+                $proof = \FrozenM5GapRecoveryOperation::batchProof('2025-12-17 23:00:00', $m1, $m5, $ticks);
+            }
             $rows = \FrozenM5GapRecoveryOperation::forkMany($source, [$proof], $missing);
         } else {
             [$m1, $m5, $ticks] = $this->nativeProviderFixture();
@@ -95,7 +106,7 @@ class ProspectiveM5ContinuityHandoffTest extends TestCase
             $rows = \FrozenM5GapRecoveryOperation::fork($source, $proof);
         }
         $priceCsv = \FrozenM5GapRecoveryOperation::csvBytes($rows);
-        $identity = ['protocol' => $batch ? 'frozen_m5_gap_recovery_v2' : 'frozen_m5_gap_recovery_v1',
+        $identity = ['protocol' => $rawTicks ? 'frozen_m5_gap_recovery_v3' : ($batch ? 'frozen_m5_gap_recovery_v2' : 'frozen_m5_gap_recovery_v1'),
             'symbol' => 'XAUUSD', 'timeframe' => 'M5', 'provider' => 'dukascopy',
             'source_csv_path' => realpath($sourcePath), 'source_csv_sha256' => $sourceHash,
             'source_rows' => count($source), 'new_rows' => count($rows),
@@ -201,6 +212,7 @@ class ProspectiveM5ContinuityHandoffTest extends TestCase
         } finally {
             // Exact fixture-owned paths only; no production dataset is touched.
             if ($bundleDirectory !== null) File::deleteDirectory($bundleDirectory);
+            if ($rawEvidencePath !== null) File::delete($rawEvidencePath);
             File::deleteDirectory($priceDirectory);
             File::deleteDirectory($sourceDirectory);
         }

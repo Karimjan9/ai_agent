@@ -41,6 +41,11 @@ replenish it. Local stage proof is not independent/economic authority. Full
 validation and the authorized independent-window dependency remain separate
 (ADR-024).
 
+An authorized secondary-price discovery fork remains under this same typed
+state and authority. Its verified original native discovery bundle supplies
+the budget anchor, so the provider repair and changed physical price hashes
+do not replenish the original question cap (ADR-027).
+
 An original terminal/drained clean-discovery validator refusal may propose one
 `academy_unobserved_mtf_validator_replacement_v1`. Attempted controls require
 their exact immutable native error/request/runtime/release evidence;
