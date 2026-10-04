@@ -42,6 +42,13 @@ class BackfillTrainingMarketData extends Command
 
             return self::INVALID;
         }
+        // This command fetches the injected native Dukascopy provider. A
+        // different storage label must never relabel those source candles.
+        if ($sourceProvider !== 'dukascopy') {
+            $this->error('Native training backfill supports only --provider=dukascopy; another provider requires a separately attributed import.');
+
+            return self::INVALID;
+        }
 
         $marketSymbol = MarketSymbol::query()
             ->where('symbol', $symbol)

@@ -27,6 +27,14 @@ class BackfillIntradayTrainingMarketData extends Command
     public function handle(MarketTrainingDataService $training, DukascopyMarketDataProvider $provider): int
     {
         $symbol = strtoupper((string) $this->option('symbol'));
+        $source = (string) $this->option('provider');
+        // The native fetch and BID metadata below are Dukascopy-owned. Reject
+        // a mismatched label before any archive, provider I/O or cursor write.
+        if ($source !== 'dukascopy') {
+            $this->error('Native training backfill supports only --provider=dukascopy; another provider requires a separately attributed import.');
+
+            return self::INVALID;
+        }
         if ($symbol !== 'XAUUSD') {
             $this->error('Intraday training foundation faqat XAUUSD uchun ruxsat etilgan.');
 
@@ -56,7 +64,6 @@ class BackfillIntradayTrainingMarketData extends Command
         }
 
         $dataset = (string) $this->option('dataset');
-        $source = (string) $this->option('provider');
         $archives = collect(['M1', 'M5', 'M30'])->mapWithKeys(fn (string $timeframe) => [
             $timeframe => $training->ensureArchive($dataset, $source, $symbol, $timeframe, $from, $to),
         ]);

@@ -9,6 +9,8 @@ aliases:
   - continuity
   - gap-recovery
 paths:
+  - backend-laravel/app/Console/Commands/BackfillTrainingMarketData.php
+  - backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php
   - backend-laravel/app/Services/MarketData
   - backend-laravel/app/Services/LabDatasetExportService.php
   - backend-laravel/app/Services/MultiTimeframeSnapshotService.php
@@ -29,6 +31,8 @@ paths:
   - backend-laravel/scripts/verify-sparse-reopen-ticks.test.cjs
   - backend-laravel/scripts/audit-frozen-m5-gap-source.py
 entry_points:
+  - market-data:backfill-training
+  - market-data:backfill-intraday-training
   - MarketDataContinuityService
   - MarketDataService
   - MarketDataController
@@ -51,6 +55,7 @@ data_tables:
   - market_training_candles
 dependencies:
 invariants:
+  - Native training backfill commands fetch Dukascopy and accept only the exact dukascopy provider identity before any archive creation; a secondary-provider label cannot rename native price rows. Separate secondary observations do not repair an immutable Dukascopy dataset or establish unused validation data.
   - Only the configured canonical provider repairs canonical continuity.
   - Scheduled market closures are interpreted through the shared session calendar.
   - Incomplete continuity blocks affected new research construction.
@@ -67,6 +72,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/TrainingBackfillProviderIdentityTest.php
   - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
   - backend-laravel/tests/Feature/MarketDataContinuityTest.php
   - backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php

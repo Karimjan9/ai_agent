@@ -2,13 +2,15 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T13:40:51.638Z",
-  "source_digest": "5abc211134e6246d2a824b0a2025de441203d6671a5c3f72f34169f3c669195d",
-  "source_file_count": 1476,
-  "git_head": "d74df03cd2f43ee5d2b6c140179c5e67b3ab15c3",
+  "generated_at": "2026-10-04T14:01:05.336Z",
+  "source_digest": "dc9197c44c3f18fd5a05d98ec0b2bfe8c8adda1e1e1629e260d4448385bf7256",
+  "source_file_count": 1477,
+  "git_head": "91e5cecd35d0bde8ed59dde2b5ca0e580529d877",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "market-data",
   "paths": [
+    "backend-laravel/app/Console/Commands/BackfillTrainingMarketData.php",
+    "backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php",
     "backend-laravel/app/Services/MarketData",
     "backend-laravel/app/Services/LabDatasetExportService.php",
     "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
@@ -33,6 +35,8 @@
     "ai-service-python/app/services/historical_quotes.py",
     "ai-service-python/app/services/volume_features.py",
     "ai-service-python/scripts/maintain_replay_cache.py",
+    "backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php",
+    "backend-laravel/app/Console/Commands/BackfillTrainingMarketData.php",
     "backend-laravel/app/Models/Candle.php",
     "backend-laravel/app/Models/MarketDataSyncState.php",
     "backend-laravel/app/Models/MarketTrainingArchive.php",
@@ -141,6 +145,60 @@
       "kind": "python_function",
       "path": "ai-service-python/scripts/maintain_replay_cache.py",
       "line": 52
+    },
+    {
+      "symbol": "BackfillIntradayTrainingMarketData",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php",
+      "line": 12
+    },
+    {
+      "symbol": "aggregate",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php",
+      "line": 167
+    },
+    {
+      "symbol": "finaliseArchives",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php",
+      "line": 189
+    },
+    {
+      "symbol": "archivesAlreadyFinalized",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php",
+      "line": 197
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php",
+      "line": 27
+    },
+    {
+      "symbol": "BackfillTrainingMarketData",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/BackfillTrainingMarketData.php",
+      "line": 12
+    },
+    {
+      "symbol": "parseBoundary",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/BackfillTrainingMarketData.php",
+      "line": 249
+    },
+    {
+      "symbol": "lastClosedBoundary",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/BackfillTrainingMarketData.php",
+      "line": 258
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/BackfillTrainingMarketData.php",
+      "line": 28
     },
     {
       "symbol": "symbol",
@@ -1654,6 +1712,19 @@
         "rows",
         "row",
         "nativeProviderFixture"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TrainingBackfillProviderIdentityTest.php",
+      "tests": [
+        "test_native_backfill_rejects_mismatched_labels_before_any_source_or_archive_side_effect",
+        "mismatchedProviders",
+        "test_genuine_native_foundation_request_fetches_and_persists_only_dukascopy",
+        "nativeFoundationRequests",
+        "test_genuine_native_intraday_request_preserves_source_and_derived_dataset_identity",
+        "nativeIntradayRequests",
+        "activeSymbol",
+        "candle"
       ]
     },
     {

@@ -6,7 +6,7 @@ tags:
   - market-data
   - dukascopy
   - reliability
-updated: 2026-08-13
+updated: 2026-10-04
 ---
 
 # Market Data Continuity
@@ -30,6 +30,26 @@ php artisan market-data:backfill-training --symbol=XAUUSD --timeframe=H1 --max-c
 php artisan market-data:training-coverage --symbol=XAUUSD --json
 php artisan market-data:export-training XAUUSD --timeframe=M15
 ```
+
+`market-data:backfill-training` and `market-data:backfill-intraday-training`
+are native Dukascopy fetch paths, not a provider registry. They accept only the
+exact `--provider=dukascopy` identity and reject another label before provider
+I/O or archive/cursor writes. Passing `--provider=twelve` does not select Twelve
+Data. Keep a different provider under a new, separately attributable dataset;
+do not reuse the Dukascopy foundation identity or splice its candles into a
+native recovery fork.
+
+Existing Twelve Data M1/M5 API observations can establish that a particular
+historical window is available, not that the entire archive is continuous or
+that synchronized BID/ASK ticks were observed. The generic training service
+can store explicitly attributed pre-2026 provider rows, but
+`market-data:import-training-csv` currently accepts only H1/M15. M1/M5 ingestion
+needs an explicit owner; the native backfill commands are not a substitute.
+The current prospective clean-discovery freezer requires a verified native
+Dukascopy recovery receipt and Dukascopy context streams. A separate Twelve
+archive/import is therefore not automatic repair or new research admission;
+it grants no independent, paper, promotion or trading authority. Re-exposure
+does not reset the existing scientific attempt budget.
 
 Laravel agents can read the same rows through
 `CandlePayloadService::candlesForTraining(...)`; the dataset and provider are

@@ -66,6 +66,11 @@ remain unavailable; old parent quotes cannot attest the slice. The stored
 ## Rules
 
 - The canonical provider is the only automatic repair source.
+- `market-data:backfill-training` and `market-data:backfill-intraday-training`
+  are native Dukascopy training owners. They reject a different `--provider`
+  before archive creation or fetch; an arbitrary label cannot replace their
+  actual provider. Existing Twelve Data responses remain separate-provider
+  observations, not native repair or independent validation proof.
 - Secondary provider data is discrepancy/archive evidence, not a silent replacement.
 - A continuity failure blocks new affected research construction but does not
   manufacture or rewrite historical evidence.
