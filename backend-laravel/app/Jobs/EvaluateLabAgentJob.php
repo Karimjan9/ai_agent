@@ -102,13 +102,16 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         public ?int $screeningSlot = null,
     )
     {
-        $scope = LabAgent::query()->with('modelVersion')->whereKey($labAgentId)
+        $scope = LabAgent::query()->with('modelVersion', 'generation')->whereKey($labAgentId)
             ->first(['id', 'lab_generation_id', 'model_version_id', 'timeframe']);
         $this->labGenerationId = $scope?->lab_generation_id;
         $this->timeframe = strtoupper((string) ($scope?->timeframe ?: $this->timeframe));
         $this->prospectiveProbe = $mode === 'screen'
-            && data_get($scope?->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind')
-                === \App\Services\ProspectiveRepairExperimentService::KIND;
+            && (data_get($scope?->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind')
+                === \App\Services\ProspectiveRepairExperimentService::KIND
+                || ($scope?->generation?->trigger_type === 'academy_experiment'
+                    && data_get($scope?->generation?->trigger_context, 'mtf_bundle_manifest.validation_bundle_protocol') === \App\Services\MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL
+                    && data_get($scope?->generation?->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only'));
         $this->recoveryContract = $recoveryContract;
         // The queue transport is an environment concern. Hard-coding the
         // database driver here makes Redis workers invisible to lab jobs.

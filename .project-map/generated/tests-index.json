@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
-  "generated_at": "2026-10-04T08:53:34.975Z",
-  "source_digest": "4164b6321e1cd7aca6d030e0968035f023bcceb5ec1f0e3b82335caebf5a1f93",
-  "source_file_count": 1467,
-  "git_head": "0f01216b43a2cf6579e588fba17051ca26b707e2",
+  "generated_at": "2026-10-04T10:02:56.449Z",
+  "source_digest": "acf436e6d9d1bc3421d0aa7e93c5ebf6358e54d370f642532302d4dd95a13707",
+  "source_file_count": 1471,
+  "git_head": "c73f4be9c2f2835d6fe2025e8bc0564d4a43b6cc",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -88,6 +88,14 @@
         "test_compact_event_digest_is_emitted_without_full_decision_trace",
         "test_shadow_state_machine_is_explicit_and_finite",
         "test_architecture_interaction_activates_auditable_classifier_state_coherence"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_clean_discovery_boundary.py",
+      "tests": [
+        "test_exact_discovery_contract_is_only_an_incremental_routing_input",
+        "test_full_or_replay_discovery_refuses_before_any_cache_or_child_spawn",
+        "test_scope_flags_and_shortcut_windows_cannot_relabel_discovery"
       ]
     },
     {
@@ -557,6 +565,23 @@
         "__construct",
         "pythonHash",
         "prospectiveTrial"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
+      "tests": [
+        "tearDown",
+        "scope",
+        "configured",
+        "prepare",
+        "test_prepared_twenty_seat_discovery_reuses_exact_bundle_and_preserves_parent_budget",
+        "test_discovery_restore_is_screening_only_and_full_evaluation_creates_no_run",
+        "test_admission_requires_typed_academy_owner_and_full_dispatch_refuses_the_slice",
+        "test_invalid_explicit_hash_cannot_fall_back_to_latest_old_bundle",
+        "test_promising_academy_screen_is_terminal_discovery_not_full_replay_selection",
+        "test_single_discovery_job_transport_and_mutex_cover_the_existing_bounded_python_deadline",
+        "test_arbiter_clean_scope_readiness_serves_only_ready_academy_and_earned_continuation",
+        "test_native_clean_bundle_enters_canonical_dispatch_and_real_python_exact_probe_without_full_readiness"
       ]
     },
     {
@@ -1515,6 +1540,7 @@
         "batchProofFixture",
         "test_batch_recovery_revalidates_each_actual_bucket_and_preserves_all_untouched_rows",
         "test_batch_zero_ticks_or_tick_minute_mismatch_cannot_create_a_bar",
+        "test_bounded_resume_accepts_only_exact_original_successful_proofs_and_unchanged_fork_bytes",
         "test_batch_duplicate_out_of_inventory_future_or_unbounded_targets_are_refused",
         "test_native_v2_readiness_binds_proof_source_bytes_sql_and_partial_calendar_scope",
         "row"
@@ -2380,6 +2406,20 @@
         "source",
         "plan",
         "screen"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php",
+      "tests": [
+        "tearDown",
+        "test_clean_scope_freezes_real_selected_rows_but_full_validation_stays_blocked",
+        "cleanBundleFixture",
+        "assertRealPythonLoader",
+        "quoteArtifact",
+        "test_parent_bytes_missing_provenance_and_smaller_budgets_cannot_be_relabelled",
+        "nativeFixture",
+        "archive",
+        "rows"
       ]
     },
     {

@@ -51,6 +51,8 @@ from app.services.composition_runtime import (
     validate_composition_runtime_contract,
 )
 from app.services.execution_contract import (
+    _canonical_json,
+    _semantic_contract_value,
     enforce_policy_boundary,
     execution_contract_metadata,
     management_contract_metadata,
@@ -670,9 +672,60 @@ def _screening_insufficient_robustness_profile(
     }
 
 
+def _assert_clean_discovery_boundary(payload: SimpleBacktestRequest) -> None:
+    """A scoped discovery input can never satisfy a full or independent replay."""
+    manifest = dict(payload.mtf_snapshot_manifest or {})
+    kind = manifest.get("validation_bundle_protocol")
+    if kind != "prospective_clean_discovery_bundle_v1" and manifest.get("data_role") != "pre_2026_discovery_only":
+        return
+    if payload.evaluation_mode != "incremental":
+        raise ValueError("DISCOVERY_ONLY_BUNDLE_FULL_VALIDATION_FORBIDDEN")
+    scope = manifest.get("discovery_scope")
+    policy = dict(payload.policy_context or {})
+    probe = policy.get("prospective_probe_window")
+    if (kind != "prospective_clean_discovery_bundle_v1"
+            or manifest.get("data_role") != "pre_2026_discovery_only"
+            or not isinstance(scope, dict)
+            or scope.get("protocol") != "prospective_clean_discovery_scope_v1"
+            or policy.get("prospective_clean_discovery_scope") != scope
+            or not isinstance(probe, dict)):
+        raise ValueError("DISCOVERY_SCOPE_OR_PROBE_MISSING")
+    for key in ("independent_evidence", "full_validation_eligible", "paper_eligible", "promotion_evidence"):
+        if manifest.get(key) is not False or scope.get(key) is not False:
+            raise ValueError("DISCOVERY_EVIDENCE_BOUNDARY_INVALID")
+    body = {key: value for key, value in scope.items() if key != "scope_hash"}
+    if scope.get("scope_hash") != hashlib.sha256(_canonical_json(_semantic_contract_value(body)).encode("utf-8")).hexdigest():
+        raise ValueError("DISCOVERY_SCOPE_HASH_MISMATCH")
+    calendar = scope.get("calendar")
+    if (not isinstance(calendar, dict) or calendar.get("selected_unexpected_gaps") != 0
+            or payload.dataset_tail_rows is not None
+            or policy.get("historical_stratified_windows")
+            or manifest.get("bundle_hash") != payload.replay_dataset_hash
+            or probe.get("protocol") != "prospective_repair_probe_window_v1"
+            or probe.get("evaluator_version") != "incremental_probe_window_v2"
+            or probe.get("dataset_hash") != payload.replay_dataset_hash
+            or probe.get("execution_hash") != (payload.execution_contract or {}).get("execution_hash")
+            or probe.get("independent_validation") is not False
+            or probe.get("paper_2026_eligible") is not False):
+        raise ValueError("DISCOVERY_REPLAY_CONTRACT_MISMATCH")
+    for key in ("loaded_rows", "warmup_rows", "evaluated_rows", "loaded_start", "loaded_end",
+                "evaluated_start", "evaluated_end", "evaluated_month_counts"):
+        if probe.get(key) != calendar.get(key):
+            raise ValueError("DISCOVERY_PROBE_SCOPE_MISMATCH")
+    if (type(probe.get("evaluated_rows")) is not int or probe["evaluated_rows"] != 15000
+            or type(probe.get("warmup_rows")) is not int or probe["warmup_rows"] != 512
+            or type(probe.get("loaded_rows")) is not int or probe["loaded_rows"] != 15512):
+        raise ValueError("DISCOVERY_ROW_BUDGET_INVALID")
+    probe_body = {key: value for key, value in probe.items() if key != "contract_hash"}
+    expected_probe = hashlib.sha256(json.dumps(probe_body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+    if probe.get("contract_hash") != expected_probe:
+        raise ValueError("PROSPECTIVE_PROBE_WINDOW_HASH_MISMATCH")
+
+
 def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
     # Direct child/standalone paths also authenticate before any checkpoint or
     # candidate-cache return, not just after a cache miss loads source_df.
+    _assert_clean_discovery_boundary(payload)
     verify_research_transport(payload, _internal_api_token())
     timing_started = time.perf_counter()
     stage_timings: dict[str, float] = {}
@@ -1997,6 +2050,7 @@ def _run_bounded_replay(
     observe a child failure. A standalone Python subprocess with a JSON pipe
     gives us a hard parent-controlled deadline and a deterministic kill path.
     """
+    _assert_clean_discovery_boundary(payload)
     assert_sealed_dataset_transport(payload)
     global \
         _last_replay_finished_at, \

@@ -681,8 +681,14 @@ class DispatchLabGeneration extends Command
         LabGenerationContextService $generationContext,
     ): LabGeneration {
         $existingManifest = (array) data_get($generation->trigger_context, 'mtf_bundle_manifest', []);
+        $discovery = ($existingManifest['validation_bundle_protocol'] ?? null) === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL;
+        if ($discovery && ($generation->trigger_type !== 'academy_experiment'
+            || data_get($generation->trigger_context, 'prospective_source_identity.data_role') !== 'pre_2026_discovery_only')) {
+            throw new \RuntimeException('GENERATION_DISCOVERY_BUNDLE_OWNER_INVALID');
+        }
         $bundle = $existingManifest !== []
-            ? $mtfSnapshots->restoreAgentOwnedConfirmationValidationBundle($existingManifest)
+            ? ($discovery ? $mtfSnapshots->restoreAgentOwnedConfirmationValidationBundle($existingManifest, true)
+                : $mtfSnapshots->restoreAgentOwnedConfirmationValidationBundle($existingManifest))
             : $mtfSnapshots->forAgentOwnedConfirmationValidation($symbol);
 
         return $generationContext->update(

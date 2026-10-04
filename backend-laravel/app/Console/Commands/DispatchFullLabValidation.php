@@ -20,6 +20,7 @@ use App\Services\LabGenerationContextService;
 use App\Services\LabGenerationReportService;
 use App\Services\LabGenerationTerminalBoundaryService;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\MultiTimeframeSnapshotService;
 use App\Services\MarketData\HistoricalDataQualityService;
 use App\Services\MarketData\MarketDataContinuityService;
 use App\Services\ShadowResearchGovernorService;
@@ -132,6 +133,11 @@ class DispatchFullLabValidation extends Command
             }
             if (! $generation) {
                 $this->warn("{$symbol}: generation topilmadi.");
+
+                continue;
+            }
+            if (data_get($generation->trigger_context, 'mtf_bundle_manifest.validation_bundle_protocol') === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL) {
+                $this->warn("{$symbol}: DISCOVERY_ONLY_BUNDLE_FULL_VALIDATION_FORBIDDEN; a fresh full-scope experiment is required.");
 
                 continue;
             }

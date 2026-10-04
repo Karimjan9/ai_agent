@@ -318,6 +318,13 @@ lease. The generic 5k differential budget is unchanged. A timeout response
 never supplies a completed probe receipt or scientific verdict.
 # Prospective historical M5 recovery boundary
 
+`prospective_clean_discovery_bundle_v1` is a separate research-only scope:
+exactly 15000 evaluated rows plus 512 warmup, four frozen streams and verified
+parent/fork/calendar/SQL hashes. Canonical Academy screening supplies the existing
+prospective probe contract; Python cannot accept this bundle for full replay,
+and Laravel checks the exact consumed-window receipt. No old full contract,
+independent research receipt or paper gate is satisfied by these clean bytes.
+
 The offline provider/tick recovery tool may create only a new training archive
 and content-addressed CSV. `MultiTimeframeSnapshotService` verifies its native
 receipt plus source/new hashes and stored economic-row digest before selecting

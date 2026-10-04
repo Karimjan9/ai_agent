@@ -58,6 +58,72 @@ function observationsForHour(candles, ticks, maxAgeMs = 60000) {
   });
 }
 
+function validateTickCheckpoint(checkpoint, hour) {
+  if (!checkpoint || checkpoint.hour !== hour || !/^[a-f0-9]{64}$/.test(checkpoint.source_sha256 || '')
+    || checkpoint.source_sha256 === sha256(JSON.stringify([]))
+    || !Array.isArray(checkpoint.last_ticks) || !checkpoint.last_ticks.length) {
+    throw new Error('Tick checkpoint is empty or unattested.');
+  }
+  let previous = -Infinity;
+  const buckets = new Set();
+  for (const tick of checkpoint.last_ticks) {
+    if (!tick || !Number.isSafeInteger(tick.timestamp) || tick.timestamp < hour || tick.timestamp >= hour + 3600000
+      || tick.timestamp < previous || !Number.isFinite(tick.bidPrice) || tick.bidPrice <= 0
+      || !Number.isFinite(tick.askPrice) || tick.askPrice <= 0) throw new Error('Tick checkpoint content is invalid.');
+    previous = tick.timestamp;
+    const bucket = Math.floor(tick.timestamp / 300000) * 300000;
+    if (buckets.has(bucket)) throw new Error('Tick checkpoint contains duplicate buckets.');
+    buckets.add(bucket);
+  }
+  if (checkpoint.source_tick_count !== undefined
+    && (!Number.isSafeInteger(checkpoint.source_tick_count) || checkpoint.source_tick_count < checkpoint.last_ticks.length)) {
+    throw new Error('Tick checkpoint source count is invalid.');
+  }
+  return checkpoint;
+}
+
+function checkpointForTicks(hour, ticks) {
+  if (!Array.isArray(ticks)) throw new Error('Provider tick hour is not an array.');
+  let previous = -Infinity;
+  for (const tick of ticks) {
+    if (!tick || !Number.isSafeInteger(tick.timestamp) || tick.timestamp < previous
+      || !Number.isFinite(tick.bidPrice) || tick.bidPrice <= 0
+      || !Number.isFinite(tick.askPrice) || tick.askPrice <= 0) throw new Error('Provider tick hour content is invalid.');
+    previous = tick.timestamp;
+  }
+  const bounded = ticks.filter((tick) => tick.timestamp >= hour && tick.timestamp < hour + 3600000);
+  // An empty decoded list cannot distinguish a genuine no-tick hour from a
+  // swallowed failed HTTP response. It is not durable source evidence.
+  if (!bounded.length) throw new Error('Provider tick hour is empty or unattested.');
+  const last = new Map();
+  for (const tick of bounded) last.set(Math.floor(tick.timestamp / 300000) * 300000, tick);
+  return validateTickCheckpoint({
+    hour, source_sha256: sha256(JSON.stringify(bounded)), source_tick_count: bounded.length, last_ticks: [...last.values()],
+  }, hour);
+}
+
+async function fetchVerifiedTickCheckpoint(provider, hour, {
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  onBackoff = (rateLimit, attempt) => process.stderr.write(`Provider ${rateLimit ? 'rate limit' : 'transport failure'}; bounded backoff ${attempt}/3 at ${utc(hour)}\n`),
+} = {}) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const ticks = await provider.getHistoricalRates({
+        instrument: 'xauusd', dates: { from: utc(hour), to: utc(hour + 3600000) },
+        timeframe: provider.Timeframe.tick, format: provider.Format.json, price: provider.Price.bid,
+        volumes: false, batchSize: 1, pauseBetweenBatchesMs: 1500, retryCount: 1, pauseBetweenRetriesMs: 1500,
+        failAfterRetryCount: true, useCache: false,
+      });
+      return checkpointForTicks(hour, ticks);
+    } catch (error) {
+      if (attempt === 3) throw new Error(`${utc(hour)}: ${error.message}`);
+      const rateLimit = /429/.test(error.message);
+      onBackoff(rateLimit, attempt + 1);
+      await sleep(rateLimit ? 30000 : 5000);
+    }
+  }
+}
+
 async function main() {
   const { values } = parseArgs({ options: {
     m5: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' }, freeze: { type: 'boolean', default: false },
@@ -107,34 +173,9 @@ async function main() {
     if (fs.existsSync(cachePath)) {
       const saved = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
       if (saved.sha256 !== sha256(JSON.stringify(saved.payload)) || saved.payload.hour !== hour) throw new Error('Tick checkpoint integrity mismatch.');
-      checkpoint = saved.payload;
+      checkpoint = validateTickCheckpoint(saved.payload, hour);
     } else {
-      let ticks;
-      for (let attempt = 0; attempt < 4; attempt++) {
-        try {
-          ticks = await provider.getHistoricalRates({
-            instrument: 'xauusd', dates: { from: utc(hour), to: utc(hour + 3600000) },
-            timeframe: provider.Timeframe.tick, format: provider.Format.json, price: provider.Price.bid,
-            volumes: false, batchSize: 1, pauseBetweenBatchesMs: 1500, retryCount: 0,
-            failAfterRetryCount: true, useCache: false,
-          });
-          break;
-        } catch (error) {
-          if (attempt === 3) throw new Error(`${utc(hour)}: ${error.message}`);
-          const rateLimit = /429/.test(error.message);
-          process.stderr.write(`Provider ${rateLimit ? 'rate limit' : 'transport failure'}; bounded backoff ${attempt + 1}/3 at ${utc(hour)}\n`);
-          await new Promise((resolve) => setTimeout(resolve, rateLimit ? 30000 : 5000));
-        }
-      }
-      const bounded = ticks.filter((tick) => tick.timestamp >= hour && tick.timestamp < hour + 3600000);
-      const last = new Map();
-      let previous = -Infinity;
-      for (const tick of bounded) {
-        if (tick.timestamp < previous) throw new Error('Out-of-order provider ticks.');
-        previous = tick.timestamp;
-        last.set(Math.floor(tick.timestamp / 300000) * 300000, tick);
-      }
-      checkpoint = { hour, source_sha256: sha256(JSON.stringify(bounded)), last_ticks: [...last.values()] };
+      checkpoint = await fetchVerifiedTickCheckpoint(provider, hour);
       const temporary = `${cachePath}.${crypto.randomBytes(6).toString('hex')}.tmp`;
       fs.writeFileSync(temporary, JSON.stringify({ payload: checkpoint, sha256: sha256(JSON.stringify(checkpoint)) }));
       fs.renameSync(temporary, cachePath);
@@ -185,5 +226,5 @@ async function main() {
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
-module.exports = { observationsForHour, boundedInterval };
+module.exports = { observationsForHour, boundedInterval, checkpointForTicks, validateTickCheckpoint, fetchVerifiedTickCheckpoint };
 if (require.main === module) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 2; });

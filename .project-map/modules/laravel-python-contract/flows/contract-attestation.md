@@ -89,6 +89,11 @@ calculation from FastAPI.
 
 ## Rules
 
+- A typed clean-discovery bundle is accepted only in incremental mode with its
+  matching 15000-evaluation/512-warmup sealed scope/probe. The guard runs before
+  cache and child spawn; full replay, tail shortcuts and independent/paper
+  claims are refused rather than silently relabelled.
+
 - HTTP success is not attestation success.
 - A present but different hash is rejected just like a missing hash.
 - Assignment or inventory presence is not runtime use; only an attested

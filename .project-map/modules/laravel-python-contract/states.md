@@ -1,5 +1,12 @@
 # Cross-runtime contract states
 
+An explicit `prospective_clean_discovery_bundle_v1` is incremental discovery
+only. Before cache/child execution, Python checks typed scope, false authority
+flags, exact bundle/probe data and execution identities, 15000+512 row bounds
+and contract hashes. A full/replay mode, missing probe, tail override or false
+independence claim is rejected. This branch cannot authorize the parent archive
+or an independent research window (ADR-024).
+
 | From | Trigger | To | Guard / owner | Failure behavior |
 | --- | --- | --- | --- | --- |
 | request_drafted | Laravel freezes data and canonicalizes payload | request_sealed | Laravel owns request identity/version; XAUUSD autonomous work requires one M5/H4/H1/M15 manifest; a declared volume lane additionally requires snapshot-scoped provenance | Invalid payload, incomplete bundle or unattested historical volume is rejected before dispatch. |

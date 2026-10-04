@@ -180,6 +180,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php
   - backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php
   - backend-laravel/tests/Feature/AcademyPreExecutionReplacementTest.php
   - backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php

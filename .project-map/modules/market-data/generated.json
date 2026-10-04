@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
-  "generated_at": "2026-10-04T08:53:34.975Z",
-  "source_digest": "4164b6321e1cd7aca6d030e0968035f023bcceb5ec1f0e3b82335caebf5a1f93",
-  "source_file_count": 1467,
-  "git_head": "0f01216b43a2cf6579e588fba17051ca26b707e2",
+  "generated_at": "2026-10-04T10:02:56.449Z",
+  "source_digest": "acf436e6d9d1bc3421d0aa7e93c5ebf6358e54d370f642532302d4dd95a13707",
+  "source_file_count": 1471,
+  "git_head": "c73f4be9c2f2835d6fe2025e8bc0564d4a43b6cc",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "market-data",
   "paths": [
@@ -26,6 +26,7 @@
     "backend-laravel/scripts/freeze-historical-tick-spread.test.cjs",
     "backend-laravel/scripts/recover-frozen-m5-gap.php",
     "backend-laravel/scripts/verify-sparse-reopen-ticks.cjs",
+    "backend-laravel/scripts/verify-sparse-reopen-ticks.test.cjs",
     "backend-laravel/scripts/audit-frozen-m5-gap-source.py"
   ],
   "source_files": [
@@ -59,7 +60,8 @@
     "backend-laravel/scripts/freeze-historical-tick-spread.cjs",
     "backend-laravel/scripts/freeze-historical-tick-spread.test.cjs",
     "backend-laravel/scripts/recover-frozen-m5-gap.php",
-    "backend-laravel/scripts/verify-sparse-reopen-ticks.cjs"
+    "backend-laravel/scripts/verify-sparse-reopen-ticks.cjs",
+    "backend-laravel/scripts/verify-sparse-reopen-ticks.test.cjs"
   ],
   "symbols": [
     {
@@ -1251,160 +1253,196 @@
       "line": 574
     },
     {
-      "symbol": "verifiedProspectiveM5Repair",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 136
-    },
-    {
-      "symbol": "MultiTimeframeSnapshotService",
-      "kind": "php_type",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 21
-    },
-    {
-      "symbol": "forAgentOwnedConfirmationValidation",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 222
-    },
-    {
-      "symbol": "forLiquidityTrapReplay",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 351
-    },
-    {
-      "symbol": "__construct",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 40
-    },
-    {
-      "symbol": "forResearchPlaybookReplay",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 436
-    },
-    {
-      "symbol": "agentValidationReadiness",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 55
-    },
-    {
-      "symbol": "restoreResearchPlaybookBundle",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 577
-    },
-    {
-      "symbol": "restoreAgentOwnedConfirmationValidationBundle",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 615
-    },
-    {
-      "symbol": "result",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 654
-    },
-    {
-      "symbol": "researchResult",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 671
-    },
-    {
-      "symbol": "commonClosedCutoff",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 694
-    },
-    {
-      "symbol": "closedRows",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 710
-    },
-    {
-      "symbol": "aggregateH4",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 724
-    },
-    {
-      "symbol": "aggregateD1",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 730
-    },
-    {
-      "symbol": "aggregateH1",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 736
-    },
-    {
-      "symbol": "streamManifest",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 771
-    },
-    {
-      "symbol": "rowContentHash",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 803
-    },
-    {
       "symbol": "writeCsv",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 833
+      "line": 1014
     },
     {
       "symbol": "csvColumns",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 858
+      "line": 1039
     },
     {
       "symbol": "csvValues",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 873
+      "line": 1054
     },
     {
       "symbol": "csvHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 883
+      "line": 1064
     },
     {
       "symbol": "attestHistoricalVolumeStreams",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 913
+      "line": 1094
     },
     {
       "symbol": "validBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 980
+      "line": 1161
+    },
+    {
+      "symbol": "verifiedProspectiveM5Repair",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 141
+    },
+    {
+      "symbol": "MultiTimeframeSnapshotService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 22
+    },
+    {
+      "symbol": "prospectiveCleanDiscoveryReadiness",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 223
+    },
+    {
+      "symbol": "forProspectiveCleanDiscovery",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 265
+    },
+    {
+      "symbol": "discoveryBundleReadiness",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 305
+    },
+    {
+      "symbol": "readDiscoveryStream",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 350
+    },
+    {
+      "symbol": "discoveryRows",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 377
+    },
+    {
+      "symbol": "forAgentOwnedConfirmationValidation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 390
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 45
+    },
+    {
+      "symbol": "publishAgentOwnedBundle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 491
+    },
+    {
+      "symbol": "forLiquidityTrapReplay",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 526
+    },
+    {
+      "symbol": "agentValidationReadiness",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 60
+    },
+    {
+      "symbol": "forResearchPlaybookReplay",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 611
+    },
+    {
+      "symbol": "restoreResearchPlaybookBundle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 752
+    },
+    {
+      "symbol": "restoreAgentOwnedConfirmationValidationBundle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 790
+    },
+    {
+      "symbol": "result",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 835
+    },
+    {
+      "symbol": "researchResult",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 852
+    },
+    {
+      "symbol": "commonClosedCutoff",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 875
+    },
+    {
+      "symbol": "closedRows",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 891
+    },
+    {
+      "symbol": "aggregateH4",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 905
+    },
+    {
+      "symbol": "aggregateD1",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 911
+    },
+    {
+      "symbol": "aggregateH1",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 917
+    },
+    {
+      "symbol": "streamManifest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 952
+    },
+    {
+      "symbol": "rowContentHash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+      "line": 984
     },
     {
       "symbol": "missing_times",
       "kind": "python_function",
       "path": "backend-laravel/scripts/audit-frozen-m5-gap-source.py",
-      "line": 22
+      "line": 24
     },
     {
       "symbol": "gaps",
       "kind": "python_function",
       "path": "backend-laravel/scripts/audit-frozen-m5-gap-source.py",
-      "line": 35
+      "line": 37
     },
     {
       "symbol": "source",
@@ -1437,28 +1475,34 @@
       "line": 197
     },
     {
-      "symbol": "collectBatch",
+      "symbol": "resumeProofs",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
       "line": 210
     },
     {
+      "symbol": "collectBatch",
+      "kind": "php_method",
+      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
+      "line": 237
+    },
+    {
       "symbol": "configureOfflineTransport",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 258
+      "line": 288
     },
     {
       "symbol": "time",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 270
+      "line": 300
     },
     {
       "symbol": "price",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 278
+      "line": 308
     },
     {
       "symbol": "proof",
@@ -1523,6 +1567,7 @@
         "batchProofFixture",
         "test_batch_recovery_revalidates_each_actual_bucket_and_preserves_all_untouched_rows",
         "test_batch_zero_ticks_or_tick_minute_mismatch_cannot_create_a_bar",
+        "test_bounded_resume_accepts_only_exact_original_successful_proofs_and_unchanged_fork_bytes",
         "test_batch_duplicate_out_of_inventory_future_or_unbounded_targets_are_refused",
         "test_native_v2_readiness_binds_proof_source_bytes_sql_and_partial_calendar_scope",
         "row"
@@ -1583,6 +1628,20 @@
       "tests": [
         "quoteModes",
         "test_agent_validation_freezes_bounded_training_store_without_live_export",
+        "rows"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php",
+      "tests": [
+        "tearDown",
+        "test_clean_scope_freezes_real_selected_rows_but_full_validation_stays_blocked",
+        "cleanBundleFixture",
+        "assertRealPythonLoader",
+        "quoteArtifact",
+        "test_parent_bytes_missing_provenance_and_smaller_budgets_cannot_be_relabelled",
+        "nativeFixture",
+        "archive",
         "rows"
       ]
     },

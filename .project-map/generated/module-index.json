@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
-  "generated_at": "2026-10-04T08:53:34.975Z",
-  "source_digest": "4164b6321e1cd7aca6d030e0968035f023bcceb5ec1f0e3b82335caebf5a1f93",
-  "source_file_count": 1467,
-  "git_head": "0f01216b43a2cf6579e588fba17051ca26b707e2",
+  "generated_at": "2026-10-04T10:02:56.449Z",
+  "source_digest": "acf436e6d9d1bc3421d0aa7e93c5ebf6358e54d370f642532302d4dd95a13707",
+  "source_file_count": 1471,
+  "git_head": "c73f4be9c2f2835d6fe2025e8bc0564d4a43b6cc",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -191,6 +191,7 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
         "backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php",
         "backend-laravel/tests/Feature/AcademyPreExecutionReplacementTest.php",
         "backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php",
@@ -401,6 +402,7 @@
         "Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
         "backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php",
         "backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php",
         "backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php",
@@ -502,6 +504,8 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "ai-service-python/tests/test_clean_discovery_boundary.py",
+        "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
         "ai-service-python/tests/test_sealed_dataset_identity.py",
         "ai-service-python/tests/test_market_adaptive_replay.py",
         "backend-laravel/tests/Feature/EvolutionAuditRegressionTest.php",
@@ -562,6 +566,7 @@
         "backend-laravel/scripts/freeze-historical-tick-spread.test.cjs",
         "backend-laravel/scripts/recover-frozen-m5-gap.php",
         "backend-laravel/scripts/verify-sparse-reopen-ticks.cjs",
+        "backend-laravel/scripts/verify-sparse-reopen-ticks.test.cjs",
         "backend-laravel/scripts/audit-frozen-m5-gap-source.py"
       ],
       "entry_points": [
@@ -573,9 +578,12 @@
         "MultiTimeframeSnapshotService::forAgentOwnedConfirmationValidation",
         "HistoricalQuoteSpreadService::attach",
         "MultiTimeframeSnapshotService::agentValidationReadiness",
+        "MultiTimeframeSnapshotService::forProspectiveCleanDiscovery",
+        "MultiTimeframeSnapshotService::discoveryBundleReadiness",
         "FrozenM5GapRecoveryOperation::batchProof",
         "FrozenM5GapRecoveryOperation::forkMany",
         "FrozenM5GapRecoveryOperation::collectBatch",
+        "FrozenM5GapRecoveryOperation::resumeProofs",
         "backend-laravel/scripts/recover-frozen-m5-gap.php"
       ],
       "data_tables": [
@@ -589,6 +597,7 @@
         "Only the configured canonical provider repairs canonical continuity.",
         "Scheduled market closures are interpreted through the shared session calendar.",
         "Incomplete continuity blocks affected new research construction.",
+        "Explicit clean discovery seals 15000 evaluated M5 rows plus 512 warmup from a verified parent fork, selected by calendar continuity/recency, never outcomes. It does not certify parent continuity, full validation, independent evidence or trading authority.",
         "Rolling/live volume coverage never attests a historical replay snapshot.",
         "A volume-dependent historical replay requires a hash-bound provenance receipt and an explicit volume_available column in every consumed stream.",
         "A no-volume lane is not a failed volume capability and reports not_requested.",
@@ -605,12 +614,13 @@
         "backend-laravel/tests/Feature/MtfAgentValidationSnapshotServiceTest.php",
         "backend-laravel/tests/Feature/HistoricalQuoteSpreadTest.php",
         "backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php",
+        "backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php",
         "ai-service-python/tests/test_historical_quotes.py"
       ],
       "flows": [
         ".project-map/modules/market-data/flows/continuity-recovery.md"
       ],
-      "source_file_count": 31,
+      "source_file_count": 32,
       "map": ".project-map/modules/market-data/module.yaml"
     },
     {

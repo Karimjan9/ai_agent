@@ -1,5 +1,12 @@
 # Causal learning states
 
+Clean-discovery cold cohorts seal the stored bundle and `pre_2026_discovery_only`
+identity before admission. Their allowance binds foundation, physical parent
+fork/economic rows and execution; new slice, quote coverage, code or label cannot
+replenish it. Local stage proof is not independent/economic authority. Full
+validation and the authorized independent-window dependency remain separate
+(ADR-024).
+
 Academy trial `planned -> materialized` creates one locked draft plus pending
 canonical-admission intent. `pending -> admitted` requires the arbiter-selected
 canonical dispatcher and successful snapshot admission for that same generation.

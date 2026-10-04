@@ -145,3 +145,44 @@ verify the source archive, reload idle workers, verify actual boot identity,
 then resume the existing lineage through the canonical arbiter. A new dataset
 does not reopen the exhausted old Academy question or provide independent
 validation, credit, paper or live authority.
+
+`--batch --resume-dataset=DATASET` reuses only the previous recovery archive's
+successful native proofs after checking original source, receipt, fork bytes
+and SQL economic digest. It refetches unresolved targets and, with `--apply`,
+publishes another fork. Provider HTTP failures and empty unattested tick hours
+are not absence proof; the tick/quote boundaries reject them without persisting
+empty checkpoints. Old recovery artifacts remain immutable.
+
+## Explicit clean discovery while full continuity is unresolved
+
+The existing `MultiTimeframeSnapshotService` exposes
+`prospectiveCleanDiscoveryReadiness('XAUUSD', DATASET)` (read-only),
+`forProspectiveCleanDiscovery('XAUUSD', DATASET)` (explicit new freeze), and
+`discoveryBundleReadiness(MANIFEST)` (read-only actual-byte verification).
+They accept only a verified native recovery parent and the fixed 15000 evaluated
+plus 512 warmup budget. The shared calendar chooses the latest sufficient clean
+segment without strategy outcomes; H4/H1/M15 context and exact selected price
+bytes enter a new `prospective_clean_discovery_bundle_v1` manifest.
+
+Select its stored bundle hash through `LAB_CLEAN_DISCOVERY_BUNDLE_HASH` only
+while paused/drained, then build the source artifact and reload idle workers.
+Do not replace `LAB_RESEARCH_M5_DATASET` with a short CSV or change full/fold
+row requirements. The existing arbiter prepares/publishes a bounded Academy
+question; eligible proof-carrying local Academy continuation may use the same
+typed discovery scope. A spent/not-ready question never unlocks generic full
+construction on the incomplete parent.
+
+Single and batch screening send the sealed actual probe bounds to Python:
+15000 evaluated rows, 512 excluded warmup, UTC bounds, month counts and exact
+data/execution hashes. The single transport/job/mutex budgets are 1800/2100/2700
+seconds, above the Python 1680-second ceiling; generic screens retain their
+existing smaller limits. Full/replay mode rejects the typed discovery bundle
+before cache/child execution. Missing quotes stay unavailable and cannot
+justify liquidity-dependent claims. Matching quote sidecars require these
+selected bytes' own SHA and a newly frozen bundle, not edits to this seal.
+
+This is discovery, not a repaired full archive or untouched validation data.
+Its cold budget binds physical parent/foundation/execution; slice, quote, label
+or code changes do not renew it. It gives no independent, paper, promotion,
+causal-skill or inheritance authority. Authorized unused research data remains
+a separate dependency under the unchanged 2026 paper-only boundary (ADR-024).

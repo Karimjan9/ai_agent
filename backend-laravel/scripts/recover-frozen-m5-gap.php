@@ -206,8 +206,35 @@ final class FrozenM5GapRecoveryOperation
         return hash_final($digest);
     }
 
+    /** Reuse only original, fully revalidated successful proofs, never prior missing-data verdicts. */
+    public static function resumeProofs(string $sourcePath, string $sourceHash, array $source, array $receipt, string $pricePath): array
+    {
+        $hash = (string) ($receipt['repair_hash'] ?? '');
+        $identity = array_diff_key($receipt, array_flip(['repair_hash', 'dataset_key']));
+        if (($receipt['protocol'] ?? null) !== self::BATCH_PROTOCOL
+            || preg_match('/^[a-f0-9]{64}$/D', $hash) !== 1
+            || ! hash_equals($hash, app(App\Services\ExecutionContractService::class)->hashParameters($identity))
+            || ($receipt['dataset_key'] ?? null) !== 'foundation_intraday_gapfix_'.substr($hash, 0, 16)
+            || ($receipt['source_csv_sha256'] ?? null) !== $sourceHash
+            || realpath((string) ($receipt['source_csv_path'] ?? '')) !== realpath($sourcePath)
+            || ($receipt['source_rows'] ?? null) !== count($source)
+            || ($receipt['independent_evidence'] ?? null) !== false
+            || ($receipt['promotion_evidence'] ?? null) !== false
+            || ($receipt['quote_liquidity_inherited'] ?? null) !== false
+            || ! is_file($pricePath)) throw new RuntimeException('RECOVERY_RESUME_RECEIPT_INVALID');
+        $proofs = (array) ($receipt['target_proofs'] ?? []);
+        $rows = self::forkMany($source, $proofs, (array) ($receipt['canonical_missing_utc'] ?? []));
+        if (($receipt['new_rows'] ?? null) !== count($rows)
+            || ! hash_equals((string) ($receipt['new_price_csv_sha256'] ?? ''), hash('sha256', self::csvBytes($rows)))
+            || ! hash_equals((string) ($receipt['new_price_csv_sha256'] ?? ''), (string) hash_file('sha256', $pricePath))
+            || ! hash_equals((string) ($receipt['new_economic_rows_sha256'] ?? ''), self::economicRowsHash($rows))) {
+            throw new RuntimeException('RECOVERY_RESUME_PROOF_OR_BYTES_INVALID');
+        }
+        return $proofs;
+    }
+
     /** One bounded provider/tick collection; failures remain unresolved source buckets. */
-    public static function collectBatch(string $sourcePath, string $sourceHash, array $source, object $provider): array
+    public static function collectBatch(string $sourcePath, string $sourceHash, array $source, object $provider, array $resumedProofs = []): array
     {
         $audit = static function (?array $recovered) use ($sourcePath): array {
             $arguments=['python', __DIR__.'/audit-frozen-m5-gap-source.py', $sourcePath,
@@ -218,10 +245,13 @@ final class FrozenM5GapRecoveryOperation
         $inventory=$audit(null); $targets=(array)($inventory['canonical_missing_utc']??[]);
         if (($inventory['source_csv_sha256']??null)!==$sourceHash || ($inventory['source_rows']??null)!==count($source)
             || count($targets)<1 || count($targets)>self::MAX_BATCH_TARGETS || count(array_unique($targets))!==count($targets)) throw new RuntimeException('RECOVERY_BATCH_INVENTORY_OR_BOUND_INVALID');
-        $days=[]; $hours=[]; $proofs=[]; $unresolved=[]; $deadline=microtime(true)+1800;
+        if ($resumedProofs !== []) self::forkMany($source, $resumedProofs, $targets);
+        $completed = array_fill_keys(array_map(static fn ($proof) => str_replace(' ', 'T', $proof['recovered_row']['time']).'+00:00', $resumedProofs), true);
+        $days=[]; $hours=[]; $proofs=$resumedProofs; $unresolved=[]; $deadline=microtime(true)+1800;
         self::configureOfflineTransport();
         // Selected screening is diagnosed first; this ordering creates no false full-archive certificate.
-        $ordered=$targets; rsort($ordered);
+        $ordered=array_values(array_filter($targets, static fn ($target) => ! isset($completed[$target]))); rsort($ordered);
+        if ($resumedProofs !== []) fwrite(STDERR, 'RECOVERY_BATCH_REUSED_VERIFIED_PROOFS '.count($resumedProofs).' pending='.count($ordered).PHP_EOL);
         foreach ($ordered as $index=>$iso) {
             $at=Carbon\CarbonImmutable::parse($iso,'UTC'); $day=$at->startOfDay(); $dayKey=$day->toDateString(); $hour=$at->startOfHour(); $hourKey=$hour->format('Y-m-d\TH:i:s\Z');
             try {
@@ -241,7 +271,7 @@ final class FrozenM5GapRecoveryOperation
                 if (isset($hours[$hourKey]['failure'])) throw new RuntimeException($hours[$hourKey]['failure']);
                 $proofs[]=self::batchProof($at->format('Y-m-d H:i:s'),$days[$dayKey]['m1'],$days[$dayKey]['m5'],$hours[$hourKey]);
             } catch (Throwable $e) { $unresolved[]=['target_utc'=>$iso,'reason'=>$e->getMessage()]; }
-            if (($index+1)%10===0 || $index+1===count($targets)) fwrite(STDERR,'RECOVERY_BATCH_PROGRESS '.($index+1).'/'.count($targets).' verified='.count($proofs).' unresolved='.count($unresolved).PHP_EOL);
+            if (($index+1)%10===0 || $index+1===count($ordered)) fwrite(STDERR,'RECOVERY_BATCH_PROGRESS '.($index+1).'/'.count($ordered).' verified='.count($proofs).' unresolved='.count($unresolved).PHP_EOL);
         }
         if (! $proofs) throw new RuntimeException('RECOVERY_BATCH_NO_VERIFIED_ACTUAL_BARS');
         usort($proofs,static fn($a,$b)=>strcmp($a['recovered_row']['time'],$b['recovered_row']['time']));
@@ -290,18 +320,35 @@ if (realpath((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) {
     $app = require dirname(__DIR__).'/bootstrap/app.php';
     $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
     try {
-        $options = getopt('', ['source:', 'source-sha256:', 'batch', 'apply']);
+        $options = getopt('', ['source:', 'source-sha256:', 'batch', 'resume-dataset:', 'apply']);
         $sourcePath = realpath((string) ($options['source'] ?? ''));
         $root = realpath(storage_path('app/lab-datasets/mtf'));
         if ($sourcePath === false || $root === false || ! str_starts_with(str_replace('\\', '/', $sourcePath), str_replace('\\', '/', $root).'/')
             || basename($sourcePath) !== 'm5.csv') throw new RuntimeException('RECOVERY_SOURCE_OUTSIDE_FROZEN_MTF');
         $sourceHash = (string) ($options['source-sha256'] ?? '');
         $batchMode=array_key_exists('batch',$options);
+        if (isset($options['resume-dataset']) && ! $batchMode) throw new RuntimeException('RECOVERY_RESUME_REQUIRES_BATCH');
         $source = FrozenM5GapRecoveryOperation::source($sourcePath, $sourceHash, $batchMode);
         $provider = app(App\Services\MarketData\DukascopyMarketDataProvider::class);
         if (config('services.dukascopy.transport', 'jetta') !== 'jetta') throw new RuntimeException('RECOVERY_JETTA_PROVIDER_REQUIRED');
         if ($batchMode) {
-            $batch=FrozenM5GapRecoveryOperation::collectBatch($sourcePath,$sourceHash,$source,$provider);
+            $resumedProofs = [];
+            if (isset($options['resume-dataset'])) {
+                $priorArchive = App\Models\MarketTrainingArchive::query()->where('dataset_key', $options['resume-dataset'])
+                    ->where('provider', 'dukascopy')->where('symbol', 'XAUUSD')->where('timeframe', 'M5')->where('status', 'complete')->first();
+                if (! $priorArchive) throw new RuntimeException('RECOVERY_RESUME_ARCHIVE_NOT_FOUND');
+                $priorReceipt = (array) data_get($priorArchive->metrics, 'frozen_m5_gap_recovery_receipt', []);
+                $resumedProofs = FrozenM5GapRecoveryOperation::resumeProofs($sourcePath, $sourceHash, $source, $priorReceipt,
+                    (string) data_get($priorArchive->metrics, 'frozen_m5_gap_recovery_price_path', ''));
+                $priorRows = app(App\Services\MarketData\MarketTrainingDataService::class)->query($priorArchive->dataset_key, 'dukascopy', 'XAUUSD', 'M5')
+                    ->toBase()->orderBy('time')->cursor()->map(static fn ($row) => ['time'=>(string)$row->time,
+                        'open'=>$row->open,'high'=>$row->high,'low'=>$row->low,'close'=>$row->close,'volume'=>$row->volume]);
+                if ((int) $priorArchive->row_count !== (int) $priorReceipt['new_rows']
+                    || FrozenM5GapRecoveryOperation::economicRowsHash($priorRows) !== $priorReceipt['new_economic_rows_sha256']) {
+                    throw new RuntimeException('RECOVERY_RESUME_SQL_CONTENT_INVALID');
+                }
+            }
+            $batch=FrozenM5GapRecoveryOperation::collectBatch($sourcePath,$sourceHash,$source,$provider,$resumedProofs);
             $rows=$batch['rows']; $calendar=$batch['calendar_scope'];
         } else {
         $start = Carbon\CarbonImmutable::parse(FrozenM5GapRecoveryOperation::TARGET, 'UTC'); $end = $start->addMinutes(10);

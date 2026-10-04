@@ -51,6 +51,18 @@ stored economic rows. A new price-only MTF freeze must precede new exact-base-SH
 quote sidecars and the final quoted freeze. Old source, sidecars and trial
 receipts remain unchanged; the same-data scientific attempt cap is not reset.
 
+Recovery resumes only successful proofs from an owner-verified prior archive:
+original source, receipt, fork bytes and SQL digest must agree. Refetch unresolved
+native targets only and publish a new fork. HTTP failure/empty unattested tick
+responses never become permanent absence checkpoints, including quote fetches.
+
+Explicit clean discovery is a separate contract when full continuity remains
+unresolved. The shared Python calendar chooses the latest sufficient clean
+segment without strategy outcomes: 15000 evaluated plus 512 warmup M5 rows,
+closed H4/H1/M15, new hashes and reverified parent/SQL evidence. Missing quotes
+remain unavailable; old parent quotes cannot attest the slice. The stored
+`LAB_CLEAN_DISCOVERY_BUNDLE_HASH` admits bounded Academy screening only (ADR-024).
+
 ## Rules
 
 - The canonical provider is the only automatic repair source.

@@ -1,5 +1,11 @@
 # Operations states
 
+`WAIT_DATASET_CONTINUITY -> bounded Academy preparation` may occur only when
+a ready proposal explicitly names a verified clean discovery bundle. Parent
+full-archive continuity remains blocked. A spent/not-ready slice cannot authorize
+a generic full successor; the arbiter rechecks the original bad-source fence
+(ADR-024).
+
 Academy draft publication is a two-step arbiter transition: prepare the trial's
 durable draft intent, then dispatch that same generation canonically. A crash
 before queue publication may fence `selected/dispatched -> publication_failed`

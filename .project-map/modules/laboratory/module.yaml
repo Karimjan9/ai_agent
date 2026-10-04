@@ -109,6 +109,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php
   - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
   - backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php
   - backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php

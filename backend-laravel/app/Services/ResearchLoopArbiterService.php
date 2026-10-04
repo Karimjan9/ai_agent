@@ -696,8 +696,36 @@ class ResearchLoopArbiterService
     private function freshDatasetContinuityReadiness(?LabGeneration $latest, array $academy, string $symbol): array
     {
         $owner = app(GenerationSnapshotAdmissionService::class);
+        // An explicitly selected, physically distinct clean discovery slice
+        // may serve only this ready bounded Academy question. It cannot
+        // certify the parent archive or unlock another generic full replay.
+        $discovery = (array) data_get($academy, 'cold_start.dependencies.discovery_bundle_manifest', []);
+        if (($academy['status'] ?? null) === 'would_materialize'
+            && data_get($academy, 'identity.data_role') === 'pre_2026_discovery_only') {
+            $discovery = (array) data_get($academy, 'identity.mtf_bundle_manifest', []);
+        }
+        if (in_array($academy['status'] ?? null, ['would_prepare_cold_start', 'would_materialize'], true)
+            && $discovery !== []) {
+            $scope = app(MultiTimeframeSnapshotService::class)->discoveryBundleReadiness($discovery);
+            if (($scope['ready'] ?? false) !== true) return ['allowed' => false,
+                'reasons' => [$scope['reason'] ?? 'PROSPECTIVE_CLEAN_DISCOVERY_SCOPE_INVALID'],
+                'data_readiness' => $scope, 'promotion_evidence' => false];
+            $checked = $owner->historicalDatasetReadiness($discovery);
+            return [...$checked, 'discovery_only' => true, 'full_validation_eligible' => false,
+                'independent_evidence' => false, 'parent_archive_repaired' => false];
+        }
         $manifest = (array) data_get($academy, 'identity.mtf_bundle_manifest',
             data_get($latest?->trigger_context, 'mtf_bundle_manifest', []));
+        if (($manifest['validation_bundle_protocol'] ?? null) === 'prospective_clean_discovery_bundle_v1') {
+            // The clean question is spent/not ready. Evaluate the original
+            // full input's outstanding dependency, not the slice's good SHA.
+            $originalSha = (string) data_get($manifest, 'prospective_m5_repair.original_bad_m5_sha256', '');
+            $prior = LabGeneration::query()->whereHas('laboratory', fn ($query) => $query->where('symbol', $symbol))
+                ->where('trigger_context->mtf_bundle_manifest->streams->M5->sha256', $originalSha)->latest('id')->first();
+            if ($prior) $manifest = (array) data_get($prior->trigger_context, 'mtf_bundle_manifest', []);
+            else return ['allowed' => false, 'reasons' => ['DISCOVERY_SCOPE_DOES_NOT_AUTHORIZE_FULL_REPLAY'],
+                'promotion_evidence' => false, 'discovery_only' => true];
+        }
         $path = (string) data_get($manifest, 'streams.M5.path', '');
         $sha = (string) data_get($manifest, 'streams.M5.sha256', '');
         // Missing or drifted paths remain subject to ordinary snapshot

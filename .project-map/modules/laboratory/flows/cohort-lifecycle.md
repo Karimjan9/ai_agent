@@ -1,5 +1,13 @@
 # Laboratory cohort lifecycle
 
+Explicit clean-discovery Academy cohorts seal a stored
+`prospective_clean_discovery_bundle_v1`, not the incomplete parent full archive.
+Canonical dispatch requires typed ownership and exact stream seals. Single and
+batch screening send the existing prospective probe contract: 15000 evaluated
+rows plus 512 warmup, UTC bounds and month counts, checked against Python's
+receipt. Academy remains research-only, including a promising scientific screen;
+full evaluation/dispatch reject this slice instead of upgrading it (ADR-024).
+
 Prospective screen repair occupies the existing protected three-arm lane; it
 does not create another generation owner. The arbiter selects one source pair,
 the population compiler preserves that source through portfolio transforms,

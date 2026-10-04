@@ -1,5 +1,10 @@
 # Runtime health and recovery
 
+An explicit stored clean bundle may unblock one ready bounded Academy discovery
+question, not a full-archive repair. Admission rechecks native parent, SQL,
+selected calendar and four stream bytes. After that allowance is spent/not ready,
+the original full-source fence governs generic construction again (ADR-024).
+
 ## Trigger
 
 The scheduler, a strict health command or an operator detects stale heartbeat,

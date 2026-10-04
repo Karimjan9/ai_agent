@@ -26,6 +26,7 @@ paths:
   - backend-laravel/scripts/freeze-historical-tick-spread.test.cjs
   - backend-laravel/scripts/recover-frozen-m5-gap.php
   - backend-laravel/scripts/verify-sparse-reopen-ticks.cjs
+  - backend-laravel/scripts/verify-sparse-reopen-ticks.test.cjs
   - backend-laravel/scripts/audit-frozen-m5-gap-source.py
 entry_points:
   - MarketDataContinuityService
@@ -36,9 +37,12 @@ entry_points:
   - MultiTimeframeSnapshotService::forAgentOwnedConfirmationValidation
   - HistoricalQuoteSpreadService::attach
   - MultiTimeframeSnapshotService::agentValidationReadiness
+  - MultiTimeframeSnapshotService::forProspectiveCleanDiscovery
+  - MultiTimeframeSnapshotService::discoveryBundleReadiness
   - FrozenM5GapRecoveryOperation::batchProof
   - FrozenM5GapRecoveryOperation::forkMany
   - FrozenM5GapRecoveryOperation::collectBatch
+  - FrozenM5GapRecoveryOperation::resumeProofs
   - backend-laravel/scripts/recover-frozen-m5-gap.php
 data_tables:
   - candles
@@ -50,6 +54,7 @@ invariants:
   - Only the configured canonical provider repairs canonical continuity.
   - Scheduled market closures are interpreted through the shared session calendar.
   - Incomplete continuity blocks affected new research construction.
+  - Explicit clean discovery seals 15000 evaluated M5 rows plus 512 warmup from a verified parent fork, selected by calendar continuity/recency, never outcomes. It does not certify parent continuity, full validation, independent evidence or trading authority.
   - Rolling/live volume coverage never attests a historical replay snapshot.
   - A volume-dependent historical replay requires a hash-bound provenance receipt and an explicit volume_available column in every consumed stream.
   - A no-volume lane is not a failed volume capability and reports not_requested.
@@ -71,4 +76,5 @@ tests:
   - backend-laravel/tests/Feature/MtfAgentValidationSnapshotServiceTest.php
   - backend-laravel/tests/Feature/HistoricalQuoteSpreadTest.php
   - backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php
+  - backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php
   - ai-service-python/tests/test_historical_quotes.py

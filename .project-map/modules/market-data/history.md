@@ -1,5 +1,12 @@
 # Market-data history
 
+## 2026-10-04 — Explicit clean discovery scope
+
+Verified recovery can resume successful proofs without treating transport errors
+as absent market data. A separately sealed calendar-selected 15000+512 clean
+discovery bundle admits bounded Academy research while leaving full parent
+continuity, independent validation and authority gates unchanged (ADR-024).
+
 ## 2026-07 to 2026-08 — Continuity became an explicit safety gate
 
 Gap ranges, provider outage state and the shared FX session calendar were made

@@ -38,6 +38,8 @@ class GenerationSnapshotAdmissionService
             $reasons = array_merge($reasons, $this->mtfBundleReasons(
                 (string) data_get($generation->trigger_context, 'mtf_bundle_hash', ''),
                 (array) data_get($generation->trigger_context, 'mtf_bundle_manifest', []),
+                $generation->trigger_type === 'academy_experiment'
+                    && data_get($generation->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only',
             ));
         }
         foreach ($generation->agents as $agent) {
@@ -128,7 +130,7 @@ class GenerationSnapshotAdmissionService
     }
 
     /** @return array<int, string> */
-    private function mtfBundleReasons(string $bundleHash, array $manifest): array
+    private function mtfBundleReasons(string $bundleHash, array $manifest, bool $allowDiscovery = false): array
     {
         $reasons = [];
         if ($bundleHash === '' || strlen($bundleHash) !== 64) {
@@ -137,7 +139,11 @@ class GenerationSnapshotAdmissionService
         if ($manifest === []) {
             return [...$reasons, 'GENERATION_MTF_BUNDLE_MANIFEST_MISSING'];
         }
-        if ((string) data_get($manifest, 'protocol') !== MultiTimeframeSnapshotService::PROTOCOL
+        $discovery = ($manifest['validation_bundle_protocol'] ?? null) === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL;
+        if ($discovery) {
+            $ready = app(MultiTimeframeSnapshotService::class)->discoveryBundleReadiness($manifest);
+            if (! $allowDiscovery || ($ready['allowed'] ?? false) !== true) $reasons[] = 'GENERATION_DISCOVERY_BUNDLE_ADMISSION_INVALID';
+        } elseif ((string) data_get($manifest, 'protocol') !== MultiTimeframeSnapshotService::PROTOCOL
             || (string) data_get($manifest, 'validation_bundle_protocol') !== 'agent_owned_mtf_foundation_bundle_v1') {
             $reasons[] = 'GENERATION_MTF_BUNDLE_PROTOCOL_INVALID';
         }

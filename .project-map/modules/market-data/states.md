@@ -17,6 +17,8 @@
 | frozen_training_source_refused | offline provider and raw-tick proof agrees for actual missing buckets | prospective_training_fork | Explicit bounded recovery operation; old CSV, rows and generation receipts remain immutable | No synthetic empty minutes or fake complete-minute coverage. Unrecovered gaps remain an explicit scope dependency. |
 | prospective_training_fork | non-default training dataset selected before a new cohort | prospective_m5_verified | Existing MTF owner verifies receipt, old/new file hashes and actual database economic-row digest | Dataset labels alone fail closed; old quote sidecars cannot transfer to new price bytes. |
 | prospective_m5_verified | new price-only freeze followed by exact-hash quote sidecar freeze | new_quote_snapshot_bound | Existing MTF and quote owners seal a new bundle only | Does not reopen old trial, reset hypothesis budget or create independent/paper authority. |
+| prospective_training_fork_with_residual_gaps | explicit calendar-selected 15000+512 scope passes parent/SQL/file checks | clean_discovery_bundle_frozen | Existing MTF owner seals four streams under `prospective_clean_discovery_bundle_v1` | Parent remains incomplete; quotes require this stream's own SHA; no full/independent authority. |
+| clean_discovery_bundle_frozen | explicit bounded Academy screening admission | discovery_evaluated | Stored bundle hash, typed Academy owner and exact Python window receipt agree | Wrong owner, shortened window or full replay fails closed; ordinary full-source fence remains. |
 
 The persisted `market_data_sync_states` rows and their migrations are the exact
 state authority. Add a transition only together with its storage, service and

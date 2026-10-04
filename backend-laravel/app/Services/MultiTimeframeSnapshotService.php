@@ -9,6 +9,7 @@ use App\Services\MarketData\MarketVolumeService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 /**
  * Freezes the complete H4/H1/M15/M5 research input as one immutable bundle.
@@ -34,6 +35,10 @@ class MultiTimeframeSnapshotService
     public const AGENT_VALIDATION_EVIDENCE_BUDGETS = [200000, 350000];
 
     public const AGENT_VALIDATION_MIN_M5_ROWS = 10000;
+
+    public const DISCOVERY_BUNDLE_PROTOCOL = 'prospective_clean_discovery_bundle_v1';
+    public const DISCOVERY_EVALUATION_ROWS = 15000;
+    public const DISCOVERY_WARMUP_ROWS = 512;
 
     private const DURATIONS = ['M5' => 5, 'M15' => 15, 'H1' => 60, 'H4' => 240, 'D1' => 1440];
 
@@ -207,10 +212,173 @@ class MultiTimeframeSnapshotService
         if ($rows !== (int) $archive->row_count || ! hash_equals((string) ($receipt['new_economic_rows_sha256'] ?? ''), hash_final($digest))) return null;
         return ['protocol' => $receipt['protocol'], 'verified' => true, 'repair_hash' => $hash,
             'dataset_key' => $archive->dataset_key, 'original_bad_m5_sha256' => $receipt['source_csv_sha256'],
+            'original_bad_m5_source_path' => $source,
             'prospective_m5_source_sha256' => $receipt['new_price_csv_sha256'], 'prospective_m5_source_path' => $price,
             'economic_rows_sha256' => $receipt['new_economic_rows_sha256'], 'quote_liquidity_inherited' => false,
             'calendar_scope' => $receipt['calendar_scope'],
             'independent_evidence' => false, 'promotion_evidence' => false];
+    }
+
+    /** Read-only selection by continuity and recency, never strategy outcomes. */
+    public function prospectiveCleanDiscoveryReadiness(string $symbol, string $dataset,
+        int $evaluationRows = self::DISCOVERY_EVALUATION_ROWS, int $warmupRows = self::DISCOVERY_WARMUP_ROWS): array
+    {
+        $blocked = fn (string $reason): array => ['ready' => false, 'allowed' => false, 'reason' => $reason, 'promotion_evidence' => false];
+        if (strtoupper($symbol) !== 'XAUUSD' || $evaluationRows !== self::DISCOVERY_EVALUATION_ROWS
+            || $warmupRows !== self::DISCOVERY_WARMUP_ROWS) return $blocked('DISCOVERY_SCOPE_POLICY_INVALID');
+        $archive = MarketTrainingArchive::query()->where('dataset_key', $dataset)->where('provider', 'dukascopy')
+            ->where('symbol', 'XAUUSD')->where('timeframe', 'M5')->first();
+        $repair = $this->verifiedProspectiveM5Repair($archive);
+        if ($repair === null) return $blocked('PROSPECTIVE_M5_REPAIR_PROVENANCE_INVALID');
+        try {
+            $audit = new Process(['python', '-B', base_path('scripts/audit-frozen-m5-gap-source.py'),
+                $repair['prospective_m5_source_path'], '--inventory', '--clean-discovery='.$evaluationRows, '--warmup='.$warmupRows]);
+            $audit->setTimeout(120); $audit->mustRun();
+            $calendar = (array) data_get(json_decode($audit->getOutput(), true, 512, JSON_THROW_ON_ERROR), 'clean_discovery_scope', []);
+            if (($calendar['protocol'] ?? null) !== 'prospective_clean_discovery_calendar_v1'
+                || ($calendar['source_csv_sha256'] ?? null) !== $repair['prospective_m5_source_sha256']
+                || ($calendar['source_rows'] ?? null) !== (int) $archive->row_count
+                || ($calendar['loaded_rows'] ?? null) !== $evaluationRows + $warmupRows
+                || ($calendar['selected_unexpected_gaps'] ?? null) !== 0
+                || ($calendar['independent_evidence'] ?? null) !== false
+                || ($calendar['full_validation_eligible'] ?? null) !== false) return $blocked('DISCOVERY_CLEAN_SEGMENT_UNAVAILABLE');
+            $rows = $this->discoveryRows($dataset, $calendar);
+            if (count($rows) !== $evaluationRows + $warmupRows
+                || CarbonImmutable::parse($rows[0]['time'])->toIso8601ZuluString() !== $calendar['loaded_start']
+                || CarbonImmutable::parse($rows[array_key_last($rows)]['time'])->toIso8601ZuluString() !== $calendar['loaded_end']) return $blocked('DISCOVERY_SELECTED_SQL_ROWS_MISMATCH');
+            $scope = ['protocol' => 'prospective_clean_discovery_scope_v1', 'symbol' => 'XAUUSD',
+                'parent_dataset_key' => $dataset, 'parent_archive_id' => (int) $archive->id,
+                'parent_repair_hash' => $repair['repair_hash'], 'parent_original_bad_m5_sha256' => $repair['original_bad_m5_sha256'],
+                'parent_fork_price_sha256' => $repair['prospective_m5_source_sha256'],
+                'parent_economic_rows_sha256' => $repair['economic_rows_sha256'],
+                'selected_price_sha256' => $this->csvHash($rows), 'calendar' => $calendar,
+                'independent_evidence' => false, 'full_validation_eligible' => false,
+                'paper_eligible' => false, 'promotion_evidence' => false];
+            $scope['scope_hash'] = app(ExecutionContractService::class)->hashParameters($scope);
+            return ['ready' => true, 'allowed' => true, 'reason' => 'CLEAN_DISCOVERY_SCOPE_READY',
+                'discovery_scope' => $scope, 'entry_cutoff' => $calendar['loaded_end'],
+                'prospective_m5_repair' => $repair, 'promotion_evidence' => false];
+        } catch (\Throwable) { return $blocked('DISCOVERY_SCOPE_CALENDAR_OR_SQL_UNVERIFIED'); }
+    }
+
+    /** Explicitly freezes new bytes. It cannot certify the incomplete parent archive. */
+    public function forProspectiveCleanDiscovery(string $symbol, string $dataset,
+        int $evaluationRows = self::DISCOVERY_EVALUATION_ROWS, int $warmupRows = self::DISCOVERY_WARMUP_ROWS): array
+    {
+        $ready = $this->prospectiveCleanDiscoveryReadiness($symbol, $dataset, $evaluationRows, $warmupRows);
+        if (! $ready['ready']) throw new RuntimeException('MTF discovery scope not ready: '.$ready['reason']);
+        $scope = $ready['discovery_scope']; $calendar = $scope['calendar'];
+        $cutoff = CarbonImmutable::parse($calendar['loaded_end'])->addMinutes(5);
+        $rows = $this->discoveryRows($dataset, $calendar);
+        if ($this->csvHash($rows) !== $scope['selected_price_sha256']) throw new RuntimeException('DISCOVERY_SELECTED_ROWS_CHANGED_DURING_FREEZE');
+        $streams = ['M5' => $rows]; $contextFrom = CarbonImmutable::parse($calendar['loaded_start'])->subDays(90);
+        foreach (['M15', 'H1'] as $timeframe) {
+            $streams[$timeframe] = $this->closedRows($this->training->candlesForAgent(
+                MarketTrainingDataService::DEFAULT_DATASET, 'dukascopy', 'XAUUSD', $timeframe, $contextFrom, $cutoff), $timeframe, $cutoff);
+        }
+        $streams['H4'] = $this->aggregateH4($streams['H1']);
+        foreach (['M5' => $evaluationRows + $warmupRows, 'M15' => 1000, 'H1' => 500, 'H4' => 100] as $timeframe => $minimum) {
+            if (count($streams[$timeframe]) < $minimum) throw new RuntimeException('DISCOVERY_CONTEXT_STREAM_UNDERPOWERED:'.$timeframe);
+        }
+        $volume = $this->attestHistoricalVolumeStreams($streams, 'dukascopy'); $streams = $volume['streams'];
+        $quotes = app(HistoricalQuoteSpreadService::class)->attach($streams['M5'], $this->csvHash($streams['M5']));
+        $streams['M5'] = $quotes['rows'];
+        $hashes = []; foreach ($streams as $timeframe => $stream) $hashes[$timeframe] = $this->rowContentHash($stream);
+        $identity = ['protocol' => self::PROTOCOL, 'validation_bundle_protocol' => self::DISCOVERY_BUNDLE_PROTOCOL,
+            'data_role' => 'pre_2026_discovery_only', 'symbol' => 'XAUUSD', 'provider' => 'dukascopy',
+            'datasets' => ['M5' => $dataset, 'M15' => MarketTrainingDataService::DEFAULT_DATASET,
+                'H1' => MarketTrainingDataService::DEFAULT_DATASET, 'H4' => 'derived_from_H1'],
+            'discovery_scope' => $scope, 'prospective_m5_repair' => $ready['prospective_m5_repair'],
+            'entry_rows' => count($streams['M5']), 'entry_first_candle_at' => $rows[0]['time'],
+            'entry_last_candle_at' => $rows[array_key_last($rows)]['time'], 'closed_cutoff' => $cutoff->toIso8601String(),
+            'context_warmup_days' => 90, 'stream_content_sha256' => $hashes,
+            'volume_provenance' => [...$volume['provenance'], 'stream_content_sha256' => $hashes],
+            'quote_spread_provenance' => $quotes['provenance'], 'aggregation' => ['H4' => 'four_complete_UTC_H1_candles'],
+            'bounded_cost_contract' => ['requested_m5_rows' => $evaluationRows + $warmupRows,
+                'evaluated_rows' => $evaluationRows, 'warmup_rows' => $warmupRows, 'full_live_export_forbidden' => true],
+            'independent_evidence' => false, 'full_validation_eligible' => false, 'paper_eligible' => false,
+            'runtime_trade_authority' => false, 'parent_authority' => false, 'promotion_evidence' => false];
+        return $this->publishAgentOwnedBundle($identity, $streams);
+    }
+
+    /** A label, clean-tail count or changed parent bytes cannot attest a frozen discovery bundle. */
+    public function discoveryBundleReadiness(array $manifest): array
+    {
+        $blocked = fn (string $reason): array => ['ready' => false, 'allowed' => false, 'reason' => $reason, 'promotion_evidence' => false];
+        if (($manifest['protocol'] ?? null) !== self::PROTOCOL
+            || ($manifest['validation_bundle_protocol'] ?? null) !== self::DISCOVERY_BUNDLE_PROTOCOL
+            || ($manifest['data_role'] ?? null) !== 'pre_2026_discovery_only'
+            || ($manifest['independent_evidence'] ?? null) !== false || ($manifest['full_validation_eligible'] ?? null) !== false
+            || ($manifest['paper_eligible'] ?? null) !== false || ($manifest['promotion_evidence'] ?? null) !== false
+            || ($manifest['runtime_trade_authority'] ?? null) !== false || ($manifest['parent_authority'] ?? null) !== false) return $blocked('DISCOVERY_EVIDENCE_BOUNDARY_INVALID');
+        $scope = (array) ($manifest['discovery_scope'] ?? []);
+        $current = $this->prospectiveCleanDiscoveryReadiness('XAUUSD', (string) ($scope['parent_dataset_key'] ?? ''));
+        if (! $current['ready'] || app(ExecutionContractService::class)->hashParameters($scope)
+            !== app(ExecutionContractService::class)->hashParameters($current['discovery_scope'])) return $blocked('DISCOVERY_PARENT_OR_SELECTED_SCOPE_CHANGED');
+        $identity = array_diff_key($manifest, array_flip(['bundle_hash', 'streams', 'generated_at', 'rule']));
+        $hash = app(ExecutionContractService::class)->hashParameters($identity);
+        $root = realpath(storage_path('app/lab-datasets/mtf/'.$hash));
+        $keys = array_keys((array) ($manifest['streams'] ?? [])); sort($keys);
+        if ($root === false || ! hash_equals($hash, (string) ($manifest['bundle_hash'] ?? ''))
+            || ! is_file($root.'/manifest.json') || ! $this->validBundle($manifest)
+            || $keys !== ['H1', 'H4', 'M15', 'M5']) return $blocked('DISCOVERY_FROZEN_BYTES_INVALID');
+        $disk = json_decode((string) File::get($root.'/manifest.json'), true);
+        if (! is_array($disk) || app(ExecutionContractService::class)->hashParameters($disk)
+            !== app(ExecutionContractService::class)->hashParameters($manifest)) return $blocked('DISCOVERY_MANIFEST_DRIFT');
+        foreach ($manifest['streams'] as $timeframe => $stream) {
+            $path = realpath((string) ($stream['path'] ?? ''));
+            if ($path === false || $path !== realpath($root.'/'.strtolower($timeframe).'.csv')) return $blocked('DISCOVERY_STREAM_PATH_INVALID');
+        }
+        if ((int) data_get($manifest, 'streams.M5.row_count') !== self::DISCOVERY_EVALUATION_ROWS + self::DISCOVERY_WARMUP_ROWS
+            || (int) ($manifest['entry_rows'] ?? 0) !== self::DISCOVERY_EVALUATION_ROWS + self::DISCOVERY_WARMUP_ROWS) return $blocked('DISCOVERY_FROZEN_ROW_BUDGET_INVALID');
+        try {
+            $frozenRows = $this->readDiscoveryStream((string) data_get($manifest, 'streams.M5.path'));
+            $priceRows = array_map(static fn (array $row): array => array_intersect_key($row,
+                array_flip(['time', 'open', 'high', 'low', 'close', 'volume'])), $frozenRows);
+            if (count($frozenRows) !== self::DISCOVERY_EVALUATION_ROWS + self::DISCOVERY_WARMUP_ROWS
+                || ! hash_equals($scope['selected_price_sha256'], $this->csvHash($priceRows))) return $blocked('DISCOVERY_FROZEN_SELECTED_ROWS_MISMATCH');
+            foreach ($manifest['streams'] as $timeframe => $stream) {
+                $rows = $timeframe === 'M5' ? $frozenRows : $this->readDiscoveryStream($stream['path']);
+                if (count($rows) !== (int) $stream['row_count']
+                    || ! hash_equals((string) data_get($manifest, 'stream_content_sha256.'.$timeframe, ''), $this->rowContentHash($rows))) return $blocked('DISCOVERY_STREAM_CONTENT_MISMATCH');
+            }
+        } catch (\Throwable) { return $blocked('DISCOVERY_FROZEN_SELECTED_ROWS_UNVERIFIED'); }
+        return ['ready' => true, 'allowed' => true, 'reason' => 'FROZEN_CLEAN_DISCOVERY_READY',
+            'discovery_scope' => $scope, 'promotion_evidence' => false];
+    }
+
+    private function readDiscoveryStream(string $path): array
+    {
+        if (! is_file($path) || filesize($path) > 67108864) throw new RuntimeException('DISCOVERY_STREAM_BOUND_INVALID');
+        $handle = fopen($path, 'rb');
+        if ($handle === false) throw new RuntimeException('DISCOVERY_STREAM_UNREADABLE');
+        try {
+            $columns = fgetcsv($handle); $rows = []; $prior = null;
+            if (! is_array($columns) || count(array_unique($columns)) !== count($columns)
+                || array_diff(['time', 'open', 'high', 'low', 'close', 'volume'], $columns) !== []) throw new RuntimeException('DISCOVERY_STREAM_COLUMNS_INVALID');
+            while (($values = fgetcsv($handle)) !== false) {
+                if (count($values) !== count($columns) || count($rows) >= 100000) throw new RuntimeException('DISCOVERY_STREAM_ROW_INVALID');
+                $row = array_combine($columns, $values);
+                if (! is_string($row['time']) || $row['time'] >= '2026-01-01' || ($prior !== null && $row['time'] <= $prior)) throw new RuntimeException('DISCOVERY_STREAM_TIME_INVALID');
+                foreach (['open', 'high', 'low', 'close', 'volume'] as $field) {
+                    if (! is_numeric($row[$field]) || ! is_finite((float) $row[$field])) throw new RuntimeException('DISCOVERY_STREAM_NUMERIC_INVALID');
+                    $row[$field] = (float) $row[$field];
+                }
+                foreach (['volume_available', 'spread_available'] as $field) if (array_key_exists($field, $row)) {
+                    if (! in_array($row[$field], ['0', '1'], true)) throw new RuntimeException('DISCOVERY_STREAM_MARKER_INVALID');
+                    $row[$field] = $row[$field] === '1';
+                }
+                $prior = $row['time']; $rows[] = $row;
+            }
+            return $rows;
+        } finally { fclose($handle); }
+    }
+
+    private function discoveryRows(string $dataset, array $calendar): array
+    {
+        return $this->training->candlesForAgent($dataset, 'dukascopy', 'XAUUSD', 'M5',
+            CarbonImmutable::parse($calendar['loaded_start']), CarbonImmutable::parse($calendar['loaded_end'])->addMinutes(5),
+            self::DISCOVERY_EVALUATION_ROWS + self::DISCOVERY_WARMUP_ROWS);
     }
 
     /**
@@ -317,7 +485,14 @@ class MultiTimeframeSnapshotService
             'parent_authority' => false,
             'promotion_evidence' => false,
         ];
-        $bundleHash = hash('sha256', json_encode($identity, JSON_UNESCAPED_SLASHES));
+        return $this->publishAgentOwnedBundle($identity, $streams);
+    }
+
+    private function publishAgentOwnedBundle(array $identity, array $streams): array
+    {
+        $bundleHash = ($identity['validation_bundle_protocol'] ?? null) === self::DISCOVERY_BUNDLE_PROTOCOL
+            ? app(ExecutionContractService::class)->hashParameters($identity)
+            : hash('sha256', json_encode($identity, JSON_UNESCAPED_SLASHES));
         $directory = storage_path('app/lab-datasets/mtf/'.$bundleHash);
         $manifestPath = $directory.'/manifest.json';
         if (is_file($manifestPath)) {
@@ -612,8 +787,14 @@ class MultiTimeframeSnapshotService
      * @param  array<string,mixed>  $manifest
      * @return array<string,mixed>
      */
-    public function restoreAgentOwnedConfirmationValidationBundle(array $manifest): array
+    public function restoreAgentOwnedConfirmationValidationBundle(array $manifest, bool $allowDiscovery = false): array
     {
+        if (($manifest['validation_bundle_protocol'] ?? null) === self::DISCOVERY_BUNDLE_PROTOCOL) {
+            if (! $allowDiscovery) throw new RuntimeException('DISCOVERY_BUNDLE_CANNOT_SATISFY_FULL_VALIDATION');
+            $ready = $this->discoveryBundleReadiness($manifest);
+            if (! $ready['allowed']) throw new RuntimeException('MTF discovery resume refused: '.$ready['reason']);
+            return [...$this->result($manifest, storage_path('app/lab-datasets/mtf/'.$manifest['bundle_hash'])), 'restored_from_sealed_retry' => true];
+        }
         if ((string) data_get($manifest, 'validation_bundle_protocol') !== 'agent_owned_mtf_foundation_bundle_v1'
             || (string) data_get($manifest, 'data_role') !== 'pre_2026_foundation_training_only'
             || (bool) data_get($manifest, 'promotion_evidence', true)) {

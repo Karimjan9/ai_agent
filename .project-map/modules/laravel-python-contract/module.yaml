@@ -72,6 +72,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_clean_discovery_boundary.py
+  - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php
   - ai-service-python/tests/test_sealed_dataset_identity.py
   - ai-service-python/tests/test_market_adaptive_replay.py
   - backend-laravel/tests/Feature/EvolutionAuditRegressionTest.php

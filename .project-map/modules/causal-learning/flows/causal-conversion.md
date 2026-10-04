@@ -1,5 +1,12 @@
 # Causal conversion loop
 
+An explicitly selected clean-discovery Academy cohort may observe local stage
+behavior on a new calendar-selected 15000+512 four-stream scope. Its cold cap
+binds physical parent/foundation/execution, not the slice/code/quote label.
+The canonical arbiter still owns prepare and dispatch; no full, independent
+confirmation, economic skill or inherited trait follows from this scope alone.
+See ADR-024.
+
 ## Prospective screen-repair branch
 
 An immutable promising pair buys one fresh, passport/phase-bound guided,

@@ -166,6 +166,39 @@ class FrozenM5GapRecoveryTest extends TestCase
         \FrozenM5GapRecoveryOperation::batchProof('2025-12-17 23:00:00',$m1,$m5,$tick);
     }
 
+    public function test_bounded_resume_accepts_only_exact_original_successful_proofs_and_unchanged_fork_bytes(): void
+    {
+        [$m1,$m5,$tick]=$this->batchProofFixture();
+        $proof=\FrozenM5GapRecoveryOperation::batchProof('2025-12-17 23:00:00',$m1,$m5,$tick);
+        $source=[$this->row('2025-12-17 21:55:00'),$this->row('2025-12-17 23:05:00')];
+        $inventory=['2025-12-17T23:00:00+00:00'];
+        $rows=\FrozenM5GapRecoveryOperation::forkMany($source,[$proof],$inventory);
+        $sourcePath=tempnam(sys_get_temp_dir(),'m5-resume-source-');
+        $pricePath=tempnam(sys_get_temp_dir(),'m5-resume-price-');
+        try {
+            File::put($sourcePath,\FrozenM5GapRecoveryOperation::csvBytes($source));
+            File::put($pricePath,\FrozenM5GapRecoveryOperation::csvBytes($rows));
+            $sourceSha=hash_file('sha256',$sourcePath);
+            $identity=['protocol'=>\FrozenM5GapRecoveryOperation::BATCH_PROTOCOL,
+                'source_csv_path'=>realpath($sourcePath),'source_csv_sha256'=>$sourceSha,
+                'source_rows'=>count($source),'new_rows'=>count($rows),'target_proofs'=>[$proof],
+                'canonical_missing_utc'=>$inventory,'new_price_csv_sha256'=>hash_file('sha256',$pricePath),
+                'new_economic_rows_sha256'=>\FrozenM5GapRecoveryOperation::economicRowsHash($rows),
+                'independent_evidence'=>false,'promotion_evidence'=>false,'quote_liquidity_inherited'=>false];
+            $hash=app(ExecutionContractService::class)->hashParameters($identity);
+            $receipt=[...$identity,'repair_hash'=>$hash,'dataset_key'=>'foundation_intraday_gapfix_'.substr($hash,0,16)];
+            $this->assertSame([$proof],\FrozenM5GapRecoveryOperation::resumeProofs($sourcePath,$sourceSha,$source,$receipt,$pricePath));
+            $forged=$receipt; $forged['target_proofs'][0]['actual_tick_count']++;
+            try { \FrozenM5GapRecoveryOperation::resumeProofs($sourcePath,$sourceSha,$source,$forged,$pricePath); $this->fail('Tampered resume accepted'); }
+            catch (\RuntimeException $error) { $this->assertSame('RECOVERY_RESUME_RECEIPT_INVALID',$error->getMessage()); }
+            try { \FrozenM5GapRecoveryOperation::resumeProofs($sourcePath,str_repeat('b',64),$source,$receipt,$pricePath); $this->fail('Different original accepted'); }
+            catch (\RuntimeException $error) { $this->assertSame('RECOVERY_RESUME_RECEIPT_INVALID',$error->getMessage()); }
+            File::put($pricePath,\FrozenM5GapRecoveryOperation::csvBytes($rows)."\n");
+            $this->expectExceptionMessage('RECOVERY_RESUME_PROOF_OR_BYTES_INVALID');
+            \FrozenM5GapRecoveryOperation::resumeProofs($sourcePath,$sourceSha,$source,$receipt,$pricePath);
+        } finally { File::delete([$sourcePath,$pricePath]); }
+    }
+
     public function test_batch_duplicate_out_of_inventory_future_or_unbounded_targets_are_refused(): void
     {
         [$m1,$m5,$tick]=$this->batchProofFixture(); $proof=\FrozenM5GapRecoveryOperation::batchProof('2025-12-17 23:00:00',$m1,$m5,$tick);

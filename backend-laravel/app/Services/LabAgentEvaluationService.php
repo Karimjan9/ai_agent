@@ -22,6 +22,10 @@ class LabAgentEvaluationService
 
     public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
+        $agent->loadMissing('generation');
+        if (data_get($agent->generation?->trigger_context, 'mtf_bundle_manifest.validation_bundle_protocol') === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL) {
+            throw new RuntimeException('DISCOVERY_ONLY_BUNDLE_FULL_VALIDATION_FORBIDDEN');
+        }
         $run ??= $this->evidence->beginRun($agent, 'full_validation', 'full', ['source' => 'direct_evaluation']);
         $agent->load('modelVersion', 'generation');
         $model = $agent->modelVersion;
@@ -999,7 +1003,7 @@ class LabAgentEvaluationService
             return;
         }
         $runtimeTimeframe = $this->replayTimeframe($agent);
-        $mtfBundle = $this->replayMtfBundle($agent);
+        $mtfBundle = $this->replayMtfBundle($agent, false, true);
         $volumeEnabled = $this->volumeEnabled($model);
         // The inexpensive genetic screen is an evolution operation, not a
         // forward/paper observation.  Keep it entirely on the frozen
@@ -1013,12 +1017,13 @@ class LabAgentEvaluationService
         );
         $microProbe = data_get($agent->generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
         $prospectiveProbe = data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind') === ProspectiveRepairExperimentService::KIND;
-        $screenRows = $microProbe
+        $cleanDiscovery = data_get($mtfBundle, 'manifest.validation_bundle_protocol') === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL;
+        $screenRows = $cleanDiscovery ? MultiTimeframeSnapshotService::DISCOVERY_EVALUATION_ROWS + MultiTimeframeSnapshotService::DISCOVERY_WARMUP_ROWS : ($microProbe
             ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
             : ($prospectiveProbe
                 ? ProspectiveRepairExperimentService::PROBE_POLICY['training_tail_rows']
-                    + ProspectiveRepairExperimentService::PROBE_POLICY['warmup_rows'] : 5000);
-        $stratifiedHistorical = ! $microProbe
+                    + ProspectiveRepairExperimentService::PROBE_POLICY['warmup_rows'] : 5000));
+        $stratifiedHistorical = ! $cleanDiscovery && ! $microProbe
             && data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind') !== ProspectiveRepairExperimentService::KIND;
         $primaryDatasetPath = $mtfBundle !== null
             ? (string) $mtfBundle['entry_dataset_path']
@@ -1112,6 +1117,7 @@ class LabAgentEvaluationService
             'emit_decision_trace' => ! $microProbe,
         ];
         $request = $this->applyMtfReplayBundle($request, $mtfBundle);
+        if ($cleanDiscovery) $request = $this->sealCleanDiscoveryWindow($request, $rows, $mtfBundle);
         if ($regimeSnapshot !== null) {
             // Screening and full replay consume the same generation-frozen
             // H1 context. Only the latest bounded tail is sent to screening.
@@ -1127,14 +1133,11 @@ class LabAgentEvaluationService
         $isDifferential = $agent->strategy_family === 'differential_router'
             || data_get($model->metadata, 'differential_router_contract') !== null
             || str_contains((string) data_get($model->metadata, 'base_strategy', ''), 'differential_router');
-        $configuredScreenTimeout = $isDifferential
-            ? (int) config('services.lab_selection.differential_screen_timeout_seconds', 900)
-            : (int) config('services.lab_selection.screen_timeout_seconds', 300);
         // Differential screening contains four paired ledgers. Keep its
         // longer transport budget explicit; ordinary screening remains
         // hard-bounded at 930 seconds so the Python worker's 900-second
         // operational budget has a 30-second response margin.
-        $screenTimeout = min($isDifferential ? 900 : 930, max(30, $configuredScreenTimeout));
+        $screenTimeout = $this->screenTransportTimeout($isDifferential, $cleanDiscovery || $prospectiveProbe);
         $requestId = 'screen-'.$agent->id.'-'.bin2hex(random_bytes(6));
         $manifest = [
             'candle_count' => count($rows),
@@ -1158,6 +1161,7 @@ class LabAgentEvaluationService
             $manifest['mtf_bundle_manifest'] = (array) $mtfBundle['manifest'];
             $manifest['execution_timeframe'] = $runtimeTimeframe;
         }
+        if ($cleanDiscovery) $manifest['prospective_probe_window'] = $request['policy_context']['prospective_probe_window'];
         if ($regimeSnapshot !== null) {
             $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
             $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
@@ -1452,7 +1456,7 @@ class LabAgentEvaluationService
             return;
         }
         $runtimeTimeframe = $this->replayTimeframe($first);
-        $mtfBundle = $this->replayMtfBundle($first);
+        $mtfBundle = $this->replayMtfBundle($first, false, true);
         $datasetContracts = $agents
             ->map(fn (LabAgent $agent): string => $this->volumeEnabled($agent->modelVersion) ? 'volume' : 'price')
             ->unique()
@@ -1483,12 +1487,13 @@ class LabAgentEvaluationService
         );
         $microProbe = data_get($generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
         $prospectiveProbe = data_get($first->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind') === ProspectiveRepairExperimentService::KIND;
-        $screenRows = $microProbe
+        $cleanDiscovery = data_get($mtfBundle, 'manifest.validation_bundle_protocol') === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL;
+        $screenRows = $cleanDiscovery ? MultiTimeframeSnapshotService::DISCOVERY_EVALUATION_ROWS + MultiTimeframeSnapshotService::DISCOVERY_WARMUP_ROWS : ($microProbe
             ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
             : ($prospectiveProbe
                 ? ProspectiveRepairExperimentService::PROBE_POLICY['training_tail_rows']
-                    + ProspectiveRepairExperimentService::PROBE_POLICY['warmup_rows'] : 5000);
-        $stratifiedHistorical = ! $microProbe
+                    + ProspectiveRepairExperimentService::PROBE_POLICY['warmup_rows'] : 5000));
+        $stratifiedHistorical = ! $cleanDiscovery && ! $microProbe
             && ! $agents->contains(fn ($arm) => data_get($arm->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind') === ProspectiveRepairExperimentService::KIND);
         $primaryDatasetPath = $mtfBundle !== null
             ? (string) $mtfBundle['entry_dataset_path']
@@ -1585,6 +1590,7 @@ class LabAgentEvaluationService
             'emit_decision_trace' => ! $microProbe,
         ];
         $request = $this->applyMtfReplayBundle($request, $mtfBundle);
+        if ($cleanDiscovery) $request = $this->sealCleanDiscoveryWindow($request, $rows, $mtfBundle);
         if ($regimeSnapshot !== null) {
             $request['regime_dataset_path'] = $regimeSnapshot['path'];
             $request['regime_dataset_tail_rows'] = 2000;
@@ -1631,6 +1637,7 @@ class LabAgentEvaluationService
             $manifest['mtf_bundle_manifest'] = (array) $mtfBundle['manifest'];
             $manifest['execution_timeframe'] = $runtimeTimeframe;
         }
+        if ($cleanDiscovery) $manifest['prospective_probe_window'] = $request['policy_context']['prospective_probe_window'];
         if ($regimeSnapshot !== null) {
             $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
             $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
@@ -2375,7 +2382,7 @@ class LabAgentEvaluationService
     }
 
     /** @return array<string,mixed>|null */
-    private function replayMtfBundle(LabAgent $agent, bool $edgeGenesisReplay = false): ?array
+    private function replayMtfBundle(LabAgent $agent, bool $edgeGenesisReplay = false, bool $allowDiscovery = false): ?array
     {
         $runtimeTimeframe = $this->replayTimeframe($agent);
         if (! $edgeGenesisReplay && $runtimeTimeframe === strtoupper((string) $agent->timeframe)) {
@@ -2387,8 +2394,14 @@ class LabAgentEvaluationService
         if ($manifest === []) {
             throw new RuntimeException('AUTONOMOUS_MTF_BUNDLE_MISSING');
         }
-        $bundle = app(MultiTimeframeSnapshotService::class)
-            ->restoreAgentOwnedConfirmationValidationBundle($manifest);
+        $discovery = ($manifest['validation_bundle_protocol'] ?? null) === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL;
+        if ($discovery && (! $allowDiscovery || $edgeGenesisReplay || $agent->generation?->trigger_type !== 'academy_experiment'
+            || data_get($agent->generation?->trigger_context, 'prospective_source_identity.data_role') !== 'pre_2026_discovery_only')) {
+            throw new RuntimeException('DISCOVERY_ONLY_BUNDLE_REPLAY_SCOPE_FORBIDDEN');
+        }
+        $owner = app(MultiTimeframeSnapshotService::class);
+        $bundle = $discovery ? $owner->restoreAgentOwnedConfirmationValidationBundle($manifest, true)
+            : $owner->restoreAgentOwnedConfirmationValidationBundle($manifest);
         $expectedHash = $edgeGenesisReplay
             ? (string) data_get($agent->modelVersion?->metadata, 'edge_genesis.mtf_bundle_hash', '')
             : (string) data_get($agent->generation?->trigger_context, 'mtf_bundle_hash', '');
@@ -2421,6 +2434,35 @@ class LabAgentEvaluationService
         data_set($request, 'policy_context.snapshot_transport.mtf_bundle_hash', (string) $bundle['bundle_hash']);
 
         return $request;
+    }
+
+    /** Reuse the actual PHP/Python probe contract; never rely on max-candle hints. */
+    private function sealCleanDiscoveryWindow(array $request, array $rows, array $bundle): array
+    {
+        $scope = (array) data_get($bundle, 'manifest.discovery_scope', []);
+        $contract = app(ProspectiveRepairProbeWindowService::class)->seal($rows, (string) $bundle['bundle_hash'],
+            (string) data_get($request, 'execution_contract.execution_hash'),
+            'academy_clean_discovery:'.$bundle['bundle_hash'].':'.(string) ($scope['scope_hash'] ?? ''),
+            MultiTimeframeSnapshotService::DISCOVERY_EVALUATION_ROWS, MultiTimeframeSnapshotService::DISCOVERY_WARMUP_ROWS);
+        foreach (['loaded_rows', 'warmup_rows', 'evaluated_rows', 'loaded_start', 'loaded_end',
+            'evaluated_start', 'evaluated_end', 'evaluated_month_counts'] as $key) {
+            if (($contract[$key] ?? null) !== data_get($scope, 'calendar.'.$key)) throw new RuntimeException('ACADEMY_DISCOVERY_WINDOW_BOUNDS_MISMATCH');
+        }
+        $request['dataset_tail_rows'] = null;
+        $request['policy_context']['historical_stratified_windows'] = [];
+        $request['policy_context']['prospective_probe_window'] = $contract;
+        $request['policy_context']['prospective_clean_discovery_scope'] = $scope;
+        return $request;
+    }
+
+    private function screenTransportTimeout(bool $differential, bool $prospectiveWindow): int
+    {
+        // The 15k child has a 1680s absolute ceiling, below transport and
+        // the existing 2100s prospective job lease. Generic screens stay cheap.
+        if ($prospectiveWindow) return 1800;
+        $configured = $differential ? (int) config('services.lab_selection.differential_screen_timeout_seconds', 900)
+            : (int) config('services.lab_selection.screen_timeout_seconds', 300);
+        return min($differential ? 900 : 930, max(30, $configured));
     }
 
     /** Keep the optional no-volume control contract JSON-object shaped. */

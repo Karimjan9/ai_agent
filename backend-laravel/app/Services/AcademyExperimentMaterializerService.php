@@ -84,8 +84,7 @@ class AcademyExperimentMaterializerService
         $dependencies = $this->coldStartDependencies($symbol, $timeframe);
         if (($dependencies['ready'] ?? false) !== true) return [...$this->blocked((string) ($dependencies['reason'] ?? 'ACADEMY_COLD_START_DATA_NOT_READY')),
             'data_readiness' => $dependencies['data_readiness'] ?? null];
-        $scope = $this->coldStartBudgetScope($symbol, $timeframe, $dependencies['foundation_sha256'],
-            $dependencies['mtf_source_sha256'], $dependencies['execution_hash']);
+        $scope = $this->dependencyBudgetScope($symbol, $timeframe, $dependencies);
         $existing = DB::table('edge_academy_passports')->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->where('frozen_upstream_contract', 'like', '%'.self::COLD_START_PROTOCOL.'%')->get();
         $sameScope = $existing->filter(fn ($row): bool => data_get(json_decode($row->frozen_upstream_contract, true),
@@ -370,6 +369,9 @@ class AcademyExperimentMaterializerService
     {
         $foundation = app(LabDatasetExportService::class)->foundationDependencyWatermark($symbol, $timeframe);
         if (($foundation['archive_present'] ?? false) !== true || ! filled($foundation['manifest_hash'] ?? null)) return ['ready' => false, 'reason' => 'ACADEMY_COLD_START_FOUNDATION_NOT_READY'];
+        if (filled(config('services.xauusd_organism.clean_discovery_bundle_hash'))) {
+            return $this->cleanDiscoveryDependencies($symbol, $timeframe, $foundation);
+        }
         $mtf = app(MultiTimeframeSnapshotService::class)->agentValidationReadiness($symbol);
         if (($mtf['ready'] ?? false) !== true) return ['ready' => false, 'reason' => 'ACADEMY_COLD_START_MTF_NOT_READY'];
         $cutoff = (string) ($mtf['entry_cutoff'] ?? '');
@@ -410,6 +412,34 @@ class AcademyExperimentMaterializerService
         if ($bundleHash === null) return ['ready' => false, 'reason' => 'ACADEMY_COLD_START_CURRENT_SEALED_MTF_BYTES_UNAVAILABLE'];
         return ['ready' => true, 'foundation' => $foundation, 'mtf_streams' => $mtf['streams'], 'entry_cutoff' => $cutoff,
             'foundation_sha256' => $foundationSha, 'mtf_bundle_hash' => $bundleHash, 'mtf_source_sha256' => $sourceHashes,
+            'execution_hash' => app(ExecutionContractService::class)->for($symbol, 'M5')['execution_hash'],
+            'evaluator_hash' => app(LabImmutableEvidenceService::class)->codeHash(),
+            'python_source_hash' => app(ResearchReleaseSealService::class)->pythonHash(),
+            'source_identity_protocol' => self::SOURCE_IDENTITY_PROTOCOL];
+    }
+
+    /** An explicit frozen discovery scope does not claim whole-archive readiness. */
+    private function cleanDiscoveryDependencies(string $symbol, string $timeframe, array $foundation): array
+    {
+        $bundleHash = (string) config('services.xauusd_organism.clean_discovery_bundle_hash');
+        if (preg_match('/^[a-f0-9]{64}$/D', $bundleHash) !== 1) return ['ready' => false, 'reason' => 'ACADEMY_DISCOVERY_BUNDLE_HASH_INVALID'];
+        $manifestPath = storage_path('app/lab-datasets/mtf/'.$bundleHash.'/manifest.json');
+        $manifest = is_file($manifestPath) ? json_decode((string) File::get($manifestPath), true) : null;
+        if (! is_array($manifest) || ($manifest['bundle_hash'] ?? null) !== $bundleHash) return ['ready' => false, 'reason' => 'ACADEMY_DISCOVERY_FROZEN_MANIFEST_MISSING'];
+        $owner = app(MultiTimeframeSnapshotService::class);
+        $readiness = $owner->discoveryBundleReadiness($manifest);
+        if (($readiness['allowed'] ?? false) !== true) return ['ready' => false, 'reason' => 'ACADEMY_DISCOVERY_BUNDLE_NOT_READY', 'data_readiness' => $readiness];
+        $dataReadiness = app(GenerationSnapshotAdmissionService::class)->historicalDatasetReadiness($manifest);
+        if (! $dataReadiness['allowed']) return ['ready' => false, 'reason' => 'GENERATION_MTF_M5_KNOWN_CANDLE_GAP', 'data_readiness' => $dataReadiness];
+        $foundationPath = (string) ($foundation['path'] ?? storage_path('app/lab-datasets/foundation/'.strtoupper($symbol).'_'.strtoupper($timeframe).'_2005-2025.csv'));
+        $foundationSha = is_file($foundationPath) ? hash_file('sha256', $foundationPath) : false;
+        if (! is_string($foundationSha)) return ['ready' => false, 'reason' => 'ACADEMY_COLD_START_FOUNDATION_BYTES_UNAVAILABLE'];
+        $sourceHashes = [];
+        foreach (['M5', 'M15', 'H1', 'H4'] as $stream) $sourceHashes[$stream] = (string) data_get($manifest, "streams.{$stream}.sha256");
+        return ['ready' => true, 'foundation' => $foundation, 'mtf_streams' => $manifest['streams'],
+            'entry_cutoff' => $manifest['entry_last_candle_at'], 'foundation_sha256' => $foundationSha,
+            'mtf_bundle_hash' => $bundleHash, 'mtf_source_sha256' => $sourceHashes,
+            'discovery_scope' => $manifest['discovery_scope'], 'discovery_bundle_manifest' => $manifest, 'data_role' => $manifest['data_role'],
             'execution_hash' => app(ExecutionContractService::class)->for($symbol, 'M5')['execution_hash'],
             'evaluator_hash' => app(LabImmutableEvidenceService::class)->codeHash(),
             'python_source_hash' => app(ResearchReleaseSealService::class)->pythonHash(),
@@ -831,7 +861,10 @@ class AcademyExperimentMaterializerService
             || ! hash_equals((string) data_get($proposal, 'cold_start.key', ''), (string) data_get($current, 'cold_start.key', ''))) return $this->blocked('ACADEMY_COLD_START_DEPENDENCY_CHANGED');
         $datasets = app(LabDatasetExportService::class);
         $foundation = $datasets->ensureFoundationDataset($decision->symbol, $decision->timeframe);
-        $bundle = app(MultiTimeframeSnapshotService::class)->forAgentOwnedConfirmationValidation($decision->symbol);
+        $discoveryManifest = (array) data_get($proposal, 'cold_start.dependencies.discovery_bundle_manifest', []);
+        $bundle = $discoveryManifest !== []
+            ? app(MultiTimeframeSnapshotService::class)->restoreAgentOwnedConfirmationValidationBundle($discoveryManifest, true)
+            : app(MultiTimeframeSnapshotService::class)->forAgentOwnedConfirmationValidation($decision->symbol);
         $execution = app(ExecutionContractService::class)->for($decision->symbol, 'M5');
         if (! hash_equals((string) data_get($proposal, 'cold_start.dependencies.foundation_sha256'), (string) $foundation['sha256'])
             || ! hash_equals((string) data_get($proposal, 'cold_start.dependencies.mtf_bundle_hash'), (string) $bundle['bundle_hash'])) {
@@ -855,8 +888,13 @@ class AcademyExperimentMaterializerService
             'execution_contract' => $execution,
             'cold_start' => [...$proposal['cold_start'], 'arbiter_decision_id' => $decision->id,
                 'hypothesis_baseline_agent_id' => $proposal['baseline_agent_id'], 'old_evidence_reused' => false]];
-        $identity['cold_start']['sealed_budget_scope'] = $this->coldStartBudgetScope($decision->symbol, $decision->timeframe,
-            $identity['data_hash'], collect($bundle['manifest']['streams'])->only(['M5', 'M15', 'H1', 'H4'])->map(fn ($stream): string => $stream['sha256'])->all(), $identity['execution_hash']);
+        if ($discoveryManifest !== []) {
+            $identity['discovery_scope'] = $bundle['manifest']['discovery_scope'];
+            $identity['data_role'] = 'pre_2026_discovery_only';
+        }
+        $identity['cold_start']['sealed_budget_scope'] = $this->dependencyBudgetScope($decision->symbol, $decision->timeframe,
+            ['foundation_sha256' => $identity['data_hash'], 'mtf_source_sha256' => collect($bundle['manifest']['streams'])->only(['M5', 'M15', 'H1', 'H4'])->map(fn ($stream): string => $stream['sha256'])->all(),
+                'execution_hash' => $identity['execution_hash'], 'discovery_scope' => $identity['discovery_scope'] ?? []]);
         if ($this->hash($proposal['cold_start']['dependencies']) !== $this->hash($this->coldStartDependencies($decision->symbol, $decision->timeframe))) {
             return $this->blocked('ACADEMY_COLD_START_DEPENDENCY_CHANGED_DURING_SEAL');
         }
@@ -1036,6 +1074,8 @@ class AcademyExperimentMaterializerService
         if (array_key_exists('source_evaluator_hash', (array) ($frozen['prospective_source_identity'] ?? []))) $identityKeys[] = 'source_evaluator_hash';
         if (array_key_exists('python_source_hash', (array) ($frozen['prospective_source_identity'] ?? []))) $identityKeys[] = 'python_source_hash';
         if (array_key_exists('source_identity_protocol', (array) ($frozen['prospective_source_identity'] ?? []))) $identityKeys[] = 'source_identity_protocol';
+        if (array_key_exists('discovery_scope', (array) ($frozen['prospective_source_identity'] ?? []))) $identityKeys[] = 'discovery_scope';
+        if (array_key_exists('data_role', (array) ($frozen['prospective_source_identity'] ?? []))) $identityKeys[] = 'data_role';
         foreach ($identityKeys as $key) {
             if (! array_key_exists($key, (array) ($frozen['prospective_source_identity'] ?? []))
                 || $this->hash(['value' => $frozen['prospective_source_identity'][$key]]) !== $this->hash(['value' => $identity[$key] ?? null])) {
@@ -1452,6 +1492,7 @@ class AcademyExperimentMaterializerService
 
         return [
             'contract_version' => ResearchExperimentConversionKernelService::CONTRACT_VERSION,
+            'discovery_scope' => (array) ($identity['discovery_scope'] ?? []),
             'confirmation_route' => app(ResearchPaperEpochContractService::class)->confirmationRoute('academy_independent_confirmation', $identity),
             'source' => ['type' => 'edge_academy_trial', 'id' => (int) $trial->id],
             'scope' => ['symbol' => strtoupper((string) $passport->symbol), 'laboratory_timeframe' => strtoupper((string) $passport->timeframe), 'execution_timeframe' => 'M5'],
@@ -1571,6 +1612,16 @@ class AcademyExperimentMaterializerService
         // observations. Only genuinely different sealed input/cost bytes
         // identify another bounded discovery scope.
         return $this->hash([self::COLD_START_PROTOCOL, $symbol, $timeframe, $foundationSha, $streams, $executionHash]);
+    }
+
+    private function dependencyBudgetScope(string $symbol, string $timeframe, array $dependencies): string
+    {
+        $discovery = (array) ($dependencies['discovery_scope'] ?? []);
+        if ($discovery !== []) return $this->hash(['prospective_academy_physical_discovery_budget_v1', $symbol, $timeframe,
+            $dependencies['foundation_sha256'], $discovery['parent_fork_price_sha256'],
+            $discovery['parent_economic_rows_sha256'], $dependencies['execution_hash']]);
+        return $this->coldStartBudgetScope($symbol, $timeframe, $dependencies['foundation_sha256'],
+            $dependencies['mtf_source_sha256'], $dependencies['execution_hash']);
     }
 
     /** Fresh hypothesis models carry strategy facts, never archived admission ownership or outcomes. */

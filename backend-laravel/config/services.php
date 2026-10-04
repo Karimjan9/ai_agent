@@ -363,6 +363,8 @@ return [
         'execution_timeframe' => env('XAUUSD_ORGANISM_EXECUTION_TIMEFRAME', 'M5'),
         // Explicit prospective training fork only; old generation manifests stay immutable.
         'research_m5_dataset' => env('LAB_RESEARCH_M5_DATASET', 'foundation_intraday_10y'),
+        // Explicit scoped discovery only; this never selects a full/fold dataset.
+        'clean_discovery_bundle_hash' => env('LAB_CLEAN_DISCOVERY_BUNDLE_HASH', ''),
         'timeframe_roles' => [
             'H4' => 'macro_bias',
             'H1' => 'regime_and_location',
