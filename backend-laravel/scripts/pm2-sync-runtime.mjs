@@ -95,27 +95,35 @@ try {
 // is idle, and stale-lock recovery remains the backstop for a killed worker.
 assertDurableReplayIdle();
 if (processes.some((entry) => entry.name === 'neurotrader-ai' && entry.pm2_env?.status === 'online')) {
+    let replayIdle = false;
+    let refusal = 'Replay lane is active; PM2 sync was refused.';
     try {
-        // ecosystem.config.cjs and run-ai-service.py prefer the coordinated
-        // workspace runtime secret after rotation.  The legacy protected
-        // file can remain present for rollback, but probing with it would
-        // report a false 401 and allow a rolling reload during an active
-        // replay.
+        // Match ecosystem.config.cjs and run-ai-service.py's coordinated
+        // workspace token after rotation; use the legacy protected file
+        // only when that workspace file is absent.
         const runtimeTokenFile = path.resolve(projectRoot, '..', 'runtime', 'internal-api.token');
         const legacyTokenFile = path.join(projectRoot, 'storage', 'app', 'secrets', 'internal-api.token');
         const tokenFile = fs.existsSync(runtimeTokenFile) ? runtimeTokenFile : legacyTokenFile;
         const token = fs.readFileSync(tokenFile, 'utf8').trim();
-        const response = await fetch('http://127.0.0.1:9000/api/replay-status', {
-            headers: { 'X-Internal-Token': token },
-            signal: AbortSignal.timeout(3000),
-        });
-        if (response.ok) {
-            const status = await response.json();
-            if (Number(status?.active_requests ?? 0) > 0) {
-                console.error('Replay lane is active; PM2 rolling sync was refused to prevent a mutex contention burst.');
-                process.exit(2);
+        if (token === '') {
+            throw new Error('REPLAY_STATUS_TOKEN_EMPTY');
+        }
+        const probeReplayIdle = async () => {
+            const response = await fetch('http://127.0.0.1:9000/api/replay-status', {
+                headers: { 'X-Internal-Token': token },
+                signal: AbortSignal.timeout(3000),
+            });
+            if (!response.ok) {
+                throw new Error('REPLAY_STATUS_HTTP_FAILURE');
             }
-
+            const status = await response.json();
+            if (status === null || typeof status !== 'object' || Array.isArray(status)
+                || !Number.isSafeInteger(status.active_requests) || status.active_requests < 0) {
+                throw new Error('REPLAY_STATUS_INVALID');
+            }
+            return status.active_requests === 0;
+        };
+        if (await probeReplayIdle()) {
             // An idle probe can land in the small hand-off gap after one
             // replay finishes and before the queue worker opens its next
             // request. Confirm the lane remains idle before a rolling reload;
@@ -123,29 +131,20 @@ if (processes.some((entry) => entry.name === 'neurotrader-ai' && entry.pm2_env?.
             // after it has acquired the shared mutex but before Python sees
             // the request, leaving an open immutable run behind.
             await new Promise((resolve) => setTimeout(resolve, 5000));
-            const confirmation = await fetch('http://127.0.0.1:9000/api/replay-status', {
-                headers: { 'X-Internal-Token': token },
-                signal: AbortSignal.timeout(3000),
-            });
-            if (!confirmation.ok) {
-                console.error(`Replay liveness confirmation returned HTTP ${confirmation.status}; PM2 sync was refused.`);
-                process.exit(2);
-            }
-            const confirmationStatus = await confirmation.json();
-            if (Number(confirmationStatus?.active_requests ?? 0) > 0) {
-                console.error('Replay lane became active during the idle grace window; PM2 rolling sync was refused.');
-                process.exit(2);
-            }
-            // Close the queue-preparation blind spot as late as possible. A
-            // worker may reserve a job after the first durable check but
-            // before Python increments active_requests.
-            assertDurableReplayIdle();
-        } else {
-            console.warn(`Replay liveness probe returned HTTP ${response.status}; continuing with the configured sync.`);
+            replayIdle = await probeReplayIdle();
         }
-    } catch (error) {
-        console.warn(`Replay liveness probe unavailable; continuing with the configured sync: ${error.message}`);
+    } catch (_) {
+        // Token reads, HTTP failures and JSON errors may contain sensitive
+        // bytes. Unknown liveness is a refusal; never print raw diagnostics.
+        refusal = 'Replay liveness could not be verified; PM2 sync was refused.';
     }
+    if (!replayIdle) {
+        process.stderr.write(`${refusal}\n`);
+        process.exit(2);
+    }
+    // Close the queue-preparation blind spot as late as possible. A worker
+    // may reserve a job before Python increments active_requests.
+    assertDurableReplayIdle();
 }
 
 const stale = staleNames.filter((name) => processes.some((entry) => entry.name === name));

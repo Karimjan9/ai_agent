@@ -1,5 +1,19 @@
 # Causal conversion loop
 
+An operator can run `trading:audit-research-window-provenance --json` before
+planning independent evidence, optionally supplying an explicit UTC candidate
+interval and a JSON design with source, exact-control, intervention, context
+and stopping-rule hashes. The command reads a fixed evaluation-run high water
+and compact request-reference ranges, existing work status and archive metadata;
+it never dumps outcome payloads, writes DB rows, dispatches or authorizes data.
+References exclude overlapping physical events conservatively, but do not claim
+all referenced candles were consumed. Missing training/selection/context
+history blocks an unused-window conclusion. `--proposal` wraps the existing
+future six-month reservation in a sealable, non-persisted draft; the caller must
+retain its immutable owner preregistration before validation outcomes. Existing
+paper disjointness, post-paper data and all independent evidence gates still own
+execution. No historical generic instrument route is created.
+
 An explicitly selected clean-discovery Academy cohort may observe local stage
 behavior on a new calendar-selected 15000+512 four-stream scope. Its cold cap
 binds physical parent/foundation/execution, not the slice/code/quote label.

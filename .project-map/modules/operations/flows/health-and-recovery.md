@@ -78,6 +78,21 @@ the arbiter and queued scheduler research children admit no new action.
 before any successor. `ai:stop` remains a distinct drain-first termination of
 new research admission; market maintenance and monitoring are not evidence.
 
+Source maintenance uses the existing STOP -> admitted drain -> verified idle ->
+worker recycle -> START sequence. Establish STOP while the admitted generation
+still owns the lane; the same arbiter continues replay and settlement before
+its disabled-mode check. PAUSE blocks new settlement children too. Before any
+source edit, require the latest generation/owning trial and agents to be terminal and
+their queues, batches, active replays and constructor children to be drained.
+Recheck the latest owner; a successor that raced through postpones deployment
+until its admitted work drains. For an online AI owner, PM2 sync requires two
+authenticated zero-count replay-status responses five seconds apart; late
+durable idle checks always apply.
+HTTP/authentication, token-read, transport, JSON and invalid/missing/negative/
+noninteger count failures exit non-zero before PM2 mutation; raw probe errors
+are not printed. Verify actual PHP/Python worker boot identities after recycling,
+then START the same durable lineage. RESUME rejects stopped/draining state.
+
 For the autonomous research scheduler, each tick freezes exactly one child
 action. A terminal technical causal arm is settled before the generic active
 generation path, then the arbiter reselects from a fresh evidence snapshot.

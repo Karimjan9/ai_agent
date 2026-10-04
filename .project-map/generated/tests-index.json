@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
-  "generated_at": "2026-10-04T10:55:00.055Z",
-  "source_digest": "7e3836603dbb250d1b9e9e99cce9141755a488b4a12fb5aab1371e6a698a79f0",
-  "source_file_count": 1472,
-  "git_head": "242b059aa1a5674b60e1e3e993310a74b5e09d7b",
+  "generator_digest": "f09bef5152997555b43825d391ae47c13f6169a1c79a616f19c26fe4184882e6",
+  "generated_at": "2026-10-04T12:58:46.674Z",
+  "source_digest": "61b642a284606ae87d819aab256b68f6ea88c5dbb6ff55fe5609116e80f8b598",
+  "source_file_count": 1476,
+  "git_head": "5c79b360a4d209999e1021c12263b744e6c6f916",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -731,6 +731,23 @@
         "__construct",
         "pythonHash",
         "test_handcrafted_depth_without_a_completed_original_stage_proof_does_not_earn_continuation_priority"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php",
+      "tests": [
+        "tearDown",
+        "cohort",
+        "countedOwner",
+        "test_velocity_reuses_one_fresh_proof_for_both_twenty_sibling_counters",
+        "test_independent_batches_reread_compressed_bytes_even_on_the_same_service_instance",
+        "test_direct_agent_classification_is_fresh_after_an_earlier_batch",
+        "test_partial_batch_cannot_lend_a_valid_cohort_disposition_to_an_out_of_roster_agent",
+        "test_ordinary_generation_batch_preserves_direct_classification_without_academy_proof",
+        "test_valid_academy_batch_has_exact_direct_classification_parity",
+        "test_invalid_proof_is_reused_only_inside_the_current_batch",
+        "test_mixed_generations_cannot_share_a_proof_or_recompute_a_null_proof_per_sibling",
+        "test_a_previous_batch_cannot_authorize_artifact_corruption_at_locked_materialization"
       ]
     },
     {
@@ -2700,6 +2717,24 @@
         "test_only_a_new_prospective_seal_can_reference_the_verified_archive_and_old_seal_is_not_backfilled",
         "zipPath",
         "mutateZip"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php",
+      "tests": [
+        "setUp",
+        "runReceipt",
+        "proposal",
+        "test_physical_time_overlap_survives_new_hash_provider_and_timeframe_labels",
+        "test_missing_legacy_chronology_never_proves_a_nonoverlapping_window_unused",
+        "test_mtf_references_include_loaded_warmup_and_use_utc_without_outcome_payloads",
+        "test_draft_uses_existing_owner_and_stable_seal_without_fabricating_dataset_or_authority",
+        "test_draft_refuses_unbound_control_intervention_and_stopping_rule",
+        "test_draft_refuses_tampered_audit_or_late_preregistration",
+        "test_future_paper_overlap_stays_an_explicit_blocked_reservation",
+        "test_operator_command_prints_dependency_and_rejects_half_interval_without_writes",
+        "test_invalid_calendar_date_and_implicit_timezone_are_not_accepted_as_utc_candidates",
+        "test_a_different_instrument_at_the_same_time_is_not_a_known_xauusd_event_overlap"
       ]
     },
     {

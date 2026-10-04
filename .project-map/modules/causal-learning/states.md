@@ -1,5 +1,17 @@
 # Causal learning states
 
+`trading:audit-research-window-provenance` produces a bounded read-only
+`BLOCKED_DEPENDENCY` receipt from research request chronology, archive inventory
+and existing work owners. Missing original training/selection/context exposure
+is explicit uncertainty; absent JSON keys and renamed provider/hash/timeframe
+labels never demonstrate unused physical market events. Its optional future
+design produces `draft_preregistration_not_persisted` through the existing
+ActivationValidationPlan owner, binding exact-control/intervention/context and
+stopping-rule hashes, UTC interval and exclusion policy. This draft has no
+dataset SHA or server authorization and cannot execute or grant authority.
+The immutable owner preregistration must precede validation outcomes; actual
+authorized data and original exposure proof remain required.
+
 Clean-discovery cold cohorts seal the stored bundle and `pre_2026_discovery_only`
 identity before admission. Their allowance binds foundation, physical parent
 fork/economic rows and execution; new slice, quote coverage, code or label cannot

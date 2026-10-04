@@ -370,7 +370,17 @@ class AcademyExperimentMaterializerService
     /** Re-attest old terminal diagnostics without requiring or authorizing a fresh source/retry. */
     public function validatorTerminalDispositionForAgent(LabAgent $agent): ?array
     {
-        $generation = $agent->generation()->with('agents.modelVersion')->first();
+        $generation = $agent->generation()->first();
+        $disposition = $generation ? $this->validatorTerminalDispositionForGeneration($generation) : null;
+
+        return $disposition !== null && in_array((int) $agent->id, $disposition['agent_ids'], true)
+            ? $disposition : null;
+    }
+
+    /** Fresh cohort proof for one caller-owned classification batch; never cached on this service. */
+    public function validatorTerminalDispositionForGeneration(LabGeneration $generation): ?array
+    {
+        $generation = LabGeneration::query()->with('agents.modelVersion')->find($generation->id);
         if (! $generation || $generation->trigger_type !== 'academy_experiment' || $generation->status !== 'technical_quarantine'
             || data_get($generation->trigger_context, 'prospective_source_identity.data_role') !== 'pre_2026_discovery_only') return null;
         $trial = DB::table('edge_academy_trials')->find((int) data_get($generation->trigger_context, 'academy_trial_id'));
@@ -381,7 +391,7 @@ class AcademyExperimentMaterializerService
         $runs = LabEvaluationRun::where(fn ($q) => $q->where('lab_generation_id', $generation->id)
             ->orWhereIn('lab_agent_id', $generation->agents->pluck('id')))->orderBy('id')->get();
         if (! $runs->contains(fn ($r) => $this->isNativeMtfValidatorRefusal((string) $r->error_message))) return null;
-        // Re-read compressed bytes on every classification. A persisted hash
+        // Re-read compressed bytes on every independent proof. A persisted hash
         // label or a long-lived worker cache must not hide artifact corruption.
         // This path never loads the 15k candles or current archive readiness.
         $dependencies = ['foundation_sha256' => $identity['data_hash'] ?? null, 'execution_hash' => $identity['execution_hash'] ?? null,
@@ -394,7 +404,9 @@ class AcademyExperimentMaterializerService
         return ($proof['status'] ?? null) === 'would_prepare_cold_start'
                 ? ['reason_code' => 'IMMUTABLE_ACADEMY_MTF_VALIDATOR_REFUSAL', 'strategy_verdict' => 'withheld',
                     'scientific_outcome_observed' => false, 'promotion_evidence' => false, 'trial_id' => (int) $trial->id,
-                    'generation_id' => (int) $generation->id, 'run_evidence_hash' => data_get($proof, 'cold_start.validator_replacement.run_evidence_hash')]
+                    'generation_id' => (int) $generation->id,
+                    'agent_ids' => $generation->agents->pluck('id')->map(fn ($id): int => (int) $id)->all(),
+                    'run_evidence_hash' => data_get($proof, 'cold_start.validator_replacement.run_evidence_hash')]
             : null;
     }
 

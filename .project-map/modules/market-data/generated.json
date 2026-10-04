@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
-  "generated_at": "2026-10-04T10:55:00.055Z",
-  "source_digest": "7e3836603dbb250d1b9e9e99cce9141755a488b4a12fb5aab1371e6a698a79f0",
-  "source_file_count": 1472,
-  "git_head": "242b059aa1a5674b60e1e3e993310a74b5e09d7b",
+  "generator_digest": "f09bef5152997555b43825d391ae47c13f6169a1c79a616f19c26fe4184882e6",
+  "generated_at": "2026-10-04T12:58:46.674Z",
+  "source_digest": "61b642a284606ae87d819aab256b68f6ea88c5dbb6ff55fe5609116e80f8b598",
+  "source_file_count": 1476,
+  "git_head": "5c79b360a4d209999e1021c12263b744e6c6f916",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "market-data",
   "paths": [
@@ -68,79 +68,79 @@
       "symbol": "validate_historical_quotes",
       "kind": "python_function",
       "path": "ai-service-python/app/services/historical_quotes.py",
-      "line": 4
+      "line": 3
     },
     {
       "symbol": "_causal_baselines",
       "kind": "python_function",
       "path": "ai-service-python/app/services/volume_features.py",
-      "line": 115
+      "line": 114
     },
     {
       "symbol": "volume_quality_gate",
       "kind": "python_function",
       "path": "ai-service-python/app/services/volume_features.py",
-      "line": 139
+      "line": 138
     },
     {
       "symbol": "add_volume_features",
       "kind": "python_function",
       "path": "ai-service-python/app/services/volume_features.py",
-      "line": 244
+      "line": 243
     },
     {
       "symbol": "_utc_timestamp",
       "kind": "python_function",
       "path": "ai-service-python/app/services/volume_features.py",
-      "line": 27
+      "line": 26
     },
     {
       "symbol": "_normalization_context",
       "kind": "python_function",
       "path": "ai-service-python/app/services/volume_features.py",
-      "line": 32
+      "line": 31
     },
     {
       "symbol": "apply_volume_policy",
       "kind": "python_function",
       "path": "ai-service-python/app/services/volume_features.py",
-      "line": 345
+      "line": 344
     },
     {
       "symbol": "volume_shadow_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/volume_features.py",
-      "line": 444
+      "line": 443
     },
     {
       "symbol": "_seasonality_bucket",
       "kind": "python_function",
       "path": "ai-service-python/app/services/volume_features.py",
-      "line": 70
+      "line": 69
     },
     {
       "symbol": "_expected_market_rows",
       "kind": "python_function",
       "path": "ai-service-python/app/services/volume_features.py",
-      "line": 84
+      "line": 83
     },
     {
       "symbol": "cache_root",
       "kind": "python_function",
       "path": "ai-service-python/scripts/maintain_replay_cache.py",
-      "line": 17
+      "line": 16
     },
     {
       "symbol": "migrate",
       "kind": "python_function",
       "path": "ai-service-python/scripts/maintain_replay_cache.py",
-      "line": 22
+      "line": 21
     },
     {
       "symbol": "main",
       "kind": "python_function",
       "path": "ai-service-python/scripts/maintain_replay_cache.py",
-      "line": 50
+      "line": 49
     },
     {
       "symbol": "symbol",

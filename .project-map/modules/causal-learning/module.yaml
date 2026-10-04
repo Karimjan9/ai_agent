@@ -10,6 +10,8 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
+  - backend-laravel/app/Console/Commands/AuditResearchWindowProvenance.php
+  - backend-laravel/app/Services/ResearchWindowProvenanceAuditService.php
   - backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php
   - backend-laravel/app/Services/XauusdEdgeFormationAcademyService.php
   - backend-laravel/app/Services/AcademyExperimentContractCompilerService.php
@@ -101,9 +103,11 @@ paths:
   - ai-service-python/app/services/instrument_research.py
   - ai-service-python/app/services/prospective_probe_window.py
 entry_points:
+  - trading:audit-research-window-provenance
   - trading:admit-academy-experiment
   - AcademyExperimentMaterializerService::proposal
   - AcademyExperimentMaterializerService::coldStartProposal
+  - AcademyExperimentMaterializerService::validatorTerminalDispositionForGeneration
   - AcademyExperimentMaterializerService::containPreparation
   - AcademyExperimentMaterializerService::preparationTerminalDispositionForAgent
   - AcademyExperimentMaterializerService::validatorTerminalDispositionForAgent
@@ -182,6 +186,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php
+  - backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php
   - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php
   - backend-laravel/tests/Feature/AcademyMtfValidatorReplacementTest.php
   - backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php

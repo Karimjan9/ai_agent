@@ -222,13 +222,15 @@ class LearningVelocityGateService
                     ->where('stage', 'screening')
                     ->get();
             $screenPasses = $screen->where('decision', 'passed')->count();
+            $classifications = app(TechnicalFailureClassifierService::class)->forAgents($agents
+                ->filter(fn (LabAgent $agent): bool => in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true)));
             $technical = $agents
-                ->filter(fn (LabAgent $agent): bool => $this->requiresTechnicalRecovery($agent))
+                ->filter(fn (LabAgent $agent): bool => $this->requiresTechnicalRecovery($agent, $classifications[(int) $agent->id] ?? []))
                 ->count();
             $capabilityQuarantined = $agents
                 ->filter(fn (LabAgent $agent): bool => in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true))
                 ->filter(fn (LabAgent $agent): bool => data_get(
-                    app(TechnicalFailureClassifierService::class)->forAgent($agent),
+                    $classifications[(int) $agent->id] ?? [],
                     'class',
                 ) === TechnicalFailureClassifierService::CAPABILITY)
                 ->count();
@@ -343,7 +345,7 @@ class LearningVelocityGateService
      * immutable zero-diff preflight shape as reconciled; every other
      * technical quarantine continues to block learning fail-closed.
      */
-    private function requiresTechnicalRecovery(LabAgent $agent): bool
+    private function requiresTechnicalRecovery(LabAgent $agent, array $classification): bool
     {
         if (! in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true)) {
             return false;
@@ -363,7 +365,6 @@ class LearningVelocityGateService
             && data_get($agent->generation?->trigger_context, 'constructor_contamination.protocol') === 'generation_construction_contamination_v1') {
             return false;
         }
-        $classification = app(TechnicalFailureClassifierService::class)->forAgent($agent);
         if (data_get($classification, 'blocks_global_generation') !== true) {
             return false;
         }

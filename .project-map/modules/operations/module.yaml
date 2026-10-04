@@ -11,6 +11,7 @@ aliases:
 paths:
   - backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php
   - backend-laravel/app/Services/RuntimeMonitoringService.php
+  - backend-laravel/app/Services/RuntimeReloadPreflightService.php
   - backend-laravel/app/Services/ResearchReleaseSealService.php
   - backend-laravel/app/Providers/AppServiceProvider.php
   - ai-service-python/app/services/research_release.py
@@ -29,6 +30,7 @@ paths:
   - backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php
   - backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php
   - backend-laravel/app/Console/Commands/RunSystemHealthCheck.php
+  - backend-laravel/app/Console/Commands/RuntimeReloadPreflight.php
   - backend-laravel/app/Console/Commands/RunHeadlessScheduler.php
   - backend-laravel/app/Console/Commands/CheckMarketHealth.php
   - backend-laravel/app/Console/Commands/AuditAutonomyStreak.php
@@ -54,12 +56,15 @@ paths:
   - scripts/restart_mt5.sh
   - docs/operations
 entry_points:
+  - TechnicalFailureClassifierService::forAgents
   - TechnicalFailureClassifierService::historicalGapDependency
   - "trading:admit-academy-experiment --contain-preparation / --finalize-preparation"
   - RunSystemHealthCheck
   - RunHeadlessScheduler
   - CheckMarketHealth
   - system:runtime-monitor
+  - system:runtime-reload-preflight
+  - RuntimeReloadPreflightService::inspect
   - trading:run-research-loop
   - ai:pause
   - ai:resume
@@ -87,7 +92,7 @@ invariants:
   - An active immutable evaluation run inside the bounded queue lease is progress in flight, not an unchanged settlement; a replay mutex release is not by itself queue retry-storm evidence.
   - A disk source hash and worker PID alone are not loaded-code proof; prospective queue/API boot hashes and returned replay receipts attest the worker release, while the read-only audit separately verifies the Git artifact. Legacy evidence stays unsealed.
   - An explicitly built content-addressed source archive attests allowlisted source bytes, not a clean Git commit, loaded workers or scientific progress. Only a new matching prospective seal may reference it; old seals are never backfilled.
-  - A release deployment pauses admission, drains bounded attempts, gracefully recycles worker ownership and resumes the existing lineage; absent authorized research data is reported as a dependency without reusing paper-only data.
+  - Source maintenance uses existing STOP to drain admitted replay/settlement before worker recycling and START on the same lineage. PAUSE also fences settlement children. An online AI owner requires two authenticated zero-count replay probes; durable idle checks always apply. Probe failures refuse PM2 mutation without raw diagnostics. Missing authorized research data remains a separate dependency.
   - An in-flight research-loop decision suppresses a successor only while the matching scheduled command's unique queue lock is live; a stale database status without that lock is fenced and cannot own work.
   - Actionable technical recovery at the terminal lineage head precedes drift or fresh-data generation writers; an exit-zero blocked generation command is not a completed writer.
 flows:
@@ -97,6 +102,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php
   - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
   - backend-laravel/scripts/pm2-summary.test.cjs
   - backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php

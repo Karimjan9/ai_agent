@@ -20,10 +20,52 @@ class TechnicalFailureClassifierService
     /** @return array<string, mixed> */
     public function forAgent(LabAgent $agent): array
     {
+        return $this->classifyAgent($agent);
+    }
+
+    /**
+     * One fresh immutable cohort proof per generation in this call only.
+     * Neither this service nor the materializer retains a proof between calls.
+     *
+     * @param iterable<LabAgent> $agents
+     * @return array<int, array<string, mixed>>
+     */
+    public function forAgents(iterable $agents): array
+    {
+        $agents = collect($agents)->values();
+        $validators = [];
+        foreach ($agents as $agent) {
+            $agent->loadMissing(['modelVersion', 'generation']);
+            $generation = $agent->generation;
+            if ($generation?->trigger_type === 'academy_experiment'
+                && data_get($generation->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only'
+                && ! array_key_exists((int) $generation->id, $validators)) {
+                $validators[(int) $generation->id] = app(AcademyExperimentMaterializerService::class)
+                    ->validatorTerminalDispositionForGeneration($generation);
+            }
+        }
+
+        $classifications = [];
+        foreach ($agents as $agent) {
+            $classifications[(int) $agent->id] = $this->classifyAgent($agent, $validators);
+        }
+
+        return $classifications;
+    }
+
+    /** @param array<int, array<string, mixed>|null> $validators */
+    private function classifyAgent(LabAgent $agent, array $validators = []): array
+    {
         $agent->loadMissing(['modelVersion', 'generation']);
         if ($agent->generation?->trigger_type === 'academy_experiment'
             && data_get($agent->generation->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only') {
-            $validator = app(AcademyExperimentMaterializerService::class)->validatorTerminalDispositionForAgent($agent);
+            $generationId = (int) $agent->lab_generation_id;
+            $validator = array_key_exists($generationId, $validators)
+                ? $validators[$generationId]
+                : app(AcademyExperimentMaterializerService::class)->validatorTerminalDispositionForAgent($agent);
+            if ($validator !== null && ! in_array((int) $agent->id, (array) ($validator['agent_ids'] ?? []), true)) {
+                $validator = null;
+            }
             if ($validator !== null) return [...$validator, 'class' => self::TERMINAL, 'capability' => null,
                 'blocks_global_generation' => false, 'action' => 'TERMINAL_DIAGNOSTIC',
                 'reason' => 'Original immutable typed validator refusal and exact unexecuted control dependents are terminal diagnostics; one prospective owner-bound replacement is separately budgeted.'];
@@ -117,7 +159,7 @@ class TechnicalFailureClassifierService
                         'reason' => 'The frozen control later completed; this candidate remains unreplayed diagnostic evidence, not an independent technical-recovery debt.',
                     ];
                 }
-                $upstream = $this->forAgent($control);
+                $upstream = $this->classifyAgent($control, $validators);
                 if (data_get($upstream, 'blocks_global_generation') !== true) {
                     return [
                         'class' => self::TERMINAL,

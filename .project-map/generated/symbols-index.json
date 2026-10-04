@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
-  "generated_at": "2026-10-04T10:55:00.055Z",
-  "source_digest": "7e3836603dbb250d1b9e9e99cce9141755a488b4a12fb5aab1371e6a698a79f0",
-  "source_file_count": 1472,
-  "git_head": "242b059aa1a5674b60e1e3e993310a74b5e09d7b",
+  "generator_digest": "f09bef5152997555b43825d391ae47c13f6169a1c79a616f19c26fe4184882e6",
+  "generated_at": "2026-10-04T12:58:46.674Z",
+  "source_digest": "61b642a284606ae87d819aab256b68f6ea88c5dbb6ff55fe5609116e80f8b598",
+  "source_file_count": 1476,
+  "git_head": "5c79b360a4d209999e1021c12263b744e6c6f916",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -13,271 +13,271 @@
       "symbol": "SimpleBacktestRequest",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 108
-    },
-    {
-      "symbol": "Metrics",
-      "kind": "python_class",
-      "path": "ai-service-python/app/schemas.py",
-      "line": 204
+      "line": 107
     },
     {
       "symbol": "StrategyConfig",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 21
+      "line": 20
+    },
+    {
+      "symbol": "Metrics",
+      "kind": "python_class",
+      "path": "ai-service-python/app/schemas.py",
+      "line": 203
     },
     {
       "symbol": "Trade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 214
+      "line": 213
     },
     {
       "symbol": "MistakeJournalEntry",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 227
+      "line": 226
     },
     {
       "symbol": "DailyReportDay",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 233
+      "line": 232
     },
     {
       "symbol": "DailyReport",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 244
+      "line": 243
     },
     {
       "symbol": "BacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 249
+      "line": 248
     },
     {
       "symbol": "SimpleTrade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 258
+      "line": 257
     },
     {
       "symbol": "SimpleBacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 301
+      "line": 300
     },
     {
       "symbol": "BacktestRequest",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 34
+      "line": 33
     },
     {
       "symbol": "StrategyRuntimeConfig",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 55
+      "line": 54
     },
     {
       "symbol": "Candle",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 9
+      "line": 8
     },
     {
       "symbol": "ExecutionConfig",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 92
+      "line": 91
     },
     {
       "symbol": "_ImmutableSourceRowIndex",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 163
+      "line": 162
     },
     {
       "symbol": "PreparedFeatureSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 598
+      "line": 597
     },
     {
       "symbol": "PreparedSignalSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 608
+      "line": 607
     },
     {
       "symbol": "PreparedReplayFeatureContext",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 622
+      "line": 621
     },
     {
       "symbol": "CompositionRuntimeContractError",
       "kind": "python_class",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 81
+      "line": 80
     },
     {
       "symbol": "MarketAdaptiveReplayService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/market_adaptive_replay.py",
-      "line": 159
+      "line": 158
     },
     {
       "symbol": "MonteCarloService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/monte_carlo.py",
-      "line": 11
+      "line": 10
     },
     {
       "symbol": "PreparedClosedMtfContext",
       "kind": "python_class",
       "path": "ai-service-python/app/services/multitimeframe_stack.py",
-      "line": 33
+      "line": 32
     },
     {
       "symbol": "RedTeamService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/red_team.py",
-      "line": 6
+      "line": 5
     },
     {
       "symbol": "StrategyDnaService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/strategy_dna.py",
-      "line": 2
+      "line": 1
     },
     {
       "symbol": "WalkForwardService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 28
+      "line": 27
     },
     {
       "symbol": "ArmReplayResourcesTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_arm_replay_resources.py",
-      "line": 4
+      "line": 3
     },
     {
       "symbol": "BacktesterExecutionRegressionTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_backtester_execution.py",
-      "line": 106
+      "line": 105
     },
     {
       "symbol": "CoveragePassportTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_coverage_passport.py",
-      "line": 5
+      "line": 4
     },
     {
       "symbol": "DualTrackConfidenceTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_dual_track_confidence.py",
-      "line": 6
+      "line": 5
     },
     {
       "symbol": "ExecutionContractCompatibilityTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_execution_contract.py",
-      "line": 5
+      "line": 4
     },
     {
       "symbol": "HybridStrategyTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_market_adaptive_replay.py",
-      "line": 560
+      "line": 559
     },
     {
       "symbol": "MarketAdaptiveReplayTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_market_adaptive_replay.py",
-      "line": 9
+      "line": 8
     },
     {
       "symbol": "MonteCarloServiceTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_monte_carlo.py",
-      "line": 4
+      "line": 3
     },
     {
       "symbol": "PaperCoveragePolicyTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_paper_coverage_policy.py",
-      "line": 6
+      "line": 5
     },
     {
       "symbol": "PaperManagementContractTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_paper_management_contract.py",
-      "line": 10
+      "line": 9
     },
     {
       "symbol": "ParameterSchemaTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_parameter_schema.py",
-      "line": 9
+      "line": 8
     },
     {
       "symbol": "RedTeamServiceTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_red_team.py",
-      "line": 4
+      "line": 3
     },
     {
       "symbol": "RegimeEnsembleTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_regime_ensemble.py",
-      "line": 37
+      "line": 36
     },
     {
       "symbol": "ReplayCacheContractTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_replay_cache_contract.py",
-      "line": 19
+      "line": 18
     },
     {
       "symbol": "RobustnessProtocolTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_robustness_protocol.py",
-      "line": 9
+      "line": 8
     },
     {
       "symbol": "StatisticalValidationTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_statistical_validation.py",
-      "line": 9
+      "line": 8
     },
     {
       "symbol": "StrategyDnaServiceTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_strategy_dna.py",
-      "line": 4
+      "line": 3
     },
     {
       "symbol": "WalkForwardSplitTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_walk_forward.py",
-      "line": 13
+      "line": 12
     },
     {
       "symbol": "OverfitDetectionTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_walk_forward.py",
-      "line": 400
+      "line": 399
     },
     {
       "symbol": "RobustnessScoreTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_walk_forward.py",
-      "line": 405
+      "line": 404
     },
     {
       "symbol": "ActivateMarketAdaptiveReplay",
@@ -350,6 +350,12 @@
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/AuditParentSelectionReasons.php",
       "line": 10
+    },
+    {
+      "symbol": "AuditResearchWindowProvenance",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/AuditResearchWindowProvenance.php",
+      "line": 9
     },
     {
       "symbol": "AuditSourceGeneration",
@@ -5584,6 +5590,12 @@
       "line": 14
     },
     {
+      "symbol": "ResearchWindowProvenanceAuditService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ResearchWindowProvenanceAuditService.php",
+      "line": 11
+    },
+    {
       "symbol": "RiskAwareReplayGovernorService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/RiskAwareReplayGovernorService.php",
@@ -7120,6 +7132,12 @@
       "line": 25
     },
     {
+      "symbol": "AcademyValidatorReadinessBatchTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php",
+      "line": 24
+    },
+    {
       "symbol": "AccessControlTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/AccessControlTest.php",
@@ -8072,6 +8090,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ResearchSourceArtifactTest.php",
       "line": 40
+    },
+    {
+      "symbol": "ResearchWindowProvenanceAuditTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php",
+      "line": 14
     },
     {
       "symbol": "RiskBoundedEvolutionTest",

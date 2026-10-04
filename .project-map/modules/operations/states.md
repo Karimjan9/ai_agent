@@ -47,6 +47,8 @@ single arbiter and its separately bounded unchanged-question allowance.
 | running | operator `ai:pause` | pausing, then paused | Durable `AutonomousModeService` control; arbiter and queued scheduler research children fence new actions | Current generation, queued evaluation and immutable receipts stay intact; already-running bounded children may finish. |
 | paused | operator `ai:resume` | running | Existing lineage is reconciled before successor selection; control revision changes the arbiter key | No generation is created by RESUME itself. |
 | paused or running | operator `ai:stop` | draining then stopped | New admission denied; admitted work may finish | STOP is distinct from PAUSE and retains evidence. |
+| stopped after admitted work drains | operator `ai:start` | running | Existing durable lineage and canonical arbiter retain ownership | START creates no generation directly; RESUME rejects stopped/draining state. |
+| source deployment requested | replay probe HTTP/authentication/transport/JSON/count failure | reload refused | An online AI owner requires two authenticated zero-count probes; durable idle checks always apply | Exit non-zero before any PM2 mutation; no raw probe diagnostics are printed. |
 | active generation, unchanged after completed settlement child | five-minute retry window | bounded settlement retry, then safety_halt | At most two retries for the same operational state hash | A third unchanged completion persists `UNCHANGED_GENERATION_AFTER_BOUNDED_SETTLEMENT_RETRIES`; no per-minute redispatch or automatic resume. |
 | active research generation | causal arm reaches terminal technical disposition | causal settlement, then arbiter reselection | `ResearchLoopArbiterService` gives the dedicated disposition precedence over generic lifecycle settlement | Quarantine without authority; do not repeat a no-op active-generation tick. |
 | terminal generation with actionable technical debt | arbiter evaluates the lineage head | bounded technical recovery, then arbiter reselection | The same learning-velocity authority used by generation admission must report `blocked_technical_recovery`; the lifecycle owner uses the one-shot frozen snapshot repair | Drift/new-data construction waits; a blocked exit-zero builder is `safety_blocked`, never a completed successor. |
@@ -57,9 +59,19 @@ single arbiter and its separately bounded unchanged-question allowance.
 | queued sealed replay | immutable source, dataset or execution identity differs before run creation | technical_quarantine | Queue evidence middleware emits one idempotent pre-execution refusal run; generation-owned open learning pairs/dispatches close without evaluator request | No retry storm, scientific verdict, release reseal or promotion credit. A merely stale worker boot hash remains a separate reload condition. |
 | user logon with managed runtime absent | autonomous runtime task starts | recovering | Hidden supervisor owns a per-user mutex and restores only missing dependencies/lanes | Duplicate launch exits; strict runtime health remains the acceptance check. |
 
-Deployment provenance has its own guarded sequence: pause admission, drain existing bounded work,
-gracefully restart workers and the idle API, verify boot-source health, then
-resume the existing lineage. Source/cost/dataset drift after a prospective
+Deployment provenance has its own guarded sequence: STOP new admission while
+the current generation still owns the lane, let the existing arbiter drain its
+admitted replay and settlement, verify terminal generation/owning trial and drained
+generation queues/batches and constructor children, then recheck latest ownership.
+If a successor raced through, defer release and drain that actual owner.
+PAUSE fences settlement children too and cannot replace this drain procedure.
+Require durable idle plus two authenticated replay-idle probes for an online AI
+owner, gracefully
+restart workers and the idle API, verify actual PHP/Python boot-source health,
+then START admission on the existing lineage. Probe failures or malformed,
+missing, negative or noninteger active-request counts refuse reload before PM2
+mutation; idle probes never replace durable queue checks.
+Source/cost/dataset drift after a prospective
 release seal is terminal technical failure, not an automatic retry under a
 different program. A healthy API source projection is not a replay receipt.
 

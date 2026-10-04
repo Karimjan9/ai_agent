@@ -68,11 +68,32 @@ archive-root writer; its immutable source ID participates in deduplication.
 The historical cohort still contains MTF/instrument experiments. Current work,
 technical recovery and ready causal follow-ups retain their higher priority.
 
-Pause admission, verify bounded replay children have drained, then gracefully
-recycle Laravel queues with `php artisan queue:restart` and restart the idle
-Python owner through the existing supervisor/PM2 topology. Never kill an active
-replay just to apply source changes. Verify `/health.research_source` reports
-`loaded_code_current=true`, then `ai:resume --json` continues the same lineage.
+For maintenance that must let the admitted generation finish, use
+`php artisan ai:stop --json` while it still owns the lane. STOP denies new
+work while the existing arbiter continues its admitted replay and settlement.
+PAUSE blocks arbiter and queued scheduler research children, including new
+settlement children; it is an intentional break, not this drain procedure.
+Keep source bytes unchanged until the latest generation and any owning trial have
+naturally closed, its agents are terminal, and generation-owned queues,
+batches, active replays and constructor children have drained. Recheck the
+latest generation ID after the fence; if a successor already acquired ownership,
+defer deployment and drain that actual owner through the same arbiter.
+
+Require `system:runtime-reload-preflight --json` to report safe idle before
+recycling workers through the existing supervisor/PM2 topology. The PM2 sync
+also requires two successful authenticated `/api/replay-status` probes five
+seconds apart for an online AI owner. Each response must contain a nonnegative
+integer `active_requests` equal to zero. HTTP/authentication, token-read,
+timeout/network, JSON or count-shape failures refuse sync with a non-zero exit
+before any PM2 mutation, without printing raw probe diagnostics. Durable
+preflight runs again after the probes and after scheduler cadence is stopped.
+An idle API response alone cannot certify that a queue owner has drained.
+
+Never kill an active replay to apply source changes. Verify actual PHP/Python
+worker boot identities and `/health.research_source` reporting
+`loaded_code_current=true` after recycling, then use `ai:start --json` to
+restore admission to the existing lineage. `ai:resume` is for PAUSE and rejects
+the stopped/draining state. START itself creates no generation.
 The next unattempted generation seals its source/data/cost release before
 queueing; source drift afterwards rejects admission. Old attempted generations
 remain legacy-unsealed, not backfilled into clean proofs.
@@ -194,7 +215,7 @@ native stream paths/SHA and full-mode restrictions remain enforced.
 For an original clean-discovery cohort rejected before science by the exact
 native `AUTONOMOUS_MTF_MANIFEST_INVALID` validator, the existing materializer
 may propose one `academy_unobserved_mtf_validator_replacement_v1`. First drain
-and terminalize through the canonical owners, then pause and deploy a tested
+and terminalize through the canonical owners under STOP, then deploy a tested
 new full/Python seal. The arbiter re-attests attempted-control immutable
 requests/runtime/technical responses and every never-executed dependent's
 exact-control admission refusal. It preserves all twenty original vectors,
