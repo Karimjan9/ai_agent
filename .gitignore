@@ -16,6 +16,7 @@ venv/
 *.tmp
 **/.runtime/
 runtime/
+.project-map/.navigation-metrics/
 
 # OSPanel/XAMPP local noise
 *.bak

@@ -8,16 +8,70 @@ prerequisite failure.
 
 ## Sequence
 
+Archive-first research is governed by `GenerationAdmissionDecisionService`
+and the existing arbiter, not a second scheduler. Until a valid champion exists,
+settlement, technical recovery and ready learning work keep priority; otherwise
+one `historical_research` generation uses the validated pre-2026 foundation.
+Live drift/new-candle freshness does not own this research lane. The cheap
+archive dependency watermark can reselect a deferred writer after data repair;
+it is not a validation receipt. Powered MTF validation keeps priority only when
+its eligibility owner finds an actionable immutable prior. Timer-only standalone
+MTF/portfolio maintenance is below archive exploration, whose cohort already
+contains MTF/instrument experiments; the prior ID participates in deduplication.
+See ADR-021.
+
 1. Collect the scoped health evidence and distinguish policy pause from failure.
 2. Record the actual affected dependency and current state.
 3. Follow the matching bounded runbook/command; do not use unrelated recovery.
 4. Re-run strict verification after remediation.
 5. Mark only the verified condition recovered; retain audit context.
 
+For research-release provenance, run
+`php backend-laravel/scripts/audit-research-release.php --generation=N`.
+It reads Git HEAD/worktree state and the generation's immutable
+run code hashes without changing DB state. Mixed run hashes or an unsealed
+worktree are reported separately from scientific outcomes. Even a clean disk
+comparison does not attest code already loaded by long-lived PHP/Python
+workers. Prospective generations additionally seal the release before queue
+admission and return boot-source receipts from the actual workers. The audit
+checks those independently of Git HEAD/worktree sealing; legacy generations
+remain unsealed. Neither field grants promotion authority. Do not rewrite
+historical run receipts to make it pass. See ADR-016.
+The explicit `--build-source-artifact` option archives only allowlisted PHP,
+Python, config, canonical runtime scripts, dependency manifests and focused
+tests into a byte-verified content-addressed ZIP. It performs no DB/Git writes;
+credentials, environment files, datasets, storage and installed dependencies
+are excluded. Build after source changes/tests are final and before the next
+new generation seal. Non-secret authorized paper/research registry digests
+also bind effective policy changes; a changed registry retires only the current
+pointer, never rewrites the original archive. Matching new seals include the
+verified archive reference;
+absence remains diagnostic incomplete, never retroactive archive proof.
+`--verify-source-artifact=HASH` verifies source/archive bytes without extracting
+anything. The generation audit reports this independently of Git cleanliness
+and actual worker receipts; its strict result requires all applicable proofs.
+If a queued evaluator reaches the immutable release assertion with source,
+execution or dataset drift, it must create a single terminal technical
+pre-execution refusal receipt and consume that queue job. No request was sent,
+so the run is not replay or strategy evidence. Open learning pair/dispatch
+projections belonging to the same sealed generation are quarantined to stop
+the arbiter pumping an impossible replay. A stale worker boot hash alone is
+recoverable by the guarded worker reload and is not treated as immutable
+source drift. Preserve the original seal and screening results.
+
 On the local Windows autonomous profile, a per-user logon task starts the
 duplicate-safe hidden supervisor. The supervisor prefers the already-running
-PM2 topology and only fills missing Redis, AI, scheduler or queue ownership;
-small hosts retain a single CPU-heavy screening lane.
+PM2 topology and only fills missing Redis, AI, scheduler or queue ownership
+when PM2 does not own the project. A partially recycling PM2 topology remains
+PM2-owned so the fallback cannot create duplicate consumers; small hosts retain
+a single CPU-heavy screening lane.
+Before starting missing processes the fallback launcher reads the durable
+`ai:runtime-gate` from MySQL. `ai:pause` prevents a later logon/restart from
+starting research processes; already-running bounded children may finish, but
+the arbiter and queued scheduler research children admit no new action.
+`ai:resume` preserves the current generation and lets the arbiter reconcile it
+before any successor. `ai:stop` remains a distinct drain-first termination of
+new research admission; market maintenance and monitoring are not evidence.
 
 For the autonomous research scheduler, each tick freezes exactly one child
 action. A terminal technical causal arm is settled before the generic active
@@ -33,6 +87,21 @@ the candidate waits under a distinct upstream reason and cannot spend its own
 timeout-retry seat. If the frozen snapshot is sealed unrecoverable, that
 terminal disposition outranks the old timeout message for both control and
 dependent; neither receives a strategy verdict.
+A terminal draft identity quarantine also has no evaluator recovery debt when
+the original dispatcher event, generation attestation and absence of all run
+and response evidence agree. A text label alone cannot bypass recovery. The
+shared classifier preserves the old quarantine; any new constructor attempt
+still needs its own bounded policy rather than replaying the invalid draft.
+An exact native `Historical data hard-gate failed: N unexpected candle gaps.`
+with positive N also requires the original compressed model/request/response
+seals and a zero-scientific-output envelope. It becomes an immutable provider-data
+dependency, not a transient retry or strategy loss. The early arbiter and final
+snapshot guard fence the same actual M5 SHA. Existing continuation retains
+priority; fresh discovery waits explicitly instead of constructing another bad
+cohort. A current verified prospective repair from the existing MTF data owner
+may choose new bytes, but Academy still needs that selected dataset's own
+canonical quoted bundle. Old data, receipt, question caps and quotes are not
+rewritten, relabeled or inherited as validation evidence.
 The arbiter deduplicates by generation, terminal-agent, open-run, downstream
 laboratory queue and settlement watermarks rather than wall-clock minute. The
 selected scheduler job is deliberately excluded from its own state hash so its
@@ -40,6 +109,19 @@ enqueue/dequeue cycle cannot generate an endless 0/1 feedback loop. When a clean
 generation receives its arbiter-created successor, the runtime seals an
 immutable autonomy receipt only after verifying the source generation's own
 creation provenance and the exact arbiter decision that selected its successor.
+The durable operator-control revision also participates in that hash, so
+RESUME can reselect work deferred during PAUSE. If a settlement child completed
+but the exact active generation did not change state, allow only two further
+five-minute-spaced attempts. A third unchanged completion reports an explicit
+no-progress `safety_halt` in durable operator control; a changed
+generation/receipt watermark starts a new decision identity before that limit.
+While an immutable evaluation run is actively started inside the bounded queue
+lease, the arbiter selects a no-command replay wait instead of consuming those
+settlement retries. Once the run closes or the lease ages out, ordinary
+lifecycle recovery resumes. `EvaluateLabAgentJob` mutex releases increment
+Laravel's raw attempts before any evaluator call, so their attempt counter
+alone cannot trigger `queue_retry_storm`; stale reservations, uncontained
+failed jobs and unknown high-attempt jobs still fail closed.
 The creation provenance is retained even when the predecessor fails audit, but
 that failure cannot produce a clean receipt. The strict proof command requires
 two consecutive linked receipts.

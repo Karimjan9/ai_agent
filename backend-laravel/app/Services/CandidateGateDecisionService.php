@@ -21,6 +21,21 @@ class CandidateGateDecisionService
 
     public function recordScreening(LabAgent $agent, array $result): CandidateGateDecision
     {
+        if (data_get($agent->modelVersion?->metadata,
+            'cooperative_experiment_block.block_type') === 'phase_scope_probe') {
+            // This is an activation question, not an economic screen pass.
+            // Persist the runtime receipt before paired settlement, but do
+            // not create a repair anchor, rescue replay or paper candidate.
+            $result['decision'] = 'failed';
+            $result['phase_scope_research_only'] = true;
+            $result['promotion_evidence'] = false;
+            $row = $this->store(null, $agent, 'screening', 'failed',
+                ['PHASE_SCOPE_RESEARCH_ONLY'], $result);
+            $result['cooperative_experiment_settlement'] = $this->cooperativeSettlement($agent);
+            $row->update(['metrics' => $result]);
+
+            return $row->fresh();
+        }
         $survival = (array) data_get($result, 'screening_survival', []);
         if (data_get($survival, 'status') === 'insufficient_evidence') {
             $result['decision'] = 'insufficient_evidence';
@@ -105,6 +120,16 @@ class CandidateGateDecisionService
         ];
         $this->mutationObservability->record($agent, $observability);
         $decision = $reasons === [] ? 'passed' : 'failed';
+        $academyResearchOnly = $agent->generation?->trigger_type === 'academy_experiment';
+        if ($academyResearchOnly) {
+            // Preserve the scientific screen answer separately; discovery is
+            // not an economic survivor/paper admission, even when promising.
+            $result['scientific_screen_decision'] = $decision;
+            $result['academy_research_only'] = true;
+            $result['promotion_evidence'] = false;
+            $reasons[] = 'ACADEMY_RESEARCH_ONLY';
+            $decision = 'failed';
+        }
         $result['decision'] = $decision;
         $result['behavioral_map_elites'] = $this->evolutionArchive->recordScreeningBehavior($agent, $result);
         $result['contextual_capsule_archive'] = app(ContextualCapsuleArchiveService::class)->recordScreening($agent, $result);
@@ -115,6 +140,7 @@ class CandidateGateDecisionService
         $decisionRow = $this->store(null, $agent, 'screening', $decision, $reasons, $result);
         $result['cooperative_experiment_settlement'] = $this->cooperativeSettlement($agent);
         $decisionRow->update(['metrics' => $result]);
+        if ($academyResearchOnly) return $decisionRow->fresh();
 
         // A complete strategy failure becomes an immutable repair anchor. It
         // is deliberately written after the gate projection and never turns

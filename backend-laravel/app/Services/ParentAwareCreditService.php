@@ -156,7 +156,7 @@ class ParentAwareCreditService
         }
         // Historical/full replay and its forward gate are research evidence.
         // Performance credit is issued only after an immutable E3 candidate
-        // produces positive prospective evidence inside paper_2026.
+        // produces positive prospective evidence inside its authorized paper epoch.
         if (data_get($result, 'failure_signature') !== null
             || data_get($result, 'learning_lane_projection') !== null
             || $this->discoveryLane($agent)
@@ -235,7 +235,9 @@ class ParentAwareCreditService
             $agent,
             'performance_credit',
             1.0,
-            'positive_absolute_2026_paper_settlement',
+            data_get($metrics, 'paper_window.paper_window_key', ResearchPaperEpochContractService::PAPER_WINDOW_KEY)
+                === ResearchPaperEpochContractService::PAPER_WINDOW_KEY
+                    ? 'positive_absolute_2026_paper_settlement' : 'positive_absolute_prospective_paper_settlement',
             $context,
             $evidence,
         );

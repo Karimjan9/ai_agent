@@ -447,12 +447,27 @@ class LabDatasetExportService
         }
     }
 
+    /** Cheap dependency watermark for scheduling; not data-validation evidence. */
+    public function foundationDependencyWatermark(string $symbol, string $timeframe = 'H1'): array
+    {
+        $path = storage_path('app/lab-datasets/foundation/'.strtoupper($symbol).'_'.strtoupper($timeframe).'_2005-2025.csv');
+        clearstatcache(true, $path);
+        clearstatcache(true, $path.'.manifest.json');
+
+        return [
+            'protocol' => 'foundation_dependency_watermark_v1',
+            'archive_present' => is_file($path),
+            'archive_bytes' => is_file($path) ? filesize($path) : null,
+            'archive_modified_at' => is_file($path) ? filemtime($path) : null,
+            'manifest_hash' => is_file($path.'.manifest.json') ? hash_file('sha256', $path.'.manifest.json') : null,
+            'validated' => false,
+        ];
+    }
+
     /**
      * Freeze the long historical training archive separately from the
-     * canonical Twelve rolling/paper stream. Twelve's current plan may not
-     * expose the 2005 baseline, while Dukascopy remains an explicit research
-     * archive. This file is never written into canonical candles and its
-     * manifest is permanently marked as non-promotion evidence.
+     * canonical rolling/paper stream. This archive never writes canonical
+     * candles and is permanently marked as non-promotion evidence.
      *
      * @return array{path: string, manifest: array<string, mixed>, sha256: string, protocol: string}
      */

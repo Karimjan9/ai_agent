@@ -4,8 +4,10 @@ namespace App\Services;
 
 use App\Models\AiLaboratory;
 use App\Models\Candle;
+use App\Models\CooperativeExperimentSettlement;
 use App\Models\InstrumentValuePosterior;
 use App\Models\LabAgent;
+use App\Models\LabGeneration;
 use App\Models\Symbol;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -17,9 +19,12 @@ class CooperativeContextualEvolutionCouncilService
 
     public const UNCERTAINTY_ABSTAIN_PROTOCOL = 'uncertainty_abstain_guard_v1';
 
+    public const FEEDBACK_PROTOCOL = 'cooperative_allocation_feedback_v1';
+
     private const BLOCK_SEATS = [
         'repair_pair' => 2, 'novelty_pair' => 2, 'replication' => 2,
-        'factorial' => 4, 'activation_factorial' => 4, 'transfer' => 4, 'descendant' => 4,
+        'factorial' => 4, 'activation_factorial' => 4, 'phase_scope_probe' => 2,
+        'transfer' => 4, 'descendant' => 4,
         'coverage_guard' => 2, 'adversarial_guard' => 2,
     ];
 
@@ -31,7 +36,7 @@ class CooperativeContextualEvolutionCouncilService
     ) {}
 
     /** @return array{plan:array<int,array<string,mixed>>,contract:array<string,mixed>} */
-    public function allocate(array $plan, AiLaboratory $lab, array $governorSnapshot = []): array
+    public function allocate(array $plan, AiLaboratory $lab, array $governorSnapshot = [], ?int $generationNumber = null): array
     {
         $plan = array_values($plan);
         if (count($plan) !== 20) {
@@ -75,20 +80,51 @@ class CooperativeContextualEvolutionCouncilService
         $evidence = $this->evidence($lab);
         $salvage = $this->salvage->planForLab($lab, 20);
         $steppingStone = $this->steppingStoneAvailable($lab);
+        $generationCursor = $generationNumber ?? (((int) ($lab->generations()->max('generation') ?? 0)) + 1);
+        if ($generationCursor < 1) {
+            throw new \InvalidArgumentException('Generation number must be positive.');
+        }
+        $feedback = $this->allocationFeedback($lab, $generationCursor);
         $phase = $steppingStone ? 'causal_compounding' : 'cold_start';
         $proofFrontier = $steppingStone
             ? ['protocol' => ProofFrontierService::PROTOCOL, 'status' => 'not_needed_positive_stepping_stone']
             : app(ProofFrontierService::class)->propose($lab, $workingPlan);
         $activationProposal = (string) data_get($proofFrontier, 'status') === 'proposed'
             ? (array) data_get($proofFrontier, 'proposal', []) : [];
-        $types = $this->blockTypes($steppingStone, count($workingPlan), $activationProposal !== []);
+        $phaseScope = $activationProposal === [] && ! $steppingStone
+            ? app(ProofFrontierService::class)->proposePhaseScope($lab, $workingPlan)
+            : ['protocol' => ProofFrontierService::PHASE_PROBE_PROTOCOL, 'status' => 'not_needed'];
+        $phaseProposal = (string) data_get($phaseScope, 'status') === 'proposed'
+            ? (array) data_get($phaseScope, 'proposal', []) : [];
+        $baselineTypes = $this->blockTypes($steppingStone, count($workingPlan));
+        $feedbackAllocation = $this->feedbackBlockTypes($baselineTypes, $feedback, $steppingStone);
+        $types = $feedbackAllocation['types'];
+        $frontierReplacement = [];
+        if ($activationProposal !== [] && ! $steppingStone) {
+            $repairIndexes = array_keys(array_filter($types, fn (string $type): bool => $type === 'repair_pair'));
+            if (count($repairIndexes) < 2) {
+                throw new \LogicException('Activation requires two repair pairs to replace.');
+            }
+            $frontierReplacement = array_slice($repairIndexes, 0, 2);
+            $types = ['activation_factorial', ...array_values(array_filter(
+                $types, fn (string $_type, int $index): bool => ! in_array($index, $frontierReplacement, true), ARRAY_FILTER_USE_BOTH,
+            ))];
+        } elseif ($phaseProposal !== [] && ! $steppingStone) {
+            $repairIndexes = array_keys(array_filter($types, fn (string $type): bool => $type === 'repair_pair'));
+            if ($repairIndexes === []) {
+                throw new \LogicException('Phase scope probe requires one repair pair to replace.');
+            }
+            $frontierReplacement = [reset($repairIndexes)];
+            $types = ['phase_scope_probe', ...array_values(array_filter(
+                $types, fn (string $_type, int $index): bool => ! in_array($index, $frontierReplacement, true), ARRAY_FILTER_USE_BOTH,
+            ))];
+        }
         $legacyLearning = app(MultiModalLearningPortfolioService::class)->planForLab(
             $lab,
             app(EvolutionaryAuthorityLadderService::class)->experimentBlocks($steppingStone),
             $this->learningEvidence($evidence),
         );
         $reference = $this->referenceTimestamp($lab);
-        $generationCursor = ((int) ($lab->generations()->max('generation') ?? 0)) + 1;
         $readyIdeas = $this->ideas->ready($lab->symbol, $lab->timeframe);
         $ideaCursor = 0;
         $allocations = array_fill_keys($this->calendar->researchPhases(), 0);
@@ -104,8 +140,17 @@ class CooperativeContextualEvolutionCouncilService
 
         foreach ($types as $blockIndex => $blockType) {
             $seatCount = self::BLOCK_SEATS[$blockType];
-            if ($blockType === 'activation_factorial') {
-                $template = (array) $workingPlan[(int) $activationProposal['base_index']];
+            if ($blockType === 'phase_scope_probe') {
+                $template = $this->phaseScopeTemplate($phaseProposal);
+                $family = (string) $template['family'];
+            } elseif ($blockType === 'activation_factorial') {
+                $template = (bool) data_get($activationProposal, 'source_owned_probe', false)
+                    ? $this->phaseScopeTemplate($activationProposal)
+                    : (array) $workingPlan[(int) $activationProposal['base_index']];
+                if ((bool) data_get($activationProposal, 'source_owned_probe', false)) {
+                    data_set($template, 'niche.declared_gene', data_get($activationProposal, 'a.gene'));
+                    data_set($template, 'niche.declared_value', data_get($activationProposal, 'a.value'));
+                }
                 $family = (string) data_get($template, 'family', 'hybrid');
             } elseif ($blockType === 'repair_pair' && $repairTargets !== []) {
                 $repairTarget = $repairTargets[$repairCursor++ % count($repairTargets)];
@@ -116,13 +161,23 @@ class CooperativeContextualEvolutionCouncilService
                 $bucket = $familyTemplates->get($family, collect($plan))->values();
                 $template = (array) $bucket[intdiv($blockIndex, max(1, $families->count())) % max(1, $bucket->count())];
             }
-            $other = $blockType === 'activation_factorial'
-                ? (array) $workingPlan[(int) $activationProposal['other_index']]
-                : $this->differentGeneTemplate($workingPlan, $template, $blockIndex + 1);
+            $other = match ($blockType) {
+                'activation_factorial' => (bool) data_get($activationProposal, 'source_owned_probe', false)
+                    ? $template : (array) $workingPlan[(int) $activationProposal['other_index']],
+                'phase_scope_probe' => $template,
+                default => $this->differentGeneTemplate($workingPlan, $template, $blockIndex + 1),
+            };
+            if ($blockType === 'activation_factorial'
+                && (bool) data_get($activationProposal, 'source_owned_probe', false)) {
+                data_set($other, 'niche.declared_gene', data_get($activationProposal, 'b.gene'));
+                data_set($other, 'niche.declared_value', data_get($activationProposal, 'b.value'));
+            }
             $sourcePhase = $blockType === 'activation_factorial'
                 && in_array((string) data_get($activationProposal, 'source_venue_phase'), $this->calendar->researchPhases(), true)
                 ? (string) $activationProposal['source_venue_phase']
-                : $this->selectPhase($blockType, $blockIndex, $generationCursor, $evidence, $allocations);
+                : ($blockType === 'phase_scope_probe'
+                    ? (string) $phaseProposal['venue_phase']
+                    : $this->selectPhase($blockType, $blockIndex, $generationCursor, $evidence, $allocations));
             $causalSourceScope = (array) data_get($legacyLearning, 'source_references.causal_skill.context_scope', []);
             if ($steppingStone && in_array($blockType, ['replication', 'factorial', 'transfer', 'descendant'], true)) {
                 $sourcePhase = $this->phaseForSourceScope($causalSourceScope, $sourcePhase);
@@ -132,14 +187,40 @@ class CooperativeContextualEvolutionCouncilService
                 : $sourcePhase;
             $sourceCell = $this->cell($template, $sourcePhase, $reference);
             $targetCell = $targetPhase === $sourcePhase ? $sourceCell : $this->cell($template, $targetPhase, $reference);
+            $idea = null;
+            // Match the submitted design before freezing a block. Do not route
+            // factorial/repair requests through an unrelated novelty pair.
+            foreach ($readyIdeas as $readyIdea) {
+                if (isset($readyIdea['claimed']) || data_get($readyIdea, 'executable_contract.required_block_type') !== $blockType) continue;
+                if (! in_array($blockType, ['repair_pair', 'novelty_pair', 'adversarial_guard'], true)) continue;
+                $ideaPhase = (string) data_get($readyIdea, 'executable_contract.context_scope.venue_phase', $sourcePhase);
+                if (! in_array($ideaPhase, $this->calendar->researchPhases(), true)) continue;
+                $templates = $blockType === 'novelty_pair' ? $familyTemplates->get($family, collect([$template]))->all() : [$template];
+                foreach ($templates as $ideaTemplate) {
+                    $ideaCell = $this->cell((array) $ideaTemplate, $ideaPhase, $reference);
+                    if (! $this->ideas->designMatches($readyIdea, $blockType, $ideaCell, $this->intervention((array) $ideaTemplate))) continue;
+                    $idea = $readyIdea;
+                    $template = (array) $ideaTemplate;
+                    $sourcePhase = $targetPhase = $ideaPhase;
+                    $sourceCell = $targetCell = $ideaCell;
+                    $other = $this->differentGeneTemplate($workingPlan, $template, $blockIndex + 1);
+                    break 2;
+                }
+            }
             $blockKey = hash('sha256', json_encode([
                 self::PROTOCOL, $lab->id, $generationCursor, $blockIndex + 1, $blockType,
-                $sourceCell['cell_hash'], $targetCell['cell_hash'],
+                $sourceCell['cell_hash'], $targetCell['cell_hash'], $feedback['settlement_digest'],
+                ...($idea !== null ? [data_get($idea, 'idea_key'), data_get($idea, 'executable_contract')] : []),
             ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
-            $idea = null;
-            if ($blockType === 'novelty_pair' && isset($readyIdeas[$ideaCursor])) {
-                $idea = (array) $readyIdeas[$ideaCursor++];
-                $this->ideas->assign((int) $idea['id'], $blockKey);
+            if ($idea !== null) {
+                if (! $this->ideas->assign((int) $idea['id'], $blockKey)) {
+                    throw new \LogicException('Idea design was concurrently claimed; allocation must be retried.');
+                }
+                foreach ($readyIdeas as &$readyIdea) {
+                    if ($readyIdea['id'] === $idea['id']) $readyIdea['claimed'] = true;
+                }
+                unset($readyIdea);
+                $ideaCursor++;
             }
             $priority = $this->priority($blockType, $sourcePhase, $seatCount, $evidence, $allocations, $idea !== null);
             $priorityLedger[] = ['block_key' => $blockKey, 'block_type' => $blockType, ...$priority];
@@ -150,7 +231,8 @@ class CooperativeContextualEvolutionCouncilService
                 $spec = $this->armSpec(
                     (array) $arm['template'], $armCell, $arm, $blockKey, $blockType,
                     $blockIndex + 1, $arms, $learning, $priority, $idea,
-                    $blockType === 'activation_factorial' ? $activationProposal : [],
+                    $blockType === 'activation_factorial' ? $activationProposal
+                        : ($blockType === 'phase_scope_probe' ? $phaseProposal : []),
                 );
                 $allocated[] = $spec;
                 $capsules[] = (array) data_get($spec, 'niche.cooperative_evolution_capsule', []);
@@ -168,6 +250,7 @@ class CooperativeContextualEvolutionCouncilService
                 'target_context_cell_key' => $targetCell['cell_hash'],
                 'source_venue_phase' => $sourcePhase, 'target_venue_phase' => $targetPhase,
                 'priority' => $priority, 'idea_key' => data_get($idea, 'idea_key'),
+                'idea_design' => data_get($idea, 'executable_contract'),
                 'requires_exact_frozen_controls' => true, 'settlement_required' => true,
                 'promotion_evidence' => false,
             ];
@@ -191,6 +274,36 @@ class CooperativeContextualEvolutionCouncilService
             ksort($finalPlan);
             $finalPlan = array_values($finalPlan);
         }
+        $seatOwnership = $this->seatOwnership($finalPlan, $generationCursor);
+        foreach ($blockRows as &$row) {
+            $row['seat_numbers'] = collect($seatOwnership)
+                ->filter(fn (array $owner): bool => $owner['kind'] === 'cooperative_block'
+                    && $owner['key'] === $row['block_key'])
+                ->pluck('seat')->values()->all();
+            if (count($row['seat_numbers']) !== $row['seat_count']) {
+                throw new \LogicException('Cooperative block seat ownership is incomplete.');
+            }
+        }
+        unset($row);
+        if (($feedbackAllocation['decision']['status'] ?? '') === 'reallocated_research_only') {
+            $sourceIndex = (int) $feedbackAllocation['decision']['block_index'] - 1;
+            $remaining = array_values(array_filter(array_keys($feedbackAllocation['types']),
+                fn (int $index): bool => ! in_array($index, $frontierReplacement, true)));
+            $survivorIndex = array_search($sourceIndex, $remaining, true);
+            if ($survivorIndex === false) {
+                throw new \LogicException('Feedback-changed block cannot be displaced by activation.');
+            }
+            $finalIndex = $survivorIndex + ($frontierReplacement === [] ? 0 : 1);
+            $feedbackAllocation['decision']['final_block_index'] = $finalIndex + 1;
+            $feedbackAllocation['decision']['final_block_key'] = $blockRows[$finalIndex]['block_key'];
+            $feedbackAllocation['decision']['final_seat_numbers'] = $blockRows[$finalIndex]['seat_numbers'];
+        }
+        $seatOwnershipDigest = $this->digest($seatOwnership);
+        $allocationManifestHash = $this->digest([
+            self::PROTOCOL, $lab->id, $generationCursor, $feedback['settlement_digest'],
+            $feedbackAllocation['decision'], $frontierReplacement,
+            $this->manifestBlocks($blockRows), $seatOwnershipDigest,
+        ]);
         $seatCounts = collect($blockRows)->groupBy('block_type')->map(fn ($rows): int => $rows->sum('seat_count'))->all();
         $pairQuotas = collect($blockRows)->groupBy('block_type')->map(fn ($rows): int => intdiv($rows->sum('seat_count'), 2))->all();
         $learningBlocks = collect($allocated)->map(fn (array $slot): array => (array) data_get($slot, 'niche.learning_method_contract', []))
@@ -215,11 +328,28 @@ class CooperativeContextualEvolutionCouncilService
         return ['plan' => $finalPlan, 'contract' => [
             'protocol' => self::PROTOCOL, 'status' => 'allocated', 'phase' => $phase,
             'planned_population' => 20, 'dynamic' => true,
+            'generation_number' => $generationCursor,
             'permanent_semantic_group_quotas' => false, 'fixed_equal_quota_forbidden' => true,
             'experiment_blocks' => $blockRows, 'block_count' => count($blockRows),
             'seat_counts' => $seatCounts, 'pair_quotas' => $pairQuotas,
             'pair_budget' => intdiv(count($allocated), 2),
             'cooperative_seats' => count($allocated),
+            'seat_ownership' => $seatOwnership,
+            'seat_ownership_digest' => $seatOwnershipDigest,
+            'seat_ownership_complete' => count($seatOwnership) === 20,
+            'allocation_manifest_required' => true,
+            'allocation_manifest_hash' => $allocationManifestHash,
+            'settlement_feedback' => [
+                ...$feedback,
+                'baseline_block_types' => $baselineTypes,
+                'feedback_block_types' => $feedbackAllocation['types'],
+                'decision' => $feedbackAllocation['decision'],
+                'activation_replaced_block_indexes' => $activationProposal !== []
+                    ? array_map(fn (int $index): int => $index + 1, $frontierReplacement) : [],
+                'phase_probe_replaced_block_indexes' => $phaseProposal !== []
+                    ? array_map(fn (int $index): int => $index + 1, $frontierReplacement) : [],
+                'final_block_types' => $types,
+            ],
             'protected_causal_proof_slots' => array_map(fn (int $index): int => $index + 1, $protectedIndexes),
             'protected_causal_proof_seats' => count($protectedIndexes),
             'uncertainty_abstain_slots' => $abstainSlots,
@@ -231,6 +361,7 @@ class CooperativeContextualEvolutionCouncilService
             'priority_formula' => 'probability_of_improvement + expected_information_gain + context_coverage_deficit + novelty_score + unresolved_failure_urgency + replication_need - execution_cost - duplicate_penalty - overfit_risk - correlated_failure_penalty',
             'priority_ledger' => $priorityLedger,
             'proof_frontier' => $proofFrontier,
+            'phase_scope_probe' => $phaseScope,
             'failure_directed_allocation' => [
                 'canonical_reason_counts' => (array) data_get($governorSnapshot, 'reason_counts', []),
                 'canonical_target_counts' => (array) data_get($governorSnapshot, 'target_counts', []),
@@ -268,34 +399,269 @@ class CooperativeContextualEvolutionCouncilService
             ],
             'idea_inbox' => ['protocol' => ResearchIdeaInboxService::PROTOCOL,
                 'ready_seen' => count($readyIdeas), 'assigned' => $ideaCursor,
+                'deferred_designs' => collect($readyIdeas)->reject(fn (array $idea): bool => isset($idea['claimed']))
+                    ->map(fn (array $idea): array => ['idea_key' => $idea['idea_key'],
+                        'required_block_type' => data_get($idea, 'executable_contract.required_block_type'),
+                        'reason' => 'NO_MATCHING_READY_BLOCK_DESIGN'])->values()->all(),
                 'direct_install_or_inheritance_forbidden' => true],
             'promotion_evidence' => false,
         ]];
     }
 
+    /** New manifests fail queue admission if their source receipt or seat ownership drifts. */
+    public function allocationReasons(LabGeneration $generation): array
+    {
+        $contract = (array) data_get($generation->trigger_context,
+            'population_group_contract.contextual_allocator', []);
+        if ((string) ($contract['protocol'] ?? '') !== self::PROTOCOL
+            || ! (bool) ($contract['dynamic'] ?? false)) {
+            return [];
+        }
+        if (! isset($contract['allocation_manifest_hash'])) {
+            return (bool) ($contract['allocation_manifest_required'] ?? false)
+                || isset($contract['settlement_feedback'])
+                ? ['ALLOCATION_MANIFEST_MISSING'] : []; // Historical generations predate this manifest.
+        }
+        $reasons = [];
+        $feedback = (array) ($contract['settlement_feedback'] ?? []);
+        $current = $this->allocationFeedback($generation->laboratory, (int) $generation->generation);
+        if (! hash_equals((string) ($feedback['settlement_digest'] ?? ''),
+            (string) $current['settlement_digest'])) {
+            $reasons[] = 'ALLOCATION_SOURCE_SETTLEMENT_DRIFT';
+        }
+        $owners = (array) ($contract['seat_ownership'] ?? []);
+        if (count($owners) !== 20 || collect($owners)->pluck('seat')->all() !== range(1, 20)
+            || ! hash_equals((string) ($contract['seat_ownership_digest'] ?? ''), $this->digest($owners))) {
+            $reasons[] = 'ALLOCATION_SEAT_OWNERSHIP_INVALID';
+        }
+        $plan = (array) data_get($generation->trigger_context, 'generation_plan', []);
+        if ($plan !== []) {
+            try {
+                if ($this->seatOwnership($plan, (int) $generation->generation) !== $owners) {
+                    $reasons[] = 'ALLOCATION_PLAN_OWNER_DRIFT';
+                }
+            } catch (\Throwable) {
+                $reasons[] = 'ALLOCATION_PLAN_OWNER_DRIFT';
+            }
+        }
+        $blocks = (array) ($contract['experiment_blocks'] ?? []);
+        foreach ($blocks as $row) {
+            if (! is_array($row)) {
+                $reasons[] = 'ALLOCATION_BLOCK_SEAT_MISMATCH';
+                break;
+            }
+            $seats = collect($owners)->filter(fn (mixed $owner): bool => is_array($owner)
+                && ($owner['kind'] ?? '') === 'cooperative_block'
+                && ($owner['key'] ?? '') === ($row['block_key'] ?? ''))
+                ->pluck('seat')->values()->all();
+            if ($seats !== ($row['seat_numbers'] ?? null) || count($seats) !== (int) ($row['seat_count'] ?? 0)) {
+                $reasons[] = 'ALLOCATION_BLOCK_SEAT_MISMATCH';
+                break;
+            }
+        }
+        $activationIndexes = array_map(fn (int $index): int => $index - 1,
+            (array) ($feedback['activation_replaced_block_indexes'] ?? []));
+        $phaseProbeIndexes = array_map(fn (int $index): int => $index - 1,
+            (array) ($feedback['phase_probe_replaced_block_indexes'] ?? []));
+        if ($activationIndexes !== [] && $phaseProbeIndexes !== []) {
+            $reasons[] = 'ALLOCATION_FRONTIER_REPLACEMENT_CONFLICT';
+        }
+        $frontierReplacement = $activationIndexes !== [] ? $activationIndexes : $phaseProbeIndexes;
+        $manifest = $this->digest([
+            self::PROTOCOL, $generation->ai_laboratory_id, (int) $generation->generation,
+            $feedback['settlement_digest'] ?? null, $feedback['decision'] ?? null,
+            $frontierReplacement, $this->manifestBlocks($blocks), $contract['seat_ownership_digest'] ?? null,
+        ]);
+        if (! hash_equals((string) $contract['allocation_manifest_hash'], $manifest)) {
+            $reasons[] = 'ALLOCATION_MANIFEST_HASH_INVALID';
+        }
+
+        return array_values(array_unique($reasons));
+    }
+
     /** @return array<int,string> */
-    private function blockTypes(bool $steppingStone, int $seatBudget, bool $activationReady = false): array
+    private function blockTypes(bool $steppingStone, int $seatBudget): array
     {
         if ($seatBudget === 20) {
-            $types = $steppingStone
+            return $steppingStone
                 ? ['replication', 'factorial', 'transfer', 'descendant', 'repair_pair', 'novelty_pair', 'coverage_guard']
                 : ['repair_pair', 'repair_pair', 'repair_pair', 'repair_pair', 'repair_pair', 'repair_pair',
                     'novelty_pair', 'novelty_pair', 'novelty_pair', 'adversarial_guard'];
-
-            return $activationReady && ! $steppingStone
-                ? ['activation_factorial', ...array_slice($types, 2)] : $types;
         }
         if ($seatBudget === 16) {
-            $types = $steppingStone
+            return $steppingStone
                 ? ['replication', 'factorial', 'descendant', 'repair_pair', 'novelty_pair', 'coverage_guard']
                 : ['repair_pair', 'repair_pair', 'repair_pair', 'repair_pair', 'repair_pair',
                     'novelty_pair', 'novelty_pair', 'adversarial_guard'];
-
-            return $activationReady && ! $steppingStone
-                ? ['activation_factorial', ...array_slice($types, 2)] : $types;
         }
 
         return array_fill(0, intdiv($seatBudget, 2), $steppingStone ? 'replication' : 'repair_pair');
+    }
+
+    /** Snapshot only the immediate terminal predecessor; old or incomplete rows cannot steer a successor. */
+    private function allocationFeedback(AiLaboratory $lab, int $generationCursor): array
+    {
+        $predecessor = $lab->generations()->where('generation', $generationCursor - 1)->first();
+        $base = ['protocol' => self::FEEDBACK_PROTOCOL,
+            'source_generation_id' => $predecessor?->id,
+            'source_generation_number' => $predecessor?->generation,
+            'source_generation_status' => $predecessor?->status,
+            'settlement_receipts' => [], 'valid_settlement_ids' => [],
+            'technical_invalid_settlement_ids' => []];
+        if (! $predecessor || ! Schema::hasTable('cooperative_experiment_settlements')) {
+            return [...$base, 'status' => 'no_terminal_predecessor',
+                'settlement_digest' => $this->digest([self::FEEDBACK_PROTOCOL, $base])];
+        }
+        if (! in_array((string) $predecessor->status, ['screened', 'completed', 'technical_quarantine'], true)) {
+            return [...$base, 'status' => 'predecessor_not_terminal',
+                'settlement_digest' => $this->digest([self::FEEDBACK_PROTOCOL, $base])];
+        }
+        $receipts = [];
+        foreach (CooperativeExperimentSettlement::query()->where('lab_generation_id', $predecessor->id)
+            ->orderBy('id')->get() as $settlement) {
+            $arms = (array) $settlement->arm_results;
+            $type = (string) $settlement->block_type;
+            $outcome = (string) $settlement->outcome_status;
+            $identityValid = hash_equals(hash('sha256', implode('|', [
+                CooperativeExperimentSettlementService::PROTOCOL, $predecessor->id, $settlement->block_key,
+            ])), (string) $settlement->settlement_key);
+            $complete = $identityValid && (bool) $settlement->evidence_complete
+                && isset(self::BLOCK_SEATS[$type])
+                && count($arms) === self::BLOCK_SEATS[$type]
+                && collect($arms)->every(fn (mixed $arm): bool => is_array($arm)
+                    && (string) ($arm['evidence_status'] ?? '') === 'eligible'
+                    && (string) ($arm['evidence_run_id'] ?? '') !== '');
+            $classification = match (true) {
+                $complete && $outcome === 'underpowered_activation' && $type === 'activation_factorial' => 'underpowered_activation',
+                $complete && $outcome === 'settled_negative_or_null' && $type === 'repair_pair' => 'negative_repair',
+                $complete && $outcome === 'settled_negative_or_null' && $type === 'novelty_pair' => 'negative_novelty',
+                $complete && $outcome === 'settled_positive_signal' => 'positive_signal_only',
+                $identityValid && $outcome === 'invalid_arm_evidence' => 'technical_invalid',
+                default => 'not_actionable',
+            };
+            $receipts[] = [
+                'settlement_id' => (int) $settlement->id,
+                'settlement_key' => (string) $settlement->settlement_key,
+                'block_key' => (string) $settlement->block_key,
+                'block_type' => $type, 'outcome_status' => $outcome,
+                'evidence_complete' => (bool) $settlement->evidence_complete,
+                'classification' => $classification,
+                'receipt_hash' => $this->digest([
+                    $settlement->id, $settlement->settlement_key, $type, $outcome,
+                    (bool) $settlement->evidence_complete, $arms,
+                    (array) $settlement->component_effects,
+                ]),
+            ];
+        }
+        $feedback = [...$base, 'status' => count($receipts) <= 10 ? 'sealed' : 'invalid_settlement_count',
+            'settlement_receipts' => $receipts,
+            'valid_settlement_ids' => collect($receipts)->filter(fn (array $row): bool =>
+                in_array($row['classification'], ['underpowered_activation', 'negative_repair',
+                    'negative_novelty', 'positive_signal_only'], true))->pluck('settlement_id')->all(),
+            'technical_invalid_settlement_ids' => collect($receipts)->filter(fn (array $row): bool =>
+                $row['classification'] === 'technical_invalid')->pluck('settlement_id')->all()];
+
+        return [...$feedback, 'settlement_digest' => $this->digest([self::FEEDBACK_PROTOCOL, $feedback])];
+    }
+
+    /** Move at most one research-only pair; no settlement signal changes the credit/authority gate. */
+    private function feedbackBlockTypes(array $types, array $feedback, bool $steppingStone): array
+    {
+        $unchanged = ['types' => $types, 'decision' => ['status' => 'unchanged',
+            'reason' => $steppingStone ? 'confirmed_authority_constitution' : (string) $feedback['status']]];
+        if ($steppingStone || $feedback['status'] !== 'sealed') {
+            return $unchanged;
+        }
+        $rules = [
+            'technical_invalid' => ['novelty_pair', 'coverage_guard', 'technical_invalid_diagnostic_guard'],
+            'underpowered_activation' => ['repair_pair', 'coverage_guard', 'underpowered_activation_coverage'],
+            'negative_repair' => ['repair_pair', 'novelty_pair', 'negative_repair_diversification'],
+            'negative_novelty' => ['novelty_pair', 'repair_pair', 'negative_novelty_refocus'],
+        ];
+        foreach ($rules as $classification => [$from, $to, $reason]) {
+            $source = collect((array) $feedback['settlement_receipts'])->first(fn (array $row): bool =>
+                $row['classification'] === $classification);
+            $index = array_search($from, $types, true);
+            if (! $source || $index === false) {
+                continue;
+            }
+            $types[$index] = $to;
+
+            return ['types' => $types, 'decision' => [
+                'status' => 'reallocated_research_only', 'reason' => $reason,
+                'source_settlement_id' => $source['settlement_id'],
+                'source_receipt_hash' => $source['receipt_hash'],
+                'source_settlement_digest' => $feedback['settlement_digest'],
+                'block_index' => $index + 1, 'from_block_type' => $from,
+                'to_block_type' => $to, 'credit_allowed' => false,
+            ]];
+        }
+
+        return $unchanged;
+    }
+
+    /** Every one of the twenty seats has exactly one auditable scientific owner. */
+    private function seatOwnership(array $plan, int $generationCursor): array
+    {
+        $owners = [];
+        foreach ($plan as $index => $slot) {
+            $block = (array) data_get($slot, 'niche.cooperative_experiment_block', []);
+            $causal = (array) data_get($slot, 'niche.causal_learning_cohort', []);
+            $abstain = (array) data_get($slot, 'niche.uncertainty_abstain_contract', []);
+            $claimed = (int) ($block !== []) + (int) ($causal !== []) + (int) ($abstain !== []);
+            if ($claimed !== 1) {
+                throw new \LogicException('Every allocation seat requires exactly one owner.');
+            }
+            if ($block !== []) {
+                $owner = ['kind' => 'cooperative_block', 'key' => (string) ($block['block_key'] ?? ''),
+                    'role' => (string) ($block['arm'] ?? '')];
+            } elseif ($causal !== []) {
+                $experimentKey = (string) ($causal['experiment_key'] ?? $causal['experiment_id'] ?? '');
+                if ($experimentKey === '') {
+                    throw new \LogicException('Protected causal seat requires an experiment identity.');
+                }
+                $owner = ['kind' => 'protected_causal_proof',
+                    'key' => $this->digest([self::PROTOCOL, $generationCursor, $experimentKey,
+                        (string) ($causal['role'] ?? ''),
+                        (int) ($causal['source_pair_id'] ?? 0),
+                        (int) ($causal['source_control_agent_id'] ?? 0),
+                        (int) ($causal['baseline_model_version_id'] ?? 0)]),
+                    'role' => (string) ($causal['role'] ?? '')];
+            } else {
+                $owner = ['kind' => 'uncertainty_abstain',
+                    'key' => $this->digest([self::UNCERTAINTY_ABSTAIN_PROTOCOL, $generationCursor,
+                        $index + 1, (string) ($abstain['status'] ?? ''), (string) ($abstain['action'] ?? '')]),
+                    'role' => (string) ($abstain['action'] ?? '')];
+            }
+            if ($owner['key'] === '' || $owner['role'] === '') {
+                throw new \LogicException('Allocation seat owner is not sealed.');
+            }
+            $owners[] = ['seat' => $index + 1, ...$owner];
+        }
+        if (count($owners) !== 20) {
+            throw new \LogicException('Cooperative allocation must own all twenty seats.');
+        }
+
+        return $owners;
+    }
+
+    private function digest(array $value): string
+    {
+        return hash('sha256', json_encode($value, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+    }
+
+    /** Stable allocation identity; mutable score presentation is not a seat owner. */
+    private function manifestBlocks(array $rows): array
+    {
+        return array_map(fn (mixed $row): array => [
+            ...(! is_array($row) ? ['invalid_row' => true] : []),
+            'block_key' => (string) ($row['block_key'] ?? ''),
+            'block_type' => (string) ($row['block_type'] ?? ''),
+            'seat_count' => (int) ($row['seat_count'] ?? 0),
+            'seat_numbers' => (array) ($row['seat_numbers'] ?? []),
+            'source_context_cell_key' => (string) ($row['source_context_cell_key'] ?? ''),
+            'target_context_cell_key' => (string) ($row['target_context_cell_key'] ?? ''),
+        ], $rows);
     }
 
     /** @return array<string,mixed> */
@@ -411,6 +777,11 @@ class CooperativeContextualEvolutionCouncilService
     private function arms(string $type, array $a, array $b): array
     {
         return match ($type) {
+            'phase_scope_probe' => [
+                ['role' => 'phase_control', 'template' => $a, 'intervention' => null],
+                ['role' => 'diagnostic_candidate', 'template' => $a,
+                    'intervention' => (array) data_get($a, 'niche.phase_scope_probe.diagnostic_intervention')],
+            ],
             'activation_factorial' => [
                 ['role' => 'control', 'template' => $a, 'intervention' => null],
                 ['role' => 'a_only', 'template' => $a, 'intervention' => $this->intervention($a)],
@@ -443,11 +814,64 @@ class CooperativeContextualEvolutionCouncilService
         };
     }
 
+    /** The historical model is a parameter baseline, never a genetic parent. */
+    private function phaseScopeTemplate(array $proposal): array
+    {
+        $source = LabAgent::query()->with('modelVersion')->find((int) data_get($proposal, 'source_agent_id', 0));
+        $metadata = (array) $source?->modelVersion?->metadata;
+        $passport = (array) data_get($metadata, 'smart_composition.composition_passport', []);
+        if (! $source?->modelVersion
+            || (int) $source->model_version_id !== (int) data_get($proposal, 'source_model_version_id', 0)
+            || (string) data_get($passport, 'composition_id') !== (string) data_get($proposal, 'source_composition_id')
+            || (array) data_get($passport, 'components', []) !== (array) data_get($proposal, 'components', [])) {
+            throw new \LogicException('Prospective phase probe source identity changed.');
+        }
+        if ((string) data_get($proposal, 'protocol') === ProofFrontierService::PHASE_PROBE_REFREEZE_PROTOCOL) {
+            $runtimeBase = app(StrategyParameterSchemaService::class)->runtimeBaseStrategy(
+                (string) $source->modelVersion->strategy,
+                data_get($metadata, 'base_strategy'), (string) $source->strategy_family,
+            );
+            $passport = app(CompositionAuthorityKernelService::class)
+                ->refreezeHistoricalHypothesis($passport, $runtimeBase);
+            $passportHash = hash('sha256', json_encode($passport,
+                JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+            if ((string) data_get($proposal, 'prospective_composition_id')
+                    !== (string) data_get($passport, 'composition_id')
+                || ! hash_equals((string) data_get($proposal, 'prospective_passport_hash', ''),
+                    $passportHash)) {
+                throw new \LogicException('Prospective phase probe passport drifted before construction.');
+            }
+        }
+        $smart = (array) data_get($metadata, 'smart_composition', []);
+        $regimes = (array) data_get($passport, 'strategy_contract.strategy_spec.regime.allowed', []);
+
+        return [
+            'family' => (string) $source->strategy_family,
+            'origin' => 'phase_scope_probe', 'target' => 'phase_scope_probe',
+            'niche' => [
+                'composition_lane' => 'strategy_composition',
+                'composition_passport' => $passport,
+                'composition_architecture' => (string) data_get($metadata, 'strategy_architecture', ''),
+                'strategy_library_id' => data_get($smart, 'strategy_library_id',
+                    data_get($passport, 'components.strategy_id')),
+                'strategy_library_contract' => data_get($smart, 'strategy_library_contract'),
+                'tactic_library_key' => data_get($smart, 'tactic_library_key',
+                    data_get($passport, 'components.tactic_id')),
+                'risk_library_id' => data_get($smart, 'risk_library_id',
+                    data_get($passport, 'components.risk_id')),
+                'risk_library_contract' => data_get($smart, 'risk_library_contract'),
+                'regime' => (string) ($regimes[0] ?? 'unknown'),
+                'volatility' => 'normal_volatility',
+                'phase_scope_probe' => $proposal,
+            ],
+        ];
+    }
+
     /** @return array<string,mixed> */
     private function armSpec(array $template, array $cell, array $arm, string $blockKey, string $blockType, int $blockIndex, array $arms, array $learning, array $priority, ?array $idea, array $activationProposal = []): array
     {
         $niche = (array) data_get($template, 'niche', []);
-        if ($blockType === 'activation_factorial') {
+        if (in_array($blockType, ['activation_factorial', 'phase_scope_probe'], true)) {
             // The source passport owns execution. An unrelated planner seat
             // may carry role baselines, repair targets or extra interventions;
             // none may leak into the four-arm frozen contrast.
@@ -485,15 +909,29 @@ class CooperativeContextualEvolutionCouncilService
                 'source_run_id' => (string) $activationProposal['source_run_id'],
                 'source_response_hash' => (string) $activationProposal['source_response_hash'],
                 'source_data_hash' => (string) $activationProposal['source_data_hash'],
+                'source_execution_hash' => (string) $activationProposal['source_execution_hash'],
+                'source_mtf_bundle_hash' => (string) $activationProposal['source_mtf_bundle_hash'],
                 'hypothesis_key' => (string) $activationProposal['hypothesis_key'],
+                'validation_plan' => (array) $activationProposal['validation_plan'],
                 'max_discovery_trials' => 1,
                 'minimum_paired_opportunities' => ProofFrontierService::MIN_PAIRED_OPPORTUNITIES,
                 'minimum_signal_opportunities' => ProofFrontierService::MIN_SIGNAL_OPPORTUNITIES,
                 'factor_a' => (array) $activationProposal['a'],
                 'factor_b' => (array) $activationProposal['b'],
                 'arm' => (string) $arm['role'],
-                'holdout_status' => 'unreserved',
+                'holdout_status' => 'reserved_awaiting_authorized_research_epoch',
                 'credit_allowed' => false,
+                'promotion_evidence' => false,
+            ];
+        }
+        if ($blockType === 'phase_scope_probe') {
+            $niche['shadow_only'] = false;
+            $niche['structural_research'] = $intervention !== [];
+            $niche['control_only'] = $intervention === [];
+            $niche['phase_scope_probe'] = [
+                ...(array) $activationProposal,
+                'arm' => (string) $arm['role'],
+                'research_only' => true, 'credit_allowed' => false,
                 'promotion_evidence' => false,
             ];
         }
@@ -512,10 +950,26 @@ class CooperativeContextualEvolutionCouncilService
                     $activationProposal['source_agent_id'], $activationProposal['source_response_hash'],
                     $activationProposal['source_model_version_id'], $activationProposal['source_parameter_hash'],
                     $activationProposal['source_data_hash'], $activationProposal['hypothesis_key'],
+                    data_get($activationProposal, 'validation_plan.plan_hash'),
                     $activationProposal['components'], $activationProposal['a'], $activationProposal['b'],
                     ProofFrontierService::MIN_PAIRED_OPPORTUNITIES,
                     ProofFrontierService::MIN_SIGNAL_OPPORTUNITIES,
                     data_get($cell, 'cell_hash')], JSON_UNESCAPED_SLASHES)) : null,
+            'phase_probe_manifest_hash' => $blockType === 'phase_scope_probe'
+                ? hash('sha256', json_encode([(string) data_get($activationProposal,
+                    'protocol', ProofFrontierService::PHASE_PROBE_PROTOCOL),
+                    $blockKey, $activationProposal['probe_key'], $activationProposal['source_agent_id'],
+                    $activationProposal['source_model_version_id'], $activationProposal['source_parameter_hash'],
+                    $activationProposal['source_run_id'], $activationProposal['source_response_hash'],
+                    $activationProposal['source_data_hash'], $activationProposal['source_execution_hash'],
+                    $activationProposal['source_mtf_bundle_hash'], $activationProposal['source_composition_id'],
+                    ...((string) data_get($activationProposal, 'protocol')
+                        === ProofFrontierService::PHASE_PROBE_REFREEZE_PROTOCOL
+                        ? [$activationProposal['prospective_composition_id'],
+                            $activationProposal['prospective_passport_hash']] : []),
+                    $activationProposal['components'], $activationProposal['venue_phase'],
+                    $activationProposal['diagnostic_intervention'], data_get($cell, 'cell_hash'),
+                ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)) : null,
             'factor_a' => $blockType === 'activation_factorial' ? $activationProposal['a'] : null,
             'factor_b' => $blockType === 'activation_factorial' ? $activationProposal['b'] : null,
             'changed_species' => $this->species->speciesForGene(
@@ -523,6 +977,7 @@ class CooperativeContextualEvolutionCouncilService
             ),
             'candidate_control_same_context_required' => $blockType !== 'transfer',
             'settlement_required' => true, 'research_nursery_only' => true, 'promotion_evidence' => false,
+            'idea_design' => data_get($idea, 'executable_contract'),
         ];
         $learning = $this->bindLearningContext($learning, $cell, $blockType, (string) $arm['role']);
         $sourceIntervention = (array) data_get($learning, 'source_reference.intervention', []);
@@ -548,9 +1003,9 @@ class CooperativeContextualEvolutionCouncilService
             'learning_method_contract' => [...$learning, 'experiment_arm' => $arm['role']],
             'outside_scope_action' => 'WAIT'];
         $spec = [...$template,
-            'origin' => $blockType === 'activation_factorial'
-                ? 'activation_factorial' : data_get($template, 'origin'),
-            'target' => $blockType !== 'activation_factorial'
+            'origin' => in_array($blockType, ['activation_factorial', 'phase_scope_probe'], true)
+                ? $blockType : data_get($template, 'origin'),
+            'target' => ! in_array($blockType, ['activation_factorial', 'phase_scope_probe'], true)
                 && (bool) data_get($template, 'niche.failure_directed_repair')
                 ? (string) data_get($template, 'target', $blockType) : $blockType,
             'research_group' => 'experiment_block:'.$blockType,
@@ -615,6 +1070,7 @@ class CooperativeContextualEvolutionCouncilService
         $desired = match ($type) {
             'repair_pair' => 'failure_directed_repair', 'replication' => 'positive_skill_replication',
             'activation_factorial' => 'activation_factorial',
+            'phase_scope_probe' => 'phase_scope_probe',
             'factorial' => 'counterfactual_factorial', 'transfer' => 'context_transfer_validation',
             'descendant' => 'positive_skill_replication', 'coverage_guard' => 'elite_rehearsal_guard',
             'adversarial_guard' => 'adversarial_robustness', default => 'quality_diversity_novelty',

@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Models\AgentLearningCausalExperiment;
 use App\Models\InstrumentValuePosterior;
 use App\Models\LabAgent;
+use App\Models\ModelVersion;
 use App\Models\PlaybookComposition;
 use App\Models\PlaybookValuePosterior;
 use App\Models\TradingInstrument;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Bridges the laboratory organism to the instrument operating system.
@@ -24,11 +26,15 @@ class LabInstrumentResearchService
 
     public const HASH_PROTOCOL = 'numeric_canonical_json_v1';
 
+    public const PAIR_SURFACE_PROTOCOL = 'paired_instrument_surface_v3';
+
     public const ACTIVATION_PROTOCOL = 'instrument_runtime_activation_contract_v1';
 
     public const RUNTIME_TRACE_PROTOCOL = 'lab_instrument_runtime_trace_v2';
 
     public const DECISION_DOCTRINE_PROTOCOL = 'contextual_instrument_decision_doctrine_v1';
+
+    public const ACADEMY_RESERVATION_PROTOCOL = 'academy_primary_instrument_surface_reservation_v1';
 
     public function __construct(
         private TradingInstrumentOperatingSystemService $instruments,
@@ -39,6 +45,12 @@ class LabInstrumentResearchService
     public function assignment(LabAgent $agent): array
     {
         $agent->loadMissing('modelVersion', 'generation');
+        // Primary Academy arms are one sealed experimental unit. Re-read its
+        // current roster even when this arm already has a cached assignment.
+        $academyReservation = $this->academyPrimaryReservation($agent);
+        if ($academyReservation !== null) {
+            $agent = $agent->fresh(['modelVersion', 'generation']) ?? $agent;
+        }
         $model = $agent->modelVersion;
         if (! $model) {
             return $this->unavailable('MODEL_VERSION_REQUIRED');
@@ -59,9 +71,18 @@ class LabInstrumentResearchService
         $existingWithoutHash = $existing;
         unset($existingWithoutHash['assignment_hash']);
         if ((string) data_get($existing, 'protocol') === self::PROTOCOL
+            && ($academyReservation === null || (data_get($academyReservation, 'status') === 'reserved'
+                && $this->hash((array) data_get($existing, 'pair_reservation', [])) === $this->hash($academyReservation)
+                && $this->academyCachedSurfaceMatches($existing, $agent, $academyReservation)))
+            && (string) data_get($existing, 'pair_surface_protocol') === self::PAIR_SURFACE_PROTOCOL
+            && ! str_starts_with((string) data_get($existing, 'status', ''), 'blocked_')
             && (string) data_get($existing, 'hash_protocol') === self::HASH_PROTOCOL
             && (string) data_get($existing, 'activation_policy.protocol') === self::ACTIVATION_PROTOCOL
             && (string) data_get($existing, 'decision_doctrine.protocol') === self::DECISION_DOCTRINE_PROTOCOL
+            && (string) data_get($existing, 'capability_protocol') === TradingInstrumentOperatingSystemService::CAPABILITY_PROTOCOL
+            && collect((array) data_get($existing, 'selected', []))->every(fn (array $row): bool =>
+                data_get($row, 'runtime_capability.capability_hash') ===
+                    $this->instruments->runtimeCapability((string) data_get($row, 'instrument_key', ''))['capability_hash'])
             && (string) data_get($existing, 'parameter_hash') === $parameterHash
             && filled(data_get($existing, 'instrument_key_role_hash'))
             && filled(data_get($existing, 'activation_context_hash'))
@@ -77,7 +98,7 @@ class LabInstrumentResearchService
             ? (string) array_key_first((array) $agent->parameter_diff)
             : null;
         $experimentRole = $this->experimentRole($agent, $changedGene);
-        $pairReservation = $this->pairReservation($agent, $experimentRole);
+        $pairReservation = $academyReservation ?? $this->pairReservation($agent, $experimentRole);
         // A frozen control has no parameter_diff by design.  Its treatment
         // surface must nevertheless be the same surface pre-registered for
         // the guided/blinded arms; otherwise a family fallback instrument can
@@ -90,7 +111,7 @@ class LabInstrumentResearchService
         // A one-gene instrument candidate without its already-persisted exact
         // control must not even reach Python. This prevents an ever-growing
         // awaiting_paired_control vitrine from masquerading as learning.
-        $pairReady = $experimentRole !== 'candidate'
+        $pairReady = ($pairReservation['required'] ?? false) !== true
             || (string) ($pairReservation['status'] ?? '') === 'reserved';
         $capsuleKeys = array_values(array_unique(array_filter(array_map(
             'strval',
@@ -129,10 +150,14 @@ class LabInstrumentResearchService
                 'selection_reason' => $treatmentGene !== null && in_array($treatmentGene, $allowed, true)
                     ? ($changedGene !== null ? 'changed_gene_causal_surface' : 'frozen_treatment_surface')
                     : ($experimentRole === 'frozen_control' ? 'frozen_control_observation' : 'frozen_support_component'),
-                'learning_authority' => $changedGene !== null && in_array($changedGene, $allowed, true)
+                'learning_authority' => $academyReservation !== null
+                    ? 'academy_stage_observation_only_no_isolated_instrument_credit'
+                    : ($changedGene !== null && in_array($changedGene, $allowed, true)
                     ? 'eligible_for_local_paired_delta_only_after_runtime_activation'
-                    : 'support_observation_only_without_factorial_attribution',
+                    : 'support_observation_only_without_factorial_attribution'),
                 'activation_contract' => $this->activationContract($instrument, $agent, $pairReservation),
+                'runtime_capability' => $this->instruments->runtimeCapability($key),
+                'research_readiness' => $this->instruments->researchReadiness($key, $parameters),
                 'tool_card_hash' => $this->hash((array) $instrument->definition),
                 'promotion_evidence' => false,
             ];
@@ -157,6 +182,8 @@ class LabInstrumentResearchService
 
         $assignment = [
             'protocol' => self::PROTOCOL,
+            'pair_surface_protocol' => self::PAIR_SURFACE_PROTOCOL,
+            'capability_protocol' => TradingInstrumentOperatingSystemService::CAPABILITY_PROTOCOL,
             'hash_protocol' => self::HASH_PROTOCOL,
             'status' => ! $pairReady
                 ? 'blocked_exact_pair_reservation_missing'
@@ -273,166 +300,90 @@ class LabInstrumentResearchService
         $symbol = strtoupper(str_replace(['/', '_', '-'], '', $symbol));
         $family = app(StrategyParameterSchemaService::class)->family($family);
         $familyGenes = array_keys(app(StrategyParameterSchemaService::class)->schema($family));
-        $requestedContext = array_filter(
-            array_intersect_key(
-                app(ContextContractV2Service::class)->canonicalAxes($context),
-                array_flip(['regime', 'session', 'venue_phase', 'volatility', 'spread_liquidity_state', 'transition_state', 'direction']),
-            ),
-            static fn ($value): bool => $value !== null && $value !== '',
-        );
-        $rows = InstrumentValuePosterior::query()
-            ->with('instrument.contract')
-            ->where('symbol', $symbol)
-            ->where('timeframe', 'M15')
-            ->whereIn('decay_state', ['confirmed', 'forbidden'])
-            ->orderByDesc('net_value')
-            ->get()
-            ->filter(function (InstrumentValuePosterior $posterior) use ($requestedContext, $family): bool {
-                $authority = app(InstrumentPosteriorAuthorityService::class)->assess($posterior);
-                if (! in_array((string) $authority['canonical_state'], ['confirmed', 'forbidden'], true)) {
-                    return false;
-                }
-                $observed = $this->posteriorContext((string) $posterior->state_key);
-                if (($observed['strategy_family'] ?? null) !== $family) {
-                    return false;
-                }
-                if ($requestedContext === []) {
-                    // A family prior may open an experiment but can never
-                    // directly select or block a mutation.
-                    return false;
-                }
+        $axes = ['regime', 'session', 'venue_phase', 'volatility', 'spread_liquidity_state', 'transition_state', 'direction'];
+        $requested = array_filter(array_intersect_key(app(ContextContractV2Service::class)->canonicalAxes($context), array_flip($axes)),
+            static fn ($value): bool => $value !== null && $value !== '');
+        $authority = app(InstrumentPosteriorAuthorityService::class);
+        $sources = []; $bundles = []; $preferred = []; $blocked = []; $evidence = [];
+        $matches = function (string $stateKey) use ($family, $requested, $axes): bool {
+            $observed = $this->posteriorContext($stateKey);
+            if (($observed['strategy_family'] ?? null) !== $family || count($requested) !== count($axes)) return false;
+            foreach ($axes as $axis) {
+                if (! isset($observed[$axis]) || (string) $observed[$axis] !== (string) $requested[$axis]) return false;
+            }
 
-                foreach ($requestedContext as $axis => $value) {
-                    if (! array_key_exists($axis, $observed) || (string) $observed[$axis] !== (string) $value) {
-                        return false;
-                    }
-                }
-
-                return true;
-            })->values();
-        $bundleRows = PlaybookValuePosterior::query()
-            ->with('playbook')
-            ->where('symbol', $symbol)
-            ->where('timeframe', 'M15')
-            ->whereIn('decay_state', ['confirmed', 'forbidden'])
-            ->orderByDesc('net_value')
-            ->get()
-            ->filter(function (PlaybookValuePosterior $posterior) use ($requestedContext, $family): bool {
-                $authority = app(InstrumentPosteriorAuthorityService::class)->assess($posterior);
-                if (! in_array((string) $authority['canonical_state'], ['confirmed', 'forbidden'], true)) {
-                    return false;
-                }
-                if ((string) data_get($posterior->playbook?->metadata, 'protocol') !== 'exact_instrument_research_bundle_v1') {
-                    return false;
-                }
-                $observed = $this->posteriorContext((string) $posterior->state_key);
-                if (($observed['strategy_family'] ?? null) !== $family) {
-                    return false;
-                }
-                if ($requestedContext === []) {
-                    return false;
-                }
-                foreach ($requestedContext as $axis => $value) {
-                    if (! array_key_exists($axis, $observed) || (string) $observed[$axis] !== (string) $value) {
-                        return false;
-                    }
-                }
-
-                return true;
-            })->values();
-        $bundleEvidence = [];
-        $bundleSources = [];
-        foreach ($bundleRows as $posterior) {
+            return true;
+        };
+        foreach (PlaybookValuePosterior::query()->with('playbook')->where('symbol', $symbol)->where('timeframe', 'M15')
+            ->whereIn('decay_state', ['confirmed', 'forbidden'])->get() as $posterior) {
+            if (! $matches((string) $posterior->state_key)
+                || data_get($posterior->playbook?->metadata, 'protocol') !== 'exact_instrument_research_bundle_v1') continue;
             $primary = (string) data_get($posterior->playbook?->metadata, 'primary_instrument_key', '');
-            if ($primary === '') {
-                continue;
-            }
-            $bundleEvidence[$primary] ??= ['positive_weight' => 0.0, 'negative_weight' => 0.0];
-            $weight = max(.05, 1 - (float) $posterior->uncertainty) * log(1 + max(1, (int) $posterior->observations));
-            $bucket = (string) $posterior->decay_state === 'confirmed' ? 'positive_weight' : 'negative_weight';
-            $bundleEvidence[$primary][$bucket] += $weight;
-            $bundleSources[] = [
-                'source_type' => 'exact_instrument_bundle',
-                'playbook_key' => $posterior->playbook?->playbook_key,
-                'bundle_hash' => data_get($posterior->playbook?->metadata, 'bundle_hash'),
-                'primary_instrument_key' => $primary,
-                'instrument_keys' => (array) $posterior->playbook?->instrument_keys,
-                'state' => (string) $posterior->decay_state,
-                'observations' => (int) $posterior->observations,
-                'net_value' => (float) $posterior->net_value,
-                'state_key' => (string) $posterior->state_key,
-                'interaction_identified' => (bool) data_get($posterior->value_vector, 'interaction_identified', false),
-            ];
-        }
-        $geneEvidence = [];
-        $sources = [];
-        foreach ($rows as $posterior) {
-            $genes = array_values(array_intersect(
-                (array) ($posterior->instrument?->contract?->allowed_genes ?? []),
-                $familyGenes,
-            ));
-            if ($genes === []) {
-                continue;
-            }
-            $weight = max(.05, 1 - (float) $posterior->uncertainty) * log(1 + max(1, (int) $posterior->observations));
-            foreach ($genes as $gene) {
-                $gene = (string) $gene;
-                $geneEvidence[$gene] ??= ['score' => 0.0, 'positive_weight' => 0.0, 'negative_weight' => 0.0, 'sources' => 0];
-                $geneEvidence[$gene]['score'] += (float) $posterior->net_value * $weight;
-                $geneEvidence[$gene][(string) $posterior->decay_state === 'confirmed' ? 'positive_weight' : 'negative_weight'] += $weight;
-                $geneEvidence[$gene]['sources']++;
-            }
-            $sources[] = [
-                'instrument_key' => $posterior->instrument?->instrument_key,
-                'state' => (string) $posterior->decay_state,
-                'observations' => (int) $posterior->observations,
-                'net_value' => (float) $posterior->net_value,
-                'genes' => $genes,
-                'state_key' => (string) $posterior->state_key,
-                'context' => $this->posteriorContext((string) $posterior->state_key),
-                'source_type' => 'isolated_instrument',
-            ];
-        }
-        $preferred = [];
-        $blocked = [];
-        foreach ($geneEvidence as $gene => $evidence) {
-            $instrumentKeys = collect($rows)
-                ->filter(fn (InstrumentValuePosterior $posterior): bool => in_array($gene, (array) ($posterior->instrument?->contract?->allowed_genes ?? []), true))
-                ->pluck('instrument.instrument_key')
-                ->filter()
-                ->unique();
-            $bundlePositive = $instrumentKeys->sum(fn (string $key): float => (float) data_get($bundleEvidence, $key.'.positive_weight', 0));
-            $bundleNegative = $instrumentKeys->sum(fn (string $key): float => (float) data_get($bundleEvidence, $key.'.negative_weight', 0));
-            $geneEvidence[$gene]['bundle_positive_weight'] = $bundlePositive;
-            $geneEvidence[$gene]['bundle_negative_weight'] = $bundleNegative;
-            // Block B requires agreement: an isolated component and at least
-            // one exact observed support bundle must both be positive. A bad
-            // bundle can veto reuse even when the component looked useful in
-            // isolation, because the executable organism consumes the pair.
-            if ((float) $evidence['score'] > 0
-                && (float) $evidence['positive_weight'] > (float) $evidence['negative_weight']
-                && $bundlePositive > $bundleNegative) {
-                $preferred[] = $gene;
-            } elseif (((float) $evidence['score'] < 0 && (float) $evidence['negative_weight'] >= (float) $evidence['positive_weight'])
-                || $bundleNegative > $bundlePositive) {
-                $blocked[] = $gene;
+            if ($primary === '') continue;
+            foreach ($authority->validationEpochs($posterior) as $epoch) {
+                if (! in_array($epoch['canonical_state'], ['confirmed', 'forbidden'], true)) continue;
+                $bundles[] = [
+                    'source_type' => 'exact_instrument_bundle', 'posterior_id' => (int) $posterior->id,
+                    'validation_epoch_key' => $epoch['epoch_key'], 'tested_intervention' => $epoch['tested_intervention'],
+                    'window_evidence_digest' => app(ResearchPaperEpochContractService::class)->parameterHash($epoch['window_evidence']),
+                    'source_receipts' => array_column($epoch['window_evidence'], 'source_receipt'),
+                    'playbook_key' => $posterior->playbook?->playbook_key, 'bundle_hash' => data_get($posterior->playbook?->metadata, 'bundle_hash'),
+                    'primary_instrument_key' => $primary, 'instrument_keys' => (array) $posterior->playbook?->instrument_keys,
+                    'state' => $epoch['canonical_state'], 'observations' => $epoch['observations'], 'net_value' => $epoch['net_value'],
+                    'state_key' => (string) $posterior->state_key, 'context' => $this->posteriorContext((string) $posterior->state_key),
+                    'interaction_identified' => (bool) data_get($posterior->value_vector, 'interaction_identified', false),
+                ];
             }
         }
+        foreach (InstrumentValuePosterior::query()->with('instrument.contract')->where('symbol', $symbol)->where('timeframe', 'M15')
+            ->whereIn('decay_state', ['confirmed', 'forbidden'])->get() as $posterior) {
+            if (! $matches((string) $posterior->state_key)) continue;
+            foreach ($authority->validationEpochs($posterior) as $epoch) {
+                if (! in_array($epoch['canonical_state'], ['confirmed', 'forbidden'], true)) continue;
+                $delta = $epoch['tested_intervention']; $gene = (string) $delta['gene'];
+                // Only the actually isolated delta owns this utility; allowed
+                // adapter genes are not a list of experimentally proven effects.
+                if (! in_array($gene, $familyGenes, true)
+                    || ! in_array($gene, (array) $posterior->instrument?->contract?->allowed_genes, true)) continue;
+                $source = [
+                    'source_type' => 'isolated_instrument', 'instrument_key' => $posterior->instrument?->instrument_key,
+                    'posterior_id' => (int) $posterior->id, 'validation_epoch_key' => $epoch['epoch_key'],
+                    'window_evidence_digest' => app(ResearchPaperEpochContractService::class)->parameterHash($epoch['window_evidence']),
+                    'source_receipts' => array_column($epoch['window_evidence'], 'source_receipt'),
+                    'tested_intervention' => $delta, 'state' => $epoch['canonical_state'],
+                    'observations' => $epoch['observations'], 'net_value' => $epoch['net_value'], 'genes' => [$gene],
+                    'state_key' => (string) $posterior->state_key, 'context' => $this->posteriorContext((string) $posterior->state_key),
+                ];
+                $sources[] = $source;
+                $agree = array_values(array_filter($bundles, static fn (array $bundle): bool =>
+                    $bundle['primary_instrument_key'] === $source['instrument_key']
+                    && $bundle['state_key'] === $source['state_key']
+                    && $bundle['validation_epoch_key'] === $source['validation_epoch_key']
+                    && $bundle['tested_intervention']['intervention_hash'] === $delta['intervention_hash']));
+                $positive = array_filter($agree, static fn (array $bundle): bool => $bundle['state'] === 'confirmed');
+                $negative = array_filter($agree, static fn (array $bundle): bool => $bundle['state'] === 'forbidden');
+                $entry = ['gene' => $gene, 'old' => $delta['old'], 'new' => $delta['new'],
+                    'tested_intervention' => $delta, 'source' => $source, 'bundle_sources' => $agree];
+                $evidence[$delta['intervention_hash']] = ['gene' => $gene, 'net_value' => $epoch['net_value'],
+                    'observations' => $epoch['observations'], 'state' => $epoch['canonical_state']];
+                if ($source['state'] === 'confirmed' && $positive !== [] && $negative === []) {
+                    $preferred[$delta['intervention_hash']] = $entry;
+                } elseif ($source['state'] === 'forbidden' || $negative !== []) {
+                    $blocked[$delta['intervention_hash']] = $entry;
+                }
+            }
+        }
+        foreach (array_keys($blocked) as $key) unset($preferred[$key]);
 
         return [
-            'protocol' => 'instrument_posterior_mutation_policy_v2',
-            'symbol' => $symbol,
-            'strategy_family' => $family,
-            'context' => $requestedContext,
-            'preferred_genes' => array_values(array_unique($preferred)),
-            'blocked_genes' => array_values(array_unique($blocked)),
-            'sources' => [...$sources, ...$bundleSources],
-            'bundle_sources' => $bundleSources,
-            'gene_posteriors' => $geneEvidence,
+            'protocol' => 'instrument_posterior_mutation_policy_v3', 'symbol' => $symbol, 'strategy_family' => $family,
+            'context' => $requested, 'preferred_genes' => array_values(array_unique(array_column($preferred, 'gene'))),
+            // A harmful exact value is not a gene-wide mutation prohibition.
+            'blocked_genes' => [], 'preferred_deltas' => array_values($preferred), 'blocked_deltas' => array_values($blocked),
+            'sources' => [...$sources, ...$bundles], 'bundle_sources' => $bundles, 'gene_posteriors' => $evidence,
             'research_inbox' => $this->familyPriorInbox($symbol, $family, $familyGenes),
-            'rule' => 'only exact family-and-context isolated evidence plus exact-bundle agreement can guide mutation; hierarchical/global priors may open controlled experiments but never inherit or block directly',
-            'paper_execution_authority' => false,
-            'promotion_evidence' => false,
+            'rule' => 'exact tested delta, validation epoch and full context only; no utility spill or gene-wide ban',
+            'paper_execution_authority' => false, 'promotion_evidence' => false,
         ];
     }
 
@@ -488,8 +439,17 @@ class LabInstrumentResearchService
     /** @return array<int, string> */
     private function instrumentKeys(LabAgent $agent, ?string $changedGene): array
     {
-        $primary = $changedGene ? $this->instrumentForGene($changedGene) : $this->baselineInstrument($agent);
-        $keys = array_values(array_unique(array_filter([$primary, 'atr_risk_envelope', 'cost_aware_exit'])));
+        $primary = $changedGene ? $this->instrumentForGene($changedGene, (string) $agent->strategy_family)
+            : $this->baselineInstrument($agent);
+        // The treatment owner is fixed by the exact pair, never chosen from
+        // a more flattering posterior. Add only support surfaces this model
+        // actually exposes; safety/risk ownership is unchanged by telemetry.
+        $parameters = (array) $agent->modelVersion?->parameters;
+        $supports = array_filter(['atr_risk_envelope', 'cost_aware_exit'], function (string $key) use ($parameters): bool {
+            $card = $this->instruments->runtimeCapability($key);
+            return array_intersect($card['parameter_surface'], array_keys($parameters)) !== [];
+        });
+        $keys = array_values(array_unique([$primary, ...$supports]));
 
         return array_slice($keys, 0, 6);
     }
@@ -505,34 +465,8 @@ class LabInstrumentResearchService
     private function activationContract(TradingInstrument $instrument, LabAgent $agent, array $pairReservation): array
     {
         $key = (string) $instrument->instrument_key;
-        $runtimeEvents = match ($key) {
-            'trend_pullback' => ['trend_decision:*'],
-            'breakout_retest' => ['breakout_decision:*'],
-            'compression_expansion' => ['compression_decision:*'],
-            'range_reentry' => ['range_decision:*'],
-            'session_breakout' => ['session_breakout_signal_evaluated'],
-            'session_range' => ['session_range_evaluated'],
-            'volume_confirmation' => ['volume_policy_evaluated'],
-            'transition_protection' => ['transition_boundary_wait_started', 'transition_entry_veto'],
-            'cost_firewall' => ['entry_cost_gate_evaluated'],
-            'high_volatility_firewall' => ['high_volatility_gate_evaluated'],
-            'loss_streak_cooldown' => ['loss_streak_wait', 'loss_cooldown'],
-            'dynamic_cooldown' => ['loss_streak_wait', 'loss_cooldown', 'loss_cooldown_scheduled'],
-            'atr_risk_envelope' => ['entry_stop_target_sized'],
-            'cost_aware_exit' => ['position_exit:*'],
-            'regime_router' => ['router_selected:*'],
-            'adaptive_entry_topology' => ['entry_topology_selected:*'],
-            'confidence_firewall' => ['confidence_gate_evaluated'],
-            'temporal_survival_filter' => ['temporal_survival_evaluated', 'state_machine_transition:*'],
-            'meta_label_filter' => ['meta_label_gate_evaluated'],
-            'dynamic_fibonacci_zone', 'confirmed_swing' => ['structure_location_evaluated'],
-            'support_resistance_zone' => ['structure_location_evaluated'],
-            'bos_event' => ['bos_event_observed'],
-            'choch_event' => ['choch_event_observed'],
-            'liquidity_sweep' => ['liquidity_sweep_observed'],
-            'liquidity_pool' => ['liquidity_pool_proxy_evaluated'],
-            default => ['runtime_hook_unavailable_no_credit'],
-        };
+        $runtimeEvents = $this->instruments->runtimeCapability($key)['runtime_events']
+            ?: ['runtime_hook_unavailable_no_credit'];
         $contract = $instrument->contract;
         $capsuleContext = (array) data_get($pairReservation, 'trait_capsule.activation_context.predicate', []);
         $semantic = (array) data_get($agent->modelVersion?->metadata, 'semantic_group', []);
@@ -582,9 +516,26 @@ class LabInstrumentResearchService
         ];
     }
 
-    private function instrumentForGene(string $gene): string
+    public function instrumentForGene(string $gene, ?string $family = null): string
     {
+        // Generic genes such as lookback have different executable owners in
+        // different strategy families. A global name-only fallback can attach
+        // a real breakout mutation to an unrelated entry-topology instrument.
+        $family = strtolower(trim((string) $family));
         return match (true) {
+            $gene === 'lookback' => match ($family) {
+                'breakout' => 'breakout_retest',
+                'volatility' => 'compression_expansion',
+                'mean_reversion' => 'range_reentry',
+                'session' => 'session_breakout',
+                default => 'adaptive_entry_topology',
+            },
+            $family === 'breakout' && in_array($gene,
+                ['atr_period', 'atr_multiplier', 'confirmation_candles', 'retest_required', 'trend_strength_min'], true)
+                => 'breakout_retest',
+            $family === 'volatility' && $gene === 'atr_period' => 'compression_expansion',
+            $family === 'mean_reversion' && in_array($gene, ['deviation', 'adx_max'], true)
+                => 'range_reentry',
             $gene === 'volume_lane' => 'volume_confirmation',
             str_starts_with($gene, 'meta_label_') => 'meta_label_filter',
             $gene === 'entry_topology_variant' => 'adaptive_entry_topology',
@@ -619,6 +570,10 @@ class LabInstrumentResearchService
 
     private function experimentRole(LabAgent $agent, ?string $changedGene): string
     {
+        if ($agent->origin === 'academy_experiment'
+            && data_get($agent->modelVersion?->metadata, 'academy_experiment.protocol') === AcademyExperimentMaterializerService::PROTOCOL) {
+            return (string) data_get($agent->modelVersion->metadata, 'academy_experiment.arm_role', 'unrecognized_academy_arm');
+        }
         $metadata = (array) ($agent->modelVersion?->metadata ?? []);
         if ((string) data_get($metadata, 'control_contract.protocol') === 'frozen_control_v2'
             && data_get($metadata, 'control_contract.control_only') === true) {
@@ -631,6 +586,8 @@ class LabInstrumentResearchService
     /** @return array<string,mixed> */
     private function pairReservation(LabAgent $agent, string $role): array
     {
+        $academy = $this->academyPrimaryReservation($agent);
+        if ($academy !== null) return $academy;
         $authority = $this->authorityCapsuleReservation($agent);
         if ($authority !== null) {
             return $authority;
@@ -642,6 +599,35 @@ class LabInstrumentResearchService
         $causalTriplet = $this->causalTripletReservation($agent, $role);
         if ($causalTriplet !== null) {
             return $causalTriplet;
+        }
+        // Ordinary controls also need the treatment surface. Otherwise a
+        // transition-cooldown candidate gets a firewall while its zero-diff
+        // control silently gets a regime router with a different veto path.
+        if ($role === 'frozen_control'
+            && data_get($agent->modelVersion?->metadata, 'control_pair_contract.role') === 'control') {
+            $pairKey = (string) data_get($agent->modelVersion?->metadata, 'control_pair_contract.pair_key', '');
+            $candidates = $agent->generation?->agents()->with('modelVersion')->get()
+                ->filter(fn (LabAgent $peer): bool => $peer->id !== $agent->id
+                    && data_get($peer->modelVersion?->metadata, 'control_pair_contract.role') === 'candidate'
+                    && $pairKey !== ''
+                    && data_get($peer->modelVersion?->metadata, 'control_pair_contract.pair_key') === $pairKey)
+                ->values();
+            if ($candidates?->count() === 1
+                && count((array) $candidates[0]->parameter_diff) === 1
+                && $this->baselines->matches($candidates[0], $agent)) {
+                return [
+                    'protocol' => 'instrument_exact_pair_reservation_v1',
+                    'status' => 'reserved', 'required' => true, 'pair_key' => $pairKey,
+                    'candidate_agent_id' => (int) $candidates[0]->id,
+                    'control_agent_id' => (int) $agent->id,
+                    'gene_key' => (string) array_key_first((array) $candidates[0]->parameter_diff),
+                    'same_generation' => true, 'single_intervention' => true,
+                    'exact_parameter_baseline' => true, 'promotion_evidence' => false,
+                ];
+            }
+            return ['status' => 'missing', 'required' => true,
+                'reason_code' => 'EXACT_CONTROL_TREATMENT_SURFACE_UNRESOLVED',
+                'promotion_evidence' => false];
         }
         if ($role !== 'candidate') {
             return [
@@ -692,6 +678,8 @@ class LabInstrumentResearchService
             'pair_key' => $pairKey,
             'candidate_agent_id' => (int) $agent->id,
             'control_agent_id' => (int) $control->id,
+            'gene_key' => count((array) $agent->parameter_diff) === 1
+                ? (string) array_key_first((array) $agent->parameter_diff) : null,
             'same_generation' => true,
             'single_intervention' => count((array) $agent->parameter_diff) === 1,
             'exact_parameter_baseline' => true,
@@ -699,6 +687,174 @@ class LabInstrumentResearchService
             'capsule_hash_valid' => data_get($inherited, 'capsule_hash_valid'),
             'promotion_evidence' => false,
         ];
+    }
+
+    /**
+     * Academy stage proof is not an ordinary instrument economic pair. Bind
+     * every primary role to the same actual treatment/veto surface, without
+     * inventing a constructor pair key or promoting an instrument posterior.
+     * Kernel/ordinary cohorts retain their existing reservation owners.
+     */
+    private function academyPrimaryReservation(LabAgent $agent): ?array
+    {
+        if ($agent->origin !== 'academy_experiment') return null;
+        $missing = static fn (string $reason): array => [
+            'protocol' => self::ACADEMY_RESERVATION_PROTOCOL, 'status' => 'missing', 'required' => true,
+            'reason_code' => $reason, 'research_only' => true, 'isolated_instrument_credit' => false,
+            'promotion_evidence' => false,
+        ];
+        $current = LabAgent::query()->with('modelVersion', 'generation')->find($agent->id);
+        $generation = $current?->generation;
+        $metadata = (array) ($current?->modelVersion?->metadata ?? []);
+        $contract = (array) data_get($metadata, 'academy_experiment', []);
+        $trialId = (int) ($contract['academy_trial_id'] ?? 0);
+        if (! $current || ! $generation || $generation->trigger_type !== 'academy_experiment'
+            || data_get($generation->trigger_context, 'protocol') !== AcademyExperimentMaterializerService::PROTOCOL
+            || ($contract['protocol'] ?? null) !== AcademyExperimentMaterializerService::PROTOCOL
+            || $trialId < 1 || (int) data_get($generation->trigger_context, 'academy_trial_id') !== $trialId) {
+            return $missing('ACADEMY_PRIMARY_RESERVATION_IDENTITY_REQUIRED');
+        }
+        $trial = DB::table('edge_academy_trials')->find($trialId);
+        $outcome = $trial ? (json_decode((string) $trial->outcome, true) ?: []) : [];
+        $frozen = $trial ? (json_decode((string) $trial->frozen_contract, true) ?: []) : [];
+        $stored = (array) data_get($generation->trigger_context, 'compiled_contract', []);
+        $axis = (string) ($stored['axis'] ?? '');
+        $baselineId = (int) data_get($generation->trigger_context, 'baseline_model_version_id', 0);
+        $baseline = $baselineId > 0 ? ModelVersion::query()->find($baselineId) : null;
+        $baselineParameters = (array) ($frozen['baseline_parameters'] ?? []);
+        if (! $trial || $trial->status !== 'materialized' || $trial->settled_at !== null
+            || (int) ($outcome['generation_id'] ?? 0) !== (int) $generation->id
+            || ($outcome['protocol'] ?? null) !== AcademyExperimentMaterializerService::PROTOCOL
+            || ($stored['protocol'] ?? null) !== AcademyExperimentContractCompilerService::PROTOCOL
+            || ($stored['status'] ?? null) !== 'compiled' || $axis === ''
+            || ! $baseline || $baselineParameters === []
+            || (int) ($frozen['baseline_model_version_id'] ?? 0) !== $baselineId
+            || $this->hash((array) $baseline->parameters) !== $this->hash($baselineParameters)) {
+            return $missing('ACADEMY_PRIMARY_ORIGINAL_TRIAL_AND_BASELINE_REQUIRED');
+        }
+        $compiler = app(AcademyExperimentContractCompilerService::class);
+        $identity = (array) ($frozen['prospective_source_identity'] ?? []);
+        $generationIdentity = (array) data_get($generation->trigger_context, 'prospective_source_identity', []);
+        foreach (['data_hash', 'execution_hash', 'source_evaluator_hash', 'python_source_hash', 'mtf_bundle_hash'] as $key) {
+            if (! is_string($identity[$key] ?? null) || preg_match('/^[a-f0-9]{64}$/D', $identity[$key]) !== 1
+                || ($generationIdentity[$key] ?? null) !== $identity[$key]
+                || data_get($generation->trigger_context, $key) !== $identity[$key]) {
+                return $missing('ACADEMY_PRIMARY_FROZEN_RUNTIME_IDENTITY_CHANGED');
+            }
+        }
+        if (($identity['source_identity_protocol'] ?? null) !== AcademyExperimentMaterializerService::SOURCE_IDENTITY_PROTOCOL
+            || ($generationIdentity['source_identity_protocol'] ?? null) !== $identity['source_identity_protocol']
+            || data_get($generation->trigger_context, 'source_identity_protocol') !== $identity['source_identity_protocol']) {
+            return $missing('ACADEMY_PRIMARY_FROZEN_RUNTIME_IDENTITY_CHANGED');
+        }
+        $compiled = $compiler->compile(['axis' => $axis, 'arms' => json_decode((string) $trial->arms, true) ?: []],
+            $baselineParameters, ['symbol' => 'XAUUSD', 'laboratory_timeframe' => 'H1', 'execution_timeframe' => 'M5']);
+        if (($compiled['status'] ?? null) !== 'compiled'
+            || $this->hash($compiled) !== $this->hash($stored)
+            || $this->hash($compiled) !== $this->hash((array) ($outcome['compiled_contract'] ?? []))
+            || ! hash_equals($compiler->parameterHash($baselineParameters), (string) ($frozen['baseline_parameter_hash'] ?? ''))) {
+            return $missing('ACADEMY_PRIMARY_COMPILED_CONTRACT_CHANGED');
+        }
+        $arms = (array) $compiled['arms'];
+        $peers = $generation->agents()->with('modelVersion')->get()->filter(fn (LabAgent $peer): bool =>
+            $peer->origin === 'academy_experiment' || data_get($peer->modelVersion?->metadata, 'academy_experiment') !== null)->values();
+        if ($peers->count() !== count($arms) || ! in_array(count($arms), [3, 4], true)) {
+            return $missing('ACADEMY_PRIMARY_COMPLETE_ROSTER_REQUIRED');
+        }
+        $expectedContractHash = hash('sha256', json_encode($compiled));
+        $roster = [];
+        $control = null;
+        $contextHash = null;
+        $componentHash = null;
+        foreach ($peers as $peer) {
+            $meta = (array) ($peer->modelVersion?->metadata ?? []);
+            $armMeta = (array) data_get($meta, 'academy_experiment', []);
+            foreach (['data_hash', 'execution_hash', 'source_evaluator_hash', 'python_source_hash', 'source_identity_protocol'] as $key) {
+                if (($armMeta[$key] ?? null) !== $identity[$key]) {
+                    return $missing('ACADEMY_PRIMARY_FROZEN_RUNTIME_IDENTITY_CHANGED');
+                }
+            }
+            $index = $armMeta['arm_index'] ?? null;
+            $arm = is_int($index) ? ($arms[$index] ?? null) : null;
+            $context = array_intersect_key($meta, array_flip(['semantic_group', 'portfolio_council_lane', 'specialist_council_membership']));
+            $components = [data_get($meta, 'smart_composition.composition_passport.components'), data_get($meta, 'tactic_contract'),
+                data_get($meta, 'base_strategy'), data_get($meta, 'architecture'), data_get($meta, 'strategy_architecture')];
+            if (! $arm || isset($roster[$index]) || ! $peer->modelVersion
+                || $peer->origin !== 'academy_experiment' || $peer->strategy_family !== 'confirmation_entry_mtf'
+                || strtoupper($peer->symbol) !== 'XAUUSD' || strtoupper($peer->timeframe) !== 'H1'
+                || ($armMeta['protocol'] ?? null) !== AcademyExperimentMaterializerService::PROTOCOL
+                || (int) ($armMeta['academy_trial_id'] ?? 0) !== $trialId
+                || ($armMeta['arm_role'] ?? null) !== $arm['role']
+                || (int) ($armMeta['causal_baseline_model_version_id'] ?? 0) !== $baselineId
+                || (int) data_get($meta, 'causal_baseline_model_version_id', 0) !== $baselineId
+                || $peer->parent_a_model_version_id !== null || $peer->parent_b_model_version_id !== null
+                || ($armMeta['parameter_hash'] ?? null) !== $arm['parameter_hash']
+                || ! hash_equals($expectedContractHash, (string) ($armMeta['contract_hash'] ?? ''))
+                || $this->hash((array) $peer->modelVersion->parameters) !== $this->hash($arm['runtime_parameters'])
+                || $this->hash((array) ($armMeta['context'] ?? [])) !== $this->hash((array) ($frozen['context'] ?? []))
+                || ($contextHash !== null && $contextHash !== $this->hash($context))
+                || ($componentHash !== null && $componentHash !== $this->hash($components))) {
+                return $missing('ACADEMY_PRIMARY_ARM_OR_POLICY_SEAL_MISMATCH');
+            }
+            $contextHash ??= $this->hash($context);
+            $componentHash ??= $this->hash($components);
+            $roster[$index] = ['arm_index' => $index, 'arm_role' => $arm['role'], 'agent_id' => (int) $peer->id,
+                'model_version_id' => (int) $peer->model_version_id, 'parameter_hash' => $arm['parameter_hash']];
+            if ($arm['role'] === 'frozen_control') {
+                if ($control !== null || (array) $peer->parameter_diff !== []
+                    || $this->hash((array) $peer->modelVersion->parameters) !== $this->hash($baselineParameters)) {
+                    return $missing('ACADEMY_PRIMARY_FROZEN_CONTROL_REQUIRED');
+                }
+                $control = $peer;
+            }
+        }
+        ksort($roster);
+        if (! $control || ! array_key_exists((int) ($contract['arm_index'] ?? -1), $roster)
+            || (int) $roster[(int) $contract['arm_index']]['agent_id'] !== (int) $current->id) {
+            return $missing('ACADEMY_PRIMARY_FROZEN_CONTROL_REQUIRED');
+        }
+        foreach ($peers as $peer) {
+            $role = (string) data_get($peer->modelVersion->metadata, 'academy_experiment.arm_role');
+            if ($role === 'candidate') {
+                if (array_keys((array) $peer->parameter_diff) !== [$axis] || ! $this->baselines->matches($peer, $control)) {
+                    return $missing('ACADEMY_PRIMARY_EXACT_SINGLE_AXIS_REQUIRED');
+                }
+            } elseif (! in_array($role, ['frozen_control', 'blinded_control'], true)
+                || (array) $peer->parameter_diff !== []
+                || $this->hash((array) $peer->modelVersion->parameters) !== $this->hash($baselineParameters)) {
+                return $missing('ACADEMY_PRIMARY_EXACT_CONTROL_ROLE_REQUIRED');
+            }
+        }
+        return [
+            'protocol' => self::ACADEMY_RESERVATION_PROTOCOL, 'status' => 'reserved', 'required' => true,
+            'academy_trial_id' => $trialId, 'lab_generation_id' => (int) $generation->id,
+            'arm_role' => (string) $contract['arm_role'], 'arm_index' => (int) $contract['arm_index'],
+            'control_agent_id' => (int) $control->id,
+            'candidate_agent_id' => $contract['arm_role'] === 'candidate' ? (int) $current->id : null,
+            'gene_key' => $axis, 'same_generation' => true, 'single_intervention' => true,
+            'exact_parameter_baseline' => true, 'roster' => array_values($roster),
+            'roster_hash' => $this->hash(array_values($roster)), 'compiled_contract_hash' => $this->hash($compiled),
+            'common_context_hash' => $contextHash, 'common_component_hash' => $componentHash,
+            'frozen_runtime_identity_hash' => $this->hash(array_intersect_key($identity, array_flip([
+                'data_hash', 'execution_hash', 'source_evaluator_hash', 'python_source_hash', 'mtf_bundle_hash', 'source_identity_protocol']))),
+            'research_only' => true, 'isolated_instrument_credit' => false, 'promotion_evidence' => false,
+        ];
+    }
+
+    private function academyCachedSurfaceMatches(array $assignment, LabAgent $agent, array $reservation): bool
+    {
+        $keys = $this->instrumentKeys($agent, (string) $reservation['gene_key']);
+        if ((array) ($assignment['selected_keys'] ?? []) !== $keys) return false;
+        $records = TradingInstrument::query()->with('contract')->whereIn('instrument_key', $keys)->get()->keyBy('instrument_key');
+        foreach ((array) ($assignment['selected'] ?? []) as $selected) {
+            $instrument = $records->get((string) ($selected['instrument_key'] ?? ''));
+            if (! $instrument || ($selected['role'] ?? null) !== $instrument->role
+                || ($selected['tool_card_hash'] ?? null) !== $this->hash((array) $instrument->definition)
+                || $this->hash((array) ($selected['activation_contract'] ?? [])) !== $this->hash($this->activationContract($instrument, $agent, $reservation))) {
+                return false;
+            }
+        }
+        return count((array) ($assignment['selected'] ?? [])) === count($keys);
     }
 
     /** @return array<string,mixed>|null */

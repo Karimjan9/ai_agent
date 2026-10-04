@@ -7,6 +7,7 @@ use App\Models\AiLaboratory;
 use App\Models\InstrumentInvocationLedger;
 use App\Models\InstrumentValuePosterior;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
@@ -16,16 +17,62 @@ use App\Models\PlaybookValuePosterior;
 use App\Models\TradingInstrument;
 use App\Services\CausalLearningCohortPlannerService;
 use App\Services\InstrumentInvocationLedgerService;
+use App\Services\InstrumentResearchWindowService;
 use App\Services\LabInstrumentResearchService;
 use App\Services\LearningLaneService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\TradingInstrumentOperatingSystemService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
+use Tests\Support\InstrumentValidationFixture;
 
 class LabInstrumentResearchLoopTest extends TestCase
 {
     use RefreshDatabase;
+    use InstrumentValidationFixture;
+
+    public function test_ordinary_frozen_control_observes_the_exact_candidate_instrument_surface(): void
+    {
+        [$candidate, $control] = $this->pairAgents();
+        $service = app(LabInstrumentResearchService::class);
+        $candidateAssignment = $service->assignment($candidate);
+        $controlAssignment = $service->assignment($control);
+        $this->assertSame($candidateAssignment['sealed_treatment_gene'], $controlAssignment['sealed_treatment_gene']);
+        $this->assertSame('volume_lane', $controlAssignment['sealed_treatment_gene']);
+        $this->assertSame($candidateAssignment['selected_keys'], $controlAssignment['selected_keys']);
+        $this->assertSame($candidateAssignment['instrument_key_role_hash'], $controlAssignment['instrument_key_role_hash']);
+        $this->assertSame($candidateAssignment['activation_context_hash'], $controlAssignment['activation_context_hash']);
+        $this->assertSame('frozen_control', $controlAssignment['experiment_role']);
+        $this->assertNull($controlAssignment['changed_gene']);
+        $this->assertFalse($controlAssignment['promotion_evidence']);
+    }
+
+    public function test_transition_wait_control_does_not_silently_switch_to_a_regime_router(): void
+    {
+        [$candidate, $control] = $this->pairAgents();
+        $base = (array) $control->modelVersion->parameters; $base['transition_wait_candles'] = 4;
+        $control->modelVersion->update(['parameters' => $base]);
+        $candidate->modelVersion->update(['parameters' => [...$base, 'transition_wait_candles' => 5]]);
+        $candidate->update(['parameter_diff' => ['transition_wait_candles' => ['old' => 4, 'new' => 5]]]);
+        $service = app(LabInstrumentResearchService::class);
+        $c = $service->assignment($candidate->fresh('modelVersion'));
+        $f = $service->assignment($control->fresh('modelVersion'));
+        $this->assertSame('transition_wait_candles', $f['sealed_treatment_gene']);
+        $this->assertSame($c['instrument_key_role_hash'], $f['instrument_key_role_hash']);
+        $this->assertSame($c['activation_context_hash'], $f['activation_context_hash']);
+        $this->assertSame($c['selected_keys'], $f['selected_keys']);
+    }
+
+    public function test_missing_control_treatment_owner_blocks_assignment_instead_of_inventing_a_surface(): void
+    {
+        [$candidate, $control] = $this->pairAgents();
+        $candidate->delete();
+        $assignment = app(LabInstrumentResearchService::class)->assignment($control->fresh('modelVersion'));
+        $this->assertSame('missing', data_get($assignment, 'pair_reservation.status'));
+        $this->assertStringStartsWith('blocked_', $assignment['status']);
+        $this->assertFalse($assignment['promotion_evidence']);
+    }
 
     public function test_assignment_is_sealed_and_only_runtime_attestation_opens_invocations(): void
     {
@@ -314,6 +361,61 @@ class LabInstrumentResearchLoopTest extends TestCase
         ]);
     }
 
+    public function test_venue_phase_attribution_requires_exact_matched_trade_slices(): void
+    {
+        $service = app(InstrumentInvocationLedgerService::class);
+        $pair = new LabLearningLanePair([
+            'strategy_family' => 'hybrid', 'independent_window_key' => 'sealed-research-window',
+        ]);
+        $slice = fn (string $phase): array => [
+            'context_key' => "trend_up|normal_volatility|london|{$phase}|BUY",
+            'context' => [
+                'regime' => 'trend_up', 'volatility' => 'normal_volatility',
+                'session' => 'london', 'venue_phase' => $phase, 'direction' => 'BUY',
+            ],
+            'metrics' => [
+                'trades' => 4, 'net_pf' => 1.2, 'net_profit_percent' => 1.0,
+                'max_drawdown_percent' => 2.0, 'execution_cost_percent' => .1,
+            ],
+            'powered' => true,
+        ];
+        $candidate = ['instrument_research_trace' => [
+            'context_source' => 'decision_time_trade_ledger',
+            'context_slice_protocol' => 'venue_phase_v1',
+            'exact_context_slices' => [$slice('london_am_fix'), $slice('london_interfix')],
+        ]];
+        $control = $candidate;
+        $method = new \ReflectionMethod(InstrumentInvocationLedgerService::class, 'pairedContextOutcomes');
+        $outcomes = $method->invoke($service, $pair, $candidate, $control);
+        $this->assertCount(2, $outcomes);
+
+        $row = new InstrumentInvocationLedger(['metadata' => [
+            'declaration' => ['activation_contract' => ['context' => [
+                'declared_context' => ['venue_phase' => 'london_am_fix'],
+            ]]],
+            'runtime_trace' => ['activated_exact_context_keys' => [
+                'trend_up|normal_volatility|london|london_am_fix|BUY',
+            ]],
+        ]]);
+        $active = (new \ReflectionMethod(InstrumentInvocationLedgerService::class, 'activatedOutcomes'))
+            ->invoke($service, $row, $outcomes);
+        $this->assertCount(1, $active);
+        $this->assertSame('london_am_fix', data_get($active[0], 'context.venue_phase'));
+        $mismatchedControl = $control;
+        $mismatchedControl['instrument_research_trace']['exact_context_slices'][0]['context']['venue_phase'] = 'london_interfix';
+        $this->assertCount(1, $method->invoke($service, $pair, $candidate, $mismatchedControl));
+
+        $legacy = ['instrument_research_trace' => [
+            'context_source' => 'decision_time_trade_ledger',
+            'context_slices' => [[...$slice('london_am_fix'),
+                'context_key' => 'trend_up|normal_volatility|london|BUY']],
+        ]];
+        $legacyOutcomes = $method->invoke($service, $pair, $legacy, $legacy);
+        $this->assertSame([], (new \ReflectionMethod(InstrumentInvocationLedgerService::class, 'activatedOutcomes'))
+            ->invoke($service, $row, $legacyOutcomes));
+        $this->assertSame([], $method->invoke($service, $pair, $candidate, $legacy));
+    }
+
     public function test_inventory_and_parameter_binding_without_runtime_activation_open_no_invocation(): void
     {
         [$candidate] = $this->pairAgents();
@@ -339,12 +441,30 @@ class LabInstrumentResearchLoopTest extends TestCase
 
     public function test_verified_frozen_pair_moves_only_changed_instrument_into_value_block(): void
     {
+        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        config()->set('services.instrument_policy.authorized_research_windows', [[
+            'authorization_id' => 'sealed-paired-window',
+            'research_epoch_id' => 'test-post-paper-research',
+            'start_inclusive' => '2027-01-01T00:00:00+00:00',
+            'end_exclusive' => '2027-02-01T00:00:00+00:00',
+            'dataset_sha256' => str_repeat('a', 64),
+            'purpose' => 'instrument_independent_validation',
+        ]]);
         [$candidate, $control, $generation] = $this->pairAgents();
         $assignment = app(LabInstrumentResearchService::class)->assignment($candidate);
         $ledger = app(InstrumentInvocationLedgerService::class);
+        foreach ([[$candidate, 'candidate-screen-run'], [$control, 'control-screen-run']] as [$agent, $runKey]) {
+            LabEvaluationRun::create(['run_id' => $runKey, 'lab_generation_id' => $generation->id,
+                'lab_agent_id' => $agent->id, 'model_version_id' => $agent->model_version_id,
+                'phase' => 'screening', 'mode' => 'test', 'attempt' => 1, 'status' => 'completed',
+                'code_hash' => hash('sha256', 'instrument-window-evaluator'),
+                'request_hash' => hash('sha256', $runKey.'-request'), 'response_hash' => hash('sha256', $runKey.'-response'),
+                'parameter_hash' => app(\App\Services\ResearchPaperEpochContractService::class)->parameterHash((array) $agent->modelVersion->parameters),
+                'data_hash' => str_repeat('a', 64)]);
+        }
         $ledger->recordResearchObservation(
             $candidate->fresh(['modelVersion']),
-            $this->attestedResult($assignment, 'candidate-screen-run'),
+            $this->attestedResult($assignment, 'candidate-screen-run', true),
         );
         $dataHash = str_repeat('a', 64);
         $executionHash = str_repeat('b', 64);
@@ -390,7 +510,7 @@ class LabInstrumentResearchLoopTest extends TestCase
                 'profit_factor' => 1.20,
                 'max_drawdown_percent' => 5.0,
                 'total_trades' => 42,
-                'instrument_research_trace' => $this->contextTrace(1.2, 4.0, 5.0, 21),
+                'instrument_research_trace' => $this->contextTrace(1.2, 4.0, 5.0, 21, true),
             ],
             'metadata' => [
                 'screening_decision' => 'failed',
@@ -400,16 +520,26 @@ class LabInstrumentResearchLoopTest extends TestCase
         ]);
         $controlMap->update(['observed_metrics' => [
             ...(array) $controlMap->observed_metrics,
-            'instrument_research_trace' => $this->contextTrace(1.05, 1.0, 6.0, 20),
+            'instrument_research_trace' => $this->contextTrace(1.05, 1.0, 6.0, 20, true),
         ]]);
         $createdPair = app(LearningLaneService::class)->pairScreeningObservation(
             $candidate->fresh(['modelVersion', 'generation']),
-            ['evidence_run_id' => 'candidate-screen-run'],
+            ['evidence_run_id' => 'candidate-screen-run', 'data_manifest' => [
+                'data_partition' => ['screening_source' => 'authorized_post_paper_research_validation'],
+                'instrument_research_window' => ['authorization_id' => 'sealed-paired-window',
+                    'research_epoch_id' => 'test-post-paper-research'],
+                'first_candle_at' => '2027-01-01T00:00:00Z',
+                'last_candle_at' => '2027-01-31T23:55:00Z',
+            ]],
             $candidateMap->toArray(),
         );
         $this->assertNotNull($createdPair);
         $pair = LabLearningLanePair::query()->findOrFail($createdPair['id']);
         $this->assertTrue($pair->isVerifiedControlPair());
+        $this->assertSame(
+            $pair->independent_window_key,
+            data_get($pair->metadata, 'instrument_research_window_receipt.window_key'),
+        );
         $this->assertNotSame(
             data_get($assignment, 'pair_reservation.pair_key'),
             $pair->pair_key,
@@ -459,8 +589,17 @@ class LabInstrumentResearchLoopTest extends TestCase
         $this->assertSame(2, InstrumentInvocationLedger::query()->where('verdict', 'support_consumed')->count());
         $this->assertDatabaseCount('instrument_evidence', 1);
         $this->assertSame(1, InstrumentValuePosterior::query()->count());
+        $this->assertCount(1, (array) data_get(InstrumentValuePosterior::query()->firstOrFail()->value_vector, 'window_evidence'));
+        $epochs = (array) data_get(InstrumentValuePosterior::query()->firstOrFail()->value_vector, 'validation_epochs');
+        $this->assertCount(1, $epochs);
+        $epoch = array_values($epochs)[0];
+        $this->assertSame('volume_lane', $epoch['tested_intervention']['gene']);
+        $this->assertSame('none', $epoch['tested_intervention']['old']);
+        $this->assertSame('breakout_volume_confirmation', $epoch['tested_intervention']['new']);
+        $this->assertSame($pair->pair_key, data_get($epoch, 'window_evidence.0.source_receipt.pair_key'));
+        $this->assertSame('provisional', InstrumentValuePosterior::query()->value('decay_state'));
         $this->assertSame(
-            'trend_up|london|normal|unknown|stable|0|buy|hybrid',
+            'trend_up|london|normal|unknown|stable|0|buy|hybrid|london_am_fix',
             InstrumentValuePosterior::query()->value('state_key'),
         );
         $this->assertSame(1, PlaybookValuePosterior::query()->count());
@@ -474,6 +613,68 @@ class LabInstrumentResearchLoopTest extends TestCase
         $this->assertDatabaseCount('instrument_evidence', 1);
         $this->assertSame(1, (int) InstrumentValuePosterior::query()->value('observations'));
         $this->assertSame(1, (int) PlaybookValuePosterior::query()->value('observations'));
+    }
+
+    public function test_authorized_window_stays_frozen_when_control_finishes_after_candidate(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        $dataHash = str_repeat('a', 64);
+        $executionHash = str_repeat('b', 64);
+        config()->set('services.instrument_policy.authorized_research_windows', [[
+            'authorization_id' => 'late-control-window',
+            'research_epoch_id' => 'test-post-paper-research',
+            'start_inclusive' => '2027-01-01T00:00:00Z',
+            'end_exclusive' => '2027-02-01T00:00:00Z',
+            'dataset_sha256' => $dataHash,
+            'purpose' => 'instrument_independent_validation',
+        ]]);
+        [$candidate, $control, $generation] = $this->pairAgents();
+        $candidateMap = LabMutationResponseMap::create([
+            'response_key' => hash('sha256', 'late-window-candidate'),
+            'stage' => 'screening', 'status' => 'screen_observed',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'target' => 'profit_factor', 'parameter_key' => 'volume_lane',
+            'lab_agent_id' => $candidate->id, 'model_version_id' => $candidate->model_version_id,
+            'evidence_run_id' => 'late-window-run',
+            'old_value' => ['value' => 'none'], 'new_value' => ['value' => 'breakout_volume_confirmation'],
+            'observed_metrics' => ['profit_factor' => 1.2],
+            'metadata' => ['screening_decision' => 'failed',
+                'data_manifest_hash' => $dataHash, 'execution_hash' => $executionHash],
+        ]);
+        $service = app(LearningLaneService::class);
+        $result = ['evidence_run_id' => 'late-window-run', 'data_manifest' => [
+            'data_partition' => ['screening_source' => 'authorized_post_paper_research_validation'],
+            'instrument_research_window' => ['authorization_id' => 'late-control-window',
+                'research_epoch_id' => 'test-post-paper-research'],
+            'first_candle_at' => '2027-01-01T00:00:00Z',
+            'last_candle_at' => '2027-01-31T23:55:00Z',
+        ]];
+        $initial = $service->pairScreeningObservation($candidate->fresh(['modelVersion', 'generation']),
+            $result, $candidateMap->toArray());
+        $pair = LabLearningLanePair::findOrFail($initial['id']);
+        $receipt = (array) data_get($pair->metadata, 'instrument_research_window_receipt');
+        $this->assertSame('missing_control', $pair->status);
+        $this->assertSame($pair->independent_window_key, $receipt['window_key']);
+
+        LabMutationResponseMap::create([
+            'response_key' => hash('sha256', 'late-window-control'),
+            'stage' => 'screening', 'status' => 'control',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'lab_agent_id' => $control->id, 'model_version_id' => $control->model_version_id,
+            'evidence_run_id' => 'late-control-run', 'observed_metrics' => ['profit_factor' => 1.0],
+            'metadata' => ['control_contract' => [
+                'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
+                'generation_id' => $generation->id, 'data_hash' => $dataHash,
+                'execution_hash' => $executionHash,
+            ]],
+        ]);
+        $updated = $service->pairScreeningObservation($candidate->fresh(['modelVersion', 'generation']),
+            $result, $candidateMap->toArray());
+        $pair = LabLearningLanePair::findOrFail($updated['id']);
+        $this->assertSame($initial['id'], $updated['id']);
+        $this->assertSame($receipt, data_get($pair->metadata, 'instrument_research_window_receipt'));
+        $this->assertSame($receipt['window_key'], $pair->independent_window_key);
+        $this->assertTrue($pair->isVerifiedControlPair());
     }
 
     public function test_unscoped_family_prior_opens_research_but_cannot_directly_mutate(): void
@@ -524,41 +725,105 @@ class LabInstrumentResearchLoopTest extends TestCase
 
     public function test_instrument_policy_keeps_london_value_out_of_asia_and_global_scope(): void
     {
+        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
         app(TradingInstrumentOperatingSystemService::class)->seedDefaults();
         $instrument = TradingInstrument::query()->where('instrument_key', 'volume_confirmation')->firstOrFail();
         InstrumentValuePosterior::create([
             'trading_instrument_id' => $instrument->id, 'symbol' => 'XAUUSD', 'timeframe' => 'M15',
-            'state_key' => 'trend_up|london|normal|normal|stable|0|both|hybrid', 'observations' => 8,
+            'state_key' => 'trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix', 'observations' => 8,
             'net_value' => .3, 'uncertainty' => .1, 'decay_state' => 'confirmed',
-            'value_vector' => $this->posteriorVector('trend_up|london|normal|normal|stable|0|both|hybrid', 8, true),
+            'value_vector' => $this->posteriorVector('trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix', 8, true),
         ]);
         InstrumentValuePosterior::create([
             'trading_instrument_id' => $instrument->id, 'symbol' => 'XAUUSD', 'timeframe' => 'M15',
-            'state_key' => 'trend_up|asia|normal|normal|stable|0|both|hybrid', 'observations' => 8,
+            'state_key' => 'trend_up|asia|normal|normal|stable|0|buy|hybrid|asia_sge_day', 'observations' => 8,
             'net_value' => -.3, 'uncertainty' => .1, 'decay_state' => 'forbidden',
-            'value_vector' => $this->posteriorVector('trend_up|asia|normal|normal|stable|0|both|hybrid', 8, false),
+            'value_vector' => $this->posteriorVector('trend_up|asia|normal|normal|stable|0|buy|hybrid|asia_sge_day', 8, false),
         ]);
         $bundle = $this->researchBundle('volume-context-bundle', ['volume_confirmation', 'atr_risk_envelope', 'cost_aware_exit'], 'volume_confirmation');
         PlaybookValuePosterior::create([
             'playbook_composition_id' => $bundle->id, 'symbol' => 'XAUUSD', 'timeframe' => 'M15',
-            'state_key' => 'trend_up|london|normal|normal|stable|0|both|hybrid', 'observations' => 8,
+            'state_key' => 'trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix', 'observations' => 8,
             'net_value' => .25, 'uncertainty' => .1, 'decay_state' => 'confirmed',
-            'value_vector' => $this->posteriorVector('trend_up|london|normal|normal|stable|0|both|hybrid', 8, true),
+            'value_vector' => $this->posteriorVector('trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix', 8, true),
         ]);
 
         $service = app(LabInstrumentResearchService::class);
-        $london = $service->mutationPolicy('XAUUSD', 'hybrid', ['regime' => 'trend_up', 'session' => 'london', 'volatility' => 'normal']);
-        $asia = $service->mutationPolicy('XAUUSD', 'hybrid', ['regime' => 'trend_up', 'session' => 'asian', 'volatility' => 'normal']);
+        $full = ['direction' => 'buy', 'transition_state' => 'stable', 'spread_liquidity_state' => 'normal'];
+        $london = $service->mutationPolicy('XAUUSD', 'hybrid', [...$full, 'regime' => 'trend_up', 'session' => 'london', 'volatility' => 'normal', 'venue_phase' => 'london_am_fix']);
+        $asia = $service->mutationPolicy('XAUUSD', 'hybrid', [...$full, 'regime' => 'trend_up', 'session' => 'asian', 'volatility' => 'normal', 'venue_phase' => 'asia_sge_day']);
         $global = $service->mutationPolicy('XAUUSD', 'hybrid');
         $otherFamily = $service->mutationPolicy('XAUUSD', 'trend', ['regime' => 'trend_up', 'session' => 'london', 'volatility' => 'normal']);
 
         $this->assertContains('volume_lane', $london['preferred_genes']);
         $this->assertNotContains('volume_lane', $london['blocked_genes']);
-        $this->assertContains('volume_lane', $asia['blocked_genes']);
+        $this->assertSame([], $asia['blocked_genes']);
+        $this->assertContains('volume_lane', array_column($asia['blocked_deltas'], 'gene'));
         $this->assertNotContains('volume_lane', $global['preferred_genes']);
         $this->assertNotContains('volume_lane', $global['blocked_genes']);
         $this->assertNotContains('volume_lane', $otherFamily['preferred_genes']);
         $this->assertNotContains('volume_lane', $otherFamily['blocked_genes']);
+    }
+
+    public function test_phase_local_posterior_cannot_mutate_a_session_wide_successor(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        app(TradingInstrumentOperatingSystemService::class)->seedDefaults();
+        $instrument = TradingInstrument::query()->where('instrument_key', 'volume_confirmation')->firstOrFail();
+        $key = 'trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix';
+        InstrumentValuePosterior::create([
+            'trading_instrument_id' => $instrument->id, 'symbol' => 'XAUUSD', 'timeframe' => 'M15',
+            'state_key' => $key, 'observations' => 8, 'net_value' => .3,
+            'uncertainty' => .1, 'decay_state' => 'confirmed',
+            'value_vector' => $this->posteriorVector($key, 8, true),
+        ]);
+        $bundle = $this->researchBundle('exact-fix-bundle', [
+            'volume_confirmation', 'atr_risk_envelope', 'cost_aware_exit',
+        ], 'volume_confirmation');
+        PlaybookValuePosterior::create([
+            'playbook_composition_id' => $bundle->id, 'symbol' => 'XAUUSD', 'timeframe' => 'M15',
+            'state_key' => $key, 'observations' => 8, 'net_value' => .25,
+            'uncertainty' => .1, 'decay_state' => 'confirmed',
+            'value_vector' => $this->posteriorVector($key, 8, true),
+        ]);
+
+        $service = app(LabInstrumentResearchService::class);
+        $base = ['regime' => 'trend_up', 'session' => 'london', 'volatility' => 'normal',
+            'direction' => 'buy', 'transition_state' => 'stable', 'spread_liquidity_state' => 'normal'];
+        $exact = $service->mutationPolicy('XAUUSD', 'hybrid', [
+            ...$base, 'venue_phase' => 'london_am_fix',
+        ]);
+        $other = $service->mutationPolicy('XAUUSD', 'hybrid', [
+            ...$base, 'venue_phase' => 'london_interfix',
+        ]);
+        $broad = $service->mutationPolicy('XAUUSD', 'hybrid', $base);
+
+        $this->assertContains('volume_lane', $exact['preferred_genes']);
+        $this->assertNotContains('volume_lane', $other['preferred_genes']);
+        $this->assertNotContains('volume_lane', $broad['preferred_genes']);
+        $this->assertSame([], $broad['bundle_sources']);
+
+        // A bundle from a different spread cell cannot support this exact
+        // instrument posterior merely because both satisfy a broad request.
+        $differentCell = 'trend_up|london|normal|high|stable|0|buy|hybrid|london_am_fix';
+        PlaybookValuePosterior::query()->where('playbook_composition_id', $bundle->id)->firstOrFail()->update([
+            'state_key' => $differentCell,
+            'value_vector' => $this->posteriorVector($differentCell, 8, true),
+        ]);
+        $mismatched = $service->mutationPolicy('XAUUSD', 'hybrid', [
+            ...$base, 'venue_phase' => 'london_am_fix',
+        ]);
+        $this->assertNotContains('volume_lane', $mismatched['preferred_genes']);
+        InstrumentValuePosterior::create([
+            'trading_instrument_id' => $instrument->id, 'symbol' => 'XAUUSD', 'timeframe' => 'M15',
+            'state_key' => $differentCell, 'observations' => 3, 'net_value' => -.1,
+            'uncertainty' => .1, 'decay_state' => 'forbidden',
+            'value_vector' => $this->posteriorVector($differentCell, 3, false),
+        ]);
+        $negativeCellBundle = $service->mutationPolicy('XAUUSD', 'hybrid', [
+            ...$base, 'venue_phase' => 'london_am_fix',
+        ]);
+        $this->assertNotContains('volume_lane', $negativeCellBundle['preferred_genes']);
     }
 
     public function test_laravel_and_python_share_the_same_assignment_protocol(): void
@@ -570,6 +835,63 @@ class LabInstrumentResearchLoopTest extends TestCase
             'ASSIGNMENT_PROTOCOL = "'.LabInstrumentResearchService::PROTOCOL.'"',
             $python,
         );
+    }
+
+    public function test_pending_exact_pair_is_reconciled_once_without_relabeling_terminal_history(): void
+    {
+        [$candidate, $control, $generation] = $this->pairAgents();
+        $assignment = app(LabInstrumentResearchService::class)->assignment($candidate);
+        $ledger = app(InstrumentInvocationLedgerService::class);
+        $ledger->recordResearchObservation($candidate->fresh('modelVersion'),
+            $this->attestedResult($assignment, 'pending-candidate-run', true));
+        $controlAssignment = app(LabInstrumentResearchService::class)->assignment($control);
+        $ledger->recordResearchObservation($control->fresh('modelVersion'),
+            $this->attestedResult($controlAssignment, 'pending-control-run', true));
+        $data = str_repeat('a', 64); $execution = str_repeat('b', 64);
+        $candidateMap = LabMutationResponseMap::create([
+            'response_key' => hash('sha256', 'pending-candidate-map'), 'stage' => 'screening', 'status' => 'screen_observed',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'target' => 'profit_factor',
+            'parameter_key' => 'volume_lane', 'lab_agent_id' => $candidate->id, 'model_version_id' => $candidate->model_version_id,
+            'evidence_run_id' => 'pending-candidate-run', 'old_value' => ['value' => 'none'],
+            'new_value' => ['value' => 'breakout_volume_confirmation'],
+            'metadata' => ['data_manifest_hash' => $data, 'execution_hash' => $execution]]);
+        $controlMap = LabMutationResponseMap::create([
+            'response_key' => hash('sha256', 'pending-control-map'), 'stage' => 'screening', 'status' => 'control',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'lab_agent_id' => $control->id, 'model_version_id' => $control->model_version_id,
+            'evidence_run_id' => 'pending-control-run', 'metadata' => ['control_contract' => [
+                'protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control',
+                'generation_id' => $generation->id, 'data_hash' => $data, 'execution_hash' => $execution]]]);
+        $pair = LabLearningLanePair::create([
+            'pair_key' => hash('sha256', 'pending-learning-observation'), 'lab_generation_id' => $generation->id,
+            'candidate_agent_id' => $candidate->id, 'control_agent_id' => $control->id,
+            'candidate_response_map_id' => $candidateMap->id, 'control_response_map_id' => $controlMap->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'target' => 'profit_factor',
+            'baseline_source' => 'control', 'status' => 'screen_paired', 'pair_integrity_status' => 'verified',
+            'same_generation' => true, 'candidate_evidence_run_id' => 'pending-candidate-run',
+            'control_evidence_run_id' => 'pending-control-run', 'candidate_data_hash' => $data, 'control_data_hash' => $data,
+            'candidate_execution_hash' => $execution, 'control_execution_hash' => $execution,
+            'candidate_metrics' => ['instrument_research_trace' => $this->contextTrace(1.2, 4, 5, 21, true)],
+            'control_metrics' => ['instrument_research_trace' => $this->contextTrace(1.05, 1, 6, 20, true)]]);
+        $this->assertTrue($pair->isVerifiedControlPair());
+        $plan = $ledger->pendingResearchPairs('XAUUSD');
+        $this->assertSame($pair->id, $plan[0]['pair_id']);
+        $this->assertSame(1, $plan[0]['powered_exact_contexts']);
+        $this->assertSame(count($controlAssignment['selected']), $plan[0]['pending_control_references']);
+        $this->artisan('trading:reconcile-instrument-pairs', ['--dry-run' => true, '--json' => true])->assertExitCode(0);
+        $this->assertDatabaseCount('instrument_evidence', 0);
+        $result = $ledger->reconcileResearchPair($pair->id);
+        $this->assertSame(0, $result['pending_after']);
+        $this->assertSame(1, $result['causal_projections']);
+        $this->assertSame(count($controlAssignment['selected']), $result['control_references_closed']);
+        $this->assertSame(count($controlAssignment['selected']), InstrumentInvocationLedger::where('verdict', 'control_reference_consumed')->count());
+        $this->assertSame([], $ledger->pendingResearchPairs('XAUUSD'));
+        $this->assertSame('provisional', InstrumentValuePosterior::query()->value('decay_state'));
+        $terminal = InstrumentInvocationLedger::query()->get()->map(fn ($row) => $row->toArray())->all();
+        $this->assertSame(0, $ledger->reconcileResearchPair($pair->id)['pending_before']);
+        $this->assertSame($terminal, InstrumentInvocationLedger::query()->get()->map(fn ($row) => $row->toArray())->all());
+        $this->assertDatabaseCount('instrument_evidence', 1);
+        $this->assertSame(1, (int) InstrumentValuePosterior::query()->value('observations'));
     }
 
     /** @return array{LabAgent, LabAgent, LabGeneration} */
@@ -668,7 +990,7 @@ class LabInstrumentResearchLoopTest extends TestCase
         ]);
     }
 
-    private function attestedResult(array $assignment, string $runId): array
+    private function attestedResult(array $assignment, string $runId, bool $exactPhase = false): array
     {
         return [
             'evidence_run_id' => $runId,
@@ -688,6 +1010,9 @@ class LabInstrumentResearchLoopTest extends TestCase
                 'runtime_observed' => true,
                 'bundle_fully_activated' => true,
                 'bundle_activation_context_keys' => ['trend_up|normal_volatility|london|BUY'],
+                ...($exactPhase ? ['bundle_activation_exact_context_keys' => [
+                    'trend_up|normal_volatility|london|london_am_fix|BUY',
+                ]] : []),
                 'instruments' => array_map(fn (array $selected): array => [
                     'instrument_key' => $selected['instrument_key'],
                     'status' => 'consumed',
@@ -698,6 +1023,9 @@ class LabInstrumentResearchLoopTest extends TestCase
                     'runtime_receipt_consistent' => true,
                     'decision_path_activated' => true,
                     'activated_context_keys' => ['trend_up|normal_volatility|london|BUY'],
+                    ...($exactPhase ? ['activated_exact_context_keys' => [
+                        'trend_up|normal_volatility|london|london_am_fix|BUY',
+                    ]] : []),
                     'promotion_evidence' => false,
                 ], $assignment['selected']),
                 'promotion_evidence' => false,
@@ -705,43 +1033,59 @@ class LabInstrumentResearchLoopTest extends TestCase
         ];
     }
 
-    private function contextTrace(float $pf, float $net, float $drawdown, int $trades): array
+    private function contextTrace(float $pf, float $net, float $drawdown, int $trades, bool $exactPhase = false): array
     {
+        $slice = [
+            'context_key' => 'trend_up|normal_volatility|london|BUY',
+            'context' => [
+                'regime' => 'trend_up', 'volatility' => 'normal_volatility',
+                'session' => 'london', 'session_utc_hour' => 8, 'direction' => 'BUY',
+            ],
+            'metrics' => [
+                'trades' => $trades, 'net_pf' => $pf,
+                'net_profit_percent' => $net, 'max_drawdown_percent' => $drawdown,
+                'execution_cost_percent' => .1,
+            ],
+            'powered' => true, 'promotion_evidence' => false,
+        ];
+
         return [
             'context_source' => 'decision_time_trade_ledger',
-            'context_slices' => [[
-                'context_key' => 'trend_up|normal_volatility|london|BUY',
-                'context' => [
-                    'regime' => 'trend_up', 'volatility' => 'normal_volatility',
-                    'session' => 'london', 'session_utc_hour' => 8, 'direction' => 'BUY',
-                ],
-                'metrics' => [
-                    'trades' => $trades, 'net_pf' => $pf,
-                    'net_profit_percent' => $net, 'max_drawdown_percent' => $drawdown,
-                    'execution_cost_percent' => .1,
-                ],
-                'powered' => true, 'promotion_evidence' => false,
-            ]],
+            'context_slices' => [$slice],
+            ...($exactPhase ? [
+                'context_slice_protocol' => 'venue_phase_v1',
+                'exact_context_slices' => [[
+                    ...$slice,
+                    'context_key' => 'trend_up|normal_volatility|london|london_am_fix|BUY',
+                    'context' => [...$slice['context'], 'venue_phase' => 'london_am_fix'],
+                ]],
+            ] : []),
         ];
     }
 
     private function posteriorVector(string $stateKey, int $observations, bool $positive): array
     {
-        [$regime, $session, $volatility, $spread, $transition, $loss, $direction, $family] = explode('|', $stateKey);
+        [$regime, $session, $volatility, $spread, $transition, $loss, $direction, $family, $venuePhase] = array_pad(explode('|', $stateKey), 9, null);
+        $manifests = [];
+        foreach ([1, 2, 3] as $month) {
+            $manifests[] = [
+                'authorization_id' => 'test-instrument-window-'.$month,
+                'research_epoch_id' => 'test-post-paper-research',
+                'start_inclusive' => sprintf('2027-%02d-01T00:00:00+00:00', $month),
+                'end_exclusive' => sprintf('2027-%02d-01T00:00:00+00:00', $month + 1),
+                'dataset_sha256' => hash('sha256', 'test-window-'.$month),
+                'purpose' => 'instrument_independent_validation',
+            ];
+        }
+        config()->set('services.instrument_policy.authorized_research_windows', $manifests);
+        $windows = array_map(fn (array $manifest): array => app(InstrumentResearchWindowService::class)->seal(
+            $manifest['authorization_id'], $manifest['dataset_sha256'],
+        ), $manifests);
+        $evidenceKeys = array_map(fn (int $i): string => "evidence-{$stateKey}-{$i}", range(1, $observations));
 
-        return [
-            'context' => [
-                'regime' => $regime, 'session' => $session, 'volatility' => $volatility,
-                'spread_state' => $spread, 'transition' => $transition,
-                'loss_streak' => (int) $loss, 'direction' => $direction,
-                'strategy_family' => $family, 'state_key' => $stateKey,
-            ],
-            'strategy_family' => $family,
-            'independent_window_keys' => ['window-a', 'window-b', 'window-c'],
-            'evidence_keys' => array_map(fn (int $i): string => "evidence-{$stateKey}-{$i}", range(1, $observations)),
-            'positive_observations' => $positive ? $observations : 0,
-            'negative_observations' => $positive ? 0 : $observations,
-            'non_target_regression_count' => 0,
-        ];
+        return $this->exactValidationVector($stateKey, array_map(fn (string $key, int $index): array => [
+            'window' => $windows[$index % 3], 'evidence_key' => $key,
+            'outcome' => $positive ? 'positive' : 'negative',
+        ], $evidenceKeys, array_keys($evidenceKeys)));
     }
 }

@@ -9,7 +9,7 @@ class BuildLabGeneration extends Command
 {
     protected $signature = 'trading:lab-generation {symbol?} {--trigger=new_data} {--timeframe=H1} {--force}';
 
-    protected $description = 'Create a configurable AI Laboratory generation after new candles, drift, or degradation';
+    protected $description = 'Create a governed AI Laboratory generation for historical research, new data, drift, or degradation';
 
     public function handle(LabPopulationService $service): int
     {
@@ -22,7 +22,7 @@ class BuildLabGeneration extends Command
         // candle-event plane synchronously here can hold generation creation
         // for minutes without creating a row.  The population builder still
         // consumes the latest append-only insights and checkpoint inputs.
-        $refreshHistoricalLearning = ! in_array($trigger, ['candidate_handoff', 'data_edge_audit', 'operator_successor'], true);
+        $refreshHistoricalLearning = ! in_array($trigger, ['candidate_handoff', 'data_edge_audit', 'operator_successor', 'historical_research'], true);
         foreach ($symbols as $symbol) {
             $timeframe = $symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
                 ? strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'))

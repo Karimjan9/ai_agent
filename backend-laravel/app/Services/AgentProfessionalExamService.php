@@ -316,8 +316,10 @@ class AgentProfessionalExamService
         $lessons = AgentLearningLesson::query()->where([
             'symbol' => $symbol, 'timeframe' => $timeframe, 'strategy_family' => $family,
         ])->where('lesson_type', 'harmful_lesson')->get();
-        $confirmed = $lessons->where('status', 'confirmed')->pluck('parameter_key')->filter()->unique()->values()->all();
-        $provisionalCounts = $lessons->where('status', 'provisional')->pluck('parameter_key')->filter()->countBy()->all();
+        // A failed delta never forbids a whole gene. Exact context/directional
+        // constraints are supplied by LearningRetrieval at the mutation site.
+        $confirmed = [];
+        $provisionalCounts = [];
         $curiosity = (array) data_get($card?->skill_contract, 'curiosity_lane', []);
         $curiosityUsed = (int) data_get($curiosity, 'used', 0);
         $curiosityBudget = max(0, (int) data_get($curiosity, 'budget', 2));
@@ -326,6 +328,7 @@ class AgentProfessionalExamService
             'protocol' => 'bounded_mutation_budget_v1',
             'status' => $this->mutationBudgetStatus($lessons),
             'confirmed_harmful_keys' => $confirmed,
+            'harmful_hypotheses_observed' => $lessons->count(),
             'provisional_harmful_counts' => $provisionalCounts,
             'provisional_retest_limit_per_key' => 1,
             'curiosity_lane' => [

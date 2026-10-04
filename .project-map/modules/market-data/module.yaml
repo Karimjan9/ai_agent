@@ -18,6 +18,15 @@ paths:
   - backend-laravel/app/Models/MarketDataSyncState.php
   - backend-laravel/app/Models/Candle.php
   - ai-service-python/app/services/volume_features.py
+  - ai-service-python/app/services/historical_quotes.py
+  - ai-service-python/scripts/maintain_replay_cache.py
+  - backend-laravel/scripts/fetch-dukascopy.cjs
+  - backend-laravel/scripts/freeze-historical-quote-spread.php
+  - backend-laravel/scripts/freeze-historical-tick-spread.cjs
+  - backend-laravel/scripts/freeze-historical-tick-spread.test.cjs
+  - backend-laravel/scripts/recover-frozen-m5-gap.php
+  - backend-laravel/scripts/verify-sparse-reopen-ticks.cjs
+  - backend-laravel/scripts/audit-frozen-m5-gap-source.py
 entry_points:
   - MarketDataContinuityService
   - MarketDataService
@@ -25,6 +34,12 @@ entry_points:
   - trading:market-data-audit
   - LabDatasetExportService::ensureFoundationVolumeDataset
   - MultiTimeframeSnapshotService::forAgentOwnedConfirmationValidation
+  - HistoricalQuoteSpreadService::attach
+  - MultiTimeframeSnapshotService::agentValidationReadiness
+  - FrozenM5GapRecoveryOperation::batchProof
+  - FrozenM5GapRecoveryOperation::forkMany
+  - FrozenM5GapRecoveryOperation::collectBatch
+  - backend-laravel/scripts/recover-frozen-m5-gap.php
 data_tables:
   - candles
   - market_data_sync_states
@@ -38,6 +53,8 @@ invariants:
   - Rolling/live volume coverage never attests a historical replay snapshot.
   - A volume-dependent historical replay requires a hash-bound provenance receipt and an explicit volume_available column in every consumed stream.
   - A no-volume lane is not a failed volume capability and reports not_requested.
+  - Sparse historical provider bars are recovered only into a new content-addressed training dataset with actual provider/tick proof, immutable old-source SHA, economic-row digest and explicit remaining calendar gaps. Missing minutes are never synthesized; new price bytes require freshly hash-bound quote sidecars and do not constitute independent validation or promotion evidence.
+  - Historical quote spread is a separate pre-2026 research sidecar; executable liquidity requires one synchronized BID/ASK tick strictly before M5 close, maximum age 60 seconds, matching frozen M5 BID, source hashes and availability. Independently closing Jetta BID/ASK bars are diagnostic only. Neither artifact backfills an existing generation or gains authority merely by existing.
 flows:
   - flows/continuity-recovery.md
 docs:
@@ -45,9 +62,13 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
   - backend-laravel/tests/Feature/MarketDataContinuityTest.php
   - backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php
   - backend-laravel/tests/Feature/TwelveDataMarketDataProviderTest.php
   - backend-laravel/tests/Feature/MarketSessionCalendarTest.php
   - backend-laravel/tests/Feature/HistoricalVolumeReplayContractTest.php
   - backend-laravel/tests/Feature/MtfAgentValidationSnapshotServiceTest.php
+  - backend-laravel/tests/Feature/HistoricalQuoteSpreadTest.php
+  - backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php
+  - ai-service-python/tests/test_historical_quotes.py

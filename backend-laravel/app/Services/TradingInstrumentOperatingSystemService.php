@@ -23,6 +23,133 @@ class TradingInstrumentOperatingSystemService
 {
     public const PROTOCOL = 'trading_instrument_operating_system_v2';
 
+    public const CAPABILITY_PROTOCOL = 'instrument_executable_capability_v1';
+
+    public const RESEARCH_READINESS_PROTOCOL = 'instrument_research_readiness_v2';
+
+    /** Code-owned capability, not an assertion that a replay activated it. */
+    public function runtimeCapability(string $key): array
+    {
+        $definition = $this->instrumentDefinitions()[$key] ?? null;
+        $events = match ($key) {
+            'trend_pullback' => ['trend_decision:*'],
+            'breakout_retest' => ['breakout_decision:*'],
+            'compression_expansion' => ['compression_decision:*'],
+            'range_reentry' => ['range_decision:*'],
+            'session_breakout' => ['session_breakout_signal_evaluated'],
+            'session_range' => ['session_range_evaluated'],
+            'volume_confirmation' => ['volume_policy_evaluated'],
+            'transition_protection' => ['transition_boundary_wait_started', 'transition_entry_veto'],
+            'cost_firewall' => ['entry_cost_gate_evaluated'],
+            'high_volatility_firewall' => ['high_volatility_gate_evaluated'],
+            'loss_streak_cooldown' => ['loss_streak_wait', 'loss_cooldown'],
+            'dynamic_cooldown' => ['loss_streak_wait', 'loss_cooldown', 'loss_cooldown_scheduled'],
+            'atr_risk_envelope' => ['entry_stop_target_sized'],
+            'cost_aware_exit' => ['position_exit:*'],
+            'regime_router' => ['router_selected:*'],
+            'adaptive_entry_topology' => ['entry_topology_selected:*'],
+            'confidence_firewall' => ['confidence_gate_evaluated'],
+            'temporal_survival_filter' => ['temporal_survival_evaluated', 'state_machine_transition:*'],
+            'meta_label_filter' => ['meta_label_gate_evaluated'],
+            'dynamic_fibonacci_zone', 'confirmed_swing', 'support_resistance_zone' => ['structure_location_evaluated'],
+            'bos_event' => ['bos_event_observed'], 'choch_event' => ['choch_event_observed'],
+            'liquidity_sweep' => ['liquidity_sweep_observed'],
+            'liquidity_pool' => ['liquidity_pool_proxy_evaluated'],
+            default => [],
+        };
+        $proxy = in_array($key, ['dynamic_fibonacci_zone', 'confirmed_swing', 'support_resistance_zone',
+            'bos_event', 'choch_event', 'liquidity_sweep', 'liquidity_pool'], true);
+        $surface = (array) data_get($definition, 'contract.allowed_genes', []);
+        $card = ['protocol' => self::CAPABILITY_PROTOCOL, 'instrument_key' => $key,
+            'implementation_status' => ! $definition || $events === [] ? 'declarative_only'
+                : ($proxy ? 'structural_proxy_adapter' : 'executable_parameter_adapter'),
+            'runtime_owner' => 'ai-service-python/app/services/backtester.py',
+            'runtime_events' => $events,
+            'required_stage' => match ($key) {
+                'cost_aware_exit' => 'position_management', 'atr_risk_envelope' => 'risk_sizing',
+                'dynamic_cooldown', 'loss_streak_cooldown' => 'position_history',
+                default => 'pre_entry_decision',
+            },
+            'parameter_surface' => $surface,
+            'required_data' => array_values(array_unique(['closed_ohlc', ...match ($key) {
+                'volume_confirmation' => ['canonical_volume'],
+                'cost_firewall' => ['observed_bid_ask'],
+                default => [],
+            }])),
+            'required_context' => (array) data_get($definition, 'contract.required_inputs', []),
+            'compatible_regimes' => (array) data_get($definition, 'contract.compatible_regimes', []),
+            'limitations' => $proxy ? ['OHLC structural proxy, not observed institutional order flow',
+                'Shared feature hook does not establish an independent algorithm'] : [],
+            'ablation_contract' => ['mode' => $surface === [] ? 'observation_only_no_isolated_credit' : 'exact_sealed_parameter_contrast',
+                'keep_fixed' => ['strategy', 'tactic', 'risk_owner', 'execution_cost_model', 'dataset', 'context', 'unrelated_genes'],
+                'safety_gate_disable_allowed' => false,
+                'removal_effect_requires' => 'A+B versus B and A+B versus A in a complete controlled factorial'],
+            'runtime_hook_is_not_causal_authority' => true, 'promotion_evidence' => false];
+        $card['capability_hash'] = hash('sha256', json_encode($card, JSON_UNESCAPED_SLASHES));
+        return $card;
+    }
+
+    /** Read-only; inventory reporting must not seed/update the registry. */
+    public function runtimeCapabilities(): array
+    {
+        return array_map(fn (string $key): array => $this->runtimeCapability($key), array_keys($this->instrumentDefinitions()));
+    }
+
+    /** Research ranking from a sealed source observation, never current/live state or P/L. */
+    public function researchReadiness(string $key, array $parameters, array $facts = []): array
+    {
+        $card = $this->runtimeCapability($key);
+        $bound = array_values(array_intersect($card['parameter_surface'], array_keys($parameters)));
+        $reason = null;
+        if ($card['implementation_status'] === 'declarative_only') $reason = 'RUNTIME_ADAPTER_UNAVAILABLE';
+        elseif ($bound === []) $reason = 'NO_EXECUTABLE_PARAMETER_SURFACE';
+        $attested = ($facts['sealed_source'] ?? false) === true
+            && strlen((string) ($facts['dataset_hash'] ?? '')) === 64
+            && filled($facts['context_key'] ?? null);
+        $missing = $attested ? array_values(array_filter($card['required_data'],
+            fn (string $input): bool => data_get($facts, 'data_available.'.$input) !== true)) : [];
+        $opportunities = $attested ? max(0, (int) ($facts['context_opportunities'] ?? 0)) : null;
+        $stageReached = $attested ? data_get($facts, 'stages.'.$card['required_stage']) === true : null;
+        $exactControl = $attested && ($facts['exact_control_available'] ?? false) === true;
+        $prospectiveControl = $attested && ($facts['prospective_control_feasible'] ?? false) === true;
+        $controlPath = $exactControl ? 'sealed_exact_control'
+            : ($prospectiveControl ? 'prospective_exact_control_required' : 'missing_exact_control');
+        $evaluations = $attested && is_numeric($facts['source_instrument_evaluations'] ?? null)
+            ? max(0, (int) $facts['source_instrument_evaluations']) : null;
+        // Evaluation count measures exploration uncertainty, not causal value.
+        // Unknown counts must remain unknown rather than a fabricated 1.0.
+        $uncertainty = $evaluations !== null ? round(1 / sqrt(1 + $evaluations), 6) : null;
+        $status = $reason ? 'no_effect' : (! $attested ? 'unknown_data'
+            : ($missing !== [] ? 'data_missing' : ($opportunities < 20 || ! $stageReached ? 'underpowered' : 'learnable')));
+        $priority = match (true) {
+            $status === 'learnable' && $exactControl => 4,
+            $status === 'learnable' && $prospectiveControl => 3,
+            $status === 'underpowered' && $stageReached && $opportunities > 0
+                && ($exactControl || $prospectiveControl) => 1,
+            default => 0,
+        };
+        $priorityReason = match (true) {
+            $reason !== null => $reason,
+            ! $attested => 'SEALED_SOURCE_REQUIRED',
+            $missing !== [] => 'REQUIRED_DATA_MISSING',
+            ! $stageReached => 'REQUIRED_STAGE_NOT_OBSERVED',
+            $opportunities < 20 => 'CONTEXT_OPPORTUNITIES_UNDERPOWERED',
+            ! $exactControl && ! $prospectiveControl => 'EXACT_CONTROL_PATH_MISSING',
+            $exactControl => 'SEALED_CONTROL_AND_OBSERVABLE_STAGE',
+            default => 'PROSPECTIVE_CONTROL_FREEZE_REQUIRED',
+        };
+        return ['protocol' => self::RESEARCH_READINESS_PROTOCOL, 'status' => $status,
+            'reason_code' => $priorityReason, 'missing_data' => $missing, 'bound_genes' => $bound,
+            'required_stage' => $card['required_stage'], 'stage_reached' => $stageReached,
+            'context_opportunities' => $opportunities,
+            'exact_control_available' => $exactControl, 'control_path' => $controlPath,
+            'priority' => $priority, 'uncertainty' => $uncertainty,
+            'source_instrument_evaluations' => $evaluations,
+            'uncertainty_scope' => 'sealed_source_execution_exploration_only_not_economic_effect',
+            'source_evidence' => $attested ? $facts : null,
+            'negative_skill_allowed' => false, 'economic_credit_allowed' => false, 'promotion_evidence' => false];
+    }
+
     public function seedDefaults(): array
     {
         return DB::transaction(function (): array {
@@ -173,13 +300,19 @@ class TradingInstrumentOperatingSystemService
                 'trading_instrument_id' => $instrument->id, 'symbol' => $symbol, 'timeframe' => $timeframe, 'state_key' => $state['state_key'],
                 'outcome_state' => (string) ($outcome['outcome_state'] ?? 'observed'), 'source_type' => $outcome['source_type'] ?? null,
                 'source_key' => $outcome['source_key'] ?? null, 'metrics' => $metrics, 'control_metrics' => $outcome['control_metrics'] ?? null,
-                'metadata' => ['protocol' => self::PROTOCOL, 'state' => $state], 'observed_at' => $outcome['observed_at'] ?? now(),
+                'metadata' => ['protocol' => self::PROTOCOL, 'state' => $state,
+                    'tested_intervention' => (array) ($outcome['tested_intervention'] ?? []),
+                    'source_receipt' => (array) ($outcome['source_receipt'] ?? [])], 'observed_at' => $outcome['observed_at'] ?? now(),
             ]);
             $scope = ['trading_instrument_id' => $instrument->id, 'symbol' => $symbol, 'timeframe' => $timeframe, 'state_key' => $state['state_key']];
             if (! $evidence->wasRecentlyCreated) {
                 return InstrumentValuePosterior::firstOrCreate($scope, ['value_vector' => []]);
             }
-            $posterior = InstrumentValuePosterior::firstOrNew($scope);
+            $posterior = InstrumentValuePosterior::query()->where($scope)->lockForUpdate()->first()
+                ?: new InstrumentValuePosterior($scope);
+            $vector['validation_epochs'] = app(InstrumentValidationEvidenceService::class)->append(
+                (array) data_get($posterior->value_vector, 'validation_epochs', []), $outcome, $state, $vector,
+            );
             [$n, $net, $uncertainty, $vector] = $this->updatePosterior($posterior, $vector);
             $posterior->fill(['observations' => $n, 'net_value' => $net, 'uncertainty' => $uncertainty, 'decay_state' => $this->decayState($n, $net, $vector), 'value_vector' => $vector, 'last_observed_at' => now()])->save();
 
@@ -215,6 +348,9 @@ class TradingInstrumentOperatingSystemService
             $vector['interpretation'] = $vector['interaction_identified']
                 ? 'factorial_interaction_effect'
                 : 'joint_bundle_value_not_component_synergy';
+            $vector['validation_epochs'] = app(InstrumentValidationEvidenceService::class)->append(
+                (array) data_get($posterior->value_vector, 'validation_epochs', []), $outcome, $state, $vector,
+            );
             [$n, $net, $uncertainty, $vector] = $this->updatePosterior($posterior, $vector);
             $posterior->fill(['observations' => $n, 'net_value' => $net, 'uncertainty' => $uncertainty, 'decay_state' => $this->decayState($n, $net, $vector), 'value_vector' => $vector, 'last_observed_at' => now()])->save();
 
@@ -359,14 +495,24 @@ class TradingInstrumentOperatingSystemService
     /** @return array<string,mixed> */
     private function withEvidenceIdentity(array $vector, array $state, array $outcome): array
     {
-        $window = (string) ($outcome['independent_window_key'] ?? '');
         $evidenceKey = (string) ($outcome['evidence_key'] ?? '');
+        $receipt = (array) ($outcome['instrument_research_window_receipt'] ?? []);
+        $dataHash = (string) data_get($outcome, 'control_contract.data_hash', '');
+        $authorized = $evidenceKey !== '' && app(InstrumentResearchWindowService::class)
+            ->authorized($receipt, $dataHash);
+        $window = $authorized ? (string) $receipt['window_key'] : '';
         $vector['context'] = Arr::only($state, [
             'regime', 'session', 'volatility', 'spread_state', 'transition',
-            'loss_streak', 'direction', 'strategy_family', 'state_key',
+            'loss_streak', 'direction', 'strategy_family', 'venue_phase', 'state_key',
         ]);
         $vector['strategy_family'] = (string) ($state['strategy_family'] ?? 'unscoped');
         $vector['independent_window_keys'] = $window !== '' ? [$window] : [];
+        $utility = (float) $vector['conditional_net_utility'];
+        $vector['window_evidence'] = $authorized ? [[
+            'window' => $receipt,
+            'evidence_key' => $evidenceKey,
+            'outcome' => $utility > 0 ? 'positive' : ($utility < 0 ? 'negative' : 'neutral'),
+        ]] : [];
         $vector['evidence_keys'] = $evidenceKey !== '' ? [$evidenceKey] : [];
         $vector['positive_observations'] = $vector['conditional_net_utility'] > 0 ? 1 : 0;
         $vector['negative_observations'] = $vector['conditional_net_utility'] < 0 ? 1 : 0;
@@ -397,6 +543,10 @@ class TradingInstrumentOperatingSystemService
             ...array_map('strval', (array) ($previous['independent_window_keys'] ?? [])),
             ...array_map('strval', (array) ($observation['independent_window_keys'] ?? [])),
         ]));
+        $windowEvidence = [
+            ...(array) ($previous['window_evidence'] ?? []),
+            ...(array) ($observation['window_evidence'] ?? []),
+        ];
         $evidenceKeys = array_values(array_unique([
             ...array_map('strval', (array) ($previous['evidence_keys'] ?? [])),
             ...array_map('strval', (array) ($observation['evidence_keys'] ?? [])),
@@ -406,6 +556,7 @@ class TradingInstrumentOperatingSystemService
             ...$observation,
             'utility_m2' => $m2,
             'independent_window_keys' => array_values(array_filter($windows)),
+            'window_evidence' => $windowEvidence,
             'evidence_keys' => array_values(array_filter($evidenceKeys)),
             'positive_observations' => (int) ($previous['positive_observations'] ?? 0) + (int) ($observation['positive_observations'] ?? 0),
             'negative_observations' => (int) ($previous['negative_observations'] ?? 0) + (int) ($observation['negative_observations'] ?? 0),
@@ -437,9 +588,9 @@ class TradingInstrumentOperatingSystemService
             return [
                 'scope' => 'exact', 'backoff_used' => false,
                 'state_key' => (string) $exact->state_key,
-                'observations' => (int) $exact->observations,
-                'net_value' => (float) $exact->net_value,
-                'uncertainty' => (float) $exact->uncertainty,
+                'observations' => (int) ($authority['observations'] ?: $exact->observations),
+                'net_value' => (float) ($authority['net_value'] ?? $exact->net_value),
+                'uncertainty' => (float) ($authority['uncertainty'] ?? $exact->uncertainty),
                 'decay_state' => (string) $authority['canonical_state'],
                 'authority' => $authority,
                 'interaction_identified' => (bool) data_get($exact->value_vector, 'interaction_identified', false),
@@ -518,28 +669,15 @@ class TradingInstrumentOperatingSystemService
 
     private function decayState(int $observations, float $net, array $vector): string
     {
-        if ((float) $vector['temporal_decay'] >= .5) {
-            return 'decaying';
-        }
-        $windows = count((array) ($vector['independent_window_keys'] ?? []));
-        $positive = (int) ($vector['positive_observations'] ?? 0);
-        $negative = (int) ($vector['negative_observations'] ?? 0);
-        $regressions = (int) ($vector['non_target_regression_count'] ?? 0);
-        $contextValid = data_get(app(ContextContractV2Service::class)->project((array) ($vector['context'] ?? [])), 'status') === 'valid';
-        $familySealed = ! in_array((string) ($vector['strategy_family'] ?? ''), ['', 'unscoped'], true);
-        $evidenceCoverage = count((array) ($vector['evidence_keys'] ?? [])) >= $observations;
-        $minimumObservations = max(3, (int) config('services.instrument_policy.minimum_posterior_observations', 3));
-        $minimumWindows = max(3, (int) config('services.instrument_policy.minimum_independent_windows', 3));
-        $positiveThreshold = max(0.00001, (float) config('services.instrument_policy.minimum_confirmed_net_utility', .001));
-        $negativeThreshold = min(-0.00001, (float) config('services.instrument_policy.minimum_forbidden_net_utility', -.001));
-        if ($contextValid && $familySealed && $evidenceCoverage
-            && $observations >= $minimumObservations && $windows >= 2 && $negative >= 2 && $net <= $negativeThreshold) {
-            return 'forbidden';
+        if ((float) $vector['temporal_decay'] >= .5) return 'decaying';
+        $states = [];
+        foreach ((array) ($vector['validation_epochs'] ?? []) as $epoch) {
+            if (! is_array($epoch)) continue;
+            $assessment = app(InstrumentValidationEvidenceService::class)->assessEpoch($epoch, (string) data_get($vector, 'context.state_key', ''));
+            if (in_array($assessment['canonical_state'], ['confirmed', 'forbidden'], true)) $states[] = $assessment['canonical_state'];
         }
 
-        return $contextValid && $familySealed && $evidenceCoverage
-            && $observations >= $minimumObservations && $windows >= $minimumWindows && $positive >= 2 && $regressions === 0 && $net >= $positiveThreshold
-            ? 'confirmed' : 'provisional';
+        return $states !== [] ? $states[count($states) - 1] : 'provisional';
     }
 
     private function volatilityFor(?MarketStateSnapshot $state): string
@@ -575,9 +713,9 @@ class TradingInstrumentOperatingSystemService
         $execution = ['compatible_regimes' => [], 'forbidden_regimes' => [], 'required_inputs' => [], 'allowed_genes' => [], 'cost_model' => ['spread_aware' => true], 'risk_model' => [], 'control_contract' => ['mode' => 'paired_isolated'], 'contract' => ['protocol' => self::PROTOCOL]];
 
         return [
-            'trend_pullback' => ['label' => 'Trend Pullback', 'role' => 'tactic', 'tactic_id' => 'trend_following_pullback', 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['hypothesis' => 'Closed H1 context with an M15 trend/pullback decision.', 'origin' => 'curated_registry'], 'contract' => [...$execution, 'compatible_regimes' => ['trend_up', 'trend_down'], 'forbidden_regimes' => ['transition'], 'required_inputs' => ['regime', 'session', 'volatility', 'spread_atr_ratio'], 'allowed_genes' => ['ema_fast', 'ema_slow', 'pullback_atr_fraction', 'trend_roc_period', 'trend_roc_threshold', 'trend_ema_period', 'trend_up_strength_min', 'trend_down_strength_min', 'trend_up_pullback_atr_fraction', 'trend_down_pullback_atr_fraction', 'trend_up_roc_period', 'trend_down_roc_period', 'trend_up_roc_threshold', 'trend_down_roc_threshold', 'trend_up_ema_period', 'trend_down_ema_period']]],
-            'breakout_retest' => ['label' => 'Breakout Retest', 'role' => 'tactic', 'tactic_id' => 'donchian_atr_breakout_retest', 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['hypothesis' => 'Range break, measured retest and cost gate.', 'origin' => 'curated_registry'], 'contract' => [...$execution, 'compatible_regimes' => ['trend_up', 'trend_down', 'high_volatility'], 'forbidden_regimes' => ['transition'], 'required_inputs' => ['regime', 'spread_atr_ratio'], 'allowed_genes' => ['lookback', 'atr_multiplier', 'retest_required', 'breakout_atr_period', 'breakout_atr_threshold', 'breakout_lookback', 'breakout_compression_ratio', 'breakout_expansion_multiplier']]],
-            'compression_expansion' => ['label' => 'Compression Expansion', 'role' => 'tactic', 'tactic_id' => 'atr_squeeze_expansion', 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['hypothesis' => 'Low-volatility compression followed by measured expansion.', 'origin' => 'curated_registry'], 'contract' => [...$execution, 'compatible_regimes' => ['trend_up', 'trend_down'], 'forbidden_regimes' => ['transition'], 'required_inputs' => ['volatility'], 'allowed_genes' => ['compression_ratio', 'expansion_multiplier', 'breakout_compression_ratio', 'breakout_expansion_multiplier', 'breakout_atr_period', 'breakout_atr_threshold']]],
+            'trend_pullback' => ['label' => 'Trend Pullback', 'role' => 'tactic', 'tactic_id' => 'trend_following_pullback', 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['hypothesis' => 'Closed H1 context with an M15 trend/pullback decision.', 'origin' => 'curated_registry'], 'contract' => [...$execution, 'compatible_regimes' => ['trend_up', 'trend_down'], 'forbidden_regimes' => ['transition'], 'required_inputs' => ['regime', 'session', 'volatility', 'spread_atr_ratio'], 'allowed_genes' => ['ema_fast', 'ema_slow', 'trend_strength_min', 'pullback_atr_fraction', 'trend_roc_period', 'trend_roc_threshold', 'trend_ema_period', 'trend_up_strength_min', 'trend_down_strength_min', 'trend_up_pullback_atr_fraction', 'trend_down_pullback_atr_fraction', 'trend_up_roc_period', 'trend_down_roc_period', 'trend_up_roc_threshold', 'trend_down_roc_threshold', 'trend_up_ema_period', 'trend_down_ema_period']]],
+            'breakout_retest' => ['label' => 'Breakout Retest', 'role' => 'tactic', 'tactic_id' => 'donchian_atr_breakout_retest', 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['hypothesis' => 'Range break, measured retest and cost gate.', 'origin' => 'curated_registry'], 'contract' => [...$execution, 'compatible_regimes' => ['trend_up', 'trend_down', 'high_volatility'], 'forbidden_regimes' => ['transition'], 'required_inputs' => ['regime', 'spread_atr_ratio'], 'allowed_genes' => ['lookback', 'atr_period', 'atr_multiplier', 'confirmation_candles', 'trend_strength_min', 'retest_required', 'breakout_atr_period', 'breakout_atr_threshold', 'breakout_lookback', 'breakout_compression_ratio', 'breakout_expansion_multiplier']]],
+            'compression_expansion' => ['label' => 'Compression Expansion', 'role' => 'tactic', 'tactic_id' => 'atr_squeeze_expansion', 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['hypothesis' => 'Low-volatility compression followed by measured expansion.', 'origin' => 'curated_registry'], 'contract' => [...$execution, 'compatible_regimes' => ['trend_up', 'trend_down'], 'forbidden_regimes' => ['transition'], 'required_inputs' => ['volatility'], 'allowed_genes' => ['lookback', 'atr_period', 'compression_ratio', 'expansion_multiplier', 'breakout_compression_ratio', 'breakout_expansion_multiplier', 'breakout_atr_period', 'breakout_atr_threshold']]],
             'session_breakout' => ['label' => 'London/NY Session Breakout', 'role' => 'tactic', 'tactic_id' => 'session_range_breakout', 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['hypothesis' => 'Liquid-session range break.', 'origin' => 'curated_registry'], 'contract' => [...$execution, 'compatible_regimes' => ['trend_up', 'trend_down'], 'forbidden_regimes' => ['transition'], 'required_inputs' => ['session', 'spread_atr_ratio'], 'allowed_genes' => ['session_start', 'session_end', 'lookback', 'session_filter_enabled', 'differential_target_session_filter_enabled', 'differential_target_session_start', 'differential_target_session_end']]],
             'range_reentry' => ['label' => 'Range Re-entry', 'role' => 'tactic', 'tactic_id' => 'bollinger_zscore_reentry', 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['hypothesis' => 'Band/z-score re-entry in a low ADX range.', 'origin' => 'curated_registry'], 'contract' => [...$execution, 'compatible_regimes' => ['range', 'low_volatility'], 'forbidden_regimes' => ['transition', 'high_volatility'], 'required_inputs' => ['regime', 'volatility'], 'allowed_genes' => ['lookback', 'deviation', 'adx_max', 'range_lookback', 'range_deviation', 'range_adx_max', 'range_low_volatility_only', 'range_reentry_required', 'range_signal_mode']]],
             'dynamic_fibonacci_zone' => ['label' => 'Dynamic Fibonacci Zone', 'role' => 'market_lens', 'tactic_id' => 'fibonacci_structure_pullback', 'promotion_state' => 'provisional', 'is_abstention' => false, 'definition' => ['values' => ['zone_width', 'distance_atr', 'swing_range']], 'contract' => [...$execution, 'compatible_regimes' => ['trend_up', 'trend_down'], 'forbidden_regimes' => ['transition'], 'required_inputs' => ['regime'], 'allowed_genes' => ['swing_lookback', 'equal_level_atr_fraction']]],
@@ -634,6 +772,7 @@ class TradingInstrumentOperatingSystemService
                 'paired_control_required' => data_get($contract, 'control_contract.mode') === 'paired_isolated',
             ],
             'mutation_surface' => (array) ($contract['allowed_genes'] ?? []),
+            'runtime_capability' => $this->runtimeCapability($key),
             'usage_contract' => [
                 'selection_is_not_invocation' => true,
                 'activate_only_when' => 'contract context matches and the runtime decision path emits an instrument-specific event',

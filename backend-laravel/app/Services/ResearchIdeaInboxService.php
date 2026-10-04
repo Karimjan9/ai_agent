@@ -9,7 +9,7 @@ use InvalidArgumentException;
 /** Converts external or agent ideas into bounded research hypotheses only. */
 class ResearchIdeaInboxService
 {
-    public const PROTOCOL = 'research_idea_inbox_v1';
+    public const PROTOCOL = 'research_idea_inbox_v2';
 
     /** @return array<string,mixed> */
     public function submit(array $idea): array
@@ -28,9 +28,26 @@ class ResearchIdeaInboxService
 
         $sourceType = strtolower((string) data_get($idea, 'source_type', 'agent'));
         $sourceReference = trim((string) data_get($idea, 'source_reference', '')) ?: null;
+        $executable = [
+            'protocol' => self::PROTOCOL,
+            'context_scope' => $this->canonicalize((array) data_get($idea, 'context_scope', [])),
+            'component_species' => $this->canonicalize((array) data_get($idea, 'component_species', [])),
+            'required_block_type' => (string) data_get($idea, 'required_block_type', 'novelty_pair'),
+            'stopping_rule' => (string) data_get($idea, 'stopping_rule', 'screen_then_frozen_control_then_independent_replay'),
+            'authority_ceiling' => 'information_credit_until_causal_settlement',
+            'promotion_evidence' => false,
+        ];
+        if (! in_array($executable['required_block_type'], ['repair_pair', 'novelty_pair', 'replication',
+            'factorial', 'activation_factorial', 'phase_scope_probe', 'transfer', 'descendant',
+            'coverage_guard', 'adversarial_guard'], true) || trim($executable['stopping_rule']) === '') {
+            throw new InvalidArgumentException('An idea must declare a supported block design and a stopping rule.');
+        }
+        $executable['design_hash'] = hash('sha256', json_encode($this->canonicalize([
+            ...$executable, 'bounded_genes' => $genes]), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         $canonical = [
+            'protocol' => self::PROTOCOL,
             'symbol' => $symbol, 'timeframe' => $timeframe, 'title' => $title,
-            'hypothesis' => $hypothesis, 'bounded_genes' => $genes,
+            'hypothesis' => $hypothesis, 'bounded_genes' => $genes, 'executable_contract' => $executable,
         ];
         $ideaKey = hash('sha256', json_encode($canonical, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         $compatibility = [
@@ -42,15 +59,6 @@ class ResearchIdeaInboxService
             'direct_inheritance_forbidden' => true,
             'candidate_control_required' => true,
             'status' => 'compatible_research_hypothesis',
-        ];
-        $executable = [
-            'protocol' => self::PROTOCOL,
-            'context_scope' => (array) data_get($idea, 'context_scope', []),
-            'component_species' => (array) data_get($idea, 'component_species', []),
-            'required_block_type' => (string) data_get($idea, 'required_block_type', 'novelty_pair'),
-            'stopping_rule' => (string) data_get($idea, 'stopping_rule', 'screen_then_frozen_control_then_independent_replay'),
-            'authority_ceiling' => 'information_credit_until_causal_settlement',
-            'promotion_evidence' => false,
         ];
         if (! Schema::hasTable('research_idea_inbox_entries')) {
             return [...$canonical, 'protocol' => self::PROTOCOL, 'idea_key' => $ideaKey,
@@ -82,12 +90,47 @@ class ResearchIdeaInboxService
             ])->all();
     }
 
-    public function assign(int $id, string $blockKey): void
+    public function assign(int $id, string $blockKey): bool
     {
-        if (! Schema::hasTable('research_idea_inbox_entries')) return;
-        ResearchIdeaInboxEntry::query()->whereKey($id)->where('status', 'ready_for_experiment')->update([
+        if (! Schema::hasTable('research_idea_inbox_entries')) return false;
+        return ResearchIdeaInboxEntry::query()->whereKey($id)->where('status', 'ready_for_experiment')->update([
             'status' => 'assigned_to_frozen_experiment', 'assigned_block_key' => $blockKey,
-        ]);
+        ]) === 1;
+    }
+
+    public function designMatches(array $idea, string $blockType, array $context, array $intervention): bool
+    {
+        $design = (array) data_get($idea, 'executable_contract', []);
+        if (($design['required_block_type'] ?? null) !== $blockType) return false;
+        // Alternate stopping rules stay pending until a matching executor is
+        // implemented; storing a rule is not permission to silently ignore it.
+        if (($design['stopping_rule'] ?? null) !== 'screen_then_frozen_control_then_independent_replay') return false;
+        $normalizer = app(ContextContractV2Service::class);
+        $actual = $normalizer->canonicalAxes($context);
+        foreach ((array) ($design['context_scope'] ?? []) as $key => $value) {
+            $expected = $normalizer->canonicalAxes([$key => $value])[$key] ?? null;
+            if ($expected === null || $expected !== ($actual[$key] ?? null)) return false;
+        }
+        $genes = collect((array) ($idea['bounded_genes'] ?? []));
+        // A reference is not execution. Assign only when the real intervention
+        // is within the submitted legal bounds, not merely a novelty label.
+        $gene = $genes->firstWhere('key', data_get($intervention, 'gene'));
+        if (! $gene || ! array_key_exists('value', $intervention)) return false;
+        $value = $intervention['value'];
+        if (($gene['minimum'] ?? null) !== null && (! is_numeric($value) || $value < $gene['minimum'])) return false;
+        if (($gene['maximum'] ?? null) !== null && (! is_numeric($value) || $value > $gene['maximum'])) return false;
+        if (($gene['allowed_values'] ?? []) !== [] && ! in_array($value, $gene['allowed_values'], true)) return false;
+        // Multi-gene designs cannot be claimed by a one-intervention pair.
+        if ($genes->count() !== 1) return false;
+        $species = app(CooperativeModuleSpeciesService::class)->speciesForGene((string) $gene['key']);
+        $declared = (array) ($design['component_species'] ?? []);
+        return $declared === [] || in_array($species, $declared, true);
+    }
+
+    private function canonicalize(array $value): array
+    {
+        if (! array_is_list($value)) ksort($value);
+        return array_map(fn (mixed $row): mixed => is_array($row) ? $this->canonicalize($row) : $row, $value);
     }
 
     public function settle(string $blockKey, array $receipt): void
@@ -124,6 +167,6 @@ class ResearchIdeaInboxService
             if ($name === '') return null;
             return ['key' => $name, 'minimum' => data_get($row, 'minimum'), 'maximum' => data_get($row, 'maximum'),
                 'allowed_values' => array_values((array) data_get($row, 'allowed_values', []))];
-        })->filter()->values()->all();
+        })->filter()->sortBy('key')->values()->all();
     }
 }

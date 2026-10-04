@@ -294,9 +294,10 @@ class AiLearningLaboratoryTest extends TestCase
             'status' => 'completed',
             'trigger_context' => [
                 ...($source->trigger_context ?? []),
-                'latest_generation_report' => ['next_action' => 'data_edge_audit_required'],
+                'latest_generation_report' => ['next_action' => 'data_edge_audit_completed'],
                 'data_edge_audit' => [
                     'protocol' => 'data_edge_audit_v1',
+                    'generation' => (int) $source->generation,
                     'finding' => 'Historical price windows are available for a pre-registered root portfolio.',
                 ],
             ],
@@ -1304,8 +1305,9 @@ class AiLearningLaboratoryTest extends TestCase
         $budget = app(AgentProfessionalExamService::class)->mutationBudget(
             'XAUUSD', 'H1', $agent->strategy_family,
         );
-        $this->assertContains($key, $budget['confirmed_harmful_keys']);
-        $this->assertNotContains($key, app(AgentProfessionalExamService::class)->allowedMutationKeys([$key, 'unrelated_gene'], $budget));
+        $this->assertSame([], $budget['confirmed_harmful_keys']);
+        $this->assertSame(1, $budget['harmful_hypotheses_observed']);
+        $this->assertContains($key, app(AgentProfessionalExamService::class)->allowedMutationKeys([$key, 'unrelated_gene'], $budget));
     }
 
     public function test_council_selection_includes_the_passed_router_in_combined_replay(): void

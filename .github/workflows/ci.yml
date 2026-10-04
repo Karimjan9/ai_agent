@@ -34,6 +34,8 @@ jobs:
           cache-dependency-path: backend-laravel/package-lock.json
       - name: Project Map freshness
         run: node scripts/project-map/project-map.mjs check
+      - name: Project Map navigation tests
+        run: node --test scripts/project-map/measure.test.mjs scripts/project-map/project-map.test.mjs
       - name: Laravel dependencies
         working-directory: backend-laravel
         run: composer install --no-interaction --prefer-dist

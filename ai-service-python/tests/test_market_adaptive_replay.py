@@ -151,6 +151,29 @@ class MarketAdaptiveReplayTest(unittest.TestCase):
         self.assertGreaterEqual(parts["replay"]["time"].min(), pd.Timestamp("2026-01-01", tz="UTC"))
         self.assertTrue(parts["holdout"]["time"].min() > parts["replay"]["time"].max())
 
+    def test_m5_uses_available_intraday_archive_without_h1_foundation_start(self):
+        time = pd.date_range("2022-01-01", "2025-12-31 23:55", freq="5min", tz="UTC")
+        archive = pd.DataFrame({"time": time, "open": 100., "high": 101.,
+                                "low": 99., "close": 100., "volume": 1})
+        parts = MarketAdaptiveReplayService().split_dataset(
+            archive, timeframe="M5", paper_only_2026=True,
+        )
+        self.assertGreaterEqual(len(parts["foundation"]), 2000)
+        self.assertEqual(parts["foundation"]["time"].min(), time.min())
+        self.assertLess(parts["foundation"]["time"].max(), parts["replay"]["time"].min())
+        self.assertLess(parts["replay"]["time"].max(), parts["holdout"]["time"].min())
+        for segment in parts.values():
+            self.assertLess(segment["time"].max(), pd.Timestamp("2026-01-01", tz="UTC"))
+
+        with self.assertRaisesRegex(ValueError, "2005-01-02"):
+            MarketAdaptiveReplayService().split_dataset(archive, timeframe="H1", paper_only_2026=True)
+        with self.assertRaisesRegex(ValueError, "M5 foundation"):
+            MarketAdaptiveReplayService().split_dataset(archive.tail(5000), timeframe="M5", paper_only_2026=True)
+
+    def test_m5_paper_only_boundary_rejects_2026_candles(self):
+        with self.assertRaisesRegex(ValueError, "faqat paper lane"):
+            MarketAdaptiveReplayService().split_dataset(self.df, timeframe="M5", paper_only_2026=True)
+
     def test_paper_only_boundary_replays_historical_rows_without_2026(self):
         pre_2026 = self.df[self.df["time"] < pd.Timestamp("2026-01-01", tz="UTC")].copy()
 

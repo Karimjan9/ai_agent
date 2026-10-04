@@ -19,6 +19,116 @@ class MutationObservabilityTest extends TestCase
 {
     use RefreshDatabase;
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('constructorAbortTypes')]
+    public function test_repeated_deterministic_constructor_exhaustion_is_terminal_without_rewriting_its_failed_cohort(string $abortKey, string $abortReason): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'name' => 'Constructor retry boundary',
+            'strategy_families' => ['volatility'], 'is_active' => true,
+        ]);
+        $reason = 'CONSTRUCTOR_MUTATION_INVARIANT_FAILED';
+        $context = [
+            'generation_plan' => [['family' => 'volatility'], ['family' => 'volatility']],
+            'constructor_audit' => [
+                'created_agents' => 1,
+                'skipped_zero_diff_slots' => [['slot' => 2, 'reason' => $reason]],
+            ],
+            $abortKey => ['reason_code' => $abortReason],
+        ];
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'learning_confirmation', 'status' => 'technical_quarantine',
+            'population_size' => 1, 'trigger_context' => $context,
+        ]);
+        $model = ModelVersion::create([
+            'name' => 'constructor-retry-control', 'strategy' => 'constructor-retry-control',
+            'version' => 'v1', 'generation' => 1, 'status' => 'testing',
+            'parameters' => app(\App\Services\StrategyParameterSchemaService::class)->defaults('volatility'),
+            'metadata' => [],
+        ]);
+        LabAgent::create([
+            'lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'volatility',
+            'origin' => 'g98_council', 'lifecycle_status' => 'technical_quarantine',
+        ]);
+
+        $this->assertTrue(LabPopulationService::constructionIncomplete($generation->fresh()));
+
+        $context['constructor_continuation'] = [
+            'complete' => false, 'planned_slots' => 2, 'completed_slots' => [1],
+            'created_slots_this_run' => [], 'failures' => [['slot' => 2, 'reason' => 'CONSTRUCTOR_EXCEPTION']],
+        ];
+        $generation->update(['trigger_context' => $context]);
+        $this->assertTrue(LabPopulationService::constructionIncomplete($generation->fresh()));
+
+        $context['constructor_continuation']['failures'][0]['reason'] = $reason;
+        $generation->update(['trigger_context' => $context]);
+        $this->assertFalse(LabPopulationService::constructionIncomplete($generation->fresh()));
+        $this->assertSame('technical_quarantine', $generation->fresh()->status);
+        $this->assertSame(1, $generation->fresh()->agents()->count());
+    }
+
+    public static function constructorAbortTypes(): array
+    {
+        return [
+            'ordinary' => ['constructor_contract_abort', 'INCOMPLETE_GENERATION_POPULATION'],
+            'shadow' => ['shadow_research_constructor_abort', 'INCOMPLETE_SHADOW_RESEARCH_POPULATION'],
+            'rescue' => ['controlled_rescue_constructor_abort', 'INCOMPLETE_CONTROLLED_RESCUE_POPULATION'],
+        ];
+    }
+
+    public function test_cooperative_shadow_candidate_retains_its_mutation_when_template_was_a_frozen_control(): void
+    {
+        $lab = AiLaboratory::create([
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'name' => 'Shadow paired mutation',
+            'strategy_families' => ['differential_router'], 'is_active' => true,
+        ]);
+        $generation = LabGeneration::create([
+            'ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'shadow_research',
+            'status' => 'draft', 'population_size' => 2, 'trigger_context' => [],
+        ]);
+        $niche = [
+            'role' => 'frozen_control', 'specialist_role' => 'frozen_control',
+            'shadow_only' => true, 'regime' => 'trend_up', 'volatility' => 'normal_volatility',
+            'shadow_research_lane' => ['protocol' => 'shadow_research_governor_v1', 'role' => 'frozen_control'],
+            'cooperative_experiment_block' => [
+                'protocol' => \App\Services\CooperativeContextualEvolutionCouncilService::PROTOCOL,
+                'block_key' => 'shadow-pair', 'block_type' => 'repair_pair', 'arm' => 'exact_frozen_control',
+                'seat_count' => 2, 'arm_ordinal' => 1,
+            ],
+            'control_pair_contract' => [
+                'protocol' => 'exact_frozen_control_pair_v2', 'pair_key' => 'shadow-pair',
+                'role' => 'control', 'required_for_candidate' => false,
+            ],
+            'control_only' => true,
+        ];
+        $service = app(LabPopulationService::class);
+        $create = new \ReflectionMethod($service, 'createAgent');
+        $failure = null;
+        $arguments = [$generation, 'differential_router', 'g98_council', 1, 'repair_pair', $niche, null, null, 0, &$failure];
+        $this->assertTrue($create->invokeArgs($service, $arguments), (string) $failure);
+
+        $niche['control_only'] = false;
+        $niche['declared_gene'] = 'minimum_signal_confidence';
+        $niche['control_pair_contract']['role'] = 'candidate';
+        $niche['control_pair_contract']['required_for_candidate'] = true;
+        $niche['cooperative_experiment_block']['arm'] = 'candidate';
+        $niche['cooperative_experiment_block']['arm_ordinal'] = 2;
+        $arguments = [$generation->fresh(), 'differential_router', 'g98_council', 2, 'repair_pair', $niche, null, null, 0, &$failure];
+        $this->assertTrue($create->invokeArgs($service, $arguments), (string) $failure);
+        $agents = $generation->agents()->with('modelVersion')->orderBy('id')->get();
+        $this->assertCount(2, $agents);
+        $this->assertSame([], $agents[0]->parameter_diff);
+        $this->assertCount(1, $agents[1]->parameter_diff);
+        // The intent has no declared value, so the bounded compiler may pick
+        // another legal prerequisite. Its recorded baseline must stay exact.
+        $gene = array_key_first($agents[1]->parameter_diff);
+        $this->assertEquals($agents[0]->modelVersion->parameters[$gene],
+            data_get($agents[1]->parameter_diff, $gene.'.old'));
+        $this->assertNotEquals(data_get($agents[1]->parameter_diff, $gene.'.old'),
+            data_get($agents[1]->parameter_diff, $gene.'.new'));
+    }
+
     public function test_exhausted_gene_gets_a_same_target_replacement_before_architecture_escape(): void
     {
         $service = app(LabPopulationService::class);

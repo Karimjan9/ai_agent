@@ -22,6 +22,8 @@ class RunLifecycleCycle extends Command
             ['expected-generation-id', null, InputOption::VALUE_OPTIONAL, 'Frozen generation authorized by the research-loop arbiter', null],
             ['settle-only', null, InputOption::VALUE_NONE, 'Drain only the frozen generation; never admit a successor in this invocation'],
             ['learning-confirmation', null, InputOption::VALUE_NONE, 'Open the exact causal learning-confirmation generation selected by the research-loop arbiter'],
+            ['prospective-source-pair-id', null, InputOption::VALUE_OPTIONAL, 'Frozen screen pair selected for prospective repair', null],
+            ['prospective-source-hash', null, InputOption::VALUE_OPTIONAL, 'Frozen prospective repair source hash', null],
             ['json', null, InputOption::VALUE_NONE, 'Output machine-readable JSON'],
         ];
     }
@@ -33,6 +35,11 @@ class RunLifecycleCycle extends Command
         $cycleId = $this->option('cycle-id') ? (string) $this->option('cycle-id') : null;
         $expectedGenerationId = $this->option('expected-generation-id') !== null
             ? (int) $this->option('expected-generation-id')
+            : null;
+        $prospectiveExpectation = $this->option('prospective-source-pair-id') !== null
+            || $this->option('prospective-source-hash') !== null
+            ? ['source_pair_id' => (int) $this->option('prospective-source-pair-id'),
+                'source_hash' => (string) $this->option('prospective-source-hash')]
             : null;
 
         if (! (bool) config('services.lifecycle_orchestrator.enabled', true)) {
@@ -49,6 +56,7 @@ class RunLifecycleCycle extends Command
             $expectedGenerationId,
             (bool) $this->option('settle-only'),
             (bool) $this->option('learning-confirmation'),
+            $prospectiveExpectation,
         );
 
         if ($this->option('json')) {

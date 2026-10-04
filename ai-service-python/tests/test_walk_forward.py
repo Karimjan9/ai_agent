@@ -231,7 +231,9 @@ class WalkForwardSplitTest(unittest.TestCase):
             }
 
         progress = []
-        with patch.object(WalkForwardService, "_run_segment", side_effect=segment_result) as replay:
+        with patch.object(WalkForwardService, "_run_segment", side_effect=segment_result) as replay, patch(
+            "app.services.walk_forward.time.thread_time", side_effect=range(18),
+        ):
             outcome = WalkForwardService().run_causal_confirmation(
                 payload,
                 frame,
@@ -273,6 +275,11 @@ class WalkForwardSplitTest(unittest.TestCase):
         self.assertTrue(protocol["independence_verified"])
         self.assertTrue(protocol["purge_embargo_applied"])
         self.assertFalse(outcome["result"]["promotion_evidence"])
+        resources = outcome["result"]["benchmark"]["arm_replay_resources"]
+        self.assertEqual("arm_replay_resources_v1", resources["protocol"])
+        self.assertEqual(9.0, resources["cpu_seconds"])
+        self.assertEqual(9, resources["measured_segments"])
+        self.assertFalse(resources["promotion_evidence"])
         self.assertEqual(
             (["causal_fold_started", "causal_fold_completed"] * 9)
             + ["causal_audit_trace_started", "causal_audit_trace_completed"],

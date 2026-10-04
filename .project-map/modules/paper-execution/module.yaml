@@ -9,6 +9,7 @@ aliases:
   - smart-discipline
   - risk-sentinel
 paths:
+  - backend-laravel/app/Services/PaperAuthorityAdmissionService.php
   - backend-laravel/app/Services/PaperTradingExecutionService.php
   - backend-laravel/app/Services/PaperExecutionStateMachineService.php
   - backend-laravel/app/Services/SmartDisciplineEngineService.php
@@ -30,7 +31,9 @@ dependencies:
   - confirmation-entry
   - laravel-python-contract
   - market-data
+  - causal-learning
 invariants:
+  - E3/E4 reuse, capture and fill re-read the persisted model and candidate against the original frozen identity; fill locks candidate/model/signal until order and entry-fill publication. Legacy admissions or signals without the new identity are blocked, never backfilled.
   - A changed or missing sealed contract cannot create a paper order.
   - NO_TRADE decisions are persisted evidence, not implicit errors.
   - Invalid process outcomes are quarantined from learning.
@@ -41,6 +44,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php
+  - backend-laravel/tests/Feature/PostPaperConfirmedTraitAdmissionTest.php
   - backend-laravel/tests/Feature/SmartDisciplineEngineTest.php
   - backend-laravel/tests/Feature/PaperConfidenceCalibrationTest.php
   - backend-laravel/tests/Feature/ExecutionRiskSentinelServiceTest.php

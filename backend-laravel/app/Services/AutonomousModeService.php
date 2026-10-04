@@ -55,6 +55,29 @@ class AutonomousModeService
         return $this->setEnabled($symbol, $timeframe, false, $actor, $reason, null);
     }
 
+    /** Pause new autonomous work without archiving the current generation. */
+    public function pause(string $symbol = 'XAUUSD', string $timeframe = 'H1', string $actor = 'operator', string $reason = 'operator_pause'): array
+    {
+        return $this->setEnabled($symbol, $timeframe, false, $actor, $reason, null, 'paused');
+    }
+
+    /** Fail closed after a detected invariant violation; an explicit START is required after diagnosis. */
+    public function safetyHalt(string $symbol, string $timeframe, string $reason): array
+    {
+        return $this->setEnabled($symbol, $timeframe, false, 'research-loop-arbiter', $reason, null, 'safety_halt');
+    }
+
+    /** Resume the same durable lineage; the arbiter reconciles it before selecting a successor. */
+    public function resume(string $symbol = 'XAUUSD', string $timeframe = 'H1', string $actor = 'operator', string $reason = 'operator_resume'): array
+    {
+        $control = $this->status($symbol, $timeframe);
+        if (in_array($control['state'], ['stopped', 'draining', 'safety_halt'], true)) {
+            return [...$control, 'changed' => false, 'reason_code' => 'RESEARCH_RUN_NOT_PAUSED'];
+        }
+
+        return $this->setEnabled($symbol, $timeframe, true, $actor, $reason, null, 'running');
+    }
+
     public function enabled(string $symbol = 'XAUUSD', string $timeframe = 'H1'): bool
     {
         return (bool) $this->status($symbol, $timeframe)['enabled'];
@@ -131,6 +154,9 @@ class AutonomousModeService
         );
         $unrecoveredBlockedCycles = $blockedCycles->whereNotIn('id', $recoveredBlockedCycles->pluck('id'));
         $attentionReasons = [];
+        if (($control['state'] ?? null) === 'safety_halt') {
+            $attentionReasons[] = 'RESEARCH_RUN_SAFETY_HALT';
+        }
         try {
             $constructor = app(LabPopulationService::class)->constructorStatus(
                 (string) $control['symbol'],
@@ -286,6 +312,7 @@ class AutonomousModeService
             ] : null,
             'queue' => $queue,
             'instrument_learning' => app(InstrumentLearningMonitorService::class)->snapshot($control['symbol']),
+            'independent_research_data' => app(InstrumentResearchWindowService::class)->readiness(),
             'research_loop' => [
                 'single_owner' => ResearchLoopArbiterService::class,
                 'latest_decision' => $loopDecision ? [
@@ -330,6 +357,10 @@ class AutonomousModeService
         $enabled = $event === null
             ? (bool) config('services.autonomous_mode.default_enabled', true)
             : (bool) data_get($event->payload, 'enabled', false);
+        $storedState = (string) data_get($event?->payload, 'state', $enabled ? 'running' : 'stopped');
+        if (in_array($storedState, ['paused', 'safety_halt'], true)) {
+            $enabled = false;
+        }
         $controllerProfile = $this->normalizeControllerProfile(
             (string) data_get(
                 $event?->payload,
@@ -347,6 +378,14 @@ class AutonomousModeService
             : null;
         $activeStatuses = ['draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation'];
         $active = $latest !== null && in_array((string) $latest->status, $activeStatuses, true);
+        $inFlightEvaluation = $storedState === 'paused' && $latest !== null && Schema::hasTable('lab_evaluation_runs')
+            && DB::table('lab_evaluation_runs')->where('lab_generation_id', $latest->id)
+                ->whereIn('status', ['started', 'running', 'processing'])->exists();
+        $inFlightChild = $storedState === 'paused' && Schema::hasTable('research_loop_decisions')
+            && ResearchLoopDecision::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
+                ->where('status', 'running')->where('updated_at', '>=', now()->subHour())->exists();
+        $effectiveState = $storedState === 'paused' && ($inFlightEvaluation || $inFlightChild)
+            ? 'pausing' : $storedState;
 
         return [
             'protocol' => self::PROTOCOL,
@@ -372,7 +411,8 @@ class AutonomousModeService
                     : [$timeframe => 'decision_and_execution'],
             ],
             'enabled' => $enabled,
-            'state' => $enabled ? 'running' : ($active ? 'draining' : 'stopped'),
+            'state' => in_array($effectiveState, ['pausing', 'paused', 'safety_halt'], true)
+                ? $effectiveState : ($enabled ? 'running' : ($active ? 'draining' : 'stopped')),
             'controller_profile' => $controllerProfile,
             'controller_semantics' => $controllerProfile === self::CONTROLLER_STRONG
                 ? 'strong model receives deep read-only diagnostics; scheduler remains the sole work authority'
@@ -389,9 +429,13 @@ class AutonomousModeService
             'actor' => data_get($event?->payload, 'actor'),
             'reason' => data_get($event?->payload, 'reason'),
             'changed_at' => data_get($event?->payload, 'changed_at'),
-            'next_action' => $enabled
-                ? 'scheduler_owns_generation_learning_and_recovery'
-                : ($active ? 'monitor_until_admitted_work_drains' : 'monitor_only_until_ai_start'),
+            'next_action' => $storedState === 'safety_halt'
+                ? 'diagnose_invariant_then_explicit_ai_start'
+                : ($storedState === 'paused'
+                ? 'await_operator_resume_of_existing_generation'
+                : ($enabled
+                    ? 'scheduler_owns_generation_learning_and_recovery'
+                    : ($active ? 'monitor_until_admitted_work_drains' : 'monitor_only_until_ai_start'))),
             'promotion_evidence' => false,
         ];
     }
@@ -404,6 +448,7 @@ class AutonomousModeService
         string $actor,
         string $reason,
         ?string $controllerProfile,
+        ?string $requestedState = null,
     ): array {
         [$symbol, $timeframe] = $this->scope($symbol, $timeframe);
         $actor = trim($actor) !== '' ? trim($actor) : 'operator';
@@ -423,19 +468,26 @@ class AutonomousModeService
             ];
         }
 
-        $changed = DB::transaction(function () use ($symbol, $timeframe, $enabled, $actor, $reason, $controllerProfile): bool {
+        $changed = DB::transaction(function () use ($symbol, $timeframe, $enabled, $actor, $reason, $controllerProfile, $requestedState): bool {
             $key = $this->eventKey($symbol, $timeframe);
             $current = SystemEvent::query()->where('event_key', $key)->lockForUpdate()->first();
             $currentEnabled = $current === null
                 ? (bool) config('services.autonomous_mode.default_enabled', true)
                 : (bool) data_get($current->payload, 'enabled', false);
+            $currentState = (string) data_get($current?->payload, 'state', $currentEnabled ? 'running' : 'stopped');
+            $nextState = $requestedState ?? ($enabled ? 'running' : 'stopped');
             $currentProfile = $this->normalizeControllerProfile((string) data_get(
                 $current?->payload,
                 'controller_profile',
                 config('services.autonomous_mode.default_controller_profile', self::CONTROLLER_LIGHTWEIGHT),
             ));
             $nextProfile = $controllerProfile ?? $currentProfile;
-            if ($current !== null && $currentEnabled === $enabled && $currentProfile === $nextProfile) {
+            $transition = in_array($nextState, ['paused', 'safety_halt'], true)
+                ? strtoupper($nextState)
+                : ($currentState === 'paused' && $nextState === 'running'
+                    ? 'RESUME'
+                    : ($enabled ? 'START' : 'STOP'));
+            if ($current !== null && $currentEnabled === $enabled && $currentProfile === $nextProfile && $currentState === $nextState) {
                 return false;
             }
 
@@ -443,7 +495,7 @@ class AutonomousModeService
             $payload = [
                 'protocol' => self::PROTOCOL,
                 'enabled' => $enabled,
-                'state' => $enabled ? 'running' : 'stopped',
+                'state' => $nextState,
                 'controller_profile' => $nextProfile,
                 'actor' => $actor,
                 'reason' => $reason,
@@ -457,9 +509,11 @@ class AutonomousModeService
                 'symbol' => $symbol,
                 'timeframe' => $timeframe,
                 'severity' => $enabled ? 'info' : 'warning',
-                'summary' => $enabled
-                    ? 'Autonomous research mode started; scheduler owns bounded work admission.'
-                    : 'Autonomous research mode stopped; new work is denied while admitted work drains.',
+                'summary' => in_array($nextState, ['paused', 'safety_halt'], true)
+                    ? 'Autonomous research '.strtoupper($nextState).'; the current generation remains durable and no new research is admitted.'
+                    : ($enabled
+                        ? 'Autonomous research mode started; scheduler owns bounded work admission.'
+                        : 'Autonomous research mode stopped; new work is denied while admitted work drains.'),
                 'payload' => $payload,
                 'occurred_at' => now(),
             ]);
@@ -470,12 +524,12 @@ class AutonomousModeService
                 'symbol' => $symbol,
                 'timeframe' => $timeframe,
                 'severity' => $enabled ? 'info' : 'warning',
-                'summary' => $enabled ? 'Autonomous mode START accepted.' : 'Autonomous mode STOP accepted.',
+                'summary' => 'Autonomous mode '.$transition.' accepted.',
                 'payload' => $payload,
                 'occurred_at' => now(),
             ]);
 
-            return $currentEnabled !== $enabled || $currentProfile !== $nextProfile;
+            return $currentEnabled !== $enabled || $currentProfile !== $nextProfile || $currentState !== $nextState;
         });
 
         return [...$this->status($symbol, $timeframe), 'changed' => $changed];
@@ -508,8 +562,8 @@ class AutonomousModeService
             'role' => $strong ? 'supervised_diagnostic_monitor' : 'start_stop_and_monitor_only',
             'diagnostic_depth' => $strong ? 'deep' : 'compact',
             'allowed_commands' => $strong
-                ? ['ai:start --controller=strong --json', 'ai:status --controller=strong --json', 'ai:stop --json']
-                : ['ai:start --controller=lightweight --json', 'ai:status --controller=lightweight --json', 'ai:stop --json'],
+                ? ['ai:start --controller=strong --json', 'ai:status --controller=strong --json', 'ai:pause --json', 'ai:resume --json', 'ai:stop --json']
+                : ['ai:start --controller=lightweight --json', 'ai:status --controller=lightweight --json', 'ai:pause --json', 'ai:resume --json', 'ai:stop --json'],
             'manual_generation_commands_allowed' => false,
             'force_or_gate_bypass_allowed' => false,
             'scheduler_owns_internal_actions' => true,

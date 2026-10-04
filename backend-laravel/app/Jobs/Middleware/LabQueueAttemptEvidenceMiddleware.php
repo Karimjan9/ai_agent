@@ -5,6 +5,7 @@ namespace App\Jobs\Middleware;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\LabAgent;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\ResearchReleaseSealService;
 use Closure;
 use Throwable;
 
@@ -22,10 +23,20 @@ class LabQueueAttemptEvidenceMiddleware
         // This middleware runs after the fairness and mutex middleware. A
         // release before this point is a queue deferral, not a replay attempt;
         // it must not create a terminal run with missing request/data evidence.
-        $run = $ledger->beginRun($agent, $job->mode === 'screen' ? 'screening' : 'full_validation', $job->mode, [
-            'attempt' => max(1, (int) $job->attempts()), 'queue' => $job->effectiveQueue(),
-            'source' => self::class,
-        ]);
+        try {
+            $run = $ledger->beginRun($agent, $job->mode === 'screen' ? 'screening' : 'full_validation', $job->mode, [
+                'attempt' => max(1, (int) $job->attempts()), 'queue' => $job->effectiveQueue(),
+                'source' => self::class,
+            ]);
+        } catch (Throwable $error) {
+            // The sealed program can never become today's program by waiting
+            // another 30 seconds. Consume this job with a technical refusal,
+            // rather than exhausting thousands of queue attempts before any
+            // evaluator run can be opened.
+            if (! ResearchReleaseSealService::isTerminalDrift($error)) throw $error;
+            $job->terminalizeReleaseDrift($error, $agent);
+            return null;
+        }
         $job->evidenceRunId = $run->run_id;
         $ledger->recordLifecycle($agent, 'queue_attempt_started', [
             'run_id' => $run->run_id, 'attempt' => $job->attempts(), 'queue' => $job->effectiveQueue(),

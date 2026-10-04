@@ -11,6 +11,13 @@ class StrategyLibraryCompilerService
     public function library(): array
     {
         return [
+            // Register the existing closed-MTF Python runtime itself, not an
+            // EMA pullback alias copied from a historical Edge hypothesis.
+            $this->spec('str_042_confirmation_entry_mtf', 'confirmation_entry_mtf', 'any',
+                ['h4_direction', 'h1_external_structure'], ['closed_m15_setup'],
+                ['closed_m5_trigger'], ['closed_m15_confirmation', 'h1_poi_location'],
+                ['setup_topology_policy', 'location_tolerance_atr', 'confirmation_topology_policy', 'confirmation_min_score'],
+                'research', ['H4', 'H1', 'M15', 'M5']) + ['materialization_owner' => 'academy_experiment'],
             $this->spec('str_001_ema_adx_pullback', 'trend_following', 'trend', ['ema_alignment', 'ema_slope'], ['ema_pullback'], ['closed_candle_rejection'], ['rsi_zone', 'adx_strength'], ['ema_fast', 'ema_slow', 'adx_min', 'atr_multiplier']),
             $this->spec('str_003_donchian_breakout', 'breakout', 'breakout_compression', ['ema_alignment'], ['donchian_previous_break'], ['closed_candle_break'], ['adx_strength', 'atr_expansion'], ['lookback', 'atr_multiplier']),
             $this->spec('str_010_bollinger_squeeze', 'breakout', 'breakout_compression', ['ema_slope'], ['bb_compression'], ['closed_candle_break'], ['adx_strength', 'atr_expansion'], ['bb_period', 'bb_width_percentile']),
@@ -85,6 +92,7 @@ class StrategyLibraryCompilerService
         if (! $spec || (string) $spec['status'] === 'shadow_only') return null;
 
         return match ($id) {
+            'str_042_confirmation_entry_mtf' => ['family' => 'confirmation_entry_mtf', 'architecture' => 'confirmation_entry_mtf'],
             'str_001_ema_adx_pullback' => ['family' => 'trend', 'architecture' => 'trend_pullback'],
             'str_003_donchian_breakout' => ['family' => 'breakout', 'architecture' => 'breakout_retest'],
             'str_010_bollinger_squeeze' => ['family' => 'volatility', 'architecture' => 'volatility_compression_expansion'],
@@ -113,6 +121,9 @@ class StrategyLibraryCompilerService
     {
         $runtime = strtolower(trim($baseStrategy));
         $regimes = match ($runtime) {
+            // Capability envelope only: the existing runtime decides using
+            // closed H4/H1 structure and M15/M5 predicates, not this label.
+            'confirmation_entry_mtf_v1' => ['trend_up', 'trend_down', 'range', 'unknown', 'transition', 'high_volatility', 'low_volatility'],
             'trend_v1', 'trend_pullback_v1', 'trend_retest_v1', 'trend_breakout_retest_v1',
             'momentum_v1', 'momentum_pullback_v1' => ['trend_up', 'trend_down'],
             'breakout_v1', 'breakout_continuation_v1', 'volatility_v1',
@@ -135,6 +146,7 @@ class StrategyLibraryCompilerService
     public function runtimeBaseStrategy(string $id): ?string
     {
         return match ($id) {
+            'str_042_confirmation_entry_mtf' => 'confirmation_entry_mtf_v1',
             'str_001_ema_adx_pullback' => 'trend_v1',
             'str_031_bos_retest', 'str_037_fvg_retest' => 'trend_retest_v1',
             'str_003_donchian_breakout' => 'breakout_v1',

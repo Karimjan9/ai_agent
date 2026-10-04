@@ -59,3 +59,24 @@ trace consumes their hash-bound chain rather than recalculating stage predicates
 Instrument assignments now derive their source components from the frozen
 passport, and a cached assignment is invalidated when any source identity
 drifts. Python independently rejects a rehashed stale source before replay.
+
+## 2026-09 - Exact instrument context across runtimes
+
+Python emits a venue-phase-specific trade envelope and activation key while
+retaining legacy session diagnostics. Laravel settles a phase-local posterior
+only from matching exact candidate/control contexts. See ADR-012.
+
+## 2026-09-28 - Loaded release and upstream scope evidence
+
+Prospective requests and responses bind actual worker boot-source receipts;
+the API checks before cache use and replay workers check before computation.
+Specialist/composition receipts preserve upstream opportunities and exact veto
+reasons, including absent measured liquidity. Modeled execution spread cannot
+impersonate that observation. See ADR-016 and ADR-017.
+
+## 2026-10-03 - Authenticated future research execution boundary
+
+The original server window owner now signs stable execution-admission contracts
+for completed authorized post-paper full replay. Python checks exact actual CSV
+inventory/UTC chronology before caches and consumed source rows after loading.
+Literal 2026, independence and credit boundaries remain separate (ADR-023).

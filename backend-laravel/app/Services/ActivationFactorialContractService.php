@@ -60,6 +60,7 @@ class ActivationFactorialContractService
         $bGene = (string) ($b['gene'] ?? '');
         $manifest = (string) data_get($block, 'activation_manifest_hash', '');
         $activation = (array) data_get($first->modelVersion?->metadata, 'activation_factorial', []);
+        $validationPlan = (array) data_get($activation, 'validation_plan', []);
         $components = (array) data_get($first->modelVersion?->metadata,
             'smart_composition.composition_passport.components', []);
         $reasons = [];
@@ -68,6 +69,7 @@ class ActivationFactorialContractService
             data_get($activation, 'source_agent_id'), data_get($activation, 'source_response_hash'),
             data_get($activation, 'source_model_version_id'), data_get($activation, 'source_parameter_hash'),
             data_get($activation, 'source_data_hash'), data_get($activation, 'hypothesis_key'),
+            data_get($validationPlan, 'plan_hash'),
             $components, $a, $b, ProofFrontierService::MIN_PAIRED_OPPORTUNITIES,
             ProofFrontierService::MIN_SIGNAL_OPPORTUNITIES,
             data_get($first->modelVersion?->metadata, 'specialist_council_membership.contextual_cell.cell_hash'),
@@ -78,6 +80,15 @@ class ActivationFactorialContractService
             || (int) data_get($activation, 'minimum_signal_opportunities') !== ProofFrontierService::MIN_SIGNAL_OPPORTUNITIES
             || $aGene === '' || $bGene === '' || $aGene === $bGene || $components === []) {
             $reasons[] = 'ACTIVATION_FACTORIAL_MANIFEST_INVALID';
+        }
+        if (! app(ActivationValidationPlanService::class)->valid($validationPlan, [
+            'hypothesis_key' => data_get($activation, 'hypothesis_key'),
+            'source_data_hash' => data_get($activation, 'source_data_hash'),
+            'source_response_hash' => data_get($activation, 'source_response_hash'),
+            'source_execution_hash' => data_get($activation, 'source_execution_hash'),
+            'source_mtf_bundle_hash' => data_get($activation, 'source_mtf_bundle_hash'),
+        ])) {
+            $reasons[] = 'ACTIVATION_VALIDATION_PLAN_INVALID';
         }
         $executableHashes = [];
         foreach ($required as $arm) {
@@ -96,6 +107,7 @@ class ActivationFactorialContractService
                 || (array) data_get($actual, 'factor_a', []) !== $a
                 || (array) data_get($actual, 'factor_b', []) !== $b
                 || (string) data_get($armActivation, 'hypothesis_key') !== (string) data_get($activation, 'hypothesis_key')
+                || (array) data_get($armActivation, 'validation_plan', []) !== $validationPlan
                 || (string) data_get($armActivation, 'executable_hash') !== $expectedExecutableHash
                 || $cellHash === ''
                 || (array) data_get($agent->modelVersion?->metadata,

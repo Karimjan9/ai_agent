@@ -356,8 +356,13 @@ return [
     // it is not a separate organism, execution lane, or genetic population.
     'xauusd_organism' => [
         'symbol' => 'XAUUSD',
+        // Archive-backed research does not wait for new live H1 bars. This
+        // changes scheduling only; paper, risk and causal authority stay gated.
+        'historical_research_until_champion' => (bool) env('XAUUSD_HISTORICAL_RESEARCH_UNTIL_CHAMPION', true),
         'laboratory_storage_timeframe' => env('XAUUSD_ORGANISM_STORAGE_TIMEFRAME', 'H1'),
         'execution_timeframe' => env('XAUUSD_ORGANISM_EXECUTION_TIMEFRAME', 'M5'),
+        // Explicit prospective training fork only; old generation manifests stay immutable.
+        'research_m5_dataset' => env('LAB_RESEARCH_M5_DATASET', 'foundation_intraday_10y'),
         'timeframe_roles' => [
             'H4' => 'macro_bias',
             'H1' => 'regime_and_location',
@@ -788,6 +793,13 @@ return [
         'negative_quarantine_after' => (int) env('LAB_LEARNING_LANE_NEGATIVE_QUARANTINE_AFTER', 5),
     ],
 
+    // No future paper period is authorized by default. A row must explicitly
+    // seal protocol, approval/id/date, UTC bounds and paper-only restrictions;
+    // it never shifts the pre-2026 research cutoff or authorizes new research.
+    'research_paper_epochs' => [
+        'authorized_paper_epochs' => json_decode((string) env('AUTHORIZED_PAPER_EPOCHS_JSON', '[]'), true) ?: [],
+    ],
+
     // Sparse activation prevents a state router from silently turning every
     // available indicator into one untestable mega-strategy.
     'instrument_policy' => [
@@ -797,6 +809,10 @@ return [
         'minimum_independent_windows' => max(3, (int) env('INSTRUMENT_POLICY_MIN_INDEPENDENT_WINDOWS', 3)),
         'minimum_confirmed_net_utility' => max(.00001, (float) env('INSTRUMENT_POLICY_MIN_CONFIRMED_NET_UTILITY', .001)),
         'minimum_forbidden_net_utility' => min(-.00001, (float) env('INSTRUMENT_POLICY_MIN_FORBIDDEN_NET_UTILITY', -.001)),
+        // No research interval is authorized by default. Each configured row
+        // must seal authorization_id, research_epoch_id, UTC bounds, purpose
+        // and the exact replay dataset SHA-256; 2026 remains paper-only.
+        'authorized_research_windows' => json_decode((string) env('INSTRUMENT_RESEARCH_WINDOWS_JSON', '[]'), true) ?: [],
     ],
 
     // Versioned parameters consumed by lab, full replay, paper and holdout.

@@ -5,17 +5,136 @@ namespace App\Services;
 use App\Models\AgentLearningCausalExperiment;
 use App\Models\InstrumentInvocationLedger;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabLearningLanePair;
 use App\Models\PaperOrder;
 use App\Models\PaperSignal;
 use App\Models\PaperSignalOutcome;
 use App\Models\TradingInstrument;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class InstrumentInvocationLedgerService
 {
     public const PROTOCOL = 'instrument_invocation_ledger_v1';
 
     public function __construct(private TradingInstrumentOperatingSystemService $operatingSystem) {}
+
+    /** Bounded recovery of missing projections, not a rewrite of settled history. */
+    public function pendingResearchPairs(string $symbol, string $timeframe = 'H1', int $limit = 1, ?int $pairId = null): array
+    {
+        if (! Schema::hasTable('instrument_invocation_ledger') || ! Schema::hasTable('lab_learning_lane_pairs')) return [];
+        $rows = InstrumentInvocationLedger::query()->where('symbol', strtoupper($symbol))
+            ->where('timeframe', strtoupper($timeframe))->whereNull('paper_signal_id')
+            ->whereNull('settled_at')->where('verdict', 'awaiting_paired_control')
+            ->when($pairId, fn ($query) => $query->whereIn('lab_agent_id',
+                LabLearningLanePair::whereKey($pairId)->pluck('candidate_agent_id')
+                    ->concat(LabLearningLanePair::whereKey($pairId)->pluck('control_agent_id'))))
+            ->orderBy('id')->limit(200)->get()->groupBy('lab_agent_id');
+        if ($rows->isEmpty()) return [];
+        $ready = [];
+        $pairs = LabLearningLanePair::query()->where('symbol', strtoupper($symbol))
+            ->where('timeframe', strtoupper($timeframe))->where('pair_integrity_status', 'verified')
+            ->where(fn ($query) => $query->whereIn('candidate_agent_id', $rows->keys())->orWhereIn('control_agent_id', $rows->keys()))
+            ->when($pairId, fn ($query) => $query->whereKey($pairId))
+            ->with('candidateAgent.modelVersion', 'controlAgent.modelVersion',
+                'candidateResponseMap', 'controlResponseMap')->orderByDesc('id')->limit(20)->get();
+        foreach ($pairs as $pair) {
+            if (! $pair->isVerifiedControlPair()) continue;
+            $assignment = (array) data_get($pair->candidateAgent?->modelVersion?->metadata, 'instrument_research_assignment', []);
+            // A reservation and an attested assignment must still name this
+            // exact pair/run. Old terminal rejection receipts remain intact.
+            if (! $this->ordinaryReservationMatchesPair($assignment, $pair)
+                && ! $this->causalTripletReservationMatchesPair($assignment, $pair)) continue;
+            $pending = $rows->get($pair->candidate_agent_id, collect())->filter(fn ($row): bool =>
+                (string) data_get($row->metadata, 'evidence_run_id') === (string) $pair->candidate_evidence_run_id
+                && filled(data_get($assignment, 'assignment_hash'))
+                && hash_equals((string) $assignment['assignment_hash'], (string) data_get($row->metadata, 'assignment_hash', '')));
+            $controlPending = $this->controlReferenceRows($pair);
+            if ($pending->isEmpty() && $controlPending->isEmpty()) continue;
+            $matched = $this->pairedContextOutcomes($pair, (array) $pair->candidate_metrics, (array) $pair->control_metrics);
+            $ready[] = ['pair_id' => (int) $pair->id, 'generation_id' => (int) $pair->lab_generation_id,
+                'candidate_agent_id' => (int) $pair->candidate_agent_id,
+                'pending_invocations' => $pending->count() + $controlPending->count(),
+                'pending_candidate_invocations' => $pending->count(),
+                'pending_control_references' => $controlPending->count(),
+                'powered_exact_contexts' => count($matched), 'priority' => $matched === [] ? 1 : 2,
+                'source' => 'exact_control_projection_debt', 'economic_credit_allowed' => false];
+        }
+        usort($ready, fn (array $a, array $b): int => [$b['priority'], -$b['pair_id']] <=> [$a['priority'], -$a['pair_id']]);
+        return array_slice($ready, 0, max(1, min(20, $limit)));
+    }
+
+    public function reconcileResearchPair(int $pairId): array
+    {
+        return DB::transaction(function () use ($pairId): array {
+            $pair = LabLearningLanePair::query()->lockForUpdate()->find($pairId);
+            $pending = $pair ? InstrumentInvocationLedger::query()->where('lab_agent_id', $pair->candidate_agent_id)
+                ->whereNull('paper_signal_id')->whereNull('settled_at')->where('verdict', 'awaiting_paired_control')
+                ->lockForUpdate()->get()->filter(fn ($row): bool =>
+                    (string) data_get($row->metadata, 'evidence_run_id') === (string) $pair->candidate_evidence_run_id) : collect();
+            $controlBefore = $pair ? $this->controlReferenceRows($pair)->count() : 0;
+            $settled = $pending->isEmpty() ? 0 : $this->settleResearchPair($pair, true);
+            if ($pair) $this->settleControlReferences($pair);
+            $controlRemaining = $pair ? $this->controlReferenceRows($pair)->count() : 0;
+            $remaining = $pending->filter(fn ($row): bool => $row->fresh()?->settled_at === null)->count();
+            return ['protocol' => 'instrument_pending_pair_reconciliation_v1', 'status' => 'completed',
+                'pair_id' => $pairId, 'pending_before' => $pending->count(), 'pending_after' => $remaining,
+                'causal_projections' => $settled, 'historical_terminal_receipts_rewritten' => false,
+                'control_pending_before' => $controlBefore, 'control_pending_after' => $controlRemaining,
+                'control_references_closed' => $controlBefore - $controlRemaining,
+                'promotion_evidence' => false];
+        });
+    }
+
+    /** A control invocation is reference evidence, never a candidate improvement. */
+    private function controlReferenceRows(LabLearningLanePair $pair): \Illuminate\Support\Collection
+    {
+        if (! $pair->isVerifiedControlPair()) return collect();
+        $candidate = (array) data_get($pair->candidateAgent?->modelVersion?->metadata, 'instrument_research_assignment', []);
+        $control = (array) data_get($pair->controlAgent?->modelVersion?->metadata, 'instrument_research_assignment', []);
+        if ((! $this->ordinaryReservationMatchesPair($candidate, $pair)
+                && ! $this->causalTripletReservationMatchesPair($candidate, $pair))
+            || data_get($control, 'experiment_role') !== 'frozen_control'
+            || (int) data_get($control, 'lab_agent_id') !== (int) $pair->control_agent_id
+            || (int) data_get($control, 'model_version_id') !== (int) $pair->controlAgent?->model_version_id
+            || (int) data_get($control, 'lab_generation_id') !== (int) $pair->lab_generation_id
+            || data_get($control, 'pair_reservation.status') !== 'reserved'
+            || (int) data_get($control, 'pair_reservation.control_agent_id') !== (int) $pair->control_agent_id
+            || ! filled(data_get($control, 'assignment_hash'))
+            || ! filled(data_get($control, 'instrument_key_role_hash'))
+            || data_get($control, 'instrument_key_role_hash') !== data_get($candidate, 'instrument_key_role_hash')
+            || ! filled(data_get($control, 'activation_context_hash'))
+            || data_get($control, 'activation_context_hash') !== data_get($candidate, 'activation_context_hash')) return collect();
+        $protocol = data_get($control, 'pair_reservation.protocol');
+        if ($protocol !== data_get($candidate, 'pair_reservation.protocol')
+            || ($protocol === 'instrument_exact_pair_reservation_v1'
+                && ((int) data_get($control, 'pair_reservation.candidate_agent_id') !== (int) $pair->candidate_agent_id
+                    || data_get($control, 'pair_reservation.pair_key') !== data_get($candidate, 'pair_reservation.pair_key')))
+            || ($protocol === 'causal_triplet_instrument_reservation_v1'
+                && data_get($control, 'pair_reservation.experiment_key') !== data_get($candidate, 'pair_reservation.experiment_key'))) return collect();
+        return InstrumentInvocationLedger::where('lab_agent_id', $pair->control_agent_id)->whereNull('paper_signal_id')
+            ->whereNull('settled_at')->where('verdict', 'awaiting_paired_control')->get()
+            ->filter(fn ($row): bool => (string) data_get($row->metadata, 'evidence_run_id') === (string) $pair->control_evidence_run_id
+                && hash_equals((string) $control['assignment_hash'], (string) data_get($row->metadata, 'assignment_hash', '')));
+    }
+
+    private function settleControlReferences(LabLearningLanePair $pair): int
+    {
+        return DB::transaction(function () use ($pair): int {
+            $closed = 0;
+            foreach ($this->controlReferenceRows($pair) as $row) {
+                $current = InstrumentInvocationLedger::whereKey($row->id)->whereNull('settled_at')->lockForUpdate()->first();
+                if (! $current) continue;
+                $current->update(['verdict' => 'control_reference_consumed', 'settled_at' => now(),
+                    'metadata' => [...(array) $current->metadata, 'paired_control_reference' => [
+                        'pair_id' => (int) $pair->id, 'candidate_agent_id' => (int) $pair->candidate_agent_id,
+                        'reference_only' => true, 'causal_credit_allowed' => false, 'promotion_evidence' => false]]]);
+                $closed++;
+            }
+            return $closed;
+        });
+    }
 
     public function recordDecision(PaperSignal $signal, ?LabAgent $agent = null): int
     {
@@ -160,6 +279,7 @@ class InstrumentInvocationLedgerService
                     'activation_policy' => data_get($assignment, 'activation_policy'),
                     'bundle_fully_activated' => (bool) data_get($trace, 'bundle_fully_activated', false),
                     'bundle_activation_context_keys' => array_values((array) data_get($trace, 'bundle_activation_context_keys', [])),
+                    'bundle_activation_exact_context_keys' => array_values((array) data_get($trace, 'bundle_activation_exact_context_keys', [])),
                     'pair_reservation' => data_get($assignment, 'pair_reservation'),
                     'declaration' => $declaration,
                     'runtime_trace' => $runtime,
@@ -184,11 +304,12 @@ class InstrumentInvocationLedgerService
      * Supporting instruments remain visible, but only the declared changed
      * surface receives causal credit from a one-gene experiment.
      */
-    public function settleResearchPair(?LabLearningLanePair $pair): int
+    public function settleResearchPair(?LabLearningLanePair $pair, bool $pendingOnly = false): int
     {
         if (! $pair) {
             return 0;
         }
+        $this->settleControlReferences($pair);
         $pair->loadMissing(
             'candidateAgent.modelVersion',
             'controlAgent.modelVersion',
@@ -203,6 +324,7 @@ class InstrumentInvocationLedgerService
         $rows = InstrumentInvocationLedger::query()
             ->where('lab_agent_id', $agent->id)
             ->whereNull('paper_signal_id')
+            ->when($pendingOnly, fn ($query) => $query->whereNull('settled_at')->where('verdict', 'awaiting_paired_control'))
             ->get()
             ->filter(fn (InstrumentInvocationLedger $row): bool => (string) data_get($row->metadata, 'evidence_run_id') === $runId);
         if ($rows->isEmpty()) {
@@ -329,7 +451,12 @@ class InstrumentInvocationLedgerService
         sort($activatedKeys);
         $bundleFullyActivated = $selectedKeys !== [] && $selectedKeys === $activatedKeys
             && $rows->every(fn (InstrumentInvocationLedger $row): bool => data_get($row->metadata, 'bundle_fully_activated') === true);
-        $bundleOutcomes = $this->bundleActivatedOutcomes($rows->first(), $outcomes, $bundleFullyActivated);
+        $phaseScopedBundle = $rows->contains(
+            fn (InstrumentInvocationLedger $row): bool => $this->requiresVenuePhase($row)
+        );
+        $bundleOutcomes = $this->bundleActivatedOutcomes(
+            $rows->first(), $outcomes, $bundleFullyActivated, $phaseScopedBundle
+        );
         if ($settled > 0 && $playbookKey !== '' && $bundleOutcomes !== []) {
             foreach ($bundleOutcomes as $outcome) {
                 $this->operatingSystem->recordPlaybookEvidence(
@@ -475,10 +602,18 @@ class InstrumentInvocationLedgerService
             || (string) data_get($controlTrace, 'context_source') !== 'decision_time_trade_ledger') {
             return [];
         }
-        $controlSlices = collect((array) data_get($controlTrace, 'context_slices', []))->keyBy('context_key');
+        $candidateExact = data_get($candidateTrace, 'context_slice_protocol') === 'venue_phase_v1';
+        $controlExact = data_get($controlTrace, 'context_slice_protocol') === 'venue_phase_v1';
+        // Never compare an exact venue-phase arm with a legacy session-only
+        // arm, or silently fall back to the broader slice of a new replay.
+        if ($candidateExact !== $controlExact) {
+            return [];
+        }
+        $sliceKey = $candidateExact ? 'exact_context_slices' : 'context_slices';
+        $controlSlices = collect((array) data_get($controlTrace, $sliceKey, []))->keyBy('context_key');
         $windowKey = (string) ($pair->independent_window_key ?? '');
         $outcomes = [];
-        foreach ((array) data_get($candidateTrace, 'context_slices', []) as $candidateSlice) {
+        foreach ((array) data_get($candidateTrace, $sliceKey, []) as $candidateSlice) {
             if (! is_array($candidateSlice) || data_get($candidateSlice, 'powered') !== true) {
                 continue;
             }
@@ -486,6 +621,18 @@ class InstrumentInvocationLedgerService
             $controlSlice = $controlSlices->get($key);
             if (! is_array($controlSlice) || data_get($controlSlice, 'powered') !== true) {
                 continue;
+            }
+            if ($candidateExact) {
+                $parts = explode('|', $key);
+                $axes = ['regime', 'volatility', 'session', 'venue_phase', 'direction'];
+                if (count($parts) !== count($axes)
+                    || collect($axes)->contains(fn (string $axis, int $index): bool =>
+                        $parts[$index] === ''
+                        || (string) data_get($candidateSlice, 'context.'.$axis, '') !== $parts[$index]
+                        || (string) data_get($controlSlice, 'context.'.$axis, '') !== $parts[$index]
+                    )) {
+                    continue;
+                }
             }
             $candidateMetrics = (array) data_get($candidateSlice, 'metrics', []);
             $controlMetrics = (array) data_get($controlSlice, 'metrics', []);
@@ -508,6 +655,7 @@ class InstrumentInvocationLedgerService
             $context['strategy_family'] = (string) $pair->strategy_family;
             $outcomes[] = [
                 'context_key' => $key,
+                'context_granularity' => $candidateExact ? 'venue_phase_v1' : 'legacy_session_v1',
                 'context' => $context,
                 'candidate' => [
                     'net_profit_percent' => (float) data_get($candidateMetrics, 'net_profit_percent', 0),
@@ -537,7 +685,15 @@ class InstrumentInvocationLedgerService
     /** @return list<array<string,mixed>> */
     private function activatedOutcomes(InstrumentInvocationLedger $row, array $outcomes): array
     {
-        $active = array_flip(array_map('strval', (array) data_get($row->metadata, 'runtime_trace.activated_context_keys', [])));
+        $exact = data_get($outcomes[0] ?? [], 'context_granularity') === 'venue_phase_v1';
+        if (! $exact && $this->requiresVenuePhase($row)) {
+            return [];
+        }
+        $active = array_flip(array_map('strval', (array) data_get(
+            $row->metadata,
+            $exact ? 'runtime_trace.activated_exact_context_keys' : 'runtime_trace.activated_context_keys',
+            [],
+        )));
 
         return collect($outcomes)
             ->filter(fn (array $outcome): bool => isset($active[(string) ($outcome['context_key'] ?? '')]))
@@ -546,17 +702,37 @@ class InstrumentInvocationLedgerService
     }
 
     /** @return list<array<string,mixed>> */
-    private function bundleActivatedOutcomes(?InstrumentInvocationLedger $row, array $outcomes, bool $fullyActivated): array
+    private function bundleActivatedOutcomes(
+        ?InstrumentInvocationLedger $row,
+        array $outcomes,
+        bool $fullyActivated,
+        bool $phaseScopedBundle = false,
+    ): array
     {
         if (! $row || ! $fullyActivated) {
             return [];
         }
-        $active = array_flip(array_map('strval', (array) data_get($row->metadata, 'bundle_activation_context_keys', [])));
+        $exact = data_get($outcomes[0] ?? [], 'context_granularity') === 'venue_phase_v1';
+        if (! $exact && $phaseScopedBundle) {
+            return [];
+        }
+        $active = array_flip(array_map('strval', (array) data_get(
+            $row->metadata,
+            $exact ? 'bundle_activation_exact_context_keys' : 'bundle_activation_context_keys',
+            [],
+        )));
 
         return collect($outcomes)
             ->filter(fn (array $outcome): bool => isset($active[(string) ($outcome['context_key'] ?? '')]))
             ->values()
             ->all();
+    }
+
+    private function requiresVenuePhase(InstrumentInvocationLedger $row): bool
+    {
+        return filled(data_get(
+            $row->metadata, 'declaration.activation_contract.context.declared_context.venue_phase'
+        ));
     }
 
     /** @return array<string,mixed> */
@@ -588,12 +764,55 @@ class InstrumentInvocationLedgerService
         $candidate = (array) $outcome['candidate'];
         $control = (array) $outcome['control'];
         $delta = (array) $outcome['delta'];
+        $windowReceipt = (array) data_get($pair->metadata, 'instrument_research_window_receipt', []);
+        if ((string) ($windowReceipt['window_key'] ?? '') !== (string) ($pair->independent_window_key ?? '')) {
+            $windowReceipt = [];
+        }
+        $pair->loadMissing(['candidateAgent.modelVersion', 'controlAgent.modelVersion']);
+        $baseline = (array) $pair->controlAgent?->modelVersion?->parameters;
+        $parameters = (array) $pair->candidateAgent?->modelVersion?->parameters;
+        $parameterDiff = [];
+        $hashes = app(ResearchPaperEpochContractService::class);
+        foreach (array_unique([...array_keys($baseline), ...array_keys($parameters)]) as $gene) {
+            if (! array_key_exists($gene, $baseline) || ! array_key_exists($gene, $parameters)
+                || $hashes->parameterHash(['value' => $baseline[$gene]]) !== $hashes->parameterHash(['value' => $parameters[$gene]])) {
+                $parameterDiff[$gene] = ['old' => $baseline[$gene] ?? null, 'new' => $parameters[$gene] ?? null];
+            }
+        }
+        $candidateRun = LabEvaluationRun::query()->where('run_id', (string) $pair->candidate_evidence_run_id)->first();
+        $controlRun = LabEvaluationRun::query()->where('run_id', (string) $pair->control_evidence_run_id)->first();
+        $evaluatorHash = $candidateRun !== null && $controlRun !== null
+            && (string) $candidateRun->code_hash === (string) $controlRun->code_hash
+                ? (string) $candidateRun->code_hash : '';
+        $validation = app(InstrumentValidationEvidenceService::class);
+        $gene = count($parameterDiff) === 1 ? (string) array_key_first($parameterDiff) : '';
+        $tested = $gene !== '' ? $validation->sealDelta($gene, $parameterDiff[$gene]['old'], $parameterDiff[$gene]['new'],
+            $hashes->parameterHash($baseline), $evaluatorHash,
+            $this->operatingSystem->fingerprint($pair->symbol, 'M15', (array) $outcome['context'])) : null;
+        $sourceReceipt = $validation->sealSource([
+            'protocol' => InstrumentValidationEvidenceService::SOURCE_PROTOCOL,
+            'pair_key' => (string) $pair->pair_key,
+            'candidate_agent_id' => (int) $pair->candidate_agent_id, 'control_agent_id' => (int) $pair->control_agent_id,
+            'candidate_model_version_id' => (int) $pair->candidateAgent?->model_version_id,
+            'control_model_version_id' => (int) $pair->controlAgent?->model_version_id,
+            'candidate_response_map_id' => (int) $pair->candidate_response_map_id, 'control_response_map_id' => (int) $pair->control_response_map_id,
+            'candidate_evidence_run_id' => (int) $candidateRun?->id, 'control_evidence_run_id' => (int) $controlRun?->id,
+            'candidate_run_key' => (string) $pair->candidate_evidence_run_id, 'control_run_key' => (string) $pair->control_evidence_run_id,
+            'candidate_request_hash' => (string) $candidateRun?->request_hash, 'control_request_hash' => (string) $controlRun?->request_hash,
+            'candidate_response_hash' => (string) $candidateRun?->response_hash, 'control_response_hash' => (string) $controlRun?->response_hash,
+            'candidate_parameter_hash' => $hashes->parameterHash($parameters), 'control_parameter_hash' => $hashes->parameterHash($baseline),
+            'evaluator_hash' => $evaluatorHash, 'data_hash' => (string) $pair->candidate_data_hash,
+            'execution_hash' => (string) $pair->candidate_execution_hash,
+        ]);
 
         return [
             'evidence_key' => $evidenceKey,
             'source_type' => (string) $outcome['source_type'],
             'source_key' => (string) $pair->pair_key,
             'independent_window_key' => (string) ($outcome['independent_window_key'] ?? ''),
+            'instrument_research_window_receipt' => $windowReceipt,
+            'tested_intervention' => $tested ?? [],
+            'source_receipt' => $sourceReceipt,
             'outcome_state' => (string) $outcome['verdict'],
             'metrics' => [
                 'net_edge' => (float) data_get($delta, 'net_profit_percent', 0) / 100,
@@ -610,6 +829,7 @@ class InstrumentInvocationLedgerService
                 'same_generation' => true,
                 'same_data_hash' => true,
                 'same_execution_hash' => true,
+                'data_hash' => (string) $pair->candidate_data_hash,
             ],
         ];
     }

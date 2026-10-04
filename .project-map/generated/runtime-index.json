@@ -1,0 +1,570 @@
+{
+  "schema_version": 1,
+  "generator": "scripts/project-map/project-map.mjs",
+  "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
+  "generated_at": "2026-10-04T08:53:34.975Z",
+  "source_digest": "4164b6321e1cd7aca6d030e0968035f023bcceb5ec1f0e3b82335caebf5a1f93",
+  "source_file_count": 1467,
+  "git_head": "0f01216b43a2cf6579e588fba17051ca26b707e2",
+  "authority": "Navigation facts only. Real source code and tests remain authoritative.",
+  "configs": [
+    {
+      "path": "backend-laravel/config/app.php",
+      "sections": [
+        {
+          "key": "name",
+          "line": 16
+        },
+        {
+          "key": "env",
+          "line": 29
+        },
+        {
+          "key": "debug",
+          "line": 42
+        },
+        {
+          "key": "url",
+          "line": 55
+        },
+        {
+          "key": "timezone",
+          "line": 68
+        },
+        {
+          "key": "locale",
+          "line": 81
+        },
+        {
+          "key": "fallback_locale",
+          "line": 83
+        },
+        {
+          "key": "faker_locale",
+          "line": 85
+        },
+        {
+          "key": "cipher",
+          "line": 98
+        },
+        {
+          "key": "key",
+          "line": 100
+        },
+        {
+          "key": "previous_keys",
+          "line": 102
+        },
+        {
+          "key": "maintenance",
+          "line": 121
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/config/auth.php",
+      "sections": [
+        {
+          "key": "defaults",
+          "line": 18
+        },
+        {
+          "key": "guards",
+          "line": 40
+        },
+        {
+          "key": "providers",
+          "line": 64
+        },
+        {
+          "key": "passwords",
+          "line": 95
+        },
+        {
+          "key": "password_timeout",
+          "line": 115
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/config/cache.php",
+      "sections": [
+        {
+          "key": "default",
+          "line": 18
+        },
+        {
+          "key": "stores",
+          "line": 35
+        },
+        {
+          "key": "prefix",
+          "line": 124
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/config/database.php",
+      "sections": [
+        {
+          "key": "default",
+          "line": 20
+        },
+        {
+          "key": "backup",
+          "line": 22
+        },
+        {
+          "key": "connections",
+          "line": 48
+        },
+        {
+          "key": "migrations",
+          "line": 151
+        },
+        {
+          "key": "redis",
+          "line": 167
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/config/filesystems.php",
+      "sections": [
+        {
+          "key": "default",
+          "line": 16
+        },
+        {
+          "key": "disks",
+          "line": 31
+        },
+        {
+          "key": "links",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/config/logging.php",
+      "sections": [
+        {
+          "key": "default",
+          "line": 21
+        },
+        {
+          "key": "deprecations",
+          "line": 34
+        },
+        {
+          "key": "channels",
+          "line": 53
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/config/mail.php",
+      "sections": [
+        {
+          "key": "default",
+          "line": 17
+        },
+        {
+          "key": "mailers",
+          "line": 38
+        },
+        {
+          "key": "from",
+          "line": 113
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/config/queue.php",
+      "sections": [
+        {
+          "key": "default",
+          "line": 16
+        },
+        {
+          "key": "connections",
+          "line": 32
+        },
+        {
+          "key": "batching",
+          "line": 121
+        },
+        {
+          "key": "failed",
+          "line": 139
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/config/redis-local.conf",
+      "sections": []
+    },
+    {
+      "path": "backend-laravel/config/services.php",
+      "sections": [
+        {
+          "key": "market_session_calendar",
+          "line": 27
+        },
+        {
+          "key": "postmark",
+          "line": 61
+        },
+        {
+          "key": "resend",
+          "line": 65
+        },
+        {
+          "key": "ses",
+          "line": 69
+        },
+        {
+          "key": "slack",
+          "line": 75
+        },
+        {
+          "key": "ai_service",
+          "line": 82
+        },
+        {
+          "key": "redis_availability",
+          "line": 95
+        },
+        {
+          "key": "scheduler",
+          "line": 102
+        },
+        {
+          "key": "lab_queue",
+          "line": 125
+        },
+        {
+          "key": "lab_evidence",
+          "line": 184
+        },
+        {
+          "key": "market_data",
+          "line": 191
+        },
+        {
+          "key": "drift_evidence",
+          "line": 200
+        },
+        {
+          "key": "market_volume",
+          "line": 213
+        },
+        {
+          "key": "historical_data",
+          "line": 233
+        },
+        {
+          "key": "secondary_intelligence",
+          "line": 251
+        },
+        {
+          "key": "access_control",
+          "line": 255
+        },
+        {
+          "key": "internal_api",
+          "line": 259
+        },
+        {
+          "key": "twelve_data",
+          "line": 263
+        },
+        {
+          "key": "cot",
+          "line": 275
+        },
+        {
+          "key": "dukascopy",
+          "line": 281
+        },
+        {
+          "key": "market_reality",
+          "line": 313
+        },
+        {
+          "key": "telegram",
+          "line": 326
+        },
+        {
+          "key": "mt5",
+          "line": 332
+        },
+        {
+          "key": "paper",
+          "line": 346
+        },
+        {
+          "key": "xauusd_organism",
+          "line": 357
+        },
+        {
+          "key": "autonomous_mode",
+          "line": 389
+        },
+        {
+          "key": "mtf_pilot",
+          "line": 402
+        },
+        {
+          "key": "paper_observation",
+          "line": 423
+        },
+        {
+          "key": "economic_calendar",
+          "line": 440
+        },
+        {
+          "key": "alpha_vantage",
+          "line": 458
+        },
+        {
+          "key": "currents_api",
+          "line": 467
+        },
+        {
+          "key": "paper_calibration",
+          "line": 477
+        },
+        {
+          "key": "lab_selection",
+          "line": 482
+        },
+        {
+          "key": "rescue_circuit_breaker",
+          "line": 663
+        },
+        {
+          "key": "dual_track",
+          "line": 688
+        },
+        {
+          "key": "twin_intelligence",
+          "line": 708
+        },
+        {
+          "key": "risk",
+          "line": 727
+        },
+        {
+          "key": "discipline",
+          "line": 748
+        },
+        {
+          "key": "learning_lane",
+          "line": 762
+        },
+        {
+          "key": "research_paper_epochs",
+          "line": 799
+        },
+        {
+          "key": "instrument_policy",
+          "line": 805
+        },
+        {
+          "key": "execution_contract",
+          "line": 821
+        },
+        {
+          "key": "promotion",
+          "line": 840
+        },
+        {
+          "key": "live_trading",
+          "line": 849
+        },
+        {
+          "key": "lifecycle_orchestrator",
+          "line": 864
+        },
+        {
+          "key": "learning_lane_recovery_limit",
+          "line": 901
+        },
+        {
+          "key": "edge_director",
+          "line": 906
+        },
+        {
+          "key": "release_seal",
+          "line": 925
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/config/session.php",
+      "sections": [
+        {
+          "key": "driver",
+          "line": 21
+        },
+        {
+          "key": "lifetime",
+          "line": 35
+        },
+        {
+          "key": "expire_on_close",
+          "line": 37
+        },
+        {
+          "key": "encrypt",
+          "line": 50
+        },
+        {
+          "key": "files",
+          "line": 63
+        },
+        {
+          "key": "connection",
+          "line": 76
+        },
+        {
+          "key": "table",
+          "line": 89
+        },
+        {
+          "key": "store",
+          "line": 104
+        },
+        {
+          "key": "lottery",
+          "line": 117
+        },
+        {
+          "key": "cookie",
+          "line": 130
+        },
+        {
+          "key": "path",
+          "line": 146
+        },
+        {
+          "key": "domain",
+          "line": 159
+        },
+        {
+          "key": "secure",
+          "line": 172
+        },
+        {
+          "key": "http_only",
+          "line": 185
+        },
+        {
+          "key": "same_site",
+          "line": 202
+        },
+        {
+          "key": "partitioned",
+          "line": 215
+        }
+      ]
+    }
+  ],
+  "scripts": [
+    {
+      "path": "ai-service-python/scripts/maintain_replay_cache.py"
+    },
+    {
+      "path": "backend-laravel/scripts/audit-frozen-m5-gap-source.py"
+    },
+    {
+      "path": "backend-laravel/scripts/audit-research-release.php"
+    },
+    {
+      "path": "backend-laravel/scripts/diagnose-signal-boundary.py"
+    },
+    {
+      "path": "backend-laravel/scripts/fetch-dukascopy.cjs"
+    },
+    {
+      "path": "backend-laravel/scripts/fetch-dukascopy.test.cjs"
+    },
+    {
+      "path": "backend-laravel/scripts/freeze-historical-quote-spread.php"
+    },
+    {
+      "path": "backend-laravel/scripts/freeze-historical-tick-spread.cjs"
+    },
+    {
+      "path": "backend-laravel/scripts/freeze-historical-tick-spread.test.cjs"
+    },
+    {
+      "path": "backend-laravel/scripts/install-autonomous-runtime-task.ps1"
+    },
+    {
+      "path": "backend-laravel/scripts/pm2-clean-env.mjs"
+    },
+    {
+      "path": "backend-laravel/scripts/pm2-summary.cjs"
+    },
+    {
+      "path": "backend-laravel/scripts/pm2-summary.test.cjs"
+    },
+    {
+      "path": "backend-laravel/scripts/pm2-sync-runtime.mjs"
+    },
+    {
+      "path": "backend-laravel/scripts/pm2-sync-runtime.test.cjs"
+    },
+    {
+      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php"
+    },
+    {
+      "path": "backend-laravel/scripts/run-ai-service.cmd"
+    },
+    {
+      "path": "backend-laravel/scripts/run-ai-service.py"
+    },
+    {
+      "path": "backend-laravel/scripts/run-laravel-server.cmd"
+    },
+    {
+      "path": "backend-laravel/scripts/run-laravel-workers-hidden.ps1"
+    },
+    {
+      "path": "backend-laravel/scripts/run-laravel-workers-hidden.vbs"
+    },
+    {
+      "path": "backend-laravel/scripts/run-laravel-workers.cmd"
+    },
+    {
+      "path": "backend-laravel/scripts/run-tests-safe.mjs"
+    },
+    {
+      "path": "backend-laravel/scripts/start-redis.ps1"
+    },
+    {
+      "path": "backend-laravel/scripts/supervise-laravel-runtime.ps1"
+    },
+    {
+      "path": "backend-laravel/scripts/verify-sparse-reopen-ticks.cjs"
+    },
+    {
+      "path": "scripts/project-map/measure.mjs"
+    },
+    {
+      "path": "scripts/project-map/measure.test.mjs"
+    },
+    {
+      "path": "scripts/project-map/project-map.mjs"
+    },
+    {
+      "path": "scripts/project-map/project-map.test.mjs"
+    },
+    {
+      "path": "scripts/restart_mt5.sh"
+    }
+  ],
+  "scope": "Runtime file and top-level Laravel config-section navigation only; values, secrets and execution semantics are not indexed."
+}

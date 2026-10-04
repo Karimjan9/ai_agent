@@ -7,6 +7,55 @@ from app.services.backtester import (
 )
 
 
+def test_exact_context_quote_coverage_is_measured_before_liquidity_removes_unknown_rows():
+    frame = pd.DataFrame({
+        'time': pd.date_range('2025-06-02T08:00:00Z', periods=200, freq='5min'),
+        'signal': ['BUY'] * 200, 'market_regime': ['trend_up'] * 2 + ['range'] * 198,
+        'atr': [10.0] * 200, 'spread': [0.1] * 200,
+        'spread_available': [0] * 2 + [1] * 198,
+    })
+    frame.attrs['quote_spread_quality'] = {
+        'protocol': 'historical_quote_spread_quality_v1', 'provider_observed': True,
+        'source': 'synchronized_bid_ask_tick', 'coverage': 0.99,
+    }
+    result = apply_specialist_scope(frame, {
+        'protocol': 'prospective_repair_exact_context_v1', 'source_context_hash': 'scope-hash',
+        'regime': 'trend_up', 'spread_liquidity_state': 'liquid',
+    })
+    scope = result.attrs['specialist_context_contract']
+    receipt = scope['context_quote_quality']
+    assert receipt['context_rows'] == 2
+    assert receipt['observed_rows'] == 0
+    assert receipt['coverage'] == 0
+    assert receipt['before_liquidity_veto'] is True
+    assert receipt['evaluated_rows'] == 200
+    assert receipt['evaluated_start'] == '2025-06-02T08:00:00Z'
+    assert scope['eligible_context_candle_count'] == 0
+    assert scope['accepted_signal_count'] == 0
+    assert scope['source_context_hash'] == receipt['source_context_hash']
+
+
+def test_exact_context_quotes_cannot_be_created_from_modeled_spread_or_a_different_window():
+    frame = pd.DataFrame({
+        'time': pd.date_range('2025-06-02T08:00:00Z', periods=4, freq='5min'),
+        'signal': ['BUY'] * 4, 'market_regime': ['trend_up'] * 4,
+        'atr': [10.0] * 4, 'spread': [0.1] * 4, 'spread_available': [1] * 4,
+    })
+    contract = {'regime': 'trend_up', 'source_context_hash': 'scope-hash'}
+    unverified = apply_specialist_scope(frame, contract).attrs['specialist_context_contract']['context_quote_quality']
+    assert unverified['source_provenance_valid'] is False
+    assert unverified['observed_rows'] == 0
+    frame.attrs['quote_spread_quality'] = {
+        'protocol': 'historical_quote_spread_quality_v1', 'provider_observed': True,
+        'source': 'synchronized_bid_ask_tick',
+    }
+    selected = apply_specialist_scope(frame.iloc[2:].copy(), contract).attrs['specialist_context_contract']['context_quote_quality']
+    assert selected['coverage'] == 1
+    assert selected['evaluated_rows'] == 2
+    assert selected['evaluated_start'] == '2025-06-02T08:10:00Z'
+    assert selected['evaluated_end'] == '2025-06-02T08:15:00Z'
+
+
 def test_iana_dst_changes_session_membership_and_overlap_without_fixed_utc_hours():
     times = pd.Series(
         [
@@ -209,3 +258,46 @@ def test_specialist_runtime_enforces_liquidity_transition_and_maintenance_absten
         {"venue_phase": "london_am_fix", "execution_policy": "abstain_only"},
     )
     assert guard["signal"].eq("WAIT").all()
+
+
+def test_specialist_preserves_raw_signal_and_missing_measured_liquidity_reason():
+    frame = pd.DataFrame({
+        "time": ["2025-01-06T11:00:00Z"], "signal": ["BUY"],
+        "market_regime": ["trend_up"], "volatility_regime": ["normal_volatility"],
+        "atr_regime": [2.0],
+    })
+    contract = {"venue_phase": "london_interfix", "regime": "trend_up",
+                "volatility": "normal", "spread_liquidity_state": "normal",
+                "source_context_hash": "sealed-source-context"}
+    scoped = apply_specialist_scope(frame, contract)
+    assert scoped.loc[0, "signal"] == "WAIT"
+    assert scoped.loc[0, "pre_specialist_signal"] == "BUY"
+    assert scoped.loc[0, "specialist_scope_first_veto"] == "liquidity_observation_missing"
+    receipt = scoped.attrs["specialist_context_contract"]
+    assert receipt["raw_strategy_signal_count"] == 1
+    assert receipt["accepted_signal_count"] == 0
+    assert receipt["target_regime"] == "trend_up"
+    assert receipt["target_volatility"] == "normal"
+    assert receipt["source_context_hash"] == "sealed-source-context"
+    assert receipt["signal_first_veto_counts"] == {"liquidity_observation_missing": 1}
+    # A measured, valid spread and atr_regime close that specific dependency;
+    # the canonical volatility alias does not cause a false rejection.
+    measured = apply_specialist_scope(frame.assign(spread=.2), contract)
+    assert measured.loc[0, "signal"] == "BUY"
+    assert measured.attrs["specialist_context_contract"]["eligible_context_candle_count"] == 1
+    silent = apply_specialist_scope(frame.assign(spread=.2, signal="WAIT"), contract)
+    assert silent.attrs["specialist_context_contract"]["eligible_context_candle_count"] == 1
+    assert silent.attrs["specialist_context_contract"]["accepted_signal_count"] == 0
+    unavailable = apply_specialist_scope(frame.assign(spread=.2, spread_available=False), contract)
+    assert unavailable.loc[0, "signal"] == "WAIT"
+    assert unavailable.loc[0, "specialist_scope_first_veto"] == "liquidity_observation_missing"
+    for invalid in (-1.0, float("inf"), float("nan")):
+        rejected = apply_specialist_scope(frame.assign(spread=invalid), contract)
+        assert rejected.loc[0, "specialist_scope_first_veto"] == "liquidity_observation_missing"
+
+
+def test_specialist_direction_veto_is_not_reported_as_owned_context():
+    frame = pd.DataFrame({"time": ["2025-01-06T11:00:00Z"], "signal": ["BUY"]})
+    scoped = apply_specialist_scope(frame, {"direction": "SELL"})
+    assert scoped.loc[0, "signal"] == "WAIT"
+    assert scoped.loc[0, "specialist_scope_first_veto"] == "direction_outside_scope"

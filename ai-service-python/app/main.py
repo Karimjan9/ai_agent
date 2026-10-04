@@ -20,6 +20,8 @@ from app.routers.backtests import router as backtests_router
 from app.routers.holdouts import router as holdouts_router
 from app.schemas import Candle, SimpleBacktestRequest, SimpleBacktestResponse
 from app.services.backtester import (
+    assert_sealed_dataset_cache_sources,
+    assert_sealed_dataset_transport,
     PreparedFeatureSnapshot,
     PreparedSignalSnapshot,
     _advance_trailing_stop,
@@ -64,6 +66,11 @@ from app.services.instrument_research import build_instrument_research_trace
 from app.services.market_adaptive_replay import MarketAdaptiveReplayService
 from app.services.multitimeframe import apply_signal_policy, counterfactuals
 from app.services.parameter_schema import validate_strategy_parameters
+from app.services.prospective_probe_window import select_probe_window
+from app.services.research_release import (
+    attest as attest_research_release, health_receipt as research_source_health,
+    verify_research_transport,
+)
 from app.services.statistical_validation import (
     deflated_sharpe_ratio,
     per_trade_sharpe,
@@ -288,11 +295,29 @@ def _assert_non_paper_source_pre_2026(
         )
     )
     timestamps = pd.to_datetime(dataframe["time"], utc=True, errors="coerce")
-    if timestamps.isna().any() or (timestamps >= cutoff).any():
+    legacy_start = pd.Timestamp("2026-01-01", tz="UTC")
+    legacy_end = pd.Timestamp("2027-01-01", tz="UTC")
+    if timestamps.isna().any() or ((timestamps >= legacy_start) & (timestamps < legacy_end)).any():
         raise ValueError(
             "Research/training/screening/replay dataset 2026-01-01 dan keyingi candle saqlamasligi kerak; "
             "2026 faqat paper lane uchun."
         )
+    if (timestamps >= legacy_end).any():
+        authorized = verify_research_transport(payload, _internal_api_token())
+        if authorized is None:
+            raise ValueError("RESEARCH_TRANSPORT_AUTHENTICATION_REQUIRED; 2026 faqat paper lane uchun.")
+        # A supplied DataFrame may not borrow a signed file's label. Check the
+        # loader-owned immutable index and actual consumed source rows too.
+        from app.services.backtester import _consumed_dataset_attestation
+        source = _consumed_dataset_attestation(payload, dataframe)
+        primary = authorized["files"][str(payload.timeframe).upper()]
+        if (source.get("status") != "verified" or source.get("actual_source_sha256") != primary["sha256"]
+                or (timestamps < pd.Timestamp(authorized["window"]["start_inclusive"])).any()
+                or (timestamps >= pd.Timestamp(authorized["window"]["end_exclusive"])).any()):
+            raise ValueError("RESEARCH_TRANSPORT_CONSUMED_SOURCE_MISMATCH")
+        return
+    if (timestamps >= min(cutoff, legacy_start)).any():
+        raise ValueError("Research/training/screening/replay dataset cutoff buzildi; 2026 faqat paper lane uchun.")
 
 
 def _candidate_cache_payload(
@@ -375,9 +400,16 @@ def _candidate_cache_contract_is_current(
     if not isinstance(received, dict):
         return False
     expected = execution_contract_metadata(payload)
-    return received.get("execution_hash") == expected.get(
+    execution_current = received.get("execution_hash") == expected.get(
         "execution_hash"
     ) and received.get("parameters") == expected.get("parameters")
+    probe = (payload.policy_context or {}).get("prospective_probe_window")
+    if isinstance(probe, dict):
+        receipt = result.get("prospective_probe_window_receipt")
+        return execution_current and isinstance(receipt, dict) and all(
+            receipt.get(key) == value for key, value in probe.items()
+        ) and receipt.get("complete") is True
+    return execution_current
 
 
 _last_replay_cache_cleanup = 0.0
@@ -453,6 +485,7 @@ def health() -> dict[str, object]:
         "status": "ok",
         "service": "neurotrader-ai-service",
         "replay_liveness": replay_liveness,
+        "research_source": research_source_health(),
     }
 
 
@@ -527,7 +560,12 @@ def run_all_backtests(payload: SimpleBacktestRequest) -> dict[str, object]:
     containment boundary: a timed-out replay is terminated and can never
     continue mutating the shared AI process or starve later candidates.
     """
-    return _run_bounded_replay("run_all", payload)
+    try:
+        return _run_bounded_replay("run_all", payload)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/backtest/aggregate-causal-folds")
@@ -633,6 +671,9 @@ def _screening_insufficient_robustness_profile(
 
 
 def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
+    # Direct child/standalone paths also authenticate before any checkpoint or
+    # candidate-cache return, not just after a cache miss loads source_df.
+    verify_research_transport(payload, _internal_api_token())
     timing_started = time.perf_counter()
     stage_timings: dict[str, float] = {}
 
@@ -955,10 +996,23 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 )
             if payload.evaluation_mode == "incremental":
                 ordered = source_df.sort_values("time").reset_index(drop=True)
+                probe_contract = (strategy_payload.policy_context or {}).get(
+                    "prospective_probe_window"
+                )
+                probe_receipt = None
+                if isinstance(probe_contract, dict):
+                    evaluation_df, probe_receipt = select_probe_window(
+                        ordered,
+                        probe_contract,
+                        strategy_payload.replay_dataset_hash,
+                        (strategy_payload.execution_contract or {}).get("execution_hash"),
+                    )
+                else:
+                    evaluation_df = ordered
                 # Tier 1 is deliberately cheap: it measures whether there is
                 # a signal/opportunity claim at all. It never rejects a gene
                 # for lacking regime, stress or monthly evidence.
-                opportunity_df = ordered.tail(2000).reset_index(drop=True)
+                opportunity_df = evaluation_df.tail(2000).reset_index(drop=True)
                 # Differential causal lanes are expensive and belong to the
                 # Tier-2 survival contract. Tier-1 only answers whether the
                 # candidate has observable activity, so do not spend four
@@ -987,11 +1041,15 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 # indicator/ATR/H1 warmup while eliminating a second feature
                 # construction for every candidate in a cohort.
                 survival_df = (
-                    ordered.tail(5000).reset_index(drop=True)
-                    if len(ordered) >= 5000
-                    else None
+                    evaluation_df if probe_receipt is not None
+                    else ordered.tail(5000).reset_index(drop=True)
+                    if len(ordered) >= 5000 else None
                 )
                 survival_features = (
+                    tail_feature_snapshot(
+                        shared_features("survival", strategy_payload, ordered),
+                        len(survival_df),
+                    ) if probe_receipt is not None else
                     shared_features("survival", strategy_payload, survival_df)
                     if survival_df is not None
                     else shared_features(
@@ -1138,13 +1196,16 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "promotion_evidence": False,
                 }
                 incremental_result["screening_survival"] = survival
+                if probe_receipt is not None:
+                    incremental_result["prospective_probe_window_receipt"] = probe_receipt
                 incremental_result["evaluation_mode"] = "incremental_two_tier"
                 incremental_result["optimization"] = {
                     "protocol": "shared_feature_snapshot_bounded_cohort_v1",
                     "feature_snapshot_builds": shared_snapshot_builds,
                     "feature_snapshot_cache_hits": shared_snapshot_hits,
                     "warmup_super_snapshot": bool(survival_df is not None),
-                    "warmup_snapshot_rows": len(survival_df)
+                    "warmup_snapshot_rows": len(ordered)
+                    if probe_receipt is not None else len(survival_df)
                     if survival_df is not None
                     else len(opportunity_df),
                     "opportunity_view_rows": len(opportunity_df),
@@ -1763,6 +1824,26 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
         # blocks settlement for every peer. Keep a strict 12-minute default
         # and a 15-minute absolute ceiling; Laravel retains a transport margin.
         env_name, default, ceiling = "AI_REPLAY_CAUSAL_HARD_TIMEOUT_SECONDS", 720, 900
+    elif (
+        payload.evaluation_mode == "incremental"
+        and isinstance((payload.policy_context or {}).get("prospective_probe_window"), dict)
+        and (payload.policy_context or {})["prospective_probe_window"].get("protocol")
+        == "prospective_repair_probe_window_v1"
+        and (payload.policy_context or {})["prospective_probe_window"].get("evaluator_version")
+        == "incremental_probe_window_v2"
+        and (payload.policy_context or {})["prospective_probe_window"].get("evaluated_rows")
+        == 15000
+    ):
+        # This prospectively sealed three-month discovery computes 15k M5
+        # decisions, not the ordinary 5k differential screen. G247 reached
+        # opportunity_replay_ready but the 780s generic child deadline killed
+        # survival before any result existed. Keep a distinct finite budget
+        # below Laravel's 1800s batch transport and 2400s queue lease.
+        env_name, default, ceiling = (
+            "AI_REPLAY_PROSPECTIVE_SCREEN_HARD_TIMEOUT_SECONDS",
+            1620,
+            1680,
+        )
     elif payload.evaluation_mode == "incremental" and len(payload.strategies) > 1:
         # A bounded cohort shares feature construction but still walks each
         # candidate's independent state machine. Give the one child process a
@@ -1916,11 +1997,18 @@ def _run_bounded_replay(
     observe a child failure. A standalone Python subprocess with a JSON pipe
     gives us a hard parent-controlled deadline and a deterministic kill path.
     """
+    assert_sealed_dataset_transport(payload)
     global \
         _last_replay_finished_at, \
         _last_replay_termination, \
         _last_replay_stage_timings
     global _active_screen_replay_count, _active_full_replay_count
+
+    # Attest the long-lived API owner before using cache or spawning a fresh
+    # child. A fresh child cannot attest stale imports in its parent process.
+    attest_research_release(payload.research_release, dataset_hash=payload.replay_dataset_hash,
+                            execution_hash=payload.execution_contract.get("execution_hash"))
+    verify_research_transport(payload, _internal_api_token())
 
     # The replay compiler is intentionally content addressed.  It is safe to
     # reuse only an *identical* payload under the same evaluator code digest;
@@ -1930,6 +2018,7 @@ def _run_bounded_replay(
     cache_key = _replay_cache_key(operation, payload)
     cached = _load_immutable_replay_cache(cache_key)
     if cached is not None:
+        assert_sealed_dataset_cache_sources(payload)
         _last_replay_stage_timings = {"cache_hit": 1.0}
         _last_replay_finished_at = pd.Timestamp.now(tz="UTC").isoformat()
         _last_replay_termination = "cache_hit"
@@ -2140,10 +2229,17 @@ def _run_bounded_replay(
 def _replay_cache_key(operation: str, payload: SimpleBacktestRequest) -> str:
     """Fingerprint every local evaluator dependency and the sealed datasets."""
     code = _runtime_dependency_manifest()
+    cache_payload = payload.model_dump(mode="json")
+    transport = (cache_payload.get("policy_context") or {}).get("authorized_research_transport")
+    if isinstance(transport, dict) and transport.get("protocol") == "authorized_research_transport_v1":
+        # Authentication is rechecked before a cache hit. A coordinated key
+        # rotation changes the delivery proof, not the frozen experiment's
+        # contract, dataset/window identity or scientific observation.
+        transport.pop("hmac_sha256", None)
     body = {
         "protocol": "immutable_replay_compiler_v2",
         "operation": operation,
-        "payload": payload.model_dump(mode="json"),
+        "payload": cache_payload,
         "code": code,
         "datasets": _dataset_dependency_manifest(payload),
     }

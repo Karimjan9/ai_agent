@@ -41,7 +41,7 @@ class GenerationAutonomyReceiptService
         $source = $sourceId > 0
             ? LabGeneration::query()->with('laboratory', 'agents.modelVersion')->find($sourceId)
             : null;
-        if (! $source || ! in_array((string) $source->status, ['screened', 'completed'], true)) {
+        if (! $source || ! in_array((string) $source->status, ['screened', 'completed', 'technical_quarantine'], true)) {
             return ['status' => 'source_not_cleanly_terminal', 'promotion_evidence' => false];
         }
         $existing = GenerationAutonomyReceipt::query()->where('lab_generation_id', $source->id)->first();

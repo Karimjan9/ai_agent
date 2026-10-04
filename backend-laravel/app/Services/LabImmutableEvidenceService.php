@@ -64,6 +64,7 @@ class LabImmutableEvidenceService
     public function beginRun(LabAgent $agent, string $phase, string $mode, array $context = []): LabEvaluationRun
     {
         $agent->loadMissing('generation', 'modelVersion');
+        if ($agent->generation) app(ResearchReleaseSealService::class)->assertCurrent($agent->generation);
         $started = now();
         $run = LabEvaluationRun::create([
             'run_id' => (string) Str::uuid(),
@@ -87,6 +88,9 @@ class LabImmutableEvidenceService
                 'protocol' => 'lab_immutable_evidence_v1',
                 'source' => $context['source'] ?? 'EvaluateLabAgentJob',
                 'historical' => false,
+                'research_release_hash' => data_get($agent->generation?->trigger_context, 'research_release.release_hash'),
+                'worker_boot_source_hash' => app()->bound('research.worker_boot_source_hash')
+                    ? app('research.worker_boot_source_hash') : null,
             ],
         ]);
 
@@ -98,6 +102,86 @@ class LabImmutableEvidenceService
         return $run;
     }
 
+    /**
+     * A sealed release mismatch happens before an evaluator request exists.
+     * Record the refusal without bypassing beginRun's release assertion or
+     * pretending that a replay was attempted. Re-delivery of the same sealed
+     * agent/phase must not create another technical result.
+     */
+    public function refuseReleaseBeforeRun(
+        LabAgent $agent,
+        string $phase,
+        string $mode,
+        array $context,
+        Throwable $error,
+    ): LabEvaluationRun {
+        if (! ResearchReleaseSealService::isTerminalDrift($error)) {
+            throw $error;
+        }
+        $agent->loadMissing('generation', 'modelVersion');
+        $sealedHash = (string) data_get($agent->generation?->trigger_context, 'research_release.release_hash', '');
+        if ($sealedHash === '') {
+            throw $error;
+        }
+        $refusalKey = hash('sha256', implode('|', [
+            'release_refusal_v1', $agent->lab_generation_id, $agent->id, $phase, $sealedHash,
+        ]));
+        $existing = LabEvaluationRun::query()
+            ->where('lab_agent_id', $agent->id)
+            ->where('phase', $phase)
+            ->where('metadata->release_refusal_key', $refusalKey)
+            ->latest('id')->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        $run = LabEvaluationRun::create([
+            'run_id' => (string) Str::uuid(),
+            'lab_generation_id' => $agent->lab_generation_id,
+            'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id,
+            'phase' => $phase,
+            'mode' => $mode,
+            'attempt' => max(1, (int) ($context['attempt'] ?? 1)),
+            'queue' => $context['queue'] ?? null,
+            'job_uuid' => $context['job_uuid'] ?? null,
+            'status' => 'started',
+            'started_at' => now(),
+            'worker_name' => gethostname() ?: null,
+            'worker_pid' => (string) getmypid(),
+            'code_hash' => $this->codeHash(),
+            'parameter_hash' => $this->parameterHash($agent),
+            'metadata' => [
+                'protocol' => 'lab_immutable_evidence_v1',
+                'source' => $context['source'] ?? 'release_preflight',
+                'release_refusal_key' => $refusalKey,
+                'research_release_hash' => $sealedHash,
+                'sealed_source_hash' => data_get($agent->generation?->trigger_context, 'research_release.source_hash'),
+                'sealed_python_source_hash' => data_get($agent->generation?->trigger_context, 'research_release.python_source_hash'),
+                'replay_started' => false,
+                'evaluator_request_sent' => false,
+                'promotion_evidence' => false,
+            ],
+        ]);
+        $this->finishRun($run, 'technical_error', null, [], [
+            'reason_code' => $error->getMessage(),
+            'failure_class' => 'sealed_release_preflight_refusal',
+            'strategy_verdict' => 'withheld',
+            'replay_started' => false,
+            'evaluator_request_sent' => false,
+            'promotion_evidence' => false,
+        ], $error);
+        $this->recordLifecycle($agent, 'release_preflight_refused', [
+            'run_id' => $run->run_id,
+            'reason_code' => $error->getMessage(),
+            'research_release_hash' => $sealedHash,
+            'replay_started' => false,
+            'promotion_evidence' => false,
+        ], $phase, $run->run_id, $run->attempt, $context['source'] ?? 'release_preflight', $error);
+
+        return $run->fresh();
+    }
+
     public function markSkipped(LabEvaluationRun $run, string $reason, array $payload = []): void
     {
         $this->finishRun($run, 'skipped', null, ['skip_reason' => $reason], [
@@ -107,6 +191,10 @@ class LabImmutableEvidenceService
 
     public function attachRequest(LabEvaluationRun $run, array $request, array $context = []): void
     {
+        DB::transaction(function () use ($run, $request, $context): void {
+        $persisted = LabEvaluationRun::whereKey($run->id)->lockForUpdate()->first();
+        if (! $persisted || in_array($persisted->status, self::TERMINAL_RUN_STATUSES, true)) return;
+        $run->setRawAttributes($persisted->getAttributes(), true);
         $requestHash = (string) ($context['request_hash'] ?? $this->hash($request));
         $payloadHash = $this->hash($request);
         $safeRequest = $this->requestManifest($request);
@@ -128,17 +216,30 @@ class LabImmutableEvidenceService
                 'attached_at' => now()->toIso8601String(),
             ],
         ]);
-        $this->recordArtifact($run, 'evaluation_request', $safeRequest, [
+        $requestArtifact = $this->recordArtifact($run, 'evaluation_request', $safeRequest, [
             'raw_payload_hash' => $payloadHash,
             'request_hash' => $requestHash,
             'dataset_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
             'dataset_hash_present' => $this->isSha256($resolvedDataHash),
             'exact_candles_referenced_by_hash' => true,
         ]);
+        // Separate original artifact preserves transport request/cache hashes.
+        // Its server-derived model seal is never accepted from request flags.
+        DB::transaction(function () use ($run, $requestHash, $payloadHash, $requestArtifact, $request): void {
+            $originalRun = LabEvaluationRun::whereKey($run->id)->lockForUpdate()->first();
+            if (! $originalRun || in_array($originalRun->status, self::TERMINAL_RUN_STATUSES, true)
+                || LabEvidenceArtifact::where('run_id', $originalRun->run_id)->where('artifact_type', 'model_runtime_identity')->exists()) return;
+            $this->recordArtifact($originalRun, 'model_runtime_identity', [...$this->modelRuntimeIdentity($originalRun),
+                'raw_request_hash' => $requestHash, 'raw_payload_hash' => $payloadHash, 'request_artifact_hash' => $requestArtifact->sha256,
+                'compiled_runtime_contract_hash' => app(ResearchPaperEpochContractService::class)->parameterHash((array) ($request['composition_runtime_contract'] ?? []))], [
+                'protocol' => 'original_model_runtime_identity_v1', 'promotion_evidence' => false,
+            ]);
+        });
         $this->recordLifecycle($run->agent, 'evaluation_request_attached', [
             'request_hash' => $requestHash, 'payload_hash' => $payloadHash,
             'data_hash' => $run->data_hash,
         ], $run->phase, $run->run_id, $run->attempt, 'LabImmutableEvidenceService');
+        });
     }
 
     public function finishRun(
@@ -270,11 +371,16 @@ class LabImmutableEvidenceService
             && ($trace !== [] || (int) data_get($traceContract, 'evaluated_candle_count', 0) === 0);
         $ledgerComplete = $this->tradeLedgerComplete($response)
             && filled(data_get($response, 'trade_ledger_hash'));
+        $seal = (array) data_get($run->request_meta, 'payload.research_release',
+            data_get($run->generation?->trigger_context, 'research_release', []));
+        $releaseComplete = app(ResearchReleaseSealService::class)->responseValid($seal,
+            (array) data_get($response, 'data_quality.research_release_receipt', []));
         $reasons = [];
         if (! $requestArtifact) $reasons[] = 'MISSING_EVALUATION_REQUEST_ARTIFACT';
         if (! $datasetHash) $reasons[] = 'MISSING_DATASET_HASH';
         if (! $traceComplete) $reasons[] = 'MISSING_COMPLETE_DECISION_TRACE';
         if (! $ledgerComplete) $reasons[] = 'MISSING_COMPLETE_TRADE_LEDGER';
+        if (! $releaseComplete) $reasons[] = 'RESEARCH_WORKER_RELEASE_RECEIPT_INVALID';
 
         return [
             'complete' => $reasons === [],
@@ -283,6 +389,7 @@ class LabImmutableEvidenceService
             'dataset_hash' => $datasetHash,
             'decision_trace' => $traceComplete,
             'trade_ledger' => $ledgerComplete,
+            'research_release' => $releaseComplete,
             'promotion_evidence' => false,
         ];
     }
@@ -326,6 +433,12 @@ class LabImmutableEvidenceService
         if (! $ledgerArtifact || data_get($ledgerArtifact->metadata, 'complete') !== true) $reasons[] = 'MISSING_COMPLETE_TRADE_LEDGER';
         if (data_get($responseMeta, 'decision_trace_present') !== true || data_get($responseMeta, 'trade_ledger_complete') !== true) {
             $reasons[] = 'RESPONSE_MANIFEST_INCOMPLETE';
+        }
+        $seal = (array) data_get($run->request_meta, 'payload.research_release',
+            data_get($run->generation?->trigger_context, 'research_release', []));
+        if (! app(ResearchReleaseSealService::class)->responseValid($seal,
+            (array) data_get($responseMeta, 'research_release_receipt', []))) {
+            $reasons[] = 'RESEARCH_WORKER_RELEASE_RECEIPT_INVALID';
         }
 
         return [
@@ -662,14 +775,21 @@ class LabImmutableEvidenceService
             if (str_contains((string) $artifact->content_encoding, 'gzip')) {
                 $contents = gzdecode($contents) ?: '';
             }
+            // The writer seals the original JSON bytes before compression.
+            // Re-encoding a decoded JSON object can change key shape/order
+            // without changing those immutable bytes (notably numeric keys).
+            $rawHash = hash('sha256', $contents);
             $decoded = json_decode($contents, true);
             if (! is_array($decoded)) {
                 throw new RuntimeException("Evidence artifact JSON yaroqsiz: {$artifact->artifact_id}");
             }
             $decodedHash = hash('sha256', $this->encode($decoded));
             $roundtripHash = (string) data_get($artifact->metadata, 'payload_roundtrip_sha256', '');
-            if (! hash_equals((string) $artifact->sha256, $decodedHash)
-                && ! ($roundtripHash !== '' && hash_equals($roundtripHash, $decodedHash))) {
+            $modernArtifact = (string) data_get($artifact->metadata, 'storage_protocol', '')
+                === 'compressed_artifact_v2';
+            if (! hash_equals((string) $artifact->sha256, $rawHash)
+                && ($modernArtifact || (! hash_equals((string) $artifact->sha256, $decodedHash)
+                    && ! ($roundtripHash !== '' && hash_equals($roundtripHash, $decodedHash))))) {
                 throw new RuntimeException("Evidence artifact hash mismatch: {$artifact->artifact_id}");
             }
 
@@ -677,6 +797,39 @@ class LabImmutableEvidenceService
         }
 
         return $artifact->payload;
+    }
+
+    /** Compare JSON projections without treating 1 and 1.0 as different facts. */
+    public function equivalentJsonValue(mixed $left, mixed $right): bool
+    {
+        if (is_array($left) || is_array($right)) {
+            if (! is_array($left) || ! is_array($right) || count($left) !== count($right)) {
+                return false;
+            }
+            foreach ($left as $key => $value) {
+                if (! array_key_exists($key, $right)
+                    || ! $this->equivalentJsonValue($value, $right[$key])) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        if (is_int($left) && is_int($right)) {
+            return $left === $right;
+        }
+        if ((is_int($left) && is_float($right)) || (is_float($left) && is_int($right))) {
+            // JSON storage may normalize 1.0 to 1, but integers above the
+            // IEEE-754 exact range must never alias a different identity.
+            $integer = is_int($left) ? $left : $right;
+            $floating = is_float($left) ? $left : $right;
+
+            return abs($integer) <= 9007199254740991
+                && is_finite($floating)
+                && (float) $integer === $floating;
+        }
+
+        return $left === $right;
     }
 
     /**
@@ -1018,11 +1171,65 @@ class LabImmutableEvidenceService
         ]);
     }
 
+    public function modelRuntimeIdentity(LabEvaluationRun $run): array
+    {
+        $model = $run->modelVersion()->first(); $agent = $run->agent()->first();
+        return ['protocol' => 'original_model_runtime_identity_v1', 'run_id' => $run->run_id,
+            'model_version_id' => $model?->id, 'lab_agent_id' => $agent?->id,
+            'parameter_hash' => app(ResearchPaperEpochContractService::class)->parameterHash((array) $model?->parameters),
+            'evidence_parameter_hash' => $agent ? $this->parameterHash($agent) : null,
+            'runtime_basis' => $model ? $this->modelRuntimeBasis($model) : null,
+            'promotion_evidence' => false];
+    }
+
+    /** Treatment identity; dataset/assignment-specific passport hashes belong to the original request plane. */
+    public function modelRuntimeBasis(\App\Models\ModelVersion $model): array
+    {
+        $components = collect(['architecture', 'strategy_architecture', 'base_strategy', 'tactic', 'tactic_contract',
+            'composition_passport', 'composition_runtime_contract', 'confirmation_entry', 'risk_governor',
+            'trade_management', 'execution_contract', 'runtime_ensemble', 'agent_constitution',
+            'specialist_context_contract', 'contextual_specialist_cell', 'contextual_specialist_contract',
+            'session_specialist_contract', 'regime_specialist_contract'])
+            ->mapWithKeys(fn (string $key): array => [$key => data_get($model?->metadata, $key)])->all();
+        $components['smart_composition_treatment'] = \Illuminate\Support\Arr::only(
+            (array) data_get($model->metadata, 'smart_composition.composition_passport', []),
+            ['protocol', 'symbol', 'laboratory_storage_timeframe', 'execution_timeframe',
+                'temporal_sensor_scope', 'decision_tools', 'market_state', 'components',
+                'strategy_contract', 'strategy_signal_scope', 'risk_governor', 'risk_contract',
+                'management_contract', 'temporal_policy', 'horizon_mode', 'horizon_contract',
+                'location_thesis', 'information_families', 'temporal_owners', 'setup_expires_at',
+                'trigger_expires_at', 'invalidation_model', 'target_model', 'invalidation_target_contract',
+                'management_state_machine', 'session_handoff_state', 'news_state', 'session_news_contract',
+                'typed_program', 'filter_funnel_version', 'volume_provenance', 'risk_hysteresis', 'validation']);
+        return ['strategy' => $model->strategy, 'components' => $components];
+    }
+
+    /** Read-only original owner seal; historical sources are never backfilled. */
+    public function verifiedModelRuntimeIdentity(LabEvaluationRun $run): ?array
+    {
+        $artifact = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'model_runtime_identity')->oldest('id')->first();
+        if (! $artifact || data_get($artifact->metadata, 'storage_protocol') !== 'compressed_artifact_v2' || ! $artifact->storage_path
+            || ($run->finished_at !== null && ($artifact->created_at === null || $artifact->created_at->greaterThan($run->finished_at)))) return null;
+        $payload = $this->readArtifactPayload($artifact);
+        if (! is_array($payload) || ($payload['protocol'] ?? null) !== 'original_model_runtime_identity_v1'
+            || ($payload['raw_request_hash'] ?? null) !== $run->request_hash
+            || $this->hash(array_diff_key($payload, array_flip(['raw_request_hash', 'raw_payload_hash', 'request_artifact_hash', 'compiled_runtime_contract_hash']))) !== $this->hash($this->modelRuntimeIdentity($run))) return null;
+        $requestArtifact = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')
+            ->where('sha256', $payload['request_artifact_hash'] ?? '')->oldest('id')->first();
+        if (! $requestArtifact || data_get($requestArtifact->metadata, 'storage_protocol') !== 'compressed_artifact_v2'
+            || data_get($requestArtifact->metadata, 'request_hash') !== $run->request_hash
+            || data_get($requestArtifact->metadata, 'raw_payload_hash') !== ($payload['raw_payload_hash'] ?? null)) return null;
+        $request = $this->readArtifactPayload($requestArtifact);
+        if (! is_array($request) || ($payload['compiled_runtime_contract_hash'] ?? null)
+            !== app(ResearchPaperEpochContractService::class)->parameterHash((array) ($request['composition_runtime_contract'] ?? []))) return null;
+        return [...$payload, 'artifact_hash' => $artifact->sha256];
+    }
+
     public function codeHash(): string
     {
         $backendRoot = base_path();
         $pythonRoot = dirname($backendRoot).'/ai-service-python';
-        $roots = [$backendRoot.'/app', $pythonRoot.'/app'];
+        $roots = [$backendRoot.'/app', $backendRoot.'/config', $pythonRoot.'/app'];
         $manifestFiles = [
             $backendRoot.'/composer.lock', $backendRoot.'/package-lock.json',
             $pythonRoot.'/requirements.txt', $pythonRoot.'/pyproject.toml',
@@ -1039,18 +1246,18 @@ class LabImmutableEvidenceService
                     continue;
                 }
                 $path = $file->getPathname();
-                $parts[str_replace('\\', '/', str_replace($backendRoot, '', $path))] = hash_file('sha256', $path);
+                $parts[str_replace('\\', '/', substr($path, strlen(dirname($backendRoot)) + 1))] = hash_file('sha256', $path);
             }
         }
         foreach ($manifestFiles as $file) {
             if (is_file($file)) {
-                $parts[str_replace('\\', '/', str_replace($backendRoot, '', $file))] = hash_file('sha256', $file);
+                $parts[str_replace('\\', '/', substr($file, strlen(dirname($backendRoot)) + 1))] = hash_file('sha256', $file);
             }
         }
         ksort($parts);
 
         return $this->hash([
-            'protocol' => 'full_runtime_dependency_fingerprint_v2',
+            'protocol' => 'full_runtime_dependency_fingerprint_v3',
             'files' => $parts,
             'php' => PHP_VERSION,
             'commit' => env('APP_COMMIT_SHA'),
@@ -1082,6 +1289,7 @@ class LabImmutableEvidenceService
 
         return [
             'payload_hash' => $this->hash($response),
+            'research_release_receipt' => data_get($response, 'data_quality.research_release_receipt'),
             'leaderboard_count' => is_array($response['leaderboard'] ?? null) ? count($response['leaderboard']) : null,
             'trade_ledger_hash' => data_get($response, 'trade_ledger_hash'),
             'event_ledger_hash' => data_get($response, 'event_ledger_hash', data_get($response, 'event_digest.hash')),

@@ -1,5 +1,13 @@
 # Laboratory history
 
+## 2026-10-03 - Lane-owned research readiness
+
+Historical exploration and admitted learning confirmation seal the validated
+pre-2026 foundation instead of requiring live feed freshness. Queue admission
+checks the same archive and MTF periods; technical predecessor provenance is
+retained without a clean autonomy receipt. Research, paper and independent
+confirmation are still separate authorities. See ADR-021.
+
 ## 2026-08 — Pair-owned evidence and adaptive parent selection
 
 The laboratory became explicitly provenance- and control-aware: dynamic parent
@@ -51,3 +59,26 @@ block for a vetted strategy-to-tactic gap. The control copies the exact source
 vector, and prequeue admission checks common manifest, arm hashes and exact
 C/A/B/A+B deltas. Incumbent context elites are preserved as a separate
 portfolio tier; the activation challenger receives no authority. See ADR-009.
+
+## 2026-09 - Settlement-owned successor allocation
+
+The council now seals immediate-predecessor settlement IDs and content hashes
+into the successor manifest and changes at most one cold-start pair for a
+specific negative, underpowered or technical-invalid receipt. Twenty-seat
+ownership remains explicit, and positive research signals do not bypass the
+confirmed-credit gate. See ADR-011.
+
+## 2026-09 - Prospective phase scoping
+
+An unphased historical signal can now seed one future, screening-only
+phase-bound exact-control probe without rewriting its old evidence. A valid
+phase-control tactic veto can feed a later source-owned activation factorial;
+neither step grants economic or component credit. See ADR-015.
+
+## 2026-09-28 - Legacy phase-scope passport correction
+
+G239 exposed a pre-scope historical passport in the phase-control arm. The
+allocation manifest verifier now accepts the phase-probe replacement index
+it sealed, while rejecting a changed index or conflicting frontier. The
+legacy replay remains technical evidence; a v2 prospective probe seals a
+fresh executable passport and keeps G234 only as source provenance (ADR-015).

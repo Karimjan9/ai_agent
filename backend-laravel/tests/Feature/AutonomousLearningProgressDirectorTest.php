@@ -127,15 +127,20 @@ class AutonomousLearningProgressDirectorTest extends TestCase
         config()->set('services.edge_director.autonomous_specialized_cohorts_enabled', false);
 
         $baseline = $generation->agents()->firstOrFail();
+        $baseline->load('modelVersion');
+        $generation->update(['trigger_context' => [...(array) $generation->trigger_context,
+            'canonical_dataset_snapshots' => ['price' => ['manifest' => ['sha256' => str_repeat('a', 64)]],
+                'foundation' => ['manifest' => ['sha256' => str_repeat('a', 64)]]]]]);
         $provisional = LabSkillZooEntry::create([
             'skill_key' => hash('sha256', 'director-provisional-skill'),
             'cartridge_key' => hash('sha256', 'director-provisional-cartridge'),
-            'revision' => 2, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
-            'module_key' => 'entry', 'niche_key' => 'trend_up|normal|london', 'gene_key' => 'minimum_confidence',
+            'revision' => 2, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => $baseline->strategy_family,
+            'module_key' => 'entry', 'niche_key' => 'trend_up|normal|london', 'gene_key' => 'minimum_signal_confidence',
             'lab_agent_id' => $baseline->id, 'model_version_id' => $baseline->model_version_id,
             'causal_baseline_agent_id' => $baseline->id, 'quality_score' => .2, 'confidence' => .8,
             'status' => 'provisional', 'component_status' => 'paired_observed', 'organism_viability' => 'not_viable',
-            'evidence' => ['intervention' => ['old_value' => .6, 'tested_value' => .55]],
+            'evidence' => ['intervention' => ['old_value' => data_get($baseline->modelVersion->parameters, 'minimum_signal_confidence'), 'tested_value' => .55],
+                'provenance' => ['data_hashes' => [str_repeat('a', 64)], 'execution_hashes' => [str_repeat('b', 64)]]],
         ]);
         foreach ([1, 2] as $observation) {
             DB::table('skill_cartridge_observations')->insert([

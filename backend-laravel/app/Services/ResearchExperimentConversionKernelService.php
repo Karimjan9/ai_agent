@@ -38,6 +38,16 @@ class ResearchExperimentConversionKernelService
         $validation = $this->validate($contract, $classification);
         if (! $validation['valid']) return $this->blocked($validation['reason']);
         $contract = $validation['contract'];
+        if (in_array((string) ($nextWork['type'] ?? ''), [
+            'activation_independent_validation', 'activation_new_opportunity_window',
+        ], true)) {
+            $plan = (array) ($nextWork['validation_plan'] ?? []);
+            if (! app(ActivationValidationPlanService::class)->valid($plan, $plan)
+                || ! hash_equals((string) data_get($contract, 'identity.window_plan_hash', ''),
+                    (string) ($plan['plan_hash'] ?? ''))) {
+                return $this->blocked('ACTIVATION_VALIDATION_PLAN_INVALID');
+            }
+        }
         $contractHash = $this->hash($contract);
         $evidenceHash = $this->hash($evidence);
         $source = (array) $contract['source'];
@@ -252,8 +262,8 @@ class ResearchExperimentConversionKernelService
             'academy_power_extension' => [false, 'NEW_INDEPENDENT_POWERED_WINDOW_REQUIRED', 1],
             'academy_technical_quarantine' => [false, 'TECHNICAL_ROOT_CAUSE_REPAIR_REQUIRED', 1],
             'academy_adversarial_ablation' => [false, 'VERSIONED_ABLATION_CONTRACT_REQUIRED', 1],
-            'activation_independent_validation' => [false, 'NEW_PREREGISTERED_INDEPENDENT_WINDOW_REQUIRED', 1],
-            'activation_new_opportunity_window' => [false, 'NEW_PREREGISTERED_INDEPENDENT_WINDOW_REQUIRED', 1],
+            'activation_independent_validation' => [false, 'AUTHORIZED_RESEARCH_WINDOW_REQUIRED', 1],
+            'activation_new_opportunity_window' => [false, 'AUTHORIZED_RESEARCH_WINDOW_REQUIRED', 1],
         ];
         [$executable, $retryCode, $maxExperiments] = $profiles[$type] ?? [true, 'OWNER_RETRY_ADMISSION', 1];
         $activationRequiresWindow = in_array($type, [

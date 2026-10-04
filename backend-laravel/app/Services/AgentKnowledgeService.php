@@ -87,25 +87,9 @@ class AgentKnowledgeService
         string $family,
         ?string $scope = null,
     ): array {
-        $query = AgentLearningLesson::query()
-            ->where(['symbol' => $symbol, 'timeframe' => $timeframe, 'strategy_family' => $family])
-            ->where('lesson_type', 'harmful_lesson')
-            ->where('status', 'confirmed')
-            ->whereNotNull('parameter_key')
-            ->where(function ($query): void {
-                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            });
-
-        $scope = $this->normalizeScope($scope);
-        if ($scope !== null) {
-            $query->where(function ($query) use ($scope): void {
-                // A lesson with no proven regime is global safety evidence;
-                // a scoped lesson remains local to its declared regime.
-                $query->where('regime', $scope)->orWhereNull('regime');
-            });
-        }
-
-        return $query->pluck('parameter_key')->filter()->unique()->values()->all();
+        // Compatibility surface only. Lessons describe tested deltas, not
+        // global safety bans. Retrieval owns the exact contextual constraint.
+        return [];
     }
 
     /**
@@ -165,14 +149,10 @@ class AgentKnowledgeService
             ->get(['lab_agent_id', 'parameter_key'])
             ->groupBy('lab_agent_id')
             ->map(fn ($rows): array => $rows->pluck('parameter_key')->filter()->unique()->values()->all());
-        $lessonKeys = $agentIds === [] ? collect() : AgentLearningLesson::query()
-            ->whereIn('lab_agent_id', $agentIds)
-            ->where('lesson_type', 'harmful_lesson')
-            ->where('status', 'confirmed')
-            ->whereNotNull('parameter_key')
-            ->get(['lab_agent_id', 'parameter_key'])
-            ->groupBy('lab_agent_id')
-            ->map(fn ($rows): array => $rows->pluck('parameter_key')->filter()->unique()->values()->all());
+        // Lesson deltas require full context + independent window proof.
+        // The regime-only knowledge cache cannot widen their scope; the exact
+        // retrieval packet supplies these constraints to the constructor.
+        $lessonKeys = collect();
 
         foreach ($agents as $agent) {
             $model = $agent->modelVersion;

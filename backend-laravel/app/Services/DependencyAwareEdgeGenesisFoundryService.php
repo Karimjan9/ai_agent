@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Jobs\EvaluateLabAgentJob;
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
+use App\Models\LabEvidenceArtifact;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use Illuminate\Support\Collection;
@@ -644,35 +646,57 @@ class DependencyAwareEdgeGenesisFoundryService
         $admissionPassed = $this->edgeAdmissionPassed($result, $contextEnforcementRequired);
         $partition = $this->stagePartitionEvidence($agent, $result, $stage);
         $partitionRequired = data_get($contract, 'frozen_window_plan.protocol') === EdgeCohortIdentityService::WINDOW_PROTOCOL;
-        $stageMastery = $this->stageMasteryAssessment($agent, $trial, $passport, $result, $stage, $controlRole);
-        // Every settled Edge replay is registered as an Academy composition.
-        // This only freezes the next curriculum axis; it does not submit an
-        // Academy arm, use hindsight at runtime, or create promotion credit.
-        $academyPassport = $this->academy->passport($agent->symbol, $agent->timeframe, [
+        // Historical/invalid observations may be indexed, but only a durable
+        // exact-source replay may fund a prospective Academy experiment.
+        $academySource = $this->academySourceAdmission($agent, $result,
+            $observable && $hashesMatch && (! $partitionRequired || ($partition['valid'] ?? false)));
+        $stageMastery = $this->stageMasteryAssessment($agent, $trial, $passport, $result, $stage, $controlRole, $academySource);
+        $academyComposition = [
             'composition_key' => (string) $passport->genesis_key,
             'strategy_family' => (string) ($agent->strategy_family ?? data_get($contract, 'packet.strategy_family', 'hybrid')),
             'context' => (array) data_get($contract, 'context', []),
             'temporal_roles' => (array) data_get($contract, 'packet.temporal_roles', data_get($contract, 'temporal_roles', [])),
             'risk_contract' => (array) data_get($contract, 'risk_contract', []),
             'management_contract' => (array) data_get($contract, 'management_contract', []),
-            'deepest_stage' => $this->academyStageFor($stageMastery),
-        ], ['edge_genesis_trial_id' => $trial?->id, 'data_hash' => $data, 'execution_hash' => $execution]);
+            'deepest_stage' => $academySource['eligible'] ? $this->academyStageFor($stageMastery) : 'market_cartographer',
+        ];
+        if ($academySource['eligible']) $academyComposition = [...$academyComposition,
+            'baseline_model_version_id' => $agent->model_version_id,
+            'baseline_parameters' => (array) $agent->modelVersion?->parameters,
+            'baseline_parameter_hash' => app(AcademyExperimentContractCompilerService::class)->parameterHash((array) $agent->modelVersion?->parameters),
+            'prospective_source_identity' => ['data_hash' => $data, 'execution_hash' => $execution,
+                'mtf_bundle_hash' => data_get($agent->generation?->trigger_context, 'mtf_bundle_hash'),
+                'mtf_bundle_manifest' => data_get($agent->generation?->trigger_context, 'mtf_bundle_manifest'),
+                'canonical_dataset_snapshots' => data_get($agent->generation?->trigger_context, 'canonical_dataset_snapshots'),
+                'source_generation_id' => $agent->lab_generation_id,
+                'source_run_id' => $academySource['run_id'],
+                'source_code_hash' => $academySource['source_code_hash'],
+                'source_evaluator_hash' => $academySource['source_code_hash'],
+                'python_source_hash' => $academySource['python_source_hash'] ?? null,
+                'source_identity_protocol' => $academySource['source_identity_protocol'] ?? null],
+        ];
+        $academyPassport = $this->academy->passport($agent->symbol, $agent->timeframe, $academyComposition,
+            ['edge_genesis_trial_id' => $trial?->id, 'data_hash' => $data, 'execution_hash' => $execution,
+                'source_admission' => $academySource]);
         $academyDiagnostic = (array) data_get($result, 'edge_formation_academy_diagnostic', []);
-        $academyOracle = ['status' => 'not_assessed_oracle_envelope_unavailable', 'promotion_evidence' => false];
+        $academyOracle = ['status' => (string) ($academyDiagnostic['status'] ?? 'not_assessed_oracle_envelope_unavailable'),
+            'reason' => (string) ($academyDiagnostic['reason'] ?? 'ORACLE_ENVELOPE_NOT_READY'), 'promotion_evidence' => false];
         if (data_get($academyDiagnostic, 'status') === 'full_oracle_gap_observed'
             && is_numeric(data_get($academyDiagnostic, 'oracle_opportunity_edge_r'))) {
             $entryEnvelope = data_get($academyDiagnostic, 'entry_envelope_after_cost_r');
             $academyOracle = $this->academy->assessOracleGap((int) $academyPassport['passport_id'], $academyDiagnostic, [
                 'data_hash' => $data, 'execution_hash' => $execution,
-                // An absent entry envelope means no eligible entry path was
-                // observed; it is an entry-mastery diagnosis, not a zero
-                // loss fabricated for a separate component.
-                'real_entry_after_cost_r' => is_numeric($entryEnvelope) ? (float) $entryEnvelope : -0.000001,
-                'realized_after_cost_r' => data_get($academyDiagnostic, 'realized_after_cost_r', data_get($result, 'after_cost_expectancy_r', 0)),
+                // Unknown entry/realized outcomes remain unknown. A negative
+                // sentinel would fabricate a measured failure or capture loss.
+                'real_entry_after_cost_r' => $entryEnvelope,
+                'realized_after_cost_r' => data_get($academyDiagnostic, 'realized_after_cost_r'),
                 'management_capture_loss_r' => data_get($academyDiagnostic, 'management_capture_loss_r'),
             ]);
         }
-        $academyNext = $this->academy->nextExperiment((int) $academyPassport['passport_id'], $academyOracle);
+        $academyNext = $academySource['eligible']
+            ? $this->academy->nextExperiment((int) $academyPassport['passport_id'], $academyOracle)
+            : ['status' => 'blocked', 'reason' => $academySource['reason'], 'source_admission' => $academySource,
+                'promotion_evidence' => false];
         $academyBeam = $this->academy->archiveBeam((int) $academyPassport['passport_id'], (string) $academyPassport['deepest_stage'], [
             'composition_key' => (string) $passport->genesis_key,
             'strategy' => data_get($contract, 'packet.strategy_id', $agent->strategy_family),
@@ -790,6 +814,7 @@ class DependencyAwareEdgeGenesisFoundryService
             'stage_partition' => $partition, 'stage_history' => $stageHistory,
             'causal_stage_mastery' => $stageMastery,
             'edge_formation_academy' => ['passport' => $academyPassport,
+                'source_admission' => $academySource,
                 'replay_diagnostic' => $academyDiagnostic, 'oracle_settlement' => $academyOracle,
                 'next_experiment' => $academyNext, 'beam_archive' => $academyBeam,
                 'promotion_evidence' => false],
@@ -967,8 +992,8 @@ class DependencyAwareEdgeGenesisFoundryService
             if (data_get($diagnostic, 'status') === 'full_oracle_gap_observed' && is_numeric(data_get($diagnostic, 'oracle_opportunity_edge_r'))) {
                 $entry = data_get($diagnostic, 'entry_envelope_after_cost_r');
                 $this->academy->assessOracleGap((int) $academy['passport_id'], $diagnostic, ['data_hash' => $row->data_hash, 'execution_hash' => $row->execution_hash,
-                    'real_entry_after_cost_r' => is_numeric($entry) ? (float) $entry : -0.000001,
-                    'realized_after_cost_r' => data_get($diagnostic, 'realized_after_cost_r', data_get($metrics, 'after_cost_expectancy_r', 0)),
+                    'real_entry_after_cost_r' => $entry,
+                    'realized_after_cost_r' => data_get($diagnostic, 'realized_after_cost_r'),
                     'management_capture_loss_r' => data_get($diagnostic, 'management_capture_loss_r')]);
             }
             $this->academy->archiveBeam((int) $academy['passport_id'], (string) $academy['deepest_stage'], [
@@ -3474,6 +3499,59 @@ class DependencyAwareEdgeGenesisFoundryService
         return (array) $performance?->metrics;
     }
 
+    /** Only exact completed immutable evidence can seed executable curriculum. */
+    private function academySourceAdmission(LabAgent $agent, array $result, bool $edgeIdentityValid): array
+    {
+        $base = ['eligible' => false, 'promotion_evidence' => false];
+        if (! $edgeIdentityValid) return [...$base, 'reason' => 'ACADEMY_EDGE_SOURCE_IDENTITY_INVALID'];
+        $run = LabEvaluationRun::query()->where('run_id', (string) ($result['evidence_run_id'] ?? ''))->first();
+        if (! $run) return [...$base, 'reason' => 'ACADEMY_IMMUTABLE_SOURCE_RUN_REQUIRED'];
+        if ($run->status !== 'completed' || (int) $run->lab_agent_id !== (int) $agent->id
+            || (int) $run->model_version_id !== (int) $agent->model_version_id
+            || (int) $run->lab_generation_id !== (int) $agent->lab_generation_id) {
+            return [...$base, 'reason' => 'ACADEMY_IMMUTABLE_SOURCE_IDENTITY_MISMATCH', 'run_id' => $run->run_id];
+        }
+        $evidence = app(LabImmutableEvidenceService::class);
+        if (! hash_equals((string) $run->parameter_hash, $evidence->parameterHash($agent))) {
+            return [...$base, 'reason' => 'ACADEMY_SOURCE_PARAMETERS_CHANGED', 'run_id' => $run->run_id];
+        }
+        $eligibility = $evidence->learningEligibility($run);
+        if (! $eligibility['complete']) return [...$base, 'reason' => 'ACADEMY_SOURCE_EVIDENCE_INCOMPLETE',
+            'run_id' => $run->run_id, 'reason_codes' => $eligibility['reason_codes']];
+        try {
+            $original = $evidence->latestArtifactPayload($run);
+        } catch (\Throwable $exception) {
+            report($exception);
+            return [...$base, 'reason' => 'ACADEMY_SOURCE_ARTIFACT_INVALID', 'run_id' => $run->run_id];
+        }
+        if (! is_array($original)) return [...$base, 'reason' => 'ACADEMY_SOURCE_ARTIFACT_INVALID', 'run_id' => $run->run_id];
+        $artifact = LabEvidenceArtifact::query()->where('run_id', $run->run_id)
+            ->where('artifact_type', 'evaluation_response')->latest('id')->first();
+        // Compressed reads verify the original bytes; legacy inline reads do
+        // not, so explicitly attest their payload as well. JSON roundtrips of
+        // compressed numeric-key objects must not replace the raw-byte seal.
+        if (! $artifact || ! hash_equals((string) $run->response_hash, (string) $artifact->sha256)
+            || (! $artifact->storage_path && ! hash_equals((string) $artifact->sha256, $evidence->hash($original)))) {
+            return [...$base, 'reason' => 'ACADEMY_SOURCE_RESPONSE_HASH_INVALID', 'run_id' => $run->run_id];
+        }
+        foreach (['data_manifest', 'execution_contract', 'edge_formation_academy_diagnostic', 'entry_contract_funnel',
+            'data_quality.decision_identity_receipt', 'edge_observability', 'forbidden_risk_bypass',
+            'trade_ledger_hash', 'after_cost_expectancy_r', 'total_trades', 'net_r', 'mfe_capture_ratio'] as $field) {
+            if (! $evidence->equivalentJsonValue(data_get($original, $field), data_get($result, $field))) {
+                return [...$base, 'reason' => 'ACADEMY_SOURCE_PROJECTION_MISMATCH', 'field' => $field, 'run_id' => $run->run_id];
+            }
+        }
+
+        return ['eligible' => true, 'reason' => 'ACADEMY_EXACT_IMMUTABLE_SOURCE_ADMITTED', 'run_id' => $run->run_id,
+            'source_code_hash' => $run->code_hash,
+            // Full-runtime and Python-loaded fingerprints have different
+            // scopes. Only the original producer's explicit Python seal may
+            // seed this field; a legacy single-hash receipt stays unbound.
+            'python_source_hash' => data_get($original, 'data_quality.decision_identity_receipt.bindings.python_source_hash'),
+            'source_identity_protocol' => data_get($original, 'data_quality.decision_identity_receipt.bindings.source_identity_protocol'),
+            'promotion_evidence' => false];
+    }
+
     /**
      * Pair a discovery treatment only with its frozen/traveling control and
      * only when the materialized parameter vector has exactly one declared
@@ -3482,13 +3560,17 @@ class DependencyAwareEdgeGenesisFoundryService
      *
      * @return array<string,mixed>
      */
-    private function stageMasteryAssessment(LabAgent $agent, ?object $trial, object $passport, array $result, string $stage, bool $controlRole): array
+    private function stageMasteryAssessment(LabAgent $agent, ?object $trial, object $passport, array $result, string $stage, bool $controlRole, ?array $sourceAdmission = null): array
     {
         $base = ['protocol' => CausalStageMasteryDirectorService::PROTOCOL, 'status' => 'not_applicable',
             'enforce' => false, 'promotion_evidence' => false];
         if ($stage !== 'two_fold_discovery' || $controlRole || ! $trial || ! $agent->modelVersion) {
             return $base;
         }
+        $sourceAdmission ??= $this->academySourceAdmission($agent, $result,
+            hash_equals((string) $passport->data_hash, (string) data_get($result, 'data_manifest.sha256', data_get($result, 'data_hash', '')))
+            && hash_equals((string) $passport->execution_hash, (string) data_get($result, 'execution_contract.execution_hash', data_get($result, 'execution_hash', ''))));
+        if (! $sourceAdmission['eligible']) return [...$base, 'status' => 'unassessable_source', 'reason' => $sourceAdmission['reason']];
         $controlTrial = DB::table('edge_genesis_trials')->where('edge_genesis_passport_id', $passport->id)
             ->where('stage', 'two_fold_discovery')->whereIn('arm', self::TRAVELING_CONTROL_ARMS)
             ->whereNotNull('settled_at')->orderBy('id')->first();
@@ -3500,6 +3582,12 @@ class DependencyAwareEdgeGenesisFoundryService
         if (! $controlModel || $controlMetrics === []) {
             return [...$base, 'status' => 'awaiting_valid_control_metrics'];
         }
+        $controlAgent = LabAgent::query()->with('modelVersion')->find((int) $controlTrial->lab_agent_id);
+        $controlSource = $controlAgent ? $this->academySourceAdmission($controlAgent, $controlMetrics,
+            hash_equals((string) $passport->data_hash, (string) data_get($controlMetrics, 'data_manifest.sha256', data_get($controlMetrics, 'data_hash', '')))
+            && hash_equals((string) $passport->execution_hash, (string) data_get($controlMetrics, 'execution_contract.execution_hash', data_get($controlMetrics, 'execution_hash', '')))) : [];
+        if (! ($controlSource['eligible'] ?? false)) return [...$base, 'status' => 'awaiting_exact_immutable_control',
+            'reason' => $controlSource['reason'] ?? 'ACADEMY_IMMUTABLE_CONTROL_RUN_REQUIRED'];
         $axis = $this->stageMastery->inferAxis((array) $controlModel->parameters, (array) $agent->modelVersion->parameters);
         if (($axis['status'] ?? '') !== 'single_axis') {
             return [...$base, 'axis' => $axis];
@@ -3520,6 +3608,8 @@ class DependencyAwareEdgeGenesisFoundryService
             'window_plan_hash' => (string) data_get($agent->modelVersion->metadata, 'edge_genesis.frozen_window_plan.window_plan_hash', ''),
             'intervention_hash' => hash('sha256', json_encode([$gene, data_get($controlModel->parameters, $gene), data_get($agent->modelVersion->parameters, $gene)])),
             'axis' => $gene,
+            'control_evaluation_run_id' => data_get($controlMetrics, 'evidence_run_id'),
+            'candidate_evaluation_run_id' => data_get($result, 'evidence_run_id'),
         ];
         $ratchet = $this->ratchetGovernor->recordAssessment($assessment, $ratchetContext, $control, $candidate);
         $this->ratchetGovernor->progress([...$ratchetContext, 'ratchet_id' => $ratchet['ratchet_id'] ?? null], 'DISCOVERED', 'DISCOVERED', [
@@ -3580,7 +3670,8 @@ class DependencyAwareEdgeGenesisFoundryService
             }
             $assessed++;
             $evidence = $priorEvidence;
-            if (data_get($outcome, 'assessment.status') === 'non_controlling_axis') {
+            if (data_get($outcome, 'assessment.evidence_assessable') === true
+                && data_get($outcome, 'assessment.reason') === 'NO_OBSERVED_SEMANTIC_EFFECT') {
                 $retired++;
             }
             DB::table('edge_genesis_trials')->where('id', $trial->id)->update([
@@ -4030,10 +4121,10 @@ class DependencyAwareEdgeGenesisFoundryService
 
         return match ($reference) {
             'trend_pullback' => 'trend_breakout_retest',
-            'liquidity_reversal' => 'liquidity_sweep_reversal',
-            'break_retest' => 'breakout_continuation',
-            'range_reversion' => 'range_rsi_reversion',
-            default => $reference.'_confirmation_variant',
+            'choch_reversal' => 'regime_consensus',
+            'bos_retest_continuation' => 'trend_breakout_retest',
+            'range_mean_reversion' => 'range_rsi_reversion',
+            default => throw new \InvalidArgumentException('EDGE_TACTIC_VARIANT_NOT_DECLARED'),
         };
     }
 
@@ -4604,9 +4695,25 @@ class DependencyAwareEdgeGenesisFoundryService
     /** Translate existing causal transition evidence into Academy curriculum depth. */
     private function academyStageFor(array $assessment): string
     {
-        return match ((string) data_get($assessment, 'target_stage', '')) {
+        $proof = (array) data_get($assessment, 'assessment', $assessment);
+        $target = (string) ($proof['target_stage'] ?? '');
+        $checks = (array) ($proof['checks'] ?? []);
+        $candidateCount = (int) data_get($proof, 'candidate_counts.'.$target, 0);
+        $controlCount = (int) data_get($proof, 'control_counts.'.$target, 0);
+        // Controllability alone includes worsened behavior. An initial source
+        // passport advances only on a positively observed local transition;
+        // same-count economic gains need the separate exact outcome comparator.
+        if (($proof['protocol'] ?? null) !== CausalStageMasteryDirectorService::PROTOCOL
+            || ($proof['status'] ?? null) !== 'controllable'
+            || ($proof['evidence_assessable'] ?? null) !== true
+            || ($proof['semantic_effect_observed'] ?? null) !== true
+            || ! collect(['parameter_changed', 'target_transition_changed', 'decision_identity_valid',
+                'upstream_identity_preserved', 'minimum_event_delta_reached', 'duplicate_behavior', 'behavior_excessive'])
+                ->every(fn (string $key): bool => ($checks[$key] ?? null) === true)
+            || $candidateCount <= 0 || $candidateCount <= $controlCount) return 'market_cartographer';
+        return match ((string) data_get($proof, 'target_stage', '')) {
             'location' => 'setup_apprentice', 'setup' => 'confirmation_specialist',
-            'confirmation', 'trigger' => 'trigger_entry_specialist', 'entry' => 'execution_specialist',
+            'confirmation' => 'trigger_entry_specialist', 'trigger' => 'execution_specialist', 'entry' => 'management_specialist',
             'closed_trade' => 'management_specialist', default => 'market_cartographer',
         };
     }
@@ -4627,9 +4734,9 @@ class DependencyAwareEdgeGenesisFoundryService
     {
         return [
             ['key' => 'trend_pullback', 'label' => 'Trend Pullback', 'strategy_id' => 'str_001_ema_adx_pullback', 'tactic_id' => 'trend_pullback', 'management_id' => 'balanced_professional', 'emitter' => 'prior_seed', 'context' => ['regime' => 'trend', 'allowed_regimes' => ['trend_up', 'trend_down'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'london_new_york_overlap'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
-            ['key' => 'liquidity_reversal', 'label' => 'Liquidity Reversal', 'strategy_id' => 'str_032_choch_reversal', 'tactic_id' => 'liquidity_reversal', 'management_id' => 'balanced_professional', 'emitter' => 'local_recombination', 'context' => ['regime' => 'transition', 'allowed_regimes' => ['transition'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'new_york'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
-            ['key' => 'break_retest', 'label' => 'Break and Retest', 'strategy_id' => 'str_031_bos_retest', 'tactic_id' => 'break_retest', 'management_id' => 'balanced_professional', 'emitter' => 'temporal_binder', 'context' => ['regime' => 'trend', 'allowed_regimes' => ['trend_up', 'trend_down'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'london_new_york_overlap'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
-            ['key' => 'range_session_specialist', 'label' => 'Range Session Specialist', 'strategy_id' => 'str_020_bb_rsi_reversion', 'tactic_id' => 'range_reversion', 'management_id' => 'balanced_professional', 'emitter' => 'confirmation_entry', 'context' => ['regime' => 'range', 'allowed_regimes' => ['range'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'new_york'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
+            ['key' => 'liquidity_reversal', 'label' => 'Liquidity Reversal', 'strategy_id' => 'str_032_choch_reversal', 'tactic_id' => 'choch_reversal', 'management_id' => 'balanced_professional', 'emitter' => 'local_recombination', 'context' => ['regime' => 'transition', 'allowed_regimes' => ['transition'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'new_york'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
+            ['key' => 'break_retest', 'label' => 'Break and Retest', 'strategy_id' => 'str_031_bos_retest', 'tactic_id' => 'bos_retest_continuation', 'management_id' => 'balanced_professional', 'emitter' => 'temporal_binder', 'context' => ['regime' => 'trend', 'allowed_regimes' => ['trend_up', 'trend_down'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'london_new_york_overlap'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
+            ['key' => 'range_session_specialist', 'label' => 'Range Session Specialist', 'strategy_id' => 'str_020_bb_rsi_reversion', 'tactic_id' => 'range_mean_reversion', 'management_id' => 'balanced_professional', 'emitter' => 'confirmation_entry', 'context' => ['regime' => 'range', 'allowed_regimes' => ['range'], 'session' => 'liquid_session', 'allowed_sessions' => ['london', 'new_york'], 'volatility' => 'normal', 'allowed_volatility' => ['normal_volatility'], 'enforcement' => 'required', 'admission_axes' => ['regime', 'session', 'volatility'], 'outside_scope' => 'WAIT']],
         ];
     }
 

@@ -1,8 +1,11 @@
 import hashlib
 import json
 
+import pandas as pd
+
 from app.services.instrument_research import (
     _context_matches,
+    _context_slices,
     build_instrument_research_trace,
 )
 
@@ -15,6 +18,39 @@ def test_snapshot_volatility_label_matches_runtime_volatility_without_widening_s
     assert not _context_matches(
         boundary, {"regime": "trend_up", "volatility": "high_volatility"}
     )
+
+
+def test_runtime_never_infers_liquid_from_absent_or_unavailable_spread():
+    from app.services.backtester import _instrument_runtime_context
+
+    row = {"time": "2025-12-22T13:05:00Z", "atr": 2.0, "market_regime": "trend_up"}
+    for extra in ({}, {"spread": None}, {"spread": -0.1}, {"spread": float("inf")},
+                  {"spread": float("nan")}, {"spread": 0.1, "spread_available": False},
+                  {"spread": 0.1, "spread_available": pd.NA}):
+        assert _instrument_runtime_context({**row, **extra}, "BUY")["spread_liquidity_state"] == "unknown"
+    assert _instrument_runtime_context({**row, "spread": 0.1, "spread_available": True}, "BUY")["spread_liquidity_state"] == "liquid"
+    assert _instrument_runtime_context({**row, "spread": 0.6, "spread_available": True}, "BUY")["spread_liquidity_state"] == "illiquid"
+
+
+def test_exact_trade_slices_do_not_merge_distinct_venue_phases():
+    result = {
+        "robustness_matrix": {
+            "instrument_context_envelopes": {
+                "trend_up|normal_volatility|london|london_am_fix|BUY": {
+                    "trades": 3, "net_pf": 1.2, "net_profit_percent": 1.0
+                },
+                "trend_up|normal_volatility|london|london_interfix|BUY": {
+                    "trades": 4, "net_pf": 0.8, "net_profit_percent": -1.0
+                },
+            }
+        }
+    }
+    slices = _context_slices(result, exact=True)
+    assert len(slices) == 2
+    assert {row["context"]["venue_phase"] for row in slices} == {
+        "london_am_fix", "london_interfix"
+    }
+    assert all(row["powered"] for row in slices)
 
 
 def _hash(value):
@@ -341,7 +377,16 @@ def test_trace_exports_only_entry_time_context_slices_for_paired_settlement():
                     "net_pf": 0.8,
                     "net_profit_percent": -0.3,
                 },
-            }
+            },
+            "instrument_context_envelopes": {
+                "trend_up|normal_volatility|london|london_am_fix|BUY": {
+                    "trades": 4, "net_pf": 1.4, "net_profit_percent": 0.8,
+                    "max_drawdown_percent": 0.2, "execution_cost_percent": 0.1,
+                },
+                "range|high_volatility|overlap|london_comex_overlap|SELL": {
+                    "trades": 2, "net_pf": 0.8, "net_profit_percent": -0.3,
+                },
+            },
         },
         "instrument_runtime_observations": _runtime(
             assignment,
@@ -353,10 +398,29 @@ def test_trace_exports_only_entry_time_context_slices_for_paired_settlement():
             },
         ),
     }
+    observed = result["instrument_runtime_observations"]["instruments"]["volume_confirmation"]
+    exact_keys = [
+        "trend_up|normal_volatility|london|london_am_fix|BUY",
+        "range|high_volatility|overlap|london_comex_overlap|SELL",
+    ]
+    observed["activated_exact_context_keys"] = exact_keys
+    observed["exact_context_event_counts"] = {key: 1 for key in exact_keys}
+    observed["activated_exact_contexts"] = {
+        key: {
+            "regime": key.split("|")[0], "volatility": key.split("|")[1],
+            "session": key.split("|")[2], "venue_phase": key.split("|")[3],
+            "direction": key.split("|")[4],
+        }
+        for key in exact_keys
+    }
 
     trace = build_instrument_research_trace(assignment, parameters, result)
 
     assert trace["context_source"] == "decision_time_trade_ledger"
+    assert trace["context_slice_protocol"] == "venue_phase_v1"
+    assert trace["instruments"][0]["activated_exact_context_keys"] == sorted(exact_keys)
+    assert trace["bundle_activation_exact_context_keys"] == sorted(exact_keys)
+    assert len(trace["exact_context_slices"]) == 2
     assert (
         trace["instrument_activation_source"]
         == "instrument_specific_runtime_event_ledger"

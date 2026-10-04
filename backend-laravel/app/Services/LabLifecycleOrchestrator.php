@@ -99,6 +99,7 @@ class LabLifecycleOrchestrator
         ?int $expectedGenerationId = null,
         bool $settleOnly = false,
         bool $learningConfirmation = false,
+        ?array $prospectiveExpectation = null,
     ): array {
         $symbol = strtoupper($symbol);
         $timeframe = $this->canonicalLaboratoryTimeframe($symbol, $timeframe);
@@ -324,7 +325,8 @@ class LabLifecycleOrchestrator
                 $cycleId,
                 $stage,
                 $startCycle,
-                (string) data_get($strategy, 'generation_trigger', ''),
+                $learningConfirmation ? 'learning_confirmation' : (string) data_get($strategy, 'generation_trigger', ''),
+                $prospectiveExpectation,
             );
             if ($generation === null) {
                 $outcome = $this->lastGenerationOutcome;
@@ -406,6 +408,11 @@ class LabLifecycleOrchestrator
                 'Cycle advanced one pass; awaiting evidence.', $stage, [
                     'generation_id' => $generation->id,
                     'generation' => $generation->generation,
+                    'generation_trigger_type' => (string) $generation->trigger_type,
+                    'prospective_source_pair_id' => (int) data_get($generation->trigger_context,
+                        'adaptive_evolution_policy.causal_learning_counterfactual_cohort.source.source_pair_id', 0),
+                    'prospective_source_hash' => (string) data_get($generation->trigger_context,
+                        'adaptive_evolution_policy.causal_learning_counterfactual_cohort.source.source_hash', ''),
                 ]);
 
             $this->logCycle($cycleId, $summary);
@@ -677,6 +684,7 @@ class LabLifecycleOrchestrator
         return [
             'state' => 'open',
             'reason' => $typed,
+            'generation_trigger' => $learningConfirmation ? 'learning_confirmation' : null,
             'actionable_pending_dojo' => $actionable,
             'consume_successor_request' => $consume,
             'generation_admission' => $decision,
@@ -909,7 +917,7 @@ class LabLifecycleOrchestrator
         }
     }
 
-    private function ensureGeneration(string $symbol, string $timeframe, string $cycleId, string $stage, bool $startCycle = false, ?string $admittedTrigger = null): ?LabGeneration
+    private function ensureGeneration(string $symbol, string $timeframe, string $cycleId, string $stage, bool $startCycle = false, ?string $admittedTrigger = null, ?array $prospectiveExpectation = null): ?LabGeneration
     {
         $this->lastGenerationOutcome = [
             'status' => 'blocked', 'reason_code' => 'GENERATION_CREATION_NOT_STARTED', 'retryable' => false,
@@ -980,9 +988,11 @@ class LabLifecycleOrchestrator
             ? $latest
             : null;
         if ($quarantinedDraft !== null) {
-            $plannedSlots = count((array) data_get($quarantinedDraft->trigger_context, 'generation_plan', []));
-            $existingSlots = $quarantinedDraft->agents()->count();
-            if ($plannedSlots > 0 && $existingSlots < $plannedSlots) {
+            // An explicitly aborted, terminal generation is immutable
+            // diagnostic history. Re-entering its deterministic failed slot
+            // on every lifecycle tick starves an otherwise ready successor.
+            // Use the arbiter's same bounded exhaustion guard for every lane.
+            if (LabPopulationService::constructionIncomplete($quarantinedDraft)) {
                 $continuation = $this->population->continueInterruptedConstruction((int) $quarantinedDraft->id, 4);
                 $complete = (string) data_get($continuation, 'status') === 'complete';
                 $this->lastGenerationOutcome = [
@@ -1023,7 +1033,8 @@ class LabLifecycleOrchestrator
                     : ($this->dataEdgeAudits->opensSuccessor($latest)
                             ? 'data_edge_audit'
                             : 'new_data'));
-            $generation = $this->population->build($symbol, $trigger, $trigger === 'operator_successor', $timeframe);
+            $generation = $this->population->build($symbol, $trigger, $trigger === 'operator_successor', $timeframe,
+                prospectiveExpectation: $prospectiveExpectation);
             $this->lastGenerationOutcome = $this->population->lastBuildOutcome();
 
             return $generation;
@@ -1384,7 +1395,19 @@ class LabLifecycleOrchestrator
                 || str_contains($payload, 'App\\\\Jobs\\\\ValidateMtfPoweredPriorJob')
                 || str_contains($payload, 'App\\Jobs\\ValidateMtfPoweredPriorJob');
         });
-        $maxAttempts = (int) ($canonicalRows->max(fn (array $row): int => (int) ($row['attempts'] ?? 0)) ?? 0);
+        // EvaluateLabAgentJob's WithoutOverlapping middleware releases a
+        // healthy contender while a peer owns the serialized replay lane.
+        // Laravel increments attempts before the evaluator is ever called;
+        // its retryUntil deadline and immutable technical runs, not this raw
+        // counter, govern failure. Unknown/high-attempt jobs still trip the
+        // circuit breaker below.
+        $attemptRows = $canonicalRows->reject(function (array $row): bool {
+            $payload = json_decode((string) ($row['payload'] ?? ''), true);
+
+            return is_array($payload)
+                && ($payload['displayName'] ?? null) === EvaluateLabAgentJob::class;
+        });
+        $maxAttempts = (int) ($attemptRows->max(fn (array $row): int => (int) ($row['attempts'] ?? 0)) ?? 0);
         $staleReserved = 0;
         foreach ((array) ($snapshot['stats'] ?? []) as $stats) {
             $staleReserved += (int) ($stats['stale_reserved_count'] ?? 0);

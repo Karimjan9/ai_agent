@@ -1,14 +1,15 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "5e3498ce579265a81dc03c17970e0f3ff7be935b657ee7f6e9aab0a863ae6762",
-  "generated_at": "2026-09-26T17:30:50.184Z",
-  "source_digest": "1f612b3f350728963367ba99e61f8e4430e448e51b310bdf17f4bc0cde0173d2",
-  "source_file_count": 1364,
-  "git_head": "c47c026e454e780e818232cbb0f9cfd03a21debb",
+  "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
+  "generated_at": "2026-10-04T08:53:34.975Z",
+  "source_digest": "4164b6321e1cd7aca6d030e0968035f023bcceb5ec1f0e3b82335caebf5a1f93",
+  "source_file_count": 1467,
+  "git_head": "0f01216b43a2cf6579e588fba17051ca26b707e2",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "paper-execution",
   "paths": [
+    "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
     "backend-laravel/app/Services/PaperTradingExecutionService.php",
     "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
     "backend-laravel/app/Services/SmartDisciplineEngineService.php",
@@ -18,6 +19,7 @@
   "source_files": [
     "backend-laravel/app/Console/Commands/MonitorPaperTrading.php",
     "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
+    "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
     "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
     "backend-laravel/app/Services/PaperTradingExecutionService.php",
     "backend-laravel/app/Services/SmartDisciplineEngineService.php"
@@ -96,6 +98,126 @@
       "line": 93
     },
     {
+      "symbol": "verifyFrozenCandidate",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 110
+    },
+    {
+      "symbol": "PaperAuthorityAdmissionService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 13
+    },
+    {
+      "symbol": "candidateIdentity",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 149
+    },
+    {
+      "symbol": "recordProspectiveOutcome",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 166
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 19
+    },
+    {
+      "symbol": "prospectiveOutcomeContract",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 206
+    },
+    {
+      "symbol": "admit",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 22
+    },
+    {
+      "symbol": "championEligible",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 254
+    },
+    {
+      "symbol": "observationReadiness",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 264
+    },
+    {
+      "symbol": "isoFreeze",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 289
+    },
+    {
+      "symbol": "postPaperTraitProvenance",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 301
+    },
+    {
+      "symbol": "archivePaperProvenance",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 404
+    },
+    {
+      "symbol": "traitRuntimeBasis",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 424
+    },
+    {
+      "symbol": "originalResearchTransportMatches",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 430
+    },
+    {
+      "symbol": "instrumentTreatment",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 448
+    },
+    {
+      "symbol": "archiveBaselineSource",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 464
+    },
+    {
+      "symbol": "immutableSource",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 478
+    },
+    {
+      "symbol": "sourceFilesInside",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 530
+    },
+    {
+      "symbol": "emptyOriginalInlinePlane",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 571
+    },
+    {
+      "symbol": "strictTime",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
+      "line": 579
+    },
+    {
       "symbol": "PaperExecutionStateMachineService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
@@ -120,127 +242,139 @@
       "line": 36
     },
     {
+      "symbol": "canonicalize",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1003
+    },
+    {
+      "symbol": "confirmationEntryTransport",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1018
+    },
+    {
       "symbol": "confirmationEntryHashValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 1004
+      "line": 1053
     },
     {
       "symbol": "confirmationEntryMtfStreams",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 1020
+      "line": 1069
     },
     {
       "symbol": "aiRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 1033
+      "line": 1082
     },
     {
       "symbol": "paperTrackAllowed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 108
+      "line": 109
+    },
+    {
+      "symbol": "candidatePassport",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 139
+    },
+    {
+      "symbol": "frozenPaperGuard",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 157
     },
     {
       "symbol": "captureLatestSignal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 151
+      "line": 184
     },
     {
       "symbol": "PaperTradingExecutionService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 19
+      "line": 20
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 21
+      "line": 22
     },
     {
       "symbol": "executePendingSignal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 452
+      "line": 490
     },
     {
       "symbol": "run",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 57
+      "line": 58
     },
     {
       "symbol": "runtimePortfolioAllowed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 696
+      "line": 745
     },
     {
       "symbol": "instrumentVolatility",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 715
+      "line": 764
     },
     {
       "symbol": "instrumentSession",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 728
+      "line": 777
     },
     {
       "symbol": "instrumentSessionContext",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 734
+      "line": 783
     },
     {
       "symbol": "portfolioTransition",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 744
+      "line": 793
     },
     {
       "symbol": "reconcile",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 758
+      "line": 807
     },
     {
       "symbol": "simulatedExit",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 838
+      "line": 887
     },
     {
       "symbol": "score",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 865
+      "line": 914
     },
     {
       "symbol": "recordClosedOrderMemory",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 899
+      "line": 948
     },
     {
       "symbol": "selfAudit",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 920
-    },
-    {
-      "symbol": "canonicalize",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 954
-    },
-    {
-      "symbol": "confirmationEntryTransport",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
       "line": 969
@@ -428,6 +562,46 @@
       "tests": [
         "test_unproven_paper_scope_preserves_raw_confidence",
         "test_calibrated_scope_uses_observed_bin_probability"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/PostPaperConfirmedTraitAdmissionTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_original_archive_plus_one_confirmed_executable_trait_can_use_only_its_new_paper_epoch",
+        "test_original_provenance_rejects_extra_genes_components_context_cost_sources_and_late_seals",
+        "test_future_archive_uses_original_modern_source_not_training_label_and_never_backfills_old_seal",
+        "traitCandidate",
+        "originalRun",
+        "producer",
+        "sealedMetadata",
+        "prePaperAuthority"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php",
+      "tests": [
+        "test_future_epochs_are_explicit_default_deny_and_preserve_2026_cutoff",
+        "test_future_paper_seal_binds_approval_freeze_and_observation_chronology",
+        "test_future_paper_and_authorized_instrument_research_must_be_disjoint_both_ways",
+        "test_future_candidate_uses_persisted_epoch_and_blocks_transport_until_it_opens",
+        "test_withdrawing_a_research_authorization_cannot_reuse_observed_window_for_paper",
+        "test_future_epoch_does_not_authorize_unverified_post_paper_training_provenance",
+        "test_route_seals_distinguish_historical_research_from_missing_independent_authority",
+        "test_activation_period_cannot_overlap_explicit_future_paper",
+        "test_legacy_activation_reservation_is_valid_but_not_rewritten_or_upgraded",
+        "futureEpoch",
+        "test_2026_is_paper_only_and_outside_dates_are_rejected",
+        "test_pre_paper_candidate_freezes_once_and_only_valid_2026_evidence_opens_e4",
+        "test_invalid_epoch_cannot_become_forward_or_parent_evidence",
+        "test_cached_e3_admission_cannot_authorize_changed_parameters_or_a_new_passport",
+        "test_component_and_execution_drift_are_not_hidden_by_equal_parameters",
+        "test_legacy_admission_without_identity_is_not_retroactively_refrozen",
+        "test_capture_and_pending_execution_block_before_http_on_parameter_drift",
+        "model",
+        "prePaperAuthority",
+        "passport"
       ]
     },
     {

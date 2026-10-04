@@ -14,6 +14,14 @@ class TacticCatalogueService
     public const PROTOCOL = 'audited_tactic_catalogue_v1';
 
     private const CATALOGUE = [
+        'confirmation_entry_mtf' => [
+            'tactic_id' => 'closed_mtf_confirmation_entry',
+            'label' => 'Closed MTF confirmation entry',
+            'hypothesis' => 'Require the existing closed H4/H1 context, M15 setup/confirmation and M5 entry predicates without inventing an EMA strategy identity.',
+            'target_regimes' => ['trend_up', 'trend_down', 'range', 'unknown', 'transition', 'high_volatility', 'low_volatility'],
+            'entry_topology' => 'confirmation_entry_mtf_v1',
+            'allowed_genes' => ['entry_model', 'setup_topology_policy', 'location_tolerance_atr', 'confirmation_topology_policy', 'confirmation_min_score', 'minimum_confirmations'],
+        ],
         'trend_pullback' => [
             'tactic_id' => 'trend_following_pullback',
             'label' => 'Trend following + ATR pullback',

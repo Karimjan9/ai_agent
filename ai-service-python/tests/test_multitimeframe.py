@@ -150,6 +150,7 @@ def test_autonomous_m5_replay_accepts_one_exact_closed_mtf_manifest(tmp_path) ->
         symbol="XAUUSD",
         timeframe="M5",
         dataset_path=streams["M5"][0],
+        replay_dataset_hash=manifest["bundle_hash"],
         mtf_dataset_paths={
             timeframe: streams[timeframe][0]
             for timeframe in ("H4", "H1", "M15")

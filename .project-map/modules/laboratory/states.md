@@ -1,7 +1,36 @@
 # Laboratory lifecycle states
 
+`historical_research` opens a bounded archive-backed successor after terminal
+settlement without requiring 24 new live H1 bars. Valid champion presence or
+disabled policy denies a new historical root; active work, technical debt,
+protocol pause and operator pause still fence admission. Missing/corrupt archive
+is an explicit dependency, not strategy failure. The prequeue foundation hash
+and pre-2026 MTF periods must match the prospective admission. New scientific
+zero-pass cohorts may continue discovery without earning independent credit.
+The separate paper snapshot and paper/live freshness guards are unchanged.
+A successor created after terminal technical quarantine keeps arbiter creation
+provenance, but the failed predecessor receives no clean autonomy receipt.
+
+Frozen replay recovery keeps the MTF aggregate, foundation CSV and paper CSV
+identities in separate domains. It reopens the original four stream bytes and
+checks the old request's M5 transport. A valid aggregate is not a foundation
+mismatch; changed, missing or ambiguous stream/transport evidence still denies
+replay, including an explicitly requested dataset-contract repair. Previously
+sealed terminal dispositions and retry budgets are not retroactively reopened.
+
+A valid prospective-repair triplet that closes discovery remains screened;
+`PROSPECTIVE_REPAIR_RESEARCH_ONLY` withholds expensive validation without placing
+the generation in technical quarantine. Invalid identity/parity remains technical.
+Discovery quality with an absent or mismatched exact-context runtime receipt is
+`data_missing` and leaves a blocked follow-up, not an `underpowered` claim.
+Only a sealed, measured scope receipt permits the context-opportunity and
+behavioral-effect transitions; old terminal evidence is immutable.
+
 The persisted models and lifecycle services are authoritative. This compact map
 captures the operational meaning needed before changing a transition.
+The bounded construction-exhaustion guard covers ordinary, shadow and
+controlled-rescue abort receipts. Lifecycle continuation and arbiter selection
+share that guard, including exact missing-slot and repeated-reason coverage.
 
 | From | Trigger | To | Guard / owner | Failure or compensation |
 | --- | --- | --- | --- | --- |
@@ -14,6 +43,7 @@ captures the operational meaning needed before changing a transition.
 | paper_candidate | paper admission succeeds | paper_observation | Paper authority/admission owns the boundary | No live authority is created. |
 | paper_observation | required paper evidence settles | completed, rejected or archived | Lifecycle gate owner records an immutable outcome | Invalid process evidence is quarantined. |
 | any active state | unrecoverable/ineligible evidence | quarantined or archived | Explicit lifecycle decision | Preserve evidence and reason; do not silently reopen. |
+| technical_quarantine with missing constructor seat | bounded continuation repeats the same deterministic no-mutation failure without creating a seat | terminal technical history | `LabPopulationService::constructionIncomplete` requires original and continuation receipts to match every missing slot | Never synthesize a zero-diff candidate or reclassify the failed cohort as science; a transient or unmatched failure remains resumable. |
 
 Terminal labels vary across persisted records (`rejected`, `overfit`,
 `stagnated`, `archived` and related statuses). Before adding a state, inspect the
@@ -33,6 +63,10 @@ Arbiter child process completion and lifecycle transition completion are
 distinct: a successful process that returns a typed pause is recorded as
 `deferred`. It cannot seal successor evidence or masquerade as a completed
 state transition.
+An arbiter-selected `learning_confirmation` constructor must preserve that
+trigger through the normal open-admission branch. A completed lifecycle pass
+with a different generation trigger or prospective pair/source hash is
+`deferred`, not a fulfilled prospective repair or causal-confirmation decision.
 
 A final `data_edge_audit_completed` report may open one root successor only
 when its audit's source generation number equals the latest generation. The
@@ -58,7 +92,37 @@ An immutable composition identity, required-node or aggregate-authority
 mismatch is terminal construction/configuration failure for that candidate; it
 must not be retried as a transient replay transport error.
 
+Creating a later generation cannot retroactively seal an earlier attempted
+generation's release.
+Prospective source/data/cost or loaded-worker drift is terminal technical
+provenance failure. A missing measured-liquidity prerequisite is reported as a
+data dependency before proposing a mutation-only activation experiment; it is
+not a strategy no-effect finding or permission to weaken a gate.
+
 Seat allocation is orthogonal to lifecycle state. Reallocating a later
 generation from discovery pairs to replication/factorial/descendant blocks does
 not change the guards above, and a missing block/control receipt still fails
 closed.
+The `phase_scope_probe` is a screening-only research block. Its arms reach the
+ordinary `screened` terminal projection with `PHASE_SCOPE_RESEARCH_ONLY`, even
+if they emit promising signals or trades; neither full-validation nor paper
+admission follows. Paired settlement records the precise phase activation
+status. Missing source bytes, mismatched phase/genome/passport or a 2026 MTF
+cutoff is a prequeue technical rejection, not a scientific no-signal result.
+An already-constructed v1 probe whose legacy passport lacks strategy-scope
+binding is also technical rejection; a new v2 cohort must prospectively
+freeze its executable passport before dispatch. A failed v1 run is never
+rewritten or credited as a v2 control.
+For cold-start successors, only a terminal immediate predecessor may steer a
+single research-only pair using a sealed cooperative settlement ID/content
+digest. Technical-invalid evidence is diagnostic, not a positive result;
+positive screening settlement alone still cannot open credit-gated blocks.
+The allocation manifest owns all twenty seats, including protected causal
+proof and uncertainty-abstain roles. Queue admission rechecks the source
+settlement digest and final seat ownership; drift is technical admission
+failure, not a new scientific result.
+An exact prospective causal triplet is a separately admitted three-seat
+generation, so an unrelated discovery slot cannot make it incomplete. A
+technical-quarantine generation with `constructor_contract_abort` and a
+persisted failed slot is terminal evidence, not a resumable draft; successor
+construction does not mutate its agents or erase the abort receipt.

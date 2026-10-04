@@ -21,6 +21,7 @@ use App\Services\ContextualInstrumentBundleGraphService;
 use App\Services\CooperativeContextualEvolutionCouncilService;
 use App\Services\CooperativeExperimentSettlementService;
 use App\Services\CooperativeModuleSpeciesService;
+use App\Services\GenerationSnapshotAdmissionService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\ResearchAllocationPolicyService;
 use App\Services\ResearchIdeaInboxService;
@@ -99,10 +100,140 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         $this->assertSame([4, 5, 6], data_get($paired, 'contract.primary_proof_slots'));
         $this->assertSame(8, data_get($paired, 'contract.pair_count'));
         $this->assertSame([20], data_get($paired, 'contract.uncertainty_abstain_slots'));
+        $this->assertTrue((bool) data_get($allocation, 'contract.seat_ownership_complete'));
+        $this->assertCount(20, (array) data_get($allocation, 'contract.seat_ownership'));
+        $this->assertSame(3, collect(data_get($allocation, 'contract.seat_ownership'))
+            ->where('kind', 'protected_causal_proof')->count());
+        $this->assertSame(1, collect(data_get($allocation, 'contract.seat_ownership'))
+            ->where('kind', 'uncertainty_abstain')->count());
         $this->assertSame(
             ['hypothesis_guided', 'blinded', 'frozen_control'],
             collect($paired['plan'])->pluck('niche.causal_learning_cohort.role')->filter()->values()->all(),
         );
+    }
+
+    public function test_valid_negative_repair_receipt_changes_one_successor_pair_and_seals_its_source(): void
+    {
+        $lab = $this->lab();
+        $settlement = $this->predecessorSettlement($lab, 'repair_pair', 'settled_negative_or_null');
+        $allocation = app(ContextualCouncilAllocatorService::class)->allocate($this->protectedPlan(), $lab);
+        $contract = $allocation['contract'];
+
+        $this->assertSame(16, $contract['cooperative_seats']);
+        $this->assertSame(8, data_get($contract, 'pair_budget'));
+        $this->assertSame(8, data_get($contract, 'seat_counts.repair_pair'));
+        $this->assertSame(6, data_get($contract, 'seat_counts.novelty_pair'));
+        $this->assertSame(2, data_get($contract, 'seat_counts.adversarial_guard'));
+        $this->assertSame($settlement->id, data_get($contract, 'settlement_feedback.decision.source_settlement_id'));
+        $this->assertSame('negative_repair_diversification', data_get($contract, 'settlement_feedback.decision.reason'));
+        $this->assertSame('repair_pair', data_get($contract, 'settlement_feedback.decision.from_block_type'));
+        $this->assertSame('novelty_pair', data_get($contract, 'settlement_feedback.decision.to_block_type'));
+        $this->assertSame([1, 2], data_get($contract, 'settlement_feedback.decision.final_seat_numbers'));
+        $this->assertSame(data_get($contract, 'experiment_blocks.0.block_key'),
+            data_get($contract, 'settlement_feedback.decision.final_block_key'));
+        $this->assertSame([$settlement->id], data_get($contract, 'settlement_feedback.valid_settlement_ids'));
+        $this->assertSame(64, strlen((string) data_get($contract, 'settlement_feedback.settlement_digest')));
+        $this->assertSame(64, strlen((string) data_get($contract, 'allocation_manifest_hash')));
+        $this->assertCount(20, $contract['seat_ownership']);
+        $this->assertTrue($contract['seat_ownership_complete']);
+        $this->assertSame([4, 5, 6], $contract['protected_causal_proof_slots']);
+        $this->assertSame([20], $contract['uncertainty_abstain_slots']);
+    }
+
+    public function test_reserved_constructor_generation_uses_its_own_number_not_max_plus_one(): void
+    {
+        $lab = $this->lab();
+        $settlement = $this->predecessorSettlement($lab, 'repair_pair', 'settled_negative_or_null');
+        $reserved = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 2,
+            'trigger_type' => 'test', 'trigger_context' => [], 'population_size' => 20, 'status' => 'draft']);
+        $allocation = app(ContextualCouncilAllocatorService::class)->allocate(
+            $this->protectedPlan(), $lab, [], (int) $reserved->generation,
+        );
+        $this->assertSame(2, data_get($allocation, 'contract.generation_number'));
+        $this->assertSame(1, data_get($allocation, 'contract.settlement_feedback.source_generation_number'));
+        $this->assertSame($settlement->id,
+            data_get($allocation, 'contract.settlement_feedback.decision.source_settlement_id'));
+        $this->assertSame(8, data_get($allocation, 'contract.seat_counts.repair_pair'));
+        $reserved->update(['trigger_context' => ['generation_plan' => $allocation['plan'],
+            'population_group_contract' => ['contextual_allocator' => $allocation['contract']]]]);
+        $this->assertSame([], app(CooperativeContextualEvolutionCouncilService::class)
+            ->allocationReasons($reserved->fresh(['laboratory'])));
+    }
+
+    public function test_underpowered_invalid_and_positive_signals_have_distinct_non_credit_allocation_effects(): void
+    {
+        $lab = $this->lab();
+        $cases = [
+            ['activation_factorial', 'underpowered_activation', true, 'underpowered_activation_coverage',
+                ['repair_pair' => 8, 'novelty_pair' => 4, 'adversarial_guard' => 2, 'coverage_guard' => 2]],
+            ['repair_pair', 'invalid_arm_evidence', false, 'technical_invalid_diagnostic_guard',
+                ['repair_pair' => 10, 'novelty_pair' => 2, 'adversarial_guard' => 2, 'coverage_guard' => 2]],
+            ['novelty_pair', 'settled_negative_or_null', true, 'negative_novelty_refocus',
+                ['repair_pair' => 12, 'novelty_pair' => 2, 'adversarial_guard' => 2]],
+            ['repair_pair', 'settled_positive_signal', true, 'sealed',
+                ['repair_pair' => 10, 'novelty_pair' => 4, 'adversarial_guard' => 2]],
+        ];
+        foreach ($cases as [$type, $outcome, $complete, $reason, $counts]) {
+            $settlement = $this->predecessorSettlement($lab, $type, $outcome, $complete);
+            $contract = app(ContextualCouncilAllocatorService::class)->allocate($this->protectedPlan(), $lab)['contract'];
+            foreach ($counts as $block => $seats) {
+                $this->assertSame($seats, data_get($contract, 'seat_counts.'.$block));
+            }
+            $this->assertSame($reason, data_get($contract, 'settlement_feedback.decision.reason'));
+            $this->assertFalse((bool) data_get($contract, 'settlement_feedback.decision.credit_allowed', false));
+            $this->assertFalse($contract['promotion_evidence']);
+            $this->assertSame($settlement->id, data_get($contract, 'settlement_feedback.settlement_receipts.0.settlement_id'));
+        }
+    }
+
+    public function test_unsealed_or_active_predecessor_cannot_steer_successor_allocation(): void
+    {
+        $lab = $this->lab();
+        $settlement = $this->predecessorSettlement($lab, 'repair_pair', 'settled_negative_or_null');
+        $sealed = app(ContextualCouncilAllocatorService::class)->allocate($this->protectedPlan(), $lab)['contract'];
+        $settlement->update(['settlement_key' => hash('sha256', 'wrong-source-key')]);
+        $contract = app(ContextualCouncilAllocatorService::class)->allocate($this->protectedPlan(), $lab)['contract'];
+        $this->assertNotSame($sealed['allocation_manifest_hash'], $contract['allocation_manifest_hash']);
+        $this->assertSame('unchanged', data_get($contract, 'settlement_feedback.decision.status'));
+        $this->assertSame(10, data_get($contract, 'seat_counts.repair_pair'));
+        $this->assertSame('not_actionable', data_get($contract, 'settlement_feedback.settlement_receipts.0.classification'));
+
+        $settlement->generation->update(['status' => 'screening']);
+        $active = app(ContextualCouncilAllocatorService::class)->allocate($this->protectedPlan(), $lab)['contract'];
+        $this->assertSame('predecessor_not_terminal', data_get($active, 'settlement_feedback.status'));
+        $this->assertSame(10, data_get($active, 'seat_counts.repair_pair'));
+
+        LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 2,
+            'trigger_type' => 'test', 'trigger_context' => [], 'population_size' => 20, 'status' => 'screened']);
+        $newer = app(ContextualCouncilAllocatorService::class)->allocate($this->protectedPlan(), $lab)['contract'];
+        $this->assertSame([], data_get($newer, 'settlement_feedback.settlement_receipts'));
+        $this->assertSame(10, data_get($newer, 'seat_counts.repair_pair'));
+    }
+
+    public function test_queue_admission_rejects_feedback_or_owner_drift_after_successor_freeze(): void
+    {
+        $lab = $this->lab();
+        $settlement = $this->predecessorSettlement($lab, 'repair_pair', 'settled_negative_or_null');
+        $allocation = app(ContextualCouncilAllocatorService::class)->allocate($this->protectedPlan(), $lab);
+        $successor = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 2,
+            'trigger_type' => 'test', 'trigger_context' => [
+                'generation_plan' => $allocation['plan'],
+                'population_group_contract' => ['contextual_allocator' => $allocation['contract']],
+            ], 'population_size' => 20, 'status' => 'queued']);
+        $council = app(CooperativeContextualEvolutionCouncilService::class);
+        $this->assertSame([], $council->allocationReasons($successor));
+
+        $settlement->update(['outcome_status' => 'settled_positive_signal']);
+        $this->assertContains('ALLOCATION_SOURCE_SETTLEMENT_DRIFT',
+            $council->allocationReasons($successor->fresh(['laboratory'])));
+        $this->assertContains('ALLOCATION_SOURCE_SETTLEMENT_DRIFT',
+            app(GenerationSnapshotAdmissionService::class)->inspect($successor->fresh(['laboratory']))['reasons']);
+
+        $context = (array) $successor->trigger_context;
+        data_set($context, 'generation_plan.0.niche.cooperative_experiment_block.arm', 'tampered_arm');
+        $successor->update(['trigger_context' => $context]);
+        $this->assertContains('ALLOCATION_PLAN_OWNER_DRIFT',
+            $council->allocationReasons($successor->fresh(['laboratory'])));
     }
 
     public function test_ready_idea_is_compiled_into_a_novelty_block_but_gets_no_runtime_authority(): void
@@ -126,6 +257,25 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
         );
         $this->assertCount(2, $ideaSeats);
         $this->assertTrue($ideaSeats->every(fn (array $slot): bool => data_get($slot, 'niche.cooperative_evolution_capsule.promotion_evidence') === false));
+    }
+
+    public function test_idea_uses_declared_repair_design_and_unsupported_factorial_remains_pending(): void
+    {
+        $service = app(ResearchIdeaInboxService::class);
+        $base = ['title' => 'Specific repair', 'hypothesis' => 'Bounded lookback repairs this phase.',
+            'bounded_genes' => [['key' => 'lookback', 'minimum' => 1, 'maximum' => 20]],
+            'required_block_type' => 'repair_pair', 'context_scope' => ['venue_phase' => 'london_interfix']];
+        $repair = $service->submit($base);
+        $factorial = $service->submit([...$base, 'required_block_type' => 'factorial']);
+        $allocation = app(ContextualCouncilAllocatorService::class)->allocate($this->plan(), $this->lab());
+        $seats = collect($allocation['plan'])->filter(fn (array $slot): bool => data_get($slot,
+            'niche.cooperative_evolution_capsule.idea_reference.idea_key') === $repair['idea_key']);
+        $this->assertCount(2, $seats);
+        $this->assertTrue($seats->every(fn (array $slot): bool => data_get($slot,
+            'niche.cooperative_experiment_block.block_type') === 'repair_pair'
+            && data_get($slot, 'niche.contextual_specialist_cell.venue_phase') === 'london_interfix'
+            && data_get($slot, 'niche.cooperative_experiment_block.idea_design.required_block_type') === 'repair_pair'));
+        $this->assertSame('ready_for_experiment', ResearchIdeaInboxEntry::findOrFail($factorial['entry_id'])->status);
     }
 
     public function test_confirmed_local_elite_is_not_replaced_by_a_non_dominating_capsule(): void
@@ -211,7 +361,8 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
                     'specialist_context_contract' => $context,
                 ]],
                 'execution_contract' => ['execution_hash' => str_repeat('e', 64)],
-            ], ['data_hash' => $dataHash, 'dataset_manifest' => ['data_hash' => $dataHash]]);
+            ], ['data_hash' => $dataHash, 'dataset_manifest' => ['data_hash' => $dataHash,
+                'mtf_bundle_hash' => str_repeat('m', 64)]]);
             app(LabImmutableEvidenceService::class)->finishRun($run, 'completed', [
                 'decision_trace' => [['event_type' => 'test', 'action' => 'WAIT']],
                 'data_quality' => ['decision_trace' => ['requested' => true, 'complete' => true, 'evaluated_candle_count' => 1]],
@@ -411,6 +562,46 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
     {
         return AiLaboratory::create(['symbol' => 'XAUUSD', 'name' => 'Cooperative council', 'timeframe' => 'H1',
             'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse']);
+    }
+
+    private function protectedPlan(): array
+    {
+        $plan = $this->plan();
+        foreach (['hypothesis_guided', 'blinded', 'frozen_control'] as $offset => $role) {
+            data_set($plan[$offset + 3], 'niche.causal_learning_cohort', [
+                'protocol' => 'causal_learning_counterfactual_cohort_v1',
+                'experiment_key' => hash('sha256', 'protected-proof'), 'role' => $role,
+                'source_pair_id' => 42, 'value' => 25.0,
+                'promotion_evidence' => false,
+            ]);
+        }
+
+        return $plan;
+    }
+
+    private function predecessorSettlement(
+        AiLaboratory $lab, string $type, string $outcome, bool $complete = true,
+    ): CooperativeExperimentSettlement {
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id,
+            'generation' => ((int) ($lab->generations()->max('generation') ?? 0)) + 1,
+            'trigger_type' => 'test', 'trigger_context' => [], 'population_size' => 20, 'status' => 'screened']);
+        $blockKey = hash('sha256', implode('|', [$lab->id, $type, $outcome]));
+        $arms = [];
+        for ($index = 0; $index < ($type === 'activation_factorial' ? 4 : 2); $index++) {
+            $arms['arm_'.$index] = ['evidence_status' => $complete ? 'eligible' : 'invalid',
+                'evidence_run_id' => 'sealed-run-'.$index];
+        }
+
+        return CooperativeExperimentSettlement::create([
+            'settlement_key' => hash('sha256', implode('|', [
+                CooperativeExperimentSettlementService::PROTOCOL, $generation->id, $blockKey,
+            ])),
+            'block_key' => $blockKey, 'lab_generation_id' => $generation->id,
+            'block_type' => $type, 'context_cell_key' => hash('sha256', 'cell'),
+            'arm_results' => $arms, 'component_effects' => [], 'pareto_vectors' => [],
+            'outcome_status' => $outcome, 'evidence_complete' => $complete,
+            'promotion_evidence' => false,
+        ]);
     }
 
     /** @return array<int,array<string,mixed>> */

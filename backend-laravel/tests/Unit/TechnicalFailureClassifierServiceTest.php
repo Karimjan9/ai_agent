@@ -7,6 +7,38 @@ use PHPUnit\Framework\TestCase;
 
 class TechnicalFailureClassifierServiceTest extends TestCase
 {
+    public function test_canonical_positive_gap_gate_is_a_data_dependency_not_a_transport_retry(): void
+    {
+        foreach (['Historical data hard-gate failed: 1 unexpected candle gaps.',
+            'RuntimeException {"detail":"Historical data hard-gate failed: 12 unexpected candle gaps."}'] as $message) {
+            $result = (new TechnicalFailureClassifierService)->classify($message);
+            $this->assertSame(TechnicalFailureClassifierService::CAPABILITY, $result['class']);
+            $this->assertSame('IMMUTABLE_HISTORICAL_CANDLE_GAP', $result['reason_code']);
+            $this->assertFalse($result['blocks_global_generation']);
+            $this->assertTrue($result['same_evidence_replay_forbidden']);
+            $this->assertFalse($result['scientific_question_budget_reset']);
+            $this->assertSame('withheld', $result['strategy_verdict']);
+        }
+        foreach (['Historical data hard-gate failed: 0 unexpected candle gaps.',
+            'Historical data hard-gate failed: data_quality rejected.', 'unexpected candle gaps',
+            'Historical data hard-gate failed: -1 unexpected candle gaps.'] as $message) {
+            $result = (new TechnicalFailureClassifierService)->classify($message);
+            $this->assertSame(TechnicalFailureClassifierService::TRANSIENT, $result['class']);
+            $this->assertSame('UNCLASSIFIED_TRANSIENT', $result['reason_code']);
+            $this->assertTrue($result['blocks_global_generation']);
+        }
+    }
+
+    public function test_a_manual_draft_integrity_label_alone_does_not_satisfy_dispatch_attestation(): void
+    {
+        $result = (new TechnicalFailureClassifierService)->classify(
+            'Draft identity/integrity contract failed; child quarantined before screening. Strategy verdict withheld.',
+        );
+        $this->assertSame(TechnicalFailureClassifierService::TRANSIENT, $result['class']);
+        $this->assertSame('UNCLASSIFIED_TRANSIENT', $result['reason_code']);
+        $this->assertTrue($result['blocks_global_generation']);
+    }
+
     public function test_curl_operation_timeout_is_a_typed_recoverable_replay_timeout(): void
     {
         $result = (new TechnicalFailureClassifierService)->classify(

@@ -9,14 +9,19 @@ aliases:
   - mutation
 paths:
   - backend-laravel/app/Domains/Laboratory
+  - backend-laravel/app/Console/Commands/BuildLabGeneration.php
   - backend-laravel/app/Console/Commands/DispatchLabGeneration.php
   - backend-laravel/app/Console/Commands/DispatchFullLabValidation.php
   - backend-laravel/app/Http/Controllers/EvolutionLabController.php
   - backend-laravel/app/Services/LabPopulationService.php
   - backend-laravel/app/Services/LabAgentEvaluationService.php
+  - backend-laravel/app/Services/ExperimentQualityProgressService.php
   - backend-laravel/app/Services/StrategyTacticRiskCompositionPlannerService.php
   - backend-laravel/app/Services/TradeManagementLibraryService.php
   - backend-laravel/app/Services/LabLifecycleOrchestrator.php
+  - backend-laravel/app/Services/CausalCompoundingKernelService.php
+  - backend-laravel/app/Services/LabReplayRecoveryService.php
+  - backend-laravel/tests/Feature/LabReplayRecoveryHashDomainTest.php
   - backend-laravel/app/Services/LabDataEdgeAuditService.php
   - backend-laravel/app/Console/Commands/RecoverLabEvaluationErrors.php
   - backend-laravel/app/Services/GenerationAdmissionDecisionService.php
@@ -27,10 +32,19 @@ paths:
   - backend-laravel/app/Services/GenerationAutonomyReceiptService.php
   - backend-laravel/app/Services/GenerationSnapshotAdmissionService.php
   - backend-laravel/app/Services/ProofFrontierService.php
+  - backend-laravel/app/Services/PhaseScopeProbeContractService.php
+  - backend-laravel/app/Services/LabImmutableEvidenceService.php
+  - backend-laravel/app/Jobs/Middleware/LabQueueAttemptEvidenceMiddleware.php
+  - backend-laravel/app/Services/CandidateGateDecisionService.php
   - backend-laravel/app/Services/ActivationFactorialContractService.php
+  - backend-laravel/app/Services/ContextualCouncilAllocatorService.php
   - backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php
   - backend-laravel/app/Services/MultiTimeframeSnapshotService.php
   - backend-laravel/app/Services/EvolutionGovernorService.php
+  - backend-laravel/app/Services/EvolutionVelocityService.php
+  - backend-laravel/app/Services/LabGenerationReportService.php
+  - backend-laravel/app/Services/ResearchReleaseSealService.php
+  - backend-laravel/scripts/diagnose-signal-boundary.py
   - backend-laravel/app/Services/AdaptiveParentFrontierService.php
   - backend-laravel/app/Services/MarketChampionService.php
   - backend-laravel/app/Services/LabAgentPreflightService.php
@@ -40,6 +54,8 @@ paths:
   - backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php
   - backend-laravel/app/Console/Commands/AuditAutonomyStreak.php
 entry_points:
+  - GenerationSnapshotAdmissionService::historicalDatasetReadiness
+  - trading:lab-generation --trigger=historical_research
   - LabPopulationService
   - LabLifecycleOrchestrator
   - EvaluateLabAgentJob
@@ -61,9 +77,18 @@ dependencies:
   - market-data
   - laravel-python-contract
 invariants:
+  - Before fresh construction or queue admission, an attested native continuity failure fences the identical actual M5 source SHA. A prospective repair must pass the existing data owner's receipt, row and file guards; Academy waits for that selected dataset's own canonical quoted MTF bundle and never relabels an old bundle.
+  - A contained Academy preparation repair reuses the original bounded kernel gene old/new vectors on the same frozen baseline/data/cost, under fresh IDs and current schema/genome seals. It cannot resample sixteen different discoveries, touch protected primary axes, copy old receipts or replenish the question budget.
+  - Explicit historical research and admitted causal confirmation validate the pre-2026 foundation instead of requiring fresh live candles. Their archive identity is sealed before construction, rechecked against the frozen foundation and M5/H4/H1/M15 periods before dispatch, and cannot bypass active work, technical recovery, protocol pause, exact controls, risk or paper gates.
+  - Activation discovery ranks sealed instrument data/context opportunities and stage reachability before capped signal volume, never using current/live state or validation profit. Missing power/data remains a dependency, not a negative skill or a reason to relax risk gates.
+  - Prospective repair binds its sealed source context to all three replay arms and requires a matching runtime scope receipt; context-eligible candles and accepted strategy signals are distinct measures.
+  - A prospective release is sealed after snapshot/MTF creation and before queue admission; source, worker, data or cost drift cannot become a scientific replay result.
+  - Stagnation requiring N adjacent comparisons loads at least N+1 scientific generations and never bridges a missing score. Velocity numerators and denominators use the same lookback; repeated failures are not the rejection fraction.
+  - Missing observed liquidity defers mutation-only activation proposals; the diagnostic reports upstream signal and exact veto counts without rewriting canonical evidence.
   - Construction and control identities remain attributable.
   - A frozen composition passport owns the final constructor family, architecture and tactic.
   - A cached instrument assignment is reusable only while every source component still equals the frozen passport; the composition ID alone is insufficient.
+  - A model persists separate instrument-policy retrieval and actual policy-aligned parameter-consumption receipts; merely selecting a posterior never asserts that a gene was inherited.
   - Causal source control and composition passport identities agree before arm construction; stale dependencies degrade only to non-credit diagnostic controls.
   - Ordinary XAUUSD cohorts retain H1 as storage identity but use a frozen M5/H4/H1/M15 replay bundle.
   - Autonomous lifecycle screening delegates to the canonical lab dispatcher; no direct evaluator queue path may bypass immutable snapshot and MTF admission.
@@ -74,6 +99,9 @@ invariants:
   - A single-agent screening recovery rechecks the exact frozen-control admission before evaluator execution; an incomplete control can never yield an unpaired candidate screen result.
   - A data-edge audit authorizes at most its own immediate successor; inherited audit context is provenance, not repeatable generation admission.
   - A research-only activation factorial consumes four seats only when a terminal immutable source has a bounded strategy-to-tactic gap and two legal distinct interventions; its control is the source executable vector and prequeue admission attests C/A/B/A+B exact deltas.
+  - An unavailable activation factorial records its first missing proof and eligibility funnel while preserving the ordinary twenty-seat allocation and credit ceiling.
+  - An unphased historical signal is hypothesis-only. One prospective research-only phase probe may replace one cold-start repair pair; its phase, source bytes, source genome, passport, exact-control baseline and one diagnostic delta are sealed before queueing. Both arms receive screening receipts but cannot pass economic screening or earn credit. A complete phase-bound tactic-veto settlement may open a later source-owned C/A/B/A+B discovery block, not promotion.
+  - Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority.
 flows:
   - flows/cohort-lifecycle.md
 docs:
@@ -81,6 +109,12 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
+  - backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php
+  - backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php
+  - backend-laravel/tests/Feature/HistoricalResearchAdmissionTest.php
+  - backend-laravel/tests/Feature/ProspectiveLifecycleHandoffTest.php
+  - backend-laravel/tests/Feature/EvolutionAuditRegressionTest.php
   - backend-laravel/tests/Feature/AiLearningLaboratoryTest.php
   - backend-laravel/tests/Feature/CausalLearningLoopContractTest.php
   - backend-laravel/tests/Feature/ParentAwareEvolutionTest.php
@@ -90,6 +124,8 @@ tests:
   - backend-laravel/tests/Feature/LearningDeadlockPreventionTest.php
   - backend-laravel/tests/Feature/StrategyTacticRiskCompositionPlannerTest.php
   - backend-laravel/tests/Feature/LabReplayRecoveryContractTest.php
+  - backend-laravel/tests/Feature/LabReplayRecoveryHashDomainTest.php
   - backend-laravel/tests/Feature/RiskBoundedEvolutionTest.php
   - backend-laravel/tests/Feature/ProofFrontierActivationTest.php
+  - backend-laravel/tests/Feature/CooperativeContextualEvolutionCouncilTest.php
   - backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php

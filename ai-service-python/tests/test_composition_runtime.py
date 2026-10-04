@@ -6,6 +6,7 @@ import pytest
 
 from app.schemas import ExecutionConfig, SimpleBacktestRequest, StrategyRuntimeConfig
 from app.services.backtester import (
+    _load_verified_dataset_csv,
     _apply_portfolio_strategy,
     _portfolio_payload_for_signal,
     run_simple_ema_rsi_backtest_on_dataframe,
@@ -725,6 +726,24 @@ def test_strategy_signal_is_exposed_as_typed_contract_without_signal_creation() 
     assert compiled.loc[1, "entry_invalidation_valid"]
 
 
+def test_specialist_veto_keeps_the_original_signal_and_emitted_rejection_chain():
+    contract = _contract()
+    frame = pd.DataFrame({"time": ["2025-01-06T11:00:00Z"],
+        "open": [100.0], "high": [102.0], "low": [99.0], "close": [101.0],
+        "signal": ["WAIT"], "pre_specialist_signal": ["BUY"],
+        "signal_confidence": [0.0], "market_regime": ["trend_up"],
+        "_management_atr": [2.0], "specialist_scope_eligible": [False],
+        "specialist_scope_first_veto": ["liquidity_observation_missing"]})
+    compiled = apply_composition_entry_contract(frame, contract)
+    assert compiled.loc[0, "signal"] == "WAIT"
+    assert compiled.loc[0, "composition_strategy_signal"] == "BUY"
+    assert compiled.loc[0, "composition_decision_reason"] == "liquidity_observation_missing"
+    receipt = build_composition_decision_receipts(compiled, contract, warmup_rows=0)
+    assert receipt["decision_count"] == 1
+    assert receipt["receipts"][0]["accepted"] is False
+    assert receipt["receipts"][0]["reason"] == "liquidity_observation_missing"
+
+
 def test_explicit_unknown_regime_is_context_when_frozen_tactic_allows_it() -> None:
     contract = _contract()
     contract["tactic_contract"]["target_regimes"] = ["unknown"]
@@ -922,6 +941,35 @@ def test_every_signal_gets_manifest_bound_first_veto_and_ordered_stage_receipt()
     assert report["receipts"][2]["stage_receipts"][-1]["module"] == "location_model"
     assert report["receipts"][2]["stage_receipts"][-1]["status"] == "rejected"
     assert report["receipts"][2]["stage_receipts"][-1]["reason"] == "atr_invalid"
+
+
+@pytest.mark.parametrize(
+    "regime,atr,terminal_module",
+    [("", 1.0, "regime_detector"), ("range", 1.0, "tactic_runtime"), ("trend_up", 0.0, "location_model")],
+)
+def test_valid_preentry_veto_remains_a_valid_decision_receipt(regime, atr, terminal_module) -> None:
+    from app.services.composition_runtime import _decision_receipts_valid, compile_composition_program
+
+    contract = _contract()
+    frame = pd.DataFrame([{
+        "time": "2025-12-22T13:05:00Z", "open": 100.0, "high": 101.0,
+        "low": 99.0, "close": 100.5, "signal": "BUY",
+        "market_regime": regime, "_management_atr": atr,
+    }])
+    report = build_composition_decision_receipts(
+        apply_composition_entry_contract(frame, contract), contract, execution_outcomes={}, warmup_rows=0,
+    )
+    report["execution_ledger"] = {
+        "protocol": "composition_execution_decision_ledger_v1",
+        "composition_id": contract["composition_id"], "contract_hash": contract["contract_hash"],
+        "manifest_hash": contract["contract_hash"], "program_hash": report["program_hash"],
+        "count": 0, "digest": _hash([]), "samples": [],
+    }
+    receipt = report["receipts"][0]
+    assert receipt["preentry_accepted"] is False
+    assert receipt["terminal_stage"] == terminal_module
+    assert receipt["stage_receipts"][-1]["module"] == terminal_module
+    assert _decision_receipts_valid(report, contract=contract, program=compile_composition_program(contract)) is True
 
 
 def test_typed_pipeline_vetoes_raw_signal_before_risk_when_location_is_invalid() -> None:
@@ -1170,7 +1218,10 @@ def test_sealed_m5_mtf_organism_reaches_trade_management(tmp_path) -> None:
         return result
 
     with patch("app.services.backtester.get_strategy", return_value=strategy):
-        result = run_simple_ema_rsi_backtest_on_dataframe(payload, frames["M5"])
+        # Consume the sealed CSV representation, not the pre-serialization
+        # float frame; strict row attestation intentionally distinguishes them.
+        sealed_frame = _load_verified_dataset_csv(payload, paths["M5"], "M5")
+        result = run_simple_ema_rsi_backtest_on_dataframe(payload, sealed_frame)
 
     assert result.composition_runtime_receipt["contract_hash"] == contract["contract_hash"]
     assert result.composition_runtime_receipt["program"]["manifest_hash"] == contract["contract_hash"]

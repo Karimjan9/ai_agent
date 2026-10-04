@@ -14,6 +14,7 @@ use App\Services\MarketData\CandlePayloadService;
 use App\Services\MarketData\MarketReadinessService;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 class PaperTradingExecutionService
@@ -117,7 +118,29 @@ class PaperTradingExecutionService
         if ($isCouncilMember || ! filled($candidate->symbol) || ! filled($candidate->timeframe)) {
             return false;
         }
-        $admission = $this->authorityAdmissions->admit($model, $candidate->symbol, $candidate->timeframe, [
+        $admission = $this->authorityAdmissions->admit($model, $candidate->symbol, $candidate->timeframe, $this->candidatePassport($candidate, $model));
+        if (! in_array(($admission['status'] ?? null), ['e3_paper_candidate', 'e4_evidence_ready'], true)) {
+            return false;
+        }
+        // Closing an admitted order remains mandatory after a paper period
+        // ends. Observation readiness applies to NEW capture/fill only.
+        if (! $this->frozenPaperGuard($candidate, null, false)['allowed']) return false;
+        if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
+            $ready = $this->portfolios->ready($candidate->symbol, $candidate->timeframe);
+            if ($ready !== null && (int) $ready->id === (int) data_get($candidate->metrics, 'elite_portfolio_id', 0)) {
+                return true;
+            }
+            $transition = $this->portfolioTransition($candidate);
+            return in_array((string) data_get($transition, 'decision'), ['HYBRID_CANARY', 'COUNCIL_CANARY'], true);
+        }
+        return true;
+    }
+
+    private function candidatePassport(ModelMarketPerformance $candidate, \App\Models\ModelVersion $model): array
+    {
+        $windowKey = data_get($model->metadata, 'paper_window_key', data_get($candidate->metrics, 'paper_window_key'));
+        return [
+            ...($windowKey !== null ? ['paper_window_key' => $windowKey] : []),
             'passport_hash' => data_get($model->metadata, 'elite_agent_passport.passport_hash', data_get($candidate->metrics, 'elite_agent_passport.passport_hash')),
             'execution_hash' => data_get($candidate->metrics, 'execution_contract.execution_hash'),
             'confirmation_entry_hash' => data_get($model->metadata, 'confirmation_entry.contract_hash', data_get($candidate->metrics, 'confirmation_entry.contract_hash')),
@@ -128,28 +151,40 @@ class PaperTradingExecutionService
             // year as evidence.
             'training_pre_2026' => data_get($candidate->metrics, 'training_boundary.used_for_training') === false
                 && data_get($candidate->metrics, 'gold_holdout.used_for_training') === false,
-        ]);
-        if (($admission['status'] ?? null) !== 'e3_paper_candidate') {
-            return false;
-        }
-        if ((bool) data_get($candidate->metrics, 'portfolio_proxy', false)) {
-            $ready = $this->portfolios->ready($candidate->symbol, $candidate->timeframe);
-            if ($ready !== null && (int) $ready->id === (int) data_get($candidate->metrics, 'elite_portfolio_id', 0)) {
-                return true;
-            }
-            $transition = $this->portfolioTransition($candidate);
+        ];
+    }
 
-            return in_array((string) data_get($transition, 'decision'), ['HYBRID_CANARY', 'COUNCIL_CANARY'], true);
+    private function frozenPaperGuard(ModelMarketPerformance $candidate, ?PaperSignal $signal = null, bool $newObservation = true): array
+    {
+        if ($candidate->exists) $candidate->refresh();
+        $model = $candidate->modelVersion?->fresh();
+        if (! $model) return ['allowed' => false, 'reason_code' => 'PAPER_MODEL_MISSING'];
+        $candidate->setRelation('modelVersion', $model);
+        $passport = $this->candidatePassport($candidate, $model);
+        $passport['execution_hash'] = data_get(app(ExecutionContractService::class)->for(
+            $candidate->symbol, $this->mtfPilot->decisionTimeframe($candidate)), 'execution_hash');
+        $guard = $this->authorityAdmissions->verifyFrozenCandidate($model, $candidate->symbol, $candidate->timeframe,
+            $passport, $signal ? (int) data_get($signal->payload, 'paper_admission.admission_id', 0) : null);
+        if ($newObservation && ($guard['allowed'] ?? false)) {
+            $readiness = $this->authorityAdmissions->observationReadiness($model, $candidate->symbol, $candidate->timeframe,
+                $signal ? (int) data_get($signal->payload, 'paper_admission.admission_id', 0) : null);
+            if (! ($readiness['allowed'] ?? false)) $guard = $readiness;
         }
-
-        // Ordinary standalone forward-valid agents retain their existing
-        // paper path. Only explicitly declared council members are held for
-        // the combined proxy.
-        return true;
+        if ($signal && ($guard['allowed'] ?? false) && ! hash_equals((string) ($guard['identity_hash'] ?? ''),
+            (string) data_get($signal->payload, 'paper_admission.identity_hash', ''))) {
+            $guard = ['allowed' => false, 'reason_code' => 'PAPER_SIGNAL_FROZEN_IDENTITY_MISMATCH'];
+        }
+        if (! ($guard['allowed'] ?? false)) {
+            $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_FROZEN_PAPER_IDENTITY',
+                ['reason_code' => $guard['reason_code'], 'paper_signal_id' => $signal?->id]);
+        }
+        return $guard;
     }
 
     private function captureLatestSignal(ModelMarketPerformance $candidate, $universe): int
     {
+        $paperAdmission = $this->frozenPaperGuard($candidate);
+        if (! $paperAdmission['allowed']) return 0;
         // A stale/invalidated portfolio proxy must stop before the AI
         // transport. Sending an empty portfolio_members payload would make
         // Python interpret the proxy as a normal `portfolio` strategy and
@@ -408,6 +443,9 @@ class PaperTradingExecutionService
             return 0;
         }
 
+        $verified = $this->frozenPaperGuard($candidate);
+        if (! $verified['allowed'] || ! hash_equals($paperAdmission['identity_hash'], $verified['identity_hash'])) return 0;
+        $signal['paper_admission'] = $verified;
         $signalSnapshot = $this->foundation->captureSignalMarketSnapshot([
             'signal_type' => 'paper_candidate',
             'signal_key' => "paper:{$candidate->id}:{$candleTime}",
@@ -460,6 +498,7 @@ class PaperTradingExecutionService
         if (! $signal) {
             return 0;
         }
+        if (! $this->frozenPaperGuard($candidate, $signal)['allowed']) return 0;
         if (! $this->runtimePortfolioAllowed($candidate)) {
             return 0;
         }
@@ -661,6 +700,15 @@ class PaperTradingExecutionService
         $broker = 'simulated';
         $units = $baseUnits * $sizeMultiple;
 
+        return DB::transaction(function () use ($candidate, $signal, $broker, $units, $entry, $executionSignal,
+            $entryCandle, $risk, $sentinelPlan, $disciplinePlan, $sizeMultiple, $authorizedContract, $authorization): int {
+        // Lock the candidate identity through order and fill publication. No stale
+        // in-memory model may turn a once-valid E3 admission into a new order.
+        ModelMarketPerformance::query()->whereKey($candidate->id)->lockForUpdate()->first();
+        \App\Models\ModelVersion::query()->whereKey($candidate->model_version_id)->lockForUpdate()->first();
+        PaperSignal::query()->whereKey($signal->id)->lockForUpdate()->first();
+        if (PaperOrder::query()->where('paper_signal_id', $signal->id)->exists()
+            || ! $this->frozenPaperGuard($candidate, $signal)['allowed']) return 0;
         $order = PaperOrder::create([
             'model_market_performance_id' => $candidate->id,
             'paper_signal_id' => $signal->id,
@@ -691,6 +739,7 @@ class PaperTradingExecutionService
         $candidate->update(['status' => 'paper', 'paper_status' => 'running']);
 
         return 1;
+        });
     }
 
     private function runtimePortfolioAllowed(ModelMarketPerformance $candidate): bool

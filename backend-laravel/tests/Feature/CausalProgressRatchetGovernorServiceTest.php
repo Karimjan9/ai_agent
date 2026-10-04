@@ -26,12 +26,14 @@ class CausalProgressRatchetGovernorServiceTest extends TestCase
             'opportunity' => 10, 'location' => 8, 'setup' => 6, 'confirmation' => 4, 'trigger' => 3,
         ]], 'total_trades' => 2];
         $assessment = [
+            ...$this->semanticAssessment(true),
             'status' => 'controllable', 'target_stage' => 'trigger', 'owner' => ['gene' => 'trigger_topology_policy'],
             'candidate_counts' => ['confirmation' => 4, 'trigger' => 3], 'event_delta' => 2,
         ];
 
         $first = $governor->recordAssessment($assessment, $context, $control, $candidate);
         $noop = $governor->recordAssessment([
+            ...$this->semanticAssessment(false),
             'status' => 'non_controlling_axis', 'target_stage' => 'trigger', 'owner' => ['gene' => 'trigger_topology_policy'],
             'candidate_counts' => ['confirmation' => 4, 'trigger' => 3], 'event_delta' => 0,
         ], $context, $control, $candidate);
@@ -47,7 +49,7 @@ class CausalProgressRatchetGovernorServiceTest extends TestCase
     public function test_unreachable_axis_pivots_upstream_instead_of_being_retired_and_progress_is_exactly_once(): void
     {
         $governor = app(CausalProgressRatchetGovernorService::class);
-        $assessment = ['status' => 'non_controlling_axis', 'target_stage' => 'trigger',
+        $assessment = [...$this->semanticAssessment(false), 'status' => 'non_controlling_axis', 'target_stage' => 'trigger',
             'candidate_counts' => ['confirmation' => 0], 'event_delta' => 0];
         $classification = $governor->classify($assessment, [], []);
         $context = ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'composition_key' => 'range_reentry',
@@ -112,7 +114,7 @@ class CausalProgressRatchetGovernorServiceTest extends TestCase
         $governor = app(CausalProgressRatchetGovernorService::class);
         $context = ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'composition_key' => 'break_retest', 'causal_baseline_id' => 9,
             'baseline_epoch_hash' => str_repeat('a', 64), 'data_hash' => str_repeat('b', 64), 'execution_hash' => str_repeat('c', 64)];
-        $governor->recordAssessment(['status' => 'controllable', 'target_stage' => 'trigger', 'owner' => ['gene' => 'trigger_topology_policy'],
+        $governor->recordAssessment([...$this->semanticAssessment(true), 'status' => 'controllable', 'target_stage' => 'trigger', 'owner' => ['gene' => 'trigger_topology_policy'],
             'candidate_counts' => ['confirmation' => 2, 'trigger' => 4], 'event_delta' => 2], $context, [], ['total_trades' => 2]);
         $rejected = $governor->recordPositiveAfterCostEdge($context, ['total_trades' => 1, 'after_cost_expectancy_r' => .2]);
         $accepted = $governor->recordPositiveAfterCostEdge($context, ['total_trades' => 12, 'after_cost_expectancy_r' => .2]);
@@ -130,7 +132,7 @@ class CausalProgressRatchetGovernorServiceTest extends TestCase
         $governor = app(CausalProgressRatchetGovernorService::class);
         $context = ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'composition_key' => 'scaffold-ablation', 'causal_baseline_id' => 3,
             'baseline_epoch_hash' => str_repeat('a', 64), 'data_hash' => str_repeat('b', 64), 'execution_hash' => str_repeat('c', 64)];
-        $governor->recordAssessment(['status' => 'controllable', 'target_stage' => 'trigger', 'owner' => ['gene' => 'trigger_topology_policy'],
+        $governor->recordAssessment([...$this->semanticAssessment(true), 'status' => 'controllable', 'target_stage' => 'trigger', 'owner' => ['gene' => 'trigger_topology_policy'],
             'candidate_counts' => ['confirmation' => 1, 'trigger' => 2], 'event_delta' => 1], $context, [], []);
         $result = $governor->recordAblation($context, ['trigger' => 2], ['trigger' => 2]);
 
@@ -151,5 +153,128 @@ class CausalProgressRatchetGovernorServiceTest extends TestCase
 
         $this->assertDatabaseCount('causal_governor_allocations', 1);
         $this->assertDatabaseCount('causal_governor_debt_ledgers', 1);
+    }
+
+    public function test_missing_or_legacy_identity_never_creates_retirement_or_progress_rows(): void
+    {
+        $governor = app(CausalProgressRatchetGovernorService::class);
+        $context = ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'composition_key' => 'missing-evidence',
+            'baseline_epoch_hash' => str_repeat('a', 64), 'data_hash' => str_repeat('b', 64), 'execution_hash' => str_repeat('c', 64)];
+        foreach (['non_controlling_axis', 'controllable'] as $status) {
+            $result = $governor->recordAssessment(['status' => $status, 'target_stage' => 'closed_trade',
+                'candidate_counts' => ['entry' => 4, 'closed_trade' => 4], 'event_delta' => 0], $context, [], []);
+            $this->assertSame('unassessable', $result['status']);
+            $this->assertFalse($result['retire']);
+            $this->assertSame('none', $result['authority']);
+        }
+        $this->assertDatabaseCount('causal_axis_retirements', 0);
+        $this->assertDatabaseCount('causal_progress_ratchets', 0);
+    }
+
+    public function test_management_semantic_change_with_equal_event_counts_is_not_retired(): void
+    {
+        $assessment = [...$this->semanticAssessment(true), 'status' => 'controllable', 'target_stage' => 'closed_trade',
+            'owner' => ['gene' => 'trailing_atr_multiplier'], 'candidate_counts' => ['entry' => 3, 'closed_trade' => 3], 'event_delta' => 0];
+        $result = app(CausalProgressRatchetGovernorService::class)->classify($assessment, ['total_trades' => 3], ['total_trades' => 3]);
+        $this->assertSame('behavior_changed_economically_underpowered', $result['classification']);
+        $this->assertFalse($result['retire']);
+        $this->assertSame('increase_economic_power', $result['next_action']);
+    }
+
+    public function test_non_controlling_scope_mismatch_is_not_a_zero_effect_retirement(): void
+    {
+        $assessment = [...$this->semanticAssessment(true), 'status' => 'non_controlling_axis',
+            'reason' => 'BEHAVIOR_DELTA_EXCESSIVE', 'target_stage' => 'closed_trade',
+            'candidate_counts' => ['entry' => 3], 'event_delta' => 0];
+        $result = app(CausalProgressRatchetGovernorService::class)->classify($assessment, [], []);
+        $this->assertSame('invariant_saturation', $result['classification']);
+        $this->assertFalse($result['retire']);
+    }
+
+    public function test_duplicate_callback_does_not_count_twice_or_retire_axis(): void
+    {
+        $governor = app(CausalProgressRatchetGovernorService::class);
+        $assessment = [...$this->semanticAssessment(false), 'status' => 'non_controlling_axis', 'target_stage' => 'closed_trade',
+            'owner' => ['gene' => 'trailing_atr_multiplier'], 'candidate_counts' => ['entry' => 3], 'event_delta' => 0];
+        $context = ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'composition_key' => 'exit-noop',
+            'baseline_epoch_hash' => str_repeat('a', 64), 'data_hash' => str_repeat('b', 64), 'execution_hash' => str_repeat('c', 64),
+            'control_evaluation_run_id' => 21, 'candidate_evaluation_run_id' => 22, 'intervention_hash' => hash('sha256', 'exit-delta-1')];
+        $control = ['value' => 2.0]; $candidate = ['value' => 2.5];
+        $first = $governor->recordAssessment($assessment, $context, $control, $candidate);
+        $retry = $governor->recordAssessment($assessment, $context, $control, $candidate);
+        $this->assertSame(1, data_get($first, 'retirement.observations'));
+        $this->assertSame(1, data_get($retry, 'retirement.observations'));
+        $this->assertTrue(data_get($retry, 'retirement.duplicate_delivery'));
+        $this->assertFalse(data_get($retry, 'retirement.retired'));
+        $this->assertDatabaseCount('causal_axis_retirements', 1);
+        $ratchet = DB::table('causal_progress_ratchets')->first();
+        $this->assertCount(1, json_decode($ratchet->evidence, true)['history']);
+
+        $second = $governor->recordAssessment($assessment, [...$context,
+            'candidate_evaluation_run_id' => 23, 'intervention_hash' => hash('sha256', 'exit-delta-2')], $control, ['value' => 3.0]);
+        $this->assertSame(2, data_get($second, 'retirement.observations'));
+        $this->assertTrue(data_get($second, 'retirement.retired'));
+    }
+
+    public function test_escalation_excludes_legacy_counters_and_other_frozen_input_scopes(): void
+    {
+        $context = ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'composition_key' => 'exit-scope',
+            'baseline_epoch_hash' => str_repeat('a', 64), 'data_hash' => str_repeat('b', 64), 'execution_hash' => str_repeat('c', 64)];
+        $row = ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'composition_key' => 'exit-scope',
+            'axis' => 'time_stop_candles', 'classification' => 'behavior_changed_no_edge', 'observations' => 20,
+            'retired' => false, 'created_at' => now(), 'updated_at' => now()];
+        DB::table('causal_axis_retirements')->insert([...$row, 'retirement_key' => 'legacy-axis', 'evidence' => json_encode(['promotion_evidence' => false])]);
+        DB::table('causal_axis_retirements')->insert([...$row, 'retirement_key' => 'other-input-axis',
+            'evidence' => json_encode(['protocol' => CausalProgressRatchetGovernorService::PROTOCOL,
+                'semantic_observation_keys' => ['one', 'two'], 'source_scope' => [...$context, 'data_hash' => str_repeat('d', 64)]])]);
+        $governor = app(CausalProgressRatchetGovernorService::class);
+        $this->assertSame('L0_scalar_threshold', $governor->escalation($context, 'time_stop_candles')['level']);
+        $this->assertSame(1, $governor->kpis('XAUUSD', 'H1')['legacy_axis_rows_diagnostic_only']);
+        DB::table('causal_axis_retirements')->insert([...$row, 'retirement_key' => 'matched-input-axis', 'observations' => 2,
+            'evidence' => json_encode(['protocol' => CausalProgressRatchetGovernorService::PROTOCOL,
+                'semantic_observation_keys' => ['three', 'four'], 'source_scope' => $context])]);
+        $this->assertSame('L1_component_topology', $governor->escalation($context, 'time_stop_candles')['level']);
+    }
+
+    public function test_no_effect_callback_keeps_settled_ablation_and_admitted_economic_authority(): void
+    {
+        $governor = app(CausalProgressRatchetGovernorService::class);
+        $context = ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'composition_key' => 'monotonic-scope',
+            'baseline_epoch_hash' => str_repeat('a', 64), 'data_hash' => str_repeat('b', 64), 'execution_hash' => str_repeat('c', 64)];
+        $changed = [...$this->semanticAssessment(true), 'status' => 'controllable', 'target_stage' => 'trigger',
+            'owner' => ['gene' => 'trigger_topology_policy'], 'candidate_counts' => ['confirmation' => 4], 'event_delta' => 1];
+        $noop = [...$this->semanticAssessment(false), 'status' => 'non_controlling_axis', 'target_stage' => 'closed_trade',
+            'owner' => ['gene' => 'time_stop_candles'], 'candidate_counts' => ['entry' => 4], 'event_delta' => 0];
+        $governor->recordAssessment($changed, $context, ['value' => 'balanced'], ['value' => 'aggressive']);
+        $governor->recordAblation($context, ['semantic_output' => 'with'], ['semantic_output' => 'without']);
+        $afterAblation = $governor->recordAssessment($noop, $context, ['value' => 3], ['value' => 4]);
+        $this->assertSame('ablation_preserved', $afterAblation['scaffold_ablation']['status']);
+        $governor->recordPositiveAfterCostEdge($context, ['total_trades' => 12, 'after_cost_expectancy_r' => .2]);
+        $afterEconomic = $governor->recordAssessment($noop, $context, ['value' => 3], ['value' => 4]);
+        $this->assertSame('positive_after_cost_edge', $afterEconomic['deepest_stage']);
+        $this->assertSame('economic_edge_confirmed', $afterEconomic['authority']);
+        $this->assertDatabaseHas('causal_progress_ratchets', ['composition_key' => 'monotonic-scope', 'authority' => 'economic_edge_confirmed']);
+    }
+
+    public function test_positive_discovery_cannot_bypass_separately_admitted_economic_replay(): void
+    {
+        $governor = app(CausalProgressRatchetGovernorService::class);
+        $context = ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'composition_key' => 'discovery-only',
+            'baseline_epoch_hash' => str_repeat('a', 64), 'data_hash' => str_repeat('b', 64), 'execution_hash' => str_repeat('c', 64)];
+        $result = $governor->recordAssessment([...$this->semanticAssessment(true), 'status' => 'controllable',
+            'target_stage' => 'closed_trade', 'owner' => ['gene' => 'time_stop_candles'], 'candidate_counts' => ['entry' => 12], 'event_delta' => 0],
+            $context, ['value' => 3], ['value' => 4, 'total_trades' => 12, 'after_cost_expectancy_r' => .2]);
+        $this->assertSame('positive_after_cost_edge', $result['classification']['classification']);
+        $this->assertSame('closed_trade', $result['deepest_stage']);
+        $this->assertFalse($governor->mutationAuthority($result['deepest_stage'])['risk_allowed']);
+        $this->assertNotSame('economic_edge_confirmed', $result['authority']);
+    }
+
+    private function semanticAssessment(bool $changed): array
+    {
+        return ['protocol' => \App\Services\CausalStageMasteryDirectorService::PROTOCOL,
+            'evidence_assessable' => true, 'semantic_effect_observed' => $changed,
+            'reason' => $changed ? 'SEMANTIC_EFFECT_OBSERVED' : 'NO_OBSERVED_SEMANTIC_EFFECT',
+            'checks' => ['decision_identity_valid' => true, 'upstream_identity_preserved' => true]];
     }
 }

@@ -27,6 +27,9 @@ class CausalSkillCreditBridgeService
         }
 
         $experiment = $experiment->fresh();
+        if (data_get($experiment?->evidence, 'experiment_kind') === ProspectiveRepairExperimentService::KIND) {
+            return $this->withheld('SCREENING_DISCOVERY_IS_NOT_INDEPENDENT_VALIDATION');
+        }
         if (! $experiment || $experiment->status !== 'confirmed'
             || ! $experiment->confirmed_at
             || ! $experiment->guided_beats_control

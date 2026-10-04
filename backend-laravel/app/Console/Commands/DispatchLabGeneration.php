@@ -205,6 +205,7 @@ class DispatchLabGeneration extends Command
             $replayActivation = $generation?->trigger_type === 'protocol_activation';
             if ((string) config('services.market_data.provider', 'csv') !== 'csv'
                 && ! $replayActivation
+                && ! app(\App\Services\GenerationAdmissionDecisionService::class)->isHistoricalGeneration($generation)
                 && ! $continuity->isReady((string) config('services.market_data.provider'), $symbol, $lab->timeframe)) {
                 $this->warn("{$symbol}: feed healthy bo'lmaguncha lab dispatch bloklandi.");
 
@@ -549,6 +550,7 @@ class DispatchLabGeneration extends Command
                     $datasets->ensureGenerationRegimeSnapshot($generation);
                 }
                 $generation = $generation->fresh(['agents.modelVersion']);
+                $generation = app(\App\Services\ResearchReleaseSealService::class)->seal($generation);
                 $snapshotCheck = $snapshotAdmission->inspect($generation);
                 if (! $snapshotCheck['allowed']) {
                     $this->warn(sprintf(

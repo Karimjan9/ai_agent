@@ -10,6 +10,18 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
+  - backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php
+  - backend-laravel/app/Services/XauusdEdgeFormationAcademyService.php
+  - backend-laravel/app/Services/AcademyExperimentContractCompilerService.php
+  - backend-laravel/app/Services/AcademyExperimentMaterializerService.php
+  - backend-laravel/app/Services/AcademyExperimentSettlementReconcilerService.php
+  - backend-laravel/app/Services/AutonomousLearningProgressDirectorService.php
+  - backend-laravel/app/Services/CausalStageMasteryDirectorService.php
+  - backend-laravel/app/Services/CausalProgressRatchetGovernorService.php
+  - backend-laravel/app/Services/DependencyAwareEdgeGenesisFoundryService.php
+  - backend-laravel/app/Services/ProvisionalCartridgeReadinessService.php
+  - backend-laravel/app/Services/InstrumentValidationEvidenceService.php
+  - backend-laravel/app/Services/ResearchIdeaInboxService.php
   - backend-laravel/app/Console/Commands/RunCausalGoldenWorldAcceptance.php
   - backend-laravel/app/Services/CanonicalLearningOutboxService.php
   - backend-laravel/app/Services/CausalArmParityService.php
@@ -20,12 +32,30 @@ paths:
   - backend-laravel/app/Services/CausalLearningConfirmationService.php
   - backend-laravel/app/Services/CausalFoldExecutionService.php
   - backend-laravel/app/Services/CausalRepairFrontierService.php
+  - backend-laravel/app/Services/ProspectiveRepairExperimentService.php
+  - backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php
+  - backend-laravel/app/Services/CausalScreeningBehaviorPreflightService.php
   - backend-laravel/app/Services/CausalSkillCreditBridgeService.php
+  - backend-laravel/app/Services/ActivationValidationPlanService.php
   - backend-laravel/app/Services/CompositionLibrarySettlementService.php
   - backend-laravel/app/Services/CompositionAuthorityKernelService.php
+  - backend-laravel/app/Services/TacticCatalogueService.php
   - backend-laravel/app/Services/CompositionSettlementFanoutService.php
   - backend-laravel/app/Services/ContextContractV2Service.php
   - backend-laravel/app/Services/InstrumentInvocationLedgerService.php
+  - backend-laravel/app/Services/InstrumentLearningMonitorService.php
+  - backend-laravel/app/Services/ContextualInstrumentBundleGraphService.php
+  - backend-laravel/app/Console/Commands/ReconcileInstrumentPairs.php
+  - backend-laravel/app/Services/InstrumentResearchWindowService.php
+  - backend-laravel/app/Services/InstrumentPolicyConsumptionService.php
+  - backend-laravel/app/Services/InstrumentPosteriorAuthorityService.php
+  - backend-laravel/app/Services/TradingInstrumentOperatingSystemService.php
+  - backend-laravel/app/Services/LearningLaneService.php
+  - backend-laravel/app/Services/LearningConsolidationService.php
+  - backend-laravel/app/Services/LearningRetrievalService.php
+  - backend-laravel/app/Services/AgentKnowledgeService.php
+  - backend-laravel/app/Services/AgentProfessionalExamService.php
+  - backend-laravel/app/Services/TypedInstrumentFoundryService.php
   - backend-laravel/app/Services/FrozenControlScreeningAdmissionService.php
   - backend-laravel/app/Services/LabAgentEvaluationService.php
   - backend-laravel/app/Services/LabInstrumentResearchService.php
@@ -41,13 +71,45 @@ paths:
   - backend-laravel/app/Jobs/RunCausalExperimentFoldJob.php
   - backend-laravel/app/Models/CausalFoldReceipt.php
   - backend-laravel/app/Models/LabLearningLanePair.php
+  - backend-laravel/tests/Feature/AcademyCanonicalHandoffTest.php
+  - backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php
+  - backend-laravel/tests/Feature/AcademyPreExecutionReplacementTest.php
+  - backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php
+  - backend-laravel/tests/Feature/AcademyConfirmationRuntimeBindingTest.php
+  - backend-laravel/tests/Feature/AcademyExactControlAdmissionTest.php
+  - backend-laravel/tests/Feature/AcademyPrimaryInstrumentSurfaceTest.php
+  - backend-laravel/tests/Support/academy_confirmation_source.json
+  - ai-service-python/tests/test_parameter_preserving_composition.py
+  - backend-laravel/tests/Feature/AcademyColdStartFairnessTest.php
+  - backend-laravel/tests/Feature/AcademyProspectiveSourceParityTest.php
+  - backend-laravel/tests/Feature/AcademyFoundrySourceAdmissionTest.php
+  - backend-laravel/tests/Feature/AutonomousLearningProgressDirectorTest.php
+  - backend-laravel/tests/Feature/InstrumentValidationEpochTest.php
+  - backend-laravel/tests/Feature/ProvisionalCartridgeReadinessTest.php
+  - backend-laravel/tests/Support/InstrumentValidationFixture.php
+  - ai-service-python/tests/support/semantic_stage_receipt_fixture.py
+  - backend-laravel/tests/Feature/AcademyExperimentMaterializerServiceTest.php
+  - backend-laravel/tests/Feature/XauusdEdgeFormationAcademyServiceTest.php
+  - backend-laravel/tests/Unit/AcademyExperimentContractCompilerServiceTest.php
+  - backend-laravel/tests/Unit/CausalStageMasteryDirectorServiceTest.php
+  - backend-laravel/tests/Feature/CausalProgressRatchetGovernorServiceTest.php
   - backend-laravel/database/migrations/2026_09_22_120000_create_durable_causal_fold_and_autonomy_receipts.php
   - backend-laravel/database/migrations/2026_09_24_130000_expand_evolution_credit_status_for_compounding.php
   - ai-service-python/app/main.py
   - ai-service-python/app/services/walk_forward.py
   - ai-service-python/app/services/composition_runtime.py
   - ai-service-python/app/services/instrument_research.py
+  - ai-service-python/app/services/prospective_probe_window.py
 entry_points:
+  - trading:admit-academy-experiment
+  - AcademyExperimentMaterializerService::proposal
+  - AcademyExperimentMaterializerService::coldStartProposal
+  - AcademyExperimentMaterializerService::containPreparation
+  - AcademyExperimentMaterializerService::preparationTerminalDispositionForAgent
+  - CompositionAuthorityKernelService::confirmationReplayMetadata
+  - LabInstrumentResearchService::assignment
+  - XauusdEdgeFormationAcademyService::previewColdStartExperiment
+  - XauusdEdgeFormationAcademyService::curriculumContinuationEvidence
   - CausalLearningCohortPlannerService
   - CausalLearningConfirmationService
   - CausalFoldExecutionService
@@ -55,7 +117,11 @@ entry_points:
   - CanonicalLearningOutboxService
   - ResearchPaperEpochContractService
   - trading:causal-golden-worlds
+  - trading:reconcile-instrument-pairs
 data_tables:
+  - edge_academy_passports
+  - edge_academy_trials
+  - edge_academy_beams
   - agent_learning_causal_experiments
   - causal_capability_escrows
   - causal_fold_receipts
@@ -68,10 +134,36 @@ dependencies:
   - laboratory
   - confirmation-entry
   - laravel-python-contract
-  - paper-execution
 invariants:
+  - Causal discovery and Research Mentor do not depend on paper profitability. Paper admission consumes original-source and exact-trait causal verification; the reverse E4 performance/Economic Parent receipt is later feedback documented in shared integrations, not a prerequisite for causal execution.
+  - Creation seals the primary Academy frozen-control owner and explicit admission-only candidate control IDs after hypothesis cleanup. Kernel pair contracts retain actual control and candidate IDs; no same-family fallback can silently substitute another control.
+  - Academy primary arms share one compiler-verified trial-owned instrument surface before any ordinary pair lookup or cache reuse. Exact baseline, roster, context, source and parameter delta are prerequisites; this multi-arm reservation is not an ordinary economic pair or instrument-credit proof.
+  - Laravel and Python refuse a blocked or unready required instrument reservation before replay, even when its assignment and aggregate contract are rehashed; a missing optional inventory is not silently reclassified as a required reservation.
+  - Fresh Academy and kernel constructors seal current-family parameter fingerprints with the shared schema canonicalizer and current local-adapter genome; missing or stale historical metadata is never copied as the new model identity. Draft verification remains strict after JSON roundtrip and real value changes.
+  - One original cold cohort may receive one attested missing-identity constructor replacement and one distinct contained preparation repair, never more than three total cohorts. The preparation repair requires original bounded-timeout operational envelopes, request-bound snapshot_loaded checkpoint, zero scientific output and a drained approved disposition; all twenty preregistered parameter vectors, question, data/MTF/cost and stable budget remain exact under fresh IDs/source.
+  - The confirmation runtime specification is explicit-owner Academy research, not generic library rotation. A fresh strategy/tactic/management passport preserves sealed parameters and risks exactly; parameter-preserving management has no override and cannot inherit an incompatible historical passport.
+  - Academy plans only executable adapter values. A new trial may create one locked draft plus durable canonical-admission intent; the arbiter alone selects preparation and dispatch through trading:dispatch-lab. Historical passports are not prospectively re-sealed.
+  - Ready proof-carrying Academy curriculum and director continuation precede fresh discovery. The one-cohort stable-input cold-start allowance also precedes new discovery, but never active closure, recovery or earned proof; depth or a planned-trial label alone is not continuation evidence.
+  - Stage mastery compares ordered candle/event identities and actual data/execution/evaluator bindings, not equal counts. Setup topology explicitly owns context/location/setup together; no exclusive single-stage claim is inferred.
+  - Exact-delta authorized validation epochs have independent statistics. Legacy/discovery evidence remains observable but cannot poison or certify a validation epoch; every authority fact rechecks its original pair, run and window provenance.
+  - Instrument selection may recommend only its proven gene old/new delta in the exact tested context and compatible baseline, never every gene listed on a capability card.
+  - External idea identity includes context, bounded genes, component species, block design and stopping rule. Only matching ready execution designs may claim the idea; unsupported designs remain deferred, never relabelled novelty.
+  - Code-owned capability cards distinguish parameter adapters, structural proxies and unavailable descriptions; catalog names and management profiles are not unique algorithms. Cards and activation events share one owner and are sealed in the assignment.
+  - Generic mutation genes resolve to the actual strategy-family instrument adapter. A four-seat activation proposal requires both axes to have observed source opportunity, reachable stage, bound data and a prospectively freezable exact control; an unknown observation count is not fabricated uncertainty or credit.
+  - The arbiter reconciles only open exact-pair instrument projections; an attested frozen-control invocation closes as control_reference_consumed without causal credit. Terminal historical receipts are not reopened, and historical reference maintenance cannot starve fresh research.
+  - Controlled factorial attribution requires four unique eligible arm receipts sharing dataset, MTF, execution, context and session identities; effects are recomputed from their values, and activation-only blocks cannot create economic attribution.
+  - Directional harmful authority requires exact old/new gene values and context plus three authorized non-overlapping negative windows and original verified settlements; legacy repeated losses cannot block the whole gene.
+  - A preregistered equal-cap three-arm benchmark settles only from complete hash-valid folds as executed_diagnostic and grants neither measured-compute equivalence nor compounding/credit authority.
+  - Instrument posterior authority requires a validation replay manifest with post-paper source and candle bounds plus server-authorized dataset receipts from non-overlapping, distinct-hash windows; at least two separate positive windows, complete evidence-key coverage, and exact context are mandatory. Ordinary pre-2026 screening, arbitrary window labels and 2026 paper candles never count.
+  - Successor instrument consumption is recorded only when an actual parameter difference matches a confirmed component and bundle with the same full state key and requested context; retrieval or preference alone is not application or paper authority.
+  - Venue-phase instrument attribution uses the same exact five-axis activation and candidate/control trade context; legacy session-only or mixed-granularity slices cannot create a phase-local posterior.
+  - A confirmed venue-phase posterior can affect next-generation mutation only in an explicitly matching requested phase, never from a broader session-only context.
   - Work lifecycle, evidence validity, causal claim and authority are distinct dimensions.
   - Counterfactual arms retain frozen control, data and execution identity.
+  - Prospective repair seals the exact declared parent semantic group separately from canonical decision context; both candidate and control must belong to it. Blinded mutation uses the same baseline Edge Genesis feasibility firewall, never memory ranking.
+  - Prospective repair runs as one exact three-arm cohort; unrelated discovery seats cannot invalidate its comparison.
+  - The initial attempt may receive two distinct unobserved constructor repairs. One final versioned transport repair is allowed only when that third attempt's exact control has a single 780s bounded-timeout error run with no strategy/trade receipt and its two peers were blocked by that control. Four attempts exhaust the source; any scientific result forbids reuse.
+  - Discovery's 15000 evaluated rows and 512 warmup rows are separately sealed and attested; the three arms share one window hash, and paper-epoch rows are forbidden.
   - A causal confirmation passport resolves to the frozen control's exact executable family and any declared architecture and tactic before construction.
   - Terminal scientific uncertainty is classified explicitly rather than fabricated as success or causal rejection.
   - A receipt and next durable action are recorded atomically or not at all.
@@ -80,7 +172,7 @@ invariants:
   - Composition credit requires explicit independently attested component evidence.
   - Post-v2 repair and causal-skill credits are issued atomically and idempotently only after the confirmed three-arm experiment, component escrow, exact pair and settlement agree; they grant no paper or parent authority.
   - An instrument assignment may be reused or credited only when its source strategy, tactic, risk and management still match the frozen composition passport.
-  - A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt; independent validation stays blocked without a fresh preregistered window.
+  - A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused.
 flows:
   - flows/causal-conversion.md
 docs:
@@ -88,13 +180,37 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php
+  - backend-laravel/tests/Feature/AcademyPreExecutionReplacementTest.php
+  - backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php
+  - backend-laravel/tests/Feature/AcademyConfirmationRuntimeBindingTest.php
+  - backend-laravel/tests/Feature/AcademyExactControlAdmissionTest.php
+  - backend-laravel/tests/Feature/AcademyPrimaryInstrumentSurfaceTest.php
+  - ai-service-python/tests/test_parameter_preserving_composition.py
+  - backend-laravel/tests/Feature/AcademyExperimentMaterializerServiceTest.php
+  - backend-laravel/tests/Feature/XauusdEdgeFormationAcademyServiceTest.php
+  - backend-laravel/tests/Unit/AcademyExperimentContractCompilerServiceTest.php
+  - backend-laravel/tests/Unit/CausalStageMasteryDirectorServiceTest.php
+  - backend-laravel/tests/Feature/ResearchIdeaDesignTest.php
+  - backend-laravel/tests/Feature/InstrumentCapabilityReadinessTest.php
+  - backend-laravel/tests/Feature/ProspectiveSemanticParentTest.php
+  - backend-laravel/tests/Feature/ProspectiveRepairExperimentTest.php
+  - ai-service-python/tests/test_arm_replay_resources.py
+  - backend-laravel/tests/Feature/EvolutionAuditRegressionTest.php
+  - backend-laravel/tests/Feature/TypedInstrumentFoundryServiceTest.php
+  - backend-laravel/tests/Feature/InstrumentResearchWindowAuthorityTest.php
+  - backend-laravel/tests/Feature/InstrumentPolicyConsumptionTest.php
+  - backend-laravel/tests/Feature/LearningEvolutionChainAcceptanceTest.php
+  - backend-laravel/tests/Feature/TradingInstrumentOperatingSystemTest.php
   - backend-laravel/tests/Feature/CausalLearningLoopContractTest.php
   - backend-laravel/tests/Feature/MutationObservabilityTest.php
   - backend-laravel/tests/Feature/DurableAutonomyProofTest.php
   - backend-laravel/tests/Feature/FailureRepairAnchorTest.php
   - backend-laravel/tests/Feature/PostV2LearningProofTest.php
   - backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php
+  - backend-laravel/tests/Feature/PostPaperConfirmedTraitAdmissionTest.php
   - backend-laravel/tests/Feature/ProofFrontierActivationTest.php
+  - backend-laravel/tests/Feature/ResearchExperimentConversionKernelServiceTest.php
   - ai-service-python/tests/test_composition_runtime.py
   - backend-laravel/tests/Feature/StrategyTacticRiskCompositionPlannerTest.php
   - backend-laravel/tests/Feature/LabInstrumentResearchLoopTest.php

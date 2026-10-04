@@ -24,7 +24,9 @@ class ResearchKnowledgePortfolioService
         $type = match ($classification) {
             'POSITIVE_CANDIDATE' => 'CAUSAL',
             'BEHAVIORAL_ACTIVATION_HYPOTHESIS' => 'SEMANTIC',
-            'HARMFUL', 'UNDERPOWERED', 'INCONCLUSIVE' => 'NEGATIVE',
+            'HARMFUL' => 'NEGATIVE',
+            // Missing data or power describes the experiment, not a harmful skill.
+            'UNDERPOWERED', 'INCONCLUSIVE' => 'EPISODIC',
             'TECHNICAL_QUARANTINE' => 'COUNTERFACTUAL',
             default => 'EPISODIC',
         };

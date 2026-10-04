@@ -19,6 +19,9 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing" force="true"/>
+        <!-- Archive-first tests explicitly enable the policy and mock provider
+             I/O; legacy construction tests must not fetch production archives. -->
+        <env name="XAUUSD_HISTORICAL_RESEARCH_UNTIL_CHAMPION" value="false" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
         <env name="BCRYPT_ROUNDS" value="4" force="true"/>
         <env name="BROADCAST_CONNECTION" value="null" force="true"/>

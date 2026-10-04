@@ -499,6 +499,7 @@ class LabAgentEvaluationService
                 ? min(960, max(120, (int) config('services.lab_selection.causal_replay_timeout_seconds', 960)))
                 : min(3900, max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900)));
             $requestId = 'full-'.$agent->id.'-'.bin2hex(random_bytes(6));
+            $request = app(ResearchReleaseSealService::class)->bindRequest($run, $request);
             $this->evidence->attachRequest($run, $request, [
                 'request_id' => $requestId,
                 'dataset_manifest' => $manifest,
@@ -899,6 +900,7 @@ class LabAgentEvaluationService
             'fold_receipts' => (int) data_get($aggregateResponse, 'received_fold_count', 0),
             'promotion_evidence' => false,
         ]);
+        $request = app(ResearchReleaseSealService::class)->bindRequest($run, $request);
         $this->evidence->attachRequest($run, $request, [
             'request_id' => 'causal-fold-aggregate-'.$agent->id.'-'.$run->run_id,
             'dataset_manifest' => $manifest,
@@ -1010,10 +1012,14 @@ class LabAgentEvaluationService
             $volumeEnabled && $mtfBundle === null,
         );
         $microProbe = data_get($agent->generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
+        $prospectiveProbe = data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind') === ProspectiveRepairExperimentService::KIND;
         $screenRows = $microProbe
             ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
-            : 5000;
-        $stratifiedHistorical = ! $microProbe;
+            : ($prospectiveProbe
+                ? ProspectiveRepairExperimentService::PROBE_POLICY['training_tail_rows']
+                    + ProspectiveRepairExperimentService::PROBE_POLICY['warmup_rows'] : 5000);
+        $stratifiedHistorical = ! $microProbe
+            && data_get($agent->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind') !== ProspectiveRepairExperimentService::KIND;
         $primaryDatasetPath = $mtfBundle !== null
             ? (string) $mtfBundle['entry_dataset_path']
             : (string) $datasetSnapshot['path'];
@@ -1156,6 +1162,16 @@ class LabAgentEvaluationService
             $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
             $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
         }
+        if ($prospectiveProbe) {
+            $manifest['prospective_probe_window'] = app(ProspectiveRepairProbeWindowService::class)->seal(
+                $rows, $replayDatasetHash, (string) data_get($request, 'execution_contract.execution_hash'),
+                (string) data_get($model->metadata, 'causal_learning_cohort.experiment_key', ''),
+                ProspectiveRepairExperimentService::PROBE_POLICY['training_tail_rows'],
+                ProspectiveRepairExperimentService::PROBE_POLICY['warmup_rows'],
+            );
+            $request['policy_context']['prospective_probe_window'] = $manifest['prospective_probe_window'];
+        }
+        $request = app(ResearchReleaseSealService::class)->bindRequest($run, $request);
         $this->evidence->attachRequest($run, $request, ['request_id' => $requestId, 'data_hash' => $manifest['data_hash'], 'dataset_manifest' => $manifest]);
         $this->assertAiReplayHealthy($requestId, $run, true);
         $response = Http::connectTimeout(15)->timeout($screenTimeout)->withOptions([
@@ -1190,6 +1206,13 @@ class LabAgentEvaluationService
             'evidence_run_id' => $run->run_id,
             'data_manifest' => $manifest,
         ]);
+        if (isset($manifest['prospective_probe_window'])
+            && ! app(ProspectiveRepairProbeWindowService::class)->attests(
+                (array) $manifest['prospective_probe_window'],
+                (array) data_get($result, 'prospective_probe_window_receipt', []),
+            )) {
+            throw new RuntimeException('PROSPECTIVE_PROBE_WINDOW_RECEIPT_MISMATCH');
+        }
         if (filled($manifest['mtf_bundle_hash'] ?? null)) {
             $screenResult['mtf_bundle_hash'] = (string) $manifest['mtf_bundle_hash'];
             $screenResult['mtf_snapshot_manifest'] = (array) ($manifest['mtf_bundle_manifest'] ?? []);
@@ -1421,6 +1444,13 @@ class LabAgentEvaluationService
         $ids = $agents->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
         $first = $agents->first();
         $generation = $first->generation;
+        $probeGroups = $agents->groupBy(fn (LabAgent $arm): string =>
+            data_get($arm->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind') === ProspectiveRepairExperimentService::KIND
+                ? 'prospective_repair' : 'ordinary');
+        if ($probeGroups->count() > 1) {
+            foreach ($probeGroups as $probeAgents) $this->screenBatch($probeAgents->pluck('id')->all(), $symbol);
+            return;
+        }
         $runtimeTimeframe = $this->replayTimeframe($first);
         $mtfBundle = $this->replayMtfBundle($first);
         $datasetContracts = $agents
@@ -1452,10 +1482,14 @@ class LabAgentEvaluationService
             $volumeEnabled && $mtfBundle === null,
         );
         $microProbe = data_get($generation->trigger_context, 'shadow_micro_probe.protocol') === ReplayResourceAdmissionService::PROTOCOL;
+        $prospectiveProbe = data_get($first->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind') === ProspectiveRepairExperimentService::KIND;
         $screenRows = $microProbe
             ? (int) config('services.ai_service.shadow_micro_probe_max_rows', 512)
-            : 5000;
-        $stratifiedHistorical = ! $microProbe;
+            : ($prospectiveProbe
+                ? ProspectiveRepairExperimentService::PROBE_POLICY['training_tail_rows']
+                    + ProspectiveRepairExperimentService::PROBE_POLICY['warmup_rows'] : 5000);
+        $stratifiedHistorical = ! $microProbe
+            && ! $agents->contains(fn ($arm) => data_get($arm->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind') === ProspectiveRepairExperimentService::KIND);
         $primaryDatasetPath = $mtfBundle !== null
             ? (string) $mtfBundle['entry_dataset_path']
             : (string) $datasetSnapshot['path'];
@@ -1601,6 +1635,21 @@ class LabAgentEvaluationService
             $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
             $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
         }
+        if ($prospectiveProbe) {
+            $experimentKeys = $agents->map(fn (LabAgent $arm): string => (string) data_get(
+                $arm->modelVersion?->metadata, 'causal_learning_cohort.experiment_key', ''
+            ))->unique();
+            if ($experimentKeys->count() !== 1) {
+                throw new RuntimeException('PROSPECTIVE_PROBE_MIXED_EXPERIMENT_KEYS');
+            }
+            $manifest['prospective_probe_window'] = app(ProspectiveRepairProbeWindowService::class)->seal(
+                $rows, $replayDatasetHash, (string) data_get($request, 'execution_contract.execution_hash'),
+                $experimentKeys->first(),
+                ProspectiveRepairExperimentService::PROBE_POLICY['training_tail_rows'],
+                ProspectiveRepairExperimentService::PROBE_POLICY['warmup_rows'],
+            );
+            $request['policy_context']['prospective_probe_window'] = $manifest['prospective_probe_window'];
+        }
         $runs = [];
         foreach ($agents as $agent) {
             $run = $this->evidence->beginRun($agent, 'screening', 'incremental', [
@@ -1609,6 +1658,7 @@ class LabAgentEvaluationService
                 'batch_agent_ids' => $ids,
             ]);
             $runs[(int) $agent->id] = $run;
+            $request = app(ResearchReleaseSealService::class)->bindRequest($run, $request);
             $requestId = 'screen-batch-'.$agent->id.'-'.bin2hex(random_bytes(5));
             $this->evidence->attachRequest($run, $request, [
                 'request_id' => $requestId,
@@ -1985,6 +2035,13 @@ class LabAgentEvaluationService
             'evidence_run_id' => $run->run_id,
             'data_manifest' => $manifest,
         ]);
+        if (isset($manifest['prospective_probe_window'])
+            && ! app(ProspectiveRepairProbeWindowService::class)->attests(
+                (array) $manifest['prospective_probe_window'],
+                (array) data_get($result, 'prospective_probe_window_receipt', []),
+            )) {
+            throw new RuntimeException('PROSPECTIVE_PROBE_WINDOW_RECEIPT_MISMATCH');
+        }
         if (filled($manifest['mtf_bundle_hash'] ?? null)) {
             $screenResult['mtf_bundle_hash'] = (string) $manifest['mtf_bundle_hash'];
             $screenResult['mtf_snapshot_manifest'] = (array) ($manifest['mtf_bundle_manifest'] ?? []);
@@ -2500,6 +2557,35 @@ class LabAgentEvaluationService
         return $value;
     }
 
+    /** Prospectively bind all three repair arms to their sealed source cell. */
+    private function replaySpecialistContextContract(mixed $model): array|\stdClass
+    {
+        $existing = data_get($model?->metadata, 'specialist_council_membership.contextual_cell');
+        $cohort = (array) data_get($model?->metadata, 'causal_learning_cohort', []);
+        if (data_get($cohort, 'experiment_kind') !== ProspectiveRepairExperimentService::KIND) {
+            return $this->specialistContextContract($existing);
+        }
+
+        $scope = (array) data_get($cohort, 'source_context_scope', []);
+        $scope = app(ContextContractV2Service::class)->canonicalDeclaredAxes($scope);
+        $sealedHash = (string) data_get($cohort, 'source_context_hash', '');
+        if (empty($scope['venue_phase']) || $sealedHash === ''
+            || ! hash_equals($sealedHash, app(ResearchPaperEpochContractService::class)->parameterHash($scope))) {
+            throw new RuntimeException('PROSPECTIVE_REPAIR_CONTEXT_SCOPE_DRIFT');
+        }
+        if (is_array($existing) && $existing !== []
+            && app(ContextContractV2Service::class)->canonicalDeclaredAxes($existing) !== $scope) {
+            throw new RuntimeException('PROSPECTIVE_REPAIR_CONTEXT_OWNER_MISMATCH');
+        }
+
+        return $this->specialistContextContract([
+            'protocol' => 'prospective_repair_exact_context_v1',
+            ...$scope,
+            'execution_policy' => 'context_owned',
+            'source_context_hash' => $sealedHash,
+        ]);
+    }
+
     /**
      * Carry a frozen composition across the actual replay boundary. The
      * passport itself is only a declaration; Python must return an exact
@@ -2507,7 +2593,7 @@ class LabAgentEvaluationService
      *
      * @return array<string,mixed>|\stdClass
      */
-    private function compositionRuntimeContract(
+    public function compositionRuntimeContract(
         LabAgent $agent,
         ?array $instrumentAssignment = null,
         ?string $runtimeTimeframe = null,
@@ -2566,6 +2652,16 @@ class LabAgentEvaluationService
         $instrumentHashPayload = $instrumentAssignment;
         unset($instrumentHashPayload['assignment_hash']);
         $instrumentBound = (string) data_get($instrumentAssignment, 'protocol') === LabInstrumentResearchService::PROTOCOL
+            && ! str_starts_with((string) data_get($instrumentAssignment, 'status', ''), 'blocked_')
+            && (! array_key_exists('required', (array) data_get($instrumentAssignment, 'pair_reservation', []))
+                || is_bool(data_get($instrumentAssignment, 'pair_reservation.required')))
+            && (data_get($instrumentAssignment, 'pair_reservation.protocol') !== LabInstrumentResearchService::ACADEMY_RESERVATION_PROTOCOL
+                || data_get($instrumentAssignment, 'pair_reservation.required') === true)
+            && (data_get($instrumentAssignment, 'pair_reservation.required') !== true
+                || (data_get($instrumentAssignment, 'pair_reservation.status') === 'reserved'
+                    && data_get($instrumentAssignment, 'status') === 'assigned'
+                    && (array) data_get($instrumentAssignment, 'selected_keys', []) !== []
+                    && (array) data_get($instrumentAssignment, 'selected', []) !== []))
             && (string) data_get($instrumentAssignment, 'hash_protocol') === LabInstrumentResearchService::HASH_PROTOCOL
             && $instrumentHash !== ''
             && hash_equals($instrumentHash, $this->numericCanonicalHash($instrumentHashPayload))
@@ -2780,9 +2876,7 @@ class LabAgentEvaluationService
                 $mtfBundle,
                 $replayDatasetHash,
             ),
-            'specialist_context_contract' => $this->specialistContextContract(
-                data_get($model->metadata, 'specialist_council_membership.contextual_cell'),
-            ),
+            'specialist_context_contract' => $this->replaySpecialistContextContract($model),
         ];
     }
 

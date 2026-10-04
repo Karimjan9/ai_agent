@@ -11,7 +11,9 @@ use Illuminate\Support\Facades\Schema;
  */
 class CausalProgressRatchetGovernorService
 {
-    public const PROTOCOL = 'causal_progress_ratchet_governor_v1';
+    public const PROTOCOL = 'causal_progress_ratchet_governor_v2';
+    // A receipt upgrade must not reset an existing durable progress lineage.
+    private const IDENTITY_PROTOCOL = 'causal_progress_ratchet_governor_v1';
     public const STAGES = ['none', 'context', 'location', 'setup', 'confirmation', 'trigger', 'entry', 'closed_trade', 'positive_after_cost_edge'];
     public const PHASES = ['DISCOVERED', 'CONFIRMATION_QUEUED', 'CONFIRMATION_SETTLED', 'REPLICATION_QUEUED', 'REPLICATION_SETTLED', 'ATTRIBUTED', 'CARTRIDGE_MATERIALIZED', 'MENTOR_INCUBATED', 'DESCENDANT_PROVEN', 'PARENT_ELIGIBLE', 'PAPER_ADMITTED'];
     public const LANES = ['edge_exploration', 'skill_consolidation', 'topology_pivot', 'adversarial_falsification'];
@@ -21,7 +23,14 @@ class CausalProgressRatchetGovernorService
     /** @return array<string,mixed> */
     public function classify(array $assessment, array $control, array $candidate): array
     {
-        if (($assessment['status'] ?? '') === 'controllable') {
+        $assessable = ($assessment['protocol'] ?? null) === CausalStageMasteryDirectorService::PROTOCOL
+            && ($assessment['evidence_assessable'] ?? null) === true
+            && data_get($assessment, 'checks.decision_identity_valid') === true
+            && data_get($assessment, 'checks.upstream_identity_preserved') === true;
+        if (! $assessable) return ['classification' => 'unassessable', 'retire' => false,
+            'next_action' => 'repair_evidence_or_counterfactual',
+            'reason' => $assessment['reason'] ?? 'SEMANTIC_EVIDENCE_INCOMPLETE'];
+        if (($assessment['status'] ?? '') === 'controllable' && ($assessment['semantic_effect_observed'] ?? null) === true) {
             $trades = (int) data_get($candidate, 'edge_observability.exit_outcome.closed_trade_count', data_get($candidate, 'total_trades', 0));
             $powered = $trades >= max(3, (int) config('services.edge_director.minimum_closed_trade_power', 10));
             $edge = $powered && (float) data_get($candidate, 'after_cost_expectancy_r', 0) > 0
@@ -32,9 +41,11 @@ class CausalProgressRatchetGovernorService
         $target = (string) data_get($assessment, 'target_stage', 'none');
         $previous = $this->previousStage($target);
         $upstream = (int) data_get($assessment, 'candidate_counts.'.$previous, 0);
-        $events = (int) data_get($assessment, 'event_delta', 0);
         if ($previous !== 'none' && $upstream === 0) return ['classification' => 'upstream_unreachable', 'retire' => false, 'next_action' => 'repair_upstream_stage'];
-        if ($events === 0) return ['classification' => 'non_controlling_axis', 'retire' => true, 'next_action' => 'retire_axis'];
+        if (($assessment['reason'] ?? null) === 'NO_OBSERVED_SEMANTIC_EFFECT'
+            && ($assessment['semantic_effect_observed'] ?? null) === false) {
+            return ['classification' => 'non_controlling_axis', 'retire' => true, 'next_action' => 'retire_axis'];
+        }
         return ['classification' => 'invariant_saturation', 'retire' => false, 'next_action' => 'topology_pivot'];
     }
 
@@ -42,11 +53,16 @@ class CausalProgressRatchetGovernorService
     public function recordAssessment(array $assessment, array $context, array $control, array $candidate): array
     {
         $classification = $this->classify($assessment, $control, $candidate);
+        if ($classification['classification'] === 'unassessable') return ['protocol' => self::PROTOCOL,
+            ...$classification, 'status' => 'unassessable', 'authority' => 'none', 'promotion_evidence' => false];
         if (! $this->available()) return ['protocol' => self::PROTOCOL, ...$classification, 'status' => 'storage_unavailable', 'promotion_evidence' => false];
+        return DB::transaction(function () use ($assessment, $context, $control, $candidate, $classification): array {
         $identity = $this->identity($context);
-        $ratchet = DB::table('causal_progress_ratchets')->where('ratchet_key', $identity['ratchet_key'])->first();
-        $stage = $classification['classification'] === 'positive_after_cost_edge' ? 'positive_after_cost_edge'
-            : (($assessment['status'] ?? '') === 'controllable' ? (string) data_get($assessment, 'target_stage', 'none') : 'none');
+        $ratchet = DB::table('causal_progress_ratchets')->where('ratchet_key', $identity['ratchet_key'])->lockForUpdate()->first();
+        // Positive discovery schedules confirmation; only the separately
+        // admitted economic replay may call recordPositiveAfterCostEdge.
+        $stage = ($assessment['status'] ?? '') === 'controllable'
+            ? (string) data_get($assessment, 'target_stage', 'none') : 'none';
         $depth = $this->depth($stage);
         $now = now();
         if (! $ratchet) {
@@ -62,21 +78,33 @@ class CausalProgressRatchetGovernorService
         }
         $oldDepth = (int) $ratchet->stage_depth;
         $advanced = $depth > $oldDepth;
-        $scaffold = $depth >= $this->depth('trigger') && $stage !== 'positive_after_cost_edge';
+        $effectiveStage = $advanced ? $stage : $ratchet->deepest_stage;
+        $effectiveDepth = max($oldDepth, $depth);
+        $authority = ($ratchet->authority ?? 'none') === 'revoked' ? 'revoked'
+            : ($effectiveStage === 'positive_after_cost_edge' ? 'economic_edge_confirmed'
+                : ($effectiveDepth >= $this->depth('trigger') ? 'path_activating_scaffold' : $ratchet->authority));
+        $scaffold = $authority === 'path_activating_scaffold';
+        $evidence = is_string($ratchet->evidence) ? (array) json_decode($ratchet->evidence, true) : (array) $ratchet->evidence;
+        $observationKey = $this->observationKey($assessment, $context, $control, $candidate);
+        $history = (array) ($evidence['history'] ?? []);
+        $duplicate = collect($history)->contains(fn (array $entry): bool => ($entry['observation_key'] ?? null) === $observationKey);
         $ablation = ['required' => $scaffold, 'status' => $scaffold ? 'pending_scaffold_removal_ablation' : 'not_required',
             'arms' => $scaffold ? ['frozen_scaffold', 'scaffold_removed_ablation'] : [],
             'rule' => 'A scaffold is causal only while removal changes the same frozen-path outcome.', 'promotion_evidence' => false];
-        $evidence = is_string($ratchet->evidence) ? (array) json_decode($ratchet->evidence, true) : (array) $ratchet->evidence;
-        $history = (array) ($evidence['history'] ?? []); $history[] = ['assessment' => $assessment, 'classification' => $classification, 'ablation' => $ablation, 'at' => now()->utc()->toIso8601String()];
+        if ((! $advanced && (($assessment['status'] ?? '') !== 'controllable' || $duplicate))
+            && isset($evidence['scaffold_ablation'])) $ablation = (array) $evidence['scaffold_ablation'];
+        if (! $duplicate) {
+            $history[] = ['observation_key' => $observationKey, 'assessment' => $assessment, 'classification' => $classification, 'ablation' => $ablation, 'at' => now()->utc()->toIso8601String()];
+        }
         DB::table('causal_progress_ratchets')->where('id', $ratchet->id)->update([
-            'deepest_stage' => $advanced ? $stage : $ratchet->deepest_stage, 'stage_depth' => max($oldDepth, $depth),
-            'authority' => max($oldDepth, $depth) >= $this->depth('trigger') && ($ratchet->authority ?? 'none') !== 'revoked' ? 'path_activating_scaffold' : $ratchet->authority,
+            'deepest_stage' => $effectiveStage, 'stage_depth' => $effectiveDepth, 'authority' => $authority,
             'evidence' => json_encode([...$evidence, 'history' => array_slice($history, -30), 'scaffold_ablation' => $ablation, 'promotion_evidence' => false]), 'updated_at' => $now,
         ]);
-        $retirement = $this->recordAxisOutcome((int) $ratchet->id, $identity, (string) data_get($assessment, 'owner.gene', $context['axis'] ?? 'unknown'), $classification, $assessment);
-        return ['protocol' => self::PROTOCOL, 'status' => 'recorded', 'ratchet_id' => $ratchet->id, 'deepest_stage' => $advanced ? $stage : $ratchet->deepest_stage,
-            'advanced' => $advanced, 'authority' => max($oldDepth, $depth) >= $this->depth('trigger') ? 'path_activating_scaffold' : 'none',
+        $retirement = $this->recordAxisOutcome((int) $ratchet->id, $identity, (string) data_get($assessment, 'owner.gene', $context['axis'] ?? 'unknown'), $classification, $assessment, $observationKey);
+        return ['protocol' => self::PROTOCOL, 'status' => 'recorded', 'ratchet_id' => $ratchet->id, 'deepest_stage' => $effectiveStage,
+            'advanced' => $advanced, 'authority' => $authority,
             'classification' => $classification, 'retirement' => $retirement, 'scaffold_ablation' => $ablation, 'promotion_evidence' => false];
+        }, 3);
     }
 
     /** A preserved scaffold has an ablation obligation; no effect revokes its authority. */
@@ -247,7 +275,8 @@ class CausalProgressRatchetGovernorService
     {
         $symbol = strtoupper($symbol); $timeframe = strtoupper($timeframe);
         if (! $this->available()) return ['protocol' => self::PROTOCOL, 'available' => false, 'promotion_evidence' => false];
-        $axes = DB::table('causal_axis_retirements')->where('symbol', $symbol)->where('timeframe', $timeframe);
+        $allAxes = DB::table('causal_axis_retirements')->where('symbol', $symbol)->where('timeframe', $timeframe);
+        $axes = (clone $allAxes)->where('evidence->protocol', self::PROTOCOL)->whereNotNull('evidence->semantic_observation_keys');
         $axisTotal = (clone $axes)->count(); $noops = (clone $axes)->where('classification', 'non_controlling_axis')->count();
         $ratchets = DB::table('causal_progress_ratchets')->where('symbol', $symbol)->where('timeframe', $timeframe);
         $cohorts = Schema::hasTable('edge_genesis_trials') ? DB::table('edge_genesis_trials as t')->join('edge_genesis_passports as p', 'p.id', '=', 't.edge_genesis_passport_id')
@@ -262,6 +291,7 @@ class CausalProgressRatchetGovernorService
         $descendants = Schema::hasTable('descendant_value_trials') ? DB::table('descendant_value_trials')->where('symbol', $symbol)->where('timeframe', $timeframe)->where('status', 'settled')->get(['evidence']) : collect();
         $improvingDescendants = $descendants->filter(fn ($row): bool => (bool) data_get(json_decode((string) $row->evidence, true), 'improved_over_mentor', false))->count();
         return ['protocol' => self::PROTOCOL, 'available' => true,
+            'legacy_axis_rows_diagnostic_only' => (clone $allAxes)->count() - $axisTotal,
             'no_op_rate' => $axisTotal > 0 ? round($noops / $axisTotal, 6) : 0.0,
             'causal_depth_gain_per_cohort' => $cohorts > 0 ? round((float) (clone $ratchets)->sum('stage_depth') / $cohorts, 6) : 0.0,
             'decisive_outcome_rate' => $cohorts > 0 ? round($decisive / $cohorts, 6) : 0.0,
@@ -324,6 +354,11 @@ class CausalProgressRatchetGovernorService
         if (! $this->available()) return ['level' => 'L0_scalar_threshold', 'next_action' => 'scalar'];
         $identity = $this->identity($context);
         $count = DB::table('causal_axis_retirements')->where('composition_key', $identity['composition_key'])->where('axis', $axis)
+            ->where('symbol', $identity['symbol'])->where('timeframe', $identity['timeframe'])
+            ->where('evidence->source_scope->baseline_epoch_hash', $identity['baseline_epoch_hash'])
+            ->where('evidence->source_scope->data_hash', $identity['data_hash'])
+            ->where('evidence->source_scope->execution_hash', $identity['execution_hash'])->where('evidence->protocol', self::PROTOCOL)
+            ->whereNotNull('evidence->semantic_observation_keys')
             ->where('classification', 'behavior_changed_no_edge')->sum('observations');
         $level = min(5, intdiv((int) $count, 2));
         $actions = ['scalar_threshold', 'component_topology', 'strategy_tactic_recombination', 'temporal_role_binding', 'regime_specialist_router', 'architecture_retirement'];
@@ -331,17 +366,41 @@ class CausalProgressRatchetGovernorService
             'scalar_reentry_forbidden' => $level >= 1, 'promotion_evidence' => false];
     }
 
-    private function recordAxisOutcome(int $ratchetId, array $identity, string $axis, array $classification, array $assessment): array
+    private function recordAxisOutcome(int $ratchetId, array $identity, string $axis, array $classification, array $assessment, string $observationKey): array
     {
-        $key = hash('sha256', implode('|', [$identity['composition_key'], $identity['baseline_epoch_hash'], $axis, $identity['data_hash'], $identity['execution_hash'], $classification['classification']]));
-        $row = DB::table('causal_axis_retirements')->where('retirement_key', $key)->first(); $observations = ((int) ($row->observations ?? 0)) + 1;
+        $key = hash('sha256', implode('|', [self::PROTOCOL, $identity['composition_key'], $identity['baseline_epoch_hash'], $axis, $identity['data_hash'], $identity['execution_hash'], $classification['classification']]));
+        $row = DB::table('causal_axis_retirements')->where('retirement_key', $key)->lockForUpdate()->first();
+        $priorEvidence = $row ? (array) json_decode((string) $row->evidence, true) : [];
+        $keys = (array) ($priorEvidence['semantic_observation_keys'] ?? []);
+        $duplicate = in_array($observationKey, $keys, true);
+        if (! $duplicate) $keys[] = $observationKey;
+        // Legacy callback counters are not independent semantic observations.
+        // Preserve their ledger but prospective retirement uses exact v2 proof keys.
+        $observations = count($keys);
         $retired = (bool) $classification['retire'] && $observations >= 2;
         DB::table('causal_axis_retirements')->updateOrInsert(['retirement_key' => $key], ['causal_progress_ratchet_id' => $ratchetId, 'symbol' => $identity['symbol'], 'timeframe' => $identity['timeframe'], 'composition_key' => $identity['composition_key'],
             'axis' => $axis, 'classification' => $classification['classification'], 'observations' => $observations, 'retired' => $retired,
-            'evidence' => json_encode(['assessment' => $assessment, 'next_action' => $classification['next_action'], 'promotion_evidence' => false]), 'updated_at' => now(), 'created_at' => now()]);
-        return ['classification' => $classification['classification'], 'observations' => $observations, 'retired' => $retired, 'next_action' => $classification['next_action']];
+            'evidence' => json_encode(['assessment' => $assessment, 'next_action' => $classification['next_action'],
+                'semantic_observation_keys' => $keys, 'source_scope' => $identity, 'protocol' => self::PROTOCOL, 'promotion_evidence' => false]), 'updated_at' => now(), 'created_at' => now()]);
+        return ['classification' => $classification['classification'], 'observations' => $observations, 'duplicate_delivery' => $duplicate,
+            'retired' => $retired, 'next_action' => $classification['next_action']];
     }
-    private function identity(array $context): array { $symbol = strtoupper((string) ($context['symbol'] ?? '')); $timeframe = strtoupper((string) ($context['timeframe'] ?? '')); $composition = (string) ($context['composition_key'] ?? 'unknown'); $baseline = (string) ($context['baseline_epoch_hash'] ?? 'unknown'); $data = (string) ($context['data_hash'] ?? 'unknown'); $execution = (string) ($context['execution_hash'] ?? 'unknown'); return ['symbol' => $symbol, 'timeframe' => $timeframe, 'composition_key' => $composition, 'baseline_epoch_hash' => $baseline, 'data_hash' => $data, 'execution_hash' => $execution, 'ratchet_key' => hash('sha256', implode('|', [self::PROTOCOL, $symbol, $timeframe, $composition, $baseline, $data, $execution]))]; }
+    private function observationKey(array $assessment, array $context, array $control, array $candidate): string
+    {
+        return $this->digest([
+            'protocol' => self::PROTOCOL, 'axis' => data_get($assessment, 'owner.gene', $context['axis'] ?? 'unknown'),
+            'control_run_id' => $context['control_evaluation_run_id'] ?? data_get($control, 'immutable_evaluation_run_id'),
+            'candidate_run_id' => $context['candidate_evaluation_run_id'] ?? data_get($candidate, 'immutable_evaluation_run_id'),
+            'control_receipt_hash' => data_get($control, 'data_quality.decision_identity_receipt.receipt_hash'),
+            'candidate_receipt_hash' => data_get($candidate, 'data_quality.decision_identity_receipt.receipt_hash'),
+            'control_value' => $control['value'] ?? null, 'candidate_value' => $candidate['value'] ?? null,
+            'intervention_hash' => $context['intervention_hash'] ?? null,
+            'data_hash' => $context['data_hash'] ?? null, 'execution_hash' => $context['execution_hash'] ?? null,
+            'target_stage' => $assessment['target_stage'] ?? null,
+            'reason' => $assessment['reason'] ?? null,
+        ]);
+    }
+    private function identity(array $context): array { $symbol = strtoupper((string) ($context['symbol'] ?? '')); $timeframe = strtoupper((string) ($context['timeframe'] ?? '')); $composition = (string) ($context['composition_key'] ?? 'unknown'); $baseline = (string) ($context['baseline_epoch_hash'] ?? 'unknown'); $data = (string) ($context['data_hash'] ?? 'unknown'); $execution = (string) ($context['execution_hash'] ?? 'unknown'); return ['symbol' => $symbol, 'timeframe' => $timeframe, 'composition_key' => $composition, 'baseline_epoch_hash' => $baseline, 'data_hash' => $data, 'execution_hash' => $execution, 'ratchet_key' => hash('sha256', implode('|', [self::IDENTITY_PROTOCOL, $symbol, $timeframe, $composition, $baseline, $data, $execution]))]; }
     private function previousStage(string $stage): string { $index = array_search($stage, self::STAGES, true); return $index === false || $index < 1 ? 'none' : self::STAGES[$index - 1]; }
     private function depth(string $stage): int { $index = array_search($stage, self::STAGES, true); return $index === false ? 0 : $index; }
     private function digest(array $value): string { return hash('sha256', json_encode($value, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)); }

@@ -14,6 +14,23 @@ RECEIPT_PROTOCOL = "xauusd_composition_execution_receipt_v3"
 ENTRY_PROTOCOL = "composition_entry_contract_v2"
 EXECUTION_AUTHORITY_PROTOCOL = "composition_execution_authority_v1"
 MANAGEMENT_ADAPTER_PROTOCOL = "trade_management_runtime_adapter_v1"
+
+
+def _parameter_preserving_management_adapter() -> dict[str, Any]:
+    """Canonical research adapter for the existing raw-parameter lifecycle."""
+    return {
+        "protocol": MANAGEMENT_ADAPTER_PROTOCOL,
+        "profile": "parameter_preserving_research",
+        "unit": "sealed_runtime_parameters",
+        "engine": "parameter_preserving_replay_v1",
+        "implementation_status": "existing_parameter_owned_position_lifecycle",
+        "parameter_owners": ["atr_stop_multiplier", "atr_target_multiplier",
+            "partial_take_profit_fraction", "partial_target_atr_multiplier",
+            "trailing_atr_multiplier", "time_stop_candles"],
+        "overrides": [],
+        "paper_execution_authority": False,
+        "promotion_evidence": False,
+    }
 HASH_PROTOCOL = "numeric_canonical_json_v1"
 PROGRAM_PROTOCOL = "xauusd_executable_composition_program_v2"
 DECISION_RECEIPT_PROTOCOL = "composition_decision_receipt_chain_v1"
@@ -162,6 +179,8 @@ def _runtime_signal_regimes(base_strategy: str) -> tuple[str, ...]:
     """
 
     normalized = str(base_strategy or "").strip().lower()
+    if normalized == "confirmation_entry_mtf_v1":
+        return ("trend_up", "trend_down", "range", "unknown", "transition", "high_volatility", "low_volatility")
     if normalized in {"trend_v1", "trend_pullback_v1", "trend_retest_v1", "trend_breakout_retest_v1", "momentum_v1", "momentum_pullback_v1"}:
         return ("trend_up", "trend_down")
     if normalized in {"breakout_v1", "breakout_continuation_v1", "volatility_v1", "volatility_breakout_v1", "session_v1"}:
@@ -362,6 +381,11 @@ def validate_composition_runtime_contract(
         or str(management_contract.get("profile") or "")
         != str(components.get("management_id") or "")
         or management_contract.get("runtime_adapter") != adapter
+        or (adapter.get("engine") not in (None, "single_partial_runner_v1", "parameter_preserving_replay_v1"))
+        or (adapter.get("profile") == "parameter_preserving_research"
+            and adapter != _parameter_preserving_management_adapter())
+        or (adapter.get("engine") == "parameter_preserving_replay_v1"
+            and adapter != _parameter_preserving_management_adapter())
     ):
         raise CompositionRuntimeContractError("COMPOSITION_MANAGEMENT_NOT_BOUND")
     typed_nodes = contract.get("typed_program_nodes") or []
@@ -430,8 +454,23 @@ def _validate_execution_authority(
     source_components = assignment.get("source_components") or {}
     frozen_components = contract.get("components") or {}
     selected_keys = assignment.get("selected_keys")
+    reservation = assignment.get("pair_reservation") or {}
+    required_reservation_ready = not str(assignment.get("status") or "").startswith("blocked_") and (not (
+        isinstance(reservation, dict) and reservation.get("required") is True
+    ) or (
+        reservation.get("status") == "reserved"
+        and assignment.get("status") == "assigned"
+        and isinstance(selected_keys, list) and bool(selected_keys)
+        and isinstance(assignment.get("selected"), list) and bool(assignment["selected"])
+    ))
+    if isinstance(reservation, dict):
+        if "required" in reservation and not isinstance(reservation["required"], bool):
+            required_reservation_ready = False
+        if reservation.get("protocol") == "academy_primary_instrument_surface_reservation_v1" and reservation.get("required") is not True:
+            required_reservation_ready = False
     if (
         not bool(instrument.get("bound"))
+        or not required_reservation_ready
         or assignment.get("protocol") != "lab_instrument_research_assignment_v2"
         or assignment.get("hash_protocol") != HASH_PROTOCOL
         or len(assignment_hash) != 64
@@ -511,6 +550,15 @@ def effective_management_parameters(
     ):
         return merged
 
+    if adapter.get("engine") == "parameter_preserving_replay_v1":
+        if adapter != _parameter_preserving_management_adapter():
+            raise CompositionRuntimeContractError("COMPOSITION_MANAGEMENT_NOT_BOUND")
+        # Risk, target, partial, trailing and time-stop values are already
+        # sealed on the runtime request. Never silently mutate an exact arm.
+        merged["composition_management_profile"] = str(adapter["profile"])
+        merged["composition_management_adapter_protocol"] = str(adapter["protocol"])
+        return merged
+
     stop_multiplier = float(merged.get("atr_stop_multiplier", 0) or 0)
     partial_r = adapter.get("partial_target_r")
     merged["partial_take_profit_fraction"] = float(
@@ -552,6 +600,9 @@ def apply_composition_entry_contract(
     out.attrs = dict(frame.attrs)
     strategy_signal = out.get("signal", pd.Series("WAIT", index=out.index)).astype(str).str.upper()
     strategy_actionable = strategy_signal.isin(["BUY", "SELL"])
+    upstream_signal = out.get("pre_specialist_signal", strategy_signal).astype(str).str.upper()
+    upstream_actionable = upstream_signal.isin(["BUY", "SELL"])
+    specialist_allowed = out.get("specialist_scope_eligible", pd.Series(True, index=out.index)).astype(bool)
     finite_price = pd.Series(True, index=out.index, dtype="bool")
     for column in ("open", "high", "low", "close"):
         values = pd.to_numeric(out.get(column), errors="coerce")
@@ -598,7 +649,7 @@ def apply_composition_entry_contract(
     tactic_rejected = tactic_evaluated & ~tactic_context_valid
     signal = strategy_signal.where(~tactic_rejected, "WAIT")
     actionable = signal.isin(["BUY", "SELL"])
-    out["composition_strategy_signal"] = strategy_signal
+    out["composition_strategy_signal"] = upstream_signal
     out["composition_tactic_signal"] = signal
     out["composition_tactic_evaluated"] = tactic_evaluated
     out["composition_tactic_accepted"] = tactic_evaluated & ~tactic_rejected
@@ -647,12 +698,13 @@ def apply_composition_entry_contract(
     # receipt. Non-signal candles remain idle; they are not mislabeled as
     # context failures. The shared decision id is also used by the bounded
     # decision ledger in the final execution receipt.
-    raw_opportunity = strategy_actionable
+    raw_opportunity = upstream_actionable
     rejection_reason = pd.Series("", index=out.index, dtype="object")
     rejection_stage = pd.Series("entry_authorized", index=out.index, dtype="object")
     first_vetoes = (
         ("context", requires_closed_mtf and ~mtf_ready, "mtf_not_ready"),
         ("context", ~context_valid, "market_context_not_ready"),
+        ("context", ~specialist_allowed, "specialist_context_outside_scope"),
         ("tactic", tactic_rejected, "tactic_scope_mismatch"),
         ("location", ~h1_location_ready, "h1_location_missing"),
         ("location", ~atr.gt(0), "atr_invalid"),
@@ -672,6 +724,8 @@ def apply_composition_entry_contract(
             if not isinstance(failed, pd.Series)
             else failed
         )
+    scope_veto = rejection_reason.eq("specialist_context_outside_scope")
+    rejection_reason.loc[scope_veto] = out.get("specialist_scope_first_veto", pd.Series("specialist_context_outside_scope", index=out.index)).loc[scope_veto]
     rejection_reason.loc[~raw_opportunity] = "no_strategy_signal"
     rejection_stage.loc[~raw_opportunity] = "idle"
     out["composition_decision_stage"] = rejection_stage
@@ -709,7 +763,7 @@ def apply_composition_entry_contract(
         atr_ready = float(atr.iloc[position]) > 0
         predicates = (
             ("mtf_context_gate", bool(mtf_ready.iloc[position]), "mtf_not_ready"),
-            ("regime_detector", bool(context_valid.iloc[position]), "market_context_not_ready"),
+            ("regime_detector", bool(context_valid.iloc[position] and specialist_allowed.iloc[position]), str(rejection_reason.iloc[position]) if not bool(specialist_allowed.iloc[position]) else "market_context_not_ready"),
             ("strategy_runtime", True, ""),
             ("tactic_runtime", bool(tactic_context_valid.iloc[position]), "tactic_scope_mismatch"),
             (
@@ -739,6 +793,11 @@ def apply_composition_entry_contract(
                 break
         preentry_receipts[position] = stages
         preentry_hashes[position] = _hash(stages)
+        # The terminal owner is the actual emitted DAG node, not a display
+        # group such as context/tactic/location. The strict verifier checks
+        # that same node; a legitimate veto must not become invalid evidence.
+        rejection_stage.iloc[position] = str(stages[-1]["module"])
+    out["composition_decision_stage"] = rejection_stage
     out["composition_preentry_stage_receipts"] = pd.Series(
         preentry_receipts, index=out.index, dtype="object"
     )

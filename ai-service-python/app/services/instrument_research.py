@@ -57,6 +57,11 @@ def build_instrument_research_trace(
         rejection_counts = {}
 
     context_slices = _context_slices(result)
+    matrix = result.get("robustness_matrix") or {}
+    exact_context_available = isinstance(matrix, dict) and isinstance(
+        matrix.get("instrument_context_envelopes"), dict
+    )
+    exact_context_slices = _context_slices(result, exact=True)
     traces: list[dict[str, Any]] = []
     for selected in assignment.get("selected", []):
         if not isinstance(selected, dict):
@@ -142,6 +147,7 @@ def build_instrument_research_trace(
                 "matched_activation_signals": activation["matched_signals"],
                 "observed_activation_signals": activation["observed_signals"],
                 "activated_context_keys": activation["activated_context_keys"],
+                "activated_exact_context_keys": activation["activated_exact_context_keys"],
                 "out_of_scope_context_keys": activation["out_of_scope_context_keys"],
                 "inactive_disposition": "NOT_INVOKED_NO_CREDIT",
                 "runtime_observation": {
@@ -163,6 +169,9 @@ def build_instrument_research_trace(
         1 for item in traces if item["status"] in {"consumed", "evaluated_veto"}
     )
     bundle_contexts = _bundle_activation_contexts(traces)
+    exact_bundle_contexts = _bundle_activation_contexts(
+        traces, "activated_exact_context_keys"
+    )
     return {
         "protocol": TRACE_PROTOCOL,
         "status": "consumed"
@@ -195,6 +204,7 @@ def build_instrument_research_trace(
         ),
         "instruments": traces,
         "bundle_activation_context_keys": bundle_contexts,
+        "bundle_activation_exact_context_keys": exact_bundle_contexts,
         "bundle_fully_activated": (
             bool(traces)
             and consumed_count == len(traces)
@@ -206,6 +216,12 @@ def build_instrument_research_trace(
         # historical_mixed posterior.  A slice is diagnostic until both arms
         # have enough observations; this trace never promotes it by itself.
         "context_slices": _decorate_context_slices(context_slices, traces),
+        "exact_context_slices": _decorate_context_slices(
+            exact_context_slices, traces, "activated_exact_context_keys"
+        ),
+        "context_slice_protocol": (
+            "venue_phase_v1" if exact_context_available else "legacy_session_v1"
+        ),
         "context_source": "decision_time_trade_ledger",
         "instrument_activation_source": "instrument_specific_runtime_event_ledger",
         "causal_value": "awaiting_verified_paired_control",
@@ -227,9 +243,10 @@ def _empty(reason: str) -> dict[str, Any]:
     }
 
 
-def _context_slices(result: dict[str, Any]) -> list[dict[str, Any]]:
+def _context_slices(result: dict[str, Any], *, exact: bool = False) -> list[dict[str, Any]]:
     matrix = result.get("robustness_matrix") or {}
-    envelopes = matrix.get("envelopes") if isinstance(matrix, dict) else {}
+    envelope_key = "instrument_context_envelopes" if exact else "envelopes"
+    envelopes = matrix.get(envelope_key) if isinstance(matrix, dict) else {}
     if not isinstance(envelopes, dict):
         return []
 
@@ -238,9 +255,13 @@ def _context_slices(result: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(raw_metrics, dict):
             continue
         parts = str(key).split("|")
-        if len(parts) != 4:
+        if len(parts) != (5 if exact else 4):
             continue
-        regime, volatility, raw_session, direction = parts
+        if exact:
+            regime, volatility, raw_session, venue_phase, direction = parts
+        else:
+            regime, volatility, raw_session, direction = parts
+            venue_phase = None
         try:
             hour = int(raw_session)
             if not 0 <= hour <= 23:
@@ -254,13 +275,17 @@ def _context_slices(result: dict[str, Any]) -> list[dict[str, Any]]:
         trades = int(raw_metrics.get("trades", 0) or 0)
         slices.append(
             {
-                "context_key": f"{regime}|{volatility}|{session}|{direction}",
+                "context_key": (
+                    f"{regime}|{volatility}|{session}|{venue_phase}|{direction}"
+                    if exact else f"{regime}|{volatility}|{session}|{direction}"
+                ),
                 "context": {
                     "regime": regime,
                     "volatility": volatility,
                     "session": session,
                     "session_utc_hour": hour,
                     "direction": direction,
+                    **({"venue_phase": venue_phase} if exact else {}),
                 },
                 "metrics": {
                     "trades": trades,
@@ -343,6 +368,15 @@ def _activation_evidence(
         if _runtime_event_allowed(required_events, str(source))
     )
     context_count = sum(int(count or 0) for count in context_event_counts.values())
+    exact_context_counts = instrument.get("exact_context_event_counts")
+    exact_context_count_valid = (
+        exact_context_counts is None
+        or (
+            isinstance(exact_context_counts, dict)
+            and sum(int(count or 0) for count in exact_context_counts.values())
+            == reported_count
+        )
+    )
     abstention_counts = instrument.get("abstention_context_counts") or {}
     if not isinstance(abstention_counts, dict):
         abstention_counts = {}
@@ -354,6 +388,7 @@ def _activation_evidence(
     receipt_consistent = (
         reported_count >= 0
         and reported_count == source_count == allowed_source_count == context_count
+        and exact_context_count_valid
         and bool(instrument.get("decision_path_activated", False))
         == (reported_count > 0)
         and evaluation_count == reported_count + abstention_total
@@ -378,6 +413,19 @@ def _activation_evidence(
                 runtime_contexts.get(context_key, _context_from_key(context_key)), dict
             )
             else _context_from_key(context_key),
+        )
+    )
+    runtime_exact_contexts = instrument.get("activated_exact_contexts") or {}
+    if not isinstance(runtime_exact_contexts, dict):
+        runtime_exact_contexts = {}
+    activated_exact_context_keys = sorted(
+        str(context_key)
+        for context_key in instrument.get("activated_exact_context_keys", [])
+        if len(str(context_key).split("|")) == 5
+        and isinstance(runtime_exact_contexts.get(str(context_key)), dict)
+        and _context_matches(
+            contract.get("context") or {},
+            runtime_exact_contexts[str(context_key)],
         )
     )
     reported_abstentions = {
@@ -422,6 +470,9 @@ def _activation_evidence(
         "matched_signals": matched,
         "observed_signals": observed,
         "activated_context_keys": activated_context_keys if activated else [],
+        "activated_exact_context_keys": (
+            activated_exact_context_keys if activated else []
+        ),
         "out_of_scope_context_keys": sorted(out_of_scope_context_keys),
     }
 
@@ -511,10 +562,12 @@ def _canonical_context_value(axis: str, value: Any) -> str:
     return normalized
 
 
-def _bundle_activation_contexts(traces: list[dict[str, Any]]) -> list[str]:
+def _bundle_activation_contexts(
+    traces: list[dict[str, Any]], field: str = "activated_context_keys"
+) -> list[str]:
     if not traces or any(item.get("status") != "consumed" for item in traces):
         return []
-    context_sets = [set(item.get("activated_context_keys") or []) for item in traces]
+    context_sets = [set(item.get(field) or []) for item in traces]
     if not context_sets or any(not values for values in context_sets):
         return []
     return sorted(set.intersection(*context_sets))
@@ -523,6 +576,7 @@ def _bundle_activation_contexts(traces: list[dict[str, Any]]) -> list[str]:
 def _decorate_context_slices(
     slices: list[dict[str, Any]],
     traces: list[dict[str, Any]],
+    activation_field: str = "activated_context_keys",
 ) -> list[dict[str, Any]]:
     decorated: list[dict[str, Any]] = []
     for slice_ in slices:
@@ -531,7 +585,7 @@ def _decorate_context_slices(
         usage: list[dict[str, str]] = []
         for trace in traces:
             instrument_key = str(trace.get("instrument_key") or "")
-            if key in (trace.get("activated_context_keys") or []):
+            if key in (trace.get(activation_field) or []):
                 state = "activated"
             elif key in (trace.get("out_of_scope_context_keys") or []):
                 state = "abstained_outside_contract"

@@ -41,6 +41,15 @@ def _normalization_context(context: dict[str, Any] | None = None) -> dict[str, A
     """
     context = dict(context or {})
     timeframe = str(context.get("timeframe") or "H1").upper()
+    if timeframe == "M5":
+        return {
+            "timeframe": "M5",
+            "seasonality_bucket": "utc_weekday_m5_slot_v1",
+            "slots_per_day": 288,
+            "global_lookback": 2016,
+            "global_min_periods": 60,
+            "session_lookback": 20,
+        }
     if timeframe == "M15":
         return {
             "timeframe": "M15",
@@ -65,7 +74,9 @@ def _seasonality_bucket(
     normalization: dict[str, Any],
 ) -> pd.Series:
     slots_per_day = int(normalization["slots_per_day"])
-    if slots_per_day == 96:
+    if slots_per_day == 288:
+        intraday_slot = times.dt.hour * 12 + (times.dt.minute // 5)
+    elif slots_per_day == 96:
         intraday_slot = times.dt.hour * 4 + (times.dt.minute // 15)
     else:
         intraday_slot = times.dt.hour

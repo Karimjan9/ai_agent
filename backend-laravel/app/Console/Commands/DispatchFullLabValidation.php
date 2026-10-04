@@ -163,6 +163,7 @@ class DispatchFullLabValidation extends Command
             $replayActivation = $generation->trigger_type === 'protocol_activation';
             if ((string) config('services.market_data.provider', 'csv') !== 'csv'
                 && ! $replayActivation
+                && ! app(\App\Services\GenerationAdmissionDecisionService::class)->isHistoricalGeneration($generation)
                 && ! $continuity->isReady((string) config('services.market_data.provider'), $symbol, $lab->timeframe)) {
                 $this->warn("{$symbol}: feed healthy bo'lmaguncha full validation bloklandi.");
 
@@ -251,6 +252,7 @@ class DispatchFullLabValidation extends Command
                     fn (string $reason): bool => ! in_array($reason, [
                         'CAUSAL_COHORT_SCREENING_EVIDENCE_INCOMPLETE',
                         'CAUSAL_COHORT_SCREENING_BEHAVIOR_EVIDENCE_INCOMPLETE',
+                        'PROSPECTIVE_REPAIR_RESEARCH_ONLY',
                     ], true),
                 ));
                 if ($contractReasons !== []) {

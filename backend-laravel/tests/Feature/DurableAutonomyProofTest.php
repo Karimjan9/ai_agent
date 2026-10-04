@@ -320,6 +320,27 @@ class DurableAutonomyProofTest extends TestCase
         $this->assertFalse($provenance['manual_generation_writer']);
     }
 
+    public function test_technical_predecessor_retains_new_successor_provenance_without_clean_receipt(): void
+    {
+        $lab = $this->lab();
+        $source = $this->generation($lab, 250, 'technical_quarantine');
+        $decision = $this->decision('technical-predecessor-successor', $source->id);
+        $successor = $this->generation($lab, 251, 'draft');
+        $audit = \Mockery::mock(GenerationAutonomyAuditService::class);
+        $audit->shouldReceive('audit')->once()->andReturn([
+            'state' => 'failed', 'failed_checks' => ['technical_integrity', 'population_complete'],
+        ]);
+        $snapshots = \Mockery::mock(GenerationSnapshotAdmissionService::class);
+        $snapshots->shouldReceive('inspect')->never();
+        $service = new GenerationAutonomyReceiptService($audit, $snapshots, app(LabGenerationContextService::class));
+
+        $this->assertSame('audit_not_clean', $service->recordSuccessorDecision($decision->fresh())['status']);
+        $this->assertDatabaseMissing('generation_autonomy_receipts', ['lab_generation_id' => $source->id]);
+        $this->assertSame($decision->id, data_get($successor->fresh()->trigger_context, 'arbiter_provenance.decision_id'));
+        $this->assertSame($source->id, data_get($successor->fresh()->trigger_context, 'arbiter_provenance.predecessor_generation_id'));
+        $this->assertSame('technical_quarantine', $source->fresh()->status);
+    }
+
     public function test_clean_receipt_rejects_a_source_without_arbiter_creation_provenance(): void
     {
         $lab = $this->lab();

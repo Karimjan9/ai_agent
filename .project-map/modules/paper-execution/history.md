@@ -16,3 +16,11 @@ or promotion policy changed.
 Pre-2026 research candidates freeze at E3. Only unchanged, disciplined,
 prospective observations inside the 2026 paper epoch may create E4 evidence;
 paper data cannot tune historical research.
+
+## 2026-10 вЂ” Explicit prospective future paper periods
+
+Added empty-by-default versioned authorization for future paper intervals,
+bound to the candidate's original freeze and disjoint research chronology.
+The 2026 archive/cutoff remains unchanged. Future live-paper capture and E4
+use the persisted seal; unknown/unapproved periods and unverified post-paper
+training remain blocked dependencies. See ADR-023.

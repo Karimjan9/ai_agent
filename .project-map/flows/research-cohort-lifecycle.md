@@ -6,7 +6,7 @@ Move a bounded research cohort from eligible construction to a settled,
 auditable outcome without collapsing data, computation, gate and paper roles.
 
 ```text
-Market-data continuity
+Lane-owned data readiness (validated historical archive or live continuity)
   -> Dynamic 20-seat scientific blocks and frozen controls
   -> Final constructor identity rebound to each frozen composition passport
   -> Frozen M5/H4/H1/M15 autonomous replay bundle
@@ -29,7 +29,17 @@ Market-data continuity
 ## Invariants
 
 - One protected construction boundary cannot silently open duplicate active work.
+- Before a valid champion, the existing arbiter selects ready learning/recovery
+  first and archive-backed exploration next; research does not wait for live H1
+  candles. A scientific zero pass is not a stop condition. Hash/period/control
+  guards and independent confirmation remain mandatory (ADR-021).
 - Python computes deterministic results; Laravel owns lifecycle/persistence gates.
+- Fresh Academy/kernel constructors seal current parameter identity and a
+  matching explicit-owner confirmation passport before normal draft admission.
+  Parameter-preserving management cannot override sealed source risks or genes.
+- One attested twenty-seat missing-identity preflight quarantine with no runs,
+  artifacts, gate outcomes or scores may receive one changed-source technical
+  replacement. It preserves question/data/cap and never rewrites old evidence.
 - A missing or invalid receipt cannot become evidence of a passing gate.
 - Session/venue/context and actual component activation remain attributable
   from population construction through replay settlement.
@@ -52,7 +62,7 @@ Market-data continuity
   belong to the current technical-recovery lookback or active lineage head;
   older quarantines remain append-only history and cannot starve all later
   cohorts.
-- A confirmed drift after a zero-pass cohort cannot enter the `market_drift`
+- Outside archive-first pre-champion research, a confirmed drift after a zero-pass cohort cannot enter the `market_drift`
   constructor directly. An eligible final report first goes through the
   lifecycle-owned, non-promotional data-edge audit; otherwise it uses the
   ordinary `new_data` lane. Fresh-candle admission remains mandatory there, and

@@ -718,6 +718,22 @@ class LabLifecycleOrchestratorTest extends TestCase
         ));
     }
 
+    public function test_mutex_deferred_evaluator_attempts_are_not_a_queue_retry_storm(): void
+    {
+        $method = new \ReflectionMethod(LabLifecycleOrchestrator::class, 'queueRisk');
+        $method->setAccessible(true);
+        $snapshot = ['rows' => [['attempts' => 5, 'payload' => json_encode([
+            'displayName' => EvaluateLabAgentJob::class,
+        ], JSON_THROW_ON_ERROR)]], 'stats' => []];
+
+        $this->assertNull($method->invoke(app(LabLifecycleOrchestrator::class),
+            $snapshot, 'XAUUSD', 'H1'));
+
+        $snapshot['rows'][0]['payload'] = json_encode(['displayName' => 'UnknownCanonicalJob'], JSON_THROW_ON_ERROR);
+        $this->assertSame('queue_retry_storm', $method->invoke(app(LabLifecycleOrchestrator::class),
+            $snapshot, 'XAUUSD', 'H1'));
+    }
+
     public function test_failed_build_writes_an_error_jsonl_entry(): void
     {
         $this->seedLaboratory();
@@ -820,7 +836,8 @@ class LabLifecycleOrchestratorTest extends TestCase
             $laboratoryId = (int) AiLaboratory::where('symbol', 'XAUUSD')->value('id');
             $population->shouldReceive('build')
                 ->zeroOrMoreTimes()
-                ->with('XAUUSD', $expectedTrigger, false, 'H1')
+                ->withArgs(fn (...$args): bool => array_slice($args, 0, 4)
+                    === ['XAUUSD', $expectedTrigger, false, 'H1'])
                 ->andReturnUsing(function () use ($laboratoryId, $expectedTrigger): LabGeneration {
                     return LabGeneration::create([
                         'ai_laboratory_id' => $laboratoryId,

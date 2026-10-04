@@ -297,6 +297,10 @@ class CausalLearningCohortService
             }
         }
 
+        if ($reasons === [] && data_get($experiment?->evidence, 'experiment_kind') === ProspectiveRepairExperimentService::KIND) {
+            app(ProspectiveRepairExperimentService::class)->closeDiscovery($experiment);
+            $reasons[] = 'PROSPECTIVE_REPAIR_RESEARCH_ONLY';
+        }
         return [
             'applicable' => true,
             'allowed' => $reasons === [],
@@ -513,6 +517,13 @@ class CausalLearningCohortService
                     'protocol' => CausalLearningCohortPlannerService::PROTOCOL,
                     'confirmation_evidence_protocol' => CausalLearningConfirmationService::EVIDENCE_PROTOCOL,
                     'experiment_kind' => (string) data_get($contract, 'experiment_kind', 'memory_confirmation'),
+                    'prospective_validation_plan' => data_get($contract, 'validation_plan'),
+                    'prospective_source_hash' => data_get($contract, 'source_hash'),
+                    'prospective_parent_semantic_group' => data_get($contract, 'source_parent_semantic_group'),
+                    'technical_retry_of_experiment_id' => data_get($contract, 'technical_retry_of_experiment_id'),
+                    'prospective_source_data_hash' => data_get($contract, 'source_data_hash'),
+                    'prospective_source_runs' => data_get($contract, 'source_runs', []),
+                    'prospective_probe_policy' => data_get($contract, 'probe_policy', []),
                     'source_causal_experiment_id' => (int) data_get($contract, 'source_causal_experiment_id', 0) ?: null,
                     'repair_lineage' => in_array((string) data_get($contract, 'experiment_kind'), [
                         'causal_repair', 'causal_architecture_escape', 'causal_architecture_interaction',
@@ -550,6 +561,8 @@ class CausalLearningCohortService
                     'construction_protocol' => (string) data_get($contract, 'construction_protocol', ''),
                     'activation_screen' => (array) data_get($contract, 'activation_screen', []),
                     'blinded_selector' => (array) data_get($contract, 'blinded_selector', []),
+                    ...(is_array($contract['confirmation_route'] ?? null)
+                        ? ['confirmation_route' => $contract['confirmation_route']] : []),
                     'roles' => [],
                     'promotion_evidence' => false,
                 ],
@@ -577,6 +590,7 @@ class CausalLearningCohortService
         $metadata = (array) $agent->modelVersion?->metadata;
         if ($agent->modelVersion) {
             $metadata['causal_learning_cohort'] = [
+                ...$contract,
                 'protocol' => CausalLearningCohortPlannerService::PROTOCOL,
                 'experiment_id' => (int) $experiment->id,
                 'experiment_key' => $experiment->experiment_key,
@@ -642,6 +656,18 @@ class CausalLearningCohortService
                     ])) {
                 $reasons[] = 'GUIDED_CAUSAL_ARCHITECTURE_INTERACTION_INVALID';
             }
+        } elseif ($kind === ProspectiveRepairExperimentService::KIND) {
+            if ($guidedIntent?->influence_type !== 'causal_repair_guided'
+                || (array) $guidedIntent?->causally_applied_lesson_ids !== []
+                || (int) data_get($experiment->evidence, 'source_pair_id', 0) <= 0
+                || data_get($experiment->evidence, 'source_authority') !== 'screening_hypothesis_only'
+                || ! app(ActivationValidationPlanService::class)->valid(
+                    (array) data_get($experiment->evidence, 'prospective_validation_plan', []),
+                    (array) data_get($experiment->evidence, 'prospective_validation_plan', []))) {
+                $reasons[] = 'PROSPECTIVE_REPAIR_SOURCE_CONTRACT_INVALID';
+            }
+            $reasons = [...$reasons, ...$this->blindedFeasibilityReasons($blindedSelector =
+                (array) data_get($experiment->evidence, 'blinded_selector', []))];
         } elseif ($hypothesisReproduction) {
             if ($guidedIntent?->influence_type !== 'hypothesis_guided'
                 || (array) $guidedIntent?->causally_applied_lesson_ids !== []

@@ -5,13 +5,17 @@ namespace Tests\Feature;
 use App\Models\InstrumentValuePosterior;
 use App\Models\PlaybookComposition;
 use App\Models\PlaybookValuePosterior;
+use App\Services\InstrumentResearchWindowService;
 use App\Services\TradingInstrumentOperatingSystemService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
+use Tests\Support\InstrumentValidationFixture;
 
 class TradingInstrumentOperatingSystemTest extends TestCase
 {
     use RefreshDatabase;
+    use InstrumentValidationFixture;
 
     public function test_registry_creates_executable_xauusd_playbooks_and_contracts(): void
     {
@@ -70,18 +74,21 @@ class TradingInstrumentOperatingSystemTest extends TestCase
     public function test_router_selects_a_conditional_playbook_and_learning_updates_its_posterior(): void
     {
         $registry = app(TradingInstrumentOperatingSystemService::class);
-        $context = ['regime' => 'trend_up', 'm15_regime' => 'trend_up', 'session' => 'london', 'volatility' => 'normal', 'spread_atr_ratio' => .08, 'transition' => false, 'direction' => 'BUY', 'strategy_family' => 'hybrid'];
+        $context = ['regime' => 'trend_up', 'm15_regime' => 'trend_up', 'session' => 'london', 'volatility' => 'normal', 'spread_atr_ratio' => .08, 'transition' => false, 'direction' => 'BUY', 'strategy_family' => 'hybrid', 'venue_phase' => 'london_am_fix'];
         $route = $registry->route('XAUUSD', 'M15', [...$context, 'decision_key' => 'instrument-router-trend']);
 
         $this->assertSame('TRADE', $route['decision']);
         $this->assertSame('xauusd_trend_pullback_v1', $route['playbook']->playbook_key);
 
         foreach (range(1, 5) as $i) {
+            $window = $this->authorizedWindow($i);
             $posterior = $registry->recordEvidence('trend_pullback', 'XAUUSD', 'M15', $context, [
+                ...$this->exactValidationFacts($context, $window, "trend-pullback-evidence-{$i}", 'pullback_atr_fraction', .5, .6),
                 'evidence_key' => "trend-pullback-evidence-{$i}", 'source_type' => 'paired_control', 'source_key' => "control-{$i}",
-                'independent_window_key' => "window-{$i}",
+                'instrument_research_window_receipt' => $window,
                 'metrics' => ['net_edge' => .60, 'cost_penalty' => .10, 'drawdown_penalty' => .05, 'survival_value' => .10, 'regime_coverage_value' => .05, 'incremental_lift' => .05],
-                'control_metrics' => ['net_edge' => .1], 'control_contract' => ['paired_isolated' => true],
+                'control_metrics' => ['net_edge' => .1], 'control_contract' => ['paired_isolated' => true,
+                    'data_hash' => $window['dataset_sha256']],
             ]);
         }
 
@@ -107,19 +114,21 @@ class TradingInstrumentOperatingSystemTest extends TestCase
         $context = [
             'regime' => 'trend_up', 'm15_regime' => 'trend_up', 'session' => 'london',
             'volatility' => 'normal', 'spread_atr_ratio' => .08, 'transition' => false,
-            'strategy_family' => 'hybrid', 'direction' => 'BUY',
+            'strategy_family' => 'hybrid', 'direction' => 'BUY', 'venue_phase' => 'london_am_fix',
         ];
         $cold = $registry->route('XAUUSD', 'M15', [...$context, 'routing_mode' => 'paper', 'decision_key' => 'paper-cold']);
         $this->assertSame('ABSTAIN', $cold['decision']);
         $this->assertSame('NO_CONFIRMED_CONTEXTUAL_PLAYBOOK', $cold['reason_code']);
 
         foreach (range(1, 3) as $i) {
+            $window = $this->authorizedWindow($i);
             $bundle = $registry->recordPlaybookEvidence('xauusd_trend_pullback_v1', 'XAUUSD', 'M15', $context, [
+                ...$this->exactValidationFacts($context, $window, "paper-bundle-{$i}", 'pullback_atr_fraction', .5, .6),
                 'evidence_key' => "paper-bundle-{$i}", 'source_key' => "window-{$i}",
-                'independent_window_key' => "window-{$i}",
+                'instrument_research_window_receipt' => $window,
                 'metrics' => ['net_edge' => .04, 'drawdown_penalty' => 0],
                 'control_metrics' => ['net_edge' => 0],
-                'control_contract' => ['paired_isolated' => true],
+                'control_contract' => ['paired_isolated' => true, 'data_hash' => $window['dataset_sha256']],
             ]);
         }
         $this->assertSame('confirmed', $bundle->decay_state);
@@ -181,5 +190,28 @@ class TradingInstrumentOperatingSystemTest extends TestCase
         $trend = collect($route['candidates'])->firstWhere('playbook_key', 'xauusd_trend_pullback_v1');
         $this->assertSame('status_only_quarantined', data_get($trend, 'bundle_posterior.decay_state'));
         $this->assertContains('BUNDLE_NOT_CONFIRMED', $trend['rejected_reasons']);
+    }
+
+    /** @return array<string,string> */
+    private function authorizedWindow(int $index): array
+    {
+        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        $manifests = [];
+        foreach (range(1, 5) as $month) {
+            $manifests[] = [
+                'authorization_id' => 'operating-window-'.$month,
+                'research_epoch_id' => 'synthetic-post-paper-research',
+                'start_inclusive' => sprintf('2027-%02d-01T00:00:00Z', $month),
+                'end_exclusive' => sprintf('2027-%02d-01T00:00:00Z', $month + 1),
+                'dataset_sha256' => hash('sha256', 'operating-dataset-'.$month),
+                'purpose' => 'instrument_independent_validation',
+            ];
+        }
+        config()->set('services.instrument_policy.authorized_research_windows', $manifests);
+        $manifest = $manifests[$index - 1];
+
+        return app(InstrumentResearchWindowService::class)->seal(
+            $manifest['authorization_id'], $manifest['dataset_sha256'],
+        );
     }
 }

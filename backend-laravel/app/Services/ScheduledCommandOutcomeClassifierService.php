@@ -16,6 +16,12 @@ class ScheduledCommandOutcomeClassifierService
     public function classify(string $command, array $arguments, int $exitCode, string $output): array
     {
         if ($exitCode === 0) {
+            if ($command === 'trading:admit-academy-experiment') {
+                $payload = json_decode(trim($output), true);
+                $achieved = is_array($payload) && in_array(($payload['status'] ?? ''), ['prepared', 'admitted'], true);
+                return $this->result($achieved ? 'completed' : 'deferred', false, $exitCode,
+                    $achieved ? 'academy_transition_achieved' : 'academy_admission_withheld');
+            }
             // The generation builder deliberately exits zero for a typed
             // admission refusal. Delivery succeeded, but no successor was
             // created; recording the arbiter writer as completed would make
@@ -32,6 +38,19 @@ class ScheduledCommandOutcomeClassifierService
             if ($command === 'trading:run-lifecycle-cycle') {
                 $payload = json_decode(trim($output), true);
                 $status = is_array($payload) ? strtolower((string) ($payload['status'] ?? '')) : '';
+                if ((bool) ($arguments['--learning-confirmation'] ?? false)
+                    && $status === 'completed'
+                    && ((int) data_get($payload, 'data.generation_id', 0) <= 0
+                        || (string) data_get($payload, 'data.generation_trigger_type') !== 'learning_confirmation')) {
+                    return $this->result('deferred', false, $exitCode, 'learning_confirmation_generation_not_created');
+                }
+                if (isset($arguments['--prospective-source-pair-id']) && $status === 'completed'
+                    && ((int) data_get($payload, 'data.prospective_source_pair_id', 0) !== (int) $arguments['--prospective-source-pair-id']
+                        || strlen((string) ($arguments['--prospective-source-hash'] ?? '')) !== 64
+                        || ! hash_equals((string) ($arguments['--prospective-source-hash'] ?? ''),
+                            (string) data_get($payload, 'data.prospective_source_hash', '')))) {
+                    return $this->result('deferred', false, $exitCode, 'prospective_repair_source_not_created');
+                }
                 // A recovery dispatch is reported as `running` with exit 0,
                 // but it has not performed the arbiter's requested successor
                 // transition. Treat it like a pause so a later tick can

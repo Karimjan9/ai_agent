@@ -152,6 +152,9 @@ class StrategyTacticRiskCompositionPlannerService
         }
 
         $strategyRuntimes = collect($this->strategies->library())
+            // First-class explicit-owner runtimes can be compiled without
+            // silently broadening the generic population rotation.
+            ->reject(fn (array $spec): bool => isset($spec['materialization_owner']))
             ->map(fn (array $spec): array => ['id' => $spec['id'], 'runtime' => $this->strategies->runtime($spec['id'])])
             ->filter(fn (array $entry): bool => $entry['runtime'] !== null)
             ->values()->all();

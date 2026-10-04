@@ -276,6 +276,19 @@ class CausalLearningConfirmationService
         if (! $experiment) {
             return ['status' => 'not_applicable', 'confirmed' => false, 'promotion_evidence' => false];
         }
+        // A screen-selected discovery is not the later independent experiment.
+        // Even an ordinary learning-lane callback cannot turn reused screening
+        // history into confirmation. Its reserved window must be admitted as a
+        // separate canonical validation contract before this authority applies.
+        if (data_get($experiment->evidence, 'experiment_kind') === ProspectiveRepairExperimentService::KIND) {
+            return [
+                'status' => 'independent_validation_required',
+                'confirmed' => false,
+                'experiment_id' => (int) $experiment->id,
+                'reason_code' => 'SCREENING_DISCOVERY_IS_NOT_INDEPENDENT_VALIDATION',
+                'promotion_evidence' => false,
+            ];
+        }
         // Confirmation is monotonic. A duplicate queue callback may replay
         // an already persisted outcome, but it can never reopen or downgrade
         // a confirmed causal skill.

@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-Timeframe = Literal["M5", "M15", "H1", "H4", "D1"]
+Timeframe = Literal["M1", "M5", "M15", "M30", "H1", "H4", "D1"]
 Direction = Literal["long", "short"]
 TradeResult = Literal["win", "loss", "open"]
 
@@ -88,6 +88,7 @@ class StrategyRuntimeConfig(BaseModel):
     # Frozen Laravel composition declaration. Runtime consumption is reported
     # separately; receiving this contract grants no component credit.
     composition_runtime_contract: dict[str, Any] = Field(default_factory=dict)
+    research_release: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExecutionConfig(BaseModel):
@@ -176,6 +177,7 @@ class SimpleBacktestRequest(BaseModel):
     instrument_research_assignment: dict[str, Any] = Field(default_factory=dict)
     composition_runtime_contract: dict[str, Any] = Field(default_factory=dict)
     # A contextual specialist must abstain outside this pre-registered cell.
+    research_release: dict[str, Any] = Field(default_factory=dict)
     # It is routing scope only and cannot create promotion evidence.
     specialist_context_contract: dict[str, Any] = Field(default_factory=dict)
     # Canonical volume provenance is passed separately from strategy genes so

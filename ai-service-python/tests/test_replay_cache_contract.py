@@ -94,6 +94,29 @@ class ReplayCacheContractTest(unittest.TestCase):
         ):
             self.assertEqual(840, _bounded_replay_seconds(payload, "run_all"))
 
+    def test_sealed_15k_prospective_probe_has_its_own_bounded_deadline(self):
+        payload = SimpleBacktestRequest(
+            evaluation_mode="incremental",
+            policy_context={"prospective_probe_window": {
+                "protocol": "prospective_repair_probe_window_v1",
+                "evaluator_version": "incremental_probe_window_v2",
+                "evaluated_rows": 15000,
+            }},
+            strategies=[{"strategy": "exact-control", "base_strategy": "differential_router_v1"}],
+        )
+        with patch.dict("os.environ", {
+            "AI_REPLAY_PROSPECTIVE_SCREEN_HARD_TIMEOUT_SECONDS": "1620",
+            "AI_REPLAY_DIFFERENTIAL_SCREEN_HARD_TIMEOUT_SECONDS": "780",
+        }, clear=False):
+            self.assertEqual(1620, _bounded_replay_seconds(payload, "run_all"))
+        with patch.dict("os.environ", {
+            "AI_REPLAY_PROSPECTIVE_SCREEN_HARD_TIMEOUT_SECONDS": "9999",
+        }, clear=False):
+            self.assertEqual(1680, _bounded_replay_seconds(payload, "run_all"))
+        payload.policy_context["prospective_probe_window"]["evaluator_version"] = "incremental_probe_window_v1"
+        with patch.dict("os.environ", {"AI_REPLAY_DIFFERENTIAL_SCREEN_HARD_TIMEOUT_SECONDS": "780"}, clear=False):
+            self.assertEqual(780, _bounded_replay_seconds(payload, "run_all"))
+
     def test_screen_capacity_defaults_to_one_on_small_hosts_and_keeps_an_explicit_override(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertEqual(1, _screen_replay_capacity(4))

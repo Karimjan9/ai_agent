@@ -53,24 +53,37 @@ const assertDurableReplayIdle = (onFailure = null) => {
     }
 };
 
-const listed = spawnSync(process.execPath, [pm2Cli, 'jlist'], {
-    cwd: projectRoot,
-    env: cleanEnvironment,
-    windowsHide: true,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-});
+let listed;
+try {
+    listed = spawnSync(process.execPath, [pm2Cli, 'jlist'], {
+        cwd: projectRoot,
+        env: cleanEnvironment,
+        windowsHide: true,
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+} catch (_) {
+    process.stderr.write('PM2 process list could not be read.\n');
+    process.exit(1);
+}
 
-if (listed.status !== 0) {
-    process.stderr.write(listed.stderr || 'PM2 process list could not be read.\n');
-    process.exit(listed.status ?? 1);
+if (listed.status !== 0 || listed.error) {
+    // PM2 persists process environments. Child errors or parse exceptions can
+    // contain secret-bearing jlist bytes; never echo those diagnostics.
+    process.stderr.write('PM2 process list could not be read.\n');
+    process.exit(listed.status || 1);
 }
 
 let processes = [];
 try {
-    processes = JSON.parse(listed.stdout || '[]');
-} catch (error) {
-    process.stderr.write(`PM2 process list is not JSON: ${error.message}\n`);
+    processes = JSON.parse(listed.stdout);
+    if (!Array.isArray(processes) || processes.some((entry) => entry === null
+        || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.name !== 'string')) {
+        throw new Error('PM2_PROCESS_LIST_SHAPE_INVALID');
+    }
+} catch (_) {
+    process.stderr.write('PM2 process list is invalid.\n');
     process.exit(1);
 }
 

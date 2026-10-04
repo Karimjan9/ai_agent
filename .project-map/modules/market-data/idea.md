@@ -16,12 +16,17 @@ than treating an empty response as valid market history.
   separate populations.
 - Materialize volume-capable historical CSVs with explicit row markers and a
   provenance receipt bound to the frozen snapshot hash.
+- Preserve separately attributable synchronized BID/ASK observations in a new
+  research snapshot; absent quotes are unknown and modeled execution costs
+  cannot supply an observed-liquidity predicate.
 
 ## Non-goals
 
 - It does not change strategy scoring or promote a candidate.
 - It does not silently backfill a canonical series with a secondary provider.
 - It does not infer historical volume availability from a live coverage percentage.
+- It does not backfill an already admitted cohort, replace execution costs with
+  a bar-close diagnostic, or grant instrument/causal authority from quote coverage.
 
 Read `docs/project-memory/market-data-continuity.md` before modifying provider,
 calendar, gap or recovery behavior.

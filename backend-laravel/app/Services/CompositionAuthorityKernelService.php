@@ -11,6 +11,74 @@ class CompositionAuthorityKernelService
 {
     public const PROTOCOL = 'xauusd_composition_authority_kernel_v1';
 
+    /**
+     * Fresh confirmation research keeps the archived parameters exactly, but
+     * never inherits an Edge passport for a different strategy runtime. This
+     * is prospective metadata: the source passport and its evidence remain
+     * unchanged. Management uses the already-implemented parameter lifecycle.
+     */
+    public function confirmationReplayMetadata(array $metadata, array $identity): array
+    {
+        $manifest = (array) ($identity['mtf_bundle_manifest'] ?? []);
+        if ((string) ($manifest['protocol'] ?? '') !== MultiTimeframeSnapshotService::PROTOCOL
+            || ! preg_match('/^[a-f0-9]{64}$/', (string) ($identity['data_hash'] ?? ''))
+            || ! preg_match('/^[a-f0-9]{64}$/', (string) ($identity['execution_hash'] ?? ''))
+            || ! collect(['M5', 'M15', 'H1', 'H4'])->every(fn (string $timeframe): bool =>
+                preg_match('/^[a-f0-9]{64}$/', (string) data_get($manifest, 'streams.'.$timeframe.'.sha256', '')) === 1)) {
+            throw new \InvalidArgumentException('CONFIRMATION_REPLAY_SEALED_MTF_IDENTITY_REQUIRED');
+        }
+        $passport = $this->freeze([
+            'symbol' => 'XAUUSD', 'strategy_id' => 'str_042_confirmation_entry_mtf',
+            'tactic_id' => 'confirmation_entry_mtf', 'risk_id' => 'atr_risk_envelope',
+            'management_id' => 'parameter_preserving_research',
+            'data_hash' => (string) $identity['data_hash'], 'execution_hash' => (string) $identity['execution_hash'],
+            // These are the closed-candle, backward-only dataset contract;
+            // runtime must still independently attest the actual stream bytes.
+            'data_contract' => ['m5_canonical' => true, 'closed_at_available_at' => true, 'backward_only_alignment' => true],
+        ]);
+        $metadata['prospective_confirmation_runtime'] = [
+            'protocol' => 'prospective_confirmation_runtime_v1',
+            'historical_composition_id' => data_get($metadata, 'smart_composition.composition_passport.composition_id'),
+            'source_passport_reused' => false, 'parameters_overridden' => false,
+            'management_owner' => 'sealed_runtime_parameters', 'promotion_evidence' => false,
+        ];
+        $metadata['base_strategy'] = 'confirmation_entry_mtf_v1';
+        $metadata['strategy_architecture'] = 'confirmation_entry_mtf';
+        $metadata['architecture'] = 'confirmation_entry_mtf';
+        $metadata['tactic_contract'] = $this->tactics->for('confirmation_entry_mtf', 'confirmation_entry_mtf');
+        $metadata['smart_composition'] = [
+            'strategy_library_id' => 'str_042_confirmation_entry_mtf',
+            'tactic_library_key' => 'confirmation_entry_mtf',
+            'risk_library_id' => 'atr_risk_envelope', 'management_id' => 'parameter_preserving_research',
+            'composition_passport' => $passport,
+        ];
+        unset($metadata['instrument_research_assignment'], $metadata['instrument_assignment']);
+
+        return $metadata;
+    }
+
+    /** A historical program is hypothesis provenance, never a passport to patch in place. */
+    public function refreezeHistoricalHypothesis(array $sourcePassport, string $runtimeBaseStrategy): array
+    {
+        if ((string) data_get($sourcePassport, 'protocol') !== self::PROTOCOL) {
+            throw new \InvalidArgumentException('Historical composition passport is invalid.');
+        }
+        $components = (array) data_get($sourcePassport, 'components', []);
+        $passport = $this->freeze([
+            'symbol' => 'XAUUSD',
+            'strategy_id' => (string) data_get($components, 'strategy_id', ''),
+            'tactic_id' => (string) data_get($components, 'tactic_id', ''),
+            'risk_id' => (string) data_get($components, 'risk_id', ''),
+            'management_id' => (string) data_get($components, 'management_id', ''),
+        ]);
+        if ($passport['components'] !== $components
+            || (string) data_get($passport, 'strategy_signal_scope.runtime') !== $runtimeBaseStrategy) {
+            throw new \InvalidArgumentException('Prospective composition is not the historical executable hypothesis.');
+        }
+
+        return $passport;
+    }
+
     public function __construct(
         private StrategyLibraryCompilerService $strategies,
         private TacticCatalogueService $tactics,

@@ -9,13 +9,25 @@ aliases:
   - backup
   - recovery
 paths:
+  - backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php
   - backend-laravel/app/Services/RuntimeMonitoringService.php
+  - backend-laravel/app/Services/ResearchReleaseSealService.php
+  - backend-laravel/app/Providers/AppServiceProvider.php
+  - ai-service-python/app/services/research_release.py
   - backend-laravel/app/Services/MarketHealthService.php
   - backend-laravel/app/Services/ResearchLoopArbiterService.php
+  - backend-laravel/app/Services/AutonomousModeService.php
+  - backend-laravel/app/Console/Commands/PauseAutonomousMode.php
+  - backend-laravel/app/Console/Commands/ResumeAutonomousMode.php
+  - backend-laravel/app/Console/Commands/AutonomousRuntimeGate.php
   - backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php
   - backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php
   - backend-laravel/app/Services/GenerationAutonomyReceiptService.php
   - backend-laravel/app/Services/TechnicalFailureClassifierService.php
+  - backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php
+  - backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php
+  - backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php
+  - backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php
   - backend-laravel/app/Console/Commands/RunSystemHealthCheck.php
   - backend-laravel/app/Console/Commands/RunHeadlessScheduler.php
   - backend-laravel/app/Console/Commands/CheckMarketHealth.php
@@ -24,23 +36,58 @@ paths:
   - backend-laravel/scripts/install-autonomous-runtime-task.ps1
   - backend-laravel/scripts/supervise-laravel-runtime.ps1
   - backend-laravel/scripts/run-laravel-workers-hidden.ps1
+  - backend-laravel/scripts/audit-research-release.php
+  - backend-laravel/scripts/run-laravel-workers.cmd
+  - backend-laravel/scripts/run-laravel-workers-hidden.vbs
+  - backend-laravel/scripts/pm2-sync-runtime.mjs
+  - backend-laravel/scripts/pm2-sync-runtime.test.cjs
+  - backend-laravel/scripts/pm2-summary.cjs
+  - backend-laravel/scripts/pm2-summary.test.cjs
+  - backend-laravel/scripts/pm2-clean-env.mjs
+  - backend-laravel/scripts/start-redis.ps1
+  - backend-laravel/scripts/run-laravel-server.cmd
+  - backend-laravel/scripts/run-ai-service.cmd
+  - backend-laravel/scripts/run-ai-service.py
+  - backend-laravel/config/queue.php
+  - backend-laravel/config/cache.php
+  - backend-laravel/config/redis-local.conf
+  - scripts/restart_mt5.sh
   - docs/operations
 entry_points:
+  - TechnicalFailureClassifierService::historicalGapDependency
+  - "trading:admit-academy-experiment --contain-preparation / --finalize-preparation"
   - RunSystemHealthCheck
   - RunHeadlessScheduler
   - CheckMarketHealth
   - system:runtime-monitor
   - trading:run-research-loop
+  - ai:pause
+  - ai:resume
+  - ai:runtime-gate
   - trading:audit-autonomy-streak
+  - php backend-laravel/scripts/audit-research-release.php
 data_tables:
   - research_loop_decisions
   - generation_autonomy_receipts
 dependencies:
+  - laboratory
 invariants:
+  - A native immutable unexpected-candle-gap envelope closes evaluator retry debt as a data dependency, not a strategy result. The same actual M5 source bytes remain blocked before fresh discovery and queue admission despite source or bundle-label changes; only verified prospective provider data may select new input, without changing old receipts or resetting the original question cap.
+  - Approved Academy preparation containment records its original request/checkpoint/source and zero-scientific-output disposition before canceling only generation-owned batches. Active replay is never killed; canceled deliveries consume normally, then untouched agents finalize after drain. Shared recovery readiness requires the immutable attestation, not a reason label.
+  - Academy publication recovery is bounded to two undelivered transport retries. publication_failed fences stale deliveries; a running/completed/deferred/failed command is not silently retried as an undelivered scientific trial.
+  - Provisional promotion debt and cartridge selection share one dispatch-readiness predicate; confidence alone cannot block exploration with unexecutable debt.
+  - Until a valid non-invalidated XAUUSD champion exists, archive-first exploration skips live drift freshness after higher-priority settlement, recovery and ready research work. A missing or changed archive has its own dependency watermark; reused archive rows never become independent confirmation.
   - A policy pause is reported distinctly from an operational failure.
+  - A PM2-owned project suppresses fallback queue consumers during PM2 worker recycle; the fallback starts only when PM2 has no project PHP owner.
   - Recovery cannot manufacture research, paper or promotion evidence.
   - Strict verification decides health after remediation.
   - An unchanged operational state hash cannot enqueue another arbiter child merely because the scheduler minute or the selected scheduler job's own queue residency changed.
+  - An operator PAUSE fences new research admission and queued scheduler children without cancelling the current generation; RESUME changes the durable control revision and reselects that same lineage.
+  - An unchanged active-generation settlement may receive two spaced retries after a completed child, then persists safety_halt instead of spinning or remaining silently frozen.
+  - An active immutable evaluation run inside the bounded queue lease is progress in flight, not an unchanged settlement; a replay mutex release is not by itself queue retry-storm evidence.
+  - A disk source hash and worker PID alone are not loaded-code proof; prospective queue/API boot hashes and returned replay receipts attest the worker release, while the read-only audit separately verifies the Git artifact. Legacy evidence stays unsealed.
+  - An explicitly built content-addressed source archive attests allowlisted source bytes, not a clean Git commit, loaded workers or scientific progress. Only a new matching prospective seal may reference it; old seals are never backfilled.
+  - A release deployment pauses admission, drains bounded attempts, gracefully recycles worker ownership and resumes the existing lineage; absent authorized research data is reported as a dependency without reusing paper-only data.
   - An in-flight research-loop decision suppresses a successor only while the matching scheduled command's unique queue lock is live; a stale database status without that lock is fenced and cannot own work.
   - Actionable technical recovery at the terminal lineage head precedes drift or fresh-data generation writers; an exit-zero blocked generation command is not a completed writer.
 flows:
@@ -50,9 +97,20 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
+  - backend-laravel/scripts/pm2-summary.test.cjs
+  - backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php
+  - backend-laravel/scripts/pm2-sync-runtime.test.cjs
+  - backend-laravel/tests/Feature/ResearchSourceArtifactTest.php
+  - backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php
+  - backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php
+  - backend-laravel/tests/Feature/HistoricalResearchAdmissionTest.php
+  - backend-laravel/tests/Feature/EvolutionAuditRegressionTest.php
+  - ai-service-python/tests/test_research_release.py
   - backend-laravel/tests/Feature/RunHeadlessSchedulerTest.php
   - backend-laravel/tests/Feature/RuntimeMonitorTest.php
   - backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php
   - backend-laravel/tests/Feature/MarketHealthEngineTest.php
   - backend-laravel/tests/Feature/ResearchLoopArbiterTest.php
+  - backend-laravel/tests/Feature/AutonomousModeControlTest.php
   - backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php

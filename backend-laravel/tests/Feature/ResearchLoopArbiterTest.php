@@ -9,7 +9,6 @@ use App\Models\AgentLearningLesson;
 use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\CandidateHandoffEvent;
-use App\Models\Candle;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
@@ -23,7 +22,9 @@ use App\Services\AutonomousModeService;
 use App\Services\CausalLearningCohortPlannerService;
 use App\Services\CausalLearningCohortService;
 use App\Services\GenerationAutonomyReceiptService;
+use App\Services\LabDataEdgeAuditService;
 use App\Services\LearningLaneService;
+use App\Services\LearningVelocityGateService;
 use App\Services\MarketDriftDetectionService;
 use App\Services\MtfResearchCohortService;
 use App\Services\ResearchClosureInvariantService;
@@ -43,6 +44,160 @@ use Tests\TestCase;
 class ResearchLoopArbiterTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // These cases exercise the existing post-champion/live scheduling
+        // policy. Archive-first coverage lives in HistoricalResearchAdmissionTest.
+        config()->set('services.xauusd_organism.historical_research_until_champion', false);
+    }
+
+    public function test_academy_pending_intent_dispatches_same_draft_before_generic_lifecycle(): void
+    {
+        Queue::fake();
+        $generation = LabGeneration::create(['ai_laboratory_id' => $this->lab()->id, 'generation' => 1,
+            'trigger_type' => 'academy_experiment', 'status' => 'draft', 'population_size' => 20, 'trigger_context' => []]);
+        $this->mock(\App\Services\AcademyExperimentMaterializerService::class, function ($mock) use ($generation): void {
+            $mock->shouldReceive('proposal')->andReturn(['status' => 'pending_canonical_admission', 'trial_id' => 7,
+                'generation_id' => $generation->id, 'baseline_model_version_id' => 3, 'identity' => ['data_hash' => str_repeat('a', 64)]]);
+        });
+        $result = app(ResearchLoopArbiterService::class)->tick();
+        $this->assertSame('DISPATCH_ACADEMY_EXPERIMENT', $result['action']);
+        $this->assertSame('trading:admit-academy-experiment', $result['command']);
+        $this->assertSame(['trial' => 7], $result['arguments']);
+        $this->assertSame(1, LabGeneration::count());
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+    }
+
+    public function test_academy_outbox_publication_gap_has_two_bounded_transport_retries(): void
+    {
+        Queue::fake();
+        $this->lab();
+        $arbiter = app(ResearchLoopArbiterService::class);
+        $choose = new \ReflectionMethod($arbiter, 'decide');
+        $args = ['XAUUSD', 'H1', 'OPEN_ACADEMY_EXPERIMENT', 81, 'trading:admit-academy-experiment',
+            [0 => 7], 'scheduler-constructor', ['READY'], ['academy_proposal' => ['trial_id' => 7]], false];
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $result = $choose->invokeArgs($arbiter, $args);
+            $this->assertSame('dispatched', $result['status']);
+            (new UniqueLock(Cache::store()))->release(new RunScheduledArtisanCommandJob($result['command'],
+                $result['arguments'], $result['queue'], $result['decision_id']));
+        }
+        $this->assertSame('duplicate_suppressed', $choose->invokeArgs($arbiter, $args)['status']);
+        $this->assertSame(3, ResearchLoopDecision::count());
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 3);
+    }
+
+    public function test_academy_child_refusal_is_not_a_completed_transition(): void
+    {
+        $classifier = app(ScheduledCommandOutcomeClassifierService::class);
+        $this->assertSame('deferred', $classifier->classify('trading:admit-academy-experiment', [], 0, '{"status":"blocked"}')['status']);
+        $this->assertSame('completed', $classifier->classify('trading:admit-academy-experiment', [], 0, '{"status":"prepared"}')['status']);
+        $this->assertSame('completed', $classifier->classify('trading:admit-academy-experiment', [], 0, '{"status":"admitted"}')['status']);
+        $this->assertSame(0, Artisan::call('trading:admit-academy-experiment', ['trial' => 99]));
+        $this->assertSame('blocked', json_decode(Artisan::output(), true)['status']);
+    }
+
+    public function test_operator_pause_fences_arbiter_and_resume_keeps_the_existing_generation(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'new_data', 'status' => 'screening', 'population_size' => 20,
+            'trigger_context' => [], 'started_at' => now()]);
+
+        $this->assertSame(0, Artisan::call('ai:pause', ['--json' => true]));
+        $paused = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('paused', $paused['state']);
+        $this->assertFalse($paused['enabled']);
+        $this->assertSame(0, Artisan::call('ai:runtime-gate', ['--json' => true]));
+        $this->assertFalse(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['start_runtime']);
+        $this->assertSame('RESEARCH_RUN_PAUSED', app(ResearchLoopArbiterService::class)->tick()['reason']);
+        $this->assertDatabaseCount('research_loop_decisions', 0);
+        Queue::assertNothingPushed();
+
+        $queuedBeforePause = new RunScheduledArtisanCommandJob(
+            'trading:run-lifecycle-cycle', ['--symbol' => 'XAUUSD'], 'scheduler-constructor',
+        );
+        $queuedBeforePause->handle(app(ScheduledCommandOutcomeClassifierService::class));
+        $this->assertSame('deferred', Cache::get($queuedBeforePause->statusCacheKey())['status']);
+
+        $this->assertSame(0, Artisan::call('ai:resume', ['--json' => true]));
+        $resumed = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('running', $resumed['state']);
+        $this->assertSame(0, Artisan::call('ai:runtime-gate', ['--json' => true]));
+        $this->assertTrue(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['start_runtime']);
+        $decision = app(ResearchLoopArbiterService::class)->tick();
+        $this->assertSame('SETTLE_EXISTING_GENERATION', $decision['action']);
+        $this->assertSame($generation->id, LabGeneration::query()->latest('id')->value('id'));
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+    }
+
+    public function test_unchanged_completed_settlement_is_retried_only_twice_then_safety_blocked(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'new_data', 'status' => 'screening', 'population_size' => 20,
+            'trigger_context' => [], 'started_at' => now()]);
+        $arbiter = app(ResearchLoopArbiterService::class);
+
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $decision = $arbiter->tick();
+            $this->assertSame('dispatched', $decision['status']);
+            ResearchLoopDecision::findOrFail($decision['decision_id'])->update([
+                'status' => 'completed', 'completed_at' => now(),
+            ]);
+            (new UniqueLock(Cache::store()))->release(new RunScheduledArtisanCommandJob(
+                (string) $decision['command'], (array) $decision['arguments'],
+                (string) $decision['queue'], (int) $decision['decision_id'],
+            ));
+            $this->assertSame('duplicate_suppressed', $arbiter->tick()['status']);
+            $this->travel(6)->minutes();
+        }
+
+        $blocked = $arbiter->tick();
+        $this->assertSame('safety_blocked', $blocked['status']);
+        $this->assertContains('UNCHANGED_GENERATION_AFTER_BOUNDED_SETTLEMENT_RETRIES', $blocked['reason_codes']);
+        $this->assertSame('safety_halt', app(AutonomousModeService::class)->status()['state']);
+        $this->assertSame('RESEARCH_RUN_SAFETY_HALT', $arbiter->tick()['reason']);
+        $this->assertSame(0, Artisan::call('ai:runtime-gate', ['--json' => true]));
+        $this->assertFalse(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['start_runtime']);
+        $this->assertDatabaseCount('research_loop_decisions', 3);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 3);
+    }
+
+    public function test_recent_immutable_replay_waits_without_spending_settlement_retries_then_stale_run_recovers(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'learning_confirmation', 'status' => 'screening', 'population_size' => 3,
+            'trigger_context' => [], 'started_at' => now()]);
+        $model = ModelVersion::create(['name' => 'bounded-active-replay', 'strategy' => 'hybrid',
+            'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+        $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
+            'origin' => 'test', 'lifecycle_status' => 'screening', 'parameter_diff' => []]);
+        LabEvaluationRun::create(['run_id' => 'bounded-active-replay-run',
+            'lab_generation_id' => $generation->id, 'lab_agent_id' => $agent->id,
+            'model_version_id' => $model->id, 'phase' => 'screening', 'mode' => 'screen',
+            'status' => 'started', 'started_at' => now()]);
+
+        $arbiter = app(ResearchLoopArbiterService::class);
+        $first = $arbiter->tick();
+        $this->assertSame('WAIT_EXISTING_GENERATION_REPLAY', $first['action']);
+        Queue::assertNothingPushed();
+        $this->travel(18)->minutes();
+        $this->assertSame('duplicate_suppressed', $arbiter->tick()['status']);
+        $this->assertSame('running', app(AutonomousModeService::class)->status()['state']);
+        $this->assertDatabaseCount('research_loop_decisions', 1);
+
+        $this->travel(58)->minutes();
+        $this->assertSame('SETTLE_EXISTING_GENERATION', $arbiter->tick()['action']);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+    }
 
     public function test_stop_denies_new_work_but_an_active_generation_is_drained_first(): void
     {
@@ -159,11 +314,11 @@ class ResearchLoopArbiterTest extends TestCase
         ]);
         app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
         config()->set('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', true);
-        $velocity = Mockery::mock(\App\Services\LearningVelocityGateService::class);
+        $velocity = Mockery::mock(LearningVelocityGateService::class);
         $velocity->shouldReceive('inspect')->once()->andReturn([
             'status' => 'blocked_technical_recovery', 'technical_recovery_agents' => 1,
         ]);
-        $this->app->instance(\App\Services\LearningVelocityGateService::class, $velocity);
+        $this->app->instance(LearningVelocityGateService::class, $velocity);
 
         $result = app(ResearchLoopArbiterService::class)->tick();
 
@@ -548,7 +703,7 @@ class ResearchLoopArbiterTest extends TestCase
         ]);
         app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
         $director = Mockery::mock(AutonomousLearningProgressDirectorService::class);
-        $director->shouldReceive('advance')->never();
+        $director->shouldReceive('advance')->once()->andReturn(['action' => 'WAIT']);
         $cohorts = Mockery::mock(MtfResearchCohortService::class);
         $cohorts->shouldReceive('candidate')->never();
         $drift = Mockery::mock(MarketDriftDetectionService::class);
@@ -573,12 +728,10 @@ class ResearchLoopArbiterTest extends TestCase
 
         $this->assertSame('ACCUMULATE_FRESH_DATA_AFTER_ZERO_PASS', $result['action']);
         $this->assertContains('ZERO_PASS_COHORT_REQUIRES_FRESH_DATA_ADMISSION', $result['reason_codes']);
-        Queue::assertPushed(RunScheduledArtisanCommandJob::class, fn (RunScheduledArtisanCommandJob $job): bool =>
-            $job->command === 'trading:lab-generation'
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:lab-generation'
             && ($job->arguments['--trigger'] ?? null) === 'new_data'
             && ($job->arguments['--timeframe'] ?? null) === 'H1');
-        Queue::assertNotPushed(RunScheduledArtisanCommandJob::class, fn (RunScheduledArtisanCommandJob $job): bool =>
-            $job->command === 'trading:lab-generation'
+        Queue::assertNotPushed(RunScheduledArtisanCommandJob::class, fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:lab-generation'
             && ($job->arguments['--trigger'] ?? null) === 'market_drift');
     }
 
@@ -623,7 +776,7 @@ class ResearchLoopArbiterTest extends TestCase
         ]);
         app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
         $director = Mockery::mock(AutonomousLearningProgressDirectorService::class);
-        $director->shouldReceive('advance')->never();
+        $director->shouldReceive('advance')->twice()->andReturn(['action' => 'WAIT']);
         $cohorts = Mockery::mock(MtfResearchCohortService::class);
         $cohorts->shouldReceive('candidate')->never();
         $drift = Mockery::mock(MarketDriftDetectionService::class);
@@ -647,20 +800,18 @@ class ResearchLoopArbiterTest extends TestCase
         $auditSelection = $arbiter->tick();
         $this->assertSame('RECORD_AUTONOMOUS_DATA_EDGE_AUDIT', $auditSelection['action']);
         $this->assertContains('AUDIT_MUST_BE_RECORDED_BY_LIFECYCLE_OWNER', $auditSelection['reason_codes']);
-        Queue::assertPushed(RunScheduledArtisanCommandJob::class, fn (RunScheduledArtisanCommandJob $job): bool =>
-            $job->command === 'trading:run-lifecycle-cycle'
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:run-lifecycle-cycle'
             && ($job->arguments['--symbol'] ?? null) === 'XAUUSD'
             && ($job->arguments['--json'] ?? false) === true);
 
-        $audit = app(\App\Services\LabDataEdgeAuditService::class)->recordFromFinalReport($generation);
+        $audit = app(LabDataEdgeAuditService::class)->recordFromFinalReport($generation);
         $this->assertSame('recorded', $audit['status']);
         $this->assertFalse((bool) data_get($audit, 'audit.promotion_evidence'));
 
         $rootSelection = $arbiter->tick();
         $this->assertSame('ACCUMULATE_FRESH_DATA_AFTER_ZERO_PASS', $rootSelection['action']);
         $this->assertNotSame($auditSelection['decision_id'], $rootSelection['decision_id']);
-        Queue::assertPushed(RunScheduledArtisanCommandJob::class, fn (RunScheduledArtisanCommandJob $job): bool =>
-            $job->command === 'trading:lab-generation'
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:lab-generation'
             && ($job->arguments['--trigger'] ?? null) === 'new_data');
     }
 
@@ -1178,6 +1329,29 @@ class ResearchLoopArbiterTest extends TestCase
     {
         return AiLaboratory::create(['name' => 'arbiter lab', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
             'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse']);
+    }
+
+    public function test_exact_instrument_projection_debt_is_one_bounded_action_before_fresh_exploration(): void
+    {
+        Queue::fake();
+        $lab = $this->lab();
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'new_data', 'status' => 'screened', 'population_size' => 20,
+            'trigger_context' => [], 'completed_at' => now()]);
+        app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
+        $ledger = Mockery::mock(\App\Services\InstrumentInvocationLedgerService::class);
+        $ledger->shouldReceive('pendingResearchPairs')->with('XAUUSD', 'H1')->andReturn([
+            ['pair_id' => 99, 'generation_id' => $generation->id, 'pending_invocations' => 3,
+                'powered_exact_contexts' => 2, 'priority' => 2]]);
+        $this->app->instance(\App\Services\InstrumentInvocationLedgerService::class, $ledger);
+        $result = app(ResearchLoopArbiterService::class)->tick();
+        $this->assertSame('RECONCILE_EXACT_INSTRUMENT_PAIR', $result['action']);
+        $this->assertSame(99, $result['arguments']['--pair-id']);
+        $this->assertSame('scheduler-critical', $result['queue']);
+        $this->assertSame('duplicate_suppressed', app(ResearchLoopArbiterService::class)->tick()['status']);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, fn ($job): bool =>
+            $job->command === 'trading:reconcile-instrument-pairs' && $job->arguments['--autonomous'] === true);
     }
 
     private function contract(): array

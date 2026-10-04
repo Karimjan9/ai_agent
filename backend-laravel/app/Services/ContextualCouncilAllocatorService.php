@@ -12,8 +12,8 @@ class ContextualCouncilAllocatorService
     public function __construct(private CooperativeContextualEvolutionCouncilService $council) {}
 
     /** @return array{plan:array<int,array<string,mixed>>,contract:array<string,mixed>} */
-    public function allocate(array $plan, AiLaboratory $lab, array $governorSnapshot = []): array
+    public function allocate(array $plan, AiLaboratory $lab, array $governorSnapshot = [], ?int $generationNumber = null): array
     {
-        return $this->council->allocate($plan, $lab, $governorSnapshot);
+        return $this->council->allocate($plan, $lab, $governorSnapshot, $generationNumber);
     }
 }

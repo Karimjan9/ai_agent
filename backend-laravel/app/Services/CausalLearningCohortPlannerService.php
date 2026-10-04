@@ -131,6 +131,9 @@ class CausalLearningCohortPlannerService
     /** @return array{plan: array<int, array<string, mixed>>, contract: array<string, mixed>} */
     public function materialize(array $plan, string $symbol, string $timeframe, int $generationId): array
     {
+        if (collect($plan)->contains(fn ($slot): bool => (int) data_get($slot, 'niche.prospective_repair_source_pair_id', 0) > 0)) {
+            return app(ProspectiveRepairExperimentService::class)->materialize($plan, $symbol, $timeframe, $generationId);
+        }
         // A falsified confirmation owns the next learning budget.  Delegate
         // its explicitly seeded plan before looking for another positive
         // lesson, otherwise the scheduler can skip the repair frontier and
@@ -324,6 +327,14 @@ class CausalLearningCohortPlannerService
                         'same_parent_required' => true,
                         'same_dataset_required' => true,
                         'same_execution_contract_required' => true,
+                        'confirmation_route' => app(ResearchPaperEpochContractService::class)->confirmationRoute(
+                            'historical_causal_confirmation', [
+                                'experiment_key' => $experimentKey, 'source_lesson_id' => (int) $lesson->id,
+                                'source_pair_id' => (int) $pair->id,
+                                'baseline_model_version_id' => (int) $pair->controlAgent->model_version_id,
+                                'source_context_hash' => $sourceContextHash,
+                            ],
+                        ),
                         'promotion_evidence' => false,
                         // Only the guided arm may receive executable memory.
                         // Blinded/control metadata must not carry the donor

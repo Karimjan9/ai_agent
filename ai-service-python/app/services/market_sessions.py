@@ -338,18 +338,25 @@ def apply_specialist_scope(
         duration_minutes,
     )
     eligible = memberships["classification_status"].eq("classified")
+    predicates = {"calendar_not_classified": eligible.copy()}
     scope_key = target_phase if target_phase in memberships.columns else target_session
     if scope_key:
         eligible &= memberships.get(scope_key, pd.Series(False, index=df.index)).astype(bool)
+        predicates["venue_phase_outside_scope"] = memberships.get(scope_key, pd.Series(False, index=df.index)).astype(bool)
     target_regime = cell.get("regime")
     if target_regime and str(target_regime).lower() not in {"unknown", "any", "mixed"}:
         eligible &= df.get("market_regime", pd.Series("unknown", index=df.index)).astype(str).eq(str(target_regime))
+        predicates["regime_outside_scope"] = df.get("market_regime", pd.Series("unknown", index=df.index)).astype(str).eq(str(target_regime))
     target_volatility = cell.get("volatility")
     if target_volatility and str(target_volatility).lower() not in {"unknown", "any", "mixed"}:
-        eligible &= df.get("volatility_regime", pd.Series("unknown", index=df.index)).astype(str).eq(str(target_volatility))
+        canonical_volatility = lambda value: str(value).lower().removesuffix("_volatility")
+        volatility_ok = df.get("volatility_regime", pd.Series("unknown", index=df.index)).map(canonical_volatility).eq(canonical_volatility(target_volatility))
+        eligible &= volatility_ok
+        predicates["volatility_outside_scope"] = volatility_ok
     execution_policy = str(cell.get("execution_policy") or "context_owned").lower()
     if execution_policy == "abstain_only":
         eligible &= False
+        predicates["abstain_only_policy"] = pd.Series(False, index=df.index)
     target_transition = str(cell.get("transition_state") or "").lower()
     if target_transition not in {"", "any", "unknown"}:
         observed_transition = pd.Series("stable", index=df.index)
@@ -357,14 +364,46 @@ def apply_specialist_scope(
             df.get("market_regime", pd.Series("unknown", index=df.index)).astype(str).eq("transition")
         ] = "transition"
         eligible &= observed_transition.eq(target_transition)
+        predicates["transition_outside_scope"] = observed_transition.eq(target_transition)
     target_liquidity = str(cell.get("spread_liquidity_state") or "").lower()
+    # Missing quotes must be measured inside the owned market context before
+    # the liquidity predicate removes them. Otherwise a sparse context can
+    # look perfectly covered merely because unknown rows became WAIT.
+    data_context = eligible.copy()
+    quote_source = dict(df.attrs.get("quote_spread_quality") or {})
+    quote_provenance_valid = (
+        quote_source.get("protocol") == "historical_quote_spread_quality_v1"
+        and quote_source.get("provider_observed") is True
+        and quote_source.get("source") == "synchronized_bid_ask_tick"
+    )
+    observed_quotes = pd.to_numeric(
+        df.get("spread_available", pd.Series(0, index=df.index)), errors="coerce"
+    ).eq(1) & quote_provenance_valid
+    context_rows = int(data_context.sum())
+    context_observed_rows = int((data_context & observed_quotes).sum())
+    quote_times = pd.to_datetime(df.get("time", pd.Series(index=df.index, dtype=object)), utc=True, errors="coerce")
+    quote_bounds_valid = bool(len(quote_times) and quote_times.notna().all()
+                              and quote_times.is_monotonic_increasing and quote_times.is_unique)
+    context_quote_quality = {
+        "protocol": "exact_context_quote_quality_v1",
+        "source_context_hash": str(contract.get("source_context_hash") or ""),
+        "evaluated_rows": len(df),
+        "evaluated_start": quote_times.iloc[0].strftime("%Y-%m-%dT%H:%M:%SZ") if quote_bounds_valid else None,
+        "evaluated_end": quote_times.iloc[-1].strftime("%Y-%m-%dT%H:%M:%SZ") if quote_bounds_valid else None,
+        "context_rows": context_rows, "observed_rows": context_observed_rows,
+        "coverage": context_observed_rows / context_rows if context_rows else None,
+        "source_provenance_valid": quote_provenance_valid,
+        "before_liquidity_veto": True, "modeled_spread_is_not_observed": True,
+        "promotion_evidence": False,
+    }
     target_liquidity = {
-        "low_spread": "liquid", "high_spread": "illiquid",
+        "low_spread": "liquid", "normal": "liquid", "normal_spread": "liquid",
+        "high": "illiquid", "high_spread": "illiquid",
         "spread_filter_veto": "illiquid",
     }.get(target_liquidity, target_liquidity)
     if target_liquidity not in {"", "any", "unknown", "closed_or_maintenance"}:
         atr = pd.to_numeric(
-            df.get("atr", df.get("structure_atr", pd.Series(float("nan"), index=df.index))),
+            df.get("atr", df.get("structure_atr", df.get("atr_regime", pd.Series(float("nan"), index=df.index)))),
             errors="coerce",
         )
         spread = pd.to_numeric(
@@ -372,16 +411,33 @@ def apply_specialist_scope(
             errors="coerce",
         )
         observed_liquidity = pd.Series("unknown", index=df.index)
-        measurable = atr.gt(0) & spread.notna()
+        measurable = atr.gt(0) & atr.lt(float("inf")) & spread.ge(0) & spread.lt(float("inf"))
+        if "spread_available" in df.columns:
+            measurable &= pd.to_numeric(df["spread_available"], errors="coerce").eq(1)
+        predicates["liquidity_observation_missing"] = measurable
         observed_liquidity.loc[measurable & spread.div(atr).le(0.25)] = "liquid"
         observed_liquidity.loc[measurable & spread.div(atr).gt(0.25)] = "illiquid"
         eligible &= observed_liquidity.eq(target_liquidity)
+        predicates["liquidity_outside_scope"] = observed_liquidity.eq(target_liquidity)
+    # A context opportunity is a candle where market predicates pass, even
+    # when the strategy emits WAIT. Direction is a signal predicate, not a
+    # market-context observation.
+    context_eligible = eligible.copy()
     target_direction = str(cell.get("direction") or "").upper()
     signals = df.get("signal", pd.Series("WAIT", index=df.index)).astype(str)
     if target_direction in {"BUY", "SELL"}:
         eligible &= signals.eq(target_direction)
+        predicates["direction_outside_scope"] = signals.eq(target_direction)
 
     scoped = df.copy()
+    scoped["pre_specialist_signal"] = signals
+    # Preserve the actual first failed predicate, including data absence. A
+    # context veto is not evidence that the underlying strategy had no signal.
+    reason = pd.Series("owned_context", index=df.index)
+    open_mask = pd.Series(True, index=df.index)
+    for code, passed in predicates.items():
+        reason.loc[open_mask & ~passed] = code
+        open_mask &= passed
     scoped["market_session"] = memberships["session"]
     scoped["market_venue_phase"] = memberships["venue_phase"]
     scoped["market_venue_phases"] = memberships["venue_phases"]
@@ -391,6 +447,7 @@ def apply_specialist_scope(
     scoped["specialist_scope_eligible"] = eligible
     scoped["specialist_scope_reason"] = "owned_context"
     scoped.loc[~eligible, "specialist_scope_reason"] = "outside_owned_context_wait"
+    scoped["specialist_scope_first_veto"] = reason
     scoped.loc[~eligible, "signal"] = "WAIT"
     if "signal_confidence" in scoped.columns:
         scoped.loc[~eligible, "signal_confidence"] = 0.0
@@ -402,11 +459,26 @@ def apply_specialist_scope(
         "calendar_protocol": SESSION_CALENDAR_PROTOCOL,
         "calendar_version": ownership.get("calendar_version"),
         "target_session": target_session or None, "target_venue_phase": target_phase or None,
+        "target_regime": str(target_regime) if target_regime else None,
+        "target_volatility": str(target_volatility) if target_volatility else None,
+        "target_direction": target_direction or None,
         "target_transition_state": target_transition or None,
         "target_spread_liquidity_state": target_liquidity or None,
+        "source_context_hash": str(contract.get("source_context_hash") or ""),
         "outside_scope_action": "WAIT",
         "out_of_scope_raw_signal_count": raw_outside_signals,
         "out_of_scope_activation_count": int((~eligible & post_scope_signals.isin(["BUY", "SELL"])).sum()),
+        "raw_strategy_signal_count": int(signals.isin(["BUY", "SELL"]).sum()),
+        "eligible_context_candle_count": int(context_eligible.sum()),
+        "context_quote_quality": context_quote_quality,
+        "accepted_signal_count": int(post_scope_signals.isin(["BUY", "SELL"]).sum()),
+        "signal_first_veto_counts": reason[signals.isin(["BUY", "SELL"]) & ~eligible].value_counts().to_dict(),
+        "signal_predicate_failure_counts": {
+            code: int((signals.isin(["BUY", "SELL"]) & ~passed).sum())
+            for code, passed in predicates.items()
+        },
+        "missing_liquidity_observation_rows": int((~predicates["liquidity_observation_missing"]).sum()) if "liquidity_observation_missing" in predicates else 0,
+        "modeled_spread_is_not_observed": True,
         "promotion_evidence": False,
     }
     return scoped

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ResearchExperimentWorkItem;
 use App\Services\ResearchClosureInvariantService;
 use App\Services\ResearchExperimentConversionKernelService;
+use App\Services\ActivationValidationPlanService;
 use App\Services\ResearchLoopArbiterService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -50,6 +51,34 @@ class ResearchExperimentConversionKernelServiceTest extends TestCase
         $this->assertSame('RESEARCH_CLOSURE_EXACTLY_ONE_OUTCOME_REQUIRED', $neither['reason']);
         $this->assertSame('RESEARCH_CLOSURE_EXACTLY_ONE_OUTCOME_REQUIRED', $both['reason']);
         $this->assertDatabaseCount('research_experiment_receipts', 0);
+    }
+
+    public function test_activation_continuation_requires_the_preregistered_plan_hash(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $proposal = [
+            'hypothesis_key' => str_repeat('a', 64),
+            'source_data_hash' => str_repeat('b', 64),
+            'source_response_hash' => str_repeat('c', 64),
+            'source_execution_hash' => str_repeat('d', 64),
+            'source_mtf_bundle_hash' => str_repeat('e', 64),
+        ];
+        $plan = app(ActivationValidationPlanService::class)->reserve($proposal);
+        $contract = $this->contract();
+        $invalid = $kernel->record($contract, ['settlement_id' => 13], 'BEHAVIORAL_ACTIVATION_HYPOTHESIS', [
+            'type' => 'activation_independent_validation', 'validation_plan' => $plan,
+        ]);
+        $this->assertSame('ACTIVATION_VALIDATION_PLAN_INVALID', $invalid['reason']);
+        $this->assertDatabaseCount('research_experiment_receipts', 0);
+
+        $contract['identity']['window_plan_hash'] = $plan['plan_hash'];
+        $valid = $kernel->record($contract, ['settlement_id' => 13], 'BEHAVIORAL_ACTIVATION_HYPOTHESIS', [
+            'type' => 'activation_independent_validation', 'validation_plan' => $plan,
+        ]);
+        $this->assertSame('recorded', $valid['status']);
+        $this->assertSame('blocked', ResearchExperimentWorkItem::query()->sole()->status);
+        $this->assertFalse((bool) data_get(ResearchExperimentWorkItem::query()->sole()->payload, 'executable'));
+        $this->assertSame([], $kernel->claimForOwner(ResearchLoopArbiterService::class));
     }
 
     public function test_next_work_is_owned_retry_bounded_and_visible_to_closure_truth(): void

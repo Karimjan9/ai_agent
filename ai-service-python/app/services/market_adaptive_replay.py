@@ -281,16 +281,15 @@ class MarketAdaptiveReplayService:
         else:
             holdout_start = normalized["time"].max() - pd.Timedelta(weeks=self.sealed_holdout_weeks)
             replay_start = _utc_timestamp(self.rolling_start)
-        is_m15 = str(timeframe).upper() == "M15"
-        # M15 evolution uses the complete available pre-2026 archive just as
-        # H1 does. The first tradable candle may be later than 2016-01-01 for
-        # an instrument listed later; Laravel freezes the actual first row in
-        # the immutable manifest and the row-count/continuity gates enforce
-        # its integrity.
-        foundation_start = _utc_timestamp("2016-01-01 00:00:00") if is_m15 else _utc_timestamp(self.foundation_start)
+        intraday = str(timeframe).upper() in {"M5", "M15"}
+        # Intraday replay uses its available, frozen pre-2026 archive. M5 is
+        # the MTF execution stream, not the H1 storage identity, and cannot
+        # satisfy H1's 2005 starting-date requirement. Keep the train/replay/
+        # holdout partitions disjoint and retain the minimum training power.
+        foundation_start = _utc_timestamp("2016-01-01 00:00:00") if intraday else _utc_timestamp(self.foundation_start)
         foundation_end = _utc_timestamp(self.foundation_end)
-        latest_supported_start = _utc_timestamp("2016-01-01 00:00:00") if is_m15 else _utc_timestamp(self.latest_supported_foundation_start)
-        minimum_foundation_rows = 2000 if is_m15 else 202
+        latest_supported_start = _utc_timestamp(self.latest_supported_foundation_start)
+        minimum_foundation_rows = 2000 if intraday else 202
         foundation = foundation_source[(foundation_source.time >= foundation_start) & (foundation_source.time <= foundation_end) & (foundation_source.time < replay_start)]
         replay = normalized[(normalized.time >= replay_start) & (normalized.time < holdout_start)]
         holdout = normalized[normalized.time >= holdout_start]
@@ -299,9 +298,9 @@ class MarketAdaptiveReplayService:
         # Keep the experiment anchored to 2004 without pretending that a
         # missing January candle exists; normal data-quality gates still reject
         # unexplained market-open holes inside the available archive.
-        if is_m15:
+        if intraday:
             if len(foundation) < minimum_foundation_rows or foundation["time"].empty:
-                raise ValueError("M15 foundation training uchun 2016-01-01 dan 2025-12-31 gacha pre-2026 archive kerak.")
+                raise ValueError(f"{str(timeframe).upper()} foundation training uchun 2016-01-01 dan 2025-12-31 gacha pre-2026 archive kerak.")
         elif len(foundation) < minimum_foundation_rows or foundation["time"].min() > latest_supported_start:
             raise ValueError("Foundation training uchun 2005-01-02 dan 2025-12-31 gacha tarix kerak.")
         if len(replay) < 202:

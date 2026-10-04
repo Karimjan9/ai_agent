@@ -62,6 +62,9 @@ class LabReplayRecoveryService
                 'price' => (string) ($price['sha256'] ?? ''),
                 'foundation' => (string) ($foundation['sha256'] ?? ''),
                 'regime' => (string) ($regime['sha256'] ?? ''),
+                // An MTF aggregate identifies four frozen streams, not the
+                // unrelated H1 foundation file or canonical paper file.
+                'mtf_bundle' => (string) data_get($context, 'mtf_bundle_hash', ''),
             ],
             'snapshot_paths' => [
                 'price' => (string) ($price['path'] ?? ''),
@@ -137,6 +140,25 @@ class LabReplayRecoveryService
                 throw new RuntimeException('RECOVERY_DATASET_SNAPSHOT_HASH_MISMATCH:'.$name);
             }
         }
+        $expectedBundle = (string) data_get($contract, 'dataset_hashes.mtf_bundle', '');
+        $storedBundle = (string) data_get($context, 'mtf_bundle_hash', '');
+        if ($expectedBundle !== '' || $storedBundle !== '') {
+            if (! $this->isSha256($expectedBundle) || ! hash_equals($expectedBundle, $storedBundle)) {
+                throw new RuntimeException('RECOVERY_DATASET_SNAPSHOT_HASH_MISMATCH:mtf_bundle');
+            }
+            $manifest = (array) data_get($context, 'mtf_bundle_manifest', []);
+            $restored = app(MultiTimeframeSnapshotService::class)->restoreAgentOwnedConfirmationValidationBundle($manifest);
+            if (! hash_equals($expectedBundle, (string) data_get($restored, 'bundle_hash', ''))) {
+                throw new RuntimeException('RECOVERY_DATASET_SNAPSHOT_HASH_MISMATCH:mtf_bundle');
+            }
+            foreach (['M5', 'H4', 'H1', 'M15'] as $timeframe) {
+                $original = (string) data_get($manifest, "streams.{$timeframe}.sha256", '');
+                $reopened = (string) data_get($restored, "manifest.streams.{$timeframe}.sha256", '');
+                if (! $this->isSha256($original) || ! hash_equals($original, $reopened)) {
+                    throw new RuntimeException('RECOVERY_DATASET_SNAPSHOT_HASH_MISMATCH:mtf_'.$timeframe);
+                }
+            }
+        }
     }
 
     private function assertPriorRunDidNotChangeDataset(
@@ -159,18 +181,60 @@ class LabReplayRecoveryService
 
         $manifest = (array) data_get($run->request_meta, 'dataset_manifest', []);
         $screening = $mode === 'screen';
+        $mtf = data_get($manifest, 'mtf_bundle_hash') !== null
+            || data_get($manifest, 'snapshot_protocol') === MultiTimeframeSnapshotService::PROTOCOL;
+        $modernFull = ! $screening && data_get($manifest, 'paper.snapshot_sha256') !== null;
         $previous = [
-            // Historical screening writes its primary snapshot hash as the
-            // foundation and carries the canonical paper hash separately.
-            // Full replay keeps the existing canonical-primary shape.
+            // Current MTF replay's primary hash is an aggregate. Current full
+            // replay separately carries the paper and foundation identities;
+            // keep the older canonical-primary shape only for legacy runs.
             'price' => $screening
                 ? data_get($manifest, 'data_partition.paper_snapshot_sha256')
-                : data_get($manifest, 'snapshot_sha256', data_get($manifest, 'data_hash')),
-            'foundation' => $screening
+                : ($modernFull ? data_get($manifest, 'paper.snapshot_sha256')
+                    : data_get($manifest, 'snapshot_sha256', data_get($manifest, 'data_hash'))),
+            'foundation' => $screening && ! $mtf
                 ? data_get($manifest, 'snapshot_sha256', data_get($manifest, 'data_hash'))
-                : data_get($manifest, 'foundation.sha256', data_get($manifest, 'foundation.snapshot_sha256')),
+                : ($modernFull ? data_get($manifest, 'sha256')
+                    : data_get($manifest, 'foundation.sha256', data_get($manifest, 'foundation.snapshot_sha256'))),
             'regime' => data_get($manifest, 'regime.sha256', data_get($manifest, 'regime_snapshot_sha256')),
         ];
+        if ($mtf) {
+            $bundle = (string) data_get($manifest, 'mtf_bundle_hash', '');
+            $primary = (string) data_get($manifest, 'snapshot_sha256', '');
+            $expected = (string) data_get($contract, 'dataset_hashes.mtf_bundle', '');
+            if (! $this->isSha256($bundle) || ! $this->isSha256($expected)
+                || ! hash_equals($bundle, $primary)
+                || ($run->data_hash && ! hash_equals($bundle, (string) $run->data_hash))) {
+                throw new RuntimeException('RECOVERY_PRIOR_DATASET_IDENTITY_AMBIGUOUS:mtf_bundle');
+            }
+            // The explicit legacy dataset-contract repair flag is not
+            // permission to change a frozen MTF experiment's aggregate.
+            if (! hash_equals($expected, $bundle)) {
+                throw new RuntimeException('RECOVERY_PRIOR_DATASET_HASH_MISMATCH:mtf_bundle');
+            }
+            $payload = (array) data_get($run->request_meta, 'payload', []);
+            $frozenStreams = (array) data_get($agent->generation?->trigger_context, 'mtf_bundle_manifest.streams', []);
+            $entryHash = (string) data_get($frozenStreams, 'M5.sha256', '');
+            if (! $this->isSha256($entryHash)
+                || ! hash_equals($bundle, (string) data_get($payload, 'replay_dataset_hash', ''))
+                || ! hash_equals($bundle, (string) data_get($payload, 'policy_context.snapshot_transport.mtf_bundle_hash', ''))
+                || ! hash_equals($entryHash, (string) data_get($payload, 'policy_context.snapshot_transport.training_dataset_sha256', ''))
+                || (string) data_get($payload, 'dataset_path', '') !== (string) data_get($frozenStreams, 'M5.path', '')) {
+                throw new RuntimeException('RECOVERY_PRIOR_DATASET_IDENTITY_AMBIGUOUS:mtf_transport');
+            }
+            $previous['mtf_bundle'] = $bundle;
+            $priorStreams = (array) data_get($manifest, 'mtf_bundle_manifest.streams',
+                data_get($manifest, 'mtf_foundation_bundle.streams', []));
+            foreach (['M5', 'H4', 'H1', 'M15'] as $timeframe) {
+                $prior = (string) data_get($priorStreams, "{$timeframe}.sha256", '');
+                $frozen = (string) data_get($agent->generation?->trigger_context, "mtf_bundle_manifest.streams.{$timeframe}.sha256", '');
+                $payloadHash = (string) data_get($payload, "mtf_snapshot_manifest.streams.{$timeframe}.sha256", '');
+                if (! $this->isSha256($prior) || ! hash_equals($prior, $frozen)
+                    || ! hash_equals($prior, $payloadHash)) {
+                    throw new RuntimeException('RECOVERY_PRIOR_DATASET_HASH_MISMATCH:mtf_'.$timeframe);
+                }
+            }
+        }
         $mismatches = [];
         foreach ($previous as $name => $hash) {
             if (! $this->isSha256((string) $hash)) continue;

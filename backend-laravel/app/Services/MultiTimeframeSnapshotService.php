@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\MarketTrainingArchive;
+use App\Services\MarketData\HistoricalQuoteSpreadService;
 use App\Services\MarketData\MarketTrainingDataService;
 use App\Services\MarketData\MarketVolumeService;
 use Carbon\CarbonImmutable;
@@ -64,11 +65,12 @@ class MultiTimeframeSnapshotService
         }
 
         $requirements = [
-            ['dataset' => 'foundation_intraday_10y', 'timeframe' => 'M5', 'minimum' => self::AGENT_VALIDATION_MIN_M5_ROWS],
+            ['dataset' => (string) config('services.xauusd_organism.research_m5_dataset', 'foundation_intraday_10y'), 'timeframe' => 'M5', 'minimum' => self::AGENT_VALIDATION_MIN_M5_ROWS],
             ['dataset' => MarketTrainingDataService::DEFAULT_DATASET, 'timeframe' => 'M15', 'minimum' => 1000],
             ['dataset' => MarketTrainingDataService::DEFAULT_DATASET, 'timeframe' => 'H1', 'minimum' => 500],
         ];
         $streams = [];
+        $repairProvenance = null;
         foreach ($requirements as $requirement) {
             $archive = MarketTrainingArchive::query()
                 ->where('dataset_key', $requirement['dataset'])
@@ -76,6 +78,16 @@ class MultiTimeframeSnapshotService
                 ->where('symbol', $symbol)
                 ->where('timeframe', $requirement['timeframe'])
                 ->first();
+            if ($requirement['timeframe'] === 'M5' && $requirement['dataset'] !== 'foundation_intraday_10y') {
+                $repairProvenance = $this->verifiedProspectiveM5Repair($archive);
+                if ($repairProvenance === null) return ['ready' => false, 'reason' => 'PROSPECTIVE_M5_REPAIR_PROVENANCE_INVALID', 'streams' => $streams];
+                $fullGaps = data_get($repairProvenance, 'calendar_scope.full_source_unexpected_after');
+                if (! is_int($fullGaps) || $fullGaps !== 0) return ['ready' => false,
+                    'reason' => 'HISTORICAL_M5_CONTINUITY_SCOPE_UNRESOLVED', 'streams' => $streams,
+                    'prospective_m5_repair' => $repairProvenance,
+                    'selected_screening_unexpected_gaps' => data_get($repairProvenance, 'calendar_scope.screening_unexpected_after'),
+                    'full_source_unexpected_gaps' => $fullGaps, 'promotion_evidence' => false];
+            }
             $rows = (int) ($archive?->row_count ?? 0);
             $streams[$requirement['timeframe']] = [
                 'dataset_key' => $requirement['dataset'],
@@ -116,7 +128,89 @@ class MultiTimeframeSnapshotService
             'requested_m5_rows' => $maxM5Rows,
             'bounded_m5_rows' => min((int) data_get($streams, 'M5.row_count'), $maxM5Rows),
             'promotion_evidence' => false,
+            'prospective_m5_repair' => $repairProvenance,
         ];
+    }
+
+    /** A config label alone cannot waive a refused immutable data source. */
+    private function verifiedProspectiveM5Repair(?MarketTrainingArchive $archive): ?array
+    {
+        if (! $archive || $archive->status !== 'complete') return null;
+        $receipt = (array) data_get($archive->metrics, 'frozen_m5_gap_recovery_receipt', []);
+        $hash = (string) ($receipt['repair_hash'] ?? '');
+        $identity = array_diff_key($receipt, array_flip(['repair_hash', 'dataset_key']));
+        $batch = ($receipt['protocol'] ?? null) === 'frozen_m5_gap_recovery_v2';
+        $proofs = (array) ($receipt['target_proofs'] ?? []);
+        $addedRows = $batch ? count($proofs) : 1;
+        if (! in_array($receipt['protocol'] ?? null, ['frozen_m5_gap_recovery_v1','frozen_m5_gap_recovery_v2'], true) || ! preg_match('/^[a-f0-9]{64}$/', $hash)
+            || ! hash_equals($hash, app(ExecutionContractService::class)->hashParameters($identity))
+            || $archive->dataset_key !== 'foundation_intraday_gapfix_'.substr($hash, 0, 16)
+            || ($receipt['dataset_key'] ?? null) !== $archive->dataset_key || ($receipt['symbol'] ?? null) !== 'XAUUSD'
+            || ($receipt['timeframe'] ?? null) !== 'M5' || ($receipt['provider'] ?? null) !== 'dukascopy'
+            || ($receipt['economic_row_hash_protocol'] ?? null) !== 'training_decimal_6_rows_v1'
+            || $addedRows < 1 || $addedRows > 300 || (int) ($receipt['source_rows'] ?? 0) + $addedRows !== (int) ($receipt['new_rows'] ?? 0)
+            || (int) ($receipt['new_rows'] ?? 0) !== (int) $archive->row_count || (int) $archive->row_count > 350300
+            || ($receipt['independent_evidence'] ?? null) !== false || ($receipt['promotion_evidence'] ?? null) !== false
+            || ($receipt['runtime_trade_authority'] ?? null) !== false || ($receipt['quote_liquidity_inherited'] ?? null) !== false
+            || (! $batch && (data_get($receipt, 'proof.observed_m1_minutes') !== 4 || data_get($receipt, 'proof.expected_clock_minutes') !== 5
+            || data_get($receipt, 'proof.complete_minute_coverage') !== false || data_get($receipt, 'proof.unobserved_minute_filled') !== false
+            || data_get($receipt, 'proof.actual_tick_count') !== 137
+            || data_get($receipt, 'proof.source_tick_hour_sha256') !== 'ecccee8e84d4bcd2ebb56ff0cf3f4db5cd397bbe6dc41547bc91503b7cef327e'
+            || data_get($receipt, 'proof.recovered_row.time') !== '2025-12-17 23:00:00'))
+            || data_get($receipt, 'calendar_scope.protocol') !== ($batch ? 'frozen_source_calendar_scope_audit_v2' : 'frozen_source_calendar_scope_audit_v1')
+            || data_get($receipt, 'calendar_scope.source_csv_sha256') !== ($receipt['source_csv_sha256'] ?? null)
+            || data_get($receipt, 'calendar_scope.screening_unexpected_after') !== 0) return null;
+        $source = realpath((string) ($receipt['source_csv_path'] ?? ''));
+        $sourceRoot = realpath(storage_path('app/lab-datasets/mtf'));
+        $price = realpath((string) data_get($archive->metrics, 'frozen_m5_gap_recovery_price_path'));
+        $expectedPrice = realpath(storage_path('app/lab-datasets/training/recovery/'.$hash.'/m5.csv'));
+        if ($source === false || $sourceRoot === false || ! str_starts_with(str_replace('\\', '/', $source), str_replace('\\', '/', $sourceRoot).'/')
+            || $price === false || $expectedPrice === false || $price !== $expectedPrice || $price === $source
+            || filesize($source) > 134217728 || filesize($price) > 134217728
+            || ! hash_equals((string) ($receipt['source_csv_sha256'] ?? ''), (string) hash_file('sha256', $source))
+            || ! hash_equals((string) ($receipt['new_price_csv_sha256'] ?? ''), (string) hash_file('sha256', $price))) return null;
+        if ($batch) {
+            try {
+                if (! class_exists(\FrozenM5GapRecoveryOperation::class, false)) require_once base_path('scripts/recover-frozen-m5-gap.php');
+                $original = \FrozenM5GapRecoveryOperation::source($source, $receipt['source_csv_sha256'], true);
+                $fork = \FrozenM5GapRecoveryOperation::forkMany($original, $proofs, (array) ($receipt['canonical_missing_utc'] ?? []));
+                $targets = array_map(static fn ($proof) => str_replace(' ', 'T', $proof['recovered_row']['time']).'+00:00', $proofs);
+                $missing = (array) ($receipt['canonical_missing_utc'] ?? []);
+                $remaining = array_values(array_diff($missing, $targets));
+                $calendar = (array) $receipt['calendar_scope'];
+                $unresolved = (array) ($receipt['unresolved_targets'] ?? []);
+                if (count($original) !== (int) $receipt['source_rows'] || $original[0]['time'] !== ($receipt['source_first_at'] ?? null)
+                    || $original[array_key_last($original)]['time'] !== ($receipt['source_last_at'] ?? null)
+                    || $calendar['source_rows'] !== count($original) || $calendar['new_rows'] !== count($fork)
+                    || ($calendar['canonical_missing_utc'] ?? null) !== $missing || ($calendar['recovered_targets_utc'] ?? null) !== $targets
+                    || ($calendar['remaining_missing_utc'] ?? null) !== $remaining
+                    || ($calendar['full_source_unexpected_before'] ?? null) !== count($missing)
+                    || ($calendar['full_source_unexpected_after'] ?? null) !== count($remaining)
+                    || ($calendar['whole_archive_continuity_proven'] ?? null) !== (count($remaining) === 0)
+                    || array_column($unresolved, 'target_utc') !== $remaining
+                    || ($receipt['collection_ceiling_seconds'] ?? null) !== 1800
+                    || ! hash_equals($receipt['new_price_csv_sha256'], hash('sha256', \FrozenM5GapRecoveryOperation::csvBytes($fork)))
+                    || ! hash_equals($receipt['new_economic_rows_sha256'], \FrozenM5GapRecoveryOperation::economicRowsHash($fork))) return null;
+                foreach ($unresolved as $dependency) if (! is_string($dependency['reason'] ?? null) || ! str_starts_with($dependency['reason'], 'RECOVERY_')) return null;
+            } catch (\Throwable) { return null; }
+        }
+        $digest = hash_init('sha256'); $rows = 0; $prior = null;
+        // Plain bounded cursor avoids hydrating 200k Eloquent/Carbon objects in readiness.
+        foreach ($this->training->query($archive->dataset_key, 'dukascopy', 'XAUUSD', 'M5')->toBase()->orderBy('time')->cursor() as $row) {
+            $time = (string) $row->time;
+            if (! preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:00$/', $time)
+                || $time >= '2026-01-01 00:00:00' || ($prior !== null && $time <= $prior) || ++$rows > 350001) return null;
+            hash_update($digest, json_encode([$time, number_format((float) $row->open, 6, '.', ''), number_format((float) $row->high, 6, '.', ''),
+                number_format((float) $row->low, 6, '.', ''), number_format((float) $row->close, 6, '.', ''), number_format((float) $row->volume, 6, '.', '')])."\n");
+            $prior = $time;
+        }
+        if ($rows !== (int) $archive->row_count || ! hash_equals((string) ($receipt['new_economic_rows_sha256'] ?? ''), hash_final($digest))) return null;
+        return ['protocol' => $receipt['protocol'], 'verified' => true, 'repair_hash' => $hash,
+            'dataset_key' => $archive->dataset_key, 'original_bad_m5_sha256' => $receipt['source_csv_sha256'],
+            'prospective_m5_source_sha256' => $receipt['new_price_csv_sha256'], 'prospective_m5_source_path' => $price,
+            'economic_rows_sha256' => $receipt['new_economic_rows_sha256'], 'quote_liquidity_inherited' => false,
+            'calendar_scope' => $receipt['calendar_scope'],
+            'independent_evidence' => false, 'promotion_evidence' => false];
     }
 
     /**
@@ -135,7 +229,7 @@ class MultiTimeframeSnapshotService
         }
         $symbol = 'XAUUSD';
         $provider = MarketTrainingDataService::DEFAULT_PROVIDER;
-        $m5Dataset = 'foundation_intraday_10y';
+        $m5Dataset = (string) data_get($readiness, 'streams.M5.dataset_key');
         $contextDataset = MarketTrainingDataService::DEFAULT_DATASET;
         $entryCutoff = CarbonImmutable::parse((string) $readiness['entry_cutoff'], 'UTC');
         $exclusiveCutoff = $entryCutoff->addMinutes(self::DURATIONS['M5']);
@@ -180,6 +274,13 @@ class MultiTimeframeSnapshotService
         $volumeAttestation = $this->attestHistoricalVolumeStreams($streams, $provider);
         $streams = $volumeAttestation['streams'];
 
+        // Quotes are admitted before the new bundle identity is frozen, never
+        // injected into an existing generation or its already sealed CSV.
+        $quoteAttestation = app(HistoricalQuoteSpreadService::class)->attach(
+            $streams['M5'], $this->csvHash($streams['M5']),
+        );
+        $streams['M5'] = $quoteAttestation['rows'];
+
         $sourceHashes = [];
         foreach ($streams as $timeframe => $rows) {
             $sourceHashes[$timeframe] = $this->rowContentHash($rows);
@@ -191,6 +292,7 @@ class MultiTimeframeSnapshotService
             'symbol' => $symbol,
             'provider' => $provider,
             'datasets' => ['M5' => $m5Dataset, 'M15' => $contextDataset, 'H1' => $contextDataset, 'H4' => 'derived_from_H1'],
+            ...(($readiness['prospective_m5_repair'] ?? null) === null ? [] : ['prospective_m5_repair' => $readiness['prospective_m5_repair']]),
             'entry_rows' => count($streams['M5']),
             'entry_first_candle_at' => $streams['M5'][0]['time'],
             'entry_last_candle_at' => $streams['M5'][array_key_last($streams['M5'])]['time'],
@@ -201,6 +303,7 @@ class MultiTimeframeSnapshotService
                 ...$volumeAttestation['provenance'],
                 'stream_content_sha256' => $sourceHashes,
             ],
+            'quote_spread_provenance' => $quoteAttestation['provenance'],
             'aggregation' => ['H4' => 'four_complete_UTC_H1_candles'],
             'bounded_cost_contract' => [
                 'maximum_m5_rows' => $maxM5Rows,
@@ -701,7 +804,7 @@ class MultiTimeframeSnapshotService
     {
         $context = hash_init('sha256');
         foreach ($rows as $row) {
-            hash_update($context, implode('|', [
+            $parts = [
                 (string) ($row['time'] ?? ''),
                 sprintf('%.10F', (float) ($row['open'] ?? 0)),
                 sprintf('%.10F', (float) ($row['high'] ?? 0)),
@@ -709,7 +812,18 @@ class MultiTimeframeSnapshotService
                 sprintf('%.10F', (float) ($row['close'] ?? 0)),
                 sprintf('%.10F', (float) ($row['volume'] ?? 0)),
                 (bool) ($row['volume_available'] ?? false) ? '1' : '0',
-            ])."\n");
+            ];
+            if (array_key_exists('spread_available', $row)) {
+                $parts = [...$parts,
+                    (bool) $row['spread_available'] ? '1' : '0',
+                    sprintf('%.10F', (float) ($row['spread'] ?? 0)),
+                    sprintf('%.10F', (float) ($row['bid_close'] ?? 0)),
+                    sprintf('%.10F', (float) ($row['ask_close'] ?? 0)),
+                    (string) ($row['quote_time_utc'] ?? ''), (string) ($row['quote_available_after_utc'] ?? ''),
+                    (string) ($row['quote_age_ms'] ?? ''),
+                ];
+            }
+            hash_update($context, implode('|', $parts)."\n");
         }
 
         return hash_final($context);
@@ -727,20 +841,10 @@ class MultiTimeframeSnapshotService
             if ($handle === false) {
                 throw new RuntimeException("MTF temporary snapshot ochilmadi: {$path}");
             }
-            $includeVolumeMarker = collect($rows)->contains(
-                static fn (array $row): bool => array_key_exists('volume_available', $row),
-            );
-            $headers = ['time', 'open', 'high', 'low', 'close', 'volume'];
-            if ($includeVolumeMarker) {
-                $headers[] = 'volume_available';
-            }
+            $headers = $this->csvColumns($rows);
             fputcsv($handle, $headers);
             foreach ($rows as $row) {
-                $values = [$row['time'], $row['open'], $row['high'], $row['low'], $row['close'], $row['volume'] ?? 0];
-                if ($includeVolumeMarker) {
-                    $values[] = (bool) ($row['volume_available'] ?? false) ? 1 : 0;
-                }
-                fputcsv($handle, $values);
+                fputcsv($handle, $this->csvValues($row, $headers));
             }
             fclose($handle);
             if (! copy($temporary, $path)) {
@@ -751,12 +855,59 @@ class MultiTimeframeSnapshotService
         }
     }
 
+    private function csvColumns(array $rows): array
+    {
+        $columns = ['time', 'open', 'high', 'low', 'close', 'volume'];
+        foreach (['volume_available', 'spread_available'] as $marker) {
+            if (collect($rows)->contains(fn (array $row): bool => array_key_exists($marker, $row))) {
+                $columns[] = $marker;
+                if ($marker === 'spread_available') {
+                    $columns = [...$columns, 'spread', 'bid_close', 'ask_close', 'quote_time_utc', 'quote_available_after_utc', 'quote_age_ms'];
+                }
+            }
+        }
+
+        return $columns;
+    }
+
+    private function csvValues(array $row, array $columns): array
+    {
+        return array_map(static fn (string $column): mixed => match ($column) {
+            'volume_available', 'spread_available' => (bool) ($row[$column] ?? false) ? 1 : 0,
+            'volume' => $row[$column] ?? 0,
+            default => $row[$column] ?? '',
+        }, $columns);
+    }
+
+    /** Same canonical CSV bytes as writeCsv; binds quotes to the price-only input. */
+    private function csvHash(array $rows): string
+    {
+        $handle = fopen('php://temp/maxmemory:1048576', 'w+b');
+        if (! $handle) {
+            throw new RuntimeException('MTF_CSV_HASH_STREAM_UNAVAILABLE');
+        }
+        try {
+            $columns = $this->csvColumns($rows);
+            fputcsv($handle, $columns);
+            foreach ($rows as $row) {
+                fputcsv($handle, $this->csvValues($row, $columns));
+            }
+            rewind($handle);
+            $digest = hash_init('sha256');
+            hash_update_stream($digest, $handle);
+
+            return hash_final($digest);
+        } finally {
+            fclose($handle);
+        }
+    }
+
     /**
      * Audit and mark the exact historical streams being frozen. Provider
      * identity is part of the training-store key; the resulting receipt is
      * additionally bound to each stream's content hash by the caller.
      *
-     * @param array<string,array<int,array<string,mixed>>> $streams
+     * @param  array<string,array<int,array<string,mixed>>>  $streams
      * @return array{streams: array<string,array<int,array<string,mixed>>>, provenance: array<string,mixed>}
      */
     private function attestHistoricalVolumeStreams(array $streams, string $provider): array

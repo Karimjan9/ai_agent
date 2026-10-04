@@ -11,6 +11,10 @@ class TradeManagementLibraryService
     public function library(): array
     {
         return [
+            'parameter_preserving_research' => ['entry' => ['single_confirmation_entry' => 1],
+                'profit' => ['owner' => 'sealed_runtime_parameters'],
+                'stop' => ['owner' => 'sealed_runtime_parameters'],
+                'exit' => ['owner' => 'sealed_runtime_parameters'], 'research_only' => true],
             'balanced_professional' => ['entry' => ['confirmation_entry' => .5, 'retest_confirmation_add' => .3, 'structure_confirmation_add' => .2], 'profit' => ['tp_ladder_r' => [['r' => 1, 'close_fraction' => .4], ['r' => 2, 'close_fraction' => .3]], 'runner_fraction' => .3], 'stop' => ['breakeven_after' => 'tp1_or_structure', 'trail' => 'atr_or_structure'], 'exit' => ['time_stop' => true, 'news_exit' => true]],
             'range_fixed_target' => ['entry' => ['single_confirmation_entry' => 1], 'profit' => ['fixed_target_r' => 1.25, 'close_fraction' => 1], 'stop' => ['breakeven_after' => 'none'], 'exit' => ['time_stop' => true, 'session_exit' => true]],
             'structure_runner' => ['profit' => ['tp_ladder_r' => [['r' => 1, 'close_fraction' => .25]], 'runner_fraction' => .75], 'stop' => ['breakeven_after' => 'confirmed_m5_structure', 'trail' => 'm5_then_m15_structure'], 'exit' => ['time_stop' => true, 'cost_aware_exit' => true]],
@@ -42,6 +46,21 @@ class TradeManagementLibraryService
      */
     public function runtimeAdapter(string $profile): ?array
     {
+        if ($profile === 'parameter_preserving_research') {
+            return [
+                'protocol' => 'trade_management_runtime_adapter_v1',
+                'profile' => $profile,
+                'unit' => 'sealed_runtime_parameters',
+                'engine' => 'parameter_preserving_replay_v1',
+                'implementation_status' => 'existing_parameter_owned_position_lifecycle',
+                'parameter_owners' => ['atr_stop_multiplier', 'atr_target_multiplier',
+                    'partial_take_profit_fraction', 'partial_target_atr_multiplier',
+                    'trailing_atr_multiplier', 'time_stop_candles'],
+                'overrides' => [],
+                'paper_execution_authority' => false,
+                'promotion_evidence' => false,
+            ];
+        }
         $spec = match ($profile) {
             'balanced_professional' => [
                 'partial_close_fraction' => .4, 'partial_target_r' => 1.0,
@@ -84,6 +103,10 @@ class TradeManagementLibraryService
             'profile' => $profile,
             'unit' => 'initial_risk_and_replay_candles',
             'engine' => 'single_partial_runner_v1',
+            'implementation_status' => 'simplified_profile_adapter',
+            'implemented_features' => ['single_entry', 'single_partial_close', 'fixed_R_target', 'ATR_trailing', 'time_stop'],
+            'not_implemented_by_this_adapter' => ['winner_pyramiding', 'multi_leg_entry', 'multi_rung_profit_ladder',
+                'structure_timeframe_escalation', 'observed_news_exit', 'measured_move_or_liquidity_target'],
             ...$spec,
             'paper_execution_authority' => false,
             'promotion_evidence' => false,

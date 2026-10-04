@@ -69,6 +69,12 @@ class LearningLaneService
         $candidateExecutionHash = $this->executionHashOf($map);
         $controlDataHash = (string) data_get($control, 'data_hash', '');
         $controlExecutionHash = (string) data_get($control, 'execution_hash', '');
+        // Freeze the authorized candidate dataset even if its exact control
+        // finishes later. Credit still waits for verified matching control.
+        $instrumentWindowReceipt = $candidateDataHash !== ''
+            ? app(InstrumentResearchWindowService::class)->sealForDataset(
+                $candidateDataHash, (array) data_get($result, 'data_manifest', []),
+            ) : null;
         $sameGeneration = $controlVerified
             && (int) data_get($control, 'generation_id', 0) === (int) $agent->lab_generation_id;
         $pairIntegrityStatus = $controlVerified && $sameGeneration
@@ -116,7 +122,7 @@ class LearningLaneService
             $map->id,
             $target,
             $this->snapshotHashOf($map) ?: data_get($result, 'data_manifest.sha256', data_get($result, 'data_manifest.snapshot_sha256')),
-            $this->windowKey($result),
+            $instrumentWindowReceipt['window_key'] ?? $this->windowKey($result),
         ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
         $baselineSource = (string) data_get($control, 'source', 'missing');
         $pair = LabLearningLanePair::query()
@@ -149,7 +155,7 @@ class LearningLaneService
                     'control_execution_hash' => $controlVerified && $controlExecutionHash !== '' ? $controlExecutionHash : null,
                     'pair_integrity_status' => $pairIntegrityStatus,
                     'same_generation' => $sameGeneration,
-                    'independent_window_key' => $this->windowKey($result),
+                    'independent_window_key' => $instrumentWindowReceipt['window_key'] ?? $this->windowKey($result),
                     'candidate_metrics' => $candidateMetrics,
                     'control_metrics' => $controlMetrics,
                     'target_delta' => $targetDelta,
@@ -168,6 +174,7 @@ class LearningLaneService
                         'same_generation' => $sameGeneration,
                         'baseline_is_diagnostic_only' => ! $controlVerified,
                         'causal_skill_compiler' => $causalSkill,
+                        'instrument_research_window_receipt' => $instrumentWindowReceipt,
                         'promotion_evidence' => false,
                     ],
                 ],
@@ -191,6 +198,7 @@ class LearningLaneService
                 'control_agent_id' => $controlVerified ? data_get($control, 'agent_id') : null,
                 'control_response_map_id' => $controlVerified ? data_get($control, 'map_id') : null,
                 'control_evidence_run_id' => $controlVerified ? data_get($control, 'evidence_run_id') : null,
+                'independent_window_key' => $pair->independent_window_key ?: $this->windowKey($result),
                 'candidate_data_hash' => $candidateDataHash !== '' ? $candidateDataHash : null,
                 'control_data_hash' => $controlVerified && $controlDataHash !== '' ? $controlDataHash : null,
                 'candidate_execution_hash' => $candidateExecutionHash !== '' ? $candidateExecutionHash : null,
@@ -212,6 +220,9 @@ class LearningLaneService
                     'same_generation' => $sameGeneration,
                     'baseline_is_diagnostic_only' => ! $controlVerified,
                     'causal_skill_compiler' => $causalSkill,
+                    // A later projection cannot retrofit a new research
+                    // authorization onto an already-created pair.
+                    'instrument_research_window_receipt' => data_get($pair->metadata, 'instrument_research_window_receipt'),
                     'promotion_evidence' => false,
                 ],
             ]);

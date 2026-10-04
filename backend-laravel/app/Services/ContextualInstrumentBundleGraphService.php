@@ -21,6 +21,10 @@ class ContextualInstrumentBundleGraphService
      */
     public function record(CooperativeExperimentSettlement $settlement, Collection $agents, array $effects): array
     {
+        if (in_array((string) $settlement->block_type, ['activation_factorial', 'phase_scope_probe'], true)) {
+            return ['protocol' => self::PROTOCOL, 'status' => 'activation_discovery_no_economic_attribution',
+                'recorded' => 0, 'promotion_evidence' => false];
+        }
         if (! $settlement->evidence_complete || ! Schema::hasTable('contextual_instrument_bundle_effects')) {
             return ['protocol' => self::PROTOCOL, 'status' => 'incomplete_or_migration_pending', 'recorded' => 0,
                 'promotion_evidence' => false];
@@ -47,6 +51,14 @@ class ContextualInstrumentBundleGraphService
         $rows = [];
 
         if ((string) $settlement->block_type === 'factorial') {
+            $contrast = $this->controlledEffects((array) $settlement->arm_results);
+            if ($contrast['status'] !== 'controlled_contrast') {
+                return ['protocol' => self::PROTOCOL, 'status' => $contrast['status'],
+                    'recorded' => 0, 'promotion_evidence' => false];
+            }
+            // Recompute from four sealed arm observations, never trust a
+            // caller-supplied marginal/interaction summary as proof.
+            $effects = $contrast['effects'];
             $control = (array) $bundles->get('control', []);
             $aBundle = (array) $bundles->get('a_only', []);
             $bBundle = (array) $bundles->get('b_only', []);
@@ -87,6 +99,12 @@ class ContextualInstrumentBundleGraphService
             foreach ($rows as &$row) {
                 $row['evidence']['bundle_only_candidate'] = $bundleOnly;
                 $row['evidence']['individual_credit_suppressed'] = $bundleOnly && $row['effect_type'] === 'standalone_marginal';
+                $row['evidence']['interaction_interpretation'] = $interaction > 0 ? 'reinforcing'
+                    : ($interaction < 0 ? 'interfering' : 'additive');
+                $row['evidence']['removal_interpretation'] = $row['leave_one_out_effect'] === null ? null
+                    : ($row['leave_one_out_effect'] > 0 ? 'incremental_contribution' : 'redundant_or_harmful_in_bundle');
+                $row['evidence']['controlled_arm_receipt_digest'] = $contrast['receipt_digest'];
+                $row['evidence']['independent_confirmation_required'] = true;
             }
             unset($row);
         } else {
@@ -141,6 +159,33 @@ class ContextualInstrumentBundleGraphService
         return ['protocol' => self::PROTOCOL, 'status' => 'research_effects_recorded',
             'recorded' => count($persisted), 'effect_ids' => $persisted,
             'authority_level' => 'research_only', 'promotion_evidence' => false];
+    }
+
+    /** Main, interaction and removal effects require the same sealed experiment universe. */
+    public function controlledEffects(array $arms): array
+    {
+        $required = ['control', 'a_only', 'b_only', 'a_plus_b'];
+        $rows = collect($required)->map(fn (string $arm): array => (array) ($arms[$arm] ?? []));
+        $valid = $rows->every(fn (array $row): bool => ($row['evidence_status'] ?? '') === 'eligible'
+            && filled($row['evidence_run_id'] ?? null)
+            && is_numeric($row['after_cost_value'] ?? null) && is_finite((float) $row['after_cost_value']));
+        foreach (['data_hash', 'execution_hash', 'mtf_bundle_hash', 'context_cell_key', 'session_instance_id'] as $key) {
+            $values = $rows->pluck($key);
+            $valid = $valid && $values->filter(fn ($value): bool => is_string($value) && $value !== '')->count() === 4
+                && $values->unique()->count() === 1;
+            if (str_ends_with($key, '_hash')) $valid = $valid && strlen((string) $values->first()) === 64;
+        }
+        $valid = $valid && $rows->pluck('lab_agent_id')->filter()->unique()->count() === 4
+            && $rows->pluck('evidence_run_id')->unique()->count() === 4;
+        if (! $valid) return ['status' => 'factorial_controlled_evidence_incomplete', 'effects' => [], 'promotion_evidence' => false];
+        $v = fn (string $arm): float => (float) $arms[$arm]['after_cost_value'];
+        return ['status' => 'controlled_contrast', 'effects' => [
+            'component_a_marginal_effect' => round($v('a_only') - $v('control'), 6),
+            'component_b_marginal_effect' => round($v('b_only') - $v('control'), 6),
+            'interaction_effect' => round($v('a_plus_b') - $v('a_only') - $v('b_only') + $v('control'), 6),
+            'whole_capsule_effect' => round($v('a_plus_b') - $v('control'), 6)],
+            'receipt_digest' => hash('sha256', json_encode($rows->all(), JSON_UNESCAPED_SLASHES)),
+            'independent_confirmation_required' => true, 'promotion_evidence' => false];
     }
 
     /** @return array<int,string> */

@@ -13,6 +13,8 @@ from app.services.backtester import (
     _instrument_owner_scope_allows,
     _instrument_runtime_report,
     _instrument_runtime_state,
+    _record_instrument_runtime_event,
+    _robustness_matrix,
     _management_evidence_report,
     _proof_carrying_replay,
     _record_strategy_instrument_events,
@@ -104,6 +106,40 @@ def differential_identity_strategy(
 
 
 class BacktesterExecutionRegressionTest(unittest.TestCase):
+    def test_instrument_evidence_keeps_exact_venue_phase(self) -> None:
+        assignment = self.instrument_assignment(["trend_pullback"])
+        state = _instrument_runtime_state(assignment)
+        candle = pd.Series(
+            {
+                "time": "2026-01-05T10:31:00Z",
+                "market_regime": "trend_up",
+                "volatility_regime": "normal_volatility",
+            }
+        )
+        _record_instrument_runtime_event(
+            state, "trend_pullback", candle, "BUY", "strategy_signal"
+        )
+        observation = _instrument_runtime_report(state)["instruments"]["trend_pullback"]
+        self.assertIn(
+            "trend_up|normal_volatility|london|london_am_fix|BUY",
+            observation["activated_exact_context_keys"],
+        )
+
+        trades = [
+            SimpleTrade(
+                direction="BUY", entry_time=time, exit_time="2026-01-05T12:00:00Z",
+                entry_price=100, exit_price=101, result="WIN", profit_percent=1,
+                balance=10100, market_regime="trend_up",
+                volatility_regime="normal_volatility",
+            )
+            for time in ["2026-01-05T10:31:00Z", "2026-01-05T11:00:00Z"]
+        ]
+        exact = _robustness_matrix(trades)["instrument_context_envelopes"]
+        self.assertEqual(2, len(exact))
+        self.assertIn(
+            "trend_up|normal_volatility|london|london_am_fix|BUY", exact
+        )
+
     def test_laravel_normal_volatility_scope_matches_runtime_label(self) -> None:
         contract = {
             "protocol": "instrument_runtime_activation_contract_v1",

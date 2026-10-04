@@ -89,8 +89,12 @@ def prepare_closed_mtf_context(
 
     if "D1" in supplied and not supplied["D1"].empty:
         d1 = _prepare_stream(supplied["D1"], "D1", parameters)
-        if not d1.empty:
-            prepared["D1"] = d1
+        if d1.empty:
+            return PreparedClosedMtfContext(
+                status="incomplete", reason="invalid_d1_stream",
+                supplied_timeframes=tuple(sorted(supplied)), prepared={}, missing=("D1",),
+            )
+        prepared["D1"] = d1
 
     related_m15 = None
     related = {
@@ -100,8 +104,12 @@ def prepare_closed_mtf_context(
     }
     if "M15" in related and not related["M15"].empty:
         candidate = _prepare_stream(related["M15"], "M15", parameters)
-        if not candidate.empty:
-            related_m15 = _m15_trap_state(candidate)
+        if candidate.empty:
+            return PreparedClosedMtfContext(
+                status="incomplete", reason="invalid_related_m15_stream",
+                supplied_timeframes=tuple(sorted(supplied)), prepared={}, missing=("RELATED_M15",),
+            )
+        related_m15 = _m15_trap_state(candidate)
 
     return PreparedClosedMtfContext(
         status="ready",
@@ -203,8 +211,17 @@ def _prepare_stream(frame: pd.DataFrame, timeframe: str, parameters: dict[str, A
         if column not in out:
             out[column] = 0.0
         out[column] = pd.to_numeric(out[column], errors="coerce")
+    if out[required].isna().any().any() or out["time"].duplicated().any():
+        return pd.DataFrame()
+    if not out["time"].is_monotonic_increasing:
+        return pd.DataFrame()
+    prices = out[["open", "high", "low", "close"]]
+    if not np.isfinite(prices.to_numpy()).all() or not prices.gt(0).all().all():
+        return pd.DataFrame()
     out["volume"] = out["volume"].fillna(0.0)
-    out = out.dropna(subset=required).sort_values("time").drop_duplicates("time", keep="last").reset_index(drop=True)
+    if not np.isfinite(out["volume"].to_numpy()).all():
+        return pd.DataFrame()
+    out = out.reset_index(drop=True)
     if len(out) < 2:
         return pd.DataFrame()
     valid_geometry = (

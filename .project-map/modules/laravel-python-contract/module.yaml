@@ -11,6 +11,8 @@ aliases:
 paths:
   - backend-laravel/app/Services/LabAgentEvaluationService.php
   - backend-laravel/app/Services/ExecutionContractService.php
+  - backend-laravel/app/Services/ResearchReleaseSealService.php
+  - backend-laravel/app/Services/InstrumentResearchWindowService.php
   - backend-laravel/app/Services/ConfirmationEntryContractService.php
   - backend-laravel/app/Services/MultiTimeframePilotService.php
   - backend-laravel/app/Services/MultiTimeframeSnapshotService.php
@@ -18,11 +20,16 @@ paths:
   - ai-service-python/app/schemas.py
   - ai-service-python/app/routers
   - ai-service-python/app/services/execution_contract.py
+  - ai-service-python/app/services/research_release.py
+  - ai-service-python/app/services/market_sessions.py
   - ai-service-python/app/services/composition_runtime.py
   - ai-service-python/app/services/market_adaptive_replay.py
   - ai-service-python/app/services/multitimeframe.py
   - ai-service-python/app/services/backtester.py
   - ai-service-python/app/services/volume_features.py
+  - ai-service-python/app/services/historical_quotes.py
+  - ai-service-python/app/services/prospective_probe_window.py
+  - backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php
   - docs/ai-service-contract.md
 entry_points:
   - ExecutionContractService
@@ -35,9 +42,18 @@ data_tables:
   - paper_signals
 dependencies:
 invariants:
+  - Only an original completed server-authorized post-paper window can receive authorized_research_transport_v1 for full replay. The deterministic HMAC binds the persisted release and all actual CSV paths/hashes/UTC rows before cache reuse; literal 2026 stays forbidden. Transport admission is not independent evidence or credit.
+  - File-sealed MTF replay forbids inline primary/context/related replacements before cache or execution; hashes attest the same parsed bytes and actual consumed rows, including after strategy feature computation and cache reuse.
+  - Stage proof emits replay_decision_identity_v2 with semantic direction, geometry and entry-linked exit/outcome hashes; consumed_dependency_identity_v1 seals actual context-stream sources and as-of joins. Equal totals or candle membership do not prove unchanged behavior; old/missing receipts are unassessable, not scientific no-effect.
+  - Gap clocks and causal volume buckets use the actual execution timeframe. Missing/NaN quote rows remain unknown, and malformed required or optional HTF streams cannot be silently cleaned into evidence.
+  - Prospective research pins source, loaded worker, dataset and economic parameters before queue admission; Laravel and Python validate the aggregate release and request dataset/cost identity, Python API/cache and child execution attest the boot source, and Laravel requires the returned receipt. Attempted legacy generations are never backfilled.
+  - Upstream strategy opportunities survive specialist veto in emitted receipts; missing measured liquidity is distinct from no signal and modeled execution spread never replaces an observation.
+  - A prospective instrument research trace keeps exact venue-phase activation keys and trade-ledger slices together; Laravel cannot substitute broad session envelopes for phase-local posterior evidence.
   - Laravel and Python must agree on required protocol and sealed identity fields.
   - HTTP success alone is never evidence attestation.
   - A mismatched hash fails at the owning boundary.
+  - Prospective screens verify exact warmup/evaluation rows, UTC bounds, month counts and data/execution identities before replay and before learning; a legacy short replay cannot satisfy the new evaluator receipt.
+  - The sealed 15k probe receives its own finite child deadline below the Laravel batch transport and queue lease; generic differential screens retain their shorter deadline. A technical timeout cannot stand in for a replay receipt.
   - A declared composition must bind strategy, tactic, risk and management before replay starts.
   - One composition execution authority must also bind symbol, execution timeframe, dataset or MTF bundle, execution assumptions and the exact instrument assignment.
   - Instrument assignment source strategy, tactic, risk and management must equal the frozen passport, even if a stale assignment is internally hash-valid.
@@ -47,6 +63,7 @@ invariants:
   - Legacy typed-program protocols cannot silently execute under a changed graph.
   - XAUUSD H1 is a laboratory storage identity; autonomous replay executes on M5 with one frozen H4/H1/M15 context bundle.
   - Historical volume context must come from the exact replay snapshot provenance, never from rolling/live coverage.
+  - An optional synchronized quote sidecar is admitted before freezing a new M5 bundle and changes its content/release identity; unavailable quotes remain unknown and never borrow modeled execution spread.
   - volume_lane=none crosses the boundary as not_requested and non-blocking.
 flows:
   - flows/contract-attestation.md
@@ -55,6 +72,15 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_sealed_dataset_identity.py
+  - ai-service-python/tests/test_market_adaptive_replay.py
+  - backend-laravel/tests/Feature/EvolutionAuditRegressionTest.php
+  - ai-service-python/tests/test_research_release.py
+  - ai-service-python/tests/test_authorized_research_transport.py
+  - ai-service-python/tests/support/authorized_research_transport_fixture.py
+  - backend-laravel/tests/Feature/AuthorizedResearchTransportTest.php
+  - backend-laravel/tests/Feature/OriginalModelRuntimeIdentityTest.php
+  - ai-service-python/tests/test_market_sessions.py
   - backend-laravel/tests/Feature/MtfPilotContractTest.php
   - backend-laravel/tests/Unit/PaperConfirmationEntryTransportTest.php
   - backend-laravel/tests/Unit/ConfirmationEntryContractServiceTest.php
@@ -65,3 +91,7 @@ tests:
   - ai-service-python/tests/test_multitimeframe.py
   - ai-service-python/tests/test_volume_features.py
   - backend-laravel/tests/Feature/HistoricalVolumeReplayContractTest.php
+  - backend-laravel/tests/Feature/HistoricalQuoteSpreadTest.php
+  - ai-service-python/tests/test_historical_quotes.py
+  - ai-service-python/tests/test_prospective_probe_window.py
+  - backend-laravel/tests/Feature/ProspectiveRepairProbeWindowTest.php

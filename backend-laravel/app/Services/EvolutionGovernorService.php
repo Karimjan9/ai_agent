@@ -51,9 +51,11 @@ class EvolutionGovernorService
      */
     public function generationSnapshot(AiLaboratory $lab, array $plan = []): array
     {
-        $lookback = max(1, (int) config('services.lab_selection.governor_lookback_generations', 3));
+        // N adjacent no-improvement comparisons require N+1 generations.
+        $stagnationThreshold = max(1, (int) config('services.lab_selection.governor_stagnation_generations', 3));
+        $lookback = max($stagnationThreshold + 1, (int) config('services.lab_selection.governor_lookback_generations', 3));
         $generations = $lab->generations()
-            ->whereIn('status', ['screened', 'completed', 'technical_quarantine', 'abandoned', 'failed'])
+            ->whereIn('status', ['screened', 'completed'])
             ->latest('generation')
             ->limit($lookback)
             ->get();
@@ -73,7 +75,7 @@ class EvolutionGovernorService
                 ->values();
 
             return $values->isEmpty() ? null : round((float) $values->avg(), 4);
-        })->filter(fn ($value): bool => $value !== null)->values();
+        })->values();
 
         $diversity = $this->diversityScore($agents);
         $stagnation = $this->stagnationGenerations($generationScores);
@@ -86,7 +88,6 @@ class EvolutionGovernorService
         $velocity = $this->velocity->snapshot($lab, max(3, $lookback));
         $operatingSystem = app(EvolutionOperatingSystemService::class)->blueprint($lab);
         $collapseThreshold = (float) config('services.lab_selection.governor_diversity_collapse_threshold', .35);
-        $stagnationThreshold = max(1, (int) config('services.lab_selection.governor_stagnation_generations', 3));
         $exploration = .20;
         if ($generations->isEmpty()) $exploration += .15;
         if ($diversity <= $collapseThreshold) $exploration += .30;
@@ -835,6 +836,9 @@ class EvolutionGovernorService
         $values = $scores->values()->all();
         $stagnation = 0;
         for ($index = 0; $index < count($values) - 1; $index++) {
+            // Missing evidence is not a scientific no-improvement result and
+            // must not bridge two non-adjacent score observations.
+            if (! is_numeric($values[$index]) || ! is_numeric($values[$index + 1])) break;
             if ((float) $values[$index] <= (float) $values[$index + 1] + .25) $stagnation++;
             else break;
         }
@@ -843,6 +847,7 @@ class EvolutionGovernorService
 
     private function progressScore(Collection $scores): float
     {
+        $scores = $scores->filter(fn ($value): bool => is_numeric($value))->values();
         if ($scores->isEmpty()) return .5;
         if ($scores->count() === 1) return .5;
         $newest = (float) $scores->first();

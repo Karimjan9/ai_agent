@@ -1,0 +1,147 @@
+# Autonomous research run
+
+`ai:start` enables the durable XAUUSD research lineage. The scheduler invokes
+`trading:run-research-loop` every minute; only the arbiter selects new research
+actions. The Windows logon task `NeuroTrader Autonomous Runtime` keeps the
+runtime available. It checks `ai:runtime-gate` before restoring missing
+processes, and the launcher is duplicate-safe. If PM2 already owns project
+workers, the fallback does not create a second queue consumer while PM2
+recycles a lane.
+
+Use `php artisan ai:pause --json` for an intentional break. PAUSE is a graceful
+admission fence: it preserves the active generation and checkpoints and stops
+new arbiter/scheduler research actions. A child already executing can finish
+its bounded attempt. While such a child is still observed, status is
+`pausing`; it becomes `paused` after the bounded child leaves. Do not interpret
+that completion as a pause failure.
+While paused, a fresh Windows logon does not start missing runtime processes.
+`php artisan ai:status --json` shows the persisted control and current
+generation. `php artisan ai:resume --json` restores admission for **that same
+generation**; it does not create a generation directly. `ai:stop` is different:
+it terminates new research admission and lets admitted work drain.
+
+After restart or resume, inspect `ai:status --json`, then
+`trading:run-research-loop --dry-run --json`. The arbiter should first settle
+the active generation. A completed lifecycle command alone is not proof of
+progress: verify the generation state, queue watermark and latest arbiter
+decision. For an unchanged settlement state, at most two spaced retries are
+allowed; `UNCHANGED_GENERATION_AFTER_BOUNDED_SETTLEMENT_RETRIES` persists a
+`safety_halt`, not a scientific verdict. Diagnose its terminal boundary rather
+than manually changing agent status or rewriting immutable evidence. After
+repair, an explicit `ai:start` acknowledges and clears the halt; `ai:resume`
+cannot clear it.
+
+## Archive-first research before champion
+
+`XAUUSD_HISTORICAL_RESEARCH_UNTIL_CHAMPION=true` (default) lets the existing
+arbiter open `historical_research` after current work and higher-priority ready
+learning/recovery have settled. The constructor validates the real pre-2026
+foundation and does not require new live H1 bars. Admitted learning-confirmation
+work uses the same archive readiness. Both dispatchers retain frozen dataset,
+MTF, control, loaded-source and risk gates; only live-feed continuity is no
+longer a prerequisite of this historical lane.
+
+Inspect `trading:run-research-loop --dry-run --json` for
+`OPEN_HISTORICAL_RESEARCH_GENERATION` and its archive dependency. A changed
+archive watermark allows reselection after data repair, not a timer-only retry.
+Missing data remains a dependency. A technically complete zero-pass report
+still records its required lifecycle-owned audit before successor construction.
+
+The admission seals `historical_research_admission`: archive hash/manifest,
+cutoff `2026-01-01T00:00:00Z`, research-only status and no-independent-evidence
+claim. Prequeue admission rechecks the frozen foundation hash and all four
+research stream periods. Live candle counts remain separate bookkeeping, so a
+later live drift lane is not compared against a historical row count.
+
+Only a valid, non-invalidated champion ends this archive-first root policy.
+This does not create a champion or relax E3 paper/E4 champion admission. The
+2026 snapshot remains paper-only; reused archive data is not new independent
+causal evidence. Scientific negative results continue bounded discovery,
+while real technical/safety failures still require their normal recovery or
+terminal disposition. Use PAUSE/STOP to end or suspend the autonomous search.
+
+## Safe source deployment
+
+Before champion, standalone MTF/portfolio maintenance timers do not own
+exploration. Only an actually eligible powered MTF prior can precede the
+archive-root writer; its immutable source ID participates in deduplication.
+The historical cohort still contains MTF/instrument experiments. Current work,
+technical recovery and ready causal follow-ups retain their higher priority.
+
+Pause admission, verify bounded replay children have drained, then gracefully
+recycle Laravel queues with `php artisan queue:restart` and restart the idle
+Python owner through the existing supervisor/PM2 topology. Never kill an active
+replay just to apply source changes. Verify `/health.research_source` reports
+`loaded_code_current=true`, then `ai:resume --json` continues the same lineage.
+The next unattempted generation seals its source/data/cost release before
+queueing; source drift afterwards rejects admission. Old attempted generations
+remain legacy-unsealed, not backfilled into clean proofs.
+
+`php backend-laravel/scripts/audit-research-release.php --generation=N --strict`
+checks Git artifact sealing and actual prospective PHP/Python run receipts
+separately. Healthy source fingerprints are not a clean Git release or market
+edge. Do not relabel historical receipts to make the audit pass.
+
+After source/tests are final and admitted work is drained, explicitly build the
+allowlisted reproducible source snapshot before the next new generation seal:
+
+```powershell
+php backend-laravel/scripts/audit-research-release.php --build-source-artifact
+php backend-laravel/scripts/audit-research-release.php --verify-source-artifact=HASH
+```
+
+The build writes only `.runtime/research-source-artifacts/`; it does not write
+DB rows, commit/push Git, reload workers or grant scientific/paper authority.
+It excludes `.env`, credentials, data/storage, vendor and node_modules. Its
+manifest binds actual file hashes, the exact full/Python source fingerprints,
+Git HEAD/dirty provenance and selected non-secret settings/tool versions.
+Matching fresh release seals reference it; old seals remain unchanged. Missing
+archive evidence makes the strict generation audit incomplete even if workers
+are attested. A dirty source archive can be reproducible without a clean Git
+commit; follow the ordinary loaded-worker reload verification separately.
+
+## Diagnose activation and independent-data dependencies
+
+`python backend-laravel/scripts/diagnose-signal-boundary.py --help` describes
+the read-only reconstruction of one frozen screening request. Its current-code
+diagnostic is explicitly non-canonical and writes no credit. Inspect raw,
+specialist-accepted and composition-accepted signals separately, plus exact
+scope veto counts. Execution spread assumptions cannot replace missing observed
+spread in liquidity predicates.
+
+Monitoring and generation reports expose independent research-data readiness.
+An empty authorized list or a future interval is
+`awaiting_authorized_research_data`, not executable validation. Preserve the
+2026 paper-only boundary. A reserved future question is not an independent
+dataset; no manual credit or new-window relabeling is a recovery step.
+
+## Immutable historical data dependencies
+
+An original sealed `Historical data hard-gate failed: N unexpected candle gaps.`
+refusal is a provider-data dependency, not a scientific strategy loss or a reason
+to repeat identical bytes. Snapshot admission and the early arbiter share that
+native failure guard. Fresh construction waits as `WAIT_DATASET_CONTINUITY`;
+changing only source, generation or bundle labels cannot bypass it.
+
+Use the explicit offline `backend-laravel/scripts/recover-frozen-m5-gap.php`
+operation with exact frozen `--source` and `--source-sha256`. Dry-run is default.
+Only agreeing real Dukascopy M5/M1/raw-tick observations may create missing M5
+buckets; no synthetic empty minute is allowed. `--apply` creates a separate
+content-addressed training fork, never changes the old CSV, training archive or
+generation. Read full-archive and selected-screening gap counts separately.
+`--batch` computes the actual canonical missing inventory (maximum 300 targets),
+groups native day/hour requests and imports one fork. Collection is bounded to
+1,800 seconds; unavailable, empty-tick or conflicting observations retain an
+explicit residual dependency. Any residual full-archive gap blocks generic
+MTF/full-fold readiness even if the latest 5,000-candle screen is clean.
+
+Select a verified prospective dataset through `LAB_RESEARCH_M5_DATASET` only
+while admission is paused and replay drained. The existing MTF data owner checks
+native receipt, original/new hashes and actual stored economic-row digest.
+Freeze new price-only MTF input first, use the existing bounded historical tick
+quote freezer for those exact new M5 bytes, then freeze the quoted bundle.
+Old quote evidence cannot be relabeled for a different price hash. Build and
+verify the source archive, reload idle workers, verify actual boot identity,
+then resume the existing lineage through the canonical arbiter. A new dataset
+does not reopen the exhausted old Academy question or provide independent
+validation, credit, paper or live authority.

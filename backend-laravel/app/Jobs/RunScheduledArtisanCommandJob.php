@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\ResearchLoopDecision;
+use App\Services\AutonomousModeService;
 use App\Services\CanonicalResearchLanePriorityService;
 use App\Services\GenerationAutonomyReceiptService;
 use App\Services\ScheduledArtisanProcessRunnerService;
@@ -51,6 +52,7 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
             'trading:process-canonical-learning-outbox',
             'trading:reconcile-screening-learning-projections',
             'trading:reconcile-cooperative-settlements',
+            'trading:reconcile-instrument-pairs',
             'trading:recover-lab-replay-mutex',
             'trading:promote-lab-frontier',
             'trading:dispatch-mtf-powered-prior-validation',
@@ -60,11 +62,13 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
             'trading:consume-research-work',
             'trading:process-targeted-generations',
             'trading:lab-generation',
+            'trading:admit-academy-experiment',
             'trading:advance-learning-progress',
             'trading:run-lifecycle-cycle',
             'trading:dispatch-lab',
             'trading:dispatch-controlled-targeted-rescue',
             'trading:dispatch-full-validation',
+            'trading:admit-academy-experiment',
         ];
         $research = [
             'market-data:backfill-intraday-shadow',
@@ -178,6 +182,17 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
 
             return;
         }
+        // A queued child from before PAUSE must not start a new bounded
+        // research action after the operator has paused the lineage. The
+        // decision closes as deferred; RESUME changes the durable control
+        // revision and allows the arbiter to select the same work again.
+        if (in_array($this->lane, ['scheduler-constructor', 'scheduler-research'], true)
+            && in_array((string) data_get(app(AutonomousModeService::class)->status('XAUUSD', 'H1'), 'state'), ['pausing', 'paused', 'safety_halt'], true)) {
+            Cache::put($key, $this->status('deferred', $started, 'Research run paused or safety-halted; no child command executed.'), now()->addDay());
+            $this->transitionResearchLoopDecision('deferred');
+
+            return;
+        }
         Cache::put($key, $this->status('running', $started), now()->addDay());
         $this->transitionResearchLoopDecision('running');
 
@@ -197,6 +212,7 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
                     'trading:dispatch-portfolio-member-replay',
                     'trading:validate-elite-portfolios',
                     'trading:run-lifecycle-cycle',
+                    'trading:admit-academy-experiment',
                 ], true) || ($this->command === 'trading:advance-learning-progress'
                     && (bool) ($this->arguments['--arbiter-authorized'] ?? false));
                 if (($ownership['owned'] ?? false) === true && ! $arbiterOwned) {
@@ -219,17 +235,21 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
                     return;
                 }
             }
+            $executionArguments = $this->arguments;
+            if ($this->command === 'trading:admit-academy-experiment') {
+                $executionArguments['--research-loop-decision'] = (int) $this->researchLoopDecisionId;
+            }
             if (app()->runningUnitTests()) {
                 // Unit/feature tests may use an in-memory database and mock
                 // Artisan. Production commands must run as bounded children:
                 // PHP on Windows has no pcntl alarm, so queue --timeout alone
                 // cannot interrupt an in-process CPU loop.
-                $exitCode = Artisan::call($this->command, $this->arguments);
+                $exitCode = Artisan::call($this->command, $executionArguments);
                 $output = trim(Artisan::output());
             } else {
                 $execution = $processRunner->run(
                     $this->command,
-                    $this->arguments,
+                    $executionArguments,
                     max(30, $this->timeout - 30),
                 );
                 $exitCode = $execution['exit_code'];
@@ -340,7 +360,7 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
         }
         $decision = ResearchLoopDecision::query()->find($this->researchLoopDecisionId);
 
-        return ! $decision || in_array((string) $decision->status, ['completed', 'deferred', 'failed'], true);
+        return ! $decision || in_array((string) $decision->status, ['completed', 'deferred', 'failed', 'publication_failed'], true);
     }
 
     private function canonicalArguments(): string

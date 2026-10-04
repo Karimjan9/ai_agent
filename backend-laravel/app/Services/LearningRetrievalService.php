@@ -153,11 +153,12 @@ class LearningRetrievalService
             && ($settlement->evidence_state === 'negative' || $settlement->hard_failure)
         )->pluck('source_id')->unique()->values();
         $ranked = $rows->map(function (AgentLearningLesson $lesson) use ($canonicalContext, $verifiedPairIds, $positivePairIds, $negativePairIds): array {
-            $fields = ['regime', 'volatility', 'session', 'transition_state', 'spread_liquidity_state', 'volume_state', 'direction', 'state_cluster_id'];
+            $fields = ['regime', 'volatility', 'session', 'venue_phase', 'transition_state', 'spread_liquidity_state', 'volume_state', 'direction', 'state_cluster_id'];
             $lessonContext = $this->contexts->canonicalAxes([
                 'regime' => $lesson->regime,
                 'volatility' => $lesson->volatility,
                 'session' => data_get($lesson->evidence, 'failure_signature.state.session', data_get($lesson->evidence, 'context.session')),
+                'venue_phase' => data_get($lesson->evidence, 'context.venue_phase'),
                 'transition_state' => $lesson->transition_state,
                 'spread_liquidity_state' => $lesson->spread_liquidity_state,
                 'volume_state' => data_get($lesson->evidence, 'failure_signature.state.volume_state', data_get($lesson->evidence, 'context.volume_state')),
@@ -202,12 +203,16 @@ class LearningRetrievalService
                 continue;
             }
             $record = AgentLearningRetrieval::query()->create(['retrieval_id' => (string) Str::uuid(), 'packet_id' => $packetId, 'episode_id' => $episodeId, 'agent_learning_lesson_id' => $lesson->id, 'lab_agent_id' => $agent?->id, 'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'strategy_family' => $family, 'retrieval_state' => 'retrieved', 'match_level' => $row['match_level'], 'rank_score' => $row['score'], 'context' => $canonicalContext, 'metadata' => ['parameter_key' => $lesson->parameter_key, 'provenance' => $row['provenance'], 'raw_requested_context' => $context, 'retrieval_decision' => ['considered' => true, 'compatible' => true, 'accepted' => false, 'reason' => 'CONTEXT_COMPATIBLE', 'expected_uplift' => null, 'uncertainty' => null, 'outcome_settlement_id' => null], 'promotion_evidence' => false]]);
-            $payload = ['lesson_id' => $lesson->id, 'retrieval_id' => $record->retrieval_id, 'parameter_key' => $lesson->parameter_key, 'failure_class' => $lesson->failure_class, 'match_level' => $row['match_level'], 'provenance' => $row['provenance'], 'score' => $row['score']];
+            $payload = ['lesson_id' => $lesson->id, 'retrieval_id' => $record->retrieval_id, 'parameter_key' => $lesson->parameter_key, 'failure_class' => $lesson->failure_class, 'match_level' => $row['match_level'], 'provenance' => $row['provenance'], 'score' => $row['score'],
+                'mutation_constraint' => $lesson->lesson_type === 'harmful_lesson'
+                    ? app(LearningConsolidationService::class)->harmfulConstraint($lesson, $context) : null];
             $groups[$bucket][] = $payload;
             $ids[] = $lesson->parameter_key;
         }
 
-        return ['packet_id' => $packetId, 'status' => 'ok', ...$groups, 'blocked_mutations' => array_values(array_unique(array_filter(array_column($groups['harmful_lessons'], 'parameter_key')))), 'recommended_genes' => array_values(array_unique(array_filter(array_column($groups['positive_lessons'], 'parameter_key')))), 'retrieval_count' => count($groups['positive_lessons']) + count($groups['harmful_lessons']) + count($groups['uncertainty_lessons']), 'promotion_evidence' => false];
+        return ['packet_id' => $packetId, 'status' => 'ok', ...$groups, 'blocked_mutations' => [],
+            'blocked_mutation_directions' => array_values(array_filter(array_column($groups['harmful_lessons'], 'mutation_constraint'))),
+            'recommended_genes' => array_values(array_unique(array_filter(array_column($groups['positive_lessons'], 'parameter_key')))), 'retrieval_count' => count($groups['positive_lessons']) + count($groups['harmful_lessons']) + count($groups['uncertainty_lessons']), 'promotion_evidence' => false];
     }
 
     /** @return array<string, mixed> */

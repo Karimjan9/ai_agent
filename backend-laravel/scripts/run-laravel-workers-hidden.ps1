@@ -5,6 +5,20 @@ $backendRoot = Split-Path -Parent $scriptDirectory
 $phpBinary = 'C:\x_programs\xamp\php\php.exe'
 $pythonBinary = (Get-Command python.exe -ErrorAction Stop).Source
 $artisanPath = Join-Path $backendRoot 'artisan'
+$controlResult = & $phpBinary $artisanPath ai:runtime-gate --json 2>$null
+if ($LASTEXITCODE -ne 0) {
+    # Unknown durable control must never be interpreted as permission to
+    # restart a research worker after a user pause.
+    exit 1
+}
+try {
+    $runtimeGate = ($controlResult | Select-Object -Last 1 | ConvertFrom-Json)
+} catch {
+    exit 1
+}
+if (-not $runtimeGate.start_runtime) {
+    exit 0
+}
 $aiServiceScript = Join-Path $scriptDirectory 'run-ai-service.py'
 $logicalProcessorCount = [int](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).NumberOfLogicalProcessors
 $screeningWorkerCount = if ($logicalProcessorCount -le 4) { 1 } else { 2 }
@@ -35,6 +49,18 @@ if (-not $aiServiceRunning) {
 $projectProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
     $_.Name -in @('php.exe', 'php-cgi.exe') -and $_.CommandLine -like "*$artisanPath*"
 })
+
+# PM2 owns its entire configured topology when any project PHP child has the
+# local PM2 daemon as parent. Its autorestart policy must fill a temporarily
+# missing lane; launching a fallback child during a five-second PM2 recycle
+# would leave two consumers on the same queue after PM2 recovers.
+$pm2DaemonIds = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -eq 'node.exe' -and $_.CommandLine -like '*backend-laravel*node_modules*pm2*Daemon.js*'
+} | ForEach-Object { $_.ProcessId })
+$pm2OwnsProject = @($projectProcesses | Where-Object { $_.ParentProcessId -in $pm2DaemonIds }).Count -gt 0
+if ($pm2OwnsProject) {
+    exit 0
+}
 
 $specifications = @(
     @{ Name = 'scheduler'; Pattern = 'schedule:headless-work'; Instances = 1; Arguments = @('artisan', 'schedule:headless-work') },

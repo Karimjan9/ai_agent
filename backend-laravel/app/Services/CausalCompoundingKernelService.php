@@ -21,6 +21,11 @@ class CausalCompoundingKernelService
     public const PROTOCOL = 'causal_compounding_kernel_v2';
 
     public const POPULATION_SIZE = 20;
+    public const PREPARATION_PLAN = 'academy_contained_preparation_discovery_plan_v1';
+
+    // The canonical model_versions migration makes this display field a
+    // unique VARCHAR(96); immutable evidence identity remains in IDs/hashes.
+    public const MAX_MODEL_NAME_LENGTH = 96;
 
     /**
      * @return array{status:string,contract:array<string,mixed>,agents:array<int,LabAgent>,dispatches:array<int,array{agent:LabAgent,mode:string}>}
@@ -33,6 +38,7 @@ class CausalCompoundingKernelService
         string $executionHash,
         string $target = 'profit_factor',
         array $protectedGenes = [],
+        array $preregisteredPlan = [],
     ): array {
         $generation->loadMissing('agents.modelVersion');
         $primaryCount = $generation->agents->count();
@@ -54,6 +60,19 @@ class CausalCompoundingKernelService
             array_intersect(array_keys($base), array_keys(app(StrategyParameterSchemaService::class)->schema($family))),
             array_values(array_unique(array_filter(array_map('strval', $protectedGenes)))),
         ));
+        if ($preregisteredPlan !== []) {
+            if ($generation->trigger_type !== 'academy_experiment' || ($preregisteredPlan['protocol'] ?? null) !== self::PREPARATION_PLAN
+                || $preregisteredPlan != (array) data_get($generation->trigger_context,
+                    'prospective_source_identity.cold_start.preparation_replacement.preregistered_discovery_plan', [])
+                || ($preregisteredPlan['scientific_outcome_observed'] ?? null) !== false
+                || ($preregisteredPlan['market_evidence_reused'] ?? null) !== false
+                || (int) ($preregisteredPlan['baseline_model_version_id'] ?? 0) !== (int) $baseline->id
+                || ($preregisteredPlan['data_hash'] ?? null) !== $dataHash || ($preregisteredPlan['execution_hash'] ?? null) !== $executionHash
+                || count((array) ($preregisteredPlan['pairs'] ?? [])) * 2 + (int) ($preregisteredPlan['abstain_seats'] ?? -1) !== $remaining
+                || count((array) ($preregisteredPlan['pairs'] ?? [])) > $desiredPairCount) {
+                throw new \RuntimeException('COMPOUNDING_PREPARATION_PLAN_SCOPE_MISMATCH');
+            }
+        }
         $usedGenes = [];
         $usedInterventions = [];
         $created = [];
@@ -61,13 +80,29 @@ class CausalCompoundingKernelService
         $pairs = [];
 
         for ($pairIndex = 1; $pairIndex <= $desiredPairCount; $pairIndex++) {
+            $registered = $preregisteredPlan['pairs'][$pairIndex - 1] ?? null;
+            if ($preregisteredPlan !== [] && $registered === null) break;
             $available = array_values(array_diff($allowed, $usedGenes));
             $selection = null;
             $interventionFingerprint = null;
             // Prefer a never-used gene, then permit a new bounded value on a
             // previously explored gene. A duplicate gene+value is not a new
             // experiment and therefore never consumes another pair.
-            for ($attempt = 1; $attempt <= 24; $attempt++) {
+            if ($registered !== null) {
+                $gene = (string) ($registered['gene'] ?? '');
+                if (! in_array($gene, $allowed, true) || ! array_key_exists($gene, $base)
+                    || $this->diff([$gene => $base[$gene]], [$gene => $registered['old_value'] ?? null]) !== []
+                    || app(AcademyExperimentContractCompilerService::class)->parameterHash($base) !== ($registered['control_parameter_hash'] ?? null)) {
+                    throw new \RuntimeException('COMPOUNDING_PREPARATION_BASELINE_OR_PROTECTED_AXIS_CHANGED');
+                }
+                $selection = ['gene' => $gene, 'old_value' => $base[$gene], 'value' => $registered['tested_value'],
+                    'selection_hash' => $registered['selector_hash'], 'selection_role' => 'preregistered_unobserved_preparation_repair',
+                    'original_generation_id' => $preregisteredPlan['original_generation_id'],
+                    'old_evidence_reused' => false, 'promotion_evidence' => false];
+                $interventionFingerprint = hash('sha256', json_encode([$gene, $base[$gene], $registered['tested_value']],
+                    JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+            }
+            for ($attempt = 1; $selection === null && $attempt <= 24; $attempt++) {
                 $candidateAllowed = $attempt === 1 && $available !== [] ? $available : $allowed;
                 $proposal = app(CausalBlindedMutationSelectorService::class)->select(
                     $family,
@@ -108,6 +143,10 @@ class CausalCompoundingKernelService
                 app(StrategyParameterSchemaService::class)->normalizeForGeneration($family, $candidateParameters),
             );
             $diff = $this->diff($base, $candidateParameters);
+            if ($registered !== null && (count($diff) !== 1 || array_key_first($diff) !== $registered['gene']
+                || app(AcademyExperimentContractCompilerService::class)->parameterHash($candidateParameters) !== $registered['candidate_parameter_hash'])) {
+                throw new \RuntimeException('COMPOUNDING_PREPARATION_INTERVENTION_VECTOR_CHANGED');
+            }
             if (count($diff) !== 1 || (string) array_key_first($diff) !== $gene) {
                 throw new \RuntimeException('COMPOUNDING_KERNEL_SINGLE_INTERVENTION_INVARIANT_FAILED');
             }
@@ -152,6 +191,17 @@ class CausalCompoundingKernelService
                 $executionHash,
                 $selection,
             );
+            // Both identities now exist. Seal the exact admission owner in
+            // the existing pair contract before any generation can dispatch.
+            foreach ([$control, $candidate] as $member) {
+                $metadata = (array) $member->modelVersion->metadata;
+                $metadata['control_pair_contract'] = [
+                    ...((array) $metadata['control_pair_contract']),
+                    'control_agent_id' => (int) $control->id,
+                    'candidate_agent_id' => (int) $candidate->id,
+                ];
+                $member->modelVersion->update(['metadata' => $metadata]);
+            }
             $created[] = $control;
             $created[] = $candidate;
             // A control is intentionally queued first. Exact pair identity is
@@ -220,6 +270,7 @@ class CausalCompoundingKernelService
             'family_prior_direct_inheritance_forbidden' => true,
             'promotion_evidence' => false,
         ];
+        if ($preregisteredPlan !== []) $contract['preparation_plan'] = $preregisteredPlan;
         $generation->update([
             'population_size' => self::POPULATION_SIZE,
             'trigger_context' => [
@@ -313,10 +364,31 @@ class CausalCompoundingKernelService
             ];
         }
 
+        // Hash the exact newly constructed vector with the same schema
+        // canonicalizer used by draft admission. Do not inherit a missing or
+        // stale baseline seal, and do not turn a causal baseline into a parent.
+        $family = (string) $scopeAgent->strategy_family;
+        if ($family === 'confirmation_entry_mtf' && $generation->trigger_type === 'academy_experiment') {
+            $metadata = app(CompositionAuthorityKernelService::class)->confirmationReplayMetadata(
+                $metadata, (array) data_get($generation->trigger_context, 'prospective_source_identity', []));
+        }
+        $identityParameters = app(StrategyParameterSchemaService::class)->canonicalizeForIdentity($family, $parameters);
+        $metadata['parameter_fingerprint'] = hash('sha256', $family.'|'.json_encode(
+            $identityParameters, JSON_PRESERVE_ZERO_FRACTION));
+        $metadata['universal_genome'] = app(UniversalAgentCapabilityService::class)->genome(
+            (string) $scopeAgent->symbol, (string) $scopeAgent->timeframe, $family,
+            (string) data_get($metadata, 'architecture', data_get($metadata, 'base_strategy', $family)), $parameters);
+
         $seat = $generation->agents()->count() + 1;
         $runtime = 'kernel_g'.$generation->generation.'_s'.$seat.'_'.Str::lower($role);
+        // Preserve the readable generation/seat and globally unique row
+        // scope. Only the baseline's display prefix is shortened, never
+        // parameters, ancestry IDs, intervention keys or evidence hashes.
+        $nameSuffix = ' kernel G'.$generation->generation.' S'.$seat.' I'.$generation->id;
+        $displayName = Str::substr((string) $baseline->name, 0,
+            max(0, self::MAX_MODEL_NAME_LENGTH - Str::length($nameSuffix))).$nameSuffix;
         $model = ModelVersion::create([
-            'name' => $baseline->name.' kernel G'.$generation->generation.' S'.$seat,
+            'name' => $displayName,
             'strategy' => $runtime,
             'version' => $baseline->version.'-kernel-'.$generation->generation.'-'.$seat,
             'generation' => $generation->generation,

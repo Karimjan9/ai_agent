@@ -6,11 +6,54 @@ use App\Models\AiLaboratory;
 use App\Models\CandidateGateDecision;
 use App\Models\GenerationAdmissionDecision;
 use App\Models\LabGeneration;
+use App\Models\ModelMarketPerformance;
 use Illuminate\Support\Facades\Schema;
 
 /** The single typed authority for every new-generation admission. */
 class GenerationAdmissionDecisionService
 {
+    public const HISTORICAL_TRIGGER = 'historical_research';
+
+    public const HISTORICAL_PROTOCOL = 'pre_paper_historical_research_v1';
+
+    public const RESEARCH_CUTOFF = '2026-01-01T00:00:00Z';
+
+    /** Scheduling policy only, never a champion/causal/paper certificate. */
+    public function historicalResearchPolicy(string $symbol, string $timeframe): array
+    {
+        $scope = strtoupper($symbol) === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))
+            && strtoupper($timeframe) === strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'));
+        $champion = $scope ? ModelMarketPerformance::query()
+            ->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
+            ->where('status', 'champion')->where('evidence_status', 'valid')
+            ->whereNull('invalidated_at')->exists() : false;
+
+        return [
+            'protocol' => self::HISTORICAL_PROTOCOL,
+            'eligible' => $scope && ! $champion
+                && (bool) config('services.xauusd_organism.historical_research_until_champion', true),
+            'valid_champion_present' => $champion,
+            'research_before' => self::RESEARCH_CUTOFF,
+            'requires_live_freshness' => false,
+            'research_only' => true,
+            'same_archive_is_independent_evidence' => false,
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** Existing sealed work stays archive-backed even after a champion appears. */
+    public function isHistoricalGeneration(?LabGeneration $generation): bool
+    {
+        $contract = $generation?->trigger_context['historical_research_admission'] ?? null;
+
+        return is_array($contract)
+            && ($contract['protocol'] ?? null) === self::HISTORICAL_PROTOCOL
+            && ($contract['research_before'] ?? null) === self::RESEARCH_CUTOFF
+            && ($contract['research_only'] ?? null) === true
+            && ($contract['requires_live_freshness'] ?? null) === false
+            && preg_match('/^[a-f0-9]{64}$/', (string) ($contract['archive_sha256'] ?? '')) === 1;
+    }
+
     public const WAIT_RUNTIME = 'WAIT_RUNTIME';
 
     public const WAIT_ACTIVE_WORK = 'WAIT_ACTIVE_WORK';
@@ -32,6 +75,9 @@ class GenerationAdmissionDecisionService
     {
         $velocity = app(LearningVelocityGateService::class)->inspect($lab);
         $trigger = (string) data_get($input, 'trigger');
+        $historicalRequested = $trigger === self::HISTORICAL_TRIGGER
+            || (bool) data_get($input, 'historical_research');
+        $historicalPolicy = $this->historicalResearchPolicy((string) $lab->symbol, (string) $lab->timeframe);
         $learningConfirmation = (bool) data_get($input, 'learning_confirmation');
         $screenedHandoff = $latest?->status === 'screened'
             && in_array($trigger, ['candidate_handoff', 'data_edge_audit', 'coverage_rescue'], true);
@@ -100,6 +146,14 @@ class GenerationAdmissionDecisionService
             $decision = self::BLOCK_HARD;
             $allowed = false;
             $reasons[] = 'AUTONOMOUS_MODE_STOPPED';
+        } elseif ($historicalRequested && ! $historicalPolicy['eligible']) {
+            $decision = self::BLOCK_HARD;
+            $allowed = false;
+            $reasons[] = 'HISTORICAL_RESEARCH_POLICY_NOT_ADMITTED';
+        } elseif ($historicalRequested && $safetyPaused) {
+            $decision = self::BLOCK_HARD;
+            $allowed = false;
+            $reasons[] = 'GENERATION_CREATION_SAFETY_PAUSED';
         } elseif ((string) data_get($velocity, 'status') === 'blocked_technical_recovery') {
             // Infrastructure recovery is a hard ordering boundary. A valid
             // causal lesson or positive pair remains durable, but neither may
@@ -147,7 +201,9 @@ class GenerationAdmissionDecisionService
             $allowed = false;
             $reasons[] = 'GENERATION_CREATION_SAFETY_PAUSED';
         } elseif ($latest && $this->screenDecisions($latest) > 0 && $this->screenPasses($latest) === 0) {
-            if ($trigger === 'new_data') {
+            if ($historicalRequested) {
+                $reasons[] = 'HISTORICAL_ZERO_PASS_CONTINUES_RESEARCH_NOT_INDEPENDENT_CONFIRMATION';
+            } elseif ($trigger === 'new_data') {
                 // An enabled autonomous loop must be able to accumulate the
                 // configured number of independent zero-pass observations.
                 // LabPopulationService still requires a fresh data window;
@@ -183,6 +239,7 @@ class GenerationAdmissionDecisionService
             && $terminal
             && ! $allowed
             && $decision === self::BLOCK_HARD
+            && ! $historicalRequested
             && ! in_array('AUTONOMOUS_MODE_STOPPED', $reasons, true)) {
             // Operator input is not a bypass. It is an audited input to this
             // authority and can only open a bounded structural/recovery path.
@@ -197,6 +254,7 @@ class GenerationAdmissionDecisionService
             'reason_codes' => array_values(array_unique($reasons)),
             'latest_generation_id' => $latest?->id,
             'input' => $input,
+            'historical_research_policy' => $historicalRequested ? $historicalPolicy : null,
             'generation_creation_safety_paused' => $safetyPaused,
             'autonomous_mode' => $autonomy,
             'learning_velocity' => $velocity,
@@ -234,6 +292,7 @@ class GenerationAdmissionDecisionService
                 'allowed' => $allowed,
                 'reason_codes' => $result['reason_codes'],
                 'context' => ['input' => $input, 'learning_velocity' => $velocity,
+                    'historical_research_policy' => $result['historical_research_policy'],
                     'causal_confirmation_priority' => $result['causal_confirmation_priority'],
                     'learning_pair_priority' => $result['learning_pair_priority'],
                     'autonomous_mode' => $autonomy, 'edge_research_lane' => $edgeOwnership, 'promotion_evidence' => false],

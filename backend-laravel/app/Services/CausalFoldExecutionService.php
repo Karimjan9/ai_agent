@@ -90,6 +90,13 @@ class CausalFoldExecutionService
         try {
             $envelope = $this->evaluations->causalFoldEnvelope($experiment, $foldIndex);
             $request = (array) $envelope['request'];
+            $guided = \App\Models\LabAgent::with('generation')->findOrFail($experiment->guided_agent_id);
+            $request = app(ResearchReleaseSealService::class)->bindGenerationRequest($guided->generation,
+                $request, [$experiment->guided_agent_id, $experiment->blinded_agent_id, $experiment->control_agent_id]);
+            $benchmark = app(TypedInstrumentFoundryService::class)->registerCausalBenchmark($experiment, $request);
+            if (($benchmark['reason'] ?? null) === 'BENCHMARK_PREREGISTERED_CONTRACT_DRIFT') {
+                throw new RuntimeException('CAUSAL_BENCHMARK_PREREGISTERED_CONTRACT_DRIFT');
+            }
             $requestHash = $this->hash($request);
             if ($receipt->request_hash && ! hash_equals((string) $receipt->request_hash, $requestHash)) {
                 throw new RuntimeException('CAUSAL_FOLD_REQUEST_IDENTITY_CHANGED');
@@ -215,7 +222,7 @@ class CausalFoldExecutionService
             );
             $armIds = collect([$locked->guided_agent_id, $locked->blinded_agent_id, $locked->control_agent_id])
                 ->map(fn (mixed $id): int => (int) $id)->filter()->unique()->values();
-            if ($items->count() !== 3 || $armIds->count() !== 3 || $armIds->diff($items->keys()->map('intval'))->isNotEmpty()) {
+            if ($items->count() !== 3 || $armIds->count() !== 3 || $armIds->diff($items->keys()->map(fn ($id): int => (int) $id))->isNotEmpty()) {
                 throw new RuntimeException('CAUSAL_FOLD_AGGREGATE_THREE_ARM_IDENTITY_MISMATCH');
             }
             $baseRequest = (array) $receipts->first()->request_payload;
@@ -254,6 +261,8 @@ class CausalFoldExecutionService
             }
             $fresh = $locked->fresh();
             $evidence = (array) $fresh->evidence;
+            data_set($evidence, 'fold_execution.compute_comparison',
+                app(TypedInstrumentFoundryService::class)->settleCausalBenchmark($fresh, $aggregate));
             data_set($evidence, 'fold_execution.settlement', [
                 'protocol' => self::PROTOCOL,
                 'status' => 'completed',
@@ -334,8 +343,8 @@ class CausalFoldExecutionService
             ...((array) data_get($evidence, 'fold_execution', [])),
             'protocol' => self::PROTOCOL,
             'required_fold_count' => $this->foldCount(),
-            'completed_fold_indexes' => $receipts->where('status', 'completed')->pluck('fold_index')->map('intval')->values()->all(),
-            'retry_ready_fold_indexes' => $receipts->where('status', 'retry_ready')->pluck('fold_index')->map('intval')->values()->all(),
+            'completed_fold_indexes' => $receipts->where('status', 'completed')->pluck('fold_index')->map(fn ($index): int => (int) $index)->values()->all(),
+            'retry_ready_fold_indexes' => $receipts->where('status', 'retry_ready')->pluck('fold_index')->map(fn ($index): int => (int) $index)->values()->all(),
             'last_error_code' => $lastError,
             'partial_fold_credit_allowed' => false,
             'updated_at' => now()->utc()->toIso8601String(),
@@ -354,11 +363,16 @@ class CausalFoldExecutionService
         $items = collect((array) data_get($payload, 'leaderboard', []));
         $expectedIds = collect([$experiment->guided_agent_id, $experiment->blinded_agent_id, $experiment->control_agent_id])
             ->map(fn (mixed $id): int => (int) $id)->sort()->values();
-        $actualIds = $items->pluck('lab_agent_id')->map('intval')->sort()->values();
+        $actualIds = $items->pluck('lab_agent_id')->map(fn ($id): int => (int) $id)->sort()->values();
         if ($items->count() !== 3 || $actualIds->all() !== $expectedIds->all()) {
             throw new RuntimeException('CAUSAL_FOLD_RESPONSE_THREE_ARM_IDENTITY_MISMATCH');
         }
         foreach ($items as $item) {
+            $seal = (array) data_get($experiment->generation?->trigger_context, 'research_release', []);
+            if (! app(ResearchReleaseSealService::class)->responseValid($seal,
+                (array) data_get($item, 'result.data_quality.research_release_receipt', []))) {
+                throw new RuntimeException('RESEARCH_WORKER_RELEASE_RECEIPT_INVALID');
+            }
             if ((string) data_get($item, 'result.learning_confirmation.execution_mode') !== 'durable_single_fold_job'
                 || (int) data_get($item, 'result.learning_confirmation.fold_count', 0) !== 1
                 || (int) data_get($item, 'result.learning_confirmation.fold_offset', -1) !== $foldIndex - 1
@@ -377,6 +391,9 @@ class CausalFoldExecutionService
     private function reasonCode(\Throwable $exception): string
     {
         $message = strtoupper($exception->getMessage());
+        if (str_contains($message, 'RESEARCH_RELEASE') || str_contains($message, 'RESEARCH_WORKER')) {
+            return 'RESEARCH_RELEASE_PROVENANCE_INVALID';
+        }
         if (str_contains($message, 'TIMEOUT') || str_contains($message, 'TIMED OUT')) {
             return 'CAUSAL_FOLD_TIMEOUT';
         }

@@ -4,71 +4,56 @@ namespace App\Services;
 
 use Illuminate\Database\Eloquent\Model;
 
-/** Re-derive instrument/bundle authority; a mutable status label is never enough. */
+/** Re-derive exact-delta validation authority; legacy aggregates stay research-only. */
 class InstrumentPosteriorAuthorityService
 {
-    /** @return array<string,mixed> */
+    public function validationEpochs(Model $posterior): array
+    {
+        $epochs = [];
+        foreach ((array) data_get($posterior->value_vector, 'validation_epochs', []) as $key => $epoch) {
+            if (! is_array($epoch) || (string) ($epoch['epoch_key'] ?? '') !== (string) $key) {
+                continue;
+            }
+            $assessment = app(InstrumentValidationEvidenceService::class)->assessEpoch($epoch, (string) $posterior->state_key);
+            if ($posterior->decay_state === 'decaying' || (float) data_get($posterior->value_vector, 'temporal_decay', 0) >= .5) {
+                $assessment['canonical_state'] = 'decaying';
+                $assessment['verified_confirmed'] = $assessment['verified_forbidden'] = false;
+            }
+            $epochs[] = $assessment;
+        }
+
+        return $epochs;
+    }
+
     public function assess(Model $posterior): array
     {
-        $vector = (array) data_get($posterior, 'value_vector', []);
-        $context = (array) data_get($vector, 'context', []);
-        $contextContract = app(ContextContractV2Service::class)->project($context);
-        $family = (string) data_get($vector, 'strategy_family', data_get($context, 'strategy_family', ''));
-        $windows = array_values(array_unique(array_filter(array_map(
-            'strval',
-            (array) data_get($vector, 'independent_window_keys', []),
-        ))));
-        $evidenceKeys = array_values(array_unique(array_filter(array_map(
-            'strval',
-            (array) data_get($vector, 'evidence_keys', []),
-        ))));
-        $observations = (int) data_get($posterior, 'observations', 0);
-        $positive = (int) data_get($vector, 'positive_observations', 0);
-        $negative = (int) data_get($vector, 'negative_observations', 0);
-        $regressions = (int) data_get($vector, 'non_target_regression_count', 0);
-        $net = (float) data_get($posterior, 'net_value', 0);
-        $minimumObservations = max(3, (int) config('services.instrument_policy.minimum_posterior_observations', 3));
-        $minimumWindows = max(3, (int) config('services.instrument_policy.minimum_independent_windows', 3));
-        $positiveThreshold = max(.00001, (float) config('services.instrument_policy.minimum_confirmed_net_utility', .001));
-        $negativeThreshold = min(-.00001, (float) config('services.instrument_policy.minimum_forbidden_net_utility', -.001));
-        $identityValid = (string) data_get($context, 'state_key', '') !== ''
-            && hash_equals((string) data_get($posterior, 'state_key', ''), (string) data_get($context, 'state_key'));
-        $common = [
-            'valid_context' => data_get($contextContract, 'status') === 'valid',
-            'family_sealed' => $family !== '' && $family !== 'unscoped',
-            'state_identity_valid' => $identityValid,
-            'observation_count_valid' => $observations >= $minimumObservations,
-            'evidence_identity_coverage' => count($evidenceKeys) >= $observations,
-            'non_target_safe' => $regressions === 0,
-        ];
-        $confirmed = ! in_array(false, $common, true)
-            && count($windows) >= $minimumWindows
-            && $positive >= 2
-            && $net >= $positiveThreshold;
-        $forbidden = $common['valid_context'] && $common['family_sealed'] && $common['state_identity_valid']
-            && $common['observation_count_valid'] && $common['evidence_identity_coverage']
-            && count($windows) >= 2 && $negative >= 2 && $net <= $negativeThreshold;
         $label = (string) data_get($posterior, 'decay_state', 'provisional');
-        $canonicalState = match (true) {
-            $label === 'confirmed' && $confirmed => 'confirmed',
-            $label === 'forbidden' && $forbidden => 'forbidden',
-            in_array($label, ['confirmed', 'forbidden'], true) => 'status_only_quarantined',
-            default => $label,
-        };
+        $epochs = $this->validationEpochs($posterior);
+        // A different delta's incomplete proof cannot erase a completed epoch.
+        $eligible = array_values(array_filter($epochs, static fn (array $epoch): bool => in_array($epoch['canonical_state'], ['confirmed', 'forbidden'], true)));
+        $selected = $eligible !== [] ? $eligible[count($eligible) - 1] : ($epochs !== [] ? $epochs[count($epochs) - 1] : null);
+        if ($selected !== null) {
+            if ($selected['canonical_state'] === 'provisional' && in_array($label, ['confirmed', 'forbidden'], true)) {
+                $selected['canonical_state'] = 'status_only_quarantined';
+            }
+            if ((float) data_get($posterior->value_vector, 'temporal_decay', 0) >= .5 || $label === 'decaying') {
+                $selected['canonical_state'] = 'decaying';
+                $selected['verified_confirmed'] = $selected['verified_forbidden'] = false;
+            }
 
-        return [
-            'canonical_state' => $canonicalState,
-            'verified_confirmed' => $canonicalState === 'confirmed',
-            'verified_forbidden' => $canonicalState === 'forbidden',
-            'declared_state' => $label,
-            'strategy_family' => $family ?: null,
-            'independent_windows' => count($windows),
-            'evidence_keys' => count($evidenceKeys),
-            'positive_observations' => $positive,
-            'negative_observations' => $negative,
-            'non_target_regressions' => $regressions,
-            'checks' => $common,
-            'promotion_evidence' => false,
-        ];
+            return [...$selected, 'declared_state' => $label,
+                'discovery_observations' => (int) $posterior->observations,
+                'authority_protocol' => InstrumentValidationEvidenceService::PROTOCOL];
+        }
+
+        return ['canonical_state' => in_array($label, ['confirmed', 'forbidden'], true) ? 'status_only_quarantined' : $label,
+            'verified_confirmed' => false, 'verified_forbidden' => false, 'declared_state' => $label,
+            'strategy_family' => data_get($posterior->value_vector, 'strategy_family'),
+            'independent_windows' => 0, 'positive_independent_windows' => 0, 'negative_independent_windows' => 0,
+            'evidence_keys' => 0, 'observations' => 0, 'positive_observations' => 0, 'negative_observations' => 0,
+            'non_target_regressions' => 0, 'tested_intervention' => [],
+            'checks' => ['sealed_window_evidence_complete' => false, 'exact_tested_delta_sealed' => false],
+            'discovery_observations' => (int) $posterior->observations,
+            'authority_protocol' => InstrumentValidationEvidenceService::PROTOCOL, 'promotion_evidence' => false];
     }
 }

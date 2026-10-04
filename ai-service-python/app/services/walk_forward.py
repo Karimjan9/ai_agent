@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 import time
 from typing import Callable
 
@@ -389,6 +390,7 @@ class WalkForwardService:
                     "per_fold_budget_seconds": per_fold_budget_seconds,
                 })
             fold_started = time.monotonic()
+            fold_cpu_started = time.thread_time()
             result = self._run_segment(
                 fold_payload,
                 forward,
@@ -413,6 +415,13 @@ class WalkForwardService:
             result["trade_ledger_count"] = fold_trade_count
             result["trade_ledger_scope"] = "fold ledger consolidated into top-level causal ledger"
             fold_elapsed = time.monotonic() - fold_started
+            result['benchmark'] = {**dict(result.get('benchmark', {}) or {}), 'arm_replay_resources': {
+                'protocol': 'arm_replay_resources_v1',
+                'cpu_seconds': max(0.0, time.thread_time() - fold_cpu_started),
+                'wall_seconds': max(0.0, fold_elapsed),
+                'scope': 'economic_replay_only_excludes_shared_features_and_audit',
+                'promotion_evidence': False,
+            }}
             elapsed_total = time.monotonic() - budget_started
             if fold_elapsed > per_fold_budget_seconds:
                 raise TimeoutError(
@@ -491,6 +500,8 @@ class WalkForwardService:
         forward_scores = [item["scores"]["forward"] for item in evaluations]
         forward_score = round(sum(forward_scores) / len(forward_scores))
         representative = dict(forward_results[-1])
+        representative['benchmark'] = {**dict(representative.get('benchmark', {}) or {}),
+            'arm_replay_resources': self._resource_totals(forward_results)}
         expected_trade_count = sum(int(result.get("total_trades", 0) or 0) for result in forward_results)
         if len(economic_trade_ledger) != expected_trade_count:
             raise RuntimeError(
@@ -659,6 +670,20 @@ class WalkForwardService:
         }
 
     @staticmethod
+    def _resource_totals(results: list[dict[str, object]]) -> dict[str, object] | None:
+        """Legacy/missing measurements stay unknown; never reuse the last fold."""
+        rows = [(result.get('benchmark', {}) or {}).get('arm_replay_resources') for result in results]
+        if not rows or any(not isinstance(row, dict) or row.get('protocol') != 'arm_replay_resources_v1'
+            or row.get('scope') != 'economic_replay_only_excludes_shared_features_and_audit'
+            or any(not isinstance(row.get(key), (int, float)) or isinstance(row.get(key), bool)
+                or not math.isfinite(row[key]) or row[key] < 0 for key in ('cpu_seconds', 'wall_seconds'))
+            for row in rows):
+            return None
+        return {'protocol': 'arm_replay_resources_v1', 'cpu_seconds': sum(row['cpu_seconds'] for row in rows),
+            'wall_seconds': sum(row['wall_seconds'] for row in rows), 'measured_segments': len(rows),
+            'scope': 'economic_replay_only_excludes_shared_features_and_audit', 'promotion_evidence': False}
+
+    @staticmethod
     def aggregate_causal_fold_items(
         items: list[dict[str, object]],
         *,
@@ -751,6 +776,8 @@ class WalkForwardService:
         aggregate_net = (compounded - 1.0) * 100.0
 
         representative = dict(fold_results[-1])
+        representative['benchmark'] = {**dict(representative.get('benchmark', {}) or {}),
+            'arm_replay_resources': WalkForwardService._resource_totals(fold_results)}
         representative["trade_ledger"] = economic_trade_ledger
         representative["trade_ledger_hash"] = _trade_ledger_hash(validated_trade_ledger)
         representative["trades"] = economic_trade_ledger[-20:]

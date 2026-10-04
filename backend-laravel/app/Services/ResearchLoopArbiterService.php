@@ -7,17 +7,18 @@ use App\Models\AgentLearningCausalExperiment;
 use App\Models\CandidateGateDecision;
 use App\Models\CandidateHandoffEvent;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\MarketDriftSnapshot;
 use App\Models\ModelMarketPerformance;
 use App\Models\MtfStrategyResearchRun;
 use App\Models\ResearchLoopDecision;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Bus\UniqueLock;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
@@ -60,6 +61,21 @@ class ResearchLoopArbiterService
         'EDGE_GENESIS',
     ];
 
+    // The one-time cold Academy question may outrank new discovery, never
+    // an admitted continuation, technical repair or evidence-earned proof.
+    private const EARNED_CAUSAL_LADDER_ACTIONS = [
+        'EDGE_DISCOVERY_RESUME',
+        'AUTHORITY_DESCENDANT_PROOF',
+        'AUTHORITY_INCUBATOR',
+        'PROVISIONAL_SKILL_CARTRIDGE_CONFIRMATION',
+        'EDGE_INDEPENDENT_REPLICATION',
+        'EDGE_CONFIRMATION',
+        'EDGE_ATTRIBUTION',
+        'QUALITY_EVOLUTION_SYNTHESIS',
+        'SKILL_CARTRIDGE_TRANSPLANT',
+        'EDGE_ARCHITECTURE_REPAIR',
+    ];
+
     public function __construct(
         private AutonomousModeService $autonomy,
         private ResearchClosureInvariantService $closure,
@@ -84,6 +100,14 @@ class ResearchLoopArbiterService
             return $this->blocked('RESEARCH_LOOP_DECISION_TABLE_MISSING');
         }
 
+        // An operator pause is an admission fence, not a transport failure.
+        // Check before stale-lease recovery so an intentionally stopped worker
+        // cannot be classified as a crashed constructor during the pause.
+        $controlState = (string) data_get($this->autonomy->status($symbol, $timeframe), 'state');
+        if (in_array($controlState, ['pausing', 'paused', 'safety_halt'], true)) {
+            return $this->blocked($controlState === 'safety_halt' ? 'RESEARCH_RUN_SAFETY_HALT' : 'RESEARCH_RUN_PAUSED');
+        }
+
         // A diagnostic dry-run must remain available while Redis/workers are
         // intentionally stopped. It cannot lease, persist or dispatch.
         if ($dryRun) {
@@ -98,6 +122,10 @@ class ResearchLoopArbiterService
             return $this->blocked('RESEARCH_LOOP_LOCK_UNAVAILABLE', ['error_class' => $exception::class]);
         }
         try {
+            $controlState = (string) data_get($this->autonomy->status($symbol, $timeframe), 'state');
+            if (in_array($controlState, ['pausing', 'paused', 'safety_halt'], true)) {
+                return $this->blocked($controlState === 'safety_halt' ? 'RESEARCH_RUN_SAFETY_HALT' : 'RESEARCH_RUN_PAUSED');
+            }
             $recovery = app(StaleAutonomousWorkRecoveryService::class)
                 ->reconcile($symbol, $timeframe);
             $result = $this->tickLocked($symbol, $timeframe, $dryRun);
@@ -157,10 +185,41 @@ class ResearchLoopArbiterService
             }
         }
 
+        $academy = Schema::hasTable('edge_academy_trials')
+            ? app(AcademyExperimentMaterializerService::class)->proposal($symbol, $timeframe) : [];
+        if (($academy['status'] ?? '') === 'pending_canonical_admission'
+            && (int) ($academy['generation_id'] ?? 0) === (int) ($latest?->id ?? 0)) {
+            return $this->decide($symbol, $timeframe, 'DISPATCH_ACADEMY_EXPERIMENT', 100,
+                'trading:admit-academy-experiment', ['trial' => (int) $academy['trial_id']], 'scheduler-constructor',
+                ['ACADEMY_DURABLE_CANONICAL_ADMISSION_INTENT'],
+                ['generation' => $generation, 'academy_proposal' => $academy], $dryRun);
+        }
+
         // Already-admitted work settles before any new hypothesis. STOP is
         // drain-first, so this branch intentionally precedes the mode check.
         if ($latest && (in_array((string) $latest->status, self::ACTIVE_GENERATION_STATUSES, true)
             || LabPopulationService::constructionIncomplete($latest))) {
+            // A sealed replay can legitimately outlive several scheduler ticks.
+            // Its immutable started run is progress in flight, not three failed
+            // settlement attempts. Bound the wait by the Redis reservation
+            // lease so an abandoned run still reaches lifecycle recovery.
+            $runLease = max(1, min(4440, (int) config('queue.connections.redis.retry_after', 4500) - 60));
+            $activeRun = Schema::hasTable('lab_evaluation_runs')
+                ? LabEvaluationRun::query()
+                    ->where('lab_generation_id', $latest->id)
+                    ->whereIn('status', ['started', 'running', 'processing'])
+                    ->where('started_at', '>=', now()->subSeconds($runLease))
+                    ->latest('id')->first()
+                : null;
+            if ($activeRun) {
+                return $this->decide($symbol, $timeframe, 'WAIT_EXISTING_GENERATION_REPLAY', 100,
+                    null, [], null, ['SEALED_GENERATION_REPLAY_IN_FLIGHT'], [
+                        'generation' => $generation,
+                        'active_run_id' => (int) $activeRun->id,
+                        'active_agent_id' => (int) $activeRun->lab_agent_id,
+                        'active_phase' => (string) $activeRun->phase,
+                    ], $dryRun);
+            }
             return $this->decide($symbol, $timeframe, 'SETTLE_EXISTING_GENERATION', 100,
                 'trading:run-lifecycle-cycle', [
                     '--symbol' => $symbol,
@@ -257,6 +316,18 @@ class ResearchLoopArbiterService
             }
         }
 
+        $instrumentDebt = app(InstrumentInvocationLedgerService::class)->pendingResearchPairs($symbol, $timeframe);
+        if ($instrumentDebt !== [] && ((int) $instrumentDebt[0]['generation_id'] === (int) $latest?->id
+                || (int) ($instrumentDebt[0]['pending_candidate_invocations'] ?? 0) > 0
+                || ! $this->recentAction('RECONCILE_EXACT_INSTRUMENT_PAIR', 30, $symbol))) {
+            $debt = $instrumentDebt[0];
+            return $this->decide($symbol, $timeframe, 'RECONCILE_EXACT_INSTRUMENT_PAIR', 93,
+                'trading:reconcile-instrument-pairs', [0 => $symbol, '--timeframe' => $timeframe,
+                    '--pair-id' => $debt['pair_id'], '--autonomous' => true, '--json' => true],
+                'scheduler-critical', ['EXACT_INSTRUMENT_CONTROL_PROJECTION_READY'],
+                ['generation' => $generation, 'instrument_projection' => $debt], $dryRun);
+        }
+
         [$currentLearningPair, $historicalLearningPair, $priorityLearningPair] =
             $this->learningCurriculum($symbol, $timeframe, $latest);
         if ($currentLearningPair) {
@@ -334,17 +405,101 @@ class ResearchLoopArbiterService
                 ], $dryRun);
         }
 
+        $historicalPolicy = app(GenerationAdmissionDecisionService::class)->historicalResearchPolicy($symbol, $timeframe);
+        // Clean zero-pass audit is a durable obligation regardless of whether
+        // the next experiment is driven by live drift or a frozen archive.
+        if ($historicalPolicy['eligible'] && $latest && $this->latestCanAutonomouslyRecordDataEdgeAudit($latest)) {
+            return $this->decide($symbol, $timeframe, 'RECORD_AUTONOMOUS_DATA_EDGE_AUDIT', 88,
+                'trading:run-lifecycle-cycle', ['--symbol' => $symbol, '--timeframe' => $timeframe, '--json' => true],
+                'scheduler-constructor', ['ZERO_PASS_FINAL_REPORT_REQUIRES_DATA_EDGE_AUDIT'], [
+                    'generation' => $generation, 'closure' => $this->compactClosure($closure),
+                    'historical_research_policy' => $historicalPolicy,
+                ], $dryRun);
+        }
+
+        // Inspect once, read-only, before ALL fresh discovery (including
+        // live drift/degradation). Reuse this exact plan later; a spent cold
+        // budget or absent repair candidate cannot hide earned proof.
+        $director = $this->director->advance($symbol, $timeframe, false, true, true);
+        $directorAction = (string) ($director['action'] ?? '');
+        if (in_array($directorAction, self::EARNED_CAUSAL_LADDER_ACTIONS, true)
+            && in_array((string) data_get($director, 'result.status'), ['would_queue', 'queued'], true)) {
+            return $this->decide($symbol, $timeframe, $directorAction, $this->directorPriority($directorAction),
+                'trading:advance-learning-progress', [0 => $symbol, '--timeframe' => $timeframe,
+                    '--apply' => true, '--arbiter-authorized' => true, '--json' => true],
+                'scheduler-constructor', ['CAUSAL_LADDER_ACTION_READY', 'EARNED_PROOF_PRECEDES_NEW_DISCOVERY'], [
+                    'generation' => $generation, 'closure' => $this->compactClosure($closure),
+                    'director' => $this->compactDirector($director),
+                ], $dryRun);
+        }
+
+        // A depth label or legacy planned trial is not earned continuation.
+        // The curriculum owner re-attests the actual original settled trial,
+        // candidate baseline and source seal without changing its evidence.
+        $academyContinuation = ($academy['status'] ?? '') === 'would_materialize'
+            ? app(XauusdEdgeFormationAcademyService::class)->curriculumContinuationEvidence((int) $academy['trial_id']) : [];
+        if (($academyContinuation['eligible'] ?? false) === true) {
+            return $this->decide($symbol, $timeframe, 'OPEN_ACADEMY_EXPERIMENT', 90,
+                'trading:admit-academy-experiment', ['trial' => (int) $academy['trial_id']], 'scheduler-constructor',
+                ['ACADEMY_ATTESTED_CURRICULUM_CONTINUATION_READY', 'EARNED_PROOF_PRECEDES_NEW_DISCOVERY'], [
+                    'generation' => $generation, 'academy_proposal' => $academy,
+                    'academy_continuation' => $academyContinuation,
+                ], $dryRun);
+        }
+
+        // Unchanged source bytes with an original, immutable continuity
+        // failure cannot buy another twenty-agent discovery. Existing work
+        // and earned continuation above retain priority. Only the existing
+        // data owner's verified prospective repair can select new bytes.
+        $dataReadiness = $this->freshDatasetContinuityReadiness($latest, $academy, $symbol);
+        if (! $dataReadiness['allowed']) {
+            return $this->decide($symbol, $timeframe, 'WAIT_DATASET_CONTINUITY', 89,
+                null, [], null, ['GENERATION_MTF_M5_KNOWN_CANDLE_GAP'], [
+                    'generation' => $generation, 'data_readiness' => $dataReadiness,
+                    'academy_proposal' => $academy, 'promotion_evidence' => false,
+                ], $dryRun);
+        }
+
+        // The cold lane is capped once per actual frozen input bytes. It may
+        // precede new discovery, never an admitted or evidence-earned action.
+        $coldAcademyReady = ($academy['status'] ?? '') === 'would_prepare_cold_start';
+        if ($coldAcademyReady) {
+            return $this->decide($symbol, $timeframe, 'OPEN_ACADEMY_EXPERIMENT', 89,
+                'trading:admit-academy-experiment', ['trial' => 0], 'scheduler-constructor',
+                ['ACADEMY_PROSPECTIVE_HYPOTHESIS_COLD_START_READY', 'BOUNDED_COLD_ACADEMY_PRECEDES_NEW_DISCOVERY'], [
+                    'generation' => $generation, 'academy_proposal' => $academy,
+                    'selection_policy' => [
+                        'protocol' => 'academy_cold_start_once_before_new_discovery_v1',
+                        'stable_input_budget_scope' => data_get($academy, 'cold_start.budget_scope'),
+                        'deferred_new_director_action' => $directorAction !== '' ? $directorAction : null,
+                        'active_work_preempted' => false,
+                        'earned_proof_preempted' => false,
+                    ],
+                ], $dryRun);
+        }
+
+        $prospectiveRepair = app(ProspectiveRepairExperimentService::class)->eligible($symbol, $timeframe);
+        if ($prospectiveRepair !== null) {
+            return $this->decide($symbol, $timeframe, 'OPEN_PROSPECTIVE_REPAIR_EXPERIMENT', 89,
+                'trading:run-lifecycle-cycle', ['--symbol' => $symbol, '--learning-confirmation' => true,
+                    '--prospective-source-pair-id' => (int) $prospectiveRepair['source_pair_id'],
+                    '--prospective-source-hash' => (string) $prospectiveRepair['source_hash'], '--json' => true],
+                'scheduler-constructor', ['PROMISING_SCREEN_REQUIRES_FRESH_EXACT_TRIPLET'], [
+                    'generation' => $generation, 'closure' => $this->compactClosure($closure),
+                    'prospective_repair' => $prospectiveRepair,
+                ], $dryRun);
+        }
         // A confirmed operational change is a high-value trigger, but the
         // arbiter—not the detector—owns its generation admission.
         $degraded = ModelMarketPerformance::query()->where('symbol', $symbol)
             ->where('status', 'champion')->where('consecutive_no_improvement', '>=', 3)->exists();
-        if ($degraded) {
+        if (! $historicalPolicy['eligible'] && $degraded) {
             return $this->decide($symbol, $timeframe, 'OPEN_DEGRADATION_RESEARCH', 88,
                 'trading:lab-generation', [0 => $symbol, '--timeframe' => $timeframe, '--trigger' => 'degradation'],
                 'scheduler-constructor', ['CONFIRMED_CHAMPION_DEGRADATION'],
                 ['generation' => $generation, 'closure' => $this->compactClosure($closure)], $dryRun);
         }
-        $drift = $this->drift->confirmation($symbol, $timeframe);
+        $drift = $historicalPolicy['eligible'] ? [] : $this->drift->confirmation($symbol, $timeframe);
         if (($drift['status'] ?? null) === 'confirmed' && ! $this->driftAlreadyConsumed($latest, $drift)) {
             if ($latest && $this->latestHasZeroPassScreening($latest)) {
                 if ($this->latestCanAutonomouslyRecordDataEdgeAudit($latest)) {
@@ -397,11 +552,8 @@ class ResearchLoopArbiterService
                 ['generation' => $generation, 'closure' => $this->compactClosure($closure), 'drift' => $drift], $dryRun);
         }
 
-        // Planning-only crosses the old feature-flag boundary but cannot
-        // mutate. The selected child command re-checks every runtime/safety
-        // admission before it receives apply authority.
-        $director = $this->director->advance($symbol, $timeframe, false, true, true);
-        $directorAction = (string) ($director['action'] ?? '');
+        // Reuse the read-only plan above for fresh discovery. The selected
+        // child re-checks every runtime/safety admission before apply.
         if (in_array($directorAction, self::CAUSAL_LADDER_ACTIONS, true)
             && in_array((string) data_get($director, 'result.status'), ['would_queue', 'queued'], true)) {
             return $this->decide($symbol, $timeframe, $directorAction, $this->directorPriority($directorAction),
@@ -413,16 +565,35 @@ class ResearchLoopArbiterService
                 ], $dryRun);
         }
 
-        // Give the unified H1/M15/M5 organism one bounded economic-information
-        // batch per 30-minute allocation window; the dispatcher itself seals
-        // an exact current-cohort control before any hypothesis.
-        $mtf = $this->mtfAllocation($symbol);
+        if (in_array(($academy['status'] ?? ''), ['would_materialize', 'would_prepare_cold_start'], true)) {
+            return $this->decide($symbol, $timeframe, 'OPEN_ACADEMY_EXPERIMENT', 81,
+                'trading:admit-academy-experiment', ['trial' => (int) $academy['trial_id']], 'scheduler-constructor',
+                [($academy['status'] ?? '') === 'would_prepare_cold_start'
+                    ? 'ACADEMY_PROSPECTIVE_HYPOTHESIS_COLD_START_READY' : 'ACADEMY_SEALED_EXPERIMENT_READY'], ['generation' => $generation,
+                    'academy_proposal' => $academy], $dryRun);
+        }
+
+        // Before champion, embedded archive experiments own exploration.
+        // Timer-only standalone MTF/portfolio maintenance must not starve
+        // them. An actually eligible powered prior still has precedence.
+        $mtf = $this->mtfAllocation($symbol, (bool) $historicalPolicy['eligible']);
         if ($mtf['powered_prior_due']) {
             return $this->decide($symbol, $timeframe, 'SETTLE_MTF_POWERED_PRIOR', 80,
                 'trading:dispatch-mtf-powered-prior-validation', [0 => $symbol],
                 'scheduler-critical', ['MTF_POWERED_PRIOR_WINDOW_DUE'], [
                     'generation' => $generation, 'closure' => $this->compactClosure($closure),
                     'director' => $this->compactDirector($director), 'mtf' => $mtf,
+                ], $dryRun);
+        }
+        if ($historicalPolicy['eligible']) {
+            return $this->decide($symbol, $timeframe, 'OPEN_HISTORICAL_RESEARCH_GENERATION', 73,
+                'trading:lab-generation', [0 => $symbol, '--timeframe' => $timeframe,
+                    '--trigger' => GenerationAdmissionDecisionService::HISTORICAL_TRIGGER],
+                'scheduler-constructor', ['PRE_PAPER_ARCHIVE_RESEARCH_READY_WITHOUT_LIVE_CANDLES'], [
+                    'generation' => $generation, 'closure' => $this->compactClosure($closure),
+                    'director' => $this->compactDirector($director), 'mtf' => $mtf,
+                    'historical_research_policy' => $historicalPolicy,
+                    'archive_dependency' => app(LabDatasetExportService::class)->foundationDependencyWatermark($symbol, $timeframe),
                 ], $dryRun);
         }
         if ($mtf['research_due']) {
@@ -521,6 +692,42 @@ class ResearchLoopArbiterService
             ->first();
     }
 
+    /** Read-only early dependency check; the final frozen bundle still rechecks before queueing. */
+    private function freshDatasetContinuityReadiness(?LabGeneration $latest, array $academy, string $symbol): array
+    {
+        $owner = app(GenerationSnapshotAdmissionService::class);
+        $manifest = (array) data_get($academy, 'identity.mtf_bundle_manifest',
+            data_get($latest?->trigger_context, 'mtf_bundle_manifest', []));
+        $path = (string) data_get($manifest, 'streams.M5.path', '');
+        $sha = (string) data_get($manifest, 'streams.M5.sha256', '');
+        // Missing or drifted paths remain subject to ordinary snapshot
+        // admission; they cannot attest a known-byte scientific dependency.
+        if (preg_match('/^[a-f0-9]{64}$/D', $sha) !== 1 || ! is_file($path)
+            || ! hash_equals($sha, (string) hash_file('sha256', $path))) {
+            return ['allowed' => true, 'reasons' => [], 'promotion_evidence' => false];
+        }
+        $blocked = $owner->historicalDatasetReadiness($manifest);
+        if ($blocked['allowed']) return $blocked;
+        $current = app(MultiTimeframeSnapshotService::class)->agentValidationReadiness($symbol);
+        $repair = (array) ($current['prospective_m5_repair'] ?? []);
+        $newPath = (string) ($repair['prospective_m5_source_path'] ?? '');
+        $newSha = (string) ($repair['prospective_m5_source_sha256'] ?? '');
+        if (($current['ready'] ?? false) === true
+            && in_array($repair['protocol'] ?? null, ['frozen_m5_gap_recovery_v1', 'frozen_m5_gap_recovery_v2'], true)
+            && ($repair['verified'] ?? false) === true
+            && ($repair['original_bad_m5_sha256'] ?? null) === $sha
+            && preg_match('/^[a-f0-9]{64}$/D', (string) ($repair['repair_hash'] ?? '')) === 1
+            && preg_match('/^[a-f0-9]{64}$/D', $newSha) === 1 && ! hash_equals($sha, $newSha)
+            && is_file($newPath) && hash_equals($newSha, (string) hash_file('sha256', $newPath))) {
+            $prospective = $owner->historicalDatasetReadiness(['streams' => ['M5' => ['sha256' => $newSha, 'path' => $newPath]]]);
+            if ($prospective['allowed']) return [...$prospective, 'prospective_m5_repair' => $repair,
+                'original_dependency' => $blocked['source_dependency'], 'old_bundle_reused' => false];
+            return $prospective;
+        }
+
+        return $blocked;
+    }
+
     /** @return array<string,mixed> */
     private function decide(
         string $symbol,
@@ -549,7 +756,7 @@ class ResearchLoopArbiterService
         $evidenceHash = $this->hash($evidence);
         $stateSnapshot = $this->operationalStateSnapshot($evidence, $queue, $symbol, $timeframe);
         $stateHash = $this->hash($stateSnapshot);
-        $decisionKey = $this->hash([
+        $baseDecisionKey = $this->hash([
             self::PROTOCOL,
             $symbol,
             $timeframe,
@@ -557,6 +764,42 @@ class ResearchLoopArbiterService
             $this->canonicalArguments($arguments),
             $stateHash,
         ]);
+        $decisionKey = $baseDecisionKey;
+        if ($action === 'SETTLE_EXISTING_GENERATION') {
+            // A lifecycle child may exit successfully after doing one bounded
+            // pass while the same generation still owns the lineage. A single
+            // completed key must not freeze that generation forever. Retry at
+            // most twice, spaced apart; unchanged states then fail visibly
+            // instead of producing an unbounded per-minute no-op loop.
+            for ($attempt = 0; $attempt < 3; $attempt++) {
+                $candidateKey = $attempt === 0 ? $baseDecisionKey : $this->hash([$baseDecisionKey, 'bounded_settlement_retry', $attempt]);
+                $prior = ResearchLoopDecision::query()->where('decision_key', $candidateKey)->first();
+                if (! $prior) {
+                    $decisionKey = $candidateKey;
+                    break;
+                }
+                $decisionKey = $candidateKey;
+                if (! in_array((string) $prior->status, ['completed', 'deferred', 'failed'], true)
+                    || $prior->updated_at?->greaterThan(now()->subMinutes(5))) {
+                    break;
+                }
+                if ($attempt === 2) {
+                    if (! $dryRun) {
+                        $this->autonomy->safetyHalt($symbol, $timeframe, 'UNCHANGED_GENERATION_AFTER_BOUNDED_SETTLEMENT_RETRIES');
+                    }
+
+                    return [
+                        'protocol' => self::PROTOCOL,
+                        'status' => 'safety_blocked',
+                        'action' => 'SETTLE_EXISTING_GENERATION',
+                        'reason_codes' => ['UNCHANGED_GENERATION_AFTER_BOUNDED_SETTLEMENT_RETRIES'],
+                        'generation_id' => data_get($evidence, 'generation.id'),
+                        'last_decision_id' => (int) $prior->id,
+                        'promotion_evidence' => false,
+                    ];
+                }
+            }
+        }
         $payload = [
             'protocol' => self::PROTOCOL,
             'status' => $dryRun ? 'dry_run' : ($command === null ? 'deferred' : 'selected'),
@@ -579,6 +822,22 @@ class ResearchLoopArbiterService
         }
 
         $sameState = ResearchLoopDecision::query()->where('decision_key', $decisionKey)->first();
+        if ($command === 'trading:admit-academy-experiment' && $sameState) {
+            // Recover only an undelivered outbox publication, never a command
+            // that ran and was scientifically/technically refused. Two bounded
+            // transport retries keep a crash between DB commit and Redis from
+            // stranding the trial without introducing minute-based job spam.
+            for ($attempt = 1; $attempt <= 2 && $sameState; $attempt++) {
+                $probe = new RunScheduledArtisanCommandJob($command, $arguments, (string) $queue, (int) $sameState->id);
+                if (! in_array($sameState->status, ['selected', 'dispatched', 'publication_failed'], true)
+                    || $this->hasLiveScheduledCommandLock($sameState)
+                    || Cache::get($probe->statusCacheKey()) !== null) break;
+                if ($sameState->status !== 'publication_failed') $sameState->update(['status' => 'publication_failed', 'completed_at' => now()]);
+                $decisionKey = $this->hash([$baseDecisionKey, 'bounded_academy_publication_retry', $attempt]);
+                $payload['decision_key'] = $decisionKey;
+                $sameState = ResearchLoopDecision::query()->where('decision_key', $decisionKey)->first();
+            }
+        }
         if ($sameState) {
             return [...$payload, 'status' => 'duplicate_suppressed', 'decision_id' => (int) $sameState->id];
         }
@@ -637,7 +896,8 @@ class ResearchLoopArbiterService
             try {
                 RunScheduledArtisanCommandJob::dispatch($command, $arguments, $queue, (int) $decision->id);
             } catch (Throwable $exception) {
-                $decision->update(['status' => 'failed', 'completed_at' => now()]);
+                $decision->update(['status' => $command === 'trading:admit-academy-experiment'
+                    ? 'publication_failed' : 'failed', 'completed_at' => now()]);
                 throw $exception;
             }
 
@@ -693,8 +953,7 @@ class ResearchLoopArbiterService
         ?string $queue,
         ?string $symbol = null,
         ?string $timeframe = null,
-    ): array
-    {
+    ): array {
         $generationId = (int) data_get($evidence, 'generation.id', 0);
         $generation = $generationId > 0
             ? LabGeneration::query()->with('agents.modelVersion')->find($generationId)
@@ -778,7 +1037,45 @@ class ResearchLoopArbiterService
             'open_run_count' => $openRunCount,
             'queue_watermark' => $queueWatermark,
             'settlement_watermark' => $settlementWatermark,
+            'run_control_revision' => data_get(app(AutonomousModeService::class)->status($symbol ?? 'XAUUSD', $timeframe ?? 'H1'), 'changed_at'),
         ];
+        if (is_array(data_get($evidence, 'archive_dependency'))) {
+            // A missing/repaired archive may make the same terminal lineage
+            // executable later. Retry only on an actual dependency change,
+            // never merely on another scheduler minute or new live candle.
+            $state['archive_dependency'] = data_get($evidence, 'archive_dependency');
+        }
+        if (data_get($evidence, 'academy_proposal.status') === 'pending_canonical_admission' && $generation) {
+            // An executed typed refusal is not an undelivered publication.
+            // It becomes selectable again only when its actual admission
+            // dependency changes, not on each scheduler minute. In particular
+            // DB job counts cannot attest an unavailable Redis queue backend.
+            try {
+                $snapshot = app(LabQueueJobInspector::class)->queueSnapshot();
+                $queueReady = ($snapshot['available'] ?? true) !== false
+                    && is_numeric($snapshot['total'] ?? null)
+                    && (int) $snapshot['total'] < max(1, (int) config('services.lab_selection.max_screening_jobs', 40));
+                $queueAvailable = ($snapshot['available'] ?? true) !== false;
+            } catch (Throwable) {
+                $queueReady = false;
+                $queueAvailable = false;
+            }
+            $snapshotAdmission = app(GenerationSnapshotAdmissionService::class)->inspect($generation);
+            $reasons = array_values(array_unique((array) ($snapshotAdmission['reasons'] ?? [])));
+            sort($reasons);
+            $state['academy_admission_dependency'] = [
+                'trial_id' => (int) data_get($evidence, 'academy_proposal.trial_id'),
+                'generation_id' => $generation->id,
+                'queue_available' => $queueAvailable,
+                'queue_capacity_ready' => $queueReady,
+                'snapshot_allowed' => ($snapshotAdmission['allowed'] ?? false) === true,
+                'snapshot_reasons' => $reasons,
+            ];
+        }
+        if ((int) data_get($evidence, 'mtf.powered_prior_id', 0) > 0) {
+            // A newly eligible immutable prior is new work, not a timer tick.
+            $state['powered_prior_id'] = (int) data_get($evidence, 'mtf.powered_prior_id');
+        }
 
         if ($generation) {
             // A lifecycle audit changes successor authority without changing
@@ -829,8 +1126,21 @@ class ResearchLoopArbiterService
     }
 
     /** @return array<string,mixed> */
-    private function mtfAllocation(string $symbol): array
+    private function mtfAllocation(string $symbol, bool $archiveFirst = false): array
     {
+        if ($archiveFirst) {
+            $source = app(MtfPoweredPriorValidationService::class)->nextEligible($symbol);
+
+            return [
+                'research_due' => false,
+                'powered_prior_due' => $source !== null
+                    && ! $this->recentAction('SETTLE_MTF_POWERED_PRIOR', 15, $symbol),
+                'playbook_prior_due' => false,
+                'powered_prior_id' => $source?->id,
+                'reason' => 'ARCHIVE_RESEARCH_OWNS_PRE_CHAMPION_EXPLORATION',
+                'standalone_maintenance_requires_actionable_evidence' => true,
+            ];
+        }
         if (! Schema::hasTable('model_market_performance')
             || ! Schema::hasTable('mtf_strategy_research_runs')) {
             return ['research_due' => false, 'powered_prior_due' => false, 'playbook_prior_due' => false,

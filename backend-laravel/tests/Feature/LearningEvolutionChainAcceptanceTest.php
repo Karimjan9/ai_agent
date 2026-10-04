@@ -17,6 +17,7 @@ use App\Models\PlaybookComposition;
 use App\Models\PlaybookValuePosterior;
 use App\Models\TradingInstrument;
 use App\Services\LearningIntelligenceAuditService;
+use App\Services\InstrumentResearchWindowService;
 use App\Services\TradingInstrumentOperatingSystemService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -184,6 +185,23 @@ class LearningEvolutionChainAcceptanceTest extends TestCase
 
     private function posteriorVector(string $stateKey): array
     {
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        $manifests = [];
+        foreach ([1, 2, 3] as $month) {
+            $manifests[] = [
+                'authorization_id' => 'golden-window-'.$month,
+                'research_epoch_id' => 'synthetic-post-paper-research',
+                'start_inclusive' => sprintf('2027-%02d-01T00:00:00Z', $month),
+                'end_exclusive' => sprintf('2027-%02d-01T00:00:00Z', $month + 1),
+                'dataset_sha256' => hash('sha256', 'golden-dataset-'.$month),
+                'purpose' => 'instrument_independent_validation',
+            ];
+        }
+        config()->set('services.instrument_policy.authorized_research_windows', $manifests);
+        $windows = array_map(fn (array $manifest): array => app(InstrumentResearchWindowService::class)
+            ->seal($manifest['authorization_id'], $manifest['dataset_sha256']), $manifests);
+        $evidenceKeys = ['evidence-1', 'evidence-2', 'evidence-3', 'evidence-4', 'evidence-5'];
+
         return [
             'context' => [
                 'regime' => 'trend_up', 'session' => 'london', 'volatility' => 'normal',
@@ -191,8 +209,11 @@ class LearningEvolutionChainAcceptanceTest extends TestCase
                 'direction' => 'buy', 'strategy_family' => 'hybrid', 'state_key' => $stateKey,
             ],
             'strategy_family' => 'hybrid',
-            'independent_window_keys' => ['window-1', 'window-2', 'window-3'],
-            'evidence_keys' => ['evidence-1', 'evidence-2', 'evidence-3', 'evidence-4', 'evidence-5'],
+            'independent_window_keys' => array_column($windows, 'window_key'),
+            'window_evidence' => array_map(fn (string $key, int $index): array => [
+                'window' => $windows[$index % 3], 'evidence_key' => $key, 'outcome' => 'positive',
+            ], $evidenceKeys, array_keys($evidenceKeys)),
+            'evidence_keys' => $evidenceKeys,
             'positive_observations' => 5, 'negative_observations' => 0,
             'non_target_regression_count' => 0,
         ];

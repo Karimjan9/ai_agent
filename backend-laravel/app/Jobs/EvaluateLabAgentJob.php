@@ -21,6 +21,7 @@ use App\Services\LabGenerationReportService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabReplayRecoveryService;
 use App\Services\LearningLaneService;
+use App\Services\ResearchReleaseSealService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -49,6 +50,9 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     private const UNIQUE_WINDOW_SECONDS = self::SCREEN_RETRY_WINDOW_MINUTES * 60;
 
     public int $timeout = 360;
+
+    /** Sealed 15k-row discovery uses a longer, still bounded evaluator. */
+    public bool $prospectiveProbe = false;
 
     // Laravel counts every middleware release as an attempt. Replay-lane
     // contention is expected operational state, so an integer attempt budget
@@ -98,9 +102,13 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         public ?int $screeningSlot = null,
     )
     {
-        $scope = LabAgent::query()->whereKey($labAgentId)->first(['lab_generation_id', 'timeframe']);
+        $scope = LabAgent::query()->with('modelVersion')->whereKey($labAgentId)
+            ->first(['id', 'lab_generation_id', 'model_version_id', 'timeframe']);
         $this->labGenerationId = $scope?->lab_generation_id;
         $this->timeframe = strtoupper((string) ($scope?->timeframe ?: $this->timeframe));
+        $this->prospectiveProbe = $mode === 'screen'
+            && data_get($scope?->modelVersion?->metadata, 'causal_learning_cohort.experiment_kind')
+                === \App\Services\ProspectiveRepairExperimentService::KIND;
         $this->recoveryContract = $recoveryContract;
         // The queue transport is an environment concern. Hard-coding the
         // database driver here makes Redis workers invisible to lab jobs.
@@ -127,7 +135,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             && $scope
             && (string) LabGeneration::query()->whereKey($scope->lab_generation_id)->value('trigger_type') === 'learning_confirmation';
         $this->timeout = $mode === 'screen'
-            ? 1200
+            ? ($this->prospectiveProbe ? 2100 : 1200)
             : ($causalConfirmation
                 // Includes snapshot validation plus the bounded AI child and
                 // a projection margin. A causal research job can therefore
@@ -176,7 +184,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                 // to 330/840 seconds; leave room for Laravel evidence
                 // projection while keeping stale recovery finite. Full
                 // validation keeps a longer lease than its worker timeout.
-                ->expireAfter($this->mode === 'screen' ? 1200 : 4500),
+                ->expireAfter($this->mode === 'screen' ? ($this->prospectiveProbe ? 2700 : 1200) : 4500),
             // Open immutable attempt evidence only after the fairness and
             // replay locks are held. A mutex-deferred queue job is operational
             // telemetry, not a terminal evaluator replay and has no request
@@ -633,13 +641,103 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         $evidence = app(LabImmutableEvidenceService::class);
         $run = $evidence->findRun($this->evidenceRunId);
         if (! $run) {
-            $run = $evidence->beginRun($agent, $this->mode === 'screen' ? 'screening' : 'full_validation', $this->mode, [
-                'attempt' => max(1, (int) $this->attempts()), 'queue' => $this->effectiveQueue(),
-                'source' => 'queue_failed_callback',
-            ]);
+            try {
+                $run = $evidence->beginRun($agent, $this->mode === 'screen' ? 'screening' : 'full_validation', $this->mode, [
+                    'attempt' => max(1, (int) $this->attempts()), 'queue' => $this->effectiveQueue(),
+                    'source' => 'queue_failed_callback',
+                ]);
+            } catch (Throwable $releaseError) {
+                if (! ResearchReleaseSealService::isTerminalDrift($releaseError)) throw $releaseError;
+                $this->terminalizeReleaseDrift($releaseError, $agent);
+                return;
+            }
             $this->evidenceRunId = $run->run_id;
         }
         $this->markEvaluationError($agent, $e, $run, $evidence);
+    }
+
+    /** A changed sealed program cannot be retried as the same experiment. */
+    public function terminalizeReleaseDrift(Throwable $error, ?LabAgent $agent = null): void
+    {
+        if (! ResearchReleaseSealService::isTerminalDrift($error)) throw $error;
+        $agent ??= LabAgent::findOrFail($this->labAgentId);
+        $agent->loadMissing('generation', 'modelVersion');
+        $evidence = app(LabImmutableEvidenceService::class);
+        $phase = $this->mode === 'screen' ? 'screening' : 'full_validation';
+        $run = $evidence->refuseReleaseBeforeRun($agent, $phase, $this->mode, [
+            'attempt' => max(1, (int) $this->attempts()),
+            'queue' => $this->effectiveQueue(),
+            'job_uuid' => isset($this->job) && method_exists($this->job, 'uuid') ? $this->job->uuid() : null,
+            'source' => self::class,
+        ], $error);
+        $this->evidenceRunId = $run->run_id;
+
+        if ((string) $agent->lifecycle_status !== 'technical_quarantine') {
+            $agent->update([
+                'lifecycle_status' => 'technical_quarantine',
+                'decision_reason' => 'Sealed research release rejected before evaluator request ['.$error->getMessage().']; strategy verdict withheld.',
+            ]);
+            app(CandidateHandoffService::class)->record($agent->generation, $agent,
+                'research_release_refused', 'blocked', $error->getMessage(), [
+                    'run_id' => $run->run_id,
+                    'replay_started' => false,
+                    'strategy_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                ]);
+        }
+
+        // Every still-open learning comparison in the same sealed generation
+        // is now non-executable. Preserve completed screen observations, but
+        // prevent the arbiter from pumping another full replay on this source.
+        foreach (LabLearningLanePair::query()->where('lab_generation_id', $agent->lab_generation_id)
+            ->whereIn('status', ['screen_paired', 'provisional', 'learning_queued', 'learning_observed'])
+            ->get() as $pair) {
+            $pair->update([
+                'status' => 'technical_quarantine',
+                'metadata' => [
+                    ...((array) $pair->metadata),
+                    'reason_code' => $error->getMessage(),
+                    'release_refusal_run_id' => $run->run_id,
+                    'promotion_evidence' => false,
+                ],
+            ]);
+        }
+        foreach (LabLearningLaneDispatch::query()->where('lab_generation_id', $agent->lab_generation_id)
+            ->whereIn('status', ['queued', 'running', 'retry_ready', 'canonical_pending'])
+            ->get() as $dispatch) {
+            $dispatch->update([
+                'status' => 'technical_quarantine',
+                'completed_at' => now(),
+                'metadata' => [
+                    ...((array) $dispatch->metadata),
+                    'reason_code' => $error->getMessage(),
+                    'release_refusal_run_id' => $run->run_id,
+                    'promotion_evidence' => false,
+                ],
+            ]);
+        }
+
+        $generation = $agent->generation;
+        if ($generation && ! $generation->agents()->whereIn('lifecycle_status', [
+            'draft', 'queued', 'screening', 'evaluation_error', 'full_queued', 'full_validation', 'training',
+        ])->exists() && ! in_array((string) $generation->status, ['technical_quarantine', 'abandoned', 'failed'], true)) {
+            app(LabGenerationContextService::class)->updateWithAttributes($generation, [
+                'status' => 'technical_quarantine',
+                'completed_at' => now(),
+            ], function (array $context) use ($error, $run): array {
+                $context['research_release_terminal_refusal'] = [
+                    'protocol' => 'sealed_release_terminal_refusal_v1',
+                    'reason_code' => $error->getMessage(),
+                    'run_id' => $run->run_id,
+                    'replay_started' => false,
+                    'strategy_verdict' => 'withheld',
+                    'promotion_evidence' => false,
+                    'recorded_at' => now()->utc()->toIso8601String(),
+                ];
+                return $context;
+            });
+            app(LabGenerationReportService::class)->record($generation->fresh(['agents']), 'research_release_technical_quarantine');
+        }
     }
 
     private function markEvaluationError(LabAgent $agent, Throwable $e, ?LabEvaluationRun $run = null, ?LabImmutableEvidenceService $evidence = null): void

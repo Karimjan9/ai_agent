@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Settles already-materialized Academy cohorts as their immutable full-replay
+ * Settles already-materialized Academy cohorts as their immutable replay
  * evidence arrives. It never creates a trial, dispatches a replay, or grants
  * authority; the materializer owns all economic classification rules.
  */
@@ -22,19 +22,26 @@ class AcademyExperimentSettlementReconcilerService
     {
         $symbol = strtoupper($symbol);
         $timeframe = strtoupper($timeframe);
-        if (! Schema::hasTable('edge_academy_trials') || ! Schema::hasTable('model_market_performance')) {
+        if (! Schema::hasTable('edge_academy_trials') || ! Schema::hasTable('lab_evaluation_runs')) {
             return ['protocol' => self::PROTOCOL, 'status' => 'migration_pending', 'promotion_evidence' => false];
         }
 
         // Do not let historical settled trials consume the per-tick budget:
         // only a trial without its terminal settlement can be reconciled.
-        $openTrialIds = DB::table('edge_academy_trials')->whereNull('settled_at')->orderBy('id')
-            ->limit(max(1, min(100, $limit)))->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        $openTrials = DB::table('edge_academy_trials as trial')
+            ->join('edge_academy_passports as passport', 'passport.id', '=', 'trial.edge_academy_passport_id')
+            ->where('passport.symbol', $symbol)->where('passport.timeframe', $timeframe)
+            ->whereNull('trial.settled_at')->where('trial.status', 'materialized')->orderBy('trial.id')
+            ->limit(max(1, min(100, $limit)))->select('trial.id', 'trial.outcome')->get();
+        $openTrialIds = $openTrials->pluck('id')->map(fn ($id): int => (int) $id)->all();
         if ($openTrialIds === []) {
             return ['protocol' => self::PROTOCOL, 'status' => 'idle', 'trial_ids' => [],
                 'new_replay_allowed' => false, 'promotion_evidence' => false];
         }
-        $representatives = LabAgent::query()->with('modelVersion')
+        $generationIds = $openTrials->map(fn (object $trial): int =>
+            (int) data_get(json_decode((string) $trial->outcome, true) ?: [], 'generation_id', 0))
+            ->filter(fn (int $id): bool => $id > 0)->unique()->values()->all();
+        $representatives = LabAgent::query()->with('modelVersion')->whereIn('lab_generation_id', $generationIds)
             ->where('origin', 'academy_experiment')->where('symbol', $symbol)->where('timeframe', $timeframe)
             ->orderBy('id')->get()->filter(function (LabAgent $agent): bool {
                 return data_get($agent->modelVersion?->metadata, 'academy_experiment.protocol') === AcademyExperimentMaterializerService::PROTOCOL
@@ -54,7 +61,8 @@ class AcademyExperimentSettlementReconcilerService
                 'result' => $this->materializer->settleOutcome($agent)];
         })->all();
         $settled = collect($outcomes)->filter(fn (array $outcome): bool => in_array(data_get($outcome, 'result.status'), [
-            'settled_powered', 'settled_without_economic_claim', 'technical_quarantine',
+            'settled_powered', 'settled_powered_marginal_value_incomplete', 'settled_without_economic_claim',
+            'settled_unassessable_stage_evidence', 'technical_quarantine',
         ], true))->count();
 
         return ['protocol' => self::PROTOCOL, 'status' => $outcomes === [] ? 'idle' : 'reconciled',

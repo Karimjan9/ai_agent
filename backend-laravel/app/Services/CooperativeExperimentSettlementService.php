@@ -54,7 +54,8 @@ class CooperativeExperimentSettlementService
                 'mtf_bundle_hash' => $armEvidence['mtf_bundle_hash'],
                 'session_instance_id' => $armEvidence['session_instance_id'],
                 'evidence_reason_codes' => $armEvidence['reason_codes'],
-                'activation_telemetry' => (string) data_get($block, 'block_type') === 'activation_factorial'
+                'activation_telemetry' => in_array((string) data_get($block, 'block_type'),
+                    ['activation_factorial', 'phase_scope_probe'], true)
                     ? $this->activationTelemetry($metrics, (string) data_get($row->modelVersion?->metadata,
                         'smart_composition.composition_passport.composition_id', '')) : null,
             ];
@@ -70,6 +71,64 @@ class CooperativeExperimentSettlementService
         if ($identityReasons !== []) {
             $complete = false;
             $invalidArms['_block_identity'] = $identityReasons;
+        }
+        $phaseProbe = (string) data_get($block, 'block_type') === 'phase_scope_probe';
+        if ($phaseProbe && $complete) {
+            $phaseReasons = app(PhaseScopeProbeContractService::class)->blockReasons($agents, $agent->generation);
+            if ($phaseReasons !== []) {
+                $complete = false;
+                $invalidArms['_phase_probe_identity'] = $phaseReasons;
+            }
+            foreach ($eligibleArmResults as $arm => $result) {
+                if (data_get($result, 'activation_telemetry.valid') !== true) {
+                    $complete = false;
+                    $invalidArms[$arm] = ['PHASE_PROBE_RUNTIME_RECEIPT_INVALID'];
+                }
+            }
+            if (collect($eligibleArmResults)->pluck('activation_telemetry.opportunity_universe_hash')->unique()->count() !== 1
+                || collect($eligibleArmResults)->pluck('activation_telemetry.opportunity_count')->unique()->count() !== 1
+                || collect($eligibleArmResults)->pluck('mtf_bundle_hash')->filter()->unique()->count() !== 1) {
+                $complete = false;
+                $invalidArms['_paired_opportunity_universe'] = ['PHASE_PROBE_PAIRED_OPPORTUNITY_MISMATCH'];
+            }
+        }
+        if ($phaseProbe) {
+            $control = (array) data_get($eligibleArmResults, 'phase_control.activation_telemetry', []);
+            $signals = (int) data_get($control, 'strategy_signals', 0);
+            $status = $invalidArms !== [] ? 'invalid_arm_evidence'
+                : (! $complete ? 'waiting_for_arms'
+                    : ((int) data_get($control, 'opportunity_count', 0) < ProofFrontierService::MIN_PAIRED_OPPORTUNITIES
+                        ? 'phase_scope_underpowered'
+                        : ($signals === 0 ? 'phase_scope_no_signal'
+                            : ($signals < ProofFrontierService::MIN_SIGNAL_OPPORTUNITIES
+                                ? 'phase_scope_underpowered_signal'
+                                : ((int) data_get($control, 'tactic_accepted', 0) === 0
+                                    ? 'phase_scope_tactic_veto_reproduced'
+                                    : ((int) data_get($control, 'accepted_entries', 0) > 0
+                                        ? 'phase_scope_entry_reached' : 'phase_scope_preentry_veto'))))));
+            $effects = ['protocol' => (string) data_get($agent->modelVersion?->metadata,
+                'phase_scope_probe.protocol', ProofFrontierService::PHASE_PROBE_PROTOCOL),
+                'control_telemetry' => $control,
+                'diagnostic_telemetry' => data_get($eligibleArmResults, 'diagnostic_candidate.activation_telemetry'),
+                'phase' => data_get($agent->modelVersion?->metadata, 'phase_scope_probe.venue_phase'),
+                'economic_claim' => 'not_evaluated', 'credit_allowed' => false,
+                'independent_validation_required' => true, 'promotion_evidence' => false];
+            $settlementKey = hash('sha256', implode('|', [self::PROTOCOL, $agent->lab_generation_id, $blockKey]));
+            $row = CooperativeExperimentSettlement::query()->updateOrCreate(['settlement_key' => $settlementKey], [
+                'block_key' => $blockKey, 'lab_generation_id' => $agent->lab_generation_id,
+                'block_type' => 'phase_scope_probe',
+                'context_cell_key' => (string) data_get($agent->modelVersion?->metadata,
+                    'cooperative_evolution_capsule.context_cell_hash', '') ?: null,
+                'arm_results' => $armResults, 'component_effects' => $effects,
+                'pareto_vectors' => [], 'outcome_status' => $status,
+                'evidence_complete' => $complete, 'promotion_evidence' => false,
+            ]);
+
+            return ['protocol' => self::PROTOCOL, 'status' => $status,
+                'settlement_id' => (int) $row->id, 'evidence_complete' => $complete,
+                'component_effects' => $effects, 'invalid_arms' => $invalidArms,
+                'instrument_bundle_graph' => null, 'credit_allowed' => false,
+                'promotion_evidence' => false];
         }
         $activationBlock = (string) data_get($block, 'block_type') === 'activation_factorial';
         if ($activationBlock && $complete) {
@@ -191,18 +250,20 @@ class CooperativeExperimentSettlementService
                 ...(array) $eligibility['reason_codes'],
             ]);
         }
-        if ((string) data_get($agent->modelVersion?->metadata,
-            'cooperative_experiment_block.block_type') === 'activation_factorial') {
+        if (in_array((string) data_get($agent->modelVersion?->metadata,
+            'cooperative_experiment_block.block_type'), ['activation_factorial', 'phase_scope_probe'], true)) {
             $immutableRequest = $this->evidence->latestArtifactPayload($run, 'evaluation_request');
             if (! is_array($immutableRequest)
-                || $immutableRequest !== data_get($run->request_meta, 'payload')) {
+                || ! $this->evidence->equivalentJsonValue($immutableRequest,
+                    data_get($run->request_meta, 'payload'))) {
                 return $this->armEvidenceResult('invalid', $runId, $run->data_hash,
                     null, null, ['ACTIVATION_IMMUTABLE_REQUEST_MISMATCH']);
             }
             $immutableTrace = data_get($this->evidence->latestArtifactPayload($run) ?? [],
                 'composition_runtime_trace');
             $decisionTrace = data_get($decision->metrics, 'composition_runtime_trace');
-            if (! is_array($immutableTrace) || $immutableTrace !== $decisionTrace) {
+            if (! is_array($immutableTrace)
+                || ! $this->evidence->equivalentJsonValue($immutableTrace, $decisionTrace)) {
                 return $this->armEvidenceResult('invalid', $runId, $run->data_hash,
                     null, null, ['ACTIVATION_IMMUTABLE_TRACE_MISMATCH']);
             }
@@ -433,7 +494,7 @@ class CooperativeExperimentSettlementService
             'minimum_signal_opportunities_for_claim' => ProofFrontierService::MIN_SIGNAL_OPPORTUNITIES,
             'arm_telemetry' => $values,
             'economic_claim' => 'not_evaluated',
-            'validation_window_status' => 'not_reserved',
+            'validation_window_status' => 'reserved_awaiting_authorized_research_epoch',
             'component_credit_allowed' => false,
             'economic_credit_allowed' => false,
             'promotion_evidence' => false,
@@ -449,6 +510,7 @@ class CooperativeExperimentSettlementService
     ): array {
         $first = $agents->first();
         $activation = (array) data_get($first?->modelVersion?->metadata, 'activation_factorial', []);
+        $validationPlan = (array) data_get($activation, 'validation_plan', []);
         $block = (array) data_get($first?->modelVersion?->metadata, 'cooperative_experiment_block', []);
         $claim = (string) data_get($effects, 'behavioral_claim', 'underpowered_activation');
         $hasActivation = in_array($claim, [
@@ -462,10 +524,11 @@ class CooperativeExperimentSettlementService
                 'identity' => (string) data_get($activation, 'hypothesis_key'),
                 'priority' => $hasActivation ? 7 : 3,
                 'executable' => false,
-                'retry_condition' => ['code' => 'NEW_PREREGISTERED_INDEPENDENT_WINDOW_REQUIRED',
+                'retry_condition' => ['code' => 'AUTHORIZED_RESEARCH_WINDOW_REQUIRED',
                     'max_experiments' => 1, 'same_evidence_replay_forbidden' => true],
                 'activation_settlement_id' => $settlement->id,
-                'validation_window_status' => 'not_reserved',
+                'validation_plan' => $validationPlan,
+                'validation_window_status' => 'reserved_awaiting_authorized_research_epoch',
                 'credit_allowed' => false]
             : [];
         $terminal = $nextWork === []
@@ -498,11 +561,7 @@ class CooperativeExperimentSettlementService
                     (string) data_get($block, 'activation_manifest_hash'),
                 ])),
                 'intervention_hash' => (string) data_get($activation, 'hypothesis_key'),
-                'window_plan_hash' => hash('sha256', implode('|', [
-                    (string) data_get($control, 'data_hash'),
-                    (string) data_get($activation, 'max_discovery_trials'),
-                    'validation_window_not_reserved',
-                ])),
+                'window_plan_hash' => (string) data_get($validationPlan, 'plan_hash', ''),
                 'evaluator_version' => ProofFrontierService::PROTOCOL,
             ],
             'arms' => collect($arms)->map(fn (array $arm, string $role): array => [
@@ -517,6 +576,8 @@ class CooperativeExperimentSettlementService
             'behavioral_claim' => $claim,
             'paired_opportunities' => (int) data_get($effects, 'paired_opportunities', 0),
             'joint_only_context_count' => (int) data_get($effects, 'joint_only_context_count', 0),
+            'validation_plan_hash' => (string) data_get($validationPlan, 'plan_hash', ''),
+            'validation_window_status' => 'reserved_awaiting_authorized_research_epoch',
             'arm_run_ids' => collect($arms)->mapWithKeys(fn (array $arm, string $role): array => [
                 $role => (string) $arm['evidence_run_id'],
             ])->all(),

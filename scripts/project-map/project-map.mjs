@@ -27,20 +27,25 @@ const generatedFiles = [
     "symbols-index.json",
     "tests-index.json",
     "integrations-index.json",
+    "runtime-index.json",
     "manifest.json",
 ];
 
 const sourceRoots = [
     "backend-laravel/app",
     "backend-laravel/routes",
+    "backend-laravel/config",
+    "backend-laravel/scripts",
     "backend-laravel/database/migrations",
     "backend-laravel/tests",
     "ai-service-python/app",
+    "ai-service-python/scripts",
     "ai-service-python/tests",
+    "scripts",
     ".project-map",
 ];
 
-const sourceExtensions = new Set([".php", ".py", ".yaml"]);
+const sourceExtensions = new Set([".php", ".py", ".yaml", ".conf", ".ps1", ".cmd", ".vbs", ".mjs", ".cjs", ".sh"]);
 const ignoredDirectories = new Set([
     ".git",
     "node_modules",
@@ -415,6 +420,33 @@ function indexIntegrations(files, routes) {
     };
 }
 
+function indexRuntime(files) {
+    const configs = [];
+    const scripts = [];
+    for (const file of files) {
+        const path = normalizedPath(file);
+        if (path.startsWith("backend-laravel/config/")) {
+            const text = readText(file);
+            configs.push({
+                path,
+                sections: path.endsWith(".php")
+                    ? matchAll(/^ {4}'([^']+)'\s*=>/gm, text, (match) => ({
+                        key: match[1], line: lineNumber(text, match.index),
+                    }))
+                    : [],
+            });
+        }
+        if (path.startsWith("backend-laravel/scripts/")
+            || path.startsWith("ai-service-python/scripts/")
+            || path.startsWith("scripts/")) {
+            scripts.push({ path });
+        }
+    }
+    return { configs, scripts,
+        scope: "Runtime file and top-level Laravel config-section navigation only; values, secrets and execution semantics are not indexed.",
+    };
+}
+
 function writeJson(path, value) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -432,6 +464,7 @@ function generate() {
     const symbols = indexSymbols(files);
     const tests = indexTests(files);
     const integrations = indexIntegrations(files, routes);
+    const runtime = indexRuntime(files);
     const generation = {
         schema_version: 1,
         generator: "scripts/project-map/project-map.mjs",
@@ -487,6 +520,7 @@ function generate() {
     });
     writeJson(resolve(generatedRoot, "tests-index.json"), { ...generation, tests });
     writeJson(resolve(generatedRoot, "integrations-index.json"), { ...generation, ...integrations });
+    writeJson(resolve(generatedRoot, "runtime-index.json"), { ...generation, ...runtime });
     writeJson(resolve(generatedRoot, "manifest.json"), {
         ...generation,
         indexes: generatedFiles.filter((file) => file !== "manifest.json"),
@@ -541,12 +575,17 @@ function impact(base = process.argv[3] || "HEAD") {
             }
         }
     }
-    const sourceChanged = changed.some((path) => /^(backend-laravel\/(app|routes|database\/migrations|tests)|ai-service-python\/(app|tests))\//.test(path));
-    const unmappedSourcePaths = changed.filter((path) => /^(backend-laravel\/(app|routes|database\/migrations|tests)|ai-service-python\/(app|tests))\//.test(path) && !matchedPaths.has(path));
+    const indexedSource = /^(backend-laravel\/(app|routes|config|scripts|database\/migrations|tests)|ai-service-python\/(app|scripts|tests)|scripts)\//;
+    const sourceChanged = changed.some((path) => indexedSource.test(path));
+    const unmappedSourcePaths = changed.filter((path) => indexedSource.test(path)
+        && !path.startsWith("scripts/project-map/")
+        && !path.startsWith("backend-laravel/config/")
+        && !matchedPaths.has(path));
     const recommendations = new Set();
     if (sourceChanged) recommendations.add("Run generate: indexed source or tests changed.");
     if (changed.some((path) => path.startsWith("backend-laravel/database/migrations/"))) recommendations.add("Review the owning module's data/transition state and flow.");
     if (changed.some((path) => path.startsWith("backend-laravel/routes/") || path.includes("/Controllers/"))) recommendations.add("Review module entry points and any externally visible flow.");
+    if (changed.some((path) => path.startsWith("backend-laravel/config/") || path.startsWith("backend-laravel/scripts/") || path.startsWith("ai-service-python/scripts/"))) recommendations.add("Review runtime config and process ownership; a map path is not proof of the loaded worker version.");
     if (changed.some((path) => path.startsWith("ai-service-python/app/") || /ContractService\.php$/.test(path))) recommendations.add("Review Laravel/Python contract and flow if request, response, hash or ownership changed.");
     if (changed.some((path) => /StateMachine|Lifecycle|Status|Transition/.test(path))) recommendations.add("Review the affected states.md transition table.");
     if (changed.some((path) => /Services\//.test(path))) recommendations.add("Decide whether module ownership, dependency or entry point changed; update module.yaml only if it did.");
@@ -559,7 +598,7 @@ function impact(base = process.argv[3] || "HEAD") {
     if (unmappedSourcePaths.length) {
         console.log(`- Unmapped source paths: ${unmappedSourcePaths.length}; inspect whether an existing module needs a new source anchor or a new module is required.`);
     }
-    if (!affected.size && !unmappedSourcePaths.length) {
+    if (!affected.size && !unmappedSourcePaths.length && !sourceChanged) {
         console.log("- No changed source path matches a current module anchor; decide whether a module map needs a new path or module.");
     }
     console.log("Required human/agent decision:");

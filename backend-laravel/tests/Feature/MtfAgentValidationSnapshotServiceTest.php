@@ -4,19 +4,27 @@ namespace Tests\Feature;
 
 use App\Models\MarketTrainingArchive;
 use App\Services\LabDatasetExportService;
+use App\Services\MarketData\HistoricalQuoteSpreadService;
 use App\Services\MarketData\MarketTrainingDataService;
 use App\Services\MultiTimeframeSnapshotService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Mockery as m;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class MtfAgentValidationSnapshotServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_agent_validation_freezes_bounded_training_store_without_live_export(): void
+    public static function quoteModes(): array
+    {
+        return ['price_and_volume_only' => [false], 'prospective_observed_quote' => [true]];
+    }
+
+    #[DataProvider('quoteModes')]
+    public function test_agent_validation_freezes_bounded_training_store_without_live_export(bool $withQuote): void
     {
         $m5 = $this->rows('2020-01-01 00:00:00', 5, MultiTimeframeSnapshotService::AGENT_VALIDATION_MIN_M5_ROWS);
         $m15 = $this->rows('2019-09-01 00:00:00', 15, 20000);
@@ -59,6 +67,42 @@ class MtfAgentValidationSnapshotServiceTest extends TestCase
             fn ($dataset, $provider, $symbol, $timeframe): bool => $dataset === 'foundation_10y'
                 && $provider === 'dukascopy' && $symbol === 'XAUUSD' && $timeframe === 'H1',
         )->andReturn($h1);
+        if ($withQuote) {
+            $quotes = m::mock(HistoricalQuoteSpreadService::class);
+            $quotes->shouldReceive('attach')->once()->withArgs(function (array $rows, string $hash): bool {
+                $this->assertTrue($rows[0]['volume_available']);
+                // Quote matching sees exactly the pre-attachment canonical CSV,
+                // including the audited volume marker, not the enriched file.
+                $stream = fopen('php://temp', 'w+b');
+                fputcsv($stream, ['time', 'open', 'high', 'low', 'close', 'volume', 'volume_available']);
+                foreach ($rows as $row) {
+                    fputcsv($stream, [$row['time'], $row['open'], $row['high'], $row['low'], $row['close'], $row['volume'], 1]);
+                }
+                rewind($stream);
+                $digest = hash_init('sha256');
+                hash_update_stream($digest, $stream);
+                fclose($stream);
+                $this->assertSame(hash_final($digest), $hash);
+
+                return true;
+            })->andReturnUsing(function (array $rows, string $hash): array {
+                foreach ($rows as $index => &$row) {
+                    $ready = $index === 0;
+                    $close = CarbonImmutable::parse($row['time'], 'UTC')->addMinutes(5);
+                    $row = [...$row, 'spread_available' => $ready, 'spread' => $ready ? 0.5 : null,
+                        'bid_close' => $ready ? $row['close'] : null, 'ask_close' => $ready ? $row['close'] + 0.5 : null,
+                        'quote_time_utc' => $ready ? $close->subSecond()->toIso8601String() : null,
+                        'quote_available_after_utc' => $ready ? $close->toIso8601String() : null,
+                        'quote_age_ms' => $ready ? 1000 : null];
+                }
+                unset($row);
+
+                return ['rows' => $rows, 'provenance' => ['protocol' => HistoricalQuoteSpreadService::PROTOCOL,
+                    'status' => 'partial', 'source_m5_csv_sha256' => $hash, 'available_rows' => 1,
+                    'promotion_evidence' => false, 'execution_cost_model_changed' => false]];
+            });
+            $this->app->instance(HistoricalQuoteSpreadService::class, $quotes);
+        }
         $service = new MultiTimeframeSnapshotService($datasets, $training);
 
         $this->assertTrue($service->agentValidationReadiness('XAUUSD')['ready']);
@@ -74,6 +118,25 @@ class MtfAgentValidationSnapshotServiceTest extends TestCase
             $this->assertSame('passed', data_get($bundle, 'manifest.streams.M5.volume_quality.status'));
             $entryHeader = str_getcsv((string) strtok((string) File::get((string) $bundle['entry_dataset_path']), "\n"));
             $this->assertContains('volume_available', $entryHeader);
+            if ($withQuote) {
+                $this->assertContains('spread_available', $entryHeader);
+                $this->assertContains('quote_available_after_utc', $entryHeader);
+                $handle = fopen((string) $bundle['entry_dataset_path'], 'rb');
+                $headers = fgetcsv($handle);
+                $first = array_combine($headers, fgetcsv($handle));
+                $second = array_combine($headers, fgetcsv($handle));
+                fclose($handle);
+                $this->assertSame('1', $first['spread_available']);
+                $this->assertSame('0.5', $first['spread']);
+                $this->assertSame('0', $second['spread_available']);
+                $this->assertSame('', $second['spread']);
+                $this->assertSame('partial', data_get($bundle, 'manifest.quote_spread_provenance.status'));
+                $this->assertFalse(data_get($bundle, 'manifest.quote_spread_provenance.promotion_evidence'));
+                $this->assertNotSame(data_get($bundle, 'manifest.quote_spread_provenance.source_m5_csv_sha256'), data_get($bundle, 'manifest.streams.M5.sha256'));
+            } else {
+                $this->assertNotContains('spread_available', $entryHeader);
+                $this->assertSame('unavailable', data_get($bundle, 'manifest.quote_spread_provenance.status'));
+            }
             $this->assertTrue((bool) data_get($bundle, 'manifest.bounded_cost_contract.full_live_export_forbidden'));
             $this->assertTrue((bool) data_get($bundle, 'manifest.post_selection_historical_evidence'));
             $this->assertFalse((bool) data_get($bundle, 'manifest.promotion_evidence'));

@@ -334,6 +334,21 @@ class LabGenerationReportService
             'symbol' => $generation->laboratory?->symbol,
             'timeframe' => $generation->laboratory?->timeframe,
             'status' => $generation->status,
+            'independent_research_data' => app(InstrumentResearchWindowService::class)->readiness(),
+            'experiment_quality_progress' => app(ExperimentQualityProgressService::class)->snapshot($generation),
+            'release_provenance' => [
+                'status' => data_get($generation->trigger_context, 'research_release') ? 'prospectively_sealed' : 'legacy_unsealed',
+                'release_hash' => data_get($generation->trigger_context, 'research_release.release_hash'),
+                'promotion_evidence' => false,
+            ],
+            'signal_scope_diagnostics' => $screenDecisions->map(fn (CandidateGateDecision $decision): array => [
+                'agent_id' => (int) $decision->lab_agent_id,
+                'scope_receipt' => data_get($decision->metrics, 'data_quality.specialist_signal_scope'),
+                'strategy_signals_before_specialist_scope' => data_get($decision->metrics,
+                    'entry_contract_funnel.strategy_signals_before_specialist_scope'),
+                'specialist_context_rejections' => data_get($decision->metrics,
+                    'entry_contract_funnel.specialist_context_rejections'),
+            ])->filter(fn (array $row): bool => $row['scope_receipt'] !== null)->values()->all(),
             'parent_model_version_ids' => $parentModelVersionIds,
             'parent_deltas_by_parent' => $parentDeltasByParent,
             // Keep the legacy key for dashboard compatibility, but make its

@@ -1,10 +1,13 @@
 import hashlib
+import io
 import json
 import math
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import MappingProxyType
 
 import numpy as np
 import pandas as pd
@@ -32,6 +35,7 @@ from app.services.composition_runtime import (
     validate_composition_runtime_contract,
 )
 from app.services.control_roots import control_root_for
+from app.services.research_release import attest as attest_research_release
 from app.services.data_loader import load_candles
 from app.services.execution_contract import (
     enforce_policy_boundary,
@@ -44,6 +48,7 @@ from app.services.market_sessions import (
     apply_specialist_scope,
     session_membership,
 )
+from app.services.historical_quotes import validate_historical_quotes
 from app.services.monte_carlo import MonteCarloService
 from app.services.multitimeframe import annotate_regime_source, apply_signal_policy
 from app.services.multitimeframe_stack import (
@@ -67,6 +72,525 @@ def _timeframe_duration_minutes(value: object) -> int:
         "M1": 1, "M5": 5, "M15": 15, "M30": 30,
         "H1": 60, "H4": 240, "D1": 1440,
     }.get(key, 0)
+
+
+def assert_sealed_dataset_transport(payload: SimpleBacktestRequest) -> None:
+    """A file-sealed request cannot replace any input with inline candles."""
+    manifest = dict(payload.mtf_snapshot_manifest or {})
+    pilot = dict(payload.mtf_pilot or {})
+    sealed_mtf = bool(manifest.get("bundle_hash")) or (
+        bool(pilot.get("enabled"))
+        and pilot.get("activation_status") == "execution_stream_bound"
+    )
+    if sealed_mtf and (
+        payload.candles or payload.regime_candles
+        or any(dict(payload.mtf_streams or {}).values())
+        or any(dict(payload.related_mtf_streams or {}).values())
+    ):
+        raise ValueError("SEALED_MTF_INLINE_TRANSPORT_FORBIDDEN")
+    if payload.dataset_path and payload.candles and (
+        payload.replay_dataset_hash or payload.research_release
+    ):
+        raise ValueError("SEALED_DATASET_DUAL_TRANSPORT_FORBIDDEN")
+
+
+def assert_sealed_dataset_cache_sources(payload: SimpleBacktestRequest) -> None:
+    """A cached replay must still refer to the exact immutable source files."""
+    assert_sealed_dataset_transport(payload)
+    manifest = dict(payload.mtf_snapshot_manifest or {})
+    primary = str(payload.timeframe).upper()
+    if manifest.get("bundle_hash"):
+        if payload.replay_dataset_hash != manifest["bundle_hash"]:
+            raise ValueError("AUTONOMOUS_MTF_DATASET_IDENTITY_MISMATCH")
+        records = dict(manifest.get("streams") or {})
+        paths = [(primary, payload.dataset_path)]
+        if payload.regime_dataset_path:
+            paths.append(("H1", payload.regime_dataset_path))
+        paths.extend((str(key).upper(), value) for key, value in dict(payload.mtf_dataset_paths or {}).items())
+        paths.extend(("RELATED_" + str(key).upper(), value) for key, value in dict(payload.related_mtf_dataset_paths or {}).items())
+    elif payload.dataset_path and payload.replay_dataset_hash:
+        records = {primary: {"path": payload.dataset_path, "sha256": payload.replay_dataset_hash}}
+        paths = [(primary, payload.dataset_path)]
+    else:
+        return
+    for stream, requested in paths:
+        record = dict(records.get(stream) or {})
+        if not requested or not record.get("path") or not record.get("sha256"):
+            raise ValueError(f"AUTONOMOUS_MTF_{stream}_MANIFEST_MISSING")
+        resolved = _resolve_dataset_path(str(requested)).resolve()
+        if resolved != _resolve_dataset_path(str(record["path"])).resolve():
+            raise ValueError(f"AUTONOMOUS_MTF_{stream}_PATH_MISMATCH")
+        digest = hashlib.sha256()
+        with resolved.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != record["sha256"]:
+            raise ValueError(f"SEALED_DATASET_{stream}_HASH_MISMATCH")
+
+
+def _source_row_tokens(frame: pd.DataFrame, columns: list[str]) -> list[bytes]:
+    """Canonical source values, excluding strategy-generated feature columns."""
+    normalized = frame.reindex(columns=columns).copy()
+    if "spread_available" in normalized:
+        absent_quote = ~pd.to_numeric(normalized["spread_available"], errors="coerce").eq(1)
+        for column in {"spread", "bid_close", "ask_close", "quote_age_ms",
+                       "quote_time_utc", "quote_available_after_utc"}.intersection(columns):
+            normalized.loc[absent_quote, column] = None
+    for column in columns:
+        if column == "time" or column.endswith("_utc"):
+            values = pd.to_datetime(normalized[column], utc=True, errors="coerce")
+            normalized[column] = values.map(lambda value: value.isoformat() if pd.notna(value) else None)
+        elif column in {"open", "high", "low", "close", "volume", "spread", "spread_points",
+                         "bid_ask_spread", "bid_close", "ask_close", "quote_age_ms",
+                         "volume_available", "spread_available"}:
+            normalized[column] = pd.to_numeric(normalized[column], errors="coerce").astype(float)
+    # pandas serializes missing/non-finite values as null consistently and
+    # keeps row order. No declared hash is substituted for these actual rows.
+    records = json.loads(normalized.to_json(orient="records", double_precision=15))
+    return [json.dumps(row, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode() for row in records]
+
+
+def _ordered_token_hash(tokens: list[bytes]) -> str:
+    digest = hashlib.sha256()
+    for token in tokens:
+        digest.update(len(token).to_bytes(8, "big"))
+        digest.update(token)
+    return digest.hexdigest()
+
+
+_SOURCE_ROW_INDEX_LOADER_TOKEN = object()
+
+
+class _ImmutableSourceRowIndex(Mapping[str, str]):
+    """Loader-owned source proof safely shared by pandas attrs deepcopy.
+
+    Neither the row hashes nor their source identity contains mutable leaves.
+    Returning self from deepcopy is therefore safe: derived frames retain the
+    same original byte/row witness, without cloning a 200k-row map per Series.
+    Plain dictionaries or caller-supplied metadata are never this attestation.
+    """
+
+    __slots__ = ("_rows", "_source", "_path")
+
+    def __init__(self, token: object, rows: dict[str, str], source: dict[str, object], path: str) -> None:
+        if token is not _SOURCE_ROW_INDEX_LOADER_TOKEN:
+            raise TypeError("SOURCE_ROW_INDEX_LOADER_OWNERSHIP_REQUIRED")
+        if any(not isinstance(key, str) or not isinstance(value, str) for key, value in rows.items()):
+            raise TypeError("SOURCE_ROW_INDEX_IMMUTABLE_STRING_LEAVES_REQUIRED")
+        source_values = []
+        for key, value in sorted(source.items()):
+            if key == "source_columns":
+                value = tuple(value)
+                if any(not isinstance(column, str) for column in value):
+                    raise TypeError("SOURCE_ROW_INDEX_IMMUTABLE_COLUMNS_REQUIRED")
+            elif not isinstance(value, (str, int)):
+                raise TypeError("SOURCE_ROW_INDEX_IMMUTABLE_IDENTITY_REQUIRED")
+            source_values.append((key, value))
+        object.__setattr__(self, "_rows", MappingProxyType(dict(rows)))
+        object.__setattr__(self, "_source", tuple(source_values))
+        object.__setattr__(self, "_path", path)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise TypeError("SOURCE_ROW_INDEX_IS_IMMUTABLE")
+
+    def __delattr__(self, name: str) -> None:
+        raise TypeError("SOURCE_ROW_INDEX_IS_IMMUTABLE")
+
+    def __getitem__(self, key: str) -> str:
+        return self._rows[key]
+
+    def __iter__(self):
+        return iter(self._rows)
+
+    def __len__(self) -> int:
+        return len(self._rows)
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo: dict[int, object]):
+        memo[id(self)] = self
+        return self
+
+    def matches(self, source: dict[str, object], payload: SimpleBacktestRequest, stream: str) -> bool:
+        expected_source = dict(self._source)
+        expected_source["source_columns"] = list(expected_source["source_columns"])
+        if source != expected_source or source.get("status") != "verified" or source.get("stream") != stream:
+            return False
+        if source.get("dataset_identity") != payload.replay_dataset_hash:
+            return False
+        manifest = dict(payload.mtf_snapshot_manifest or {})
+        if manifest.get("bundle_hash"):
+            record = dict((manifest.get("streams") or {}).get(stream) or {})
+            declared = record.get("sha256")
+            requested = record.get("path")
+        else:
+            declared = payload.replay_dataset_hash
+            requested = payload.dataset_path
+        return bool(requested) and str(declared or "") == source.get("actual_source_sha256") and str(
+            _resolve_dataset_path(str(requested)).resolve()
+        ) == self._path
+
+
+def _load_verified_dataset_csv(
+    payload: SimpleBacktestRequest, path: str, stream: str,
+) -> pd.DataFrame:
+    assert_sealed_dataset_transport(payload)
+    resolved = _resolve_dataset_path(path).resolve()
+    manifest = dict(payload.mtf_snapshot_manifest or {})
+    record = dict((manifest.get("streams") or {}).get(stream) or {})
+    declared_hash = ""
+    if manifest.get("bundle_hash"):
+        if not record.get("path") or not record.get("sha256"):
+            raise ValueError(f"AUTONOMOUS_MTF_{stream}_MANIFEST_MISSING")
+        if _resolve_dataset_path(str(record["path"])).resolve() != resolved:
+            raise ValueError(f"AUTONOMOUS_MTF_{stream}_PATH_MISMATCH")
+        declared_hash = str(record["sha256"])
+        if payload.replay_dataset_hash != manifest.get("bundle_hash"):
+            raise ValueError("AUTONOMOUS_MTF_DATASET_IDENTITY_MISMATCH")
+    elif stream == str(payload.timeframe).upper():
+        declared_hash = str(payload.replay_dataset_hash or "")
+    # Hash the same bytes passed to the CSV parser, eliminating a hash/read race.
+    with resolved.open("rb") as handle:
+        contents = handle.read()
+    actual_hash = hashlib.sha256(contents).hexdigest()
+    if declared_hash and actual_hash != declared_hash:
+        raise ValueError(f"SEALED_DATASET_{stream}_HASH_MISMATCH")
+    frame = pd.read_csv(io.BytesIO(contents), low_memory=False)
+    columns = sorted(str(column) for column in frame.columns)
+    tokens = _source_row_tokens(frame, columns)
+    times = pd.to_datetime(frame["time"], utc=True, errors="coerce")
+    row_hashes = {
+        value.isoformat(): hashlib.sha256(token).hexdigest()
+        for value, token in zip(times, tokens) if pd.notna(value)
+    }
+    frame.attrs["dataset_source_attestation"] = {
+        "protocol": "consumed_dataset_attestation_v1",
+        "status": "verified" if declared_hash else "unsealed",
+        "dataset_identity": str(payload.replay_dataset_hash or actual_hash),
+        "actual_source_sha256": actual_hash,
+        "source_columns": columns,
+        "source_rows": len(frame),
+        "stream": stream,
+    }
+    frame.attrs["_sealed_source_row_hashes"] = _ImmutableSourceRowIndex(
+        _SOURCE_ROW_INDEX_LOADER_TOKEN, row_hashes,
+        frame.attrs["dataset_source_attestation"], str(resolved),
+    )
+    return frame
+
+
+def _consumed_dataset_attestation(
+    payload: SimpleBacktestRequest, frame: pd.DataFrame,
+) -> dict[str, object]:
+    source = dict(frame.attrs.get("dataset_source_attestation") or {})
+    expected = frame.attrs.get("_sealed_source_row_hashes")
+    if payload.dataset_path and (payload.replay_dataset_hash or payload.research_release) and not source:
+        frozen = _load_verified_dataset_csv(payload, payload.dataset_path, str(payload.timeframe).upper())
+        source = dict(frozen.attrs["dataset_source_attestation"])
+        expected = frozen.attrs["_sealed_source_row_hashes"]
+    columns = list(source.get("source_columns") or sorted(str(column) for column in frame.columns))
+    tokens = _source_row_tokens(frame, columns)
+    if source.get("status") == "verified":
+        if not isinstance(expected, _ImmutableSourceRowIndex) or not expected.matches(source, payload, str(payload.timeframe).upper()):
+            raise ValueError("SEALED_DATASET_CONSUMED_IDENTITY_MISMATCH")
+        times = pd.to_datetime(frame["time"], utc=True, errors="coerce")
+        for value, token in zip(times, tokens):
+            if pd.isna(value) or expected.get(value.isoformat()) != hashlib.sha256(token).hexdigest():
+                raise ValueError("SEALED_DATASET_CONSUMED_ROWS_MISMATCH")
+    return {
+        **source,
+        "protocol": "consumed_dataset_attestation_v1",
+        "status": str(source.get("status") or "unsealed"),
+        "dataset_identity": str(source.get("dataset_identity") or payload.replay_dataset_hash or ""),
+        "source_columns": columns,
+        "consumed_data_hash": _ordered_token_hash(tokens),
+        "consumed_rows": len(frame),
+        "execution_timeframe": str(payload.timeframe).upper(),
+        "promotion_evidence": False,
+    }
+
+
+def _context_source_attestation(
+    payload: SimpleBacktestRequest, stream: str, frame: pd.DataFrame,
+) -> dict[str, object]:
+    """Attest original rows actually supplied to the context compiler.
+
+    Derived structure columns are deliberately excluded: a legal context/setup
+    intervention may change them without changing its counterfactual inputs.
+    """
+    source = dict(frame.attrs.get("dataset_source_attestation") or {})
+    columns = list(source.get("source_columns") or sorted(str(column) for column in frame.columns))
+    tokens = _source_row_tokens(frame, columns)
+    times = pd.to_datetime(frame.get("time"), utc=True, errors="coerce")
+    expected = frame.attrs.get("_sealed_source_row_hashes")
+    manifest_stream = "H1" if stream == "REGIME_H1" else stream
+    declared = dict((payload.mtf_snapshot_manifest or {}).get("streams", {}).get(manifest_stream) or {})
+    verified = (source.get("status") == "verified"
+        and source.get("dataset_identity") == payload.replay_dataset_hash
+        and source.get("stream") == manifest_stream
+        and declared.get("sha256") == source.get("actual_source_sha256")
+        and isinstance(expected, _ImmutableSourceRowIndex)
+        and expected.matches(source, payload, manifest_stream))
+    if source.get("status") == "verified" and not verified:
+        raise ValueError(f"SEALED_CONTEXT_{stream}_CONSUMED_IDENTITY_MISMATCH")
+    if verified:
+        if not times.is_unique or not times.is_monotonic_increasing:
+            raise ValueError(f"SEALED_CONTEXT_{stream}_TEMPORAL_IDENTITY_MISMATCH")
+        for value, token in zip(times, tokens):
+            if pd.isna(value) or expected.get(value.isoformat()) != hashlib.sha256(token).hexdigest():
+                raise ValueError(f"SEALED_CONTEXT_{stream}_CONSUMED_ROWS_MISMATCH")
+    return {
+        "stream": stream, "status": "verified" if verified else "unsealed",
+        "actual_source_sha256": str(source.get("actual_source_sha256") or ""),
+        "consumed_data_hash": _ordered_token_hash(tokens),
+        "consumed_rows": len(frame),
+        "first_candle_utc": times.iloc[0].isoformat() if len(times) and pd.notna(times.iloc[0]) else "",
+        "last_candle_utc": times.iloc[-1].isoformat() if len(times) and pd.notna(times.iloc[-1]) else "",
+    }
+
+
+def _decision_dependency_identity(
+    payload: SimpleBacktestRequest, scope: pd.DataFrame, quality: dict[str, object],
+) -> dict[str, object]:
+    """Bind every consumed compiler source and its actual backward-as-of join."""
+    primary = dict(quality.get("dataset_attestation") or {})
+    streams = dict(quality.get("context_source_attestations") or {})
+    streams[str(payload.timeframe).upper()] = {
+        "stream": str(payload.timeframe).upper(),
+        "status": str(primary.get("status") or "unsealed"),
+        "actual_source_sha256": str(primary.get("actual_source_sha256") or ""),
+        "consumed_data_hash": str(primary.get("consumed_data_hash") or ""),
+        "consumed_rows": int(primary.get("consumed_rows") or 0),
+    }
+    manifest = dict(payload.mtf_snapshot_manifest or {})
+    if manifest.get("bundle_hash") and primary.get("actual_source_sha256") != dict(
+        (manifest.get("streams") or {}).get(str(payload.timeframe).upper()) or {}).get("sha256"):
+        streams[str(payload.timeframe).upper()]["status"] = "request_identity_mismatch"
+    required = {str(payload.timeframe).upper()}
+    required.update(str(key).upper() for key, value in dict(payload.mtf_dataset_paths or {}).items() if value)
+    required.update(str(key).upper() for key, value in dict(payload.mtf_streams or {}).items() if value)
+    required.update("RELATED_" + str(key).upper() for key, value in dict(payload.related_mtf_dataset_paths or {}).items() if value)
+    required.update("RELATED_" + str(key).upper() for key, value in dict(payload.related_mtf_streams or {}).items() if value)
+    if payload.regime_dataset_path or payload.regime_candles:
+        required.add("REGIME_H1")
+    if str(payload.timeframe).upper() == "M5" or (payload.mtf_snapshot_manifest or {}).get("bundle_hash"):
+        required.update(("H4", "H1", "M15"))
+    # A reused/partially missing prepared context cannot manufacture absent inputs.
+    complete = required == set(streams)
+    times = pd.to_datetime(scope["time"], utc=True, errors="coerce")
+    duration = pd.Timedelta(minutes=_timeframe_duration_minutes(payload.timeframe))
+    for stream in sorted(set(streams) - {str(payload.timeframe).upper()}):
+        item = dict(streams[stream])
+        declared_stream = "H1" if stream == "REGIME_H1" else stream
+        declared = dict((payload.mtf_snapshot_manifest or {}).get("streams", {}).get(declared_stream) or {})
+        if item.get("status") == "verified" and declared.get("sha256") != item.get("actual_source_sha256"):
+            item["status"] = "request_identity_mismatch"
+            complete = False
+        column = "_h1_closed_at" if stream == "REGIME_H1" else stream.lower() + "_available_at"
+        as_of = times if stream == "REGIME_H1" else times + duration
+        if column not in scope:
+            item.update({"join_status": "missing", "as_of_join_hash": ""})
+            complete = False
+        else:
+            available = pd.to_datetime(scope[column], utc=True, errors="coerce")
+            valid = not bool((available.notna() & available.gt(as_of)).any())
+            tokens = [json.dumps([decision.isoformat(), closed.isoformat() if pd.notna(closed) else None],
+                separators=(",", ":")).encode() for decision, closed in zip(as_of, available)]
+            item.update({"join_status": "verified" if valid else "future_context",
+                "as_of_rule": "candle_open_utc_v1" if stream == "REGIME_H1" else "candle_open_plus_timeframe_duration_utc_v1",
+                "as_of_join_hash": _ordered_token_hash(tokens)})
+            complete &= valid
+        streams[stream] = item
+    complete &= all(item.get("status") == "verified" and int(item.get("consumed_rows") or 0) > 0
+        and all(len(str(item.get(key) or "")) == 64 for key in ("actual_source_sha256", "consumed_data_hash"))
+        for item in streams.values())
+    receipt = {"protocol": "consumed_dependency_identity_v1", "status": "complete" if complete else "non_controlling",
+        "required_streams": sorted(required), "streams": streams,
+        "as_of_rule": "candle_open_plus_timeframe_duration_utc_v1", "promotion_evidence": False}
+    receipt["receipt_hash"] = hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    return receipt
+
+
+def _semantic_event_value(value: object) -> object:
+    """Stable finite tokens (numbers as strings); receipt JSON is PHP-safe."""
+    if value is None or value is pd.NA or value is pd.NaT:
+        return None
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, float, np.number)):
+        number = float(value)
+        if not math.isfinite(number):
+            return None
+        return format(number, ".17g")
+    if isinstance(value, (datetime, pd.Timestamp)):
+        stamp = pd.Timestamp(value)
+        return (stamp.tz_localize("UTC") if stamp.tzinfo is None else stamp.tz_convert("UTC")).isoformat()
+    return str(value)
+
+
+def _decision_identity_receipt(
+    payload: SimpleBacktestRequest,
+    frame: pd.DataFrame,
+    trades: list[SimpleTrade],
+    entry_indices: set[int],
+    entry_events: dict[int, dict[str, object]] | None = None,
+    closed_events: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    """Attest stage-specific meaning, never just candle membership/counts."""
+    scope = frame.iloc[199 : max(199, len(frame) - 1)]
+    duration = pd.Timedelta(minutes=_timeframe_duration_minutes(payload.timeframe))
+    times = pd.to_datetime(scope["time"], utc=True, errors="coerce")
+    symbol = str(payload.symbol).replace("/", "").replace("_", "").replace("-", "").upper()
+    timeframe = str(payload.timeframe).upper()
+    identities = [
+        hashlib.sha256(json.dumps(
+            [symbol, timeframe, (value + duration).isoformat()],
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        for value in times if pd.notna(value)
+    ]
+    domain_valid = len(identities) == len(scope) and times.is_unique and times.is_monotonic_increasing
+
+    def event_identity(mask: pd.Series | None, fields: tuple[str, ...] = (), *, raw: bool = False) -> dict[str, object]:
+        if mask is None or not domain_valid:
+            return {"status": "unavailable", "event_count": 0, "event_hash": "", "semantic_schema": "stage_semantics_v2"}
+        selected = []
+        columns = [column for column in fields if column in scope]
+        positions = np.flatnonzero(mask.fillna(False).astype(bool).to_numpy())
+        direction_column = raw_column if raw else next((column for column in ("entry_contract_direction", raw_column, "signal") if column and column in scope), None)
+        needed = list(dict.fromkeys([*columns, *([direction_column] if direction_column and columns else [])]))
+        records = scope.iloc[positions][needed].to_dict(orient="records") if needed else [{} for _ in positions]
+        for position, row in zip(positions, records):
+            event = {"decision_id": identities[position], "values": {column: _semantic_event_value(row[column]) for column in columns}}
+            if columns:
+                event["direction"] = str(row[direction_column]) if direction_column else "WAIT"
+            selected.append(json.dumps(event, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode())
+        return {"status": "observed", "event_count": len(selected), "event_hash": _ordered_token_hash(selected), "semantic_schema": "stage_semantics_v2"}
+
+    raw_column = next((column for column in ("pre_volume_signal", "pre_specialist_signal", "signal") if column in scope), None)
+    stages: dict[str, object] = {
+        "opportunity": event_identity(pd.Series(True, index=scope.index)),
+    }
+    for stage, (column, fields) in {
+        "context": ("entry_context_valid", ("entry_context_valid", "market_regime", "volatility_regime", "mtf_stack_status", "mtf_stack_reason", "h4_context_hash", "h1_context_hash", "m15_context_hash")),
+        "location": ("entry_location_valid", ("entry_location_valid", "entry_location_reference_price", "entry_location_distance_atr", "entry_setup_zone_low", "entry_setup_zone_high")),
+        "setup": ("entry_setup_detected", ("entry_setup_detected", "entry_contract_model", "entry_reference_price", "entry_setup_reference_price", "entry_setup_zone_low", "entry_setup_zone_high")),
+        "confirmation": ("entry_confirmation_valid", ("entry_confirmation_valid", "entry_independent_confirmation_count", "entry_raw_confirmation_count", "entry_confirmation_families", "entry_redundancy_penalty", "entry_confirmation_count", "entry_confirmation_family_count")),
+        "trigger": ("entry_trigger_valid", ("entry_trigger_valid", "entry_trigger_anchor_price", "entry_trigger_reference_price", "entry_trigger_reason")),
+    }.items():
+        stages[stage] = event_identity(scope[column] if column in scope else None, fields)
+    stages["raw_signal"] = event_identity(scope[raw_column].isin(["BUY", "SELL"]) if raw_column else None,
+        (raw_column, "signal_confidence") if raw_column else (), raw=True)
+    entries = entry_events or {}
+    entry_tokens = []
+    entry_links = {}
+    entry_valid = domain_valid
+    for position, index in enumerate(scope.index):
+        if index not in entry_indices:
+            continue
+        event = entries.get(int(index))
+        valid_entry = event and event.get("direction") in {"BUY", "SELL"}
+        try:
+            valid_entry = valid_entry and all(math.isfinite(float(event[key])) for key in (
+                "entry_price", "initial_stop_loss", "position_size_multiple", "risk_budget_percent"))
+        except (KeyError, ValueError, TypeError):
+            valid_entry = False
+        if not valid_entry:
+            entry_valid = False
+            continue
+        token = json.dumps({"decision_id": identities[position], "entry": event}, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        entry_tokens.append(token)
+        entry_links[_semantic_event_value(scope.iloc[position]["time"])] = hashlib.sha256(token).hexdigest()
+    stages["entry"] = {"status": "observed" if entry_valid else "unavailable", "event_count": len(entry_tokens), "event_hash": _ordered_token_hash(entry_tokens) if entry_valid else "", "semantic_schema": "filled_entry_v2"}
+    closed_tokens = []
+    closed_valid = entry_valid and (closed_events is None or len(closed_events) == len(trades))
+    for trade_index, trade in enumerate(trades):
+        link = entry_links.get(_semantic_event_value(pd.Timestamp(trade.signal_time))) if trade.signal_time else None
+        numeric = (trade.entry_price, trade.exit_price, trade.profit_percent, trade.gross_profit_percent,
+            trade.execution_cost_percent, trade.market_profit_percent, trade.position_size_multiple, trade.risk_budget_percent)
+        valid = link and trade.direction in {"BUY", "SELL"} and all(math.isfinite(float(value)) for value in numeric)
+        valid = valid and all(value is None or math.isfinite(float(value)) for value in (
+            trade.stop_loss, trade.take_profit, trade.realized_r_multiple))
+        if not valid:
+            closed_valid = False
+            continue
+        event = {key: _semantic_event_value(getattr(trade, key)) for key in (
+            "direction", "entry_price", "exit_price", "stop_loss", "take_profit",
+            "profit_percent", "gross_profit_percent", "execution_cost_percent", "market_profit_percent",
+            "position_size_multiple", "risk_budget_percent", "result", "exit_reason", "realized_r_multiple",
+        )}
+        event["signal_time"] = _semantic_event_value(pd.Timestamp(trade.signal_time))
+        event["entry_time"] = _semantic_event_value(pd.Timestamp(trade.entry_time))
+        event["exit_time"] = _semantic_event_value(pd.Timestamp(trade.exit_time))
+        event["entry_link_hash"] = link
+        if closed_events is not None:
+            raw = closed_events[trade_index] if trade_index < len(closed_events) else {}
+            required_money = ("entry_price", "exit_price", "profit_percent", "gross_profit_percent",
+                "execution_cost_percent", "market_profit_percent", "position_size_multiple")
+            try:
+                raw_valid = raw.get("direction") == trade.direction and all(
+                    math.isfinite(float(raw[key])) for key in required_money)
+            except (KeyError, ValueError, TypeError):
+                raw_valid = False
+            if not raw_valid:
+                closed_valid = False
+                continue
+            event["execution_outcome"] = {key: _semantic_event_value(value) for key, value in raw.items()}
+        closed_tokens.append(json.dumps(event, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode())
+    stages["closed_trade"] = {"status": "observed" if closed_valid else "unavailable", "event_count": len(closed_tokens), "event_hash": _ordered_token_hash(closed_tokens) if closed_valid else "", "semantic_schema": "entry_linked_close_v2"}
+    quality = dict(frame.attrs.get("data_quality") or {})
+    attestation = dict(quality.get("dataset_attestation") or {})
+    release = dict(quality.get("research_release_receipt") or {})
+    dependencies = _decision_dependency_identity(payload, scope, quality)
+    bindings = {
+        "symbol": symbol, "execution_timeframe": timeframe,
+        "dataset_identity": str(attestation.get("dataset_identity") or ""),
+        "data_hash": str(attestation.get("consumed_data_hash") or ""),
+        "actual_source_sha256": str(attestation.get("actual_source_sha256") or ""),
+        "dataset_attestation_status": str(attestation.get("status") or "unsealed"),
+        "execution_hash": str(execution_contract_metadata(payload).get("execution_hash") or ""),
+        "as_of_rule": "candle_open_plus_timeframe_duration_utc_v1",
+        "source_evaluator_hash": str(release.get("source_hash") or ""),
+        "source_identity_protocol": "dual_runtime_source_identity_v1",
+        "python_source_hash": str(release.get("source_hash") or ""),
+        "full_runtime_source_hash": str(release.get("sealed_full_runtime_source_hash") or "")
+            if release.get("protocol") == "research_worker_release_receipt_v1"
+            and release.get("full_runtime_source_provenance") == "validated_sealed_release_identity"
+            and len(str(release.get("release_hash") or "")) == 64 else "",
+        "source_evaluator_attested": release.get("loaded_code_attested") is True,
+        "dependency_receipt_hash": dependencies["receipt_hash"],
+        "dependency_status": dependencies["status"],
+    }
+    temporal_valid = True
+    decisions = times + duration
+    for column in ("h4_available_at", "h1_available_at", "m15_available_at", "d1_available_at", "related_m15_available_at"):
+        if column in scope:
+            available = pd.to_datetime(scope[column], utc=True, errors="coerce")
+            temporal_valid &= not bool((available.notna() & available.gt(decisions)).any())
+    receipt: dict[str, object] = {
+        "protocol": "replay_decision_identity_v2",
+        "status": "complete" if domain_valid and len(scope) > 0 and temporal_valid
+            and all(stage["status"] == "observed" for stage in stages.values())
+            and bindings["dataset_attestation_status"] == "verified"
+            and dependencies["status"] == "complete"
+            and bindings["source_evaluator_attested"]
+            and len(bindings["source_evaluator_hash"]) == 64
+            and len(bindings["full_runtime_source_hash"]) == 64
+            and bindings["python_source_hash"] == bindings["source_evaluator_hash"]
+            and all(bindings[key] for key in ("dataset_identity", "data_hash", "actual_source_sha256", "execution_hash"))
+            else "non_controlling",
+        "bindings": bindings,
+        "dependency_identity": dependencies,
+        "candle_domain": {"event_count": len(scope), "event_hash": _ordered_token_hash([value.encode() for value in identities]) if domain_valid and identities else ""},
+        "stage_identities": stages,
+        "ordered_unique": bool(domain_valid), "temporal_as_of_valid": bool(temporal_valid),
+        "counts_are_diagnostic_only": True, "promotion_evidence": False,
+    }
+    receipt["receipt_hash"] = hashlib.sha256(json.dumps(
+        receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode()).hexdigest()
+    return receipt
 
 
 @dataclass(frozen=True)
@@ -123,6 +647,7 @@ def prepare_replay_feature_context(
     and performance.  Reuse therefore changes only compute cost, never the
     causal observation or strategy behaviour of a fold.
     """
+    assert_sealed_dataset_transport(payload)
     regime_source = _load_regime_source(payload)
     mtf_streams = _load_mtf_streams(payload)
     mtf_context = (
@@ -154,6 +679,7 @@ def _assert_closed_mtf_runtime(
                 digest.update(chunk)
         return digest.hexdigest()
 
+    assert_sealed_dataset_transport(payload)
     pilot = dict(payload.mtf_pilot or {})
     if not (
         bool(pilot.get("enabled", False))
@@ -169,6 +695,8 @@ def _assert_closed_mtf_runtime(
 
     manifest = dict(payload.mtf_snapshot_manifest or {})
     bundle_hash = str(manifest.get("bundle_hash") or "")
+    if payload.replay_dataset_hash != bundle_hash:
+        raise ValueError("AUTONOMOUS_MTF_DATASET_IDENTITY_MISMATCH")
     if (
         manifest.get("protocol") != "closed_h4_h1_m15_m5_snapshot_v1"
         or manifest.get("validation_bundle_protocol")
@@ -288,6 +816,7 @@ def _prepare_simple_dataframe(
     payload: SimpleBacktestRequest, df: pd.DataFrame
 ) -> pd.DataFrame:
     """Normalize and validate one candle stream exactly once per snapshot."""
+    assert_sealed_dataset_transport(payload)
     frame = df.copy()
     if "volume" not in frame.columns:
         frame["volume"] = 0
@@ -313,6 +842,7 @@ def _prepare_simple_dataframe(
     frame["time"] = pd.to_datetime(frame["time"], errors="coerce", utc=True)
     for column in ["open", "high", "low", "close", "volume"]:
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame = validate_historical_quotes(frame, payload)
     # CSV/API payloads may materialize this marker as an object column when
     # unavailable rows contain nulls.  Calling fillna directly on that object
     # column emits pandas' future downcasting warning; in the bounded worker
@@ -378,7 +908,11 @@ def prepare_feature_snapshot(
     replay_context: PreparedReplayFeatureContext | None = None,
 ) -> PreparedFeatureSnapshot:
     """Build closed-context, volume and ATR features once per candle snapshot."""
+    release_receipt = attest_research_release(payload.research_release,
+        dataset_hash=payload.replay_dataset_hash,
+        execution_hash=payload.execution_contract.get("execution_hash"))
     normalized = _prepare_simple_dataframe(payload, df)
+    dataset_attestation = _consumed_dataset_attestation(payload, normalized)
     source = normalized.copy()
     regime_source = (
         replay_context.regime_source
@@ -404,6 +938,14 @@ def prepare_feature_snapshot(
             _load_related_mtf_streams(payload),
         )
     _assert_closed_mtf_runtime(payload, mtf_context)
+    context_sources = {}
+    if regime_source is not None:
+        context_sources["REGIME_H1"] = _context_source_attestation(payload, "REGIME_H1", regime_source)
+    if mtf_context is not None:
+        for stream, context_frame in mtf_context.prepared.items():
+            context_sources[stream] = _context_source_attestation(payload, stream, context_frame)
+        if mtf_context.related_m15 is not None:
+            context_sources["RELATED_M15"] = _context_source_attestation(payload, "RELATED_M15", mtf_context.related_m15)
     if mtf_context is not None or mtf_streams:
         prepared = apply_closed_mtf_context(
             prepared,
@@ -412,7 +954,15 @@ def prepare_feature_snapshot(
             None if mtf_context is not None else _load_related_mtf_streams(payload),
             prepared_context=mtf_context,
         )
-    prepared = add_volume_features(prepared, payload.volume_context)
+    prepared = add_volume_features(prepared, {
+        **dict(payload.volume_context or {}), "timeframe": str(payload.timeframe).upper(),
+    })
+    # H1/closed-MTF as-of joins discard DataFrame attrs. Retain only the
+    # quote attestation validated on the source rows before those joins;
+    # spread telemetry still counts the actual consumed slice at response time.
+    quote_quality = normalized.attrs.get("quote_spread_quality")
+    if isinstance(quote_quality, dict):
+        prepared.attrs["quote_spread_quality"] = dict(quote_quality)
     prepared.attrs["execution_timeframe"] = str(payload.timeframe).upper()
     previous_close = prepared["close"].shift(1)
     true_range = pd.concat(
@@ -428,6 +978,9 @@ def prepare_feature_snapshot(
         normalized.attrs.get("unexpected_gap_count", 0)
     )
     data_quality = dict(normalized.attrs.get("data_quality") or {})
+    data_quality["research_release_receipt"] = release_receipt
+    data_quality["dataset_attestation"] = dataset_attestation
+    data_quality["context_source_attestations"] = context_sources
     if "mtf_stack" in prepared.attrs:
         data_quality["mtf_stack"] = dict(prepared.attrs["mtf_stack"])
     if interaction_variant == "state_classifier_coherence_v1":
@@ -475,11 +1028,21 @@ def tail_feature_snapshot(
     frame.attrs["warmup_view_rows"] = requested
     source.attrs = dict(snapshot.source_frame.attrs)
 
+    data_quality = dict(snapshot.data_quality)
+    attestation = dict(data_quality.get("dataset_attestation") or {})
+    if attestation:
+        attestation["consumed_rows"] = len(source)
+        attestation["consumed_data_hash"] = _ordered_token_hash(
+            _source_row_tokens(source, list(attestation["source_columns"]))
+        )
+        data_quality["dataset_attestation"] = attestation
+    frame.attrs["data_quality"] = data_quality
+
     return PreparedFeatureSnapshot(
         source_frame=source,
         frame=frame,
         unexpected_gap_count=snapshot.unexpected_gap_count,
-        data_quality=dict(snapshot.data_quality),
+        data_quality=data_quality,
     )
 
 
@@ -490,11 +1053,41 @@ def prepare_signal_snapshot(
     feature_snapshot: PreparedFeatureSnapshot | None = None,
 ) -> PreparedSignalSnapshot:
     """Apply one strategy/router signal layer to a reusable feature snapshot."""
+    assert_sealed_dataset_transport(payload)
     features = feature_snapshot or prepare_feature_snapshot(
         payload,
         df if df is not None else _load_simple_candles(payload),
     )
     prepared = features.frame.copy()
+    signal_data_quality = dict(features.data_quality)
+    dataset_attestation = dict(signal_data_quality.get("dataset_attestation") or {})
+    for stream, source in dict(signal_data_quality.get("context_source_attestations") or {}).items():
+        if source.get("status") != "verified":
+            continue
+        declared_stream = "H1" if stream == "REGIME_H1" else stream
+        declared = dict((payload.mtf_snapshot_manifest or {}).get("streams", {}).get(declared_stream) or {})
+        if declared.get("sha256") != source.get("actual_source_sha256"):
+            raise ValueError(f"SEALED_FEATURE_CONTEXT_{stream}_IDENTITY_MISMATCH")
+    if dataset_attestation.get("status") == "verified":
+        if (dataset_attestation.get("dataset_identity") != payload.replay_dataset_hash
+            or dataset_attestation.get("execution_timeframe") != str(payload.timeframe).upper()):
+            raise ValueError("SEALED_FEATURE_SNAPSHOT_IDENTITY_MISMATCH")
+        manifest = dict(payload.mtf_snapshot_manifest or {})
+        if manifest.get("bundle_hash") and dataset_attestation.get("actual_source_sha256") != dict(
+            (manifest.get("streams") or {}).get(str(payload.timeframe).upper()) or {}).get("sha256"):
+            raise ValueError("SEALED_FEATURE_PRIMARY_SOURCE_IDENTITY_MISMATCH")
+        current = _consumed_dataset_attestation(payload, features.source_frame)
+        actual_feature_hash = _ordered_token_hash(
+            _source_row_tokens(prepared, list(dataset_attestation["source_columns"]))
+        )
+        if current["consumed_data_hash"] != actual_feature_hash:
+            raise ValueError("SEALED_FEATURE_SNAPSHOT_ROWS_MISMATCH")
+        signal_data_quality["dataset_attestation"] = current
+    # A shared feature snapshot belongs to a data context, not to the caller's
+    # release identity. Recheck even when no feature work is performed.
+    signal_data_quality["research_release_receipt"] = attest_research_release(
+        payload.research_release, dataset_hash=payload.replay_dataset_hash,
+        execution_hash=payload.execution_contract.get("execution_hash"))
     if payload.portfolio_members:
         prepared = _apply_portfolio_strategy(
             prepared,
@@ -520,12 +1113,23 @@ def prepare_signal_snapshot(
             payload.specialist_context_contract,
             _timeframe_duration_minutes(payload.timeframe),
         )
+        # Carry the emitted scope receipt through feature metadata. Replacing
+        # data_quality below must not erase why a signal became WAIT.
+        scope_receipt = dict(prepared.attrs.get("specialist_context_contract") or {})
+        if scope_receipt:
+            signal_data_quality["specialist_signal_scope"] = scope_receipt
     prepared = apply_composition_entry_contract(
         prepared, payload.composition_runtime_contract
     )
     prepared = _apply_signal_delay(prepared, payload.signal_delay_candles)
+    if dataset_attestation.get("status") == "verified":
+        consumed_hash = _ordered_token_hash(
+            _source_row_tokens(prepared, list(dataset_attestation["source_columns"]))
+        )
+        if consumed_hash != signal_data_quality["dataset_attestation"]["consumed_data_hash"]:
+            raise ValueError("SEALED_SIGNAL_SNAPSHOT_ROWS_MISMATCH")
     prepared.attrs["unexpected_gap_count"] = features.unexpected_gap_count
-    prepared.attrs["data_quality"] = dict(features.data_quality)
+    prepared.attrs["data_quality"] = signal_data_quality
     prepared.attrs["regime_source"] = str(
         features.frame.attrs.get("regime_source", "execution_timeframe")
     )
@@ -533,7 +1137,7 @@ def prepare_signal_snapshot(
         source_frame=features.source_frame,
         frame=prepared,
         unexpected_gap_count=features.unexpected_gap_count,
-        data_quality=dict(features.data_quality),
+        data_quality=signal_data_quality,
         feature_snapshot=features,
     )
 
@@ -564,6 +1168,7 @@ def _sealed_strategy_parameters(payload: SimpleBacktestRequest) -> dict[str, obj
 
 
 def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
+    assert_sealed_dataset_transport(payload)
     if payload.candles:
         df = pd.DataFrame(
             [
@@ -576,8 +1181,10 @@ def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
         if not dataset_path:
             normalized = payload.symbol.replace("/", "").replace("_", "").upper()
             dataset_path = f"../datasets/{normalized}_H1.csv"
-        csv_path = _resolve_dataset_path(dataset_path)
-        df = pd.read_csv(csv_path)
+        # Nullable quote timestamps may first appear late in a frozen stream.
+        # Infer the complete column once; chunk-local float/string inference
+        # otherwise emits DtypeWarning into the bounded worker's stderr.
+        df = _load_verified_dataset_csv(payload, dataset_path, str(payload.timeframe).upper())
 
         # Read directly from the immutable snapshot path and retain only the
         # sealed bounded tail.  This is semantically the same stream Laravel
@@ -590,6 +1197,7 @@ def _load_simple_candles(payload: SimpleBacktestRequest) -> pd.DataFrame:
 
 
 def _load_regime_source(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
+    assert_sealed_dataset_transport(payload)
     if payload.regime_candles:
         return pd.DataFrame(
             [
@@ -598,7 +1206,7 @@ def _load_regime_source(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
             ]
         )
     if payload.regime_dataset_path:
-        frame = pd.read_csv(_resolve_dataset_path(payload.regime_dataset_path))
+        frame = _load_verified_dataset_csv(payload, payload.regime_dataset_path, "H1")
         if payload.regime_dataset_tail_rows is not None:
             frame = frame.tail(int(payload.regime_dataset_tail_rows)).reset_index(
                 drop=True
@@ -609,6 +1217,7 @@ def _load_regime_source(payload: SimpleBacktestRequest) -> pd.DataFrame | None:
 
 def _load_mtf_streams(payload: SimpleBacktestRequest) -> dict[str, pd.DataFrame]:
     """Load the sealed non-entry streams used by a role-separated MTF model."""
+    assert_sealed_dataset_transport(payload)
     streams: dict[str, pd.DataFrame] = {}
     inline = dict(payload.mtf_streams or {})
     for timeframe, candles in inline.items():
@@ -623,7 +1232,7 @@ def _load_mtf_streams(payload: SimpleBacktestRequest) -> dict[str, pd.DataFrame]
         key = str(timeframe).upper()
         if key in streams or not path:
             continue
-        frame = pd.read_csv(_resolve_dataset_path(path))
+        frame = _load_verified_dataset_csv(payload, path, key)
         tail = dict(payload.mtf_dataset_tail_rows or {}).get(str(timeframe))
         if tail is None:
             tail = dict(payload.mtf_dataset_tail_rows or {}).get(key)
@@ -637,6 +1246,7 @@ def _load_related_mtf_streams(
     payload: SimpleBacktestRequest,
 ) -> dict[str, pd.DataFrame]:
     """Load independently sealed related-market context; never infer it from primary candles."""
+    assert_sealed_dataset_transport(payload)
     streams: dict[str, pd.DataFrame] = {}
     for timeframe, candles in dict(payload.related_mtf_streams or {}).items():
         if candles:
@@ -650,7 +1260,7 @@ def _load_related_mtf_streams(
         key = str(timeframe).upper()
         if key in streams or not path:
             continue
-        frame = pd.read_csv(_resolve_dataset_path(path))
+        frame = _load_verified_dataset_csv(payload, path, f"RELATED_{key}")
         tail = dict(payload.related_mtf_dataset_tail_rows or {}).get(str(timeframe))
         if tail is None:
             tail = dict(payload.related_mtf_dataset_tail_rows or {}).get(key)
@@ -749,6 +1359,9 @@ def _run_prepared_simple_backtest(
     peak_balance = balance
     max_drawdown = 0.0
     trades: list[SimpleTrade] = []
+    accepted_decision_indices: set[int] = set()
+    accepted_entry_events: dict[int, dict[str, object]] = {}
+    closed_execution_events: list[dict[str, object]] = []
     position: dict[str, object] | None = None
     gross_profit = 0.0
     gross_loss = 0.0
@@ -861,6 +1474,9 @@ def _run_prepared_simple_backtest(
     edge_context_matches = 0
     edge_context_rejections: Counter[str] = Counter()
     entry_funnel["raw_strategy_signals"] = _count_lane_signals(df, differential_lane)
+    if "pre_specialist_signal" in df.columns:
+        entry_funnel["strategy_signals_before_specialist_scope"] = int(df["pre_specialist_signal"].isin(["BUY", "SELL"]).sum())
+        entry_funnel["specialist_context_rejections"] = int((df["pre_specialist_signal"].isin(["BUY", "SELL"]) & ~df["specialist_scope_eligible"]).sum())
     if differential_lane is None and "composition_strategy_signal" in df.columns:
         entry_funnel["strategy_runtime_evaluations"] = int(len(df))
         entry_funnel["mtf_context_gate_evaluations"] = int(len(df))
@@ -1304,6 +1920,7 @@ def _run_prepared_simple_backtest(
                     signal_row.get("mtf_veto_reason", "")
                     or signal_row.get("instrument_scope_rejection", "")
                     or policy_rejection
+                    or (signal_row.get("specialist_scope_first_veto", "") if signal_row.get("pre_specialist_signal") in {"BUY", "SELL"} and not signal_row.get("specialist_scope_eligible", True) else "")
                     or signal_row.get("composition_decision_reason", "")
                     or signal_row.get("entry_contract_status", "")
                     or "no_signal"
@@ -1753,6 +2370,17 @@ def _run_prepared_simple_backtest(
                 "maximum_favorable_excursion": 0.0,
                 "maximum_adverse_excursion": 0.0,
             }
+            accepted_decision_indices.add(index - 1)
+            # Measured at fill, before management mutates stops or closes the
+            # position. No future PnL/target outcome may alter upstream identity.
+            accepted_entry_events[index - 1] = {
+                "direction": signal,
+                "entry_time": _semantic_event_value(pd.Timestamp(candle["time"])),
+                "entry_price": _semantic_event_value(entry_price),
+                "initial_stop_loss": _semantic_event_value(stop_loss),
+                "position_size_multiple": _semantic_event_value(position["position_size_multiple"]),
+                "risk_budget_percent": _semantic_event_value(payload.risk_per_trade),
+            }
             record_composition_stage(
                 signal_row,
                 "order_execution",
@@ -2101,6 +2729,19 @@ def _run_prepared_simple_backtest(
             else None
         )
 
+        # Receipt semantics use exact measured outcomes, not the rounded display
+        # model below. A sub-cent exit change must not retire a controlling axis.
+        closed_execution_events.append({
+            "direction": direction, "entry_time": pd.Timestamp(position["entry_time"]),
+            "exit_time": pd.Timestamp(candle["time"]), "entry_price": entry_price, "exit_price": exit_price,
+            "profit_percent": profit_percent, "gross_profit_percent": gross_profit_percent,
+            "execution_cost_percent": scaled_cost_percent, "market_profit_percent": market_profit_percent,
+            "position_size_multiple": position_size, "risk_budget_percent": payload.risk_per_trade,
+            "exit_reason": exit_reason, "initial_risk_percent": initial_risk_percent,
+            "realized_r_multiple": realized_r_multiple,
+            "partial_exit_price": position.get("partial_exit_price"),
+            "partial_fraction": position.get("partial_fraction"),
+        })
         trades.append(
             SimpleTrade(
                 direction=direction,
@@ -2555,6 +3196,9 @@ def _run_prepared_simple_backtest(
         ),
         data_quality={
             **dict(df.attrs.get("data_quality") or {}),
+            "decision_identity_receipt": _decision_identity_receipt(
+                payload, df, trades, accepted_decision_indices, accepted_entry_events, closed_execution_events,
+            ),
             "status": "warning"
             if (
                 dict(df.attrs.get("data_quality") or {}).get(
@@ -2812,6 +3456,21 @@ def _data_quality_diagnostics(df: pd.DataFrame) -> dict[str, object]:
 def _spread_quality(
     df: pd.DataFrame, payload: SimpleBacktestRequest
 ) -> dict[str, object]:
+    quote_quality = df.attrs.get("quote_spread_quality")
+    if isinstance(quote_quality, dict):
+        count = int(pd.to_numeric(df["spread_available"], errors="coerce").eq(1).sum())
+        return {
+            **quote_quality,
+            "available_rows": count,
+            "rows": len(df),
+            "coverage": count / len(df) if len(df) else 0,
+            "status": "observed" if count == len(df) and count > 0 else ("partial" if count else "unavailable"),
+            "provider_observed": count > 0,
+            "column": "spread",
+            "spread_points": float(payload.execution.spread_points),
+            "point_size": float(payload.execution.point_size),
+            "round_trip_cost_assumption": "sealed spread + slippage + commission; quote observation is a separate liquidity gate",
+        }
     observed_column = next(
         (
             column
@@ -2820,15 +3479,25 @@ def _spread_quality(
         ),
         None,
     )
+    observed = pd.Series(False, index=df.index)
+    if observed_column:
+        values = pd.to_numeric(df[observed_column], errors="coerce")
+        observed = values.notna() & np.isfinite(values) & values.ge(0)
+    available_rows = int(observed.sum())
     return {
-        "status": "observed" if observed_column else "assumed",
+        "status": ("observed" if available_rows == len(df) and available_rows > 0 else
+                   "partial" if available_rows else "unavailable" if observed_column else "assumed"),
         "source": observed_column or "execution_config",
-        "provider_observed": observed_column is not None,
+        "provider_observed": available_rows > 0,
+        "available_rows": available_rows,
+        "rows": len(df),
+        "coverage": available_rows / len(df) if len(df) else 0.0,
         "column": observed_column,
         "spread_points": float(payload.execution.spread_points),
         "point_size": float(payload.execution.point_size),
         "round_trip_cost_assumption": "spread + slippage + commission",
-        "promotion_evidence": observed_column is not None,
+        "provenance_status": "unverified_legacy_column" if observed_column else "modeled_execution_cost",
+        "promotion_evidence": False,
     }
 
 
@@ -3836,6 +4505,8 @@ def _instrument_runtime_state(
                 "event_sources": Counter(),
                 "context_event_counts": Counter(),
                 "activated_contexts": {},
+                "exact_context_event_counts": Counter(),
+                "activated_exact_contexts": {},
                 "evaluated_contexts": {},
                 "decision_effect_counts": Counter(),
                 "abstention_context_counts": Counter(),
@@ -3871,6 +4542,15 @@ def _record_instrument_runtime_event(
             str(context["regime"]),
             str(context["volatility"]),
             str(context["session"]),
+            str(context["direction"]),
+        ]
+    )
+    exact_context_key = "|".join(
+        [
+            str(context["regime"]),
+            str(context["volatility"]),
+            str(context["session"]),
+            str(context["venue_phase"]),
             str(context["direction"]),
         ]
     )
@@ -3910,12 +4590,18 @@ def _record_instrument_runtime_event(
         sources[source] += 1
     if isinstance(contexts, Counter):
         contexts[context_key] += 1
+    exact_contexts = observation.get("exact_context_event_counts")
+    if isinstance(exact_contexts, Counter):
+        exact_contexts[exact_context_key] += 1
     effects = observation.get("decision_effect_counts")
     if isinstance(effects, Counter):
         effects["ALLOW_OR_MODIFY"] += 1
     definitions = observation.get("activated_contexts")
     if isinstance(definitions, dict):
         definitions[context_key] = dict(context)
+    exact_definitions = observation.get("activated_exact_contexts")
+    if isinstance(exact_definitions, dict):
+        exact_definitions[exact_context_key] = dict(context)
 
 
 def _record_strategy_instrument_events(
@@ -4111,9 +4797,19 @@ def _instrument_runtime_context(
         "direction": direction if direction in {"BUY", "SELL"} else "WAIT",
         "transition_state": "stable",
     }
-    atr = float(signal_row.get("atr", signal_row.get("structure_atr", 0)) or 0)
-    spread = float(signal_row.get("spread", 0) or 0)
-    if atr > 0:
+    context["spread_liquidity_state"] = "unknown"
+    try:
+        atr = float(signal_row.get("atr", signal_row.get("structure_atr", 0)))
+        spread = float(signal_row.get("spread"))
+    except (TypeError, ValueError, OverflowError):
+        atr, spread = float("nan"), float("nan")
+    marker = signal_row.get("spread_available", True)
+    observed = isinstance(marker, (bool, int, float, str, np.number, np.bool_)) and marker in (True, 1, "1")
+    measured = (
+        observed and math.isfinite(atr) and atr > 0
+        and math.isfinite(spread) and spread >= 0
+    )
+    if measured:
         context["spread_liquidity_state"] = (
             "liquid" if spread / atr <= 0.25 else "illiquid"
         )
@@ -4251,8 +4947,10 @@ def _instrument_runtime_report(state: dict[str, object]) -> dict[str, object]:
             abstain_count = int(raw.get("abstain_count", 0) or 0)
             sources = raw.get("event_sources") or Counter()
             contexts = raw.get("context_event_counts") or Counter()
+            exact_contexts = raw.get("exact_context_event_counts") or Counter()
             abstentions = raw.get("abstention_context_counts") or Counter()
             definitions = raw.get("activated_contexts") or {}
+            exact_definitions = raw.get("activated_exact_contexts") or {}
             evaluated_definitions = raw.get("evaluated_contexts") or {}
             effects = raw.get("decision_effect_counts") or Counter()
             disposition = (
@@ -4271,6 +4969,18 @@ def _instrument_runtime_report(state: dict[str, object]) -> dict[str, object]:
                     for name, value in sorted(dict(sources).items())
                 },
                 "activated_context_keys": sorted(str(name) for name in dict(contexts)),
+                "activated_exact_context_keys": sorted(
+                    str(name) for name in dict(exact_contexts)
+                ),
+                "exact_context_event_counts": {
+                    str(name): int(value)
+                    for name, value in sorted(dict(exact_contexts).items())
+                },
+                "activated_exact_contexts": {
+                    str(name): dict(value)
+                    for name, value in sorted(dict(exact_definitions).items())
+                    if isinstance(value, dict)
+                },
                 "context_event_counts": {
                     str(name): int(value)
                     for name, value in sorted(dict(contexts).items())
@@ -7741,6 +8451,7 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
     envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
     dst_envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
     venue_phase_envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
+    instrument_context_envelopes: dict[str, list[SimpleTrade]] = defaultdict(list)
     session_instances: dict[str, int] = defaultdict(int)
     for trade in trades:
         timestamp = pd.Timestamp(trade.entry_time)
@@ -7754,6 +8465,9 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
         envelopes[envelope].append(trade)
         dst_envelopes[f"{envelope}|{offset_state}"].append(trade)
         venue_phase_envelopes[f"{trade.market_regime}|{trade.volatility_regime}|{venue_phase}|{trade.direction}|{offset_state}"].append(trade)
+        instrument_context_envelopes[
+            f"{trade.market_regime}|{trade.volatility_regime}|{session}|{venue_phase}|{trade.direction}"
+        ].append(trade)
         session_instances[session_instance] += 1
 
     def summary(rows: list[SimpleTrade]) -> dict[str, float | int]:
@@ -7784,6 +8498,9 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
     envelope_rows = {key: summary(rows) for key, rows in envelopes.items()}
     dst_envelope_rows = {key: summary(rows) for key, rows in dst_envelopes.items()}
     venue_phase_rows = {key: summary(rows) for key, rows in venue_phase_envelopes.items()}
+    instrument_context_rows = {
+        key: summary(rows) for key, rows in instrument_context_envelopes.items()
+    }
     weak = [
         {
             "context": key,
@@ -7813,6 +8530,7 @@ def _robustness_matrix(trades: list[SimpleTrade]) -> dict[str, object]:
         "envelopes": envelope_rows,
         "dst_envelopes": dst_envelope_rows,
         "venue_phase_envelopes": venue_phase_rows,
+        "instrument_context_envelopes": instrument_context_rows,
         "session_instance_coverage": dict(session_instances),
         "weakest_envelopes": weak[:20],
         "calendar_role": "diagnostic_recurrence_only_not_mutation_or_router_feature",
@@ -8409,12 +9127,18 @@ def _validate_data_gaps(df: pd.DataFrame, payload: SimpleBacktestRequest) -> int
     if len(df) < 2:
         return 0
 
-    expected = pd.Timedelta(minutes=15 if payload.timeframe == "M15" else 60)
+    duration = _timeframe_duration_minutes(payload.timeframe)
+    if duration <= 0:
+        raise ValueError("UNSUPPORTED_CANDLE_TIMEFRAME")
+    expected = pd.Timedelta(minutes=duration)
     unexpected = 0
-    previous = pd.Timestamp(df.iloc[0]["time"])
+    # No full Series construction (and no DataFrame attrs propagation) is
+    # needed to read one timestamp. Preserve the exact same calendar checks.
+    timestamps = df["time"].array
+    previous = pd.Timestamp(timestamps[0])
 
-    for index in range(1, len(df)):
-        current = pd.Timestamp(df.iloc[index]["time"])
+    for value in timestamps[1:]:
+        current = pd.Timestamp(value)
         if current <= previous:
             raise ValueError("Candle timestamps takrorlangan yoki tartibsiz.")
 

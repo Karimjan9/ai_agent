@@ -57,7 +57,7 @@ class InstrumentLearningMonitorService
         $bundleAuthority = $bundleRows->map(fn (PlaybookValuePosterior $row): array => app(InstrumentPosteriorAuthorityService::class)->assess($row));
         $canonicalBundles = $bundleAuthority->countBy('canonical_state')->map(fn ($count): int => (int) $count)->all();
         $invocations = array_sum($verdicts);
-        $settled = collect($verdicts)->except(['awaiting_paired_control', 'support_consumed'])->sum();
+        $settled = collect($verdicts)->only(['helped', 'harmed', 'neutral'])->sum();
         // JSON metadata is deliberately not indexed and a lifetime scan made
         // the lightweight status command take tens of seconds. Operational
         // monitoring needs the active/recent cohort window; immutable runtime
@@ -79,6 +79,14 @@ class InstrumentLearningMonitorService
                 ->groupBy('decision')->pluck('aggregate', 'decision')->map(fn ($count): int => (int) $count)->all()
             : [];
         $strategyLibrary = app(StrategyLibraryCompilerService::class)->library();
+        $compiler = app(StrategyLibraryCompilerService::class);
+        $runtimeAliases = collect($strategyLibrary)->groupBy(fn (array $spec): string =>
+            $compiler->runtimeBaseStrategy($spec['id']) ?: 'shadow_or_declarative')->map(fn ($rows) => $rows->pluck('id')->all())->all();
+        $capabilities = app(TradingInstrumentOperatingSystemService::class)->runtimeCapabilities();
+        $management = app(TradeManagementLibraryService::class);
+        $managementCapabilities = collect(array_keys($management->library()))->mapWithKeys(fn (string $profile): array =>
+            [$profile => $management->runtimeAdapter($profile)])->all();
+        $latest = LabGeneration::whereIn('id', $recentGenerationIds)->latest('generation')->first();
         $researchPlaybooks = (array) data_get(app(StrategyResearchCatalogueService::class)->catalogue(), 'models', []);
         $instrumentPrograms = Schema::hasTable('research_instrument_programs')
             ? DB::table('research_instrument_programs')->where('symbol', $symbol)->count()
@@ -121,10 +129,18 @@ class InstrumentLearningMonitorService
                     'total' => count($strategyLibrary),
                     'executable_research' => collect($strategyLibrary)->where('status', 'research')->count(),
                     'shadow_only' => collect($strategyLibrary)->where('status', 'shadow_only')->count(),
+                    'distinct_runtime_keys' => count(array_diff(array_keys($runtimeAliases), ['shadow_or_declarative'])),
+                    'runtime_aliases' => $runtimeAliases,
+                    'catalogue_names_are_not_distinct_algorithms' => true,
                 ],
                 'tactic_library' => count(app(TacticCatalogueService::class)->catalogue()),
                 'risk_library' => count(app(RiskManagementLibraryService::class)->library()),
                 'trade_management_library' => count(app(TradeManagementLibraryService::class)->library()),
+                'executable_capabilities' => ['protocol' => TradingInstrumentOperatingSystemService::CAPABILITY_PROTOCOL,
+                    'by_status' => collect($capabilities)->countBy('implementation_status')->all(),
+                    'instruments' => $capabilities, 'management_profiles' => $managementCapabilities,
+                    'distinct_management_engines' => collect($managementCapabilities)->pluck('engine')->filter()->unique()->count(),
+                    'standalone_algorithm_count_attested' => false],
                 'professional_mtf_research_playbooks' => count($researchPlaybooks),
                 'prior_blueprints' => count(app(PriorKnowledgeVaultService::class)->blueprints()),
                 'research_instrument_programs' => $instrumentPrograms,
@@ -146,6 +162,7 @@ class InstrumentLearningMonitorService
                     : 0,
                 'awaiting_paired_control' => (int) ($verdicts['awaiting_paired_control'] ?? 0),
                 'support_consumed' => (int) ($verdicts['support_consumed'] ?? 0),
+                'control_reference_consumed' => (int) ($verdicts['control_reference_consumed'] ?? 0),
                 'settled_causal_invocations' => (int) $settled,
                 'verdicts' => $verdicts,
             ],
@@ -175,6 +192,9 @@ class InstrumentLearningMonitorService
                 'promotion_authority' => false,
             ],
             'truth_rule' => 'catalogue != invocation; invocation != causal value; causal value != promotion',
+            'paired_projection_debt' => app(InstrumentInvocationLedgerService::class)->pendingResearchPairs($symbol, 'H1', 3),
+            'independent_validation_dependency' => app(InstrumentResearchWindowService::class)->readiness(),
+            'evolutionary_progress' => $latest ? app(ExperimentQualityProgressService::class)->snapshot($latest) : null,
             'promotion_evidence' => false,
         ];
     }

@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Schema;
  */
 class EvolutionVelocityService
 {
-    public const PROTOCOL = 'evolution_velocity_scorecard_v1';
+    public const PROTOCOL = 'evolution_velocity_scorecard_v2';
 
     /** @return array<string, mixed> */
     public function snapshot(AiLaboratory $lab, int $lookback = 20): array
@@ -32,16 +32,17 @@ class EvolutionVelocityService
             $generationIds = $generations->pluck('id');
             $agents = $generationIds->isEmpty() ? collect() : LabAgent::with('modelVersion')
                 ->whereIn('lab_generation_id', $generationIds)->get();
+            $agentIds = $agents->pluck('id');
             $scope = fn ($query) => $query->where('symbol', strtoupper($lab->symbol))->where('timeframe', strtoupper($lab->timeframe));
-            $archive = $scope(LabEvolutionArchiveEntry::query())->where('archive_type', 'behavioral_map_elites')->get();
-            $responses = $scope(LabMutationResponseMap::query())->get();
-            $lessons = $scope(AgentLearningLesson::query())->get();
+            $archive = $scope(LabEvolutionArchiveEntry::query())->whereIn('lab_generation_id', $generationIds)->where('archive_type', 'behavioral_map_elites')->get();
+            $responses = $scope(LabMutationResponseMap::query())->whereIn('lab_agent_id', $agentIds)->get();
+            $lessons = $scope(AgentLearningLesson::query())->whereIn('lab_agent_id', $agentIds)->get();
             $canonicalReceipts = Schema::hasTable('evolution_learning_receipts')
-                ? $scope(EvolutionLearningReceipt::query())->get()
+                ? $scope(EvolutionLearningReceipt::query())->whereIn('lab_generation_id', $generationIds)->get()
                 : collect();
-            $credits = $scope(LabEvolutionCreditEvent::query())->where('event_type', 'descendant_trait')->get();
-            $skillZoo = Schema::hasTable('lab_skill_zoo_entries') ? $scope(LabSkillZooEntry::query())->get() : collect();
-            $mutationActions = Schema::hasTable('lab_mutation_actions') ? $scope(LabMutationAction::query())->get() : collect();
+            $credits = $scope(LabEvolutionCreditEvent::query())->whereIn('lab_agent_id', $agentIds)->where('event_type', 'descendant_trait')->get();
+            $skillZoo = Schema::hasTable('lab_skill_zoo_entries') ? $scope(LabSkillZooEntry::query())->whereIn('lab_agent_id', $agentIds)->get() : collect();
+            $mutationActions = Schema::hasTable('lab_mutation_actions') ? $scope(LabMutationAction::query())->whereIn('lab_agent_id', $agentIds)->get() : collect();
             $completed = $agents->filter(fn (LabAgent $agent): bool => in_array((string) $agent->lifecycle_status, ['screened', 'replay_complete', 'forward_validated', 'completed', 'rejected', 'failed', 'overfit', 'stagnated'], true));
             $receipts = $agents->map(fn (LabAgent $agent): array => (array) data_get($agent->modelVersion?->metadata, 'learning_receipt', []))
                 ->filter(fn (array $receipt): bool => data_get($receipt, 'protocol') === LearningReceiptService::PROTOCOL);
@@ -50,6 +51,11 @@ class EvolutionVelocityService
             $novel = $archive->where('novelty_score', '>', 0)->count();
             $duplicate = $archive->count() - $novel;
             $failure = $completed->filter(fn (LabAgent $agent): bool => in_array((string) $agent->lifecycle_status, ['rejected', 'failed', 'overfit', 'stagnated'], true))->count();
+            $failures = $responses->filter(fn (LabMutationResponseMap $row): bool => in_array($row->status, ['failed', 'harmful', 'provisional_harmful'], true));
+            $uniqueFailureSignatures = $failures->map(fn (LabMutationResponseMap $row): string => json_encode([
+                $row->strategy_family, $row->target, $row->parameter_key, $row->direction,
+                $row->old_value, $row->new_value, data_get($row->metadata, 'failure_signature', $row->regime_result),
+            ], JSON_UNESCAPED_SLASHES))->unique()->count();
             $modelIds = $agents->pluck('model_version_id')->filter()->unique();
             $adversarial = Schema::hasTable('adversarial_validator_findings') && $modelIds->isNotEmpty()
                 ? AdversarialValidatorFinding::query()->whereIn('model_version_id', $modelIds)->get()
@@ -68,7 +74,10 @@ class EvolutionVelocityService
                 'settled_learning_receipts_per_completed_experiment' => round($settled->count() / max(1, $completed->count()), 4),
                 'settled_knowledge_per_compute_hour' => $computeHours > 0 ? round(($settled->count() + $settledActions->count()) / $computeHours, 4) : null,
                 'behavioral_duplicate_rate' => round($duplicate / max(1, $archive->count()), 4),
-                'repeat_failure_rate' => round($failure / max(1, $completed->count()), 4),
+                'repeat_failure_rate' => round(($failures->count() - $uniqueFailureSignatures) / max(1, $failures->count()), 4),
+                'rejected_experiment_rate' => round($failure / max(1, $completed->count()), 4),
+                'repeat_failure_observations' => $failures->count(),
+                'observed_generation_ids' => $generationIds->values()->all(),
                 'descendant_success_rate' => round($confirmedDescendants / max(1, $credits->count()), 4),
                 'cross_niche_transfer_rate' => ['status' => 'not_claimed_without_sealed_cross_niche_ablation', 'value' => null],
                 'skill_retention_in_inheritance' => ['issued_receipts' => $receipts->count(), 'settled_receipts' => $settled->count(), 'rate' => round($settled->count() / max(1, $receipts->count()), 4)],
@@ -90,6 +99,7 @@ class EvolutionVelocityService
                     'response_map_statuses_are_not_skill_authority' => true,
                     'promotion_evidence' => false,
                 ],
+                'independent_research_data' => app(InstrumentResearchWindowService::class)->readiness(),
                 'rule' => 'Throughput is diagnostic only. No scorecard field can select a parent, dispatch a replay, or promote a champion.',
                 'promotion_evidence' => false,
             ];
