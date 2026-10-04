@@ -205,6 +205,12 @@ settlement needs an explicit scientific classification and a next action.
   The same arbiter prepares fresh source/IDs with unchanged primary and sixteen
   preregistered kernel vectors. Original + constructor + preparation is capped
   at three cohorts, and no scientific budget or independent evidence is reset.
+  A distinct original clean-discovery native MTF validator refusal instead
+  admits at most one `academy_unobserved_mtf_validator_replacement_v1` under
+  fresh full/Python seals. All attempted controls and never-executed exact
+  dependents are re-attested before the laboratory lock consumes the allowance.
+  All twenty original vectors/data/cost stay exact; original plus one is capped
+  at two and excludes any constructor/preparation replacement chain (ADR-025).
 - Before persisting Academy or kernel models, constructors stamp current-family
   schema-canonical parameter and local-adapter identities. Admission does not
   repair those hashes or waive real parameter changes. Confirmation research

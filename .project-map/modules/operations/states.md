@@ -6,6 +6,17 @@ full-archive continuity remains blocked. A spent/not-ready slice cannot authoriz
 a generic full successor; the arbiter rechecks the original bad-source fence
 (ADR-024).
 
+A terminal, drained original clean-discovery cohort may receive one typed
+unobserved MTF validator replacement from the existing Academy owner/arbiter.
+Fresh full/Python source and exact original twenty vectors/data/cost are
+required. Observed science, missing arm proof, a previous replacement or any
+further replacement chain is rejected; old technical history stays sealed
+(ADR-025).
+The shared technical classifier re-attests the original cohort through its
+Academy owner before treating the refusal as terminal diagnostic history.
+It does not repeatedly lease the old validator failure as transient replay
+debt, mutate old work items or grant the replacement itself any authority.
+
 Academy draft publication is a two-step arbiter transition: prepare the trial's
 durable draft intent, then dispatch that same generation canonically. A crash
 before queue publication may fence `selected/dispatched -> publication_failed`

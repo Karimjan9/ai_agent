@@ -186,3 +186,19 @@ Its cold budget binds physical parent/foundation/execution; slice, quote, label
 or code changes do not renew it. It gives no independent, paper, promotion,
 causal-skill or inheritance authority. Authorized unused research data remains
 a separate dependency under the unchanged 2026 paper-only boundary (ADR-024).
+
+API and native enabled-MTF feature preparation share the scope/probe guard.
+The discovery protocol is accepted only after it succeeds, while all four
+native stream paths/SHA and full-mode restrictions remain enforced.
+
+For an original clean-discovery cohort rejected before science by the exact
+native `AUTONOMOUS_MTF_MANIFEST_INVALID` validator, the existing materializer
+may propose one `academy_unobserved_mtf_validator_replacement_v1`. First drain
+and terminalize through the canonical owners, then pause and deploy a tested
+new full/Python seal. The arbiter re-attests attempted-control immutable
+requests/runtime/technical responses and every never-executed dependent's
+exact-control admission refusal. It preserves all twenty original vectors,
+baseline/data/MTF/cost and the physical-parent budget. The canonical dispatcher
+admits fresh IDs; the failed trial is never reopened. Original plus one is
+the maximum, with no subsequent constructor/preparation/validator chain.
+Any scientific output, missing proof or another error fails closed (ADR-025).

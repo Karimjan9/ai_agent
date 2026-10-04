@@ -21,6 +21,13 @@ class TechnicalFailureClassifierService
     public function forAgent(LabAgent $agent): array
     {
         $agent->loadMissing(['modelVersion', 'generation']);
+        if ($agent->generation?->trigger_type === 'academy_experiment'
+            && data_get($agent->generation->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only') {
+            $validator = app(AcademyExperimentMaterializerService::class)->validatorTerminalDispositionForAgent($agent);
+            if ($validator !== null) return [...$validator, 'class' => self::TERMINAL, 'capability' => null,
+                'blocks_global_generation' => false, 'action' => 'TERMINAL_DIAGNOSTIC',
+                'reason' => 'Original immutable typed validator refusal and exact unexecuted control dependents are terminal diagnostics; one prospective owner-bound replacement is separately budgeted.'];
+        }
         if (data_get($agent->generation?->trigger_context, 'academy_preparation_containment.protocol')
             === AcademyExperimentMaterializerService::PREPARATION_CONTAINMENT_PROTOCOL) {
             $preparation = app(AcademyExperimentMaterializerService::class)->preparationTerminalDispositionForAgent($agent);

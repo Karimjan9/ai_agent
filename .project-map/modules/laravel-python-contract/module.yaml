@@ -42,6 +42,7 @@ data_tables:
   - paper_signals
 dependencies:
 invariants:
+  - API replay and direct closed-MTF feature preparation share the exact clean-discovery scope/probe boundary. Enabled confirmation admits the typed incremental bundle only after that guard; full foundation protocol and all four path/SHA checks remain strict.
   - Only an original completed server-authorized post-paper window can receive authorized_research_transport_v1 for full replay. The deterministic HMAC binds the persisted release and all actual CSV paths/hashes/UTC rows before cache reuse; literal 2026 stays forbidden. Transport admission is not independent evidence or credit.
   - File-sealed MTF replay forbids inline primary/context/related replacements before cache or execution; hashes attest the same parsed bytes and actual consumed rows, including after strategy feature computation and cache reuse.
   - Stage proof emits replay_decision_identity_v2 with semantic direction, geometry and entry-linked exit/outcome hashes; consumed_dependency_identity_v1 seals actual context-stream sources and as-of joins. Equal totals or candle membership do not prove unchanged behavior; old/missing receipts are unassessable, not scientific no-effect.

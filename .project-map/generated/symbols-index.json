@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
-  "generated_at": "2026-10-04T10:02:56.449Z",
-  "source_digest": "acf436e6d9d1bc3421d0aa7e93c5ebf6358e54d370f642532302d4dd95a13707",
-  "source_file_count": 1471,
-  "git_head": "c73f4be9c2f2835d6fe2025e8bc0564d4a43b6cc",
+  "generated_at": "2026-10-04T10:55:00.055Z",
+  "source_digest": "7e3836603dbb250d1b9e9e99cce9141755a488b4a12fb5aab1371e6a698a79f0",
+  "source_file_count": 1472,
+  "git_head": "242b059aa1a5674b60e1e3e993310a74b5e09d7b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -97,25 +97,25 @@
       "symbol": "_ImmutableSourceRowIndex",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 162
+      "line": 163
     },
     {
       "symbol": "PreparedFeatureSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 597
+      "line": 598
     },
     {
       "symbol": "PreparedSignalSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 607
+      "line": 608
     },
     {
       "symbol": "PreparedReplayFeatureContext",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 621
+      "line": 622
     },
     {
       "symbol": "CompositionRuntimeContractError",
@@ -7088,6 +7088,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/AcademyFoundrySourceAdmissionTest.php",
       "line": 16
+    },
+    {
+      "symbol": "AcademyMtfValidatorReplacementTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/AcademyMtfValidatorReplacementTest.php",
+      "line": 29
     },
     {
       "symbol": "AcademyPreExecutionReplacementTest",

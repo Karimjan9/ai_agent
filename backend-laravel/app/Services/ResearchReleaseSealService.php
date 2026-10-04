@@ -41,6 +41,7 @@ class ResearchReleaseSealService
         'backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php',
         'backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php',
         'backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php',
+        'backend-laravel/tests/Feature/AcademyMtfValidatorReplacementTest.php',
         'backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php',
         'backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php',
         'backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php',

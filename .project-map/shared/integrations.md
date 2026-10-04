@@ -324,6 +324,19 @@ parent/fork/calendar/SQL hashes. Canonical Academy screening supplies the existi
 prospective probe contract; Python cannot accept this bundle for full replay,
 and Laravel checks the exact consumed-window receipt. No old full contract,
 independent research receipt or paper gate is satisfied by these clean bytes.
+API and native enabled-MTF feature preparation share that exact scope/probe
+guard, including direct replay entry. A valid incremental bundle may compile
+confirmation context without replacing the full foundation protocol or any
+of the four native path/SHA checks.
+
+One original terminal/drained clean-discovery MTF validator refusal can produce
+an unchanged-question replacement through the existing Academy owner and
+arbiter. Immutable attempted-control requests/runtime/technical envelopes and
+canonical blocked-dependent admission must cover all original twenty arms.
+The existing kernel frozen-plan path reuses every original vector under fresh
+IDs/full/Python source. Original plus one is the maximum, not an extension of
+the constructor/preparation chain; scientific observations and old receipts
+cannot be copied, credited or retried as independent evidence (ADR-025).
 
 The offline provider/tick recovery tool may create only a new training archive
 and content-addressed CSV. `MultiTimeframeSnapshotService` verifies its native

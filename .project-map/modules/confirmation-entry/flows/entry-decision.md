@@ -8,6 +8,10 @@ independently available H4/H1/M15 streams.
 ## Sequence
 
 1. Validate temporal availability and OHLC geometry of every supplied stream.
+   Both direct feature preparation and API replay use the shared discovery-scope
+   guard before admitting a typed clean-discovery bundle. Enabled closed-MTF
+   confirmation accepts that incremental-only scope while retaining all four
+   frozen path/SHA checks; it does not satisfy the full foundation protocol.
 2. Build H1-owned context/location and evaluate the model-specific setup.
 3. Require independent confirmation and exact M5 trigger.
 4. Compute logical invalidation, target reference, reward-space and chase checks.

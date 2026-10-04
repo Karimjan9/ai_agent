@@ -6,6 +6,10 @@ flags, exact bundle/probe data and execution identities, 15000+512 row bounds
 and contract hashes. A full/replay mode, missing probe, tail override or false
 independence claim is rejected. This branch cannot authorize the parent archive
 or an independent research window (ADR-024).
+The same owner guard also precedes direct context/feature preparation and
+native enabled closed-MTF validation. A valid incremental clean bundle can
+compile confirmation context; a protocol label alone cannot bypass scope,
+four-stream source integrity, full-mode or authority restrictions.
 
 | From | Trigger | To | Guard / owner | Failure behavior |
 | --- | --- | --- | --- | --- |

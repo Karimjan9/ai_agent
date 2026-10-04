@@ -1,5 +1,12 @@
 # Causal-learning history
 
+## 2026-10-04 - Bounded unobserved MTF validator repair
+
+ADR-025 admits one exact unchanged-question replacement for an original,
+terminal and drained clean-discovery validator refusal with no scientific
+output. Immutable attempted-control and blocked-dependent evidence owns the
+exception; fresh source/IDs do not reset the physical budget or earn credit.
+
 ## 2026-10-03 - Exact evidence scopes and canonical Academy admission
 
 ADR-022 connects Academy draft intents to the existing arbiter/dispatcher,

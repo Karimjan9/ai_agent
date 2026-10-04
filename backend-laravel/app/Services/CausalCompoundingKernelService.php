@@ -61,9 +61,20 @@ class CausalCompoundingKernelService
             array_values(array_unique(array_filter(array_map('strval', $protectedGenes)))),
         ));
         if ($preregisteredPlan !== []) {
+            $validatorRepair = (array) data_get($generation->trigger_context, 'prospective_source_identity.cold_start.validator_replacement', []);
+            $frozenPlan = $validatorRepair !== []
+                ? (array) ($validatorRepair['preregistered_discovery_plan'] ?? [])
+                : (array) data_get($generation->trigger_context, 'prospective_source_identity.cold_start.preparation_replacement.preregistered_discovery_plan', []);
             if ($generation->trigger_type !== 'academy_experiment' || ($preregisteredPlan['protocol'] ?? null) !== self::PREPARATION_PLAN
-                || $preregisteredPlan != (array) data_get($generation->trigger_context,
-                    'prospective_source_identity.cold_start.preparation_replacement.preregistered_discovery_plan', [])
+                || $preregisteredPlan != $frozenPlan
+                || ($validatorRepair !== [] && (($validatorRepair['protocol'] ?? null) !== AcademyExperimentMaterializerService::VALIDATOR_REPLACEMENT_PROTOCOL
+                    || ($validatorRepair['fault'] ?? null) !== 'AUTONOMOUS_MTF_MANIFEST_INVALID'
+                    || ($validatorRepair['maximum_validator_replacements'] ?? null) !== 1
+                    || ($validatorRepair['maximum_total_cohorts'] ?? null) !== 2
+                    || ($validatorRepair['scientific_outcome_observed'] ?? null) !== false
+                    || ($validatorRepair['scientific_question_budget_reset'] ?? null) !== false
+                    || (int) ($validatorRepair['technical_retry_of_trial_id'] ?? 0) !== (int) ($preregisteredPlan['original_trial_id'] ?? -1)
+                    || (int) ($validatorRepair['technical_retry_of_generation_id'] ?? 0) !== (int) ($preregisteredPlan['original_generation_id'] ?? -1)))
                 || ($preregisteredPlan['scientific_outcome_observed'] ?? null) !== false
                 || ($preregisteredPlan['market_evidence_reused'] ?? null) !== false
                 || (int) ($preregisteredPlan['baseline_model_version_id'] ?? 0) !== (int) $baseline->id
@@ -96,7 +107,8 @@ class CausalCompoundingKernelService
                     throw new \RuntimeException('COMPOUNDING_PREPARATION_BASELINE_OR_PROTECTED_AXIS_CHANGED');
                 }
                 $selection = ['gene' => $gene, 'old_value' => $base[$gene], 'value' => $registered['tested_value'],
-                    'selection_hash' => $registered['selector_hash'], 'selection_role' => 'preregistered_unobserved_preparation_repair',
+                    'selection_hash' => $registered['selector_hash'], 'selection_role' => ($validatorRepair ?? []) !== []
+                        ? 'preregistered_unobserved_mtf_validator_repair' : 'preregistered_unobserved_preparation_repair',
                     'original_generation_id' => $preregisteredPlan['original_generation_id'],
                     'old_evidence_reused' => false, 'promotion_evidence' => false];
                 $interventionFingerprint = hash('sha256', json_encode([$gene, $base[$gene], $registered['tested_value']],

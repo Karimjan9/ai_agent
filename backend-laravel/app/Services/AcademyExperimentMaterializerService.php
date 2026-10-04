@@ -27,6 +27,7 @@ class AcademyExperimentMaterializerService
     public const PREPARATION_CONTAINMENT_PROTOCOL = 'academy_preparation_containment_v1';
     public const PREPARATION_FAULT = 'sealed_dataframe_attrs_copy_blowup_v1';
     public const PREPARATION_REPLACEMENT_PROTOCOL = 'academy_preparation_containment_repair_v1';
+    public const VALIDATOR_REPLACEMENT_PROTOCOL = 'academy_unobserved_mtf_validator_replacement_v1';
 
     public function __construct(
         private AcademyExperimentContractCompilerService $compiler,
@@ -92,6 +93,15 @@ class AcademyExperimentMaterializerService
             || data_get(json_decode($row->frozen_upstream_contract, true),
                 'prospective_source_identity.cold_start.sealed_budget_scope') === $scope);
         if ($sameScope->isNotEmpty()) {
+            // The typed validator allowance is an alternative to, not a
+            // continuation of, the older constructor/preparation repair chain.
+            if ($sameScope->contains(fn ($row): bool => filled(data_get(json_decode($row->frozen_upstream_contract, true),
+                'prospective_source_identity.cold_start.validator_replacement')))) {
+                return $this->blocked('ACADEMY_VALIDATOR_REPLACEMENT_ALLOWANCE_EXHAUSTED');
+            }
+            try { $validator = $this->validatorReplacementProposal($sameScope, $dependencies, $scope); }
+            catch (RuntimeException|\ErrorException) { return $this->blocked('ACADEMY_VALIDATOR_REPLACEMENT_IMMUTABLE_EVIDENCE_INVALID'); }
+            if ($validator !== null) return $validator;
             $preparation = $this->preparationReplacementProposal($sameScope, $dependencies, $scope);
             if ($preparation !== null) return $preparation;
             return $this->technicalReplacementProposal($sameScope, $dependencies, $scope);
@@ -119,6 +129,273 @@ class AcademyExperimentMaterializerService
                 'research_only' => true, 'promotion_evidence' => false, 'independent_causal_skill' => false];
         }
         return $this->blocked('ACADEMY_COLD_START_LEGAL_HYPOTHESIS_BASELINE_MISSING');
+    }
+
+    /** ONE prospective repair of the exact clean-bundle validator refusal, never outcome-selected retry. */
+    private function validatorReplacementProposal($sameScope, array $dependencies, string $scope, bool $attestOnly = false): ?array
+    {
+        if ($sameScope->count() !== 1) return null;
+        $passport = $sameScope->first();
+        $frozen = (array) (json_decode((string) $passport->frozen_upstream_contract, true) ?: []);
+        $identity = (array) ($frozen['prospective_source_identity'] ?? []);
+        $cold = (array) ($identity['cold_start'] ?? []);
+        if (($identity['data_role'] ?? null) !== 'pre_2026_discovery_only'
+            || ($identity['source_identity_protocol'] ?? null) !== self::SOURCE_IDENTITY_PROTOCOL
+            || ($cold['protocol'] ?? null) !== self::COLD_START_PROTOCOL
+            || isset($cold['technical_replacement']) || isset($cold['preparation_replacement'])
+            || (! $attestOnly && isset($cold['validator_replacement']))) return null;
+        if ($attestOnly && isset($cold['validator_replacement'])
+            && (data_get($cold, 'validator_replacement.protocol') !== self::VALIDATOR_REPLACEMENT_PROTOCOL
+                || data_get($cold, 'validator_replacement.maximum_validator_replacements') !== 1
+                || data_get($cold, 'validator_replacement.maximum_total_cohorts') !== 2
+                || data_get($cold, 'validator_replacement.scientific_question_budget_reset') !== false)) return null;
+        $trials = DB::table('edge_academy_trials')->where('edge_academy_passport_id', $passport->id)->get();
+        if ($trials->count() !== 1) return null;
+        $trial = $trials->first();
+        $generations = LabGeneration::query()->with('agents.modelVersion')->where('trigger_context->academy_trial_id', (int) $trial->id)->get();
+        if ($generations->count() !== 1) return null;
+        $generation = $generations->first();
+        $agentIds = $generation->agents->pluck('id')->all();
+        $runs = LabEvaluationRun::query()->where(fn ($q) => $q->where('lab_generation_id', $generation->id)
+            ->orWhereIn('lab_agent_id', $agentIds))->orderBy('id')->get();
+        if ($runs->isEmpty() || ! $runs->contains(fn ($run): bool => $this->isNativeMtfValidatorRefusal((string) $run->error_message))) return null;
+        $refusal = 'ACADEMY_VALIDATOR_REPLACEMENT_ATTESTATION_REQUIRED';
+        $agents = $generation->agents;
+        $baseline = ModelVersion::find((int) ($frozen['baseline_model_version_id'] ?? 0));
+        $baselineAgent = LabAgent::with('generation')->find((int) ($cold['hypothesis_baseline_agent_id'] ?? 0));
+        if ($trial->status !== 'technical_quarantine' || $trial->settled_at === null || $generation->status !== 'technical_quarantine'
+            || $generation->trigger_type !== 'academy_experiment' || (int) $generation->population_size !== 20
+            || ($frozen['protocol'] ?? null) !== XauusdEdgeFormationAcademyService::PROTOCOL
+            || $agents->count() !== 20 || $agents->pluck('model_version_id')->unique()->count() !== 20
+            || $agents->contains(fn ($a): bool => ! $a->modelVersion || $a->lifecycle_status !== 'technical_quarantine'
+                || (int) $a->sample_count !== 0 || $a->profit_factor !== null || $a->train_score !== null
+                || $a->validation_score !== null || $a->forward_score !== null
+                || data_get($a->modelVersion->metadata, 'last_result') !== null || data_get($a->modelVersion->metadata, 'last_screen_result') !== null)
+            || ! $baseline || ! $baselineAgent || (int) $baselineAgent->model_version_id !== (int) $baseline->id
+            || (int) $baselineAgent->generation?->ai_laboratory_id !== (int) $generation->ai_laboratory_id
+            || preg_match('/^[a-f0-9]{64}$/', (string) ($identity['source_evaluator_hash'] ?? '')) !== 1
+            || preg_match('/^[a-f0-9]{64}$/', (string) ($identity['python_source_hash'] ?? '')) !== 1
+            || (! $attestOnly && (hash_equals((string) $identity['source_evaluator_hash'], (string) $dependencies['evaluator_hash'])
+                || hash_equals((string) $identity['python_source_hash'], (string) $dependencies['python_source_hash'])))
+            || LabGateDecisionEvent::where(fn ($q) => $q->where('lab_generation_id', $generation->id)->orWhereIn('lab_agent_id', $agentIds))->exists()
+            || LabEvidenceArtifact::where(fn ($q) => $q->where('lab_generation_id', $generation->id)->orWhereIn('lab_agent_id', $agentIds))->whereIn('artifact_type',
+                ['trade_ledger', 'decision_trace', 'decision_events', 'replay_result'])->exists()) return $this->blocked($refusal);
+        $queue = app(LabQueueJobInspector::class)->generationQueueBacklog($agents->pluck('id')->all());
+        if (($queue['available'] ?? false) !== true || ($queue['total'] ?? null) !== 0) return $this->blocked($refusal);
+        foreach (['data_hash', 'execution_hash', 'mtf_bundle_hash', 'source_evaluator_hash', 'python_source_hash', 'source_identity_protocol'] as $field) {
+            if (($identity[$field] ?? null) !== data_get($generation->trigger_context, $field)) return $this->blocked($refusal);
+        }
+        if (($identity['data_hash'] ?? null) !== $dependencies['foundation_sha256']
+            || ($identity['execution_hash'] ?? null) !== $dependencies['execution_hash']
+            || ($identity['mtf_bundle_hash'] ?? null) !== $dependencies['mtf_bundle_hash']
+            || $this->hash((array) ($identity['discovery_scope'] ?? [])) !== $this->hash((array) ($dependencies['discovery_scope'] ?? []))
+            || $this->hash((array) ($identity['mtf_bundle_manifest'] ?? [])) !== $this->hash((array) data_get($generation->trigger_context, 'mtf_bundle_manifest', []))
+            || $this->hash(collect((array) data_get($identity, 'mtf_bundle_manifest.streams'))->only(['M5', 'M15', 'H1', 'H4'])
+                ->map(fn ($s) => $s['sha256'] ?? null)->all()) !== $this->hash($dependencies['mtf_source_sha256'])) return $this->blocked($refusal);
+        $preview = app(XauusdEdgeFormationAcademyService::class)->previewColdStartExperiment((array) $baseline->parameters);
+        $compiled = (array) ($preview['compiled_contract'] ?? []);
+        $trialCompiled = $this->compiler->compile(['axis' => $preview['axis'] ?? '', 'arms' => (array) json_decode((string) $trial->arms, true)],
+            (array) $baseline->parameters, ['symbol' => 'XAUUSD', 'laboratory_timeframe' => 'H1', 'execution_timeframe' => 'M5']);
+        if (($preview['status'] ?? null) !== 'previewed'
+            || $frozen['baseline_parameter_hash'] !== $this->compiler->parameterHash((array) $baseline->parameters)
+            || $cold['preview_hash'] !== $this->hash($compiled) || $this->hash($compiled) !== $this->hash($trialCompiled)
+            || $this->hash($compiled) !== $this->hash((array) data_get($generation->trigger_context, 'compiled_contract', []))
+            || $this->hash((array) $preview['event_density_contract']) !== $this->hash((array) json_decode((string) $trial->density_contract, true))) return $this->blocked($refusal);
+        $primary = $agents->where('origin', 'academy_experiment');
+        $kernel = (array) data_get($generation->trigger_context, 'causal_compounding_kernel', []);
+        $kernelIds = collect((array) ($kernel['pairs'] ?? []))->flatMap(fn ($p) => [(int) $p['control_agent_id'], (int) $p['candidate_agent_id']])
+            ->merge((array) ($kernel['abstain_agent_ids'] ?? []))->sort()->values()->all();
+        if ($primary->count() !== count($compiled['arms'])
+            || $primary->pluck('modelVersion.metadata.academy_experiment.arm_index')->unique()->count() !== $primary->count()
+            || ($kernel['protocol'] ?? null) !== CausalCompoundingKernelService::PROTOCOL || ($kernel['state'] ?? null) !== 'sealed'
+            || (int) ($kernel['population_size'] ?? 0) !== 20
+            || ($kernel['data_hash'] ?? null) !== $identity['data_hash'] || ($kernel['execution_hash'] ?? null) !== $identity['execution_hash']
+            || (int) ($kernel['causal_baseline_model_version_id'] ?? 0) !== (int) $baseline->id
+            || $kernelIds !== $agents->where('origin', '!=', 'academy_experiment')->pluck('id')->sort()->values()->all()) return $this->blocked($refusal);
+        foreach ($agents as $a) {
+            $parameters = app(StrategyParameterSchemaService::class)->canonicalizeForIdentity($a->strategy_family, (array) $a->modelVersion->parameters);
+            $encoded = json_encode($parameters, JSON_PRESERVE_ZERO_FRACTION);
+            if (data_get($a->modelVersion->metadata, 'parameter_fingerprint') !== hash('sha256', $a->strategy_family.'|'.$encoded)
+                || data_get($a->modelVersion->metadata, 'universal_genome.local_adapter.parameters_hash') !== hash('sha256', $encoded)) return $this->blocked($refusal);
+        }
+        foreach ($primary as $a) {
+            $arm = $compiled['arms'][(int) data_get($a->modelVersion->metadata, 'academy_experiment.arm_index', -1)] ?? [];
+            if (data_get($a->modelVersion->metadata, 'academy_experiment.protocol') !== self::PROTOCOL
+                || (int) data_get($a->modelVersion->metadata, 'academy_experiment.academy_trial_id') !== (int) $trial->id
+                || data_get($a->modelVersion->metadata, 'academy_experiment.arm_role') !== ($arm['role'] ?? null)
+                || $this->compiler->parameterHash((array) $a->modelVersion->parameters) !== ($arm['parameter_hash'] ?? null)) return $this->blocked($refusal);
+        }
+        $plan = ['protocol' => CausalCompoundingKernelService::PREPARATION_PLAN, 'original_generation_id' => (int) $generation->id,
+            'original_trial_id' => (int) $trial->id, 'baseline_model_version_id' => (int) $baseline->id,
+            'data_hash' => $identity['data_hash'], 'execution_hash' => $identity['execution_hash'],
+            'scientific_outcome_observed' => false, 'market_evidence_reused' => false,
+            'abstain_seats' => count((array) ($kernel['abstain_agent_ids'] ?? [])), 'pairs' => []];
+        foreach ((array) ($kernel['pairs'] ?? []) as $p) {
+            $c = $agents->firstWhere('id', (int) $p['control_agent_id']); $a = $agents->firstWhere('id', (int) $p['candidate_agent_id']);
+            if (! $c || ! $a || ! app(ExactCausalBaselineService::class)->matches($a, $c)
+                || $this->compiler->parameterHash((array) $c->modelVersion->parameters) !== $frozen['baseline_parameter_hash']
+                || (int) data_get($a->modelVersion->metadata, 'control_pair_contract.control_agent_id') !== (int) $c->id
+                || data_get($c->modelVersion->metadata, 'control_pair_contract.pair_key') !== $p['pair_key']
+                || data_get($a->modelVersion->metadata, 'control_pair_contract.pair_key') !== $p['pair_key']
+                || data_get($a->parameter_diff, $p['gene'].'.old') !== $p['old_value']
+                || data_get($a->parameter_diff, $p['gene'].'.new') !== $p['tested_value']) return $this->blocked($refusal);
+            $plan['pairs'][] = ['gene' => $p['gene'], 'old_value' => $p['old_value'], 'tested_value' => $p['tested_value'],
+                'selector_hash' => $p['selector_hash'], 'control_parameter_hash' => $this->compiler->parameterHash((array) $c->modelVersion->parameters),
+                'candidate_parameter_hash' => $this->compiler->parameterHash((array) $a->modelVersion->parameters)];
+        }
+        foreach ((array) ($kernel['abstain_agent_ids'] ?? []) as $id) {
+            if ($this->compiler->parameterHash((array) $agents->firstWhere('id', (int) $id)?->modelVersion?->parameters) !== $frozen['baseline_parameter_hash']) return $this->blocked($refusal);
+        }
+        $ledger = app(LabImmutableEvidenceService::class); $runProof = []; $probeHash = null;
+        $release = (array) data_get($generation->trigger_context, 'research_release', []);
+        $releaseBody = $release; unset($releaseBody['release_hash'], $releaseBody['sealed_at'], $releaseBody['promotion_evidence']);
+        if (($release['protocol'] ?? null) !== ResearchReleaseSealService::PROTOCOL
+            || ($release['source_hash'] ?? null) !== $identity['source_evaluator_hash']
+            || ($release['python_source_hash'] ?? null) !== $identity['python_source_hash']
+            || ($release['dataset_hash'] ?? null) !== $identity['mtf_bundle_hash']
+            || ($release['release_hash'] ?? null) !== app(ExecutionContractService::class)->hashParameters($releaseBody)) return $this->blocked($refusal);
+        foreach ($runs as $run) {
+            $a = $agents->firstWhere('id', (int) $run->lab_agent_id);
+            if (! $a || (int) $run->lab_generation_id !== (int) $generation->id || $run->status !== 'technical_error' || $run->phase !== 'screening'
+                || ! $run->started_at || ! $run->finished_at || filled($run->trade_ledger_hash)
+                || (int) $run->model_version_id !== (int) $a->model_version_id || $run->code_hash !== $identity['source_evaluator_hash']
+                || data_get($run->metadata, 'worker_boot_source_hash') !== $identity['source_evaluator_hash']
+                || data_get($run->metadata, 'research_release_hash') !== $release['release_hash']
+                || $run->parameter_hash !== $ledger->parameterHash($a) || $run->data_hash !== $identity['mtf_bundle_hash']
+                || ! $this->isNativeMtfValidatorRefusal((string) $run->error_message)
+                || array_diff(array_keys((array) $run->metrics), ['total_trades', 'profit_factor', 'max_drawdown_percent',
+                    'screening_survival', 'monthly_passport', 'gate_failure_context', 'event_ledger_hash']) !== []
+                || collect((array) $run->metrics)->contains(fn ($value): bool => $value !== null)
+                || $ledger->verifiedModelRuntimeIdentity($run) === null) return $this->blocked($refusal);
+            $responses = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_response')->get();
+            $requests = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')->get();
+            if ($responses->count() !== 1 || $requests->count() !== 1
+                || ! filled($responses->first()->storage_path)
+                || data_get($responses->first()->metadata, 'storage_protocol') !== 'compressed_artifact_v2'
+                || ! filled($requests->first()->storage_path)
+                || data_get($requests->first()->metadata, 'storage_protocol') !== 'compressed_artifact_v2') return $this->blocked($refusal);
+            $response = $ledger->readArtifactPayload($responses->first()); $request = $ledger->readArtifactPayload($requests->first());
+            if (! is_array($response) || ! is_array($request) || $responses->first()->sha256 !== $run->response_hash
+                || array_diff(array_keys($response), ['terminal_replay_envelope', 'data_quality', 'trade_ledger_hash', 'total_trades', 'displayed_trade_count']) !== []
+                || count($response) !== 5
+                || array_diff(array_keys((array) ($response['data_quality'] ?? [])), ['decision_trace']) !== []
+                || array_diff(array_keys((array) data_get($response, 'data_quality.decision_trace', [])), ['requested', 'complete', 'reason']) !== []
+                || array_diff(array_keys((array) ($response['terminal_replay_envelope'] ?? [])), ['status', 'response_available', 'reason_code', 'error_class', 'error_message']) !== []
+                || count((array) ($response['terminal_replay_envelope'] ?? [])) !== 5
+                || data_get($response, 'terminal_replay_envelope.error_class') !== $run->error_class
+                || data_get($response, 'terminal_replay_envelope.error_message') !== $run->error_message
+                || data_get($response, 'terminal_replay_envelope.reason_code') !== data_get($run->metadata, 'reason_code')
+                || data_get($response, 'displayed_trade_count') !== 0
+                || data_get($response, 'terminal_replay_envelope.response_available') !== false
+                || data_get($response, 'terminal_replay_envelope.status') !== 'technical_error'
+                || ! $this->isNativeMtfValidatorRefusal((string) data_get($response, 'terminal_replay_envelope.error_message'))
+                || data_get($response, 'data_quality.decision_trace.complete') !== false
+                || data_get($response, 'total_trades') !== null || data_get($response, 'trade_ledger_hash') !== null
+                || array_key_exists('trade_ledger', $response) || array_key_exists('decision_trace', $response)
+                || ($request['evaluation_mode'] ?? null) !== 'incremental' || ($request['dataset_tail_rows'] ?? null) !== null
+                || ($request['replay_dataset_hash'] ?? null) !== $identity['mtf_bundle_hash']
+                || data_get($request, 'execution_contract.execution_hash') !== $identity['execution_hash']
+                || $this->hash((array) ($request['research_release'] ?? [])) !== $this->hash($release)
+                || $this->hash((array) ($request['mtf_snapshot_manifest'] ?? [])) !== $this->hash($identity['mtf_bundle_manifest'])
+                || data_get($request, 'mtf_pilot.enabled') !== true
+                || data_get($request, 'mtf_pilot.activation_status') !== 'execution_stream_bound') return $this->blocked($refusal);
+            $strategies = collect((array) ($request['strategies'] ?? []));
+            $strategy = $strategies->firstWhere('lab_agent_id', (int) $a->id);
+            if (! $strategy || $this->compiler->parameterHash((array) ($strategy['parameters'] ?? [])) !== $this->compiler->parameterHash((array) $a->modelVersion->parameters)
+                || ($strategy['strategy'] ?? null) !== $a->modelVersion->strategy || ($strategy['version'] ?? null) !== $a->modelVersion->version) return $this->blocked($refusal);
+            $probe = (array) data_get($request, 'policy_context.prospective_probe_window', []);
+            if (! app(ProspectiveRepairProbeWindowService::class)->attests($probe, [...$probe, 'complete' => true])
+                || ($probe['dataset_hash'] ?? null) !== $identity['mtf_bundle_hash'] || ($probe['execution_hash'] ?? null) !== $identity['execution_hash']
+                || $this->hash((array) data_get($request, 'policy_context.prospective_clean_discovery_scope', [])) !== $this->hash($identity['discovery_scope'])) return $this->blocked($refusal);
+            foreach (['loaded_rows', 'warmup_rows', 'evaluated_rows', 'loaded_start', 'loaded_end', 'evaluated_start', 'evaluated_end', 'evaluated_month_counts'] as $field) {
+                if (($probe[$field] ?? null) !== data_get($identity, 'discovery_scope.calendar.'.$field)) return $this->blocked($refusal);
+            }
+            if ($probeHash !== null && $probeHash !== $probe['contract_hash']) return $this->blocked($refusal);
+            $probeHash = $probe['contract_hash'];
+            $runProof[] = [$run->run_id, $run->request_hash, $run->response_hash, $requests->first()->sha256,
+                $ledger->verifiedModelRuntimeIdentity($run)['artifact_hash'], $run->code_hash, $run->parameter_hash, $run->finished_at->toIso8601String()];
+        }
+        $unexecuted = [];
+        foreach ($agents as $a) {
+            if ($runs->contains('lab_agent_id', $a->id)) continue;
+            // Batch admission has no evaluator run: re-attest its exact sealed
+            // control and native error instead of fabricating a zero outcome.
+            $admission = app(FrozenControlScreeningAdmissionService::class)->admission($a);
+            $control = $agents->firstWhere('id', (int) ($admission['control_agent_id'] ?? 0));
+            $expectedControlId = $a->origin === 'academy_experiment'
+                ? (int) $primary->first(fn ($p) => data_get($p->modelVersion->metadata, 'academy_experiment.arm_role') === 'frozen_control')?->id
+                : (int) data_get(collect((array) ($kernel['pairs'] ?? []))->firstWhere('candidate_agent_id', (int) $a->id), 'control_agent_id', 0);
+            if (($admission['status'] ?? null) !== 'blocked' || ($admission['reason'] ?? null) !== 'FROZEN_CONTROL_REPLAY_INCOMPLETE'
+                || ! $control || ! $runs->contains('lab_agent_id', $control->id)
+                || $expectedControlId <= 0 || $expectedControlId !== (int) $control->id
+                || $a->decision_reason !== 'Frozen control admission failed before screening; strategy verdict withheld: FROZEN_CONTROL_REPLAY_INCOMPLETE.'
+                || LabEvidenceArtifact::where('lab_agent_id', $a->id)->exists()) return $this->blocked($refusal);
+            $unexecuted[] = ['agent_id' => $a->id, 'control_agent_id' => $control->id, 'reason' => $admission['reason'],
+                'parameter_hash' => $this->compiler->parameterHash((array) $a->modelVersion->parameters), 'scientific_outcome_observed' => false];
+        }
+        $receipts = ResearchExperimentReceipt::with('workItems')->where('source_type', 'edge_academy_trial')->where('source_id', $trial->id)
+            ->where('classification', 'TECHNICAL_QUARANTINE')->get();
+        $receipt = $receipts->first(); $works = $receipt?->workItems->where('work_type', 'academy_technical_quarantine');
+        if ($receipts->count() !== 1 || $works?->count() !== 1 || $works->first()->status !== 'blocked' || (int) $works->first()->attempts !== 0
+            || data_get($receipt->payload, 'evidence.academy_settlement.status') !== 'technical_quarantine'
+            || (array) data_get($receipt->payload, 'evidence.immutable_arm_evidence', []) !== []) return $this->blocked($refusal);
+        $replacement = ['protocol' => self::VALIDATOR_REPLACEMENT_PROTOCOL, 'fault' => 'AUTONOMOUS_MTF_MANIFEST_INVALID',
+            'technical_retry_of_trial_id' => (int) $trial->id, 'technical_retry_of_generation_id' => (int) $generation->id,
+            'source_receipt_id' => (int) $receipt->id, 'source_work_item_id' => (int) $works->first()->id,
+            'original_question_key' => $cold['key'], 'original_budget_scope' => $scope,
+            'old_source_hash' => $identity['source_evaluator_hash'], 'old_python_source_hash' => $identity['python_source_hash'],
+            'new_source_hash' => $dependencies['evaluator_hash'], 'new_python_source_hash' => $dependencies['python_source_hash'],
+            'run_evidence_hash' => $this->hash($runProof), 'unexecuted_dependent_arms' => $unexecuted,
+            'preregistered_discovery_plan' => $plan, 'probe_contract_hash' => $probeHash,
+            'maximum_validator_replacements' => 1, 'maximum_total_cohorts' => 2,
+            'scientific_outcome_observed' => false, 'market_evidence_reused' => false,
+            'independent_evidence' => false, 'scientific_question_budget_reset' => false];
+        $key = $this->hash([self::VALIDATOR_REPLACEMENT_PROTOCOL, $replacement, $dependencies, $compiled]);
+        return ['protocol' => self::PROTOCOL, 'status' => 'would_prepare_cold_start', 'trial_id' => 0,
+            'baseline_model_version_id' => $baseline->id, 'baseline_agent_id' => $baselineAgent->id,
+            'baseline_parameter_hash' => $frozen['baseline_parameter_hash'],
+            'cold_start' => ['protocol' => self::COLD_START_PROTOCOL, 'key' => $key, 'budget_scope' => $scope,
+                'dependencies' => $dependencies, 'preview_hash' => $this->hash($compiled), 'axis' => $preview['axis'],
+                'trial_type' => $preview['trial_type'], 'maximum_cohorts_per_scope' => 1, 'validator_replacement' => $replacement],
+            'source_role' => 'unobserved_mtf_validator_replacement_same_question', 'stage_depth' => 0,
+            'primary_proof_seats' => count($compiled['arms']), 'research_only' => true, 'promotion_evidence' => false, 'independent_causal_skill' => false];
+    }
+
+    private function isNativeMtfValidatorRefusal(string $message): bool
+    {
+        $payload = json_decode($message, true);
+        return is_array($payload) && $payload === ['detail' => 'AUTONOMOUS_MTF_MANIFEST_INVALID'];
+    }
+
+    /** Re-attest old terminal diagnostics without requiring or authorizing a fresh source/retry. */
+    public function validatorTerminalDispositionForAgent(LabAgent $agent): ?array
+    {
+        $generation = $agent->generation()->with('agents.modelVersion')->first();
+        if (! $generation || $generation->trigger_type !== 'academy_experiment' || $generation->status !== 'technical_quarantine'
+            || data_get($generation->trigger_context, 'prospective_source_identity.data_role') !== 'pre_2026_discovery_only') return null;
+        $trial = DB::table('edge_academy_trials')->find((int) data_get($generation->trigger_context, 'academy_trial_id'));
+        $passport = $trial ? DB::table('edge_academy_passports')->find($trial->edge_academy_passport_id) : null;
+        if (! $passport || $trial->status !== 'technical_quarantine' || $trial->settled_at === null) return null;
+        $frozen = (array) (json_decode((string) $passport->frozen_upstream_contract, true) ?: []);
+        $identity = (array) ($frozen['prospective_source_identity'] ?? []);
+        $runs = LabEvaluationRun::where(fn ($q) => $q->where('lab_generation_id', $generation->id)
+            ->orWhereIn('lab_agent_id', $generation->agents->pluck('id')))->orderBy('id')->get();
+        if (! $runs->contains(fn ($r) => $this->isNativeMtfValidatorRefusal((string) $r->error_message))) return null;
+        // Re-read compressed bytes on every classification. A persisted hash
+        // label or a long-lived worker cache must not hide artifact corruption.
+        // This path never loads the 15k candles or current archive readiness.
+        $dependencies = ['foundation_sha256' => $identity['data_hash'] ?? null, 'execution_hash' => $identity['execution_hash'] ?? null,
+                'mtf_bundle_hash' => $identity['mtf_bundle_hash'] ?? null, 'evaluator_hash' => $identity['source_evaluator_hash'] ?? null,
+                'python_source_hash' => $identity['python_source_hash'] ?? null, 'discovery_scope' => $identity['discovery_scope'] ?? [],
+                'mtf_source_sha256' => collect((array) data_get($identity, 'mtf_bundle_manifest.streams'))->only(['M5', 'M15', 'H1', 'H4'])
+                    ->map(fn ($s) => $s['sha256'] ?? null)->all()];
+        try { $proof = $this->validatorReplacementProposal(collect([$passport]), $dependencies, (string) data_get($identity, 'cold_start.budget_scope'), true); }
+        catch (RuntimeException|\ErrorException) { $proof = null; }
+        return ($proof['status'] ?? null) === 'would_prepare_cold_start'
+                ? ['reason_code' => 'IMMUTABLE_ACADEMY_MTF_VALIDATOR_REFUSAL', 'strategy_verdict' => 'withheld',
+                    'scientific_outcome_observed' => false, 'promotion_evidence' => false, 'trial_id' => (int) $trial->id,
+                    'generation_id' => (int) $generation->id, 'run_evidence_hash' => data_get($proof, 'cold_start.validator_replacement.run_evidence_hash')]
+            : null;
     }
 
     /** One output-preserving preparation repair; source changes never renew the question budget. */
@@ -909,7 +1186,8 @@ class AcademyExperimentMaterializerService
                 ->where('frozen_upstream_contract', 'like', '%'.self::COLD_START_PROTOCOL.'%')->get()
                 ->contains(fn ($row): bool => data_get(json_decode($row->frozen_upstream_contract, true), 'prospective_source_identity.cold_start.budget_scope') === $proposal['cold_start']['budget_scope']
                     || data_get(json_decode($row->frozen_upstream_contract, true), 'prospective_source_identity.cold_start.sealed_budget_scope') === $identity['cold_start']['sealed_budget_scope']);
-            $replacementKey = filled(data_get($proposal, 'cold_start.preparation_replacement')) ? 'preparation_replacement' : 'technical_replacement';
+            $replacementKey = filled(data_get($proposal, 'cold_start.validator_replacement')) ? 'validator_replacement'
+                : (filled(data_get($proposal, 'cold_start.preparation_replacement')) ? 'preparation_replacement' : 'technical_replacement');
             $replacement = (array) data_get($proposal, 'cold_start.'.$replacementKey, []);
             if ($replacement !== []) {
                 // Re-attest under the same laboratory lock used to consume
@@ -1163,7 +1441,8 @@ class AcademyExperimentMaterializerService
                 (string) $identity['execution_hash'],
                 'selection_quality',
                 $protectedGenes,
-                (array) data_get($identity, 'cold_start.preparation_replacement.preregistered_discovery_plan', []),
+                (array) data_get($identity, 'cold_start.validator_replacement.preregistered_discovery_plan',
+                    data_get($identity, 'cold_start.preparation_replacement.preregistered_discovery_plan', [])),
             );
             foreach ($generation->agents()->with('modelVersion')->get() as $member) {
                 $metadata = $this->hypothesisRuntimeMetadata((array) $member->modelVersion->metadata);

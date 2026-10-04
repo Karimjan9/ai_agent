@@ -49,6 +49,7 @@ from app.services.market_sessions import (
     session_membership,
 )
 from app.services.historical_quotes import validate_historical_quotes
+from app.services.prospective_probe_window import assert_clean_discovery_boundary
 from app.services.monte_carlo import MonteCarloService
 from app.services.multitimeframe import annotate_regime_source, apply_signal_policy
 from app.services.multitimeframe_stack import (
@@ -647,6 +648,7 @@ def prepare_replay_feature_context(
     and performance.  Reuse therefore changes only compute cost, never the
     causal observation or strategy behaviour of a fold.
     """
+    assert_clean_discovery_boundary(payload)
     assert_sealed_dataset_transport(payload)
     regime_source = _load_regime_source(payload)
     mtf_streams = _load_mtf_streams(payload)
@@ -679,6 +681,10 @@ def _assert_closed_mtf_runtime(
                 digest.update(chunk)
         return digest.hexdigest()
 
+    # API and direct feature/replay paths authenticate the same discovery-only
+    # scope before accepting its distinct bundle type. This is not a generic
+    # alternative to the full foundation contract.
+    assert_clean_discovery_boundary(payload)
     assert_sealed_dataset_transport(payload)
     pilot = dict(payload.mtf_pilot or {})
     if not (
@@ -699,8 +705,10 @@ def _assert_closed_mtf_runtime(
         raise ValueError("AUTONOMOUS_MTF_DATASET_IDENTITY_MISMATCH")
     if (
         manifest.get("protocol") != "closed_h4_h1_m15_m5_snapshot_v1"
-        or manifest.get("validation_bundle_protocol")
-        != "agent_owned_mtf_foundation_bundle_v1"
+        or manifest.get("validation_bundle_protocol") not in {
+            "agent_owned_mtf_foundation_bundle_v1",
+            "prospective_clean_discovery_bundle_v1",
+        }
         or len(bundle_hash) != 64
     ):
         raise ValueError("AUTONOMOUS_MTF_MANIFEST_INVALID")
@@ -908,6 +916,7 @@ def prepare_feature_snapshot(
     replay_context: PreparedReplayFeatureContext | None = None,
 ) -> PreparedFeatureSnapshot:
     """Build closed-context, volume and ATR features once per candle snapshot."""
+    assert_clean_discovery_boundary(payload)
     release_receipt = attest_research_release(payload.research_release,
         dataset_hash=payload.replay_dataset_hash,
         execution_hash=payload.execution_contract.get("execution_hash"))

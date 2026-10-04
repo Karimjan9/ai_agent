@@ -7,6 +7,19 @@ replenish it. Local stage proof is not independent/economic authority. Full
 validation and the authorized independent-window dependency remain separate
 (ADR-024).
 
+An original terminal/drained clean-discovery validator refusal may propose one
+`academy_unobserved_mtf_validator_replacement_v1`. Attempted controls require
+their exact immutable native error/request/runtime/release evidence;
+unexecuted dependents require the canonical exact-control refusal. Any observed
+science, missing arm or other failure shape denies it. The arbiter prepares
+fresh IDs and full/Python seals with all twenty original vectors/data/cost
+unchanged. Original plus one is terminally capped; no other replacement can
+follow that leaf. Old evidence and independent/paper authority remain unchanged
+(ADR-025).
+That same original-evidence proof owns the classifier's terminal diagnostic
+projection; absence of outputs alone or an error string is insufficient.
+The projection never reopens the old trial or changes its technical receipt.
+
 Academy trial `planned -> materialized` creates one locked draft plus pending
 canonical-admission intent. `pending -> admitted` requires the arbiter-selected
 canonical dispatcher and successful snapshot admission for that same generation.

@@ -56,6 +56,10 @@ calculation from FastAPI.
    an unsigned flag, copied bundle label or caller cutoff cannot authorize it.
    This admission is not independence, credit or paper/promotion evidence.
 3. Python compiles the frozen typed nodes into the versioned executable DAG,
+   applying the shared clean-discovery scope/probe guard at API and direct
+   context/feature entry. Enabled closed-MTF confirmation recognizes the typed
+   incremental discovery bundle only after this same guard succeeds; native
+   four-stream path and SHA verification remains mandatory.
    validates port types/topological order and strategy-signal/tactic-scope
    overlap, then validates aggregate authority and MTF hashes before feature
    construction. An unbound component, unprovable/empty activation scope,

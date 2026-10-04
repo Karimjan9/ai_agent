@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "919941a9fb741800987bfdbdf5c664c4e9d03bc48aabfce451d7d4634644b365",
-  "generated_at": "2026-10-04T10:02:56.449Z",
-  "source_digest": "acf436e6d9d1bc3421d0aa7e93c5ebf6358e54d370f642532302d4dd95a13707",
-  "source_file_count": 1471,
-  "git_head": "c73f4be9c2f2835d6fe2025e8bc0564d4a43b6cc",
+  "generated_at": "2026-10-04T10:55:00.055Z",
+  "source_digest": "7e3836603dbb250d1b9e9e99cce9141755a488b4a12fb5aab1371e6a698a79f0",
+  "source_file_count": 1472,
+  "git_head": "242b059aa1a5674b60e1e3e993310a74b5e09d7b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -95,7 +95,12 @@
       "tests": [
         "test_exact_discovery_contract_is_only_an_incremental_routing_input",
         "test_full_or_replay_discovery_refuses_before_any_cache_or_child_spawn",
-        "test_scope_flags_and_shortcut_windows_cannot_relabel_discovery"
+        "test_scope_flags_and_shortcut_windows_cannot_relabel_discovery",
+        "test_api_and_direct_runtime_share_one_discovery_boundary",
+        "test_enabled_closed_mtf_discovery_reaches_real_confirmation_strategy",
+        "test_direct_mtf_preparation_rejects_invalid_discovery_before_loading",
+        "test_discovery_protocol_preserves_all_four_file_hash_guards",
+        "test_foundation_protocol_is_not_a_discovery_authority_shortcut"
       ]
     },
     {
@@ -664,6 +669,19 @@
         "test_source_adapter_requires_exact_primary_ownership_parameters_and_original_diagnostic",
         "test_legacy_single_hash_is_not_relabelled_as_a_python_source_seal",
         "source"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AcademyMtfValidatorReplacementTest.php",
+      "tests": [
+        "tearDown",
+        "open",
+        "failedValidator",
+        "changedSource",
+        "test_one_native_validator_repair_preserves_exact_twenty_vectors_and_cannot_chain",
+        "test_observed_missing_or_unattested_program_never_receives_a_replacement",
+        "invalidEvidence",
+        "test_classifier_rechecks_raw_original_bytes_and_does_not_spend_an_old_work_item"
       ]
     },
     {

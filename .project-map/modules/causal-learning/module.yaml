@@ -106,6 +106,7 @@ entry_points:
   - AcademyExperimentMaterializerService::coldStartProposal
   - AcademyExperimentMaterializerService::containPreparation
   - AcademyExperimentMaterializerService::preparationTerminalDispositionForAgent
+  - AcademyExperimentMaterializerService::validatorTerminalDispositionForAgent
   - CompositionAuthorityKernelService::confirmationReplayMetadata
   - LabInstrumentResearchService::assignment
   - XauusdEdgeFormationAcademyService::previewColdStartExperiment
@@ -135,6 +136,7 @@ dependencies:
   - confirmation-entry
   - laravel-python-contract
 invariants:
+  - One original drained clean-discovery cohort with exact immutable pre-execution MTF validator refusal may receive one unchanged-question replacement under fresh full/Python source. Every attempted and unexecuted dependent arm is re-attested; original plus one is the maximum, with no constructor/preparation chain, new vectors, scientific budget reset or authority (ADR-025).
   - Causal discovery and Research Mentor do not depend on paper profitability. Paper admission consumes original-source and exact-trait causal verification; the reverse E4 performance/Economic Parent receipt is later feedback documented in shared integrations, not a prerequisite for causal execution.
   - Creation seals the primary Academy frozen-control owner and explicit admission-only candidate control IDs after hypothesis cleanup. Kernel pair contracts retain actual control and candidate IDs; no same-family fallback can silently substitute another control.
   - Academy primary arms share one compiler-verified trial-owned instrument surface before any ordinary pair lookup or cache reuse. Exact baseline, roster, context, source and parameter delta are prerequisites; this multi-arm reservation is not an ordinary economic pair or instrument-credit proof.
@@ -181,6 +183,7 @@ docs:
   - history.md
 tests:
   - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php
+  - backend-laravel/tests/Feature/AcademyMtfValidatorReplacementTest.php
   - backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php
   - backend-laravel/tests/Feature/AcademyPreExecutionReplacementTest.php
   - backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php
