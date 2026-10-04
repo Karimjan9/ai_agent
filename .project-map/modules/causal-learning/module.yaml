@@ -186,6 +186,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SecondaryM5ResearchRecoveryTest.php
+  - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
   - backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php
   - backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php
   - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php

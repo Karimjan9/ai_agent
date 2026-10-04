@@ -21,6 +21,12 @@ The canonical arbiter still owns prepare and dispatch; no full, independent
 confirmation, economic skill or inherited trait follows from this scope alone.
 See ADR-024.
 
+An explicitly attributed secondary-price discovery bundle retains the verified
+original native bundle's parent price/economic hashes in a sealed budget
+anchor. MTF readiness revalidates that anchor before Academy dependencies are
+constructed; mixed prices and new bundle hashes cannot renew the original
+physical-discovery question cap (ADR-027).
+
 ## Prospective screen-repair branch
 
 An immutable promising pair buys one fresh, passport/phase-bound guided,

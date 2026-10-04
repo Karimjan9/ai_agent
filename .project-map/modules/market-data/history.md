@@ -1,5 +1,20 @@
 # Market-data history
 
+## 2026-10-04 — Attributed secondary price discovery
+
+Explicitly authorized alternative prices can close a separate mixed archive's
+calendar gaps using actual raw responses and sealed row attribution. Only
+typed bounded pre-2026 discovery consumes it; native full validation remains
+native-only, volume/quotes stay unavailable and the original verified native
+bundle retains the same question budget (ADR-027).
+
+## 2026-10-04 — Observed native tick reconstruction
+
+Explicit v3 recovery can aggregate real synchronized Jetta/BI5 tick minutes
+omitted by the candle endpoint while revalidating observed M1, source/decoder
+hashes and SQL rows. Residual gaps and unknown uninterrupted tick history stay
+explicit; old v1/v2 evidence and research budgets remain unchanged (ADR-026).
+
 ## 2026-10-04 — Explicit clean discovery scope
 
 Verified recovery can resume successful proofs without treating transport errors

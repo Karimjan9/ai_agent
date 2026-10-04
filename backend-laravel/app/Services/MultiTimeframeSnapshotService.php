@@ -144,10 +144,15 @@ class MultiTimeframeSnapshotService
         $receipt = (array) data_get($archive->metrics, 'frozen_m5_gap_recovery_receipt', []);
         $hash = (string) ($receipt['repair_hash'] ?? '');
         $identity = array_diff_key($receipt, array_flip(['repair_hash', 'dataset_key']));
-        $batch = ($receipt['protocol'] ?? null) === 'frozen_m5_gap_recovery_v2';
+        $batch = in_array($receipt['protocol'] ?? null, ['frozen_m5_gap_recovery_v2', 'frozen_m5_gap_recovery_v3'], true);
         $proofs = (array) ($receipt['target_proofs'] ?? []);
+        $rawTickProofs = array_filter($proofs, static fn ($proof) => is_array($proof)
+            && ($proof['protocol'] ?? null) === 'actual_raw_tick_derived_m5_recovery_v1');
+        $rawTickBatch = ($receipt['protocol'] ?? null) === 'frozen_m5_gap_recovery_v3';
         $addedRows = $batch ? count($proofs) : 1;
-        if (! in_array($receipt['protocol'] ?? null, ['frozen_m5_gap_recovery_v1','frozen_m5_gap_recovery_v2'], true) || ! preg_match('/^[a-f0-9]{64}$/', $hash)
+        if (! in_array($receipt['protocol'] ?? null, ['frozen_m5_gap_recovery_v1','frozen_m5_gap_recovery_v2','frozen_m5_gap_recovery_v3'], true)
+            || ($rawTickBatch ? count($rawTickProofs) < 1 : count($rawTickProofs) > 0)
+            || ! preg_match('/^[a-f0-9]{64}$/', $hash)
             || ! hash_equals($hash, app(ExecutionContractService::class)->hashParameters($identity))
             || $archive->dataset_key !== 'foundation_intraday_gapfix_'.substr($hash, 0, 16)
             || ($receipt['dataset_key'] ?? null) !== $archive->dataset_key || ($receipt['symbol'] ?? null) !== 'XAUUSD'
@@ -219,6 +224,14 @@ class MultiTimeframeSnapshotService
             'independent_evidence' => false, 'promotion_evidence' => false];
     }
 
+    /** Native lineage proof reused by the separately attributed secondary owner. */
+    public function verifiedNativeM5Repair(string $dataset): ?array
+    {
+        $archive = MarketTrainingArchive::query()->where('dataset_key', $dataset)->where('provider', 'dukascopy')
+            ->where('symbol', 'XAUUSD')->where('timeframe', 'M5')->first();
+        return $this->verifiedProspectiveM5Repair($archive);
+    }
+
     /** Read-only selection by continuity and recency, never strategy outcomes. */
     public function prospectiveCleanDiscoveryReadiness(string $symbol, string $dataset,
         int $evaluationRows = self::DISCOVERY_EVALUATION_ROWS, int $warmupRows = self::DISCOVERY_WARMUP_ROWS): array
@@ -226,9 +239,12 @@ class MultiTimeframeSnapshotService
         $blocked = fn (string $reason): array => ['ready' => false, 'allowed' => false, 'reason' => $reason, 'promotion_evidence' => false];
         if (strtoupper($symbol) !== 'XAUUSD' || $evaluationRows !== self::DISCOVERY_EVALUATION_ROWS
             || $warmupRows !== self::DISCOVERY_WARMUP_ROWS) return $blocked('DISCOVERY_SCOPE_POLICY_INVALID');
-        $archive = MarketTrainingArchive::query()->where('dataset_key', $dataset)->where('provider', 'dukascopy')
+        $provider = str_starts_with($dataset, 'research_mixed_gapfix_') ? 'mixed' : 'dukascopy';
+        $archive = MarketTrainingArchive::query()->where('dataset_key', $dataset)->where('provider', $provider)
             ->where('symbol', 'XAUUSD')->where('timeframe', 'M5')->first();
-        $repair = $this->verifiedProspectiveM5Repair($archive);
+        $repair = $provider === 'mixed' && $archive !== null
+            ? app(\App\Services\MarketData\SecondaryM5ResearchRecoveryService::class)->verify($archive)
+            : $this->verifiedProspectiveM5Repair($archive);
         if ($repair === null) return $blocked('PROSPECTIVE_M5_REPAIR_PROVENANCE_INVALID');
         try {
             $audit = new Process(['python', '-B', base_path('scripts/audit-frozen-m5-gap-source.py'),
@@ -240,9 +256,10 @@ class MultiTimeframeSnapshotService
                 || ($calendar['source_rows'] ?? null) !== (int) $archive->row_count
                 || ($calendar['loaded_rows'] ?? null) !== $evaluationRows + $warmupRows
                 || ($calendar['selected_unexpected_gaps'] ?? null) !== 0
+                || ($provider === 'mixed' && ($calendar['full_source_unexpected_gaps'] ?? null) !== 0)
                 || ($calendar['independent_evidence'] ?? null) !== false
                 || ($calendar['full_validation_eligible'] ?? null) !== false) return $blocked('DISCOVERY_CLEAN_SEGMENT_UNAVAILABLE');
-            $rows = $this->discoveryRows($dataset, $calendar);
+            $rows = $this->discoveryRows($dataset, $calendar, $provider);
             if (count($rows) !== $evaluationRows + $warmupRows
                 || CarbonImmutable::parse($rows[0]['time'])->toIso8601ZuluString() !== $calendar['loaded_start']
                 || CarbonImmutable::parse($rows[array_key_last($rows)]['time'])->toIso8601ZuluString() !== $calendar['loaded_end']) return $blocked('DISCOVERY_SELECTED_SQL_ROWS_MISMATCH');
@@ -254,6 +271,7 @@ class MultiTimeframeSnapshotService
                 'selected_price_sha256' => $this->csvHash($rows), 'calendar' => $calendar,
                 'independent_evidence' => false, 'full_validation_eligible' => false,
                 'paper_eligible' => false, 'promotion_evidence' => false];
+            if ($provider === 'mixed') $scope['original_budget_scope_anchor'] = $repair['original_budget_scope_anchor'];
             $scope['scope_hash'] = app(ExecutionContractService::class)->hashParameters($scope);
             return ['ready' => true, 'allowed' => true, 'reason' => 'CLEAN_DISCOVERY_SCOPE_READY',
                 'discovery_scope' => $scope, 'entry_cutoff' => $calendar['loaded_end'],
@@ -269,7 +287,8 @@ class MultiTimeframeSnapshotService
         if (! $ready['ready']) throw new RuntimeException('MTF discovery scope not ready: '.$ready['reason']);
         $scope = $ready['discovery_scope']; $calendar = $scope['calendar'];
         $cutoff = CarbonImmutable::parse($calendar['loaded_end'])->addMinutes(5);
-        $rows = $this->discoveryRows($dataset, $calendar);
+        $provider = (string) data_get($ready, 'prospective_m5_repair.provider', 'dukascopy');
+        $rows = $this->discoveryRows($dataset, $calendar, $provider);
         if ($this->csvHash($rows) !== $scope['selected_price_sha256']) throw new RuntimeException('DISCOVERY_SELECTED_ROWS_CHANGED_DURING_FREEZE');
         $streams = ['M5' => $rows]; $contextFrom = CarbonImmutable::parse($calendar['loaded_start'])->subDays(90);
         foreach (['M15', 'H1'] as $timeframe) {
@@ -280,12 +299,22 @@ class MultiTimeframeSnapshotService
         foreach (['M5' => $evaluationRows + $warmupRows, 'M15' => 1000, 'H1' => 500, 'H4' => 100] as $timeframe => $minimum) {
             if (count($streams[$timeframe]) < $minimum) throw new RuntimeException('DISCOVERY_CONTEXT_STREAM_UNDERPOWERED:'.$timeframe);
         }
-        $volume = $this->attestHistoricalVolumeStreams($streams, 'dukascopy'); $streams = $volume['streams'];
-        $quotes = app(HistoricalQuoteSpreadService::class)->attach($streams['M5'], $this->csvHash($streams['M5']));
+        $volume = $this->attestHistoricalVolumeStreams($streams, $provider); $streams = $volume['streams'];
+        if ($provider === 'mixed') {
+            $streams['M5'] = app(\App\Services\MarketData\SecondaryM5ResearchRecoveryService::class)
+                ->attributeRows($streams['M5'], $ready['prospective_m5_repair']);
+            $volume['provenance']['price_side'] = 'mixed_native_bid_and_secondary_composite_mid';
+        }
+        $quotes = $provider === 'mixed'
+            ? ['rows' => $streams['M5'], 'provenance' => ['protocol' => 'historical_quote_spread_snapshot_v1',
+                'status' => 'unavailable', 'provider' => 'none', 'sources' => [], 'available_rows' => 0, 'coverage' => 0,
+                'source_m5_csv_sha256' => $this->csvHash($streams['M5']), 'quote_liquidity_inherited' => false,
+                'paper_2026_included' => false, 'promotion_evidence' => false]]
+            : app(HistoricalQuoteSpreadService::class)->attach($streams['M5'], $this->csvHash($streams['M5']));
         $streams['M5'] = $quotes['rows'];
         $hashes = []; foreach ($streams as $timeframe => $stream) $hashes[$timeframe] = $this->rowContentHash($stream);
         $identity = ['protocol' => self::PROTOCOL, 'validation_bundle_protocol' => self::DISCOVERY_BUNDLE_PROTOCOL,
-            'data_role' => 'pre_2026_discovery_only', 'symbol' => 'XAUUSD', 'provider' => 'dukascopy',
+            'data_role' => 'pre_2026_discovery_only', 'symbol' => 'XAUUSD', 'provider' => $provider,
             'datasets' => ['M5' => $dataset, 'M15' => MarketTrainingDataService::DEFAULT_DATASET,
                 'H1' => MarketTrainingDataService::DEFAULT_DATASET, 'H4' => 'derived_from_H1'],
             'discovery_scope' => $scope, 'prospective_m5_repair' => $ready['prospective_m5_repair'],
@@ -315,6 +344,10 @@ class MultiTimeframeSnapshotService
         $current = $this->prospectiveCleanDiscoveryReadiness('XAUUSD', (string) ($scope['parent_dataset_key'] ?? ''));
         if (! $current['ready'] || app(ExecutionContractService::class)->hashParameters($scope)
             !== app(ExecutionContractService::class)->hashParameters($current['discovery_scope'])) return $blocked('DISCOVERY_PARENT_OR_SELECTED_SCOPE_CHANGED');
+        $provider = (string) data_get($current, 'prospective_m5_repair.provider', 'dukascopy');
+        if ($provider === 'mixed' && (($manifest['provider'] ?? null) !== 'mixed'
+            || app(ExecutionContractService::class)->hashParameters((array) ($manifest['prospective_m5_repair'] ?? []))
+                !== app(ExecutionContractService::class)->hashParameters($current['prospective_m5_repair']))) return $blocked('DISCOVERY_MIXED_PROVIDER_IDENTITY_INVALID');
         $identity = array_diff_key($manifest, array_flip(['bundle_hash', 'streams', 'generated_at', 'rule']));
         $hash = app(ExecutionContractService::class)->hashParameters($identity);
         $root = realpath(storage_path('app/lab-datasets/mtf/'.$hash));
@@ -337,6 +370,16 @@ class MultiTimeframeSnapshotService
                 array_flip(['time', 'open', 'high', 'low', 'close', 'volume'])), $frozenRows);
             if (count($frozenRows) !== self::DISCOVERY_EVALUATION_ROWS + self::DISCOVERY_WARMUP_ROWS
                 || ! hash_equals($scope['selected_price_sha256'], $this->csvHash($priceRows))) return $blocked('DISCOVERY_FROZEN_SELECTED_ROWS_MISMATCH');
+            if ($provider === 'mixed') {
+                $expected = app(\App\Services\MarketData\SecondaryM5ResearchRecoveryService::class)
+                    ->attributeRows($priceRows, $current['prospective_m5_repair']);
+                foreach ($frozenRows as $index => $row) {
+                    if (($row['volume_available'] ?? null) !== false || array_key_exists('spread_available', $row)) return $blocked('DISCOVERY_MIXED_OBSERVATION_POLICY_INVALID');
+                    foreach (['source_provider', 'price_basis', 'source_response_sha256'] as $field) {
+                        if (($row[$field] ?? null) !== $expected[$index][$field]) return $blocked('DISCOVERY_MIXED_ROW_ATTRIBUTION_INVALID');
+                    }
+                }
+            }
             foreach ($manifest['streams'] as $timeframe => $stream) {
                 $rows = $timeframe === 'M5' ? $frozenRows : $this->readDiscoveryStream($stream['path']);
                 if (count($rows) !== (int) $stream['row_count']
@@ -374,9 +417,9 @@ class MultiTimeframeSnapshotService
         } finally { fclose($handle); }
     }
 
-    private function discoveryRows(string $dataset, array $calendar): array
+    private function discoveryRows(string $dataset, array $calendar, string $provider = 'dukascopy'): array
     {
-        return $this->training->candlesForAgent($dataset, 'dukascopy', 'XAUUSD', 'M5',
+        return $this->training->candlesForAgent($dataset, $provider, 'XAUUSD', 'M5',
             CarbonImmutable::parse($calendar['loaded_start']), CarbonImmutable::parse($calendar['loaded_end'])->addMinutes(5),
             self::DISCOVERY_EVALUATION_ROWS + self::DISCOVERY_WARMUP_ROWS);
     }
@@ -1004,6 +1047,9 @@ class MultiTimeframeSnapshotService
                     (string) ($row['quote_age_ms'] ?? ''),
                 ];
             }
+            foreach (['source_provider', 'price_basis', 'source_response_sha256'] as $field) {
+                if (array_key_exists($field, $row)) $parts[] = (string) $row[$field];
+            }
             hash_update($context, implode('|', $parts)."\n");
         }
 
@@ -1046,6 +1092,9 @@ class MultiTimeframeSnapshotService
                     $columns = [...$columns, 'spread', 'bid_close', 'ask_close', 'quote_time_utc', 'quote_available_after_utc', 'quote_age_ms'];
                 }
             }
+        }
+        foreach (['source_provider', 'price_basis', 'source_response_sha256'] as $field) {
+            if (array_key_exists($field, $rows[0] ?? [])) $columns[] = $field;
         }
 
         return $columns;

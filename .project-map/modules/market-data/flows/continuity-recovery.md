@@ -56,12 +56,34 @@ original source, receipt, fork bytes and SQL digest must agree. Refetch unresolv
 native targets only and publish a new fork. HTTP failure/empty unattested tick
 responses never become permanent absence checkpoints, including quote fetches.
 
+Explicit v3 offline recovery may consume a hash-bound raw-tick manifest for
+minutes omitted by the native candle endpoint. The owner validates synchronized
+Jetta/BI5 quotes, instrument/hour URL, raw bytes and decoder hashes; every
+observed M1 OHLC and its six-decimal volume identity must agree. It aggregates
+actual tick minutes, preserves missing observations, revalidates evidence on
+fork/readiness/resume and publishes a new immutable archive. Complete observed
+minute membership does not prove uninterrupted tick history. Existing v1/v2
+proofs and old generation receipts retain their original meanings (ADR-026).
+Sparse BI5 recovery additionally requires exact agreement between all observed
+tick minutes and the positive-volume native M1 inventory; its local M5 aggregate
+remains explicitly incomplete in clock minutes.
+
 Explicit clean discovery is a separate contract when full continuity remains
 unresolved. The shared Python calendar chooses the latest sufficient clean
 segment without strategy outcomes: 15000 evaluated plus 512 warmup M5 rows,
 closed H4/H1/M15, new hashes and reverified parent/SQL evidence. Missing quotes
 remain unavailable; old parent quotes cannot attest the slice. The stored
 `LAB_CLEAN_DISCOVERY_BUNDLE_HASH` admits bounded Academy screening only (ADR-024).
+
+User-authorized secondary recovery creates a separate `mixed` archive through
+the strict recovery owner. Native parent proofs and rows remain unchanged;
+actual Twelve M1 or corroborated provider M5 responses seal each unresolved
+bucket, UTC scope, observed-minute coverage and composite-mid attribution.
+The owner reopens raw responses, validates the exact residual inventory and
+matches derivative file/SQL hashes. The existing clean-discovery freezer seals
+row attribution into M5, marks volume unavailable and omits unobserved quotes.
+It binds the verified original native discovery budget, selects the new stored
+bundle hash and leaves ordinary native full validation fenced (ADR-027).
 
 ## Rules
 

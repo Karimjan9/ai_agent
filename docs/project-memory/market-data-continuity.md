@@ -51,11 +51,35 @@ archive/import is therefore not automatic repair or new research admission;
 it grants no independent, paper, promotion or trading authority. Re-exposure
 does not reset the existing scientific attempt budget.
 
+`recover-frozen-m5-gap.php --batch --raw-tick-evidence=MANIFEST
+--raw-tick-evidence-sha256=SHA --resume-dataset=DATASET` is the explicit offline
+v3 native tick reconstruction owner. It accepts only hash-bound official
+Dukascopy Jetta/BI5 resources, checks observed native M1 against actual
+synchronized tick aggregates, and creates a new archive. Omitted candle
+minutes come from actual ticks; flat carry-forward zero-volume bars never
+become observed price proof. Keep referenced raw evidence under durable
+storage because future fork/readiness/resume reopens it. Neither observed
+minute coverage nor a new fork certifies uninterrupted tick history, inherited
+quotes or independent evidence (ADR-026).
+
 Laravel agents can read the same rows through
 `CandlePayloadService::candlesForTraining(...)`; the dataset and provider are
 explicit arguments, so a training archive is never confused with live candles.
 
 ## States
+
+Explicit alternative-source authorization may also use
+`scripts/recover-secondary-m5-research.php` to create a separately attributed
+`mixed` archive from a verified native fork and actual Twelve Data responses.
+This owner preserves native prices, reopens raw evidence and verifies the
+entire residual calendar inventory, derivative CSV and SQL economic digest.
+Actual sparse provider M5 remains distinct from complete five-minute M1
+coverage. The existing clean-discovery freezer seals provider/basis/response
+metadata into M5 and keeps volume and unobserved quotes unavailable. Only the
+typed bounded pre-2026 discovery path consumes it; native full validation is
+unchanged. The original verified native discovery bundle anchors the existing
+Academy question cap, so the new mixed hashes do not create fresh attempts
+(ADR-027).
 
 - `healthy` — latest requested live range has no missing market-open H1 candle.
 - `offline` — provider fetch raised an error; the requested range is retained for retry.

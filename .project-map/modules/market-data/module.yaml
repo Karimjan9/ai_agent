@@ -27,6 +27,9 @@ paths:
   - backend-laravel/scripts/freeze-historical-tick-spread.cjs
   - backend-laravel/scripts/freeze-historical-tick-spread.test.cjs
   - backend-laravel/scripts/recover-frozen-m5-gap.php
+  - backend-laravel/scripts/decode-dukascopy-tick-hour.py
+  - backend-laravel/scripts/decode-dukascopy-tick-hour.test.py
+  - backend-laravel/scripts/recover-secondary-m5-research.php
   - backend-laravel/scripts/verify-sparse-reopen-ticks.cjs
   - backend-laravel/scripts/verify-sparse-reopen-ticks.test.cjs
   - backend-laravel/scripts/audit-frozen-m5-gap-source.py
@@ -47,6 +50,13 @@ entry_points:
   - FrozenM5GapRecoveryOperation::forkMany
   - FrozenM5GapRecoveryOperation::collectBatch
   - FrozenM5GapRecoveryOperation::resumeProofs
+  - FrozenM5GapRecoveryOperation::rawTickProof
+  - FrozenM5GapRecoveryOperation::collectRawTickBatch
+  - SecondaryM5ResearchRecoveryService::build
+  - SecondaryM5ResearchRecoveryService::verify
+  - SecondaryM5ResearchRecoveryService::attributeRows
+  - MultiTimeframeSnapshotService::verifiedNativeM5Repair
+  - backend-laravel/scripts/recover-secondary-m5-research.php
   - backend-laravel/scripts/recover-frozen-m5-gap.php
 data_tables:
   - candles
@@ -64,6 +74,8 @@ invariants:
   - A volume-dependent historical replay requires a hash-bound provenance receipt and an explicit volume_available column in every consumed stream.
   - A no-volume lane is not a failed volume capability and reports not_requested.
   - Sparse historical provider bars are recovered only into a new content-addressed training dataset with actual provider/tick proof, immutable old-source SHA, economic-row digest and explicit remaining calendar gaps. Missing minutes are never synthesized; new price bytes require freshly hash-bound quote sidecars and do not constitute independent validation or promotion evidence.
+  - Explicit v3 raw-tick recovery aggregates omitted candle minutes from hash-bound synchronized native Jetta/BI5 observations, validates observed M1 prices and six-decimal volume identity, reopens the raw evidence before readiness/resume, and never certifies uninterrupted tick history or inserts raw proofs into old v2 receipts.
+  - Explicit secondary recovery creates a separate mixed price archive with raw-response proofs and row attribution. Only typed pre-2026 bounded clean discovery consumes it; ordinary native full validation remains fenced, unavailable volume/quotes stay unavailable and the verified original native bundle anchors the existing question budget.
   - Historical quote spread is a separate pre-2026 research sidecar; executable liquidity requires one synchronized BID/ASK tick strictly before M5 close, maximum age 60 seconds, matching frozen M5 BID, source hashes and availability. Independently closing Jetta BID/ASK bars are diagnostic only. Neither artifact backfills an existing generation or gains authority merely by existing.
 flows:
   - flows/continuity-recovery.md
@@ -82,5 +94,7 @@ tests:
   - backend-laravel/tests/Feature/MtfAgentValidationSnapshotServiceTest.php
   - backend-laravel/tests/Feature/HistoricalQuoteSpreadTest.php
   - backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php
+  - backend-laravel/scripts/decode-dukascopy-tick-hour.test.py
   - backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php
+  - backend-laravel/tests/Feature/SecondaryM5ResearchRecoveryTest.php
   - ai-service-python/tests/test_historical_quotes.py
