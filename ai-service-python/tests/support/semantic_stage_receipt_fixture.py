@@ -29,7 +29,7 @@ def produce(control_limit: float = 1.0, candidate_limit: float = 1.1, blinded_li
             full_runtime_source_hash: str | None = None, python_source_hash: str | None = None,
             start_date: str | None = None, include_sources: bool = False,
             confirmed_volume_trait: bool = False, confirmation_source: bool = False,
-            arm_inputs: dict | None = None) -> dict:
+            arm_inputs: dict | None = None, location_distance_step: float | None = None) -> dict:
     with tempfile.TemporaryDirectory(prefix="stage-receipt-fixture-") as directory:
         streams = {}
         for timeframe, start, rows, frequency in (
@@ -108,6 +108,13 @@ def produce(control_limit: float = 1.0, candidate_limit: float = 1.1, blinded_li
             frame["entry_context_valid"] = True
             frame["entry_location_distance_atr"] = np.where(np.arange(len(frame)) % 2 == 0,
                 min(control_limit, candidate_limit, blinded_limit) / 2, (control_limit + candidate_limit) / 2)
+            if location_distance_step is not None:
+                if not 0 < location_distance_step <= 1:
+                    raise ValueError("FIXTURE_BOUNDED_LOCATION_STEP_REQUIRED")
+                # Fixed synthetic opportunities, identical across trial/arm
+                # vectors. Only the legal location threshold changes; actual
+                # semantic receipts are emitted by the ordinary producer.
+                frame["entry_location_distance_atr"] = ((np.arange(len(frame)) % 10) + 0.5) * location_distance_step
             frame["entry_location_valid"] = frame["entry_location_distance_atr"] <= limit
             frame["entry_setup_detected"] = frame["entry_location_valid"]
             frame["entry_confirmation_valid"] = frame["entry_setup_detected"]
@@ -155,6 +162,7 @@ if __name__ == "__main__":
     parser.add_argument("--control-limit", type=float, default=1.0)
     parser.add_argument("--candidate-limit", type=float, default=1.1)
     parser.add_argument("--blinded-limit", type=float, default=0.9)
+    parser.add_argument("--location-distance-step", type=float)
     parser.add_argument("--full-runtime-source-hash")
     parser.add_argument("--python-source-hash")
     parser.add_argument("--start-date")
@@ -165,5 +173,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(json.dumps(produce(args.control_limit, args.candidate_limit, args.blinded_limit,
         args.full_runtime_source_hash, args.python_source_hash, args.start_date, args.include_sources, args.confirmed_volume_trait,
-        args.confirmation_source, json.load(sys.stdin) if args.arm_inputs_stdin else None),
+        args.confirmation_source, json.load(sys.stdin) if args.arm_inputs_stdin else None, args.location_distance_step),
         sort_keys=True, separators=(",", ":"), ensure_ascii=False))

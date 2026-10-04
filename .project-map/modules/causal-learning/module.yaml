@@ -75,9 +75,18 @@ paths:
   - backend-laravel/app/Services/CooperativeExperimentSettlementService.php
   - backend-laravel/app/Services/ResearchExperimentConversionKernelService.php
   - backend-laravel/app/Services/ResearchKnowledgePortfolioService.php
+  - backend-laravel/app/Services/MultiModalLearningPortfolioService.php
+  - backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php
+  - backend-laravel/database/migrations/2026_10_04_200000_create_research_abstraction_and_behavior_archives.php
+  - backend-laravel/tests/Feature/ProspectiveResearchMetaLearningTest.php
+  - backend-laravel/tests/Feature/AcademyLearningProgressTest.php
+  - backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php
+  - backend-laravel/tests/Feature/ResearchFidelityMeasurementTest.php
+  - docs/operations/research-meta-learning.md
   - backend-laravel/app/Services/SkillMentorService.php
   - backend-laravel/app/Jobs/RunCausalExperimentFoldJob.php
   - backend-laravel/app/Models/CausalFoldReceipt.php
+  - backend-laravel/app/Models/ResearchExperimentReceipt.php
   - backend-laravel/app/Models/LabLearningLanePair.php
   - backend-laravel/tests/Feature/AcademyCanonicalHandoffTest.php
   - backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php
@@ -128,6 +137,13 @@ entry_points:
   - CanonicalLearningOutboxService
   - TypedInstrumentFoundryService::registerCausalBenchmark
   - TypedInstrumentFoundryService::settleCausalBenchmark
+  - TypedInstrumentFoundryService::compress
+  - TypedInstrumentFoundryService::taskContract
+  - TypedInstrumentFoundryService::behaviorAlternatives
+  - ResearchKnowledgePortfolioService::preregisterExperiment
+  - ResearchKnowledgePortfolioService::chooseDiscriminatingProbe
+  - XauusdEdgeFormationAcademyService::learningProgress
+  - XauusdEdgeFormationAcademyService::skillDependencyGraph
   - EvolutionaryAuthorityFoundryService::settleDescendantOutcome
   - CanonicalSkillCartridgeService::planTransplant
   - CanonicalSkillCartridgeService::settleTransplantOutcome
@@ -135,6 +151,8 @@ entry_points:
   - trading:causal-golden-worlds
   - trading:reconcile-instrument-pairs
 data_tables:
+  - research_instrument_abstractions
+  - research_behavior_archive
   - edge_academy_passports
   - edge_academy_trials
   - edge_academy_beams
@@ -197,6 +215,11 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php
+  - backend-laravel/tests/Feature/ProspectiveResearchMetaLearningTest.php
+  - backend-laravel/tests/Feature/AcademyLearningProgressTest.php
+  - backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php
+  - backend-laravel/tests/Feature/ResearchFidelityMeasurementTest.php
   - backend-laravel/tests/Feature/LearningTruthProtocolTest.php
   - backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php
   - backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T17:51:35.623Z",
-  "source_digest": "ab27d80f95d2f8d1af597545a6645e2bdc46afb52e8ec013d03054473d0b3ee7",
-  "source_file_count": 1480,
-  "git_head": "993e0823a898a483da4dc883c07deda6bd564b72",
+  "generated_at": "2026-10-04T19:13:52.015Z",
+  "source_digest": "25db5c425e1221253402ba188a938d1033f08809d2e8eaa4d36c64d56dc2d117",
+  "source_file_count": 1487,
+  "git_head": "d914e86960d8ddbdf0fbb1e0bd190b296dd1964b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -97,25 +97,25 @@
       "symbol": "_ImmutableSourceRowIndex",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 165
+      "line": 166
     },
     {
       "symbol": "PreparedFeatureSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 598
+      "line": 599
     },
     {
       "symbol": "PreparedSignalSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 608
+      "line": 609
     },
     {
       "symbol": "PreparedReplayFeatureContext",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 622
+      "line": 623
     },
     {
       "symbol": "CompositionRuntimeContractError",
@@ -242,6 +242,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_replay_cache_contract.py",
       "line": 21
+    },
+    {
+      "symbol": "ResearchProgramTasksTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_research_program_tasks.py",
+      "line": 28
     },
     {
       "symbol": "RobustnessProtocolTest",
@@ -5257,7 +5263,7 @@
       "symbol": "MultiModalLearningPortfolioService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/MultiModalLearningPortfolioService.php",
-      "line": 15
+      "line": 19
     },
     {
       "symbol": "MultiTimeframePilotService",
@@ -5575,7 +5581,7 @@
       "symbol": "ResearchKnowledgePortfolioService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ResearchKnowledgePortfolioService.php",
-      "line": 13
+      "line": 16
     },
     {
       "symbol": "ResearchLoopArbiterService",
@@ -6037,7 +6043,7 @@
       "symbol": "TypedInstrumentFoundryService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 15
+      "line": 17
     },
     {
       "symbol": "UncertaintyAbstentionSettlementService",
@@ -7060,6 +7066,12 @@
       "line": 7
     },
     {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_04_200000_create_research_abstraction_and_behavior_archives.php",
+      "line": 7
+    },
+    {
       "symbol": "FrozenM5GapRecoveryOperation",
       "kind": "php_type",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
@@ -7112,6 +7124,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/AcademyFoundrySourceAdmissionTest.php",
       "line": 16
+    },
+    {
+      "symbol": "AcademyLearningProgressTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/AcademyLearningProgressTest.php",
+      "line": 21
     },
     {
       "symbol": "AcademyMtfValidatorReplacementTest",
@@ -8032,6 +8050,12 @@
       "line": 9
     },
     {
+      "symbol": "ProspectiveResearchMetaLearningTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ProspectiveResearchMetaLearningTest.php",
+      "line": 16
+    },
+    {
       "symbol": "ProspectiveSemanticParentTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ProspectiveSemanticParentTest.php",
@@ -8084,6 +8108,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ResearchExperimentConversionKernelServiceTest.php",
       "line": 13
+    },
+    {
+      "symbol": "ResearchFidelityMeasurementTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ResearchFidelityMeasurementTest.php",
+      "line": 22
     },
     {
       "symbol": "ResearchIdeaDesignTest",
@@ -8324,6 +8354,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/TypedInstrumentFoundryServiceTest.php",
       "line": 9
+    },
+    {
+      "symbol": "TypedInstrumentResearchLearningTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php",
+      "line": 19
     },
     {
       "symbol": "UniversalKnowledgeGraphTest",

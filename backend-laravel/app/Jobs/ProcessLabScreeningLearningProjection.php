@@ -139,6 +139,15 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         $decision->update(['metrics' => $decisionMetrics]);
 
         $result = [...$this->screenProjection, 'evidence_run_id' => $this->runId];
+        // Research diversity is projected from the original committed artifacts,
+        // not catalogue names or parameter distance. No promotion authority.
+        app(\App\Services\TypedInstrumentFoundryService::class)->recordBehaviorOutcome($this->runId);
+        $programKey = data_get($run->request_meta, 'payload.policy_context.research_program_task.program_key');
+        if (is_string($programKey) && $programKey !== '') {
+            // This mutable selector is not proof: Foundry re-reads the original
+            // request, task, expanded AST and producer result before recording.
+            app(\App\Services\TypedInstrumentFoundryService::class)->recordProgramOutcome($programKey, $this->runId);
+        }
         // Catalogue selection alone is not an invocation. The ledger opens
         // only after Python returned an exact assignment/parameter attestation.
         $instrumentInvocations->recordResearchObservation($agent, $result, 'screening');

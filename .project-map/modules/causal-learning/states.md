@@ -1,5 +1,27 @@
 # Causal learning states
 
+## Research meta-learning (ADR-028)
+
+New causal questions: `preregistered -> local_target_calibrated | underpowered`.
+Original hash-valid atomic folds and unchanged scope/arm parameters are required;
+already observed questions cannot receive a retrospective seal. Calibration
+does not mean confirmation. Missing measured compute stays null.
+
+New Academy task seals retain original trial identity and prerequisites.
+Only comparable powered stage evidence can advise a neighboring challenge;
+missing prerequisites request repair and noisy/unmeasured progress holds budget.
+An enabling edge is research-only until a downstream original trial completes.
+
+Abstractions distinguish compression candidates, expanded semantic equivalence,
+unseen-task utility and separately measured search utility. Behavioral archive
+entries stay `observed_research_only`; unsupported dimensions remain unknown.
+
+Fidelity audits and measurement proposals are prospectively sealed dependencies
+until matching original producer outcomes exist. Finite policy candidates move
+through fixed synthetic benchmarks and prospectively fixed real-question
+comparisons, never self-activation or automatic economic authority. Exact-context
+boundary cells remain positive/negative/unknown **research** observations.
+
 `trading:audit-research-window-provenance` produces a bounded read-only
 `BLOCKED_DEPENDENCY` receipt from research request chronology, archive inventory
 and existing work owners. Missing original training/selection/context exposure

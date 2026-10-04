@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T17:51:35.623Z",
-  "source_digest": "ab27d80f95d2f8d1af597545a6645e2bdc46afb52e8ec013d03054473d0b3ee7",
-  "source_file_count": 1480,
-  "git_head": "993e0823a898a483da4dc883c07deda6bd564b72",
+  "generated_at": "2026-10-04T19:13:52.015Z",
+  "source_digest": "25db5c425e1221253402ba188a938d1033f08809d2e8eaa4d36c64d56dc2d117",
+  "source_file_count": 1487,
+  "git_head": "d914e86960d8ddbdf0fbb1e0bd190b296dd1964b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -415,6 +415,18 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_research_program_tasks.py",
+      "tests": [
+        "test_foundry_php_scientific_exponents_decimal_band_and_ascii_strings",
+        "test_preserved_ast_survives_whole_float_transport_and_rejects_bool_or_malformed_copies",
+        "test_outputs_are_real_semantics_not_caller_solved_or_expected_flags",
+        "test_parameterized_macro_exact_expansion_and_content_type_scope_guards",
+        "test_future_2026_unsupported_code_and_nonfinite_values_fail_closed",
+        "test_actual_compute_and_vector_budgets_are_enforced",
+        "test_real_prepared_backtest_owner_preserves_optional_task_result_in_benchmark"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_research_release.py",
       "tests": [
         "test_legacy_is_explicitly_unattested_and_release_is_schema_preserved",
@@ -669,6 +681,23 @@
         "test_source_adapter_requires_exact_primary_ownership_parameters_and_original_diagnostic",
         "test_legacy_single_hash_is_not_relabelled_as_a_python_source_seal",
         "source"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AcademyLearningProgressTest.php",
+      "tests": [
+        "setUp",
+        "test_actual_completed_comparable_trials_measure_reduction_not_surprise",
+        "test_noisy_plateau_holds_existing_next_experiment_path_without_new_work",
+        "test_easy_local_task_creates_only_an_adjacent_legal_axis_challenge",
+        "test_original_task_seals_and_runtime_identity_reject_poisoned_or_retrofitted_evidence",
+        "test_receipt_bound_dependency_gets_value_only_after_actual_downstream_completion",
+        "test_claimed_depth_missing_prerequisites_and_cycles_never_unlock_learning_work",
+        "test_registered_trial_cap_counts_failed_and_unobserved_work_not_only_winners",
+        "test_initial_curriculum_progress_tracks_the_actual_executable_cold_axis",
+        "series",
+        "completeTrial",
+        "fixture"
       ]
     },
     {
@@ -1255,6 +1284,7 @@
     {
       "path": "backend-laravel/tests/Feature/CooperativeContextualEvolutionCouncilTest.php",
       "tests": [
+        "test_native_council_retains_actual_resolved_question_fidelity_and_selection_without_method_override",
         "test_cold_start_is_twenty_seats_of_dynamic_scientific_blocks_and_seven_species",
         "test_causal_triplet_and_contextual_blocks_share_one_twenty_seat_generation",
         "test_valid_negative_repair_receipt_changes_one_successor_pair_and_seals_its_source",
@@ -2316,6 +2346,9 @@
     {
       "path": "backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php",
       "tests": [
+        "test_question_fidelity_is_bounded_diagnostic_and_preserves_independent_admission",
+        "test_native_allocator_ranks_only_ready_compatible_questions_and_seals_discriminating_probe",
+        "test_default_native_generation_identity_activates_same_seat_heuristic_ranking_without_inventing_forecast",
         "test_cold_start_uses_four_learning_sources_without_weakening_exact_pairs",
         "test_positive_evidence_moves_compute_to_replication_factorial_transfer_and_rehearsal"
       ]
@@ -2577,6 +2610,25 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ProspectiveResearchMetaLearningTest.php",
+      "tests": [
+        "test_preregister_then_actual_fold_calibration_is_idempotent_and_cannot_issue_credit",
+        "test_observed_experiment_has_no_retrospective_prediction_and_scope_drift_is_blocked",
+        "test_underpowered_and_tampered_folds_never_become_negative_or_positive_skill_facts",
+        "test_changed_treatment_parameters_invalidate_original_outcome_even_if_fold_hashes_match",
+        "test_probe_prefers_a_real_distinction_not_more_variants_and_preserves_safety",
+        "test_hypotheses_and_policy_are_durable_bounded_declarations_not_executable_code",
+        "test_random_control_share_is_bounded_reproducible_and_does_not_select_unready_jobs",
+        "test_fixed_real_policy_challenge_waits_for_all_original_questions_and_cannot_self_activate",
+        "test_boundary_map_preserves_unknown_context_instead_of_extrapolating_authority",
+        "test_new_native_receipts_preserve_whole_valued_floats_under_the_original_hash",
+        "test_new_generation_ids_cannot_mint_new_calibration_questions_for_the_same_consumed_vectors",
+        "experiment",
+        "complete",
+        "hash"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ProspectiveSemanticParentTest.php",
       "tests": [
         "sourcePair",
@@ -2673,6 +2725,24 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ResearchFidelityMeasurementTest.php",
+      "tests": [
+        "setUp",
+        "test_random_rejection_audit_seals_pool_before_outcome_and_counts_only_matched_later_receipts",
+        "test_audit_refuses_post_outcome_stale_incomplete_and_tampered_witnesses",
+        "test_actual_sealed_hypotheses_and_matched_existing_data_produce_only_acquisition_dependency",
+        "test_measurement_refuses_missing_hypotheses_future_availability_unmatched_inputs_and_unknown_cost",
+        "measurementSpec",
+        "receipt",
+        "measurementReceipt",
+        "createRun",
+        "response",
+        "eventRows",
+        "convert",
+        "canonicalHash"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ResearchIdeaDesignTest.php",
       "tests": [
         "test_identity_includes_context_block_design_and_stopping_rule",
@@ -2690,6 +2760,8 @@
     {
       "path": "backend-laravel/tests/Feature/ResearchLoopArbiterTest.php",
       "tests": [
+        "test_fidelity_annotations_do_not_replace_readiness_or_authorize_independent_replay",
+        "test_existing_dataset_wait_records_actual_source_dependency_without_inventing_measurement_value",
         "setUp",
         "test_academy_pending_intent_dispatches_same_draft_before_generic_lifecycle",
         "test_academy_outbox_publication_gap_has_two_bounded_transport_retries",
@@ -3138,6 +3210,36 @@
         "ast",
         "test_foundry_requires_academy_gates_and_rejects_semantic_duplicates",
         "test_emitter_credit_and_compounding_benchmark_remain_settled_research_contracts"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php",
+      "tests": [
+        "setUp",
+        "test_repeated_solved_subtrees_create_typed_parameterized_macro_and_exact_expansion",
+        "test_solved_flags_and_task_key_relabeling_cannot_mine_a_library",
+        "test_single_source_duplicate_runs_and_unsolved_outputs_are_not_repeat_evidence",
+        "test_unused_dummy_inputs_and_different_ids_do_not_create_distinct_solved_tasks",
+        "test_macro_argument_scope_content_and_expanded_complexity_guards_are_enforced",
+        "test_native_novel_task_semantics_never_claims_search_efficiency_or_promoted_library_utility",
+        "test_familiar_task_missing_cpu_and_unequal_budget_do_not_grant_library_utility",
+        "test_source_identity_drift_or_cached_response_tampering_invalidates_reuse",
+        "test_future_inputs_and_wrong_original_program_are_rejected",
+        "test_actual_native_contract_executes_macro_and_original_path_copy_mismatch_is_refused",
+        "test_native_hash_matches_actual_php_scientific_numbers_and_executes_tiny_and_large_constants",
+        "test_original_task_parser_rejects_malformed_or_mismatched_preserved_ast_copies",
+        "test_archive_is_actual_behavior_not_model_name_or_parameter_distance",
+        "test_zero_trade_archive_reports_unknowns_and_excludes_incompatible_or_mutated_sources",
+        "test_behavior_sampling_is_bounded_and_archive_tampering_is_not_silently_overwritten",
+        "trainedMacro",
+        "program",
+        "ast",
+        "candles",
+        "context",
+        "gates",
+        "fixtureRun",
+        "nativeTask",
+        "hashAst"
       ]
     },
     {

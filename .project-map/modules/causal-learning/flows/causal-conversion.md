@@ -365,3 +365,20 @@ Progress separates technical completion, answer-producing comparisons and
 actual descendant/trait-ablation witnesses. Historical Academy/causal research
 is not the authorized post-paper instrument route. Missing independent data
 remains a dependency, not a provisional result silently promoted to authority.
+
+## Research-question improvement
+
+The existing portfolio may rank compatible ready questions using prospective
+forecast/information/cost evidence and a seeded random-control share. Academy
+tasks seal learning-progress/prerequisite identity only when newly inserted.
+Native causal folds preregister a memory forecast before dispatch and calibrate
+only after original atomic settlement. Committed screening projection records
+bounded original behavioral descriptors. Foundry mines typed CALL abstractions
+only from distinct solved tasks, preserving the expanded primitive program.
+
+Cheap rejection audits and masked/unmasked measurement studies preregister
+their own exact questions before later witnesses. The existing arbiter remains
+the sole dispatcher. Fixed policy challengers may be compared on six synthetic
+worlds and prospectively sealed unobserved real questions; neither path skips
+authorized data, scientific gates or separate measured search/transfer proof.
+See ADR-028 and `docs/operations/research-meta-learning.md`.

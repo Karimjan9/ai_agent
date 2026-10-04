@@ -116,10 +116,16 @@ class AcademyProspectiveSourceParityTest extends TestCase
             $metrics['irrelevant_numeric_object'] = (object) ['0' => 'raw-byte transport fixture'];
             $run = LabEvaluationRun::create(['run_id' => (string) Str::uuid(), 'lab_generation_id' => $generation->id,
                 'lab_agent_id' => $agent->id, 'model_version_id' => $model->id, 'phase' => 'screening', 'mode' => 'screen',
-                'status' => 'completed', 'response_hash' => $evidence->hash($metrics), 'data_hash' => $metrics['data_hash'],
+                'status' => 'started', 'started_at' => now(), 'data_hash' => $metrics['data_hash'],
                 'code_hash' => $case === 'run_code' && $arm === 'candidate' ? str_repeat('9', 64) : $bindings['full_runtime_source_hash'],
                 'parameter_hash' => $evidence->parameterHash($agent), 'attempt' => 1]);
-            $evidence->recordArtifact($run, 'evaluation_response', $metrics);
+            // The new curriculum prerequisite rechecks the original request/
+            // model seal; a completed label plus response alone is not enough.
+            $evidence->attachRequest($run, ['symbol' => 'XAUUSD', 'timeframe' => 'M5',
+                'parameters' => $model->parameters, 'replay_dataset_hash' => $metrics['data_hash'],
+                'composition_runtime_contract' => []]);
+            $evidence->finishRun($run, 'completed', $metrics);
+            $run = $run->fresh();
             $runs[$arm] = $run; $agents[$arm] = $agent; $models[$arm] = $model;
         }
         $comparison = ['role' => 'candidate', 'gene' => 'location_tolerance_atr'];

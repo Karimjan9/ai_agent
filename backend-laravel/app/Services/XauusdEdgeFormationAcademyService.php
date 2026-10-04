@@ -23,6 +23,7 @@ class XauusdEdgeFormationAcademyService
         'full_composition_master',
     ];
     public const BEAM_STAGES = ['setup', 'trigger', 'economic', 'robustness'];
+    public const LEARNING_PROGRESS_PROTOCOL = 'academy_learning_progress_v1';
 
     /** Register/update the frozen composition and expose only the next legal axis. */
     public function passport(string $symbol, string $timeframe, array $identity, array $evidence = []): array
@@ -57,6 +58,9 @@ class XauusdEdgeFormationAcademyService
         }
         $frozen = $this->frozenContract($identity, $stage);
         $curriculum = $this->curriculum($stage, $frozen);
+        // A passport refresh cannot erase an original pre-execution task seal.
+        $curriculum['learning_progress_tasks'] = $existing
+            ? (array) data_get(json_decode((string) $existing->curriculum, true), 'learning_progress_tasks', []) : [];
         DB::table('edge_academy_passports')->updateOrInsert(['passport_key' => $key], [
             'symbol' => $symbol, 'timeframe' => $timeframe, 'composition_key' => $composition,
             'strategy_key' => (string) ($identity['strategy_key'] ?? $identity['strategy_family'] ?? 'unknown'),
@@ -295,6 +299,16 @@ class XauusdEdgeFormationAcademyService
         DB::table('edge_academy_trials')->where('id', $trialId)->update(['status' => $status,
             'outcome' => json_encode(['density' => $verdict, 'marginal_value' => $marginal, 'stage_progress' => $progress,
                 'outcome' => $outcome, 'promotion_evidence' => false]), 'settled_at' => now(), 'updated_at' => now()]);
+        // The prerequisite must be settled before its successor task is sealed.
+        // Both writes are still inside this transaction; a reader sees neither
+        // a half-settlement nor an unearned continuation.
+        if (($progress['status'] ?? null) === 'observed_stage_controllability') {
+            $progress['next_trial'] = $this->planNextCurriculumTrial((int) $progress['successor_passport_id']);
+            DB::table('edge_academy_trials')->where('id', $trialId)->update([
+                'outcome' => json_encode(['density' => $verdict, 'marginal_value' => $marginal, 'stage_progress' => $progress,
+                    'outcome' => $outcome, 'promotion_evidence' => false]),
+            ]);
+        }
         return ['protocol' => self::PROTOCOL, 'status' => $status, 'density' => $verdict, 'marginal_value' => $marginal,
             'stage_progress' => $progress, 'promotion_evidence' => false];
         });
@@ -426,13 +440,12 @@ class XauusdEdgeFormationAcademyService
                 'control_run_id' => $control->run_id, 'candidate_run_id' => $candidate->run_id,
                 'exact_delta' => ['gene' => $gene, 'old' => $controlParameters[$gene], 'new' => $candidateParameters[$gene]],
                 'stage_assessment' => $assessment, 'independent_causal_skill' => false]);
-            $next = $this->planNextCurriculumTrial((int) $successor['passport_id']);
             return [...$base, 'status' => 'observed_stage_controllability', 'evidence_assessable' => true, 'controllable_depth' => $this->depth($stage),
                 'successor_passport_id' => $successor['passport_id'], 'source_passport_id' => (int) $passport->id,
                 'source_control_run_id' => $control->run_id, 'source_candidate_run_id' => $candidate->run_id,
                 'candidate_parameter_hash' => $compiler->parameterHash($candidateParameters),
                 'exact_delta' => ['gene' => $gene, 'old' => $controlParameters[$gene], 'new' => $candidateParameters[$gene]],
-                'assessment' => $assessment, 'next_trial' => $next];
+                'assessment' => $assessment];
         }
         return $base;
     }
@@ -631,6 +644,13 @@ class XauusdEdgeFormationAcademyService
             ]);
         }
         if ($status === 'oracle_negative_retire_context_cell') return ['protocol' => self::PROTOCOL, 'status' => 'retired_context_cell', 'dispatch_allowed' => false, 'promotion_evidence' => false];
+        $progress = $this->learningProgress($passportId);
+        if (in_array(data_get($progress, 'recommendation.action'), ['hold_budget', 'repair_prerequisite'], true)) {
+            return $this->blocked('ACADEMY_LEARNING_PROGRESS_HOLDS_NEW_WORK', ['learning_progress' => $progress, 'dispatch_allowed' => false]);
+        }
+        if (data_get($progress, 'recommendation.action') === 'adjacent_legal_challenge') {
+            return $this->planAdjacentChallenge($passport, (string) $progress['axis']);
+        }
         $curriculum = json_decode((string) $passport->curriculum, true) ?: [];
         $axes = (array) ($curriculum['permitted_axes'] ?? []);
         if ($status === 'entry_mastery_required') {
@@ -756,6 +776,10 @@ class XauusdEdgeFormationAcademyService
 
     private function planNextCurriculumTrial(int $passportId): array
     {
+        $progress = $this->learningProgress($passportId);
+        if (in_array(data_get($progress, 'recommendation.action'), ['hold_budget', 'repair_prerequisite'], true)) {
+            return $this->blocked('ACADEMY_LEARNING_PROGRESS_HOLDS_NEW_WORK', ['learning_progress' => $progress, 'dispatch_allowed' => false]);
+        }
         $depth = (int) DB::table('edge_academy_passports')->where('id', $passportId)->value('stage_depth');
         return match ($depth) {
             1 => $this->planSetupTopologyProbe($passportId),
@@ -822,19 +846,373 @@ class XauusdEdgeFormationAcademyService
                 'trial_type' => $type, 'axis' => $axis,
                 'arms' => json_decode((string) $existing->arms, true) ?: [],
                 'event_density_contract' => json_decode((string) $existing->density_contract, true) ?: [],
-                'terminal' => true, 'promotion_evidence' => false];
+                'learning_progress' => $this->learningProgress($passportId, $axis), 'terminal' => true, 'promotion_evidence' => false];
         }
         if (! $existing) {
+            $progress = $this->learningProgress($passportId, $axis);
+            if (data_get($progress, 'registered_comparable_trials', 0) >= 6) {
+                return $this->blocked('ACADEMY_PREREGISTERED_TASK_TRIAL_CAP_REACHED', ['learning_progress' => $progress]);
+            }
+            $created = now();
             DB::table('edge_academy_trials')->insert([
                 'trial_key' => $key, 'edge_academy_passport_id' => $passportId, 'trial_type' => $type,
                 'status' => 'planned', 'frozen_contract' => json_encode($frozen), 'arms' => json_encode($arms),
-                'density_contract' => json_encode($density), 'created_at' => now(), 'updated_at' => now(),
+                'density_contract' => json_encode($density), 'created_at' => $created, 'updated_at' => $created,
             ]);
+            $newTrial = DB::table('edge_academy_trials')->where('trial_key', $key)->first();
+            $curriculum['learning_progress_tasks'][$key] = $this->learningTask($passport, $newTrial);
+            DB::table('edge_academy_passports')->where('id', $passportId)->update(['curriculum' => json_encode($curriculum), 'updated_at' => now()]);
         }
         $trialId = (int) ($existing?->id ?? DB::table('edge_academy_trials')->where('trial_key', $key)->value('id'));
         return ['protocol' => self::PROTOCOL, 'status' => $existing?->status ?? 'planned', 'trial_id' => $trialId,
-            'trial_type' => $type, 'axis' => $axis, 'arms' => $arms, 'event_density_contract' => $density, 'promotion_evidence' => false];
+            'trial_type' => $type, 'axis' => $axis, 'arms' => $arms, 'event_density_contract' => $density,
+            'learning_progress' => $this->learningProgress($passportId, $axis), 'promotion_evidence' => false];
     }
+
+    /** Local replay learning, not forecast calibration or independent market skill. */
+    public function learningProgress(int $passportId, ?string $axis = null): array
+    {
+        $base = ['protocol' => self::LEARNING_PROGRESS_PROTOCOL, 'status' => 'unmeasured',
+            'metric' => 'unreached_target_stage_fraction', 'metric_is_correctness_or_economic_loss' => false,
+            'verified_comparable_trials' => 0, 'error_reduction' => null, 'uncertainty_reduction' => null,
+            'independent_validation_proven' => false, 'economic_authority' => false,
+            'credit_authority' => false, 'paper_authority' => false, 'parent_authority' => false, 'promotion_evidence' => false];
+        if (! $this->available()) return [...$base, 'reason' => 'EDGE_ACADEMY_REGISTRY_UNAVAILABLE'];
+        $passport = DB::table('edge_academy_passports')->find($passportId);
+        if (! $passport) return [...$base, 'reason' => 'ACADEMY_PASSPORT_NOT_FOUND'];
+        $curriculum = json_decode((string) $passport->curriculum, true) ?: [];
+        $frozen = json_decode((string) $passport->frozen_upstream_contract, true) ?: [];
+        if ($axis === null && (int) $passport->stage_depth === 0) {
+            $location = $this->contextLocationProbeDefinition((array) ($frozen['baseline_parameters'] ?? []));
+            $axis = ($location['reason'] ?? null) === 'ACADEMY_AXIS_INACTIVE_IN_RUNTIME_MODEL'
+                ? 'setup_topology_policy' : 'location_tolerance_atr';
+        }
+        $axis ??= match ((int) $passport->stage_depth) {
+            0 => 'location_tolerance_atr', 1 => 'setup_topology_policy', 2 => 'confirmation_family_policy',
+            3 => 'trigger_topology_policy', 4 => 'max_chase_atr', 5 => 'time_stop_candles', default => '',
+        };
+        if (! in_array($axis, (array) ($curriculum['permitted_axes'] ?? []), true)) return [...$base, 'reason' => 'CURRICULUM_FORBIDS_MUTATION_AXIS'];
+        $scope = $this->learningScope($passport, $axis);
+        $prerequisite = $this->prerequisiteEvidence($passport);
+        $resources = ['maximum_comparable_trials' => 6, 'rolling_trial_window' => 4,
+            'maximum_primary_arms_per_trial' => 5, 'new_scope_does_not_reset_cold_start_budget' => true,
+            'replay_cpu_measured' => false, 'canonical_dispatcher_budget_unchanged' => true];
+        $result = [...$base, 'passport_id' => $passportId, 'axis' => $axis, 'task_scope_key' => $scope['scope_key'],
+            'resources' => $resources, 'prerequisite' => $prerequisite,
+            'recommendation' => ['action' => 'continue_bounded_probe', 'axis' => $axis, 'dispatch_allowed' => false]];
+        if (! $prerequisite['eligible'] && (int) $passport->stage_depth > 0
+            && filled(data_get($frozen, 'prospective_source_identity.source_evaluator_hash'))) {
+            return [...$result, 'status' => 'blocked_prerequisite', 'reason' => $prerequisite['reason'],
+                'recommendation' => ['action' => 'repair_prerequisite', 'required_stage' => $scope['upstream_stage'], 'dispatch_allowed' => false]];
+        }
+        $observations = []; $excluded = []; $seen = []; $registered = 0;
+        // Scope bounded: only passports for this market/timeframe and newest 64
+        // settled tasks are examined. Caller-provided outcome labels are unused.
+        $trials = DB::table('edge_academy_trials as t')->join('edge_academy_passports as p', 'p.id', '=', 't.edge_academy_passport_id')
+            ->where('p.symbol', $passport->symbol)->where('p.timeframe', $passport->timeframe)
+            ->where('p.curriculum', 'like', '%'.$scope['scope_key'].'%')
+            ->orderByDesc('t.id')->limit(64)->select('t.*')->get()->reverse();
+        foreach ($trials as $trial) {
+            $owner = DB::table('edge_academy_passports')->find($trial->edge_academy_passport_id);
+            $task = $this->verifiedLearningTask($owner, $trial);
+            if (! $task || $task['scope_key'] !== $scope['scope_key']) continue;
+            $registered++;
+            if ($trial->settled_at === null) continue;
+            if ((int) $owner->stage_depth > 0 && ! $this->prerequisiteEvidence($owner)['eligible']) {
+                $excluded[] = ['trial_id' => (int) $trial->id, 'reason' => 'ORIGINAL_TRIAL_PREREQUISITES_REQUIRED']; continue;
+            }
+            $pairs = $this->verifiedTrialComparisons($trial);
+            if ($pairs === []) { $excluded[] = ['trial_id' => (int) $trial->id, 'reason' => 'ORIGINAL_COMPARABLE_ARM_EVIDENCE_REQUIRED']; continue; }
+            if (! collect($pairs)->contains(fn (array $pair): bool => ! $pair['null_intervention'])) {
+                $excluded[] = ['trial_id' => (int) $trial->id, 'reason' => 'NON_NULL_PREREGISTERED_COMPARISON_REQUIRED']; continue;
+            }
+            $eligible = array_values(array_filter($pairs, fn (array $pair): bool => $pair['upstream_count'] >= $task['minimum_upstream_events']));
+            if (count($eligible) !== count($pairs)) { $excluded[] = ['trial_id' => (int) $trial->id, 'reason' => 'UNDERPOWERED_TARGET_TRANSITION']; continue; }
+            // Every candidate in the preregistered roster contributes; the best
+            // arm is never selected retrospectively as the progress statistic.
+            $witnesses = array_column($eligible, 'witness_key'); sort($witnesses);
+            $identity = $this->canonicalHash($witnesses);
+            if (isset($seen[$identity])) continue;
+            $seen[$identity] = true;
+            $observations[] = ['trial_id' => (int) $trial->id, 'settled_at' => $trial->settled_at,
+                'error' => array_sum(array_column($eligible, 'target_deficit')) / count($eligible),
+                'candidate_count' => count($eligible), 'witness_keys' => $witnesses,
+                'minimum_upstream_count' => min(array_column($eligible, 'upstream_count'))];
+        }
+        usort($observations, fn (array $left, array $right): int =>
+            [$left['settled_at'], $left['trial_id']] <=> [$right['settled_at'], $right['trial_id']]);
+        $count = count($observations); $window = array_slice($observations, -4);
+        $result = [...$result, 'verified_comparable_trials' => $count, 'registered_comparable_trials' => $registered,
+            'observations' => $window, 'excluded_trials' => $excluded,
+            'evidence_scope' => 'same_frozen_replay_task_not_independent_market_replication',
+            'uncertainty_metric' => 'between_trial_deficit_range_not_statistical_confidence'];
+        if (count($window) < 4) return [...$result, 'status' => $count === 0 ? 'unmeasured' : 'underpowered',
+            'reason' => 'FOUR_PREREGISTERED_COMPLETED_COMPARABLE_TRIALS_REQUIRED',
+            'recommendation' => ['action' => $registered >= 6 ? 'hold_budget' : 'continue_bounded_probe', 'axis' => $axis,
+                'reason' => $registered >= 6 ? 'PREREGISTERED_TASK_TRIAL_CAP_REACHED' : 'OBSERVATIONS_NOT_YET_POWERED', 'dispatch_allowed' => false]];
+        $early = array_column(array_slice($window, 0, 2), 'error'); $recent = array_column(array_slice($window, 2), 'error');
+        $before = array_sum($early) / 2; $after = array_sum($recent) / 2;
+        $oldRange = max($early) - min($early); $newRange = max($recent) - min($recent);
+        $gain = $before - $after;
+        $status = $after <= .05 && $newRange <= .05 ? 'mastered_local'
+            : ($newRange > .25 ? 'noisy_plateau' : ($gain >= .05 && $newRange <= max(.1, $oldRange) + 1e-9 ? 'learning_progress' : 'plateau'));
+        $hold = in_array($status, ['plateau', 'noisy_plateau'], true) || $registered >= 6;
+        $action = $hold ? 'hold_budget' : ($status === 'mastered_local' ? 'adjacent_legal_challenge' : 'continue_bounded_probe');
+        $next = $this->adjacentChallenge($passport, $axis, $prerequisite);
+        return [...$result, 'status' => $status, 'error_before' => $before, 'error_after' => $after,
+            'error_reduction' => $gain, 'uncertainty_before' => $oldRange, 'uncertainty_after' => $newRange,
+            'uncertainty_reduction' => $oldRange - $newRange,
+            'recommendation' => ['action' => $action, 'axis' => $axis, 'adjacent_challenge' => $next,
+                'reason' => $registered >= 6 ? 'PREREGISTERED_TASK_TRIAL_CAP_REACHED' : 'MEASURED_PROGRESS_NOT_SURPRISE', 'dispatch_allowed' => false]];
+    }
+
+    /** An edge is observed enabling work, not proof that a skill is necessary. */
+    public function skillDependencyGraph(int $passportId): array
+    {
+        $base = ['protocol' => 'academy_observed_skill_dependency_graph_v1', 'status' => 'unmeasured', 'edges' => [],
+            'observed_research_enabling_value' => 0, 'dependency_necessity_proven' => false,
+            'causal_enabling_value_proven' => false, 'economic_authority' => false,
+            'credit_authority' => false, 'paper_authority' => false, 'parent_authority' => false, 'promotion_evidence' => false];
+        if (! $this->available()) return [...$base, 'reason' => 'EDGE_ACADEMY_REGISTRY_UNAVAILABLE'];
+        $passport = DB::table('edge_academy_passports')->find($passportId);
+        if (! $passport) return [...$base, 'reason' => 'ACADEMY_PASSPORT_NOT_FOUND'];
+        $prerequisite = $this->prerequisiteEvidence($passport);
+        if (! $prerequisite['eligible']) return [...$base, 'status' => 'blocked_prerequisite', 'reason' => $prerequisite['reason']];
+        $edges = []; $value = 0;
+        foreach ($prerequisite['lineage'] as $link) {
+            $owner = DB::table('edge_academy_passports')->find($link['successor_passport_id']);
+            foreach (DB::table('edge_academy_trials')->where('edge_academy_passport_id', $owner->id)->orderBy('id')->limit(6)->get() as $trial) {
+                $task = $this->verifiedLearningTask($owner, $trial);
+                if (! $task || data_get($task, 'prerequisite.trial_id') !== $link['source_trial_id']) continue;
+                $pairs = $trial->settled_at === null ? [] : $this->verifiedTrialComparisons($trial);
+                $powered = array_values(array_filter($pairs, fn (array $pair): bool => $pair['upstream_count'] >= $task['minimum_upstream_events']));
+                $answered = $powered !== [] && collect($powered)->contains(fn (array $pair): bool => ! $pair['null_intervention']);
+                $positive = collect($powered)->contains(fn (array $pair): bool => $pair['assessment']['status'] === 'controllable' && $pair['target_deficit'] < $pair['control_deficit']);
+                $value += (int) $answered;
+                $edges[] = [...$link, 'downstream_trial_id' => (int) $trial->id, 'downstream_task_scope_key' => $task['scope_key'],
+                    'status' => $answered ? 'completed_answered_downstream_work' : ($trial->settled_at === null ? 'unlocked_preregistered_work' : 'underpowered_or_invalid_downstream_work'),
+                    'completed_answered' => $answered, 'positive_stage_effect' => $positive,
+                    'downstream_witness_keys' => array_column($powered, 'witness_key'),
+                    'confounding_guard' => 'exact_source_baseline_single_axis_preserved_upstream', 'economic_value' => null];
+            }
+        }
+        return [...$base, 'status' => $edges === [] ? 'verified_prerequisite_without_downstream_work' : 'observed_dependency_work',
+            'edges' => $edges, 'observed_research_enabling_value' => $value];
+    }
+
+    private function learningScope(object $passport, string $axis): array
+    {
+        $frozen = json_decode((string) $passport->frozen_upstream_contract, true) ?: [];
+        $parameters = (array) ($frozen['baseline_parameters'] ?? []); unset($parameters[$axis]);
+        $target = match ($axis) { 'location_tolerance_atr' => 'location', 'setup_topology_policy' => 'setup',
+            'confirmation_family_policy' => 'confirmation', 'trigger_topology_policy' => 'trigger',
+            'max_chase_atr', 'minimum_reward_space_r' => 'entry', default => 'closed_trade' };
+        $upstream = match ($target) { 'location', 'setup' => 'opportunity', 'confirmation' => 'setup',
+            'trigger' => 'confirmation', 'entry' => 'trigger', default => 'entry' };
+        $source = (array) ($frozen['prospective_source_identity'] ?? []);
+        $baseline = ModelVersion::query()->find((int) ($frozen['baseline_model_version_id'] ?? 0));
+        $scope = ['symbol' => $passport->symbol, 'timeframe' => $passport->timeframe, 'strategy' => $frozen['strategy'] ?? null,
+            'axis' => $axis, 'target_stage' => $target, 'upstream_stage' => $upstream,
+            'context' => $frozen['context'] ?? [], 'temporal_roles' => $frozen['temporal_roles'] ?? [],
+            'risk' => $frozen['risk'] ?? [], 'management' => $frozen['management'] ?? [], 'frozen_non_axis_parameters' => $parameters,
+            'frozen_runtime_basis' => $baseline ? app(LabImmutableEvidenceService::class)->modelRuntimeBasis($baseline) : null,
+            'source' => array_intersect_key($source, array_flip(['mtf_bundle_hash', 'mtf_bundle_manifest', 'execution_hash',
+                'source_evaluator_hash', 'python_source_hash', 'source_identity_protocol']))];
+        return [...$scope, 'scope_key' => $this->canonicalHash($scope)];
+    }
+
+    private function learningTask(object $passport, object $trial): array
+    {
+        $arms = json_decode((string) $trial->arms, true) ?: [];
+        $frozen = json_decode((string) $trial->frozen_contract, true) ?: [];
+        $source = (array) ($frozen['prospective_source_identity'] ?? []);
+        $task = [...$this->learningScope($passport, (string) ($arms[0]['changed_axis'] ?? '')),
+            'protocol' => self::LEARNING_PROGRESS_PROTOCOL, 'trial_key' => $trial->trial_key,
+            'trial_created_at' => $trial->created_at, 'trial_type' => $trial->trial_type,
+            'baseline_parameter_hash' => $frozen['baseline_parameter_hash'] ?? null,
+            'frozen_contract_hash' => $this->canonicalHash($frozen), 'arm_roster_hash' => $this->canonicalHash($arms),
+            'density_contract_hash' => $this->canonicalHash(json_decode((string) $trial->density_contract, true) ?: []),
+            'metric' => 'unreached_target_stage_fraction', 'minimum_completed_comparable_trials' => 4,
+            'minimum_upstream_events' => 20, 'rolling_trial_window' => 4, 'maximum_comparable_trials' => 6,
+            'minimum_error_reduction' => .05, 'maximum_recent_deficit_range' => .25,
+            'maximum_primary_arms' => 5, 'prerequisite' => [
+                'trial_id' => (int) ($source['source_academy_trial_id'] ?? 0),
+                'control_run_id' => $source['source_control_run_id'] ?? null, 'candidate_run_id' => $source['source_candidate_run_id'] ?? null,
+                'candidate_response_hash' => $source['source_response_hash'] ?? null],
+            'research_only' => true, 'economic_authority' => false, 'promotion_evidence' => false];
+        return [...$task, 'task_seal' => $this->canonicalHash($task)];
+    }
+
+    private function verifiedLearningTask(?object $passport, object $trial): ?array
+    {
+        if (! $passport) return null;
+        $task = data_get(json_decode((string) $passport->curriculum, true), 'learning_progress_tasks.'.$trial->trial_key);
+        if (! is_array($task) || $task !== $this->learningTask($passport, $trial)) return null;
+        if ($trial->settled_at !== null && $task['trial_created_at'] > $trial->settled_at) return null;
+        return $task;
+    }
+
+    /** Original complete roster, actual parameters and immutable semantic receipts. */
+    private function verifiedTrialComparisons(object $trial): array
+    {
+        $frozen = json_decode((string) $trial->frozen_contract, true) ?: [];
+        $evidence = app(LabImmutableEvidenceService::class); $director = app(CausalStageMasteryDirectorService::class);
+        $compiler = app(AcademyExperimentContractCompilerService::class);
+        $agents = LabAgent::query()->with('modelVersion')->whereHas('modelVersion', fn ($query) =>
+            $query->where('metadata->academy_experiment->academy_trial_id', (int) $trial->id))->get();
+        if ($agents->isEmpty() || $agents->pluck('lab_generation_id')->unique()->count() !== 1) return [];
+        try {
+            if (! $this->primaryRosterComplete($trial, $frozen, (int) $agents->first()->lab_generation_id)) return [];
+            $control = $agents->first(fn (LabAgent $agent): bool => data_get($agent->modelVersion?->metadata, 'academy_experiment.arm_role') === 'frozen_control');
+            if (! $control) return [];
+            $arms = json_decode((string) $trial->arms, true) ?: []; $axis = (string) ($arms[0]['changed_axis'] ?? '');
+            $scope = $this->learningScope(DB::table('edge_academy_passports')->find($trial->edge_academy_passport_id), $axis);
+            $metrics = []; $runs = [];
+            foreach ($agents as $agent) {
+                $run = LabEvaluationRun::query()->where('lab_agent_id', $agent->id)->where('model_version_id', $agent->model_version_id)
+                    ->where('phase', 'screening')->where('status', 'completed')->latest('id')->first();
+                $identity = $run ? $evidence->verifiedModelRuntimeIdentity($run) : null;
+                if (! $run || ! $identity || ! $run->started_at || ! $run->finished_at
+                    || $run->started_at->lt($trial->created_at)) return [];
+                $requestArtifact = LabEvidenceArtifact::query()->where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')
+                    ->where('sha256', $identity['request_artifact_hash'])->oldest('id')->first();
+                $request = $requestArtifact ? $evidence->readArtifactPayload($requestArtifact) : null;
+                $actualParameters = is_array($request) ? ($request['parameters'] ?? null) : null;
+                if ($actualParameters === null && is_array($request)) {
+                    $actualParameters = collect($request['agents'] ?? [])->first(fn ($item): bool =>
+                        is_array($item) && ($item['lab_agent_id'] ?? null) === (int) $agent->id)['parameters'] ?? null;
+                }
+                if (! is_array($actualParameters) || ! $evidence->equivalentJsonValue($actualParameters, (array) $agent->modelVersion->parameters)) return [];
+                $payload = $evidence->latestArtifactPayload($run);
+                if (! is_array($payload) || ! $director->decisionIdentityValid((array) data_get($payload, 'data_quality.decision_identity_receipt', []))) return [];
+                $runs[$agent->id] = $run; $metrics[$agent->id] = $payload;
+            }
+            $pairs = [];
+            foreach ($agents as $candidate) {
+                if (data_get($candidate->modelVersion?->metadata, 'academy_experiment.arm_role') !== 'candidate') continue;
+                if ($this->canonicalHash($evidence->modelRuntimeBasis($control->modelVersion))
+                    !== $this->canonicalHash($evidence->modelRuntimeBasis($candidate->modelVersion))) return [];
+                $axisProof = $director->inferAxis((array) $control->modelVersion->parameters, (array) $candidate->modelVersion->parameters);
+                // A categorical tournament may deliberately include its
+                // baseline policy as a null candidate. Keep it in the roster
+                // statistic; never mislabel it as an intervention/effect.
+                $null = ($axisProof['reason'] ?? null) === 'NO_PARAMETER_CHANGE';
+                if (! $null && (($axisProof['status'] ?? null) !== 'single_axis' || ($axisProof['gene'] ?? null) !== $axis)) return [];
+                $assessment = $director->assess($axis, [...$metrics[$control->id], 'value' => $control->modelVersion->parameters[$axis]],
+                    [...$metrics[$candidate->id], 'value' => $candidate->modelVersion->parameters[$axis]]);
+                if (($assessment['evidence_assessable'] ?? false) !== true) return [];
+                $upstream = (int) data_get($metrics[$control->id], 'data_quality.decision_identity_receipt.stage_identities.'.$scope['upstream_stage'].'.event_count', 0);
+                $old = (int) data_get($metrics[$control->id], 'data_quality.decision_identity_receipt.stage_identities.'.$scope['target_stage'].'.event_count', 0);
+                $new = (int) data_get($metrics[$candidate->id], 'data_quality.decision_identity_receipt.stage_identities.'.$scope['target_stage'].'.event_count', 0);
+                if ($upstream <= 0 || max($old, $new) > $upstream) return [];
+                $pairs[] = ['control_run_id' => $runs[$control->id]->run_id, 'candidate_run_id' => $runs[$candidate->id]->run_id,
+                    'control_response_hash' => $runs[$control->id]->response_hash, 'candidate_response_hash' => $runs[$candidate->id]->response_hash,
+                    'candidate_model_version_id' => $candidate->model_version_id,
+                    'candidate_parameter_hash' => $compiler->parameterHash((array) $candidate->modelVersion->parameters),
+                    'upstream_count' => $upstream, 'provided_stage_event_count' => $new,
+                    'control_deficit' => 1 - ($old / $upstream), 'target_deficit' => 1 - ($new / $upstream),
+                    'null_intervention' => $null, 'assessment' => $assessment,
+                    // Full response hashes are still reverified above. They
+                    // include transport/checkpoint metadata and are not new
+                    // scientific observations when the consumed events agree.
+                    'witness_key' => $this->canonicalHash([$scope['scope_key'],
+                        $compiler->parameterHash((array) $control->modelVersion->parameters),
+                        $compiler->parameterHash((array) $candidate->modelVersion->parameters),
+                        data_get($metrics[$control->id], 'data_quality.decision_identity_receipt.candle_domain'),
+                        data_get($metrics[$candidate->id], 'data_quality.decision_identity_receipt.candle_domain'),
+                        data_get($metrics[$control->id], 'data_quality.decision_identity_receipt.stage_identities'),
+                        data_get($metrics[$candidate->id], 'data_quality.decision_identity_receipt.stage_identities')])];
+            }
+            return $pairs;
+        } catch (\Throwable) { return []; }
+    }
+
+    private function prerequisiteEvidence(object $passport): array
+    {
+        $lineage = []; $seen = []; $current = $passport;
+        for ($depth = 0; $depth < 16; $depth++) {
+            if (isset($seen[$current->id])) return ['eligible' => false, 'reason' => 'ACADEMY_PREREQUISITE_CYCLE', 'lineage' => []];
+            $seen[$current->id] = true;
+            $frozen = json_decode((string) $current->frozen_upstream_contract, true) ?: [];
+            $source = (array) ($frozen['prospective_source_identity'] ?? []);
+            $sourceId = (int) ($source['source_academy_trial_id'] ?? 0);
+            if ($sourceId === 0) return ['eligible' => (int) $current->stage_depth === 0,
+                'reason' => (int) $current->stage_depth === 0 ? 'ACADEMY_ROOT_TASK_NO_PREREQUISITE' : 'ACADEMY_RECEIPT_BOUND_PREREQUISITE_REQUIRED', 'lineage' => $lineage];
+            $trial = DB::table('edge_academy_trials')->find($sourceId);
+            $owner = $trial ? DB::table('edge_academy_passports')->find($trial->edge_academy_passport_id) : null;
+            if ($owner && isset($seen[$owner->id])) return ['eligible' => false, 'reason' => 'ACADEMY_PREREQUISITE_CYCLE', 'lineage' => []];
+            if (! $trial || ! $owner || $trial->settled_at === null || ! $this->verifiedLearningTask($owner, $trial)
+                || (int) $owner->stage_depth >= (int) $current->stage_depth
+                || $owner->symbol !== $current->symbol || $owner->timeframe !== $current->timeframe) {
+                return ['eligible' => false, 'reason' => 'ACADEMY_ORIGINAL_PREREQUISITE_TRIAL_REQUIRED', 'lineage' => []];
+            }
+            $proof = data_get(json_decode((string) $trial->outcome, true), 'stage_progress', []);
+            $original = json_decode((string) $trial->frozen_contract, true) ?: [];
+            foreach (['context', 'temporal_roles', 'risk', 'management'] as $binding) {
+                if ($this->canonicalHash((array) ($original[$binding] ?? [])) !== $this->canonicalHash((array) ($frozen[$binding] ?? []))) {
+                    return ['eligible' => false, 'reason' => 'ACADEMY_PREREQUISITE_SCOPE_CONFOUNDED', 'lineage' => []];
+                }
+            }
+            $pairs = $this->verifiedTrialComparisons($trial);
+            $witness = collect($pairs)->first(fn (array $pair): bool => $pair['control_run_id'] === ($source['source_control_run_id'] ?? null)
+                && $pair['candidate_run_id'] === ($source['source_candidate_run_id'] ?? null)
+                && $pair['candidate_response_hash'] === ($source['source_response_hash'] ?? null)
+                && $pair['candidate_model_version_id'] === ($frozen['baseline_model_version_id'] ?? null)
+                && $pair['candidate_parameter_hash'] === ($frozen['baseline_parameter_hash'] ?? null)
+                && $pair['assessment']['status'] === 'controllable' && $pair['target_deficit'] < $pair['control_deficit']
+                && $pair['upstream_count'] >= 20 && $pair['provided_stage_event_count'] >= 20);
+            $expectedDepth = $witness ? match ($witness['assessment']['target_stage']) {
+                'location' => 1, 'setup' => 2, 'confirmation' => 3, 'trigger' => 4, 'entry', 'closed_trade' => 5, default => 0,
+            } : 0;
+            if (! $witness || ($proof['status'] ?? null) !== 'observed_stage_controllability'
+                || ($proof['successor_passport_id'] ?? null) !== (int) $current->id
+                || $expectedDepth !== (int) $current->stage_depth
+                || $this->canonicalHash((array) ($proof['assessment'] ?? [])) !== $this->canonicalHash($witness['assessment'])) {
+                return ['eligible' => false, 'reason' => 'ACADEMY_IMMUTABLE_POSITIVE_PREREQUISITE_REQUIRED', 'lineage' => []];
+            }
+            $lineage[] = ['source_trial_id' => $sourceId, 'source_passport_id' => (int) $owner->id,
+                'successor_passport_id' => (int) $current->id, 'source_candidate_run_id' => $witness['candidate_run_id'],
+                'source_control_run_id' => $witness['control_run_id'], 'source_response_hash' => $witness['candidate_response_hash'],
+                'provided_stage' => $witness['assessment']['target_stage'], 'provided_stage_event_count' => $witness['provided_stage_event_count'],
+                'baseline_parameter_hash' => $witness['candidate_parameter_hash']];
+            $current = $owner;
+        }
+        return ['eligible' => false, 'reason' => 'ACADEMY_PREREQUISITE_DEPTH_CAP_REACHED', 'lineage' => []];
+    }
+
+    private function adjacentChallenge(object $passport, string $axis, array $prerequisite): array
+    {
+        $legal = (array) data_get(json_decode((string) $passport->curriculum, true), 'permitted_axes', []);
+        return ['axis' => $axis, 'permitted_axes' => $legal,
+            'kind' => 'next_schema_bounded_single_axis_variant', 'requires_fresh_trial_preregistration' => true,
+            'new_context_requires_new_source_and_prerequisites' => true, 'prerequisite_verified' => $prerequisite['eligible'],
+            'changes_risk_or_frozen_upstream' => false, 'dispatch_allowed' => false];
+    }
+
+    /** A harder legal threshold, not a new context, risk axis or arbitrary gene. */
+    private function planAdjacentChallenge(object $passport, string $axis): array
+    {
+        $frozen = json_decode((string) $passport->frozen_upstream_contract, true) ?: [];
+        $baseline = data_get($frozen, 'baseline_parameters.'.$axis);
+        $schema = app(StrategyParameterSchemaService::class)->schema('confirmation_entry_mtf');
+        [$kind, $minimum, $maximum] = array_pad($schema[$axis] ?? [], 3, null);
+        if (! in_array($kind, ['numeric', 'integer'], true) || $this->finiteNumber($baseline) === null) {
+            return $this->blocked('ACADEMY_ADJACENT_NUMERIC_CHALLENGE_REQUIRED', ['axis' => $axis]);
+        }
+        $step = $kind === 'integer' ? 2 : .2;
+        // Tightening a location/chase threshold is a bounded adjacent stress
+        // challenge. It is not evidence of transfer outside this frozen task.
+        $candidate = $baseline - $step; $blind = $baseline + $step;
+        if ($candidate < $minimum || $blind > $maximum) return $this->blocked('ACADEMY_ADJACENT_LEGAL_VALUES_EXHAUSTED');
+        if ($kind === 'integer') { $candidate = (int) $candidate; $blind = (int) $blind; }
+        else { $candidate = round($candidate, 6); $blind = round($blind, 6); }
+        return $this->plan((int) $passport->id, 'adjacent_'.$axis.'_challenge', $axis, [
+            ['role' => 'frozen_control', 'value' => 'frozen_current'], ['role' => 'candidate', 'value' => $candidate],
+            ['role' => 'blinded_control', 'value' => $blind],
+        ], ['minimum_setup_events' => 20, 'minimum_trigger_events' => 12, 'minimum_closed_trades' => 8]);
+    }
+
+    private function canonicalHash(array $value): string { return app(ExecutionContractService::class)->hashParameters($value); }
 
     /** Planner semantics are explicit, never inferred from arm array order. */
     private function explicitArms(array $definitions, string $axis, array $frozen): array

@@ -26,6 +26,29 @@ class CausalGoldenWorldHarnessService
         private EvolutionaryAuthorityLadderService $authority,
     ) {}
 
+    /** Fixed challenger worlds: labels are unavailable to the research ranker. */
+    public function researchPolicyWorlds(): array
+    {
+        $candidate = static fn (string $id, array $features, bool $safe = true, int $cost = 60): array => [
+            'question_id' => $id, 'ready' => true, 'safety_preserved' => $safe,
+            'cost_ceiling_seconds' => $cost, 'features' => $features,
+        ];
+        return [
+            'positive' => ['candidates' => [$candidate('useful', ['expected_value' => .8, 'information_gain' => .7]),
+                $candidate('weak', ['expected_value' => .1])], 'outcomes' => ['useful' => 1, 'weak' => 0]],
+            'null' => ['candidates' => [$candidate('null-cheap', [], true, 10), $candidate('null-expensive', [], true, 120)],
+                'outcomes' => ['null-cheap' => 0, 'null-expensive' => 0]],
+            'poisoned' => ['candidates' => [$candidate('unsafe', ['expected_value' => 1], false), $candidate('safe', ['information_gain' => .2])],
+                'outcomes' => ['unsafe' => -1, 'safe' => 0]],
+            'context_switch' => ['candidates' => [$candidate('unverified-transfer', ['expected_value' => 0]), $candidate('scope-probe', ['information_gain' => .7])],
+                'outcomes' => ['unverified-transfer' => -1, 'scope-probe' => 1]],
+            'interaction' => ['candidates' => [$candidate('joint-probe', ['information_gain' => .9, 'diversity' => .5]), $candidate('marginal-only', ['information_gain' => .1])],
+                'outcomes' => ['joint-probe' => 1, 'marginal-only' => 0]],
+            'misleading_proxy' => ['candidates' => [$candidate('proxy-attractive', ['expected_value' => .95]), $candidate('uncertainty-audit', ['information_gain' => .8])],
+                'outcomes' => ['proxy-attractive' => -1, 'uncertainty-audit' => 1]],
+        ];
+    }
+
     /** @return array<string,mixed> */
     public function run(bool $withPersistenceProof = false): array
     {

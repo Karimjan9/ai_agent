@@ -45,6 +45,42 @@ class ResearchLoopArbiterTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_fidelity_annotations_do_not_replace_readiness_or_authorize_independent_replay(): void
+    {
+        $owner = app(ResearchLoopArbiterService::class);
+        $this->assertNull($owner->fidelityPlanForAction('SETTLE_EXISTING_GENERATION', 'XAUUSD', 'H1', []));
+        $independent = $owner->fidelityPlanForAction('EDGE_INDEPENDENT_REPLICATION', 'XAUUSD', 'H1', []);
+        $this->assertSame('independent_validation', $independent['kind']);
+        $this->assertSame('blocked_dependency', $independent['status']);
+        $this->assertFalse($independent['independence_attested']);
+        $this->assertTrue($independent['executor_admission_unchanged']);
+        $this->assertFalse($independent['promotion_evidence']);
+    }
+
+    public function test_existing_dataset_wait_records_actual_source_dependency_without_inventing_measurement_value(): void
+    {
+        Queue::fake(); $this->lab();
+        $owner = app(ResearchLoopArbiterService::class);
+        $choose = new \ReflectionMethod($owner, 'decide');
+        $source = ['protocol' => 'immutable_historical_candle_gap_dependency_v1', 'run_id' => 'original-run',
+            'dataset_hash' => str_repeat('a', 64), 'response_artifact_hash' => str_repeat('b', 64)];
+        $decision = $choose->invokeArgs($owner, ['XAUUSD', 'H1', 'WAIT_DATASET_CONTINUITY', 89,
+            null, [], null, ['GENERATION_MTF_M5_KNOWN_CANDLE_GAP'], ['data_readiness' => ['allowed' => false,
+                'source_dependency' => $source, 'primary_stream_sha256' => str_repeat('c', 64)]], false]);
+        $proposal = $decision['evidence_snapshot']['measurement_acquisition_proposal'];
+        $this->assertSame('deferred', $decision['status']);
+        $this->assertNull($decision['command']);
+        $this->assertSame(89, $decision['priority']);
+        $this->assertSame($source, $proposal['source_evidence']);
+        $this->assertNull($proposal['value_of_measurement']);
+        $this->assertSame([], $proposal['hypotheses']);
+        $this->assertFalse($proposal['absence_is_market_closure_proof']);
+        $this->assertFalse($proposal['paid_api_calls_authorized']);
+        $this->assertFalse($proposal['promotion_evidence']);
+        $this->assertSame($proposal, ResearchLoopDecision::query()->sole()->evidence_snapshot['measurement_acquisition_proposal']);
+        Queue::assertNothingPushed();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -671,6 +707,8 @@ class ResearchLoopArbiterTest extends TestCase
             $second = $arbiter->tick();
 
             $this->assertSame('RUN_NORMAL_TWENTY_SEAT_LIFECYCLE', $first['action']);
+            $this->assertSame('discovery', data_get($first, 'evidence_snapshot.research_fidelity_plan.kind'));
+            $this->assertTrue(data_get($first, 'contract.existing_readiness_priority_and_executor_admission_unchanged'));
             $this->assertSame('duplicate_suppressed', $second['status']);
             Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
         } finally {

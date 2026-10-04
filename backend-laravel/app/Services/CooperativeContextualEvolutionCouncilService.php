@@ -122,7 +122,10 @@ class CooperativeContextualEvolutionCouncilService
         $legacyLearning = app(MultiModalLearningPortfolioService::class)->planForLab(
             $lab,
             app(EvolutionaryAuthorityLadderService::class)->experimentBlocks($steppingStone),
-            $this->learningEvidence($evidence),
+            [...$this->learningEvidence($evidence), '__planning_identity' => [
+                'laboratory_id' => (int) $lab->id, 'generation_number' => $generationNumber,
+                'symbol' => strtoupper($lab->symbol), 'timeframe' => strtoupper($lab->timeframe),
+            ]],
         );
         $reference = $this->referenceTimestamp($lab);
         $readyIdeas = $this->ideas->ready($lab->symbol, $lab->timeframe);
@@ -1083,15 +1086,20 @@ class CooperativeContextualEvolutionCouncilService
         $source = data_get($portfolio, 'source_references.'.$sourceKey);
         $requires = in_array($desired, ['positive_skill_replication', 'counterfactual_factorial', 'context_transfer_validation', 'elite_rehearsal_guard'], true);
         $method = $requires && ! is_array($source) ? ($desired === 'elite_rehearsal_guard' ? 'adversarial_robustness' : 'bayesian_active_learning') : $desired;
+        $question = app(MultiModalLearningPortfolioService::class)->planExistingSeat(
+            $blockKey, $type, $method, $priority, (array) ($portfolio['planning_identity'] ?? []),
+            is_array($source) ? $source : null,
+        );
 
         return [
+            ...$question,
             'protocol' => MultiModalLearningPortfolioService::PROTOCOL, 'block_key' => $blockKey,
             'block_index' => $index + 1, 'learning_method' => $method,
             'deferred_learning_method' => $method !== $desired ? $desired : null,
             'source_reference' => $source, 'source_reference_status' => is_array($source) ? 'bound_before_mutation' : ($requires ? 'missing_fail_closed' : 'not_required'),
             'source_reference_required' => $method === $desired && $requires,
             'source_context_required' => $method === $desired && $requires,
-            'selection_receipt' => ['receipt_hash' => hash('sha256', json_encode([self::PROTOCOL, $blockKey, $method, $source, $priority], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)),
+            'selection_receipt' => ['receipt_hash' => hash('sha256', json_encode([self::PROTOCOL, $blockKey, $method, $source, $priority, $question], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)),
                 'status' => 'pre_registered', 'selected_before_mutation' => true, 'result_link_pending' => true, 'promotion_evidence' => false],
             'settlement_must_link_to_receipt' => true, 'requires_exact_frozen_control' => true,
             'research_nursery_only' => true,

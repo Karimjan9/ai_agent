@@ -24,6 +24,12 @@ class CausalFoldReceipt extends Model
         'observed_at' => 'datetime',
     ];
 
+    /** Do not lose 1.0 -> 1 while persisting a pre-hashed request/response. */
+    protected function asJson($value, $flags = 0)
+    {
+        return parent::asJson($value, $flags | JSON_PRESERVE_ZERO_FRACTION);
+    }
+
     protected static function booted(): void
     {
         static::updating(function (CausalFoldReceipt $receipt): void {

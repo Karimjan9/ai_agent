@@ -355,3 +355,15 @@ bad source dependency from a transient evaluator failure; a new label cannot
 waive actual-byte continuity. Newly frozen M5 bytes require new hash-bound
 synchronized quote sidecars. Sparse observed bars are not synthetic minute
 coverage, independent research evidence, credit or paper/live authority.
+
+## Research meta-learning boundary
+
+The committed screening projection and causal fold owner may project bounded
+behavior/calibration after original immutable completion. Planning metadata
+never substitutes for executor admission. New typed research program tasks use
+the optional existing policy context, deterministic whitelist interpretation,
+as-of inputs and content-sealed primitive expansion; their response is a research
+benchmark, not a strategy signal, trading receipt or measured synthesis benefit.
+Original request/model/response hashes are reverified at Foundry consumption.
+Fidelity audits, measurement value and policy challengers remain research-only;
+2026 paper data and old archives do not become independent validation.

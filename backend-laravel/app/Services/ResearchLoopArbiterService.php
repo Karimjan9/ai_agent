@@ -769,6 +769,12 @@ class ResearchLoopArbiterService
         array $evidence,
         bool $dryRun,
     ): array {
+        $fidelity = $this->fidelityPlanForAction($action, $symbol, $timeframe, $evidence);
+        if ($fidelity !== null) $evidence['research_fidelity_plan'] = $fidelity;
+        if ($action === 'WAIT_DATASET_CONTINUITY') {
+            $evidence['measurement_acquisition_proposal'] = app(MultiModalLearningPortfolioService::class)
+                ->measurementDependencyProposal((array) ($evidence['data_readiness'] ?? []));
+        }
         $contract = [
             'protocol' => self::PROTOCOL,
             'owner' => self::OWNER,
@@ -780,6 +786,8 @@ class ResearchLoopArbiterService
             'queue' => $queue,
             'new_generation_writers_outside_arbiter_forbidden' => true,
             'promotion_authority' => false,
+            'question_fidelity_plan_hash' => $fidelity['plan_hash'] ?? null,
+            'existing_readiness_priority_and_executor_admission_unchanged' => true,
         ];
         $evidenceHash = $this->hash($evidence);
         $stateSnapshot = $this->operationalStateSnapshot($evidence, $queue, $symbol, $timeframe);
@@ -933,6 +941,40 @@ class ResearchLoopArbiterService
         }
 
         return [...$payload, 'decision_id' => (int) $decision->id];
+    }
+
+    /** Read-only planning inside the selected readiness tier, never a second selector. */
+    public function fidelityPlanForAction(string $action, string $symbol, string $timeframe, array $evidence): ?array
+    {
+        $kind = match ($action) {
+            'EDGE_INDEPENDENT_REPLICATION' => 'independent_validation',
+            'AUTHORITY_DESCENDANT_PROOF', 'SKILL_CARTRIDGE_TRANSPLANT' => 'descendant_proof',
+            'EDGE_CONFIRMATION', 'PROVISIONAL_SKILL_CARTRIDGE_CONFIRMATION', 'OPEN_PROSPECTIVE_REPAIR_EXPERIMENT' => 'replication',
+            'EDGE_ATTRIBUTION', 'EDGE_ARCHITECTURE_REPAIR', 'WAIT_DATASET_CONTINUITY' => 'diagnostic',
+            'OPEN_ACADEMY_EXPERIMENT', 'EDGE_DISCOVERY_RESUME', 'EDGE_HYPOTHESIS_COMPILED', 'EDGE_GENESIS',
+            'RUN_NORMAL_TWENTY_SEAT_LIFECYCLE', 'OPEN_HISTORICAL_RESEARCH_GENERATION',
+            'RUN_MTF_ECONOMIC_INFORMATION_BATCH', 'EXPLORE_MTF_PLAYBOOK_PRIOR' => 'discovery',
+            default => null,
+        };
+        if ($kind === null) return null;
+        $source = (array) ($evidence['academy_proposal'] ?? []);
+        $progress = (array) ($source['learning_progress'] ?? []);
+        if ($action === 'OPEN_ACADEMY_EXPERIMENT' && $progress === [] && (int) ($source['passport_id'] ?? 0) > 0) {
+            $progress = app(XauusdEdgeFormationAcademyService::class)->learningProgress((int) $source['passport_id']);
+        }
+
+        return app(MultiModalLearningPortfolioService::class)->planFidelity([
+            'kind' => $kind, 'question_key' => $this->hash([$action, $source,
+                data_get($evidence, 'generation.id'), data_get($evidence, 'director.next_action')]),
+            'scope' => ['symbol' => $symbol, 'timeframe' => $timeframe],
+            'source_references' => array_filter([
+                'academy_identity' => $source['identity'] ?? null,
+                'source_dependency' => data_get($evidence, 'data_readiness.source_dependency'),
+                'prospective_repair' => $evidence['prospective_repair'] ?? null,
+            ]),
+            'learning_progress' => $progress,
+            'criterion' => ['action' => $action, 'existing_owner_terminal_receipt_required' => true],
+        ]);
     }
 
     private function hasLiveScheduledCommandLock(ResearchLoopDecision $decision): bool

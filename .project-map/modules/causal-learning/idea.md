@@ -25,6 +25,13 @@ attested causal evidence.
 - It does not grant a skill, mentor, parent or paper authority from a score.
 - It does not rewrite historical evidence to fit a newer conclusion.
 
+The research meta-learning extension (ADR-028) uses the same memory, Academy,
+Foundry, portfolio and arbiter. Prospective forecasts, learning-progress tasks,
+typed abstractions, behavior archives, fidelity audits and fixed policy
+challengers remain research-only; measured search/transfer utility and
+scientific authority are separate proof levels. See
+`docs/operations/research-meta-learning.md` for the native hooks and acceptance.
+
 The active detailed implementation blueprint is
 `docs/architecture/ai-lab-final-blueprint.md`; the current vertical-slice plan
 is `docs/task1.txt` until its durable parts move into an ADR/architecture note.

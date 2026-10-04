@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T17:51:35.623Z",
-  "source_digest": "ab27d80f95d2f8d1af597545a6645e2bdc46afb52e8ec013d03054473d0b3ee7",
-  "source_file_count": 1480,
-  "git_head": "993e0823a898a483da4dc883c07deda6bd564b72",
+  "generated_at": "2026-10-04T19:13:52.015Z",
+  "source_digest": "25db5c425e1221253402ba188a938d1033f08809d2e8eaa4d36c64d56dc2d117",
+  "source_file_count": 1487,
+  "git_head": "d914e86960d8ddbdf0fbb1e0bd190b296dd1964b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -87,9 +87,18 @@
         "backend-laravel/app/Services/CooperativeExperimentSettlementService.php",
         "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
         "backend-laravel/app/Services/ResearchKnowledgePortfolioService.php",
+        "backend-laravel/app/Services/MultiModalLearningPortfolioService.php",
+        "backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php",
+        "backend-laravel/database/migrations/2026_10_04_200000_create_research_abstraction_and_behavior_archives.php",
+        "backend-laravel/tests/Feature/ProspectiveResearchMetaLearningTest.php",
+        "backend-laravel/tests/Feature/AcademyLearningProgressTest.php",
+        "backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php",
+        "backend-laravel/tests/Feature/ResearchFidelityMeasurementTest.php",
+        "docs/operations/research-meta-learning.md",
         "backend-laravel/app/Services/SkillMentorService.php",
         "backend-laravel/app/Jobs/RunCausalExperimentFoldJob.php",
         "backend-laravel/app/Models/CausalFoldReceipt.php",
+        "backend-laravel/app/Models/ResearchExperimentReceipt.php",
         "backend-laravel/app/Models/LabLearningLanePair.php",
         "backend-laravel/tests/Feature/AcademyCanonicalHandoffTest.php",
         "backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php",
@@ -141,6 +150,13 @@
         "CanonicalLearningOutboxService",
         "TypedInstrumentFoundryService::registerCausalBenchmark",
         "TypedInstrumentFoundryService::settleCausalBenchmark",
+        "TypedInstrumentFoundryService::compress",
+        "TypedInstrumentFoundryService::taskContract",
+        "TypedInstrumentFoundryService::behaviorAlternatives",
+        "ResearchKnowledgePortfolioService::preregisterExperiment",
+        "ResearchKnowledgePortfolioService::chooseDiscriminatingProbe",
+        "XauusdEdgeFormationAcademyService::learningProgress",
+        "XauusdEdgeFormationAcademyService::skillDependencyGraph",
         "EvolutionaryAuthorityFoundryService::settleDescendantOutcome",
         "CanonicalSkillCartridgeService::planTransplant",
         "CanonicalSkillCartridgeService::settleTransplantOutcome",
@@ -149,6 +165,8 @@
         "trading:reconcile-instrument-pairs"
       ],
       "data_tables": [
+        "research_instrument_abstractions",
+        "research_behavior_archive",
         "edge_academy_passports",
         "edge_academy_trials",
         "edge_academy_beams",
@@ -208,6 +226,11 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php",
+        "backend-laravel/tests/Feature/ProspectiveResearchMetaLearningTest.php",
+        "backend-laravel/tests/Feature/AcademyLearningProgressTest.php",
+        "backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php",
+        "backend-laravel/tests/Feature/ResearchFidelityMeasurementTest.php",
         "backend-laravel/tests/Feature/LearningTruthProtocolTest.php",
         "backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php",
         "backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php",
@@ -255,7 +278,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 97,
+      "source_file_count": 105,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -490,6 +513,8 @@
         "ai-service-python/app/services/market_adaptive_replay.py",
         "ai-service-python/app/services/multitimeframe.py",
         "ai-service-python/app/services/backtester.py",
+        "ai-service-python/app/services/research_program_tasks.py",
+        "ai-service-python/tests/test_research_program_tasks.py",
         "ai-service-python/app/services/volume_features.py",
         "ai-service-python/app/services/historical_quotes.py",
         "ai-service-python/app/services/prospective_probe_window.py",
@@ -509,6 +534,7 @@
       ],
       "dependencies": [],
       "invariants": [
+        "Optional policy_context.research_program_task is a bounded pure typed whitelist task, not strategy or arbitrary code. CALL expansion/as-of inputs and producer output identity must match; unsupported temporal semantics remain a dependency. Interpreter CPU is not measured synthesis/search advantage.",
         "API replay and direct closed-MTF feature preparation share the exact clean-discovery scope/probe boundary. Enabled confirmation admits the typed incremental bundle only after that guard; full foundation protocol and all four path/SHA checks remain strict.",
         "Only an original completed server-authorized post-paper window can receive authorized_research_transport_v1 for full replay. The deterministic HMAC binds the persisted release and all actual CSV paths/hashes/UTC rows before cache reuse; literal 2026 stays forbidden. Transport admission is not independent evidence or credit.",
         "File-sealed MTF replay forbids inline primary/context/related replacements before cache or execution; hashes attest the same parsed bytes and actual consumed rows, including after strategy feature computation and cache reuse.",
@@ -535,6 +561,7 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "ai-service-python/tests/test_research_program_tasks.py",
         "backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php",
         "ai-service-python/tests/test_clean_discovery_boundary.py",
         "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
@@ -565,7 +592,7 @@
       "flows": [
         ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
       ],
-      "source_file_count": 23,
+      "source_file_count": 25,
       "map": ".project-map/modules/laravel-python-contract/module.yaml"
     },
     {

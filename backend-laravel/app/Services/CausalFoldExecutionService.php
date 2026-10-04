@@ -97,6 +97,10 @@ class CausalFoldExecutionService
             if (($benchmark['reason'] ?? null) === 'BENCHMARK_PREREGISTERED_CONTRACT_DRIFT') {
                 throw new RuntimeException('CAUSAL_BENCHMARK_PREREGISTERED_CONTRACT_DRIFT');
             }
+            $prediction = app(ResearchKnowledgePortfolioService::class)->preregisterExperiment($experiment, $request);
+            if (($prediction['reason'] ?? null) === 'PREDICTION_PREREGISTERED_CONTRACT_DRIFT') {
+                throw new RuntimeException('CAUSAL_PREDICTION_PREREGISTERED_CONTRACT_DRIFT');
+            }
             $requestHash = $this->hash($request);
             if ($receipt->request_hash && ! hash_equals((string) $receipt->request_hash, $requestHash)) {
                 throw new RuntimeException('CAUSAL_FOLD_REQUEST_IDENTITY_CHANGED');
@@ -275,6 +279,7 @@ class CausalFoldExecutionService
                 'promotion_evidence' => false,
             ]);
             $fresh->update(['evidence' => $evidence]);
+            app(ResearchKnowledgePortfolioService::class)->settleExperimentPrediction($fresh);
             $generation = $fresh->generation()->with('agents.modelVersion')->first();
             if ($generation) {
                 $this->terminalBoundary->closeIfTerminal($generation);

@@ -33,6 +33,23 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_native_council_retains_actual_resolved_question_fidelity_and_selection_without_method_override(): void
+    {
+        $lab = $this->lab();
+        $allocation = app(ContextualCouncilAllocatorService::class)->allocate($this->plan(), $lab, [], 12);
+        foreach ($allocation['plan'] as $slot) {
+            $learning = (array) data_get($slot, 'niche.learning_method_contract');
+            $this->assertSame(12, $learning['planning_identity']['generation_number']);
+            $this->assertSame($learning['block_key'], $learning['fidelity_plan']['question_key']);
+            $this->assertSame($learning['block_key'], $learning['question_selection']['ranking'][0]['question_id']);
+            $this->assertTrue($learning['resolved_method_unchanged']);
+            $this->assertFalse($learning['promotion_evidence']);
+            $this->assertSame('not_executed', $learning['fidelity_plan']['execution_status']);
+            $this->assertSame('unknown_requires_exact_native_fold_scope', $learning['forecast_status']);
+        }
+        $this->assertCount(20, $allocation['plan']);
+    }
+
     public function test_cold_start_is_twenty_seats_of_dynamic_scientific_blocks_and_seven_species(): void
     {
         $lab = $this->lab();
@@ -355,6 +372,8 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
             $dataHash = str_repeat('d', 64);
             $run = app(LabImmutableEvidenceService::class)->beginRun($last, 'screening', 'incremental');
             app(LabImmutableEvidenceService::class)->attachRequest($run, [
+                'candles' => array_map(fn ($row) => ['time' => \Carbon\CarbonImmutable::parse('2025-09-12T00:00:00Z')
+                    ->addMinutes($row * 5)->toIso8601ZuluString(), 'close' => 2000], range(0, 200)),
                 'strategies' => [[
                     'lab_agent_id' => $last->id,
                     'strategy' => $model->strategy,
@@ -364,8 +383,10 @@ class CooperativeContextualEvolutionCouncilTest extends TestCase
             ], ['data_hash' => $dataHash, 'dataset_manifest' => ['data_hash' => $dataHash,
                 'mtf_bundle_hash' => str_repeat('m', 64)]]);
             app(LabImmutableEvidenceService::class)->finishRun($run, 'completed', [
-                'decision_trace' => [['event_type' => 'test', 'action' => 'WAIT']],
-                'data_quality' => ['decision_trace' => ['requested' => true, 'complete' => true, 'evaluated_candle_count' => 1]],
+                'decision_trace' => [['event_type' => 'signal_evaluation', 'action' => 'WAIT',
+                    'candle_index' => 200, 'candle_time' => '2025-09-12T16:40:00Z', 'accepted' => false]],
+                'data_quality' => ['decision_trace' => ['protocol' => 'candle_decision_trace_v1',
+                    'requested' => true, 'complete' => true, 'event_count' => 1, 'evaluated_candle_count' => 1]],
                 'trade_ledger' => [],
                 'trade_ledger_hash' => hash('sha256', json_encode([])),
                 'total_trades' => 0,

@@ -1,5 +1,13 @@
 # Causal-learning history
 
+## 2026-10-04 - Evidence-bounded research meta-learning
+
+Existing memory, Academy, Foundry and portfolio gain prospective calibration,
+learning-progress task/skill graphs, typed operator and behavior archives,
+fidelity/measurement studies and fixed declarative policy challengers. Research
+advice, semantic utility, measured compute and scientific authority remain
+separate. Existing frozen trials are preserved. See ADR-028.
+
 ## 2026-10-04 - Bounded unobserved MTF validator repair
 
 ADR-025 admits one exact unchanged-question replacement for an original,

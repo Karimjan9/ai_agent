@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T17:51:35.623Z",
-  "source_digest": "ab27d80f95d2f8d1af597545a6645e2bdc46afb52e8ec013d03054473d0b3ee7",
-  "source_file_count": 1480,
-  "git_head": "993e0823a898a483da4dc883c07deda6bd564b72",
+  "generated_at": "2026-10-04T19:13:52.015Z",
+  "source_digest": "25db5c425e1221253402ba188a938d1033f08809d2e8eaa4d36c64d56dc2d117",
+  "source_file_count": 1487,
+  "git_head": "d914e86960d8ddbdf0fbb1e0bd190b296dd1964b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
@@ -877,85 +877,85 @@
       "symbol": "intervention",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1020
+      "line": 1023
     },
     {
       "symbol": "differentGeneTemplate",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1035
+      "line": 1038
     },
     {
       "symbol": "cell",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1047
+      "line": 1050
     },
     {
       "symbol": "learningContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1068
+      "line": 1071
     },
     {
       "symbol": "priority",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1103
+      "line": 1111
     },
     {
       "symbol": "selectPhase",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1139
+      "line": 1147
     },
     {
       "symbol": "differentPhase",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1154
+      "line": 1162
     },
     {
       "symbol": "phaseForSourceScope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1160
+      "line": 1168
     },
     {
       "symbol": "bindLearningContext",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1174
+      "line": 1182
     },
     {
       "symbol": "evidence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1202
+      "line": 1210
     },
     {
       "symbol": "learningEvidence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1278
+      "line": 1286
     },
     {
       "symbol": "steppingStoneAvailable",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1290
+      "line": 1298
     },
     {
       "symbol": "referenceTimestamp",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1303
+      "line": 1311
     },
     {
       "symbol": "binaryEntropy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 1310
+      "line": 1318
     },
     {
       "symbol": "CooperativeContextualEvolutionCouncilService",
@@ -979,79 +979,79 @@
       "symbol": "allocationReasons",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 412
+      "line": 415
     },
     {
       "symbol": "blockTypes",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 483
+      "line": 486
     },
     {
       "symbol": "allocationFeedback",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 502
+      "line": 505
     },
     {
       "symbol": "feedbackBlockTypes",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 568
+      "line": 571
     },
     {
       "symbol": "seatOwnership",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 604
+      "line": 607
     },
     {
       "symbol": "digest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 648
+      "line": 651
     },
     {
       "symbol": "manifestBlocks",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 654
+      "line": 657
     },
     {
       "symbol": "uncertaintyAbstainSpec",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 668
+      "line": 671
     },
     {
       "symbol": "orderedRepairTargets",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 704
+      "line": 707
     },
     {
       "symbol": "templateForRepairTarget",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 743
+      "line": 746
     },
     {
       "symbol": "arms",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 777
+      "line": 780
     },
     {
       "symbol": "phaseScopeTemplate",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 818
+      "line": 821
     },
     {
       "symbol": "armSpec",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CooperativeContextualEvolutionCouncilService.php",
-      "line": 871
+      "line": 874
     },
     {
       "symbol": "scopeSnapshot",
@@ -4850,6 +4850,7 @@
     {
       "path": "backend-laravel/tests/Feature/CooperativeContextualEvolutionCouncilTest.php",
       "tests": [
+        "test_native_council_retains_actual_resolved_question_fidelity_and_selection_without_method_override",
         "test_cold_start_is_twenty_seats_of_dynamic_scientific_blocks_and_seven_species",
         "test_causal_triplet_and_contextual_blocks_share_one_twenty_seat_generation",
         "test_valid_negative_repair_receipt_changes_one_successor_pair_and_seals_its_source",

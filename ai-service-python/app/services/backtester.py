@@ -36,6 +36,7 @@ from app.services.composition_runtime import (
 )
 from app.services.control_roots import control_root_for
 from app.services.research_release import attest as attest_research_release
+from app.services.research_program_tasks import execute_task as execute_research_program_task
 from app.services.data_loader import load_candles
 from app.services.execution_contract import (
     enforce_policy_boundary,
@@ -3388,6 +3389,19 @@ def _run_prepared_simple_backtest(
                     "promotion_evidence": False,
                     "rule": "Paired differential replay runs only after the core candidate gate passes.",
                 },
+            }
+    task = payload.policy_context.get("research_program_task")
+    if task is not None:
+        # Optional, frozen pure research question. These outputs never alter
+        # signals, trades, replay gates or any economic authority.
+        try:
+            response.benchmark["research_program_task"] = execute_research_program_task(task)
+        except ValueError as error:
+            # Missing pure-task evidence never changes the completed economic
+            # replay into a failure or reruns it under another authority.
+            response.benchmark["research_program_task"] = {
+                "producer_protocol": "bounded_typed_program_execution_v1", "status": "blocked_dependency",
+                "reason_code": str(error), "research_only": True, "promotion_evidence": False,
             }
     return response
 

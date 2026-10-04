@@ -26,6 +26,8 @@ paths:
   - ai-service-python/app/services/market_adaptive_replay.py
   - ai-service-python/app/services/multitimeframe.py
   - ai-service-python/app/services/backtester.py
+  - ai-service-python/app/services/research_program_tasks.py
+  - ai-service-python/tests/test_research_program_tasks.py
   - ai-service-python/app/services/volume_features.py
   - ai-service-python/app/services/historical_quotes.py
   - ai-service-python/app/services/prospective_probe_window.py
@@ -42,6 +44,7 @@ data_tables:
   - paper_signals
 dependencies:
 invariants:
+  - Optional policy_context.research_program_task is a bounded pure typed whitelist task, not strategy or arbitrary code. CALL expansion/as-of inputs and producer output identity must match; unsupported temporal semantics remain a dependency. Interpreter CPU is not measured synthesis/search advantage.
   - API replay and direct closed-MTF feature preparation share the exact clean-discovery scope/probe boundary. Enabled confirmation admits the typed incremental bundle only after that guard; full foundation protocol and all four path/SHA checks remain strict.
   - Only an original completed server-authorized post-paper window can receive authorized_research_transport_v1 for full replay. The deterministic HMAC binds the persisted release and all actual CSV paths/hashes/UTC rows before cache reuse; literal 2026 stays forbidden. Transport admission is not independent evidence or credit.
   - File-sealed MTF replay forbids inline primary/context/related replacements before cache or execution; hashes attest the same parsed bytes and actual consumed rows, including after strategy feature computation and cache reuse.
@@ -73,6 +76,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_research_program_tasks.py
   - backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php
   - ai-service-python/tests/test_clean_discovery_boundary.py
   - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php
