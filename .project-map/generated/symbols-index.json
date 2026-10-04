@@ -1,283 +1,283 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "f09bef5152997555b43825d391ae47c13f6169a1c79a616f19c26fe4184882e6",
-  "generated_at": "2026-10-04T12:58:46.674Z",
-  "source_digest": "61b642a284606ae87d819aab256b68f6ea88c5dbb6ff55fe5609116e80f8b598",
+  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
+  "generated_at": "2026-10-04T13:40:51.638Z",
+  "source_digest": "5abc211134e6246d2a824b0a2025de441203d6671a5c3f72f34169f3c669195d",
   "source_file_count": 1476,
-  "git_head": "5c79b360a4d209999e1021c12263b744e6c6f916",
+  "git_head": "d74df03cd2f43ee5d2b6c140179c5e67b3ab15c3",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
     {
+      "symbol": "Candle",
+      "kind": "python_class",
+      "path": "ai-service-python/app/schemas.py",
+      "line": 11
+    },
+    {
       "symbol": "SimpleBacktestRequest",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 107
-    },
-    {
-      "symbol": "StrategyConfig",
-      "kind": "python_class",
-      "path": "ai-service-python/app/schemas.py",
-      "line": 20
+      "line": 110
     },
     {
       "symbol": "Metrics",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 203
+      "line": 206
     },
     {
       "symbol": "Trade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 213
+      "line": 216
     },
     {
       "symbol": "MistakeJournalEntry",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 226
+      "line": 229
+    },
+    {
+      "symbol": "StrategyConfig",
+      "kind": "python_class",
+      "path": "ai-service-python/app/schemas.py",
+      "line": 23
     },
     {
       "symbol": "DailyReportDay",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 232
+      "line": 235
     },
     {
       "symbol": "DailyReport",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 243
+      "line": 246
     },
     {
       "symbol": "BacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 248
+      "line": 251
     },
     {
       "symbol": "SimpleTrade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 257
+      "line": 260
     },
     {
       "symbol": "SimpleBacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 300
+      "line": 303
     },
     {
       "symbol": "BacktestRequest",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 33
+      "line": 36
     },
     {
       "symbol": "StrategyRuntimeConfig",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 54
-    },
-    {
-      "symbol": "Candle",
-      "kind": "python_class",
-      "path": "ai-service-python/app/schemas.py",
-      "line": 8
+      "line": 57
     },
     {
       "symbol": "ExecutionConfig",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 91
+      "line": 94
     },
     {
       "symbol": "_ImmutableSourceRowIndex",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 162
+      "line": 165
     },
     {
       "symbol": "PreparedFeatureSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 597
+      "line": 598
     },
     {
       "symbol": "PreparedSignalSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 607
+      "line": 608
     },
     {
       "symbol": "PreparedReplayFeatureContext",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 621
+      "line": 622
     },
     {
       "symbol": "CompositionRuntimeContractError",
       "kind": "python_class",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 80
+      "line": 83
     },
     {
       "symbol": "MarketAdaptiveReplayService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/market_adaptive_replay.py",
-      "line": 158
+      "line": 159
     },
     {
       "symbol": "MonteCarloService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/monte_carlo.py",
-      "line": 10
+      "line": 11
     },
     {
       "symbol": "PreparedClosedMtfContext",
       "kind": "python_class",
       "path": "ai-service-python/app/services/multitimeframe_stack.py",
-      "line": 32
+      "line": 33
     },
     {
       "symbol": "RedTeamService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/red_team.py",
-      "line": 5
+      "line": 8
     },
     {
       "symbol": "StrategyDnaService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/strategy_dna.py",
-      "line": 1
+      "line": 4
     },
     {
       "symbol": "WalkForwardService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 27
+      "line": 28
     },
     {
       "symbol": "ArmReplayResourcesTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_arm_replay_resources.py",
-      "line": 3
+      "line": 6
     },
     {
       "symbol": "BacktesterExecutionRegressionTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_backtester_execution.py",
-      "line": 105
+      "line": 108
     },
     {
       "symbol": "CoveragePassportTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_coverage_passport.py",
-      "line": 4
+      "line": 7
     },
     {
       "symbol": "DualTrackConfidenceTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_dual_track_confidence.py",
-      "line": 5
+      "line": 8
     },
     {
       "symbol": "ExecutionContractCompatibilityTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_execution_contract.py",
-      "line": 4
-    },
-    {
-      "symbol": "HybridStrategyTest",
-      "kind": "python_class",
-      "path": "ai-service-python/tests/test_market_adaptive_replay.py",
-      "line": 559
+      "line": 7
     },
     {
       "symbol": "MarketAdaptiveReplayTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_market_adaptive_replay.py",
-      "line": 8
+      "line": 11
+    },
+    {
+      "symbol": "HybridStrategyTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_market_adaptive_replay.py",
+      "line": 562
     },
     {
       "symbol": "MonteCarloServiceTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_monte_carlo.py",
-      "line": 3
+      "line": 6
     },
     {
       "symbol": "PaperCoveragePolicyTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_paper_coverage_policy.py",
-      "line": 5
+      "line": 8
     },
     {
       "symbol": "PaperManagementContractTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_paper_management_contract.py",
-      "line": 9
+      "line": 12
     },
     {
       "symbol": "ParameterSchemaTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_parameter_schema.py",
-      "line": 8
+      "line": 11
     },
     {
       "symbol": "RedTeamServiceTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_red_team.py",
-      "line": 3
+      "line": 6
     },
     {
       "symbol": "RegimeEnsembleTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_regime_ensemble.py",
-      "line": 36
+      "line": 39
     },
     {
       "symbol": "ReplayCacheContractTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_replay_cache_contract.py",
-      "line": 18
+      "line": 21
     },
     {
       "symbol": "RobustnessProtocolTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_robustness_protocol.py",
-      "line": 8
+      "line": 11
     },
     {
       "symbol": "StatisticalValidationTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_statistical_validation.py",
-      "line": 8
+      "line": 11
     },
     {
       "symbol": "StrategyDnaServiceTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_strategy_dna.py",
-      "line": 3
+      "line": 6
     },
     {
       "symbol": "WalkForwardSplitTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_walk_forward.py",
-      "line": 12
+      "line": 15
     },
     {
       "symbol": "OverfitDetectionTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_walk_forward.py",
-      "line": 399
+      "line": 402
     },
     {
       "symbol": "RobustnessScoreTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_walk_forward.py",
-      "line": 404
+      "line": 407
     },
     {
       "symbol": "ActivateMarketAdaptiveReplay",

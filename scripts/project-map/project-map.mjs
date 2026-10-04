@@ -63,8 +63,22 @@ function normalizedPath(path) {
     return relative(repositoryRoot, path).split(sep).join("/");
 }
 
-function readText(path) {
-    return readFileSync(path, "utf8");
+export function readText(path) {
+    // Navigation indexes follow text, not Git's platform-dependent checkout EOL.
+    // Runtime release and immutable artifact digests retain their own raw-byte owners.
+    return readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+}
+
+function navigationBytes(path) {
+    const bytes = readFileSync(path);
+    const normalized = Buffer.allocUnsafe(bytes.length);
+    let length = 0;
+    for (let index = 0; index < bytes.length; index++) {
+        if (bytes[index] === 13 && bytes[index + 1] === 10) continue;
+        normalized[length++] = bytes[index];
+    }
+    // Normalize only CRLF bytes; retain BOMs and every other encoding byte exactly.
+    return normalized.subarray(0, length);
 }
 
 function walk(directory) {
@@ -87,19 +101,19 @@ function sourceFiles() {
         .sort((left, right) => normalizedPath(left).localeCompare(normalizedPath(right)));
 }
 
-function sourceDigest(files = sourceFiles()) {
+export function sourceDigest(files = sourceFiles()) {
     const hash = createHash("sha256");
     for (const file of files) {
         hash.update(normalizedPath(file));
         hash.update("\0");
-        hash.update(readFileSync(file));
+        hash.update(navigationBytes(file));
         hash.update("\0");
     }
     return hash.digest("hex");
 }
 
-function fileDigest(path) {
-    return createHash("sha256").update(readFileSync(path)).digest("hex");
+export function fileDigest(path) {
+    return createHash("sha256").update(navigationBytes(path)).digest("hex");
 }
 
 function lineNumber(text, offset) {
@@ -316,7 +330,7 @@ function matchAll(expression, text, mapper) {
     return results;
 }
 
-function indexSymbols(files) {
+export function indexSymbols(files) {
     const symbols = [];
     for (const file of files.filter((item) => /\.(php|py)$/.test(item))) {
         const text = readText(file);
@@ -329,10 +343,10 @@ function indexSymbols(files) {
                 symbol: match[1], kind: "php_method", path, line: lineNumber(text, match.index),
             })));
         } else {
-            symbols.push(...matchAll(/^\s*class\s+(\w+)/gm, text, (match) => ({
+            symbols.push(...matchAll(/^[\t ]*class[\t ]+(\w+)/gm, text, (match) => ({
                 symbol: match[1], kind: "python_class", path, line: lineNumber(text, match.index),
             })));
-            symbols.push(...matchAll(/^\s*(?:async\s+)?def\s+(\w+)\s*\(/gm, text, (match) => ({
+            symbols.push(...matchAll(/^[\t ]*(?:async[\t ]+)?def[\t ]+(\w+)[\t ]*\(/gm, text, (match) => ({
                 symbol: match[1], kind: "python_function", path, line: lineNumber(text, match.index),
             })));
         }
@@ -608,10 +622,13 @@ function impact(base = process.argv[3] || "HEAD") {
     console.log("Then update only the affected semantic map files, run generate when requested, and finish with check.");
 }
 
-if (command === "generate") generate();
-else if (command === "check") check();
-else if (command === "impact") impact();
-else {
-    console.error("Usage: node scripts/project-map/project-map.mjs <impact [base]|generate|check>");
-    process.exitCode = 1;
+// Importing the bounded scanner helpers for tests must not scan a repository.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    if (command === "generate") generate();
+    else if (command === "check") check();
+    else if (command === "impact") impact();
+    else {
+        console.error("Usage: node scripts/project-map/project-map.mjs <impact [base]|generate|check>");
+        process.exitCode = 1;
+    }
 }

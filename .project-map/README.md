@@ -78,6 +78,12 @@ not values or secrets. A shared config file is not assigned wholesale to one
 module; follow its section to the real consumer. The index does not prove that
 a long-lived worker loaded the same code currently on disk.
 
+Navigation source and generator digests use UTF-8 text with CRLF normalized to
+LF, so a platform checkout cannot invalidate identical navigation content.
+Symbol anchors point to the named definition's actual row. This normalization
+belongs only to the map scanner; immutable dataset, research release and source
+artifact fingerprints retain their existing raw-byte owners and semantics.
+
 ## Measuring navigation cost (opt-in pilot)
 
 Use `scripts/project-map/measure.mjs` for a small pilot of ten *paired read-only

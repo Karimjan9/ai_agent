@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "f09bef5152997555b43825d391ae47c13f6169a1c79a616f19c26fe4184882e6",
-  "generated_at": "2026-10-04T12:58:46.674Z",
-  "source_digest": "61b642a284606ae87d819aab256b68f6ea88c5dbb6ff55fe5609116e80f8b598",
+  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
+  "generated_at": "2026-10-04T13:40:51.638Z",
+  "source_digest": "5abc211134e6246d2a824b0a2025de441203d6671a5c3f72f34169f3c669195d",
   "source_file_count": 1476,
-  "git_head": "5c79b360a4d209999e1021c12263b744e6c6f916",
+  "git_head": "d74df03cd2f43ee5d2b6c140179c5e67b3ab15c3",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -197,928 +197,928 @@
   ],
   "symbols": [
     {
+      "symbol": "_screen_replay_capacity",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 100
+    },
+    {
       "symbol": "_replay_checkpoint_root",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 131
+      "line": 134
     },
     {
       "symbol": "_write_replay_checkpoint",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 144
+      "line": 147
     },
     {
       "symbol": "run_portfolio_backtest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1689
+      "line": 1690
     },
     {
       "symbol": "_run_portfolio_backtest_sync",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1703
+      "line": 1706
     },
     {
       "symbol": "_bounded_replay_seconds",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1743
+      "line": 1746
     },
     {
       "symbol": "_bounded_env_int",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1906
+      "line": 1909
     },
     {
       "symbol": "_bounded_contract_int",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1914
+      "line": 1917
     },
     {
       "symbol": "_read_replay_capture",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1930
+      "line": 1933
     },
     {
       "symbol": "_terminate_replay_tree",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1944
+      "line": 1947
     },
     {
       "symbol": "_run_bounded_replay",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1992
+      "line": 1995
     },
     {
       "symbol": "_latest_replay_checkpoint",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 204
+      "line": 207
     },
     {
       "symbol": "_replay_cache_key",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2233
+      "line": 2236
     },
     {
       "symbol": "_runtime_dependency_manifest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2257
+      "line": 2260
     },
     {
       "symbol": "_utc_timestamp",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 226
+      "line": 229
     },
     {
       "symbol": "_dataset_dependency_manifest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2304
-    },
-    {
-      "symbol": "_load_foundation_candles",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 236
+      "line": 2307
     },
     {
       "symbol": "_replay_cache_path",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2374
+      "line": 2377
     },
     {
       "symbol": "_load_immutable_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2384
+      "line": 2387
+    },
+    {
+      "symbol": "_load_foundation_candles",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 239
     },
     {
       "symbol": "_store_immutable_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2407
-    },
-    {
-      "symbol": "_assert_historical_evolution_screen_source",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 243
+      "line": 2410
     },
     {
       "symbol": "_cleanup_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2434
+      "line": 2437
+    },
+    {
+      "symbol": "_assert_historical_evolution_screen_source",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 246
     },
     {
       "symbol": "_with_replay_compiler_metadata",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2480
+      "line": 2483
     },
     {
       "symbol": "_attach_behavioral_diversity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2505
+      "line": 2508
     },
     {
       "symbol": "_minhash_similarity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2610
+      "line": 2613
     },
     {
       "symbol": "_correlation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2615
+      "line": 2618
     },
     {
       "symbol": "_prepare_paper_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2628
+      "line": 2631
     },
     {
       "symbol": "_twin_inference_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2664
+      "line": 2667
     },
     {
       "symbol": "_council_confidence",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2707
+      "line": 2710
     },
     {
       "symbol": "paper_signal",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2747
+      "line": 2748
     },
     {
       "symbol": "_assert_non_paper_source_pre_2026",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 275
+      "line": 278
     },
     {
       "symbol": "paper_twin_inference",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3014
+      "line": 3015
     },
     {
       "symbol": "_twin_lane_process_worker",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3055
+      "line": 3058
     },
     {
       "symbol": "_run_twin_lane_process",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3069
+      "line": 3072
     },
     {
       "symbol": "paper_twin_red_team",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3094
+      "line": 3095
     },
     {
       "symbol": "paper_twin_ablation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3162
+      "line": 3163
     },
     {
       "symbol": "paper_execution_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3220
+      "line": 3221
     },
     {
       "symbol": "_candidate_cache_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 325
+      "line": 328
     },
     {
       "symbol": "advance_paper_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3341
+      "line": 3342
     },
     {
       "symbol": "_mtf_variant_payloads",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3518
+      "line": 3521
     },
     {
       "symbol": "variant_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3540
+      "line": 3542
     },
     {
       "symbol": "_mtf_signal_identity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3578
+      "line": 3581
     },
     {
       "symbol": "_mtf_snapshot_identity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3599
+      "line": 3602
     },
     {
       "symbol": "frame_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3607
-    },
-    {
-      "symbol": "_candidate_scoped_contract",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 363
+      "line": 3609
     },
     {
       "symbol": "_build_mtf_feature_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3632
+      "line": 3635
     },
     {
       "symbol": "_run_mtf_variants",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3645
+      "line": 3648
+    },
+    {
+      "symbol": "_candidate_scoped_contract",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 366
     },
     {
       "symbol": "_mtf_validation_lanes",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3762
+      "line": 3765
     },
     {
       "symbol": "_scaled_cost_execution",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3776
+      "line": 3779
     },
     {
       "symbol": "_exit_stress_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3802
+      "line": 3805
     },
     {
       "symbol": "_run_mtf_targeted_validation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3831
+      "line": 3834
     },
     {
       "symbol": "_candidate_cache_contract_is_current",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 384
+      "line": 387
     },
     {
       "symbol": "run_mtf_ablation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3967
+      "line": 3968
     },
     {
       "symbol": "run_mtf_targeted_validation_endpoint",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4052
+      "line": 4053
     },
     {
       "symbol": "run_mtf_hypothesis_batch",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4118
+      "line": 4119
     },
     {
       "symbol": "_mtf_lane_summary",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4210
+      "line": 4213
     },
     {
       "symbol": "_run_single_mtf_lane",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4237
+      "line": 4240
     },
     {
       "symbol": "run_mtf_council",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4285
+      "line": 4286
     },
     {
       "symbol": "require_internal_token",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 429
+      "line": 430
     },
     {
       "symbol": "_coverage_permission",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4447
+      "line": 4450
     },
     {
       "symbol": "_abstention_meta_decision",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4533
+      "line": 4536
     },
     {
       "symbol": "_internal_api_token",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 458
+      "line": 461
     },
     {
       "symbol": "_regime_belief",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4726
+      "line": 4729
     },
     {
       "symbol": "health",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 473
+      "line": 474
     },
     {
       "symbol": "_transition_mixture",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4775
+      "line": 4778
     },
     {
       "symbol": "_typed_agent_council",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4814
+      "line": 4817
     },
     {
       "symbol": "_execution_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4895
+      "line": 4898
     },
     {
       "symbol": "home",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 497
+      "line": 498
     },
     {
       "symbol": "_strategy_contract_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4999
+      "line": 5002
     },
     {
       "symbol": "_paper_management_audit",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5017
+      "line": 5020
     },
     {
       "symbol": "strategies",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 505
+      "line": 506
     },
     {
       "symbol": "_tactical_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5075
+      "line": 5078
     },
     {
       "symbol": "_entry_contract_projection",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5117
+      "line": 5120
     },
     {
       "symbol": "boolean",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5128
-    },
-    {
-      "symbol": "replay_status",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 513
+      "line": 5130
     },
     {
       "symbol": "number",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5132
+      "line": 5134
+    },
+    {
+      "symbol": "replay_status",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 514
     },
     {
       "symbol": "timestamp",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5141
+      "line": 5143
     },
     {
       "symbol": "run_simple_backtest_api",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 534
+      "line": 535
     },
     {
       "symbol": "run_all_backtests",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 557
+      "line": 558
     },
     {
       "symbol": "aggregate_causal_folds",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 576
+      "line": 577
     },
     {
       "symbol": "_screening_robustness_admission",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 615
+      "line": 618
     },
     {
       "symbol": "_screening_insufficient_robustness_profile",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 648
+      "line": 651
     },
     {
       "symbol": "_run_all_backtests_sync",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 675
+      "line": 678
     },
     {
       "symbol": "add_timing",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 684
+      "line": 686
     },
     {
       "symbol": "run_timed",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 689
+      "line": 691
     },
     {
       "symbol": "shared_features",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 798
-    },
-    {
-      "symbol": "_screen_replay_capacity",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 97
+      "line": 800
     },
     {
       "symbol": "build_composition_execution_receipt",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1048
+      "line": 1051
     },
     {
       "symbol": "build_composition_runtime_trace",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1274
+      "line": 1277
     },
     {
       "symbol": "_binding",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1439
+      "line": 1442
     },
     {
       "symbol": "_node_receipt_valid",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1444
+      "line": 1447
     },
     {
       "symbol": "_decision_receipts_valid",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1461
-    },
-    {
-      "symbol": "_parameter_preserving_management_adapter",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 16
+      "line": 1464
     },
     {
       "symbol": "_complete_decision_witness",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1683
-    },
-    {
-      "symbol": "_runtime_signal_regimes",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 170
+      "line": 1686
     },
     {
       "symbol": "_organism_outcome_status",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1701
+      "line": 1704
+    },
+    {
+      "symbol": "_runtime_signal_regimes",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/composition_runtime.py",
+      "line": 173
     },
     {
       "symbol": "_normalize_symbol",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1731
+      "line": 1734
     },
     {
       "symbol": "_empty",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1735
+      "line": 1738
     },
     {
       "symbol": "_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1748
+      "line": 1751
     },
     {
       "symbol": "_canonicalize",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 1755
+      "line": 1758
+    },
+    {
+      "symbol": "_parameter_preserving_management_adapter",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/composition_runtime.py",
+      "line": 19
     },
     {
       "symbol": "bind_diagnostic_execution_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 196
+      "line": 199
     },
     {
       "symbol": "validate_composition_runtime_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 244
+      "line": 247
     },
     {
       "symbol": "_validate_execution_authority",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 402
+      "line": 405
     },
     {
       "symbol": "effective_management_parameters",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 532
+      "line": 535
     },
     {
       "symbol": "apply_composition_entry_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 583
+      "line": 586
     },
     {
       "symbol": "CompositionRuntimeContractError",
       "kind": "python_class",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 80
+      "line": 83
     },
     {
       "symbol": "compile_composition_program",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 84
+      "line": 87
     },
     {
       "symbol": "build_composition_decision_receipts",
       "kind": "python_function",
       "path": "ai-service-python/app/services/composition_runtime.py",
-      "line": 882
+      "line": 885
     },
     {
       "symbol": "build_instrument_research_trace",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 11
+      "line": 14
     },
     {
       "symbol": "_empty",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 230
+      "line": 233
     },
     {
       "symbol": "_context_slices",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 243
+      "line": 246
     },
     {
       "symbol": "_activation_evidence",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 308
+      "line": 311
     },
     {
       "symbol": "_context_from_key",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 477
+      "line": 480
     },
     {
       "symbol": "_runtime_event_allowed",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 489
+      "line": 492
     },
     {
       "symbol": "_path_value",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 499
+      "line": 502
     },
     {
       "symbol": "_signal_matches",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 508
+      "line": 511
     },
     {
       "symbol": "_context_matches",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 521
+      "line": 524
     },
     {
       "symbol": "_canonical_context_value",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 545
+      "line": 548
     },
     {
       "symbol": "_bundle_activation_contexts",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 562
+      "line": 565
     },
     {
       "symbol": "_decorate_context_slices",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 573
+      "line": 576
     },
     {
       "symbol": "_session_for_hour",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 597
+      "line": 600
     },
     {
       "symbol": "_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 607
+      "line": 610
     },
     {
       "symbol": "_canonicalize",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_research.py",
-      "line": 614
+      "line": 617
     },
     {
       "symbol": "utc",
       "kind": "python_function",
       "path": "ai-service-python/app/services/prospective_probe_window.py",
-      "line": 103
+      "line": 105
     },
     {
       "symbol": "assert_clean_discovery_boundary",
       "kind": "python_function",
       "path": "ai-service-python/app/services/prospective_probe_window.py",
-      "line": 15
+      "line": 18
     },
     {
       "symbol": "select_probe_window",
       "kind": "python_function",
       "path": "ai-service-python/app/services/prospective_probe_window.py",
-      "line": 70
+      "line": 73
     },
     {
       "symbol": "count",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1005
+      "line": 1007
     },
     {
       "symbol": "_aggregate_edge_context_enforcement",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1051
+      "line": 1052
     },
     {
       "symbol": "_parameter_activation_manifest",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1112
+      "line": 1113
     },
     {
       "symbol": "_forward_window_protocol",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1162
+      "line": 1163
     },
     {
       "symbol": "_row_rolling_windows",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 120
+      "line": 122
     },
     {
       "symbol": "_purge_segments",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1224
+      "line": 1225
     },
     {
       "symbol": "_run_segment",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1243
+      "line": 1245
     },
     {
       "symbol": "_normalize",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1287
+      "line": 1288
     },
     {
       "symbol": "calculate_robustness_score",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1293
+      "line": 1296
     },
     {
       "symbol": "detect_overfit",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1299
+      "line": 1302
     },
     {
       "symbol": "run",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 165
-    },
-    {
-      "symbol": "WalkForwardService",
-      "kind": "python_class",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 27
+      "line": 167
     },
     {
       "symbol": "run_causal_confirmation",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 275
+      "line": 277
+    },
+    {
+      "symbol": "WalkForwardService",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 28
     },
     {
       "symbol": "_causal_context_cache_key",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 37
+      "line": 38
     },
     {
       "symbol": "split_dataset",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 60
+      "line": 62
     },
     {
       "symbol": "_resource_totals",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 672
+      "line": 673
     },
     {
       "symbol": "aggregate_causal_fold_items",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 686
+      "line": 687
     },
     {
       "symbol": "fold_number",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 703
+      "line": 705
     },
     {
       "symbol": "rolling_windows",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 73
+      "line": 75
     },
     {
       "symbol": "_causal_forward_folds",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 917
+      "line": 919
     },
     {
       "symbol": "_causal_window_projection",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 971
+      "line": 972
     },
     {
       "symbol": "_aggregate_edge_observability",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 990
+      "line": 991
     },
     {
       "symbol": "produce",
       "kind": "python_function",
       "path": "ai-service-python/tests/support/semantic_stage_receipt_fixture.py",
-      "line": 25
+      "line": 28
     },
     {
       "symbol": "preserving_contract",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_parameter_preserving_composition.py",
-      "line": 20
+      "line": 23
     },
     {
       "symbol": "test_parameter_owned_adapter_preserves_source_economics_and_management_mutations",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_parameter_preserving_composition.py",
-      "line": 33
+      "line": 36
     },
     {
       "symbol": "test_rehashed_noncanonical_research_manager_still_fails",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_parameter_preserving_composition.py",
-      "line": 53
+      "line": 54
     },
     {
       "symbol": "test_confirmation_runtime_scope_is_capability_metadata_not_a_new_signal_rule",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_parameter_preserving_composition.py",
-      "line": 61
+      "line": 64
     },
     {
       "symbol": "test_parameter_preserving_adapter_uses_real_position_lifecycle_and_does_not_mask_time_stop",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_parameter_preserving_composition.py",
-      "line": 68
+      "line": 71
     },
     {
       "symbol": "strategy",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_parameter_preserving_composition.py",
-      "line": 83
+      "line": 85
     },
     {
       "symbol": "AdmitAcademyExperiment",
