@@ -15,6 +15,7 @@ paths:
   - backend-laravel/app/Http/Controllers/EvolutionLabController.php
   - backend-laravel/app/Services/LabPopulationService.php
   - backend-laravel/app/Services/LabAgentEvaluationService.php
+  - backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php
   - backend-laravel/app/Services/ExperimentQualityProgressService.php
   - backend-laravel/app/Services/StrategyTacticRiskCompositionPlannerService.php
   - backend-laravel/app/Services/TradeManagementLibraryService.php
@@ -50,6 +51,7 @@ paths:
   - backend-laravel/app/Services/LabAgentPreflightService.php
   - backend-laravel/app/Services/LearningVelocityGateService.php
   - backend-laravel/app/Jobs/EvaluateLabAgentJob.php
+  - backend-laravel/app/Jobs/EvaluateLabScreeningBatchJob.php
   - backend-laravel/app/Models/GenerationAutonomyReceipt.php
   - backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php
   - backend-laravel/app/Console/Commands/AuditAutonomyStreak.php
@@ -59,6 +61,8 @@ entry_points:
   - LabPopulationService
   - LabLifecycleOrchestrator
   - EvaluateLabAgentJob
+  - EvaluateLabScreeningBatchJob
+  - ProspectiveRepairProbeWindowService::requiresSingleCandidateScreening
   - EvolutionGovernorService
   - trading:build-lab-generation
   - trading:dispatch-lab
@@ -109,6 +113,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php
   - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php
   - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
   - backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php

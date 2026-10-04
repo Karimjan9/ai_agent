@@ -9,6 +9,7 @@ use App\Models\LabEvaluationRun;
 use App\Services\FrozenControlScreeningAdmissionService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\LearningTechnicalCircuitBreakerService;
+use App\Services\ProspectiveRepairProbeWindowService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -21,7 +22,8 @@ use Illuminate\Queue\SerializesModels;
 use Throwable;
 
 /**
- * Sends a bounded 4–6-agent cohort through one shared snapshot request.
+ * Sends ordinary 1–6-agent batches through one shared snapshot request;
+ * typed 15k discovery/prospective work is scheduled as singleton jobs.
  * Each agent still receives its own immutable evidence run/gate decision;
  * only dataset/feature construction is shared in the Python evaluator.
  */
@@ -69,6 +71,20 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
 
     public function middleware(): array
     {
+        $mutexLease = (int) config('services.lab_queue.screening_batch_timeout_seconds', 1800) + 120;
+        $eligibleAgents = LabAgent::query()->with('modelVersion', 'generation')
+            ->whereIn('id', $this->labAgentIds)
+            ->whereIn('lifecycle_status', ['queued', 'screening'])
+            ->get();
+        if ($eligibleAgents->contains(fn (LabAgent $agent): bool =>
+            app(ProspectiveRepairProbeWindowService::class)->requiresSingleCandidateScreening(
+                (array) ($agent->modelVersion?->metadata ?? []), (string) $agent->generation?->trigger_type,
+                (array) ($agent->generation?->trigger_context ?? [])))) {
+            // Terminal members of a stale payload cannot shorten the lease
+            // of its remaining typed singleton. Oversized eligible payloads
+            // still fail in screenBatch before opening any replay evidence.
+            $mutexLease = max($mutexLease, $this->timeout + 120);
+        }
         return [
             // A cancelled cohort must be consumed before fairness or replay
             // mutex middleware can release it. Otherwise it may loop without
@@ -78,7 +94,7 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
             (new WithoutOverlapping($this->screeningMutexKey()))
                 ->shared()
                 ->releaseAfter(max(15, (int) config('services.lab_queue.mutex_release_seconds', 60)))
-                ->expireAfter((int) config('services.lab_queue.screening_batch_timeout_seconds', 1800) + 120),
+                ->expireAfter($mutexLease),
         ];
     }
 

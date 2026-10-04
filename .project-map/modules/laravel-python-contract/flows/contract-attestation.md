@@ -97,6 +97,11 @@ calculation from FastAPI.
   matching 15000-evaluation/512-warmup sealed scope/probe. The guard runs before
   cache and child spawn; full replay, tail shortcuts and independent/paper
   claims are refused rather than silently relabelled.
+  Canonical Laravel dispatch gives each 15000-row typed candidate one bounded
+  queue job and one unchanged Python/HTTP deadline. An oversized direct or stale
+  typed batch is refused before evidence creation, rather than recursively
+  executing several deadlines under one job lease. This changes scheduling,
+  not row counts, sealed windows, economic gates or scientific authority.
 
 - HTTP success is not attestation success.
 - A present but different hash is rejected just like a missing hash.

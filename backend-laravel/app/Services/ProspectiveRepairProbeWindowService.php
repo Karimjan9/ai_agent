@@ -12,6 +12,15 @@ class ProspectiveRepairProbeWindowService
 
     public const EVALUATOR = 'incremental_probe_window_v2';
 
+    /** Scheduling only; the existing snapshot/release owners still admit evidence. */
+    public function requiresSingleCandidateScreening(array $modelMetadata, string $triggerType, array $generationContext): bool
+    {
+        return data_get($modelMetadata, 'causal_learning_cohort.experiment_kind') === ProspectiveRepairExperimentService::KIND
+            || ($triggerType === 'academy_experiment'
+                && data_get($generationContext, 'mtf_bundle_manifest.validation_bundle_protocol') === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL
+                && data_get($generationContext, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only');
+    }
+
     public function seal(array $rows, string $datasetHash, string $executionHash, string $experimentKey,
         int $evaluationRows, int $warmupRows): array
     {

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T14:01:05.336Z",
-  "source_digest": "dc9197c44c3f18fd5a05d98ec0b2bfe8c8adda1e1e1629e260d4448385bf7256",
-  "source_file_count": 1477,
-  "git_head": "91e5cecd35d0bde8ed59dde2b5ca0e580529d877",
+  "generated_at": "2026-10-04T14:48:45.247Z",
+  "source_digest": "7a5c38f76f4a693f1ccb664ead63d99675542757b45195b54221e83d98d6f932",
+  "source_file_count": 1478,
+  "git_head": "353e614fb31841b7a3c3abb9004853fdc1ddc0d3",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -318,6 +318,7 @@
         "backend-laravel/app/Http/Controllers/EvolutionLabController.php",
         "backend-laravel/app/Services/LabPopulationService.php",
         "backend-laravel/app/Services/LabAgentEvaluationService.php",
+        "backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php",
         "backend-laravel/app/Services/ExperimentQualityProgressService.php",
         "backend-laravel/app/Services/StrategyTacticRiskCompositionPlannerService.php",
         "backend-laravel/app/Services/TradeManagementLibraryService.php",
@@ -353,6 +354,7 @@
         "backend-laravel/app/Services/LabAgentPreflightService.php",
         "backend-laravel/app/Services/LearningVelocityGateService.php",
         "backend-laravel/app/Jobs/EvaluateLabAgentJob.php",
+        "backend-laravel/app/Jobs/EvaluateLabScreeningBatchJob.php",
         "backend-laravel/app/Models/GenerationAutonomyReceipt.php",
         "backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php",
         "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php"
@@ -363,6 +365,8 @@
         "LabPopulationService",
         "LabLifecycleOrchestrator",
         "EvaluateLabAgentJob",
+        "EvaluateLabScreeningBatchJob",
+        "ProspectiveRepairProbeWindowService::requiresSingleCandidateScreening",
         "EvolutionGovernorService",
         "trading:build-lab-generation",
         "trading:dispatch-lab",
@@ -411,6 +415,7 @@
         "Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php",
         "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
         "backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php",
         "backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php",
@@ -436,7 +441,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 45,
+      "source_file_count": 47,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -500,7 +505,7 @@
         "HTTP success alone is never evidence attestation.",
         "A mismatched hash fails at the owning boundary.",
         "Prospective screens verify exact warmup/evaluation rows, UTC bounds, month counts and data/execution identities before replay and before learning; a legacy short replay cannot satisfy the new evaluator receipt.",
-        "The sealed 15k probe receives its own finite child deadline below the Laravel batch transport and queue lease; generic differential screens retain their shorter deadline. A technical timeout cannot stand in for a replay receipt.",
+        "Each sealed 15k probe owns one bounded queue job and its own finite child deadline below the Laravel transport and queue lease; several typed candidates cannot share that deadline or run recursively under one lease. Generic short screens retain batching. A technical timeout cannot stand in for a replay receipt.",
         "A declared composition must bind strategy, tactic, risk and management before replay starts.",
         "One composition execution authority must also bind symbol, execution timeframe, dataset or MTF bundle, execution assumptions and the exact instrument assignment.",
         "Instrument assignment source strategy, tactic, risk and management must equal the frozen passport, even if a stale assignment is internally hash-valid.",
@@ -514,6 +519,7 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php",
         "ai-service-python/tests/test_clean_discovery_boundary.py",
         "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
         "ai-service-python/tests/test_sealed_dataset_identity.py",

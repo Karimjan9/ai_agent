@@ -23,6 +23,7 @@ use App\Services\LearningProtocolSafetyService;
 use App\Services\LearningTechnicalCircuitBreakerService;
 use App\Services\MarketData\MarketDataContinuityService;
 use App\Services\MultiTimeframeSnapshotService;
+use App\Services\ProspectiveRepairProbeWindowService;
 use App\Services\ResearchAllocationPolicyService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Console\Command;
@@ -601,35 +602,7 @@ class DispatchLabGeneration extends Command
                         ? min($configuredBatchSize, 2)
                         : $configuredBatchSize);
                 $orderedIds = $agentIds->map(fn ($id): int => (int) $id)->all();
-                // Recovery may contribute already-queued stranded agents while
-                // draftAgents is empty. Classify controls from the complete set
-                // being dispatched so a resumed causal cohort cannot put its
-                // control and candidates back into one self-waiting batch.
-                $controlIds = $dispatchAgents
-                    ->filter(fn (LabAgent $agent): bool => $this->isFrozenRepairControl($agent))
-                    ->pluck('id')->map(fn ($id): int => (int) $id)->all();
-                $remainingIds = array_values(array_diff($orderedIds, $controlIds));
-                $chunks = [];
-                foreach ($controlIds as $controlId) {
-                    $chunks[] = [$controlId];
-                }
-                // A bounded batch shares one dataset path.  Never mix price and
-                // volume contracts in one request: the old global `contains`
-                // check made a price control inherit the volume snapshot merely
-                // because a sibling in the same chunk used volume.
-                $remainingAgents = $generation->agents
-                    ->whereIn('id', $remainingIds)
-                    ->sortBy(fn (LabAgent $agent): int => array_search((int) $agent->id, $remainingIds, true))
-                    ->groupBy(fn (LabAgent $agent): string => $this->screeningDatasetContract($agent));
-                foreach ($remainingAgents as $contractAgents) {
-                    foreach (array_chunk($contractAgents->pluck('id')->map(fn ($id): int => (int) $id)->all(), $batchSize) as $chunk) {
-                        $chunks[] = $chunk;
-                    }
-                }
-                $jobs = collect($chunks)
-                    ->values()
-                    ->map(fn (array $ids, int $index) => new EvaluateLabScreeningBatchJob($ids, $symbol, $index % 2, $generation->id, $timeframe))
-                    ->all();
+                $jobs = $this->screeningJobs($generation, $dispatchAgents, $orderedIds, $batchSize, $symbol, $timeframe);
 
                 $batch = Bus::batch($jobs)
                     ->name("{$symbol} {$timeframe} Lab G{$generation->generation} screening")
@@ -658,7 +631,7 @@ class DispatchLabGeneration extends Command
                     $batch->id,
                     count($agentIds),
                     count($jobs),
-                    $batchSize,
+                    max(array_map(fn (EvaluateLabScreeningBatchJob $job): int => count($job->labAgentIds), $jobs)),
                     $heavyScreeningBatch ? 'yes' : 'no',
                 ));
             } finally {
@@ -729,6 +702,37 @@ class DispatchLabGeneration extends Command
             || data_get($parameters, 'volume_lane', 'none') !== 'none';
 
         return $volume ? 'volume' : 'price';
+    }
+
+    /** Each typed 15k replay gets its own unchanged HTTP/Python and queue lease. */
+    private function screeningJobs(LabGeneration $generation, \Illuminate\Support\Collection $dispatchAgents,
+        array $orderedIds, int $ordinaryBatchSize, string $symbol, string $timeframe): array
+    {
+        // Include resumed queued agents, not only newly constructed draft seats.
+        $controlIds = $dispatchAgents->whereIn('id', $orderedIds)
+            ->filter(fn (LabAgent $agent): bool => $this->isFrozenRepairControl($agent))
+            ->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        $remainingIds = array_values(array_diff($orderedIds, $controlIds));
+        $chunks = array_map(fn (int $id): array => [$id], $controlIds);
+        $windowOwner = app(ProspectiveRepairProbeWindowService::class);
+        $singleCandidate = fn (LabAgent $agent): bool => $windowOwner->requiresSingleCandidateScreening(
+            (array) ($agent->modelVersion?->metadata ?? []), (string) $generation->trigger_type,
+            (array) ($generation->trigger_context ?? []));
+        // Keep both physical dataset and row-budget contracts separate. Never
+        // run several typed windows recursively inside one 2400s queue job.
+        $groups = $dispatchAgents->whereIn('id', $remainingIds)
+            ->sortBy(fn (LabAgent $agent): int => array_search((int) $agent->id, $remainingIds, true))
+            ->groupBy(fn (LabAgent $agent): string => $this->screeningDatasetContract($agent)
+                .($singleCandidate($agent) ? ':single_15k' : ':ordinary'));
+        foreach ($groups as $agents) {
+            $size = $singleCandidate($agents->first()) ? 1 : $ordinaryBatchSize;
+            foreach (array_chunk($agents->pluck('id')->map(fn ($id): int => (int) $id)->all(), $size) as $chunk) {
+                $chunks[] = $chunk;
+            }
+        }
+
+        return collect($chunks)->values()->map(fn (array $ids, int $index) =>
+            new EvaluateLabScreeningBatchJob($ids, $symbol, $index % 2, $generation->id, $timeframe))->all();
     }
 
     /**

@@ -54,7 +54,7 @@ invariants:
   - HTTP success alone is never evidence attestation.
   - A mismatched hash fails at the owning boundary.
   - Prospective screens verify exact warmup/evaluation rows, UTC bounds, month counts and data/execution identities before replay and before learning; a legacy short replay cannot satisfy the new evaluator receipt.
-  - The sealed 15k probe receives its own finite child deadline below the Laravel batch transport and queue lease; generic differential screens retain their shorter deadline. A technical timeout cannot stand in for a replay receipt.
+  - Each sealed 15k probe owns one bounded queue job and its own finite child deadline below the Laravel transport and queue lease; several typed candidates cannot share that deadline or run recursively under one lease. Generic short screens retain batching. A technical timeout cannot stand in for a replay receipt.
   - A declared composition must bind strategy, tactic, risk and management before replay starts.
   - One composition execution authority must also bind symbol, execution timeframe, dataset or MTF bundle, execution assumptions and the exact instrument assignment.
   - Instrument assignment source strategy, tactic, risk and management must equal the frozen passport, even if a stale assignment is internally hash-valid.
@@ -73,6 +73,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php
   - ai-service-python/tests/test_clean_discovery_boundary.py
   - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php
   - ai-service-python/tests/test_sealed_dataset_identity.py

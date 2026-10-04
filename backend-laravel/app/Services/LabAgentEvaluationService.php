@@ -1430,6 +1430,16 @@ class LabAgentEvaluationService
                 throw new RuntimeException("Screening batch model version topilmadi: agent {$agent->id}.");
             }
         }
+        // The 15k deadline belongs to one sequential candidate, not a cohort.
+        // Refuse stale/direct oversized payloads before local guard runs,
+        // snapshots, HTTP or recursive contract splitting. Completed members
+        // were already filtered above and retain their original evidence.
+        if ($agents->count() > 1 && $agents->contains(fn (LabAgent $agent): bool =>
+            app(ProspectiveRepairProbeWindowService::class)->requiresSingleCandidateScreening(
+                (array) ($agent->modelVersion?->metadata ?? []), (string) $agent->generation?->trigger_type,
+                (array) ($agent->generation?->trigger_context ?? [])))) {
+            throw new RuntimeException('PROSPECTIVE_SCREEN_REQUIRES_SINGLE_CANDIDATE_JOB');
+        }
         // A guard seat is a pre-registered WAIT policy, not a strategy replay.
         // Resolve it locally before snapshots, health admission and HTTP so it
         // cannot occupy the scarce replay lane or become a transport failure.

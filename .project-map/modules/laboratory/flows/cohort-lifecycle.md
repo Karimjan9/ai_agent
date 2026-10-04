@@ -2,8 +2,15 @@
 
 Explicit clean-discovery Academy cohorts seal a stored
 `prospective_clean_discovery_bundle_v1`, not the incomplete parent full archive.
-Canonical dispatch requires typed ownership and exact stream seals. Single and
-batch screening send the existing prospective probe contract: 15000 evaluated
+Canonical dispatch requires typed ownership and exact stream seals. Each typed
+15k screen receives a separate bounded queue job and HTTP/Python deadline, with
+frozen controls still dispatched first. Ordinary short screens retain batching;
+physical price/volume datasets and typed/ordinary budgets are never mixed. A
+stale oversized typed job is refused before opening evidence or local WAIT runs,
+not recursively expanded into several long HTTP calls under one queue lease.
+Its screening mutex outlives the 2400-second job timeout with a 120-second margin;
+queue redelivery remains later than that lease. Singleton screening sends the
+existing prospective probe contract: 15000 evaluated
 rows plus 512 warmup, UTC bounds and month counts, checked against Python's
 receipt. Academy remains research-only, including a promising scientific screen;
 full evaluation/dispatch reject this slice instead of upgrading it (ADR-024).
